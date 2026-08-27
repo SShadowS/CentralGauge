@@ -72,6 +72,10 @@ interface TaskRecord {
   kind: string;
   hasReferenceSolution: boolean;
   gates: Record<string, GateRecord>;
+  /** Tests whose only assertions are placeholders, on an otherwise real oracle. */
+  placeholderTests?: string[];
+  /** Tests that exit early on a missing fixture and so can pass vacuously. */
+  vacuousTests?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -131,20 +135,46 @@ interface ProbeJson {
 }
 
 async function attachB1(t: TaskRecord): Promise<void> {
+  // A hollow oracle cannot discriminate BY CONSTRUCTION, whatever a probe says:
+  // if every assertion is `Assert.IsTrue(true, ...)` then a correct and a wrong
+  // solution are indistinguishable to it. This overrides the probe rather than
+  // being weighed against it, because a probe's correct leg passing is exactly
+  // what a hollow oracle guarantees.
+  const audit = ORACLE_AUDIT[t.id];
+  if (audit?.hollowOracle) {
+    t.gates["B1"] = {
+      status: "quarantine",
+      detail:
+        `HOLLOW ORACLE: all ${
+          audit.hollowTests?.length ?? 0
+        } test(s) assert only ` +
+        "`Assert.IsTrue(true, ...)`, so the oracle cannot distinguish any solution from " +
+        "any other. A probe's correct leg passing here proves nothing. Needs a rewritten " +
+        "oracle, not a repaired one",
+      hollowTests: audit.hollowTests,
+    };
+    return;
+  }
+
   const probe = await readJson<ProbeJson>(
     join(REPO, "scratch", t.id, ".probe.json"),
   );
   if (probe === undefined) {
     const seed = SEED_VERIFICATION[t.id];
     if (seed !== undefined) {
+      // A probe that ran the CORRECT leg only cannot discriminate: it shows the
+      // reference solution passes and never asks whether a wrong solution
+      // fails, which is exactly what B1 exists to establish. Reporting that as
+      // `pass` is how two hollow oracles (H011, H017) were certified by this
+      // gate while asserting nothing at all. `inconclusive` is the honest
+      // status - the evidence is real but only half the gate.
       t.gates["B1"] = {
-        status: seed.b1 === "pass"
-          ? "pass"
-          : seed.b1 === "inconclusive"
-          ? "inconclusive"
-          : "quarantine",
-        detail:
-          `correct leg only (seeded reference, no negative side authored): ${seed.detail}`,
+        status: seed.b1 === "fail" ? "quarantine" : "inconclusive",
+        detail: seed.b1 === "pass"
+          ? "CORRECT LEG ONLY - the reference solution passes, but no negative side was " +
+            "authored, so nothing shows a wrong solution FAILS. Not a discrimination " +
+            `result: ${seed.detail}`
+          : `correct leg only (seeded reference, no negative side authored): ${seed.detail}`,
         legs: "correct-only",
       };
       return;
@@ -284,6 +314,37 @@ interface B4Entry {
  * already contain it for a third of the suite, so most of B4 costs nothing to
  * establish. Built by the block in scripts/ that writes b4-evidence.json.
  */
+/**
+ * Oracles that assert nothing, from scripts/oracle-audit.py.
+ *
+ * A hollow oracle - every [Test] in it is `Assert.IsTrue(true, ...)` - passes
+ * B1, B2 AND B4 while measuring nothing, because every one of those gates asks
+ * "does a correct solution pass?" and none asks "does a wrong one fail?". B7
+ * cannot catch it either: no assertions means nothing for a mutant to violate,
+ * and both hollow oracles found so far also had zero mutable sites.
+ *
+ * So it needs its own signal, and that signal has to override the others rather
+ * than sit beside them.
+ */
+interface OracleAudit {
+  hollowOracle?: boolean;
+  hollowTests?: string[];
+  vacuousTests?: string[];
+  tests?: string[];
+  placeholders?: number;
+}
+
+const ORACLE_AUDIT: Record<string, OracleAudit> = await (async () => {
+  try {
+    const raw = await Deno.readTextFile(
+      join(REPO, "scratch", "oracle-audit.json"),
+    );
+    return JSON.parse(raw) as Record<string, OracleAudit>;
+  } catch {
+    return {};
+  }
+})();
+
 const B4_EVIDENCE: Record<string, B4Entry> = await (async () => {
   try {
     const raw = await Deno.readTextFile(join(DOCS, "b4-evidence.json"));
@@ -770,6 +831,22 @@ async function main(): Promise<void> {
   const tasks = await inventory();
   for (const t of tasks) {
     await attachB1(t);
+    {
+      // Not fatal on its own, but a placeholder assertion inside an otherwise real
+      // oracle still means that particular test measures nothing.
+      const a = ORACLE_AUDIT[t.id];
+      const placeholders = a?.hollowTests ?? [];
+      const vacuous = a?.vacuousTests ?? [];
+      if (a && !a.hollowOracle && placeholders.length > 0) {
+        t.placeholderTests = placeholders;
+      }
+      // A vacuous test asserts nothing whenever its fixture is absent, which
+      // makes it a quieter version of the same problem: it can pass without
+      // measuring. Recorded even on oracles with no placeholder at all.
+      if (vacuous.length > 0) {
+        t.vacuousTests = vacuous;
+      }
+    }
     attachB2(t, phase1);
     await attachB7(t);
     attachRemaining(t);

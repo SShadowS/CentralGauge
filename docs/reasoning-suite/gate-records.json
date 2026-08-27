@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-27T07:40:59.065Z",
+  "generatedAt": "2026-08-27T09:17:22.057Z",
   "sources": {
     "determinism": "scratch/backfill-phase1-results.json",
     "mutation": "scratch/lethal-t1/<id>/report.json",
@@ -899,8 +899,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus281 (pass:25/25f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus281 (pass:25/25f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -983,8 +983,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus282 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus282 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1062,8 +1062,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus283 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus283 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1147,7 +1147,10 @@
           "status": "absent",
           "detail": "clean-room solver gate unbuilt"
         }
-      }
+      },
+      "vacuousTests": [
+        "TestHighInventoryDiscount"
+      ]
     },
     {
       "id": "CG-AL-H004",
@@ -1156,8 +1159,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus284 (pass:14/14f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus284 (pass:14/14f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1235,8 +1238,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus285 (pass:6/6f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus285 (pass:6/6f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1312,8 +1315,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus28 (pass:6/6f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus28 (pass:6/6f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1397,8 +1400,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus282 (pass:10/10f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus282 (pass:10/10f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1479,8 +1482,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus283 (pass:10/10f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus283 (pass:10/10f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1564,8 +1567,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus284 (pass:11/11f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus284 (pass:11/11f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1659,8 +1662,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus285 (pass:8/8f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus285 (pass:8/8f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1749,9 +1752,15 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus28 (pass:5/5f0)",
-          "legs": "correct-only"
+          "status": "quarantine",
+          "detail": "HOLLOW ORACLE: all 5 test(s) assert only `Assert.IsTrue(true, ...)`, so the oracle cannot distinguish any solution from any other. A probe's correct leg passing here proves nothing. Needs a rewritten oracle, not a repaired one",
+          "hollowTests": [
+            "TestQueryHasCorrectProperties",
+            "TestQueryReturnsAggregatedData",
+            "TestQueryFiltersByOrderType",
+            "TestQueryHasSumColumn",
+            "TestQueryHasCountColumn"
+          ]
         },
         "B2": {
           "status": "pass",
@@ -1818,8 +1827,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus281 (pass:9/9f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus281 (pass:9/9f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1904,8 +1913,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus283 (pass:7/7f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus283 (pass:7/7f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -1969,8 +1978,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus284 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus284 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2053,8 +2062,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus285 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus285 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2132,9 +2141,13 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus28 (pass:3/3f0)",
-          "legs": "correct-only"
+          "status": "quarantine",
+          "detail": "HOLLOW ORACLE: all 3 test(s) assert only `Assert.IsTrue(true, ...)`, so the oracle cannot distinguish any solution from any other. A probe's correct leg passing here proves nothing. Needs a rewritten oracle, not a repaired one",
+          "hollowTests": [
+            "TestQueryCompiles",
+            "TestQueryHasCrossJoinBehavior",
+            "TestQueryColumnsAccessible"
+          ]
         },
         "B2": {
           "status": "pass",
@@ -2201,8 +2214,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus281 (pass:6/6f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus281 (pass:6/6f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2289,8 +2302,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus282 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus282 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2365,7 +2378,12 @@
           "status": "absent",
           "detail": "clean-room solver gate unbuilt"
         }
-      }
+      },
+      "placeholderTests": [
+        "TestTryProcessData_Success",
+        "TestTryProcessData_NoException",
+        "TestCodeunitAccessible"
+      ]
     },
     {
       "id": "CG-AL-H020",
@@ -2374,8 +2392,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus284 (pass:10/10f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus284 (pass:10/10f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2451,8 +2469,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus285 (pass:20/20f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus285 (pass:20/20f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2523,8 +2541,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus281 (pass:21/21f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus281 (pass:21/21f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2612,8 +2630,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus281 (pass:25/25f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus281 (pass:25/25f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2782,8 +2800,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus283 (pass:7/7f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus283 (pass:7/7f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2858,8 +2876,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus285 (pass:8/8f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus285 (pass:8/8f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2931,8 +2949,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus28 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus28 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -2998,8 +3016,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus281 (pass:9/9f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus281 (pass:9/9f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3073,8 +3091,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus282 (pass:18/18f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus282 (pass:18/18f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3155,8 +3173,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus283 (pass:10/10f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus283 (pass:10/10f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3234,8 +3252,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus284 (pass:22/22f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus284 (pass:22/22f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3303,7 +3321,10 @@
           "status": "absent",
           "detail": "clean-room solver gate unbuilt"
         }
-      }
+      },
+      "vacuousTests": [
+        "TestCalcIfFlowField_True"
+      ]
     },
     {
       "id": "CG-AL-H032",
@@ -3312,8 +3333,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus281 (pass:19/19f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus281 (pass:19/19f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3389,8 +3410,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus282 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus282 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3459,8 +3480,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus283 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus283 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3531,8 +3552,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus284 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus284 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3602,8 +3623,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus285 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus285 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3665,8 +3686,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus28 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus28 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3735,8 +3756,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus281 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus281 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3809,8 +3830,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus282 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus282 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3886,8 +3907,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus283 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus283 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -3955,8 +3976,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus284 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus284 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4027,8 +4048,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus285 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus285 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4094,8 +4115,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus28 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus28 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4170,8 +4191,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus282 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus282 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4237,8 +4258,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus283 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus283 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4308,8 +4329,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus284 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus284 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4379,8 +4400,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus285 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus285 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4453,8 +4474,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus28 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus28 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4522,8 +4543,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus281 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus281 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4585,8 +4606,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus283 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus283 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4656,8 +4677,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus284 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus284 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4725,8 +4746,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus285 (pass:6/6f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus285 (pass:6/6f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4817,8 +4838,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus282 (pass:10/10f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus282 (pass:10/10f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4893,8 +4914,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus281 (pass:22/22f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus281 (pass:22/22f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -4983,8 +5004,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus282 (pass:9/9f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus282 (pass:9/9f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5070,8 +5091,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus284 (pass:12/12f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus284 (pass:12/12f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5150,8 +5171,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus285 (pass:22/22f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus285 (pass:22/22f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5256,7 +5277,12 @@
           "status": "absent",
           "detail": "clean-room solver gate unbuilt"
         }
-      }
+      },
+      "placeholderTests": [
+        "TestLogPaymentTransactionExecutes",
+        "TestLogPaymentTransactionDifferentStatuses",
+        "TestSendPaymentRequestWithVariousCurrencies"
+      ]
     },
     {
       "id": "CG-AL-M006",
@@ -5265,8 +5291,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus28 (pass:18/18f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus28 (pass:18/18f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5370,8 +5396,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus281 (pass:15/15f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus281 (pass:15/15f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5498,8 +5524,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus282 (pass:12/12f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus282 (pass:12/12f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5633,8 +5659,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus283 (pass:11/11f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus283 (pass:11/11f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5700,7 +5726,12 @@
           "status": "absent",
           "detail": "clean-room solver gate unbuilt"
         }
-      }
+      },
+      "placeholderTests": [
+        "TestInterfaceCompiles",
+        "TestInterfaceCanBeDeclared",
+        "TestMockImplementsInterface"
+      ]
     },
     {
       "id": "CG-AL-M010",
@@ -5709,8 +5740,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus285 (pass:21/21f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus285 (pass:21/21f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5793,7 +5824,10 @@
           "status": "absent",
           "detail": "clean-room solver gate unbuilt"
         }
-      }
+      },
+      "placeholderTests": [
+        "TestProjectManagementCodeunitExists"
+      ]
     },
     {
       "id": "CG-AL-M020",
@@ -5802,8 +5836,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus28 (pass:17/17f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus28 (pass:17/17f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5878,8 +5912,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus281 (pass:11/11f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus281 (pass:11/11f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -5946,8 +5980,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus282 (pass:9/9f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus282 (pass:9/9f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6118,8 +6152,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus284 (pass:10/10f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus284 (pass:10/10f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6198,8 +6232,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus281 (pass:7/7f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus281 (pass:7/7f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6278,8 +6312,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus282 (pass:8/8f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus282 (pass:8/8f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6356,8 +6390,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus283 (pass:18/18f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus283 (pass:18/18f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6423,8 +6457,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus284 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus284 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6487,8 +6521,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus285 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus285 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6551,8 +6585,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus28 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus28 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6604,8 +6638,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus281 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus281 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6674,8 +6708,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus282 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus282 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6789,8 +6823,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus283 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus283 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6860,8 +6894,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus284 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus284 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6931,8 +6965,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus285 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus285 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -6994,8 +7028,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus28 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus28 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7074,8 +7108,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus282 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus282 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7186,8 +7220,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus283 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus283 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7257,8 +7291,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus284 (pass:8/8f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus284 (pass:8/8f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7332,8 +7366,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus285 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus285 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7408,8 +7442,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus28 (pass:6/6f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus28 (pass:6/6f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7486,8 +7520,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus281 (pass:6/6f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus281 (pass:6/6f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7555,8 +7589,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus283 (pass:6/6f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus283 (pass:6/6f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7639,8 +7673,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus284 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus284 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7765,8 +7799,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus285 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus285 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7841,8 +7875,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus28 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus28 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7908,8 +7942,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus281 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus281 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -7982,8 +8016,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus282 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus282 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8049,8 +8083,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus284 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus284 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8121,8 +8155,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus285 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus285 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8191,8 +8225,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus28 (pass:1/1f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus28 (pass:1/1f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8254,8 +8288,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus281 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus281 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8327,8 +8361,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus282 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus282 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8394,8 +8428,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus283 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus283 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8466,8 +8500,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus285 (pass:1/1f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus285 (pass:1/1f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8531,8 +8565,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus28 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus28 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8598,8 +8632,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus281 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus281 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8665,8 +8699,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus282 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus282 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8727,8 +8761,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus283 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus283 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8794,8 +8828,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus284 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus284 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8864,8 +8898,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus281 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus281 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8926,8 +8960,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus282 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus282 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -8998,8 +9032,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus283 (pass:1/1f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus283 (pass:1/1f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9070,8 +9104,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus284 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus284 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9135,8 +9169,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus285 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus285 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9205,8 +9239,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus28 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus28 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9270,8 +9304,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus281 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus281 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9337,8 +9371,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus282 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus282 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9404,8 +9438,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus283 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus283 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9476,8 +9510,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus284 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus284 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9541,8 +9575,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus285 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus285 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9608,8 +9642,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus28 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus28 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9676,8 +9710,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus282 (pass:4/4f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus282 (pass:4/4f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9748,8 +9782,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus283 (pass:5/5f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus283 (pass:5/5f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9818,8 +9852,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus282+Cronus284 (pass:1/1f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus282+Cronus284 (pass:1/1f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9923,8 +9957,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus283+Cronus285 (pass:3/3f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus283+Cronus285 (pass:3/3f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -9990,8 +10024,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus284+Cronus28 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus284+Cronus28 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -10057,8 +10091,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus285+Cronus281 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus285+Cronus281 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -10127,8 +10161,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus28+Cronus283 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus28+Cronus283 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {
@@ -10200,8 +10234,8 @@
       "hasReferenceSolution": true,
       "gates": {
         "B1": {
-          "status": "pass",
-          "detail": "correct leg only (seeded reference, no negative side authored): passes identically on Cronus281+Cronus284 (pass:2/2f0)",
+          "status": "inconclusive",
+          "detail": "CORRECT LEG ONLY - the reference solution passes, but no negative side was authored, so nothing shows a wrong solution FAILS. Not a discrimination result: passes identically on Cronus281+Cronus284 (pass:2/2f0)",
           "legs": "correct-only"
         },
         "B2": {

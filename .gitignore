@@ -131,6 +131,7 @@ scripts/*
 !scripts/b4-evidence.ts
 !scripts/split-al-objects.py
 !scripts/normalize-kill-tests.py
+!scripts/oracle-audit.py
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
