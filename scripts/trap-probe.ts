@@ -56,7 +56,16 @@ import * as colors from "@std/fmt/colors";
 import { classifyInfraError } from "../src/health/classify.ts";
 import { EnvLoader } from "../src/utils/env-loader.ts";
 
-/** The only local container with credentials wired for this script (others 401). */
+/**
+ * Default probe target. Any of this machine's Cronus containers works — see
+ * the `prepareContainerForVerification` call in `main()`, which registers
+ * credentials and publishes the SOAP harness on whatever `--container` names.
+ * This used to be documented as "the only container with credentials wired
+ * (others 401)"; that was a misdiagnosis. The others were being sent
+ * `admin`/`admin` because credential registration was hardcoded to this
+ * default, and the resulting authentication failure surfaced as an opaque
+ * `prepareCandidateApp failed`.
+ */
 const DEFAULT_CONTAINER = "Cronus28";
 
 /** Local-only dev defaults for THIS machine's Cronus containers (CLAUDE.md
@@ -65,6 +74,31 @@ const DEFAULT_CONTAINER = "Cronus28";
  * self-sufficient rather than relying on a `.env` entry that doesn't exist. */
 const LOCAL_CONTAINER_USERNAME = "sshadows";
 const LOCAL_CONTAINER_PASSWORD = "1234";
+
+/**
+ * Resolve the BC container credentials to register for the probe target.
+ *
+ * Exported for its regression test rather than for reuse. The bug this guards
+ * is silent: `BcContainerProvider.getCredentials` falls back to
+ * `admin`/`admin` for any container nobody registered, and the Cronus
+ * containers reject that with `Status Code Unauthorized` from the
+ * dev-endpoint publish - which the provider surfaces only as
+ * `prepareCandidateApp failed`. Nothing in that chain mentions credentials,
+ * so the failure was read for a long time as "only Cronus28 works".
+ *
+ * `env` is injected rather than read from `Deno.env` so the test does not have
+ * to mutate process state.
+ */
+export function resolveContainerCredentials(
+  env: { get(key: string): string | undefined },
+): { username: string; password: string } {
+  return {
+    username: env.get("CENTRALGAUGE_CONTAINER_USERNAME") ??
+      LOCAL_CONTAINER_USERNAME,
+    password: env.get("CENTRALGAUGE_CONTAINER_PASSWORD") ??
+      LOCAL_CONTAINER_PASSWORD,
+  };
+}
 
 /**
  * Load `.env` exactly like the normal CLI entrypoint does
@@ -411,8 +445,28 @@ async function main() {
   // MUST happen before the dynamic import below — see the file-header note
   // on why this can't be a static import + a later loadEnvironment() call.
   await resolveCredentialsEnv();
-  const { handleAlVerify, handleAlVerifyTask } = await import(
+  const {
+    handleAlVerify,
+    handleAlVerifyTask,
+    prepareContainerForVerification,
+  } = await import(
     "../mcp/al-tools-server.ts"
+  );
+
+  // Register credentials for the container we were actually asked to probe.
+  // The MCP module's own top-level init only wires its DEFAULT_CONTAINER
+  // (Cronus28), and `getCredentials` silently falls back to `admin`/`admin`
+  // for anything else — which the Cronus containers reject, surfacing as
+  // `Status Code Unauthorized` from the dev-endpoint publish and classifying
+  // as an opaque `prepareCandidateApp failed` infra error. That made
+  // `--container` unusable for every container but the default, which is why
+  // the file header above claimed the others simply "401". They do not: they
+  // were being sent the wrong credentials. This also ensures the SOAP test
+  // harness is published on the target, which is not guaranteed for a
+  // container the bench has never warmed.
+  await prepareContainerForVerification(
+    plan.container,
+    resolveContainerCredentials(Deno.env),
   );
 
   let res: VerifyResult;

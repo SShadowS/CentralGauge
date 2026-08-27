@@ -8,6 +8,7 @@ import { isAbsolute } from "@std/path";
 import {
   classifyProbeOutcome,
   planProbe,
+  resolveContainerCredentials,
   strictFailExitCode,
   type VerifyResult,
 } from "../../../scripts/trap-probe.ts";
@@ -495,5 +496,55 @@ describe("scripts/trap-probe", () => {
         );
       }
     });
+  });
+});
+
+describe("resolveContainerCredentials", () => {
+  // Regression guard. Credentials used to be registered for the MCP module's
+  // own DEFAULT_CONTAINER only, so probing any other container sent
+  // `admin`/`admin`, which the Cronus containers reject. The publish failed
+  // with `Status Code Unauthorized`, the provider reported only
+  // `prepareCandidateApp failed`, and the conclusion drawn for a long time was
+  // that Cronus28 was "the only container with credentials wired". It was not:
+  // every other container was simply being sent the wrong ones. These tests
+  // pin the resolution so a future refactor cannot quietly drop back to a
+  // provider default.
+  it("falls back to this machine's documented local Cronus credentials", () => {
+    const env = { get: (_k: string) => undefined };
+    assertEquals(resolveContainerCredentials(env), {
+      username: "sshadows",
+      password: "1234",
+    });
+  });
+
+  it("prefers the environment when it supplies both", () => {
+    const supplied: Record<string, string> = {
+      CENTRALGAUGE_CONTAINER_USERNAME: "ciuser",
+      CENTRALGAUGE_CONTAINER_PASSWORD: "cipass",
+    };
+    const env = { get: (k: string) => supplied[k] };
+    assertEquals(resolveContainerCredentials(env), {
+      username: "ciuser",
+      password: "cipass",
+    });
+  });
+
+  it("fills in only the half the environment is missing", () => {
+    const supplied: Record<string, string> = {
+      CENTRALGAUGE_CONTAINER_USERNAME: "ciuser",
+    };
+    const env = { get: (k: string) => supplied[k] };
+    assertEquals(resolveContainerCredentials(env), {
+      username: "ciuser",
+      password: "1234",
+    });
+  });
+
+  it("never resolves to the provider's admin/admin fallback", () => {
+    // The specific value that produced the silent 401. Asserting against it
+    // directly is the point: any resolution that yields it is the bug back.
+    const resolved = resolveContainerCredentials({ get: () => undefined });
+    assertEquals(resolved.username === "admin", false);
+    assertEquals(resolved.password === "admin", false);
   });
 });

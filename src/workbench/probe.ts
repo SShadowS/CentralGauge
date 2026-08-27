@@ -106,8 +106,11 @@ export interface ProbeVerdict {
 export type ProbeRunner = (args: string[]) => Promise<number>;
 
 /**
- * The spec records Cronus28 as the only local container with credentials
- * wired for `trap-probe` (the others return 401 on the web-service port).
+ * Default probe target. Not a restriction: `trap-probe` registers credentials
+ * and publishes the SOAP harness on whatever container it is pointed at, so
+ * any of this machine's Cronus containers is a valid `--container`. The spec
+ * used to record Cronus28 as the only wired one; that was a misdiagnosis of a
+ * hardcoded credential registration, since fixed.
  */
 const DEFAULT_CONTAINER = "Cronus28";
 

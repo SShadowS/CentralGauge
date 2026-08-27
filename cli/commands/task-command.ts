@@ -503,8 +503,8 @@ export function registerTaskCommand(cli: Command): void {
     .option(
       "--container <container:string>",
       "BC container the generated workspace's symbol resolution and " +
-        "single-side probe tasks target (default: Cronus28 — the only " +
-        "one with credentials wired for trap-probe)",
+        "single-side probe tasks target (default: Cronus28; any Cronus " +
+        "container works)",
     )
     .action(async (opts) => {
       await runTaskNew({
@@ -524,8 +524,8 @@ export function registerTaskCommand(cli: Command): void {
     .arguments("<id:string>")
     .option(
       "--container <container:string>",
-      "BC container to probe against (default: Cronus28 — the only one " +
-        "with credentials wired for trap-probe)",
+      "BC container to probe against (default: Cronus28; any Cronus " +
+        "container works)",
     )
     .option(
       "--allow-compile-fail",
