@@ -18,12 +18,8 @@ import { ContainerError, isSessionTimeoutContainerError } from "../errors.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import { Logger } from "../logger/mod.ts";
-import {
-  BC_APPLICATION_VERSION,
-  BC_PLATFORM_VERSION,
-  BC_RUNTIME_VERSION,
-  TEST_TOOLKIT_DEPENDENCIES,
-} from "../constants.ts";
+import { TEST_TOOLKIT_DEPENDENCIES } from "../constants.ts";
+import { resolvePlatformVersions } from "../container/bc-platform-version.ts";
 import { Mutex, Semaphore } from "./semaphore.ts";
 import type {
   CompileEnqueueOptions,
@@ -1045,15 +1041,31 @@ export class CompileQueue implements CompileWorkQueue {
     // This eliminates the need for PRECLEAN step (~13s savings)
     const BENCHMARK_APP_ID = "00000000-cafe-0000-0000-be4c00decade";
 
+    // Platform/runtime/application come from THIS container, not a constant.
+    // The policy is "newest platform and runtime the supplied containers
+    // support", and a constant cannot express that: it freezes whatever BC
+    // version the containers were on when the file was last edited, so pointing
+    // the bench at a newer container would keep emitting the old manifest and
+    // silently forbid every API added since. See
+    // `src/container/bc-platform-version.ts` for how it is derived and what
+    // happens when it cannot be.
+    const versions = await resolvePlatformVersions(this.containerName);
+    if (versions.source !== "symbols") {
+      log.warn(
+        `app.json versions for ${this.containerName} are not fully derived ` +
+          `from the container (${versions.source}): ${versions.evidence ?? ""}`,
+      );
+    }
+
     // Create app.json with test toolkit dependencies if needed
     const appJson: Record<string, unknown> = {
       id: BENCHMARK_APP_ID,
       name: `CentralGauge_${item.context.manifest.id}_${item.attemptNumber}`,
       publisher: "CentralGauge",
       version: "1.0.0.0",
-      platform: BC_PLATFORM_VERSION,
-      runtime: BC_RUNTIME_VERSION,
-      application: BC_APPLICATION_VERSION,
+      platform: versions.platform,
+      runtime: versions.runtime,
+      application: versions.application,
       idRanges: [{ from: 70000, to: 89999 }],
       features: ["NoImplicitWith"],
     };

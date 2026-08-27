@@ -107,13 +107,27 @@ export const DEFAULT_CONTAINER_NAME = "Cronus28";
 // BC Platform & App Manifest Versions
 // =============================================================================
 
-/** BC platform version for app.json manifests */
+// FALLBACKS ONLY - not the source of truth.
+//
+// The policy is "newest platform and runtime the supplied containers support",
+// which a constant cannot express: these numbers freeze whichever BC version
+// the containers happened to be on when this file was last edited. Point the
+// bench at a BC29 container and a constant would keep emitting platform
+// 28.0.0.0 / runtime 17.0, an app.json that forbids every API added since.
+//
+// `src/container/bc-platform-version.ts` reads the real values from the
+// container (its own Microsoft symbol-package manifest states both outright),
+// and every generated app.json goes through that. These remain only as the
+// last-resort answer when no container can be inspected, and a caller that
+// lands on them logs the fact rather than pretending it measured something.
+
+/** Fallback BC platform version. Prefer `resolvePlatformVersions()`. */
 export const BC_PLATFORM_VERSION = "28.0.0.0";
 
-/** BC application version for app.json manifests */
+/** Fallback BC application version. Prefer `resolvePlatformVersions()`. */
 export const BC_APPLICATION_VERSION = "28.0.0.0";
 
-/** AL runtime version for app.json manifests */
+/** Fallback AL runtime version. Prefer `resolvePlatformVersions()`. */
 export const BC_RUNTIME_VERSION = "17.0";
 
 /**

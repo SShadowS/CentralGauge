@@ -18,12 +18,8 @@ import { ConfigManager } from "../config/config.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import { getTracer } from "../tracing/tracer.ts";
-import {
-  BC_APPLICATION_VERSION,
-  BC_PLATFORM_VERSION,
-  BC_RUNTIME_VERSION,
-  TEST_TOOLKIT_DEPENDENCIES,
-} from "../constants.ts";
+import { TEST_TOOLKIT_DEPENDENCIES } from "../constants.ts";
+import { resolvePlatformVersions } from "../container/bc-platform-version.ts";
 import type { LLMAdapter } from "../llm/types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
 import { Logger } from "../logger/mod.ts";
@@ -312,15 +308,22 @@ export class TaskExecutorV2 {
     const hasTestApp = context.manifest.expected.testApp &&
       context.manifest.expected.testApp.length > 0;
 
+    // Platform/runtime/application come from the container being compiled
+    // against, not a constant - see `src/container/bc-platform-version.ts`.
+    // A constant freezes whichever BC version the containers were on when the
+    // file was last edited, so a newer container would still be handed the old
+    // manifest and every API added since would be rejected.
+    const versions = await resolvePlatformVersions(context.containerName);
+
     // Create app.json with test toolkit dependencies if needed
     const appJson: Record<string, unknown> = {
       id: `${context.manifest.id}-${attemptNumber}`,
       name: `CentralGauge_${context.manifest.id}_${attemptNumber}`,
       publisher: "CentralGauge",
       version: "1.0.0.0",
-      platform: BC_PLATFORM_VERSION,
-      runtime: BC_RUNTIME_VERSION,
-      application: BC_APPLICATION_VERSION,
+      platform: versions.platform,
+      runtime: versions.runtime,
+      application: versions.application,
       idRanges: [{ from: 70000, to: 89999 }],
     };
 
