@@ -52,6 +52,21 @@ VACUOUS_GUARD = re.compile(
     re.IGNORECASE,
 )
 
+# Sources of nondeterminism the determinism gate (B2) cannot see. B2 measures
+# OBSERVED variation - an oracle whose random draws happen to stay inside the
+# passing range looks perfectly stable while being nondeterministic by
+# construction. 13 committed oracles called `Any.*` with no `SetSeed` when this
+# check was written; BigCodeBench bakes the same rule into its curation rubric,
+# and competitive-judge ecosystems mandate seeded RNG (testlib) outright.
+RANDOM_CALL = re.compile(r"\bAny\s*\.\s*\w+\s*\(")
+RANDOM_SEED = re.compile(r"\bAny\s*\.\s*SetSeed\s*\(", re.IGNORECASE)
+AL_RANDOM = re.compile(r"\bRandom\s*\(", re.IGNORECASE)
+AL_RANDOMIZE = re.compile(r"\bRandomize\s*\(\s*\d", re.IGNORECASE)
+# Wall-clock reads are nondeterministic per run; date-only reads (Today,
+# WorkDate) are stable within a day and pervasive in legitimate fixtures, so
+# only the sub-day clocks are flagged.
+WALL_CLOCK = re.compile(r"\b(CurrentDateTime|Time)\s*\(\s*\)", re.IGNORECASE)
+
 IN_SCOPE = ("hard", "medium")
 
 
@@ -82,9 +97,19 @@ def audit_file(path):
         head = seg[:first_assert.start()] if first_assert else seg
         if VACUOUS_GUARD.search(head):
             vacuous.append(name)
+    # File-level: seeding anywhere in the file covers helpers shared by tests.
+    nondet = []
+    if RANDOM_CALL.search(text) and not RANDOM_SEED.search(text):
+        nondet.append("Any.* without SetSeed")
+    if AL_RANDOM.search(text) and not AL_RANDOMIZE.search(text):
+        nondet.append("Random() without a fixed Randomize(seed)")
+    if WALL_CLOCK.search(text):
+        nondet.append("sub-day wall clock (CurrentDateTime/Time)")
+
     return {
         "tests": tests,
         "vacuousTests": vacuous,
+        "nondeterminismSources": nondet,
         "hollowTests": hollow,
         "placeholders": len(PLACEHOLDER.findall(text)),
         "hollowOracle": bool(tests) and len(hollow) == len(tests),
@@ -105,7 +130,8 @@ def main(argv):
         res = audit_file(path)
         # Report a file for EITHER failure mode: an oracle can be vacuous
         # without containing a single placeholder.
-        if not res["placeholders"] and not res["vacuousTests"]:
+        if (not res["placeholders"] and not res["vacuousTests"]
+                and not res["nondeterminismSources"]):
             continue
         res["tier"] = tier
         res["path"] = path.replace("\\", "/")
@@ -113,9 +139,11 @@ def main(argv):
 
     hollow_oracles = {t: v for t, v in findings.items() if v["hollowOracle"]}
     vacuous_any = {t: v for t, v in findings.items() if v["vacuousTests"]}
+    nondet_any = {t: v for t, v in findings.items() if v["nondeterminismSources"]}
     print(f"oracles containing a placeholder assertion : {len(findings)}")
     print(f"oracles that assert NOTHING AT ALL         : {len(hollow_oracles)}")
     print(f"oracles with a vacuously-passing test      : {len(vacuous_any)}")
+    print(f"oracles with unseeded/nondeterministic src : {len(nondet_any)}")
     print()
     print(f"{'task':<14}{'tier':<8}{'tests':>6}{'hollow':>8}  status")
     for t, v in findings.items():
@@ -137,7 +165,14 @@ def main(argv):
     # A hollow oracle is a hard failure: the task measures nothing, and every
     # other gate will certify it. A stray placeholder among real assertions is
     # reported but does not fail the check.
-    return 1 if hollow_oracles else 0
+    if nondet_any:
+        print("\nnondeterminism sources:")
+        for t, v in nondet_any.items():
+            print(f"    {t}: {'; '.join(v['nondeterminismSources'])}")
+
+    # Hollow oracles and unseeded randomness are both hard failures: the first
+    # measures nothing, the second measures something different every run.
+    return 1 if (hollow_oracles or nondet_any) else 0
 
 
 if __name__ == "__main__":
