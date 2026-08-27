@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-27T07:34:13.311Z",
+  "generatedAt": "2026-08-27T07:40:59.065Z",
   "sources": {
     "determinism": "scratch/backfill-phase1-results.json",
     "mutation": "scratch/lethal-t1/<id>/report.json",
@@ -1423,9 +1423,12 @@
           "survivorCodes": [
             "M0012"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "unreached": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "1 survivor(s) with no recorded disposition"
+          "detail": "1 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -2794,7 +2797,7 @@
         },
         "B7": {
           "status": "quarantine",
-          "at": "2026-08-26T22:16:16.619Z",
+          "at": "2026-08-27T07:40:14.251Z",
           "score": null,
           "survivors": 0,
           "noCoverage": 0,
@@ -4390,7 +4393,7 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T07:26:44.706Z",
           "score": 0.75,
           "survivors": 1,
@@ -4402,9 +4405,12 @@
           "survivorCodes": [
             "M0004"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "1 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -6683,7 +6689,7 @@
         },
         "B7": {
           "status": "quarantine",
-          "at": "2026-08-26T22:16:49.539Z",
+          "at": "2026-08-27T07:38:28.039Z",
           "score": null,
           "survivors": 0,
           "noCoverage": 0,
@@ -7575,9 +7581,12 @@
           "survivorCodes": [
             "M0004"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "unreached": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "1 survivor(s) with no recorded disposition"
+          "detail": "1 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
         },
         "B3": {
           "status": "pending_no_tooling",

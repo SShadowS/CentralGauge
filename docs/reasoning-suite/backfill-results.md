@@ -707,6 +707,82 @@ failed:
 (79 + 30), not 38 more model calls.** That is the actual cost of phase 4, and it
 was never dollars.
 
+## Closing out B7
+
+### Where it landed
+
+**B7 in-scope: 123 pass, 56 quarantine, 17 not measurable, 6 absent, 1 stale.**
+Suite dispositions: **119 tasks, 588 mutants, none untriaged.**
+
+The 56 quarantines are 50 confirmed coverage holes each carrying a written kill
+test, 5 blocked on the LethAL quarantine defect, and 1 red baseline (M023, whose
+reference solution fails 1 of its own 11 tests with no execution-path excuse).
+
+### The object-mix blocker was ours, not LethAL's
+
+Ten tasks were refused with `assertNoUnsupportedObjectMix` and a bare `Error`
+carrying no message. That reads like an object-type blocklist and is not - enum,
+page, query, report and tableextension all appear in projects LethAL instruments
+happily. The discriminator is per FILE: every refused project had one `.al` file
+declaring two or more objects, every accepted one had exactly one.
+
+The seeded solutions tripped it only because they were lifted verbatim from
+model output, and a model asked for one solution writes one file.
+`scripts/split-al-objects.py` distributes them one object per file, which AL is
+indifferent to. Nine of the ten then swept.
+
+Four of those nine came back looking terrible - M044 16.7%, M001 20%, M010 46.5%
+- and none of them is a weak oracle. All four are TestPage oracles, and LethAL
+drops TestPage tests from the green set and scores the remainder, so the number
+describes whatever assertions survived that filter. They are recorded
+`not_runnable`, the same treatment the other TestPage tasks get.
+
+### Two seeded reference solutions were wrong
+
+X001 and X052 failed test compile because of their solutions, not their oracles:
+
+- **X001** held the TEST codeunit (80290, byte-identical to
+  `tests/al/hard/CG-AL-X001.Test.al`) and no solution at all.
+- **X052** captured `CG X052 Clerk` where the oracle needs `CG X052 Agent`.
+
+Both were recoverable from the B4 run's passing submissions. X001's duplicated
+oracle copy is deleted - it would collide at compile time. An audit for the
+general case now confirms no reference solution contains an object in the
+80000-89999 test band, and the audit also has to tolerate solutions that
+legitimately name base-application objects (Sales Header, G/L Entry, Upgrade
+Tag), which is most of what a naive version of it flags.
+
+Three tasks (M034, M040, X044) still have no reference solution and no passing
+submission has ever been recorded for them, so nothing can be recovered.
+
+### The LethAL quarantine defect is still open
+
+Re-tested at app version 11.0.0.0 on a fresh container (Cronus284) after the
+first report: `CG-AL-M033` and `CG-AL-H025` both quarantine identically. Green
+baseline, successful deploy, every verdict discarded. Neither a version zombie
+nor a container-specific fault.
+
+### Late finds worth keeping
+
+Two of the last three single-survivor triages found real holes, and both are the
+kind a benchmark exists to catch:
+
+- **H007 M0012** swaps the arguments of
+  `StrSubstNo('Value must be between %1 and %2', MinValue, MaxValue)`, so the
+  message renders "between 100 and 10". The task YAML pins that exact message
+  shape, but the oracle asserts only the substring `'Value must be between'`,
+  which stops short of the substituted values. A model emitting the bounds
+  backwards passes.
+- **M088 M0004** flips `DaysUsed < 0` to `<= 0`, so a same-day cancellation
+  refunds 0 instead of the full amount. The oracle passes 15, 10 and -5, never
+  zero.
+
+And **X122** is the sharpest structural finding: its cancellation-side numbering
+mutants survive only because the oracle never creates two cancellation entries
+in one run, while the byte-identical release-side mutation IS killed. The
+canonical fix splits one starter notifier into two codeunits, so a model can
+hand-write broken numbering in the new one and still pass.
+
 ## Cost
 
 Zero model spend through the repo's own adapters: `results/model-costs.jsonl`

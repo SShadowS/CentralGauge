@@ -5947,6 +5947,50 @@
         "equivalent": 1
       },
       "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-H007": {
+      "mutants": [
+        {
+          "code": "M0012",
+          "disposition": "unreached",
+          "alreadyKilled": false,
+          "justification": "swap-call-arguments on StrSubstNo(OutOfRangeErr, MinValue, MaxValue) in ValidateInRange. The label is 'Value must be between %1 and %2', so with Min=10/Max=100 the original renders 'Value must be between 10 and 100' and the mutant renders 'Value must be between 100 and 10'. A real observable difference in the ErrorInfo message for every call where MinValue <> MaxValue, and it is in scope: the task YAML requires \"Message = 'Value must be between [MinValue] and [MaxValue]' (actual values substituted)\". The oracle's two asserterror tests only do Assert.ExpectedError('Value must be between'), a substring that stops short of the substituted values, so the swapped message matches too. A model that emitted the bounds in the wrong order would pass this oracle while producing a nonsensical range message.",
+          "killTest": "Add TestValidateInRange_ErrorTextNamesBoundsInOrder: MinValue := 10; MaxValue := 100; asserterror ValidationEngine.ValidateInRange(5, MinValue, MaxValue, 'Amount'); Assert.ExpectedError(StrSubstNo('Value must be between %1 and %2', MinValue, MaxValue)). Building the expected text with StrSubstNo over the same Decimal locals in (min, max) order makes the assertion order-sensitive while matching the implementation's own decimal rendering, so the baseline cannot go red on a Format(Decimal) surprise. The mutant renders '... between 100 and 10', no substring match, test fails."
+        }
+      ],
+      "totals": {
+        "unreached": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-H053": {
+      "mutants": [
+        {
+          "code": "M0004",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Deletes CustTotalQuery.Close(), the last statement of TotalForCustomer. CustTotalQuery is a procedure-local Query variable: opened once, read once, never stored, returned or passed out, and no global or table state is touched. The return value Total was captured from CustTotalQuery.Total_Amount BEFORE the Close() and is neither read nor written afterwards, so the returned Decimal is identical either way. Close() on a Query writes nothing observable; it releases the runtime cursor the runtime releases anyway at procedure exit. Because the variable is fresh per invocation there is no cross-call interaction: each of the four oracle tests constructs its own codeunit instance and each call gets a new Query local, so no 'query already open' error can arise. The task YAML's required body steps list declare / SetRange / Open+Read / return 0 on no row and never mention Close, so no spec obligation is dropped."
+        }
+      ],
+      "totals": {
+        "equivalent": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-M088": {
+      "mutants": [
+        {
+          "code": "M0004",
+          "disposition": "unreached",
+          "alreadyKilled": false,
+          "justification": "conditional-boundary flips the guard DaysUsed < 0 to DaysUsed <= 0 in CalculateProratedRefund. The two versions differ on exactly one input, DaysUsed = 0. Original: guard false, so RefundAmount = (TotalAmount / TotalDays) * (TotalDays - 0) = TotalAmount. Mutant: exit(0). For any TotalAmount <> 0 that is a full-amount versus zero-amount divergence, the most business-visible failure this procedure has. The guarded statement is exit(0), not an identity assignment, so this is NOT a boundary-flip-into-identity equivalence. In scope: the YAML specifies only 'If DaysUsed is negative, return 0.' plus the formula, which fully determines DaysUsed = 0 as a full refund. The oracle exercises DaysUsed = 15, 10 and -5 only; zero is never passed, so a model writing <= 0 passes while silently zeroing every same-day cancellation refund.",
+          "killTest": "Add TestRefund_ZeroDaysUsed: Result := SubEngine.CalculateProratedRefund(300, 0, \"Subscription Plan\"::Basic); Assert.AreEqual(300, Result, 'Cancelling before any day is used must refund the whole amount.'). Basic is 30 days total, so (300 / 30) * (30 - 0) = 300 with exact decimal arithmetic and no rounding sensitivity. Baseline returns 300 and passes; the mutant returns 0 and fails."
+        }
+      ],
+      "totals": {
+        "unreached": 1
+      },
+      "triageBatch": "phase2c-reattribution"
     }
   },
   "compositeFinding": "Zero composite-LOCAL survivors across X096/X097/X098/X099: all 18 map 1:1 onto their donors' sweep rows (X082 2, X083 3, X066 4, X067 1, X072 1, X069 2, X084 3, X089 2), and both open holes are donor-level, present byte-identically in CG-AL-X066.Test.al and CG-AL-X084.Test.al.",
