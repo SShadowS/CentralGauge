@@ -129,6 +129,7 @@ scripts/*
 !scripts/gate-records.ts
 !scripts/seed-reference-solution.ts
 !scripts/b4-evidence.ts
+!scripts/split-al-objects.py
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
