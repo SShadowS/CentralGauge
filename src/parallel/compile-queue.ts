@@ -6,6 +6,10 @@
  */
 
 import { basename, dirname, join } from "@std/path";
+import {
+  describeCollisions,
+  findProtectedNameCollisions,
+} from "../tasks/candidate-guard.ts";
 import { ensureDir, exists } from "@std/fs";
 import type {
   CompileWorkItem,
@@ -828,6 +832,38 @@ export class CompileQueue implements CompileWorkQueue {
     projectDir: string,
     startTime: number,
   ): Promise<CompileWorkResult> {
+    // Anti-gaming guard: a candidate that shadows the test infrastructure by
+    // NAME (codeunit Any, Assert, Library - *, CG-AL-* companions) is rejected
+    // before any container work. Measured incident: three 2026-08-27 bench
+    // "passes" declared a stub `codeunit 70354 Any`, and the oracle's random
+    // helpers bound to candidate-controlled code. Reported as a compile-style
+    // failure so it can never read as infra, and the message names the guard.
+    {
+      const collisions = findProtectedNameCollisions(item.code);
+      if (collisions.length > 0) {
+        return {
+          workItemId: item.id,
+          containerName: this.containerName,
+          compilationResult: {
+            success: false,
+            errors: collisions.map((c) => ({
+              code: "CG-GUARD",
+              message: describeCollisions([c]),
+              file: "",
+              line: 0,
+              column: 0,
+              severity: "error" as const,
+            })),
+            warnings: [],
+            duration: 0,
+            output: describeCollisions(collisions),
+          },
+          duration: Date.now() - startTime,
+          compileDuration: 0,
+        };
+      }
+    }
+
     // Find and compile prereq apps
     const taskId = item.context.manifest.id;
     const projectRoot = Deno.cwd();
@@ -1075,11 +1111,14 @@ export class CompileQueue implements CompileWorkQueue {
       appJson["target"] = item.context.manifest.metadata.target;
     }
 
-    // Add test toolkit dependencies if testApp is specified
+    // Add test toolkit dependencies if testApp is specified. The FULL shared
+    // manifest, unfiltered: an April 2026 refactor preserved an older list by
+    // filtering out `Any` here, which made 20 tasks whose oracles use
+    // Microsoft's Any test library uncompilable at bench time while they
+    // passed the probe harness (which declares it). One manifest, no per-site
+    // filters - harness drift is exactly how that class of defect is born.
     if (hasTestApp) {
-      appJson["dependencies"] = TEST_TOOLKIT_DEPENDENCIES.filter(
-        (d) => d.name !== "Any",
-      );
+      appJson["dependencies"] = [...TEST_TOOLKIT_DEPENDENCIES];
     } else {
       appJson["dependencies"] = [];
     }

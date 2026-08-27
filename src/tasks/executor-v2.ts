@@ -3,6 +3,10 @@
  */
 
 import { basename, dirname, join } from "@std/path";
+import {
+  describeCollisions,
+  findProtectedNameCollisions,
+} from "./candidate-guard.ts";
 import { ensureDir, exists } from "@std/fs";
 import { ContainerError, ValidationError } from "../errors.ts";
 import type {
@@ -332,11 +336,12 @@ export class TaskExecutorV2 {
       appJson["target"] = context.manifest.metadata.target;
     }
 
-    // Add test toolkit dependencies if testApp is specified
+    // Add test toolkit dependencies if testApp is specified. Full shared
+    // manifest, unfiltered - same rule as the bench path (compile-queue.ts):
+    // one manifest, no per-site filters. The Any filter here made oracles
+    // using Microsoft's Any library uncompilable on this path too.
     if (hasTestApp) {
-      appJson["dependencies"] = TEST_TOOLKIT_DEPENDENCIES.filter(
-        (d) => d.name !== "Any",
-      );
+      appJson["dependencies"] = [...TEST_TOOLKIT_DEPENDENCIES];
     }
 
     await Deno.writeTextFile(
@@ -558,6 +563,33 @@ export class TaskExecutorV2 {
     testResult?: TestResult;
     projectDir: string;
   }> {
+    // Anti-gaming guard, identical to the bench path (compile-queue.ts): a
+    // candidate shadowing the test infrastructure by name is rejected before
+    // any container work. Both harnesses must give the same verdict for the
+    // same candidate or the guard itself becomes a source of harness drift.
+    {
+      const collisions = findProtectedNameCollisions(code);
+      if (collisions.length > 0) {
+        return {
+          compilationResult: {
+            success: false,
+            errors: collisions.map((c) => ({
+              code: "CG-GUARD",
+              message: describeCollisions([c]),
+              file: "",
+              line: 0,
+              column: 0,
+              severity: "error" as const,
+            })),
+            warnings: [],
+            duration: 0,
+            output: describeCollisions(collisions),
+          },
+          projectDir: "",
+        };
+      }
+    }
+
     // Create temporary project
     const projectDir = await this.createTempProject(
       context,
