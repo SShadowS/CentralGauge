@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-27T06:27:18.320Z",
+  "generatedAt": "2026-08-27T07:29:19.139Z",
   "sources": {
     "determinism": "scratch/backfill-phase1-results.json",
     "mutation": "scratch/lethal-t1/<id>/report.json",
@@ -1170,8 +1170,19 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T07:26:47.910Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -1400,8 +1411,21 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T07:26:44.697Z",
+          "score": 0.9166666666666666,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0012"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "1 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -3376,8 +3400,20 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "not_runnable",
+          "at": "2026-08-27T07:26:38.273Z",
+          "score": null,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 14,
+          "noMeasurement": true,
+          "noMutableSites": false,
+          "baselineRed": true,
+          "lethalStructuralLimit": "oracle opens a TestPage, which BC refuses in LethAL's fenced ODataV4 session",
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "not measurable by LethAL: oracle opens a TestPage, which BC refuses in LethAL's fenced ODataV4 session"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -4354,8 +4390,21 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T07:26:44.706Z",
+          "score": 0.75,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0004"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "1 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -4776,8 +4825,29 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "not_runnable",
+          "at": "2026-08-27T07:27:24.794Z",
+          "score": 0.2,
+          "survivors": 8,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": true,
+          "lethalStructuralLimit": "oracle opens a TestPage, which BC refuses in LethAL's fenced ODataV4 session",
+          "survivorCodes": [
+            "M0005",
+            "M0006",
+            "M0007",
+            "M0008",
+            "M0009",
+            "M0010",
+            "M0002",
+            "M0004"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "not measurable by LethAL: oracle opens a TestPage, which BC refuses in LethAL's fenced ODataV4 session"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -5647,8 +5717,44 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "not_runnable",
+          "at": "2026-08-27T07:28:52.928Z",
+          "score": 0.46511627906976744,
+          "survivors": 23,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": true,
+          "lethalStructuralLimit": "oracle opens a TestPage, which BC refuses in LethAL's fenced ODataV4 session",
+          "survivorCodes": [
+            "M0026",
+            "M0032",
+            "M0036",
+            "M0039",
+            "M0040",
+            "M0043",
+            "M0001",
+            "M0002",
+            "M0003",
+            "M0004",
+            "M0006",
+            "M0009",
+            "M0012",
+            "M0014",
+            "M0016",
+            "M0017",
+            "M0018",
+            "M0019",
+            "M0020",
+            "M0021",
+            "M0022",
+            "M0023",
+            "M0024"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "not measurable by LethAL: oracle opens a TestPage, which BC refuses in LethAL's fenced ODataV4 session"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -7310,8 +7416,26 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "not_runnable",
+          "at": "2026-08-27T07:27:14.565Z",
+          "score": 0.16666666666666666,
+          "survivors": 5,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": true,
+          "lethalStructuralLimit": "oracle opens a TestPage, which BC refuses in LethAL's fenced ODataV4 session",
+          "survivorCodes": [
+            "M0001",
+            "M0002",
+            "M0003",
+            "M0004",
+            "M0005"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "not measurable by LethAL: oracle opens a TestPage, which BC refuses in LethAL's fenced ODataV4 session"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -7439,8 +7563,21 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T07:27:14.648Z",
+          "score": 0.8,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0004"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "1 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -9682,8 +9819,19 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T07:27:55.943Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",

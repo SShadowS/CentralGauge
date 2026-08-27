@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "what": "Per-task LethAL mutation sweep results. `scoreUsable` is false for a run that stranded on a timeout mutant: lethal still writes a report of only the mutants that executed, so its score is over a subset and reads HIGHER the earlier the run died. The log's 'N deployed' against the report's mutant count is what detects it. `attributionTrusted` is the separate, independent check: a no-coverage mutant with durationMs 0 was never executed at all (LethAL could not resolve its methodId), so the score describes a subset of the mutants without saying so.",
   "counts": {
-    "tasksWithAReport": 188,
-    "complete": 178,
+    "tasksWithAReport": 197,
+    "complete": 186,
     "partial": 2,
-    "completeAndFullyKilled": 68,
+    "completeAndFullyKilled": 70,
     "attributionUntrusted": 0,
-    "noMeasurement": 8,
-    "baselineRed": 5
+    "noMeasurement": 9,
+    "baselineRed": 9
   },
   "tasks": {
     "CG-AL-H001": {
@@ -104,6 +104,32 @@
       "quarantineEvents": 0,
       "baselineGreen": true
     },
+    "CG-AL-H004": {
+      "state": "complete",
+      "score": 1,
+      "scoreUsable": true,
+      "mutantsInReport": 8,
+      "mutantsDeployed": 8,
+      "counts": {
+        "killed": 8,
+        "survived": 0,
+        "noCoverage": 0,
+        "timeoutKilled": 0,
+        "knownSurvivors": 0,
+        "unstable": 0,
+        "errors": 0,
+        "deadlineExceeded": 0
+      },
+      "survivors": [],
+      "noCoverage": [],
+      "neverExecuted": [],
+      "attributionTrusted": true,
+      "baselineRed": false,
+      "errored": [],
+      "degradedScope": null,
+      "quarantineEvents": 0,
+      "baselineGreen": true
+    },
     "CG-AL-H005": {
       "state": "complete",
       "score": 0.8333,
@@ -152,6 +178,34 @@
       "survivors": [
         "M0005",
         "M0006"
+      ],
+      "noCoverage": [],
+      "neverExecuted": [],
+      "attributionTrusted": true,
+      "baselineRed": false,
+      "errored": [],
+      "degradedScope": null,
+      "quarantineEvents": 0,
+      "baselineGreen": true
+    },
+    "CG-AL-H007": {
+      "state": "complete",
+      "score": 0.9167,
+      "scoreUsable": true,
+      "mutantsInReport": 12,
+      "mutantsDeployed": 12,
+      "counts": {
+        "killed": 11,
+        "survived": 1,
+        "noCoverage": 0,
+        "timeoutKilled": 0,
+        "knownSurvivors": 0,
+        "unstable": 0,
+        "errors": 0,
+        "deadlineExceeded": 0
+      },
+      "survivors": [
+        "M0012"
       ],
       "noCoverage": [],
       "neverExecuted": [],
@@ -922,6 +976,50 @@
       "quarantineEvents": 0,
       "baselineGreen": true
     },
+    "CG-AL-H033": {
+      "state": "no-measurement",
+      "score": null,
+      "scoreUsable": false,
+      "mutantsInReport": 14,
+      "mutantsDeployed": 14,
+      "counts": {
+        "killed": 0,
+        "survived": 0,
+        "noCoverage": 0,
+        "timeoutKilled": 0,
+        "knownSurvivors": 0,
+        "unstable": 0,
+        "errors": 14,
+        "deadlineExceeded": 0
+      },
+      "survivors": [],
+      "noCoverage": [],
+      "neverExecuted": [],
+      "attributionTrusted": true,
+      "baselineRed": true,
+      "errored": [
+        "M0001",
+        "M0002",
+        "M0003",
+        "M0004",
+        "M0005",
+        "M0006",
+        "M0007",
+        "M0008",
+        "M0009",
+        "M0010",
+        "M0011",
+        "M0012",
+        "M0013",
+        "M0014"
+      ],
+      "degradedScope": [
+        "baseline-red",
+        "tests-testpage-unsupported"
+      ],
+      "quarantineEvents": 0,
+      "baselineGreen": false
+    },
     "CG-AL-H034": {
       "state": "complete",
       "score": 0.6,
@@ -1278,6 +1376,34 @@
       "quarantineEvents": 0,
       "baselineGreen": true
     },
+    "CG-AL-H053": {
+      "state": "complete",
+      "score": 0.75,
+      "scoreUsable": true,
+      "mutantsInReport": 4,
+      "mutantsDeployed": 4,
+      "counts": {
+        "killed": 3,
+        "survived": 1,
+        "noCoverage": 0,
+        "timeoutKilled": 0,
+        "knownSurvivors": 0,
+        "unstable": 0,
+        "errors": 0,
+        "deadlineExceeded": 0
+      },
+      "survivors": [
+        "M0004"
+      ],
+      "noCoverage": [],
+      "neverExecuted": [],
+      "attributionTrusted": true,
+      "baselineRed": false,
+      "errored": [],
+      "degradedScope": null,
+      "quarantineEvents": 0,
+      "baselineGreen": true
+    },
     "CG-AL-H054": {
       "state": "complete",
       "score": 0.9474,
@@ -1425,6 +1551,44 @@
       "degradedScope": null,
       "quarantineEvents": 0,
       "baselineGreen": true
+    },
+    "CG-AL-M001": {
+      "state": "complete",
+      "score": 0.2,
+      "scoreUsable": false,
+      "mutantsInReport": 10,
+      "mutantsDeployed": 10,
+      "counts": {
+        "killed": 2,
+        "survived": 8,
+        "noCoverage": 0,
+        "timeoutKilled": 0,
+        "knownSurvivors": 0,
+        "unstable": 0,
+        "errors": 0,
+        "deadlineExceeded": 0
+      },
+      "survivors": [
+        "M0002",
+        "M0004",
+        "M0005",
+        "M0006",
+        "M0007",
+        "M0008",
+        "M0009",
+        "M0010"
+      ],
+      "noCoverage": [],
+      "neverExecuted": [],
+      "attributionTrusted": true,
+      "baselineRed": true,
+      "errored": [],
+      "degradedScope": [
+        "baseline-red",
+        "tests-testpage-unsupported"
+      ],
+      "quarantineEvents": 0,
+      "baselineGreen": false
     },
     "CG-AL-M002": {
       "state": "complete",
@@ -1908,6 +2072,59 @@
       "degradedScope": null,
       "quarantineEvents": 2,
       "baselineGreen": true
+    },
+    "CG-AL-M010": {
+      "state": "complete",
+      "score": 0.4651,
+      "scoreUsable": false,
+      "mutantsInReport": 43,
+      "mutantsDeployed": 43,
+      "counts": {
+        "killed": 20,
+        "survived": 23,
+        "noCoverage": 0,
+        "timeoutKilled": 0,
+        "knownSurvivors": 0,
+        "unstable": 0,
+        "errors": 0,
+        "deadlineExceeded": 0
+      },
+      "survivors": [
+        "M0001",
+        "M0002",
+        "M0003",
+        "M0004",
+        "M0006",
+        "M0009",
+        "M0012",
+        "M0014",
+        "M0016",
+        "M0017",
+        "M0018",
+        "M0019",
+        "M0020",
+        "M0021",
+        "M0022",
+        "M0023",
+        "M0024",
+        "M0026",
+        "M0032",
+        "M0036",
+        "M0039",
+        "M0040",
+        "M0043"
+      ],
+      "noCoverage": [],
+      "neverExecuted": [],
+      "attributionTrusted": true,
+      "baselineRed": true,
+      "errored": [],
+      "degradedScope": [
+        "baseline-red",
+        "tests-testpage-unsupported"
+      ],
+      "quarantineEvents": 0,
+      "baselineGreen": false
     },
     "CG-AL-M020": {
       "state": "complete",
@@ -2485,6 +2702,41 @@
       "quarantineEvents": 0,
       "baselineGreen": true
     },
+    "CG-AL-M044": {
+      "state": "complete",
+      "score": 0.1667,
+      "scoreUsable": false,
+      "mutantsInReport": 6,
+      "mutantsDeployed": 6,
+      "counts": {
+        "killed": 1,
+        "survived": 5,
+        "noCoverage": 0,
+        "timeoutKilled": 0,
+        "knownSurvivors": 0,
+        "unstable": 0,
+        "errors": 0,
+        "deadlineExceeded": 0
+      },
+      "survivors": [
+        "M0001",
+        "M0002",
+        "M0003",
+        "M0004",
+        "M0005"
+      ],
+      "noCoverage": [],
+      "neverExecuted": [],
+      "attributionTrusted": true,
+      "baselineRed": true,
+      "errored": [],
+      "degradedScope": [
+        "baseline-red",
+        "tests-testpage-unsupported"
+      ],
+      "quarantineEvents": 0,
+      "baselineGreen": false
+    },
     "CG-AL-M045": {
       "state": "complete",
       "score": 1,
@@ -2502,6 +2754,34 @@
         "deadlineExceeded": 0
       },
       "survivors": [],
+      "noCoverage": [],
+      "neverExecuted": [],
+      "attributionTrusted": true,
+      "baselineRed": false,
+      "errored": [],
+      "degradedScope": null,
+      "quarantineEvents": 0,
+      "baselineGreen": true
+    },
+    "CG-AL-M088": {
+      "state": "complete",
+      "score": 0.8,
+      "scoreUsable": true,
+      "mutantsInReport": 5,
+      "mutantsDeployed": 5,
+      "counts": {
+        "killed": 4,
+        "survived": 1,
+        "noCoverage": 0,
+        "timeoutKilled": 0,
+        "knownSurvivors": 0,
+        "unstable": 0,
+        "errors": 0,
+        "deadlineExceeded": 0
+      },
+      "survivors": [
+        "M0004"
+      ],
       "noCoverage": [],
       "neverExecuted": [],
       "attributionTrusted": true,
@@ -3375,6 +3655,32 @@
         "M0006",
         "M0007"
       ],
+      "noCoverage": [],
+      "neverExecuted": [],
+      "attributionTrusted": true,
+      "baselineRed": false,
+      "errored": [],
+      "degradedScope": null,
+      "quarantineEvents": 0,
+      "baselineGreen": true
+    },
+    "CG-AL-X043": {
+      "state": "complete",
+      "score": 1,
+      "scoreUsable": true,
+      "mutantsInReport": 3,
+      "mutantsDeployed": 3,
+      "counts": {
+        "killed": 3,
+        "survived": 0,
+        "noCoverage": 0,
+        "timeoutKilled": 0,
+        "knownSurvivors": 0,
+        "unstable": 0,
+        "errors": 0,
+        "deadlineExceeded": 0
+      },
+      "survivors": [],
       "noCoverage": [],
       "neverExecuted": [],
       "attributionTrusted": true,
