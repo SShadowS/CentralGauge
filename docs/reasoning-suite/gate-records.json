@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-27T09:17:22.057Z",
+  "generatedAt": "2026-08-27T09:24:08.414Z",
   "sources": {
     "determinism": "scratch/backfill-phase1-results.json",
     "mutation": "scratch/lethal-t1/<id>/report.json",
@@ -4782,11 +4782,11 @@
           "triaged": true,
           "dispositions": {
             "equivalent": 1,
-            "unreached": 5,
-            "deliberately_open": 2
+            "unreached": 3,
+            "deliberately_open": 4
           },
           "reportPredatesOracle": false,
-          "detail": "5 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
+          "detail": "3 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -5044,10 +5044,11 @@
           "dispositions": {
             "equivalent": 1,
             "out_of_scope_proved": 7,
-            "unreached": 3
+            "deliberately_open": 1,
+            "unreached": 2
           },
           "reportPredatesOracle": false,
-          "detail": "3 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
+          "detail": "2 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -5478,11 +5479,12 @@
           "triaged": true,
           "dispositions": {
             "equivalent": 7,
-            "unreached": 47,
+            "unreached": 41,
+            "deliberately_open": 6,
             "accepted_unscorable": 2
           },
           "reportPredatesOracle": false,
-          "detail": "47 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
+          "detail": "41 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -5613,11 +5615,11 @@
           "dispositions": {
             "equivalent": 6,
             "out_of_scope_proved": 17,
-            "unreached": 22,
-            "deliberately_open": 15
+            "unreached": 18,
+            "deliberately_open": 19
           },
           "reportPredatesOracle": false,
-          "detail": "22 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
+          "detail": "18 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -9724,7 +9726,7 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-26T18:34:36.237Z",
           "score": 0.6666666666666666,
           "survivors": 4,
@@ -9741,12 +9743,11 @@
           ],
           "triaged": true,
           "dispositions": {
-            "equivalent": 2,
-            "out_of_scope_proved": 1,
-            "unreached": 1
+            "equivalent": 3,
+            "out_of_scope_proved": 1
           },
           "reportPredatesOracle": false,
-          "detail": "1 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",

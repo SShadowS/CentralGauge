@@ -2388,15 +2388,15 @@
         },
         {
           "code": "M0006",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "Dataset triggers / helper calls emptied; no test reads any report column, so an empty dataset is indistinguishable from a correct one"
+          "justification": "Dataset triggers / helper calls emptied; no test reads any report column, so an empty dataset is indistinguishable from a correct one | RECLASSIFIED: spec gap: the only observation channel is a dataset COLUMN NAME the spec never fixes, and reaching the code at all needs a [RequestPageHandler] naming an implementation-chosen control. Adding TestRequestPage would also flip this whole oracle from the SOAP runner to the legacy client-session path. See killtests/kt2.json."
         },
         {
           "code": "M0007",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "Dataset triggers / helper calls emptied; no test reads any report column, so an empty dataset is indistinguishable from a correct one"
+          "justification": "Dataset triggers / helper calls emptied; no test reads any report column, so an empty dataset is indistinguishable from a correct one | RECLASSIFIED: spec gap: the only observation channel is a dataset COLUMN NAME the spec never fixes, and reaching the code at all needs a [RequestPageHandler] naming an implementation-chosen control. Adding TestRequestPage would also flip this whole oracle from the SOAP runner to the legacy client-session path. See killtests/kt2.json."
         },
         {
           "code": "M0008",
@@ -2538,15 +2538,15 @@
         },
         {
           "code": "M0002",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "SalesHeader OnPreDataItem date filter; only reachable through a [RequestPageHandler]"
+          "justification": "SalesHeader OnPreDataItem date filter; only reachable through a [RequestPageHandler] | RECLASSIFIED: spec gap: the only observation channel is a dataset COLUMN NAME the spec never fixes, and reaching the code at all needs a [RequestPageHandler] naming an implementation-chosen control. Adding TestRequestPage would also flip this whole oracle from the SOAP runner to the legacy client-session path. See killtests/kt2.json."
         },
         {
           "code": "M0003",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "SalesHeader OnPreDataItem date filter; only reachable through a [RequestPageHandler]"
+          "justification": "SalesHeader OnPreDataItem date filter; only reachable through a [RequestPageHandler] | RECLASSIFIED: spec gap: the only observation channel is a dataset COLUMN NAME the spec never fixes, and reaching the code at all needs a [RequestPageHandler] naming an implementation-chosen control. Adding TestRequestPage would also flip this whole oracle from the SOAP runner to the legacy client-session path. See killtests/kt2.json."
         },
         {
           "code": "M0039",
@@ -2580,15 +2580,15 @@
         },
         {
           "code": "M0045",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "TryGetDateRange body; feeds GetDaysInPeriod, reachable only with a non-blank date filter"
+          "justification": "TryGetDateRange body; feeds GetDaysInPeriod, reachable only with a non-blank date filter | RECLASSIFIED: spec gap: the only observation channel is a dataset COLUMN NAME the spec never fixes, and reaching the code at all needs a [RequestPageHandler] naming an implementation-chosen control. Adding TestRequestPage would also flip this whole oracle from the SOAP runner to the legacy client-session path. See killtests/kt2.json."
         },
         {
           "code": "M0047",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "TryGetDateRange body; feeds GetDaysInPeriod, reachable only with a non-blank date filter"
+          "justification": "TryGetDateRange body; feeds GetDaysInPeriod, reachable only with a non-blank date filter | RECLASSIFIED: spec gap: the only observation channel is a dataset COLUMN NAME the spec never fixes, and reaching the code at all needs a [RequestPageHandler] naming an implementation-chosen control. Adding TestRequestPage would also flip this whole oracle from the SOAP runner to the legacy client-session path. See killtests/kt2.json."
         },
         {
           "code": "M0048",
@@ -2665,7 +2665,8 @@
       ],
       "totals": {
         "equivalent": 7,
-        "unreached": 47,
+        "unreached": 41,
+        "deliberately_open": 6,
         "accepted_unscorable": 2
       },
       "triageBatch": "phase2b-b3",
@@ -3294,9 +3295,9 @@
         },
         {
           "code": "M0034",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "Guards never given invalid input, history increments never counted, CalcFields(Amount) invisible while every test document has Amount 0, and the OnAfterDelete cleanup never asserted"
+          "justification": "Guards never given invalid input, history increments never counted, CalcFields(Amount) invisible while every test document has Amount 0, and the OnAfterDelete cleanup never asserted | RECLASSIFIED: spec gap: closing it would pin behaviour the task YAML never states (which approval states may be escalated from / what deleting a purchase document does to its in-flight approval). See docs/reasoning-suite/killtests/kt6.json."
         },
         {
           "code": "M0041",
@@ -3378,21 +3379,21 @@
         },
         {
           "code": "M0076",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "Guards never given invalid input, history increments never counted, CalcFields(Amount) invisible while every test document has Amount 0, and the OnAfterDelete cleanup never asserted"
+          "justification": "Guards never given invalid input, history increments never counted, CalcFields(Amount) invisible while every test document has Amount 0, and the OnAfterDelete cleanup never asserted | RECLASSIFIED: spec gap: closing it would pin behaviour the task YAML never states (which approval states may be escalated from / what deleting a purchase document does to its in-flight approval). See docs/reasoning-suite/killtests/kt6.json."
         },
         {
           "code": "M0077",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "Guards never given invalid input, history increments never counted, CalcFields(Amount) invisible while every test document has Amount 0, and the OnAfterDelete cleanup never asserted"
+          "justification": "Guards never given invalid input, history increments never counted, CalcFields(Amount) invisible while every test document has Amount 0, and the OnAfterDelete cleanup never asserted | RECLASSIFIED: spec gap: closing it would pin behaviour the task YAML never states (which approval states may be escalated from / what deleting a purchase document does to its in-flight approval). See docs/reasoning-suite/killtests/kt6.json."
         },
         {
           "code": "M0078",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "Guards never given invalid input, history increments never counted, CalcFields(Amount) invisible while every test document has Amount 0, and the OnAfterDelete cleanup never asserted"
+          "justification": "Guards never given invalid input, history increments never counted, CalcFields(Amount) invisible while every test document has Amount 0, and the OnAfterDelete cleanup never asserted | RECLASSIFIED: spec gap: closing it would pin behaviour the task YAML never states (which approval states may be escalated from / what deleting a purchase document does to its in-flight approval). See docs/reasoning-suite/killtests/kt6.json."
         },
         {
           "code": "M0050",
@@ -3488,8 +3489,8 @@
       "totals": {
         "equivalent": 6,
         "out_of_scope_proved": 17,
-        "unreached": 22,
-        "deliberately_open": 15
+        "unreached": 18,
+        "deliberately_open": 19
       },
       "triageBatch": "phase2b-b2",
       "note": "ORACLE TOO NARROW **AND** PROMPT TOO NARROW - a test-only fix round cannot close it. Every one of the 11 tests creates a Purchase Header with NO lines, so Amount is always 0 and the headline requirement (approver by amount threshold) is never exercised. Every assertion is IsTrue/AreNotEqual/count>0; none asserts a status, an exact count, an approver identity, or a false return. Not one of the 10 exit(false) guards is graded. 15 of 60 survivors are unkillable by construction: the thresholds (1000/10000/100000) and approver names appear NOWHERE in the prompt, and CheckTimeout has no seam. Recommendation: task-level rewrite (state the thresholds, replace telemetry logging with a persisted audit table, add an observable status accessor, give CheckTimeout a seam), THEN a fix round for the 22 unreached. SEPARATE B2 CONCERN: TestTimeoutHandling is TIMING-FLAKY - mutant M0003 zeroes TimeoutHours and survived only because 0 ms elapsed between initiate and check.",
@@ -4086,9 +4087,9 @@
         },
         {
           "code": "M0009",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "End Date equal to Start Date not rejected, Contract Value zero not rejected, and clearing End Date - all boundaries the task's own wording states"
+          "justification": "End Date equal to Start Date not rejected, Contract Value zero not rejected, and clearing End Date - all boundaries the task's own wording states | RECLASSIFIED: spec gap: closing it requires asserting that clearing End Date while Start Date is set is ALLOWED, which the task never says. A written test exists and is gated on that spec line. See killtests/kt4-kt5.json."
         },
         {
           "code": "M0012",
@@ -4106,7 +4107,8 @@
       "totals": {
         "equivalent": 1,
         "out_of_scope_proved": 7,
-        "unreached": 3
+        "deliberately_open": 1,
+        "unreached": 2
       },
       "triageBatch": "phase2b-b5",
       "note": "NOT too narrow for coverage - it hits every named requirement at least once. Its only true defect is testing each rule at one point and never at the boundary the task states ('after Start Date' never tested at equality, 'greater than 0' never at zero). That is 2 asserts. The low score is MISLEADING: 7 of 11 survivors sit in triggers the task never asked for, which arrived with the seeded submission. Hardening those would penalise a model that implemented exactly what was specified.",
@@ -4296,15 +4298,14 @@
         },
         {
           "code": "M0011",
-          "disposition": "unreached",
+          "disposition": "equivalent",
           "alreadyKilled": false,
-          "justification": "The final Commit() removed; the oracle reads back in-session so it never sees a rollback boundary"
+          "justification": "The final Commit() removed; the oracle reads back in-session so it never sees a rollback boundary | RECLASSIFIED: NOT a coverage hole: the prereq codeunit's AuditLog.Write ends with its OWN Commit() and nothing writes between it and the mutated line, so the mutant commits an empty transaction and the rollback boundary is identical. The prereq's hidden Commit is the point of this trap task. See killtests/kt1.json."
         }
       ],
       "totals": {
-        "equivalent": 2,
-        "out_of_scope_proved": 1,
-        "unreached": 1
+        "equivalent": 3,
+        "out_of_scope_proved": 1
       },
       "triageBatch": "phase2b-b5",
       "resweep": "Fix round: YES (small, with a caveat - the kill test extends 'regardless of outcome' to durability past a caller failure; pair it with a task-statement clarification).",
@@ -4827,15 +4828,15 @@
         },
         {
           "code": "M0014",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "Negative discount and negative quantity alone no longer error, zero unit price now errors, and the zero-branch event adjustment is discarded"
+          "justification": "Negative discount and negative quantity alone no longer error, zero unit price now errors, and the zero-branch event adjustment is discarded | RECLASSIFIED: spec gap: the task never says whether the zero-input path returns Result AFTER the event or a literal 0, so a conformant implementation can make both mutants invisible. A written test exists, gated on that spec line. See killtests/kt4-kt5.json."
         },
         {
           "code": "M0016",
-          "disposition": "unreached",
+          "disposition": "deliberately_open",
           "alreadyKilled": false,
-          "justification": "Negative discount and negative quantity alone no longer error, zero unit price now errors, and the zero-branch event adjustment is discarded"
+          "justification": "Negative discount and negative quantity alone no longer error, zero unit price now errors, and the zero-branch event adjustment is discarded | RECLASSIFIED: spec gap: the task never says whether the zero-input path returns Result AFTER the event or a literal 0, so a conformant implementation can make both mutants invisible. A written test exists, gated on that spec line. See killtests/kt4-kt5.json."
         },
         {
           "code": "M0010",
@@ -4852,8 +4853,8 @@
       ],
       "totals": {
         "equivalent": 1,
-        "unreached": 5,
-        "deliberately_open": 2
+        "unreached": 3,
+        "deliberately_open": 4
       },
       "triageBatch": "phase2b-b6",
       "resweep": "Fix round: YES (5 cheap kills).",
