@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-26T23:18:02.627Z",
+  "generatedAt": "2026-08-27T06:27:18.320Z",
   "sources": {
     "determinism": "scratch/backfill-phase1-results.json",
     "mutation": "scratch/lethal-t1/<id>/report.json",
@@ -2699,8 +2699,19 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T05:59:10.000Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -5921,8 +5932,29 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:00:11.959Z",
+          "score": 0.5714285714285714,
+          "survivors": 9,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": true,
+          "survivorCodes": [
+            "M0002",
+            "M0006",
+            "M0009",
+            "M0010",
+            "M0011",
+            "M0012",
+            "M0013",
+            "M0015",
+            "M0019"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "baseline red: the reference solution does not pass this task's own oracle, so any score (0.5714285714285714) was measured against something other than a working implementation"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -9584,8 +9616,23 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:00:13.970Z",
+          "score": 0.7272727272727273,
+          "survivors": 3,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0002",
+            "M0006",
+            "M0007"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "3 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10136,8 +10183,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:01:03.843Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10188,8 +10246,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:00:47.132Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10240,8 +10309,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:00:01.663Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10292,8 +10372,22 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:01:44.445Z",
+          "score": 0.7142857142857143,
+          "survivors": 2,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0002",
+            "M0005"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "2 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10344,8 +10438,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:01:25.806Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10396,8 +10501,21 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:00:41.309Z",
+          "score": 0.75,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0002"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "1 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10448,8 +10566,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:02:23.950Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10500,8 +10629,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:02:06.218Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10552,8 +10692,21 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:01:20.533Z",
+          "score": 0.8,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0005"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "1 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10730,8 +10883,35 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:09:13.328Z",
+          "score": 0.85,
+          "survivors": 3,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0004",
+            "M0016",
+            "M0018"
+          ],
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 1,
+            "already_killed": 2,
+            "unreached": 1,
+            "accepted_unscorable": 2
+          },
+          "reportPredatesOracle": false,
+          "resweep": {
+            "state": "DONE",
+            "partial": false,
+            "scoreAfter": 0.85,
+            "dispositionsConfirmed": true
+          },
+          "detail": "1 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -11509,7 +11689,7 @@
             "already_killed": 10,
             "unreached": 1
           },
-          "reportPredatesOracle": false,
+          "reportPredatesOracle": true,
           "resweep": {
             "state": "DONE",
             "partial": false,
@@ -11586,7 +11766,7 @@
             "equivalent": 3,
             "unreached": 1
           },
-          "reportPredatesOracle": false,
+          "reportPredatesOracle": true,
           "resweep": {
             "state": "DONE",
             "partial": false,
@@ -12007,7 +12187,7 @@
             "already_killed": 1,
             "unreached": 1
           },
-          "reportPredatesOracle": false,
+          "reportPredatesOracle": true,
           "resweep": {
             "state": "DONE",
             "partial": false,
@@ -12912,7 +13092,7 @@
             "unreached": 1,
             "accepted_unscorable": 2
           },
-          "reportPredatesOracle": false,
+          "reportPredatesOracle": true,
           "resweep": {
             "state": "NOT_RUN",
             "partial": false
@@ -12968,8 +13148,32 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "stale",
+          "at": "2026-08-27T06:07:10.912Z",
+          "score": 0.9714285714285714,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0014"
+          ],
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 1,
+            "already_killed": 1,
+            "accepted_unscorable": 1
+          },
+          "reportPredatesOracle": false,
+          "resweep": {
+            "state": "DONE",
+            "partial": true,
+            "scoreAfter": 1,
+            "dispositionsConfirmed": null
+          },
+          "detail": "every survivor is dispositioned, and a re-sweep ran, but it STRANDED on a timeout mutant (35 deployed, 5 in the report). A partial run re-measures nothing and its score is over a subset, so this stays stale"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -13042,7 +13246,7 @@
             "already_killed": 1,
             "unreached": 1
           },
-          "reportPredatesOracle": false,
+          "reportPredatesOracle": true,
           "resweep": {
             "state": "DONE",
             "partial": false,
@@ -13461,7 +13665,7 @@
             "equivalent": 1,
             "unreached": 1
           },
-          "reportPredatesOracle": false,
+          "reportPredatesOracle": true,
           "resweep": {
             "state": "DONE",
             "partial": false,
@@ -13864,8 +14068,22 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:02:01.661Z",
+          "score": 0.8888888888888888,
+          "survivors": 2,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0015",
+            "M0016"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "2 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -13916,8 +14134,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:15:50.057Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -13968,8 +14197,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:07:52.258Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14020,8 +14260,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:02:41.215Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14072,8 +14323,21 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:16:30.801Z",
+          "score": 0.9230769230769231,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0013"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "1 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14124,8 +14388,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:08:33.127Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14176,8 +14451,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:07:57.830Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 1,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14228,8 +14514,22 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:17:17.003Z",
+          "score": 0.8823529411764706,
+          "survivors": 2,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0016",
+            "M0017"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "2 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14280,8 +14580,21 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:09:18.994Z",
+          "score": 0.9333333333333333,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0004"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "1 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14332,8 +14645,23 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:24:02.447Z",
+          "score": 0.90625,
+          "survivors": 3,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0002",
+            "M0010",
+            "M0018"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "3 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14384,8 +14712,21 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:17:56.631Z",
+          "score": 0.9565217391304348,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0011"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "1 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14436,8 +14777,27 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:10:09.320Z",
+          "score": 0.78125,
+          "survivors": 7,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0006",
+            "M0008",
+            "M0009",
+            "M0010",
+            "M0028",
+            "M0031",
+            "M0032"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "7 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14488,8 +14848,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:22:51.066Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14540,8 +14911,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:18:33.489Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14592,8 +14974,24 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:10:51.190Z",
+          "score": 0.8333333333333334,
+          "survivors": 4,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0018",
+            "M0019",
+            "M0022",
+            "M0023"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "4 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14644,8 +15042,26 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:22:38.079Z",
+          "score": 0.5714285714285714,
+          "survivors": 6,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0003",
+            "M0004",
+            "M0006",
+            "M0008",
+            "M0010",
+            "M0012"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "6 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14696,8 +15112,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:19:07.737Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14748,8 +15175,22 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:11:35.520Z",
+          "score": 0.9285714285714286,
+          "survivors": 2,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0003",
+            "M0024"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "2 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14800,8 +15241,21 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "quarantine",
+          "at": "2026-08-27T06:24:50.719Z",
+          "score": 0.9411764705882353,
+          "survivors": 1,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [
+            "M0014"
+          ],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "1 survivor(s) with no recorded disposition"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14852,8 +15306,19 @@
           ]
         },
         "B7": {
-          "status": "absent",
-          "detail": "no LethAL sweep has been run for this task"
+          "status": "pass",
+          "at": "2026-08-27T06:19:43.441Z",
+          "score": 1,
+          "survivors": 0,
+          "noCoverage": 0,
+          "errored": 0,
+          "noMeasurement": false,
+          "noMutableSites": false,
+          "baselineRed": false,
+          "survivorCodes": [],
+          "triaged": false,
+          "reportPredatesOracle": false,
+          "detail": "no surviving mutants"
         },
         "B3": {
           "status": "pending_no_tooling",
