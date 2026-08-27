@@ -29,6 +29,28 @@ codeunit 80025 "CG-AL-M025 Test"
     end;
 
     [Test]
+    procedure TestInsertAndTruncate_LeavesNoRowsBehind()
+    var
+        Result: Integer;
+    begin
+        // [SCENARIO] Insert-and-truncate empties the table, not just its own additions
+        // [GIVEN] Rows already in the table
+        BulkManager.TruncateAll();
+        BulkManager.InsertRecords(3);
+        Assert.AreEqual(3, BulkManager.GetRecordCount(), 'Seed rows were not present before the call');
+
+        // [WHEN] Insert-and-truncate runs with nothing to add. Count 0 deliberately:
+        // the call under test then performs no insert, so no key collision with the
+        // seeded rows is possible under any AutoIncrement semantics.
+        Result := BulkManager.InsertAndTruncate(0);
+
+        // [THEN] The reported count AND the table agree that nothing is left. The
+        // second assert is the one that bites: the return value is 0 either way.
+        Assert.AreEqual(0, Result, 'Insert-and-truncate reported a non-zero row count');
+        Assert.AreEqual(0, BulkManager.GetRecordCount(), 'Rows were still in the table after insert-and-truncate');
+    end;
+
+    [Test]
     procedure TestTruncateAll_RemovesAllRecords()
     begin
         // [SCENARIO] TruncateAll removes all records

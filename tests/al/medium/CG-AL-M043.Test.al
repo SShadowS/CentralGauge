@@ -153,6 +153,44 @@ codeunit 80042 "CG-AL-M043 Test"
         Assert.AreEqual(42, Line."Sort Order", 'Sort Order on BETA must be preserved through rename');
     end;
 
+    [Test]
+    procedure TestRenameDoesNotStealAnotherParentsFirstChild()
+    var
+        Group: Record "CG M043 Document Group";
+        Line: Record "CG M043 Document Line";
+    begin
+        // [SCENARIO] The renamed parent's code sorts AFTER an unrelated parent's, so
+        // the first row in child-table primary-key order does NOT belong to the
+        // parent being renamed. Every other test here happens to put the target
+        // parent's child first, which is why an unfiltered cascade survives them.
+        DeleteAllH2Data();
+
+        InsertGroup('AAA', 'Unrelated group');
+        InsertLine('AAA', 'K1', 'Keeper', 5);
+
+        InsertGroup('ZZZ', 'Target group');
+        InsertLine('ZZZ', 'M1', 'Move 1', 1);
+        InsertLine('ZZZ', 'M2', 'Move 2', 2);
+
+        Group.Get('ZZZ');
+        Group.Rename('ZZZ2');
+
+        // [THEN] the unrelated parent keeps its own child
+        Line.Reset();
+        Line.SetRange("Group Code", 'AAA');
+        Assert.AreEqual(1, Line.Count(), 'The unrelated parent must still own exactly its own child after another parent is renamed');
+        Assert.IsTrue(Line.Get('AAA', 'K1'), 'AAA/K1 must remain reachable under its own parent code');
+
+        // [THEN] the renamed parent owns exactly its own children
+        Line.Reset();
+        Line.SetRange("Group Code", 'ZZZ2');
+        Assert.AreEqual(2, Line.Count(), 'The renamed parent must own exactly its own 2 children');
+
+        Line.Reset();
+        Line.SetRange("Group Code", 'ZZZ');
+        Assert.IsTrue(Line.IsEmpty(), 'No lines must remain under the previous group code after rename');
+    end;
+
     local procedure DeleteAllH2Data()
     var
         Group: Record "CG M043 Document Group";

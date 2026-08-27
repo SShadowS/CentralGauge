@@ -30,6 +30,18 @@ codeunit 80015 "CG-AL-H015 Test"
     end;
 
     [Test]
+    procedure TestPayPal_DeclinedAtLimit()
+    var
+        PayPal: Codeunit "PayPal Provider";
+        Result: Text;
+    begin
+        // Exactly 1000 is not below the limit. Routed through Payment Service so
+        // the interface dispatch is exercised, like the tests either side of it.
+        Result := PaymentService.Process(PayPal, 1000);
+        Assert.AreEqual('Declined by PayPal', Result, 'PayPal reported an amount of exactly 1000 as authorized');
+    end;
+
+    [Test]
     procedure TestCreditCard_AlwaysAuthorized()
     var
         CC: Codeunit "Credit Card Provider";

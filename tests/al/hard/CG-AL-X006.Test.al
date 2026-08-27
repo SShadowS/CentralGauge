@@ -188,4 +188,51 @@ codeunit 80295 "CG-AL-X006 Test"
         Assert.IsFalse(
           Result.Get('DOCD'), 'Closed doc of unblocked customer must NOT be collected');
     end;
+
+    [Test]
+    procedure StaleContentAndFiltersInTheSuppliedBufferDoNotSurviveCollection()
+    var
+        Cust: Record "CG X006 Customer";
+        DocOpen: Record "CG X006 Doc";
+        Selector: Codeunit "CG X006 Selector";
+        Result: Record "CG X006 Doc" temporary;
+        Collected: Integer;
+    begin
+        // [GIVEN] A single qualifying doc in the database
+        ClearData();
+        Cust.Init();
+        Cust."No." := 'CUSTX';
+        Cust.Blocked := false;
+        Cust.Insert();
+
+        DocOpen.Init();
+        DocOpen."No." := 'DOC-OPEN';
+        DocOpen.Status := DocOpen.Status::Open;
+        DocOpen."Customer No." := Cust."No.";
+        DocOpen.Insert();
+        Commit();
+
+        // [GIVEN] The caller reuses a buffer that still holds a NON-qualifying row
+        // from an earlier answer, under a filter that does not match it. Every other
+        // test here passes a freshly declared buffer, so this state is never reached.
+        Result.Init();
+        Result."No." := 'DOC-STALE';
+        Result.Status := Result.Status::Closed;
+        Result."Customer No." := Cust."No.";
+        Result.Insert();
+        Result.SetRange("No.", 'ZZZ-NO-SUCH-DOC');
+
+        // [WHEN] Collecting relevant docs into that same buffer
+        Collected := Selector.CollectRelevant(Result);
+
+        // [THEN] The answer is exactly the qualifying doc. The row count is the
+        // assertion that bites: the collected count is 1 either way.
+        Result.Reset();
+        Assert.AreEqual(1, Collected, 'One doc should be collected');
+        Assert.AreEqual(1, Result.Count(), 'The result must hold exactly the collected docs and nothing else');
+        Assert.IsFalse(
+          Result.Get('DOC-STALE'), 'A closed doc of an unblocked customer must not be present in the result');
+        Assert.IsTrue(
+          Result.Get('DOC-OPEN'), 'The open doc must be present in the result');
+    end;
 }

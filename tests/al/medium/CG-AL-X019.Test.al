@@ -112,4 +112,43 @@ codeunit 80308 "CG-AL-X019 Test"
 
         ClearState();
     end;
+
+    [Test]
+    procedure RecalcAndGetAmountIgnoresRowSortingFirstInTheTable()
+    var
+        Doc: Record "CG X019 Doc";
+        Processor: Codeunit "CG X019 Processor";
+        RefId1: Guid;
+        RefId2: Guid;
+        DecoyRefId: Guid;
+    begin
+        // [GIVEN] the usual two documents plus a third whose "No." sorts BEFORE
+        // every value the Refresher can produce ('DOC-...'), so "whichever row
+        // comes first in the table" is never the right answer. Both other tests
+        // pass by that accident: 'DOC-41' and 'DOC-71' both sort ahead of
+        // 'DOC-A'/'DOC-B'.
+        SeedData(RefId1, RefId2);
+
+        DecoyRefId := CreateGuid();
+        Doc.Init();
+        Doc."No." := 'AAA-DECOY';
+        Doc."Ref ID" := DecoyRefId;
+        Doc.Amount := 999;
+        Doc.Insert();
+
+        // [WHEN/THEN] 10*3+11 -> "DOC-41"; 10*7+2 = 72. An unfiltered re-find
+        // lands on 'AAA-DECOY' and returns 999 instead.
+        Assert.AreEqual(
+            72,
+            Processor.RecalcAndGetAmount(RefId1),
+            'Must return the current amount of the recalculated document');
+
+        // [THEN] the unrelated document is untouched
+        Doc.SetRange("Ref ID", DecoyRefId);
+        Assert.IsTrue(Doc.FindFirst(), 'Unrelated doc must still be locatable by its Ref ID');
+        Assert.AreEqual('AAA-DECOY', Doc."No.", 'Unrelated doc primary key must be unchanged');
+        Assert.AreEqual(999, Doc.Amount, 'Unrelated doc Amount must be unchanged');
+
+        ClearState();
+    end;
 }

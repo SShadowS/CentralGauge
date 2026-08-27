@@ -127,4 +127,54 @@ codeunit 80012 "CG-AL-M112 Test"
         // asserterror rolls the transaction back to the last Commit, so the project
         // and time entry are removed automatically. No further DB ops are valid here.
     end;
+
+    [Test]
+    procedure TestProjectDeleteAllowedWhileAnotherProjectHasTimeEntries()
+    var
+        BusyProject: Record "CG Project";
+        IdleProject: Record "CG Project";
+        TimeEntry: Record "CG Time Entry";
+        BusyProjectNo: Code[20];
+        IdleProjectNo: Code[20];
+    begin
+        // [SCENARIO] A project with no time entries of its own can be deleted even
+        // while a DIFFERENT project still has entries. Every other test here empties
+        // its own entries first, so only the blocked direction was ever exercised.
+        BusyProjectNo := CopyStr(DelChr(Format(CreateGuid()), '=', '{}-'), 1, 20);
+        IdleProjectNo := CopyStr(DelChr(Format(CreateGuid()), '=', '{}-'), 1, 20);
+
+        BusyProject.Init();
+        BusyProject."No." := BusyProjectNo;
+        BusyProject.Description := 'BUSY';
+        BusyProject.Insert(true);
+
+        IdleProject.Init();
+        IdleProject."No." := IdleProjectNo;
+        IdleProject.Description := 'IDLE';
+        IdleProject.Insert(true);
+
+        Clear(TimeEntry);
+        TimeEntry.Init();
+        TimeEntry.Validate("Project No.", BusyProjectNo);
+        TimeEntry."Entry Date" := 0D;
+        TimeEntry.Validate(Hours, 3);
+        TimeEntry.Posted := false;
+        TimeEntry.Insert(true);
+
+        // [WHEN] The project WITHOUT entries is deleted
+        IdleProject.Delete(true);
+
+        // [THEN] It is gone. Under a delete check scoped to the whole table rather
+        // than to this project, the busy project's entry blocks this and the test
+        // fails on an unexpected error instead.
+        Assert.IsFalse(
+            IdleProject.Get(IdleProjectNo),
+            'A project that has no time entries of its own must be gone after being deleted, even while another project still has entries');
+
+        // Cleanup
+        TimeEntry.Reset();
+        TimeEntry.SetRange("Project No.", BusyProjectNo);
+        TimeEntry.DeleteAll(true);
+        BusyProject.Delete(true);
+    end;
 }
