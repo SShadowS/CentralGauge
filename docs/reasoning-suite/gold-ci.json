@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "what": "Gold-solution replay ledger. A task is TRUSTED only while its recorded verdict is `pass` AND the hashes below still match: inputsHash covers the oracle, companions, reference solution and prereq; harnessHash covers the dependency manifest and app.json writers. Either changing invalidates the replay, because either can flip the verdict.",
+  "tasks": {
+    "CG-AL-H015": {
+      "verdict": "pass",
+      "at": "2026-08-27T16:01:04.896Z",
+      "testsPassed": 5,
+      "testsTotal": 5,
+      "inputsHash": "05f56965949df0743a52d119ab38ffaae9f5c520af6095caefb4339eb64f6988",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-M088": {
+      "verdict": "pass",
+      "at": "2026-08-27T16:01:32.802Z",
+      "testsPassed": 7,
+      "testsTotal": 7,
+      "inputsHash": "1b6178391c6bf84aacb87c753d044f58e24b8e1ece315463a6853c19fec98b24",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    }
+  },
+  "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803"
+}

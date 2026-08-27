@@ -132,6 +132,7 @@ scripts/*
 !scripts/split-al-objects.py
 !scripts/normalize-kill-tests.py
 !scripts/oracle-audit.py
+!scripts/gold-ci.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
