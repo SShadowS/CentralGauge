@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import type { AlObject } from "../../../scripts/id-audit.ts";
 import { auditObjects, collect, unitOf } from "../../../scripts/id-audit.ts";
 
@@ -208,4 +208,106 @@ Deno.test("auditObjects: the real repo is clean", async () => {
     [],
     `Object-id violations in committed AL:\n${problems.join("\n")}`,
   );
+});
+
+Deno.test("auditObjects: prereq co-installation collisions", async (t) => {
+  const prereqObj = (unit: string, id: number, name: string) => ({
+    file: `tests/al/dependencies/${unit}/${name}.Table.al`,
+    unit: `prereq:${unit}`,
+    kind: "table",
+    id,
+    name,
+  });
+
+  await t.step("flags the same table id declared by two prereq apps", () => {
+    // Two prereq apps are two compilation units, so this can never be AL0264
+    // and the same-unit check is right to ignore it. It still fails at INSTALL
+    // time with "defined in multiple apps" the moment both are on one tenant.
+    const { problems } = auditObjects(
+      [
+        prereqObj("CG-AL-A001", 69500, "Shared"),
+        prereqObj("CG-AL-A002", 69500, "Shared"),
+      ],
+      new Map(),
+      new Map(),
+    );
+    assertEquals(problems.length, 1);
+    assertStringIncludes(problems[0]!, "prereq co-installation collision");
+    assertStringIncludes(problems[0]!, "table:69500");
+    assertStringIncludes(problems[0]!, "prereq:CG-AL-A001");
+    assertStringIncludes(problems[0]!, "prereq:CG-AL-A002");
+  });
+
+  await t.step("stays silent when an allowlist covers exactly that set", () => {
+    const { problems, knownCoinstallSeen } = auditObjects(
+      [
+        prereqObj("CG-AL-A001", 69500, "Shared"),
+        prereqObj("CG-AL-A002", 69500, "Shared"),
+      ],
+      new Map(),
+      new Map([["table:69500", ["prereq:CG-AL-A001", "prereq:CG-AL-A002"]]]),
+    );
+    assertEquals(problems, []);
+    assertEquals(knownCoinstallSeen, 1);
+  });
+
+  await t.step("still flags when a THIRD app joins an allowlisted pair", () => {
+    // The allowlist pins an exact set, so growth is reported rather than
+    // absorbed - the same rule the same-unit allowlist uses.
+    const { problems } = auditObjects(
+      [
+        prereqObj("CG-AL-A001", 69500, "Shared"),
+        prereqObj("CG-AL-A002", 69500, "Shared"),
+        prereqObj("CG-AL-A003", 69500, "Shared"),
+      ],
+      new Map(),
+      new Map([["table:69500", ["prereq:CG-AL-A001", "prereq:CG-AL-A002"]]]),
+    );
+    assertEquals(problems.length, 1);
+    assertStringIncludes(problems[0]!, "this set differs");
+  });
+
+  await t.step("ignores a shared id across DIFFERENT object kinds", () => {
+    // BC keys the conflict on (object type, id), so a table and a codeunit at
+    // the same number co-install fine.
+    const { problems } = auditObjects(
+      [
+        prereqObj("CG-AL-A001", 69500, "Shared"),
+        {
+          file: "tests/al/dependencies/CG-AL-A002/Shared.Codeunit.al",
+          unit: "prereq:CG-AL-A002",
+          kind: "codeunit",
+          id: 69500,
+          name: "Shared",
+        },
+      ],
+      new Map(),
+      new Map(),
+    );
+    assertEquals(problems, []);
+  });
+
+  await t.step("ignores non-prereq units entirely", () => {
+    const { problems } = auditObjects(
+      [
+        {
+          file: "tests/al/hard/CG-AL-H001.Test.al",
+          unit: "alproject:tests/al/hard",
+          kind: "codeunit",
+          id: 80001,
+          name: "A",
+        },
+        {
+          file: "tests/al/medium/CG-AL-M001.Test.al",
+          unit: "alproject:tests/al/medium",
+          kind: "codeunit",
+          id: 80001,
+          name: "B",
+        },
+      ],
+      new Map(),
+      new Map(),
+    );
+    assertEquals(problems, []);
+  });
 });

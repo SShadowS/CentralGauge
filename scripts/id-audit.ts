@@ -71,6 +71,33 @@ const OBJECT_RE =
  * If those pairs are ever renumbered, delete the entry — a stale allowlist
  * entry keeps expecting a collision that no longer exists.
  */
+/**
+ * Pre-existing prereq co-installation collisions.
+ *
+ * Found 2026-08-26 by the backfill's seed verification, which publishes many
+ * tasks' prereqs onto one container in sequence and hit
+ * `The application object of type 'Table' with the ID '69001' is defined in
+ * multiple apps`. Allowlisted rather than renumbered because changing a prereq
+ * app.json edits `tests/al/**` and moves `task_sets.hash`, which owes a
+ * re-bench; the collision is harmless to the bench itself, which installs one
+ * task's prereq at a time.
+ *
+ * Renumber these when a hash move is happening anyway, then delete the entry.
+ * A stale allowlist entry keeps expecting a collision that no longer exists.
+ */
+const KNOWN_COINSTALL_COLLISIONS = new Map<string, string[]>([
+  ["table:69001", [
+    "prereq:CG-AL-E002",
+    "prereq:CG-AL-M001",
+    "prereq:CG-AL-X058",
+  ]],
+  ["table:69225", [
+    "prereq:CG-AL-H022",
+    "prereq:CG-AL-H023",
+    "prereq:CG-AL-H026",
+  ]],
+]);
+
 const KNOWN_DUPLICATES = new Map<string, string[]>([
   ["alproject:tests/al/hard|codeunit:80015", [
     "tests/al/hard/CG-AL-H014.Test.al",
@@ -180,6 +207,12 @@ export interface AuditResult {
   problems: string[];
   /** How many allowlisted pre-existing duplicate pairs were matched exactly. */
   knownSeen: number;
+  /**
+   * How many allowlisted pre-existing prereq CO-INSTALLATION collisions were
+   * matched exactly. Separate from `knownSeen`: these are a different failure
+   * surface with a different allowlist.
+   */
+  knownCoinstallSeen: number;
 }
 
 /**
@@ -189,6 +222,7 @@ export interface AuditResult {
 export function auditObjects(
   objects: AlObject[],
   knownDuplicates: Map<string, string[]> = KNOWN_DUPLICATES,
+  knownCoinstall: Map<string, string[]> = KNOWN_COINSTALL_COLLISIONS,
 ): AuditResult {
   const problems: string[] = [];
 
@@ -240,11 +274,50 @@ export function auditObjects(
     );
   }
 
-  return { problems, knownSeen };
+  // 3. Prereq CO-INSTALLATION collisions.
+  //
+  // A separate failure surface from check 2, and the reason it needs its own
+  // check: two prereq apps are two compilation units, so a shared object id can
+  // never produce AL0264 and check 2 is right to ignore it. But prereq apps can
+  // be INSTALLED on one tenant at the same time, and then BC rejects the second
+  // with "defined in multiple apps" - a publish/install error, not a compile
+  // error. The bench installs one task's prereq at a time so it never sees this;
+  // anything that co-installs them does.
+  const byPrereqObject = new Map<string, Set<string>>();
+  for (const obj of objects) {
+    if (!obj.unit.startsWith("prereq:")) continue;
+    const key = `${obj.kind}:${obj.id}`;
+    const bucket = byPrereqObject.get(key);
+    if (bucket) bucket.add(obj.unit);
+    else byPrereqObject.set(key, new Set([obj.unit]));
+  }
+
+  let knownCoinstallSeen = 0;
+  for (const [key, unitSet] of byPrereqObject) {
+    if (unitSet.size < 2) continue;
+    const units = [...unitSet].sort();
+    const allowed = knownCoinstall.get(key);
+    if (allowed && allowed.slice().sort().join("|") === units.join("|")) {
+      knownCoinstallSeen++;
+      continue;
+    }
+    const note = allowed
+      ? ` (allowlisted for exactly ${allowed.join(", ")} — this set differs)`
+      : "";
+    problems.push(
+      `prereq co-installation collision: ${key} is declared by ` +
+        `${
+          units.join(", ")
+        } — installing two of these on one tenant fails with ` +
+        `"defined in multiple apps"` + note,
+    );
+  }
+
+  return { problems, knownSeen, knownCoinstallSeen };
 }
 
 function main(objects: AlObject[], showList: boolean): number {
-  const { problems, knownSeen } = auditObjects(objects);
+  const { problems, knownSeen, knownCoinstallSeen } = auditObjects(objects);
 
   // Report.
   if (showList) {
@@ -269,6 +342,14 @@ function main(objects: AlObject[], showList: boolean): number {
     console.log(
       colors.dim(
         `${knownSeen} allowlisted pre-existing duplicate pair(s) ignored.`,
+      ),
+    );
+  }
+  if (knownCoinstallSeen > 0) {
+    console.log(
+      colors.dim(
+        `${knownCoinstallSeen} allowlisted pre-existing prereq ` +
+          `co-installation collision(s) ignored.`,
       ),
     );
   }
