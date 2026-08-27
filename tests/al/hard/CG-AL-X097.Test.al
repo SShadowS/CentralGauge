@@ -988,4 +988,28 @@ codeunit 89193 "CG-AL-X097 Test"
 
         VerifyAllocationBalances('RND01', TotalAmount);
     end;
+
+    [Test]
+    procedure ShipmentNeverDrawsOnAnotherItemsReceipts()
+    var
+        Engine: Codeunit "CG X066 Costing Engine";
+        ShipmentNo: Integer;
+    begin
+        // [SCENARIO] Another item holds a far more expensive receipt that sorts
+        // ahead of this item's own. The shipment must be costed from this
+        // item's stock, so the foreign layer must never be drawn on - and the
+        // only way to see that is to make the foreign layer the one an
+        // unfiltered walk would reach first.
+        ClearX066Data();
+        SeedEntry('DRAW-A', 5, 100.00);
+        SeedEntry('DRAW-B', 5, 1.00);
+        ShipmentNo := SeedEntry('DRAW-B', -5, 0);
+
+        Engine.CalculateShipmentCosts('DRAW-B');
+
+        Assert.AreEqual(5.00, ShipmentCostOf(ShipmentNo),
+          'Expected the shipment to cost what the item''s own receipts cost, never another item''s stock that happened to sort earlier');
+        Assert.AreEqual(0, ShipmentCostRowCount('DRAW-A'),
+          'Expected recomputing one item to leave the other item with no recorded cost row at all');
+    end;
 }

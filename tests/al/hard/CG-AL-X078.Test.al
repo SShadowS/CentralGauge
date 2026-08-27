@@ -296,4 +296,33 @@ codeunit 88831 "CG-AL-X078 Test"
             Credits += Audience div 5;
         exit(Credits);
     end;
+
+    [Test]
+    procedure BuildStatementLeavesTheBufferHoldingOnlyTheStatementJustBuilt()
+    var
+        Performance: Record "CG X078 Performance";
+        StatementLine: Record "CG X078 Statement Line" temporary;
+        Statement: Codeunit "CG X078 Statement";
+        TotalAmount: Decimal;
+        TotalCredits: Integer;
+    begin
+        // [SCENARIO] The caller hands over a buffer that already holds a line
+        // from earlier work AND is narrowed to a range that does not cover it.
+        // Building a statement replaces the whole buffer, so the leftover must
+        // be gone whatever part of it the caller happened to be reading.
+        Performance.DeleteAll();
+        SeedPerformance(1751, 'TRYAL-RS51', 'Macbeth', 'TRAGEDY', 30);
+
+        StatementLine.Init();
+        StatementLine."Line No." := 999;
+        StatementLine."Play Name" := 'Left over from earlier work';
+        StatementLine.Insert();
+        StatementLine.SetRange("Line No.", 1, 100);
+
+        Statement.BuildStatement('TRYAL-RS51', StatementLine, TotalAmount, TotalCredits);
+
+        StatementLine.Reset();
+        Assert.AreEqual(1, StatementLine.Count(), 'Expected the buffer to hold only the lines of the statement just built, whatever part of it the caller was reading beforehand');
+        Assert.IsFalse(StatementLine.Get(999), 'The leftover line must not survive a rebuild just because it sat outside the caller''s filter');
+    end;
 }

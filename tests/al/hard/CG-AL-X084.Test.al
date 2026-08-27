@@ -283,4 +283,28 @@ codeunit 88837 "CG-AL-X084 Test"
             RowsDelta <= 20,
             StrSubstNo('Adding one more entry must not cost work proportional to how many entries are already in the session: rows budget %1, actual %2', 20, RowsDelta));
     end;
+
+    [Test]
+    procedure TheRunningTotalCoversEveryAppliedEntryWhateverTheCallerWasReading()
+    var
+        TotalMgt: Codeunit "CG X084 Total Mgt";
+        Buffer: Record "CG X084 Total Buffer" temporary;
+    begin
+        // [SCENARIO] The caller was reading one document's row out of the
+        // buffer and asks for the running total without putting the buffer
+        // back. The total is a property of everything applied in the session,
+        // so it must not shrink to whatever the caller happened to be viewing.
+        ClearAll();
+        CreateLedgerEntry(1, 'DOC1', 100, 100);
+        CreateLedgerEntry(2, 'DOC2', 250, 250);
+        CreateLedgerEntry(3, 'DOC3', 75, 75);
+
+        TotalMgt.AddAppliedEntry(Buffer, 1);
+        TotalMgt.AddAppliedEntry(Buffer, 2);
+        TotalMgt.AddAppliedEntry(Buffer, 3);
+
+        Buffer.SetRange("Document No.", 'DOC2');
+
+        Assert.AreEqual(425, TotalMgt.GetBufferTotal(Buffer), 'The running total must cover every entry applied in the session, not just the part of the buffer the caller happened to be reading');
+    end;
 }

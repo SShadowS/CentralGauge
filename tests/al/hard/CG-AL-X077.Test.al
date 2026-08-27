@@ -355,4 +355,26 @@ codeunit 88830 "CG-AL-X077 Test"
         Assert.AreEqual(DMY2Date(1, 6, 2027), MergedPeriod."Starting Date", 'The output buffer must reflect only the second call''s period, not any period left over from the first call');
         Assert.AreEqual(DMY2Date(10, 6, 2027), MergedPeriod."Ending Date", 'The output buffer must reflect only the second call''s period, not any period left over from the first call');
     end;
+
+    [Test]
+    procedure MergeKeepsTheOuterEndingDateWhenAWindowSitsFullyInsideAnother()
+    var
+        PriceLine: Record "CG X077 Price Validity Line" temporary;
+        MergedPeriod: Record "CG X077 Price Validity Line" temporary;
+        Analyzer: Codeunit "CG X077 Validity Analyzer";
+    begin
+        // [SCENARIO] A short window sits entirely within a year-long one. The
+        // year-long window already covers it, so the merged coverage period
+        // must still run to the outer ending date - absorbing the inner window
+        // must not pull the end backwards to the inner one's earlier date.
+        AddLine(PriceLine, 10000, DMY2Date(1, 1, 2027), DMY2Date(31, 12, 2027));
+        AddLine(PriceLine, 20000, DMY2Date(1, 3, 2027), DMY2Date(10, 3, 2027));
+
+        Analyzer.MergeValidityPeriods(PriceLine, MergedPeriod);
+
+        Assert.AreEqual(1, MergedPeriod.Count(), 'A window contained by another must merge into a single coverage period');
+        MergedPeriod.Get(10000);
+        Assert.AreEqual(DMY2Date(1, 1, 2027), MergedPeriod."Starting Date", 'The merged coverage period must start on the outer window''s starting date');
+        Assert.AreEqual(DMY2Date(31, 12, 2027), MergedPeriod."Ending Date", 'The merged coverage period must run to the outer window''s ending date, not stop on the inner window''s earlier ending date');
+    end;
 }

@@ -96,4 +96,24 @@ codeunit 89299 "CG-AL-X105 Test"
         Assert.IsTrue(ApprovalLookup.GetApprovalLimit('APP6', Entry), 'APP6 has its own approved entry and must be found');
         Assert.AreEqual(4200, Entry."Amount Limit", 'APP6''s own limit must be returned, not another approver''s');
     end;
+
+    [Test]
+    procedure ApprovedEntryIsFoundWhateverTheCallerWasViewing()
+    var
+        Entry: Record "CG X105 Approval Entry";
+        ApprovalLookup: Codeunit "CG X105 Approval Lookup";
+    begin
+        Entry.DeleteAll();
+        Seed(50, 'APP7', Entry.Status::Rejected, 111);
+        Seed(51, 'APP7', Entry.Status::Approved, 7700);
+
+        // The caller arrives holding a narrowed view of its own record that
+        // excludes the approved entry. A lookup answers a question about the
+        // approver, so what the caller happened to be looking at beforehand
+        // must not change the answer.
+        Entry.SetRange("Entry No.", 50, 50);
+
+        Assert.IsTrue(ApprovalLookup.GetApprovalLimit('APP7', Entry), 'APP7 has its own approved entry and must be found however the caller''s record was set up beforehand');
+        Assert.AreEqual(7700, Entry."Amount Limit", 'The approved limit must be returned even though the caller''s own filter excluded that row');
+    end;
 }
