@@ -5596,6 +5596,357 @@
         "out_of_scope_proved": 1
       },
       "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X122": {
+      "mutants": [
+        {
+          "code": "M0006",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Log is a procedure-local Record in Cancellation Alerter's LogEntry, blank at scope entry, and the Activity Log table has exactly three fields (Entry No., Doc No., Kind) all assigned before Insert; NextEntryNo uses its own separate local record, so nothing stale can leak in and Init() is a no-op."
+        },
+        {
+          "code": "M0028",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Identical shape in Release Notifier's LogEntry: fresh procedure-local record, no InitValue anywhere on the table, all three fields overwritten before Insert."
+        },
+        {
+          "code": "M0008",
+          "disposition": "unreached",
+          "alreadyKilled": false,
+          "justification": "Emptied NextEntryNo returns 0 for every cancellation entry, so the second CANCELLED entry in one run collides on the Entry No. primary key and Insert() errors. The oracle never produces two cancellation entries, whereas M0030 - the byte-identical mutation on the release side - WAS killed by BatchReleasesValidOpenDocuments because that test does produce two release entries. The asymmetry matters because the canonical fix splits one starter notifier into two codeunits, so a model hand-writing the new cancellation codeunit could leave its numbering broken and still pass.",
+          "killTest": "New test ManualCancellationsOfSeveralDocumentsEachLeaveTheirOwnAlert: ResetAll(); SeedOpenDocument('D20', 500), ('D21', 500), ('D22', 500); call CancelAction.CancelWithAlert on D20, D21, D22 in turn; assert StatusOf each is 'Cancelled' and Assert.AreEqual(3, LogCountOf('CANCELLED'), 'Each manually cancelled document must leave its own cancellation activity entry'). Kills M0008 (errors on the second cancellation) and M0009 (errors on the third). Count-only assertion, so it does not constrain what numbering scheme a fix uses."
+        },
+        {
+          "code": "M0009",
+          "disposition": "unreached",
+          "alreadyKilled": false,
+          "justification": "exit(0) instead of exit(Log.\"Entry No.\" + 1) makes cancellation-side numbering non-monotonic: entries go 1, 0, then 0 again, so the third cancellation collides on the primary key and errors. The oracle's cancellation tests never create more than one entry.",
+          "killTest": "Killed by the same ManualCancellationsOfSeveralDocumentsEachLeaveTheirOwnAlert test listed under M0008."
+        },
+        {
+          "code": "M0031",
+          "disposition": "unreached",
+          "alreadyKilled": false,
+          "justification": "Same non-monotonic numbering on the release side: entries 1, 0, then 0 again, so a batch releasing three documents errors on the third Insert. BatchReleasesValidOpenDocuments releases only two, one short of exposing it.",
+          "killTest": "Extend BatchReleasesValidOpenDocuments with a third valid document (SeedOpenDocument('D2b', 750)), assert StatusOf('D2b') = 'Released', and raise the expectation to Assert.AreEqual(3, LogCountOf('RELEASED'), 'Every released document must leave a released activity entry'). One-line change, kills M0031 on its own."
+        },
+        {
+          "code": "M0010",
+          "disposition": "out_of_scope_proved",
+          "alreadyKilled": false,
+          "justification": "Only shifts the first entry number from 1 to 0; every entry stays distinct and every count stays correct for any number of cancellations, so it is observable solely by asserting literal Entry No. values. NextEntryNo is byte-identical to tasks/starter/CG-AL-X122/CGX122DocLifecycleNotifier.Codeunit.al, and the task bounds the fix to 'the nightly batch's own cancellations never produce a cancellation log entry, while a document cancelled through the manual cancel action still produces one exactly as before, and every document still ends up with the correct status either way' - entry numbers are never constrained, and pinning them would fail legitimate alternative numbering."
+        },
+        {
+          "code": "M0032",
+          "disposition": "out_of_scope_proved",
+          "alreadyKilled": false,
+          "justification": "Release-side counterpart of M0010: numbering becomes 0, 1, 2 instead of 1, 2, 3, all distinct, all counts unchanged. Same untouched starter procedure and the same silence in the task description about entry numbers."
+        }
+      ],
+      "totals": {
+        "equivalent": 2,
+        "unreached": 3,
+        "out_of_scope_proved": 2
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X126": {
+      "mutants": [
+        {
+          "code": "M0003",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Divergence needs OriginalWidth = MaxDimension with OriginalHeight <= MaxDimension, which forces the OriginalWidth >= OriginalHeight branch, where ThumbnailWidth := MaxDimension = OriginalWidth and ThumbnailHeight := Round(OriginalHeight * MaxDimension / OriginalWidth) = OriginalHeight exactly. The only differing input is a zero-length side (100x0 at maximum 100 gives 100x1 instead of 100x0), which is not an 'original picture's pixel width and height' and which the confirmed examples never cover, so no assertion should be added."
+        },
+        {
+          "code": "M0004",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Mirror of M0003: divergence needs OriginalHeight = MaxDimension with OriginalWidth <= MaxDimension, and the scaling path then returns Round(OriginalWidth * MaxDimension / OriginalHeight) = OriginalWidth with ThumbnailHeight = MaxDimension = OriginalHeight, the identical box. Again only a zero-length side breaks the identity."
+        },
+        {
+          "code": "M0006",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Divergence needs OriginalWidth = OriginalHeight past the already-fits guard, so both sides exceed MaxDimension; the taken branch yields (MaxDimension, Round(H*M/W)) = (M, M) and the swapped branch yields (Round(W*M/H), MaxDimension) = (M, M). A square original scales to a square either way for every MaxDimension >= 1."
+        },
+        {
+          "code": "M0008",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "The swap exchanges only the first two parameters, which appear in ScaleOtherSide solely as the product Side * MaxDimension; the divisor LongerSide is untouched, so the computed value is identical for every input by commutativity of integer multiplication."
+        },
+        {
+          "code": "M0010",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Same commutativity argument as M0008 for the height-is-longer branch: Round(MaxDimension * OriginalWidth / OriginalHeight) equals Round(OriginalWidth * MaxDimension / OriginalHeight) for all inputs."
+        },
+        {
+          "code": "M0012",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Scaled < 1 to Scaled <= 1 only adds the case Scaled = 1, and both arms then return 1 (the guard's exit(1) versus the fall-through exit(Scaled) with Scaled = 1), so the return value is unchanged for every input."
+        }
+      ],
+      "totals": {
+        "equivalent": 6
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X125": {
+      "mutants": [
+        {
+          "code": "M0018",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Policy is a procedure-local Record reached only after Policy.Get('') has already failed (so nothing was read into it), and the Refund Policy table has exactly two fields, 'Primary Key' and 'Approval Threshold', both assigned on the next two lines before Insert; Init() cannot change any field value."
+        },
+        {
+          "code": "M0019",
+          "disposition": "out_of_scope_proved",
+          "alreadyKilled": false,
+          "justification": "Dropping Insert() leaves the policy table empty, so every call re-enters the branch and still returns 500; ApprovalThreshold()'s value is bit-identical for every call and no other code reads that table, leaving a row nothing consumes as the only difference. ApprovalThreshold is byte-identical to tasks/starter/CG-AL-X125/CGX125RefundReleaser.Codeunit.al and the task bounds the work to 'Fix the application so ReleaseRefund produces the confirmed behavior for every request it is given', never mentioning a policy record, so asserting the row's persistence would over-constrain a fix that legitimately restructures the threshold lookup."
+        },
+        {
+          "code": "M0022",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Log is a procedure-local Record in LogDecline with no filter, mark, or key ever set on it before the Reset(), so Reset() has nothing to clear and the following FindLast() sees the same unfiltered primary-key ordering either way."
+        },
+        {
+          "code": "M0023",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Init() sits after FindLast(), so removing it leaves the last-read row's values in the buffer, but the Decline Log table has exactly three fields (Entry No., Customer No., Amount) and all three are reassigned before Insert. ReleaseRefundHandlesManyRequestsAnsweredNo inserts 24 declines each preceded by a successful FindLast, exercising precisely this stale-buffer state and passing, which also confirms the platform regenerates SystemId on Insert."
+        }
+      ],
+      "totals": {
+        "equivalent": 3,
+        "out_of_scope_proved": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X041": {
+      "mutants": [
+        {
+          "code": "M0002",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Doc is a procedure-local record that AL blanks at scope entry and this is its first use, and all four fields of table 69930 (Batch Id, Line No., Status, Amount) are explicitly assigned on the next four lines before Insert(); the table declares no InitValue, so Init() cannot change any inserted value."
+        },
+        {
+          "code": "M0006",
+          "disposition": "out_of_scope_proved",
+          "alreadyKilled": false,
+          "justification": "The only state ClearLastError() alters is the session last-error buffer, observable solely via GetLastErrorText/GetLastErrorCallStack; the DB path is provably unaffected (the mutant still satisfies the oracle's Doc.IsEmpty() open-residue assert). The YAML bounds the contract to 'reporting true when the Worker finished the batch and false when it did not, without letting a Worker failure interrupt PostDoc' plus row states on true/false, and says nothing about error text - a minimal correct submission would omit the call entirely, so requiring it would fail conforming fixes."
+        },
+        {
+          "code": "M0007",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Doc is a fresh procedure-local on which PostDoc never sets a filter, mark, SetLoadFields or SetCurrentKey before line 23, and the Worker OnRun uses only its own locals (Marker/Line1/Line2) and never touches Rec, so nothing can come back through the var record of Codeunit.Run; Reset() therefore clears an empty filter set and re-selects the already-current primary key, and the two following SetRange calls fully determine the DeleteAll scope either way."
+        }
+      ],
+      "totals": {
+        "equivalent": 2,
+        "out_of_scope_proved": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X058": {
+      "mutants": [
+        {
+          "code": "M0002",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "The only filter ever placed on Buffer is the SetRange(Label, ...) on the very next line, and AL SetRange on a field replaces any prior range on that same field, so the loop filter state after the SetRange is identical with or without Reset(); no SetCurrentKey, mark, or SetLoadFields is ever used, and neither IsEmpty() nor Insert() alters filters."
+        },
+        {
+          "code": "M0005",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Table 69001 has exactly two fields and both (Entry No., Label) are assigned on the two lines immediately after the Init() and before Insert(), so the record is fully overwritten regardless of whether it still carries the previous iteration's inserted values; plain Insert() always generates a fresh SystemId, so the stale-SystemId route is closed too."
+        }
+      ],
+      "totals": {
+        "equivalent": 2
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X111": {
+      "mutants": [
+        {
+          "code": "M0015",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Both call sites (CountOpenSubItems:11, TotalEstimatedHours:28) declare ChildItem as their own local and call the local FindChildren exactly once on it - recursion allocates a new frame with a new record - so Reset() always runs on a scope-entry-fresh record with no filters, marks or non-default key to clear. Also byte-identical to tasks/starter/CG-AL-X111/CGX111WorkItemReport.Codeunit.al:53-59, i.e. starter code the fix does not touch."
+        },
+        {
+          "code": "M0016",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Removing SetCurrentKey changes only the ORDER BY of the filtered FindSet/Next traversal, and FindChildren is local with exactly two consumers that aggregate order-insensitively - an integer count of open sub-items and an exact Decimal sum of Estimated Hours - so every returned value is identical; the SQL-statement budget test measures only OpenSubItemHoursAcrossChecklist, which never calls FindChildren. Also untouched starter code, per the same starter file."
+        }
+      ],
+      "totals": {
+        "equivalent": 2
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X118": {
+      "mutants": [
+        {
+          "code": "M0016",
+          "disposition": "out_of_scope_proved",
+          "alreadyKilled": false,
+          "justification": "The bare Get contributes only (a) an existence check already enforced by the platform on field 3's TableRelation = 'CG X118 Account'.\"No.\" - which is what still raises the error the oracle's SettingAnUnknownCounterAccountFailsWithAnError asserts under the mutant - and (b) the Currency Code feeding the reference's own defensive 'Rounding Precision' < 0 guard, a state the Currency table's MinValue = 0 makes unreachable through validation. The YAML bounds the fix to 'Amount and Balancing Amount always net to exactly zero once the counter account has been set'; the mutant (Balancing Amount := -Amount) is exactly the minimal conforming fix, so pinning the Get would fail correct submissions."
+        },
+        {
+          "code": "M0017",
+          "disposition": "unreached",
+          "alreadyKilled": false,
+          "justification": "Flipping < 0 to <= 0 makes a counter currency whose Rounding Precision is exactly 0 - a value the Currency table explicitly permits (MinValue = 0) - raise 'invalid rounding precision' instead of balancing the line, contradicting the YAML's 'for any account and counter account, and whatever currency each side uses, a journal line Amount and Balancing Amount always net to exactly zero'. The oracle seeds only 0.01, 0.001 and 1 precisions, so the zero-precision boundary is never constructed.",
+          "killTest": "Add AZeroPrecisionCounterCurrencyStillBalancesExactly: ClearAllData(); SeedCurrency('EUR', 0.01); SeedCurrency('ZPC', 0); SeedAccount('MAIN-EUR', 'EUR'); SeedAccount('CTR-ZPC', 'ZPC'); CreateLine(JournalLine, 17, 'MAIN-EUR'); SetAmountThenCounterAccount(JournalLine, 100.005, 'CTR-ZPC'); AssertBalances(17, 100.005). The mutant errors inside Validate('Counter Account No.') so the test fails before the asserts; the existing AssertBalances messages cover the value side. Bonus discriminating power: it also kills any submission keeping a Round(Amount, counterPrecision) shape, which divides by zero at this precision."
+        }
+      ],
+      "totals": {
+        "out_of_scope_proved": 1,
+        "unreached": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X128": {
+      "mutants": [
+        {
+          "code": "M0003",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Every caller (SetGracePeriodDays/GetGracePeriodDays/SetLateFeePercent/GetLateFeePercent) passes its own scope-fresh local into GetSetup, so the failed Get('SETUP') is that record's first touch, and all three fields of table 70880 (Primary Key, Grace Period Days, Late Fee Percent) are assigned on the next three lines before Insert() - whatever a failed Get leaves behind is fully overwritten. Byte-identical to tasks/starter/CG-AL-X128/CGX128CollectionPolicy.Codeunit.al:3-12; the fix is the table's DataPerCompany property, not this procedure."
+        },
+        {
+          "code": "M0024",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "GroupRate is a scope-fresh local whose only prior operation is the failed Get(CurrencyCode), so both fields of table 70882 are already blank; Currency Code is then explicitly assigned and Intercompany Rate is 0 at Insert() in both variants before being set to Rate and persisted by the Modify() two lines later, giving the identical final row. Byte-identical to tasks/starter/CG-AL-X128/CGX128TreasuryRate.Codeunit.al:3-14 - untouched starter code the fix must leave alone by design."
+        }
+      ],
+      "totals": {
+        "equivalent": 2
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X060": {
+      "mutants": [
+        {
+          "code": "M0002",
+          "disposition": "out_of_scope_proved",
+          "alreadyKilled": false,
+          "justification": "Spec bounds Fetch to 'retrieves the row identified by ItemNo into Item. It must bring back only the Description column'; SetLoadFields+Get alone satisfies that for every input, because Get ignores filters and re-reads the row, fully determining buffer contents and loaded-field set regardless of caller-supplied prior state. The only residual difference (caller filters/marks surviving, buffer on the not-found error path) is unconstrained by the spec, so the mutant is itself a spec-conformant solution the oracle must accept. Both load-bearing calls ARE pinned: removing SetLoadFields dies on FetchDoesNotBringBackTheOtherColumns, removing Get dies on FetchReturnsTheRequestedRow."
+        }
+      ],
+      "totals": {
+        "out_of_scope_proved": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X063": {
+      "mutants": [
+        {
+          "code": "M0005",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Result := Format(ValueRef.Value()) completes before RecRef.Close(), and RecRef/KeyRef/ValueRef are procedure locals never touched again, so the returned Text is identical either way. Each DescribeOf call opens its own fresh local RecordRef, so no state leaks across the oracle's five calls (two inside one test), and no lock or cursor an open RecordRef holds is observable in AL."
+        }
+      ],
+      "totals": {
+        "equivalent": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X115": {
+      "mutants": [
+        {
+          "code": "M0013",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "IsSameMoment is provably symmetric: the 0DT branch returns First = Second and the other returns Abs(First - Second) < 10, both symmetric, so IsSameMoment(a,b) = IsSameMoment(b,a) for every input pair and the swap at the ShouldResync call site cannot change any result. Stronger still: the spec demands symmetry ('whichever one is passed first') and the oracle asserts both orders across the full 0..40 ms sweep and for 0DT in either position, so the mutant is equivalent for every candidate that passes at all."
+        }
+      ],
+      "totals": {
+        "equivalent": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X119": {
+      "mutants": [
+        {
+          "code": "M0004",
+          "disposition": "out_of_scope_proved",
+          "alreadyKilled": false,
+          "justification": "Line.SetRange(\"Document No.\", DocumentNo) is byte-identical in tasks/starter/CG-AL-X119/CGX119Exporter.Codeunit.al - the reference fix's entire diff is the added Charge case branch plus SetChargeFields - and the spec bounds the work to 'Fix the application so a document's Charge lines export completely.' No fix variant for blank Charge fields deletes the document filter. NOTE: the triager flagged this as a borderline call - the mutated behaviour is real and unexercised, because BuildExportLinesOnlyReplacesLinesForItsOwnDocument seeds a stale DOC2 export line but never a DOC2 doc line, so the Line filter is unpinned. Optional hardening, not required for B7: add SeedItem + SeedDocLine('DOC2', 20, \"CG X119 Line Type\"::Item, 'ITM9') to that test and assert Assert.IsFalse(ExportLine.Get('DOC2', 20), 'Rebuilding one document must not create export lines for another document')."
+        }
+      ],
+      "totals": {
+        "out_of_scope_proved": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X120": {
+      "mutants": [
+        {
+          "code": "M0002",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "ApprovedRecord is a procedure-local record AL blanks at scope entry, and all five fields of the table are assigned before Insert(), so Init() overwrites nothing not then reassigned. No InitValue on any field, and plain Insert() generates a fresh SystemId irrespective of the buffer. Also byte-identical starter code; the fix adds the else-branches that clear the flag."
+        },
+        {
+          "code": "M0010",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Pending is a procedure-local record whose only prior operation is a Pending.Get(RecordNo, 'Contact Name') that just returned FALSE, so no row was loaded and the buffer holds at most the searched key - and both of the table's only two fields are then assigned exactly those values before Insert(). No InitValue on 'CG X120 Pending Verification', so Init() is a provable no-op under either interpretation of a failed Get's buffer state."
+        },
+        {
+          "code": "M0018",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "Identical structure to M0010 in SetCreditLimit: fresh local Pending, guard is a failed Get, both fields of the two-field table assigned to the searched key values before Insert(), no InitValue anywhere on the table."
+        }
+      ],
+      "totals": {
+        "equivalent": 3
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X121": {
+      "mutants": [
+        {
+          "code": "M0011",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "All four fields of 'CG X121 Contract Line' are reassigned on each of the three loop iterations before Insert(), so the carried-over record is fully overwritten; Init() does not clear filters in AL so the earlier SetRange is unaffected either way, and plain Insert() assigns a new SystemId rather than reusing the buffer's, which is why iteration 2 does not collide. No InitValue and no OnInsert trigger on the table. The codeunit is byte-identical to tasks/starter/CG-AL-X121 - the fix lives in the header table's validation triggers."
+        }
+      ],
+      "totals": {
+        "equivalent": 1
+      },
+      "triageBatch": "phase2c-reattribution"
+    },
+    "CG-AL-X129": {
+      "mutants": [
+        {
+          "code": "M0014",
+          "disposition": "equivalent",
+          "alreadyKilled": false,
+          "justification": "< and <= differ only when ChargeableHours = RateCard.\"Minimum Hours\", and the guarded statement there is ChargeableHours := RateCard.\"Minimum Hours\" - an identity self-assignment - so the mutant computes the same Round(ChargeableHours * \"Hourly Rate\", 0.01) for every input. This is fix-authored code (the starter's HourlyAmountFor was a bare Error), and the oracle does hit the exact boundary: graded case 3 is STANDARD/2 hours against Minimum Hours 2 (expected 180) and case 12 is CALLOUT/4 hours against Minimum Hours 4 (expected 133.33), both identical under either operator."
+        }
+      ],
+      "totals": {
+        "equivalent": 1
+      },
+      "triageBatch": "phase2c-reattribution"
     }
   },
   "compositeFinding": "Zero composite-LOCAL survivors across X096/X097/X098/X099: all 18 map 1:1 onto their donors' sweep rows (X082 2, X083 3, X066 4, X067 1, X072 1, X069 2, X084 3, X089 2), and both open holes are donor-level, present byte-identically in CG-AL-X066.Test.al and CG-AL-X084.Test.al.",

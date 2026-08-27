@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-27T07:29:19.139Z",
+  "generatedAt": "2026-08-27T07:34:13.311Z",
   "sources": {
     "determinism": "scratch/backfill-phase1-results.json",
     "mutation": "scratch/lethal-t1/<id>/report.json",
@@ -9753,7 +9753,7 @@
           "scope": "passing-path-only"
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:00:13.970Z",
           "score": 0.7272727272727273,
           "survivors": 3,
@@ -9767,9 +9767,13 @@
             "M0006",
             "M0007"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 2,
+            "out_of_scope_proved": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "3 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10520,7 +10524,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:01:44.445Z",
           "score": 0.7142857142857143,
           "survivors": 2,
@@ -10533,9 +10537,12 @@
             "M0002",
             "M0005"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 2
+          },
           "reportPredatesOracle": false,
-          "detail": "2 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10649,7 +10656,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:00:41.309Z",
           "score": 0.75,
           "survivors": 1,
@@ -10661,9 +10668,12 @@
           "survivorCodes": [
             "M0002"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "out_of_scope_proved": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "1 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -10840,7 +10850,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:01:20.533Z",
           "score": 0.8,
           "survivors": 1,
@@ -10852,9 +10862,12 @@
           "survivorCodes": [
             "M0005"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "1 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14216,7 +14229,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:02:01.661Z",
           "score": 0.8888888888888888,
           "survivors": 2,
@@ -14229,9 +14242,12 @@
             "M0015",
             "M0016"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 2
+          },
           "reportPredatesOracle": false,
-          "detail": "2 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14471,7 +14487,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:16:30.801Z",
           "score": 0.9230769230769231,
           "survivors": 1,
@@ -14483,9 +14499,12 @@
           "survivorCodes": [
             "M0013"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "1 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14675,9 +14694,13 @@
             "M0016",
             "M0017"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "out_of_scope_proved": 1,
+            "unreached": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "2 survivor(s) with no recorded disposition"
+          "detail": "1 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14728,7 +14751,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:09:18.994Z",
           "score": 0.9333333333333333,
           "survivors": 1,
@@ -14740,9 +14763,12 @@
           "survivorCodes": [
             "M0004"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "out_of_scope_proved": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "1 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14793,7 +14819,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:24:02.447Z",
           "score": 0.90625,
           "survivors": 3,
@@ -14807,9 +14833,12 @@
             "M0010",
             "M0018"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 3
+          },
           "reportPredatesOracle": false,
-          "detail": "3 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14860,7 +14889,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:17:56.631Z",
           "score": 0.9565217391304348,
           "survivors": 1,
@@ -14872,9 +14901,12 @@
           "survivorCodes": [
             "M0011"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "1 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -14943,9 +14975,14 @@
             "M0031",
             "M0032"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 2,
+            "unreached": 3,
+            "out_of_scope_proved": 2
+          },
           "reportPredatesOracle": false,
-          "detail": "7 survivor(s) with no recorded disposition"
+          "detail": "3 UNREACHED mutant(s) - confirmed coverage hole; kill test recorded in survivor-dispositions.json"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -15122,7 +15159,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:10:51.190Z",
           "score": 0.8333333333333334,
           "survivors": 4,
@@ -15137,9 +15174,13 @@
             "M0022",
             "M0023"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 3,
+            "out_of_scope_proved": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "4 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -15190,7 +15231,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:22:38.079Z",
           "score": 0.5714285714285714,
           "survivors": 6,
@@ -15207,9 +15248,12 @@
             "M0010",
             "M0012"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 6
+          },
           "reportPredatesOracle": false,
-          "detail": "6 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -15323,7 +15367,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:11:35.520Z",
           "score": 0.9285714285714286,
           "survivors": 2,
@@ -15336,9 +15380,12 @@
             "M0003",
             "M0024"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 2
+          },
           "reportPredatesOracle": false,
-          "detail": "2 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",
@@ -15389,7 +15436,7 @@
           ]
         },
         "B7": {
-          "status": "quarantine",
+          "status": "pass",
           "at": "2026-08-27T06:24:50.719Z",
           "score": 0.9411764705882353,
           "survivors": 1,
@@ -15401,9 +15448,12 @@
           "survivorCodes": [
             "M0014"
           ],
-          "triaged": false,
+          "triaged": true,
+          "dispositions": {
+            "equivalent": 1
+          },
           "reportPredatesOracle": false,
-          "detail": "1 survivor(s) with no recorded disposition"
+          "detail": "every survivor triaged to equivalent, out-of-scope-proved or accepted"
         },
         "B3": {
           "status": "pending_no_tooling",

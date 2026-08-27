@@ -1,4 +1,4 @@
-codeunit 71410 "CG X052 Clerk"
+codeunit 71410 "CG X052 Agent"
 {
     Access = Internal;
 
@@ -6,16 +6,11 @@ codeunit 71410 "CG X052 Clerk"
     var
         Quote: Record "CG X052 Quote";
     begin
-        Quote.Get(No);
+        if not Quote.Get(No) then
+            Error('Quote %1 does not exist.', No);
 
-        // Set the quantity first so the table adjusts it under its packaging rule
-        // and recomputes the fee from the adjusted quantity.
         Quote.Validate(Qty, NewQty);
-
-        // Set the rate after the quantity is adjusted so the effective rate is
-        // derived using the adjusted quantity the quote now carries.
         Quote.Validate(Rate, OfferedRate);
-
         Quote.Modify(true);
     end;
 }
