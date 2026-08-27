@@ -130,6 +130,7 @@ scripts/*
 !scripts/seed-reference-solution.ts
 !scripts/b4-evidence.ts
 !scripts/split-al-objects.py
+!scripts/normalize-kill-tests.py
 TestLookupSandbox.md
 bug.md
 dockerstatus.md

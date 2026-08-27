@@ -358,11 +358,13 @@
       "killTests": [
         {
           "name": "RecomputingOneItemRecordsNothingForAnotherItemsShipment",
-          "closes": "M0005",
           "alsoApplyTo": "CG-AL-X066 (donor - the hole is byte-identical there)",
           "setup": "Seed MULTI-C (+5 @1.00, -5) and MULTI-D (+3 @2.00, -3); recompute MULTI-C only.",
           "assertion": "Assert.IsFalse(ShipmentCost.Get(OtherShipmentNo), 'Expected no recorded cost at all for a shipment belonging to an item nobody asked to recompute')",
-          "whyRobust": "Holds whether an implementation stamps Item No. from the parameter or from the ledger row."
+          "whyRobust": "Holds whether an implementation stamps Item No. from the parameter or from the ledger row.",
+          "closes": [
+            "M0005"
+          ]
         }
       ],
       "resweep": "Fix round: YES (1 test, into X097 AND donor X066).",
@@ -504,11 +506,13 @@
       "killTests": [
         {
           "name": "TheRunningTotalCoversEveryAppliedEntryWhateverTheCallerWasViewing",
-          "closes": "M0023",
           "alsoApplyTo": "CG-AL-X084 (donor - the hole is byte-identical there)",
           "setup": "Apply entries 1/2/3 (100+250+75), then leave the caller on Buffer.SetRange('Entry No.', 2).",
           "assertion": "Assert.AreEqual(425, TotalMgt.GetBufferTotal(Buffer), 'The running total must cover every applied entry, not only the rows the caller happened to be looking at')",
-          "whyRobust": "Mutant returns 250."
+          "whyRobust": "Mutant returns 250.",
+          "closes": [
+            "M0023"
+          ]
         }
       ],
       "resweep": "Fix round: yes, low priority (1 test, into X099 AND donor X084).",
@@ -845,11 +849,15 @@
       "killTests": [
         {
           "name": "FlagOnWithAnIncompleteRuleActuallyWarnsTheUser",
-          "closes": "M0010, M0011, M0012 (all three die on this one test)",
           "setup": "[HandlerFunctions('CountWarning')] over a [SendNotificationHandler] that increments a global counter. Clear rules, advanced filtering on, create one incomplete rule, call ShowIncompleteRulesNotification().",
           "assertion": "Assert.AreEqual(1, WarningsShown, 'The user must be warned exactly once while a rule is still incomplete')",
           "whyRobust": "Under all three mutants nothing is sent, so the platform fails the test on its unexecuted-handler check before the assert is reached. Also closes the documented 'inverted if' gap.",
-          "BLOCKED_ON": "An unmeasured premise. [ConfirmHandler] is measured to engage headless (decisions.md entries 22, 27), but Notification.Send() is fire-and-forget and may be short-circuited when no client exists - which would fail a CORRECT solution. One throwaway probe settles it. If the probe fails, the original acceptance becomes correct for the first time on a measured basis; the NOTES.md wording still needs correcting either way, because it asserts no such AL handler exists."
+          "BLOCKED_ON": "An unmeasured premise. [ConfirmHandler] is measured to engage headless (decisions.md entries 22, 27), but Notification.Send() is fire-and-forget and may be short-circuited when no client exists - which would fail a CORRECT solution. One throwaway probe settles it. If the probe fails, the original acceptance becomes correct for the first time on a measured basis; the NOTES.md wording still needs correcting either way, because it asserts no such AL handler exists.",
+          "closes": [
+            "M0010",
+            "M0011",
+            "M0012"
+          ]
         }
       ],
       "resweep": "Fix round: YES, one test, GATED on the notification premise probe.",
@@ -909,11 +917,13 @@
       "killTests": [
         {
           "name": "ShipmentNeverDrawsOnAnotherItemsReceipts",
-          "closes": "M0005",
           "alsoApplyTo": "CG-AL-X097 (composite carrying the same hole)",
           "setup": "Seed DRAW-A 5 @ 100.00 and DRAW-B 5 @ 1.00, DRAW-B shipment -5, recompute DRAW-B.",
           "assertion": "Assert.AreEqual(5.00, ShipmentCostOf(ShipmentNo), 'Expected the shipment to cost what the item''s own receipts cost, never another item''s stock that happened to arrive earlier')",
-          "whyRobust": "Mutant yields 500.00."
+          "whyRobust": "Mutant yields 500.00.",
+          "closes": [
+            "M0005"
+          ]
         }
       ],
       "resweep": "Fix round: YES.",
@@ -1073,10 +1083,12 @@
       "killTests": [
         {
           "name": "BuildStatementLeavesTheBufferHoldingOnlyTheStatementJustBuilt",
-          "closes": "M0013",
           "setup": "Insert stale line 999, SetRange('Line No.', 1, 100) before the call, Reset() after.",
           "assertion": "Assert.AreEqual(1, StatementLine.Count(), 'Expected the buffer to hold only the lines of the statement just built, whatever part of it the caller was reading beforehand')",
-          "whyRobust": "Mutant yields 2."
+          "whyRobust": "Mutant yields 2.",
+          "closes": [
+            "M0013"
+          ]
         }
       ],
       "resweep": "Fix round: YES.",
@@ -1336,11 +1348,13 @@
       "killTests": [
         {
           "name": "TheRunningTotalCoversEveryAppliedEntryWhateverTheCallerWasReading",
-          "closes": "M0014",
           "alsoApplyTo": "CG-AL-X099 (composite carrying the same hole)",
           "setup": "Apply entries 1/2/3 (100+250+75), then Buffer.SetRange('Document No.', 'DOC2').",
           "assertion": "Assert.AreEqual(425, TotalMgt.GetBufferTotal(Buffer), 'The running total must cover every entry applied in the session, not just the part of the buffer the caller happened to be reading')",
-          "whyRobust": "Mutant yields 250."
+          "whyRobust": "Mutant yields 250.",
+          "closes": [
+            "M0014"
+          ]
         }
       ],
       "resweep": "Fix round: YES.",
@@ -1519,10 +1533,12 @@
       "killTests": [
         {
           "name": "MergeKeepsTheOuterEndingDateWhenAWindowSitsFullyInsideAnother",
-          "closes": "M0013",
           "setup": "Seed line 10000 = (1 Jan 2027 - 31 Dec 2027) and line 20000 = (1 Mar - 10 Mar 2027), call MergeValidityPeriods.",
           "assertion": "Assert.AreEqual(DMY2Date(31, 12, 2027), MergedPeriod.\"Ending Date\", 'The merged coverage period must run to the outer window''s ending date, not stop on the inner window''s earlier ending date')",
-          "whyRobust": "Mutant yields 10 Mar 2027. No mechanism leak (the planted defect is the 'and' in PeriodsOverlap's FIRST clause) and no legitimate alternative forbidden."
+          "whyRobust": "Mutant yields 10 Mar 2027. No mechanism leak (the planted defect is the 'and' in PeriodsOverlap's FIRST clause) and no legitimate alternative forbidden.",
+          "closes": [
+            "M0013"
+          ]
         }
       ],
       "resweep": "Fix round: YES, one test.",
@@ -2115,10 +2131,12 @@
       "killTests": [
         {
           "name": "ApprovedEntryIsFoundWhateverTheCallerWasViewing",
-          "closes": "M0002",
           "setup": "Either a one-line hardening of the existing UnrelatedApproversAreNotMixedUp (leave the caller's record ranged to 'Entry No.' 40..42 before the APP6 lookup), or a standalone test of the same shape on a fresh APP7 pair.",
           "assertion": "Assert.IsTrue(ApprovalLookup.GetApprovalLimit('APP6', Entry), 'APP6 has its own approved entry and must be found however the caller''s record was set up beforehand')",
-          "whyRobust": "Entry 43 falls outside the caller's surviving range, so without the Reset() the lookup returns false. Leaks nothing about the graded mechanic (Status range / pick order) and forbids no legitimate fix."
+          "whyRobust": "Entry 43 falls outside the caller's surviving range, so without the Reset() the lookup returns false. Leaks nothing about the graded mechanic (Status range / pick order) and forbids no legitimate fix.",
+          "closes": [
+            "M0002"
+          ]
         }
       ],
       "resweep": "Fix round: YES (X105 only, in this batch).",
@@ -2656,31 +2674,84 @@
         {
           "name": "TestReportDatasetTotalsAllCustomerSales",
           "assertion": "LibraryReportDataset.AssertElementWithValueExists('TotalSales', <seeded total>)",
-          "closes": "M0004/M0005/M0008-M0017 (PreProcessSalesLines + filters)"
+          "closes": [
+            "M0008",
+            "M0009",
+            "M0010",
+            "M0011",
+            "M0012",
+            "M0013",
+            "M0014",
+            "M0015",
+            "M0016",
+            "M0017",
+            "M0004",
+            "M0005"
+          ]
         },
         {
           "name": "TestReportDatasetRanksTheLargestCustomerFirst",
-          "assertion": "LibraryReportDataset.AssertElementWithValueExists('CustRank', 1) on the top-selling customer's row"
+          "assertion": "LibraryReportDataset.AssertElementWithValueExists('CustRank', 1) on the top-selling customer's row",
+          "closes": []
         },
         {
           "name": "TestReportDatasetReportsPriorYearComparisonPerCustomer",
           "assertion": "AssertElementWithValueExists('YoYComparison', <expected>)",
-          "closes": "the whole M0020-M0037 CalculateCustYoY block"
+          "closes": [
+            "M0020",
+            "M0021",
+            "M0022",
+            "M0023",
+            "M0024",
+            "M0025",
+            "M0026",
+            "M0027",
+            "M0028",
+            "M0029",
+            "M0030",
+            "M0031",
+            "M0032",
+            "M0033",
+            "M0034",
+            "M0035",
+            "M0036",
+            "M0037"
+          ]
         },
         {
           "name": "TestReportDatasetReportsOrderFrequencyForTheCustomer",
           "assertion": "AssertElementWithValueExists('OrderFrequency', <expected>)",
-          "closes": "M0039-M0044 + M0048-M0057"
+          "closes": [
+            "M0039",
+            "M0040",
+            "M0041",
+            "M0042",
+            "M0043",
+            "M0044",
+            "M0048",
+            "M0049",
+            "M0050",
+            "M0051",
+            "M0052",
+            "M0053",
+            "M0054",
+            "M0055",
+            "M0056",
+            "M0057"
+          ]
         },
         {
           "name": "TestReportDatasetReportsQuantityOnEachSalesLine",
           "assertion": "AssertElementWithValueExists('ProductSalesQty', <expected>)",
-          "closes": "M0001"
+          "closes": [
+            "M0001"
+          ]
         },
         {
           "name": "(optional) [RequestPageHandler] test setting Date Filter",
           "assertion": "the only way to reach M0002/M0003/M0012/M0043/M0049",
-          "COST": "routes the task off the SOAP harness onto the legacy client-session path (projectUsesTestPage), costing real bench wall time - judgement call"
+          "COST": "routes the task off the SOAP harness onto the legacy client-session path (projectUsesTestPage), costing real bench wall time - judgement call",
+          "closes": []
         }
       ],
       "resweep": "Fix round: YES - mandatory oracle REDESIGN. Drop or demote the 13 mock-calculator tests; add dataset verification."
@@ -2744,7 +2815,8 @@
       "killTests": [
         {
           "name": "TestApplyFilterString_MalformedFilterIsReported",
-          "assertion": "Assert.IsFalse(DynamicHandler.ApplyFilterString(RecRef, 'WHERE(NoSuchField=FILTER(X))'), 'A filter naming a field the table does not have is reported as not applied')"
+          "assertion": "Assert.IsFalse(DynamicHandler.ApplyFilterString(RecRef, 'WHERE(NoSuchField=FILTER(X))'), 'A filter naming a field the table does not have is reported as not applied')",
+          "closes": []
         }
       ],
       "resweep": "Fix round: YES (1 test)."
@@ -2798,7 +2870,8 @@
         {
           "name": "TestCalcIfFlowField_TrueOnSeededGroupRow",
           "assertion": "Assert.IsTrue(Calc.CalcIfFlowField(RecRef, 10), 'Calculating a summed field on a stored row is reported as performed')",
-          "betterFix": "delete the early-exit guard at line 68 and seed a Customer"
+          "betterFix": "delete the early-exit guard at line 68 and seed a Customer",
+          "closes": []
         }
       ],
       "resweep": "Fix round: YES."
@@ -2845,7 +2918,8 @@
         {
           "name": "TestInsertAndTruncate_ClearsPreExistingRows",
           "assertion": "Assert.AreEqual(0, BulkManager.GetRecordCount(), 'No rows remain after the combined operation')",
-          "setup": "seed BulkManager.InsertRecords(4) first, then call InsertAndTruncate(5)"
+          "setup": "seed BulkManager.InsertRecords(4) first, then call InsertAndTruncate(5)",
+          "closes": []
         }
       ],
       "resweep": "Fix round: YES (1 test)."
@@ -2953,7 +3027,8 @@
         {
           "name": "TestRenameLeavesEarlierSortingParentUntouched",
           "assertion": "Assert.IsTrue(Line.Get('AAA', 'C1'), 'A child of an unrelated parent that sorts before the renamed parent keeps its own parent code')",
-          "setup": "insert group 'AAA' + child 'C1', group 'ZZZ' + children; rename 'ZZZ' -> 'ZZZ2'"
+          "setup": "insert group 'AAA' + child 'C1', group 'ZZZ' + children; rename 'ZZZ' -> 'ZZZ2'",
+          "closes": []
         }
       ],
       "resweep": "Fix round: YES (1 test)."
@@ -3011,7 +3086,8 @@
         {
           "name": "TestProjectDeleteAllowedWhenOnlyOtherProjectsHaveEntries",
           "assertion": "Assert.IsFalse(Project.Get(ProjectBNo), 'A project carrying no time entries of its own is removed')",
-          "setup": "project A + one entry; project B with none; ProjectB.Delete(true)"
+          "setup": "project A + one entry; project B with none; ProjectB.Delete(true)",
+          "closes": []
         }
       ],
       "resweep": "Fix round: YES (1 test)."
@@ -3417,7 +3493,8 @@
       },
       "triageBatch": "phase2b-b2",
       "note": "ORACLE TOO NARROW **AND** PROMPT TOO NARROW - a test-only fix round cannot close it. Every one of the 11 tests creates a Purchase Header with NO lines, so Amount is always 0 and the headline requirement (approver by amount threshold) is never exercised. Every assertion is IsTrue/AreNotEqual/count>0; none asserts a status, an exact count, an approver identity, or a false return. Not one of the 10 exit(false) guards is graded. 15 of 60 survivors are unkillable by construction: the thresholds (1000/10000/100000) and approver names appear NOWHERE in the prompt, and CheckTimeout has no seam. Recommendation: task-level rewrite (state the thresholds, replace telemetry logging with a persisted audit table, add an observable status accessor, give CheckTimeout a seam), THEN a fix round for the 22 unreached. SEPARATE B2 CONCERN: TestTimeoutHandling is TIMING-FLAKY - mutant M0003 zeroes TimeoutHours and survived only because 0 ms elapsed between initiate and check.",
-      "resweep": "Fix round: NO - task rewrite first, then close the 22 unreached."
+      "resweep": "Fix round: NO - task rewrite first, then close the 22 unreached.",
+      "killTests": []
     },
     "CG-AL-X002": {
       "mutants": [
@@ -3476,7 +3553,8 @@
         "deliberately_open": 1
       },
       "triageBatch": "phase2b-b2",
-      "resweep": "Fix round: YES."
+      "resweep": "Fix round: YES.",
+      "killTests": []
     },
     "CG-AL-H037": {
       "mutants": [
@@ -3550,7 +3628,8 @@
       },
       "triageBatch": "phase2b-b2",
       "note": "Kill tests rest on two BC test-framework details not verified on a container: whether TestHttpRequestMessage exposes body and content headers to the handler, and what an unmocked request does under TestHttpRequestPolicy. Check before authoring.",
-      "resweep": "Fix round: YES."
+      "resweep": "Fix round: YES.",
+      "killTests": []
     },
     "CG-AL-X047": {
       "mutants": [
@@ -3578,7 +3657,8 @@
         "unreached": 2
       },
       "triageBatch": "phase2b-b2",
-      "resweep": "Fix round: YES."
+      "resweep": "Fix round: YES.",
+      "killTests": []
     },
     "CG-AL-H015": {
       "mutants": [
@@ -3593,7 +3673,8 @@
         "unreached": 1
       },
       "triageBatch": "phase2b-b2",
-      "resweep": "Fix round: YES (one line)."
+      "resweep": "Fix round: YES (one line).",
+      "killTests": []
     },
     "CG-AL-X019": {
       "mutants": [
@@ -3608,7 +3689,8 @@
         "unreached": 1
       },
       "triageBatch": "phase2b-b2",
-      "resweep": "Fix round: YES (one test)."
+      "resweep": "Fix round: YES (one test).",
+      "killTests": []
     },
     "CG-AL-H039": {
       "mutants": [
@@ -3949,7 +4031,8 @@
       },
       "triageBatch": "phase2b-b5",
       "note": "ORACLE TOO NARROW, decisively. FIVE of its 21 tests carry assertions that cannot fail - Assert.IsTrue(true, ...) and Assert.IsTrue(true or not Result, ...) - violating this repo's own 'Never Use Placeholder Assertions' rule. Of the six things the task demands, retry logic and JSON serialisation are wholly untested and auth headers plus timeout are UNTESTABLE through this harness. Be clear-eyed about the ceiling: 14 survivors are unscorable whatever happens and 9 more sit in unspecified regions, so even a perfect fix round lands ~0.62-0.65, not 0.9. A higher score needs the TASK tightened, not the oracle.",
-      "resweep": "Fix round: YES (highest volume)."
+      "resweep": "Fix round: YES (highest volume).",
+      "killTests": []
     },
     "CG-AL-M003": {
       "mutants": [
@@ -4027,7 +4110,8 @@
       },
       "triageBatch": "phase2b-b5",
       "note": "NOT too narrow for coverage - it hits every named requirement at least once. Its only true defect is testing each rule at one point and never at the boundary the task states ('after Start Date' never tested at equality, 'greater than 0' never at zero). That is 2 asserts. The low score is MISLEADING: 7 of 11 survivors sit in triggers the task never asked for, which arrived with the seeded submission. Hardening those would penalise a model that implemented exactly what was specified.",
-      "resweep": "Fix round: YES (small)."
+      "resweep": "Fix round: YES (small).",
+      "killTests": []
     },
     "CG-AL-H010": {
       "mutants": [
@@ -4079,7 +4163,8 @@
       },
       "triageBatch": "phase2b-b5",
       "note": "THE CLEANEST FINDING IN THE BATCH. The task is titled and structured entirely around IntegrationEvent publishers - three publishers, var parameter passing, a handled-flag protocol - and the oracle contains NO subscriber codeunit. A model could delete all three publisher calls, or transpose their arguments, and still pass. Three subscriber-backed tests plus one companion close it completely, and since the prompt already spells out every event name and signature, none of them leak anything.",
-      "resweep": "Fix round: YES (highest value per line)."
+      "resweep": "Fix round: YES (highest value per line).",
+      "killTests": []
     },
     "CG-AL-H025": {
       "mutants": [
@@ -4222,7 +4307,8 @@
         "unreached": 1
       },
       "triageBatch": "phase2b-b5",
-      "resweep": "Fix round: YES (small, with a caveat - the kill test extends 'regardless of outcome' to durability past a caller failure; pair it with a task-statement clarification)."
+      "resweep": "Fix round: YES (small, with a caveat - the kill test extends 'regardless of outcome' to durability past a caller failure; pair it with a task-statement clarification).",
+      "killTests": []
     },
     "CG-AL-H008": {
       "mutants": [
@@ -4266,7 +4352,8 @@
         "unreached": 1
       },
       "triageBatch": "phase2b-b5",
-      "resweep": "Fix round: YES (one test)."
+      "resweep": "Fix round: YES (one test).",
+      "killTests": []
     },
     "CG-AL-H001": {
       "mutants": [
@@ -4341,7 +4428,8 @@
         "unreached": 1
       },
       "triageBatch": "phase2b-b5",
-      "resweep": "Fix round: YES (one assertion)."
+      "resweep": "Fix round: YES (one assertion).",
+      "killTests": []
     },
     "CG-AL-H034": {
       "mutants": [
@@ -4362,7 +4450,8 @@
         "unreached": 2
       },
       "triageBatch": "phase2b-b5",
-      "resweep": "Fix round: YES (two tests)."
+      "resweep": "Fix round: YES (two tests).",
+      "killTests": []
     },
     "CG-AL-H003": {
       "mutants": [
@@ -4445,7 +4534,8 @@
       },
       "triageBatch": "phase2b-b6",
       "note": "THE WORST ORACLE IN THE SUITE, structurally broken two independent ways. VERIFIED INDEPENDENTLY: (1) it creates ZERO fixture items - it iterates whatever demo data exists and exits outright when none qualifies, so the discount-tier ladder that IS the task is never evaluated; (2) three of five tests recompute their expected value FROM the output they are checking - `ExpectedPrice := Round(TempResult.\"Original Price\" * (1 - TempResult.\"Discount Percent\" / 100), 0.01)` then asserts against TempResult.\"Final Price\" - so any tier mutation moves both sides together and passes. Needs a fixture-driven REWRITE, not patches.",
-      "resweep": "Fix round: YES - rewrite, highest value."
+      "resweep": "Fix round: YES - rewrite, highest value.",
+      "killTests": []
     },
     "CG-AL-H019": {
       "mutants": [
@@ -4481,7 +4571,8 @@
       },
       "triageBatch": "phase2b-b6",
       "note": "TOO NARROW, and it violates the repo's own AL test rules: VERIFIED - three of its five tests are `Assert.IsTrue(true, ...)` placeholders, explicitly banned by CLAUDE.md. The two real tests assert only AreNotEqual('') where the task prescribes exact return strings. Residual: even a perfect oracle leaves M0003 alive, because the task genuinely does not constrain that body.",
-      "resweep": "Fix round: YES - rewrite, removes banned placeholders."
+      "resweep": "Fix round: YES - rewrite, removes banned placeholders.",
+      "killTests": []
     },
     "CG-AL-M006": {
       "mutants": [
@@ -4632,7 +4723,8 @@
       },
       "triageBatch": "phase2b-b6",
       "note": "The ORACLE is not the main problem - the TASK is under-specified. 10 of 23 survivors sit in code the task describes only as 'analyze payment patterns' or 'automated risk evaluation'. Tightening the oracle there would enshrine one particular seeded implementation. Specifying the rating formula and the credit-limit amounts in the task YAML converts 7 deliberately_open into killable holes in ONE edit.",
-      "resweep": "Fix round: YES for the 8 unreached, plus a separate task-spec decision."
+      "resweep": "Fix round: YES for the 8 unreached, plus a separate task-spec decision.",
+      "killTests": []
     },
     "CG-AL-H009": {
       "mutants": [
@@ -4704,7 +4796,8 @@
       },
       "triageBatch": "phase2b-b6",
       "note": "TOO NARROW, and it is a single clean gap: the oracle passes a blank CurrencyCode in ALL 11 tests while the task's core requirement is to work with the Currency table's rounding-precision fields. One fixture currency plus a 100/3 division closes 8 of the 10. MEASURED FACT worth banking: AL's Round treats precision 0 as the 0.01 default, so a dropped GetCurrency degrades SILENTLY instead of erroring.",
-      "resweep": "Fix round: YES (one currency fixture, 8 kills)."
+      "resweep": "Fix round: YES (one currency fixture, 8 kills).",
+      "killTests": []
     },
     "CG-AL-H205": {
       "mutants": [
@@ -4763,7 +4856,8 @@
         "deliberately_open": 2
       },
       "triageBatch": "phase2b-b6",
-      "resweep": "Fix round: YES (5 cheap kills)."
+      "resweep": "Fix round: YES (5 cheap kills).",
+      "killTests": []
     },
     "CG-AL-H032": {
       "mutants": [
@@ -4809,7 +4903,8 @@
       },
       "triageBatch": "phase2b-b6",
       "note": "M0029 needs a NEW prereq table carrying two Customer-relation fields, one ObsoleteState=Removed - no standard-table pair is version-stable enough. If the fixture is declined, M0029 becomes deliberately_open.",
-      "resweep": "Fix round: YES (6 kills, 5 need no fixture)."
+      "resweep": "Fix round: YES (6 kills, 5 need no fixture).",
+      "killTests": []
     },
     "CG-AL-H029": {
       "mutants": [
@@ -4892,7 +4987,8 @@
         "deliberately_open": 2
       },
       "triageBatch": "phase2b-b6",
-      "resweep": "Fix round: YES (3 cheap kills)."
+      "resweep": "Fix round: YES (3 cheap kills).",
+      "killTests": []
     },
     "CG-AL-M036": {
       "mutants": [
@@ -4941,7 +5037,8 @@
         "unreached": 1
       },
       "triageBatch": "phase2b-b6",
-      "resweep": "Fix round: YES (1 kill, replaces a weak Contains test)."
+      "resweep": "Fix round: YES (1 kill, replaces a weak Contains test).",
+      "killTests": []
     },
     "CG-AL-M033": {
       "mutants": [
@@ -4999,7 +5096,8 @@
         "unreached": 1
       },
       "triageBatch": "phase2b-b6",
-      "resweep": "Fix round: YES but low priority (costs a spy companion)."
+      "resweep": "Fix round: YES but low priority (costs a spy companion).",
+      "killTests": []
     },
     "CG-AL-M026": {
       "mutants": [
@@ -5014,7 +5112,8 @@
         "unreached": 1
       },
       "triageBatch": "phase2b-b6",
-      "resweep": "Fix round: YES (1 kill)."
+      "resweep": "Fix round: YES (1 kill).",
+      "killTests": []
     },
     "CG-AL-X011": {
       "mutants": [
@@ -5052,14 +5151,23 @@
           "code": "M0002",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "lethal.empty-block empties the existing-key update branch, so an update to an EXISTING key falls through into the new-key path: evicts InsertionOrder.Get(1), Add()s the key and appends it. TestUpdateExistingKeyDoesNotEvict re-adds K1 which happens to BE the oldest entry at capacity 5, so the mutant evicts K1 and immediately re-inserts it and all four asserts pass. Spec: 'If Key was already present, replace its Value but DO NOT change insertion order' - insertion order is never observed after an update.",
-          "killTest": "TestUpdateKeepsOriginalEvictionPosition: Clear(); Add K1..K5; Add('K1',99) [update the OLDEST key at capacity]; Add('K6',6). Assert Count=5; Assert.IsFalse(Get('K1')) - reference drops K1, mutant has moved K1 to the back so it drops K2 instead and the IsFalse fails. Complement: TestUpdateBelowCapacityDoesNotGrowCache: Clear(); Add K1,K2; Add('K1',99); Assert Count=2, Get('K1')=99."
+          "justification": "lethal.empty-block empties the existing-key update branch, so an update to an EXISTING key falls through into the new-key path: evicts InsertionOrder.Get(1), Add()s the key and appends it. TestUpdateExistingKeyDoesNotEvict re-adds K1 which happens to BE the oldest entry at capacity 5, so the mutant evicts K1 and immediately re-inserts it and all four asserts pass. Spec: 'If Key was already present, replace its Value but DO NOT change insertion order' - insertion order is never observed after an update."
         }
       ],
       "totals": {
         "unreached": 1
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "TestUpdateKeepsOriginalEvictionPosition: Clear(); Add K1..K5; Add('K1',99) [update the OLDEST key at capacity]; Add('K6',6). Assert Count=5; Assert.IsFalse(Get('K1')) - reference drops K1, mutant has moved K1 to the back so it drops K2 instead and the IsFalse fails. Complement: TestUpdateBelowCapacityDoesNotGrowCache: Clear(); Add K1,K2; Add('K1',99); Assert Count=2, Get('K1')=99.",
+          "closes": [
+            "M0002"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-X003": {
       "mutants": [
@@ -5067,14 +5175,23 @@
           "code": "M0002",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "lethal.return-value turns the not-found guard 'if not ChangeLogSetup.Get() then exit(false)' into exit(true). M0003 (same operator on the activation guard) IS killed, so the two guards are distinguishable. The statement never executes: every test funnels through ResetChangeLogState -> SetActivated, whose helper inserts the singleton row, so Get() always succeeds. The divergence is real on a constructible BC state - a company where Change Log Setup was never opened has no row, and the correct answer there is false.",
-          "killTest": "NotAuditedWhenSetupRecordAbsent: ResetChangeLogState(); ChangeLogSetup.DeleteAll(); ChangeLogMgt.InitChangeLog(); Assert.IsFalse(AuditCheck.WouldLogUserChanges(), 'Must return false when there is no Change Log Setup record'). Teardown ResetChangeLogState() re-inserts the row. Also discriminates a bare ChangeLogSetup.Get() with no not-found handling, which errors instead of returning false."
+          "justification": "lethal.return-value turns the not-found guard 'if not ChangeLogSetup.Get() then exit(false)' into exit(true). M0003 (same operator on the activation guard) IS killed, so the two guards are distinguishable. The statement never executes: every test funnels through ResetChangeLogState -> SetActivated, whose helper inserts the singleton row, so Get() always succeeds. The divergence is real on a constructible BC state - a company where Change Log Setup was never opened has no row, and the correct answer there is false."
         }
       ],
       "totals": {
         "unreached": 1
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "NotAuditedWhenSetupRecordAbsent: ResetChangeLogState(); ChangeLogSetup.DeleteAll(); ChangeLogMgt.InitChangeLog(); Assert.IsFalse(AuditCheck.WouldLogUserChanges(), 'Must return false when there is no Change Log Setup record'). Teardown ResetChangeLogState() re-inserts the row. Also discriminates a bare ChangeLogSetup.Get() with no not-found handling, which errors instead of returning false.",
+          "closes": [
+            "M0002"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-X025": {
       "mutants": [
@@ -5110,8 +5227,7 @@
           "code": "M0004",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "AddHeader stores Set(Value, Name), keying the dictionary by header VALUE; the oracle only asserts Result.Contains('Content-Type')/Contains('Authorization') and both tokens still appear as dictionary values, so the key-role inversion is invisible. Observable format-agnostically: two headers sharing one value collide into a single entry under the mutant.",
-          "killTest": "TestAddHeader_DistinctNamesSharingOneValue: build with AddHeader('X-Trace-Id','shared-token') and AddHeader('X-Correlation-Id','shared-token'). Assert Contains('X-Trace-Id'), Contains('X-Correlation-Id'), Contains('shared-token'). Original keeps two entries; M0004 collapses them under 'shared-token' and loses X-Trace-Id. The third assert also kills M0013."
+          "justification": "AddHeader stores Set(Value, Name), keying the dictionary by header VALUE; the oracle only asserts Result.Contains('Content-Type')/Contains('Authorization') and both tokens still appear as dictionary values, so the key-role inversion is invisible. Observable format-agnostically: two headers sharing one value collide into a single entry under the mutant."
         },
         {
           "code": "M0011",
@@ -5123,8 +5239,7 @@
           "code": "M0013",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Dropping RequestHeaders.Get(HeaderName, HeaderValue) leaves HeaderValue blank every iteration, so ALL header values vanish from the built text while the names remain; the oracle asserts only header names. Header values are in scope: 'AddHeader(Name: Text; Value: Text) ... adds to RequestHeaders dictionary', plus Build must contain 'headers'.",
-          "killTest": "Same test as M0004, third assertion Contains('shared-token'). Standalone variant: AddHeader('Content-Type','application/json') then Assert.IsTrue(Result.Contains('application/json'))."
+          "justification": "Dropping RequestHeaders.Get(HeaderName, HeaderValue) leaves HeaderValue blank every iteration, so ALL header values vanish from the built text while the names remain; the oracle asserts only header names. Header values are in scope: 'AddHeader(Name: Text; Value: Text) ... adds to RequestHeaders dictionary', plus Build must contain 'headers'."
         },
         {
           "code": "M0015",
@@ -5136,50 +5251,117 @@
           "code": "M0018",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Emptying Create's body removes all five Clear calls (and exit(Builder), inert because SingleInstance = true makes every returned instance share state), so Create returns an instance still carrying the previous request. Spec item 7 requires 'Create() ... returns a new cleared instance'; TestCreate_ReturnsNewInstance overwrites URL and method after Create and asserts only Contains('second.com').",
-          "killTest": "TestCreate_DropsPreviousRequest kills M0018-M0023 together: build a stale request (URL https://stale.example/path, DELETE, header X-Stale-Header/stale-header-value, distinctive body, timeout 987654), then Fresh := Builder.Create(); Cleared := Fresh.Build(); six IsFalse asserts with NO setters in between, one per leaked field. M0018 fails all six."
+          "justification": "Emptying Create's body removes all five Clear calls (and exit(Builder), inert because SingleInstance = true makes every returned instance share state), so Create returns an instance still carrying the previous request. Spec item 7 requires 'Create() ... returns a new cleared instance'; TestCreate_ReturnsNewInstance overwrites URL and method after Create and asserts only Contains('second.com')."
         },
         {
           "code": "M0019",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removing Clear(RequestUrl) leaves the prior URL in the shared SingleInstance state after Create; invisible only because the oracle immediately calls SetUrl('https://second.com'), overwriting it. Spec item 7 mandates a cleared instance.",
-          "killTest": "TestCreate_DropsPreviousRequest: Assert.IsFalse(Cleared.Contains('https://stale.example/path'), 'New request should not report an address it was never given')."
+          "justification": "Removing Clear(RequestUrl) leaves the prior URL in the shared SingleInstance state after Create; invisible only because the oracle immediately calls SetUrl('https://second.com'), overwriting it. Spec item 7 mandates a cleared instance."
         },
         {
           "code": "M0020",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removing Clear(RequestMethod) leaks the previous method; masked by the oracle's immediate SetMethod('POST') after Create. Spec item 7 mandates a cleared instance.",
-          "killTest": "TestCreate_DropsPreviousRequest: Assert.IsFalse(Cleared.Contains('DELETE'), 'New request should not report a method it was never given')."
+          "justification": "Removing Clear(RequestMethod) leaks the previous method; masked by the oracle's immediate SetMethod('POST') after Create. Spec item 7 mandates a cleared instance."
         },
         {
           "code": "M0021",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removing Clear(RequestHeaders) leaves every previously added header in the shared dictionary after Create; the oracle never re-inspects headers after Create. Spec item 7 mandates a cleared instance.",
-          "killTest": "TestCreate_DropsPreviousRequest: IsFalse on both 'X-Stale-Header' and 'stale-header-value'."
+          "justification": "Removing Clear(RequestHeaders) leaves every previously added header in the shared dictionary after Create; the oracle never re-inspects headers after Create. Spec item 7 mandates a cleared instance."
         },
         {
           "code": "M0022",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removing Clear(RequestBody) leaks the previous body into the built text after Create; the oracle asserts nothing about the body after Create. Spec item 7 mandates a cleared instance.",
-          "killTest": "TestCreate_DropsPreviousRequest: Assert.IsFalse(Cleared.Contains(the stale body text), 'New request should not report a body it was never given')."
+          "justification": "Removing Clear(RequestBody) leaks the previous body into the built text after Create; the oracle asserts nothing about the body after Create. Spec item 7 mandates a cleared instance."
         },
         {
           "code": "M0023",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removing Clear(RequestTimeout) leaks the previous timeout; the oracle asserts nothing about the timeout after Create. Spec item 7 mandates a cleared instance.",
-          "killTest": "TestCreate_DropsPreviousRequest: Assert.IsFalse(Cleared.Contains('987654'), ...). The distinctive 987654 avoids a false pass against the '0' a cleared Integer renders as."
+          "justification": "Removing Clear(RequestTimeout) leaks the previous timeout; the oracle asserts nothing about the timeout after Create. Spec item 7 mandates a cleared instance."
         }
       ],
       "totals": {
         "unreached": 8,
         "out_of_scope_proved": 2
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "TestAddHeader_DistinctNamesSharingOneValue: build with AddHeader('X-Trace-Id','shared-token') and AddHeader('X-Correlation-Id','shared-token'). Assert Contains('X-Trace-Id'), Contains('X-Correlation-Id'), Contains('shared-token'). Original keeps two entries; M0004 collapses them under 'shared-token' and loses X-Trace-Id. The third assert also kills M0013.",
+          "closes": [
+            "M0004",
+            "M0013"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "Same test as M0004, third assertion Contains('shared-token'). Standalone variant: AddHeader('Content-Type','application/json') then Assert.IsTrue(Result.Contains('application/json')).",
+          "closes": [
+            "M0013",
+            "M0004"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCreate_DropsPreviousRequest kills M0018-M0023 together: build a stale request (URL https://stale.example/path, DELETE, header X-Stale-Header/stale-header-value, distinctive body, timeout 987654), then Fresh := Builder.Create(); Cleared := Fresh.Build(); six IsFalse asserts with NO setters in between, one per leaked field. M0018 fails all six.",
+          "closes": [
+            "M0018",
+            "M0019",
+            "M0020",
+            "M0021",
+            "M0022",
+            "M0023"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCreate_DropsPreviousRequest: Assert.IsFalse(Cleared.Contains('https://stale.example/path'), 'New request should not report an address it was never given').",
+          "closes": [
+            "M0019"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCreate_DropsPreviousRequest: Assert.IsFalse(Cleared.Contains('DELETE'), 'New request should not report a method it was never given').",
+          "closes": [
+            "M0020"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCreate_DropsPreviousRequest: IsFalse on both 'X-Stale-Header' and 'stale-header-value'.",
+          "closes": [
+            "M0021"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCreate_DropsPreviousRequest: Assert.IsFalse(Cleared.Contains(the stale body text), 'New request should not report a body it was never given').",
+          "closes": [
+            "M0022"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCreate_DropsPreviousRequest: Assert.IsFalse(Cleared.Contains('987654'), ...). The distinctive 987654 avoids a false pass against the '0' a cleared Integer renders as.",
+          "closes": [
+            "M0023"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-M002": {
       "mutants": [
@@ -5187,22 +5369,19 @@
           "code": "M0003",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Line 9, two-argument overload: UnitPrice <= 0 errors on a zero price, but the spec bounds the raise to negative input ('Price must be positive for negative prices'), and the oracle already commits to that reading on the sibling parameter via TestCalculateLineTotalZeroQuantity. No test passes a zero unit price.",
-          "killTest": "TestCalculateLineTotalZeroPrice: Assert.AreEqual(0, CalculateLineTotal(10, 0), 'A line priced at zero should total zero'). Original returns 0; M0003 raises the price error."
+          "justification": "Line 9, two-argument overload: UnitPrice <= 0 errors on a zero price, but the spec bounds the raise to negative input ('Price must be positive for negative prices'), and the oracle already commits to that reading on the sibling parameter via TestCalculateLineTotalZeroQuantity. No test passes a zero unit price."
         },
         {
           "code": "M0006",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Line 19, three-argument overload: Quantity <= 0 errors on zero quantity. Zero quantity is asserted only against the two-argument overload, so the discount overload's copy of the guard is never exercised at the boundary; the spec bounds the raise to negative quantities.",
-          "killTest": "TestCalculateLineTotalZeroQuantityWithDiscount: Assert.AreEqual(0, CalculateLineTotal(0, 100.00, 10), 'A line of zero quantity should total zero even with a discount'). A companion assert kills M0007 in the same test."
+          "justification": "Line 19, three-argument overload: Quantity <= 0 errors on zero quantity. Zero quantity is asserted only against the two-argument overload, so the discount overload's copy of the guard is never exercised at the boundary; the spec bounds the raise to negative quantities."
         },
         {
           "code": "M0007",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Line 21, three-argument overload: UnitPrice <= 0 errors on a zero price; no test calls the discount overload with a zero price, and the spec restricts the price error to negative prices.",
-          "killTest": "Same test as M0006: Assert.AreEqual(0, CalculateLineTotal(10, 0, 10), 'A line priced at zero should total zero even with a discount')."
+          "justification": "Line 21, three-argument overload: UnitPrice <= 0 errors on a zero price; no test calls the discount overload with a zero price, and the spec restricts the price error to negative prices."
         },
         {
           "code": "M0008",
@@ -5214,22 +5393,64 @@
           "code": "M0009",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "DiscountPercent <= 0 differs on exactly one input, DiscountPercent = 0, where it raises instead of returning Quantity * UnitPrice. A zero discount is an in-range value of the spec's own parameter, so its result is spec-determined; the oracle only ever passes discount 10.",
-          "killTest": "TestCalculateLineTotalZeroDiscount: Assert.AreEqual(1000.00, CalculateLineTotal(10, 100.00, 0), 'A zero discount should leave the line total unreduced')."
+          "justification": "DiscountPercent <= 0 differs on exactly one input, DiscountPercent = 0, where it raises instead of returning Quantity * UnitPrice. A zero discount is an in-range value of the spec's own parameter, so its result is spec-determined; the oracle only ever passes discount 10."
         },
         {
           "code": "M0010",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "DiscountPercent >= 100 differs only at DiscountPercent = 100, where it raises instead of returning 0. 100 is a legitimate value of the spec's DiscountPercent parameter and the top of the range the reference itself accepts; no test passes 100. Weaker spec support than M0009 (a full-discount line is the arguable edge), but the literal spec authorises no discount rejection at all.",
-          "killTest": "TestCalculateLineTotalFullDiscount: Assert.AreEqual(0, CalculateLineTotal(10, 100.00, 100), 'A line discounted in full should total zero')."
+          "justification": "DiscountPercent >= 100 differs only at DiscountPercent = 100, where it raises instead of returning 0. 100 is a legitimate value of the spec's DiscountPercent parameter and the top of the range the reference itself accepts; no test passes 100. Weaker spec support than M0009 (a full-discount line is the arguable edge), but the literal spec authorises no discount rejection at all."
         }
       ],
       "totals": {
         "unreached": 5,
         "out_of_scope_proved": 1
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "TestCalculateLineTotalZeroPrice: Assert.AreEqual(0, CalculateLineTotal(10, 0), 'A line priced at zero should total zero'). Original returns 0; M0003 raises the price error.",
+          "closes": [
+            "M0003"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCalculateLineTotalZeroQuantityWithDiscount: Assert.AreEqual(0, CalculateLineTotal(0, 100.00, 10), 'A line of zero quantity should total zero even with a discount'). A companion assert kills M0007 in the same test.",
+          "closes": [
+            "M0006",
+            "M0007"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "Same test as M0006: Assert.AreEqual(0, CalculateLineTotal(10, 0, 10), 'A line priced at zero should total zero even with a discount').",
+          "closes": [
+            "M0007",
+            "M0006"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCalculateLineTotalZeroDiscount: Assert.AreEqual(1000.00, CalculateLineTotal(10, 100.00, 0), 'A zero discount should leave the line total unreduced').",
+          "closes": [
+            "M0009"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCalculateLineTotalFullDiscount: Assert.AreEqual(0, CalculateLineTotal(10, 100.00, 100), 'A line discounted in full should total zero').",
+          "closes": [
+            "M0010"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-H030": {
       "mutants": [
@@ -5243,15 +5464,13 @@
           "code": "M0016",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "KeyIdx >= RecRef.KeyCount makes the highest VALID key index return empty text; the spec bounds the empty result to 'Return empty text if KeyIdx exceeds KeyCount', and KeyIdx = KeyCount does not exceed it. Every oracle test passes KeyIdx = 1, and this mutant surviving proves KeyCount >= 2 at runtime (declared PK plus the platform SystemId key).",
-          "killTest": "TestGetNthKeyFieldName_HighestKeyIndex: RecRef.Open(69300); Expected := RecRef.KeyIndex(RecRef.KeyCount).FieldIndex(1).Name; assert non-empty, then Assert.AreEqual(Expected, GetNthKeyFieldName(69300, RecRef.KeyCount, 1)). Deriving Expected from the platform keeps it version-independent. Deterministic alternative: add a second declared key to prereq table 69300."
+          "justification": "KeyIdx >= RecRef.KeyCount makes the highest VALID key index return empty text; the spec bounds the empty result to 'Return empty text if KeyIdx exceeds KeyCount', and KeyIdx = KeyCount does not exceed it. Every oracle test passes KeyIdx = 1, and this mutant surviving proves KeyCount >= 2 at runtime (declared PK plus the platform SystemId key)."
         },
         {
           "code": "M0017",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Emptying the KeyIdx-out-of-range block deletes exit(''), so control falls through to RecRef.KeyIndex(KeyIdx) and errors with 'Index out of bounds' instead of returning empty text. The spec requires that branch; the oracle tests the out-of-range FieldIdx (which killed twin mutant M0020) but never an out-of-range KeyIdx.",
-          "killTest": "TestGetNthKeyFieldName_KeyIndexOutOfRange: Assert.AreEqual('', GetNthKeyFieldName(69300, 99, 1), 'A key position the table does not have should report no field name'). Does NOT kill M0016, which still needs its own boundary test."
+          "justification": "Emptying the KeyIdx-out-of-range block deletes exit(''), so control falls through to RecRef.KeyIndex(KeyIdx) and errors with 'Index out of bounds' instead of returning empty text. The spec requires that branch; the oracle tests the out-of-range FieldIdx (which killed twin mutant M0020) but never an out-of-range KeyIdx."
         },
         {
           "code": "M0018",
@@ -5276,7 +5495,26 @@
         "equivalent": 4,
         "unreached": 2
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "TestGetNthKeyFieldName_HighestKeyIndex: RecRef.Open(69300); Expected := RecRef.KeyIndex(RecRef.KeyCount).FieldIndex(1).Name; assert non-empty, then Assert.AreEqual(Expected, GetNthKeyFieldName(69300, RecRef.KeyCount, 1)). Deriving Expected from the platform keeps it version-independent. Deterministic alternative: add a second declared key to prereq table 69300.",
+          "closes": [
+            "M0016"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestGetNthKeyFieldName_KeyIndexOutOfRange: Assert.AreEqual('', GetNthKeyFieldName(69300, 99, 1), 'A key position the table does not have should report no field name'). Does NOT kill M0016, which still needs its own boundary test.",
+          "closes": [
+            "M0017",
+            "M0016"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-M038": {
       "mutants": [
@@ -5284,15 +5522,13 @@
           "code": "M0001",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "An empty body makes GetLockTimeoutPrevious return 0 without ever calling Database.LockTimeoutDuration, violating the spec's 'call Database.LockTimeoutDuration with the NewValue argument and return its Integer result'; the oracle's only assertion is the tautology Assert.IsTrue((Captured = Captured)), which holds for any return value, so the returned Integer is never checked at all.",
-          "killTest": "LockTimeoutDurationValueIsReportedBack: call Demo.GetLockTimeoutPrevious(5000) once to prime, then Reported := Demo.GetLockTimeoutPrevious(5000) with the SAME value (under either reading of the platform semantics, returns-previous or returns-new-current, the second identical call must observe 5000), then Demo.GetLockTimeoutPrevious(10000) to restore the default, and assert Assert.AreEqual(5000, Reported, 'Expected the lock timeout duration just put in effect to be reported back'). Reported is 0 under M0001 and M0002. Also replace the existing tautological assert with this. If the platform normalizes the stored value, relax to Assert.AreNotEqual(0, Reported, ...), which still kills both."
+          "justification": "An empty body makes GetLockTimeoutPrevious return 0 without ever calling Database.LockTimeoutDuration, violating the spec's 'call Database.LockTimeoutDuration with the NewValue argument and return its Integer result'; the oracle's only assertion is the tautology Assert.IsTrue((Captured = Captured)), which holds for any return value, so the returned Integer is never checked at all."
         },
         {
           "code": "M0002",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "exit(0) drops both the call and the result, a real spec violation (the return must be the method's Integer result), and it survives because the oracle asserts only Captured = Captured.",
-          "killTest": "Same test as M0001: the Assert.AreEqual(5000, Reported, ...) after two identical priming calls returns 0 under exit(0), so one test kills M0001 and M0002 together."
+          "justification": "exit(0) drops both the call and the result, a real spec violation (the return must be the method's Integer result), and it survives because the oracle asserts only Captured = Captured."
         },
         {
           "code": "M0004",
@@ -5311,7 +5547,27 @@
         "unreached": 2,
         "equivalent": 2
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "LockTimeoutDurationValueIsReportedBack: call Demo.GetLockTimeoutPrevious(5000) once to prime, then Reported := Demo.GetLockTimeoutPrevious(5000) with the SAME value (under either reading of the platform semantics, returns-previous or returns-new-current, the second identical call must observe 5000), then Demo.GetLockTimeoutPrevious(10000) to restore the default, and assert Assert.AreEqual(5000, Reported, 'Expected the lock timeout duration just put in effect to be reported back'). Reported is 0 under M0001 and M0002. Also replace the existing tautological assert with this. If the platform normalizes the stored value, relax to Assert.AreNotEqual(0, Reported, ...), which still kills both.",
+          "closes": [
+            "M0001",
+            "M0002"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "Same test as M0001: the Assert.AreEqual(5000, Reported, ...) after two identical priming calls returns 0 under exit(0), so one test kills M0001 and M0002 together.",
+          "closes": [
+            "M0001",
+            "M0002"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-H006": {
       "mutants": [
@@ -5319,21 +5575,39 @@
           "code": "M0005",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "An empty GetCallCount body returns 0 always, violating 'GetCallCount(): Integer - Returns current CallCount without incrementing'; all three covering tests use only relative or zero-valued asserts (AreEqual(CountBefore, CountAfter), AreEqual(0, CountAfterReset), AreEqual(Count1, Count2)), so a constant 0 satisfies every one of them and the nonzero count is never asserted anywhere in the oracle.",
-          "killTest": "GetCallCountReportsTheNumberOfIncrements: Counter.Reset(); Counter.IncrementAndGet(); Counter.IncrementAndGet(); then Assert.AreEqual(2, Counter.GetCallCount(), 'Expected the call count to report the two increments already made'). Returns 0 under M0005 and M0006. Also harden the existing tests to absolutes: Assert.AreEqual(2, CountBefore, ...) / AreEqual(2, CountAfter, ...) in TestGetCallCountWithoutIncrement and Assert.AreEqual(2, Count2, ...) in TestSingleInstancePersistence, so a constant-0 getter cannot satisfy the SingleInstance test either."
+          "justification": "An empty GetCallCount body returns 0 always, violating 'GetCallCount(): Integer - Returns current CallCount without incrementing'; all three covering tests use only relative or zero-valued asserts (AreEqual(CountBefore, CountAfter), AreEqual(0, CountAfterReset), AreEqual(Count1, Count2)), so a constant 0 satisfies every one of them and the nonzero count is never asserted anywhere in the oracle."
         },
         {
           "code": "M0006",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "exit(0) in place of exit(CallCount) is the same real spec violation and survives for the same reason: no oracle assertion ever pins GetCallCount to a nonzero expected value.",
-          "killTest": "Same test as M0005 - Assert.AreEqual(2, Counter.GetCallCount(), ...) after two increments fails at 0, killing M0005 and M0006 together."
+          "justification": "exit(0) in place of exit(CallCount) is the same real spec violation and survives for the same reason: no oracle assertion ever pins GetCallCount to a nonzero expected value."
         }
       ],
       "totals": {
         "unreached": 2
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "GetCallCountReportsTheNumberOfIncrements: Counter.Reset(); Counter.IncrementAndGet(); Counter.IncrementAndGet(); then Assert.AreEqual(2, Counter.GetCallCount(), 'Expected the call count to report the two increments already made'). Returns 0 under M0005 and M0006. Also harden the existing tests to absolutes: Assert.AreEqual(2, CountBefore, ...) / AreEqual(2, CountAfter, ...) in TestGetCallCountWithoutIncrement and Assert.AreEqual(2, Count2, ...) in TestSingleInstancePersistence, so a constant-0 getter cannot satisfy the SingleInstance test either.",
+          "closes": [
+            "M0005",
+            "M0006"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "Same test as M0005 - Assert.AreEqual(2, Counter.GetCallCount(), ...) after two increments fails at 0, killing M0005 and M0006 together.",
+          "closes": [
+            "M0005",
+            "M0006"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-H028": {
       "mutants": [
@@ -5361,8 +5635,7 @@
           "code": "M0002",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Without the category filter, CopyAToB iterates every row and copies non-A rows too, violating 'For every CG X004 Item whose Category is A, create one new ...'; it survives only because in all three tests every existing non-A row is itself a derived image (Entry No. = Tag + 1000), so Get(Tag + 1000) finds itself and the extra iterations are self-cancelling no-ops.",
-          "killTest": "OnlyCategoryARowsAreCopied: Seed(2) (A rows tags 1..2), then insert a category-B row that is NOT a derived image - Item.'Entry No.' := 500; Item.Category := 'B'; Item.Tag := 7; Item.Insert(); Commit(); - then Assert.AreEqual(2, Copier.CopyAToB(), 'Expected only the two category-A items to produce new rows'), Assert.AreEqual(3, CountByCategory('B'), 'Expected the pre-existing category-B item plus one new row per category-A item'), and Assert.IsFalse(Item.Get(1007), 'Expected no row derived from a category-B item tag'). The mutant creates 1007 from tag 7, so it returns 3 and leaves 4 B rows - killed on all three asserts, and the result is independent of whether FindSet picks up rows inserted ahead of the cursor."
+          "justification": "Without the category filter, CopyAToB iterates every row and copies non-A rows too, violating 'For every CG X004 Item whose Category is A, create one new ...'; it survives only because in all three tests every existing non-A row is itself a derived image (Entry No. = Tag + 1000), so Get(Tag + 1000) finds itself and the extra iterations are self-cancelling no-ops."
         },
         {
           "code": "M0004",
@@ -5375,7 +5648,17 @@
         "unreached": 1,
         "equivalent": 1
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "OnlyCategoryARowsAreCopied: Seed(2) (A rows tags 1..2), then insert a category-B row that is NOT a derived image - Item.'Entry No.' := 500; Item.Category := 'B'; Item.Tag := 7; Item.Insert(); Commit(); - then Assert.AreEqual(2, Copier.CopyAToB(), 'Expected only the two category-A items to produce new rows'), Assert.AreEqual(3, CountByCategory('B'), 'Expected the pre-existing category-B item plus one new row per category-A item'), and Assert.IsFalse(Item.Get(1007), 'Expected no row derived from a category-B item tag'). The mutant creates 1007 from tag 7, so it returns 3 and leaves 4 B rows - killed on all three asserts, and the result is independent of whether FindSet picks up rows inserted ahead of the cursor.",
+          "closes": [
+            "M0002"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-X051": {
       "mutants": [
@@ -5403,92 +5686,79 @@
           "code": "M0006",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Drops the RecordId entry from _metadata, which task item 1 requires ('Include a _metadata object with TableName, TableId, and RecordId as string'); TestSerializeToJson_HasMetadata asserts only TableName and TableId.",
-          "killTest": "TestSerializeToJson_MetadataIncludesRecordId: TestRecord.Code := 'RID001'; Insert; SerializeToJson; MetadataObj := token('_metadata').AsObject(); Assert.IsTrue(MetadataObj.Get('RecordId', JsonToken), 'Metadata should report the record identity'); Assert.AreEqual(Format(TestRecord.RecordId()), JsonToken.AsValue().AsText(), 'Reported record identity should match the record')."
+          "justification": "Drops the RecordId entry from _metadata, which task item 1 requires ('Include a _metadata object with TableName, TableId, and RecordId as string'); TestSerializeToJson_HasMetadata asserts only TableName and TableId."
         },
         {
           "code": "M0010",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removes the Add in the Integer/BigInteger arm of AddFieldToJson, so whole-number fields vanish from the JSON; item 1 lists Integer among the types to handle, but every serialization test uses CG Test Record (Code/Text/Decimal/Boolean/Code) or asserts only No./Name on Customer, so no Integer field is ever asserted.",
-          "killTest": "TestSerializeToJson_ScalarFieldTypes (shared with M0013/M0014): RelatedRecord.'Entry No.' := 4242; serialize; Assert.IsTrue(JsonResult.Get('Entry No.', JsonToken)); Assert.AreEqual(4242, JsonToken.AsValue().AsInteger(), 'Entry No. should match')."
+          "justification": "Removes the Add in the Integer/BigInteger arm of AddFieldToJson, so whole-number fields vanish from the JSON; item 1 lists Integer among the types to handle, but every serialization test uses CG Test Record (Code/Text/Decimal/Boolean/Code) or asserts only No./Name on Customer, so no Integer field is ever asserted."
         },
         {
           "code": "M0013",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removes the Add in the Date arm, so Date fields vanish from the JSON; item 1 lists Date, but no serialization test uses a record with a Date field (CG Test Record has none, the Customer test asserts only No./Name).",
-          "killTest": "TestSerializeToJson_ScalarFieldTypes (same test as M0010): RelatedRecord.'Created Date' := 20260115D; Assert.IsTrue(JsonResult.Get('Created Date', JsonToken)); Assert.AreEqual('2026-01-15', JsonToken.AsValue().AsText(), 'Created Date should match')."
+          "justification": "Removes the Add in the Date arm, so Date fields vanish from the JSON; item 1 lists Date, but no serialization test uses a record with a Date field (CG Test Record has none, the Customer test asserts only No./Name)."
         },
         {
           "code": "M0014",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removes the Add in the DateTime arm; item 1 lists DateTime, and neither prereq table has a DateTime column so the arm is never asserted on any input the oracle constructs.",
-          "killTest": "TestSerializeToJson_ScalarFieldTypes: requires a DateTime column - add field(7; 'Created At'; DateTime) to the CG-AL-H023 prereq table CG Related Record; set 'Created At' := CreateDateTime(20260115D, 120000T); assert Get('Created At') and AreEqual(Format(..., 0, 9), AsText())."
+          "justification": "Removes the Add in the DateTime arm; item 1 lists DateTime, and neither prereq table has a DateTime column so the arm is never asserted on any input the oracle constructs."
         },
         {
           "code": "M0015",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removes the Add in the Option arm, so Option/Enum fields vanish; item 1 lists Option and Enum, but neither prereq table has one and the Customer test asserts only No./Name.",
-          "killTest": "TestSerializeToJson_OptionField: Customer.'No.' := 'CUST-OPT'; Customer.Blocked := Customer.Blocked::All; serialize; Assert.IsTrue(JsonResult.Get('Blocked', JsonToken)); Assert.AreEqual(3, JsonToken.AsValue().AsInteger(), 'Blocked should match the record')."
+          "justification": "Removes the Add in the Option arm, so Option/Enum fields vanish; item 1 lists Option and Enum, but neither prereq table has one and the Customer test asserts only No./Name."
         },
         {
           "code": "M0026",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "FieldsSet >= 0 makes DeserializeFromJson always report success once the table matches, violating item 2 ('Return true if at least one field was set, false if table mismatch or no fields set'); the two deserialize tests cover 4-fields-set (true) and table mismatch (false via the earlier exit) only.",
-          "killTest": "TestDeserializeFromJson_NoMatchingFields: MetadataObj.Add('TableId', 69225); JsonData.Add('_metadata', MetadataObj); JsonData.Add('NotAField', 'x'); RecRef.Open(69225); Assert.IsFalse(DeserializeFromJson(JsonData, RecRef), 'Should report failure when no field values were applied')."
+          "justification": "FieldsSet >= 0 makes DeserializeFromJson always report success once the table matches, violating item 2 ('Return true if at least one field was set, false if table mismatch or no fields set'); the two deserialize tests cover 4-fields-set (true) and table mismatch (false via the earlier exit) only."
         },
         {
           "code": "M0028",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Turning the non-value guard into exit(true) counts an unassignable token as a field set, so DeserializeFromJson reports success while writing nothing - contrary to item 2's 'false if ... no fields set'; the oracle only ever supplies scalar values under field keys (the nested object it builds sits under _metadata, which is skipped).",
-          "killTest": "TestDeserializeFromJson_NestedValueNotApplied: put an InnerObj under key 'Description'; Assert.IsFalse(Success, 'Should report failure when no field values were applied'); Assert.AreEqual('', GetFieldValueAsText(RecRef, 2), 'Description should stay blank')."
+          "justification": "Turning the non-value guard into exit(true) counts an unassignable token as a field set, so DeserializeFromJson reports success while writing nothing - contrary to item 2's 'false if ... no fields set'; the oracle only ever supplies scalar values under field keys (the nested object it builds sits under _metadata, which is skipped)."
         },
         {
           "code": "M0029",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Turning the JSON-null guard into exit(true) counts a null as a field set, so the procedure reports success with nothing written, contrary to item 2's return contract; no test ever passes a null under a field key.",
-          "killTest": "TestDeserializeFromJson_NullValueNotApplied: NullValue.SetValueToNull(); JsonData.Add('Description', NullValue); Assert.IsFalse(Success, ...); Assert.AreEqual('', GetFieldValueAsText(RecRef, 2), 'Description should stay blank')."
+          "justification": "Turning the JSON-null guard into exit(true) counts a null as a field set, so the procedure reports success with nothing written, contrary to item 2's return contract; no test ever passes a null under a field key."
         },
         {
           "code": "M0032",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "With 'and' the guard only fires when BOTH arguments are non-records, so a single non-record argument falls through to GetTable and errors instead of returning empty; item 3 requires 'Verify both are records of same table (return empty if not)' and all three CompareRecords tests pass two records.",
-          "killTest": "TestCompareRecords_NonRecordInput: Record1.Code := 'CMP003'; NotARecord := 'just text'; Differences := CompareRecords(Record1, NotARecord); Assert.AreEqual(0, Differences.Count, 'Should be empty when a value that is not a record is supplied')."
+          "justification": "With 'and' the guard only fires when BOTH arguments are non-records, so a single non-record argument falls through to GetTable and errors instead of returning empty; item 3 requires 'Verify both are records of same table (return empty if not)' and all three CompareRecords tests pass two records."
         },
         {
           "code": "M0037",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Changing 'and' to 'or' makes non-Normal fields (FlowField/FlowFilter) pass the gate and get compared, violating item 3's 'Skip FlowFields and BLOB fields'; every field of CG Test Record is Normal and non-BLOB so both forms agree there, and the cross-table test exits before the loop.",
-          "killTest": "TestCompareRecords_IgnoresCalculatedFields (needs one prereq line: field(6; 'Total Line Amount'; Decimal) FieldClass = FlowField, CalcFormula = sum('CG Related Record'.'Line Amount' where('Parent Code' = field(Code))) on CG Test Record). Insert parent + child, CalcFields on Rec1 only, then Assert.AreEqual(0, Differences.Count, 'Two reads of the same stored record should show no differences')."
+          "justification": "Changing 'and' to 'or' makes non-Normal fields (FlowField/FlowFilter) pass the gate and get compared, violating item 3's 'Skip FlowFields and BLOB fields'; every field of CG Test Record is Normal and non-BLOB so both forms agree there, and the cross-table test exits before the loop."
         },
         {
           "code": "M0042",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "exit(true) on a non-record source makes CloneRecord report success while copying nothing, contradicting item 4's 'Return true if successful'; both clone tests pass a real record.",
-          "killTest": "TestCloneRecord_NonRecordSource: NotARecord := 'just text'; DestRecRef.Open(69225); Assert.IsFalse(CloneRecord(NotARecord, DestRecRef), 'Should report failure for a value that is not a record'); Assert.AreEqual('', GetFieldValueAsText(DestRecRef, 2), 'Destination should stay blank')."
+          "justification": "exit(true) on a non-record source makes CloneRecord report success while copying nothing, contradicting item 4's 'Return true if successful'; both clone tests pass a real record."
         },
         {
           "code": "M0045",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "exit(true) on a source/destination table mismatch reports a successful clone that never happened, contradicting item 4's 'Return true if successful'; both clone tests use CG Test Record on both sides. Note: item 4 has no explicit mismatch clause the way items 2 and 3 do - consider adding one to the YAML alongside this test.",
-          "killTest": "TestCloneRecord_TableMismatch: SourceRecord.Code := 'MIS001'; DestRecRef.Open(18); Assert.IsFalse(CloneRecord(SourceRecord, DestRecRef), 'Should report failure when source and destination are different record types')."
+          "justification": "exit(true) on a source/destination table mismatch reports a successful clone that never happened, contradicting item 4's 'Return true if successful'; both clone tests use CG Test Record on both sides. Note: item 4 has no explicit mismatch clause the way items 2 and 3 do - consider adding one to the YAML alongside this test."
         },
         {
           "code": "M0050",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "'or' lets non-Normal fields into the copy loop, so calculated fields are written to the destination, violating item 4's 'Copy all normal fields (not FlowFields, not BLOB)'; all CG Test Record fields are Normal so the two forms agree on the tables the oracle uses.",
-          "killTest": "TestCloneRecord_LeavesCalculatedFieldsAlone (same prereq FlowField as M0037): CalcFields the source, clone, then Assert.AreEqual('0', GetFieldValueAsText(DestRecRef, 6), 'Calculated total on the destination should stay untouched')."
+          "justification": "'or' lets non-Normal fields into the copy loop, so calculated fields are written to the destination, violating item 4's 'Copy all normal fields (not FlowFields, not BLOB)'; all CG Test Record fields are Normal so the two forms agree on the tables the oracle uses."
         },
         {
           "code": "M0054",
@@ -5500,15 +5770,13 @@
           "code": "M0057",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Emptying GetDefaultValue makes it return '' for every type, so a numeric primary key at 0 is misread as already populated and CloneRecord keeps the destination's empty PK instead of copying the source's, breaking item 4's 'if DestRecRef already has PK set, keep it; otherwise copy from source'; for Code and Date PKs the correct default is also '' so the only tested table (CG Test Record, Code PK) cannot tell the two apart.",
-          "killTest": "TestCloneRecord_CopiesNumericKeyWhenDestinationEmpty: Source.'Entry No.' := 4242; DestRecRef.Open(69228); clone; Assert.AreEqual('4242', GetFieldValueAsText(DestRecRef, 1), 'Key value should come from the source when the destination has none')."
+          "justification": "Emptying GetDefaultValue makes it return '' for every type, so a numeric primary key at 0 is misread as already populated and CloneRecord keeps the destination's empty PK instead of copying the source's, breaking item 4's 'if DestRecRef already has PK set, keep it; otherwise copy from source'; for Code and Date PKs the correct default is also '' so the only tested table (CG Test Record, Code PK) cannot tell the two apart."
         },
         {
           "code": "M0066",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Drops 'Length' from each schema element, which item 5 requires ('Each element is JsonObject with: FieldNo, FieldName, FieldType (as text), Length, FieldClass ... IsPartOfPrimaryKey'); TestGetTableSchema_ReturnsAllFields asserts Contains for every listed key except Length.",
-          "killTest": "TestGetTableSchema_ReportsFieldLength: find FieldName = 'Description', FieldObj.Get('Length', JsonToken); Assert.AreEqual(100, JsonToken.AsValue().AsInteger(), 'Description length should match the table definition'); plus add Assert.IsTrue(FieldObj.Contains('Length')) to TestGetTableSchema_ReturnsAllFields."
+          "justification": "Drops 'Length' from each schema element, which item 5 requires ('Each element is JsonObject with: FieldNo, FieldName, FieldType (as text), Length, FieldClass ... IsPartOfPrimaryKey'); TestGetTableSchema_ReturnsAllFields asserts Contains for every listed key except Length."
         },
         {
           "code": "M0071",
@@ -5520,29 +5788,25 @@
           "code": "M0084",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "exit(true) when more key values are supplied than the key has fields makes GetRecordByPrimaryKey report a find with an unfiltered, unpositioned RecordRef, contradicting item 7's 'Return true if record found, false otherwise'; both lookup tests pass exactly one value for the single-field key.",
-          "killTest": "TestGetRecordByPrimaryKey_TooManyKeyValues: KeyValues.Add('FIND001'); KeyValues.Add('EXTRA'); Assert.IsFalse(GetRecordByPrimaryKey(69225, KeyValues, ResultRecRef), 'Should report not found when more key values are supplied than the key holds')."
+          "justification": "exit(true) when more key values are supplied than the key has fields makes GetRecordByPrimaryKey report a find with an unfiltered, unpositioned RecordRef, contradicting item 7's 'Return true if record found, false otherwise'; both lookup tests pass exactly one value for the single-field key."
         },
         {
           "code": "M0085",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Emptying the loop body applies no key filters, so FindFirst returns whatever row comes first in the table rather than the requested one; item 7 requires 'Filter by primary key fields using the provided KeyValues in order', and the oracle only ever has one row (or none) in CG Test Record when it looks up, so first-row and requested-row coincide.",
-          "killTest": "TestGetRecordByPrimaryKey_SelectsTheRequestedRecord: insert Code 'AAA001'/Description 'First' and Code 'ZZZ999'/Description 'Last'; look up 'ZZZ999'; Assert.AreEqual('Last', GetFieldValueAsText(ResultRecRef, 2), 'Should return the requested record'); then assert a key that is not stored reports not found."
+          "justification": "Emptying the loop body applies no key filters, so FindFirst returns whatever row comes first in the table rather than the requested one; item 7 requires 'Filter by primary key fields using the provided KeyValues in order', and the oracle only ever has one row (or none) in CG Test Record when it looks up, so first-row and requested-row coincide."
         },
         {
           "code": "M0086",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Without KeyValues.Get the loop filters on an empty KeyVal, which is an empty (i.e. no) filter, so the lookup degenerates to first-row-in-table exactly as in M0085; it survived without erroring, proving the empty filter is accepted, and the oracle's one-row data cannot distinguish it.",
-          "killTest": "TestGetRecordByPrimaryKey_SelectsTheRequestedRecord (same test as M0085) - the two-row setup makes first-row differ from requested-row."
+          "justification": "Without KeyValues.Get the loop filters on an empty KeyVal, which is an empty (i.e. no) filter, so the lookup degenerates to first-row-in-table exactly as in M0085; it survived without erroring, proving the empty filter is accepted, and the oracle's one-row data cannot distinguish it."
         },
         {
           "code": "M0087",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removing SetFilter leaves the RecordRef unfiltered, so FindFirst returns the first row in the table instead of the requested key, against item 7's 'Filter by primary key fields using the provided KeyValues in order'; undetectable while the table holds at most the one row being looked up.",
-          "killTest": "TestGetRecordByPrimaryKey_SelectsTheRequestedRecord (same test as M0085)."
+          "justification": "Removing SetFilter leaves the RecordRef unfiltered, so FindFirst returns the first row in the table instead of the requested key, against item 7's 'Filter by primary key fields using the provided KeyValues in order'; undetectable while the table holds at most the one row being looked up."
         },
         {
           "code": "M0091",
@@ -5566,15 +5830,13 @@
           "code": "M0105",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Dropping Reset() lets the previous relating field's SetRange survive into the next iteration, so with two fields pointing at the source table the result becomes an intersection instead of per-field matches, against item 9's 'For each such field, filter by source record's primary key value'; CG Related Record has exactly one field relating to CG Test Record, so the loop body runs once on a fresh RecordRef and Reset is a no-op.",
-          "killTest": "TestFindRelatedRecords_ChecksEachRelatingFieldIndependently (needs one prereq line: field(7; 'Alt Parent Code'; Code[20]) TableRelation = 'CG Test Record'.Code on CG Related Record). Insert one child via 'Parent Code' and one via 'Alt Parent Code', both pointing at 'MULTI1'; Assert.AreEqual(2, RelatedIds.Count, 'Both records referencing the parent should be reported')."
+          "justification": "Dropping Reset() lets the previous relating field's SetRange survive into the next iteration, so with two fields pointing at the source table the result becomes an intersection instead of per-field matches, against item 9's 'For each such field, filter by source record's primary key value'; CG Related Record has exactly one field relating to CG Test Record, so the loop body runs once on a fresh RecordRef and Reset is a no-op."
         },
         {
           "code": "M0106",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Removing SetRange returns every row of the related table regardless of which parent it points at, against item 9's 'filter by source record's primary key value'; the two FindRelatedRecords tests only ever have the intended children (or nothing) in CG Related Record, so unfiltered and filtered counts coincide.",
-          "killTest": "TestFindRelatedRecords_IgnoresOtherParents: two parents, two children on PARENT1 and one on PARENT2; Assert.AreEqual(2, RelatedIds.Count, 'Only records referencing this parent should be reported')."
+          "justification": "Removing SetRange returns every row of the related table regardless of which parent it points at, against item 9's 'filter by source record's primary key value'; the two FindRelatedRecords tests only ever have the intended children (or nothing) in CG Related Record, so unfiltered and filtered counts coincide."
         },
         {
           "code": "M0109",
@@ -5586,8 +5848,7 @@
           "code": "M0112",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Inverting IntVal = 0 to <> 0 makes ValidateRecordCompleteness report populated whole-number fields as missing and blank ones as present, against item 10's 'Integer/Decimal: 0 is invalid'; the three validation tests only pass Text, Decimal and Date field numbers, so the Integer/BigInteger/Option arm is never asserted.",
-          "killTest": "TestValidateRecordCompleteness_IntegerField: 'Entry No.' := 4242, RequiredFields.Add(1), Assert.AreEqual(0, MissingFields.Count, 'A populated whole-number field should not be reported as missing'); then 'Entry No.' := 0 and Assert.IsTrue(MissingFields.Contains('Entry No.'), 'A zero whole-number field should be reported as missing')."
+          "justification": "Inverting IntVal = 0 to <> 0 makes ValidateRecordCompleteness report populated whole-number fields as missing and blank ones as present, against item 10's 'Integer/Decimal: 0 is invalid'; the three validation tests only pass Text, Decimal and Date field numbers, so the Integer/BigInteger/Option arm is never asserted."
         }
       ],
       "totals": {
@@ -5595,7 +5856,191 @@
         "equivalent": 5,
         "out_of_scope_proved": 1
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "TestSerializeToJson_MetadataIncludesRecordId: TestRecord.Code := 'RID001'; Insert; SerializeToJson; MetadataObj := token('_metadata').AsObject(); Assert.IsTrue(MetadataObj.Get('RecordId', JsonToken), 'Metadata should report the record identity'); Assert.AreEqual(Format(TestRecord.RecordId()), JsonToken.AsValue().AsText(), 'Reported record identity should match the record').",
+          "closes": [
+            "M0006"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestSerializeToJson_ScalarFieldTypes (shared with M0013/M0014): RelatedRecord.'Entry No.' := 4242; serialize; Assert.IsTrue(JsonResult.Get('Entry No.', JsonToken)); Assert.AreEqual(4242, JsonToken.AsValue().AsInteger(), 'Entry No. should match').",
+          "closes": [
+            "M0010",
+            "M0013",
+            "M0014"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestSerializeToJson_ScalarFieldTypes (same test as M0010): RelatedRecord.'Created Date' := 20260115D; Assert.IsTrue(JsonResult.Get('Created Date', JsonToken)); Assert.AreEqual('2026-01-15', JsonToken.AsValue().AsText(), 'Created Date should match').",
+          "closes": [
+            "M0013",
+            "M0010"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestSerializeToJson_ScalarFieldTypes: requires a DateTime column - add field(7; 'Created At'; DateTime) to the CG-AL-H023 prereq table CG Related Record; set 'Created At' := CreateDateTime(20260115D, 120000T); assert Get('Created At') and AreEqual(Format(..., 0, 9), AsText()).",
+          "closes": [
+            "M0014"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestSerializeToJson_OptionField: Customer.'No.' := 'CUST-OPT'; Customer.Blocked := Customer.Blocked::All; serialize; Assert.IsTrue(JsonResult.Get('Blocked', JsonToken)); Assert.AreEqual(3, JsonToken.AsValue().AsInteger(), 'Blocked should match the record').",
+          "closes": [
+            "M0015"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestDeserializeFromJson_NoMatchingFields: MetadataObj.Add('TableId', 69225); JsonData.Add('_metadata', MetadataObj); JsonData.Add('NotAField', 'x'); RecRef.Open(69225); Assert.IsFalse(DeserializeFromJson(JsonData, RecRef), 'Should report failure when no field values were applied').",
+          "closes": [
+            "M0026"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestDeserializeFromJson_NestedValueNotApplied: put an InnerObj under key 'Description'; Assert.IsFalse(Success, 'Should report failure when no field values were applied'); Assert.AreEqual('', GetFieldValueAsText(RecRef, 2), 'Description should stay blank').",
+          "closes": [
+            "M0028"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestDeserializeFromJson_NullValueNotApplied: NullValue.SetValueToNull(); JsonData.Add('Description', NullValue); Assert.IsFalse(Success, ...); Assert.AreEqual('', GetFieldValueAsText(RecRef, 2), 'Description should stay blank').",
+          "closes": [
+            "M0029"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCompareRecords_NonRecordInput: Record1.Code := 'CMP003'; NotARecord := 'just text'; Differences := CompareRecords(Record1, NotARecord); Assert.AreEqual(0, Differences.Count, 'Should be empty when a value that is not a record is supplied').",
+          "closes": [
+            "M0032"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCompareRecords_IgnoresCalculatedFields (needs one prereq line: field(6; 'Total Line Amount'; Decimal) FieldClass = FlowField, CalcFormula = sum('CG Related Record'.'Line Amount' where('Parent Code' = field(Code))) on CG Test Record). Insert parent + child, CalcFields on Rec1 only, then Assert.AreEqual(0, Differences.Count, 'Two reads of the same stored record should show no differences').",
+          "closes": [
+            "M0037"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCloneRecord_NonRecordSource: NotARecord := 'just text'; DestRecRef.Open(69225); Assert.IsFalse(CloneRecord(NotARecord, DestRecRef), 'Should report failure for a value that is not a record'); Assert.AreEqual('', GetFieldValueAsText(DestRecRef, 2), 'Destination should stay blank').",
+          "closes": [
+            "M0042"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCloneRecord_TableMismatch: SourceRecord.Code := 'MIS001'; DestRecRef.Open(18); Assert.IsFalse(CloneRecord(SourceRecord, DestRecRef), 'Should report failure when source and destination are different record types').",
+          "closes": [
+            "M0045"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCloneRecord_LeavesCalculatedFieldsAlone (same prereq FlowField as M0037): CalcFields the source, clone, then Assert.AreEqual('0', GetFieldValueAsText(DestRecRef, 6), 'Calculated total on the destination should stay untouched').",
+          "closes": [
+            "M0050",
+            "M0037"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestCloneRecord_CopiesNumericKeyWhenDestinationEmpty: Source.'Entry No.' := 4242; DestRecRef.Open(69228); clone; Assert.AreEqual('4242', GetFieldValueAsText(DestRecRef, 1), 'Key value should come from the source when the destination has none').",
+          "closes": [
+            "M0057"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestGetTableSchema_ReportsFieldLength: find FieldName = 'Description', FieldObj.Get('Length', JsonToken); Assert.AreEqual(100, JsonToken.AsValue().AsInteger(), 'Description length should match the table definition'); plus add Assert.IsTrue(FieldObj.Contains('Length')) to TestGetTableSchema_ReturnsAllFields.",
+          "closes": [
+            "M0066"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestGetRecordByPrimaryKey_TooManyKeyValues: KeyValues.Add('FIND001'); KeyValues.Add('EXTRA'); Assert.IsFalse(GetRecordByPrimaryKey(69225, KeyValues, ResultRecRef), 'Should report not found when more key values are supplied than the key holds').",
+          "closes": [
+            "M0084"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestGetRecordByPrimaryKey_SelectsTheRequestedRecord: insert Code 'AAA001'/Description 'First' and Code 'ZZZ999'/Description 'Last'; look up 'ZZZ999'; Assert.AreEqual('Last', GetFieldValueAsText(ResultRecRef, 2), 'Should return the requested record'); then assert a key that is not stored reports not found.",
+          "closes": [
+            "M0085"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestGetRecordByPrimaryKey_SelectsTheRequestedRecord (same test as M0085) - the two-row setup makes first-row differ from requested-row.",
+          "closes": [
+            "M0086",
+            "M0085"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestGetRecordByPrimaryKey_SelectsTheRequestedRecord (same test as M0085).",
+          "closes": [
+            "M0087",
+            "M0085"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestFindRelatedRecords_ChecksEachRelatingFieldIndependently (needs one prereq line: field(7; 'Alt Parent Code'; Code[20]) TableRelation = 'CG Test Record'.Code on CG Related Record). Insert one child via 'Parent Code' and one via 'Alt Parent Code', both pointing at 'MULTI1'; Assert.AreEqual(2, RelatedIds.Count, 'Both records referencing the parent should be reported').",
+          "closes": [
+            "M0105"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestFindRelatedRecords_IgnoresOtherParents: two parents, two children on PARENT1 and one on PARENT2; Assert.AreEqual(2, RelatedIds.Count, 'Only records referencing this parent should be reported').",
+          "closes": [
+            "M0106"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "TestValidateRecordCompleteness_IntegerField: 'Entry No.' := 4242, RequiredFields.Add(1), Assert.AreEqual(0, MissingFields.Count, 'A populated whole-number field should not be reported as missing'); then 'Entry No.' := 0 and Assert.IsTrue(MissingFields.Contains('Entry No.'), 'A zero whole-number field should be reported as missing').",
+          "closes": [
+            "M0112"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-X122": {
       "mutants": [
@@ -5615,22 +6060,19 @@
           "code": "M0008",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Emptied NextEntryNo returns 0 for every cancellation entry, so the second CANCELLED entry in one run collides on the Entry No. primary key and Insert() errors. The oracle never produces two cancellation entries, whereas M0030 - the byte-identical mutation on the release side - WAS killed by BatchReleasesValidOpenDocuments because that test does produce two release entries. The asymmetry matters because the canonical fix splits one starter notifier into two codeunits, so a model hand-writing the new cancellation codeunit could leave its numbering broken and still pass.",
-          "killTest": "New test ManualCancellationsOfSeveralDocumentsEachLeaveTheirOwnAlert: ResetAll(); SeedOpenDocument('D20', 500), ('D21', 500), ('D22', 500); call CancelAction.CancelWithAlert on D20, D21, D22 in turn; assert StatusOf each is 'Cancelled' and Assert.AreEqual(3, LogCountOf('CANCELLED'), 'Each manually cancelled document must leave its own cancellation activity entry'). Kills M0008 (errors on the second cancellation) and M0009 (errors on the third). Count-only assertion, so it does not constrain what numbering scheme a fix uses."
+          "justification": "Emptied NextEntryNo returns 0 for every cancellation entry, so the second CANCELLED entry in one run collides on the Entry No. primary key and Insert() errors. The oracle never produces two cancellation entries, whereas M0030 - the byte-identical mutation on the release side - WAS killed by BatchReleasesValidOpenDocuments because that test does produce two release entries. The asymmetry matters because the canonical fix splits one starter notifier into two codeunits, so a model hand-writing the new cancellation codeunit could leave its numbering broken and still pass."
         },
         {
           "code": "M0009",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "exit(0) instead of exit(Log.\"Entry No.\" + 1) makes cancellation-side numbering non-monotonic: entries go 1, 0, then 0 again, so the third cancellation collides on the primary key and errors. The oracle's cancellation tests never create more than one entry.",
-          "killTest": "Killed by the same ManualCancellationsOfSeveralDocumentsEachLeaveTheirOwnAlert test listed under M0008."
+          "justification": "exit(0) instead of exit(Log.\"Entry No.\" + 1) makes cancellation-side numbering non-monotonic: entries go 1, 0, then 0 again, so the third cancellation collides on the primary key and errors. The oracle's cancellation tests never create more than one entry."
         },
         {
           "code": "M0031",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Same non-monotonic numbering on the release side: entries 1, 0, then 0 again, so a batch releasing three documents errors on the third Insert. BatchReleasesValidOpenDocuments releases only two, one short of exposing it.",
-          "killTest": "Extend BatchReleasesValidOpenDocuments with a third valid document (SeedOpenDocument('D2b', 750)), assert StatusOf('D2b') = 'Released', and raise the expectation to Assert.AreEqual(3, LogCountOf('RELEASED'), 'Every released document must leave a released activity entry'). One-line change, kills M0031 on its own."
+          "justification": "Same non-monotonic numbering on the release side: entries 1, 0, then 0 again, so a batch releasing three documents errors on the third Insert. BatchReleasesValidOpenDocuments releases only two, one short of exposing it."
         },
         {
           "code": "M0010",
@@ -5650,7 +6092,35 @@
         "unreached": 3,
         "out_of_scope_proved": 2
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "New test ManualCancellationsOfSeveralDocumentsEachLeaveTheirOwnAlert: ResetAll(); SeedOpenDocument('D20', 500), ('D21', 500), ('D22', 500); call CancelAction.CancelWithAlert on D20, D21, D22 in turn; assert StatusOf each is 'Cancelled' and Assert.AreEqual(3, LogCountOf('CANCELLED'), 'Each manually cancelled document must leave its own cancellation activity entry'). Kills M0008 (errors on the second cancellation) and M0009 (errors on the third). Count-only assertion, so it does not constrain what numbering scheme a fix uses.",
+          "closes": [
+            "M0008",
+            "M0009"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "Killed by the same ManualCancellationsOfSeveralDocumentsEachLeaveTheirOwnAlert test listed under M0008.",
+          "closes": [
+            "M0009",
+            "M0008"
+          ],
+          "source": "per-mutant"
+        },
+        {
+          "name": null,
+          "assertion": "Extend BatchReleasesValidOpenDocuments with a third valid document (SeedOpenDocument('D2b', 750)), assert StatusOf('D2b') = 'Released', and raise the expectation to Assert.AreEqual(3, LogCountOf('RELEASED'), 'Every released document must leave a released activity entry'). One-line change, kills M0031 on its own.",
+          "closes": [
+            "M0031"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-X126": {
       "mutants": [
@@ -5808,15 +6278,24 @@
           "code": "M0017",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "Flipping < 0 to <= 0 makes a counter currency whose Rounding Precision is exactly 0 - a value the Currency table explicitly permits (MinValue = 0) - raise 'invalid rounding precision' instead of balancing the line, contradicting the YAML's 'for any account and counter account, and whatever currency each side uses, a journal line Amount and Balancing Amount always net to exactly zero'. The oracle seeds only 0.01, 0.001 and 1 precisions, so the zero-precision boundary is never constructed.",
-          "killTest": "Add AZeroPrecisionCounterCurrencyStillBalancesExactly: ClearAllData(); SeedCurrency('EUR', 0.01); SeedCurrency('ZPC', 0); SeedAccount('MAIN-EUR', 'EUR'); SeedAccount('CTR-ZPC', 'ZPC'); CreateLine(JournalLine, 17, 'MAIN-EUR'); SetAmountThenCounterAccount(JournalLine, 100.005, 'CTR-ZPC'); AssertBalances(17, 100.005). The mutant errors inside Validate('Counter Account No.') so the test fails before the asserts; the existing AssertBalances messages cover the value side. Bonus discriminating power: it also kills any submission keeping a Round(Amount, counterPrecision) shape, which divides by zero at this precision."
+          "justification": "Flipping < 0 to <= 0 makes a counter currency whose Rounding Precision is exactly 0 - a value the Currency table explicitly permits (MinValue = 0) - raise 'invalid rounding precision' instead of balancing the line, contradicting the YAML's 'for any account and counter account, and whatever currency each side uses, a journal line Amount and Balancing Amount always net to exactly zero'. The oracle seeds only 0.01, 0.001 and 1 precisions, so the zero-precision boundary is never constructed."
         }
       ],
       "totals": {
         "out_of_scope_proved": 1,
         "unreached": 1
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "Add AZeroPrecisionCounterCurrencyStillBalancesExactly: ClearAllData(); SeedCurrency('EUR', 0.01); SeedCurrency('ZPC', 0); SeedAccount('MAIN-EUR', 'EUR'); SeedAccount('CTR-ZPC', 'ZPC'); CreateLine(JournalLine, 17, 'MAIN-EUR'); SetAmountThenCounterAccount(JournalLine, 100.005, 'CTR-ZPC'); AssertBalances(17, 100.005). The mutant errors inside Validate('Counter Account No.') so the test fails before the asserts; the existing AssertBalances messages cover the value side. Bonus discriminating power: it also kills any submission keeping a Round(Amount, counterPrecision) shape, which divides by zero at this precision.",
+          "closes": [
+            "M0017"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-X128": {
       "mutants": [
@@ -5954,14 +6433,23 @@
           "code": "M0012",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "swap-call-arguments on StrSubstNo(OutOfRangeErr, MinValue, MaxValue) in ValidateInRange. The label is 'Value must be between %1 and %2', so with Min=10/Max=100 the original renders 'Value must be between 10 and 100' and the mutant renders 'Value must be between 100 and 10'. A real observable difference in the ErrorInfo message for every call where MinValue <> MaxValue, and it is in scope: the task YAML requires \"Message = 'Value must be between [MinValue] and [MaxValue]' (actual values substituted)\". The oracle's two asserterror tests only do Assert.ExpectedError('Value must be between'), a substring that stops short of the substituted values, so the swapped message matches too. A model that emitted the bounds in the wrong order would pass this oracle while producing a nonsensical range message.",
-          "killTest": "Add TestValidateInRange_ErrorTextNamesBoundsInOrder: MinValue := 10; MaxValue := 100; asserterror ValidationEngine.ValidateInRange(5, MinValue, MaxValue, 'Amount'); Assert.ExpectedError(StrSubstNo('Value must be between %1 and %2', MinValue, MaxValue)). Building the expected text with StrSubstNo over the same Decimal locals in (min, max) order makes the assertion order-sensitive while matching the implementation's own decimal rendering, so the baseline cannot go red on a Format(Decimal) surprise. The mutant renders '... between 100 and 10', no substring match, test fails."
+          "justification": "swap-call-arguments on StrSubstNo(OutOfRangeErr, MinValue, MaxValue) in ValidateInRange. The label is 'Value must be between %1 and %2', so with Min=10/Max=100 the original renders 'Value must be between 10 and 100' and the mutant renders 'Value must be between 100 and 10'. A real observable difference in the ErrorInfo message for every call where MinValue <> MaxValue, and it is in scope: the task YAML requires \"Message = 'Value must be between [MinValue] and [MaxValue]' (actual values substituted)\". The oracle's two asserterror tests only do Assert.ExpectedError('Value must be between'), a substring that stops short of the substituted values, so the swapped message matches too. A model that emitted the bounds in the wrong order would pass this oracle while producing a nonsensical range message."
         }
       ],
       "totals": {
         "unreached": 1
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "Add TestValidateInRange_ErrorTextNamesBoundsInOrder: MinValue := 10; MaxValue := 100; asserterror ValidationEngine.ValidateInRange(5, MinValue, MaxValue, 'Amount'); Assert.ExpectedError(StrSubstNo('Value must be between %1 and %2', MinValue, MaxValue)). Building the expected text with StrSubstNo over the same Decimal locals in (min, max) order makes the assertion order-sensitive while matching the implementation's own decimal rendering, so the baseline cannot go red on a Format(Decimal) surprise. The mutant renders '... between 100 and 10', no substring match, test fails.",
+          "closes": [
+            "M0012"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     },
     "CG-AL-H053": {
       "mutants": [
@@ -5983,14 +6471,23 @@
           "code": "M0004",
           "disposition": "unreached",
           "alreadyKilled": false,
-          "justification": "conditional-boundary flips the guard DaysUsed < 0 to DaysUsed <= 0 in CalculateProratedRefund. The two versions differ on exactly one input, DaysUsed = 0. Original: guard false, so RefundAmount = (TotalAmount / TotalDays) * (TotalDays - 0) = TotalAmount. Mutant: exit(0). For any TotalAmount <> 0 that is a full-amount versus zero-amount divergence, the most business-visible failure this procedure has. The guarded statement is exit(0), not an identity assignment, so this is NOT a boundary-flip-into-identity equivalence. In scope: the YAML specifies only 'If DaysUsed is negative, return 0.' plus the formula, which fully determines DaysUsed = 0 as a full refund. The oracle exercises DaysUsed = 15, 10 and -5 only; zero is never passed, so a model writing <= 0 passes while silently zeroing every same-day cancellation refund.",
-          "killTest": "Add TestRefund_ZeroDaysUsed: Result := SubEngine.CalculateProratedRefund(300, 0, \"Subscription Plan\"::Basic); Assert.AreEqual(300, Result, 'Cancelling before any day is used must refund the whole amount.'). Basic is 30 days total, so (300 / 30) * (30 - 0) = 300 with exact decimal arithmetic and no rounding sensitivity. Baseline returns 300 and passes; the mutant returns 0 and fails."
+          "justification": "conditional-boundary flips the guard DaysUsed < 0 to DaysUsed <= 0 in CalculateProratedRefund. The two versions differ on exactly one input, DaysUsed = 0. Original: guard false, so RefundAmount = (TotalAmount / TotalDays) * (TotalDays - 0) = TotalAmount. Mutant: exit(0). For any TotalAmount <> 0 that is a full-amount versus zero-amount divergence, the most business-visible failure this procedure has. The guarded statement is exit(0), not an identity assignment, so this is NOT a boundary-flip-into-identity equivalence. In scope: the YAML specifies only 'If DaysUsed is negative, return 0.' plus the formula, which fully determines DaysUsed = 0 as a full refund. The oracle exercises DaysUsed = 15, 10 and -5 only; zero is never passed, so a model writing <= 0 passes while silently zeroing every same-day cancellation refund."
         }
       ],
       "totals": {
         "unreached": 1
       },
-      "triageBatch": "phase2c-reattribution"
+      "triageBatch": "phase2c-reattribution",
+      "killTests": [
+        {
+          "name": null,
+          "assertion": "Add TestRefund_ZeroDaysUsed: Result := SubEngine.CalculateProratedRefund(300, 0, \"Subscription Plan\"::Basic); Assert.AreEqual(300, Result, 'Cancelling before any day is used must refund the whole amount.'). Basic is 30 days total, so (300 / 30) * (30 - 0) = 300 with exact decimal arithmetic and no rounding sensitivity. Baseline returns 300 and passes; the mutant returns 0 and fails.",
+          "closes": [
+            "M0004"
+          ],
+          "source": "per-mutant"
+        }
+      ]
     }
   },
   "compositeFinding": "Zero composite-LOCAL survivors across X096/X097/X098/X099: all 18 map 1:1 onto their donors' sweep rows (X082 2, X083 3, X066 4, X067 1, X072 1, X069 2, X084 3, X089 2), and both open holes are donor-level, present byte-identically in CG-AL-X066.Test.al and CG-AL-X084.Test.al.",
