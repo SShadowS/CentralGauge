@@ -126,6 +126,9 @@ scripts/*
 !scripts/harvest-candidate-corpus.ts
 !scripts/id-audit.ts
 !scripts/lethal-t1-prep.ps1
+!scripts/gate-records.ts
+!scripts/seed-reference-solution.ts
+!scripts/b4-evidence.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
