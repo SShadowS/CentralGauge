@@ -25,10 +25,34 @@ it, do not fake it).
 - **Validity (loop B) completes before hardness selection (C1).** Solver
   failure is uninterpretable until you know the oracle is deterministic and
   not over-strict.
+- **Free static checks run before anything that costs money or a container.**
+  Loop 0 is milliseconds and catches defects four executable gates missed.
+- **Harness integrity outranks task-level rigour.** A bad dependency manifest
+  voids every task's B1 result at once, and no amount of per-task care detects
+  it. `gold-ci --check` before trusting any probe verdict.
 - **Any oracle/starter/task.yml edit re-enters at B1.** The gates that
   trigger edits sit downstream of the executable gates they invalidate.
 
 ---
+
+## 0 - Hygiene (free, run first and last)
+
+**0 static audit (LIVE, new).** Costs milliseconds, needs no container, and
+catches the class of defect that passed four executable gates for months.
+
+```bash
+python scripts/oracle-audit.py --json scratch/oracle-audit.json
+```
+
+Exit 1 = a hard failure. Four checks: hollow oracles (every test asserting
+`Assert.IsTrue(true, ...)` - H011 and H017 were entirely this), vacuous fixture
+guards (`if not X.FindFirst() then exit;` before the first assertion), sources
+of nondeterminism (`Any.*` with no `SetSeed`, unseeded `Random()`, sub-day
+clocks - 13 oracles), and it reports what `candidate-guard.ts` enforces at
+runtime.
+
+Run it **before** the batch (so a scaffolded oracle cannot inherit the pattern)
+and **again after every oracle edit**. Never promote a task the audit flags.
 
 ## A - Screening
 
@@ -94,6 +118,22 @@ builder reports arrive (pipeline the container). On failure, message the
 builder with the measured evidence - never guess past a probe.
 `naive=compile_fail` is a broken task layout, not a trap.
 
+**B1b harness agreement (LIVE, new).** A probe pass is evidence about the
+PROBE harness only. Twenty tasks passed B1 and then failed 100% of bench
+attempts because the bench manifest filtered out a dependency the probe
+declared. Record the reference as replayed under the tracked harness
+fingerprint:
+
+```bash
+deno run --allow-all scripts/gold-ci.ts --replay --task CG-AL-X<NNN>
+deno run --allow-all scripts/gold-ci.ts --check   # exit 1 = something stale
+```
+
+The ledger invalidates a green replay when the oracle, companions, reference,
+prereq OR the harness inputs (dependency manifest, both app.json writers,
+candidate guard, probe entry) change. Re-run `--check` after ANY harness edit;
+that fingerprint is the one a hand-run probe always forgets.
+
 **B2 determinism (LIVE, new).** Re-probe each green task twice more, at
 least once on a **different container** (six are available: Cronus28,
 Cronus281-285). Verdict must be identical, and so must assertion counts -
@@ -152,6 +192,17 @@ armed with mutation and contrast-set evidence.
 
 ## C - Selection
 
+**C0 authoring metadata (LIVE, new).** Record the authoring model family in
+each task's `task.yml` under `authoring.model`, and mirror it into the ledger
+row. Without it the family-exclusion rule below is folklore: the August 2026 B4
+recovery had to ASSUME anthropic authored everything, because no task says.
+Mark an assumption as an assumption.
+
+Self-preference is not incidental - it is perplexity-driven, so it survives
+anonymisation, and it compounds across authoring and judging as two independent
+biases. The family that authored a task must not supply its B4 checkers, its
+B6 auditor, or its C1 solver.
+
 **C1 clean-room solver (LIVE, new).** Render the prompt the bench would
 send. Fresh conversation, no authoring artifacts, no oracle, benchmark tool
 budget. The X097 spot-check leaked `task.yml` tags because the solver was
@@ -186,6 +237,17 @@ one `feat(tasks)` commit.
 
 VERIFY companions: every `CG-AL-X*.…al` file the oracles reference must be
 staged (batch 2/3 shipped two oracles whose companions sat untracked).
+
+VERIFY hygiene and harness, both hard blockers (new):
+
+```bash
+python scripts/oracle-audit.py                   # must exit 0
+deno run --allow-all scripts/gold-ci.ts --check   # must exit 0
+```
+
+A task that fails either does not promote. The audit catches an oracle that
+asserts nothing or draws unseeded randomness; gold-ci catches a reference whose
+recorded green no longer holds under the current harness.
 
 Record per task in the ledger: which gates ran, which were PENDING, the C1
 verdict with model and date, and the B7 mutation score. Promotion moves
