@@ -133,6 +133,7 @@ scripts/*
 !scripts/normalize-kill-tests.py
 !scripts/oracle-audit.py
 !scripts/gold-ci.ts
+!scripts/stamp-provenance.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md

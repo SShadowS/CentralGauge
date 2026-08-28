@@ -256,14 +256,65 @@ function isTextExtension(basename: string): boolean {
 }
 
 /** Normalize CRLF -> LF for text extensions only; binary content passes through untouched. */
+/**
+ * Strip a task manifest's `provenance:` block before hashing.
+ *
+ * Provenance records who authored a task, when, and the contamination canary.
+ * None of it reaches a model: the rendered prompt is built from `description`
+ * and the template, so a top-level `provenance:` key is invisible at eval time
+ * while remaining visible to anyone scraping the repo — which is exactly what a
+ * canary must be.
+ *
+ * It therefore must not move `task_sets.hash`. Stamping provenance across 200+
+ * manifests would otherwise invalidate every published score for metadata that
+ * cannot change a single verdict, and the same reasoning is already applied to
+ * `tests/al/app.json` (editor-only) and to non-`.yml` files under `tasks/` —
+ * see {@link isUnderTasksStarter}'s note about a stray README forcing a
+ * re-bench.
+ *
+ * Excision is line-based on purpose. A YAML round-trip through a parser would
+ * reorder keys and reformat scalars, changing the digest for reasons unrelated
+ * to content; slicing from a column-0 `provenance:` to the next column-0 key
+ * leaves every other byte exactly as authored.
+ */
+/** A column-0 `provenance:` key on its own line. Multiline so it can gate raw text. */
+const PROVENANCE_KEY_RE = /^provenance:[ \t]*\r?$/m;
+
+function stripProvenanceBlock(text: string): string {
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => /^provenance:\s*$/.test(l));
+  if (start < 0) return text;
+  let end = start + 1;
+  // A block member is indented or blank; the block ends at the next line that
+  // starts in column 0 with content.
+  while (
+    end < lines.length && (lines[end]!.trim() === "" || /^\s/.test(lines[end]!))
+  ) {
+    end++;
+  }
+  return [...lines.slice(0, start), ...lines.slice(end)].join("\n");
+}
+
 function normalizeForHash(
   basename: string,
   bytes: Uint8Array<ArrayBuffer>,
 ): Uint8Array<ArrayBuffer> {
   if (!isTextExtension(basename)) return bytes;
-  const text = new TextDecoder().decode(bytes);
-  if (!text.includes("\r\n")) return bytes;
-  return new TextEncoder().encode(text.replaceAll("\r\n", "\n"));
+  const raw = new TextDecoder().decode(bytes);
+  const hadCrlf = raw.includes("\r\n");
+  const hadProvenance = basename.endsWith(".yml") &&
+    PROVENANCE_KEY_RE.test(raw);
+  if (!hadCrlf && !hadProvenance) return bytes;
+  // CRLF -> LF FIRST, then excise. stripProvenanceBlock is line-based and
+  // splits on "\n", so against CRLF text every line still carries a trailing
+  // "\r" — including the blank line that precedes the block. Slicing the block
+  // out then leaves that orphan "\r" as the file's last byte, which the later
+  // "\r\n" -> "\n" pass cannot see (there is no "\n" after it). That moved
+  // task_sets.hash on exactly the 49 CRLF manifests when provenance was first
+  // stamped; the order below is the fix, not an incidental tidy-up.
+  let text = hadCrlf ? raw.replaceAll("\r\n", "\n") : raw;
+  if (hadProvenance) text = stripProvenanceBlock(text);
+  return new TextEncoder().encode(text);
 }
 
 async function collectFiles(

@@ -21,6 +21,33 @@ const TaskManifestExpectedSchema = z.object({
   mustNotContain: z.array(z.string()).optional(),
 }).strict();
 
+/**
+ * Authoring provenance and contamination canary.
+ *
+ * Deliberately EXCLUDED from `task_sets.hash` (see
+ * `stripProvenanceBlock` in src/ingest/catalog/task-set-hash.ts): none of it
+ * reaches a model, so it cannot change a verdict and must not invalidate
+ * published scores.
+ *
+ * `canary` is a fixed project GUID plus the do-not-train sentence, embedded so
+ * a scraped copy is detectable later — BIG-bench's canary was reproduced
+ * verbatim by pre-RLHF GPT-4 and by Claude 3.5 Sonnet, so the tripwire works.
+ * It is a detector, not a defence: n-gram and exact-match decontamination are
+ * defeated by rephrasing.
+ *
+ * `authoring_model` exists so the family-exclusion rule (a task's authoring
+ * family may not supply its B4 checkers, B6 auditor or C1 solver) is
+ * mechanically enforceable rather than folklore. `authoring_model_assumed`
+ * marks a value inferred rather than recorded — an assumption written down as a
+ * fact is worse than a gap.
+ */
+const TaskProvenanceSchema = z.object({
+  canary: z.string().optional(),
+  authored_at: z.string().optional(),
+  authoring_model: z.string().optional(),
+  authoring_model_assumed: z.boolean().optional(),
+}).passthrough();
+
 const TaskManifestMetadataSchema = z.object({
   difficulty: z.enum(["easy", "medium", "hard"]).optional(),
   category: z.string().optional(),
@@ -73,6 +100,7 @@ export const TaskManifestSchema = z.object({
   ),
   metadata: TaskManifestMetadataSchema.optional(),
   prompts: PromptInjectionConfigSchema.optional(),
+  provenance: TaskProvenanceSchema.optional(),
 }).strict();
 
 export function parseTaskManifest(
