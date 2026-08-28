@@ -65,8 +65,15 @@ codeunit 80231 "CG-AL-H031 Test"
         Customer: Record Customer;
         RecRef: RecordRef;
     begin
-        if not Customer.FindFirst() then
-            exit;
+        // Seeded rather than taken from demo data: `if not FindFirst then exit`
+        // made this test pass having asserted nothing in any company without
+        // customers.
+        Customer.SetRange("No.", 'CGH031-C1');
+        if not Customer.FindFirst() then begin
+            Customer.Init();
+            Customer."No." := 'CGH031-C1';
+            Customer.Insert(false);
+        end;
         RecRef.GetTable(Customer);
         Assert.IsTrue(Calc.CalcIfFlowField(RecRef, Customer.FieldNo("Balance (LCY)")),
             'CalcIfFlowField returns true for FlowField');

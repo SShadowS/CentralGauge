@@ -6,24 +6,56 @@ codeunit 80003 "CG-AL-H003 Test"
     var
         Assert: Codeunit Assert;
 
+    /// Give an item a priced, stocked position. Inventory is a FlowField over
+    /// Item Ledger Entry, so it cannot be assigned - the entry is what makes
+    /// CalcFields(Inventory) return anything.
+    local procedure SeedStockedItem(ItemNo: Code[20]; UnitPrice: Decimal; Quantity: Decimal)
+    var
+        Item: Record Item;
+        ItemLedgerEntry: Record "Item Ledger Entry";
+        LastEntry: Record "Item Ledger Entry";
+        NextEntryNo: Integer;
+    begin
+        if not Item.Get(ItemNo) then begin
+            Item.Init();
+            Item."No." := ItemNo;
+            Item.Insert(false);
+        end;
+        Item."Unit Price" := UnitPrice;
+        Item.Modify(false);
+
+        ItemLedgerEntry.SetRange("Item No.", ItemNo);
+        ItemLedgerEntry.DeleteAll(false);
+
+        NextEntryNo := 1;
+        if LastEntry.FindLast() then
+            NextEntryNo := LastEntry."Entry No." + 1;
+
+        ItemLedgerEntry.Init();
+        ItemLedgerEntry."Entry No." := NextEntryNo;
+        ItemLedgerEntry."Item No." := ItemNo;
+        ItemLedgerEntry.Quantity := Quantity;
+        ItemLedgerEntry."Remaining Quantity" := Quantity;
+        ItemLedgerEntry.Open := true;
+        ItemLedgerEntry.Insert(false);
+    end;
+
     [Test]
     procedure TestHighInventoryDiscount()
     var
         TempResult: Record "CG Discount Result" temporary;
         Processor: Codeunit "CG Temp Table Processor";
-        Item: Record Item;
         Found: Boolean;
     begin
         // [SCENARIO] Items with inventory >= 100 get 15% discount
-        // Find an item with high inventory or skip if none exist
-        Item.SetFilter(Inventory, '>=100');
-        Item.SetFilter("Unit Price", '>0');
-        if not Item.FindFirst() then
-            exit; // Skip if no suitable items
+        // Seeded rather than searched for: `if not Item.FindFirst() then exit`
+        // made this test pass having asserted nothing in any company without a
+        // priced, stocked item.
+        SeedStockedItem('CGH003-HI', 250, 150);
 
         Processor.ProcessItemsWithDiscount(TempResult, 15);
 
-        TempResult.SetRange("Item No.", Item."No.");
+        TempResult.SetRange("Item No.", 'CGH003-HI');
         Found := TempResult.FindFirst();
         Assert.IsTrue(Found, 'High inventory item should be in results');
         Assert.AreEqual(15, TempResult."Discount Percent", 'Discount should be 15%');
