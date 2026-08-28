@@ -146,6 +146,16 @@ nothing itself.
    the diagnose apps the batch-7 sweeps ran on. Two repos also give two
    independent survivor populations with different code styles, which
    the suite currently lacks.
+
+   **Module scan (2026-08-28).** DO: DocumentOutput has Cloud (553 .al)
+   + OnPrem (14) source with a 111-file Test suite - scope the first
+   run to one Cloud submodule at harvest time. BC.History by test/source
+   file counts: BaseApp 1600/8020 and System 409/1309 (too big first),
+   APIV2 69/126 (best ratio, but API plumbing), EDocument 42/332
+   (rich logic, big), VATGroupManagement 9/51 (compact logic).
+   First-bite picks: **VATGroupManagement** (BC.History, small enough
+   to learn LethAL's real-code limits) then **EDocument** for the real
+   harvest; DO submodule chosen after inspecting Cloud/'s layout.
 2. Run on Cronus28, `-StopHungSessions`, LCR-class operators preferred;
    ABS/UOI survivors deprioritized as likely-equivalent.
 3. Triage survivors (mutation-triager agent): equivalent / suite hole

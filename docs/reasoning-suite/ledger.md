@@ -7,14 +7,14 @@ reason in Notes) - they stop re-mining the same ground.
 **Counts** (update when editing rows):
 
 - Candidates mined: 149 (74 raw + 1 filtered + 12 rejected + 62 promoted)
-- Promoted tasks not sourced from a ledger row: 5 composites (C001-C005),
+- Promoted tasks not sourced from a ledger row: 10 composites (C001-C005 = X096-X100; batch-8 X141-X145),
   CG-AL-X111 (re-aimed after R098 was measured false), and CG-AL-X124,
   CG-AL-X128, CG-AL-X129, CG-AL-X130 (batch-6 fresh designs - see below),
   and CG-AL-X137, CG-AL-X138, CG-AL-X139, CG-AL-X140 (batch-7 fresh designs)
 - Passed Sonnet filter (Sonnet failed to solve): 4
 - Passed Fable filter (Fable failed or struggled): 0
-- Tasks built: 76 / 100
-- Tasks promoted: 76 / 100
+- Tasks built: 81 / 100
+- Tasks promoted: 81 / 100
 
 **Column vocabulary**
 
@@ -513,3 +513,76 @@ Cronus28.
   legitimate fix and pinning the direction would fail it.
 
 Suite now stands at 125 X-series tasks: 49 traps + 76 reasoning.
+
+## Build batch 8, part 1 (2026-08-28/29) - composite batch 2
+
+Five composites (X141-X145) promoted - category 3 COMPLETE (10/10).
+**81 / 100.** Assembly per entry 12 plus the batch8-hardening-plan W1
+amendment: verbatim donors + authored defect-free glue wiring >= 1
+distractor onto the live symptom's data flow (T3 coupling verified
+mechanically with `alsem query touches` per composite), symptom reported
+only downstream at product level. Live donors: X110->X141 (statement
+doubling), X140->X142 (settlement legs), X134->X143 (dashboard timeout),
+X131->X144 (intake-log flood), X139->X145 (network overview drift).
+Glue ids (actuals; the plan doc's blocks had committed-id collisions):
+X141=71010, X142=71040, X143=71070-71071, X144=71203-71205, X145=71142.
+
+**The batch was run as a controlled measurement of the merging lever**
+(every live donor except X110 had a known solved-standalone C1 verdict).
+Result, honestly stated: **once the specs were made fair, all five were
+solved single-shot by BOTH outside families** (gpt-5.5 + opus-4.8,
+2026-08-28/29). The one observed failure - gpt-5.5 on X141 round 1,
+while solving donor X110 standalone 17/17 the same day - did NOT survive
+the B6a-driven disambiguation of the re-run wording: it was ambiguity
+resistance, not packaging resistance. Conclusion for the program:
+entangled 4-module packaging + downstream symptoms + location-vague
+wording buys no single-shot frontier resistance BY ITSELF, and what it
+appears to buy is exactly the spec unfairness B4/B6a exist to strip.
+Quantitative contracts (X133-class) remain the one measured hard-tier
+lever. All five ship as category-3 mid-tier calibration anchors.
+
+**Audit round (B6a, two auditors over five tasks):** 2 HIGH - X144's
+healthy-module innocence sentence (the exact entry-12 banned phrase
+family; it even neutralized the wired false lead) and X143's
+must-not-change clause contradicting the graded 20-row truncation; 3 MED
+- X141 re-run ambiguity (feed vs posting reading), X142 entry-vs-amount
+wording, X145 symptom claiming a source debit the starter never makes.
+All five fixed, all five re-probed green (B1 x2 containers each), all
+ten solver legs re-run green. One oracle hardening: X141 gained a
+two-identical-lines test severing a dedup-subscriber bypass the auditor
+constructed past all 37 tests.
+
+**B7 mutation sweep + B6b triage (LethAL, Cronus28, 2026-08-29).** Full
+sweeps, no truncation (three runaway `until Next() = 0`-class mutants
+timeout-killed as designed). First-pass scores 72-92%; triage of 53
+survivors found every donor-code survivor maps 1:1 to a batch-7
+standalone ruling (NO donor test lost power in any merge - the verbatim
+assembly's key validity property, now measured) and SIX real holes, all
+in authored GLUE plus one inherited donor hole:
+- X141 glue: feed's batch filter removable (both glue tests were
+  single-batch) -> two-batch kill test. 87.9% -> 89.7%.
+- X142 glue: settlement's Account No. validation removable (no test read
+  accounts) -> account asserts. Plus the INHERITED X118 zero-precision
+  hole whose kill test batch-7's triage RECORDED BUT NEVER APPLIED - a
+  pipeline slip now closed in both the donor oracle
+  (tests/al/hard/CG-AL-X118.Test.al, 17 tests, replay green) and the
+  composite. 81.6% -> 84.2%; X118 94.1%.
+- X143 glue: stale-indicator DeleteAll + team SetRange both removable
+  (single-refresh tests) -> one buffer-reuse kill test kills both.
+  72.2% -> 75.9%.
+- X144 glue: log entry-number allocator degradable to 1,0,error (no test
+  logged 3+ problems) -> three-problem test. 86.7% -> 88.3%.
+- X145: glue fully killed on the first sweep; no fix round. 91.8%.
+All six confirmed dead by a v3.0.0.0 re-prep + resweep; all five
+composites + donor X118 re-verified after the oracle edits (gold-ci
+replay green x6, promoted-starter trap-probe --expect fail green x5).
+Glue's 2-3-test coverage is the predicted hole territory - next
+composite batch should budget glue tests like donor tests from the
+start.
+
+Operational note: never run gold-ci replays in PARALLEL - concurrent
+runs race on gold-ci.json (last-writer-wins dropped two verdicts this
+batch; re-replayed serially). Ledger stands at 215/215 trusted.
+
+W2 (X146 higher-order pilot) and W3 (T4 harvest: VATGroupManagement +
+DO submodule) still pending in batch 8.

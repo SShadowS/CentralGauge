@@ -207,6 +207,23 @@ codeunit 89312 "CG-AL-X118 Test"
     end;
 
     [Test]
+    procedure AZeroPrecisionCounterCurrencyStillBalancesExactly()
+    var
+        JournalLine: Record "CG X118 Journal Line";
+    begin
+        ClearAllData();
+        SeedCurrency('EUR', 0.01);
+        SeedCurrency('ZPR', 0);
+        SeedAccount('MAIN-EUR', 'EUR');
+        SeedAccount('CTR-ZPR', 'ZPR');
+        CreateLine(JournalLine, 14, 'MAIN-EUR');
+
+        SetAmountThenCounterAccount(JournalLine, 88.37, 'CTR-ZPR');
+
+        AssertBalances(14, 88.37);
+    end;
+
+    [Test]
     procedure AFinelyDenominatedMainCurrencyStillBalancesExactlyAgainstAWholeUnitCounter()
     var
         JournalLine: Record "CG X118 Journal Line";

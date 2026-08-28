@@ -140,7 +140,8 @@ Standing constraints (from CLAUDE.md + session rules):
       behaviourally (per-distinct-owner memoization vs constant-cost
       contract) - the batch's one hard-tier task. Gate log in
       scratch/batch7-plan.md.
-- [ ] Remaining composite tasks (5 of 10): X141-X145 per
+- [x] Composite batch 2 (2026-08-28/29): X141-X145 promoted, category 3 complete. **81 / 100.** The controlled merging-lever measurement came back NEGATIVE: once B6a stripped the spec-unfairness (2 HIGH, 3 MED), all five were solved single-shot by both outside families; the one apparent resistance datapoint (gpt-5.5 on X141) was ambiguity, not packaging. Ledger batch-8 section + scratch/batch7-plan.md style gate log in batch8 plan doc. Was:
+      X141-X145 per
       **batch8-hardening-plan.md** (verbatim donors + authored glue for
       T3 entanglement, behavior-precise/location-vague symptoms, donor
       sets from X101-X140; the batch doubles as a measurement of the
