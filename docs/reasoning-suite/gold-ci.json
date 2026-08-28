@@ -46,6 +46,42 @@
       "inputsHash": "3f161bb5326f2c8fe4c044d8a9f5698694a5b2834385bed817de6bb57e599020",
       "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
       "detail": "[trap-probe] OK"
+    },
+    "CG-AL-H001": {
+      "verdict": "pass",
+      "at": "2026-08-28T18:03:36.584Z",
+      "testsPassed": 25,
+      "testsTotal": 25,
+      "inputsHash": "0ef5abf181f8eb34739385365626d8a27b7ddb1fec2008b0a1413b3e2b78c91d",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-H058": {
+      "verdict": "pass",
+      "at": "2026-08-28T18:03:37.467Z",
+      "testsPassed": 5,
+      "testsTotal": 5,
+      "inputsHash": "2ee7879588d75544ebfe7e31fa0198c8520c2d6a6db3acdb80f07e97194ba8c3",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X013": {
+      "verdict": "pass",
+      "at": "2026-08-28T18:04:00.932Z",
+      "testsPassed": 2,
+      "testsTotal": 2,
+      "inputsHash": "d6b0a3ed80ad1fdef834e0d62900d807794eece633cc780ff70637cdb6b284f1",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X077": {
+      "verdict": "pass",
+      "at": "2026-08-28T18:04:02.723Z",
+      "testsPassed": 22,
+      "testsTotal": 22,
+      "inputsHash": "65135c9c77e51b0c8abf1d103b0522d05606d97741ab8b7eb472b4fab4137b8a",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
     }
   },
   "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803"

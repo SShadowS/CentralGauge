@@ -38,6 +38,8 @@
  *   deno run --allow-all scripts/gold-ci.ts --replay --all
  *   deno run --allow-all scripts/gold-ci.ts --replay --sample 8
  *   deno run --allow-all scripts/gold-ci.ts --replay --task CG-AL-H015
+ *   deno run --allow-all scripts/gold-ci.ts --replay \
+ *     --containers Cronus28,Cronus281,Cronus282   # one worker per container
  *
  * Ledger: docs/reasoning-suite/gold-ci.json (consumed by gate-records.ts).
  */
@@ -188,7 +190,7 @@ interface ProbeOutcome {
   detail?: string;
 }
 
-async function probe(id: string): Promise<ProbeOutcome> {
+async function probe(id: string, container?: string): Promise<ProbeOutcome> {
   const cmd = new Deno.Command("deno", {
     args: [
       "run",
@@ -200,6 +202,7 @@ async function probe(id: string): Promise<ProbeOutcome> {
       `reference/solutions/${id}`,
       "--expect",
       "pass",
+      ...(container ? ["--container", container] : []),
     ],
     cwd: REPO,
     stdout: "piped",
@@ -233,6 +236,12 @@ async function main(argv: string[]) {
   const sample = sampleArg >= 0 ? Number(argv[sampleArg + 1]) : 0;
   const taskArg = argv.indexOf("--task");
   const only = taskArg >= 0 ? argv[taskArg + 1] : undefined;
+  const containersArg = argv.indexOf("--containers");
+  const containers: string[] = containersArg >= 0
+    ? (argv[containersArg + 1] ?? "").split(",").map((c) => c.trim()).filter(
+      Boolean,
+    )
+    : [];
 
   const harnessHash = await sha256Of(HARNESS_INPUTS);
   const ledger = await loadLedger();
@@ -298,41 +307,71 @@ async function main(argv: string[]) {
     const step = Math.max(1, Math.floor(src.length / sample));
     queue = src.filter((_, i) => i % step === 0).slice(0, sample);
   }
-  console.log(`\n[gold-ci] replaying ${queue.length} task(s)\n`);
+  // One worker per container. A full backfill is ~200 serial probes against a
+  // single container while the rest of the pool sits idle, and the whole
+  // ledger goes stale again on every harness change - so this runs often
+  // enough to be worth fanning out.
+  const workers: (string | undefined)[] = containers.length > 0
+    ? containers
+    : [undefined];
+  console.log(
+    `\n[gold-ci] replaying ${queue.length} task(s) on ${workers.length} ` +
+      `container(s)${
+        containers.length > 0 ? `: ${containers.join(", ")}` : ""
+      }\n`,
+  );
 
-  let pass = 0, bad = 0;
-  for (const id of queue) {
-    const tier = tasks.get(id);
-    if (tier === undefined) {
-      console.log(`  ${id}: not an in-scope task, skipped`);
-      continue;
-    }
-    const r = await probe(id);
-    const h = inputs.get(id) ?? await sha256Of(await taskInputs(id, tier));
-    ledger.tasks[id] = {
-      verdict: r.verdict,
-      at: new Date().toISOString(),
-      ...(r.testsPassed !== undefined ? { testsPassed: r.testsPassed } : {}),
-      ...(r.testsTotal !== undefined ? { testsTotal: r.testsTotal } : {}),
-      inputsHash: h,
-      harnessHash,
-      ...(r.detail ? { detail: r.detail } : {}),
-    };
-    if (r.verdict === "pass") {
-      pass++;
-      console.log(
-        `  ${id}: pass ${r.testsPassed ?? "?"}/${r.testsTotal ?? "?"}`,
+  let pass = 0, bad = 0, next = 0;
+  // Serialise ledger writes through a promise chain. Persisting after each
+  // task means a long replay killed midway keeps everything it finished, and
+  // concurrent probes must not interleave writes to the same file.
+  let writes: Promise<void> = Promise.resolve();
+
+  async function runWorker(container?: string) {
+    const tag = container ? `[${container}] ` : "";
+    while (true) {
+      const i = next++;
+      if (i >= queue.length) return;
+      const id = queue[i]!;
+      const tier = tasks.get(id);
+      if (tier === undefined) {
+        console.log(`  ${tag}${id}: not an in-scope task, skipped`);
+        continue;
+      }
+      const r = await probe(id, container);
+      const h = inputs.get(id) ?? await sha256Of(await taskInputs(id, tier));
+      ledger.tasks[id] = {
+        verdict: r.verdict,
+        at: new Date().toISOString(),
+        ...(r.testsPassed !== undefined ? { testsPassed: r.testsPassed } : {}),
+        ...(r.testsTotal !== undefined ? { testsTotal: r.testsTotal } : {}),
+        inputsHash: h,
+        harnessHash,
+        ...(r.detail ? { detail: r.detail } : {}),
+      };
+      if (r.verdict === "pass") {
+        pass++;
+        console.log(
+          `  ${tag}${id}: pass ${r.testsPassed ?? "?"}/${r.testsTotal ?? "?"}` +
+            ` (${pass + bad}/${queue.length})`,
+        );
+      } else {
+        bad++;
+        console.log(
+          `  ${tag}${id}: ${r.verdict.toUpperCase()} - ${
+            r.detail ?? "(no detail)"
+          } (${pass + bad}/${queue.length})`,
+        );
+      }
+      ledger.harnessHash = harnessHash;
+      writes = writes.then(() =>
+        Deno.writeTextFile(LEDGER, JSON.stringify(ledger, null, 2) + "\n")
       );
-    } else {
-      bad++;
-      console.log(
-        `  ${id}: ${r.verdict.toUpperCase()} - ${r.detail ?? "(no detail)"}`,
-      );
+      await writes;
     }
-    // Persist after each task: a long replay killed midway keeps its results.
-    ledger.harnessHash = harnessHash;
-    await Deno.writeTextFile(LEDGER, JSON.stringify(ledger, null, 2) + "\n");
   }
+
+  await Promise.all(workers.map((c) => runWorker(c)));
 
   console.log(`\n[gold-ci] replayed ${pass + bad}: ${pass} pass, ${bad} not`);
   console.log(`[gold-ci] -> ${LEDGER}`);
