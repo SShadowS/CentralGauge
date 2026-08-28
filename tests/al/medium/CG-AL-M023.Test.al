@@ -117,6 +117,7 @@ codeunit 80023 "CG-AL-M023 Test"
     var
         Item1: Record Item;
         Item2: Record Item;
+        ItemIter: Record Item;
         TotalInventory: Decimal;
         ExpectedSum: Decimal;
     begin
@@ -126,15 +127,14 @@ codeunit 80023 "CG-AL-M023 Test"
         // Test with existing inventory data instead
         LibraryInventory.CreateItem(Item1);
         LibraryInventory.CreateItem(Item2);
-        
+
         // Calculate expected sum from all items by iterating
-        Item1.Reset();
         ExpectedSum := 0;
-        if Item1.FindSet() then
+        if ItemIter.FindSet() then
             repeat
-                Item1.CalcFields(Inventory);
-                ExpectedSum += Item1.Inventory;
-            until Item1.Next() = 0;
+                ItemIter.CalcFields(Inventory);
+                ExpectedSum += ItemIter.Inventory;
+            until ItemIter.Next() = 0;
 
         // [WHEN] Summing inventory
         TotalInventory := PartialLoader.SumItemInventory();
@@ -143,7 +143,6 @@ codeunit 80023 "CG-AL-M023 Test"
         Assert.AreEqual(ExpectedSum, TotalInventory, 'Inventory sum should match');
 
         // Cleanup
-        Item1.Get(Item1."No.");
         Item1.Delete();
         Item2.Delete();
     end;

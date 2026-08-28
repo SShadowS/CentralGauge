@@ -1,3 +1,5 @@
+namespace CGFqnDemo;
+
 codeunit 70036 "CGFqnWorker"
 {
     Access = Public;

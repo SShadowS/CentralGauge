@@ -1,3 +1,5 @@
+namespace CGFqnDemo;
+
 page 70038 "CGFqnCustomerView"
 {
     Caption = 'CG FQN Customer View';

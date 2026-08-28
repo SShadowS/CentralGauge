@@ -1,3 +1,5 @@
+namespace CGFqnDemo;
+
 report 70039 "CGFqnSalesList"
 {
     Caption = 'CG FQN Sales List';

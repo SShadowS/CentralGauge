@@ -1,3 +1,5 @@
+namespace CGFqnDemo;
+
 table 70037 "CGFqnArchive"
 {
     Caption = 'CG FQN Archive';

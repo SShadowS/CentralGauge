@@ -1,3 +1,5 @@
+namespace CGFqnDemo;
+
 codeunit 70040 "CGFqnRunner"
 {
     Access = Public;

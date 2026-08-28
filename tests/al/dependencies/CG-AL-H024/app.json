@@ -20,5 +20,8 @@
     }
   ],
   "runtime": "17.0",
-  "features": ["NoImplicitWith"]
+  "features": [
+    "NoImplicitWith"
+  ],
+  "propagateDependencies": true
 }
