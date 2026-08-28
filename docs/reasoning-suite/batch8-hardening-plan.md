@@ -140,11 +140,20 @@ nothing itself.
 3. Triage survivors (mutation-triager agent): equivalent / suite hole
    (report upstream, not our problem) / **reality-camouflaged** - the
    harvest.
-4. For the top 5-10 harvested mutants: wrap as diagnose drafts (starter
-   = mutated, correct = original, trimmed to a self-contained app per
-   the builder brief's invented-objects rule), bank as ledger rows
-   (`source: probe:lethal-t4-<module>`), and take them through the
-   normal pipeline in later batches.
+4. For the top 5-10 harvested mutants: wrap as diagnose drafts, bank as
+   ledger rows (`source: probe:lethal-t4-<module>`), and take them
+   through the normal pipeline in later batches.
+   **Copy-vs-re-author boundary**: the real module and its mutants stay
+   local (scratch/, gitignored) - nothing real is committed. The
+   shipped draft is RE-AUTHORED per the builder brief's invented-objects
+   rule: fresh domain, our names/ids, invented dependency stand-ins, no
+   original comments; what is preserved EXACTLY is the defect mechanic
+   and the structural context that camouflaged it (guard placement,
+   infection-to-observation distance, the masking call pattern). The
+   renaming is for licensing, contamination, and compilability only -
+   round 4 measured it is not a difficulty lever; the hardness rides on
+   the survivor's structure, and the re-authored task still earns its
+   tier through the normal gates.
 
 ## Sequencing
 
