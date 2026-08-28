@@ -131,10 +131,21 @@ reality-camouflaged defects - manufactured hardness with a built-in
 validity argument. This feeds batches 9-10 (and W2 pairs); it promotes
 nothing itself.
 
-1. **Operator decision required first: the target module.** Candidates
-   per tooling-plan: a Continia module or BC.History - needs decent
-   test coverage and a compilable, publishable shape on Cronus28. Ask
-   the user before spending container time.
+1. **Operator decision RESOLVED (2026-08-28): use BOTH repos.**
+   - `u:\Git\DO.Support-NewFormat\` - Continia Document Output
+     (`DocumentOutput/` with Cloud/OnPrem source + Test/TestFR suites).
+     Proprietary, never in training corpora: the purest camouflage
+     signal. Re-authoring is mandatory for licensing regardless.
+   - `u:\Git\BC.History\` - Microsoft base-app modules as per-module
+     `Source/` + `Test/` pairs (e.g. BankDeposits). The strongest
+     survived-good-tests bar; training exposure is irrelevant since
+     only re-authored tasks ship.
+   Start with ONE module per repo (pick by test-to-source ratio and a
+   compile check against Cronus28 symbols) to learn LethAL's limits on
+   real-scale code before widening - real modules are far bigger than
+   the diagnose apps the batch-7 sweeps ran on. Two repos also give two
+   independent survivor populations with different code styles, which
+   the suite currently lacks.
 2. Run on Cronus28, `-StopHungSessions`, LCR-class operators preferred;
    ABS/UOI survivors deprioritized as likely-equivalent.
 3. Triage survivors (mutation-triager agent): equivalent / suite hole
