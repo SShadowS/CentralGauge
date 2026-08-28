@@ -140,10 +140,14 @@ Standing constraints (from CLAUDE.md + session rules):
       behaviourally (per-distinct-owner memoization vs constant-cost
       contract) - the batch's one hard-tier task. Gate log in
       scratch/batch7-plan.md.
-- [ ] Remaining composite tasks (5 of 10): explicit behavior specs but
-      symptom distant from defect (see hardness-strategy.md), >= 1
-      genuinely entangled distractor each (tooling-plan.md T3 gate);
-      some prompts well past 10k tokens.
+- [ ] Remaining composite tasks (5 of 10): X141-X145 per
+      **batch8-hardening-plan.md** (verbatim donors + authored glue for
+      T3 entanglement, behavior-precise/location-vague symptoms, donor
+      sets from X101-X140; the batch doubles as a measurement of the
+      merging lever against known standalone C1 verdicts). Same plan
+      covers the X146 higher-order-defect pilot (two masked interacting
+      defects, four-leg probe) and the T4 stubborn-mutant harvest
+      (operator must pick the target module first).
 - [x] T1/T4 prerequisite (2026-08-24): 47 promoted tasks' correct/
       reference solutions committed under hash-excluded
       `reference/solutions/` (fa6d4d82).
