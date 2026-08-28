@@ -129,6 +129,17 @@ Standing constraints (from CLAUDE.md + session rules):
       found by audit, every one past a green probe; X125 needed a restructure
       because its description stated the whole predicate. First promoted
       companion file since batch 3 (X122's oracle-side spy).
+- [x] Build batch 7 (2026-08-28): CG-AL-X131..X140 promoted - the
+      revision-3 gate shakedown. **76 / 100.** B4 caught one over-strict
+      oracle (X138, both outside-family solvers failing identically on an
+      unlicensed fold rule), B6a caught a second unlicensed contract (X140)
+      plus an uncarried tiebreak pin, A3 premise probes killed R022 (CalcSums
+      works keyless, decisions 31) and admitted R002 (Collect drain-inside-
+      scope, decisions 30). C1 verdict: 9 of 10 solved single-shot by both
+      gpt-5.5 and opus-4.8 (mid-tier anchors); X133 failed both families
+      behaviourally (per-distinct-owner memoization vs constant-cost
+      contract) - the batch's one hard-tier task. Gate log in
+      scratch/batch7-plan.md.
 - [ ] Remaining composite tasks (5 of 10): explicit behavior specs but
       symptom distant from defect (see hardness-strategy.md), >= 1
       genuinely entangled distractor each (tooling-plan.md T3 gate);
@@ -175,6 +186,7 @@ Standing constraints (from CLAUDE.md + session rules):
 | 2026-08-23 | Scaffolded; categories allocated; perf premise probe started. |
 | 2026-08-23 | Phase 2 batch 1 filtered (Sonnet 20/24, Fable 4/4; decision 9 closes raw filtering). Build batch 1: X066-X075 promoted, 11/100. |
 | 2026-08-23 | Phase 1 mining complete: 7 parallel sweeps, 147 candidates merged into `ledger.md` (R002-R148) with cross-sweep dedup; raw reports committed under `sweeps/`. Lessons: strip spoiler comments from reused volotest solutions; famous-kata contamination risk; the nine `performance-*` volotests carry turnkey SQL-counter oracles; `transactions-counter-lock` hints locking may be single-session testable. |
+| 2026-08-28 | Build batch 7 promoted (76/100) - revision-3 shakedown: B4 and B6a each caught a real unlicensed-contract defect past green probes; C1 demoted 9/10 to mid-tier, X133 hard. gold-ci 210/210 green; earlier the same day the full backfill closed at 200/200 after fixing H024 (chained-prereq propagateDependencies), M023 (oracle cleanup cursor), M031 (namespace-less seeded reference). |
 | 2026-08-26 | Build batch 6 promoted (66/100). Category 10 unblocked by measurement; three candidates killed by probes; the perf menu narrowed again (entry 26: a filtered FindSet scan is 1 statement at any row count). |
 | 2026-08-25 | Build batch 5 promoted (56/100). Perf-oracle menu re-derived from measurement; attempt-2 leak path traced in source; T2 visibility scored for batches 4 and 5; batch-4 LethAL sweep + 2 kill tests. |
 | 2026-08-23 | Diagnose-task format shipped (Tasks 1-7, `docs/superpowers/plans/2026-08-23-diagnose-task-format.md`): `tasks/starter/<id>/` / `scratch/<id>/starter/` convention, `templates/diagnose.md`, `PROMPT_POLICY_VERSION` folded into `task_sets.hash`, bench attempt-1 wiring, and workbench scaffold (`task new --diagnose`) / probe / promote support. Known gaps: `task import` does not reconstruct `starter/` for a promoted diagnose task; the draft `CHECKLIST.md` stays `naive/`-oriented for diagnose drafts. |

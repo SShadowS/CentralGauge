@@ -737,3 +737,47 @@ Append-only. Each entry: date, decision, why.
     can't contain database writes on-prem"). This harness cannot settle it -
     every measurement from inside a test carries the `RunTests` wrapper. A
     production-scope answer would need a non-test execution path.
+
+30. **`[ErrorBehavior(ErrorBehavior::Collect)]` WORKS under the SOAP test
+    runner, with three sharp edges (2026-08-28, Cronus28, BC 28.4, probe
+    `scratch/probe-collecterr/`, re-runnable).** Measured for R002/X131:
+    - **Mid-scope collection works.** A collectible
+      `Error(ErrorInfo.Create(msg, true))` inside a Collect scope does not
+      abort; execution continues (proved by the PLAIN-STOP case: the plain
+      `Error()` after a collectible one is what aborted, with the collectible
+      already banked).
+    - **A plain `Error()` inside the scope aborts immediately**, exactly as
+      outside.
+    - **Scope exit with uncleared collected errors AUTO-RAISES**: "Multiple
+      errors occurred during the operation the first of which is: {first}".
+      After that raise, `GetCollectedErrors` OUTSIDE the scope returns an
+      EMPTY list - the caller cannot retrieve what was collected.
+    - **Drain-inside-scope is the usable shape**: `GetCollectedErrors(true)`
+      called INSIDE the collect scope returns all collected errors in raise
+      order (D-inCount=2, D-inMsgs in order) and clears them, letting the
+      scope exit clean (D-ok=Yes).
+    - **`HasCollectedErrors()` is unreliable under this runner**: it
+      returned Yes in every case, including when the list was empty (likely
+      tainted by the outer RunTests context). Never key an oracle or starter
+      on it; key on the drained list.
+    Consequence: X131 (R002) builds in the drain-inside-scope shape - the
+    starter's validation routine collects per-rule errors, drains inside the
+    scope, and returns messages; the oracle asserts on the returned list.
+
+31. **`CalcSums` on a field covered by NO SIFT key SUCCEEDS silently on
+    BC28 (2026-08-28, Cronus28, probe `scratch/probe-siftless/`,
+    re-runnable).** Table with only a PK, 50 rows: `CalcSums(Amount)`
+    returned the correct 1275 with no error - the platform falls back to a
+    SQL SUM. Also measured:
+    - The virtual **"Key" table IS readable from a test** (SetRange on
+      TableNo works; listed the PK and `$systemId`, `SumIndexFields` field
+      accessible) - metadata assertions on key shape are possible.
+    - A repeated identical `CalcSums` is served from the NST cache: 0
+      statements, 0 rows read (the warm-up TryCalcSums paid the round trip).
+    - Loop-sum vs CalcSums on rows-read: 51 rows vs ~0-1 - menu item 4
+      confirmed again.
+    Consequence: **R022 rejected.** With CalcSums working keyless, the
+    "missing SIFT key + loop sum" two-part defect collapses into exactly
+    X123's loop-to-CalcSums repair (A2 duplicate), and the missing-key half
+    is invisible to both counters (extends entry 17). A SIFT-shaped task
+    would need the key's ABSENCE to change behavior, and it does not.

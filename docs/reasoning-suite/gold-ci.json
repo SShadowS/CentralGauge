@@ -1801,6 +1801,96 @@
       "inputsHash": "27326fc70adbdd32c116f61ed76984fccaae4a21fa0672676b89499cb103a9a4",
       "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
       "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X131": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:01:36.120Z",
+      "testsPassed": 13,
+      "testsTotal": 13,
+      "inputsHash": "e48b528f152928ed08b2813a80e65f6220a8d791c75eaa247e28f15ee866c163",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X136": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:01:36.943Z",
+      "testsPassed": 7,
+      "testsTotal": 7,
+      "inputsHash": "56d45ff63424b472b80bf1047128e2e93a421317bbe8cfafeac28c2b2a2c24d5",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X132": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:01:37.151Z",
+      "testsPassed": 10,
+      "testsTotal": 10,
+      "inputsHash": "0626dec2a770f0d34795b8e5cf24b29075ea2a97391db90fa4ed4f79c814dc75",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X135": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:01:37.487Z",
+      "testsPassed": 4,
+      "testsTotal": 4,
+      "inputsHash": "e39b980a5fb38e8e99c54964551ed7c27fd0a2b82b929577ba1bdaa45a8c71e4",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X134": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:01:37.547Z",
+      "testsPassed": 6,
+      "testsTotal": 6,
+      "inputsHash": "1b60be7ff455073d22945e09e5e096df3c0e061618d30eab69be43bd2016fdcc",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X133": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:49:26.589Z",
+      "testsPassed": 8,
+      "testsTotal": 8,
+      "inputsHash": "57740382f864b48f79c4ba7498abde972104dbc7939dca8ea0e463f2121ef615",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X137": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:02:02.461Z",
+      "testsPassed": 4,
+      "testsTotal": 4,
+      "inputsHash": "c682d355ddbf8e5b0c1696c74829732ded646080345b543506c825388b6ca66d",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X139": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:02:03.592Z",
+      "testsPassed": 11,
+      "testsTotal": 11,
+      "inputsHash": "ed04f3ee8ec3cc6b97065feb40c4a994c873532b857e4c1e45f748401f222d7c",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X140": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:02:03.997Z",
+      "testsPassed": 7,
+      "testsTotal": 7,
+      "inputsHash": "9a1f85b17596957e95299e1cf2bb8cb1c83879074710a63704d4160de6a2a0f8",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X138": {
+      "verdict": "pass",
+      "at": "2026-08-28T20:36:55.162Z",
+      "testsPassed": 9,
+      "testsTotal": 9,
+      "inputsHash": "19c122a8ee48b502d0711cfe03f2ff4d5d7b60d8cfd2efaf0b1746ffbc0c0df8",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
     }
   },
   "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803"
