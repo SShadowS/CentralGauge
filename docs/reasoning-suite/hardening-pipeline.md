@@ -112,13 +112,51 @@ Customer.FindFirst() then exit;` — sits *before* its first assertion, so it
 passes having checked nothing whenever the fixture is absent. Found H003, H031.
 The same shape *after* an assertion is ordinary control flow and is not flagged.
 
-**0c. Nondeterminism sources.** `Any.*` without `SetSeed`, `Random()` without
-a fixed `Randomize(seed)`, sub-day wall-clock reads. **This is the check B2
-structurally cannot be:** B2 measures *observed* variation, and an oracle whose
-random draws stay inside the passing range looks perfectly stable while being
-nondeterministic by construction. 13 oracles were in that state. BigCodeBench
-writes this into its curation rubric; competitive-judge ecosystems mandate
-seeded RNG outright.
+**0c. Nondeterminism sources.** **This is the check B2 structurally cannot
+be:** B2 measures *observed* variation, and an oracle whose random draws stay
+inside the passing range looks perfectly stable while being nondeterministic by
+construction. BigCodeBench writes this into its curation rubric;
+competitive-judge ecosystems mandate seeded RNG outright.
+
+What the check flags is read off Microsoft's source for `codeunit 130500
+"Any"`, because the library's naming inverts the intuition:
+
+```al
+local procedure GetNextValue(MaxValue: Integer): Integer
+begin
+    if (not SeedSet) then
+        SetSeed(1);                  // no SetSeed call => fixed seed 1
+    exit(Random(MaxValue));
+end;
+
+procedure SetDefaultSeed()
+begin
+    SeedSet := true;
+    SetSeed(Time() - 000000T);       // wall clock => nondeterministic
+end;
+```
+
+So `Any.*` with no seeding call is the **deterministic** case, and the
+innocuous-sounding `SetDefaultSeed()` is the defect. The first revision of this
+check asserted the opposite and reported 13 false positives; reading the
+library settled it. `Any` is not `SingleInstance` and its seed is instance
+state, so a method-local `Any` re-seeds to 1 on its first draw and each test's
+sequence is independent of which other tests ran — which is why Microsoft's own
+doc comment requires the local form.
+
+The three findings that survived are all **codeunit-global `Any`** (X081, X098,
+X124): one shared instance seeds once, so every test's values then depend on
+execution order, on which tests ran, and on any `Random` the *candidate's* code
+happens to call between the oracle's draws. Fixed by moving the declaration
+into each test and passing it to helpers by reference — a fresh instance per
+helper *call* would re-seed to 1 and hand back the same value every time.
+Also flagged: argless `Randomize()`, and bare `Random()` with no fixed
+`Randomize(<literal>)`.
+
+Sub-day wall-clock reads (`CurrentDateTime`, `Time()`) are reported as an
+**advisory**, not a promote blocker: whether the value reaches an assertion
+cannot be decided from the token, and both committed hits (X083, X096) only
+stamp a field no assertion reads.
 
 **0d. Toolkit namespace collisions** (`src/tasks/candidate-guard.ts`, enforced
 at runtime in both harnesses rather than statically). A candidate declaring an
@@ -245,11 +283,12 @@ State leakage and order dependence are the failures that matter, and
 same-container repetition cannot see either.
 
 **And B2 is not sufficient on its own — pair it with 0c.** B2 observes
-variation; 0c reads sources. An unseeded oracle whose draws stay inside the
-passing band is stable under any number of reruns and still nondeterministic by
-construction. 13 oracles were exactly that, and B2 had cleared them. Neither
-check subsumes the other: 0c cannot see state leakage, B2 cannot see an unfired
-source. Both, always.
+variation; 0c reads sources. An order-dependent oracle whose draws stay inside
+the passing band is stable under any number of reruns and still
+nondeterministic by construction. Three oracles were exactly that (a
+codeunit-global `Any`), and B2 had cleared them. Neither check subsumes the
+other: 0c cannot see state leakage, B2 cannot see an unfired source. Both,
+always.
 
 For reference on rerun counts: TDD-Bench keeps an instance only if three runs
 in independent containers agree; SWE-bench Multimodal ran validation 10x and

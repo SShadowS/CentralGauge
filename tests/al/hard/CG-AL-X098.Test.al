@@ -6,7 +6,6 @@ codeunit 89194 "CG-AL-X098 Test"
 
     var
         Assert: Codeunit Assert;
-        Any: Codeunit Any;
 
     // Consume the return value of Bind/UnbindSubscription rather than calling
     // the bare statement form (X062 lesson).
@@ -139,7 +138,7 @@ codeunit 89194 "CG-AL-X098 Test"
         Item.Insert(true);
     end;
 
-    local procedure RandomGrade(): Code[10]
+    local procedure RandomGrade(var Any: Codeunit Any): Code[10]
     begin
         exit(CopyStr(Any.AlphabeticText(10), 1, 10));
     end;
@@ -158,6 +157,7 @@ codeunit 89194 "CG-AL-X098 Test"
     var
         Calculator: Codeunit "CG X067 Freight Calculator";
         Amount: Decimal;
+        Any: Codeunit Any;
     begin
         // [SCENARIO] Nothing has activated the promotion, and the order is small
         Amount := Any.DecimalInRange(100, 900, 2);
@@ -181,6 +181,7 @@ codeunit 89194 "CG-AL-X098 Test"
     var
         Calculator: Codeunit "CG X067 Freight Calculator";
         Amount: Decimal;
+        Any: Codeunit Any;
     begin
         // [SCENARIO] A large order, but nothing has activated the promotion for this call
         Amount := Any.DecimalInRange(1001, 5000, 2);
@@ -205,6 +206,7 @@ codeunit 89194 "CG-AL-X098 Test"
         Calculator: Codeunit "CG X067 Freight Calculator";
         Promotion: Codeunit "CG X067 Free Freight Promotion";
         Amount: Decimal;
+        Any: Codeunit Any;
     begin
         // [SCENARIO] The caller has explicitly activated the promotion for this call
         ActivatePromotion(Promotion);
@@ -225,6 +227,7 @@ codeunit 89194 "CG-AL-X098 Test"
         Calculator: Codeunit "CG X067 Freight Calculator";
         Promotion: Codeunit "CG X067 Free Freight Promotion";
         Amount: Decimal;
+        Any: Codeunit Any;
     begin
         // [SCENARIO] Activated, but the order does not reach the threshold
         ActivatePromotion(Promotion);
@@ -367,9 +370,10 @@ codeunit 89194 "CG-AL-X098 Test"
         Item: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
         Grade: Code[10];
+        Any: Codeunit Any;
     begin
         ResetOrderLines();
-        Grade := RandomGrade();
+        Grade := RandomGrade(Any);
         CreateGradedItem(Item, 'ITEM-A', Grade);
 
         CreateOrderLine(OrderLine, 1, Item."No.");
@@ -400,10 +404,11 @@ codeunit 89194 "CG-AL-X098 Test"
         SecondItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
         SecondGrade: Code[10];
+        Any: Codeunit Any;
     begin
         ResetOrderLines();
-        CreateGradedItem(FirstItem, 'ITEM-C', RandomGrade());
-        SecondGrade := RandomGrade();
+        CreateGradedItem(FirstItem, 'ITEM-C', RandomGrade(Any));
+        SecondGrade := RandomGrade(Any);
         CreateGradedItem(SecondItem, 'ITEM-D', SecondGrade);
         CreateOrderLine(OrderLine, 3, FirstItem."No.");
 
@@ -420,9 +425,10 @@ codeunit 89194 "CG-AL-X098 Test"
         GradedItem: Record "CG X081 Item";
         GradelessItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
+        Any: Codeunit Any;
     begin
         ResetOrderLines();
-        CreateGradedItem(GradedItem, 'ITEM-E', RandomGrade());
+        CreateGradedItem(GradedItem, 'ITEM-E', RandomGrade(Any));
         CreateGradedItem(GradelessItem, 'ITEM-F', '');
         CreateOrderLine(OrderLine, 4, GradedItem."No.");
 
@@ -438,9 +444,10 @@ codeunit 89194 "CG-AL-X098 Test"
     var
         GradedItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
+        Any: Codeunit Any;
     begin
         ResetOrderLines();
-        CreateGradedItem(GradedItem, 'ITEM-M', RandomGrade());
+        CreateGradedItem(GradedItem, 'ITEM-M', RandomGrade(Any));
         CreateOrderLine(OrderLine, 8, GradedItem."No.");
 
         OrderLine.Validate("Item No.", '');
@@ -458,11 +465,12 @@ codeunit 89194 "CG-AL-X098 Test"
         SecondGradedItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
         SecondGrade: Code[10];
+        Any: Codeunit Any;
     begin
         ResetOrderLines();
-        CreateGradedItem(FirstGradedItem, 'ITEM-G', RandomGrade());
+        CreateGradedItem(FirstGradedItem, 'ITEM-G', RandomGrade(Any));
         CreateGradedItem(GradelessItem, 'ITEM-H', '');
-        SecondGrade := RandomGrade();
+        SecondGrade := RandomGrade(Any);
         CreateGradedItem(SecondGradedItem, 'ITEM-I', SecondGrade);
         CreateOrderLine(OrderLine, 5, FirstGradedItem."No.");
 
@@ -504,9 +512,10 @@ codeunit 89194 "CG-AL-X098 Test"
         GradelessItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
         OtherLine: Record "CG X081 Order Line";
+        Any: Codeunit Any;
     begin
         ResetOrderLines();
-        CreateGradedItem(GradedItem, 'ITEM-K', RandomGrade());
+        CreateGradedItem(GradedItem, 'ITEM-K', RandomGrade(Any));
         CreateGradedItem(GradelessItem, 'ITEM-L', '');
 
         OtherLine.Init();

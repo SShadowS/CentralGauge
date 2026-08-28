@@ -5,7 +5,6 @@ codeunit 88834 "CG-AL-X081 Test"
 
     var
         Assert: Codeunit Assert;
-        Any: Codeunit Any;
 
     // The default test isolation persists writes between test methods, so
     // every test clears both tables before seeding its own rows. Grades are
@@ -29,7 +28,7 @@ codeunit 88834 "CG-AL-X081 Test"
         Item.Insert(true);
     end;
 
-    local procedure RandomGrade(): Code[10]
+    local procedure RandomGrade(var Any: Codeunit Any): Code[10]
     begin
         exit(CopyStr(Any.AlphabeticText(10), 1, 10));
     end;
@@ -49,9 +48,10 @@ codeunit 88834 "CG-AL-X081 Test"
         Item: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
         Grade: Code[10];
+        Any: Codeunit Any;
     begin
         Reset();
-        Grade := RandomGrade();
+        Grade := RandomGrade(Any);
         CreateItem(Item, 'ITEM-A', Grade);
 
         CreateLine(OrderLine, 1, Item."No.");
@@ -82,10 +82,11 @@ codeunit 88834 "CG-AL-X081 Test"
         SecondItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
         SecondGrade: Code[10];
+        Any: Codeunit Any;
     begin
         Reset();
-        CreateItem(FirstItem, 'ITEM-C', RandomGrade());
-        SecondGrade := RandomGrade();
+        CreateItem(FirstItem, 'ITEM-C', RandomGrade(Any));
+        SecondGrade := RandomGrade(Any);
         CreateItem(SecondItem, 'ITEM-D', SecondGrade);
         CreateLine(OrderLine, 3, FirstItem."No.");
 
@@ -102,9 +103,10 @@ codeunit 88834 "CG-AL-X081 Test"
         GradedItem: Record "CG X081 Item";
         GradelessItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
+        Any: Codeunit Any;
     begin
         Reset();
-        CreateItem(GradedItem, 'ITEM-E', RandomGrade());
+        CreateItem(GradedItem, 'ITEM-E', RandomGrade(Any));
         CreateItem(GradelessItem, 'ITEM-F', '');
         CreateLine(OrderLine, 4, GradedItem."No.");
 
@@ -120,9 +122,10 @@ codeunit 88834 "CG-AL-X081 Test"
     var
         GradedItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
+        Any: Codeunit Any;
     begin
         Reset();
-        CreateItem(GradedItem, 'ITEM-M', RandomGrade());
+        CreateItem(GradedItem, 'ITEM-M', RandomGrade(Any));
         CreateLine(OrderLine, 8, GradedItem."No.");
 
         OrderLine.Validate("Item No.", '');
@@ -140,11 +143,12 @@ codeunit 88834 "CG-AL-X081 Test"
         SecondGradedItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
         SecondGrade: Code[10];
+        Any: Codeunit Any;
     begin
         Reset();
-        CreateItem(FirstGradedItem, 'ITEM-G', RandomGrade());
+        CreateItem(FirstGradedItem, 'ITEM-G', RandomGrade(Any));
         CreateItem(GradelessItem, 'ITEM-H', '');
-        SecondGrade := RandomGrade();
+        SecondGrade := RandomGrade(Any);
         CreateItem(SecondGradedItem, 'ITEM-I', SecondGrade);
         CreateLine(OrderLine, 5, FirstGradedItem."No.");
 
@@ -186,9 +190,10 @@ codeunit 88834 "CG-AL-X081 Test"
         GradelessItem: Record "CG X081 Item";
         OrderLine: Record "CG X081 Order Line";
         OtherLine: Record "CG X081 Order Line";
+        Any: Codeunit Any;
     begin
         Reset();
-        CreateItem(GradedItem, 'ITEM-K', RandomGrade());
+        CreateItem(GradedItem, 'ITEM-K', RandomGrade(Any));
         CreateItem(GradelessItem, 'ITEM-L', '');
 
         OtherLine.Init();

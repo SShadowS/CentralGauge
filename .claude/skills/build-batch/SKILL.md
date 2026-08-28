@@ -47,9 +47,17 @@ python scripts/oracle-audit.py --json scratch/oracle-audit.json
 Exit 1 = a hard failure. Four checks: hollow oracles (every test asserting
 `Assert.IsTrue(true, ...)` - H011 and H017 were entirely this), vacuous fixture
 guards (`if not X.FindFirst() then exit;` before the first assertion), sources
-of nondeterminism (`Any.*` with no `SetSeed`, unseeded `Random()`, sub-day
-clocks - 13 oracles), and it reports what `candidate-guard.ts` enforces at
+of nondeterminism, and it reports what `candidate-guard.ts` enforces at
 runtime.
+
+On nondeterminism, note which way round the `Any` library works, because its
+naming inverts the intuition: `codeunit 130500 "Any"` falls back to `SetSeed(1)`
+on its first draw, so **`Any.*` with no seeding call is deterministic**, while
+`Any.SetDefaultSeed()` seeds from `Time()` and is the defect. Declare `Any` as a
+method-local in every test and pass it to helpers **by reference** - a
+codeunit-global one makes values depend on test order (X081, X098, X124), and a
+fresh instance per helper call re-seeds to 1 and returns the same value every
+time.
 
 Run it **before** the batch (so a scaffolded oracle cannot inherit the pattern)
 and **again after every oracle edit**. Never promote a task the audit flags.

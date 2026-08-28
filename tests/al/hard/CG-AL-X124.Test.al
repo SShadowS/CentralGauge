@@ -5,7 +5,6 @@ codeunit 89318 "CG-AL-X124 Test"
 
     var
         Assert: Codeunit Assert;
-        Any: Codeunit Any;
 
     local procedure ClearAll()
     var
@@ -207,6 +206,7 @@ codeunit 89318 "CG-AL-X124 Test"
         SeededLines: Integer;
         i: Integer;
         ExpectedWeight: Decimal;
+        Any: Codeunit Any;
     begin
         // [SCENARIO] A shipment with many lines is recalculated as cheaply as a small one
         ClearAll();

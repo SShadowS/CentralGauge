@@ -1,4 +1,51 @@
 {
+ "CG-AL-E007": {
+  "tests": [
+   "TestReportCanBeRun",
+   "TestReportWithSingleCustomer",
+   "TestReportWithMultipleCustomers",
+   "TestReportWithFilteredCustomers",
+   "TestReportWithEmptyDataset",
+   "TestReportSavesToStream",
+   "TestReportColumnValues"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [
+   "TestReportCanBeRun",
+   "TestReportWithSingleCustomer",
+   "TestReportWithMultipleCustomers",
+   "TestReportWithFilteredCustomers",
+   "TestReportWithEmptyDataset"
+  ],
+  "placeholders": 5,
+  "hollowOracle": false,
+  "tier": "easy",
+  "path": "tests/al/easy/CG-AL-E007.Test.al"
+ },
+ "CG-AL-E008": {
+  "tests": [
+   "TestInterfaceCompiles",
+   "TestInterfaceCanBeDeclared",
+   "TestInterfaceProceduresExist",
+   "TestProcessPayment",
+   "TestValidatePayment",
+   "TestGetTransactionFee"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [
+   "TestInterfaceCompiles",
+   "TestInterfaceCanBeDeclared",
+   "TestInterfaceProceduresExist"
+  ],
+  "placeholders": 3,
+  "hollowOracle": false,
+  "tier": "easy",
+  "path": "tests/al/easy/CG-AL-E008.Test.al"
+ },
  "CG-AL-H003": {
   "tests": [
    "TestHighInventoryDiscount",
@@ -11,6 +58,7 @@
    "TestHighInventoryDiscount"
   ],
   "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
   "hollowTests": [],
   "placeholders": 0,
   "hollowOracle": false,
@@ -27,6 +75,7 @@
   ],
   "vacuousTests": [],
   "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
   "hollowTests": [
    "TestQueryHasCorrectProperties",
    "TestQueryReturnsAggregatedData",
@@ -47,6 +96,7 @@
   ],
   "vacuousTests": [],
   "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
   "hollowTests": [
    "TestQueryCompiles",
    "TestQueryHasCrossJoinBehavior",
@@ -66,6 +116,7 @@
   ],
   "vacuousTests": [],
   "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
   "hollowTests": [],
   "placeholders": 2,
   "hollowOracle": false,
@@ -101,159 +152,12 @@
    "TestCalcIfFlowField_True"
   ],
   "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
   "hollowTests": [],
   "placeholders": 0,
   "hollowOracle": false,
   "tier": "hard",
   "path": "tests/al/hard/CG-AL-H031.Test.al"
- },
- "CG-AL-X067": {
-  "tests": [
-   "DefaultFreightAppliesForOrdersUnderTheThreshold",
-   "DefaultFreightAppliesJustBelowTheThresholdWhenNotActivated",
-   "LargeOrdersPayDefaultFreightWhenThePromotionHasNotBeenActivated",
-   "LargeOrdersPayDefaultFreightAtExactlyTheThresholdWhenNotActivated",
-   "ActivatedPromotionGrantsFreeFreightFromTheThresholdUpward",
-   "ActivatedPromotionLeavesOrdersBelowTheThresholdAtTheDefaultCharge",
-   "CalculatedFreightReflectsTheAmountAnActiveOverrideSets"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X067.Test.al"
- },
- "CG-AL-X068": {
-  "tests": [
-   "CountsAContactCarryingTheTextInNameOnly",
-   "CountsAContactCarryingTheTextInCityOnly",
-   "CountsAContactMatchingInBothColumnsOnce",
-   "CountsTheFullSetForAGeneratedText",
-   "LowercaseSearchFindsUppercaseValuesInBothColumns",
-   "FindsNothingWhenTheTextIsInNeitherColumn",
-   "ContactableCountsOnlyMatchesWithAnEmail",
-   "ContactableNeverCountsAContactOnItsEmailAlone",
-   "ContactableIsZeroWhenEveryMatchLacksAnEmail",
-   "ContactableCountsABothColumnMatchWithAnEmailOnce",
-   "SearchReturnsAndLogsTheSameCountAsCountMatches",
-   "SearchContactableNeverWritesToTheLog"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X068.Test.al"
- },
- "CG-AL-X070": {
-  "tests": [
-   "AllPendingLinesOfTheBatchAreImported",
-   "ImportCopiesCustomerAndQuantityToTheImportedOrder",
-   "ALineWithNoCustomerFailsAndIsNotImported",
-   "AZeroQuantityLineFailsAndIsNotImported",
-   "ANegativeQuantityLineFailsAndIsNotImported",
-   "LinesImportedBeforeAFailingLineSurviveTheRun",
-   "TheFailingLineAndItsSuccessorAreNotImported",
-   "RepairedBatchResumesWithoutDuplicatingEarlierLines",
-   "ImportOnlyAffectsLinesOfTheGivenBatch",
-   "AlreadyImportedLinesAreNotReprocessed",
-   "EmptyBatchIsAQuietNoOp",
-   "ALineThatFailsToWriteStillSparesItsPredecessors"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X070.Test.al"
- },
- "CG-AL-X076": {
-  "tests": [
-   "ParseAmountReturnsTheValueOfAValidAmountText",
-   "ParseAmountAcceptsZero",
-   "ParseAmountErrorsOnTextThatIsNotANumber",
-   "ParseAmountErrorsOnANegativeAmount",
-   "TryParseAmountReturnsTrueAndTheValueForAValidText",
-   "TryParseAmountReturnsFalseWithTheReasonInsteadOfFailing",
-   "TryParseAmountReportsTheLatestFailure",
-   "ImportLineLeavesNoRowBehindForANonNumericAmount",
-   "ImportLineLeavesNoRowBehindForANegativeAmount",
-   "ImportLineImportsAWellFormedAmount",
-   "ImportLineAcceptsZeroAsAWellFormedAmount",
-   "BatchSkipsEveryBadLineAndImportsNothing",
-   "BatchImportsEveryWellFormedLineAndCountsThem",
-   "BatchCountsOnlyTheWellFormedLinesInAMixedBatch"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X076.Test.al"
- },
- "CG-AL-X078": {
-  "tests": [
-   "TragedyChargesFlatFeeAtExactlyThirtyAttendees",
-   "TragedyAddsSurchargeJustAboveThirtyAttendees",
-   "ComedyEarnsNoBonusAtExactlyTwentyAttendees",
-   "ComedyAddsBonusJustAboveTwentyAttendees",
-   "NoCreditsAtExactlyThirtyAttendees",
-   "OneCreditAtThirtyOneAttendees",
-   "ComedyAddsCreditPerFullGroupOfFiveAttendees",
-   "ComedyCreditsDropPartialGroupOfFive",
-   "UnknownCategoryFailsLineAmount",
-   "UnknownCategoryFailsLineCredits",
-   "BuildStatementListsAgreementPerformancesInOrderWithCorrectTotals",
-   "BuildStatementDoesNotCarryOverThePriorAgreementsTotalsWhenReused",
-   "BuildStatementClearsPreSetTotalsAndStaleBufferLine",
-   "BuildStatementYieldsZeroTotalsForAgreementWithNoPerformancesEvenWithDirtyInputs",
-   "BuildStatementFailsWhenAPerformanceHasUnknownCategory",
-   "RandomAgreementTotalsMatchIndependentComputation",
-   "BuildStatementLeavesTheBufferHoldingOnlyTheStatementJustBuilt"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X078.Test.al"
- },
- "CG-AL-X081": {
-  "tests": [
-   "NewLineForAGradedItemGetsTheGrade",
-   "NewLineForAGradelessItemStaysBlank",
-   "RevalidatingToAnotherGradedItemOverwritesTheGrade",
-   "RevalidatingToAGradelessItemClearsTheLine",
-   "ClearingTheItemNoAlsoClearsTheGrade",
-   "RevalidatingBackToAGradedItemAfterClearingSetsTheNewGrade",
-   "AssigningItemValuesDirectlyAlsoClearsAStaleGrade",
-   "UnrelatedLinesAreNeverTouched"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X081.Test.al"
  },
  "CG-AL-X083": {
   "tests": [
@@ -268,8 +172,8 @@
    "GetLastImportedPackageCountIsZeroForAShipmentNeverImported"
   ],
   "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed",
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [
    "sub-day wall clock (CurrentDateTime/Time)"
   ],
   "hollowTests": [],
@@ -331,8 +235,8 @@
    "OrderWithoutLinesSerializesAnEmptyLinesArray"
   ],
   "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed",
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [
    "sub-day wall clock (CurrentDateTime/Time)"
   ],
   "hollowTests": [],
@@ -340,162 +244,6 @@
   "hollowOracle": false,
   "tier": "hard",
   "path": "tests/al/hard/CG-AL-X096.Test.al"
- },
- "CG-AL-X098": {
-  "tests": [
-   "DefaultFreightAppliesForOrdersUnderTheThreshold",
-   "DefaultFreightAppliesJustBelowTheThresholdWhenNotActivated",
-   "LargeOrdersPayDefaultFreightWhenThePromotionHasNotBeenActivated",
-   "LargeOrdersPayDefaultFreightAtExactlyTheThresholdWhenNotActivated",
-   "ActivatedPromotionGrantsFreeFreightFromTheThresholdUpward",
-   "ActivatedPromotionLeavesOrdersBelowTheThresholdAtTheDefaultCharge",
-   "CalculatedFreightReflectsTheAmountAnActiveOverrideSets",
-   "QualifyingSpendAloneIsApprovedAlongsideANonQualifyingPeer",
-   "VipOverrideAloneIsApprovedBelowTheThreshold",
-   "NeitherConditionStaysUnapproved",
-   "BothConditionsTogetherAreApproved",
-   "SpendThresholdBoundaryIsInclusive",
-   "AlreadyDecidedCandidatesAreLeftAlone",
-   "SingleCandidateEvaluationMatchesBatchEvaluation",
-   "NewLineForAGradedItemGetsTheGrade",
-   "NewLineForAGradelessItemStaysBlank",
-   "RevalidatingToAnotherGradedItemOverwritesTheGrade",
-   "RevalidatingToAGradelessItemClearsTheLine",
-   "ClearingTheItemNoAlsoClearsTheGrade",
-   "RevalidatingBackToAGradedItemAfterClearingSetsTheNewGrade",
-   "AssigningItemValuesDirectlyAlsoClearsAStaleGrade",
-   "UnrelatedLinesAreNeverTouched",
-   "CustomPathIncludesMandatorySegment",
-   "CustomPathMandatorySegmentReflectsItsOwnPeriod",
-   "CustomPathBodyIsStillTheCustomBody",
-   "DefaultPathIncludesMandatorySegment",
-   "DefaultPathMandatorySegmentReflectsItsOwnPeriod",
-   "MandatorySegmentReflectsEachDistinctPeriod",
-   "AThirdRuleStillProducesItsOwnBody"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X098.Test.al"
- },
- "CG-AL-X100": {
-  "tests": [
-   "EveryLineInTheCategoryIsRepriced",
-   "VolumeDiscountAppliesAtTwentyUnits",
-   "BelowThresholdKeepsBasePrice",
-   "OtherCategoriesVolumeDoesNotChangeThePrice",
-   "RepricingIsRepeatable",
-   "PriceServiceContractSurvives",
-   "CityOnlyQualifiersAppearOnTheList",
-   "CreditLimitQualifiersAppearRegardlessOfCity",
-   "ContactMatchingBothRulesIsVisitedOnceAlongsideCityOnlyContact",
-   "CreditLimitThresholdBoundaryQualifiesAtExactValue",
-   "TargetCityMatchesTheWholeValueOnly",
-   "BuildingTheListWritesNoContacts",
-   "CampaignLookupBuildsTheSameCallListThroughTheWrapper",
-   "TragedyChargesFlatFeeAtExactlyThirtyAttendees",
-   "TragedyAddsSurchargeJustAboveThirtyAttendees",
-   "ComedyEarnsNoBonusAtExactlyTwentyAttendees",
-   "ComedyAddsBonusJustAboveTwentyAttendees",
-   "NoCreditsAtExactlyThirtyAttendees",
-   "OneCreditAtThirtyOneAttendees",
-   "ComedyAddsCreditPerFullGroupOfFiveAttendees",
-   "ComedyCreditsDropPartialGroupOfFive",
-   "UnknownCategoryFailsLineAmount",
-   "UnknownCategoryFailsLineCredits",
-   "BuildStatementListsAgreementPerformancesInOrderWithCorrectTotals",
-   "BuildStatementDoesNotCarryOverThePriorAgreementsTotalsWhenReused",
-   "BuildStatementClearsPreSetTotalsAndStaleBufferLine",
-   "BuildStatementYieldsZeroTotalsForAgreementWithNoPerformancesEvenWithDirtyInputs",
-   "BuildStatementFailsWhenAPerformanceHasUnknownCategory",
-   "RandomAgreementTotalsMatchIndependentComputation",
-   "NewContactIsInsertedFromFeedWithNoRenameRequested",
-   "CleanRenameMovesContactAndRefreshesFieldsUnderTheNewId",
-   "CleanMergeViaImportFeedMovesContactAndRefreshesFieldsUnderTheNewId",
-   "CollisionSkipLeavesTheLosingContactUnderItsOldIdWithStaleFields",
-   "CollisionSkipLeavesTheCollidingContactUntouched",
-   "CollisionSkipStaysInEffectOnEveryRepeatedSync"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X100.Test.al"
- },
- "CG-AL-X109": {
-  "tests": [
-   "ReturnsTheEntryWithTheHighestEntryNo",
-   "IgnoresNewerEntriesOfOtherDocuments",
-   "ReturnsFalseWhenTheDocumentHasNoEntries",
-   "StaysWithinTheRowBudgetForAnEntryHeavyDocument",
-   "StaysWithinTheStatementBudgetForAnEntryHeavyDocument"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X109.Test.al"
- },
- "CG-AL-X110": {
-  "tests": [
-   "CleanBatchPostsOneEntryPerOpenLine",
-   "PostingCopiesTheLineFieldsToTheLedgerEntry",
-   "EntryNumbersContinueAfterTheLastExistingEntry",
-   "PostingIntoALedgerWithNoEntriesStartsNumberingAtOne",
-   "EntriesFollowLineNumberOrder",
-   "PostingMarksEveryPostedLinePosted",
-   "BlankAccountNoFailsTheWholeBatch",
-   "BlankPostingDateFailsTheWholeBatch",
-   "ZeroAmountLineFailsTheWholeBatch",
-   "UnbalancedShortBatchFailsWithOutOfBalanceError",
-   "OneCentSurplusFailsWithOutOfBalanceError",
-   "EmptyBatchFailsWithNothingToPost",
-   "RepostingAFullyPostedBatchReportsNothingToPost",
-   "NewlyOpenedLinesPostWithoutDuplicatingAlreadyPostedOnes",
-   "ABatchWithSomeAlreadyPostedLinesOnlyPostsItsOpenOnes",
-   "NewOpenLineForAPreviouslyPostedAccountStillGetsItsOwnEntry",
-   "PostingScopesEveryCheckToTheGivenBatch"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X110.Test.al"
- },
- "CG-AL-X123": {
-  "tests": [
-   "TotalAddsUpEveryLoggedEntry",
-   "EntriesFromOtherProjectsNeverContributeToTheTotal",
-   "CorrectionEntriesReduceTheTotal",
-   "TotalIsZeroWhenNothingHasBeenLoggedForAProject",
-   "TotalStaysCheapNoMatterHowManyEntriesAreLogged"
-  ],
-  "vacuousTests": [],
-  "nondeterminismSources": [
-   "Any.* without SetSeed"
-  ],
-  "hollowTests": [],
-  "placeholders": 0,
-  "hollowOracle": false,
-  "tier": "hard",
-  "path": "tests/al/hard/CG-AL-X123.Test.al"
  },
  "CG-AL-M005": {
   "tests": [
@@ -524,6 +272,7 @@
   ],
   "vacuousTests": [],
   "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
   "hollowTests": [
    "TestLogPaymentTransactionExecutes",
    "TestLogPaymentTransactionDifferentStatuses",
@@ -550,6 +299,7 @@
   ],
   "vacuousTests": [],
   "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
   "hollowTests": [
    "TestInterfaceCompiles",
    "TestInterfaceCanBeDeclared",
@@ -586,6 +336,7 @@
   ],
   "vacuousTests": [],
   "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
   "hollowTests": [
    "TestProjectManagementCodeunitExists"
   ],

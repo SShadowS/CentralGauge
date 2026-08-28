@@ -55,16 +55,51 @@ VACUOUS_GUARD = re.compile(
 # Sources of nondeterminism the determinism gate (B2) cannot see. B2 measures
 # OBSERVED variation - an oracle whose random draws happen to stay inside the
 # passing range looks perfectly stable while being nondeterministic by
-# construction. 13 committed oracles called `Any.*` with no `SetSeed` when this
-# check was written; BigCodeBench bakes the same rule into its curation rubric,
-# and competitive-judge ecosystems mandate seeded RNG (testlib) outright.
-RANDOM_CALL = re.compile(r"\bAny\s*\.\s*\w+\s*\(")
-RANDOM_SEED = re.compile(r"\bAny\s*\.\s*SetSeed\s*\(", re.IGNORECASE)
-AL_RANDOM = re.compile(r"\bRandom\s*\(", re.IGNORECASE)
-AL_RANDOMIZE = re.compile(r"\bRandomize\s*\(\s*\d", re.IGNORECASE)
+# construction.
+#
+# The rules below are read off Microsoft's own source for codeunit 130500
+# "Any" (extracted from Microsoft_Any_28.0.46665.50383.app), because the
+# library's naming actively misleads:
+#
+#     local procedure GetNextValue(MaxValue: Integer): Integer
+#     begin
+#         if (not SeedSet) then
+#             SetSeed(1);          // NO SetSeed call => fixed seed 1
+#         exit(Random(MaxValue));
+#     end;
+#
+#     procedure SetDefaultSeed()
+#     begin
+#         SeedSet := true;
+#         SetSeed(Time() - 000000T);   // wall clock => NONDETERMINISTIC
+#     end;
+#
+# So `Any.*` with no seeding call is the DETERMINISTIC case, and the
+# innocuous-sounding `SetDefaultSeed()` is the defect. An earlier revision of
+# this check had it exactly backwards and reported 13 false positives; the
+# facts above are what corrected it. `Any` is not SingleInstance and its Seed
+# lives in instance state, so a method-local `Any` re-seeds to 1 on its first
+# draw and each test's sequence is independent of which other tests ran.
+ANY_CALL = re.compile(r"\bAny\s*\.\s*\w+\s*\(")
+ANY_DEFAULT_SEED = re.compile(r"\bAny\s*\.\s*SetDefaultSeed\s*\(", re.IGNORECASE)
+# A codeunit-GLOBAL `Any` breaks that independence: one instance is shared, so
+# it seeds once and every test's values then depend on execution order and on
+# which tests ran. Microsoft's own doc comment on the codeunit requires the
+# local form - "this library must be added as a local variable to the test
+# method". A declaration before the first procedure/trigger is the global one.
+ANY_DECL = re.compile(r"\bAny\s*:\s*Codeunit\s+(?:\"Any\"|Any)\b", re.IGNORECASE)
+FIRST_MEMBER = re.compile(r"\b(?:procedure|trigger)\b", re.IGNORECASE)
+# Raw AL RNG outside the Any wrapper. Argless `Randomize()` seeds from the
+# clock; `Random()` with no fixed `Randomize(<literal>)` anywhere inherits
+# whatever the session's stream happens to be.
+AL_RANDOM = re.compile(r"(?<!\.)\bRandom\s*\(", re.IGNORECASE)
+AL_RANDOMIZE_FIXED = re.compile(r"\bRandomize\s*\(\s*\d", re.IGNORECASE)
+AL_RANDOMIZE_CLOCK = re.compile(r"\bRandomize\s*\(\s*\)", re.IGNORECASE)
 # Wall-clock reads are nondeterministic per run; date-only reads (Today,
 # WorkDate) are stable within a day and pervasive in legitimate fixtures, so
-# only the sub-day clocks are flagged.
+# only the sub-day clocks are flagged. ADVISORY, not a promote blocker: whether
+# the value reaches an assertion cannot be decided from the token alone, and
+# both committed hits (X083, X096) only stamp a field no assertion reads.
 WALL_CLOCK = re.compile(r"\b(CurrentDateTime|Time)\s*\(\s*\)", re.IGNORECASE)
 
 IN_SCOPE = ("hard", "medium")
@@ -97,19 +132,28 @@ def audit_file(path):
         head = seg[:first_assert.start()] if first_assert else seg
         if VACUOUS_GUARD.search(head):
             vacuous.append(name)
-    # File-level: seeding anywhere in the file covers helpers shared by tests.
+    # File-level. `nondet` blocks promotion; `nondetAdvisory` only reports.
     nondet = []
-    if RANDOM_CALL.search(text) and not RANDOM_SEED.search(text):
-        nondet.append("Any.* without SetSeed")
-    if AL_RANDOM.search(text) and not AL_RANDOMIZE.search(text):
-        nondet.append("Random() without a fixed Randomize(seed)")
+    if ANY_DEFAULT_SEED.search(text):
+        nondet.append("Any.SetDefaultSeed() seeds from the wall clock")
+    first = FIRST_MEMBER.search(text)
+    head = text[:first.start()] if first else text
+    if ANY_CALL.search(text) and ANY_DECL.search(head):
+        nondet.append("codeunit-global `Any` - values depend on test order")
+    if AL_RANDOMIZE_CLOCK.search(text):
+        nondet.append("Randomize() with no seed argument")
+    if AL_RANDOM.search(text) and not AL_RANDOMIZE_FIXED.search(text):
+        nondet.append("bare Random() without a fixed Randomize(seed)")
+
+    advisory = []
     if WALL_CLOCK.search(text):
-        nondet.append("sub-day wall clock (CurrentDateTime/Time)")
+        advisory.append("sub-day wall clock (CurrentDateTime/Time)")
 
     return {
         "tests": tests,
         "vacuousTests": vacuous,
         "nondeterminismSources": nondet,
+        "nondeterminismAdvisory": advisory,
         "hollowTests": hollow,
         "placeholders": len(PLACEHOLDER.findall(text)),
         "hollowOracle": bool(tests) and len(hollow) == len(tests),
@@ -131,7 +175,8 @@ def main(argv):
         # Report a file for EITHER failure mode: an oracle can be vacuous
         # without containing a single placeholder.
         if (not res["placeholders"] and not res["vacuousTests"]
-                and not res["nondeterminismSources"]):
+                and not res["nondeterminismSources"]
+                and not res["nondeterminismAdvisory"]):
             continue
         res["tier"] = tier
         res["path"] = path.replace("\\", "/")
@@ -140,10 +185,14 @@ def main(argv):
     hollow_oracles = {t: v for t, v in findings.items() if v["hollowOracle"]}
     vacuous_any = {t: v for t, v in findings.items() if v["vacuousTests"]}
     nondet_any = {t: v for t, v in findings.items() if v["nondeterminismSources"]}
+    advisory_any = {
+        t: v for t, v in findings.items() if v["nondeterminismAdvisory"]
+    }
     print(f"oracles containing a placeholder assertion : {len(findings)}")
     print(f"oracles that assert NOTHING AT ALL         : {len(hollow_oracles)}")
     print(f"oracles with a vacuously-passing test      : {len(vacuous_any)}")
-    print(f"oracles with unseeded/nondeterministic src : {len(nondet_any)}")
+    print(f"oracles with a nondeterministic src        : {len(nondet_any)}")
+    print(f"oracles with a wall-clock read (advisory)  : {len(advisory_any)}")
     print()
     print(f"{'task':<14}{'tier':<8}{'tests':>6}{'hollow':>8}  status")
     for t, v in findings.items():
@@ -169,6 +218,11 @@ def main(argv):
         print("\nnondeterminism sources:")
         for t, v in nondet_any.items():
             print(f"    {t}: {'; '.join(v['nondeterminismSources'])}")
+    if advisory_any:
+        print("\nwall-clock reads (advisory - check the value reaches no "
+              "assertion, then ignore):")
+        for t, v in advisory_any.items():
+            print(f"    {t}: {'; '.join(v['nondeterminismAdvisory'])}")
 
     # Hollow oracles and unseeded randomness are both hard failures: the first
     # measures nothing, the second measures something different every run.
