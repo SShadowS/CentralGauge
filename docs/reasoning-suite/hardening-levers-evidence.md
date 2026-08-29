@@ -188,3 +188,47 @@ effect on today's frontier is probably smaller than quoted. Levers 1, 2 and
   one 16-object app with a merged oracle — lever 3, DebugBench-validated,
   built entirely from assets already on disk.
 - Contract-only experiment (16 variants) DEPRIORITISED per lever 5.
+
+## Separability measured (2026-08-29): the fallback option is also gone
+
+Uncapped, all 110 tasks, best-of-2:
+
+| Model | score |
+|---|---|
+| claude-opus-5 | 106/110 = 96.4% |
+| claude-sonnet-5 | 99/110 = 90.0% |
+| gpt-5.6-luna | 95/110 = 86.4% |
+
+Paired McNemar over the same tasks (discordant pairs shown as
+a-solves-not-b / b-solves-not-a):
+
+| pair | discordant | chi2 | p |
+|---|---|---|---|
+| sonnet-5 vs gpt-5.6-luna | 18 (11 / 7) | 0.50 | **0.480** |
+| sonnet-5 vs opus-5 | 15 (4 / 11) | 2.40 | **0.121** |
+| gpt-5.6-luna vs opus-5 | 11 (0 / 11) | 9.09 | 0.003 |
+
+**Only one of three model pairs is statistically distinguishable.** By
+Arena-Hard's separability definition (fraction of pairs whose intervals
+do not overlap) this suite scores 1/3. That kills option A from
+format-rethink.md - "keep it as a comparative instrument" - on evidence
+rather than taste.
+
+One structural detail worth keeping: opus vs luna is 11/0, strict
+dominance (luna solves nothing opus misses), while sonnet vs luna is
+11/7 - mixed, i.e. differently-abled rather than ordered. A hard split
+built from levers 1-3 should preserve that kind of non-nested structure,
+because that is where discrimination actually lives.
+
+### Where this leaves the decision
+
+Every fallback is now closed by measurement, not opinion:
+- reach <=50% by building more of the same -> yield too low (~20%, and
+  measured on levers now known false)
+- move the bar to pass@1 -> 92.7%
+- per-category floor -> best category 79% pass@1
+- keep it as a comparative instrument -> separates 1 of 3 pairs
+
+The hard split is the only path left, and it must be built from the
+three levers with measured effect (non-functional contracts, composition,
+N-simultaneous-defects) rather than from more single-site planted defects.
