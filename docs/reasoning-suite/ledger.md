@@ -687,3 +687,33 @@ all three B2 containers and correctly graded both solvers' skip-scans.
 Consistent with the round-4 ruling: fair-spec single-defect tasks do not
 resist frontier single-shot solving; knowledge-gap depth remains the
 lever.
+
+**B7 mutation sweep + B6b triage (LethAL, Cronus28, 2026-08-29).** One
+NST-restart wedge between X150 and X151 (ServerInstance stuck stopping;
+Restart-BcContainer + targeted resweep recovered; one more quirk: a
+LethAL-stamped install 3.0.20694.x on X147 blocked a 3.0.0.1 republish -
+resweep with a HIGHER -Version after uninstalling the leftover). Scores:
+X147 81.0%, X148 80.0%, X149 92.9%, X150 83.3%, X151 81.8%, X152 94.1%,
+X153 100%, X154 92.3%, X155 66.7%. Triage of all 16+7 survivors:
+- **ONE real hole:** X147 M0012 (swap-call-arguments in SetEntityValue's
+  Get) - the oracle only ever FIRST-seeded each key, so the
+  overwrite-an-existing-value path was never exercised. Kill test
+  SettingAnEntitysValueAgainLeavesTheNewValueInForce added to the
+  promoted oracle (8 tests now); re-verified correct 8/8 + starter
+  5/8-reaching-assertions + both solver legs + cross-container +
+  replay green; resweep 81.0% -> 85.7%, M0012 confirmed dead.
+- Everything else equivalent or proved out of scope: 8 redundant-Init
+  removals on fresh fully-overwritten locals, X151's mutually-redundant
+  Clear pair (each covered by the other; single-mutation scoring can
+  never fire both), X155's two >-vs->= fold boundaries (tie assigns the
+  identical enum value - the intended survivor profile of a
+  strictest-of fold), X150's five re-applied SetRanges + the
+  0.005-threshold boundary (unreachable given cent-exact department
+  amounts) + two tie-break boundaries (the pre-declared non-graded
+  contract), X148's dangling-rebate-group fallback (never described,
+  deliberately unpriced in the isolation test). Zero unreached. Kill
+  rate on killable mutants: 100% on all nine tasks. Runaway-loop
+  mutants timeout-killed as designed; X150's seven quarantined
+  runaway shapes accepted as unscorable.
+
+Suite: 140 X-series tasks (49 traps + 91 reasoning). gold-ci 225/225.

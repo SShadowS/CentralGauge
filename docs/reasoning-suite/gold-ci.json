@@ -1948,10 +1948,10 @@
     },
     "CG-AL-X147": {
       "verdict": "pass",
-      "at": "2026-08-29T10:42:09.630Z",
-      "testsPassed": 7,
-      "testsTotal": 7,
-      "inputsHash": "8a393267f3f47c5b891de202c9163a42e8a2a71779563cb9960f807abe380346",
+      "at": "2026-08-29T12:06:19.827Z",
+      "testsPassed": 8,
+      "testsTotal": 8,
+      "inputsHash": "fc2faa188cd3aef92e7dc2e3259e7b498fce43d0932d6084c38a5cffeb6d8cac",
       "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
       "detail": "[trap-probe] OK"
     },

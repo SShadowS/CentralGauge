@@ -75,6 +75,16 @@ codeunit 89367 "CG-AL-X147 Test"
     end;
 
     [Test]
+    procedure SettingAnEntitysValueAgainLeavesTheNewValueInForce()
+    begin
+        ClearAll();
+        SeedEntityValue("CG X147 Entity Type"::Customer, 'CUST8', 'TIER', 'GOLD');
+        SeedEntityValue("CG X147 Entity Type"::Customer, 'CUST8', 'TIER', 'SILVER');
+
+        AssertResolvesTo("CG X147 Entity Type"::Customer, 'CUST8', 'TIER', 'SILVER', 'An entity whose own value is set a second time resolves to the newer value');
+    end;
+
+    [Test]
     procedure EntityRelyingOnTheStandardValueForItsTypeResolvesToIt()
     begin
         ClearAll();
