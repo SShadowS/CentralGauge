@@ -65,6 +65,40 @@ codeunit 89377 "CG-AL-X157 Test"
     end;
 
     [Test]
+    procedure BuildStatementForOneCostCenterLeavesAnothersRowsAlone()
+    var
+        Statement: Codeunit "CG X157 Period Statement";
+    begin
+        ClearAll();
+        SeedCostCenter('CC1');
+        SeedCostCenter('CC2');
+        SeedEntry('CC1', 20260110D, 100);
+        SeedEntry('CC2', 20260115D, 70);
+
+        Statement.BuildStatement('CC1', 20260101D, 20260131D);
+        Statement.BuildStatement('CC2', 20260101D, 20260131D);
+
+        AssertStatementLine('CC1', 20260101D, 100, 'Another cost center''s statement rows must survive building this one''s');
+        AssertStatementLine('CC2', 20260101D, 70, 'The freshly built cost center''s own row must carry its own amount');
+    end;
+
+    [Test]
+    procedure StatementSpanningYearEndCarriesEachMonthsOwnFigure()
+    var
+        Statement: Codeunit "CG X157 Period Statement";
+    begin
+        ClearAll();
+        SeedCostCenter('CC1');
+        SeedEntry('CC1', 20261210D, 90);
+        SeedEntry('CC1', 20270115D, 35);
+
+        Statement.BuildStatement('CC1', 20261201D, 20270131D);
+
+        AssertStatementLine('CC1', 20261201D, 90, 'The December period of a statement spanning year end carries December''s own figure');
+        AssertStatementLine('CC1', 20270101D, 35, 'The January period of a statement spanning year end carries January''s own figure');
+    end;
+
+    [Test]
     procedure MidYearWindowReportsOnlyThatMonthsActivity()
     var
         Statement: Codeunit "CG X157 Period Statement";

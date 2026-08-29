@@ -772,3 +772,36 @@ ceiling, and the standing two-company topology ceiling on
 X162/X163/X164 (hardcode-both-names unclosable without a third
 container company; auditors also note cleanup assumes two companies -
 revisit if topology ever changes).
+
+**B7 mutation sweep + B6b triage (LethAL, Cronus28, 2026-08-29).** Full
+first sweep, no wedges: X156 100%, X157 73.7%, X158 100%, X159 88.9%,
+X160 85.7%, X161 85.0%, X162 87.5%, X163 82.4%, X164 80.0%. Triage of
+all 20 survivors: 11 equivalent (the familiar removed-Init-on-fresh-
+fully-overwritten-locals shape dominates), 5 out-of-scope proved
+(incl. X160's entry-numbering start value, X161's unconfigured-carrier
+guards - unclosable without over-constraining valid solutions - and
+X163's deliberately ungraded Query Log), zero unreached, and FOUR real
+holes, all killed same day:
+- X157 M0007: an unfiltered DeleteAll in BuildStatement wiped every
+  cost center's rows unobserved (no test built statements for two cost
+  centers) -> cross-cost-center kill test.
+- X157 M0017: no graded window ever touched December, so an emptied
+  Month=12 branch in EndOfMonth survived -> year-end-spanning kill
+  test (Dec+Jan).
+- X160 M0012: the refund cap's wallet filter was removable (refund
+  room computed against ALL wallets' refunds) - in the very procedure
+  the model must write -> cross-wallet refund-room kill test, the
+  batch's highest-value addition.
+- X161 M0014 (folded in): Standard's band lookup missing its carrier
+  filter was fixture-masked (enum 0 sorts first; no Express band above
+  Standard's top) -> foreign-band refusal kill test.
+Post-fix resweep: X157 84.2%, X160 90.5%, X161 90.0%; all remaining
+survivors proved equivalent/out-of-scope. References re-verified
+(10/10, 13/13, 10/10), starters still fail reaching assertions, all
+six solver legs re-run green vs the hardened oracles, replays green.
+Kill rate on killable mutants: 100% on all nine tasks.
+
+Suite: 149 X-series tasks (49 traps + 100 reasoning). gold-ci 234/234.
+**reasoning-100: 100 / 100. The build program is complete.** Remaining
+program items live in PLAN.md: THE re-bench, leaderboard task-set flip,
+sync-taxonomy re-apply, W3 DO-harvest round 2 (optional, post-100).

@@ -62,6 +62,26 @@ codeunit 89380 "CG-AL-X160 Test"
     end;
 
     [Test]
+    procedure ARefundOnOneWalletDoesNotShrinkAnotherWalletsRefundRoom()
+    var
+        WalletMgt: Codeunit "CG X160 Wallet Mgt";
+        Wallet: Record "CG X160 Wallet";
+    begin
+        // [SCENARIO] Refund room is per wallet, not shared across wallets
+        ClearFixture();
+        SeedWallet('W-RA', 500);
+        SeedWallet('W-RB', 500);
+        WalletMgt.PostCharge('W-RA', 100);
+        WalletMgt.PostCharge('W-RB', 100);
+
+        WalletMgt.PostRefund('W-RA', 40);
+        WalletMgt.PostRefund('W-RB', 100);
+
+        Wallet.Get('W-RB');
+        Assert.AreEqual(500.0, Wallet.Balance, 'A wallet''s refund room must not be reduced by another wallet''s refunds');
+    end;
+
+    [Test]
     procedure ChargingMoreThanTheBalanceIsRefused()
     var
         WalletMgt: Codeunit "CG X160 Wallet Mgt";

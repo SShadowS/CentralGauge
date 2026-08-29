@@ -214,6 +214,23 @@ codeunit 89381 "CG-AL-X161 Test"
     end;
 
     [Test]
+    procedure StandardRefusesAWeightOnlyTheOtherCarriersBandsReach()
+    var
+        StandardCarrier: Codeunit "CG X161 Standard Carrier";
+        Provider: Interface "CG X161 Rate Provider";
+    begin
+        // [SCENARIO] A weight beyond Standard's own bands is refused even
+        // when another carrier happens to have a band that would cover it
+        SeedFixture();
+        SeedRateBand("CG X161 Carrier"::Express, 80, 2);
+        Provider := StandardCarrier;
+
+        asserterror Provider.GetQuote(60, 'DOM');
+
+        Assert.ExpectedError('60');
+    end;
+
+    [Test]
     procedure ExpressQuotesMatchItsOwnRatesAndZones()
     var
         ExpressCarrier: Codeunit "CG X161 Express Carrier";
