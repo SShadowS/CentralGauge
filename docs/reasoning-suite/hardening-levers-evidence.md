@@ -586,3 +586,42 @@ Option 1 is the honest fix and it is the one the literature supports.
 Whichever is chosen, **the panel numbers currently in this document were
 measured under option 3**, and a format change invalidates them - including
 the panel-widening run started 2026-08-30.
+
+### Refinement: the confirmed figure is 33%, the upper bound 53%
+
+Building `scripts/failure-causes.py` to make the analysis above repeatable
+exposed a classification choice worth stating rather than hiding. A failed
+compile can carry an omission diagnostic (AL0185/AL0132) *alongside* a real
+one (a syntax error). An AL0185 can itself be a CASCADE of a syntax error -
+a file that fails to parse takes its objects with it, so the table
+legitimately reads as "missing".
+
+Attributing those mixed cases to omission over-counts the artifact. The
+script therefore classifies conservatively - omission only when EVERY
+non-cascade diagnostic is an omission code - and holds the mixed cases out
+in their own `mixed_compile` bucket:
+
+| cause of last failed attempt | n | share |
+|---|---|---|
+| behavioural | 12 | 40% |
+| omission (confirmed) | 10 | 33% |
+| mixed_compile (held out) | 6 | 20% |
+| al_knowledge | 2 | 7% |
+
+**Artifact share: 33% confirmed, 53% upper bound.** Likewise the destroyed
+repair attempts are 9 confirmed of 39 (23%) with 5 more mixed, i.e. 36% as
+an upper bound rather than a point estimate. The narrative above and the
+commit that introduced it quote the upper bounds; these are the figures to
+carry forward.
+
+Opus 5's own three omission failures (X140, X169, X173) are all in the
+CONFIRMED bucket - every diagnostic on those attempts was an omission code,
+with no syntax error to have cascaded from. That part of the finding does
+not soften.
+
+### Operator ruling 2026-08-30
+
+The rule-2 decision is DEFERRED until the seven-model panel run lands, so
+the omission rate can be read off a seven-model sample rather than three.
+Re-run `scripts/failure-causes.py` over every uncapped run once the panel
+completes, then choose between the three options above.
