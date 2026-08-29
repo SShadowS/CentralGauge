@@ -483,3 +483,106 @@ fetched `engine_validation.py` at `b4a40501`. Could NOT retrieve the
 the widely-quoted intermediate figure of 11,407 PRs - do not cite it. The
 Verified figures were recomputed from OpenAI's published annotation CSVs.
 Unabridged sub-reports at `scratchpad/swebench-research/{successors,difficulty}.md`.
+
+---
+
+## VALIDITY DEFECT: one third of failures are object omission, not capability (2026-08-30)
+
+Found while checking whether the selection filter above is even valid.
+Classifying every failed task on the three uncapped panel runs by the cause
+of its LAST attempt:
+
+| cause | n | share |
+|---|---|---|
+| behavioural (failed the graded assertions) | 12 | 40% |
+| **compile: omitted object/field** (AL0185 "Table 'X' is missing", AL0132 "does not contain a definition for 'X'") | **10** | **33%** |
+| compile: genuine AL knowledge (syntax, `GroupBy` misuse, enum static access, permission kind, Duration operator) | 8 | 27% |
+
+Across all compile errors on the panel, 58 of 98 (59%) are AL0185/AL0132 -
+the signature of a model that dropped an object or a field while re-emitting
+the whole application.
+
+### Where it actually bites: the repair attempt
+
+Split by two-attempt pattern:
+
+| attempt 1 -> attempt 2 | n |
+|---|---|
+| behavioural -> pass (repaired) | 17 |
+| **behavioural -> omitted object** | **14** |
+| behavioural -> behavioural | 7 |
+| omitted -> behavioural | 3 |
+| other | 8 |
+
+**Of the 39 tasks whose first attempt failed behaviourally, 14 (36%) had
+their repair attempt destroyed by object omission.** The model diagnosed
+the defect, was told what failed, and then lost an unrelated field while
+retyping the app.
+
+Opus 5's own four failures are all of this shape:
+
+| task | attempt 1 | attempt 2 |
+|---|---|---|
+| X074 | behavioural | behavioural (real) |
+| X140 | behavioural (allocation drift) | AL0132: dropped `Rebate Description` from `CG X140 Rebate Header` |
+| X169 | behavioural (2 SQL-flatness tests) | AL0132: dropped `Code` from `CG X169 Pricing Setup` |
+| X173 | behavioural (2 SQL-flatness tests) | AL0132 x6: dropped fields from `CG X158 Item` |
+
+So the resistant set is real - every one fails attempt 1 on the graded
+contract, which is the strong-evidence class - but **three of Opus's four
+best-of-2 failures are scored against an artifact rather than against a
+second genuine diagnostic attempt.**
+
+### It is not simply "the app is too big"
+
+Omission hits 3-object starters (X140, X171) as often as 15-object ones
+(X141, X174). X140's failure was dropping a single FIELD from a table it
+otherwise re-emitted correctly. Size correlates, but the mechanism is the
+re-emit requirement itself, not object count.
+
+### Cause
+
+`templates/diagnose.md` rule 2 requires the model to return EVERY object of
+the corrected application. Nothing in the graded contract needs that. It is
+a response-format decision, and it converts "fix one procedure" into
+"retype 3-15 objects without losing a field".
+
+This is exactly SWE-bench Verified's dominant discard category,
+`false_negative` - the harness rejecting a submission whose author
+understood the problem - which their annotation found at 61.2%, ahead of
+underspecification at 38.3%. It is also why SWE-bench grades a **diff**
+rather than a re-emitted repository.
+
+### Consequence for the launch bar - it points the wrong way
+
+Removing this artifact would RAISE scores, not lower them. Opus's best-of-2
+would plausibly move from 96.4% toward 99%. That is a real cost against the
+<=50% bar and it must be stated rather than quietly enjoyed:
+
+- The current numbers are **not** measuring what we claim they measure. A
+  third of our failure signal is transcription fidelity.
+- Any task retained by the selection filter partly *because* models omit
+  objects on it is retained for the wrong reason. Of the 22 tasks in the
+  `<=2 of 3` retention set, the ones appearing in the omission list above
+  (X133, X140, X141, X142, X165, X167, X169, X171, X172, X173, X174) need
+  re-measuring under a fixed format before they can be trusted as
+  discriminating.
+
+### Options
+
+1. **Emit-changed-objects-only.** Rule 2 becomes "return every object you
+   changed, complete"; the harness overlays them on the starter. Closest to
+   SWE-bench's patch grading. Requires a candidate-assembly change, not just
+   a template edit.
+2. **Keep rule 2, add a completeness pre-check** that returns the missing
+   object list to the model as a free correction before scoring. Cheaper,
+   but invents a third attempt.
+3. **Do nothing and document it** as a deliberate "must produce a complete
+   compilable app" requirement. Defensible for BC specifically, but it means
+   ~a third of the headline failure signal is not diagnostic ability, and
+   the leaderboard should say so.
+
+Option 1 is the honest fix and it is the one the literature supports.
+Whichever is chosen, **the panel numbers currently in this document were
+measured under option 3**, and a format change invalidates them - including
+the panel-widening run started 2026-08-30.
