@@ -166,3 +166,4 @@ scratch/
 .superpowers/
 
 docs/volotests/*
+!scripts/panel-select.py

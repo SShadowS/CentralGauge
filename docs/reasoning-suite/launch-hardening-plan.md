@@ -314,3 +314,50 @@ the kinds we know how to build.**
 
 That is a strategy decision, not a build decision, so it goes to the
 operator rather than getting quietly absorbed into a wave-2 dispatch.
+
+---
+
+## SUPERSEDED: the "20% yield" above was scored against the wrong criterion (2026-08-30)
+
+Everything in this document that reasons from "wave 1 yielded 2 of 10"
+measured **Opus-only resistance**: does the single strongest model fail the
+task. That is not the criterion any comparable benchmark optimises, and it
+is far harsher than the one that matters.
+
+Re-scored against **multi-model discrimination** (retained if at least one
+of the three uncapped panel models fails it, best-of-2), wave 1 yields
+**8 of 10**: X165, X167, X168, X169, X171, X172, X173, X174. Only X166 and
+X170 fall out.
+
+The whole-suite picture under the same rule, from
+`python scripts/panel-select.py results/benchmark-results-1788035816828.json
+results/benchmark-results-1788038780527.json`:
+
+| rule | n | retention | Opus bo2 | Sonnet bo2 | Luna bo2 |
+|---|---|---|---|---|---|
+| all | 110 | 100% | 96% | 92% | 91% |
+| solved by <=2 of 3 | 22 | 20% | 82% | 50% | 32% |
+| solved by <=1 of 3 | 8 | 7% | 50% | 50% | 0% |
+
+So the arithmetic in "Waves 2-4 sized from wave-1 yield" (~230 builds) is
+wrong by roughly 4x, and the conclusion that the bar is unreachable by
+building is not supported by a yield of 80%.
+
+**What actually blocks the bar is the panel, not the pipeline.** Three
+models give the retention dial three notches: 20% retention leaves Opus at
+82%, 7% retention hits 50% but at n=8 and with Opus and Sonnet tied, which
+is unpublishable. Aider polyglot ran 7 models and kept "solved by 3 or
+fewer" - fewer than half the panel - for 32% retention inside a stated
+5-50% target band. We cannot express that threshold on 3 models.
+
+Next step is therefore a **measurement**, not a build: widen the panel to
+5-7 uncapped models on the 110-task set. gpt-5.5 and deepseek-v4-pro exist
+in `results/benchmark-results-1787828821306.json` but at a 16k cap and over
+only 66 of the 110 tasks, so they must be re-run. Full reasoning and the
+supporting literature are in
+`docs/reasoning-suite/hardening-levers-evidence.md`, section "SELECTION,
+not authoring, is the lever we were missing".
+
+The truncation hazard recorded above is now enforced mechanically:
+`scripts/panel-select.py` excludes any run containing an attempt that lands
+exactly on a round token cap, and says so on stderr.

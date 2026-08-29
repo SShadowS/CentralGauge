@@ -288,3 +288,198 @@ face value. **A gate result is only valid once completion tokens, prompt
 input size, and the failure text have all been inspected.** Staging a
 scratch task for a gate run requires copying BOTH `starter/` into
 `tasks/starter/<id>/` AND the oracle into `tests/al/hard/`.
+
+---
+
+## SELECTION, not authoring, is the lever we were missing (2026-08-30)
+
+A second research stream (`res-swebench`) read the SWE-bench collection and
+validation code at HEAD, OpenAI's Verified annotation corpus, and the
+released selection scripts of five successor benchmarks. Its headline is a
+negative result that reframes this whole document:
+
+> **No benchmark in this literature filters on difficulty at construction
+> time.** SWE-bench's admission gate is `len(FAIL_TO_PASS) > 0` plus "the
+> environment builds" - a VALIDITY filter. No model in the loop, no
+> solve-rate threshold, at any stage. Difficulty there is a byproduct of
+> what real PRs looked like.
+
+Difficulty is imposed **afterwards, by selection against a measured model
+panel**. The released scripts that do it:
+
+| Benchmark | Rule | Retention |
+|---|---|---|
+| Aider polyglot | 7 models attempt 697 problems; keep the 225 "solved by 3 or fewer models" | 32% |
+| BigCodeBench-Hard (`analysis/bcb_subset.py`) | measured `solve_rate < 50` AND soln > 426 chars AND > 2 libraries AND SE-similarity | 13% |
+| AutoCodeBench (arXiv 2508.09101) | trims BOTH ends: drop what a mid-tier model solves 10/10 (-25.1%), then drop <2 passes | - |
+| SWEBench-verified-mini | KMeans over a 49-feature empirical solve-rate matrix + PuLP integer program | 2% |
+| tinyBenchmarks (`tutorials/irt.py`) | fit per-item IRT difficulty + discrimination, cluster on fitted params | - |
+
+Aider's target band is stated explicitly: "a wide range of scores between
+about 5% and 50%". That is our bar, reached by selection.
+
+### Applying the Aider recipe to our own measured data
+
+Panel = the three uncapped 110-task runs (opus-5, sonnet-5, gpt-5.6-luna).
+Task retained if solved (best-of-2) by at most K of 3:
+
+| Rule | n | retention | Opus pass@1 | Opus best-of-2 | Sonnet bo2 | Luna bo2 |
+|---|---|---|---|---|---|---|
+| all 110 | 110 | 100% | 92.7% | 96.4% | 92% | 91% |
+| solved by <=2 of 3 | 22 | 20% | **64%** | **82%** | 50% | 32% |
+| solved by <=1 of 3 | 8 | 7% | 25% | **50%** | 50% | 0% |
+| solved by 0 of 3 | 0 | 0% | - | - | - | - |
+
+Distribution of solvers per task (best-of-2): 88 tasks solved by all three,
+14 by two, 8 by one, **0 by none**.
+
+Two things follow immediately.
+
+**1. The <=1-of-3 rule hits the bar exactly (Opus best-of-2 = 50%) but at
+n=8, and it collapses separability** - Opus and Sonnet both score 50%. Too
+small to publish and it cannot rank the two models it retains. This is
+LiveCodeBench's documented failure mode (optimising toward 0% destroys
+discrimination) arriving at n=8.
+
+**2. The <=2-of-3 rule is the usable one but our panel is too small to
+apply Aider's actual threshold.** Aider kept problems solved by <=3 of 7 -
+i.e. fewer than half the panel. The faithful analogue on 3 models is
+<=1 of 3, not <=2 of 3. With only three models the retention dial has three
+notches and none sits where we need it. **The fix is a bigger panel, not a
+different rule.**
+
+### The correction this forces to our own yield estimate
+
+Wave 1 (X165-X174) was recorded in `launch-hardening-plan.md` as "2 of 10"
+because it was scored against *Opus-only resistance*. Scored against
+multi-model discrimination, eight of the ten survive the <=2-of-3 filter:
+X165, X167, X168, X169, X171, X172, X173, X174. Only X166 and X170 fall
+out.
+
+**Wave 1's yield was 80%, not 20%.** Every lever ranking in this document
+above was computed against the wrong criterion - "does Opus fail it" rather
+than "does it separate models" - and is therefore mis-ranked. Opus-only
+resistance is a much harsher and much less useful target than the one the
+literature actually optimises.
+
+### pass^k measured on our own data (tau-bench, arXiv 2406.12045)
+
+`pass^k` (ALL k trials succeed) needs no task changes. We have one uncapped
+trial per model plus the 16k-capped 2026-08-29 run; truncation only ever
+manufactures false failures, never false successes, so pairs where the
+capped run failed at exactly 16000 tokens are discarded as uninformative
+and the rest form a valid two-trial sample:
+
+| model | both pass | both fail | real flips | pass^2 | pass@2 (single run) |
+|---|---|---|---|---|---|
+| claude-opus-5 | 87 | 1 | 6 | **92.6%** (87/94) | 98.0% |
+| claude-sonnet-5 | 75 | 5 | 7 | **86.2%** (75/87) | 92.0% |
+| gpt-5.6-luna | 85 | 7 | 8 | **85.0%** (85/100) | 91.0% |
+
+Per-task stochastic flip rate is ~6-8%. pass^k therefore decays slowly for
+us; extrapolated pass^4 for Opus lands near 85%, nowhere near 50. tau-bench
+saw 60.4% -> 38.3% because their per-trial variance is far higher than
+ours. **pass^k is real, cheap, and worth ~5 points at k=2 - a supporting
+metric, not the bar.**
+
+### Oracle strengthening (lever 4) re-costed against our own mutation data
+
+`survivor-dispositions.json`, 119 tasks triaged, 588 survivors:
+
+| disposition | count |
+|---|---|
+| unreached (= oracle hole, a kill test is owed) | 208 |
+| equivalent | 184 |
+| deliberately_open | 65 |
+| out_of_scope_proved | 58 |
+| accepted_unscorable | 47 |
+| already_killed | 26 |
+
+208 oracle holes sounds large, but they concentrate on the LEGACY M/H suite
+(M007 41, H023 22, M008 18, M005 15, H003 11). Across the 110-task X-series
+there are only ~24, spread over 17 tasks. **Lever 4's ceiling on the
+reasoning suite is ~24 kill tests, not a suite-wide 19-29% drop.**
+
+EvalPlus's actual mechanism was input amplification (9.6 -> 764.1 tests per
+problem), which maps to our **gate B5 (input/state amplification) - still
+PENDING, no tooling**. That, not survivor mop-up, is the unbuilt half.
+
+### The failure mode three independent teams rediscovered
+
+SWE-bench Verified's dominant discard reason was NOT underspecification. Of
+1699 annotated instances, at severity >=2: `false_negative` (tests reject
+reasonable correct solutions) 61.2%, `underspecified` 38.3%, any 68.3%.
+465 removed for test-unfairness alone versus 109 for underspecification
+alone. From the rubric: "the tests rel[y] on a new function, variable name,
+or error message that were introduced in the Gold Patch but is not
+mentioned or differs from the Issue Description." SPICE and SWE-rebench
+(which codes it `B2 IMPLICIT_NAMING`) found the same thing independently.
+
+Our name for this is gate **B4 (over-strictness)**, and this is external
+confirmation that B4 is the highest-value gate we run. Caveats worth
+carrying: OpenAI publishes no inter-annotator agreement (recomputed
+unanimity 31.0% / 32.1%; their own hedge: "this filtering process is likely
+to be overzealous"), and their filter removed 93.6% of ">4 hours" tasks
+versus 53.5% of "<15 min" ones - **a test-fairness gate preferentially
+destroys hard tasks.** Ours will too, and that is a cost to price in, not a
+reason to skip it.
+
+Also: SWE-rebench's ablation of LLM-as-judge quality gating against those
+1699 human labels tops out at F1 0.50, recall 0.05-0.40. Human Krippendorff
+alpha on the same task is 0.24 / 0.41. **There is no reliable human ceiling
+to approximate**, so an automated B4/B6 verdict should stay advisory.
+
+### Independently-arrived-at agreement worth noting
+
+SWE-bench v5.0.0 added `swebench/harness/infra_failure.py` with a
+`no_tests_collected` signature (regex `no tests ran|collected 0 items`).
+That is our `zero_tests` signature (GH #13), reached independently. Theirs
+is advisory - "the scoring denominator is unchanged" - ours reroutes via
+infra-retry. We are ahead of them on this one.
+
+Their grading also hardened exactly where we did: a `SUITE_RAN` regex whose
+every alternative requires a non-zero count ("a zero count read as evidence
+turns a suite that never ran into a resolved instance") and an exit-code
+cross-check because "a patch can print its own 'PASSED' lines".
+
+### And the reason not to aim at 0%
+
+OpenAI RETIRED SWE-bench Verified on 2026-02-23: "we have stopped reporting
+SWE-bench Verified scores, and we recommend that other model developers do
+so too." Trigger was saturation (74.9% -> 80.9% in six months). The
+post-mortem audit then found 59.4% of a 138-problem hard-tail subset had
+flawed tests rejecting correct submissions - though that is an
+adversarially-chosen 27.6% slice, implying a ~16.4% whole-set ceiling, and
+Epoch AI independently estimates 5-10%. **The hard tail is exactly where
+oracle defects concentrate.** Every task we add at the resistant end
+carries above-average odds of being wrong rather than hard.
+
+## Revised recommendation
+
+Selection first, authoring second:
+
+1. **Widen the panel to 5-7 uncapped models on the 110-task set.** We have
+   3. gpt-5.5 and deepseek-v4-pro were run 2026-08-27 but at a 16k cap and
+   over only 66 of the 110, so they must be re-run. This is one bench run
+   and it is the prerequisite for every selection rule above.
+2. **Then apply an Aider-style `solved by < half the panel` filter.** At 7
+   models that is <=3, with retention expected in the literature's 13-40%
+   band - i.e. 15-45 tasks out of 110.
+3. **Author only to top up the retained pool**, targeting the criterion
+   that actually matters (separates models) rather than Opus-only
+   resistance. Wave 1 already yields 8 keepers under this criterion.
+4. Report pass^k alongside pass@1/best-of-2 as a reliability column. Worth
+   ~5 points, not the bar.
+5. Build B5 (input/state amplification) if lever 4 is wanted at scale;
+   survivor mop-up on the X-series is only ~24 kill tests.
+
+### Provenance
+
+Research stream `res-swebench`: cloned SWE-bench at HEAD and read
+`swebench/collect/{build_dataset,print_pulls,get_tasks_pipeline,make_lite/*}.py`,
+`swebench/harness/{grading,infra_failure}.py`, `docs/assets/collection.md`;
+fetched `engine_validation.py` at `b4a40501`. Could NOT retrieve the
+`validation.ipynb` that held the actual admission rule, and could not verify
+the widely-quoted intermediate figure of 11,407 PRs - do not cite it. The
+Verified figures were recomputed from OpenAI's published annotation CSVs.
+Unabridged sub-reports at `scratchpad/swebench-research/{successors,difficulty}.md`.
