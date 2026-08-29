@@ -165,3 +165,38 @@ the entry-32 glue amendment) pointed at the launch bar:
       waves 2-4
 - [ ] Waves 2-4 sized from wave-1 yield
 - [ ] Final full bench (3+ models) -> verify <= 50% -> ingest + flip
+
+## Measurement hazard found at wave 1's gate: OUTPUT TRUNCATION
+
+The first wave-1 Opus-5 gate returned 40% best-of-2 (6 of 10 resisting).
+**That number was not real.** Six of the failures hit EXACTLY 16000
+output tokens, and their failure text is the truncation fingerprint:
+"Model returned empty response", syntax errors part-way down the file,
+and "Expected one of the application object keywords" at line 1 (a
+submission that starts mid-object). The recorded `context.maxTokens`
+was **4000** - `bench`'s `--max-tokens` Cliffy option carries
+`default: 4000`, and a Cliffy default is a VALUE, so it silently
+overrode `.centralgauge.yml`'s `maxTokens: 64000` (the same footgun
+CLAUDE.md records for `--no-X` flags).
+
+Why it matters more here than it ever did before: wave-1 tasks ship
+LARGER starter apps than the reasoning-100 average (the composites
+X173/X174 especially), and `diagnose.md` rule 2 makes the model return
+EVERY object. Truncation therefore bites hardest exactly on the tasks
+this program builds, and it manufactures resistance that has nothing to
+do with an AL knowledge gap. Counting it would corrupt the ≤50% bar in
+the same way an unfair spec would - and unlike an unfair spec, no
+auditor would ever see it.
+
+**Rule, effective immediately: every resistance-gate and launch bench
+passes an explicit `--max-tokens` (64000; streaming is already required
+and handles it - see `llm-work-pool.ts`'s note), and any gate result is
+INVALID until the per-attempt completion-token counts are checked
+against the cap.** A run where any attempt lands exactly on the cap is
+re-run, not interpreted.
+
+Consequence for the 2026-08-29 top-3 baseline (Opus 5 88% / luna 87% /
+Sonnet 5 78%): it carried the same 4000-token default, so it is
+truncation-affected too. It stays usable as a RELATIVE reading (all
+three models, same cap, same tasks), but the launch verification bench
+must be re-run with the cap lifted before anyone certifies ≤50%.
