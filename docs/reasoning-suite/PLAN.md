@@ -162,7 +162,9 @@ Standing constraints (from CLAUDE.md + session rules):
       opus-4.8-on-X150 failed (zero-weight regression, patch kept for
       B8). No hard-tier admits; nine calibration anchors. Deferred to
       batch 10: cat-12 slot 2, cat-10 slots 2-3. Full gate log in ledger
-      batch-9 section. B7 LethAL sweep + B6b triage pending post-promote.
+      batch-9 section. B7+B6b done same day: one real hole (X147 M0012
+      re-seed path, kill test added, 85.7% after), all other survivors
+      proved equivalent/out-of-scope, X153 swept 100% clean.
       (operator must pick the target module first).
 - [x] T1/T4 prerequisite (2026-08-24): 47 promoted tasks' correct/
       reference solutions committed under hash-excluded
