@@ -37,63 +37,63 @@ tags:
   - slug: api-page
     groups: [pages-ui]
   - slug: auto-increment
-    groups: [data-modeling]
+    groups: [business-logic, data-modeling, error-transactions, integration-serialization, records-runtime]
   - slug: base64
     groups: [integration-serialization]
   - slug: business-event
     groups: [interfaces-events]
   - slug: calculations
-    groups: [business-logic, data-modeling, interfaces-events, pages-ui, queries-performance, records-runtime]
+    groups: [business-logic, data-modeling, error-transactions, integration-serialization, interfaces-events, pages-ui, queries-performance, records-runtime, reflection-datatransfer]
   - slug: collectible-errors
     groups: [error-transactions]
   - slug: collections
-    groups: [business-logic, integration-serialization, interfaces-events, queries-performance, reflection-datatransfer]
+    groups: [business-logic, data-modeling, error-transactions, integration-serialization, interfaces-events, queries-performance, records-runtime, reflection-datatransfer]
   - slug: conditional-visibility
     groups: [pages-ui]
   - slug: continue-keyword
     groups: [business-logic]
   - slug: data-classification
-    groups: [data-modeling]
+    groups: [business-logic, data-modeling, records-runtime, reflection-datatransfer]
   - slug: datatransfer
     groups: [reflection-datatransfer]
   - slug: decimal-precision
-    groups: [business-logic, records-runtime]
+    groups: [business-logic, interfaces-events, records-runtime]
   - slug: encoding
-    groups: [business-logic, integration-serialization]
-  - slug: encryption
-    groups: [integration-serialization]
+    groups: [integration-serialization, reflection-datatransfer]
   - slug: enum
     groups: [business-logic, data-modeling, error-transactions, interfaces-events]
+  - slug: enum-extension
+    groups: [data-modeling]
   - slug: errorinfo
-    groups: [error-transactions, integration-serialization]
+    groups: [error-transactions]
   - slug: event-publisher
-    groups: [error-transactions, interfaces-events]
+    groups: [business-logic, error-transactions, interfaces-events]
   - slug: event-subscriber
-    groups: [interfaces-events, records-runtime, reflection-datatransfer]
+    groups: [business-logic, data-modeling, error-transactions, interfaces-events, records-runtime, reflection-datatransfer]
   - slug: factbox
     groups: [pages-ui]
   - slug: field-properties
-    groups: [data-modeling, pages-ui]
+    groups: [business-logic, data-modeling, interfaces-events, pages-ui, records-runtime]
   - slug: field-validation
-    groups: [data-modeling, pages-ui, records-runtime]
+    groups: [business-logic, data-modeling, error-transactions, interfaces-events, pages-ui, records-runtime]
   - slug: fieldref
-    groups: [reflection-datatransfer]
+    groups: [business-logic, reflection-datatransfer]
   - slug: flowfield
-    groups: [data-modeling, reflection-datatransfer]
+    groups: [business-logic, data-modeling, interfaces-events, pages-ui, reflection-datatransfer]
   - slug: flowfilter
-    groups: [reflection-datatransfer]
+    groups: [data-modeling, reflection-datatransfer]
   - slug: fluent-api
     groups: [business-logic]
   - slug: generics
-    groups: [business-logic]
+    groups: [business-logic, interfaces-events, reflection-datatransfer]
   - slug: guid
-    groups: [business-logic]
+    groups: [business-logic, data-modeling, pages-ui]
   - slug: http
     groups: [integration-serialization]
   - slug: install
     groups: [reflection-datatransfer]
   - slug: integration-event
-    groups: [error-transactions, interfaces-events]
+    groups: [business-logic, error-transactions, interfaces-events]
   - slug: interface
     groups: [integration-serialization, interfaces-events, reflection-datatransfer]
   - slug: json
@@ -101,79 +101,85 @@ tags:
   - slug: keyref
     groups: [reflection-datatransfer]
   - slug: keys
-    groups: [data-modeling, reflection-datatransfer]
+    groups: [business-logic, data-modeling, error-transactions, interfaces-events, pages-ui, queries-performance, records-runtime, reflection-datatransfer]
   - slug: locking
-    groups: [error-transactions, reflection-datatransfer]
+    groups: [business-logic, error-transactions, reflection-datatransfer]
   - slug: namespace
-    groups: [business-logic, reflection-datatransfer]
+    groups: [business-logic, integration-serialization, pages-ui, queries-performance, reflection-datatransfer]
   - slug: number-formatting
-    groups: [business-logic]
+    groups: [business-logic, integration-serialization, reflection-datatransfer]
   - slug: obsolete
     groups: [interfaces-events, reflection-datatransfer]
   - slug: page
-    groups: [pages-ui, records-runtime, reflection-datatransfer]
+    groups: [business-logic, pages-ui, records-runtime, reflection-datatransfer]
   - slug: page-action
-    groups: [pages-ui]
+    groups: [business-logic, pages-ui]
   - slug: page-customization
-    groups: [pages-ui]
+    groups: [data-modeling, pages-ui]
   - slug: page-extension
     groups: [pages-ui]
+  - slug: page-view
+    groups: [pages-ui, records-runtime]
   - slug: permissions
+    groups: [business-logic, data-modeling, error-transactions]
+  - slug: permissionset
     groups: [error-transactions]
   - slug: privacy
     groups: [error-transactions, integration-serialization]
   - slug: query
-    groups: [queries-performance]
+    groups: [business-logic, queries-performance]
   - slug: recordref
-    groups: [business-logic, records-runtime, reflection-datatransfer]
+    groups: [business-logic, data-modeling, records-runtime, reflection-datatransfer]
   - slug: report
     groups: [pages-ui, reflection-datatransfer]
   - slug: rounding
-    groups: [business-logic]
+    groups: [business-logic, interfaces-events, records-runtime]
   - slug: secrettext
     groups: [integration-serialization]
+  - slug: sift-keys
+    groups: [business-logic, data-modeling]
   - slug: single-instance
     groups: [queries-performance, records-runtime]
   - slug: string-formatting
-    groups: [business-logic]
+    groups: [business-logic, data-modeling, error-transactions, integration-serialization, interfaces-events, records-runtime, reflection-datatransfer]
   - slug: system-part
     groups: [pages-ui]
   - slug: table
-    groups: [data-modeling, error-transactions, pages-ui, queries-performance, records-runtime, reflection-datatransfer]
+    groups: [business-logic, data-modeling, error-transactions, integration-serialization, interfaces-events, pages-ui, queries-performance, records-runtime, reflection-datatransfer]
   - slug: table-extension
-    groups: [data-modeling, pages-ui, records-runtime]
+    groups: [data-modeling, interfaces-events, pages-ui, records-runtime]
   - slug: table-relation
-    groups: [data-modeling, pages-ui, records-runtime, reflection-datatransfer]
+    groups: [business-logic, data-modeling, interfaces-events, pages-ui, records-runtime, reflection-datatransfer]
   - slug: temporary-table
-    groups: [records-runtime]
+    groups: [business-logic, data-modeling, error-transactions, integration-serialization, records-runtime]
   - slug: test-codeunit
-    groups: [business-logic, pages-ui]
+    groups: [business-logic]
   - slug: test-isolation
     groups: [business-logic]
   - slug: test-page
     groups: [pages-ui]
   - slug: text-builder
-    groups: [business-logic, integration-serialization]
+    groups: [business-logic, integration-serialization, reflection-datatransfer]
   - slug: transaction
-    groups: [error-transactions, interfaces-events, records-runtime]
+    groups: [business-logic, error-transactions, integration-serialization, records-runtime, reflection-datatransfer]
   - slug: triggers
-    groups: [data-modeling, interfaces-events, pages-ui, records-runtime]
+    groups: [business-logic, data-modeling, error-transactions, interfaces-events, pages-ui, records-runtime, reflection-datatransfer]
   - slug: try-function
-    groups: [error-transactions]
+    groups: [business-logic, error-transactions]
   - slug: upgrade-tag
     groups: [reflection-datatransfer]
   - slug: v15
     groups: [integration-serialization, interfaces-events, pages-ui, reflection-datatransfer]
   - slug: v16
-    groups: [business-logic, data-modeling, pages-ui, reflection-datatransfer]
+    groups: [data-modeling, pages-ui, reflection-datatransfer]
   - slug: v17
     groups: [reflection-datatransfer]
   - slug: variant
-    groups: [business-logic, reflection-datatransfer]
+    groups: [reflection-datatransfer]
   - slug: web-service
-    groups: [integration-serialization]
+    groups: [integration-serialization, pages-ui]
   - slug: xml
-    groups: [integration-serialization, reflection-datatransfer]
+    groups: [business-logic, integration-serialization, reflection-datatransfer]
   - slug: xmlport
     groups: [integration-serialization]
   - slug: xrec
@@ -181,112 +187,243 @@ tags:
 
 tasks:
   CG-AL-E001: { group: data-modeling, tags: [data-classification, field-properties, keys, table] }
-  CG-AL-E002: { group: pages-ui, tags: [page, table] }
+  CG-AL-E002: { group: pages-ui, tags: [field-properties, page] }
   CG-AL-E003: { group: data-modeling, tags: [enum] }
   CG-AL-E004: { group: data-modeling, tags: [data-classification, field-properties, table-extension] }
-  CG-AL-E005: { group: business-logic, tags: [] }
-  CG-AL-E006: { group: pages-ui, tags: [page-extension] }
+  CG-AL-E005: { group: business-logic, tags: [string-formatting] }
+  CG-AL-E006: { group: pages-ui, tags: [field-properties, page, page-extension] }
   CG-AL-E007: { group: pages-ui, tags: [report] }
   CG-AL-E008: { group: interfaces-events, tags: [interface] }
   CG-AL-E009: { group: integration-serialization, tags: [xml, xmlport] }
-  CG-AL-E010: { group: interfaces-events, tags: [event-subscriber] }
-  CG-AL-E031: { group: data-modeling, tags: [data-classification, field-validation, keys, table, triggers] }
+  CG-AL-E010: { group: interfaces-events, tags: [event-subscriber, triggers] }
+  CG-AL-E031: { group: data-modeling, tags: [data-classification, field-properties, field-validation, keys, table, triggers] }
   CG-AL-E032: { group: interfaces-events, tags: [interface] }
-  CG-AL-E045: { group: data-modeling, tags: [auto-increment, field-validation, table, triggers] }
-  CG-AL-E050: { group: business-logic, tags: [string-formatting, text-builder] }
+  CG-AL-E045: { group: data-modeling, tags: [auto-increment, calculations, field-properties, field-validation, keys, table, triggers] }
+  CG-AL-E050: { group: business-logic, tags: [string-formatting] }
   CG-AL-E051: { group: business-logic, tags: [collections, number-formatting, string-formatting] }
   CG-AL-E052: { group: business-logic, tags: [number-formatting, string-formatting] }
-  CG-AL-E053: { group: pages-ui, tags: [page-action, page-extension] }
+  CG-AL-E053: { group: pages-ui, tags: [page, page-action, page-extension] }
   CG-AL-E054: { group: business-logic, tags: [collections, guid] }
   CG-AL-E055: { group: business-logic, tags: [namespace, recordref] }
-  CG-AL-E056: { group: business-logic, tags: [encoding, string-formatting] }
-  CG-AL-E057: { group: data-modeling, tags: [field-properties, table, v16] }
-  CG-AL-E058: { group: business-logic, tags: [test-codeunit, test-isolation, v16] }
-  CG-AL-H001: { group: business-logic, tags: [calculations, decimal-precision, enum] }
-  CG-AL-H002: { group: data-modeling, tags: [flowfield, keys, table, table-relation] }
-  CG-AL-H003: { group: records-runtime, tags: [calculations, decimal-precision, table, temporary-table] }
-  CG-AL-H004: { group: data-modeling, tags: [enum] }
-  CG-AL-H005: { group: records-runtime, tags: [single-instance, table, triggers, xrec] }
-  CG-AL-H006: { group: queries-performance, tags: [single-instance] }
-  CG-AL-H007: { group: error-transactions, tags: [enum, errorinfo] }
-  CG-AL-H008: { group: error-transactions, tags: [try-function] }
-  CG-AL-H009: { group: business-logic, tags: [calculations, decimal-precision, rounding] }
-  CG-AL-H010: { group: interfaces-events, tags: [event-publisher, integration-event] }
-  CG-AL-H011: { group: queries-performance, tags: [calculations, query] }
-  CG-AL-H013: { group: business-logic, tags: [collections, continue-keyword] }
-  CG-AL-H014: { group: integration-serialization, tags: [json] }
+  CG-AL-E056: { group: business-logic, tags: [guid, number-formatting, string-formatting, xml] }
+  CG-AL-E057: { group: data-modeling, tags: [data-classification, field-properties, keys, page-customization, table] }
+  CG-AL-E058: { group: business-logic, tags: [permissions, test-codeunit, test-isolation] }
+  CG-AL-H001: { group: business-logic, tags: [calculations, decimal-precision, enum, rounding] }
+  CG-AL-H002: { group: data-modeling, tags: [auto-increment, field-properties, flowfield, keys, table, table-relation] }
+  CG-AL-H003: { group: records-runtime, tags: [calculations, decimal-precision, keys, rounding, table, temporary-table] }
+  CG-AL-H004: { group: data-modeling, tags: [calculations, enum] }
+  CG-AL-H005: { group: records-runtime, tags: [collections, single-instance, string-formatting, table, triggers, xrec] }
+  CG-AL-H006: { group: queries-performance, tags: [calculations, single-instance] }
+  CG-AL-H007: { group: error-transactions, tags: [collectible-errors, collections, enum, errorinfo, string-formatting] }
+  CG-AL-H008: { group: error-transactions, tags: [calculations, try-function] }
+  CG-AL-H009: { group: business-logic, tags: [calculations, decimal-precision, number-formatting, rounding] }
+  CG-AL-H010: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event] }
+  CG-AL-H011: { group: queries-performance, tags: [calculations, namespace, query] }
+  CG-AL-H013: { group: business-logic, tags: [collections, continue-keyword, string-formatting] }
+  CG-AL-H014: { group: integration-serialization, tags: [collections, json] }
   CG-AL-H015: { group: integration-serialization, tags: [interface] }
-  CG-AL-H016: { group: integration-serialization, tags: [http, secrettext, web-service] }
-  CG-AL-H017: { group: queries-performance, tags: [calculations, query] }
-  CG-AL-H018: { group: business-logic, tags: [collections, fluent-api] }
+  CG-AL-H016: { group: integration-serialization, tags: [http, privacy, secrettext, string-formatting] }
+  CG-AL-H017: { group: queries-performance, tags: [calculations, namespace, query] }
+  CG-AL-H018: { group: business-logic, tags: [collections, fluent-api, string-formatting] }
   CG-AL-H019: { group: error-transactions, tags: [permissions, try-function] }
-  CG-AL-H020: { group: business-logic, tags: [collections] }
-  CG-AL-H021: { group: interfaces-events, tags: [collections, interface] }
-  CG-AL-H022: { group: reflection-datatransfer, tags: [fieldref, keys, recordref] }
-  CG-AL-H023: { group: reflection-datatransfer, tags: [collections, fieldref, interface, json, recordref, variant] }
-  CG-AL-H024: { group: reflection-datatransfer, tags: [fieldref, recordref, variant] }
-  CG-AL-H025: { group: reflection-datatransfer, tags: [datatransfer, install, upgrade-tag] }
-  CG-AL-H026: { group: reflection-datatransfer, tags: [recordref, variant] }
-  CG-AL-H027: { group: records-runtime, tags: [event-subscriber, single-instance, table-extension, xrec] }
-  CG-AL-H028: { group: reflection-datatransfer, tags: [fieldref, recordref, xml] }
-  CG-AL-H029: { group: reflection-datatransfer, tags: [fieldref, recordref] }
-  CG-AL-H030: { group: reflection-datatransfer, tags: [fieldref, keyref, keys, recordref] }
-  CG-AL-H031: { group: reflection-datatransfer, tags: [collections, fieldref, flowfield, flowfilter, recordref, variant] }
-  CG-AL-H032: { group: reflection-datatransfer, tags: [collections, obsolete, recordref, table-relation] }
-  CG-AL-H033: { group: pages-ui, tags: [conditional-visibility, page, page-action, table] }
-  CG-AL-H034: { group: error-transactions, tags: [errorinfo, event-publisher, integration-event, transaction] }
-  CG-AL-H035: { group: integration-serialization, tags: [http, secrettext, web-service] }
-  CG-AL-H036: { group: integration-serialization, tags: [encryption, json, privacy, secrettext] }
-  CG-AL-H037: { group: reflection-datatransfer, tags: [datatransfer, install, upgrade-tag] }
-  CG-AL-H038: { group: error-transactions, tags: [locking, transaction] }
-  CG-AL-H039: { group: reflection-datatransfer, tags: [install, upgrade-tag] }
-  CG-AL-H040: { group: reflection-datatransfer, tags: [event-subscriber, install, upgrade-tag] }
-  CG-AL-H041: { group: error-transactions, tags: [table, transaction, try-function] }
+  CG-AL-H020: { group: business-logic, tags: [calculations, collections, generics, string-formatting] }
+  CG-AL-H021: { group: interfaces-events, tags: [collections, generics, interface] }
+  CG-AL-H022: { group: reflection-datatransfer, tags: [fieldref, keyref, keys, recordref, table-relation, variant] }
+  CG-AL-H023: { group: reflection-datatransfer, tags: [collections, fieldref, flowfield, interface, json, keys, recordref, table-relation, variant] }
+  CG-AL-H024: { group: reflection-datatransfer, tags: [collections, fieldref, recordref, variant] }
+  CG-AL-H025: { group: reflection-datatransfer, tags: [datatransfer, install, triggers] }
+  CG-AL-H026: { group: reflection-datatransfer, tags: [recordref] }
+  CG-AL-H027: { group: records-runtime, tags: [data-classification, event-subscriber, single-instance, table-extension, triggers, xrec] }
+  CG-AL-H028: { group: reflection-datatransfer, tags: [fieldref, number-formatting, recordref, string-formatting, variant, xml] }
+  CG-AL-H029: { group: reflection-datatransfer, tags: [encoding, fieldref, recordref, text-builder] }
+  CG-AL-H030: { group: reflection-datatransfer, tags: [fieldref, keyref, keys, recordref, string-formatting] }
+  CG-AL-H031: { group: reflection-datatransfer, tags: [calculations, fieldref, flowfield, flowfilter, recordref, variant] }
+  CG-AL-H032: { group: reflection-datatransfer, tags: [collections, flowfield, flowfilter, obsolete, table-relation] }
+  CG-AL-H033: { group: pages-ui, tags: [conditional-visibility, field-properties, keys, page, table, triggers] }
+  CG-AL-H034: { group: error-transactions, tags: [event-publisher, event-subscriber, integration-event, transaction] }
+  CG-AL-H035: { group: integration-serialization, tags: [http, privacy, secrettext, web-service] }
+  CG-AL-H036: { group: integration-serialization, tags: [json, privacy, secrettext] }
+  CG-AL-H037: { group: reflection-datatransfer, tags: [datatransfer, install, triggers] }
+  CG-AL-H038: { group: error-transactions, tags: [transaction, triggers, try-function] }
+  CG-AL-H039: { group: reflection-datatransfer, tags: [install, transaction, upgrade-tag] }
+  CG-AL-H040: { group: reflection-datatransfer, tags: [collections, event-subscriber, install, upgrade-tag] }
+  CG-AL-H041: { group: error-transactions, tags: [auto-increment, collections, string-formatting, transaction, triggers] }
   CG-AL-H042: { group: error-transactions, tags: [enum, permissions, privacy] }
-  CG-AL-H043: { group: integration-serialization, tags: [http, web-service] }
-  CG-AL-H050: { group: error-transactions, tags: [collectible-errors, table, try-function] }
-  CG-AL-H051: { group: records-runtime, tags: [recordref, table] }
-  CG-AL-H052: { group: records-runtime, tags: [recordref, table] }
-  CG-AL-H053: { group: queries-performance, tags: [query, table] }
+  CG-AL-H043: { group: integration-serialization, tags: [http, namespace, web-service] }
+  CG-AL-H050: { group: error-transactions, tags: [collectible-errors, string-formatting] }
+  CG-AL-H051: { group: records-runtime, tags: [collections] }
+  CG-AL-H052: { group: records-runtime, tags: [] }
+  CG-AL-H053: { group: queries-performance, tags: [calculations, query] }
   CG-AL-H054: { group: queries-performance, tags: [collections, single-instance] }
-  CG-AL-H056: { group: business-logic, tags: [variant] }
-  CG-AL-H057: { group: pages-ui, tags: [page, test-page, triggers] }
+  CG-AL-H056: { group: business-logic, tags: [] }
+  CG-AL-H057: { group: pages-ui, tags: [page, page-view, test-page, triggers] }
   CG-AL-H058: { group: integration-serialization, tags: [base64, encoding, text-builder] }
-  CG-AL-H205: { group: interfaces-events, tags: [calculations, event-publisher, integration-event] }
-  CG-AL-M001: { group: pages-ui, tags: [api-page, field-validation, page-action, table-extension] }
-  CG-AL-M002: { group: business-logic, tags: [calculations, generics, number-formatting] }
-  CG-AL-M003: { group: data-modeling, tags: [field-validation, keys, table, table-relation, triggers] }
-  CG-AL-M004: { group: pages-ui, tags: [conditional-visibility, factbox, page, page-action, system-part, triggers] }
-  CG-AL-M005: { group: integration-serialization, tags: [errorinfo, http, json, web-service] }
-  CG-AL-M006: { group: data-modeling, tags: [calculations, field-validation, table-extension, table-relation, triggers] }
-  CG-AL-M007: { group: pages-ui, tags: [calculations, report, test-codeunit, triggers] }
-  CG-AL-M008: { group: interfaces-events, tags: [event-subscriber, transaction, triggers] }
+  CG-AL-H205: { group: interfaces-events, tags: [calculations, decimal-precision, event-publisher, integration-event, rounding] }
+  CG-AL-M001: { group: pages-ui, tags: [api-page, field-validation, guid, page, table-extension, triggers, web-service] }
+  CG-AL-M002: { group: business-logic, tags: [calculations, collections, decimal-precision] }
+  CG-AL-M003: { group: data-modeling, tags: [data-classification, field-properties, field-validation, keys, table, table-relation, triggers] }
+  CG-AL-M004: { group: pages-ui, tags: [calculations, conditional-visibility, flowfield, page, page-action, triggers] }
+  CG-AL-M005: { group: integration-serialization, tags: [http, json, web-service] }
+  CG-AL-M006: { group: data-modeling, tags: [calculations, data-classification, event-subscriber, field-validation, table-extension, table-relation, triggers] }
+  CG-AL-M007: { group: pages-ui, tags: [calculations, report, triggers] }
+  CG-AL-M008: { group: interfaces-events, tags: [event-subscriber] }
   CG-AL-M009: { group: interfaces-events, tags: [interface] }
-  CG-AL-M010: { group: pages-ui, tags: [page, table, table-relation, triggers] }
-  CG-AL-M020: { group: integration-serialization, tags: [collections, json] }
-  CG-AL-M021: { group: integration-serialization, tags: [json] }
-  CG-AL-M022: { group: integration-serialization, tags: [http, json, web-service] }
-  CG-AL-M023: { group: reflection-datatransfer, tags: [flowfield, recordref] }
-  CG-AL-M024: { group: integration-serialization, tags: [collections, json] }
+  CG-AL-M010: { group: pages-ui, tags: [calculations, keys, page, page-action, table, table-relation, triggers] }
+  CG-AL-M020: { group: integration-serialization, tags: [collections, json, string-formatting] }
+  CG-AL-M021: { group: integration-serialization, tags: [collections, json] }
+  CG-AL-M022: { group: integration-serialization, tags: [http, json, string-formatting, web-service] }
+  CG-AL-M023: { group: reflection-datatransfer, tags: [calculations, collections, flowfield] }
+  CG-AL-M024: { group: integration-serialization, tags: [calculations, collections, json] }
   CG-AL-M025: { group: records-runtime, tags: [recordref, transaction] }
-  CG-AL-M026: { group: business-logic, tags: [] }
-  CG-AL-M027: { group: integration-serialization, tags: [collections, json] }
-  CG-AL-M028: { group: pages-ui, tags: [page, page-extension, system-part, v16] }
-  CG-AL-M029: { group: pages-ui, tags: [field-properties, page-customization, v16] }
-  CG-AL-M031: { group: reflection-datatransfer, tags: [namespace, page, recordref, report, table, v17] }
-  CG-AL-M032: { group: reflection-datatransfer, tags: [datatransfer, install, upgrade-tag, v17] }
-  CG-AL-M033: { group: pages-ui, tags: [json, report, triggers, v15] }
-  CG-AL-M034: { group: reflection-datatransfer, tags: [fieldref, flowfield, recordref, v15] }
+  CG-AL-M026: { group: business-logic, tags: [string-formatting] }
+  CG-AL-M027: { group: integration-serialization, tags: [json] }
+  CG-AL-M028: { group: pages-ui, tags: [factbox, page, page-extension, system-part, v16] }
+  CG-AL-M029: { group: pages-ui, tags: [page, page-customization, v16] }
+  CG-AL-M031: { group: reflection-datatransfer, tags: [data-classification, keys, namespace, page, recordref, report, table, v17] }
+  CG-AL-M032: { group: reflection-datatransfer, tags: [datatransfer, install, v17] }
+  CG-AL-M033: { group: pages-ui, tags: [json, namespace, report, triggers, v15] }
+  CG-AL-M034: { group: reflection-datatransfer, tags: [calculations, fieldref, flowfield, recordref, v15] }
   CG-AL-M035: { group: integration-serialization, tags: [http, v15] }
   CG-AL-M036: { group: integration-serialization, tags: [collections, json, secrettext, v15] }
   CG-AL-M037: { group: interfaces-events, tags: [business-event, enum, obsolete, v15] }
-  CG-AL-M038: { group: reflection-datatransfer, tags: [collections, locking, recordref, v16] }
-  CG-AL-M039: { group: pages-ui, tags: [factbox, page, page-action, test-page, v16] }
-  CG-AL-M040: { group: data-modeling, tags: [data-classification, field-properties, table, v16] }
-  CG-AL-M041: { group: data-modeling, tags: [flowfield, table, table-extension] }
-  CG-AL-M042: { group: records-runtime, tags: [field-validation, table, triggers, xrec] }
-  CG-AL-M043: { group: records-runtime, tags: [table, table-relation, triggers, xrec] }
-  CG-AL-M044: { group: records-runtime, tags: [page, triggers, xrec] }
-  CG-AL-M045: { group: records-runtime, tags: [event-subscriber, field-validation, single-instance, xrec] }
-  CG-AL-M088: { group: business-logic, tags: [calculations, enum] }
-  CG-AL-M112: { group: data-modeling, tags: [auto-increment, field-validation, flowfield, keys, table, table-relation, triggers] }
+  CG-AL-M038: { group: reflection-datatransfer, tags: [collections, generics, locking, recordref, v16] }
+  CG-AL-M039: { group: pages-ui, tags: [factbox, page, test-page, v16] }
+  CG-AL-M040: { group: data-modeling, tags: [data-classification, field-properties, keys, table, v16] }
+  CG-AL-M041: { group: data-modeling, tags: [calculations, field-properties, flowfield, table-extension] }
+  CG-AL-M042: { group: records-runtime, tags: [calculations, field-properties, field-validation, keys, table, triggers, xrec] }
+  CG-AL-M043: { group: records-runtime, tags: [data-classification, field-properties, keys, table, table-relation, triggers, xrec] }
+  CG-AL-M044: { group: records-runtime, tags: [keys, page, page-view, triggers, xrec] }
+  CG-AL-M045: { group: records-runtime, tags: [event-subscriber, field-validation, single-instance, triggers, xrec] }
+  CG-AL-M088: { group: business-logic, tags: [calculations, decimal-precision, enum, rounding] }
+  CG-AL-M112: { group: data-modeling, tags: [auto-increment, calculations, data-classification, field-properties, field-validation, flowfield, keys, table, table-relation, triggers] }
+  CG-AL-X001: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event] }
+  CG-AL-X002: { group: error-transactions, tags: [errorinfo, transaction, try-function] }
+  CG-AL-X003: { group: data-modeling, tags: [data-classification, permissions] }
+  CG-AL-X004: { group: business-logic, tags: [collections, temporary-table] }
+  CG-AL-X005: { group: business-logic, tags: [locking, transaction] }
+  CG-AL-X006: { group: data-modeling, tags: [table-relation, temporary-table] }
+  CG-AL-X007: { group: data-modeling, tags: [calculations, collections] }
+  CG-AL-X008: { group: error-transactions, tags: [collections, locking, transaction] }
+  CG-AL-X009: { group: data-modeling, tags: [table, triggers] }
+  CG-AL-X010: { group: business-logic, tags: [calculations] }
+  CG-AL-X011: { group: business-logic, tags: [transaction] }
+  CG-AL-X012: { group: data-modeling, tags: [data-classification, field-properties, table, table-relation, triggers] }
+  CG-AL-X013: { group: business-logic, tags: [string-formatting] }
+  CG-AL-X014: { group: business-logic, tags: [string-formatting] }
+  CG-AL-X017: { group: business-logic, tags: [calculations] }
+  CG-AL-X018: { group: business-logic, tags: [calculations] }
+  CG-AL-X019: { group: data-modeling, tags: [guid] }
+  CG-AL-X022: { group: records-runtime, tags: [calculations, data-classification, table, triggers, xrec] }
+  CG-AL-X024: { group: business-logic, tags: [data-classification, field-properties, string-formatting, table] }
+  CG-AL-X025: { group: business-logic, tags: [auto-increment, data-classification, table, temporary-table, triggers] }
+  CG-AL-X026: { group: business-logic, tags: [calculations] }
+  CG-AL-X027: { group: business-logic, tags: [string-formatting] }
+  CG-AL-X029: { group: integration-serialization, tags: [encoding] }
+  CG-AL-X030: { group: business-logic, tags: [calculations] }
+  CG-AL-X031: { group: business-logic, tags: [calculations, collections, generics, table] }
+  CG-AL-X033: { group: business-logic, tags: [fieldref, recordref, table] }
+  CG-AL-X034: { group: data-modeling, tags: [enum, string-formatting] }
+  CG-AL-X035: { group: error-transactions, tags: [table, transaction, try-function] }
+  CG-AL-X037: { group: error-transactions, tags: [keys, table, transaction, try-function] }
+  CG-AL-X040: { group: error-transactions, tags: [table, transaction, try-function] }
+  CG-AL-X041: { group: error-transactions, tags: [table, transaction, triggers, try-function] }
+  CG-AL-X043: { group: interfaces-events, tags: [event-subscriber, field-properties, integration-event, table, table-extension] }
+  CG-AL-X044: { group: data-modeling, tags: [recordref, table] }
+  CG-AL-X045: { group: business-logic, tags: [calculations, field-validation, rounding, table, triggers] }
+  CG-AL-X046: { group: business-logic, tags: [field-properties, guid, table, triggers] }
+  CG-AL-X047: { group: business-logic, tags: [calculations, table, temporary-table] }
+  CG-AL-X050: { group: business-logic, tags: [calculations, enum, keys, table] }
+  CG-AL-X051: { group: data-modeling, tags: [calculations, enum, flowfield, flowfilter, table] }
+  CG-AL-X052: { group: business-logic, tags: [calculations, field-validation, rounding, table, triggers] }
+  CG-AL-X055: { group: business-logic, tags: [collections] }
+  CG-AL-X056: { group: integration-serialization, tags: [json] }
+  CG-AL-X057: { group: business-logic, tags: [string-formatting] }
+  CG-AL-X058: { group: data-modeling, tags: [collections, keys, table] }
+  CG-AL-X059: { group: data-modeling, tags: [enum, field-validation, table] }
+  CG-AL-X060: { group: reflection-datatransfer, tags: [keys, table] }
+  CG-AL-X061: { group: reflection-datatransfer, tags: [calculations, flowfield, table] }
+  CG-AL-X062: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event] }
+  CG-AL-X063: { group: reflection-datatransfer, tags: [fieldref, recordref, table, variant] }
+  CG-AL-X064: { group: business-logic, tags: [collections, string-formatting, try-function] }
+  CG-AL-X065: { group: business-logic, tags: [keys, table] }
+  CG-AL-X066: { group: business-logic, tags: [calculations, collections, decimal-precision, keys, rounding, table] }
+  CG-AL-X067: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event, rounding] }
+  CG-AL-X068: { group: records-runtime, tags: [auto-increment, table] }
+  CG-AL-X069: { group: business-logic, tags: [auto-increment, guid, keys, table] }
+  CG-AL-X070: { group: error-transactions, tags: [enum, table, transaction] }
+  CG-AL-X071: { group: interfaces-events, tags: [enum, event-subscriber, flowfield, integration-event, table] }
+  CG-AL-X072: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event, table] }
+  CG-AL-X073: { group: data-modeling, tags: [field-properties, keys, table, table-relation] }
+  CG-AL-X074: { group: business-logic, tags: [page, page-action, table, triggers] }
+  CG-AL-X075: { group: business-logic, tags: [table] }
+  CG-AL-X076: { group: error-transactions, tags: [collections, table, transaction, try-function] }
+  CG-AL-X077: { group: business-logic, tags: [calculations, collections, table, temporary-table] }
+  CG-AL-X078: { group: business-logic, tags: [calculations, table, temporary-table] }
+  CG-AL-X079: { group: business-logic, tags: [calculations, decimal-precision, field-properties, rounding, table, table-relation] }
+  CG-AL-X080: { group: data-modeling, tags: [enum, enum-extension, table] }
+  CG-AL-X081: { group: interfaces-events, tags: [event-publisher, event-subscriber, field-validation, integration-event, table, table-relation, triggers] }
+  CG-AL-X082: { group: integration-serialization, tags: [auto-increment, http, interface, json, table] }
+  CG-AL-X083: { group: integration-serialization, tags: [auto-increment, table, xml] }
+  CG-AL-X084: { group: business-logic, tags: [calculations, collections, flowfield, keys, sift-keys, table, temporary-table] }
+  CG-AL-X085: { group: error-transactions, tags: [field-validation, table, transaction] }
+  CG-AL-X086: { group: business-logic, tags: [keys, string-formatting, table] }
+  CG-AL-X087: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event, table] }
+  CG-AL-X088: { group: business-logic, tags: [auto-increment, table] }
+  CG-AL-X089: { group: business-logic, tags: [auto-increment, collections, keys, table, table-relation, text-builder] }
+  CG-AL-X090: { group: queries-performance, tags: [calculations, collections, keys, query, table] }
+  CG-AL-X091: { group: queries-performance, tags: [single-instance, table] }
+  CG-AL-X092: { group: business-logic, tags: [decimal-precision, number-formatting, string-formatting] }
+  CG-AL-X093: { group: integration-serialization, tags: [json, number-formatting, string-formatting, table] }
+  CG-AL-X094: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event, string-formatting] }
+  CG-AL-X095: { group: error-transactions, tags: [auto-increment, keys, permissions, permissionset, table, transaction] }
+  CG-AL-X096: { group: integration-serialization, tags: [http, interface, json, number-formatting, string-formatting, table, xml] }
+  CG-AL-X097: { group: business-logic, tags: [calculations, collections, decimal-precision, rounding, table, temporary-table] }
+  CG-AL-X098: { group: interfaces-events, tags: [event-publisher, event-subscriber, field-validation, integration-event, table] }
+  CG-AL-X099: { group: business-logic, tags: [collections, flowfield, keys, query, table, table-relation, text-builder] }
+  CG-AL-X100: { group: business-logic, tags: [table, temporary-table, triggers] }
+  CG-AL-X101: { group: data-modeling, tags: [calculations, keys, table, temporary-table] }
+  CG-AL-X102: { group: records-runtime, tags: [table, temporary-table] }
+  CG-AL-X103: { group: business-logic, tags: [table] }
+  CG-AL-X104: { group: integration-serialization, tags: [json, table, temporary-table, transaction] }
+  CG-AL-X105: { group: data-modeling, tags: [enum, keys, table] }
+  CG-AL-X106: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event, table] }
+  CG-AL-X107: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event, table] }
+  CG-AL-X108: { group: queries-performance, tags: [single-instance, table] }
+  CG-AL-X109: { group: data-modeling, tags: [field-properties, keys, table] }
+  CG-AL-X110: { group: business-logic, tags: [enum, field-validation, locking, table, transaction] }
+  CG-AL-X111: { group: data-modeling, tags: [calculations, field-properties, flowfield, keys, sift-keys, table] }
+  CG-AL-X112: { group: business-logic, tags: [auto-increment, collections, keys, string-formatting, table] }
+  CG-AL-X113: { group: business-logic, tags: [auto-increment, keys, table] }
+  CG-AL-X114: { group: business-logic, tags: [calculations, table] }
+  CG-AL-X115: { group: business-logic, tags: [calculations] }
+  CG-AL-X116: { group: business-logic, tags: [collections, decimal-precision, number-formatting, string-formatting] }
+  CG-AL-X117: { group: integration-serialization, tags: [number-formatting, string-formatting, table, xml] }
+  CG-AL-X118: { group: business-logic, tags: [decimal-precision, field-validation, rounding, table, table-relation, triggers] }
+  CG-AL-X119: { group: business-logic, tags: [enum, string-formatting, table] }
+  CG-AL-X120: { group: business-logic, tags: [keys, table] }
+  CG-AL-X121: { group: business-logic, tags: [field-validation, table, triggers] }
+  CG-AL-X122: { group: interfaces-events, tags: [event-publisher, event-subscriber, integration-event] }
+  CG-AL-X123: { group: business-logic, tags: [auto-increment, calculations, keys, sift-keys, table] }
+  CG-AL-X124: { group: queries-performance, tags: [calculations, table] }
+  CG-AL-X125: { group: business-logic, tags: [string-formatting, table] }
+  CG-AL-X126: { group: business-logic, tags: [calculations, decimal-precision, rounding] }
+  CG-AL-X127: { group: business-logic, tags: [field-validation, table, triggers] }
+  CG-AL-X128: { group: business-logic, tags: [calculations, table] }
+  CG-AL-X129: { group: business-logic, tags: [calculations, decimal-precision, keys, rounding, table] }
+  CG-AL-X130: { group: business-logic, tags: [collections, generics] }
+  CG-AL-X131: { group: error-transactions, tags: [collectible-errors, collections, errorinfo, string-formatting, table] }
+  CG-AL-X132: { group: business-logic, tags: [table, temporary-table] }
+  CG-AL-X133: { group: business-logic, tags: [collections, event-publisher, event-subscriber, integration-event, table, temporary-table] }
+  CG-AL-X134: { group: data-modeling, tags: [auto-increment, flowfield, keys, table, table-relation, temporary-table] }
+  CG-AL-X135: { group: business-logic, tags: [enum, field-validation, table] }
+  CG-AL-X136: { group: business-logic, tags: [calculations, table] }
+  CG-AL-X137: { group: error-transactions, tags: [collections, table, transaction] }
+  CG-AL-X138: { group: business-logic, tags: [string-formatting, table] }
+  CG-AL-X139: { group: business-logic, tags: [calculations, enum, keys, table, triggers] }
+  CG-AL-X140: { group: business-logic, tags: [calculations, decimal-precision, keys, rounding, table] }
+  CG-AL-X141: { group: business-logic, tags: [calculations, enum, keys, locking, table, transaction] }
+  CG-AL-X142: { group: business-logic, tags: [calculations, decimal-precision, keys, rounding, sift-keys, table, temporary-table] }
+  CG-AL-X143: { group: business-logic, tags: [collections, event-subscriber, flowfield, integration-event, keys, table, temporary-table] }
+  CG-AL-X144: { group: error-transactions, tags: [calculations, collectible-errors, collections, errorinfo, keys, string-formatting, table, temporary-table] }
+  CG-AL-X145: { group: interfaces-events, tags: [calculations, enum, event-subscriber, integration-event, keys, table] }
+  CG-AL-X146: { group: business-logic, tags: [calculations, decimal-precision, keys, rounding, table] }

@@ -37,6 +37,9 @@ const GROUP_OVERRIDE: Record<string, string> = {
   "CG-AL-E052": "business-logic", "CG-AL-H005": "records-runtime",
   "CG-AL-H027": "records-runtime", "CG-AL-M045": "records-runtime",
   "CG-AL-H034": "error-transactions",
+  // Batch-7/8 perf tasks whose slugs dodge the perf regexes:
+  "CG-AL-X133": "queries-performance", "CG-AL-X134": "queries-performance",
+  "CG-AL-X143": "queries-performance",
 };
 
 // ---- FACET TAG canonicalization ----

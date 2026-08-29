@@ -173,7 +173,7 @@ Standing constraints (from CLAUDE.md + session rules):
       T4 stubborn-mutant harvest for batch-5+ candidates.
 - [ ] Batches of ~10 through: workbench author → probe gate →
       `al-test-auditor` → promote. Ledger counts tracked at the top.
-- [ ] **Suite-wide perf-message de-leak** (decisions entry 21): 15 assert
+- [x] **Suite-wide perf-message de-leak** DONE 2026-08-29 (3a405df2): 15 assert
       messages across 8 promoted oracles name the graded SQL counter, which
       hands a perf task's diagnosis to the model on attempt 2. One focused
       pass, BEFORE the set is complete - the hash moves with every promotion
@@ -181,6 +181,15 @@ Standing constraints (from CLAUDE.md + session rules):
 
 ### Phase 4 — Suite integration
 
+- [x] Taxonomy refreshed 2026-08-29: groups rebuilt (perf overrides for
+      X133/X134/X143), content facets re-enriched by workflow (241 tasks,
+      75 tags, avg 3.6 facets, 2 known-generic zero-facet stragglers),
+      `site/catalog/task-categories.yml` committed. **`sync-taxonomy
+      --apply` DEFERRED**: prod 500s with a FOREIGN KEY error because the
+      current prod task set predates batch 7 (16 tasks absent from D1) -
+      re-apply after the re-bench ingests the new set. Worker hardening
+      note: the taxonomy endpoint should skip tasks absent from the target
+      hash instead of failing the whole POST.
 - [ ] `deno task id-audit` clean; taxonomy refresh
       (`refresh-task-taxonomy` skill); duplicate-id allowlist reviewed.
 - [ ] THE re-bench of the completed set (first time the rebench rule
