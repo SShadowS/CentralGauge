@@ -165,6 +165,18 @@ Standing constraints (from CLAUDE.md + session rules):
       batch-9 section. B7+B6b done same day: one real hole (X147 M0012
       re-seed path, kill test added, 85.7% after), all other survivors
       proved equivalent/out-of-scope, X153 swept 100% clean.
+- [x] Build batch 10 (2026-08-29): CG-AL-X156..X164 promoted.
+      **100 / 100 - THE SUITE IS COMPLETE.** Four ledger rows
+      (R003/R070/R137/R097) + five fresh designs on entries 36-38
+      (probed BEFORE slots were spent: ChangeCompany per-instance scope,
+      permission predicates track pushed sets, unlinked CalcFormula
+      ignores the Date Filter). Cat-4 dropped by operator ruling (entry
+      35), 3 slots to cat 1. B4/C1 18/18 after two textbook licensing
+      fix rounds (X160 cross-family identical failure = unanchored sign
+      pin + under-licensed cap; X159 spec-steered schema redesign the
+      auditor independently predicted). No hard-tier admits. Full gate
+      log in ledger batch-10 section. B7 LethAL + B6b pending
+      post-promote.
       (operator must pick the target module first).
 - [x] T1/T4 prerequisite (2026-08-24): 47 promoted tasks' correct/
       reference solutions committed under hash-excluded

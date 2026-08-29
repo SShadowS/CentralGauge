@@ -838,3 +838,53 @@ Append-only. Each entry: date, decision, why.
     (a session cache without a company key serving one company's rate to
     every company) is buildable, and its fixtures must use the two company
     names above.
+
+35. **Category 4 (minimal-change constraint) is DROPPED from the
+    allocation (2026-08-29, operator ruling at batch-10 planning).** Its
+    enforcement premise was measured false (entry 15: the bench writes
+    the whole submission to one file, so a redeclared frozen object is an
+    AL0264 compile error while diagnose.md rule 2 orders every object
+    returned), fixing it needs an unpiloted template amendment, and only
+    3 unallocated slots remained. The 3 slots move to category 1 (66
+    mined candidates unspent). Final allocation: cat 4 = 0; categories.md
+    updated at batch-10 promote. R115 (the last cat-4 seed) retires as
+    unusable-without-machinery; the enforcement question (prereq-app
+    carrier + conditional read-only block) remains open for a future
+    suite revision, not this one.
+
+36. **ChangeCompany is per-record-instance; CompanyName() is
+    session-scoped (2026-08-29, Cronus28, BC 28.4, probe
+    `scratch/probe-ccscope/`, re-runnable).** With 'P'=11.0 seeded in the
+    current company and 'P'=22.0 in the other: a ChangeCompany'd variable
+    reads 22 while a FRESH variable of the same table in the same scope
+    reads 11; a helper-procedure-local record called mid-use also reads
+    11 (the switch does NOT propagate to other instances); CompanyName()
+    returns the current company throughout. Consequence: the X162
+    (wrong-company attribution via CompanyName() stamped inside a
+    ChangeCompany loop) and X163 (helper-local record silently reading
+    the current company during cross-company aggregation) designs are
+    buildable exactly as premised.
+
+37. **Record-level permission predicates TRACK the pushed permission set
+    under TestPermissions=Restrictive (2026-08-29, Cronus28, BC 28.4,
+    probe `scratch/probe-permcheck/`, re-runnable).** With an R-only app
+    set pushed via PushPermissionSetWithoutDefaults:
+    ReadPermission()=Yes, WritePermission()=No, and a real Insert dies
+    with "the current permissions prevented the action"; after pushing
+    the RIMD set additionally, WritePermission() flips to Yes and the
+    Insert succeeds (predicates reflect the union of pushed sets).
+    Re-hit on the way: a write inside a [TryFunction] is refused under
+    the SOAP runner (entry 13's write-inside-try scoping) - probe
+    corroboration must use asserterror, and X164's starter must not
+    lean on TryFunction around writes. Also: permission set NAMES cap
+    at 20 characters (AL0305).
+
+38. **A CalcFormula with no date term silently ignores the Date Filter
+    FlowFilter (2026-08-29, Cronus28, BC 28.4, probe
+    `scratch/probe-flowfilter/`, re-runnable).** Entries 10 (Jan), 20
+    (Feb), 40 (Mar): unlinked Balance reads 70 under NO filter, under a
+    Feb-only filter, and under a Feb-Mar filter (70/70/70); the
+    date-linked Net Change reads 70/20/60. No error, no warning - the
+    filter is simply not applied. Consequence: the X157 (R070) design -
+    "wrong FlowField chosen, date window silently ignored" - is
+    buildable; the defect is invisible to alsem and to the compiler.

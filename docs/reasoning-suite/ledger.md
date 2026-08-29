@@ -12,13 +12,13 @@ reason in Notes) - they stop re-mining the same ground.
   CG-AL-X128, CG-AL-X129, CG-AL-X130 (batch-6 fresh designs - see below),
   and CG-AL-X137, CG-AL-X138, CG-AL-X139, CG-AL-X140 (batch-7 fresh designs),
   CG-AL-X146 (batch-8 higher-order pilot, fresh design),
-  and CG-AL-X150, CG-AL-X154 (batch-9 fresh designs: X150 = two-level
+  CG-AL-X150, CG-AL-X154 (batch-9 fresh designs: X150 = two-level
   largest-remainder drift, X079-family extension; X154 = SingleInstance
   cache with no company dimension, built directly on decisions entry 34)
 - Passed Sonnet filter (Sonnet failed to solve): 4
 - Passed Fable filter (Fable failed or struggled): 0
-- Tasks built: 91 / 100
-- Tasks promoted: 91 / 100
+- Tasks built: 100 / 100
+- Tasks promoted: 100 / 100
 
 **Column vocabulary**
 
@@ -34,7 +34,7 @@ reason in Notes) - they stop re-mining the same ground.
 |---|---|---|---|---|---|---|
 | R001 | pr:52841 (+52724, 52196) | 1 | - | - | promoted (CG-AL-X065) | PILOT of the diagnose format. var-record filter wipe: helper borrows the caller's var record as its aggregation cursor; only one line per category gets repriced. Probe: correct 6/6, starter fails 4/6 (single-line + direct-contract tests pass on starter by design). Auditor HIGH (unfiltered-aggregation hole) closed with the GAMMA test before promote. Skipped the model filter: format validation, not difficulty selection. |
 | R002 | volotest:error-handling-collect-errors | 7 | - | - | promoted (CG-AL-X131) | else-if chain flattened to independent ifs inside a [ErrorBehavior(Collect)] scope: a multi-rule-broken line reports every rule instead of first-only; invisible outside a Collect scope. Oracle: clean/one-rule/three-rule/cross-batch lines, portable near-verbatim from volotest's own test. |
-| R003 | volotest:error-handling-delete-guard | 1 | - | - | raw | MAYBE: Sales Header.Status has 4 values, not 2; guard swapped from Status=Released to Status<>Open also blocks Pending Approval/Prepayment orders. Deeper IsTemporary-guard-drop alternative rejected as expensive/flaky to seed. |
+| R003 | volotest:error-handling-delete-guard | 1 | - | - | promoted (CG-AL-X156) | MAYBE: Sales Header.Status has 4 values, not 2; guard swapped from Status=Released to Status<>Open also blocks Pending Approval/Prepayment orders. Deeper IsTemporary-guard-drop alternative rejected as expensive/flaky to seed. |
 | R004 | volotest:error-handling-istemporary-guard | 1 | - | - | promoted (CG-AL-X132) | MAYBE: shared IsTemporary guard inlined and silently dropped from ProcessBuffer only (twin-procedure omission) - a non-temporary record passed to ProcessBuffer mutates real table rows instead of raising. |
 | R005 | volotest:error-handling-posting-gate | 1 | - | - | raw | Sell-to vs Bill-to Customer No. field swap in an invoice-hold gate; volotest's OWN test suite can't discriminate it (always same customer) but the diagnose oracle can seed sell-to-held/bill-to-clear and the reverse. |
 | R006 | volotest:error-handling-tryfunction | 1 | solved | - | promoted (CG-AL-X076) | [TryFunction]-decorated helper gets Insert() moved inside it; DisableWriteInsideTryFunctions silently swallows the write so ImportLine imports NOTHING ever, even valid lines - "classic write-inside-try trap" per volotest's own hint. Filter b1: sonnet=solved, fable=skipped; buggy app kept at scratch/filter-batch1/a1-tryfunction/ MEASURED: write-inside-try restriction is dynamically scoped (any TryFunction on the call stack) and PIERCES enclosing TryFunctions in the runner; production silent-swallow story marked unverified. |
@@ -101,7 +101,7 @@ reason in Notes) - they stop re-mining the same ground.
 | R067 | volotest:basics-systemid-crossref | 1 | - | - | raw | MAYBE: 4-procedure SystemId-crossref choreography with a genuinely subtle idempotency invariant (a migrated row whose stale number was since taken by a different customer must NOT be repointed). REAL dedup overlap with shipped X046 (2-bool Insert overload copying SystemId) via ImportBookmark - if converted, anchor on ResolveCustomer's rename-survival or MigrateLegacyBookmarks' idempotency guard specifically, the non-overlapping angles. |
 | R068 | volotest:basics-uri-builder-endpoints | 1 | - | - | raw | MAYBE: AddQueryParameter/AddQueryFlag auto-percent-encode but SetPath treats its argument as raw path syntax - a value spliced into a path segment needs hand EscapeDataString. Naive fixture omits escaping on ItemCardUrl's path splice while every other call site in the same file is auto-encoded (difficulty lever #2: red herring elsewhere reads suspicious but is correct). |
 | R069 | volotest:basics-variant-dispatch | 1 | - | - | rejected | FormatValue/TryFormatValue dispatch a Variant via Is<Type>() probes that are NOT mutually exclusive (IsCode also answers IsText true; IsOption also answers IsInteger true) - probe order determines correctness. Textbook difficulty-lever-#2 match: naive fixture checks IsInteger before IsOption, or IsText before IsCode. REJECTED: premise measured false on BC28 (decisions 13): Variant Is* probes are EXACT, no overlap. |
-| R070 | volotest:filtering-balance-in-window | 1 | - | - | raw | Net Change (LCY) swapped for Balance (LCY) in BalanceChangeBetween; Balance's CalcFormula has no posting-date link so it silently ignores the Date Filter FlowFilter and always returns the all-time balance - nothing in the code LOOKS wrong, both are valid Customer FlowFields. |
+| R070 | volotest:filtering-balance-in-window | 1 | - | - | promoted (CG-AL-X157) | Net Change (LCY) swapped for Balance (LCY) in BalanceChangeBetween; Balance's CalcFormula has no posting-date link so it silently ignores the Date Filter FlowFilter and always returns the all-time balance - nothing in the code LOOKS wrong, both are valid Customer FlowFields. |
 | R071 | volotest:filtering-cross-column-search | 1 | partial | solved | promoted (CG-AL-X068) | Both SetFilter(Name)/SetFilter(City) set in the default filter group (0) instead of FilterGroup(-1); compiles fine, silently returns AND instead of the promised OR. FilterGroup(-1) is a genuinely obscure, non-guessable "search box" reserved group. Volotest's own task.md narrates the bug verbatim as production incident prose. Filter b1: sonnet=partial, fable=solved; buggy app kept at scratch/filter-batch1/a4-cross-column-search/ hard tier; audit pinned SearchContactable return + log fields; starter now fails 9/12. |
 | R072 | volotest:filtering-filter-tokens | 5 | - | - | rejected | MAYBE, category 5 (fill-the-hole) fits better than diagnose: starter genuinely never calls Filter Tokens at all (unimplemented, not subtly wrong). If pursued as diagnose: call MakeDateFilter but apply the pre-mutation original var instead of the rewritten one - requires knowing MakeDateFilter mutates its parameter in place. REJECTED 2026-08-26: premise measured false on BC28 (decisions 25) - SetFilter already resolves t/today/w/yesterday/tomorrow/t..t/..t natively on a Date field, so applying the original text instead of the MakeDateFilter-rewritten text matches identically and the defect is unobservable. |
 | R073 | volotest:filtering-hostile-names | 1 | - | - | raw | MAYBE, scoped: CountExactName's exact-match lesson (SetRange not SetFilter) is the SAME mechanic X014-filter-substitution already measures - reject that half outright. CountNamesContaining's apostrophe-doubling escape for a safe contains-search IS novel (X014 only tests exact match); plant the defect there only, leave CountExactName as fixed oracle-side scaffolding. |
@@ -128,7 +128,7 @@ reason in Notes) - they stop re-mining the same ground.
 | R094 | pr:52675 | 2 | solved | - | filtered | MAYBE: SetLoadFields(key fields only) immediately before Rename() defeats itself - Rename physically rewrites the row so BC JIT-reloads the excluded fields, an EXTRA statement per row rather than the one saved. 3 PRs (52675/52677/52841), one file, never fixed across 3 separate review rounds. JIT-reload family cross-ref: R020 (A1 perf-setloadfields, strongest existing oracle) and R121 (C WI80316, JIT-reload+optimistic-concurrency correctness bug) - three different concrete triggers, same platform mechanic; this instance is the narrowest of the three (pure extra-statement cost, no correctness angle). Filter b1: sonnet=solved, fable=skipped; buggy app kept at scratch/filter-batch1/b1-setloadfields-rename/ |
 | R095 | pr:52312 | 2 | solved | - | promoted (CG-AL-X084) | Excel Search's CalcTotals rebuilds its buffer from scratch on every UI edit event - per buffered entry, one point Get()+CalcFields() re-touches ALL prior entries, so filling M rows costs O(M^2) not O(M). Corpus's strongest recurrence signal: 4 distinct PRs (52312/52692/53627/53629), 4 separate rewrites of the SAME file - the inefficiency is what a competent BC dev reaches for by default. Filter b1: sonnet=solved, fable=skipped; buggy app kept at scratch/filter-batch1/b1-calctotals-quadratic/ second perf-oracle task (budget 20, correct ~2 vs starter ~402 at N=200); mechanism clause removed from description. |
 | R096 | pr:52663 | 2 | partial | solved | promoted (CG-AL-X069) | HasPendingReferenceUpToPeriodEnd scans an entire unfiltered queue table and, per row, opens a RecordRef via GetBySystemId on a DIFFERENT source table just to read one date - the common "nothing pending" case pays for a full scan plus N cross-table lookups. 2 PRs (52663/53254), same file, months apart, explicitly acknowledged by the author as a known issue and never fixed. Filter b1: sonnet=partial, fable=solved; buggy app kept at scratch/filter-batch1/b1-queue-scan/ hard tier; FIRST perf-oracle task (SQL counters, budget 20 vs naive 201); audit closed source-table-bypass hole with RemoveReference test. |
-| R097 | pr:52472 | 2 | - | - | raw | OnAfterValidate subscriber loops EVERY company via ChangeCompany doing a full-record Get() per company to answer yes/no, with no early exit once known AND the triggering condition (Email changed) tested INSIDE the loop instead of hoisted above it - even a no-op save pays for a full N-company scan. Flagged twice in 2 PRs (52472/52473), same loop. |
+| R097 | pr:52472 | 2 | - | - | promoted (CG-AL-X159) | OnAfterValidate subscriber loops EVERY company via ChangeCompany doing a full-record Get() per company to answer yes/no, with no early exit once known AND the triggering condition (Email changed) tested INSIDE the loop instead of hoisted above it - even a no-op save pays for a full N-company scan. Flagged twice in 2 PRs (52472/52473), same loop. |
 | R098 | pr:51887 | 2 | - | - | rejected | SummaryLine table has keys on Id/Sort Order/Line Type/Flow Code/Network Profile Id but NOT on ParentId, the field both recursive tree-walk passes filter on; a different SetCurrentKey call right before is a RED HERRING that doesn't help this filter. Every child lookup scans the FULL table per node, cost grows quadratically with tree size. Directly matches decisions.md's "missing key (scan width)" menu item via SqlRowsRead specifically. REJECTED 2026-08-25: premise measured false on BC28 (decisions 17) - a missing key is INVISIBLE to the SQL counters (keyed and unkeyed measured identically, 20s/620r and 1s/21r), because SqlRowsRead counts rows RETURNED to AL, not rows scanned. CG-AL-X111 was re-aimed off this mid-batch. |
 | R099 | pr:49388 | 2 | - | - | promoted (CG-AL-X112) | GetJobQueueSummaryText applies 3 filters + FindFirst() against a shared log table once per DISPLAYED ROW instead of one bulk pre-load into a Dictionary keyed by row parameter; N agreements on screen = N separate queries. Same family as R096/R121 (per-row lookup against a shared table) - recurs across 5 PRs in 2 repos when counted broadly. |
 | R100 | pr:52747 | 2 | - | - | promoted (CG-AL-X133) | Two independent "display column" getters each trigger a full event-dispatch-and-resolve cycle per row, and the subscriber behind the event does 2 point Gets uncached - up to 4N Gets where a resolve-once-and-cache-on-row pass costs N or fewer. Same per-row-lookup family as R096/R099. |
@@ -146,7 +146,7 @@ reason in Notes) - they stop re-mining the same ground.
 | R112 | pr:52382 | 6 | - | - | promoted (CG-AL-X106) | One subscriber, defending against a DIFFERENT bug (a stale record instance), does a full Get() re-read INTO a shared var Record parameter that N subscribers write to - this correctly fixes staleness but silently WIPES any in-memory, not-yet-persisted field an EARLIER subscriber already set on that exact instance. Subtlest entry in the B2 set: a correct fix for bug A directly causes bug B. 1 PR lineage (52382/52384/52375) across 3 genuinely-revised review rounds. |
 | R113 | pr:52798 | 6 | - | - | raw | AL runs the request page FIRST, then OnPreReport; seeding defaults inside OnPreReport (correct only on a code path that SKIPS the request page) discards the user's just-entered values on the interactive path. Human-confirmed fixed. Already documented in the 2026-08-20 doc's Tier 2 table; kept here with full quote + confirmed-fix status as the clearest instance of category 7's "input silently discarded on success" sibling shape. |
 | R114 | pr:51887 | 1 | - | - | promoted (CG-AL-X104) | A sync/import procedure treats "response has the expected top-level shape" as sufficient proof a full replacement is safe, and sequences DeleteAll() across multiple related tables BEFORE parsing/validating the nested arrays it's about to rebuild from - a technically-valid-but-degenerate empty response wipes everything and refills nothing. Cleanest single case of "destructive op sequenced before validation" specifically (distinct from R104's Commit-then-fail irreversibility family). |
-| R115 | pr:52377 | 4 | - | - | raw | Category-4 (minimal-change constraint) candidate: a helper receiving var Record filters/repositions it as an UNDOCUMENTED side effect of computing a value; the PR's own fix strategy was per-call-site Clear() patches, fragile and already missed a THIRD call site. Symptom traces to the helper (object A) but naive fixes reach for call-site patches (object B/C/D) that don't scale - forces the model past a tempting non-fix when only object A is submittable. Latent (not live in production) - the task's starter code must add a caller that DOES read the variable afterward to manifest the symptom. |
+| R115 | pr:52377 | 4 | - | - | retired | Category-4 (minimal-change constraint) candidate: a helper receiving var Record filters/repositions it as an UNDOCUMENTED side effect of computing a value; the PR's own fix strategy was per-call-site Clear() patches, fragile and already missed a THIRD call site. Symptom traces to the helper (object A) but naive fixes reach for call-site patches (object B/C/D) that don't scale - forces the model past a tempting non-fix when only object A is submittable. Latent (not live in production) - the task's starter code must add a caller that DOES read the variable afterward to manifest the symptom. |
 | R116 | pr:51887 | 1 | - | - | raw | Reinforces the 2026-08-20 doc's existing Tier 1 #4 (Evaluate-consumed-return-value family) with a materially different concrete shape: FIVE independent Evaluate calls in ONE record-parsing procedure, each ignored, silently coerce a malformed external field to its TYPE DEFAULT (blank GUID, 0 date) instead of failing the row - multi-field single-procedure blanking vs the existing single-field cross-iteration-reuse shape. Ranked last; worth building only as a second scene if Tier-1#4 becomes a composite task. |
 | R117 | wi:80835 | 6 | solved | - | promoted (CG-AL-X087) | Event subscriber holds the Record instance handed at event time and Modify(false)s it after a sibling subscriber already wrote the row through a different instance. MEASURED CORRECTION to the mined story: same-session stale Modify does NOT trip BC's optimistic-concurrency check - it silently overwrites the whole buffer (lost update); the "changed by another user" throw is cross-session only. Symptom rewritten to the observed revert; deterministic two-events-fixed-sequence restructure; audit MEDs closed the conditional-replay hardcode (standalone doc seeded Copied) + pinned source-doc untouched. Filter b1: sonnet=solved; app was scratch/filter-batch1/c-wi80835-modifyfalse/ |
 | R118 | wi:81246 | 1 | solved | - | promoted (CG-AL-X088) | Feature-flag-gated filter builder exits WITHOUT filtering; caller's not-IsEmpty check then matches any row anywhere - warning fires unconditionally. Oracle observes only the caller's boolean so BOTH fix families pass (zero-row filter in the helper, or caller-side flag check). Audit MEDs: no-setup contract added to description; 3-rule completion order kills FindFirst AND FindLast predicate rewrites; notification wrapper existence pinned at compile time. Filter b1: sonnet=solved; app was scratch/filter-batch1/c-wi81246-unfiltered-exit/ |
@@ -168,7 +168,7 @@ reason in Notes) - they stop re-mining the same ground.
 | R134 | wi:79450 | 5 | - | - | promoted (CG-AL-X119) | A per-line-type dispatch (Item/G/L Account/...) has NO branch for one line type; those lines silently fall through with blank fields (no name, no seller id, no UOM) instead of erroring. Fix adds the missing case with its own multi-tier fallback chain (description field A -> description field B for name; line number for identifier; UOM code with a hardcoded fallback). |
 | R135 | wi:71682 | 1 | - | - | raw | Status stamped "closed" without verifying the paired offset entry still exists - a one-sided completeness check that doesn't confirm its counterpart survived. |
 | R136 | wi:76692 | 1 | - | - | raw | Matching code checks "is field non-blank" instead of reading the user's actual boolean setting, so the setting is only honored when the field happens to be blank - a proxy-condition-instead-of-the-real-flag trap. |
-| R137 | wi:80687 | 1 | - | - | raw | A display field is sourced from the WRONG of two related records; a quantity shown in one UOM basis gets VALIDATED against a different UOM's quantity - a unit-basis mismatch between the display and validation paths. |
+| R137 | wi:80687 | 1 | - | - | promoted (CG-AL-X158) | A display field is sourced from the WRONG of two related records; a quantity shown in one UOM basis gets VALIDATED against a different UOM's quantity - a unit-basis mismatch between the display and validation paths. |
 | R138 | wi:79926 | 12 | - | - | rejected | An inherent Permissions property was left declared on a Page after the modify loop it protected was refactored OUT into a helper codeunit invoked via Codeunit.Run - the permission grant no longer travels with the code that needs it. REJECTED 2026-08-26: premise measured false on BC28 (decisions 22) - codeunit-level Permissions elevation is denied under Restrictive (IndirectInsert), so the fix this task exists to require (move the grant onto the helper codeunit so it travels with the code) does not work on this container. |
 | R139 | wi:75717 | 1 | - | - | raw | A bank-system lookup is called with a HARDCODED transaction-type enum literal instead of the record's actual type; the visible error is an unrelated-looking VAT message two calls DOWNSTREAM - a red-herring error template worth the phrase-book value alone. |
 | R140 | wi:80484 | 1 | - | - | raw | A missing record filter in a job-queue dispatch loop causes it to never self-terminate, re-sending the same notifications indefinitely - an infinite-loop-via-missing-filter shape. |
@@ -717,3 +717,58 @@ X153 100%, X154 92.3%, X155 66.7%. Triage of all 16+7 survivors:
   runaway shapes accepted as unscorable.
 
 Suite: 140 X-series tasks (49 traps + 91 reasoning). gold-ci 225/225.
+
+## Build batch 10 (2026-08-29) - THE SUITE IS COMPLETE
+
+Nine tasks promoted (X156-X164). **100 / 100.** Four from ledger rows
+(R003->X156, R070->X157, R137->X158, R097->X159) plus five fresh designs:
+X160 (mirrored-counterpart fill-the-hole, cat 5), X161 (interface
+second-implementation fill-the-hole, cat 5), X162 (CompanyName() is
+session-scoped, cat 10, entry 36), X163 (ChangeCompany is
+per-record-instance, cat 10, entry 36), X164 (permission predicates track
+the pushed set, cat 12, entry 37). Operator ruling at batch planning
+(decisions entry 35): category 4 dropped (blocked enforcement premise),
+its 3 remaining slots reallocated to category 1; R115 retired.
+
+**A3 probes run BEFORE any slot was spent** (entries 36-38, all three
+premises measured true on the first run): ChangeCompany per-instance
+scope + session CompanyName (probe-ccscope), ReadPermission/
+WritePermission tracking pushed sets under Restrictive (probe-permcheck;
+also re-hit entry 13's write-inside-try under the SOAP runner and
+measured the 20-char permission-set name cap), and the unlinked
+CalcFormula silently ignoring the Date Filter FlowFilter
+(probe-flowfilter).
+
+**Gates.** All nine: 0 clean, min-diff single-cause, alsem
+lint-invisible, B1 green (X159 needed one oracle compile fix - four
+bare Count() calls, AL0192 - and one mispredicted-but-correct naive
+measurement: a missed cross-company Get costs a round trip too, so
+naive = exactly 2N statements, 401/601 vs budgets 12/18), B2 identical
+counts x3 containers each, B1b replay, B6a three auditors. B3/B5
+PENDING as usual. B7+B6b recorded below when run.
+
+**B4/C1 (gpt-5.5 + opus-4.8, 2026-08-29): 18/18 valid solves after two
+licensing fix rounds - and both fix rounds were textbook B4:**
+- X160: BOTH families failed the SAME 4 tests (the cross-family
+  signature). Diagnosis: an unanchored sign pin (the oracle demanded
+  negated refund amounts when the Entry Type enum already carries
+  direction - both solvers stored raw magnitude) and an under-licensed
+  cap contract (the only anchor was a doc comment both frontier models
+  read past). Fixed by switching the oracle to the starter-anchored
+  raw-magnitude+type convention and LICENSING the cap behaviorally in
+  the description. Re-entered B1+B2, re-rendered, both solvers 12/12.
+- X159: gpt-5.5 failed only the perf budgets - by redesigning the
+  registry as DataPerCompany=false exactly as the auditor independently
+  predicted from the description's "directory is shared across every
+  company" wording (a compliant-but-failing literal reading). Auditor
+  MED applied: business-rule phrasing + "costs essentially nothing".
+  Re-rendered; gpt-5.5 re-run hoists the unchanged-email check and
+  passes 7/7. The original failing patch kept for B8.
+No hard-tier admits; nine calibration anchors. Accepted LOWs recorded
+without action: X156 prepayment gloss, X157 non-aligned BuildStatement
+corner + Balance-date-link alternate fix (legitimate), X160 stale
+sentinel comment, X161 Ok:=Insert() style, X159 hoist-only half-fix
+ceiling, and the standing two-company topology ceiling on
+X162/X163/X164 (hardcode-both-names unclosable without a third
+container company; auditors also note cleanup assumes two companies -
+revisit if topology ever changes).

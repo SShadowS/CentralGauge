@@ -27,7 +27,7 @@ Cross-cutting rules (apply to every category):
 | 1 | Logic diagnosis | 22 | behavior assertions | ready |
 | 2 | Performance diagnosis | 15 | SQL statement/rows-read budgets | gated: SessionInformation probe |
 | 3 | Composite large-context | 10 | per-part behavior assertions | ready after #1 format |
-| 4 | Minimal-change constraint | 8 | behavior + fixed companions | ready |
+| 4 | Minimal-change constraint | 0 | behavior + fixed companions | DROPPED (entry 35) |
 | 5 | Fill-the-hole | 8 | behavior assertions | ready |
 | 6 | Event-driven wiring | 8 | behavior assertions | ready |
 | 7 | Transaction / error-flow | 7 | behavior (rollback observable) | ready |
@@ -105,10 +105,12 @@ Three things the fix has to settle, none of them yet measured:
    amendment, so it is strictly stronger combined with the block than the
    block alone, and should be evaluated rather than assumed away.
 
-The count of 8 is itself a bet on the unmeasured premise above. Trimming
-it toward 4-5 and moving the balance to category 1 (which has ~70 mined
-candidates against 3 remaining slots) is the standing recommendation;
-it is a program-level allocation change and has not been applied.
+RESOLVED 2026-08-29 (decisions entry 35, operator ruling at batch-10
+planning): the category is DROPPED from the 100-task suite - count 0.
+Its final 3 unallocated slots moved to category 1; the earlier 5 were
+already absorbed by other categories across batches 5-9. The enforcement
+question (prereq-app carrier + conditional read-only block) stays open
+for a future suite revision, not this one. R115 retired in the ledger.
 
 ### 5. Fill-the-hole (8)
 
