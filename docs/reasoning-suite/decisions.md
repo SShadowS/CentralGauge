@@ -888,3 +888,22 @@ Append-only. Each entry: date, decision, why.
     filter is simply not applied. Consequence: the X157 (R070) design -
     "wrong FlowField chosen, date window silently ignored" - is
     buildable; the defect is invisible to alsem and to the compiler.
+
+39. **N persisted Insert() calls INSIDE a measured window cost ~0.25-0.3
+    statements per row (2026-08-29, Cronus284, BC 28.4, measured by
+    CG-AL-X167's B1 probe - the probe run IS the measurement).** The
+    correct-side implementation (flat reads, then N Audit Result inserts
+    in-window) measured 23 statements at N=70 and 33 at N=120 against a
+    ~3-statement read base: ~20 and ~30 insert-attributable statements,
+    i.e. flush batching of roughly 4-5 rows per round trip. Entry 26 only
+    ever measured fixture-setup inserts flushed BEFORE the window.
+    Control: CG-AL-X169's correct side, identical wave, writes its N
+    output rows to a caller-supplied `var temporary` record and measured
+    flat (~4 statements) - temp writes remain free. Consequences: (a) a
+    perf oracle whose correct side must persist N rows in-window can
+    never hold a flat statements budget - use the X133/X153/X169
+    temp-buffer output pattern, or budget the insert term explicitly on
+    both sides; (b) X167 redesigned to temp-buffer output on this
+    ruling; X166 warned (same shape). This is the fifth entry in the
+    measured menu: per-row persisted writes, ~0.25-0.3 stmts/row,
+    visible on statements.
