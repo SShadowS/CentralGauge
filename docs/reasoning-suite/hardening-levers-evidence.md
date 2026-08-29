@@ -775,3 +775,145 @@ Two further facts that bear on the choice:
 - **The two tasks both frontier models fail are the same family** - measured
   SQL counter budgets. That is the one lever with demonstrated purchase on
   saturated models, and it is `decisions.md` entry 8/39 territory.
+
+---
+
+## Seven-model panel complete: the bar is reachable only at n=8 (2026-08-30)
+
+Both halves of the panel widening finished in 51 minutes total. All four new
+runs are uncapped (`--max-tokens 64000`, largest completion 62,527; zero
+attempts on a round cap).
+
+### The definitive baseline
+
+110 tasks, 7 models, 2 attempts, no ingest:
+
+| model | pass@1 | best-of-2 | tasks failed | max n at which it can score <=50% |
+|---|---|---|---|---|
+| claude-opus-5 | 93% | **96%** | 4 | 8 |
+| gpt-5.5 | 91% | **95%** | 6 | 12 |
+| google/gemini-3.1-pro-preview | 91% | **94%** | 7 | 14 |
+| claude-sonnet-5 | 84% | 90% | 11 | 22 |
+| gpt-5.6-luna | 78% | 86% | 15 | 30 |
+| x-ai/grok-4.3 | 69% | 77% | 25 | 50 |
+| deepseek/deepseek-v4-pro | 55% | 63% | 41 | 82 |
+
+**Three frontier models are saturated, not one.** Opus 5, gpt-5.5 and
+Gemini 3.1 Pro sit within two points of each other at 94-96% and fail 4, 6
+and 7 tasks respectively. Their failures barely overlap: **union 9,
+intersection 1** (X173).
+
+### Aider's own rule, applied faithfully
+
+Aider polyglot keeps problems solved by <= 3 of 7 and retains 32%, landing
+in a stated 5-50% band. Our panel is now the same size, so the rule
+transfers directly:
+
+| rule | n | retention | top model | top best-of-2 |
+|---|---|---|---|---|
+| <= 6 of 7 | 47 | 43% | opus-5 | 91% |
+| <= 5 of 7 | 30 | 27% | opus-5 | 87% |
+| <= 4 of 7 | 14 | 13% | opus-5 | 71% |
+| **<= 3 of 7 (Aider's rule)** | **11** | **10%** | opus-5 | **64%** |
+| <= 2 of 7 | 5 | 5% | sonnet-5 | 80% |
+| <= 1 of 7 | 2 | 2% | opus-5 | 50% |
+
+We retain 10% where Aider retained 32%, and the top model still scores 64%.
+Note the non-monotonicity at `<= 2 of 7`: the top model CHANGES IDENTITY to
+sonnet-5, which scores 80% on the five hardest tasks. At n=5 that is noise,
+but it is a reminder that "top model" is not a fixed model.
+
+### The exhaustive answer
+
+Searching every subset for the largest set on which **every** model scores
+at or below 50%:
+
+> **MAX n = 8** - X067, X074, X089, X133, X140, X165, X169, X173.
+
+| model | best-of-2 on those 8 |
+|---|---|
+| claude-opus-5 | 4/8 = 50% |
+| claude-sonnet-5 | 4/8 = 50% |
+| google/gemini-3.1-pro-preview | 4/8 = 50% |
+| gpt-5.5 | 4/8 = 50% |
+| gpt-5.6-luna | 2/8 = 25% |
+| x-ai/grok-4.3 | 2/8 = 25% |
+| deepseek/deepseek-v4-pro | 0/8 = 0% |
+
+The bar is met exactly, and **four models tie at 50%** - the set has zero
+separating power among the top four. That is LiveCodeBench's documented
+failure mode (optimising toward 0% destroys discrimination) arriving at
+n=8, and it is why n=8 is not a launch.
+
+### Conclusion, stated plainly
+
+**On the current 110 tasks there is no publishable set meeting the <=50%
+bar.** Selection has now been applied at full panel strength and the answer
+is arithmetic rather than a matter of technique: the three strongest models
+collectively fail 9 distinct tasks, so no subset can hold more than 8 while
+keeping the best model at or below half.
+
+Two independent things must therefore be true for the bar to be met at a
+publishable n:
+
+1. **More tasks that frontier models fail.** The binding number is not "how
+   many hard tasks" but "how many tasks the STRONGEST model fails" - today
+   4. A set of n=40 needs 20.
+2. **Those failures must not all be the same model's.** Because the union of
+   the three frontier models' failures is 9 while their intersection is 1,
+   authoring against a single model's weakness produces a set the other two
+   pass. The one task all three fail, X173, is a measured SQL-statement
+   budget contract, and X169 (failed by opus and gpt-5.5) is the same
+   family. That family is the only demonstrated lever against saturation.
+
+### The revised price list
+
+At wave 1's measured 20% rate of producing an Opus-failing task:
+
+| target n | Opus-failing tasks needed | further builds |
+|---|---|---|
+| 20 | 10 | ~30 |
+| 40 | 20 | ~80 |
+| 60 | 30 | ~130 |
+
+And this understates it, because condition 2 requires the tasks to defeat
+gpt-5.5 and Gemini 3.1 Pro as well, which the current 4 mostly do not.
+
+### The three options the measurement leaves
+
+- **A. Build ~30 more tasks in the X169/X173 family** (measured SQL budget
+  contracts in SMALL apps, per the omission finding) and launch at n=20 with
+  a top-model score near 50%. Roughly one further wave at the observed rate.
+- **B. Launch the full 110 as a comparative instrument.** The 7-model spread
+  is real - 96% to 63%, and grok/deepseek separate cleanly - so the suite
+  ranks AL capability even though it does not resist frontier models. The
+  claim changes; nothing needs building.
+- **C. Change the format** (rule 2 / agentic), which the deferred decision
+  covers. Note this moves scores UP, away from the bar.
+
+These are not exclusive: B can ship now and A can follow as a "hard subset"
+once the count of frontier-failing tasks supports it.
+
+### Omission on seven models: 37% confirmed, 49% upper bound
+
+Re-running `scripts/failure-causes.py` across all four uncapped runs, which
+was the reason the rule-2 decision was deferred to a seven-model sample:
+
+| cause of last failed attempt | n | share |
+|---|---|---|
+| omission (confirmed) | 40 | **37%** |
+| behavioural | 35 | 32% |
+| al_knowledge | 19 | 17% |
+| mixed_compile (held out) | 13 | 12% |
+| other | 2 | 2% |
+
+Higher than the three-model figure (33%), and it worsens down the capability
+ladder: grok-4.3 loses 13 of its 25 failures to omission (52%), deepseek 13
+of 41 (32%), while gemini-3.1-pro loses 2 of 7. Weaker models are penalised
+disproportionately by a requirement that has nothing to do with diagnosis,
+which biases the whole leaderboard's spread, not just the top.
+
+The finding that omission never FABRICATES a failure still holds for the
+frontier models, whose omissions all land on attempt 2. It does not
+generalise safely to grok and deepseek, where omission is the modal failure
+and appears on first attempts too.
