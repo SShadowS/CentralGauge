@@ -952,4 +952,11 @@ move the hash for no signal): X160's NextEntryNo first-entry value is
 unasserted anywhere, and X163's entire Query Log table is un-graded
 instrumentation.
 
+**Post-fix resweep confirms every kill (Cronus28, 3.1.0.0).** X165
+71.1->78.9%, X166 81.8->90.9%, X167 78.6->92.9%, X168 88.0->92.0%,
+X170 83.9->89.3%, X171 83.9->87.1%, X172 85.3->86.8%, X173
+84.1->90.5%. Survivor deltas sum to exactly 16 = the 14 holes plus the
+2 unreached; no kill test took collateral, and X169/X174 needed no
+round. Remaining survivors are the proved-equivalent set.
+
 Suite: 159 X-series tasks (49 traps + 110 reasoning). gold-ci 244/244.
