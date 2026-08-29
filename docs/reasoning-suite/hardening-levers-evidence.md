@@ -232,3 +232,59 @@ Every fallback is now closed by measurement, not opinion:
 The hard split is the only path left, and it must be built from the
 three levers with measured effect (non-functional contracts, composition,
 N-simultaneous-defects) rather than from more single-site planted defects.
+
+## Pilot results (2026-08-29): lever 3 works for us, lever 2 does not
+
+Two pilots built entirely from tasks Opus 5 already solves first-try, then
+gated against Opus 5 (`--max-tokens 64000`; both runs validated as
+untruncated with real prompt input — the first two attempts at this gate
+were INVALID for plumbing reasons and are not counted, see below).
+
+**X176 — composition (lever 2): SOLVED first try, 11/11.**
+Two parents (X066 FIFO costing, X139 adjustment posting) plus a defect-free
+glue capability that can only be right if both parents are. Hand-traced to
+require both fixes. Opus fixed both and composed them without difficulty.
+EvoEval's 78.1% relative drop does NOT reproduce here. Plausible reason:
+EvoEval composes two INDEPENDENT algorithmic problems that must be reasoned
+about jointly, whereas our composition is two repairs in one app plus glue
+that is already written for the model. **Lever 2 is not transferable to a
+repair benchmark at this scale.**
+
+**X175 — four simultaneous defects (lever 3): RESISTS.**
+Attempt 1 is a BEHAVIOURAL failure, the strong-evidence class:
+`X066_ShipmentDrawnFromTwoReceiptsCostsTheExactCombinedTotal` expected 2,
+got 1.99 — Opus fixed some of the four defects but left the X066 FIFO
+rounding one.
+
+The sharpest datum in this whole exercise: **that same X066 defect, alone in
+X066 and alone-with-one-other in X176, is fixed first try. Put it among
+three unrelated defects and it is missed.** The difficulty is attention
+dilution across defect sites, not defect subtlety — exactly DebugBench's
+finding (GPT-4 single 73-88% -> quadruple 55.9%) and consistent with
+BugPilot's multi-site result.
+
+HONEST CAVEAT on X175's attempt 2: it failed on COMPILE, because the model
+omitted objects when re-emitting a 16-object application ("Table 'CG X066
+Ledger Entry' is missing"). That is partly the `diagnose.md` rule-2
+requirement to return EVERY object interacting with app size, not purely a
+capability failure. Attempt 1 carries the real evidence; attempt 2's
+contribution should be discounted. If N-defect tasks become the wave-2
+recipe, consider whether rule 2 should allow returning only changed objects
+at this scale — otherwise large tasks accrue difficulty from transcription
+rather than from repair.
+
+### Two INVALID gate runs, recorded so the mistake is not repeated
+1. First run: `prompt template requires starter code but none was found` —
+   attempt 1 consumed 0 tokens, attempt 2 ran on a 911-token prompt with no
+   application, so the model invented one and failed on an out-of-range
+   object id. Cause: starter code resolves from `tasks/starter/<id>/`,
+   which only exists after promotion.
+2. Second run: `Zero tests detected after successful publish` (the GH#13
+   infra signature). Cause: `expected.testApp` points at
+   `tests/al/hard/<id>.Test.al`, also promotion-only.
+
+Both would have read as "the task resists" if the FAIL had been taken at
+face value. **A gate result is only valid once completion tokens, prompt
+input size, and the failure text have all been inspected.** Staging a
+scratch task for a gate run requires copying BOTH `starter/` into
+`tasks/starter/<id>/` AND the oracle into `tests/al/hard/`.
