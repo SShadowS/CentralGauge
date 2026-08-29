@@ -677,3 +677,101 @@ already failed the graded assertions on its own merits. So:
 
 Practical consequence for wave 2: recycled-filler composites buy omission,
 not difficulty. Build the graded contract into a SMALL app.
+
+---
+
+## The ceiling: selection cannot create failures (2026-08-30, five-model panel)
+
+Run A of the panel widening landed in 33 minutes (not the 11-16h estimated -
+that estimate extrapolated a 4-container smoke and was wrong by an order of
+magnitude). Uncapped, 110 tasks:
+
+| model | pass@1 | best-of-2 | tasks failed |
+|---|---|---|---|
+| claude-opus-5 | 93% | 96% | **4** |
+| gpt-5.5 | 91% | 95% | **6** |
+| claude-sonnet-5 | 84% | 90% | 11 |
+| gpt-5.6-luna | 78% | 86% | 15 |
+| deepseek/deepseek-v4-pro | 55% | 63% | 41 |
+
+gpt-5.5 is a second saturated frontier model, statistically indistinguishable
+from Opus here. deepseek is a legitimate panel member rather than a broken
+one - its failures are dominated by `al_knowledge` (16 of 41 final causes),
+i.e. real AL syntax and semantics, not format.
+
+### The arithmetic that settles the bar
+
+Selection REDISTRIBUTES failures; it cannot manufacture them. If a model
+fails `k` of the whole suite, then on any retained set of size `n` it fails
+at most `k`, so it scores at or below 50% only when `k >= n/2`, i.e.
+
+```
+n <= 2k
+```
+
+| model | k (tasks failed) | max n at which it can score <=50% |
+|---|---|---|
+| claude-opus-5 | 4 | **8** |
+| gpt-5.5 | 6 | 12 |
+| both frontier models simultaneously | 2 (intersection) | **4** |
+
+**No subset of the current 110 tasks puts the top model at or below 50% for
+n greater than 8.** The eight-task union of frontier failures (X074, X080,
+X095, X133, X140, X165, X169, X173) does hit the bar exactly - Opus fails 4
+of 8 (50%), gpt-5.5 fails 6 of 8 (25%) - and is far too small to publish.
+
+Confirmed by sweeping the five-model panel:
+
+| rule | n | retention | Opus bo2 | gpt-5.5 bo2 | sonnet bo2 | luna bo2 | deepseek bo2 |
+|---|---|---|---|---|---|---|---|
+| <=4 of 5 | 45 | 41% | 91% | 87% | 76% | 67% | 9% |
+| <=3 of 5 | 19 | 17% | 79% | 68% | 53% | 26% | 5% |
+| <=2 of 5 | 10 | 9% | 60% | 50% | 50% | 10% | 0% |
+| <=1 of 5 | 3 | 3% | 33% | 0% | 67% | 0% | 0% |
+
+### This corrects my own reframing, in both directions
+
+Earlier in this document I wrote that "selection, not authoring, is the
+lever" and that scoring wave 1 on Opus-only resistance (2 of 10) rather than
+multi-model discrimination (8 of 10) was an error of 4x. Half of that was
+wrong, and the correction needs stating as plainly as the claim.
+
+**Both numbers are right, for different questions:**
+
+- For a **discriminating leaderboard** - the question Aider polyglot and
+  BigCodeBench-Hard actually optimise - the criterion is "does any panel
+  model fail it", wave 1 yields 8 of 10, and selection genuinely is the
+  lever we were missing.
+- For the **<=50% top-model bar** the operator set, the criterion is "does
+  the BEST model fail it", wave 1 yields 2 of 10, and selection is
+  powerless. Only authoring moves `k`.
+
+Wave 1's two Opus-failing tasks are X169 and X173. The original 20% figure
+was the correct one for the bar; the 80% figure is the correct one for the
+leaderboard. Flattening them into a single "yield" was the actual mistake.
+
+### What the bar now costs, precisely
+
+To publish a set of `n` where the top model scores <=50%, the suite needs
+`k >= n/2` tasks that the top model fails. Today `k = 4`.
+
+| target n | tasks the top model must fail | further Opus-failing tasks needed | builds at wave-1's 20% rate |
+|---|---|---|---|
+| 20 | 10 | 6 | ~30 |
+| 40 | 20 | 16 | ~80 |
+| 60 | 30 | 26 | ~130 |
+
+That is the honest price list. It is much smaller than the ~230 figure this
+document previously carried (which came from the discrimination criterion
+mixed with the bar), and much larger than zero.
+
+Two further facts that bear on the choice:
+
+- **Frontier failures barely overlap.** Opus and gpt-5.5 fail almost
+  disjoint sets: union 8, intersection 2 (X169, X173 - both SQL-statement
+  budget contracts). Good for separability; bad for a "top model" bar,
+  because whichever model is strongest on the retained set is the one that
+  did not fail those tasks.
+- **The two tasks both frontier models fail are the same family** - measured
+  SQL counter budgets. That is the one lever with demonstrated purchase on
+  saturated models, and it is `decisions.md` entry 8/39 territory.
