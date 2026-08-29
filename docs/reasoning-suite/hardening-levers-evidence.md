@@ -625,3 +625,55 @@ The rule-2 decision is DEFERRED until the seven-model panel run lands, so
 the omission rate can be read off a seven-model sample rather than three.
 Re-run `scripts/failure-causes.py` over every uncapped run once the panel
 completes, then choose between the three options above.
+
+### Does omission BIAS the selection? Membership no, magnitude yes.
+
+The obvious worry is that the retention set is populated by tasks that are
+merely hard to retype. Two checks, and they point opposite ways.
+
+**The worry has a real basis.** Omission scales sharply with app size, and
+with the wave that deliberately built bigger apps:
+
+| starter objects | omission+mixed attempts |
+|---|---|
+| 1-4 | 8 / 272 = 2.9% |
+| 5-8 | 6 / 69 = 8.7% |
+| 9-12 | 0 / 6 = 0% |
+| 13+ | 6 / 33 = **18.2%** |
+
+| authoring wave | omission+mixed attempts |
+|---|---|
+| X065-X146 (core) | 9 / 279 = 3.2% |
+| X147-X164 (batches 9-10) | 1 / 56 = 1.8% |
+| **X165-X174 (wave 1)** | 10 / 45 = **22.2%** |
+
+Wave 1 omits at 7x the core suite's rate - it is the wave that used recycled
+filler composites - and 15 of the 22 tasks in the `<=2 of 3` retention set
+carry at least one omission or mixed attempt. Only 7 are clean: X067, X074,
+X080, X095, X102, X112, X161.
+
+**But it never fabricates a failure.** Recomputing the retention set with
+omission-only failures discounted returns the *identical* 22 tasks, because
+of this:
+
+> Of the 30 failed (model, task) pairs across the panel, **0 are explained
+> entirely by omission.** Every one has a genuine failed attempt underneath:
+> 27 behavioural, 3 AL-knowledge.
+
+Omission always lands on the SECOND attempt, after a first attempt that
+already failed the graded assertions on its own merits. So:
+
+- **Retention-set membership is valid.** No task is in it because models
+  find it hard to retype. The earlier alarm was wrong.
+- **Score magnitude is not.** Best-of-2 is depressed across 23-36% of
+  genuinely-failed tasks whose repair attempt was spent on transcription,
+  which is why fixing rule 2 would RAISE scores rather than reshuffle the
+  ranking.
+- **The wave-1 "80% yield" correction still stands**, but for a narrower
+  reason than first claimed: those eight tasks discriminate because their
+  first attempts genuinely fail, not because their apps are big. The 22.2%
+  omission rate is a property of how wave 1 was built, and it costs those
+  tasks their repair signal.
+
+Practical consequence for wave 2: recycled-filler composites buy omission,
+not difficulty. Build the graded contract into a SMALL app.
