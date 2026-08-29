@@ -200,3 +200,63 @@ Sonnet 5 78%): it carried the same 4000-token default, so it is
 truncation-affected too. It stays usable as a RELATIVE reading (all
 three models, same cap, same tasks), but the launch verification bench
 must be re-run with the cap lifted before anyone certifies ≤50%.
+
+## Wave 1 resistance gate: the real number, and what it costs us
+
+Re-run with `--max-tokens 64000` (every attempt landed far under the
+cap - 2.5k-26k completion tokens - so this reading is clean):
+
+**Opus 5 best-of-2 on wave 1: 8 / 10 = 80%. Resistant yield: 2.**
+
+| Task | Verdict |
+|---|---|
+| X165 X166 X168 X170 X171 X172 X174 | solved first try |
+| X167 | solved on attempt 2 |
+| **X169** | **RESISTS** - attempt 1 real budget failure (512 stmts vs 100), attempt 2 broke the schema |
+| **X173** | **RESISTS** - attempt 1 real budget failure (1382 stmts vs 40), attempt 2 broke the schema |
+
+Both resisters are BEHAVIOURAL failures on attempt 1 (the strong
+evidence class), and both then failed attempt 2 by editing a donor
+table's fields out from under the oracle rather than by fixing the
+cost. That second-attempt shape is itself a finding: given a failing
+perf budget, the model reaches for the DATA MODEL before it reaches for
+the algorithm.
+
+### What separates the two resisters from the eight solves
+
+All five lever-1 perf cores had comparable dual margins, so margin is
+not the discriminator. The two that survived are the two carrying an
+extra misdirection layer:
+- **X169** is the only core with a deliberate MEASURED-FREE red herring
+  (the repeated same-key setup read). The model must know which reads
+  cost before it can find the ones that do.
+- **X173** is a composite: the perf core sits behind three donor
+  modules and 19 riding tests, so the cost site has to be located in a
+  large app before it can be fixed (the X142 scale-pressure shape).
+
+Plain "restructure N per-row reads into one pass" (X165/X166/X167/X168)
+is NOT resistant to Opus 5 - it reads the budget failure and fixes it.
+Allocation invariants (X170/X171/X172/X174) were ALL solved first try,
+including the two-level and mixed-granularity variants. That is a
+material update to the pre-wave lever ranking, which had allocation as
+lever 2 on the strength of X140/X142/X146/X150 resisting the
+2026-08-29 baseline - a baseline now known to be truncation-affected.
+**Some of that apparent allocation resistance was probably truncation,
+not difficulty.**
+
+### Consequences for the program
+
+1. At a 20% yield, reaching ~38 resistant tasks by this recipe needs
+   ~190 more builds. Not viable. The recipe must change before wave 2,
+   not the volume.
+2. The two shapes that DID work are now the whole lever list:
+   misdirection (a cost site that is invisible unless you know the
+   platform's cost model) and scale (a cost site that must be found
+   inside a large app). Wave 2 should be built exclusively from those,
+   and ideally from BOTH at once.
+3. The ≤50% bar is measured against a baseline that must be re-taken
+   uncapped. The old 88% is not the real Opus-5 number, and several
+   reasoning-100 tasks credited as resistant may simply have been
+   truncated. Re-baselining is now the highest-value next measurement:
+   it tells us how many tasks the bar actually needs, and it may
+   invalidate part of the existing resistant set.
