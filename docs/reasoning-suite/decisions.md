@@ -781,3 +781,47 @@ Append-only. Each entry: date, decision, why.
     X123's loop-to-CalcSums repair (A2 duplicate), and the missing-key half
     is invisible to both counters (extends entry 17). A SIFT-shaped task
     would need the key's ABSENCE to change behavior, and it does not.
+
+32. **Composite assembly amendment RATIFIED: verbatim donors + authored
+    glue (2026-08-28/29, batch 8, X141-X145).** Entry 12's verbatim-donor
+    model stands, plus: each composite adds a small DEFECT-FREE glue object
+    (byte-identical in starter/ and correct/) wiring at least one distractor
+    onto the live symptom's data flow, with the coupling verified
+    mechanically (`alsem query touches`) before probing; the symptom is
+    reported only DOWNSTREAM at product level; the must-not-change contract
+    is stated as one blanket sentence, never a healthy-module list (X144's
+    list was the entry-12 banned phrase family recurring, and it neutralized
+    the engineered false lead). Measured verdict on the merging lever: with
+    fair specs, all five composites were solved single-shot by both outside
+    families - packaging + entanglement + location-vague wording buys no
+    frontier resistance by itself; its apparent resistance was exactly the
+    spec unfairness B4/B6a strip. Glue's 2-3-test coverage was the B7 hole
+    territory (5 of 6 real holes) - budget glue tests like donor tests.
+
+33. **Higher-order (two-defect) task class piloted; gate adaptations
+    RATIFIED (2026-08-29, CG-AL-X146).** For a task with exactly two
+    documented interacting defects:
+    - Min-diff: the starter-to-correct diff must decompose into exactly two
+      disjoint hunks, one per defect, mapped in NOTES.
+    - Probe: FOUR legs - correct passes; starter fails; fix-A-only fails
+      reaching assertions; fix-B-only fails reaching assertions. The
+      half-fixed apps are authored alongside starter/ and correct/ and
+      probed via trap-probe --expect fail --strict-fail-mode. All four legs
+      held empirically for X146 on the first probe.
+    - B7 runs against correct/ as usual; the halffix sweeps were satisfied
+      by the probe evidence for the pilot - build proper halffix sweep
+      layouts if the class scales.
+    - The description states ONE compound symptom, never two bug reports
+      (the audit removed a contrast clause that restated defect B's shape).
+    Pilot results: the four-leg gate caught nothing less than the batch
+    pattern predicts - B4 round 1 failed both outside families identically
+    on an UNLICENSED residual-fairness choice (licensed by one WHAT-level
+    sentence, both passed round 2), and LethAL found a SetCurrentKey removal
+    masked by contiguous fixtures (interleaved-entries kill test added;
+    fixture-seeding order is a standing blind spot worth checking in every
+    group-and-flush oracle). C1: solved by both families once licensed -
+    two interacting defects at 4-object scale do not resist single-shot
+    solving either; both models enumerated both defects immediately. The
+    class still earns its keep as VALIDITY tooling (the four-leg probe is a
+    stronger oracle proof than the two-leg), not as a hardness lever at
+    this scale.

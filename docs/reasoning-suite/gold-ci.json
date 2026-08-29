@@ -1936,6 +1936,15 @@
       "inputsHash": "c9f20aaf979901e300e24b43a6d0fb6c80291c248ecfad6ad96c52113a5aaf78",
       "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
       "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X146": {
+      "verdict": "pass",
+      "at": "2026-08-29T00:15:18.359Z",
+      "testsPassed": 9,
+      "testsTotal": 9,
+      "inputsHash": "49c64cd9ff7947f7def39b02ea7d414ef89eff380a7b8b900ac0795d107db4bd",
+      "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803",
+      "detail": "[trap-probe] OK"
     }
   },
   "harnessHash": "aeb0f033713220c4a307af52398bef9dbedaaffa41e157b837b3ade92e8d2803"

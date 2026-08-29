@@ -10,11 +10,12 @@ reason in Notes) - they stop re-mining the same ground.
 - Promoted tasks not sourced from a ledger row: 10 composites (C001-C005 = X096-X100; batch-8 X141-X145),
   CG-AL-X111 (re-aimed after R098 was measured false), and CG-AL-X124,
   CG-AL-X128, CG-AL-X129, CG-AL-X130 (batch-6 fresh designs - see below),
-  and CG-AL-X137, CG-AL-X138, CG-AL-X139, CG-AL-X140 (batch-7 fresh designs)
+  and CG-AL-X137, CG-AL-X138, CG-AL-X139, CG-AL-X140 (batch-7 fresh designs),
+  CG-AL-X146 (batch-8 higher-order pilot, fresh design)
 - Passed Sonnet filter (Sonnet failed to solve): 4
 - Passed Fable filter (Fable failed or struggled): 0
-- Tasks built: 81 / 100
-- Tasks promoted: 81 / 100
+- Tasks built: 82 / 100
+- Tasks promoted: 82 / 100
 
 **Column vocabulary**
 
@@ -586,3 +587,31 @@ batch; re-replayed serially). Ledger stands at 215/215 trusted.
 
 W2 (X146 higher-order pilot) and W3 (T4 harvest: VATGroupManagement +
 DO submodule) still pending in batch 8.
+
+## Build batch 8, part 2 (2026-08-29) - the X146 higher-order pilot
+
+CG-AL-X146 (bonus-split-never-adds-up) promoted, category-1 slot.
+**82 / 100.** Two interacting defects in one fresh app: accumulator
+carry-over in the base calculator (defect A) + last-line residual dump in
+the bonus distributor (defect B), one compound symptom. Full story and
+the ratified gate adaptations in decisions entries 32-33. Highlights:
+- Four-leg probe green on the FIRST container run (correct 8/8, starter
+  and both half-fixes failing reaching assertions, per-test outcomes
+  matching the builder's hand-computed four-column table exactly).
+- B4 round 1: both outside families failed identically by keeping a
+  last-contributing-line residual close-out - deterministic, order-stable,
+  exact-sum, zero-line-safe, i.e. legitimate under everything then stated.
+  Licensed with one fairness sentence; both passed round 2.
+- The sweep was PROVEN tie-free under seed 146 by a dedicated probe
+  (scratch/probe-x146tie/, all 8 partitions, min pairwise remainder gap
+  2.45e-5) instead of accepting X140's documented-risk precedent.
+- B7: 65.5% -> 69.0% after the one real hole (SetCurrentKey removal
+  masked by contiguous fixtures; interleaved-entries kill test); 9
+  remaining survivors all proved equivalent/out-of-scope.
+- C1: solved by both families once licensed -> mid-tier anchor.
+
+Ops note: Cronus281 and Cronus283 intermittently refuse fresh candidate
+publishes (prepareCandidateApp failed) after heavy sweep/replay load;
+Cronus28 kept working throughout. Same transient class as batch 7.
+
+Suite: 131 X-series tasks (49 traps + 82 reasoning). gold-ci 216/216.
