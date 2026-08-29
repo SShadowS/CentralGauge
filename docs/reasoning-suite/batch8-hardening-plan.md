@@ -156,6 +156,39 @@ nothing itself.
    First-bite picks: **VATGroupManagement** (BC.History, small enough
    to learn LethAL's real-code limits) then **EDocument** for the real
    harvest; DO submodule chosen after inspecting Cloud/'s layout.
+
+   **First-round results (2026-08-29, two bites attempted).** The
+   harvest PIPELINE is validated end to end - id-shifted clone builds
+   (incl. tableextension FIELD ids), permissionset renames (names are a
+   GLOBAL namespace; plain permissionsets cap at 20 chars), shipped
+   first-party app uninstall/reinstall (reversible; tableextension
+   field names are table-scoped-global), the LethAL selector band
+   (79150-79250) added to the clone's idRanges, publish via dev
+   endpoint, LethAL run + quarantine recovery. What blocked BOTH bites
+   is SUITE compatibility, not tooling:
+   - VATGroupManagement: 76 of 78 tests wedge LethAL's fenced session
+     as in-flight-unknown quarantines - TestPage-driving tests and
+     app-side live-HTTP tests (TestFailureInSend fires the app's real
+     HttpClient). Exactly the two things CG oracle rules ban.
+   - SAF-T: publishes and runs clean, headless-audited, but 11 of 22
+     baseline tests (every export-pipeline test) fail red on the clone
+     - first-party format-registration wiring the clone does not
+     reproduce - leaving 2239 of 2243 mutants no-coverage. LethAL's
+     validity block correctly reports the run as degraded; no failure
+     text is relayed for baseline reds, so each hypothesis costs a
+     container cycle. Stopped rather than blind-debug.
+   **Conclusion for the next round:** BC.History first-party clones are
+   the WRONG substrate - the collision surgery is solvable but the
+   in-container framework wiring is not worth reproducing. DO
+   (Continia) is a genuine third-party app: own id ranges, own
+   permission sets, installable beside everything with NO clone surgery
+   - only the headless-suite criterion applies (grep Test/ for
+   TestPage + HttpClient BEFORE spending container time; also audit
+   HandlerFunctions coverage, TaskScheduler branches, and
+   DownloadFromStream reachability, per the SAF-T audit template).
+   Layouts kept re-runnable at scratch/t4-vatgroup/ and scratch/t4-saft/
+   (local); Cronus28 fully restored (VAT Group Management, SAF-T,
+   SAF-T Modification DK all reinstalled, CG T4 apps uninstalled).
 2. Run on Cronus28, `-StopHungSessions`, LCR-class operators preferred;
    ABS/UOI survivors deprioritized as likely-equivalent.
 3. Triage survivors (mutation-triager agent): equivalent / suite hole

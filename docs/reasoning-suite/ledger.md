@@ -614,4 +614,12 @@ Ops note: Cronus281 and Cronus283 intermittently refuse fresh candidate
 publishes (prepareCandidateApp failed) after heavy sweep/replay load;
 Cronus28 kept working throughout. Same transient class as batch 7.
 
+**W3 T4 harvest, round 1 (2026-08-29):** pipeline validated, both
+BC.History bites blocked by suite compatibility (VATGroupManagement:
+TestPage + live-HTTP tests wedge the fenced session; SAF-T: baseline
+red on first-party wiring, 2239/2243 no-coverage). Ruling: first-party
+clones are the wrong substrate; next round targets DO (a genuine
+third-party app) with the headless-suite pre-audit. Full findings in
+batch8-hardening-plan.md W3. Cronus28 restored.
+
 Suite: 131 X-series tasks (49 traps + 82 reasoning). gold-ci 216/216.
