@@ -17,8 +17,10 @@ reason in Notes) - they stop re-mining the same ground.
   cache with no company dimension, built directly on decisions entry 34)
 - Passed Sonnet filter (Sonnet failed to solve): 4
 - Passed Fable filter (Fable failed or struggled): 0
-- Tasks built: 100 / 100
-- Tasks promoted: 100 / 100
+- Tasks built: 110 (100 reasoning-100 + 10 launch-hardening wave 1)
+- Tasks promoted: 110; LAUNCH SET target stays 100 (see
+  launch-hardening-plan.md Decision 1: retire-and-recycle as resistant
+  yield lands)
 
 **Column vocabulary**
 
@@ -805,3 +807,93 @@ Suite: 149 X-series tasks (49 traps + 100 reasoning). gold-ci 234/234.
 **reasoning-100: 100 / 100. The build program is complete.** Remaining
 program items live in PLAN.md: THE re-bench, leaderboard task-set flip,
 sync-taxonomy re-apply, W3 DO-harvest round 2 (optional, post-100).
+
+## Launch-hardening wave 1 (2026-08-29) - X165-X174
+
+Ten tasks promoted, ALL fresh designs (no ledger rows - the remaining
+raw rows are category-1 logic shapes, measured non-resistant by the
+2026-08-29 top-3 bench). Suite now 110 reasoning tasks; the LAUNCH SET
+stays 100 (Decision 1: retire the easiest as each wave's resistant
+yield lands, recycling them as composite filler).
+
+**Composition, per launch-hardening-plan.md's measured levers:**
+- Lever 1, quantitative perf contracts (5): X165 grouped manifest
+  (3 redundant per-shipment reads), X166 running-balance rebuild
+  (per-entry rescan + Get/Modify invalidation), X167 cross-ledger
+  duplicate audit (hash-join gap), X168 hierarchy rollup (per-node
+  reads x subtree revisits), X169 batch pricer (with a measured-FREE
+  same-key read as a red herring - "cache the setup" changes nothing).
+- Lever 2, allocation invariants (3): X170 partial-reversal
+  conservation, X171 mixed-basis document-vs-line fee rounding,
+  X172 mixed-granularity units-and-cents two-level allocation.
+- Lever 3, recycled-filler composites (2): X173 = perf core + X156/
+  X158/X151 donors verbatim; X174 = allocation core + X160/X162/X163
+  donors verbatim. Donor oracles ride along as regression mass.
+
+**New measured fact (entry 39), and it reshaped two tasks.** X167's B1
+probe measured persisted in-window Insert() at ~0.25-0.3 statements/row
+(correct side 23 stmts at N=70 against a 3-stmt read base). X166's
+builder independently derived the consequence: with writes on both
+sides the naive/correct ratio ceilings at ~11.9x, so the 10x/10x recipe
+has NO solution at any N. Both redesigned to the X133/X153 temp-buffer
+output pattern; X169 had chosen it up front and measured flat.
+
+**Gates.** 0 clean; min-diff single-cause (perf tasks differ by the
+algorithm, as X133/X153 precedent allows); B1 green on all ten (four
+needed fix rounds: X166 bare Count() + AutoIncrement-literal Gets,
+X167 the entry-39 redesign, X168 test-side Get typos then a
+TryGetValue rewrite - that method does not exist in AL, four compilers
+confirm - and X165 a budget re-tune 90->70 after the probe measured
+naive at 771-911); B2 identical counts x3 containers each; B1b replay
+green (gold-ci 244/244).
+
+**B4.** Both outside families (gpt-5.5, claude-opus-4.8, thinking=high)
+FAILED four tasks on budgets only (X165 771/811/911 vs 70; X167
+143/243/83 vs 13; X169 512/262 vs 100; X173 1382 vs 40) - correctness
+passed throughout, so no over-strictness signal, but no independent
+implementation had passed. Applied the hard-tier exception: the authors
+wrote deliberately different second implementations (temp-record
+buffers instead of Dictionaries; X167 flipped the join direction).
+**All four alternates pass their oracles** - the acceptance evidence
+B4 exists for. Notable near-miss: opus diagnosed X165 as a missing key,
+which decisions entry 17 measured to be counter-invisible.
+One REAL over-strictness catch: X174's exact per-wallet cent pins
+rejected opus's cumulative running-remainder allocation, which
+conserves exactly and stays within a cent - relaxed to invariant
+grading (sum-exact + within-a-cent + ledger consistency), X140 B6b
+precedent. gpt-5.5 and opus now both pass.
+
+**B6a (three auditors, ten tasks): 3 HIGH + 3 MED, all fixed and
+re-entered.** The HIGHs are exactly the failure mode this wave screens
+for - resistance that comes from an unfair spec rather than a knowledge
+gap:
+- X166 HIGH x2: the description promised only "no longer
+  disproportionately slow" while the oracle graded a FLAT budget (an
+  O(N)-small-constant fix reads as compliant and fails), and the
+  rows-read bound graded an unstated read-scope contract that
+  false-failed both the sibling tasks' own reference idiom and a
+  legitimate scoped two-pass fix. Reworded to the flat contract +
+  licensed the scope + raised MaxRows 400->700. Recorded: the rows axis
+  has only a ~5x total spread, so the 10x/10x recipe cannot hold there.
+- X170 HIGH: every net assertion read the GetNetAmount getter, so a
+  model could keep the buggy writes verbatim and rewrite only the
+  getter to fabricate the expected number. Closed with a test-local
+  GetRawNet reading stored records directly, asserted alongside.
+- X165 MED: the starter demonstrated the fix idiom (List + Dictionaries
+  in one pass) inside the very codeunit under repair - a free
+  implementation template. BuildRouteSummaries rewritten identically on
+  both sides to a temp-buffer upsert.
+- X169 MED: the description mis-stated the signature and claimed
+  persistence the design does not have - a literal reading produced
+  either a compile failure or ~800 in-window inserts that bust the
+  budget for prose reasons. X167 MED: licensed the posted-ledger-size
+  contract the third perf test graded.
+Auditors ratified X171/X172's exact pins (their descriptions state the
+cent-handout METHOD, so alternative bases genuinely violate the
+contract - the X174 relaxation deliberately does not transfer) and
+X168/X173 clean.
+
+C1 is DEFERRED to the bench resistance gate by the methodology
+correction in launch-hardening-plan.md: pi solvers overpredict bench
+solvability, so hardness verdicts come from a scripted Opus-5 bench
+run, not from these B4 legs.

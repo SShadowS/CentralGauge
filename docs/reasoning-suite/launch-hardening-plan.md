@@ -151,7 +151,17 @@ the entry-32 glue amendment) pointed at the launch bar:
 ## Status
 
 - [x] Decision 1 RESOLVED: replace at 100; retired easy tasks recycled as verbatim correct filler donors inside new composites (scale pressure + regression mass around lever-1/2 cores)
-- [ ] Wave 1 (~10 tasks: 5 lever-1, 3 lever-2, 2 lever-3) - build
-- [ ] Wave 1 resistance gate (Opus 5 bench)
+- [x] Wave 1 BUILT + PROMOTED 2026-08-29 (X165-X174: 5 lever-1,
+      3 lever-2, 2 lever-3). All gates green; ledger has the full log.
+      New measured fact banked as decisions entry 39 (in-window
+      persisted inserts ~0.25-0.3 stmts/row) - it forced two tasks onto
+      the temp-buffer output pattern and rules out any perf oracle
+      whose correct side must persist N rows in-window.
+      B6a caught 3 HIGH, ALL of the "resistance from an unfair spec"
+      kind this wave screens for - the screen works and is worth its
+      cost in every future wave.
+- [ ] Wave 1 resistance gate (Opus 5 bench) - the number that decides
+      how many of the ten count toward the resistant quota, and sizes
+      waves 2-4
 - [ ] Waves 2-4 sized from wave-1 yield
 - [ ] Final full bench (3+ models) -> verify <= 50% -> ingest + flip
