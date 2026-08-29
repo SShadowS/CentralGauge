@@ -278,6 +278,6 @@ codeunit 89086 "CG-AL-X089 Test"
         Assert.AreEqual(20, GetValue(Totals, 'CGX89-B1'), 'Expected the low-cost valuation to still carry the real numbers');
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('Expected the valuation''s SQL statement cost to stay flat no matter how many distinct items the batch touches: budget %1, actual %2 for %3 distinct items', 20, StmtDelta, ItemCount));
+            StrSubstNo('Expected the valuation''s cost to stay flat no matter how many distinct items the batch touches: budget %1, actual %2 for %3 distinct items', 20, StmtDelta, ItemCount));
     end;
 }

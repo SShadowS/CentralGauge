@@ -175,6 +175,6 @@ codeunit 89303 "CG-AL-X109 Test"
         Assert.AreEqual(LatestEntryNo, ActivityEntry."Entry No.",
             'Expected the cheap lookup to still return the correct latest entry - the right answer first, then the right cost');
         Assert.IsTrue(StatementsUsed <= MaxStatements,
-            StrSubstNo('Expected the lookup to execute at most %1 SQL statements, but it executed %2 for a document with 200 entries', MaxStatements, StatementsUsed));
+            StrSubstNo('Expected the lookup to stay within its cost budget of %1, but it measured %2 for a document with 200 entries', MaxStatements, StatementsUsed));
     end;
 }

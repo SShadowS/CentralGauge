@@ -289,7 +289,7 @@ codeunit 89087 "CG-AL-X090 Test"
             'Expected the low-cost report to still carry the real sums - 20 cases of 10 each for team P1');
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('The report must not do work proportional to how many cases match: statement budget %1, actual %2', 20, StmtDelta));
+            StrSubstNo('The report must not do work proportional to how many cases match: budget %1, actual %2', 20, StmtDelta));
         Assert.IsTrue(
             RowsDelta <= 20,
             StrSubstNo('The report must not do work proportional to how many cases match: rows budget %1, actual %2', 20, RowsDelta));

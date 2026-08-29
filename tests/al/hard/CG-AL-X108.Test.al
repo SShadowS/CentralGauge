@@ -105,7 +105,7 @@ codeunit 89302 "CG-AL-X108 Test"
 
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('Three checks after the first must not re-walk the full module list: statement budget %1, actual %2', 20, StmtDelta));
+            StrSubstNo('Three checks after the first must not re-walk the full module list: budget %1, actual %2', 20, StmtDelta));
         Assert.IsTrue(
             RowsDelta <= 20,
             StrSubstNo('Three checks after the first must not re-walk the full module list: rows budget %1, actual %2', 20, RowsDelta));
@@ -151,7 +151,7 @@ codeunit 89302 "CG-AL-X108 Test"
 
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('Three checks after the first must not re-walk the full module list: statement budget %1, actual %2', 20, StmtDelta));
+            StrSubstNo('Three checks after the first must not re-walk the full module list: budget %1, actual %2', 20, StmtDelta));
         Assert.IsTrue(
             RowsDelta <= 20,
             StrSubstNo('Three checks after the first must not re-walk the full module list: rows budget %1, actual %2', 20, RowsDelta));
@@ -194,7 +194,7 @@ codeunit 89302 "CG-AL-X108 Test"
         Assert.IsFalse(Result, 'A separately declared variable must report the same not-active answer already determined this session');
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('A separately declared variable must reuse the already-determined answer instead of re-walking the full module list: statement budget %1, actual %2', 20, StmtDelta));
+            StrSubstNo('A separately declared variable must reuse the already-determined answer instead of re-walking the full module list: budget %1, actual %2', 20, StmtDelta));
         Assert.IsTrue(
             RowsDelta <= 20,
             StrSubstNo('A separately declared variable must reuse the already-determined answer instead of re-walking the full module list: rows budget %1, actual %2', 20, RowsDelta));

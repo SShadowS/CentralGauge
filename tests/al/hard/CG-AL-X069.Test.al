@@ -204,7 +204,7 @@ codeunit 88822 "CG-AL-X069 Test"
         Assert.IsFalse(Result, 'A 200-entry backlog with nothing genuinely due must still report nothing pending');
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('The check must not do work proportional to the queue backlog: statement budget %1, actual %2', 20, StmtDelta));
+            StrSubstNo('The check must not do work proportional to the queue backlog: budget %1, actual %2', 20, StmtDelta));
         Assert.IsTrue(
             RowsDelta <= 20,
             StrSubstNo('The check must not do work proportional to the queue backlog: rows budget %1, actual %2', 20, RowsDelta));

@@ -323,7 +323,7 @@ codeunit 89195 "CG-AL-X099 Test"
         Assert.IsFalse(Result, 'A 200-entry backlog with nothing genuinely due must still report nothing pending');
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('The check must not do work proportional to the queue backlog: statement budget %1, actual %2', 20, StmtDelta));
+            StrSubstNo('The check must not do work proportional to the queue backlog: budget %1, actual %2', 20, StmtDelta));
         Assert.IsTrue(
             RowsDelta <= 20,
             StrSubstNo('The check must not do work proportional to the queue backlog: rows budget %1, actual %2', 20, RowsDelta));
@@ -564,7 +564,7 @@ codeunit 89195 "CG-AL-X099 Test"
         Assert.AreEqual(ExpectedTotal, TotalMgt.GetBufferTotal(Buffer), 'The running total must include the newly entered entry on top of the 200 already applied');
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('Adding one more entry must not cost work proportional to how many entries are already in the session: statement budget %1, actual %2', 20, StmtDelta));
+            StrSubstNo('Adding one more entry must not cost work proportional to how many entries are already in the session: budget %1, actual %2', 20, StmtDelta));
         Assert.IsTrue(
             RowsDelta <= 20,
             StrSubstNo('Adding one more entry must not cost work proportional to how many entries are already in the session: rows budget %1, actual %2', 20, RowsDelta));
@@ -803,7 +803,7 @@ codeunit 89195 "CG-AL-X099 Test"
         Assert.AreEqual(20, GetValue(Totals, 'CGX89-B1'), 'Expected the low-cost valuation to still carry the real numbers');
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('Expected the valuation''s SQL statement cost to stay flat no matter how many distinct items the batch touches: budget %1, actual %2 for %3 distinct items', 20, StmtDelta, ItemCount));
+            StrSubstNo('Expected the valuation''s cost to stay flat no matter how many distinct items the batch touches: budget %1, actual %2 for %3 distinct items', 20, StmtDelta, ItemCount));
     end;
 
     // =================================================================
@@ -1052,7 +1052,7 @@ codeunit 89195 "CG-AL-X099 Test"
             'Expected the low-cost report to still carry the real sums - 20 cases of 10 each for team P1');
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('The report must not do work proportional to how many cases match: statement budget %1, actual %2', 20, StmtDelta));
+            StrSubstNo('The report must not do work proportional to how many cases match: budget %1, actual %2', 20, StmtDelta));
         Assert.IsTrue(
             RowsDelta <= 20,
             StrSubstNo('The report must not do work proportional to how many cases match: rows budget %1, actual %2', 20, RowsDelta));

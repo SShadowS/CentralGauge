@@ -278,7 +278,7 @@ codeunit 88837 "CG-AL-X084 Test"
         Assert.AreEqual(ExpectedTotal, TotalMgt.GetBufferTotal(Buffer), 'The running total must include the newly entered entry on top of the 200 already applied');
         Assert.IsTrue(
             StmtDelta <= 20,
-            StrSubstNo('Adding one more entry must not cost work proportional to how many entries are already in the session: statement budget %1, actual %2', 20, StmtDelta));
+            StrSubstNo('Adding one more entry must not cost work proportional to how many entries are already in the session: budget %1, actual %2', 20, StmtDelta));
         Assert.IsTrue(
             RowsDelta <= 20,
             StrSubstNo('Adding one more entry must not cost work proportional to how many entries are already in the session: rows budget %1, actual %2', 20, RowsDelta));

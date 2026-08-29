@@ -229,6 +229,6 @@ codeunit 89305 "CG-AL-X111 Test"
         Assert.AreEqual(307, HoursTotal,
             'Expected the low-cost figure to still carry the real total - 99 open children at 3 hours each plus BC1''s 10 hours, with every root (including BIGROOT) and the done BC2 excluded');
         Assert.IsTrue(StmtDelta <= 5,
-            StrSubstNo('The figure''s cost must not grow with the size of the checklist: statement budget %1, actual %2', 5, StmtDelta));
+            StrSubstNo('The figure''s cost must not grow with the size of the checklist: budget %1, actual %2', 5, StmtDelta));
     end;
 }

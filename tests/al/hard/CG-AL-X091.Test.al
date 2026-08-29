@@ -195,7 +195,7 @@ codeunit 89088 "CG-AL-X091 Test"
         Assert.AreEqual(275.25, Setup."Max Batch Weight",
             'Expected an independently declared variable to be served the same cached setup that was already read, not the row''s current value');
         Assert.AreEqual(ZeroBig, StmtDelta,
-            StrSubstNo('Expected an independently declared variable to reuse the already-cached setup instead of reading the table again: statement budget %1, actual %2', 0, StmtDelta));
+            StrSubstNo('Expected an independently declared variable to reuse the already-cached setup instead of reading the table again: budget %1, actual %2', 0, StmtDelta));
         Assert.AreEqual(ZeroBig, RowsDelta,
             StrSubstNo('Expected an independently declared variable to reuse the already-cached setup instead of reading the table again: rows budget %1, actual %2', 0, RowsDelta));
     end;
