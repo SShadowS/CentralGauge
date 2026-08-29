@@ -113,13 +113,32 @@ existing gated pipeline plus the calibration loop below.
    first program that selects ON bench resistance); measure wave 1
    before sizing waves 3+.
 
-### Retirement / replacement (Decision 1 - operator)
+### Retirement / replacement (Decision 1 - RESOLVED 2026-08-29)
 
-To keep the set at 100 while adding ~38 resistant tasks, ~38 current
-tasks must retire. Candidate policy: retire from the 81 solved-by-all
-first-try pool, preserving category coverage and keeping the strongest
-per-category anchors. Alternative: grow the set past 100 and let the
-launch set be a curated subset. NOT decided yet.
+Operator ruling: **replace at 100, and recycle the retired easy tasks as
+FILLER inside the new tasks.** A retired solved-first-try task does not
+just leave the set - its app ships again as a verbatim CORRECT donor
+module (defect fixed) inside a new large composite whose LIVE defect is
+a lever-1/lever-2 core. This is the batch-8 assembly model (entry 12 +
+the entry-32 glue amendment) pointed at the launch bar:
+
+- New resistant task = lever-1/2 core (the live defect) + 2-4 recycled
+  easy-task modules wired onto the live data flow (T3 coupling verified
+  with `alsem query touches`) + authored glue with its own budgeted
+  tests.
+- The recycled modules' oracles ride along as regression assertions
+  (pass on starter AND correct) - free PASS_TO_PASS mass that punishes
+  shotgun rewrites, plus the scale pressure that is measured to break
+  Opus on its own (X097/X100/X143-X145).
+- Honesty constraint from the batch-8 measurement: packaging alone buys
+  NO resistance once specs are fair. Filler adds scale pressure and
+  context mass; the CORE must still be a quantitative-contract or
+  allocation-invariant defect. Never count a task toward the resistant
+  quota on packaging grounds - only the bench resistance gate counts it.
+- Retirement picks come from the 81 solved-by-all-first-try pool,
+  preserving category coverage; each wave names which retired tasks it
+  consumed as filler. Retired task files move out of the launch set but
+  stay in git history.
 
 ### Standing constraints
 
@@ -131,7 +150,7 @@ launch set be a curated subset. NOT decided yet.
 
 ## Status
 
-- [ ] Decision 1: replace-at-100 vs grow-and-curate (operator)
+- [x] Decision 1 RESOLVED: replace at 100; retired easy tasks recycled as verbatim correct filler donors inside new composites (scale pressure + regression mass around lever-1/2 cores)
 - [ ] Wave 1 (~10 tasks: 5 lever-1, 3 lever-2, 2 lever-3) - build
 - [ ] Wave 1 resistance gate (Opus 5 bench)
 - [ ] Waves 2-4 sized from wave-1 yield

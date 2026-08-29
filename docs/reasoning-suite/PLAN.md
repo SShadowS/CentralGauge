@@ -244,6 +244,6 @@ invariants) plus large composites (Opus-only). C1-via-pi overpredicted
 solvability; hardness verdicts now come from the bench harness itself.
 Full program: docs/reasoning-suite/launch-hardening-plan.md (~38 new
 resistant tasks in waves, per-wave Opus resistance gate at ~$1.3/wave).
-- [ ] Decision 1 (operator): replace-at-100 vs grow-and-curate
+- [x] Decision 1: replace at 100, retired easy tasks recycled as composite filler (see plan doc)
 - [ ] Waves 1-4 per the plan doc; final bench + ingest + flip only on
       the hardened set
