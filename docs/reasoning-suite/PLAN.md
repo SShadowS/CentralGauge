@@ -233,3 +233,17 @@ Standing constraints (from CLAUDE.md + session rules):
 | 2026-08-26 | Build batch 6 promoted (66/100). Category 10 unblocked by measurement; three candidates killed by probes; the perf menu narrowed again (entry 26: a filtered FindSet scan is 1 statement at any row count). |
 | 2026-08-25 | Build batch 5 promoted (56/100). Perf-oracle menu re-derived from measurement; attempt-2 leak path traced in source; T2 visibility scored for batches 4 and 5; batch-4 LethAL sweep + 2 kill tests. |
 | 2026-08-23 | Diagnose-task format shipped (Tasks 1-7, `docs/superpowers/plans/2026-08-23-diagnose-task-format.md`): `tasks/starter/<id>/` / `scratch/<id>/starter/` convention, `templates/diagnose.md`, `PROMPT_POLICY_VERSION` folded into `task_sets.hash`, bench attempt-1 wiring, and workbench scaffold (`task new --diagnose`) / probe / promote support. Known gaps: `task import` does not reconstruct `starter/` for a promoted diagnose task; the draft `CHECKLIST.md` stays `naive/`-oriented for diagnose drafts. |
+
+## Launch hardening (post-100, ruling 2026-08-29)
+
+Operator bar: top model best-of-2 <= 50% before launch. Top-3 bench
+(Opus 5 88%, luna 87%, Sonnet 5 78% best-of-2; NOT ingested) measured
+only 12 Opus-resistant tasks - the resisters are exactly the two
+measured hard-tier families (quantitative perf contracts + allocation
+invariants) plus large composites (Opus-only). C1-via-pi overpredicted
+solvability; hardness verdicts now come from the bench harness itself.
+Full program: docs/reasoning-suite/launch-hardening-plan.md (~38 new
+resistant tasks in waves, per-wave Opus resistance gate at ~$1.3/wave).
+- [ ] Decision 1 (operator): replace-at-100 vs grow-and-curate
+- [ ] Waves 1-4 per the plan doc; final bench + ingest + flip only on
+      the hardened set

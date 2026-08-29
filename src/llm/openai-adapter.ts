@@ -38,6 +38,7 @@ import {
 // (e.g. "gpt-5.5-2026-04-23"), and sub-variants (e.g. "gpt-5.5-pro").
 const TEMPERATURE_LOCKED_MODELS: readonly string[] = [
   "gpt-5.5",
+  "gpt-5.6",
 ];
 
 function modelRejectsTemperature(model: string): boolean {
