@@ -260,3 +260,57 @@ not difficulty.**
    truncated. Re-baselining is now the highest-value next measurement:
    it tells us how many tasks the bar actually needs, and it may
    invalidate part of the existing resistant set.
+
+## THE RE-BASELINE (2026-08-29, uncapped): the program's arithmetic was built on an artifact
+
+`--max-tokens 64000`, all 110 tasks, Opus 5, `--no-ingest`. Clean:
+the largest single attempt used 19,887 completion tokens, so nothing
+truncated.
+
+**Opus 5 best-of-2: 106 / 110 = 96%.** Not 88%.
+
+Only FOUR tasks resist: **X074, X140, X169, X173.**
+
+Of the twelve tasks the truncation-affected baseline credited as
+Opus-resistant, ELEVEN now fall - including X133, which this document
+called "THE anchor", plus X090, X099, X142, X146 and X150. The
+hard-tier evidence base was largely a token limit.
+
+### What the four survivors actually share
+
+Not their category: X074 is plain logic diagnosis, X140 an allocation
+invariant, X169 and X173 quantitative perf contracts. What they share
+is that **the oracle grades something the model cannot verify by
+reading its own code**:
+- X169 / X173: a SQL statement count. You cannot know your rewrite's
+  cost by inspecting it; you must know the platform's cost model.
+- X140: a deterministic multi-partition cent sweep. The failure is one
+  cent on one partition out of many - not reachable by eyeballing.
+- X074: a filtered-count contract on an unsaved record, where the
+  wrong answer is a large number rather than an obviously-wrong one,
+  and attempt 2 failed a DIFFERENT assertion than attempt 1.
+
+Everything a competent reader can settle by static reasoning - absent
+branches, wrong field sourced, missing ChangeCompany, independent
+rounding, stale caches, permission predicates - Opus 5 now solves,
+usually first try.
+
+**Second repeatable signature: three of the four resisters failed
+attempt 2 by editing the ORACLE'S schema** (deleting a field the test
+references) rather than fixing the behaviour. Given a failing measured
+contract, the model reaches for the data model before the algorithm.
+A task whose graded contract sits on donor/frozen tables converts that
+reflex into a hard failure.
+
+### The arithmetic, honestly
+
+Bar: top model best-of-2 <= 50%. Current: 96%. A 100-task launch set
+needs ~50 resistant tasks; we have 4. Wave 1 built ten tasks
+*designed* to resist and yielded two, and that 20% was measured on the
+old lever list - the levers that produced the other eight are now known
+not to work at all. Extrapolating even the optimistic yield gives ~230
+further builds. **This bar is not reachable by building more tasks of
+the kinds we know how to build.**
+
+That is a strategy decision, not a build decision, so it goes to the
+operator rather than getting quietly absorbed into a wave-2 dispatch.
