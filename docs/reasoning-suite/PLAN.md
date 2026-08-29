@@ -150,6 +150,19 @@ Standing constraints (from CLAUDE.md + session rules):
       merging lever against known standalone C1 verdicts). Same plan
       covers the X146 higher-order-defect pilot (two masked interacting
       defects, four-leg probe) and the T4 stubborn-mutant harvest
+- [x] Build batch 9 (2026-08-29): CG-AL-X147..X155 promoted. **91 / 100.**
+      Seven ledger rows (R023/R035/R107/R126/R128/R142/R145) + two fresh
+      designs (X150 two-level largest-remainder drift; X154
+      SingleInstance-cache-has-no-company-dimension, decisions entry 34,
+      P3 probe same day). All nine: B1 first-try green with builder
+      predictions matching exactly, B2 x3 containers, B1b replay, B6a
+      (4 MED found+fixed+re-entered: X148/X149 prompt-contract rewords,
+      X151 persistence-hole assert, X154 third-company topology landmine),
+      B4/C1 both outside families - 17/18 valid solves, only
+      opus-4.8-on-X150 failed (zero-weight regression, patch kept for
+      B8). No hard-tier admits; nine calibration anchors. Deferred to
+      batch 10: cat-12 slot 2, cat-10 slots 2-3. Full gate log in ledger
+      batch-9 section. B7 LethAL sweep + B6b triage pending post-promote.
       (operator must pick the target module first).
 - [x] T1/T4 prerequisite (2026-08-24): 47 promoted tasks' correct/
       reference solutions committed under hash-excluded

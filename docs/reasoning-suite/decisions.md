@@ -825,3 +825,16 @@ Append-only. Each entry: date, decision, why.
     class still earns its keep as VALIDITY tooling (the four-leg probe is a
     stronger oracle proof than the two-leg), not as a hardness lever at
     this scale.
+
+34. **A SingleInstance codeunit's in-memory state has NO company dimension
+    (2026-08-29, Cronus28, BC 28.4, probe `scratch/probe-sicompany/`,
+    re-runnable).** A value cached from the current company's setup row is
+    served unchanged after the caller switches to reading another company's
+    data via `Rec.ChangeCompany` (cachedBefore 11 / otherRow 22 /
+    cachedAfter 11). Also measured in the same shape: the container's two
+    companies are "My Company" (the test session's company) and "CRONUS
+    Danmark A/S", and per-company writes through ChangeCompany stay fully
+    isolated (entry 22 re-confirmed). Consequence: the X154 cat-10 design
+    (a session cache without a company key serving one company's rate to
+    every company) is buildable, and its fixtures must use the two company
+    names above.
