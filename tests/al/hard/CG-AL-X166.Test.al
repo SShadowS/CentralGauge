@@ -96,6 +96,29 @@ codeunit 89386 "CG-AL-X166 Test"
     end;
 
     [Test]
+    procedure ABackdatedPostingLandsInDateOrderNotInTheOrderItWasEntered()
+    var
+        StatementLine: Record "CG X166 Statement Line" temporary;
+        Builder: Codeunit "CG X166 Statement Builder";
+        ELate: Integer;
+        EEarly: Integer;
+    begin
+        ClearAll();
+        SeedAccount('ACC-8', 'Backdated Corp');
+        ELate := SeedEntry('ACC-8', DMY2Date(10, 1, 2024), 100);
+        EEarly := SeedEntry('ACC-8', DMY2Date(1, 1, 2024), 10);
+
+        Builder.RebuildStatement('ACC-8', StatementLine);
+
+        StatementLine.Get('ACC-8', EEarly);
+        Assert.AreEqual(10.0, StatementLine."Running Balance",
+            'Expected the earlier-dated posting to carry only its own amount, even though it was entered last');
+        StatementLine.Get('ACC-8', ELate);
+        Assert.AreEqual(110.0, StatementLine."Running Balance",
+            'Expected the later-dated posting to carry both postings, even though it was entered first');
+    end;
+
+    [Test]
     procedure SameDatePostingsAreOrderedByEntrySequence()
     var
         StatementLine: Record "CG X166 Statement Line" temporary;

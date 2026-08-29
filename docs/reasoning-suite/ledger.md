@@ -897,3 +897,59 @@ C1 is DEFERRED to the bench resistance gate by the methodology
 correction in launch-hardening-plan.md: pi solvers overpredict bench
 solvability, so hardness verdicts come from a scripted Opus-5 bench
 run, not from these B4 legs.
+
+**B7 mutation sweep + B6b triage (LethAL, Cronus28, 2026-08-29).** Full
+sweep, no wedges. Scores: X165 71.1%, X166 81.8%, X167 78.6%, X168
+88.0%, X169 92.9%, X170 83.9%, X171 83.9%, X172 85.3%, X173 84.1%,
+X174 69.2%. Three triagers over 55 survivors + X174's 16 no-coverage.
+
+**14 real holes found and closed** (the richest B6b round the program
+has run), plus 2 unreached:
+- X165 (3): the per-route summary contract was UNTESTED for a carrier
+  shipping on more than one route - every fixture used a single route,
+  so three mutants that collapse or drop route summaries all survived.
+  Closed with a two-route summary test; a second test pins that the
+  whole rebuilt manifest is visible to the caller (the two Reset calls
+  were individually non-load-bearing, a mutually-masking pair).
+- X166 (1): removing SetCurrentKey survived because every fixture
+  seeded entries in ascending date order, making AutoIncrement order
+  identical to posting order. A single accumulator loop WITHOUT the key
+  would have passed. Closed with a back-dated posting test.
+- X167 (2): the else-branch that resets PostedAmount/Status per import
+  row could be emptied - invisible because New is enum ordinal 0 and no
+  test ever mixed a matched and an unmatched entry in one batch, so a
+  stale verdict leaked from the previous iteration. Closed with a
+  matched-then-unmatched test. Plus the caller-buffer Reset.
+- X168 (1), X170 (3), X171 (1), X172 (1), X173 (2 holes + 2 unreached):
+  charge-header Allocated never asserted true; GetReversedTotal's two
+  filters both removable (no two charges shared a reversal number, no
+  test read a single reversal on a multi-reversal charge);
+  zero-net-fee lines only ever seeded already-zero;
+  GetWarehouseAllocatedCostTotal's warehouse filter removable (both
+  call sites single-warehouse); the donor X158 CanFulfill boundary
+  (exact-stock line) and the donor X151 never-blocked-clear path.
+All 14 closed by kill tests; six oracles edited, each re-verified
+(reference passes, starter still fails reaching assertions) and
+re-replayed.
+
+**X174's 16 no-coverage ruled ADMISSIBLE** on a two-part test, not on
+"it's filler": (a) X174's graded contract cannot structurally reach
+them - SettlePeriod calls exactly ONE donor entry point (PostCharge),
+while PostRefund/RefundableFor/GetMeterReading/GetAmountDirect are
+called by no X174 object or test; (b) every one has a named killing
+test in its own donor's promoted oracle. Zero no-coverage in the core
+or glue.
+
+**A measured confirmation the B4 relaxation was right:** X174's three
+surviving tie-placement mutants conserve the pool exactly while the
+starter still sums to 100.02/149.99. They are the expected fingerprint
+of the accepted-alternative ruling, not a defect - the sum pin carries
+all the discrimination, exactly as intended.
+
+Two INHERITED donor-oracle gaps recorded for the donors' own triage,
+deliberately NOT closed inside X174 (that would grade donor filler and
+move the hash for no signal): X160's NextEntryNo first-entry value is
+unasserted anywhere, and X163's entire Query Log table is un-graded
+instrumentation.
+
+Suite: 159 X-series tasks (49 traps + 110 reasoning). gold-ci 244/244.

@@ -280,6 +280,8 @@ codeunit 89392 "CG-AL-X172 Test"
         Assert.AreEqual(15.00, GetCostShare('CD01', 2, 2), 'Expected an even two-department split to allocate exactly half the warehouse shipping cost to each department');
         Assert.AreEqual(20, Allocator.GetAllocatedUnitTotal('CD01'), 'Expected the order-level unit reconciliation total to equal the order''s total units after allocating');
         Assert.AreEqual(55.00, Allocator.GetOrderAllocatedCostTotal('CD01'), 'Expected the order-level cost reconciliation total to equal the combined shipping cost of every warehouse after allocating');
+        Assert.AreEqual(25.00, Allocator.GetWarehouseAllocatedCostTotal('CD01', 1), 'Expected the departments under one warehouse to sum to that warehouse''s own recorded shipping cost, not every warehouse''s combined');
+        Assert.AreEqual(30.00, Allocator.GetWarehouseAllocatedCostTotal('CD01', 2), 'Expected the departments under one warehouse to sum to that warehouse''s own recorded shipping cost, not every warehouse''s combined');
 
         ProductionOrder.Get('XO01');
         Assert.IsFalse(ProductionOrder.Allocated, 'Expected an untouched order to stay unallocated');

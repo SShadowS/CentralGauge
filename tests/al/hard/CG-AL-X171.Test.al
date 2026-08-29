@@ -286,7 +286,7 @@ codeunit 89391 "CG-AL-X171 Test"
         SeedLine('ZA01', 2, 'Item Q', 100.52);
         SeedLine('ZA01', 3, 'Item R', 798.80);
         SeedLine('ZA01', 4, 'Item S', 691.66);
-        SeedLine('ZA01', 5, 'Sample T (no charge)', 0.00);
+        SeedLineWithSentinel('ZA01', 5, 0.00, 7.77);
 
         Allocator.CalculateFees('ZA01');
 

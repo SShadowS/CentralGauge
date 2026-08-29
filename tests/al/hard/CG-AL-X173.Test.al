@@ -218,6 +218,32 @@ codeunit 89393 "CG-AL-X173 Test"
     end;
 
     [Test]
+    procedure ItemFulfillmentAcceptsALineThatExactlyConsumesTheStock()
+    var
+        Fulfillment: Codeunit "CG X158 Fulfillment";
+        OrderLine: Record "CG X158 Order Line";
+    begin
+        ClearAll();
+        SeedItem('ITM-F4', 'Exact fit', 1, 20);
+        SeedOrderLine('ORD-F4', 10000, 'ITM-F4', 20);
+
+        OrderLine.Get('ORD-F4', 10000);
+        Assert.IsTrue(Fulfillment.CanFulfill(OrderLine), 'Expected a line that exactly consumes the item''s remaining stock to be accepted');
+    end;
+
+    [Test]
+    procedure ClearingACodeThatWasNeverBlockedLeavesItUnblocked()
+    var
+        BlockList: Codeunit "CG X151 Block List";
+    begin
+        ClearAll();
+
+        BlockList.ClearBlocked('VEND-BL3');
+
+        Assert.IsFalse(BlockList.IsBlocked('VEND-BL3'), 'Expected clearing a code that was never blocked to leave it not blocked');
+    end;
+
+    [Test]
     procedure ItemFulfillmentRefusesALineOverStock()
     var
         Fulfillment: Codeunit "CG X158 Fulfillment";
@@ -472,7 +498,9 @@ codeunit 89393 "CG-AL-X173 Test"
         SeedRequisition('REQ-G7B', 'Second run line', 7, Enum::"CG X156 Requisition Status"::Released);
         SeedPostingLine(PostingLine, 'REQ-G7B', 'VEND-G7', 'ITM-G7', 10);
 
+        PostedPurchase.SetRange("Vendor No.", 'VEND-NOBODY');
         Poster.PostPurchaseRun(PostingLine, PostedPurchase);
+        PostedPurchase.Reset();
 
         Assert.AreEqual(1, PostedPurchase.Count(), 'Expected a second run reusing the same output buffer to replace the first run''s line, not add to it');
         AssertNotPosted(PostedPurchase, 'REQ-G7A', 'The first run''s line after a second run replaced the buffer');

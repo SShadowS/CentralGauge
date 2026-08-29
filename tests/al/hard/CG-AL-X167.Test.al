@@ -225,6 +225,29 @@ codeunit 89387 "CG-AL-X167 Test"
     end;
 
     [Test]
+    procedure AnUnmatchedEntryAfterAMatchedOneStillComesBackAsNewWithNoPostedAmount()
+    var
+        DuplicateAuditor: Codeunit "CG X167 Duplicate Auditor";
+        AuditResult: Record "CG X167 Audit Result" temporary;
+    begin
+        ClearAll();
+        SeedPosted(70, 'REF-MIX-A', 100);
+        SeedImport(60, 'REF-MIX-A', 100, 'SRC-MIX');
+        SeedImport(61, 'REF-MIX-B', 55, 'SRC-MIX');
+
+        DuplicateAuditor.RunAudit('SRC-MIX', AuditResult);
+
+        AuditResult.Get('REF-MIX-A');
+        Assert.AreEqual(AuditResult.Status::"Already Posted", AuditResult.Status,
+            'Expected an entry whose reference is already in the posted ledger to be reported as already posted');
+        AuditResult.Get('REF-MIX-B');
+        Assert.AreEqual(AuditResult.Status::New, AuditResult.Status,
+            'Expected an entry with no posted counterpart to come back as new even when an earlier entry in the same batch did have one');
+        Assert.AreEqual(0.0, AuditResult."Posted Amount",
+            'Expected no posted amount on an entry with no posted counterpart, even when an earlier entry in the same batch had one');
+    end;
+
+    [Test]
     procedure CallArgumentIsDiscardedAndRebuilt()
     var
         DuplicateAuditor: Codeunit "CG X167 Duplicate Auditor";
@@ -237,11 +260,13 @@ codeunit 89387 "CG-AL-X167 Test"
         AuditResult."External Ref" := 'LEFTOVER';
         AuditResult.Status := AuditResult.Status::New;
         AuditResult.Insert();
+        AuditResult.SetRange("External Ref", 'REF-FRESH');
 
         DuplicateAuditor.RunAudit('SRC-A', AuditResult);
 
+        AuditResult.Reset();
         Assert.AreEqual(1, AuditResult.Count(),
-            'Expected whatever the buffer held before the call to be discarded and rebuilt from scratch');
+            'Expected everything the buffer held before the call to be discarded, whatever the caller happened to be looking at');
         Assert.IsFalse(AuditResult.Get('LEFTOVER'),
             'Expected a pre-existing entry in the caller''s buffer to be discarded, not merged into the rebuilt result');
         Assert.IsTrue(AuditResult.Get('REF-FRESH'),

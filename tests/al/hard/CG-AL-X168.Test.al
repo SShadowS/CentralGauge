@@ -230,8 +230,10 @@ codeunit 89388 "CG-AL-X168 Test"
             'Expected the root''s total before the new posting was logged');
 
         SeedEntry('RB-CHILD', 4);
+        RollupResult.SetRange("Group Code", 'RB-ROOT');
         RollupBuilder.BuildRollup(RollupResult);
 
+        RollupResult.Reset();
         Assert.AreEqual(2, RollupResult.Count(),
             'Expected the rebuild to replace the previous rows, not add duplicates alongside them');
         RollupResult.Get('RB-CHILD');

@@ -231,6 +231,58 @@ codeunit 89385 "CG-AL-X165 Test"
     end;
 
     [Test]
+    procedure EachRouteGetsItsOwnSummaryWhenACarrierShipsOnSeveralRoutes()
+    var
+        ManifestBuilder: Codeunit "CG X165 Manifest Builder";
+        ManifestRow: Record "CG X165 Manifest Row" temporary;
+    begin
+        ClearAll();
+        SeedCarrier('CAR-8', 'Carrier Eight', 0);
+        SeedRoute('RT-8A', 'Route Eight A');
+        SeedRoute('RT-8B', 'Route Eight B');
+        SeedShipment('SHIP-8A', 'CAR-8', 'RT-8A', 1);
+        SeedShipmentLine('SHIP-8A', 1, 100, 40);
+        SeedShipment('SHIP-8B', 'CAR-8', 'RT-8B', 2);
+        SeedShipmentLine('SHIP-8B', 1, 25, 10);
+
+        ManifestBuilder.BuildManifest('CAR-8', ManifestRow);
+
+        ManifestRow.SetRange("Row Kind", ManifestRow."Row Kind"::RouteTotal);
+        Assert.AreEqual(2, ManifestRow.Count(),
+            'Expected one summary row for each route the carrier ships on, not a single combined one');
+        ManifestRow.SetRange("Route Code", 'RT-8A');
+        ManifestRow.FindFirst();
+        Assert.AreEqual(100, ManifestRow."Total Weight",
+            'Expected each route''s summary to hold only that route''s own shipments');
+        Assert.AreEqual(40, ManifestRow."Freight Total",
+            'Expected each route''s summary to hold only that route''s own shipments');
+        ManifestRow.SetRange("Route Code", 'RT-8B');
+        ManifestRow.FindFirst();
+        Assert.AreEqual(25, ManifestRow."Total Weight",
+            'Expected each route''s summary to hold only that route''s own shipments');
+        Assert.AreEqual(10, ManifestRow."Freight Total",
+            'Expected each route''s summary to hold only that route''s own shipments');
+    end;
+
+    [Test]
+    procedure TheWholeRebuiltManifestIsVisibleToTheCaller()
+    var
+        ManifestBuilder: Codeunit "CG X165 Manifest Builder";
+        ManifestRow: Record "CG X165 Manifest Row" temporary;
+    begin
+        ClearAll();
+        SeedCarrier('CAR-9', 'Carrier Nine', 0);
+        SeedRoute('RT-9', 'Route Nine');
+        SeedShipment('SHIP-9', 'CAR-9', 'RT-9', 1);
+        SeedShipmentLine('SHIP-9', 1, 10, 5);
+
+        ManifestBuilder.BuildManifest('CAR-9', ManifestRow);
+
+        Assert.AreEqual(2, ManifestRow.Count(),
+            'Expected every row the build produced, shipment rows and route summaries alike, to be visible straight after the call');
+    end;
+
+    [Test]
     procedure BuildManifestLeavesDisplaysBlankWhenCarrierOrRouteMasterDataIsMissing()
     var
         ManifestBuilder: Codeunit "CG X165 Manifest Builder";

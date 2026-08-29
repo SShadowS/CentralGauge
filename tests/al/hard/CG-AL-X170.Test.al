@@ -202,7 +202,7 @@ codeunit 89390 "CG-AL-X170 Test"
         // CD01 must not touch any of it.
         SeedCharge('XB01', 999.00);
         SeedCostCenterWithSentinel('XB01', 1, 'CC Untouched', 1, 555.55);
-        SeedReversalLineSentinel('XB01', 'R0', 1, 111.11);
+        SeedReversalLineSentinel('XB01', 'R1', 1, 111.11);
 
         Allocator.AllocateCharge('CD01');
         Allocator.ReverseCharge('CD01', 'R1', 50.00);
@@ -214,11 +214,14 @@ codeunit 89390 "CG-AL-X170 Test"
         Assert.AreEqual(75.00, Allocator.GetNetAmount('CD01', 1), 'Expected an even split of a reversal to give back exactly half from each cost center, leaving an even net remaining amount on each');
         Assert.AreEqual(75.00, Allocator.GetNetAmount('CD01', 2), 'Expected an even split of a reversal to give back exactly half from each cost center, leaving an even net remaining amount on each');
 
+        ChargeHeader.Get('CD01');
+        Assert.IsTrue(ChargeHeader.Allocated, 'Expected a charge whose cost centers carry weight to be recorded as allocated once its total has been spread across them');
+
         ChargeHeader.Get('XB01');
         Assert.IsFalse(ChargeHeader.Allocated, 'Expected an untouched charge to stay unallocated');
         Assert.AreEqual(555.55, GetCCAllocated('XB01', 1), 'Expected another charge''s cost center amount to be left untouched by allocating or reversing a different charge');
         Assert.AreEqual(555.55, Allocator.GetAllocatedTotal('XB01'), 'Expected another charge''s allocated-total reconciliation to be left untouched by allocating or reversing a different charge');
-        Assert.AreEqual(111.11, Allocator.GetReversedTotal('XB01', 'R0'), 'Expected another charge''s already-recorded reversal amount to be left untouched by allocating or reversing a different charge');
+        Assert.AreEqual(111.11, Allocator.GetReversedTotal('XB01', 'R1'), 'Expected another charge''s already-recorded reversal amount to be left untouched by allocating or reversing a different charge');
         Assert.AreEqual(444.44, Allocator.GetNetAmount('XB01', 1), 'Expected another charge''s net remaining amount to be left untouched by allocating or reversing a different charge');
     end;
 
@@ -389,6 +392,8 @@ codeunit 89390 "CG-AL-X170 Test"
         Assert.AreEqual(106.72, GetRawNet('AD01', 2), 'Expected a cost center''s net remaining amount to still match a clean allocation of whatever is left of the charge after two separate reversals, not just after one');
         Assert.AreEqual(103.28, GetRawNet('AD01', 3), 'Expected a cost center''s net remaining amount to still match a clean allocation of whatever is left of the charge after two separate reversals, not just after one');
         Assert.AreEqual(96.39, GetRawNet('AD01', 4), 'Expected a cost center''s net remaining amount to still match a clean allocation of whatever is left of the charge after two separate reversals, not just after one');
+        Assert.AreEqual(50.00, Allocator.GetReversedTotal('AD01', 'R1'), 'Expected the amounts recorded under one reversal to stay the amount that reversal was for after a later, separate reversal is recorded against the same charge');
+        Assert.AreEqual(30.00, Allocator.GetReversedTotal('AD01', 'R2'), 'Expected the amounts recorded under one reversal to stay the amount that reversal was for after a later, separate reversal is recorded against the same charge');
     end;
 
     [Test]
