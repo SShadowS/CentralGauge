@@ -1279,3 +1279,67 @@ against ~80 under the best-of-2 framing.
 
 That third point is the only remaining lever, and it is now a specific,
 costed, measurable target rather than "make the suite harder".
+
+---
+
+## Pre-launch audit of the n=14 candidate, and one debt this session created
+
+### The n=14 set is behaviourally clean
+
+Attempt-1 cause per model across the seven-model panel, for the fourteen
+tasks the pass@1 selection retains:
+
+| task | pass | behavioural | al_knowledge | omission | mixed |
+|---|---|---|---|---|---|
+| X067 | 3 | 4 | 0 | 0 | 0 |
+| X068 | 6 | 1 | 0 | 0 | 0 |
+| X069 | 5 | 2 | 0 | 0 | 0 |
+| X072 | 6 | 0 | 1 | 0 | 0 |
+| **X074** | **0** | **7** | 0 | 0 | 0 |
+| X075 | 6 | 1 | 0 | 0 | 0 |
+| **X080** | **0** | **7** | 0 | 0 | 0 |
+| X090 | 1 | 4 | 1 | 1 | 0 |
+| X095 | 3 | 3 | 1 | 0 | 0 |
+| X115 | 4 | 0 | 2 | 1 | 0 |
+| **X133** | **0** | **6** | 1 | 0 | 0 |
+| X140 | 2 | 5 | 0 | 0 | 0 |
+| X165 | 2 | 4 | 1 | 0 | 0 |
+| X169 | 2 | 5 | 0 | 0 | 0 |
+
+**Twelve of fourteen have zero artifact in their attempt-1 failures.** X090
+(1 of 6) and X115 (1 of 3) carry one each. X074, X080 and X133 defeat the
+first attempt of **all seven models**, behaviourally, and are the strongest
+tasks in the suite by that measure.
+
+`scripts/oracle-audit.py` exits 0: no hollow tests, no unseeded randomness,
+no vacuous fixture guards anywhere in the X-series. The three hollow oracles
+it reports are legacy (M005, M009, M010) and outside this set.
+
+### Debt: this session invalidated the gold-ci replay ledger
+
+`scripts/gold-ci.ts --check` now reports **244 tasks STALE, 0 trusted**. The
+cause is this session's edit to `src/parallel/compile-queue.ts`, which is a
+tracked `HARNESS_INPUTS` entry, so the harness fingerprint moved from
+`aeb0f033` to `ca07b171` and every recorded replay lost its warrant.
+
+That is the gate working as designed - it exists because a pin can appear
+validated while a different harness runs underneath - and it must NOT be
+worked around by removing the file from `HARNESS_INPUTS`.
+
+The behavioural argument for why a replay is nonetheless cheap to defer:
+
+- The overlay is gated on `usesObjectOverlay()`, which requires
+  `prompt_template` to end in `diagnose-objects.md`.
+- Across all committed tasks the only two values are `code-gen.md` (160) and
+  `diagnose.md` (110). **Zero committed tasks reach the new code path.**
+- The 18 arm-B manifests that do live in `scratch/ab-objects/`, which is
+  gitignored and outside the task-set hash.
+
+So the new branch is provably unreachable for every task in the ledger, and
+the staleness is a conservative content hash rather than a real invalidation.
+The fingerprint cannot know that, which is exactly why it is conservative.
+
+**Operator decision:** either spend the 244-task replay before launch, or
+record this reasoning as the justification for carrying the stale ledger until
+the contract change is actually adopted (at which point a replay is owed
+regardless, because the candidate assembly WILL differ for real).
