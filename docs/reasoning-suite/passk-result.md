@@ -127,12 +127,24 @@ at 2 on both sides so the comparison is like-for-like:
 | x-ai/grok-4.3 | 0.0% | 9.5% |
 | deepseek/deepseek-v4-pro | 0.0% | 4.8% |
 
-**Top model regresses +9.5pp out of sample**, identically across 30
-independent selection draws.
+**Top model regresses +9.5pp out of sample** on that split.
 
-Netting out generic drift: the same candidate pool scored WITHOUT any
-selection moves +3.6pp between the same two trial pairs. So roughly **3.6pp is
-trial-to-trial noise and ~6pp is genuine selection overfit.**
+**CORRECTION, same day: +9.5pp was a single fold and it overstated the
+effect.** Cross-validating across all 27 disjoint select/hold-out splits of
+the five trials, k matched at 2 on both sides:
+
+| | value |
+|---|---|
+| in-sample top model | 44.8% |
+| held-out top model | 48.5% |
+| **overfit gap** | **+3.7pp** (median +5.6, sd 8.0, range -12.5 to +18.8) |
+| null drift, same splits, no selection | +0.0pp (sd 4.7) |
+
+So the selection overfit is **~3.7pp, not 9.5pp** - the single split landed
+near the high end of a wide distribution. The corrected estimate for the
+published n=24 at k=5 is **~53.7%**, not the ~57% first reported. The 27
+splits share trials, so the effective sample is far below 27 and the sd is
+wide; a directly measured number needs fresh trials.
 
 ### What this kills and what survives
 
