@@ -27,7 +27,6 @@ import argparse
 import collections
 import glob
 import json
-import os
 
 
 def load_trial(path: str) -> dict[tuple[str, str], dict]:
@@ -101,7 +100,7 @@ def main() -> int:
         all_ = sum(1 for t in mt if all(tr[(m, t)][args.metric] for tr in trials))
         rows.append((m, mean, any_ / len(mt), all_ / len(mt), len(mt)))
     rows.sort(key=lambda r: -r[3])
-    for m, mean, at_any, at_all, n in rows:
+    for m, mean, at_any, at_all, _n in rows:
         print(f"  {m:32s} {mean:9.1%} {at_any:8.1%} {at_all:8.1%} "
               f"{at_all - mean:+6.1%}")
 
