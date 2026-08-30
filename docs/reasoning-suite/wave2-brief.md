@@ -489,3 +489,46 @@ scale, and the launch claim should change instead.
 `gemini-3.1-pro-preview` is dropped from the panel - too old and too
 expensive for its contribution. OpenRouter credits have been restored, so
 grok-4.3 and deepseek-v4-pro are available again.
+
+### The undocumented-behaviour screen: also zero (2026-08-30)
+
+A research review made a good objection to the 0-in-11 result: **every one of
+those candidates is documented on Microsoft Learn**, which is heavily crawled.
+The corpus scarcity that held COBOL, ABAP and BFCL-Java flat for 17-24 months
+is in AL *code* (BC-Bench counts 338 MIT-licensed AL repos against 581K for
+C#) and in behaviour discoverable only by RUNNING it - which is precisely what
+`decisions.md` records and what the screen had never touched.
+
+So the screen was re-run on six candidates drawn from measured facts in
+`decisions.md`, none of which are documented behaviour:
+
+| candidate | fact | Opus 5 | gpt-5.5 |
+|---|---|---|---|
+| U1 cache per-company data in a SingleInstance codeunit | 34: SingleInstance state has NO company dimension | correct - keyed by company | correct - keyed by company |
+| U2 read another company's rows plus a related table | 36: ChangeCompany is per-record-INSTANCE | correct - both records changed | correct |
+| U3 date-ranged FlowField total | 38: a CalcFormula with no date term silently ignores the Date Filter | correct - date term included | correct |
+| U4 count failures across trapped errors | 20: codeunit in-memory state SURVIVES asserterror | correct - keyed Dictionary | (no output) |
+| U5 fast per-branch total | 31: CalcSums with NO SIFT key succeeds silently | correct - SIFT key added | correct - SIFT key added |
+| U6 two callers observing one event | 28: two manual subscribers both fire, unbinding one does not affect the other | correct, **and commented the fact verbatim** | (no output) |
+
+**Zero wrong forms again.** U6 is the sharpest: Opus wrote *"Binding/unbinding
+is per instance, so two callers can observe at the same time and one calling
+StopObserving does not unbind the other"* - our own measured fact 28, stated
+unprompted.
+
+Running total across both screens: **~17 candidates, two vendors, one
+non-convergent hit (Opus looping per-customer `CalcSums`), zero convergent
+attractors.**
+
+So the objection was reasonable and the data does not support it. The gap is
+not documented-versus-measured; frontier models write the correct form for
+behaviour we had to run a container to establish. One caveat kept explicit:
+writing code consistent with a fact is not the same as knowing it, and a
+screen of this size cannot separate the two.
+
+**Screen defect found and fixed.** Three of twelve cells came back empty
+because the adapter's extractor returns `""` when a model answers without a
+code fence; `attractor-probe.ts` now falls back to the raw response. All
+three recovered cells were correct, so the conclusion is unchanged - but the
+first run's numbers were quietly missing data, and any future screen should
+check for empty cells before being believed.

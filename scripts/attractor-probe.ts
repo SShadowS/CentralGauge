@@ -76,7 +76,12 @@ async function main(): Promise<number> {
             description: c.requirement,
           },
         );
-        const code = (res.code ?? "").trim();
+        // Fall back to the raw response: the adapter's extractor returns ""
+        // when the model answers without a fence, which silently loses the
+        // cell. Three of twelve cells were lost that way on the first
+        // undocumented-behaviour screen.
+        const code = ((res.code ?? "").trim() ||
+          (res.response?.content ?? "").trim());
         console.log(`\n--- ${slug} (${code.split("\n").length} lines)`);
         console.log(code.slice(0, 2400));
       } catch (err) {
