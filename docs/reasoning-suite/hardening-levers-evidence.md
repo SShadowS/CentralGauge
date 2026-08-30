@@ -1129,3 +1129,80 @@ same response. Ours would be exact.
 Per the standing principle, that must be a DETECTOR that scores, never a
 repairer that hides. Aider's `no_apply: 0` beside 134-of-300 instances hitting
 format failures is the cautionary case.
+
+---
+
+## A/B result: the overlay is worth +22 points, and my ceiling prediction was wrong (2026-08-30)
+
+18 tasks (12 where omission was observed, 6 controls), 2 attempts, paired on
+the same cells in both arms. McNemar exact on the discordants.
+
+| model | arm A (whole-app) | arm B (changed objects) | delta |
+|---|---|---|---|
+| claude-opus-5 | 14/18 = 78% | **17/18 = 94%** | +17pp |
+| claude-sonnet-5 | 10/18 = 56% | **15/18 = 83%** | +28pp |
+| **pooled** | 24/36 = 67% | **32/36 = 89%** | **+22pp** |
+
+Discordant cells: 9 fixed by the overlay, 1 broken. **McNemar exact
+p = 0.0215 - significant.**
+
+Attempt-level cause mix, which is the mechanism:
+
+| cause | arm A | arm B |
+|---|---|---|
+| pass | 44% | **62%** |
+| behavioural | 37% | 33% |
+| omission | 9% | **2%** |
+| mixed | 7% | **0%** |
+| al_knowledge | 2% | 4% |
+
+### The prediction this falsifies
+
+The section above predicted the overlay could fix at most the object_drop
+half - 54% of omissions - because member drops inside a returned object stay
+destructive. **Measured, omission plus mixed fell from 16% of attempts to 2%,
+an ~89% reduction, far beyond that ceiling.**
+
+The prediction's error was assuming the model's drop behaviour is invariant to
+the contract. It is not: asking for two objects instead of fifteen produces
+less truncation of EVERY kind, member drops included. The X140 smoke that
+motivated the ceiling was a real case, but it was not representative - under
+the changed-objects contract X140 is one of the nine cells the overlay fixed.
+
+### What is not omission
+
+Two of the nine fixed cells - X074 and X102, both under sonnet-5 - had
+`['behavioural', 'behavioural']` in arm A, i.e. no omission anywhere. Those
+are either noise at one cell each or a genuine reasoning benefit from a
+shorter output contract. The honest read is that **7 of 9 are attributable to
+omission and 2 are not explained by it.**
+
+One cell was BROKEN: X133 under opus-5, which passed under whole-app and now
+fails `['behavioural', 'al_knowledge']`. That is the overlay's own error rate
+showing up, exactly the cost res-swebench warned would silently enter every
+model's score. At 1 in 36 it is small, but it is not zero and it should be
+re-measured at larger n.
+
+### Three caveats that bound this result
+
+1. **Two models only.** grok-4.3 and deepseek-v4-pro returned `402
+   Insufficient credits` on all 18 tasks each and were dropped as provider
+   failures, not scored as zeros. Both are models where omission was WORST
+   (grok lost 13 of 25 failures to it), so the arms are compared on exactly
+   the two models least affected. The result may understate or overstate for
+   weaker models; it does not currently speak to them at all.
+2. **The subset is omission-enriched by construction** - 12 of 18 tasks were
+   chosen because omission was observed on them. +22pp on this subset is NOT
+   +22pp on the 110-task suite, and must not be quoted as such.
+3. **It moves away from the launch bar.** Opus at 94% on a subset picked to
+   contain its hardest tasks is the direction this was always going to push.
+
+### The operator decision this now supports
+
+The format question has a measured answer: the changed-objects contract is
+significantly better and the cost is one broken cell in 36. But adopting it
+raises scores, and the `<=50%` bar is already unreachable by selection (max
+n=8). The two facts together say the same thing the ceiling analysis did -
+**the bar needs authored tasks, not a cleaner contract** - with the addition
+that keeping the noisy contract was never buying real difficulty, only
+retyping stamina.

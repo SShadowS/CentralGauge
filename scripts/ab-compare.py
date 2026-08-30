@@ -50,20 +50,46 @@ def cause(attempt: dict) -> str:
     return "behavioural" if not test.get("success") else "pass"
 
 
-def load(paths: list[str]) -> dict[tuple[str, str], dict]:
+def is_provider_failure(attempts: list[dict]) -> bool:
+    """True when no attempt produced any model output at all.
+
+    A 402 (out of credits), 401 or hard 429 scores as `success: false` in the
+    results file, which is indistinguishable from a capability failure unless
+    you look. It is not a model outcome and must never enter a rate: an
+    exhausted OpenRouter balance silently reported grok-4.3 and deepseek-v4-pro
+    at 0/18 during the 2026-08-30 A/B.
+    """
+    if not attempts:
+        return True
+    for att in attempts:
+        usage = ((att.get("llmResponse") or {}).get("usage")) or {}
+        content = (att.get("llmResponse") or {}).get("content") or ""
+        if (usage.get("completionTokens") or 0) > 0 or content:
+            return False
+    return True
+
+
+def load(paths: list[str]) -> tuple[dict[tuple[str, str], dict], list[tuple[str, str, str]]]:
     out: dict[tuple[str, str], dict] = {}
+    dropped: list[tuple[str, str, str]] = []
     for path in paths:
         with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
         for res in doc.get("results", []):
             model = (res.get("context") or {}).get("llmModel") or "?"
             attempts = res.get("attempts") or []
+            if is_provider_failure(attempts):
+                reasons = (attempts[0].get("failureReasons") if attempts else None) or []
+                dropped.append(
+                    (model, res["taskId"], (reasons[0] if reasons else "no model output")),
+                )
+                continue
             out[(model, res["taskId"])] = {
                 "solved": bool(res.get("success")),
                 "first_try": res.get("passedAttemptNumber") == 1,
                 "causes": [cause(a) for a in attempts],
             }
-    return out
+    return out, dropped
 
 
 def mcnemar_exact(b: int, c: int) -> float:
@@ -86,7 +112,20 @@ def main() -> int:
                     default="solved")
     args = ap.parse_args()
 
-    A, B = load(args.arm_a), load(args.arm_b)
+    A, dropped_a = load(args.arm_a)
+    B, dropped_b = load(args.arm_b)
+    for label, dropped in (("arm A", dropped_a), ("arm B", dropped_b)):
+        if dropped:
+            print(f"[DROPPED] {label}: {len(dropped)} cell(s) with no model output "
+                  f"- provider failure, not a model outcome")
+            seen = set()
+            for model, task, reason in dropped:
+                if model in seen:
+                    continue
+                seen.add(model)
+                n = sum(1 for m, _, _ in dropped if m == model)
+                print(f"           {model}: {n} cell(s) - {reason[:80]}")
+            print()
     pairs = sorted(set(A) & set(B))
     if not pairs:
         print("[FAIL] no (model, task) pair appears in both arms")
