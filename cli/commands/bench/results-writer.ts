@@ -10,6 +10,10 @@ import type {
   TaskManifest,
 } from "../../../src/tasks/interfaces.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
+import {
+  computeOmissionStats,
+  renderOmissionBlock,
+} from "../../../src/stats/omission.ts";
 import { loadResultFilesGrouped } from "../report/file-loader.ts";
 import { groupResultsByModelAndTask } from "../report/run-detector.ts";
 import { calculateMultiRunStats } from "../report/stats-calculator.ts";
@@ -583,6 +587,30 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     if (fallbackLines.length > 0) {
       lines.push(``);
       lines.push(...fallbackLines);
+    }
+  }
+
+  // # Omission block — attempts that dropped an AL object or field while
+  // re-emitting the whole application under `diagnose.md` rule 2. Reported
+  // rather than forgiven: on the seven-model panel of 2026-08-30 this was 37%
+  // of all failures, so a pass rate quoted without it conflates transcription
+  // fidelity with diagnostic ability. Precedents for publishing both numbers
+  // are IFEval (strict AND loose accuracy) and Aider
+  // (`percent_cases_well_formed` beside the pass rate).
+  if (input.results && input.results.length > 0) {
+    const omissionLines = renderOmissionBlock(
+      computeOmissionStats(input.results.map((r) => ({
+        success: r.success,
+        attempts: (r.attempts ?? []).map((a) => ({
+          compilationResult: a.compilationResult,
+          failedAssertions: a.compilationResult?.success === true &&
+            a.testResult !== undefined && !a.testResult.success,
+        })),
+      }))),
+    );
+    if (omissionLines.length > 0) {
+      lines.push(``);
+      lines.push(...omissionLines);
     }
   }
 
