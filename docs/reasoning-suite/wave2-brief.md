@@ -255,3 +255,67 @@ any wave is funded:
 2. Re-pilot B with that recipe, then C.
 3. Treat the 2-in-10 rate and the ~65-build estimate as unvalidated until a
    pilot lands.
+
+## Pilot 2, re-run on the banked recipe: ALSO solved first try (2026-08-30)
+
+The measurement defect above was fixed by reading a working oracle instead of
+re-deriving one. `CG-AL-X169.Test.al` carries the recipe, and six oracles use
+it:
+
+```al
+local procedure FlushDataCache()
+begin
+    // The warm-up call and the fixture-seeding loop leave the session's data
+    // cache warm, and a cache-served read costs zero in the counters below -
+    // the graded call would then measure nothing. A write to an unrelated
+    // row, followed by SelectLatestVersion, forces real statements again.
+    SeedItem('PI-DECOY', 1, 'PG-DECOY');
+    SelectLatestVersion();
+end;
+```
+
+Also copied: an ABSOLUTE budget (`MaxStatements()`) rather than a delta
+between two sizes, and correctness assertions before the cost assertion.
+
+Rebuilt on that, X179 discriminates cleanly: correct passes 7/7, and the
+starter burns **243 statements against a 35 budget across 120 depots**.
+
+**Both frontier models then solved it first try.** Opus 5 PASS (100),
+gpt-5.5 PASS (100).
+
+## Conclusion after two completed pilots: the brief does not transfer
+
+| sub-family | existing evidence | pilot outcome |
+|---|---|---|
+| A. open-world extensibility | X080, 7/7 | X178 - solved by **both**, first try |
+| B. SQL-counter scaling | X133/X165/X169/X173, 4-6 of 7 | X179 - solved by **both**, first try |
+| C. ordering/partition invariance | X140, 5/7 | not attempted |
+
+Two tasks, deliberately designed to the measured recipe, both valid (probe
+discriminates, `oracle-audit` clean), both solved first try by the two
+strongest models available. **The recipe derived from the resistant tasks does
+not reproduce their resistance.**
+
+That is the most decision-relevant result in this document, and it argues
+against funding a wave on this brief at all:
+
+- The `~65 builds` estimate assumes wave 1's 2-in-10 rate is a property of
+  the DESIGN. Two designed-to-spec tasks scoring 0-in-2 is weak evidence that
+  it is not - that wave 1's two hits owed more to incidental properties than
+  to the family they were later assigned to.
+- The seven tasks that DO resist share a description ("quantifies over inputs
+  the model's code cannot enumerate") which is apparently necessary but
+  clearly not sufficient. X179 quantifies over depot count and is solved;
+  X169 quantifies over batch size and is not. **What separates them is not
+  captured by anything measured so far.**
+- Publishing a bar that needs ~20 such tasks, when the current method
+  produces them at an unmeasured and possibly very low rate, is a schedule
+  risk that should be surfaced before any wave is funded rather than after.
+
+**Recommended: do not fund wave 2 on this brief.** The cheaper next
+experiment is diagnostic rather than productive - take the seven resistant
+tasks and the two pilots, and find what actually differs. One candidate
+already noted: the resistant ones may all contain a naive fix that is
+*obvious and wrong*, whereas both pilots had an obvious fix that was simply
+right. That is testable by inspection, costs no builds, and would replace a
+recipe that has now failed twice.
