@@ -1393,3 +1393,80 @@ It is the closest available evidence that format failure and task failure
 travel together rather than being orthogonal noise - and it matches our own
 finding that omission lands on the repair attempt of tasks that were already
 failing.
+
+---
+
+## What the edit does not preserve: measured, and it is small (2026-08-30)
+
+Every omission figure in this document until now is COMPILER-detected: the
+AL compiler only reports a dropped member when something still references it
+(AL0132). A member nothing references vanishes silently, compiles clean, and
+can pass the oracle. That is precisely the gap arXiv 2604.05100 named across
+150+ benchmarks - "none of them confirms what the edit preserves", with 56%
+of tests scoped exclusively to the edited code.
+
+`scripts/completeness-scan.ts` measures it directly, over all 920 attempts of
+the seven-model panel, using `checkCompleteness` against each task's starter:
+
+| | n | share |
+|---|---|---|
+| attempts dropping >=1 whole object | 49 | 5.3% |
+| attempts dropping >=1 member | 95 | 10.3% |
+| attempts shrinking an object by >half | 12 | - |
+
+Split by outcome, the raw signal looks alarming:
+
+| | attempts | dropped something |
+|---|---|---|
+| PASSING | 661 | 34 (5.1%) |
+| FAILING | 259 | 82 (31.7%) |
+
+### The reference solution is the discriminator, and it removes 3/4 of it
+
+A raw detector cannot tell "the fix legitimately removes this member" from
+"the model lost it" - the exact false-positive class that made SWE-agent's
+guardrail block legitimate deletions and got Roo Code's detector deleted. We
+have something no surveyed harness has: a reference solution per task. If the
+REFERENCE also drops the member, the model's drop is part of the fix.
+
+Of the 34 passing attempts that dropped a member (all 34 comparable, every
+task has a reference):
+
+| | n |
+|---|---|
+| drop MATCHES the reference - legitimate removal | 24 |
+| drop NOT in the reference - **unpunished loss** | **8** |
+
+**So the honest figure is 1.2% of passing attempts, not 5.1%.** Three
+quarters of the raw firings are legitimate refactoring. Reporting 5.1% would
+have been the overclaim the literature predicts for a detector without a
+baseline.
+
+The eight, with their multiplicities: `cg x074 report comments` triggers
+`onaction`/`onfindrecord`/`onaftergetcurrrecord` (x5 across the object),
+`cg x167 posted entry|key:extref` and `cg x167 import entry|key:sourceref`,
+`cg x133 ...|procedure:getteamdisplay`, `cg x165 ...|buildroutesummaries`,
+`cg x068 ...|applycrosscolumnsearch`, `cg x072 ...|oncheckpriorityeligibility`,
+`cg x094 ...|appendfiscalsegment`.
+
+### What this says about suite validity
+
+**The oracles are not badly blind.** At most 1.2% of passing attempts removed
+something the reference keeps, and even that is an upper bound - a legitimate
+alternative fix the reference happens not to exhibit would land in the same
+bucket. The "what the edit preserves" gap is real in our suite and small,
+which is the reassuring answer rather than the interesting one.
+
+Per-model, the raw drop rate tracks capability exactly as the omission column
+does - deepseek 21.4%, grok 15.3%, sonnet 10.9%, luna 10.4%, opus 10.2%,
+gemini 8.5%, gpt-5.5 8.3% - so completeness is a capability axis in its own
+right, not noise.
+
+### Scope note
+
+This is a measurement, not a gate. Nothing rejects on it, consistent with the
+posture argued above: SWE-agent Figure 11 documents a completeness gate
+blocking legitimate deletions, and Roo Code removed its detector over false
+positives it never measured. We measured first. Whether 1.2% justifies a
+scored column alongside `omission_rate` is an open question - on this evidence
+it probably does not, and saying so is the point of having measured it.
