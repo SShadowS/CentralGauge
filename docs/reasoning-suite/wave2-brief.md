@@ -397,3 +397,50 @@ X-series' original trap framing that the brief drifted away from.
 holds - but the yield rate should now be re-estimated against this rule
 rather than against the three sub-families, and one pilot built to the
 corrected rule should precede any wave.
+
+---
+
+## The attractor screen, made empirical and cheap (2026-08-30)
+
+`scripts/attractor-probe.ts` turns gate A1 from a judgement call into a
+measurement: state a requirement, ask real models to implement it from
+scratch, and see whether they write the wrong form. Cents per candidate,
+seconds, no container. A candidate models implement CORRECTLY has no task in
+it and dies here rather than after a build slot and a gate run - which is what
+X178 and X179 cost.
+
+First three candidates, against Opus 5 and gpt-5.5:
+
+| candidate | Opus 5 | gpt-5.5 | verdict |
+|---|---|---|---|
+| A. total a FlowField across a filtered parent list | **WRONG** - per-customer `CalcSums` in a loop | correct - a `query` object with `Method = Sum` | no convergence |
+| B. proportional split that must sum to the total | correct - cumulative/running allocation | not run | dead |
+| C. count within a caller's filters without clobbering them | not run | correct - `Copy()` | dead |
+
+**Candidate A is the instructive one.** Opus wrote the per-customer loop
+while commenting that its cost "is bound to the number of entries, not
+re-evaluated per customer via a FlowField CALCFIELDS in a loop". It wrote the
+defect and asserted it had avoided it - textbook attractor behaviour, and
+exactly the shape the X133/X169/X173 family grades.
+
+**But gpt-5.5 reached for a `query` object and got it right.** So A defeats
+one frontier model and not the other, and the bar binds whichever model is
+strongest on the retained set.
+
+### What this says about the remaining work
+
+Three candidates, two vendors, **zero convergent attractors**. That is a small
+sample, but it is consistent with the panel data: across the whole 110-task
+suite, Opus and gpt-5.5 fail near-disjoint sets (union 9, intersection 1), and
+only X173 defeats all three frontier models.
+
+So the binding difficulty is not "write a hard task" - it is **find a defect
+that MORE THAN ONE frontier model writes**. Vendors have different blind
+spots, and a task built on one vendor's blind spot is passed by the others.
+
+That reframes the cost estimate honestly: the `n <= 2k` arithmetic still says
+~13 more tasks that defeat the strongest model, but the screen above suggests
+the per-candidate hit rate for a CONVERGENT attractor is low, and it is now
+measurable before any build. **Run the screen over a batch of candidates and
+report the hit rate before committing a wave** - that is a cents-scale
+experiment that would replace the unvalidated 2-in-10 assumption with a number.

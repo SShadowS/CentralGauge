@@ -170,3 +170,4 @@ docs/volotests/*
 !scripts/failure-causes.py
 !scripts/ab-compare.py
 !scripts/completeness-scan.ts
+!scripts/attractor-probe.ts
