@@ -209,3 +209,49 @@ Anyone resuming this should treat the ~65-build estimate as unvalidated: the
 2-in-10 rate it derives from came from wave 1, whose levers this document has
 already shown were partly mis-attributed. Pilot each sub-family on ONE task
 before funding a wave. That cost one task here and saved the alternative.
+
+## Pilot 2: sub-family B, failed on my own measurement harness (2026-08-30)
+
+**CG-AL-X179** (`scratch/CG-AL-X179/`, not promoted): per-depot filtered reads
+that should be one ordered pass, with the misdirection that a `Dictionary`
+cache is ALREADY present and correct so a model pattern-matching
+"hoist the lookup" changes nothing that matters. Four objects.
+
+It never reached a model. Two defects, both mine:
+
+1. **Oracle seeding.** `Insert(true)` on an `AutoIncrement` key across repeated
+   `Seed()` calls collides - the counter is not reset by `DeleteAll` and does
+   not roll back with the test transaction. This repo already recorded that
+   trap (X166). Fixed by assigning entry numbers explicitly.
+2. **The measurement is void.** `StatementsToBuild` did a warm-up call, then
+   measured a second IDENTICAL call. `decisions.md` entries 8 and 11 say
+   repeat identical reads are served free from the NST cache and that
+   `SelectLatestVersion()` is what flushes it. Measured result: **correct 0
+   statements, starter 0 statements, delta 0** - the harness charges nothing
+   to either side, so the probe correctly reported `naive=pass` and refused
+   the task.
+
+**The process failure is the one worth recording.** `hardening-pipeline.md`
+gate A3 requires ANY platform-semantics premise to go through `premise-probe`
+BEFORE a build slot is spent, and `decisions.md` entry 13 exists because two
+batch-4 slots died exactly this way. I authored the task first and probed
+after. The gate ordering is not ceremony.
+
+### Standing of the brief after two pilots
+
+| sub-family | evidence | pilot |
+|---|---|---|
+| A. open-world extensibility | 1 task (X080, 7/7) | **failed** - X178 solved 0/2 |
+| B. SQL-counter scaling | 4 tasks (4-6 of 7) | **not tested** - X179 never reached a model |
+| C. ordering/partition invariance | 1 task (X140, 5/7) | not attempted |
+
+Two pilots, zero validations. Nothing here has been shown to transfer. Before
+any wave is funded:
+
+1. **Bank the counter-measurement recipe as a premise probe first.** The
+   existing X133/X169/X173/X165 oracles measure scaling successfully, so a
+   working pattern exists in the tree - read one and copy it rather than
+   re-deriving. Whatever they do about cache flushing is the fact to bank.
+2. Re-pilot B with that recipe, then C.
+3. Treat the 2-in-10 rate and the ~65-build estimate as unvalidated until a
+   pilot lands.
