@@ -1074,3 +1074,58 @@ not use it.** SWE-bench's own two sources disagree on Claude 2's apply count
 (paper Table 5: 988/43.07%; experiments repo: 686). Modern per-instance
 `patch_successfully_applied` data sits in `s3://swe-bench-submissions/` and
 needs AWS credentials - unretrieved.
+
+---
+
+## Sub-unit truncation: the overlay's ceiling is ~half (2026-08-30)
+
+The overlay smoke exposed a failure class the format taxonomy does not
+cover. Opus 5, two omission-affected tasks under `diagnose-objects.md`:
+
+- **X173 passes first try, 19/19.** Under whole-app it failed BOTH attempts,
+  behavioural then omission. Exactly the intended win.
+- **X140 still fails with the identical `AL0132 'Rebate Description'`.** The
+  model RETURNED the `CG X140 Rebate Header` table and dropped a field from
+  inside it, so the overlay faithfully replaced a good starter object with a
+  truncated one.
+
+Object-level omission becomes a no-op; **member-level omission inside a
+returned object stays destructive under every placement scheme** - whole-app,
+identity overlay and diffs alike. This also corrects a description used
+earlier in this document: X140 was called object omission, and it is element
+omission within a returned unit.
+
+### How much of the artifact the overlay can actually reach
+
+Every confirmed-omission attempt on the seven-model panel was reclassified
+from the compiler message itself (`AL0185 "X is missing"` and `AL0132 "does
+not contain a definition for 'Y'"`), checking whether the OWNING object was
+present in the candidate's own `extractedCode`. Nothing was unclassifiable:
+
+| class | n | share | overlay fixes it? |
+|---|---|---|---|
+| object_drop - the owning object is absent from the candidate | 28 | **54%** | yes |
+| member_drop - the object is present, a field/procedure/value inside it is gone | 24 | **46%** | **no** |
+
+**So the overlay's upper bound is roughly halving the omission artifact**, not
+eliminating it: 37% of failures should fall to about 20%, not to zero. That is
+a prediction the paired A/B tests directly.
+
+Member drops cluster on the same objects across independent models, which is
+itself informative - `CG X169 Pricing Setup`.`Code` is dropped by opus-5,
+gpt-5.5 AND grok-4.3; `CG X140 Rebate Header`.`Rebate Description` by opus-5.
+The same field disappears from the same table for three different vendors,
+which points at a property of the source text rather than a quirk of one
+model.
+
+### What this implies for a detector
+
+We can do something no surveyed harness can: **compare the returned unit's
+member set against the starter unit's before invoking the compiler.** Every
+other harness lacks the base to compare against - Aider's AST-node-count
+elision check is the closest instance and it approximates the base from the
+same response. Ours would be exact.
+
+Per the standing principle, that must be a DETECTOR that scores, never a
+repairer that hides. Aider's `no_apply: 0` beside 134-of-300 instances hitting
+format failures is the cautionary case.
