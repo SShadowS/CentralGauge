@@ -319,3 +319,81 @@ already noted: the resistant ones may all contain a naive fix that is
 *obvious and wrong*, whereas both pilots had an obvious fix that was simply
 right. That is testable by inspection, costs no builds, and would replace a
 recipe that has now failed twice.
+
+---
+
+## The diagnostic: resistant tasks have ONE attractor, and my pilots had none
+
+If a task were merely "hard", independent models would fail it in different
+ways. If it induces one specific wrong answer, they would fail identically.
+Measured over attempt-1 behavioural failures on the seven-model panel, per
+task, counting distinct sets of failing assertions:
+
+| task | models failing a1 | distinct failure sets | modal share |
+|---|---|---|---|
+| X080 | 7 | **1** | 100% |
+| X133 | 6 | **1** | 100% |
+| X169 | 5 | **1** | 100% |
+| X165 | 4 | **1** | 100% |
+| X173 | 4 | **1** | 100% |
+| X067 | 4 | **1** | 100% |
+| X168 | 4 | **1** | 100% |
+| X142 | 4 | 2 | 75% |
+| X167 | 4 | 2 | 75% |
+| X140 | 5 | 3 | 60% |
+| X074 | 7 | 2 | 57% |
+| X090 | 4 | 3 | 50% |
+
+Across the 12 tasks with at least four attempt-1 behavioural failures: **mean
+modal share 85%, mean 1.6 distinct failure sets.** Seven of twelve are at
+100%. Seven independent models from four vendors converge on the SAME wrong
+answer.
+
+**These tasks are not broadly difficult. They are attractors.** Each one
+induces a specific wrong fix that nearly every model writes, and the oracle
+grades exactly that.
+
+### Why both pilots failed, stated precisely
+
+Neither pilot had an attractor.
+
+- **X178**: the obvious fix is to iterate `Enum::X.Ordinals()`. That is also
+  the correct fix.
+- **X179**: the obvious fix is a single ordered pass accumulating into the
+  buffer. That is also the correct fix.
+
+In both, the starter's defect was something a frontier model would not write
+if asked to produce the code fresh - per-depot `Count()` inside a loop is a
+*bad developer's* mistake, not a *frontier model's* mistake. So there was
+nothing for the oracle to catch.
+
+**This is the repo's own A1 screening gate**, `hardening-pipeline.md`:
+*"Drop any candidate whose wrong form a model would not plausibly write
+fresh."* I derived a recipe that quietly dropped that criterion and replaced
+it with "grade a contract the model cannot verify by inspection". That
+property is real - every resistant task has it - but it is a property of the
+ORACLE, and I mistook it for the source of the difficulty. The difficulty
+lives in the STARTER.
+
+### The corrected authoring rule
+
+Design the wrong answer first, then the assertion that catches it:
+
+1. **Pick a defect a frontier model would write itself.** The test is
+   literal: ask a model to implement the requirement from scratch and see
+   what it produces. If it produces the correct form, there is no task here.
+2. **Then build the oracle to catch exactly that**, using the
+   unverifiable-by-inspection contract as the *mechanism* of catching - open
+   world, counter budget, invariance sweep - rather than as the source of
+   difficulty.
+3. Screen candidates on convergence: a good candidate should make several
+   models fail the SAME assertion. A scattered failure profile means broadly
+   hard, which is worth less and correlates with over-strictness.
+
+This inverts the method the brief above prescribes, and it restores the
+X-series' original trap framing that the brief drifted away from.
+
+**The n=13-more estimate is unaffected** - the arithmetic (`n <= 2k`) still
+holds - but the yield rate should now be re-estimated against this rule
+rather than against the three sub-families, and one pilot built to the
+corrected rule should precede any wave.
