@@ -168,3 +168,4 @@ scratch/
 docs/volotests/*
 !scripts/panel-select.py
 !scripts/failure-causes.py
+!scripts/ab-compare.py
