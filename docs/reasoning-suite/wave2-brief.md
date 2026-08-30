@@ -134,3 +134,78 @@ Beyond the standard gates in `hardening-pipeline.md`:
   behavioural, which is contract-robust (pass@1 delta p = 0.7266).
 - OpenRouter credits are exhausted, so grok-4.3 and deepseek-v4-pro cannot
   currently be run.
+
+---
+
+## Pilot result: sub-family A did NOT transfer (2026-08-30)
+
+Before committing ~65 builds to this brief, one task was authored to test its
+top-ranked claim.
+
+**CG-AL-X178** (`scratch/CG-AL-X178/`, not promoted): outbound enumeration.
+Four objects. `BuildTotals` emits one summary row per charge type; the starter
+loops over the three literal values it can see; the oracle's companion
+`enumextension` adds ordinal 30 after the fact. Structurally the same
+open-world shape as X080, with a different mechanism (outbound enumeration via
+`Ordinals()` rather than inbound wire-code mapping).
+
+It passed every validity gate - `oracle-audit.py` exit 0, and `task probe`
+reported `correct=pass naive=fail` with the starter failing REACHING the
+assertions, on exactly the two open-world tests.
+
+**And both frontier models solved it.** Opus 5 first try; gpt-5.5 compile-fail
+then pass on attempt 2. Resistance 0 of 2, against X080's 7 of 7.
+
+### The explanation I reached for, and the data that rejects it
+
+My first read was that X178's description telegraphed the fix. X080's fix
+sentence is 13 words and states an outcome ("so every status code the
+carrier's API sends resolves to its correct status"); X178's is 45+ and
+enumerates every graded property, including the phrase "whatever they are",
+which points at reflection.
+
+Tested across the 103 X-series tasks that carry a "Fix the application..."
+sentence, against measured attempt-1 failure rate on the seven-model panel:
+
+| fix sentence | n | mean attempt-1 failure rate |
+|---|---|---|
+| short (<=25 words) | 58 | 13.8% |
+| long (>=45 words) | 12 | **32.1%** |
+| all | 103 | 20.5% |
+
+Pearson r(words, attempt-1 failure rate) = **+0.319**.
+
+**Longer fix sentences go with HARDER tasks, not easier ones** - the opposite
+of the hypothesis. Presumably a harder contract simply needs more
+specification. The hardest tasks sit at 13-36 words and the easiest at 7-8.
+So verbosity is not the explanation for X178, and brevity is not a difficulty
+lever.
+
+### What is left, as a hypothesis and labelled as one
+
+The structural difference that survives: **X080 contains a misdirection and
+X178 does not.** X080's symptom names "a new status code", so the obvious fix
+is to special-case that one code - and the oracle then asserts on a DIFFERENT
+ordinal (50) introduced by the extension. The model that does the obvious
+thing fails. X178's requirement has one obvious correct implementation and no
+wrong-but-plausible one.
+
+If that is right, the lever is not "open-world" as a category but **a naive
+fix that is both obvious and wrong**, with the open-world assertion as the
+thing that catches it. That is consistent with the X-series' original
+trap-task framing and with `decisions.md`'s round-4 ruling that knowledge-gap
+depth is the lever. **It is untested.**
+
+### Consequence for this brief
+
+**Sub-family A's ranking is withdrawn.** It rested on a single task (X080,
+7/7) and the one attempt to reproduce it produced 0/2. Sub-families B
+(SQL-counter scaling, 4 tasks, 4-6 of 7) and C (ordering/partition invariance,
+1 task, 5/7) still rest on their own measured tasks, but note B is the only
+one with more than one instance and is therefore the only one with any
+evidence of transfer at all.
+
+Anyone resuming this should treat the ~65-build estimate as unvalidated: the
+2-in-10 rate it derives from came from wave 1, whose levers this document has
+already shown were partly mis-attributed. Pilot each sub-family on ONE task
+before funding a wave. That cost one task here and saved the alternative.
