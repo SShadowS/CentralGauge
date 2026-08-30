@@ -1343,3 +1343,53 @@ The fingerprint cannot know that, which is exactly why it is conservative.
 record this reasoning as the justification for carrying the stale ledger until
 the contract change is actually adopted (at which point a replay is owed
 regardless, because the candidate assembly WILL differ for real).
+
+---
+
+## CORRECTION: the `no_apply: 0` laundering claim was wrong (2026-08-30)
+
+Two sections above, and in commits `359ee4dd` / `e33d5ce4` / `54652d6e`, the
+case for "report, don't repair" leaned on this: Aider's SWE-bench Lite
+submission hit edit-format failures on 134 of 300 instances yet published
+`no_apply: 0`, therefore the retry loop laundered the signal.
+
+**The numbers are right; the mechanism attached to them is wrong.** Verified
+counts from the shipped transcripts: 134/300 (44.7%) contain "The LLM did not
+conform to the edit format", 679 events, 784 failed SEARCH blocks,
+`results.json` reads `no_apply: []`, `no_generation: 10`, `resolved: 79`. But
+`no_apply` means "the submitted diff failed `git apply` during SWE-bench's own
+evaluation". Aider submits a real `git diff` of its working tree, which applies
+by construction. **`no_apply: 0` is expected for ANY working-tree-diff
+submitter regardless of what happened internally**, and is not caused by the
+retry loop.
+
+The valid form of the claim is narrower and still supports the conclusion:
+the published artifact records only resolved / applied / no_generation, so 679
+internal format failures leave no trace in it. "Report, don't repair" stands;
+this particular proof of it does not.
+
+Aider is in fact one of only two systems that both retry AND count:
+`num_malformed_responses` increments BEFORE the retry and survives it, and
+`percent_cases_well_formed` counts a case ill-formed even when a later retry
+succeeds - it publishes gemini-1.5-pro at 7.9% well-formed beside a 49.4% pass
+rate. The other is the SWE-bench harness's `% Apply`. All three agent
+frameworks surveyed repair silently; Agentless converts a rejected patch to
+`""`, indistinguishable from a refusal.
+
+### The replacement evidence is stronger than what it replaces
+
+Splitting Aider's own 300 instances by whether they hit an edit-format
+failure:
+
+| | n | resolved |
+|---|---|---|
+| with >=1 edit-format failure | 134 | 25 (**18.7%**) |
+| without any | 166 | 54 (**32.5%**) |
+
+13.9pp gap, Fisher exact two-sided **p = 0.0082**. Confound to state
+alongside it: harder or longer tasks produce more edit attempts and therefore
+more chances to malform, so this is association, not established causation.
+It is the closest available evidence that format failure and task failure
+travel together rather than being orthogonal noise - and it matches our own
+finding that omission lands on the repair attempt of tasks that were already
+failing.
