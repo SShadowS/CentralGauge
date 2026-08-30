@@ -1470,3 +1470,66 @@ blocking legitimate deletions, and Roo Code removed its detector over false
 positives it never measured. We measured first. Whether 1.2% justifies a
 scored column alongside `omission_rate` is an open question - on this evidence
 it probably does not, and saying so is the point of having measured it.
+
+---
+
+## CORRECTION: with the weak models included, the A/B is NOT significant (2026-08-30)
+
+The A/B result reported above (+22pp best-of-2, McNemar p = 0.0215,
+"significant") was measured on **two** models, because grok-4.3 and
+deepseek-v4-pro had hit `402 Insufficient credits` on all 36 cells. Credits
+were restored and arm B was re-run for those two. The full four-model paired
+comparison over the same 18 tasks:
+
+| model | arm A (whole-app) | arm B (changed objects) | delta |
+|---|---|---|---|
+| claude-opus-5 | 14/18 = 78% | 17/18 = 94% | +17pp |
+| claude-sonnet-5 | 10/18 = 56% | 15/18 = 83% | +28pp |
+| deepseek/deepseek-v4-pro | 3/18 = 17% | 5/18 = 28% | +11pp |
+| **x-ai/grok-4.3** | 7/18 = 39% | 5/18 = 28% | **-11pp** |
+| **pooled** | 34/72 = 47% | 42/72 = 58% | **+11pp** |
+
+Discordant: 14 fixed, 6 broken. **McNemar exact p = 0.1153 - not
+significant.**
+
+On pass@1 the picture is the same shape and weaker still: opus +6, sonnet +6,
+deepseek 0, **grok -17**.
+
+**So the earlier "+22pp, p = 0.0215, significant" headline does not survive
+the full panel, and it should not be quoted.** The honest statement is: the
+changed-objects contract shows a +11pp pooled improvement that is not
+statistically significant at n=72, with the benefit concentrated in the two
+strongest models and one weaker model regressing.
+
+### Why grok regresses, as far as the data says
+
+The overlay did what it was built to do for grok: its omission rate fell from
+52% of failures under whole-app to 6% of attempts under the overlay, and its
+arm-B failures are **68% behavioural**. It reaches the assertions far more
+often and then fails them. Four tasks it passed under whole-app (X112, X141,
+X165, X167) it now fails; two it failed (X074, X171) it now passes.
+
+At n=18 for a single model, 4 regressions against 2 gains is well within
+noise, and no mechanism is established. What can be said is that the
+overlay's benefit is **not uniform across the capability range**, which
+matters because an intervention that helps strong models and not weak ones
+compresses the leaderboard spread rather than cleaning it.
+
+### What this does and does not change
+
+- **The omission measurement stands.** 37% of failures, 28% of repair
+  attempts, per-model rates tracking capability. That was measured directly,
+  not inferred from the A/B.
+- **The pass@1 contract-robustness result stands** and is if anything
+  reinforced: the contract barely moves first attempts for anyone.
+- **The case for adopting the changed-objects contract weakens.** It removes a
+  real artifact, but the end-to-end effect on scores is now unproven at
+  p = 0.12, and it may not be neutral across the capability range.
+- **The launch bar is unaffected** either way: the ceiling arithmetic
+  (`n <= 2k`) and the n=14 candidate set are computed on pass@1, which the
+  contract does not move.
+
+The methodological lesson is the plain one: **a two-model significant result
+over an 18-task subset was not worth reporting as settled**, and the weak
+models - dropped for a billing reason entirely unrelated to the hypothesis -
+were the ones that changed the answer.
