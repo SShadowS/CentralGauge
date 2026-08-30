@@ -444,3 +444,48 @@ the per-candidate hit rate for a CONVERGENT attractor is low, and it is now
 measurable before any build. **Run the screen over a batch of candidates and
 report the hit rate before committing a wave** - that is a cents-scale
 experiment that would replace the unvalidated 2-in-10 assumption with a number.
+
+### The measured hit rate: 0 convergent attractors in 11 candidates
+
+Eight further candidates, chosen from AL-specific semantics in
+`decisions.md` rather than general programming - the areas most likely to
+catch a model that knows software but not Business Central:
+
+| # | candidate | wrong form sought | Opus 5 | gpt-5.5 |
+|---|---|---|---|---|
+| 1 | guard on a row that may not exist | AL's `and`/`or` do not short-circuit | correct (`if not Get then exit`) | correct |
+| 2 | filter a `List of [Text]` without touching the caller's | List is a reference type | correct (new list) | correct |
+| 3 | earliest row by a non-primary field | `FindFirst` follows the current key | correct (`SetCurrentKey`) | correct (manual scan) |
+| 4 | audit must survive a failed parse | a write inside a failed `[TryFunction]` rolls back | correct (`Commit()` first) | (empty response) |
+| 5 | two changes to one row | same-session lost update | correct | correct |
+| 6 | store the first 50 chars | assignment errors rather than truncating | correct (`CopyStr`) | correct |
+| 7 | delete matching lines | `Delete()` inside `FindSet`/`Next` skips rows | correct (filter + delete-all) | correct |
+| 8 | count customers with a positive FlowField | `SetRange` on an uncalculated FlowField | correct (`SetAutoCalcFields`) | correct |
+
+**Zero wrong forms in either model across all eight**, and the earlier three
+produced one non-convergent hit (Opus on the FlowField-total loop). So the
+measured rate is **0 convergent attractors in 11 candidates**.
+
+This is the number the wave decision needed, and it is worse than the
+unvalidated 2-in-10 assumption by a wide margin. It also explains the
+mechanism: **the AL semantic traps this suite was built on are now known to
+frontier models.** The eight above are exactly the kind of platform-knowledge
+gap the X-series exploited, and both models handled every one, several with
+an explicit comment naming the trap they were avoiding.
+
+That is consistent with everything else measured this session - three
+saturated frontier models, only 4-7 whole-suite failures each, near-disjoint
+failure sets - and it means the honest estimate for reaching n=40 is not
+"~65 builds at a known rate" but "unknown, and the cheap screen currently
+finds nothing".
+
+**Recommendation stands and hardens: do not fund a wave.** Run the screen
+over a much wider candidate pool first, and if the convergent-hit rate stays
+near zero, the ≤50% bar is not reachable by authoring at any affordable
+scale, and the launch claim should change instead.
+
+### Panel note (operator, 2026-08-30)
+
+`gemini-3.1-pro-preview` is dropped from the panel - too old and too
+expensive for its contribution. OpenRouter credits have been restored, so
+grok-4.3 and deepseek-v4-pro are available again.
