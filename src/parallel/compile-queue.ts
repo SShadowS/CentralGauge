@@ -24,6 +24,12 @@ import { DebugLogger } from "../utils/debug-logger.ts";
 import { Logger } from "../logger/mod.ts";
 import { TEST_TOOLKIT_DEPENDENCIES } from "../constants.ts";
 import { resolvePlatformVersions } from "../container/bc-platform-version.ts";
+import { loadStarterCode, starterDirForTask } from "../tasks/starter-code.ts";
+import {
+  OBJECT_OVERLAY_TEMPLATE,
+  overlayObjects,
+  usesObjectOverlay,
+} from "../tasks/object-overlay.ts";
 import { Mutex, Semaphore } from "./semaphore.ts";
 import type {
   CompileEnqueueOptions,
@@ -1128,9 +1134,42 @@ export class CompileQueue implements CompileWorkQueue {
       JSON.stringify(appJson, null, 2),
     );
 
-    // Write the generated code
+    // Write the generated code.
+    //
+    // Under the default `diagnose.md` contract the model returns the COMPLETE
+    // application and `item.code` is the candidate outright. Under the
+    // `diagnose-objects.md` variant it returns only the objects it changed,
+    // which are overlaid onto the starter by type+name so an object the model
+    // did not return is carried through rather than lost. The two contracts
+    // are the arms of the A/B measuring what rule 2 costs; see
+    // docs/reasoning-suite/hardening-levers-evidence.md.
     const codeFileName = `${item.context.manifest.id}.al`;
-    await Deno.writeTextFile(`${tempDir}/${codeFileName}`, item.code);
+    let candidateCode = item.code;
+    if (usesObjectOverlay(item.context.manifest)) {
+      const starterDir = starterDirForTask(
+        Deno.cwd(),
+        item.context.manifest.id,
+      );
+      const starter = await loadStarterCode(starterDir);
+      if (starter === undefined) {
+        // Fail loudly. Silently falling back to whole-app semantics would
+        // make one arm of the A/B quietly become the other, and the delta
+        // would be measuring nothing.
+        throw new Error(
+          `Task ${item.context.manifest.id} uses ${OBJECT_OVERLAY_TEMPLATE} ` +
+            `but no starter code was found at ${starterDir}`,
+        );
+      }
+      const overlay = overlayObjects(starter, item.code);
+      candidateCode = overlay.source;
+      log.debug("Overlaid changed objects onto starter", {
+        taskId: item.context.manifest.id,
+        replaced: overlay.replaced.length,
+        added: overlay.added.length,
+        carried: overlay.carried.length,
+      });
+    }
+    await Deno.writeTextFile(`${tempDir}/${codeFileName}`, candidateCode);
 
     // Copy test file(s) if testApp is specified
     // Also copies any helper files (enums, mocks) with the same task ID prefix
