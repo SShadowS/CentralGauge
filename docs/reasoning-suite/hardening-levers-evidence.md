@@ -1533,3 +1533,63 @@ The methodological lesson is the plain one: **a two-model significant result
 over an 18-task subset was not worth reporting as settled**, and the weak
 models - dropped for a billing reason entirely unrelated to the hypothesis -
 were the ones that changed the answer.
+
+---
+
+## Over-strictness proxy on the 12 attractors and the n=14 candidate (2026-08-30)
+
+The concern raised against the attractor finding is that "attractor" and
+"over-strict oracle" are observationally identical: a task only frontier
+models fail is the population most enriched in defects. FrontierMath is the
+warning - repairing 42% of its problems gave the strongest model **+35.32pp
+and the weakest +0.01pp**, and GSM8K-Platinum found **54.8% of model-failed
+items were broken rather than hard**.
+
+A full B4 pass (independent solvers, run through the oracle) is the real
+test. A free proxy is available first: across the seven-model panel, how many
+TEXTUALLY DISTINCT solutions does each oracle already accept? A defective
+oracle typically accepts nothing, or only the reference shape.
+
+Passing attempts, normalised (comments stripped, whitespace collapsed), hashed:
+
+| task | passing | distinct models | distinct solutions |
+|---|---|---|---|
+| X167 | 5 | 5 | **5** |
+| X168 | 4 | 4 | **4** |
+| X165, X142, X140*, X074, X090 | 2-3 | 2-3 | 2-3 each |
+| X080, X169 | 2 | 2 | 2 |
+| **X067** | 3 | 3 | **1** |
+| **X133** | 1 | 1 | **1** |
+| **X173** | 1 | 1 | **1** |
+
+And across the n=14 launch candidate: X069 accepts 5, X115 5, X068 4, X075 3,
+X074 3, X090 3, X165 3, X072 2, X080 2, X140 2, X169 2; X067, X095 and X133
+accept one shape each.
+
+**Every one of the 12 attractors and all 14 launch candidates has at least one
+passing solution**, and most accept several textually different ones written
+independently by different vendors. That is strong evidence against the
+"wrong key" reading: an oracle that rejects correct work would not admit five
+distinct solutions from five vendors.
+
+### What it does not settle
+
+- **It shows the oracles accept variety; not that they accept every correct
+  solution.** The real B4 test is whether a deliberately DIFFERENT correct
+  solution passes, and that has not been run on these 12.
+- **X133 and X173 remain unfalsified**, with a single accepted solution each.
+  They are also two of the strongest tasks in the suite (X133 defeats six of
+  seven models at attempt 1; X173 is the only task all three frontier models
+  fail), so they carry the most weight and have the least validity evidence.
+  **Those two should get a real B4 pass before any launch claim rests on
+  them.**
+- X067's single shape is a different case: three different models produced
+  normalisation-identical code, which suggests a canonical solution rather
+  than a narrow oracle.
+
+On the base rate this is reassuring rather than conclusive. Platinum
+Benchmarks measured label-error attribution at **0-5% on
+mechanically-verifiable tasks** versus 90%+ on human-keyed natural-language
+ones, and a compile-and-test-graded AL oracle sits at the good end of that
+spectrum. The counterweight is real: OpenAI found **35.5% of audited SWE-bench
+problems had narrow tests enforcing a particular implementation**.
