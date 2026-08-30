@@ -1206,3 +1206,76 @@ n=8). The two facts together say the same thing the ceiling analysis did -
 **the bar needs authored tasks, not a cleaner contract** - with the addition
 that keeping the noisy contract was never buying real difficulty, only
 retyping stamina.
+
+---
+
+## pass@1 is contract-robust; best-of-2 was measuring retyping (2026-08-30)
+
+Re-running the same paired A/B on pass@1 instead of best-of-2 separates the
+two effects cleanly:
+
+| metric | arm A | arm B | delta | McNemar |
+|---|---|---|---|---|
+| best-of-2 | 24/36 = 67% | 32/36 = 89% | **+22pp** | p = 0.0215 **significant** |
+| pass@1 | 18/36 = 50% | 20/36 = 56% | +6pp | p = 0.7266 **not significant** |
+
+**Omission was destroying the REPAIR attempt specifically.** First attempts
+are barely affected by the contract; second attempts are transformed by it.
+That is the mechanism behind every number in this document, stated exactly.
+
+The per-task detail confirms it. Under the changed-objects contract Opus 5
+solves all four of its previously-failing tasks - but look at WHICH attempt:
+
+| task | arm B attempt 1 | arm B attempt 2 |
+|---|---|---|
+| X169 | fails, same 2 SQL-flatness assertions as arm A | passes 11/11 |
+| X173 | fails, same 2 SQL-flatness assertions as arm A | passes 19/19 |
+| X074 | fails, same assertion as arm A | passes 7/7 |
+| X140 | **passes 7/7** | - |
+
+X169 and X173 are still hard. Their first attempts fail on the identical
+assertions. The overlay did not make them easy; it stopped throwing away the
+repair. Only X140 became a first-try solve.
+
+### Consequences
+
+**1. The contract change is free for pass@1.** Because the pass@1 delta is
+not significant, arm-A pass@1 measurements remain a valid proxy under the new
+contract - the seven-model panel does NOT need re-running to re-price
+selection on pass@1.
+
+**2. pass@1 nearly doubles the usable set size.** Exhaustive search for the
+largest subset where EVERY model scores at or below 50%:
+
+| headline metric | strongest model's failures (k) | MAX publishable n |
+|---|---|---|
+| best-of-2 | 4 | 8 |
+| **pass@1** | **7** | **14** |
+
+The 14: X067, X068, X069, X072, X074, X075, X080, X090, X095, X115, X133,
+X140, X165, X169. Opus, sonnet, gemini and gpt-5.5 all land on exactly 7/14 =
+50%; luna and grok 43%; deepseek 0%.
+
+**3. It does not solve the separability problem.** Four models still tie at
+50%, for the same reason as at n=8. A bar that binds the top model equally
+binds everything near it.
+
+**4. The price list halves.** At pass@1 the strongest model fails 7 of 109. A
+set of n=40 needs 20, so 13 more. Wave 1 produced 2 tasks that defeat Opus at
+pass@1 (X165, X169), the same 20% rate, so roughly **65 further builds** -
+against ~80 under the best-of-2 framing.
+
+### The launch configuration this supports
+
+1. **Adopt the changed-objects contract.** Significantly better on best-of-2
+   (p = 0.0215), neutral on pass@1, and it removes an artifact that was 37% of
+   all failures. Cost: one broken cell in 36, to be re-measured at larger n.
+2. **Headline on pass@1**, not best-of-2 or `auc_2`. It is the metric the
+   contract cannot move, it nearly doubles the usable set, and under the old
+   contract `auc_2` was partly scoring retyping stamina.
+3. **Author ~13 more tasks that defeat the strongest model's FIRST attempt.**
+   X169 and X173 show the family that does it and keeps doing it under a clean
+   contract: measured SQL-statement budget contracts, in small applications.
+
+That third point is the only remaining lever, and it is now a specific,
+costed, measurable target rather than "make the suite harder".
