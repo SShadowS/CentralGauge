@@ -468,8 +468,32 @@ export class LocalLLMAdapter
         temperature: request.temperature ?? this.config.temperature ?? 0.1,
         num_predict: request.maxTokens ?? this.config.maxTokens ?? 4000,
         stop: request.stop,
+        // Ollama defaults num_ctx to a small window (4096 on many builds)
+        // REGARDLESS of the model's native context, and silently truncates
+        // rather than erroring. Our diagnose tasks measure p95 ~4.1k prompt +
+        // ~9.3k completion, and the contract makes the model re-emit the whole
+        // application, so a truncated completion scores as a compile failure -
+        // the same footgun as bench's --max-tokens default. Size the window to
+        // prompt + num_predict with headroom, capped at a sane ceiling.
+        num_ctx: Number(
+          Deno.env.get("CENTRALGAUGE_LOCAL_NUM_CTX") ??
+            Math.min(
+              65536,
+              Math.max(
+                8192,
+                ((request.maxTokens ?? this.config.maxTokens ?? 4000) +
+                  Math.ceil(request.prompt.length / 3)) * 2,
+              ),
+            ),
+        ),
       },
       stream,
+      // Reasoning models default thinking ON. A thinking local model can burn
+      // the whole completion budget and return no code at all - deepseek-v4-pro
+      // hit a 256,000-token ceiling three times on CG-AL-X076 with zero
+      // extractable output. Off by default; set CENTRALGAUGE_LOCAL_THINK=1 to
+      // measure with it on.
+      think: Deno.env.get("CENTRALGAUGE_LOCAL_THINK") === "1",
     };
     if (request.systemPrompt) {
       payload["system"] = request.systemPrompt;
