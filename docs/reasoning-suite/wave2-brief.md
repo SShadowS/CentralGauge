@@ -532,3 +532,80 @@ code fence; `attractor-probe.ts` now falls back to the raw response. All
 three recovered cells were correct, so the conclusion is unchanged - but the
 first run's numbers were quietly missing data, and any future screen should
 check for empty cells before being believed.
+
+---
+
+## CORRECTION: the attractor claim does not survive a chance-corrected null
+
+I reported that "seven models from four vendors converge on the SAME wrong
+answer" (mean modal share 85%, seven of twelve at 100%) and built a corrected
+authoring rule on it. **A research review pointed out the statistic had no
+null**, that convergent frontier failure is a measured base rate rather than a
+discovery, and that the twelve items were SELECTED on being the hardest -
+which is exactly the confound. Both objections are correct and the claim does
+not survive them.
+
+BC-Bench publishes a complete per-instance boolean matrix, 85 runs across 15
+model/agent combinations on 101 tasks, MIT. That is a real external reference
+for an AL benchmark, so the null can be computed rather than argued.
+
+Chance-corrected pairwise agreement on correctness (CAPA reduces to Cohen's
+kappa for binary outcomes):
+
+| set | models | mean accuracy | mean pairwise kappa |
+|---|---|---|---|
+| **BC-Bench bug-fix, 101 tasks** | 15 combos | 59.9% | **+0.558** |
+| **CentralGauge, 110 tasks, pass@1** | 7 | 80.2% | **+0.368** |
+| CentralGauge, the 12 "attractors" | 7 | - | **+0.025** |
+| random 12-task subsets of ours | 7 | - | +0.295 (5-95pct +0.06 to +0.60) |
+| difficulty-matched 12 from our hardest 25 | 7 | - | +0.067 (5-95pct -0.01 to +0.15) |
+
+**On the twelve, chance-corrected model agreement is +0.025 - essentially
+independent - and they sit at the 19th percentile of difficulty-matched
+subsets.** Models agree LESS about who fails those twelve than about
+comparable-difficulty tasks.
+
+### Reconciling that with the 85%
+
+The two statistics measure different things and both are true. The 85% modal
+share was computed over WHICH ASSERTION SET fails, conditional on failing: a
+task whose defect is graded by two SQL-flatness assertions produces the same
+failing set from anyone who fails it. Kappa is computed over WHO fails. So:
+
+> When a model fails these tasks it fails in the same place. But which models
+> fail is close to independent.
+
+Only the second is evidence for an "attractor" - a specific wrong answer that
+nearly every model writes. **The first is largely a property of how many
+gradeable assertions the oracle has, not of the task's pull on models.** I
+conflated them.
+
+### What this changes
+
+- **The "attractor" framing is withdrawn as an established finding** and
+  demoted to an unsupported hypothesis. The corrected authoring rule built on
+  it - "design the wrong answer first, screen for convergence" - loses its
+  evidential base, though the A1 screen it produced (`attractor-probe.ts`)
+  remains independently useful as an empirical version of a gate the pipeline
+  already required.
+- **It explains the pilot failures better than the attractor story did.** If
+  the resistant tasks are not convergent attractors, designing for
+  convergence would not reproduce them - which is exactly what X178 and X179
+  measured.
+- **The suite-level result is genuinely good news and was not sought.** Our
+  chance-corrected inter-model agreement is **+0.368 against BC-Bench's
+  +0.558** - on our tasks, models disagree substantially more about what they
+  can do. For a leaderboard that is the property you want, and it is
+  consistent with the near-disjoint frontier failure sets (union 9,
+  intersection 1) measured independently.
+
+### Method note
+
+Kappa here uses each model's own accuracy as the marginal, so it is corrected
+for the fact that two strong models agree often simply by both being right.
+BC-Bench runs were collapsed to one vector per model/agent combination by
+majority over that combination's runs; ours are single uncapped trials at
+pass@1. The comparison is therefore approximate in the direction of
+UNDERSTATING our agreement (a majority vote is less noisy than a single
+trial), which makes the +0.19 gap a conservative reading rather than a
+flattering one.
