@@ -191,3 +191,115 @@ export function usesObjectOverlay(
     OBJECT_OVERLAY_TEMPLATE,
   );
 }
+
+/**
+ * Members a returned object can silently lose. Enumerated rather than parsed
+ * with a grammar, for the same reason `splitAlObjects` counts braces: AL
+ * string literals are single-quoted and cannot unbalance the scan.
+ *
+ * `field`/`value`/`key` carry an id or name in the first slot; `procedure`
+ * and `trigger` carry a bare identifier. Together these cover what an oracle
+ * can reference across an object boundary, which is what a dropped member
+ * turns into an AL0132 for.
+ */
+const MEMBER_DECL = new RegExp(
+  String
+    .raw`^\s*(?:(field|value|key)\s*\(\s*[^;)]*?;?\s*("([^"]+)"|[A-Za-z_]\w*)` +
+    String
+      .raw`|(?:local\s+|internal\s+|protected\s+)?(procedure|trigger)\s+("([^"]+)"|[A-Za-z_]\w*))`,
+  "i",
+);
+
+/** Member identities declared directly inside one object's source text. */
+export function splitAlMembers(objectText: string): Set<string> {
+  const members = new Set<string>();
+  for (const line of objectText.split("\n")) {
+    const m = MEMBER_DECL.exec(line);
+    if (!m) continue;
+    const kind = (m[1] ?? m[4] ?? "").toLowerCase();
+    const name = (m[3] ?? m[2] ?? m[6] ?? m[5] ?? "").trim().toLowerCase();
+    if (kind && name) members.add(`${kind}:${name}`);
+  }
+  return members;
+}
+
+export interface DroppedMember {
+  /** Identity key of the object that lost it. */
+  object: string;
+  /** `kind:name` of the vanished member. */
+  member: string;
+}
+
+export interface CompletenessReport {
+  /** Starter objects absent from the response entirely. */
+  droppedObjects: string[];
+  /** Members that vanished from an object the response DID return. */
+  droppedMembers: DroppedMember[];
+  /**
+   * Objects the response returned at under half the starter's line count.
+   * Advisory only - a legitimate fix can shorten an object, and identity
+   * comparison cannot see a procedure that survives but loses its body. This
+   * is the analogue of Aider's AST-node-count band (`verify_old_class_children`
+   * in `benchmark/refactor_tools.py`, +/-10%), which works there only because
+   * a pure cut-and-paste refactor conserves total nodes. A repair does not, so
+   * this signal is reported and never gated on.
+   */
+  shrunkObjects: string[];
+}
+
+/**
+ * Compare a response against the starter and report what it silently lost.
+ *
+ * This is a DETECTOR that scores, never a repairer that hides. Two precedents
+ * decide that posture. Aider's `verify_refactor` is written into the generated
+ * unittest, so elision IS the oracle rather than something the harness fixes
+ * up. And Roo Code deleted its omission detector outright (commit `86edc01c`,
+ * "remove omission detection logic to fix false positives") without ever
+ * measuring the false-positive rate first - so measure before gating.
+ *
+ * Note the false positive this WILL produce: a fix that legitimately removes a
+ * member is indistinguishable from one that drops it. SWE-agent documents the
+ * same cost for its edit guardrail (arXiv 2405.15793 Figure 11: the gate
+ * forces a model removing an argument to remove every reference in the same
+ * action). Report the rate; do not reject on it.
+ *
+ * Nothing in the surveyed literature implements this. arXiv 2604.05100
+ * surveyed 150+ code benchmarks and found that AST inspection confirms what an
+ * edit adds and testing confirms what it produces, "but none of them confirms
+ * what the edit preserves" - 56% of tests scope exclusively to the edited
+ * code. Agentless computes the identical symbol-set difference
+ * (`postprocess_data.py`, `# removes functions`) and uses it only as a dedup
+ * key for majority voting; it never flags or counts.
+ */
+export function checkCompleteness(
+  starterSource: string,
+  returnedSource: string,
+): CompletenessReport {
+  const starter = splitAlObjects(starterSource);
+  const returned = new Map(
+    splitAlObjects(returnedSource).map((o) => [objectKey(o), o]),
+  );
+
+  const droppedObjects: string[] = [];
+  const droppedMembers: DroppedMember[] = [];
+  const shrunkObjects: string[] = [];
+
+  for (const base of starter) {
+    const key = objectKey(base);
+    const got = returned.get(key);
+    if (!got) {
+      droppedObjects.push(key);
+      continue;
+    }
+    const baseMembers = splitAlMembers(base.text);
+    const gotMembers = splitAlMembers(got.text);
+    for (const member of baseMembers) {
+      if (!gotMembers.has(member)) droppedMembers.push({ object: key, member });
+    }
+    const baseLines = base.text.split("\n").length;
+    const gotLines = got.text.split("\n").length;
+    if (baseLines >= 10 && gotLines * 2 < baseLines) shrunkObjects.push(key);
+  }
+
+  return { droppedObjects, droppedMembers, shrunkObjects };
+}

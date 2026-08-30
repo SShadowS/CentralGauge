@@ -104,6 +104,15 @@ export interface OmissionAttemptView {
 export interface OmissionTaskView {
   success: boolean;
   attempts: readonly OmissionAttemptView[];
+  /**
+   * True when no attempt produced any model output - a 402/401/hard-429 from
+   * the provider. Such a task lands as `success: false` and is otherwise
+   * indistinguishable from a capability failure, so it must be excluded from
+   * every rate here: an exhausted OpenRouter balance silently reported two
+   * models at 0/18 during the 2026-08-30 A/B. It is not an omission any more
+   * than it is a wrong answer.
+   */
+  providerFailure?: boolean;
 }
 
 export function computeOmissionStats(
@@ -120,6 +129,7 @@ export function computeOmissionStats(
   };
 
   for (const task of tasks) {
+    if (task.providerFailure) continue;
     const kinds: Array<CompileFailureKind | "pass" | "behavioural" | "none"> =
       [];
     for (const attempt of task.attempts) {

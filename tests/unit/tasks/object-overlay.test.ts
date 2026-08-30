@@ -1,8 +1,10 @@
 import { assertEquals } from "@std/assert";
 import {
   type AlObject,
+  checkCompleteness,
   objectKey,
   overlayObjects,
+  splitAlMembers,
   splitAlObjects,
 } from "../../../src/tasks/object-overlay.ts";
 
@@ -159,4 +161,113 @@ Deno.test("overlayObjects", async (t) => {
       assertEquals(splitAlObjects(r.source).length, 3);
     },
   );
+});
+
+const MEMBERFUL = `table 70001 "CG X001 Ledger"
+{
+    fields
+    {
+        field(1; "Entry No."; Integer) { }
+        field(2; "Rebate Description"; Text[100]) { }
+    }
+    keys
+    {
+        key(PK; "Entry No.") { }
+    }
+    procedure Recalculate()
+    begin
+    end;
+}
+
+enum 70003 "CG X001 Kind"
+{
+    value(0; Open) { }
+    value(1; Closed) { }
+}`;
+
+Deno.test("splitAlMembers", async (t) => {
+  await t.step("enumerates fields, keys, procedures and enum values", () => {
+    const objs = splitAlObjects(MEMBERFUL);
+    assertEquals([...splitAlMembers(objs[0]!.text)].sort(), [
+      "field:entry no.",
+      "field:rebate description",
+      "key:pk",
+      "procedure:recalculate",
+    ]);
+    assertEquals([...splitAlMembers(objs[1]!.text)].sort(), [
+      "value:closed",
+      "value:open",
+    ]);
+  });
+
+  await t.step("sees local and internal procedures", () => {
+    const m = splitAlMembers(
+      "codeunit 1 X\n{\n    local procedure Helper()\n    internal procedure Other()\n}",
+    );
+    assertEquals(m.has("procedure:helper"), true);
+    assertEquals(m.has("procedure:other"), true);
+  });
+});
+
+Deno.test("checkCompleteness", async (t) => {
+  await t.step("clean re-emission reports nothing", () => {
+    const r = checkCompleteness(MEMBERFUL, MEMBERFUL);
+    assertEquals(r.droppedObjects, []);
+    assertEquals(r.droppedMembers, []);
+    assertEquals(r.shrunkObjects, []);
+  });
+
+  await t.step("a whole missing object is droppedObjects", () => {
+    const only = splitAlObjects(MEMBERFUL)[0]!.text;
+    const r = checkCompleteness(MEMBERFUL, only);
+    assertEquals(r.droppedObjects, ["enum:cg x001 kind"]);
+    assertEquals(r.droppedMembers, []);
+  });
+
+  await t.step("the X140 case: object returned, field dropped", () => {
+    // The failure the overlay cannot fix. Opus returned CG X140 Rebate Header
+    // and lost 'Rebate Description' from inside it.
+    const truncated = MEMBERFUL.replace(
+      '        field(2; "Rebate Description"; Text[100]) { }\n',
+      "",
+    );
+    const r = checkCompleteness(MEMBERFUL, truncated);
+    assertEquals(r.droppedObjects, []);
+    assertEquals(r.droppedMembers, [{
+      object: "table:cg x001 ledger",
+      member: "field:rebate description",
+    }]);
+  });
+
+  await t.step("a dropped procedure is caught too", () => {
+    const r = checkCompleteness(
+      MEMBERFUL,
+      MEMBERFUL.replace(
+        "    procedure Recalculate()\n    begin\n    end;\n",
+        "",
+      ),
+    );
+    assertEquals(r.droppedMembers.map((d) => d.member), [
+      "procedure:recalculate",
+    ]);
+  });
+
+  await t.step("added members are not reported - only losses", () => {
+    const grown = MEMBERFUL.replace(
+      "    procedure Recalculate()",
+      "    procedure Extra()\n    begin\n    end;\n\n    procedure Recalculate()",
+    );
+    const r = checkCompleteness(MEMBERFUL, grown);
+    assertEquals(r.droppedMembers, []);
+  });
+
+  await t.step("body elision is advisory, and only above a floor", () => {
+    const objs = splitAlObjects(MEMBERFUL);
+    const gutted = objs[0]!.text.split("\n").slice(0, 3).join("\n") + "\n}";
+    const r = checkCompleteness(objs[0]!.text, gutted);
+    assertEquals(r.shrunkObjects, ["table:cg x001 ledger"]);
+    // A small object is never flagged: shrinking 3 lines to 1 is noise.
+    const small = 'enum 70003 "CG X001 Kind"\n{\n    value(0; Open) { }\n}';
+    assertEquals(checkCompleteness(small, small).shrunkObjects, []);
+  });
 });

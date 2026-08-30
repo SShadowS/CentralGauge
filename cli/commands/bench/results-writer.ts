@@ -601,6 +601,11 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     const omissionLines = renderOmissionBlock(
       computeOmissionStats(input.results.map((r) => ({
         success: r.success,
+        providerFailure: (r.attempts ?? []).length === 0 ||
+          (r.attempts ?? []).every((a) =>
+            ((a.llmResponse?.usage?.completionTokens ?? 0) === 0) &&
+            !a.llmResponse?.content
+          ),
         attempts: (r.attempts ?? []).map((a) => ({
           compilationResult: a.compilationResult,
           failedAssertions: a.compilationResult?.success === true &&

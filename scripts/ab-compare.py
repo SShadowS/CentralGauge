@@ -25,6 +25,7 @@ import argparse
 import collections
 import json
 import math
+import re
 
 OMISSION_CODES = {"AL0185", "AL0132"}
 CASCADE_CODES = {"AL0000"}
@@ -36,10 +37,21 @@ def cause(attempt: dict) -> str:
     if not comp:
         return "other"
     if not comp.get("success"):
-        codes = [e.get("code") for e in (comp.get("errors") or [])]
+        errors = comp.get("errors") or []
+        codes = [e.get("code") for e in errors]
         real = [c for c in codes if c not in CASCADE_CODES]
         if real and all(c in OMISSION_CODES for c in real):
-            return "omission"
+            # Split the two, because under the changed-objects contract they
+            # are mechanically different failures: an absent unit is a NO-OP
+            # (the overlay carries the starter's through), while a returned
+            # unit missing a member is fatal under BOTH contracts. Reporting
+            # them together makes arm B look like it fixed less than it did
+            # and hides the residual class worth studying.
+            for err in errors:
+                msg = (err.get("message") or "").strip()
+                if re.match(r"^\w+ '[^']+' is missing", msg):
+                    return "object_omission"
+            return "member_omission"
         if any(c in OMISSION_CODES for c in real):
             return "mixed"
         return "al_knowledge"
