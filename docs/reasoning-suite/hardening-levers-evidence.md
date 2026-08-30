@@ -917,3 +917,160 @@ The finding that omission never FABRICATES a failure still holds for the
 frontier models, whose omissions all land on attempt 2. It does not
 generalise safely to grok and deepseek, where omission is the modal failure
 and appears on first attempts too.
+
+---
+
+## CORRECTION: omission is not `false_negative`, and the obvious fix is the worst option (2026-08-30)
+
+Two sections above I claimed the object-omission finding "is exactly
+SWE-bench Verified's dominant discard category, `false_negative`". **That is
+wrong**, and it is load-bearing enough to correct rather than quietly amend:
+`false_negative` is a defect on the ORACLE side - the grader rejecting a
+correct solution. Ours is on the MODEL side - the model emitting an
+incomplete program, provoked by a contract we chose. Acting on the bad
+analogy would have sent us to fix an oracle that is fine.
+
+**The correct analogue is SWE-bench's `% Apply`**, published as a headline
+in the original paper's Table 5 next to `% Resolved`:
+
+| model | % Resolved | % Apply |
+|---|---|---|
+| Claude 3 Opus | 3.79% | **46.56%** |
+| ChatGPT-3.5 | 0.17% | **26.33%** |
+
+53-90% of frontier outputs were not usable submissions before a single test
+ran. Appendix A.5 adds a "Patch Fix Rate": of GPT-4's 195 patches that
+applied, **121 (62%) only applied after the harness repaired them**. The
+paper's own explanation: *"Generating patches is easier than generating
+whole files... models still struggle with generating well-formatted patch
+files."*
+
+**That field was then deleted from the leaderboard** (commit `0a32d0e65551`,
+2024-06-26, "Remove metrics folder"). 51 old-schema submissions still carry
+`no_apply`; the 213 modern ones do not. The field measured exactly our
+quantity, was published, and was dropped. Grepping Agentless, OpenHands and
+CodeAct for it returns zero hits.
+
+### Why the Aider comparison does not transfer
+
+Aider's `whole` format is per-FILE and it OVERLAYS. Executed against
+upstream `WholeFileCoder.get_edits`: with two files in chat and one
+returned, the result touches only the returned file; `apply_edits` writes
+only files that appeared in the response, and Aider has no completeness
+check at all. So every statistic showing `whole` is the best-formed format
+(gemini-exp-1206: 100.0% well-formed on `whole` vs 84.2% on `diff`)
+describes a contract **where omission is structurally impossible**.
+
+Our `compile-queue.ts:1133` writes the entire response to one
+`${taskId}.al`; only oracle-prefixed files are layered on top. No base tree,
+no overlay, full replacement. Across every harness surveyed, **we are the
+only design where an omitted unit is destructive rather than a no-op** -
+SWE-bench tries four escalating apply commands (`git apply`, `--3way`,
+`--reject`, `patch --fuzz=5`) and unmentioned files are simply untouched.
+
+### Switching to diffs is ruled out
+
+RepairLLaMA (arXiv 2312.15698) is the only controlled ablation on this exact
+axis - same model, same 488 Defects4J bugs, only output representation
+varies. Semantic matches: **OR2 "fixed chunk" 144, OR1 "full function" 45,
+OR3 3-line diff 24, OR4 1-line diff 3.** Compile rate 73.0% vs 39.8%. Diffs
+are far worse than either, and the OR3-vs-OR4 gradient shows the failure is
+anchoring, not reasoning. Confirmed by "To Diff or Not to Diff?"
+(arXiv 2604.27296): Qwen2.5-Coder-7B average pass@1 **FullCode 57.07,
+ContentDiff 54.43, UniDiff 33.15, MinUniDiff 14.07**.
+
+So the option space is NOT "whole-app vs diff". It is "whole-app vs
+complete-changed-objects, overlaid by identity".
+
+### The steelman for leaving rule 2 alone is stronger than I gave it credit for
+
+1. **Whole-file is the format models are best at, not worst.** Cursor kept
+   full-file rewrite and trained a 70B speculative-decoding model to afford
+   it: *"models have likely seen more full-files of code than diffs"*,
+   *"Most models fail to output accurate diffs."* The published cost of
+   `whole` is tokens and latency - never fidelity. A benchmark is not
+   cost-constrained the way an IDE is.
+2. **Regression is legitimately gradeable, and SWE-bench takes our side
+   harder.** Its "Breaking Resolved" (Appendix C.5) scores a total failure
+   when prior behaviour is not maintained - and Table 23 shows Claude 2
+   broke existing behaviour in **462 of 1,078 applied patches (43%)** under
+   a diff contract where it never retyped unrelated code.
+3. **Forgiveness launders signal rather than removing it.** Aider's own
+   SWE-bench Lite submission: **134 of 300 instances (44.7%) hit at least
+   one edit-format failure, 679 events, 784 failed blocks** - and its
+   published `results.json` reads `no_apply: 0, resolved: 79`. An overlay
+   would do exactly that to our omission signal, permanently.
+4. **Declared vs undeclared strictness is the load-bearing line.** OpenAI's
+   retirement audit condemns oracles penalising a name that appears nowhere
+   in the problem statement; CORE-Bench penalised `96.12` vs `96.124991`
+   under an unstated tolerance. Both are UNDECLARED. Our rule is declared in
+   the prompt, deterministic, and in the output mode models handle best.
+
+Aider hit this exact fork and went strict: rather than post-processing
+elided code they built a DETECTOR for it (the AST-node-count check) and
+reported it as a model property.
+
+### The resolution: measure it as a column, then A/B it
+
+Two independent precedents for publishing both numbers rather than choosing:
+**IFEval** computes strict AND loose accuracy and publishes both, stating
+loose *"is likely to introduce false positives"* and is *"a complement to
+the original criterion"*. **Aider** forgives the malformed edit AND publishes
+`percent_cases_well_formed` as an orthogonal column.
+
+Our AL0185/AL0132 signature is already a mechanical omission detector
+(`scripts/failure-causes.py`; 58 of 98 compile errors across the panel).
+Promoting it to a scored `omission_rate` column gives an uncontaminated
+headline PLUS the ability to state how much of each model's gap is retyping
+versus reasoning - strictly more information than an overlay produces, and
+it does not move the launch bar.
+
+Then settle the format question with a paired A/B on the seven-model panel:
+the same tasks under the current whole-app contract and under "emit only the
+complete AL objects you changed", overlaid by type+name. The delta is the
+answer. Per RepairLLaMA, the changed-object variant must emit the complete
+replacement UNIT verbatim (OR2), never a diff of it (OR3/OR4).
+
+### Symbol-identity overlay: no prior art, and the reason is not discouraging
+
+Nobody keys placement on symbol identity. RepairLLaMA uses a Java AST tool
+to EXTRACT then places with `str.replace`; SWE-smith uses `ast` to AUTHOR
+then transports by line slicing; OpenAI's `apply_patch` `@@ class Foo`
+header is a literal string scan. AST on the way in, text or line numbers on
+the way out - nobody closes the loop.
+
+The reason is domain, not failure: in Python and Java a function name does
+not determine placement (same name, different classes/modules/scopes), so
+symbol identity is not a key. **In AL it is** - an object is type + name,
+globally unique in the app, and free to live in any file. The absence of
+prior art reflects their constraint, not a discovered problem with the
+approach.
+
+### The metric defect this exposes, independent of the format question
+
+Our own attempt-2 finding is the sharpest version of the argument, and it
+holds whichever way the format question goes:
+
+> 23% confirmed / 36% upper bound of behavioural first-attempt failures lose
+> attempt 2 to omission. So `auc_2` is partly measuring retyping stamina
+> rather than repair-from-feedback. **A model that diagnoses the bug
+> correctly on attempt 2 and drops an unrelated field currently scores
+> identically to one that never understood the bug at all.**
+
+If fixing this raises scores, that is not a loss of difficulty - it is the
+removal of difficulty that does not discriminate on the skill being
+measured. Should scores then rise too far, the answer is the one already in
+this document: strengthen the oracle, add pass^k, add tasks in the
+X169/X173 family. Do not keep a noisy contract as a difficulty crutch.
+
+### Flagged as unverified by the research
+
+No published measured rate of elision output exists for any frontier model
+from any vendor or peer-reviewed paper (Aider's 12/89 is the only public
+count, on one 2024 model family). Anthropic has published no rationale for
+`str_replace` over whole-file rewriting. The "diffs fail at least 40% of the
+time" figure widely attributed to Cursor **is not in the Cursor post - do
+not use it.** SWE-bench's own two sources disagree on Claude 2's apply count
+(paper Table 5: 988/43.07%; experiments repo: 686). Modern per-instance
+`patch_successfully_applied` data sits in `s3://swe-bench-submissions/` and
+needs AWS credentials - unretrieved.
