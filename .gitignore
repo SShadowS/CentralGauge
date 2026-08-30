@@ -171,3 +171,4 @@ docs/volotests/*
 !scripts/ab-compare.py
 !scripts/completeness-scan.ts
 !scripts/attractor-probe.ts
+!scripts/passk.py
