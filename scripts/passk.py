@@ -54,16 +54,26 @@ def load_trial(path: str) -> dict[tuple[str, str], dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("runs", nargs="+")
+    ap.add_argument("runs", nargs="+",
+                    help='one trial per argument; join a multi-file trial with "+"')
     ap.add_argument("--subset", help="comma-separated task-id suffixes, e.g. X067,X074")
     ap.add_argument("--metric", choices=("solved", "first_try"), default="first_try")
     args = ap.parse_args()
 
+    # One TRIAL may span several result files - the seven-model panel was run
+    # as four separate bench invocations covering different models. Join those
+    # with "+" so they count as one trial rather than four:
+    #     passk.py "a.json+b.json" pass2.json pass3.json
     paths: list[str] = []
-    for pattern in args.runs:
-        paths.extend(sorted(glob.glob(pattern)) or [pattern])
-    trials = [load_trial(p) for p in paths]
-    trials = [t for t in trials if t]
+    trials: list[dict[tuple[str, str], dict]] = []
+    for group in args.runs:
+        merged: dict[tuple[str, str], dict] = {}
+        for pattern in group.split("+"):
+            for path in (sorted(glob.glob(pattern)) or [pattern]):
+                paths.append(path)
+                merged.update(load_trial(path))
+        if merged:
+            trials.append(merged)
     if not trials:
         print("[FAIL] no usable trials")
         return 1
