@@ -103,3 +103,75 @@ oracle-audit) that no other AL benchmark has.**
   edited a tracked harness input. The new code path is provably unreachable
   for every committed task, so this is a conservative content hash rather than
   a real invalidation - but it should be resolved or explicitly waived.
+
+---
+
+## CORRECTION: the n=24 subset overfits. Its 50.0% does not replicate. (2026-08-30)
+
+An adversarial review (Fable 5, `scratch/fable-review.md`) named the n=24
+frontier subset as the weakest thing in the package: it was selected by
+maximising n subject to `top model <= 50%` over the **same five trials it is
+then scored with**. That is selection on the outcome, and "exactly 50.0%" is
+an optimisation target wearing the clothes of a measurement.
+
+The objection is testable for free, because five trials can be split.
+Selecting on trials {1,2} and scoring on held-out trials {4,5}, with k matched
+at 2 on both sides so the comparison is like-for-like:
+
+| model | in-sample (selected on) | held-out |
+|---|---|---|
+| **claude-opus-5** | **47.6%** | **57.1%** |
+| claude-sonnet-5 | 28.6% | 28.6% |
+| gpt-5.5 | 33.3% | 28.6% |
+| gpt-5.6-luna | 14.3% | 19.0% |
+| x-ai/grok-4.3 | 0.0% | 9.5% |
+| deepseek/deepseek-v4-pro | 0.0% | 4.8% |
+
+**Top model regresses +9.5pp out of sample**, identically across 30
+independent selection draws.
+
+Netting out generic drift: the same candidate pool scored WITHOUT any
+selection moves +3.6pp between the same two trial pairs. So roughly **3.6pp is
+trial-to-trial noise and ~6pp is genuine selection overfit.**
+
+### What this kills and what survives
+
+- **The n=24 subset does NOT meet the <=50% bar out of sample.** Honest
+  estimate is ~57%. The headline "top model at exactly 50.0%" must not ship.
+- **Every weak model's score rises out of sample** (grok 0 -> 9.5%, deepseek
+  0 -> 4.8%), because selection also pushed them to the floor. The subset was
+  over-fitted at both ends, not just the top.
+- **The full-suite pass^5 result is untouched.** Opus 87.3%, separation
+  32.2% -> 51.5%, six distinct scores. Nothing there was selected on anything;
+  it is a straight measurement over all 110 tasks.
+
+### The fix
+
+Two options, and the second is cheap enough that there is no excuse:
+
+1. Publish the subset **labelled as post-hoc**, with the out-of-sample number
+   (~57%) as the honest one, not the 50.0%.
+2. **Re-select on these five trials, then run five FRESH trials and report the
+   subset's score on those only.** ~$150 and ~4h — the same cost as the
+   measurement that produced this data.
+
+Option 2 is what a hard subset needs to be publishable as a frontier claim.
+Until it runs, the launch headline is the full 110 at `pass^5`, and the subset
+is an internal artifact.
+
+### Two related corrections from the same review
+
+- **The 8.7%-vs-8.9% irreducible-core corroboration is demoted to
+  "suggestive".** Our 9-of-103 comes from 30 model-exposures; BC-Bench's
+  9-of-101 from 85 runs across 15 model/agent combinations. Ours will shrink
+  as trials accumulate, so the sizes matching is partly an artifact of our
+  smaller sample. It is also gated on X133/X173 clearing B4 - both sit IN the
+  core, and if either is over-strict the core is 7/103 = 6.8% and the match
+  evaporates. The claim that survives unchanged is the union comparison:
+  their 91.1% against our pass@1 92.7%, within two points.
+- **Drop the kappa from the launch claim.** +0.368 vs +0.558 measures whether
+  models fail the SAME tasks. Lower can mean richer discrimination, but it can
+  equally mean more per-task noise, and it sits in tension with leaning on
+  cross-benchmark difficulty convergence. The claim "separates models" is
+  properly supported by the 51.5-point pass^5 spread with a strictly monotone
+  ordering. Use that.

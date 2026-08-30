@@ -4,8 +4,14 @@ From the 2026-08-30 pass^k result (`passk-result.md`). Ordered, with the
 blocking facts stated. Nothing here is started.
 
 **Headline decision:** move the leaderboard from `auc_2` to **`pass^k` at
-k=5**, publish the **n=24 hard subset** as the frontier view, and keep
-`omission_rate` beside both.
+k=5** on the full 110, and keep `omission_rate` beside it.
+
+**REVISED 2026-08-30 after adversarial review** (`fable-adversarial-review.md`):
+the n=24 hard subset is **pulled from the launch**. Split-sample testing showed
+its top-model score regresses **+9.5pp out of sample** (~6pp of that genuine
+selection overfit, ~3.6pp drift), so it does NOT meet the <=50% bar on trials
+it was not selected on. It ships only after five FRESH trials, or with the
+honest out-of-sample number. See `passk-result.md`.
 
 ---
 
