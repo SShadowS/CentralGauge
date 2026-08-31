@@ -1,0 +1,32 @@
+id: CG-AL-X214
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application supports a services back office: document archiving, journal batch posting, site control on job cards, and rebate allocation. Codeunit "CG X106 Archive Mgt" exposes ArchiveDocument, which archives an existing "CG X106 Document"; the archived document ends up carrying an "Enrichment Note" of ''NOTE-'' followed by its "Base Total", and an "Archive Tag" of ''PRIORITY'' where that "Base Total" is 100 or more and ''STANDARD'' below it. Table "CG X110 Journal Line" holds batch lines carrying a Status of Open or Posted. Codeunit "CG X110 Post Batch" exposes PostBatch, which writes one "CG X110 Ledger Entry" for each line of the named batch standing Open as the call begins and leaves each of those lines Posted, a line already Posted contributing nothing further however often its batch is posted. Table "CG X127 Site Setup" records, per company, whether a given site code is Restricted, and codeunit "CG X127 Site Guard" is consulted whenever a "CG X127 Job Card"''s "Site Code" is set, refusing that job card exactly where the code stands Restricted in the company the job card belongs to. Codeunit "CG X140 Rebate Allocator" spreads a "CG X140 Rebate Header" record''s "Total Rebate Amount" across its "CG X140 Rebate Line" records in proportion to each line''s "Allocation Weight", storing each share in that line''s "Rebate Amount" and marking the header Allocated. Each share follows from that line''s own weight, the document''s total weight and the header amount alone; a line whose "Allocation Weight" is zero takes exactly 0.00 wherever the document carries weight elsewhere; and the lines total the header''s "Total Rebate Amount" exactly. A document whose lines carry no weight at all is left as it stands, amounts and Allocated status alike. Month-end ran long because figures out of this application keep having to be checked by hand, and nobody can say where the checking should start. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X106
+    - CG-AL-X110
+    - CG-AL-X127
+    - CG-AL-X140
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X214.Test.al
+  testCodeunitId: 89436

@@ -1,0 +1,32 @@
+id: CG-AL-X234
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application is a distributor''s back office: loyalty standing, a legacy amount feed, rebate allocation, and branch account totals. Codeunit "CG X072 Loyalty Gatekeeper" approves a "CG X072 Loyalty Candidate" whose "Lifetime Spend" is 5,000 or more, or whose "Manual VIP Override" is switched on, or both, storing that verdict in "Priority Support Approved". EvaluateCandidate settles one candidate; EvaluateAllPending puts every candidate not already approved through the same test. Codeunit "CG X076 Legacy Importer" reads an amount from text: ParseAmount returns the value of a well-formed amount of zero or more and raises an error on anything else, TryParseAmount reports that outcome as a Boolean with a reason, and ImportLine writes one "CG X076 Legacy Amount" row for an amount it accepts and none for one it does not. "CG X076 Import Job"''s ImportBatch runs a batch of entry codes and amount texts through it and returns how many rows were written. Codeunit "CG X140 Rebate Allocator"''s AllocateRebate gives each "CG X140 Rebate Line" the largest whole-cent amount not exceeding its exact share of the header''s "Total Rebate Amount" by "Allocation Weight", then makes up the difference one cent at a time, each cent going to the line whose exact share stands furthest above the amount recorded for it, ties to the lower "Line No.", none taking more than one. A line carrying no weight, where others carry weight, takes exactly zero; a document carrying none at all keeps its amounts and Allocated mark. Codeunit "CG X163 Ledger Mgt" holds one configured Amount per "Account Code" for each branch and reads back zero where a branch has none; "CG X163 Group Totals"''s GetGroupTotal adds up what every branch on the database has configured for an account. Since the last release the figures this application reports have stopped agreeing with the records behind them, and what users say points nowhere in particular. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X072
+    - CG-AL-X076
+    - CG-AL-X140
+    - CG-AL-X163
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X234.Test.al
+  testCodeunitId: 89456

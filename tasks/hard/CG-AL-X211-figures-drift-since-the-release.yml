@@ -1,0 +1,32 @@
+id: CG-AL-X211
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application runs a nightly legacy feed, an outbound change check, budgeting, and cross- company meter consolidation. Codeunit "CG X076 Import Job" ImportBatch runs "CG X076 Legacy Importer" ImportLine per line and reports how many were imported: well-formed, non-negative amount text leaves one "CG X076 Legacy Amount" row for its entry code and counts; text that is not a number, or a negative amount, fails and leaves no row. Codeunit "CG X115 Change Detector" IsSameMoment treats two timestamps less than ten milliseconds apart as the same moment, whichever is passed first: 0, 3 and 9 apart are the same moment, 10 and 20 are not; two undefined timestamps are the same moment, an undefined one and a real one never are, in either position. ShouldResync reports false exactly when its timestamps are the same moment under that rule, unless the stored last-synced timestamp is undefined, which always needs a resync. Codeunit "CG X150 Budget Allocator" AllocateBudget spreads a "CG X150 Budget Header" record''s "Total Amount" over its "CG X150 Department" records in proportion to Weight, then each department''s amount over its "CG X150 Team" records the same way, marking the header Allocated. Every stored amount is a whole number of cents; a budget''s departments come to exactly its "Total Amount", its teams to exactly their department''s "Department Amount"; a Weight of zero earns exactly zero; and where an amount does not divide evenly the spare cents go out one at a time, at most one each, to whichever exact entitlements lost most when cut back to a whole cent. Codeunit "CG X162 Consolidator" CollectReadings walks every company and copies its "CG X162 Meter Reading" rows into "CG X162 Collected Reading", each row carrying that reading''s "Meter No." and Quantity and filed under its source company. Planning cannot get a straight answer out of this application, and the complaints come from everywhere. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X076
+    - CG-AL-X115
+    - CG-AL-X150
+    - CG-AL-X162
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X211.Test.al
+  testCodeunitId: 89433

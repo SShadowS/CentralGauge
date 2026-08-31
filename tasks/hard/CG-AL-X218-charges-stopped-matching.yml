@@ -1,0 +1,32 @@
+id: CG-AL-X218
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application supports sales administration: order line defaults, service contract billing, rebate allocation, and a per-code block list. Table "CG X081 Item" records each item''s optional "Quality Grade", and table "CG X081 Order Line" carries its own "Quality Grade" mirroring whichever item the line names, refreshed every time "Item No." is validated and blank where that item has no grade of its own. Codeunit "CG X121 Contract Mgt" builds a "CG X121 Contract Header"''s three "CG X121 Contract Line" rows from the "Plan Code" and "Region Code" the header carries at the moment its lines are refreshed, each line''s Amount being the plan rate - 100 for ''BASIC'', 200 for ''PLUS'', 300 for ''PREMIUM'', otherwise 100 - times the region factor - 1.0 for ''EAST'', 1.1 for ''WEST'', 1.2 for ''NORTH'', otherwise 1.0. Change either value on the header, refresh, and the lines reflect what the header now carries. Codeunit "CG X140 Rebate Allocator" spreads a "CG X140 Rebate Header" record''s "Total Rebate Amount" across its "CG X140 Rebate Line" records in proportion to each line''s "Allocation Weight", storing each share in that line''s "Rebate Amount" and marking the header Allocated. Each share follows from that line''s own weight, the document''s total weight and the header amount alone; a line whose "Allocation Weight" is zero takes exactly 0.00 wherever the document carries weight elsewhere; and the lines total the header''s "Total Rebate Amount" exactly. A document whose lines carry no weight at all is left as it stands. Codeunit "CG X151 Block List" answers IsBlocked for a code by whichever of SetBlocked and ClearBlocked was last applied to it, from the moment that call is made and for the rest of the session. Users keep saying that what they see after a change is not what they expected, and the accounts coming back do not agree with each other. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X081
+    - CG-AL-X121
+    - CG-AL-X140
+    - CG-AL-X151
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X218.Test.al
+  testCodeunitId: 89440
