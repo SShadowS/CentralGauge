@@ -164,3 +164,39 @@ Omission scales with size: 2.9% of attempts at 1–4 starter objects, **18.2% at
 its `nl2al` set (112 + 66 tasks) is our format — currently LLM-judge graded,
 which is its weakest link and our biggest differentiator. If they add an
 executable oracle there, our positioning changes materially.
+
+---
+
+## Addendum 2026-08-31: the trap surface is not exhausted; my candidate generation was
+
+The 0-for-17 screen above used candidates I INVENTED. Candidates MINED from
+real code-review findings (DevOpsWorker `pr_reviews.findings_list`, 778
+critical/major AL findings, corpus described in
+`U:\Git\DevOpsWorker\private\internal-docs\superpowers\plans\2026-08-31-review-provenance-for-trap-mining.md`)
+went **3 for 12** on the same screen, opus-5 + gpt-5.5:
+
+- **M11 convergent**: both models put `Sleep()` backoff inside the caller's
+  open posting transaction, holding record locks; gpt-5.5 added
+  `[CommitBehavior(CommitBehavior::Ignore)]` on top.
+- M8 (Opus only): truncated a filename with `CopyStr(Name, 1, 100)`, losing
+  the extension a sibling routine derives the MIME type from.
+- M9 (gpt-5.5 only): listed blobs once, never followed the continuation
+  marker.
+- M6 (Opus only): omitted from `Find` the parent guard that `Update` and
+  `Insert` both carry.
+
+What separates these from the invented set: they are mistakes a competent
+developer actually made and shipped to review (gate A1's "wrong form a model
+would plausibly write fresh"), and they are inconsistency/attention-shaped
+rather than knowledge-shaped. Known-semantics traps stay dead (M2: both models
+already `FieldRef.Validate`).
+
+Two screen defects found and fixed on the way: the probe's 4000-token budget
+starved reasoning models (6 of 24 cells empty; now 16000 via
+`CENTRALGAUGE_PROBE_MAX_TOKENS`), and one observation per model is noise
+(verdict instability measured at 1 in 3), so a hit needs >= 2 of 3 passes.
+
+M11 is n=1 per model and has passed no gate. The pipeline to take it and its
+successors through screening, building and gating is in
+`mined-trap-pipeline-prompt.md`. **Re-test order is therefore revised: screen
+the mined corpus first, not the archived invented candidates.**
