@@ -1,0 +1,35 @@
+id: CG-AL-X263
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application serves a wholesale operation: a nightly legacy amount feed, a wire exchange with an external service, deal posting, catalogue thumbnail sizing, site restrictions on job cards, and budget allocation. Codeunit "CG X076 Legacy Importer".ParseAmount returns an amount text''s value and fails, naming the offending text as not a valid amount, when the text is not a number or is negative; TryParseAmount reports the same judgement as a Boolean, FailureReason empty on success and carrying that message on failure. ImportLine stores exactly one "CG X076 Legacy Amount" row holding the parsed amount for a well-formed non-negative text, zero included, and reports true, otherwise leaving no row and reporting false; "CG X076 Import Job".ImportBatch calls it once per line and returns how many rows it stored. Codeunit "CG X092 Wire Format".ToWireDecimal renders 1234567.89 as "1234567.89", -1234.5 as "-1234.5", 999 as "999" and 1000 as "1000"; ToWireDate renders 23 January 2026 as "2026-01-23" and 3 February 2026 as "2026-02-03". FromWireDecimal and FromWireDate read text of exactly those shapes back to the original value and report false, without failing, for anything else. Codeunit "CG X107 Deal Poster".PostDeal(SourceNo) writes a "CG X107 Posted Deal" carrying the deal header''s "Deal Reference" unchanged and the Amount the posting assigns. Codeunit "CG X126 Thumbnail Sizer".CalculateThumbnailSize takes an original picture''s pixel width and height plus the largest pixel size the reserved box may use, and reports the box''s width and height back. Confirmed examples: 100x40 at 50 gives 50x20; 40x100 at 50 gives 20x50; 80x80 at 32 gives 32x32; 100x40 at 64 gives 64x26; 20x10 at 15 gives 15x8; 100x40 at 41 gives 41x16, not 41x17; 20x10 stays 20x10 at 64 and at exactly 20; 100x2 at 10 gives 10x1, not 10x0. Every other size and maximum follows the same behaviour. Codeunit "CG X127 Site Guard".CheckSiteAllowed refuses a job card''s site code as currently restricted exactly when "CG X127 Site Setup" records a restriction against that site code for the company the job card belongs to; otherwise the code validates and is stored. Codeunit "CG X150 Budget Allocator".AllocateBudget spreads a "CG X150 Budget Header"''s Total Amount across its "CG X150 Department" records in proportion to Weight, then each Department Amount across that department''s "CG X150 Team" records the same way, marking the header Allocated. Every amount is a whole number of cents; teams sum to exactly their own Department Amount and departments to exactly Total Amount; a Weight of zero takes exactly zero; and where an amount does not divide evenly the spare cents go one at a time to whichever entitlements stand furthest above the whole cent they would otherwise take. A budget with no weight anywhere stays unallocated and untouched. Finance is asking more questions than usual about figures they used to sign off without comment. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-6
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X076
+    - CG-AL-X092
+    - CG-AL-X107
+    - CG-AL-X126
+    - CG-AL-X127
+    - CG-AL-X150
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X263.Test.al
+  testCodeunitId: 89485

@@ -1,0 +1,35 @@
+id: CG-AL-X264
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application runs the finance side of a distribution business: shipment costing, freight charges, expense-report comments, a legacy amount feed, a wire exchange with an external service, and each company''s collection policy. Codeunit "CG X066 Costing Engine".CalculateShipmentCosts(ItemNo) recomputes each outbound "CG X066 Ledger Entry" for one item from that item''s receipts, oldest first, recording a "CG X066 Shipment Cost" row worth exactly what the receipts it drew on cost, a value falling halfway between two cents taking the cent further from zero. Shipping more than has arrived fails with an "Insufficient inventory" error naming the quantity needed before the quantity on hand. Codeunit "CG X067 Freight Calculator".CalculateFreight returns 10% of the order amount to the nearest cent, so 999.99 and 1000 alike give 100.00. "CG X067 Free Freight Promotion" returns 0 for amounts of 1000 or more only while a caller has switched it on for its own call, smaller amounts keeping the standard charge; with nothing switched on the standard charge applies however large the amount, and a charge set by something else active for the call is returned as that something set it. Codeunit "CG X074 Comment Mgt.".AddComment appends a comment at the next line number that report alone uses. CountRelatedComments reports how many "CG X074 Comment Line" records belong to the report being viewed, which is zero for a brand-new report not yet saved, and UpdateReportSummary writes that count onto the report''s "Total Comment Count" while leaving every other report''s count alone. Codeunit "CG X076 Legacy Importer".ParseAmount returns an amount text''s value and fails, naming the offending text as not a valid amount, when the text is not a number or is negative; TryParseAmount reports the same judgement as a Boolean, FailureReason empty on success and carrying that message on failure. ImportLine stores exactly one "CG X076 Legacy Amount" row holding the parsed amount for a well-formed non-negative text, zero included, and reports true, otherwise leaving no row and reporting false; "CG X076 Import Job".ImportBatch calls it once per line and returns how many rows it stored. Codeunit "CG X092 Wire Format".ToWireDecimal renders 1234567.89 as "1234567.89", -1234.5 as "-1234.5", 999 as "999" and 1000 as "1000"; ToWireDate renders 23 January 2026 as "2026-01-23" and 3 February 2026 as "2026-02-03". FromWireDecimal and FromWireDate read text of exactly those shapes back and report false, without failing, for anything else. Codeunit "CG X128 Collection Policy" holds a grace period in days and a late-fee percentage belonging to the company they were set in, so each company reads back its own values whatever another company sets, defaulting to 14 days and 1.5%. IsOverdue is false at 14 days since due and true at 15, and CalculateLateFee returns that percentage of the amount. Codeunit "CG X128 Treasury Rate" holds one intercompany rate per currency code that every company sees identically, and 0 for a currency never set. The controller has flagged that this quarter''s numbers are taking longer than usual to explain. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-6
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X066
+    - CG-AL-X067
+    - CG-AL-X074
+    - CG-AL-X076
+    - CG-AL-X092
+    - CG-AL-X128
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X264.Test.al
+  testCodeunitId: 89486

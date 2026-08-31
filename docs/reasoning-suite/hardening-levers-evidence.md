@@ -1788,3 +1788,41 @@ donors must be reused across composites. Screening cost is ~$0.20 per composite
 per trial-cell; a 1-trial screen over 60 composites is ~$25, plus confirmation
 trials on the ~10 survivors. Screen with ONE trial and confirm only survivors -
 in this batch no task that both models solved in trial 1 later resisted.
+
+### Defect-site count is the lever, and it scales (2026-09-01)
+
+The section above reports 3 of 18 composites gating at FOUR live defect sites,
+and records that neither donor hardness nor defect quietness predicts a hit.
+The variable that does is the number of live defect sites.
+
+| defect sites | composites screened | candidates at 1 trial | rate |
+| --- | --- | --- | --- |
+| 4 | 58 | 10 | **17%** |
+| 6 | 15 | 5 | **33%** |
+
+Same assembler, same withholding template, same two models, same gate. Adding
+two more defect sites roughly doubles the candidate rate. Confirmation survival
+also held: of 9 four-site candidates 7 confirmed, and of 5 six-site candidates 4
+confirmed (X260 fell to 1 of 3 for both models).
+
+**This was only affordable because of the changed-objects contract.** Composites
+were capped at four donors for the whole earlier programme because object
+omission runs 18.2% of attempts at 13+ starter objects, and X175's attempt 2 died
+on exactly that. Under `diagnose-objects.md` the six-site apps are 16-21 objects
+and 49-70 oracle tests, and across all 110 screen cells in this programme there
+were **zero compile or omission cells**. The contract that was shelved at
+p=0.115 is what makes the lever reachable.
+
+**Final tally: 11 gated tasks** - X185, X187, X194, X211, X214, X218, X234
+(four sites) and X254, X257, X263, X264 (six sites). Each fails attempt 1
+behaviourally for BOTH `anthropic/claude-opus-5` and `openai/gpt-5.5` in at
+least 2 of 3 trials, most at 3 of 3. Total programme spend $95.16 across 88
+composites screened.
+
+**What to do next, in order.** Push the site count further - 8 and 10 sites are
+untested and the trend is monotonic so far. The donor pool (67 usable
+single-defect diagnose tasks, excluding SQL-counter, Restrictive and
+companion-carrying ones) supports it; reuse across composites is already routine
+and decisions.md:155 anticipates the donor/composite score correlation. Screen
+with ONE trial and confirm only survivors: across 88 composites no task that
+both models solved in trial 1 later resisted.

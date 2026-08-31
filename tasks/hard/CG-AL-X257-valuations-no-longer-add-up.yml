@@ -1,0 +1,35 @@
+id: CG-AL-X257
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application runs a distributor''s order desk: freight pricing, a contact feed, exchange text, the welcome-call queue, staged import checks and rebate allocation. "CG X067 Freight Calculator"''s CalculateFreight charges a tenth of the order amount, to the nearest cent, unless an override switched on for that call supplies it; "CG X067 Free Freight Promotion" is that override, making an order of 1,000 or more cost exactly 0 while it is switched on, and leaving every order at the standard charge while nobody has switched it on. "CG X086 Feed Import"''s ImportFeed passes each "CG X086 Feed Line" to "CG X086 Contact Sync"''s SyncContact, which moves the local "CG X086 Contact" to the id the feed reports and refreshes "Company Name", "VAT Registration No.", Address, Status and "Last Synced" from that line; where that id already identifies a different contact, the import raises an error and neither contact''s stored fields change. "CG X092 Wire Format" writes and reads that exchange''s text alike on every server: ToWireDecimal writes a leading "-" when negative, then plain digits with a single "." before any fractional part and nothing marking the thousands, so 1000 stands as 1000; ToWireDate writes 23 January 2026 as 2026-01-23; FromWireDecimal and FromWireDate read such text back. "CG X130 Signup Queue" collects through QueueSignup the ids of customers awaiting a welcome call, reports them through PendingSignups, and at StartNewDay begins the next day with nobody waiting; "CG X130 Outreach Tracker", attached through Attach, reports through AwaitingOutreach exactly the customers that queue has waiting whenever asked, later signups included. "CG X131 Import Checker"''s CheckLine reports a "CG X131 Import Line" with exactly one message, for the first of three tests it breaks in this succession - a blank "Item No.", a Quantity not greater than zero, a negative "Unit Cost" - and nothing for a line breaking none; CheckBatch builds a batch''s Problems list the same way, one entry per line needing attention. "CG X140 Rebate Allocator"''s AllocateRebate spreads a "CG X140 Rebate Header"''s "Total Rebate Amount" across its "CG X140 Rebate Line" rows by "Allocation Weight" into each "Rebate Amount", marking the header Allocated. On a document carrying weight a zero-weight line takes exactly 0.00, every other share follows from that document''s weights and total alone, and the whole cents add up to the "Total Rebate Amount" exactly; a document with no weight anywhere is left as it stands. Since the spring release the figures and files it hands out keep coming back queried, and the complaints have nothing in common. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-6
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X067
+    - CG-AL-X086
+    - CG-AL-X092
+    - CG-AL-X130
+    - CG-AL-X131
+    - CG-AL-X140
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X257.Test.al
+  testCodeunitId: 89479

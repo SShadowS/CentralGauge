@@ -1,0 +1,35 @@
+id: CG-AL-X254
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application spans loyalty approvals, a nightly legacy amount import, carrier shipment messages, journal balancing, a balance-line working buffer, and prepaid customer wallets. Table "CG X072 Loyalty Candidate" records each candidate''s "Lifetime Spend" and "Manual VIP Override", and codeunit "CG X072 Loyalty Gatekeeper" writes the "Priority Support Approved" verdict back. A candidate qualifies on a "Lifetime Spend" of 5,000 or more, on "Manual VIP Override" being switched on, or on both together, and does not qualify below 5,000 with the override off. EvaluateAllPending runs every not-yet-approved candidate and reaches the verdict a single EvaluateCandidate call reaches, leaving already-approved candidates alone. Codeunit "CG X076 Import Job" calls "CG X076 Legacy Importer"''s ImportLine once per line from ImportBatch and counts the lines actually imported. A well-formed, non-negative amount text writes one "CG X076 Legacy Amount" row for its entry code and counts as imported; a badly-formed or negative one reports failure and leaves no row behind. ParseAmount converts well-formed non-negative text and raises an error otherwise, and TryParseAmount reports the value with true, or false with the failure reason instead of raising. Codeunit "CG X083 Shipment Import Mgt." writes one "CG X083 Shipment Import Entry" per FreightEx message, whose "Package Count" is the number of packages the message declares for that shipment; a package belonging to another partner''s part of the document, or carrying no shipment identity of its own, never counts toward it. Status reads "Empty Shipment" when that count is zero and Received otherwise, beside "Tracking No. Count" and "Weight Unit". GetLastImportedPackageCount reports the most recent import for the shipment asked about, and zero for one never imported. Table "CG X118 Journal Line" stores a "Balancing Amount" that offsets the line''s Amount exactly, so the two net to zero for any "Account No.", any "Counter Account No.", and whatever "CG X118 Currency" each side is denominated in, one with no minor units at all included. Clearing "Counter Account No." leaves nothing to balance, clearing "Account No." clears the line''s "Currency Code", and naming an account that does not exist fails with an error. Codeunit "CG X132 Balance Buffer" works on a working copy of "CG X132 Balance Line" rows the caller has built up in memory. ProcessBuffer marks each such line Reviewed and returns their total; ArchiveBuffer marks each Reviewed and clears its Amount to zero. Handed the real "CG X132 Balance Line" table instead, each raises an error and leaves the real rows exactly as they were, whether that table is empty or populated and whether it is whole or narrowed to one account. Codeunit "CG X160 Wallet Mgt" posts against a "CG X160 Wallet". PostCharge refuses a non-positive amount, an unknown wallet, and any amount above the wallet''s Balance; otherwise it writes a "CG X160 Wallet Entry", takes the amount off Balance and adds it to "Total Charged". PostRefund refuses a non-positive amount and an unknown wallet, and refuses anything beyond what has been charged to that wallet less the refunds it has already had; otherwise it writes an entry and puts the amount back on Balance, leaving "Total Charged" as it stands. Support keeps escalating cases where the figures on screen and the figures on paper have parted company. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-6
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X072
+    - CG-AL-X076
+    - CG-AL-X083
+    - CG-AL-X118
+    - CG-AL-X132
+    - CG-AL-X160
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X254.Test.al
+  testCodeunitId: 89476
