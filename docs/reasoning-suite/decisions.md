@@ -907,3 +907,46 @@ Append-only. Each entry: date, decision, why.
     ruling; X166 warned (same shape). This is the fifth entry in the
     measured menu: per-row persisted writes, ~0.25-0.3 stmts/row,
     visible on statements.
+
+40. **A `Commit()` executed INSIDE application code (a codeunit the test
+    calls, not the test method) is honoured under the SOAP test runner, and
+    is what decides whether a preceding write survives a later `Error()`
+    (2026-08-31, Cronus28, BC 28.4).** Probe at
+    `scratch/probe-commitscope/` (codeunit 80108 test, codeunit 80109 app
+    side, table 70082), re-runnable. One test, four cases, measured in one
+    run:
+
+    | case | result |
+    | --- | --- |
+    | uncommitted write, no error (control) | PRESENT |
+    | uncommitted write, then `Error()` | ABSENT |
+    | the control row, re-read after that same raise | ABSENT |
+    | write + `Commit()` inside the app code, then `Error()` | **PRESENT** |
+    | write + `Commit()` inside the app code, no error | PRESENT |
+
+    The third row is the control entry 18 says an absence-observing probe
+    must carry: it proves the second row is a ROLLBACK (the raise took the
+    earlier uncommitted row with it) rather than "the write never
+    happened". Entry 18 measured the commit boundary with the `Commit()` in
+    the TEST; this extends it to a `Commit()` the code under test performs
+    itself, which is the only position a diagnose task can grade, since the
+    oracle may not edit the thing being measured.
+
+    Consequence for task design: a defect of the form "a one-time value is
+    obtained, and a step that can fail runs before the value is durably
+    stored" IS gradeable here, unlike R085 (rejected by entry 18). The
+    discriminator is not the ORDER of two writes inside one transaction -
+    entry 18 is right that a raise erases both orderings identically - but
+    whether the value is committed before the fallible step. Correct side
+    commits and the value survives the failure; naive side does not and the
+    value is gone. Measured for the B0-8 mined-trap candidate (both
+    `claude-opus-5` and `gpt-5.5` wrote the naive form 3 of 3 screening
+    passes).
+
+    Operational note recorded because it cost 15 minutes: the probe runner
+    resolves containers through the docker CLI, and this machine's active
+    docker context is `desktop-linux`, where the Cronus containers do not
+    exist. `Get-BcContainerArtifactUrl` then fails with `no such object:
+    Cronus28` and the runner reports only "Failed to create compiler
+    folder". Run container-touching scripts with
+    `DOCKER_CONTEXT=desktop-windows`.

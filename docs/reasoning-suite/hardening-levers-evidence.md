@@ -1593,3 +1593,109 @@ mechanically-verifiable tasks** versus 90%+ on human-keyed natural-language
 ones, and a compile-and-test-graded AL oracle sits at the good end of that
 spectrum. The counterweight is real: OpenAI found **35.5% of audited SWE-bench
 problems had narrow tests enforcing a particular implementation**.
+
+## Mined-trap pipeline, batch 0 (2026-08-31)
+
+First batch run under `docs/reasoning-suite/mined-trap-pipeline-prompt.md`.
+Cap $50; spent **$5.42** of it. **Net new tasks: 0.**
+
+### Counts
+
+| stage | n |
+| --- | --- |
+| findings pulled from `pr_reviews` (offset 0, limit 25) | 24 distinct |
+| already screened in the M-series | 5 |
+| transform-skipped (rule 6) | 8 |
+| screened (batch-0.json) | 11 |
+| trap_not_reached in >= 2/3 | 0 |
+| miss | 9 |
+| single-vendor | 0 |
+| **convergent** | **2** (B0-7, B0-8) |
+| built + gated | 1 (B0-8 -> CG-AL-X180) |
+| rejected at gate A2 without a build slot | 1 (B0-7) |
+| **gate PASS** | **0** |
+| promoted | 0 |
+
+Screen hit rate 2 of 11 (18%), consistent with the M-series prior of 3 of 12.
+Screening cost $4.26 for 66 cells (3 passes x 2 models x 11), i.e. **$0.065 per
+cell, $0.39 per candidate** - about a third of the $1/candidate the prompt
+budgets. Stage 0 verification cost $0.44.
+
+### The headline result: a convergent screen does NOT predict a resisting task
+
+**CG-AL-X180 passed every validity gate and then failed the bench gate 3 trials
+out of 3, with both models solving it on attempt 1 at 100/100.** It is not a
+marginal fail; there was no behavioural failure to classify.
+
+Gate record, all green: B1 (correct 10/10, starter fails exactly 2 reaching
+assertions), B2 (identical verdicts and counts on Cronus28/281/282), B4
+(`correct-alt` 10/10), B6a (out-of-family audit by gpt-5.5 found 3 HIGH oracle
+holes, all closed), B7 (LethAL 81.8% -> **90.9%** after two kill tests; the only
+survivors left are two provably-equivalent redundant `Init()` calls),
+`oracle-audit` clean, `id-audit` clean. The task is, as far as every instrument
+we own can tell, a valid and well-formed task. It is simply not hard.
+
+The mechanism was as strong a candidate as the screen produces: both
+`claude-opus-5` and `gpt-5.5` wrote the wrong form in **3 of 3** passes each -
+strictly stronger than M11, the M-series' only convergent hit, which was 1 of 1.
+
+**The gap this exposes is structural, and the pipeline prompt assumes it away.**
+The screen measures *what a model writes when composing from a bare
+requirement*. The gate measures *what a model does when handed the whole
+application plus the symptom and asked to repair it*. Those are different
+tasks, and X180 is a clean demonstration that the first does not imply the
+second: both models reliably wrote the defect, and both models reliably
+recognised and fixed it once shown it. Convergent authorship is not the same
+capability as failure to diagnose.
+
+This is the same shape as the X178/X179 result in `LESSONS.md` - a task built
+precisely to a derived recipe, solved first try by both models - and it has now
+recurred with the recipe replaced by a direct empirical measurement of the two
+target models. That is the stronger version of the negative result, because the
+empirical screen was introduced specifically to fix what the recipe got wrong.
+
+### B0-7 rejected at A2, not built
+
+B0-7 (a running total recomputed from scratch on every row entered, O(n^2)
+reads) was convergent at 2 of 3 for both models. It was not built: gate A2
+(redundancy) rejects it, because `CG-AL-X084-calctotals-rebuild-quadratic` is
+already promoted with the same defect mechanism, the same repair operation and
+the same symptom path. Its description ("keeps a buffer row per applied entry",
+"each new one visibly hangs", "fix it so adding one more entry costs no more
+work") is B0-7's requirement almost verbatim. `LESSONS.md` also records the
+SQL-counter shape (X179) as solved first try. Nothing to add to k.
+
+### Two things banked that outlive the batch
+
+1. **`decisions.md` entry 40**: a `Commit()` executed inside application code
+   (not the test) is honoured under the SOAP runner and is what decides whether
+   a preceding write survives a later `Error()` - measured with the control
+   entry 18 demands. This extends entry 18 to the only commit position a
+   diagnose task can grade, and it is what made X180 gradeable at all. It also
+   records the operational trap that cost 15 minutes: container-touching
+   scripts need `DOCKER_CONTEXT=desktop-windows` on this machine, or
+   `Get-BcContainerArtifactUrl` fails with `no such object` and the runner
+   reports only "Failed to create compiler folder".
+2. **`scripts/attractor-probe.ts` diagnostics**: every cell now reports output
+   tokens, reasoning tokens, finish reason, served model and cost, flags EMPTY
+   cells explicitly, prints a run total, and `--out=<file>` writes the full
+   untruncated cells as JSON. Stage 0 confirmed 6 of 6 cells non-empty before
+   any screening spend, which is the check the 4000-token starvation incident
+   asked for.
+
+### What a next batch should change before spending again
+
+The screen is cheap, fast and honest about what it measures. What it does not
+measure is the thing the gate scores. Either:
+
+- **screen in the diagnose format directly** - show the candidate app with the
+  defect planted and the symptom stated, and keep only candidates both models
+  fail to repair; this costs the same order of money and measures the gate's
+  own question, or
+- **keep the authorship screen as a cheap pre-filter** but stop treating
+  convergent as sufficient for a build slot, and expect a hit rate on the gate
+  far below the 2-in-11 the screen reports.
+
+On this batch's evidence the authorship screen's positive predictive value for
+the bench gate is **0 of 1** built, and the corpus's own prior (M-series, 3 of
+12 convergent, none yet gated) offers no reason to assume better.

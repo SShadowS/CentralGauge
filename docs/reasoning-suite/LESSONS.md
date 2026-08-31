@@ -200,3 +200,45 @@ M11 is n=1 per model and has passed no gate. The pipeline to take it and its
 successors through screening, building and gating is in
 `mined-trap-pipeline-prompt.md`. **Re-test order is therefore revised: screen
 the mined corpus first, not the archived invented candidates.**
+
+## Addendum 2026-08-31 (later the same day): the mined screen's first gated task FAILED
+
+The addendum above reports the mined corpus screening at **3 for 12** where the
+invented set went 0 for 17, and revises the re-test order to "screen the mined
+corpus first". Batch 0 of that pipeline has now run end to end, and the hit
+rate it should be judged on is not the screen's.
+
+**Screen: 2 convergent from 11 new mined candidates (18%, consistent with the
+3-of-12 prior). Gate: 0 of 1 built. Promoted: 0.**
+
+`CG-AL-X180` (a one-time secret discarded by a failure that runs before it is
+durably stored) was the strongest candidate the screen has ever produced -
+**both** `claude-opus-5` and `gpt-5.5` wrote the wrong form in **3 of 3** passes,
+where M11 was 1 of 1. It passed B1, B2 on three containers, B4, an out-of-family
+B6a audit (3 HIGH holes found and closed), and B7 (LethAL 90.9%, only
+provably-equivalent survivors). Then **both models solved it on attempt 1 in 3
+of 3 bench trials, at 100/100.**
+
+**The lesson, and it is the one that matters for whoever picks this up:
+"a model writes this bug when composing from a requirement" and "a model fails
+to fix this bug when shown the whole app and the symptom" are different
+capabilities, and the first does not predict the second.** `attractor-probe.ts`
+measures the first. The bench gate scores the second. The mined corpus fixed
+the *candidate supply* problem the 0-for-17 screen exposed - these really are
+mistakes competent developers ship - without touching the *format mismatch*
+between the screen and the gate.
+
+This is the third time the suite has produced a valid, well-gated, unhard task
+(X178, X179, now X180), and the first time it happened with an empirical
+per-model screen rather than a derived recipe standing behind it. Screening in
+the authorship format is therefore not the fix for authoring; it is a cheaper
+way to reach the same wall.
+
+Before the next batch, change the screen to measure the gate's own question:
+plant the defect, show the app, state the symptom, and keep only candidates
+both models fail to REPAIR. Full counts, costs and reasoning in
+`hardening-levers-evidence.md`, section "Mined-trap pipeline, batch 0".
+
+The second convergent hit of the batch (B0-7, a running total recomputed per
+row) was never built: gate A2 rejects it as the mechanism already promoted in
+`CG-AL-X084-calctotals-rebuild-quadratic`.
