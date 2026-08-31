@@ -1699,3 +1699,92 @@ measure is the thing the gate scores. Either:
 On this batch's evidence the authorship screen's positive predictive value for
 the bench gate is **0 of 1** built, and the corpus's own prior (M-series, 3 of
 12 convergent, none yet gated) offers no reason to assume better.
+
+## Multi-defect composites with a withheld symptom: 3 gated tasks (2026-08-31)
+
+The batch-0 mined-trap result above concluded that a convergent authorship
+screen does not predict a resisting diagnose task, because the screen measures
+what a model WRITES and the gate measures what it REPAIRS when handed the app
+and the symptom. This section reports the follow-up, which attacks the second
+half instead: **stop handing over the symptom.**
+
+**Result: 3 of 18 composites pass the bench gate** - CG-AL-X185, CG-AL-X187 and
+CG-AL-X194 - each failing attempt 1 BEHAVIOURALLY for BOTH `claude-opus-5` and
+`gpt-5.5` in **3 of 3 trials**. Every one of the 40+ donor defects is solved
+first-try in isolation. Total spend $20.31 in gate runs.
+
+### What the design changed, and which change did the work
+
+Three variables moved at once relative to the suite's existing composites
+(X096-X100, X141-X145), all of which are solved single-shot:
+
+1. **Four LIVE defects, not one live plus fixed distractors.** This is X175's
+   shape, which sits outside decisions entries 12/32 (they mandate 1-2 live
+   symptoms plus a glue object, and entry 32 records that ratified shape
+   measured NEGATIVE). The ruling is hereby amended by measurement: four live
+   defects is the only composite shape with a positive result, now n=3 rather
+   than X175's n=1.
+2. **The description withholds the bug.** It states each module's contract
+   neutrally and closes with a vague symptom. No count of what is wrong, no
+   module named or exonerated, no mechanism word. Contrast X096, which says
+   "The exchange-rate client, the shipment importer and the wire-format codec
+   are all working correctly today and must not be changed. Only the order
+   export module has problems, and two have appeared", then enumerates both.
+   That is a guided tour, and it is why the triage composites do not resist.
+   X175 withheld which-of-four but still named all four codeunits AND their
+   procedures; these withhold strictly more.
+3. **`prompt_template: diagnose-objects.md`.** The changed-objects contract was
+   built, measured at +11pp pooled (p=0.115) and SHELVED as not significant.
+   On this shape it is load-bearing: `failure-causes.py` reports **0/5 failures
+   from omission, and 0 of 6 attempt-1 behavioural failures lost attempt 2 to
+   it.** X175's attempt 2 died on exactly that confound. The null result came
+   from pooling weak models; on a frontier-only gate over a 10-15 object app it
+   removes the artifact outright. **Adopt it for any task above ~8 objects.**
+
+### The mechanism, measured three times
+
+In every hit, the SAME donor is missed by both models in every cell:
+
+| task | donor whose defect survives | that donor solved ALONE |
+| --- | --- | --- |
+| X187 | X140 rebate allocation | 14/30 |
+| X185 | X114 allowance band, and X076 legacy importer | **X114 is 30/30** |
+| X194 | X074 filter/key semantics | 15/30, 1/30 first-try |
+
+**X114 is the sharpest datum.** Its defect is `>= 360` where the contract says
+`> 360`. Every model solves it in 5 of 5 trials standing alone. Put it among
+three unrelated defects and both frontier models miss it, 4 cells of 4. That is
+the X066-in-X175 observation reproduced on demand.
+
+### What does NOT predict a hit
+
+- **Donor hardness.** X183 carries two of the suite's hardest donors (X067 at
+  10/30, X118 at 19/20) and both models solved it first try. X185's four donors
+  are all easy (X114 and X162 are 30/30) and it resists. Consistent with X175,
+  whose four donors are among the easiest in the suite.
+- **Defect quietness.** Iteration 2 was built specifically on the hypothesis
+  that quiet defects (a boundary operator, a format call, a one-line edit)
+  survive dilution while loud ones get found. All 32 donors had a <= 4-line
+  defect. It yielded **1 of 8**, statistically indistinguishable from
+  iteration 1's 2 of 10. The hypothesis is NOT supported. X194's survivor
+  (X074) is an intrinsically hard donor, not a quiet one.
+
+So the lever is dilution itself, and which specific defect survives it is not
+yet predictable from any donor property measured here. Yield is **~15-17% per
+composite**, and the four donors are consumed whether or not it gates.
+
+### Cost model for anyone extending this
+
+Assembly is now mechanical: `scratch/composite-plan/compose.py` copies donor
+starters and references verbatim (donor `CG X<NNN>` prefixes and disjoint id
+blocks make collisions impossible) and merges the donor oracles into one
+codeunit, prefixing every helper and test with its donor tag. One real bug found
+building it: a donor oracle may reference its OWN codeunit by name to bind a
+manual subscriber, which the rename breaks (AL0185, X067 inside X183).
+
+At the measured yield, **10 gated tasks needs roughly 60-70 composites**, which
+is about 240-280 donor slots against a pool of 110 usable diagnose tasks, so
+donors must be reused across composites. Screening cost is ~$0.20 per composite
+per trial-cell; a 1-trial screen over 60 composites is ~$25, plus confirmation
+trials on the ~10 survivors. Screen with ONE trial and confirm only survivors -
+in this batch no task that both models solved in trial 1 later resisted.

@@ -1,0 +1,33 @@
+id: CG-AL-X194
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application handles inbound and outbound document processing: carrier shipment messages, price-validity analysis, batch order import and expense-report comments. Codeunit "CG X083 Shipment Import Mgt." exposes ImportShipmentStatus, reading one carrier message through "CG X083 Shipment Status Parser" and writing a "CG X083 Shipment Import Entry" whose "Package Count" is how many packages that message lists, whose "Tracking No. Count" is how many tracking numbers it lists, and whose "Weight Unit" is the unit it states; Status is "Empty Shipment" when the message lists no packages and Received when it lists at least one. GetLastImportedPackageCount returns the "Package Count" of the latest entry imported for a shipment number. Codeunit "CG X077 Validity Analyzer" exposes MergeValidityPeriods, combining an item''s price-validity windows into continuous coverage periods, and CountConflictingPairs, returning how many unordered pairs of those windows share at least one calendar day. A window with no "Ending Date" never expires, and pairs with any window it shares a day with on exactly the terms every other window is judged by. Codeunit "CG X070 Import Batch" exposes ImportBatch(BatchCode), working through every Pending "CG X070 Import Line" of that batch by ascending "Line No.": a blank "Customer No." fails with the standard field-guard error, a Quantity of zero or below fails with an error saying the quantity must be positive, and every other line gains a "CG X070 Imported Order" carrying its "Customer No." and Quantity while the line itself becomes Imported. When a line partway through a run fails, every line already imported earlier in that same run still holds its imported order and its Imported status. Codeunit "CG X074 Comment Mgt." exposes CountRelatedComments, reporting how many "CG X074 Comment Line" rows belong to the expense report whose Comments list is open, which is zero for a brand-new report not yet saved and the report''s own comment count for a saved one, alongside AddComment and UpdateReportSummary, which leaves "Total Comment Count" on "CG X074 Report" equal to the comment lines that report has. Month-end review keeps turning up figures nobody can tie back to the records underneath them, and the examples people bring in have nothing obvious in common. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - quiet-defects
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X083
+    - CG-AL-X077
+    - CG-AL-X070
+    - CG-AL-X074
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X194.Test.al
+  testCodeunitId: 89416

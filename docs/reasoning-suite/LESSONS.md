@@ -242,3 +242,51 @@ both models fail to REPAIR. Full counts, costs and reasoning in
 The second convergent hit of the batch (B0-7, a running total recomputed per
 row) was never built: gate A2 rejects it as the mechanism already promoted in
 `CG-AL-X084-calctotals-rebuild-quadratic`.
+
+## Addendum 2026-08-31 (third): authoring is NOT dead - the format was wrong
+
+The two addenda above end at "screening in the authorship format is a cheaper
+way to reach the same wall". The wall has now been gone round, and the headline
+of this file needs reading in that light.
+
+**Three tasks now exist that both `claude-opus-5` and `gpt-5.5` fail on attempt
+1, behaviourally, in 3 of 3 trials: CG-AL-X185, CG-AL-X187, CG-AL-X194.**
+
+They are not new AL. Each is four ALREADY-GATED single-defect donors copied
+verbatim into one application with all four defects live at once, and every one
+of those donor defects is solved first-try in isolation. What makes them resist
+is not what is in the app but what is withheld from the prompt:
+
+- no count of what is wrong,
+- no module named, and none exonerated,
+- no mechanism word, and no per-defect symptom.
+
+The suite's existing composites (X096-X100, X141-X145) do the opposite - X096
+tells the model that three of four modules "are working correctly today and must
+not be changed" and that the fourth has exactly two problems - and every one of
+them is solved single-shot. Same shape, same size, opposite result. **The
+difficulty was never in the code; it was in how much the prompt gave away.**
+
+Three practical consequences:
+
+1. **Dead end #1 above ("authoring more hard tasks") is narrower than written.**
+   Authoring NEW hard AL is still unproductive. ASSEMBLING gated donors and
+   withholding the symptom is not. Yield is ~15% per composite, measured over 18.
+2. **Dead end #5 ("the changed-objects response contract") should be reopened
+   for large apps.** It was shelved at +11pp, p=0.115 - a null driven by pooling
+   weak models. On these 10-15 object composites it removed object omission
+   entirely (0 of 6 attempt-1 behavioural failures lost attempt 2 to it), which
+   is what discredited X175's attempt 2. Use `diagnose-objects.md` above ~8
+   objects.
+3. **Do not select donors for hardness, and do not select them for subtlety.**
+   Both were tested. X183 carries two of the suite's hardest donors and was
+   solved; a whole batch of eight built from <= 4-line "quiet" defects yielded
+   1 of 8, no better than chance against the baseline rate. The sharpest datum
+   in the programme: X114, whose defect is `>= 360` where the contract says
+   `> 360`, is solved 30/30 alone by every model in every trial, and missed by
+   both frontier models in every cell once three unrelated defects compete with
+   it.
+
+Full counts, cost model and the assembler's one real gotcha are in
+`hardening-levers-evidence.md`, section "Multi-defect composites with a withheld
+symptom".
