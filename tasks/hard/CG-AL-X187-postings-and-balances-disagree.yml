@@ -1,0 +1,32 @@
+id: CG-AL-X187
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application keeps a group''s rebates, prices and ledgers in step with the records behind them. Codeunit "CG X115 Change Detector"''s IsSameMoment reports two timestamps as the same moment when they lie less than 10 milliseconds apart, whichever is passed first; an undefined timestamp is the same moment as another undefined one, and never the same moment as a real one. ShouldResync reports false when its timestamps are the same moment under that rule, true when they are not, and always true for a record whose stored last-synced timestamp is undefined. Codeunit "CG X140 Rebate Allocator"''s AllocateRebate spreads a "CG X140 Rebate Header" record''s Total Rebate Amount across its "CG X140 Rebate Line" records in proportion to each line''s "Allocation Weight", storing each share in that line''s "Rebate Amount" and marking the header Allocated; GetAllocatedTotal reports it. On a document with weight to spread, a line whose "Allocation Weight" is zero receives exactly zero, every other line''s share follows only from that document''s weights and total, and the lines'' "Rebate Amount" values sum exactly to the header''s Total Rebate Amount. A document whose lines carry no weight is left as it stands, Allocated status included. Codeunit "CG X104 Price Sync"''s SyncPriceList replaces a "CG X104 Price List"''s "CG X104 Price List Line" rows from the JSON payload the supplier feed returns: a response naming at least one item replaces the list''s prices, and a response naming none is refused, leaving the prices it already holds. Codeunit "CG X163 Ledger Mgt" stores and looks up a branch''s own amount for an account code through SetAmount and GetAmountDirect, and codeunit "CG X163 Group Totals"''s GetGroupTotal combines every branch''s own amount for that account into one group-wide figure. Finance keeps asking why what this application produces no longer ties back to the records underneath, and the cases they send in have little in common. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X115
+    - CG-AL-X140
+    - CG-AL-X104
+    - CG-AL-X163
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X187.Test.al
+  testCodeunitId: 89409

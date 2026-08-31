@@ -1,0 +1,32 @@
+id: CG-AL-X185
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application exchanges figures with an external service, imports amounts from a nightly feed, settles travel claims, and consolidates readings across the companies on the database. Codeunit "CG X092 Wire Format" converts values to and from the text form that service exchanges documents in: ToWireDecimal writes an amount as a leading "-" for a negative value, plain digits and a single "." before any fractional part, with nothing marking the thousands; ToWireDate writes a date; FromWireDecimal and FromWireDate read such text back into the value it stands for. They produce and accept the same text on every server. Codeunit "CG X076 Import Job"''s ImportBatch calls "CG X076 Legacy Importer"''s ImportLine once per line of a batch and returns how many lines were imported: a well-formed, non-negative amount text produces one "CG X076 Legacy Amount" row for its entry code and counts as imported, while a badly formed or negative one reports failure and leaves no row behind. ParseAmount converts a well-formed amount text; TryParseAmount reports whether one can be converted. Codeunit "CG X114 Allowance Calc" derives a travel allowance from a claim''s away-time in minutes through CalculateAllowance, stores that amount onto the "CG X114 Travel Claim" record through RecalculateClaim, and classifies the same away-time into the bands the away-time statistics report uses through OvertimeBandOf. The amount a claim is paid and the band it is reported under describe the same outcome for any away-time. Codeunit "CG X162 Consolidator"''s CollectReadings walks every company on the database and copies each company''s "CG X162 Meter Reading" rows into one "CG X162 Collected Reading" list, each collected row carrying the quantity read and the "Source Company" it was read in. Since the last release, figures this application hands over have stopped agreeing with the records they were built from, and nobody reporting it has been able to say where it starts. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X092
+    - CG-AL-X076
+    - CG-AL-X114
+    - CG-AL-X162
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X185.Test.al
+  testCodeunitId: 89407
