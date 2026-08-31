@@ -150,12 +150,21 @@ Per hit, in this order (any oracle/starter edit re-enters at B1):
   starter fails REACHING the assertions. Then `scripts/gold-ci.ts --replay`.
 - **B2** re-probe twice more, at least once on another container; identical
   verdicts and assertion counts.
-- **B4** both `correct/` and `correct-alt/` must pass the oracle. C0 family
-  rule: this session and its builders are Anthropic, so no Anthropic model may
-  serve as a B4 checker or B6 auditor; the author-written alternative is the
-  legitimate hard-tier form.
+- **B4** both `correct/` and `correct-alt/` must pass the oracle. Any model
+  that passes the oracle at the Stage 5 gate (gpt-5.5 on attempt 2, for
+  instance) is a genuine independent no-tools solution and counts as further
+  B4 evidence; the author-written alternative is the floor for tasks nobody
+  solves. C0 family rule: this session and its builders are Anthropic, so no
+  Anthropic model may serve as a B4 checker or B6 auditor.
 - **B6a** run the `al-test-auditor` instructions through `pi_ask` on
   `gpt-5.5` (not the in-session agent, same family rule). Apply HIGH/MED.
+  This is the ONLY step that may use `pi_ask`: an auditor is meant to read the
+  oracle and the task. **Never use `pi_ask` as a solver, screener or gate.**
+  Its delegate can read the repo, including `tests/al/hard/`, and no setting
+  makes it single-shot; `require_evidence` pushes it to read. Every step that
+  measures a model (screen, B4 solves, gate) goes through the adapters
+  (`attractor-probe.ts`, `bench`), which are single-shot and tool-free, the
+  same condition the benchmark scores under.
 - **B7** LethAL sweep on Cronus28 ONLY; triage survivors with
   `mutation-triager`; `unreached` survivors get a kill test.
 - Run `python scripts/oracle-audit.py` after every oracle edit.
