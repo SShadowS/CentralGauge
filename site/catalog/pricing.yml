@@ -698,6 +698,18 @@
   cache_write_per_mtoken: 0
   source: litellm-api
   fetched_at: '2026-05-31T14:36:29.400Z'
+# Fable 5.1 pricing is ASSUMED equal to Fable 5 until the list price is
+# confirmed. Do not `sync-catalog --apply` this row to prod before checking.
+- pricing_version: "2026-09-01"
+  model_slug: anthropic/claude-fable-5-1
+  effective_from: "2026-09-01T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 10
+  output_per_mtoken: 50
+  cache_read_per_mtoken: 1
+  cache_write_per_mtoken: 12.5
+  source: manual
+  fetched_at: "2026-09-01T00:00:00.000Z"
 - pricing_version: "2026-06-09"
   model_slug: anthropic/claude-fable-5
   effective_from: "2026-06-09T00:00:00.000Z"
