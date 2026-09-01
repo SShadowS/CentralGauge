@@ -106,7 +106,7 @@ tasks/starter/*/.alpackages/
 tasks/starter/*/output/
 tasks/starter/*/rad.json
 
-# Plan G â€” workflow orchestrator output (CI-only).
+# Plan G — workflow orchestrator output (CI-only).
 weekly-cycle-result.json
 digest.md
 
@@ -133,6 +133,9 @@ scripts/*
 !scripts/normalize-kill-tests.py
 !scripts/oracle-audit.py
 !scripts/gold-ci.ts
+!scripts/composite-plan.py
+!scripts/composite-assemble.py
+!scripts/composite-verdict.py
 !scripts/stamp-provenance.ts
 TestLookupSandbox.md
 bug.md
