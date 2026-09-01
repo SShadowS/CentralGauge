@@ -103,6 +103,8 @@ while X185's donors are all 30/30-easy and it resists) and **defect quietness**
    behaviourally. The console matrix labels the FINAL attempt, so reading it
    instead of attempt 1 will mislead you - that nearly cost a valid task.
    Cross-check with `python scripts/failure-causes.py` that omission is at zero.
+   For attempt-2 behaviour (modules gained or lost on retry, pass@2, cost) use
+   `python scripts/composite-attempts.py <results.json> <label>`.
 9. **Confirm candidates at 3 trials.** PASS = both models fail attempt 1
    behaviourally in at least 2 of 3.
 10. **Promote** passers (`deno task start task promote <id> --difficulty hard`),

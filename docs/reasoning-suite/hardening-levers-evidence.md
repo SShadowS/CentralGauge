@@ -1955,3 +1955,65 @@ correction as well: an earlier note in this session cited the recorded
 `attempt.prompt` as proof the model saw no objects on retry. That field is
 `context.instructions`, not the sent prompt, so it proved nothing; the
 hallucinated table names and a read of the code path are the evidence.
+
+### First valid attempt-2 figures: Fable 5.1 on the 22 composites (2026-09-02)
+
+Same 22 tasks, one trial, two attempts, on the fixed retry path
+(`results/benchmark-results-1788300093590.json`). Attempt 1 is simply a
+second trial of Fable 5.1; attempt 2 is the first repair figure in this file
+that means anything for a `diagnose-objects.md` task.
+
+| | pre-fix run (09-01) | fixed retry (09-02) |
+| --- | --- | --- |
+| bugs found, attempt 1 | 98/125 (78.4%) | 98/125 (78.4%) |
+| pass@1 | 0/22 | 5/22 |
+| bugs found, final | 15/125 (12.0%) | **117/125 (93.6%)** |
+| pass@2 | 0/22 | **14/22** |
+| second attempts that lost a module | 19 of 22 | 0 of 17 |
+| oracle tests, final | 215/242 | 1159/1180 (98.2%) |
+| tokens in / out | 300k / 412k | 364k / 228k |
+| cost (assumed $10/$50 per MTok) | $23.58 | $15.02 |
+| refusals / fallback-served | 0 / 0 | 0 / 0 |
+
+Per task, modules fully fixed out of defect sites, attempt 1 then attempt 2
+(`a1` = solved first try, so no second attempt ran):
+
+```
+X185 2->3/4   X187 3->3/4   X194 3->4/4   X211 4/4 a1   X214 3->3/4   X218 3->3/4
+X234 4/4 a1   X239 4->5/5   X244 4->4/5   X245 4->5/5   X248 5/5 a1   X249 4->5/5
+X254 6/6 a1   X257 CF->5/6  X263 5->6/6   X264 5->6/6   X270 6->8/8   X271 6->8/8
+X272 8/8 a1   X274 6->8/8   X276 7->7/8   X278 6->7/8
+```
+
+Four readings:
+
+1. **The retry now behaves.** Every second attempt returned exactly the
+   modules whose tests failed in attempt 1 and nothing else (one or two
+   objects out of 10 to 24), 13 of 17 gained at least one module, 9 of 17
+   ended in a pass, none lost one. Input tokens rose 21% because the retry
+   sees the whole candidate; output fell 45% because it returns only what it
+   changed. The run got cheaper, not dearer.
+2. **What survives a retry is one donor.** Of the 8 composites still unsolved,
+   6 miss exactly X140's three tests and nothing else (X187, X214, X218, X244,
+   X257, X278); X185 misses X114's two, X276 one X066 test. On X140 the retry
+   prompt spelled out `Expected:<18.54> Actual:<18.55>` with the test names,
+   Fable re-emitted the allocator in 9 composites, and got it right in 4.
+   That is the knowledge-gap lever from the ADO cohort showing up again:
+   attention dilution is what the gate measures at attempt 1, but the
+   residue after a pointed retry is a defect the model does not understand.
+3. **Attempt 1 is noisier than the bug count suggests.** Both runs found
+   98 of 125 bugs, yet first-try solves went 0/22 then 5/22: WHICH module goes
+   missing moves between trials while the count does not. Two-trial pass@1
+   is 11.4% against Opus 5's 6.1% and GPT-5.5's 4.5% at three trials; not
+   an ordering worth stating before a third trial.
+4. **X257's attempt-1 compile failure was the model's.** It retyped a
+   parameter on a `"CG X130 Signup Queue"` procedure the oracle calls with a
+   `List of [Code[20]]` (six `AL0133`), then fixed only that on attempt 2 and
+   never revisited X140.
+
+**What this does not settle.** Opus 5 and GPT-5.5 have no valid composite
+pass@2 yet; their recorded second attempts ran on the broken path. One trial
+each at two attempts on the 22 tasks is about $12 (Opus) and $9 (GPT) at the
+observed token counts, and is owed before any "fixes on second try" column
+for the composite tier goes on the site. `scripts/composite-attempts.py`
+produces the table above from any results file.

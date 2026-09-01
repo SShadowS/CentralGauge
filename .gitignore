@@ -175,3 +175,4 @@ docs/volotests/*
 !scripts/completeness-scan.ts
 !scripts/attractor-probe.ts
 !scripts/passk.py
+!scripts/composite-attempts.py
