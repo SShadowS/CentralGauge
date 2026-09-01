@@ -1,0 +1,34 @@
+id: CG-AL-X249
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application supports finance and payroll: it archives documents, pays travel allowances, allocates rebates across document lines, imports per-profile settings, and reports cost-centre figures by period. Codeunit "CG X106 Archive Mgt"''s ArchiveDocument leaves the named "CG X106 Document" carrying an "Enrichment Note" reading NOTE- followed by its "Base Total", and an "Archive Tag" of PRIORITY when that total is 100 or more and STANDARD below 100. RefreshArchiveTag sets that same "Archive Tag" and leaves the "Enrichment Note" untouched. Codeunit "CG X114 Allowance Calc"''s CalculateAllowance derives a travel allowance from a claim''s away-time in minutes: an away-time of exactly 360 minutes earns nothing, one above 360 and below 720 earns 250, and one of 720 minutes or more earns the full 500. OvertimeBandOf sorts the same away-times into the matching three bands; RecalculateClaim writes the calculated amount onto its own "CG X114 Travel Claim", leaving other claims alone. Codeunit "CG X140 Rebate Allocator" spreads a "CG X140 Rebate Header"''s Total Rebate Amount across its "CG X140 Rebate Line" records in proportion to each line''s Allocation Weight, storing each share in Rebate Amount and marking the header Allocated. Where a document has weight to share, a line of Allocation Weight zero gets exactly zero; every other line''s Rebate Amount follows only from the weights and total recorded on that document, coming out the same however its lines were entered; the lines always sum exactly to Total Rebate Amount; and a document carrying no weight at all is left as it is, line amounts and Allocated status untouched. Codeunit "CG X152 Config Importer"''s ImportConfig saves a profile''s settings from a semicolon-separated string of name=value segments: blank and all-space segments are skipped, a value may be empty, a setting named more than once is saved with its last-listed value, and a segment with no equals sign, or a blank name, is refused so none of that string''s settings are saved and whatever an earlier import saved stands. GetSetting and SettingExists read a saved setting back by name. Codeunit "CG X157 Period Statement"''s GetPeriodAmount returns a "CG X157 Cost Center"''s net amount posted between a From Date and a To Date, counting both those days; BuildStatement writes one "CG X157 Statement Line" per calendar month that window spans, each carrying that month''s own net amount. Complaints keep arriving about figures that look nothing like what was expected. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X106
+    - CG-AL-X114
+    - CG-AL-X140
+    - CG-AL-X152
+    - CG-AL-X157
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X249.Test.al
+  testCodeunitId: 89471

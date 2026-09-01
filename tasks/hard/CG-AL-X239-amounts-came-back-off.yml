@@ -1,0 +1,34 @@
+id: CG-AL-X239
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This is a group finance back office application, running on a database that holds more than one company. Codeunit "CG X128 Collection Policy" lets each company configure its own grace period and its own late-fee percentage, starting at 14 days and 1.5 percent; IsOverdue treats an invoice exactly at the grace period as not yet overdue and one day beyond it as overdue, and CalculateLateFee applies the percentage to the amount. The rate codeunit "CG X128 Treasury Rate" stores for a currency is a single group-wide figure that reads the same in every company. Codeunit "CG X137 Batch Poster" posts every line of a named batch into "CG X137 Posted Entry" through PostBatch, refusing a line whose Amount is not positive with an error that leaves the ledger holding nothing from that run. PostedCountLastRun and SkippedCountLastRun describe what the ledger really holds: a further run on the same batch posts each line not yet there and counts the rest as skipped, and posting one batch leaves every other batch''s rows alone. Codeunit "CG X140 Rebate Allocator" spreads a "CG X140 Rebate Header" record''s Total Rebate Amount across its "CG X140 Rebate Line" records in proportion to Allocation Weight, records each share in Rebate Amount and marks the header Allocated. A line with an Allocation Weight of zero receives exactly 0.00 while the document has other weight to spread; the recorded amounts sum exactly to the header total and depend only on that document''s weights and total, whatever line numbers its lines carry; a document with no weight anywhere keeps its existing amounts and stays unallocated. Codeunit "CG X147 Attribute Resolver" answers ResolveValue for an entity and attribute with the entity''s own value when it has one, the standard value set for its entity type when it does not, and nothing when neither exists. Codeunit "CG X147 Assignment Poster" records whatever resolved into "CG X147 Assignment Entry", and records nothing when nothing resolved. Codeunit "CG X157 Period Statement" reports a cost center over a chosen window: GetPeriodAmount returns the net amount posted between a From Date and a To Date, both counted; BuildStatement writes one "CG X157 Statement Line" per calendar month the window touches, each holding that month''s own net amount within it. Month-end review keeps turning up figures nobody can tie back to what the business actually did. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X128
+    - CG-AL-X137
+    - CG-AL-X140
+    - CG-AL-X147
+    - CG-AL-X157
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X239.Test.al
+  testCodeunitId: 89461

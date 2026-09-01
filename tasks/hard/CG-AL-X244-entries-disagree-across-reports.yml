@@ -1,0 +1,34 @@
+id: CG-AL-X244
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application keeps a product catalogue and its logistics feeds. Codeunit "CG X073 Category Rename Mgt." renames a "CG X073 Product Category" through RenameCategory, after which the category record exists under the new code with its own Description intact, every "CG X073 Product" that sat in it carries the new code, and every "CG X073 Category Report Filter" that named the old code names the new one, keeping its own "Filter Description" and Enabled. CountMatchingProducts returns how many products sit in the category the named row points at. Table "CG X081 Order Line" carries a "Quality Grade" mirroring whichever "CG X081 Item" is on the line, refreshed every time "Item No." is validated: the item''s own grade when it has one, blank when it has none or when "Item No." is cleared. Codeunit "CG X083 Shipment Import Mgt." writes one "CG X083 Shipment Import Entry" per incoming carrier message, carrying the shipment number; a "Package Count" of the packages that message reports for that shipment itself, not of identically named elements belonging to another partner or to no shipment, however the carrier laid the message out; a "Tracking No. Count" of those packages carrying a tracking number; the "Weight Unit" of the first package stating one; and a Status of Received when the shipment carries at least one package, Empty Shipment when none. GetLastImportedPackageCount returns the "Package Count" of the most recent entry for a shipment, and zero for one never imported. Codeunit "CG X140 Rebate Allocator" spreads a "CG X140 Rebate Header" record''s Total Rebate Amount across its "CG X140 Rebate Line" records in proportion to Allocation Weight, records each share in Rebate Amount and marks the header Allocated. A line whose Allocation Weight is zero receives exactly 0.00 while the document has other weight to spread; the recorded amounts sum exactly to the header total and depend only on that document''s weights and total, whatever line numbers its lines carry; a document with no weight anywhere keeps its existing amounts and stays unallocated. Codeunit "CG X151 Block List" marks a code through SetBlocked, lifts it through ClearBlocked, and answers IsBlocked with whatever the underlying "CG X151 Block Entry" list says for that code at that moment, immediately after either call and for the rest of the session. Warehouse and sales have both taken to working around the system rather than trusting it. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X073
+    - CG-AL-X081
+    - CG-AL-X083
+    - CG-AL-X140
+    - CG-AL-X151
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X244.Test.al
+  testCodeunitId: 89466

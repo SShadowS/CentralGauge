@@ -1861,3 +1861,47 @@ still falls sharply with site count ($14.6 at 4 sites, $8.2 at 6, $8.2 at 8
 including confirmations).
 
 Untested and next: 10+ sites, and whether the effect is saturating.
+
+### Final curve, 5 sites added, and the programme total (2026-09-01)
+
+Filling the gap at five defect sites completes the dose-response:
+
+| defect sites | screened | candidates | rate | confirmed | gated |
+| --- | --- | --- | --- | --- | --- |
+| 4 | 58 | 10 | 17% | 7 of 9 | 7 |
+| 5 | 15 | 5 | 33% | **5 of 5** | 5 |
+| 6 | 15 | 5 | 33% | 4 of 5 | 4 |
+| 8 | 10 | 6 | 60% | **6 of 6** | 6 |
+| **total** | **98** | **26** | **27%** | **22 of 25** | **22** |
+
+The step is 4 -> 5, not a smooth ramp: five and six sites behave identically at
+33%, and eight jumps to 60%. Whatever the mechanism is, going from four
+simultaneous defects to five roughly doubles it, and there is a second jump
+somewhere between six and eight. Confirmation survival is high everywhere and
+perfect at five and eight sites.
+
+**22 gated tasks**, each failing attempt 1 behaviourally for BOTH
+`anthropic/claude-opus-5` and `openai/gpt-5.5` in at least 2 of 3 trials:
+
+- 4 sites: X185, X187, X194, X211, X214, X218, X234
+- 5 sites: X239, X244, X245, X248, X249
+- 6 sites: X254, X257, X263, X264
+- 8 sites: X270, X271, X272, X274, X276, X278
+
+Programme spend **$176.31**, i.e. **$8.01 per gated task**, over 98 composites
+screened and 25 confirmed. Cost per gated task by site count: $14.6 at four,
+$6.2 at five, $8.2 at six, $8.2 at eight - five sites is the current sweet spot
+on cost, eight on hit rate.
+
+One process note worth keeping. `task promote` refuses when `task.yml` is newer
+than the cached probe verdict, which is correct and caught a real ordering
+mistake twice: descriptions were applied AFTER probing in two batches, so those
+tasks needed a re-probe before promotion. Apply descriptions BEFORE probing.
+
+A second note, on fairness rather than difficulty. A description writer flagged
+that it had dropped one clause of a module's contract for length on X253, and
+the oracle DOES grade that clause (`X116_NoInvoicesYieldEmptyText`). Withholding
+where the bug is must never shade into withholding what the contract is - the
+first is the experiment, the second is an unfair task. X253 did not become a
+candidate so nothing shipped, but any future batch should diff each description
+against its oracle's test names before screening.

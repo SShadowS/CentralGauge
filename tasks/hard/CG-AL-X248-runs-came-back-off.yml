@@ -1,0 +1,34 @@
+id: CG-AL-X248
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application is a distribution back office: it imports legacy amounts, keeps order lines in step with the items on them, composes bank remittance lines, keeps journal entries balanced, and reports cost-centre figures period by period. Codeunit "CG X076 Legacy Importer" exposes ParseAmount, TryParseAmount and ImportLine; codeunit "CG X076 Import Job"''s ImportBatch calls ImportLine once per line and returns how many were imported. A well-formed, non-negative amount text produces one "CG X076 Legacy Amount" row for its entry code and counts as imported; a badly-formed or negative one reports failure and leaves no row behind. Table "CG X081 Order Line" carries a "Quality Grade" that mirrors whichever "CG X081 Item" its "Item No." names, refreshed whenever "Item No." is validated and whenever codeunit "CG X081 Line Defaults Mgt"''s AssignItemValues runs, and standing blank when the item on the line carries no grade of its own or when the line names no item at all. Codeunit "CG X116 Remittance Composer" builds one payment''s remittance line. AddInvoice records an entry as the invoice number, a single space, and the amount written with exactly two decimal places, a dot as the decimal separator and nothing marking the thousands, rejecting with an error naming the 140-character limit any entry that alone would exceed it. GetRemittanceText joins the recorded entries with a comma and a space in the order they were added, returning empty text when none were added, the whole join when it is at most 140 characters, and otherwise the longest leading run of entries that still fits, closed with ", and N more" for the N invoices left out, or the bare "and N more" when not even the first entry fits. Validating "Counter Account No." on a "CG X118 Journal Line" sets that line''s "Balancing Amount" from the Amount recorded on it, so the two net to exactly zero whatever currency either side uses. Codeunit "CG X157 Period Statement"''s GetPeriodAmount returns a "CG X157 Cost Center"''s net amount posted between a From Date and a To Date, counting both those days, and BuildStatement writes one "CG X157 Statement Line" per calendar month that window spans, each carrying that month''s own net amount. The close has been running late on paperwork that keeps coming back to be redone by hand. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X076
+    - CG-AL-X081
+    - CG-AL-X116
+    - CG-AL-X118
+    - CG-AL-X157
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X248.Test.al
+  testCodeunitId: 89470
