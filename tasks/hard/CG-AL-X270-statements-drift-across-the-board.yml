@@ -1,0 +1,37 @@
+id: CG-AL-X270
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application runs a wholesaler''s operations, from the product catalogue through to cost- centre reporting. Codeunit "CG X073 Category Rename Mgt." renames a product category through RenameCategory(OldCode; NewCode): the "CG X073 Product Category" record takes the new code, every "CG X073 Product" assigned to it carries the new "Category Code", and every "CG X073 Category Report Filter" that named the old code names the new one, so CountMatchingProducts keeps returning that category''s own product count. Codeunit "CG X076 Import Job"''s ImportBatch calls "CG X076 Legacy Importer"''s ImportLine once per line and returns how many were imported: well-formed, non-negative amount text writes one "CG X076 Legacy Amount" row for its entry code and counts, while badly-formed or negative text reports failure and leaves no row. ParseAmount raises on text it cannot convert, and TryParseAmount reports that same verdict without raising. Codeunit "CG X083 Shipment Import Mgt." writes one "CG X083 Shipment Import Entry" per incoming FreightEx message, its "Package Count" being how many packages that message actually carries, alongside the "Shipment No.", "Tracking No. Count" and "Weight Unit" it names, with Status Received above zero and Empty Shipment at zero. GetLastImportedPackageCount reports the newest entry''s count for a shipment, zero for one never imported. Codeunit "CG X087 Document Copy Mgt"''s CopyDocument(SourceNo; NewNo) builds a new "CG X087 Document Header" from an existing one: it carries the source''s Description and "Copied From No.", ends up Released with a "Release Reference" of "REL-" followed by its own "No.", and is marked "Copy Audited", the source itself left as it was. Codeunit "CG X102 Buffer Service" hands working rows out two ways: TakeSnapshot gives back rows exactly as they stood when it was called, staying that way however the working rows are later added to, altered or removed, while AttachSharedView gives back a view that keeps following those rows and through which a write reaches them. Codeunit "CG X137 Batch Poster"''s PostBatch(BatchNo) writes a "CG X137 Posted Entry" for every line of that batch the ledger does not already hold and counts as skipped every line it does, refusing the run with an error on a line whose Amount is not above zero. PostedCountLastRun and SkippedCountLastRun report what the last run did against the ledger''s real contents. Codeunit "CG X140 Rebate Allocator" spreads a "CG X140 Rebate Header"''s "Total Rebate Amount" across its "CG X140 Rebate Line" records by "Allocation Weight" into "Rebate Amount", marking the header Allocated. The line amounts sum exactly to that total; a line of zero "Allocation Weight" receives exactly zero where the document has other weight; each amount depends only on the weights and total recorded there, never on which line was entered first; and a document with no weight at all is left as it stands. Codeunit "CG X157 Period Statement"''s GetPeriodAmount returns a cost centre''s net amount posted between a From Date and a To Date, both days counted; BuildStatement rewrites that cost centre''s "CG X157 Statement Line" rows, one per calendar month the window spans, each holding only that month''s own net amount. Reports the business runs every week have stopped agreeing with one another, and nobody can say which to trust. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-8
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X073
+    - CG-AL-X076
+    - CG-AL-X083
+    - CG-AL-X087
+    - CG-AL-X102
+    - CG-AL-X137
+    - CG-AL-X140
+    - CG-AL-X157
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X270.Test.al
+  testCodeunitId: 89492

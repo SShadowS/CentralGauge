@@ -1,0 +1,37 @@
+id: CG-AL-X271
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application serves a logistics operator, from freight pricing through to charge reversal. Codeunit "CG X067 Freight Calculator"''s CalculateFreight charges 10 per cent of the order amount to the nearest cent, unless a caller has activated an override for its call. "CG X067 Free Freight Promotion" waives that to 0 on an order of 1000 or more, applying only while a caller has activated it for that call; otherwise the standard charge stands however large the order. Codeunit "CG X079 Charge Allocator" spreads a "CG X079 Charge Header"''s "Total Charge Amount" across its "CG X079 Charge Line" records by Weight into "Allocated Amount", marking the header Allocated. Those amounts sum exactly to the header total, each line within a cent of its own proportional share; a Weight of zero takes exactly zero where the charge has other weight; a charge with no weight is left as it stands. Codeunit "CG X085 Batch Reissue Mgt"''s Reissue(BatchNo) rebuilds that number''s "CG X085 Batch Header" from "CG X085 Reissue Setup", taking its Description and "Template Code", today as "Created Date", and Status Open. A missing setup record fails the call, and a blank "Default Batch Template" fails with the standard field- guard error, the batch keeping the Description, "Template Code", "Created Date" and Status it had going in. Codeunit "CG X087 Document Copy Mgt"''s CopyDocument(SourceNo; NewNo) builds a new "CG X087 Document Header" from an existing one carrying the source''s Description and "Copied From No.", ending up Released with a "Release Reference" of "REL-" followed by its own "No.", and marked "Copy Audited". Codeunit "CG X092 Wire Format" exchanges values with an external service as text reading the same on every server whatever its regional settings. ToWireDecimal writes a leading "-" for a negative value, plain digits, and a single "." before any fractional part, nothing marking thousands; ToWireDate writes a four-digit year then two-digit month and day; FromWireDecimal and FromWireDate take exactly those back to the original value. Codeunit "CG X151 Block List" exposes SetBlocked, ClearBlocked and IsBlocked; IsBlocked reports whether a code stands blocked right now, reflecting SetBlocked marking one and ClearBlocked releasing one the moment either happens, for the rest of the session. Codeunit "CG X157 Period Statement"''s GetPeriodAmount returns a cost centre''s net amount posted between a From Date and a To Date, both counted; BuildStatement rewrites that cost centre''s "CG X157 Statement Line" rows, one per calendar month spanned, each holding only that month''s own net amount. Codeunit "CG X170 Charge Allocator" spreads a "CG X170 Charge Header"''s "Total Amount" across its "CG X170 Cost Center" records by Weight into "Allocated Amount" and marks the header Allocated, while ReverseCharge(ChargeNo; ReversalNo; ReversalAmount) records each cost centre''s share of a payback as a "Reversed Amount" on a "CG X170 Reversal Line" under that "Reversal No.", summing to exactly ReversalAmount. After any number of reversals a cost centre''s net remaining amount is whole cents and those nets sum exactly to the part of "Total Amount" not yet paid back; a Weight of zero takes and gives back zero; a charge with no weight is left as it stands; and leftover cents go one at a time to whichever cost centre''s entitlement most exceeds the whole cents it would otherwise take. Finance has been reconciling by hand and still cannot close the period. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-8
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X067
+    - CG-AL-X079
+    - CG-AL-X085
+    - CG-AL-X087
+    - CG-AL-X092
+    - CG-AL-X151
+    - CG-AL-X157
+    - CG-AL-X170
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X271.Test.al
+  testCodeunitId: 89493

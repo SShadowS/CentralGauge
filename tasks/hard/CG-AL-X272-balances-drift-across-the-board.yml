@@ -1,0 +1,37 @@
+id: CG-AL-X272
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application covers a trading company''s day-to-day work, from inventory costing through to cost-centre reporting. Codeunit "CG X066 Costing Engine" rebuilds one "CG X066 Shipment Cost" row per outbound entry of an item from that item''s receipts, oldest-first. A row''s "Shipment Cost" is the exact combined value of the receipt quantities consumed, to the nearest cent with an exact half cent going away from zero; shipping more than is on hand raises an error. Codeunit "CG X076 Import Job"''s ImportBatch calls "CG X076 Legacy Importer"''s ImportLine once per line and returns how many were imported: well-formed, non-negative amount text writes one "CG X076 Legacy Amount" row for its entry code and counts, while badly-formed or negative text reports failure and leaves no row. ParseAmount raises on text it cannot convert, and TryParseAmount reports that same verdict without raising. Codeunit "CG X105 Approval Lookup"''s GetApprovalLimit(ApproverID; Entry) hands back that approver''s Approved "CG X105 Approval Entry" whenever one exists and reports false when none does, whatever Rejected or Pending entries the same approver also carries and whatever the caller was looking at beforehand. "CG X105 Spend Guard"''s IsWithinLimit authorizes a request up to that entry''s "Amount Limit", refusing anything above it or any approver with no approved entry. Codeunit "CG X107 Deal Poster"''s PostDeal(SourceNo) turns a "CG X107 Deal Header" into a "CG X107 Posted Deal" carrying the header''s "No.", Amount and "Deal Reference". Codeunit "CG X116 Remittance Composer" builds one payment''s remittance line. AddInvoice(InvoiceNo; Amount) records the invoice number, a space, and the amount to exactly two decimals with a dot and no thousands mark, refusing with an error naming the 140-character limit any entry that alone needs more. GetRemittanceText joins entries earliest-added first with a comma and a space and returns that join unchanged at 140 characters or fewer; longer, it keeps the longest leading run of whole entries and ends "and N more" for every invoice left out, or is that suffix alone when the first entry will not fit beside it. Codeunit "CG X151 Block List" exposes SetBlocked, ClearBlocked and IsBlocked. IsBlocked reports whether a code stands blocked right now, reflecting it the moment SetBlocked marks one and the moment ClearBlocked releases one, for the rest of the session and however often that code is blocked and released again. Codeunit "CG X152 Config Importer"''s ImportConfig(ProfileCode; Config) reads a semicolon-separated string of "Setting Key"=value pairs and saves each for that profile, cutting at the first "=" so a value may hold one, passing over blank and all-space segments, saving an entry with nothing after its "=" as an empty value, and saving the last- listed value where the string lists a setting more than once. A segment with no "=" at all, or nothing before it, fails the whole call, leaving none of that string''s settings saved and an earlier call''s settings unchanged; GetSetting and SettingExists read a saved setting back. Codeunit "CG X157 Period Statement"''s GetPeriodAmount returns a cost centre''s net amount posted between a From Date and a To Date, both days counted; BuildStatement rewrites that cost centre''s "CG X157 Statement Line" rows, one per calendar month the window spans, each holding only that month''s own net amount. Tickets have stacked up from three departments this quarter, none of them obviously connected. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-8
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X066
+    - CG-AL-X076
+    - CG-AL-X105
+    - CG-AL-X107
+    - CG-AL-X116
+    - CG-AL-X151
+    - CG-AL-X152
+    - CG-AL-X157
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X272.Test.al
+  testCodeunitId: 89494

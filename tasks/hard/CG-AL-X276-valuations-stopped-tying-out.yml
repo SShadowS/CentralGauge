@@ -1,0 +1,37 @@
+id: CG-AL-X276
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application is a wholesaler''s distribution back office: item costing, campaign calling, deal posting, journal posting, bank remittance, volume agreements, a block list and multi-branch reporting. Codeunit "CG X066 Costing Engine"''s CalculateShipmentCosts recomputes every outbound entry''s "Shipment Cost" for an item from that item''s receipts, consuming them strictly oldest- first, and stores one "CG X066 Shipment Cost" row per outbound entry, reconciling exactly to the value of the receipts it drew on however many receipts and decimal places are involved. Codeunit "CG X075 Campaign Call List"''s BuildCallList shapes the "CG X075 Contact" view a caller then walks, so it visits every contact in the campaign''s target city and every contact whose "Credit Limit" is at or above its minimum, each exactly once. BuildCallListForCampaign does the same from a campaign record. Codeunit "CG X107 Deal Poster"''s PostDeal(SourceNo) turns a "CG X107 Deal Header" into a posted deal carrying the same "No.", Amount and "Deal Reference" the deal header holds. Codeunit "CG X110 Post Batch"''s PostBatch(BatchName) posts every currently Open journal line of the named batch into the ledger and marks those lines Posted, failing a batch with nothing open and one whose open lines do not sum to zero. A batch yields entries only for the lines open at the time of the call, however often PostBatch has run before. Codeunit "CG X116 Remittance Composer" builds one free-text remittance line of at most 140 characters. AddInvoice(InvoiceNo, Amount) records one entry - the invoice number, a single space, and the amount with exactly two decimals and a dot as decimal separator, nothing marking the thousands - and fails with an error mentioning the limit of 140 when that entry alone would exceed it. GetRemittanceText joins the recorded entries with a comma and a space in the order added, returns empty text when nothing was added, and returns the full join when it is at most 140 characters. An entry is never split: once the join is too long it keeps the longest possible run of leading entries and ends with "and N more" for the N invoices left out, or is just that bare suffix when not even the first entry fits. Table "CG X148 Volume Agreement" may name a "Rebate Group". DistributeToZones creates one "CG X148 Volume Agreement Line" per shipping zone carrying the agreement''s own details, and "CG X148 Rebate Resolver"''s GetRebatePct returns the "Rebate %" that line''s rebate group has in "CG X148 Rebate Rate", or the standard 2.5 for a line with no group or no rate on record. Codeunit "CG X151 Block List"''s SetBlocked marks a code as blocked, ClearBlocked removes the block, and IsBlocked reports whether a code is currently blocked, showing the effect of the most recent SetBlocked or ClearBlocked for it straight away and for the rest of the session; a code never touched is not blocked. Codeunit "CG X163 Ledger Mgt" stores and looks up one branch''s own configured amount for an account code; "CG X163 Group Totals"''s GetGroupTotal adds every branch''s own amount for that code into one group-wide total, counting a branch with nothing configured as zero. Month-end closed late again, and nobody can say which numbers on the pack they still trust. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-8
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X066
+    - CG-AL-X075
+    - CG-AL-X107
+    - CG-AL-X110
+    - CG-AL-X116
+    - CG-AL-X148
+    - CG-AL-X151
+    - CG-AL-X163
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X276.Test.al
+  testCodeunitId: 89498

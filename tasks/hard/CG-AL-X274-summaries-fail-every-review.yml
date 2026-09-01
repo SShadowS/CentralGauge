@@ -1,0 +1,37 @@
+id: CG-AL-X274
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application is a distributor''s back office: legacy imports, document copying, an external data exchange, submission notifications, contract billing, site work, rebate allocation and cross-company meter consolidation. Codeunit "CG X076 Legacy Importer"''s ParseAmount, TryParseAmount and ImportLine treat a well-formed, non-negative amount text - zero included - as convertible, storing one "CG X076 Legacy Amount" row for its entry code, while a badly-formed or negative text is rejected and leaves no row. "CG X076 Import Job"''s ImportBatch calls ImportLine per line and reports how many were imported. Codeunit "CG X087 Document Copy Mgt"''s CopyDocument(SourceNo, NewNo) builds a header recording where it came from, carrying over the Description, ending up Released with the "Release Reference" recorded when it was released, and marked "Copy Audited", leaving the source as it was. AuditDocument marks a document audited without disturbing its Status or "Release Reference". Codeunit "CG X092 Wire Format" writes and reads the same text on any server whatever its regional settings: ToWireDecimal gives a leading "-" when negative, then plain digits and a single "." before any fractional part, nothing marking the thousands; ToWireDate gives an ISO year-month-day with two-digit month and day; FromWireDecimal and FromWireDate accept exactly that. Codeunit "CG X103 Submitter"''s BuildPayload derives a submission''s notification e-mail, preferring its own "Notify E-Mail" and otherwise the "Fallback E-Mail" on the "CG X103 Notify Setup" record its "Setup Code" names. Guard fails, saying it cannot determine a notification e-mail, exactly when BuildPayload would come back blank. Codeunit "CG X121 Contract Mgt"''s RefreshLines rebuilds a contract''s three "CG X121 Contract Line" records from whichever "Plan Code" and "Region Code" its header currently holds, each priced at the plan rate - BASIC 100, PLUS 200, PREMIUM 300 - times the region factor - EAST 1.0, WEST 1.1, NORTH 1.2. Changing only "Contact Name" leaves the existing lines alone. Table "CG X127 Site Setup" records, per company, whether a site code is under a restriction, and codeunit "CG X127 Site Guard"''s CheckSiteAllowed refuses a job card''s "Site Code" as restricted only when the restriction is recorded for that job card''s own company. Codeunit "CG X140 Rebate Allocator"''s AllocateRebate spreads a rebate header''s "Total Rebate Amount" over its "CG X140 Rebate Line" records in proportion to each line''s "Allocation Weight" and marks the header Allocated. A zero-weight line gets exactly zero when the document has other weight; every other amount follows only from the document''s weights and total, never from the line numbers used; and they sum exactly to the header total. A document with no weight anywhere is left untouched. Codeunit "CG X162 Consolidator"''s CollectReadings walks every company on the database and records each company''s meter readings into the single "CG X162 Collected Reading" list, filed under the "Source Company" they came from; a second run refreshes each in place, and the source readings stay unchanged. Nothing has felt settled since the last deployment, and the figures people expect are not the figures they get. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-8
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X076
+    - CG-AL-X087
+    - CG-AL-X092
+    - CG-AL-X103
+    - CG-AL-X121
+    - CG-AL-X127
+    - CG-AL-X140
+    - CG-AL-X162
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X274.Test.al
+  testCodeunitId: 89496

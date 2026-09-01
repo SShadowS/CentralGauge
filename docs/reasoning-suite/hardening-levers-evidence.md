@@ -1826,3 +1826,38 @@ companion-carrying ones) supports it; reuse across composites is already routine
 and decisions.md:155 anticipates the donor/composite score correlation. Screen
 with ONE trial and confirm only survivors: across 88 composites no task that
 both models solved in trial 1 later resisted.
+
+### The dose-response curve: defect sites vs candidate rate (2026-09-01)
+
+Extending the six-site result with a ten-composite batch at EIGHT live defect
+sites. The relationship is monotonic and steep:
+
+| defect sites | composites screened | candidates at 1 trial | rate | confirmed |
+| --- | --- | --- | --- | --- |
+| 4 | 58 | 10 | 17% | 7 of 9 |
+| 6 | 15 | 5 | 33% | 4 of 5 |
+| 8 | 10 | 6 | **60%** | **6 of 6** |
+
+Everything else held constant: same assembler, same verbatim donors, same
+withholding template, same two models, same 3-trial gate. Confirmation survival
+also RISES with site count - at eight sites every candidate confirmed, and in
+confirmation trial 3 the running tally was gpt-5.5 0 of 6 and opus 0 of 5 across
+BOTH attempts.
+
+**Total: 17 gated tasks.** X185, X187, X194, X211, X214, X218, X234 (4 sites),
+X254, X257, X263, X264 (6 sites), X270, X271, X272, X274, X276, X278 (8 sites).
+
+Eight-site apps are 21-28 objects with 63-88 merged oracle tests. Across all 130
+screen cells in the programme there were **two** non-behavioural cells, and
+neither was an assembly artifact: one gpt-5.5 cell invented a non-existent AL
+function (`CompareStr`, AL0118) on X277. Object omission remains at zero under
+`diagnose-objects.md`, which is what makes apps this size usable at all.
+
+**Practical guidance.** Build at the highest site count the donor pool supports.
+Screen with ONE trial - across 88+ composites no task both models solved in
+trial 1 later resisted. Cost scales with app size: a one-trial screen cell ran
+about $0.60 at 4 sites, $1.14 at 6 and $2.22 at 8, so the cost PER GATED TASK
+still falls sharply with site count ($14.6 at 4 sites, $8.2 at 6, $8.2 at 8
+including confirmations).
+
+Untested and next: 10+ sites, and whether the effect is saturating.

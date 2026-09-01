@@ -1,0 +1,37 @@
+id: CG-AL-X278
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application is a distributor''s customer-operations back office: order imports, campaign calling, graded items, a partner JSON export, travel allowances, rebates, prepaid wallets and branch reporting. Codeunit "CG X070 Import Batch"''s ImportBatch(BatchCode) works through the batch''s Pending lines in ascending "Line No." order: a blank "Customer No." fails with the standard field-guard error, a Quantity of zero or less fails with an error saying it must be positive, and every other line gets its own "CG X070 Imported Order" copying both, its Status flipped to Imported. When a line partway through a run turns out bad, the lines imported earlier in that run keep their records and Imported status; one batch''s import never touches another. Codeunit "CG X075 Campaign Call List"''s BuildCallList shapes the "CG X075 Contact" view a caller then walks, so it visits every contact in the campaign''s target city and every contact whose "Credit Limit" is at or above its minimum, each exactly once. BuildCallListForCampaign does the same from a campaign record. Table "CG X081 Item" records an item''s optional "Quality Grade"; "CG X081 Order Line" carries its own "Quality Grade" mirroring whichever item is on the line, refreshed whenever "Item No." is validated and blank when that item has no grade or "Item No." is cleared. AssignItemValues leaves it the same way. Codeunit "CG X093 Order Export"''s ExportOrder builds the JSON the warehouse partner reads: orderNo, customerNo and orderDate at top level, and one lines entry per order line with lineNo, itemNo, description, quantity, unitPrice and lineAmount. orderDate is an ISO year-month-day text with two-digit month and day, read the same way on any server; quantity, unitPrice and lineAmount are each a plain JSON number holding the line''s stored value. Codeunit "CG X114 Allowance Calc"''s CalculateAllowance derives a travel allowance from a claim''s away-time in minutes and RecalculateClaim stores it onto the claim: exactly 360 minutes earns nothing, anything longer than 360 earns 250, and 720 or more earns the full 500. OvertimeBandOf sorts the same away-times into those three bands, and the two agree everywhere. Codeunit "CG X140 Rebate Allocator"''s AllocateRebate spreads a rebate header''s "Total Rebate Amount" over its "CG X140 Rebate Line" records in proportion to each line''s "Allocation Weight" and marks the header Allocated. A zero-weight line gets exactly zero when the document has other weight; every other amount follows only from the document''s weights and total, never from the line numbers used; and they sum exactly to the header total. A document with no weight anywhere is left untouched. Table "CG X160 Wallet" holds a wallet''s Balance and running "Total Charged"; "CG X160 Wallet Entry" is its ledger. PostCharge takes an amount off Balance, adds it to "Total Charged" and writes a Charge row, refusing what Balance cannot cover. PostRefund puts money back onto Balance and writes a Refund row, refusing anything beyond what has been charged less what was already refunded, and leaves "Total Charged" alone. Both refuse a non-positive amount and an unknown wallet. Codeunit "CG X163 Ledger Mgt" stores and looks up one branch''s own configured amount for an account code; "CG X163 Group Totals"''s GetGroupTotal adds every branch''s own amount for that code into one group-wide total, counting a branch with nothing configured as zero. Customer services keeps hearing about figures that do not match what people expect. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-8
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X070
+    - CG-AL-X075
+    - CG-AL-X081
+    - CG-AL-X093
+    - CG-AL-X114
+    - CG-AL-X140
+    - CG-AL-X160
+    - CG-AL-X163
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X278.Test.al
+  testCodeunitId: 89500
