@@ -6,6 +6,7 @@ import {
   buildFixPrompt,
   buildGenerationPrompt,
   DEFAULT_PROMPT_TEMPLATE,
+  FIX_PROMPT_PREVIOUS_CODE_CAP,
 } from "../../../src/llm/prompt-building.ts";
 import { TemplateRenderer } from "../../../src/templates/renderer.ts";
 
@@ -35,15 +36,50 @@ describe("llm/prompt-building", () => {
     assertStringIncludes(p, "AL0132: unknown field");
   });
 
-  it("truncates previous code at 4000 characters", () => {
-    const p = buildFixPrompt({ ...base, previousCode: "x".repeat(5000) });
-    assertStringIncludes(p, "... (truncated)");
-    assertEquals(p.includes("x".repeat(4001)), false);
+  // The retry must show the WHOLE previous submission. A 4000-character cap
+  // was fine for single-object code-gen tasks and silently crippled every
+  // multi-object diagnose retry: the model saw one or two objects of a 20+
+  // object app and invented the rest (2026-09-01: 18 of 22 Fable 5.1 second
+  // attempts died on AL0185 references to tables it could no longer see).
+  it("shows a whole multi-object application on retry, untruncated", () => {
+    const app = Array.from(
+      { length: 80 },
+      (_, i) => `table ${71000 + i} "CG X${i} Thing" { fields { field(1; "No."; Code[20]) { } } }`,
+    ).join("\n\n");
+    assertEquals(app.length > 4000, true);
+    const p = buildFixPrompt({ ...base, previousCode: app });
+    assertStringIncludes(p, 'table 71079 "CG X79 Thing"');
+    assertEquals(p.includes("... (truncated)"), false);
   });
 
-  it("does not truncate previous code at exactly 4000", () => {
-    const p = buildFixPrompt({ ...base, previousCode: "x".repeat(4000) });
-    assertEquals(p.includes("... (truncated)"), false);
+  it("truncates only past the safety cap", () => {
+    const atCap = buildFixPrompt({
+      ...base,
+      previousCode: "x".repeat(FIX_PROMPT_PREVIOUS_CODE_CAP),
+    });
+    assertEquals(atCap.includes("... (truncated)"), false);
+    const overCap = buildFixPrompt({
+      ...base,
+      previousCode: "x".repeat(FIX_PROMPT_PREVIOUS_CODE_CAP + 1),
+    });
+    assertStringIncludes(overCap, "... (truncated)");
+    assertEquals(
+      overCap.includes("x".repeat(FIX_PROMPT_PREVIOUS_CODE_CAP + 1)),
+      false,
+    );
+  });
+
+  it("restates the changed-objects return rule under that contract", () => {
+    const p = buildFixPrompt({ ...base, contract: "changed-objects" });
+    assertStringIncludes(p, "only the objects you changed");
+    assertStringIncludes(p, "kept exactly as they are in your previous submission");
+    assertEquals(p.includes("COMPLETE corrected AL code"), false);
+  });
+
+  it("keeps the full-app wording by default", () => {
+    const p = buildFixPrompt(base);
+    assertStringIncludes(p, "COMPLETE corrected AL code (not a diff)");
+    assertEquals(p.includes("only the objects you changed"), false);
   });
 
   it("caps error list at 20 errors", () => {

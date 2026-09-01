@@ -4,6 +4,7 @@
  */
 
 import type { ExecutionAttempt, TaskExecutionContext } from "./interfaces.ts";
+import { retrySourceFor } from "./object-overlay.ts";
 import type { GenerationContext } from "../llm/types.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { ConfigManager } from "../config/config.ts";
@@ -47,7 +48,7 @@ export class PromptGenerator {
     previousAttempts: ExecutionAttempt[],
   ): GenerationContext {
     const lastAttempt = previousAttempts[previousAttempts.length - 1];
-    const previousCode = lastAttempt?.extractedCode;
+    const previousCode = lastAttempt ? retrySourceFor(lastAttempt) : undefined;
     const previousErrors = lastAttempt?.compilationResult?.errors.map(
       (e) => `${e.file}:${e.line} - ${e.message}`,
     );

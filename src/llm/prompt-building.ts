@@ -114,16 +114,40 @@ export async function buildGenerationPrompt(opts: {
   );
 }
 
+/**
+ * Safety cap on the previous submission shown in a retry prompt, in
+ * characters. This is a guard against a runaway response, NOT a budget: the
+ * retry must show the WHOLE previous submission. The old 4000-character cap
+ * was sized for single-object code-gen tasks and silently crippled every
+ * multi-object diagnose retry - the model saw one or two objects of a 20+
+ * object application and invented the rest (2026-09-01: 18 of 22 Fable 5.1
+ * second attempts died on AL0185 references to tables it could no longer
+ * see). 400k characters is roughly 100k tokens, far above any real app here.
+ */
+export const FIX_PROMPT_PREVIOUS_CODE_CAP = 400_000;
+
 export function buildFixPrompt(opts: {
   attemptNumber: number;
   originalInstructions: string;
   previousCode: string;
   errors: string[];
+  /**
+   * Which response contract attempt 1 ran under, so the retry restates the
+   * SAME rule. `full-app` (default): return the complete application.
+   * `changed-objects` (`diagnose-objects.md`): return only the objects you
+   * changed, complete; unreturned objects are carried from the previous
+   * submission (see `CompileWorkItem.overlayBase`).
+   */
+  contract?: "full-app" | "changed-objects";
 }): string {
-  const truncatedCode = opts.previousCode.length > 4000
-    ? opts.previousCode.substring(0, 4000) + "\n... (truncated)"
+  const truncatedCode = opts.previousCode.length > FIX_PROMPT_PREVIOUS_CODE_CAP
+    ? opts.previousCode.substring(0, FIX_PROMPT_PREVIOUS_CODE_CAP) +
+      "\n... (truncated)"
     : opts.previousCode;
   const errorSnippet = opts.errors.slice(0, 20).join("\n");
+  const returnRule = opts.contract === "changed-objects"
+    ? "Return only the objects you changed, each one COMPLETE from its declaration to its closing brace. Objects you do not return are kept exactly as they are in your previous submission"
+    : "Provide the COMPLETE corrected AL code (not a diff)";
 
   return `Your previous submission (attempt ${
     opts.attemptNumber - 1
@@ -143,7 +167,7 @@ ${errorSnippet}
 ## Instructions
 1. Analyze the compilation errors or test failures above
 2. Fix the issues in your code
-3. Provide the COMPLETE corrected AL code (not a diff)
+3. ${returnRule}
 4. Ensure the fix addresses the root cause
 5. Do NOT add references to objects that don't exist (pages, codeunits, etc.) unless they are part of the task
 6. Output ONLY the corrected code inside the BEGIN-CODE/END-CODE fences below - no explanations, no markdown, no commentary

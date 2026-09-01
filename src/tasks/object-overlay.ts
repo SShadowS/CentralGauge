@@ -125,6 +125,21 @@ export interface OverlayResult {
  * A returned object that matches nothing in the starter is an ADDITION, not
  * an error: a repair may legitimately introduce a new enum or helper.
  */
+/**
+ * The source a RETRY attempt must be built from: the previous attempt's full
+ * compiled candidate when one was recorded, else its raw output. Under
+ * `diagnose-objects.md` the raw output is only the objects the model changed,
+ * so showing it to the model as "your previous submission" hands it an app
+ * with most objects missing (measured 2026-09-01: 18 of 22 Fable 5.1 retries
+ * died on AL0185 references to tables it could no longer see). Under the
+ * full-app contract the two are identical, so this is a no-op there.
+ */
+export function retrySourceFor(
+  attempt: { candidateCode?: string | undefined; extractedCode: string },
+): string {
+  return attempt.candidateCode ? attempt.candidateCode : attempt.extractedCode;
+}
+
 export function overlayObjects(
   starterSource: string,
   returnedSource: string,

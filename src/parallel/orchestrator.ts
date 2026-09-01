@@ -792,6 +792,7 @@ export class ParallelBenchmarkOrchestrator {
     llmResult: LLMWorkResult,
     workItemId: string,
     options: ParallelBenchmarkOptions,
+    overlayBase?: string,
   ): Promise<{
     compileResult: CompileWorkResult;
     infraRetries: InfraRetryRecord[];
@@ -803,6 +804,7 @@ export class ParallelBenchmarkOrchestrator {
       context,
       attemptNumber,
       llmResponse: llmResult.llmResponse!,
+      ...(overlayBase !== undefined ? { overlayBase } : {}),
       createdAt: new Date(),
     };
 
@@ -926,6 +928,11 @@ export class ParallelBenchmarkOrchestrator {
         llmResult,
         workItemId,
         options,
+        // Attempt N is built on attempt N-1's full compiled candidate, not the
+        // starter: under diagnose-objects.md the model returns only changed
+        // objects, and overlaying those onto the starter would silently revert
+        // every fix the previous attempt made (2026-09-01 root cause).
+        attempts[attempts.length - 1]?.candidateCode,
       );
 
       const attempt = this.createAttempt(
@@ -1161,6 +1168,7 @@ export class ParallelBenchmarkOrchestrator {
       prompt: context.instructions,
       llmResponse: llmResult.llmResponse!,
       extractedCode: llmResult.code || "",
+      candidateCode: compileResult.candidateCode,
       codeLanguage: "al",
       compilationResult: compileResult.compilationResult,
       success,

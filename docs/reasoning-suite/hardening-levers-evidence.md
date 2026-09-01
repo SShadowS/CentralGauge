@@ -1905,3 +1905,53 @@ where the bug is must never shade into withholding what the contract is - the
 first is the experiment, the second is an unfair task. X253 did not become a
 candidate so nothing shipped, but any future batch should diff each description
 against its oracle's test names before screening.
+
+### The retry path was broken for every changed-objects task (fixed 2026-09-01)
+
+Found while reading Fable 5.1's composite run: on 19 of 22 tasks its second
+attempt scored FEWER modules than its first, and 18 of 22 second attempts
+failed to compile on `AL0185` references to tables that exist in the app
+under a slightly different name (`"CG X152 Config Setting"` for the real
+`"CG X152 Setting"`). No model regresses like that on purpose. Two root
+causes, both in the retry path, both specific to `diagnose-objects.md`
+(under the full-app contract the two are invisible, which is why the A/B
+never saw them):
+
+1. **The retry was built from the wrong source.** `ExecutionAttempt.
+   extractedCode` is the model's RAW output, which under the changed-objects
+   contract is only the objects it changed (7 of 24 on X272). The fix prompt
+   showed that partial output as "your previous submission", and the
+   compile side overlaid attempt 2's objects onto the STARTER, so every fix
+   attempt 1 made and attempt 2 did not re-emit silently reverted. Fix: the
+   exact compiled source is now persisted per attempt as `candidateCode`,
+   the retry prompt is built from it (`retrySourceFor`), and attempt N's
+   objects are overlaid onto attempt N-1's candidate (`CompileWorkItem.
+   overlayBase`), never the starter.
+2. **The retry prompt truncated the previous code to 4000 characters.**
+   `buildFixPrompt` was sized for single-object code-gen tasks; a composite
+   is 40-60k characters, so the model saw one or two objects and invented
+   the rest. Two unit tests pinned the 4000 cap as intended behaviour. Fix:
+   the cap is now a 400k-character safety guard (`FIX_PROMPT_PREVIOUS_CODE_
+   CAP`), and the retry restates attempt 1's return contract instead of
+   telling a changed-objects task to resend the whole app.
+
+Verification, Sonnet 5 on X187 and X272 with two attempts:
+
+| task | attempt 1 | attempt 2 returned | attempt 2 result |
+| --- | --- | --- | --- |
+| X187 | compile fail (real model error) | 1 object | compiled, 3 of 4 modules |
+| X272 | 6 of 8 modules, 68/79 | 3 objects | **8 of 8, 79/79** |
+
+Zero hallucinated-name errors on either retry. Unit coverage: overlay
+chaining, `retrySourceFor`, the cap boundary, and the contract wording
+(`tests/unit/tasks/object-overlay.test.ts`, `tests/unit/llm/prompt-building.test.ts`).
+
+**Consequence for the numbers in this file.** Every composite figure that
+depends on attempt 2 - pass@2, `repair_rate`, "fixes on second try" - recorded
+BEFORE this fix is invalid for `diagnose-objects.md` tasks and must be
+re-measured. The 22 gated tasks are unaffected: the gate is attempt-1 only.
+Attempt-1 figures (bugs found, tests passed, pass@1) stand. One evidence
+correction as well: an earlier note in this session cited the recorded
+`attempt.prompt` as proof the model saw no objects on retry. That field is
+`context.instructions`, not the sent prompt, so it proved nothing; the
+hallucinated table names and a read of the code path are the evidence.

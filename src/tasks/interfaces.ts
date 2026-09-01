@@ -352,6 +352,15 @@ export interface ExecutionAttempt {
   prompt: string;
   llmResponse: LLMResponse;
   extractedCode: string;
+  /**
+   * The exact source that was compiled for this attempt. Under
+   * `diagnose-objects.md` this is the overlay of `extractedCode` onto the
+   * attempt's base (starter for attempt 1, the previous attempt's
+   * `candidateCode` after that); under the full-app contract it equals
+   * `extractedCode`. Retries are built from THIS, never from `extractedCode`
+   * - see `retrySourceFor`. Absent when no compile phase was reached.
+   */
+  candidateCode?: string | undefined;
   codeLanguage: "al" | "diff";
 
   // Compilation/test results

@@ -197,6 +197,15 @@ export interface CompileWorkItem {
   /** LLM response for metrics */
   llmResponse: LLMResponse;
 
+  /**
+   * For `diagnose-objects.md` tasks on attempt >= 2: the previous attempt's
+   * full compiled candidate. The returned objects are overlaid onto THIS, so
+   * a fix the previous attempt made and this one did not re-emit survives.
+   * Absent on attempt 1 (and ignored under the full-app contract), in which
+   * case the overlay base is the task's starter.
+   */
+  overlayBase?: string | undefined;
+
   /** When queued */
   createdAt: Date;
 }
@@ -247,6 +256,13 @@ export interface CompileWorkResult {
 
   /** Duration of just the test execution in ms (only if tests ran) */
   testDuration?: number;
+
+  /**
+   * The exact source that was compiled - the overlay result under
+   * `diagnose-objects.md`, the raw code otherwise. Persisted onto the
+   * attempt as `candidateCode` so the next attempt can build on it.
+   */
+  candidateCode?: string | undefined;
 
   /**
    * Present when the work was tagged for quarantine (an alert raised on

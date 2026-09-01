@@ -32,6 +32,7 @@ import {
   buildGenerationPrompt,
   DEFAULT_TEMPLATE_DIR,
 } from "../llm/prompt-building.ts";
+import { retrySourceFor, usesObjectOverlay } from "../tasks/object-overlay.ts";
 import { loadStarterCode, starterDirForTask } from "../tasks/starter-code.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { PromptInjectionResolver } from "../prompts/mod.ts";
@@ -360,7 +361,7 @@ export class LLMWorkPool {
       const lastAttempt =
         item.previousAttempts[item.previousAttempts.length - 1];
       if (lastAttempt) {
-        context.previousCode = lastAttempt.extractedCode;
+        context.previousCode = retrySourceFor(lastAttempt);
         context.errors = lastAttempt.failureReasons;
       }
     }
@@ -430,7 +431,7 @@ export class LLMWorkPool {
       } else {
         const errors = this.extractErrors(previousAttempt);
         return adapter.generateFixStream(
-          previousAttempt.extractedCode,
+          retrySourceFor(previousAttempt),
           errors,
           req,
           ctx,
@@ -543,8 +544,13 @@ export class LLMWorkPool {
       const basePrompt = buildFixPrompt({
         attemptNumber: item.attemptNumber,
         originalInstructions: item.context.instructions,
-        previousCode: previousAttempt.extractedCode,
+        previousCode: retrySourceFor(previousAttempt),
         errors,
+        // Restate attempt 1's return contract, so a changed-objects task is
+        // not told to resend the whole app on retry.
+        contract: usesObjectOverlay(item.taskManifest)
+          ? "changed-objects"
+          : "full-app",
       });
       applied = PromptInjectionResolver.resolveAndApply(
         basePrompt,

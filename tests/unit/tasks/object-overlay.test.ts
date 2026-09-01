@@ -4,6 +4,7 @@ import {
   checkCompleteness,
   objectKey,
   overlayObjects,
+  retrySourceFor,
   splitAlMembers,
   splitAlObjects,
 } from "../../../src/tasks/object-overlay.ts";
@@ -270,4 +271,67 @@ Deno.test("checkCompleteness", async (t) => {
     const small = 'enum 70003 "CG X001 Kind"\n{\n    value(0; Open) { }\n}';
     assertEquals(checkCompleteness(small, small).shrunkObjects, []);
   });
+});
+
+// Attempt-2 base regression (2026-09-01): under diagnose-objects.md the model
+// returns only the objects it changed. Attempt 2 must be built ON TOP OF
+// attempt 1's full compiled candidate, not the starter and not attempt 1's
+// partial raw output - otherwise every fix attempt 1 made and attempt 2 did
+// not re-emit silently reverts, and the retry prompt shows the model an app
+// with most objects missing (18 of 22 Fable 5.1 retries died on AL0185
+// references to tables it could no longer see).
+Deno.test("attempt chaining under the changed-objects contract", async (t) => {
+  const ATTEMPT_1 = `codeunit 70002 "CG X001 Engine"
+{
+    procedure Post(): Decimal
+    begin
+        exit(2); // fixed in attempt 1
+    end;
+}`;
+  const ATTEMPT_2 = `enum 70003 "CG X001 Kind"
+{
+    value(0; Open) { }
+    value(1; Closed) { } // fixed in attempt 2
+}`;
+
+  await t.step(
+    "overlaying attempt 2 onto attempt 1's candidate keeps attempt 1's fix",
+    () => {
+      const candidate1 = overlayObjects(STARTER, ATTEMPT_1).source;
+      const candidate2 = overlayObjects(candidate1, ATTEMPT_2).source;
+      assertEquals(candidate2.includes("exit(2); // fixed in attempt 1"), true);
+      assertEquals(candidate2.includes("value(1; Closed)"), true);
+      assertEquals(keys(splitAlObjects(candidate2)), [
+        "table:cg x001 ledger",
+        "codeunit:cg x001 engine",
+        "enum:cg x001 kind",
+      ]);
+    },
+  );
+
+  await t.step(
+    "overlaying attempt 2 onto the STARTER loses attempt 1's fix (the bug)",
+    () => {
+      const wrong = overlayObjects(STARTER, ATTEMPT_2).source;
+      assertEquals(wrong.includes("exit(2); // fixed in attempt 1"), false);
+    },
+  );
+
+  await t.step("retrySourceFor prefers the compiled candidate", () => {
+    assertEquals(
+      retrySourceFor({ candidateCode: "full app", extractedCode: "partial" }),
+      "full app",
+    );
+  });
+
+  await t.step(
+    "retrySourceFor falls back to the raw output when no candidate was compiled",
+    () => {
+      assertEquals(retrySourceFor({ extractedCode: "partial" }), "partial");
+      assertEquals(
+        retrySourceFor({ candidateCode: "", extractedCode: "partial" }),
+        "partial",
+      );
+    },
+  );
 });

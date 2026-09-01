@@ -645,8 +645,11 @@ export class CompileQueue implements CompileWorkQueue {
 
     // Create temporary project
     let projectDir: string | undefined;
+    let candidateCode: string | undefined;
     try {
-      projectDir = await this.createTempProject(entry.item);
+      ({ projectDir, candidateCode } = await this.createTempProject(
+        entry.item,
+      ));
     } catch (error) {
       releaseOnce();
       this.recordCompleted(
@@ -670,6 +673,9 @@ export class CompileQueue implements CompileWorkQueue {
         projectDir,
         startTime,
       );
+      // The exact source that was compiled, so the next attempt can build on
+      // it instead of the starter (see CompileWorkItem.overlayBase).
+      compilePhaseResult.candidateCode = candidateCode;
       compileDurationMs = Date.now() - compileStart;
       releaseOnce(); // Free compile slot immediately
 
@@ -1072,7 +1078,9 @@ export class CompileQueue implements CompileWorkQueue {
   /**
    * Create a temporary AL project for compilation
    */
-  private async createTempProject(item: CompileWorkItem): Promise<string> {
+  private async createTempProject(
+    item: CompileWorkItem,
+  ): Promise<{ projectDir: string; candidateCode: string }> {
     const tempDir = await Deno.makeTempDir({ prefix: "cg_compile_" });
 
     // Check if we need test toolkit dependencies
@@ -1160,9 +1168,14 @@ export class CompileQueue implements CompileWorkQueue {
             `but no starter code was found at ${starterDir}`,
         );
       }
-      const overlay = overlayObjects(starter, item.code);
+      // Attempt 1 overlays onto the starter. Attempt N >= 2 overlays onto
+      // attempt N-1's full compiled candidate (`overlayBase`), so a fix the
+      // previous attempt made and this one did not re-emit is carried, not
+      // silently reverted to the starter's buggy version.
+      const overlay = overlayObjects(item.overlayBase ?? starter, item.code);
       candidateCode = overlay.source;
-      log.debug("Overlaid changed objects onto starter", {
+      log.debug("Overlaid changed objects onto base", {
+        base: item.overlayBase !== undefined ? "previous-candidate" : "starter",
         taskId: item.context.manifest.id,
         replaced: overlay.replaced.length,
         added: overlay.added.length,
@@ -1196,7 +1209,7 @@ export class CompileQueue implements CompileWorkQueue {
       }
     }
 
-    return tempDir;
+    return { projectDir: tempDir, candidateCode };
   }
 
   /**

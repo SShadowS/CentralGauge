@@ -111,6 +111,13 @@ while X185's donors are all 30/30-easy and it resists) and **defect quietness**
 
 ## Gotchas that each cost real time
 
+- **Attempt 2 was broken for every changed-objects task until 2026-09-01.**
+  The retry was built from the model's partial raw output, truncated to 4000
+  characters, and overlaid onto the STARTER - so attempt 2 saw one or two
+  objects, hallucinated the rest, and reverted attempt 1's fixes. Fixed
+  (`candidateCode`, `overlayBase`, `retrySourceFor`, `FIX_PROMPT_PREVIOUS_
+  CODE_CAP`). Any composite pass@2 / repair figure recorded before that date
+  is invalid; attempt-1 figures and the gate are unaffected.
 - A donor oracle may reference its OWN codeunit by name to bind a manual
   subscriber; the merge renames the codeunit and it stops compiling (AL0185,
   X067 inside X183). The assembler rewrites these - do not remove that.
