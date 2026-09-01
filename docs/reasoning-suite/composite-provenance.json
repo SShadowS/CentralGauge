@@ -1,0 +1,1067 @@
+{
+ "CG-AL-X181": {
+  "donors": [
+   "CG-AL-X102",
+   "CG-AL-X079",
+   "CG-AL-X085",
+   "CG-AL-X136"
+  ],
+  "objs": 10,
+  "sites": 4
+ },
+ "CG-AL-X182": {
+  "donors": [
+   "CG-AL-X131",
+   "CG-AL-X116",
+   "CG-AL-X087",
+   "CG-AL-X128"
+  ],
+  "objs": 11,
+  "sites": 4
+ },
+ "CG-AL-X183": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X126",
+   "CG-AL-X118",
+   "CG-AL-X137"
+  ],
+  "objs": 10,
+  "sites": 4
+ },
+ "CG-AL-X184": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X132",
+   "CG-AL-X093",
+   "CG-AL-X107"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X185": {
+  "donors": [
+   "CG-AL-X092",
+   "CG-AL-X076",
+   "CG-AL-X114",
+   "CG-AL-X162"
+  ],
+  "objs": 10,
+  "sites": 4
+ },
+ "CG-AL-X186": {
+  "donors": [
+   "CG-AL-X157",
+   "CG-AL-X081",
+   "CG-AL-X127",
+   "CG-AL-X070"
+  ],
+  "objs": 15,
+  "sites": 4
+ },
+ "CG-AL-X187": {
+  "donors": [
+   "CG-AL-X115",
+   "CG-AL-X140",
+   "CG-AL-X104",
+   "CG-AL-X163"
+  ],
+  "objs": 11,
+  "sites": 4
+ },
+ "CG-AL-X188": {
+  "donors": [
+   "CG-AL-X130",
+   "CG-AL-X083",
+   "CG-AL-X106",
+   "CG-AL-X110"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X189": {
+  "donors": [
+   "CG-AL-X152",
+   "CG-AL-X077",
+   "CG-AL-X150",
+   "CG-AL-X154"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X190": {
+  "donors": [
+   "CG-AL-X072",
+   "CG-AL-X151",
+   "CG-AL-X117",
+   "CG-AL-X065"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X191": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X085",
+   "CG-AL-X128",
+   "CG-AL-X156"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X192": {
+  "donors": [
+   "CG-AL-X152",
+   "CG-AL-X132",
+   "CG-AL-X078",
+   "CG-AL-X158"
+  ],
+  "objs": 10,
+  "sites": 4
+ },
+ "CG-AL-X193": {
+  "donors": [
+   "CG-AL-X130",
+   "CG-AL-X117",
+   "CG-AL-X087",
+   "CG-AL-X068"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X194": {
+  "donors": [
+   "CG-AL-X083",
+   "CG-AL-X077",
+   "CG-AL-X070",
+   "CG-AL-X074"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X195": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X081",
+   "CG-AL-X101",
+   "CG-AL-X075"
+  ],
+  "objs": 14,
+  "sites": 4
+ },
+ "CG-AL-X196": {
+  "donors": [
+   "CG-AL-X157",
+   "CG-AL-X137",
+   "CG-AL-X107",
+   "CG-AL-X086"
+  ],
+  "objs": 15,
+  "sites": 4
+ },
+ "CG-AL-X197": {
+  "donors": [
+   "CG-AL-X126",
+   "CG-AL-X151",
+   "CG-AL-X110",
+   "CG-AL-X105"
+  ],
+  "objs": 11,
+  "sites": 4
+ },
+ "CG-AL-X198": {
+  "donors": [
+   "CG-AL-X072",
+   "CG-AL-X136",
+   "CG-AL-X103",
+   "CG-AL-X135"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X199": {
+  "donors": [
+   "CG-AL-X126",
+   "CG-AL-X140",
+   "CG-AL-X154",
+   "CG-AL-X157"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X200": {
+  "donors": [
+   "CG-AL-X079",
+   "CG-AL-X081",
+   "CG-AL-X116",
+   "CG-AL-X157"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X201": {
+  "donors": [
+   "CG-AL-X078",
+   "CG-AL-X106",
+   "CG-AL-X117",
+   "CG-AL-X130"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X202": {
+  "donors": [
+   "CG-AL-X104",
+   "CG-AL-X116",
+   "CG-AL-X118",
+   "CG-AL-X127"
+  ],
+  "objs": 11,
+  "sites": 4
+ },
+ "CG-AL-X203": {
+  "donors": [
+   "CG-AL-X072",
+   "CG-AL-X116",
+   "CG-AL-X157",
+   "CG-AL-X162"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X204": {
+  "donors": [
+   "CG-AL-X087",
+   "CG-AL-X110",
+   "CG-AL-X117",
+   "CG-AL-X148"
+  ],
+  "objs": 16,
+  "sites": 4
+ },
+ "CG-AL-X205": {
+  "donors": [
+   "CG-AL-X107",
+   "CG-AL-X116",
+   "CG-AL-X150",
+   "CG-AL-X162"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X206": {
+  "donors": [
+   "CG-AL-X079",
+   "CG-AL-X081",
+   "CG-AL-X110",
+   "CG-AL-X157"
+  ],
+  "objs": 15,
+  "sites": 4
+ },
+ "CG-AL-X207": {
+  "donors": [
+   "CG-AL-X081",
+   "CG-AL-X085",
+   "CG-AL-X149",
+   "CG-AL-X157"
+  ],
+  "objs": 15,
+  "sites": 4
+ },
+ "CG-AL-X208": {
+  "donors": [
+   "CG-AL-X078",
+   "CG-AL-X083",
+   "CG-AL-X131",
+   "CG-AL-X154"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X209": {
+  "donors": [
+   "CG-AL-X073",
+   "CG-AL-X117",
+   "CG-AL-X131",
+   "CG-AL-X163"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X210": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X076",
+   "CG-AL-X115",
+   "CG-AL-X154"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X211": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X115",
+   "CG-AL-X150",
+   "CG-AL-X162"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X212": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X072",
+   "CG-AL-X083",
+   "CG-AL-X163"
+  ],
+  "objs": 14,
+  "sites": 4
+ },
+ "CG-AL-X213": {
+  "donors": [
+   "CG-AL-X093",
+   "CG-AL-X126",
+   "CG-AL-X130",
+   "CG-AL-X131"
+  ],
+  "objs": 8,
+  "sites": 4
+ },
+ "CG-AL-X214": {
+  "donors": [
+   "CG-AL-X106",
+   "CG-AL-X110",
+   "CG-AL-X127",
+   "CG-AL-X140"
+  ],
+  "objs": 14,
+  "sites": 4
+ },
+ "CG-AL-X215": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X083",
+   "CG-AL-X106",
+   "CG-AL-X128"
+  ],
+  "objs": 14,
+  "sites": 4
+ },
+ "CG-AL-X216": {
+  "donors": [
+   "CG-AL-X116",
+   "CG-AL-X128",
+   "CG-AL-X131",
+   "CG-AL-X149"
+  ],
+  "objs": 11,
+  "sites": 4
+ },
+ "CG-AL-X217": {
+  "donors": [
+   "CG-AL-X065",
+   "CG-AL-X110",
+   "CG-AL-X117",
+   "CG-AL-X130"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X218": {
+  "donors": [
+   "CG-AL-X081",
+   "CG-AL-X121",
+   "CG-AL-X140",
+   "CG-AL-X151"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X219": {
+  "donors": [
+   "CG-AL-X079",
+   "CG-AL-X083",
+   "CG-AL-X085",
+   "CG-AL-X121"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X220": {
+  "donors": [
+   "CG-AL-X068",
+   "CG-AL-X072",
+   "CG-AL-X079",
+   "CG-AL-X117"
+  ],
+  "objs": 14,
+  "sites": 4
+ },
+ "CG-AL-X221": {
+  "donors": [
+   "CG-AL-X104",
+   "CG-AL-X107",
+   "CG-AL-X118",
+   "CG-AL-X127"
+  ],
+  "objs": 14,
+  "sites": 4
+ },
+ "CG-AL-X222": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X077",
+   "CG-AL-X085",
+   "CG-AL-X092"
+  ],
+  "objs": 9,
+  "sites": 4
+ },
+ "CG-AL-X223": {
+  "donors": [
+   "CG-AL-X070",
+   "CG-AL-X093",
+   "CG-AL-X150",
+   "CG-AL-X162"
+  ],
+  "objs": 15,
+  "sites": 4
+ },
+ "CG-AL-X224": {
+  "donors": [
+   "CG-AL-X092",
+   "CG-AL-X118",
+   "CG-AL-X132",
+   "CG-AL-X155"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X225": {
+  "donors": [
+   "CG-AL-X083",
+   "CG-AL-X106",
+   "CG-AL-X115",
+   "CG-AL-X127"
+  ],
+  "objs": 11,
+  "sites": 4
+ },
+ "CG-AL-X226": {
+  "donors": [
+   "CG-AL-X087",
+   "CG-AL-X110",
+   "CG-AL-X127",
+   "CG-AL-X140"
+  ],
+  "objs": 14,
+  "sites": 4
+ },
+ "CG-AL-X227": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X077",
+   "CG-AL-X093",
+   "CG-AL-X128"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X228": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X081",
+   "CG-AL-X092",
+   "CG-AL-X132"
+  ],
+  "objs": 10,
+  "sites": 4
+ },
+ "CG-AL-X229": {
+  "donors": [
+   "CG-AL-X093",
+   "CG-AL-X102",
+   "CG-AL-X118",
+   "CG-AL-X135"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X230": {
+  "donors": [
+   "CG-AL-X079",
+   "CG-AL-X093",
+   "CG-AL-X107",
+   "CG-AL-X139"
+  ],
+  "objs": 15,
+  "sites": 4
+ },
+ "CG-AL-X231": {
+  "donors": [
+   "CG-AL-X092",
+   "CG-AL-X104",
+   "CG-AL-X118",
+   "CG-AL-X162"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X232": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X075",
+   "CG-AL-X092",
+   "CG-AL-X150"
+  ],
+  "objs": 11,
+  "sites": 4
+ },
+ "CG-AL-X233": {
+  "donors": [
+   "CG-AL-X070",
+   "CG-AL-X103",
+   "CG-AL-X107",
+   "CG-AL-X150"
+  ],
+  "objs": 15,
+  "sites": 4
+ },
+ "CG-AL-X234": {
+  "donors": [
+   "CG-AL-X072",
+   "CG-AL-X076",
+   "CG-AL-X140",
+   "CG-AL-X163"
+  ],
+  "objs": 14,
+  "sites": 4
+ },
+ "CG-AL-X235": {
+  "donors": [
+   "CG-AL-X068",
+   "CG-AL-X072",
+   "CG-AL-X131",
+   "CG-AL-X151"
+  ],
+  "objs": 12,
+  "sites": 4
+ },
+ "CG-AL-X236": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X104",
+   "CG-AL-X163",
+   "CG-AL-X172"
+  ],
+  "objs": 13,
+  "sites": 4
+ },
+ "CG-AL-X237": {
+  "donors": [
+   "CG-AL-X070",
+   "CG-AL-X087",
+   "CG-AL-X128",
+   "CG-AL-X170"
+  ],
+  "objs": 16,
+  "sites": 4
+ },
+ "CG-AL-X238": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X104",
+   "CG-AL-X146",
+   "CG-AL-X151"
+  ],
+  "objs": 11,
+  "sites": 4
+ },
+ "CG-AL-X239": {
+  "donors": [
+   "CG-AL-X128",
+   "CG-AL-X137",
+   "CG-AL-X140",
+   "CG-AL-X147",
+   "CG-AL-X157"
+  ],
+  "objs": 19,
+  "sites": 5
+ },
+ "CG-AL-X240": {
+  "donors": [
+   "CG-AL-X085",
+   "CG-AL-X116",
+   "CG-AL-X130",
+   "CG-AL-X150",
+   "CG-AL-X157"
+  ],
+  "objs": 14,
+  "sites": 5
+ },
+ "CG-AL-X241": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X079",
+   "CG-AL-X092",
+   "CG-AL-X148",
+   "CG-AL-X152"
+  ],
+  "objs": 13,
+  "sites": 5
+ },
+ "CG-AL-X242": {
+  "donors": [
+   "CG-AL-X081",
+   "CG-AL-X117",
+   "CG-AL-X120",
+   "CG-AL-X132",
+   "CG-AL-X137"
+  ],
+  "objs": 15,
+  "sites": 5
+ },
+ "CG-AL-X243": {
+  "donors": [
+   "CG-AL-X079",
+   "CG-AL-X081",
+   "CG-AL-X110",
+   "CG-AL-X135",
+   "CG-AL-X162"
+  ],
+  "objs": 19,
+  "sites": 5
+ },
+ "CG-AL-X244": {
+  "donors": [
+   "CG-AL-X073",
+   "CG-AL-X081",
+   "CG-AL-X083",
+   "CG-AL-X140",
+   "CG-AL-X151"
+  ],
+  "objs": 16,
+  "sites": 5
+ },
+ "CG-AL-X245": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X106",
+   "CG-AL-X116",
+   "CG-AL-X118",
+   "CG-AL-X157"
+  ],
+  "objs": 16,
+  "sites": 5
+ },
+ "CG-AL-X246": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X102",
+   "CG-AL-X115",
+   "CG-AL-X118",
+   "CG-AL-X157"
+  ],
+  "objs": 13,
+  "sites": 5
+ },
+ "CG-AL-X247": {
+  "donors": [
+   "CG-AL-X093",
+   "CG-AL-X148",
+   "CG-AL-X150",
+   "CG-AL-X157",
+   "CG-AL-X163"
+  ],
+  "objs": 20,
+  "sites": 5
+ },
+ "CG-AL-X248": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X081",
+   "CG-AL-X116",
+   "CG-AL-X118",
+   "CG-AL-X157"
+  ],
+  "objs": 16,
+  "sites": 5
+ },
+ "CG-AL-X249": {
+  "donors": [
+   "CG-AL-X106",
+   "CG-AL-X114",
+   "CG-AL-X140",
+   "CG-AL-X152",
+   "CG-AL-X157"
+  ],
+  "objs": 15,
+  "sites": 5
+ },
+ "CG-AL-X250": {
+  "donors": [
+   "CG-AL-X107",
+   "CG-AL-X110",
+   "CG-AL-X116",
+   "CG-AL-X118",
+   "CG-AL-X157"
+  ],
+  "objs": 17,
+  "sites": 5
+ },
+ "CG-AL-X251": {
+  "donors": [
+   "CG-AL-X073",
+   "CG-AL-X079",
+   "CG-AL-X116",
+   "CG-AL-X128",
+   "CG-AL-X157"
+  ],
+  "objs": 16,
+  "sites": 5
+ },
+ "CG-AL-X252": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X117",
+   "CG-AL-X120",
+   "CG-AL-X140",
+   "CG-AL-X162"
+  ],
+  "objs": 15,
+  "sites": 5
+ },
+ "CG-AL-X253": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X102",
+   "CG-AL-X116",
+   "CG-AL-X120",
+   "CG-AL-X140"
+  ],
+  "objs": 11,
+  "sites": 5
+ },
+ "CG-AL-X254": {
+  "donors": [
+   "CG-AL-X072",
+   "CG-AL-X076",
+   "CG-AL-X083",
+   "CG-AL-X118",
+   "CG-AL-X132",
+   "CG-AL-X160"
+  ],
+  "objs": 20,
+  "sites": 6
+ },
+ "CG-AL-X255": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X081",
+   "CG-AL-X083",
+   "CG-AL-X103",
+   "CG-AL-X104",
+   "CG-AL-X162"
+  ],
+  "objs": 20,
+  "sites": 6
+ },
+ "CG-AL-X256": {
+  "donors": [
+   "CG-AL-X092",
+   "CG-AL-X104",
+   "CG-AL-X106",
+   "CG-AL-X114",
+   "CG-AL-X150",
+   "CG-AL-X154"
+  ],
+  "objs": 19,
+  "sites": 6
+ },
+ "CG-AL-X257": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X086",
+   "CG-AL-X092",
+   "CG-AL-X130",
+   "CG-AL-X131",
+   "CG-AL-X140"
+  ],
+  "objs": 14,
+  "sites": 6
+ },
+ "CG-AL-X258": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X079",
+   "CG-AL-X085",
+   "CG-AL-X117",
+   "CG-AL-X132",
+   "CG-AL-X156"
+  ],
+  "objs": 16,
+  "sites": 6
+ },
+ "CG-AL-X259": {
+  "donors": [
+   "CG-AL-X070",
+   "CG-AL-X093",
+   "CG-AL-X107",
+   "CG-AL-X130",
+   "CG-AL-X136",
+   "CG-AL-X150"
+  ],
+  "objs": 19,
+  "sites": 6
+ },
+ "CG-AL-X260": {
+  "donors": [
+   "CG-AL-X087",
+   "CG-AL-X088",
+   "CG-AL-X092",
+   "CG-AL-X102",
+   "CG-AL-X150",
+   "CG-AL-X152"
+  ],
+  "objs": 16,
+  "sites": 6
+ },
+ "CG-AL-X261": {
+  "donors": [
+   "CG-AL-X072",
+   "CG-AL-X079",
+   "CG-AL-X101",
+   "CG-AL-X117",
+   "CG-AL-X128",
+   "CG-AL-X131"
+  ],
+  "objs": 19,
+  "sites": 6
+ },
+ "CG-AL-X262": {
+  "donors": [
+   "CG-AL-X072",
+   "CG-AL-X104",
+   "CG-AL-X116",
+   "CG-AL-X148",
+   "CG-AL-X150",
+   "CG-AL-X163"
+  ],
+  "objs": 21,
+  "sites": 6
+ },
+ "CG-AL-X263": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X092",
+   "CG-AL-X107",
+   "CG-AL-X126",
+   "CG-AL-X127",
+   "CG-AL-X150"
+  ],
+  "objs": 16,
+  "sites": 6
+ },
+ "CG-AL-X264": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X067",
+   "CG-AL-X074",
+   "CG-AL-X076",
+   "CG-AL-X092",
+   "CG-AL-X128"
+  ],
+  "objs": 17,
+  "sites": 6
+ },
+ "CG-AL-X265": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X093",
+   "CG-AL-X107",
+   "CG-AL-X136",
+   "CG-AL-X137",
+   "CG-AL-X151"
+  ],
+  "objs": 17,
+  "sites": 6
+ },
+ "CG-AL-X266": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X086",
+   "CG-AL-X092",
+   "CG-AL-X107",
+   "CG-AL-X110",
+   "CG-AL-X128"
+  ],
+  "objs": 20,
+  "sites": 6
+ },
+ "CG-AL-X267": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X087",
+   "CG-AL-X093",
+   "CG-AL-X102",
+   "CG-AL-X137",
+   "CG-AL-X170"
+  ],
+  "objs": 19,
+  "sites": 6
+ },
+ "CG-AL-X268": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X070",
+   "CG-AL-X087",
+   "CG-AL-X114",
+   "CG-AL-X117",
+   "CG-AL-X127"
+  ],
+  "objs": 19,
+  "sites": 6
+ },
+ "CG-AL-X269": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X070",
+   "CG-AL-X107",
+   "CG-AL-X116",
+   "CG-AL-X128",
+   "CG-AL-X150",
+   "CG-AL-X157",
+   "CG-AL-X158"
+  ],
+  "objs": 27,
+  "sites": 8
+ },
+ "CG-AL-X270": {
+  "donors": [
+   "CG-AL-X073",
+   "CG-AL-X076",
+   "CG-AL-X083",
+   "CG-AL-X087",
+   "CG-AL-X102",
+   "CG-AL-X137",
+   "CG-AL-X140",
+   "CG-AL-X157"
+  ],
+  "objs": 26,
+  "sites": 8
+ },
+ "CG-AL-X271": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X079",
+   "CG-AL-X085",
+   "CG-AL-X087",
+   "CG-AL-X092",
+   "CG-AL-X151",
+   "CG-AL-X157",
+   "CG-AL-X170"
+  ],
+  "objs": 23,
+  "sites": 8
+ },
+ "CG-AL-X272": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X076",
+   "CG-AL-X105",
+   "CG-AL-X107",
+   "CG-AL-X116",
+   "CG-AL-X151",
+   "CG-AL-X152",
+   "CG-AL-X157"
+  ],
+  "objs": 23,
+  "sites": 8
+ },
+ "CG-AL-X273": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X092",
+   "CG-AL-X101",
+   "CG-AL-X102",
+   "CG-AL-X118",
+   "CG-AL-X131",
+   "CG-AL-X158",
+   "CG-AL-X172"
+  ],
+  "objs": 21,
+  "sites": 8
+ },
+ "CG-AL-X274": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X087",
+   "CG-AL-X092",
+   "CG-AL-X103",
+   "CG-AL-X121",
+   "CG-AL-X127",
+   "CG-AL-X140",
+   "CG-AL-X162"
+  ],
+  "objs": 24,
+  "sites": 8
+ },
+ "CG-AL-X275": {
+  "donors": [
+   "CG-AL-X081",
+   "CG-AL-X092",
+   "CG-AL-X117",
+   "CG-AL-X121",
+   "CG-AL-X129",
+   "CG-AL-X130",
+   "CG-AL-X131",
+   "CG-AL-X140"
+  ],
+  "objs": 21,
+  "sites": 8
+ },
+ "CG-AL-X276": {
+  "donors": [
+   "CG-AL-X066",
+   "CG-AL-X075",
+   "CG-AL-X107",
+   "CG-AL-X110",
+   "CG-AL-X116",
+   "CG-AL-X148",
+   "CG-AL-X151",
+   "CG-AL-X163"
+  ],
+  "objs": 27,
+  "sites": 8
+ },
+ "CG-AL-X277": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X079",
+   "CG-AL-X083",
+   "CG-AL-X085",
+   "CG-AL-X120",
+   "CG-AL-X127",
+   "CG-AL-X149",
+   "CG-AL-X158"
+  ],
+  "objs": 24,
+  "sites": 8
+ },
+ "CG-AL-X278": {
+  "donors": [
+   "CG-AL-X070",
+   "CG-AL-X075",
+   "CG-AL-X081",
+   "CG-AL-X093",
+   "CG-AL-X114",
+   "CG-AL-X140",
+   "CG-AL-X160",
+   "CG-AL-X163"
+  ],
+  "objs": 28,
+  "sites": 8
+ }
+}
