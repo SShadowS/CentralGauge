@@ -290,3 +290,14 @@ Three practical consequences:
 Full counts, cost model and the assembler's one real gotcha are in
 `hardening-levers-evidence.md`, section "Multi-defect composites with a withheld
 symptom".
+
+## Addendum 2026-09-02: the composite lever is six donors, not the site count
+
+Batch 6 (ten 8-site composites, donor pool stripped of earlier donor sets)
+gated 1 of 10 where the 09-01 batch gated 6 of 10, with the models measured
+unchanged on a control. Over every composite screened, 0 of 70 without one of
+X076, X074, X140, X170, X075 or X114 gated; 22 of 38 with one did, at every
+site count. The 4 -> 8 site curve was the chance of drawing one of them. Seed
+composites with `composite-plan.py --require`, build at five sites, and treat
+the gated composites as six knowledge gaps in many wrappers. Evidence in
+`hardening-levers-evidence.md`, "The dose-response was a confound".

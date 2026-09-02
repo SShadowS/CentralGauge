@@ -11,7 +11,7 @@ scratch/CG-AL-X175/correct/CG-AL-X175.Test.al):
 """
 import os, re, json, sys, shutil
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 def read(p):
     with open(p, encoding='utf-8-sig') as f:

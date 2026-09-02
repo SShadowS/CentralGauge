@@ -1063,5 +1063,145 @@
   ],
   "objs": 28,
   "sites": 8
+ },
+ "CG-AL-X279": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X087",
+   "CG-AL-X114",
+   "CG-AL-X115",
+   "CG-AL-X116",
+   "CG-AL-X140",
+   "CG-AL-X157",
+   "CG-AL-X162"
+  ],
+  "objs": 22,
+  "sites": 8
+ },
+ "CG-AL-X280": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X068",
+   "CG-AL-X070",
+   "CG-AL-X115",
+   "CG-AL-X116",
+   "CG-AL-X118",
+   "CG-AL-X130",
+   "CG-AL-X157"
+  ],
+  "objs": 22,
+  "sites": 8
+ },
+ "CG-AL-X281": {
+  "donors": [
+   "CG-AL-X070",
+   "CG-AL-X079",
+   "CG-AL-X081",
+   "CG-AL-X093",
+   "CG-AL-X120",
+   "CG-AL-X156",
+   "CG-AL-X157",
+   "CG-AL-X162"
+  ],
+  "objs": 28,
+  "sites": 8
+ },
+ "CG-AL-X282": {
+  "donors": [
+   "CG-AL-X081",
+   "CG-AL-X104",
+   "CG-AL-X117",
+   "CG-AL-X118",
+   "CG-AL-X131",
+   "CG-AL-X156",
+   "CG-AL-X157",
+   "CG-AL-X163"
+  ],
+  "objs": 27,
+  "sites": 8
+ },
+ "CG-AL-X283": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X079",
+   "CG-AL-X087",
+   "CG-AL-X116",
+   "CG-AL-X127",
+   "CG-AL-X147",
+   "CG-AL-X152",
+   "CG-AL-X157"
+  ],
+  "objs": 25,
+  "sites": 8
+ },
+ "CG-AL-X284": {
+  "donors": [
+   "CG-AL-X083",
+   "CG-AL-X092",
+   "CG-AL-X102",
+   "CG-AL-X103",
+   "CG-AL-X107",
+   "CG-AL-X118",
+   "CG-AL-X127",
+   "CG-AL-X137"
+  ],
+  "objs": 23,
+  "sites": 8
+ },
+ "CG-AL-X285": {
+  "donors": [
+   "CG-AL-X070",
+   "CG-AL-X105",
+   "CG-AL-X107",
+   "CG-AL-X117",
+   "CG-AL-X132",
+   "CG-AL-X150",
+   "CG-AL-X154",
+   "CG-AL-X160"
+  ],
+  "objs": 30,
+  "sites": 8
+ },
+ "CG-AL-X286": {
+  "donors": [
+   "CG-AL-X083",
+   "CG-AL-X087",
+   "CG-AL-X104",
+   "CG-AL-X120",
+   "CG-AL-X140",
+   "CG-AL-X151",
+   "CG-AL-X156",
+   "CG-AL-X172"
+  ],
+  "objs": 25,
+  "sites": 8
+ },
+ "CG-AL-X287": {
+  "donors": [
+   "CG-AL-X070",
+   "CG-AL-X072",
+   "CG-AL-X083",
+   "CG-AL-X105",
+   "CG-AL-X128",
+   "CG-AL-X130",
+   "CG-AL-X150",
+   "CG-AL-X155"
+  ],
+  "objs": 30,
+  "sites": 8
+ },
+ "CG-AL-X288": {
+  "donors": [
+   "CG-AL-X070",
+   "CG-AL-X079",
+   "CG-AL-X081",
+   "CG-AL-X083",
+   "CG-AL-X102",
+   "CG-AL-X106",
+   "CG-AL-X128",
+   "CG-AL-X129"
+  ],
+  "objs": 27,
+  "sites": 8
  }
 }

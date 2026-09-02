@@ -46,17 +46,31 @@ def load_pool(inventory):
     return pool, info
 
 
-def plan(pool, info, sites, count, start, prev, max_reuse, seed, obj_lo, obj_hi):
+def plan(pool, info, sites, count, start, prev, max_reuse, seed, obj_lo, obj_hi,
+         require=()):
     by = defaultdict(list)
     for d in pool:
         by[info[d]["category"]].append(d)
     cats = sorted(by, key=lambda k: -len(by[k]))
     random.seed(seed)
     use, groups = Counter(), []
+    required = [d for d in require if d in pool]
+    missing = [d for d in require if d not in pool]
+    if missing:
+        raise SystemExit(f"--require donors not in the eligible pool: {missing}")
     for _ in range(400000):
         if len(groups) >= count:
             break
         picks = []
+        # Measured 2026-09-02 (hardening-levers-evidence.md, "The dose-response
+        # was a confound"): 0 of 70 composites without one of the high-survival
+        # donors gated at ANY site count; 22 of 38 with one did. So seed each
+        # composite with at least one required donor before dealing the rest.
+        if required:
+            avail = [d for d in required if use[d] < max_reuse]
+            if not avail:
+                break
+            picks.append(random.choice(avail))
         # Deal one donor per category first: composites must mix mechanisms.
         for c in random.sample(cats, len(cats)):
             if len(picks) >= sites:
@@ -100,6 +114,10 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--obj-lo", type=int, default=0)
     ap.add_argument("--obj-hi", type=int, default=999)
+    ap.add_argument("--require", default="",
+                    help="comma-separated donor ids; every composite gets at least one "
+                         "(the measured high-survival set: CG-AL-X076,CG-AL-X074,"
+                         "CG-AL-X140,CG-AL-X170,CG-AL-X075,CG-AL-X114)")
     a = ap.parse_args()
 
     pool, info = load_pool(a.inventory)
@@ -107,8 +125,9 @@ def main():
     for f in a.prev:
         for c in json.load(open(f)):
             prev.add(frozenset(c["donors"]))
+    require = [d.strip() for d in a.require.split(",") if d.strip()]
     spec, use = plan(pool, info, a.sites, a.count, a.start, prev,
-                     a.max_reuse, a.seed, a.obj_lo, a.obj_hi)
+                     a.max_reuse, a.seed, a.obj_lo, a.obj_hi, require)
     json.dump(spec, open(a.out, "w"), indent=1)
     print(f"eligible donors {len(pool)}; planned {len(spec)} composites at {a.sites} sites")
     print(f"object counts {sorted(Counter(c['objs'] for c in spec).items())}")

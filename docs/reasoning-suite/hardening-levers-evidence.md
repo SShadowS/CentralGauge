@@ -2017,3 +2017,101 @@ each at two attempts on the 22 tasks is about $12 (Opus) and $9 (GPT) at the
 observed token counts, and is owed before any "fixes on second try" column
 for the composite tier goes on the site. `scripts/composite-attempts.py`
 produces the table above from any results file.
+
+## The dose-response was a confound: six donors carry every gated composite (2026-09-02)
+
+Composite batch 6 was ten more 8-site composites (CG-AL-X279..X288), planned
+exactly like the 60%-yield batch above but with `--prev` excluding every earlier
+donor SET and `--max-reuse 5`. Same assembler, same withholding template, same
+two models, one-trial screen, `results/benchmark-results-1788330895052.json`,
+$9.80.
+
+**Result: 1 candidate of 10.** X283 fails attempt 1 behaviourally for both
+models in 3 of 3 trials (confirmations `1788337375367`, `1788337594588`, $1.74)
+and is promoted. Opus 5 solved seven first try. GPT-5.5 returned five compile
+cells, all real model errors and none assembly artifacts: `CompareStr` invented
+twice (X281, X286), an ambiguous `Duration` subtraction on the X115 Change
+Detector twice (X279, X280), and a `999999999999999` Integer literal (X288).
+Five compile cells in one batch against two in the 130 cells before it is
+itself a datum: the donor mix decides how often gpt-5.5 trips on AL, and X115
+trips it reliably.
+
+Against a 60% rate at n=10, one hit has binomial probability about 0.002, so
+something moved. **A control run rules out the models**: Opus 5 on X270, X272
+and X278 (gated 8-site tasks from 09-01), one attempt, $1.66 - all three still
+fail, at 6/8, 7/8 and 6/8 modules, and the surviving donors are X076 and X140
+again (`1788337457630`).
+
+### What actually survives dilution
+
+Per donor, over every informative attempt-1 cell (behavioural or pass, compile
+excluded) of every composite screened since 08-31, both models, 316 cells:
+
+| donor | survived / included | rate |
+| --- | --- | --- |
+| X076 legacy importer (TryFunction swallows writes) | 65 / 77 | **84%** |
+| X074 filter and key semantics | 10 / 12 | **83%** |
+| X140 rebate allocation drift | 59 / 78 | **76%** |
+| X170 partial-reversal conservation | 6 / 10 | 60% |
+| X075 campaign call-list shaping | 12 / 21 | 57% |
+| X114 allowance band boundary | 6 / 24 | 25% |
+| X126, X150, X130, X083 | | 20-21% |
+| X079, X066 | | 17% |
+| X102, X070, X067 | | 10-12% |
+| X092, X116 | | 4-5% |
+| the other 45 donors (X157 0/81, X081 0/57, X107 0/49, ...) | 0 / 1,100+ | **0%** |
+
+Survival is not spread across donors and thinned by dilution; it is
+concentrated in six donors and absent from most of the pool.
+
+### The confound
+
+Cross-tabulating every composite screened (108) by site count and by whether
+it carries at least one of those six donors:
+
+| sites | no resistant donor | with one |
+| --- | --- | --- |
+| 4 | 0 / 44 | 7 / 14 (50%) |
+| 5 | 0 / 8 | 5 / 7 (71%) |
+| 6 | 0 / 8 | 4 / 7 (57%) |
+| 8 | 0 / 10 | 6 / 10 (60%) |
+| **all** | **0 / 70** | **22 / 38 (58%)** |
+
+**No composite without one of the six has ever gated, at any site count, and
+with one the rate is flat across site counts.** The 17% -> 33% -> 60% curve
+above was the probability of drawing one of six donors into a composite rising
+with the number of draws: at four sites 14 of 58 composites carried one, at
+eight sites all ten did. Batch 6 drew eight sites from a pool that `--prev` and
+`--max-reuse` had stripped of exactly those donors (X066 sixteen prior uses and
+zero here, X140 sixteen and two, X076 thirteen and two), and seven of its ten
+composites carried none. X283 carries X076; its six cells all fail on X076's
+four tests and nothing else.
+
+This corrects two earlier statements in this file: "which specific defect
+survives dilution is not yet predictable from any donor property measured
+here" (08-31) - it is predictable from measured survival, and only from that;
+and "defect-site count is the lever, and it scales" (09-01) - site count was
+a proxy. The lever is **a dilution-resistant donor inside a large app**. Donor
+hardness standing alone still does not predict it (X114 is 30/30 alone), so the
+property is only measurable in composites, which is why the survival table above
+is the artifact to keep updating.
+
+### Consequences
+
+1. `scripts/composite-plan.py --require CG-AL-X076,CG-AL-X074,CG-AL-X140,CG-AL-X170,CG-AL-X075,CG-AL-X114`
+   seeds every composite with one of the six before dealing the rest. Expected
+   rate about 58% at any site count, so build at **five sites**, the cheapest
+   size, not eight.
+2. The 23 gated composites measure six knowledge gaps wrapped in many
+   applications. For panel and selection statistics they are one family, not 23
+   independent tasks, and the residual after a pointed retry (09-02 section:
+   "what survives a retry is one donor") is the same six.
+3. The pool of resistant donors is the real ceiling of this programme. New
+   single-defect donors are worth building only if they survive dilution, which
+   a cheap composite screen can measure directly; that is a different and
+   testable criterion from the standalone hardness that LESSONS.md #1 rightly
+   calls dead.
+4. gold-ci was replayed in full under harness fingerprint `0634e0ee1c1c`
+   (the 08-30 overlay and 09-01 retry commits had staled all 266 records):
+   267/267 green including X283. CG-AL-M003 fails only on Cronus28, where a
+   resident Continia app defines codeunit 80013; it passes on Cronus282.

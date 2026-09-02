@@ -1,0 +1,37 @@
+id: CG-AL-X283
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application is a field-service contractor''s operations and finance extension for job cards and billing. Codeunit "CG X076 Legacy Importer" converts amount texts: ParseAmount takes a well-formed, non-negative text, zero included, or fails with an error quoting it as not a valid amount; TryParseAmount instead reports false, that error text in FailureReason, describing only its latest failure; ImportLine stores one table "CG X076 Legacy Amount" row for an accepted text, none for a rejected one; codeunit "CG X076 Import Job"''s ImportBatch runs it per line, returning the count imported. Codeunit "CG X079 Charge Allocator"''s AllocateCharge spreads the Total Charge Amount on a table "CG X079 Charge Header" record over its table "CG X079 Charge Line" rows in proportion to Weight, storing whole cents in "Allocated Amount" that total the header amount exactly, within a cent of each line''s fair share, marking the header Allocated; a weightless line gets zero, a negative credit-memo total still summing exactly, a charge with no weight anywhere staying as it is. Codeunit "CG X087 Document Copy Mgt" copies a document through CopyDocument: the copy names its source in "Copied From No.", carries its Description, ends up Released with a "Release Reference" of REL- followed by its own "No.", marked "Copy Audited", the source staying as it stood; AuditDocument marks a document "Copy Audited", its Status and "Release Reference" untouched. Codeunit "CG X116 Remittance Composer" composes a payment''s remittance line: AddInvoice records the invoice number, a space and the amount with two decimals, a dot, no thousand separators, refusing an entry over 140 characters with an error naming the limit; GetRemittanceText joins entries with a comma and a space as added, empty for none, at most 140 characters as built, otherwise the longest leading run of whole entries plus ", and N more" for the omitted, the suffix counting toward the 140, so adding it can push another entry out, N recounting; a suffixed 140 exactly is kept, just "and N more" when none fits. Codeunit "CG X127 Site Guard"''s CheckSiteAllowed is consulted when a table "CG X127 Job Card" row has its "Site Code" set, and refuses it exactly when table "CG X127 Site Setup" holds that code as Restricted for the company the job card belongs to. Codeunit "CG X147 Attribute Resolver"''s ResolveValue gives an entity''s own value for an attribute where it has one, otherwise the standard value recorded for that entity''s type, and nothing when neither exists, never a standard value held against another type; codeunit "CG X147 Assignment Poster"''s PostAssignment writes the resolved value into table "CG X147 Assignment Entry", nothing when nothing applies. Codeunit "CG X152 Config Importer"''s ImportConfig saves each name=value entry of a semicolon-separated string for the profile, skipping blank segments, an entry with nothing after its equals sign holding an empty value, and keeping the last-listed value of a setting named twice; an entry with no equals sign, or nothing before it, fails with an error naming it and the profile, no setting of that string saved, earlier ones standing. GetSetting returns a saved value, failing when none was; SettingExists reports which. Codeunit "CG X157 Period Statement" reports a cost center''s table "CG X157 Cost Entry" figures: GetPeriodAmount returns the net amount posted between a From Date and To Date, both counted; BuildStatement writes one table "CG X157 Statement Line" row per calendar month spanned, holding that month''s own net amount, replacing an earlier build''s rows. Since the latest release, routine daily work has drifted from what the records behind it say, and the reports reaching support disagree. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-8
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X076
+    - CG-AL-X079
+    - CG-AL-X087
+    - CG-AL-X116
+    - CG-AL-X127
+    - CG-AL-X147
+    - CG-AL-X152
+    - CG-AL-X157
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5-1
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X283.Test.al
+  testCodeunitId: 89505

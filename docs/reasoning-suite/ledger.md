@@ -960,3 +960,28 @@ X170 83.9->89.3%, X171 83.9->87.1%, X172 85.3->86.8%, X173
 round. Remaining survivors are the proved-equivalent set.
 
 Suite: 159 X-series tasks (49 traps + 110 reasoning). gold-ci 244/244.
+
+## Composite batch 6 (2026-09-02) - X279-X288 screened, X283 promoted
+
+Ten 8-site composites planned with `--prev spec..spec5 --max-reuse 5`
+(spec at `scratch/composite-plan/spec6.json`, provenance recorded for all
+ten), descriptions by two Opus writers under the description brief with the
+word cap raised to 600 so no graded clause is left implicit, lint clean;
+all ten probe-green (reference 61-93 tests, starter fails 24-47 reaching
+assertions), staged, id-audit + oracle-audit clean. One-trial screen on
+opus-5 + gpt-5.5 ($9.80): **1 candidate**, X283, confirmed 3/3 for both
+models ($1.74), promoted as `CG-AL-X283-statements-stop-adding-up`
+(8 donors: X076 X079 X087 X116 X127 X147 X152 X157; every failing cell is
+X076's four tests). The nine non-passers were unstaged.
+
+Why 1 of 10 against 6 of 10 last time is measured, not guessed: an opus
+control on X270/X272/X278 still fails all three (models unchanged), and a
+per-donor survival table over 316 attempt-1 cells shows 0 of 70 composites
+without one of six donors (X076 X074 X140 X170 X075 X114) ever gated versus
+22 of 38 with one, flat across site counts. The site-count dose-response was
+a confound; `composite-plan.py --require` now seeds one per composite. Full
+tables in hardening-levers-evidence.md, "The dose-response was a confound".
+
+Harness: gold-ci fully replayed under fingerprint 0634e0ee1c1c, 267/267
+green. Suite: 160 X-series tasks committed (49 traps + 111 reasoning incl.
+23 gated composites).

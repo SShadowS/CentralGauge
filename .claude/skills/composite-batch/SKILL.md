@@ -36,9 +36,23 @@ missed by both frontier models in every cell once other defects compete.
 | 6 | 15 | 5 | 33% | 4 of 5 | $8.2 |
 | 8 | 10 | 6 | **60%** | 6 of 6 | $8.2 |
 
-It is a STEP at 4 to 5, not a ramp: five and six behave identically, then eight
-jumps again. Build at 5 sites for cost, 8 for hit rate. 10+ is untested and the
-curve has not saturated.
+**That curve was a confound (measured 2026-09-02, batch 6).** Cross-tabulated
+over all 108 composites screened, no composite WITHOUT one of six donors has
+ever gated at any site count (0 of 70), and with one the rate is flat at about
+58% (7/14 at four sites, 5/7, 4/7, 6/10 at eight). The site count only raised
+the chance of drawing one of those donors. Batch 6 drew eight sites from a pool
+that `--prev`/`--max-reuse` had stripped of them and gated 1 of 10 with the
+models measured unchanged on a control.
+
+The six, by attempt-1 survival across 316 cells: X076 (84%), X074 (83%),
+X140 (76%), X170 (60%), X075 (57%), X114 (25%). Forty-five other donors have
+never survived once. So: pass `--require CG-AL-X076,CG-AL-X074,CG-AL-X140,CG-AL-X170,CG-AL-X075,CG-AL-X114`
+to the planner (it seeds one per composite), build at **5 sites** (cheapest,
+same rate), and treat the gated composites as six knowledge gaps in many
+wrappers when reading panel statistics. Refresh the survival table from the
+results files before each batch; a donor that has not been screened inside a
+composite has no measured survival, and standalone hardness does not predict it
+(X114 is 30/30 alone).
 
 Two things that do NOT predict a hit, both tested and dead: **donor hardness**
 (X183 carried two of the suite's hardest donors and both models solved it,
@@ -63,9 +77,11 @@ while X185's donors are all 30/30-easy and it resists) and **defect quietness**
 
 ## Procedure
 
-1. **Plan.** `python scripts/composite-plan.py --sites 8 --count 10 --start
+1. **Plan.** `python scripts/composite-plan.py --sites 5 --count 10 --start
    <NNN> --inventory <tsv> --out scratch/composite-plan/spec.json --prev
-   <earlier spec files>`. The donor exclusions are baked in and are measured,
+   <earlier spec files> --require <the six high-survival donors above>`.
+   Without `--require` a batch can draw no resistant donor at all and yield
+   nothing (batch 6). The donor exclusions are baked in and are measured,
    not taste: SQL-counter oracles (budgets calibrated in a 3-object app, and
    `SessionInformation` counters are session-global, so other modules seeding
    data blow the budget), `TestPermissions = Restrictive` (codeunit-level, and

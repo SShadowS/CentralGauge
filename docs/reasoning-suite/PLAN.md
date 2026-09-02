@@ -226,6 +226,7 @@ Standing constraints (from CLAUDE.md + session rules):
 
 | Date | What moved |
 |---|---|
+| 2026-09-02 | Composite batch 6: X279-X288 screened at 8 sites, X283 promoted (23 gated composites). Per-donor survival over 316 cells: 0/70 composites without one of six donors (X076 X074 X140 X170 X075 X114) ever gated, 22/38 with one, flat across site counts - the site-count dose-response was a confound; composite-plan.py --require seeds one per composite. gold-ci replayed 267/267 under the post-retry-fix fingerprint. |
 | 2026-08-23 | Scaffolded; categories allocated; perf premise probe started. |
 | 2026-08-23 | Phase 2 batch 1 filtered (Sonnet 20/24, Fable 4/4; decision 9 closes raw filtering). Build batch 1: X066-X075 promoted, 11/100. |
 | 2026-08-23 | Phase 1 mining complete: 7 parallel sweeps, 147 candidates merged into `ledger.md` (R002-R148) with cross-sweep dedup; raw reports committed under `sweeps/`. Lessons: strip spoiler comments from reused volotest solutions; famous-kata contamination risk; the nine `performance-*` volotests carry turnkey SQL-counter oracles; `transactions-counter-lock` hints locking may be single-session testable. |
