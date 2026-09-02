@@ -1,22 +1,28 @@
 # Taxonomy v2: format groups, mechanism facets, donor-aware inference
 
-Date: 2026-09-02. Status: design, approved in discussion, awaiting implementation plan.
+Date: 2026-09-02. Status: design, revision 2 after a two-model review
+(GPT-5.6 Sol, GLM 5.3; raw reviews in `.panel/taxonomy-spec-review-*.md`).
+Awaiting owner review, then implementation plans.
 
 ## 1. Summary
 
 The site's task taxonomy is rebuilt on two orthogonal dimensions. The
 single-valued **group** becomes the task's evaluation format (build from spec,
 runtime trap, single-defect diagnose, composite diagnose), derived mechanically
-from fields the task files already carry. **Facets** become three explicit
-families (mechanism, surface, environment); a composite's facets are the union
-of its donors' facets, with the donor list stored so provenance is
-reconstructable. The leaderboard cuts its tabs and tier bands on format,
-computes bands for the metric the table is sorted by, and replaces task-index
-resampling with resampling over *independent units* (a task, or the donors a
-composite is built from), so shared defects widen intervals instead of
-inflating confidence. Every score is shown with its standard error and every
-tab with its task and unit counts. The taxonomy stays outside the task-set
-hash; no task file is edited.
+from fields the task files already carry. **Facets** become explicit families
+(mechanism, invariant, surface, environment); a composite's derived facets are
+the union of its donors' facets, with the donor list stored so provenance is
+reconstructable. Taxonomy data is stored as immutable revisions with a single
+active pointer per task set, served through a versioned v2 API while v1 keeps
+its meaning until a dated sunset. The leaderboard cuts tabs on format, computes
+bands for the solve metric the table is sorted by, states its estimand, and
+replaces task-index resampling with resampling over the connected components
+of the task-donor graph, so shared defects widen intervals or, when the
+components are too few, suppress bands honestly. Every score carries its
+standard error; every slice shows task, donor and component counts, and a
+model appears on a slice only when it was evaluated on all of it. The taxonomy
+stays outside the task-set hash; no task file is edited. The work ships in
+three releases so a defect in one layer cannot move public rankings unnoticed.
 
 ## 2. Why now, measured
 
@@ -28,113 +34,118 @@ hash; no task file is edited.
 - Format is the dominant score signal: composites score 0, 0, 3 and 10 percent
   at attempt 1 across the four frontier models against 80 to 93 percent on the
   singles (`hardening-levers-evidence.md`, panel section). What predicts a
-  composite's resistance is which donor mechanisms it carries, not object
-  types (0 of 59 composites without a high-survival donor ever gated, 29 of 59
-  with one).
-- `tiers.ts` resamples task indices (line 80). Twenty-nine composites resting
-  on seven donors are not exchangeable, so bands on a composite slice overclaim.
+  composite's resistance is which donor mechanisms it carries (0 of 59
+  composites without a high-survival donor ever gated, 29 of 59 with one).
+- `tiers.ts` resamples task indices (line 80). The 29 gated composites form
+  ONE connected component of the donor-sharing graph (51 distinct donors;
+  X076 in 16 composites, X140 in 13, X157 in 11). Bands computed over them as
+  29 independent tasks overclaim.
 - The task files' `metadata.category` is inside the hashed content. Fixing it
   there would move `task_sets.hash` and orphan every run.
 - Precedents: BC-Bench, Terminal-Bench and LiveBench group by kind of work or
-  domain, never by solution object type; Aider polyglot and BigCodeBench-Hard
-  select by measured solve rate; Anthropic's "Adding Error Bars to Evals"
-  prescribes clustered errors and reporting the cluster count next to the
-  question count when questions share a source.
+  domain; Aider polyglot and BigCodeBench-Hard select by measured solve rate;
+  Miller 2024 ("Adding Error Bars to Evals") prescribes clustered errors and
+  reporting cluster counts next to question counts; Chatbot Arena treats
+  overlapping bootstrap intervals as indistinguishable.
 
 ## 3. Non-goals
 
 - Changing any file under `tasks/` or `tests/al/`. `metadata.category` is
   frozen and documented as a historical authoring label.
 - The launch-bar metric policy and the published selection rule (donor cap,
-  "solved by at most k of n"). Section 6 makes the leaderboard correct under
-  any headline choice; the choice itself is a separate decision.
-- Retagging the legacy E/M/H tasks' surface facets by hand. They keep their
-  current tags through the pruning rule in 4.2.
+  "solved by at most k of n"). Section 6 is correct under any headline choice.
+- A request-time "solved by k of n panel models" difficulty display: it needs
+  a versioned panel manifest that does not exist; deferred.
+- A hierarchical multiple-membership model of composite outcomes. It is the
+  right offline research tool and the wrong production estimator; section 6.9
+  names it as the validation instrument.
 
 ## 4. Taxonomy
 
 ### 4.1 Group = format
 
-One group per task, derived by the first matching rule over the task manifest:
+One group per task, derived by the first matching rule over the manifest:
 
 | order | rule (manifest fields) | slug | display name |
 | --- | --- | --- | --- |
 | 1 | `metadata.donors` non-empty | `diagnose-composite` | Composite diagnose |
-| 2 | `prompt_template` starts with `diagnose` | `diagnose-single` | Single-defect diagnose |
+| 2 | `prompt_template` in {`diagnose.md`, `diagnose-objects.md`, `diagnose-contract.md`} | `diagnose-single` | Single-defect diagnose |
 | 3 | `metadata.cohort` = `ado-trap-2026` | `runtime-trap` | Runtime trap |
-| 4 | otherwise | `build-from-spec` | Build from spec |
+| 4 | `prompt_template` = `code-gen.md` | `build-from-spec` | Build from spec |
+
+Any other `prompt_template` value fails validation rather than defaulting.
+Repository census on 2026-09-02: 29 manifests carry donors, 139 use a
+diagnose template, 50 carry the trap cohort (one of them a diagnose task,
+which rule order handles), 159 use `code-gen.md`; no manifest falls outside
+the rules. The promoted trap set is 49 tasks.
 
 Definitions carried in the catalog:
 
 - `build-from-spec`: write new AL objects from a behavioural specification.
-- `runtime-trap`: implement a compact requirement whose natural solution
-  meets a Business Central runtime semantic.
+- `runtime-trap`: implement a compact requirement whose natural solution meets
+  a Business Central runtime semantic.
 - `diagnose-single`: repair a complete application with one planted defect,
   given a symptom.
 - `diagnose-composite`: repair one application assembled from several donor
   applications with every defect live and no per-module symptom.
 
-No regex over slugs, no per-task override table. The validator (4.5) fails if
-a rule's precondition is inconsistent with the file layout (a `diagnose`
-template without `tasks/starter/<id>/`, a `donors` list naming a task that is
-not in the set).
-
 ### 4.2 Facet families
 
-Every tag carries a `family`. Three families:
+Every tag carries a `family`. Four families:
 
-**mechanism** - the runtime semantic or invariant the task turns on. Controlled
-vocabulary, seeded from the measured survivors and the twelve reasoning-suite
-authoring categories. Initial list (slugs), each with a one-line description in
-the catalog:
-
-`tryfunction-write-rollback`, `commit-scope`, `error-flow`,
+**mechanism** - a Business Central runtime or language semantic. Initial
+vocabulary: `tryfunction-write-rollback`, `commit-scope`, `error-flow`,
 `filter-key-semantics`, `filter-group-state`, `temporary-record`,
-`xrec-trigger-state`, `event-binding`, `event-order`, `validation-trigger`,
-`largest-remainder-allocation`, `reversal-conservation`, `boundary-operator`,
-`decimal-precision`, `culture-format-roundtrip`, `serialization-encoding`,
-`company-scope`, `permission-check`, `flowfield-sift`, `sql-cost-scaling`,
+`xrec-trigger-state`, `event-binding` (subscriber lifetime and instance
+scope), `event-order`, `validation-trigger`, `decimal-precision`,
+`culture-format-roundtrip`, `serialization-encoding`, `company-scope`,
+`permission-check`, `flowfield-sift`, `sql-cost-scaling`,
 `single-instance-state`, `recordref-reflection`, `upgrade-datatransfer`,
-`spec-induction`.
+`record-locking-concurrency`.
 
-Mechanism facets for the 110 single-defect tasks and the 64 trap tasks are
-assigned by the enrichment workflow against this vocabulary and then reviewed
-by hand once, because they are the analytic core. New vocabulary is admitted
-only through the workflow's `vocabGaps` output plus a human decision; the
-validator rejects unknown slugs.
+**invariant** - a domain contract the oracle grades independent of mechanism:
+`largest-remainder-allocation`, `reversal-conservation`, `exact-total`,
+`inclusive-boundary`, `idempotent-rebuild`, `company-isolation`,
+`roundtrip-fidelity`, `bounded-sql-cost`.
 
-**surface** - AL objects and APIs touched. Seeded from the current 75 tags with
-a deterministic prune: drop any tag present on more than 30 percent of tasks
-or on fewer than two tasks (this removes `calculations`, `table`, `keys`,
-`collections` and the singletons), then canonicalize aliases
-(`tryfunction`/`try-function`, `numeric-precision`/`decimal-precision`). Tags
-that name a mechanism rather than a surface (`transaction`, `rounding`,
-`locking`, `xrec`, `try-function`) move to the mechanism family under their new
-slugs.
+**surface** - AL objects and APIs touched. A reviewed vocabulary seeded from
+the current tags with an explicit alias and deprecation table (for example
+`try-function` becomes the mechanism `tryfunction-write-rollback`;
+`numeric-precision` and `decimal-precision` merge). No prevalence-based
+pruning: frequency is a UI ordering concern, not a validity criterion. Common
+surfaces such as `codeunit` and `table` stay in the vocabulary and are hidden
+from default filter suggestions by count.
 
-**environment** - `bc-v15`, `bc-v16`, `bc-v17`, `multi-company`,
-`culture-sensitive`, `test-permissions`. The existing `v15`/`v16`/`v17` tags
-are renamed into this family.
+**environment** - `multi-company`, `culture-sensitive`, `test-permissions`,
+plus a structured `min_bc_version` field (the current `v15`/`v16`/`v17` tags
+express a requirement, not the execution version; they become that field).
 
+Retired from the facet namespace: `diagnose`, `composite`, `multi-defect`,
+`minimal-symptom`, `defect-sites-N`, and generic labels (`calculations`).
 Administrative facts (cohort, difficulty, defect-site count, gated status,
-authoring model) are structured metadata, not facets. The tags `diagnose`,
-`composite`, `multi-defect`, `minimal-symptom` and `defect-sites-N` are
-retired from the facet namespace; the group and `donors` carry that
-information.
+authoring model) are structured metadata, not facets. Reasoning shapes such
+as spec induction are not facets in this revision.
+
+Mechanism and invariant facets for the 110 single-defect and 49 trap tasks
+are assigned by the enrichment workflow against the vocabulary and then
+reviewed by hand once. The vocabulary grows only through the workflow's
+`vocabGaps` output plus a human decision; a vocabulary-gap audit against every
+current tag precedes freezing the list.
 
 ### 4.3 Composite derivation
 
-For a composite C with donors D1..Dn:
+For a composite C with donors D1..Dn (each Di a `diagnose-single` task in the
+same set; nesting is not supported):
 
-- `mechanism(C)`, `surface(C)`, `environment(C)` = union over donors, in that
-  family, deduplicated.
-- The donor list is stored with C (catalog and D1). Facet provenance is not
-  stored per facet; it is reconstructed as `facet ∈ facets(Di)` for each donor
-  when needed (task page, analysis).
-- Derived facets are materialized into the catalog by the pipeline, never
-  computed by the site.
-- A donor's facet change regenerates every composite that carries it (the
-  pipeline recomputes all composites on every run, so this is automatic).
+- `derived(C)` = union over donors of their mechanism, invariant and surface
+  facets, deduplicated; `min_bc_version(C)` = max over donors.
+- `local(C)` = facets assigned to the composite itself (assembly glue, an
+  environment condition the donors did not carry). Usually empty.
+- `facets(C)` = `derived(C)` ∪ `local(C)`. The catalog stores both parts.
+- The donor list is stored with C in order. Facet provenance is reconstructed
+  as `facet ∈ facets(Di)` when needed.
+- Derived facets are materialized by the pipeline, never computed by the
+  site. A donor's facet change regenerates every composite on the next run.
 - Outcome-derived properties (survival rate, resistance) are never facets.
 
 ### 4.4 Catalog file, schema version 2
@@ -150,6 +161,8 @@ groups:
 families:
   - slug: mechanism
     name: Mechanism
+  - slug: invariant
+    name: Invariant
   - slug: surface
     name: AL surface
   - slug: environment
@@ -159,248 +172,336 @@ tags:
     family: mechanism
     name: TryFunction write rollback
     description: Writes inside a failed TryFunction are rolled back ...
-  - slug: page
+  - slug: table
     family: surface
-    name: Page
+    name: Table
+    hidden_by_default: true
 tasks:
   CG-AL-X076:
     group: diagnose-single
-    tags: [tryfunction-write-rollback, codeunit, table, bc-v17]
+    facets: [tryfunction-write-rollback, codeunit, table]
+    min_bc_version: 17
   CG-AL-X283:
     group: diagnose-composite
     donors: [CG-AL-X076, CG-AL-X079, CG-AL-X087, CG-AL-X116, CG-AL-X127, CG-AL-X147, CG-AL-X152, CG-AL-X157]
-    # materialized union of the eight donors' facets, all families, deduplicated
-    tags: [tryfunction-write-rollback, largest-remainder-allocation, boundary-operator,
-           culture-format-roundtrip, company-scope, codeunit, table, bc-v17]
+    derived_facets: [tryfunction-write-rollback, largest-remainder-allocation, inclusive-boundary, culture-format-roundtrip, company-scope, codeunit, table]
+    local_facets: []
+    min_bc_version: 17
 ```
 
-Decomposition for implementation: plan A covers sections 4 and 8.1 (pipeline,
-catalog, validator, hand review); plan B covers sections 5 to 7 and 8.2 to 8.6
-(site). Plan A has no dependency on plan B and ships first.
-
-The `groups:` constraint list on tags (v1) is removed; families replace it.
+The v1 `groups:` constraint list on tags is removed. The example above is
+generated by the pipeline; a test asserts that every example in this document
+round-trips through the validator.
 
 ### 4.5 Pipeline (`.claude/skills/refresh-task-taxonomy/pipeline/`)
 
-- `build-taxonomy.ts`: rewritten. Groups by the 4.1 rules. Surface facets by
-  the 4.2 prune and alias table. Reads `metadata.donors` for composites.
-  Emits a draft catalog with mechanism facets empty for tasks that have none
-  yet.
-- `enrich-task-tags.workflow.js`: vocabulary replaced by the mechanism list;
-  runs only over tasks lacking mechanism facets (or all, with a flag); output
-  merged by `merge-taxonomy.ts`, which also computes composite unions.
-- `validate-taxonomy.ts` (new): every task under `tasks/**/*.yml` has exactly
-  one group; every tag slug exists and has a family; every donor resolves to a
-  task in the set; every composite's tags equal the union of its donors' tags;
-  no retired slug appears. Exit 1 on any failure. Wired into
-  `deno task id-audit`'s CI job so a new batch cannot land untagged.
+- `build-taxonomy.ts`: rewritten. Groups by 4.1. Surface facets through the
+  alias table. Reads `metadata.donors`. Emits a draft with mechanism and
+  invariant facets empty for tasks that have none yet. The v1 `GROUP_RULES`
+  and `GROUP_OVERRIDE` are deleted in the same commit.
+- `enrich-task-tags.workflow.js`: vocabulary replaced by the mechanism and
+  invariant lists; runs over tasks lacking those facets (or all, with a flag).
+- `merge-taxonomy.ts`: merges enrichment, computes composite derivations.
+- `validate-taxonomy.ts` (new), exit 1 on any failure: every task under
+  `tasks/**/*.yml` has exactly one group; `donors` non-empty iff group is
+  `diagnose-composite`; donors distinct, not self, each a `diagnose-single`
+  task in the set; every facet slug exists with a family; `derived_facets`
+  equals the donor union exactly; no retired or duplicate slug; every group,
+  family and tag has name and description; unknown `prompt_template` or a
+  cohort that conflicts with the template fails. Wired into CI next to
+  `id-audit` so a new batch cannot land untagged.
 - Rerunning the pipeline on unchanged inputs reproduces the file byte for
-  byte (deterministic ordering, no timestamps).
+  byte.
+- `sync-taxonomy` refuses a catalog whose `schema_version` it does not
+  implement. The v2-capable CLI ships in the same commit as the v2 catalog.
 
 ## 5. Storage and API
 
-### 5.1 D1 migration `0016_taxonomy_v2.sql`
+### 5.1 D1 migration `0016_taxonomy_revisions.sql`
+
+Additive. v1 tables (`task_categories`, `tags`, `task_tags`,
+`tasks.category_id`) are untouched and keep serving v1.
 
 ```sql
-ALTER TABLE tags ADD COLUMN family TEXT;          -- mechanism | surface | environment
-ALTER TABLE tags ADD COLUMN description TEXT;
-
-CREATE TABLE task_donors (
-  task_set_hash TEXT NOT NULL,
-  task_id       TEXT NOT NULL,
-  donor_task_id TEXT NOT NULL,
-  ordinal       INTEGER NOT NULL,
-  PRIMARY KEY (task_set_hash, task_id, donor_task_id),
-  FOREIGN KEY (task_set_hash, task_id) REFERENCES tasks(task_set_hash, task_id)
-);
-CREATE INDEX idx_task_donors_task ON task_donors(task_set_hash, task_id);
-
-CREATE TABLE taxonomy_meta (
-  task_set_hash  TEXT PRIMARY KEY REFERENCES task_sets(hash),
+CREATE TABLE taxonomy_revisions (
+  id             INTEGER PRIMARY KEY,
+  task_set_hash  TEXT NOT NULL REFERENCES task_sets(hash),
   schema_version INTEGER NOT NULL,
-  digest         TEXT NOT NULL,      -- sha256 of the canonical applied payload
-  applied_at     TEXT NOT NULL
+  digest         TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  active         INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0,1)),
+  UNIQUE (task_set_hash, digest)
 );
+CREATE UNIQUE INDEX idx_taxonomy_active ON taxonomy_revisions(task_set_hash) WHERE active = 1;
+
+CREATE TABLE taxonomy_groups   (revision_id INTEGER NOT NULL REFERENCES taxonomy_revisions(id) ON DELETE CASCADE, slug TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL, PRIMARY KEY (revision_id, slug));
+CREATE TABLE taxonomy_families (revision_id INTEGER NOT NULL REFERENCES taxonomy_revisions(id) ON DELETE CASCADE, slug TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (revision_id, slug));
+CREATE TABLE taxonomy_tags     (revision_id INTEGER NOT NULL REFERENCES taxonomy_revisions(id) ON DELETE CASCADE, slug TEXT NOT NULL, family TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL, hidden_by_default INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (revision_id, slug), FOREIGN KEY (revision_id, family) REFERENCES taxonomy_families(revision_id, slug));
+CREATE TABLE taxonomy_task_groups (revision_id INTEGER NOT NULL REFERENCES taxonomy_revisions(id) ON DELETE CASCADE, task_set_hash TEXT NOT NULL, task_id TEXT NOT NULL, group_slug TEXT NOT NULL, min_bc_version INTEGER, PRIMARY KEY (revision_id, task_id), FOREIGN KEY (task_set_hash, task_id) REFERENCES tasks(task_set_hash, task_id), FOREIGN KEY (revision_id, group_slug) REFERENCES taxonomy_groups(revision_id, slug));
+CREATE TABLE taxonomy_task_tags   (revision_id INTEGER NOT NULL REFERENCES taxonomy_revisions(id) ON DELETE CASCADE, task_id TEXT NOT NULL, tag_slug TEXT NOT NULL, origin TEXT NOT NULL CHECK (origin IN ('direct','derived','local')), PRIMARY KEY (revision_id, task_id, tag_slug), FOREIGN KEY (revision_id, tag_slug) REFERENCES taxonomy_tags(revision_id, slug));
+CREATE TABLE taxonomy_task_donors (revision_id INTEGER NOT NULL REFERENCES taxonomy_revisions(id) ON DELETE CASCADE, task_set_hash TEXT NOT NULL, task_id TEXT NOT NULL, donor_task_id TEXT NOT NULL, ordinal INTEGER NOT NULL CHECK (ordinal >= 0), PRIMARY KEY (revision_id, task_id, donor_task_id), UNIQUE (revision_id, task_id, ordinal), FOREIGN KEY (task_set_hash, task_id) REFERENCES tasks(task_set_hash, task_id), FOREIGN KEY (task_set_hash, donor_task_id) REFERENCES tasks(task_set_hash, task_id));
+CREATE INDEX idx_taxonomy_task_tags_tag ON taxonomy_task_tags(revision_id, tag_slug);
 ```
 
-Additive only. `tasks.category_id` keeps pointing at `task_categories`, whose
-rows become the four format groups.
+Vocabulary is versioned per revision, so a later revision cannot change what
+an earlier hash's taxonomy meant. Activation is one statement on one row, so
+readers never observe a half-written revision.
 
 ### 5.2 Admin endpoint `/api/v1/admin/catalog/task-taxonomy`
 
-- Accepts `version: 1` (unchanged behaviour) and `version: 2`.
-- Version 2 payload: `{ version: 2, hash, groups[], families[], tags[{slug,
-  family, name, description}], tasks: { id: { group, tags[], donors?[] } } }`.
-  `hash` is required for version 2; the implicit-current fallback is refused
-  with `400 hash_required`.
-- Validation before any write: payload task ids equal the set of task ids for
-  that hash (no missing, no extra); every task has exactly one known group;
-  every tag references a known family; every donor exists in the same hash;
-  for every composite, `tags` equals the union of donor tags.
-- Writer (`taxonomy.ts`): phases in order, each a single `db.batch()` where the
-  50-statement cap allows and chunked otherwise: upsert groups; upsert tags
-  with family and description; set `tasks.category_id` for every task in the
-  payload; delete and reinsert `task_tags` for the hash; delete and reinsert
-  `task_donors` for the hash; prune orphan groups; upsert `taxonomy_meta`
-  last. `taxonomy_meta` is only written on full success, so a partial write is
-  detectable (`digest` absent or stale) and the next apply is idempotent.
-- The `sync-taxonomy` CLI emits version 2 when the catalog says
-  `schema_version: 2`, always passes the resolved hash explicitly, and prints
-  the digest it expects the server to record.
+- `version: 1` payloads keep their behaviour, except: once any v2 revision is
+  active for a hash, a v1 apply for that hash is refused with
+  `409 taxonomy_version_regression`.
+- `version: 2` payload: `{ version: 2, hash, groups[], families[], tags[],
+  tasks: { id: { group, facets[] | derived_facets[] + local_facets[],
+  donors?[], min_bc_version? } } }`. `hash` is required; the implicit-current
+  fallback is refused with `400 hash_required`.
+- Validation before any write: payload task ids equal the task ids of that
+  hash; every task has exactly one known group; every facet references a
+  known tag whose family exists; donors present iff group is
+  `diagnose-composite`, distinct, not self, each resolving to a task whose
+  group in this payload is `diagnose-single`; `derived_facets` equals the
+  donor union; ordinals 0..n-1; no duplicate slugs; names and descriptions
+  present.
+- Digest: SHA-256 of canonical JSON `{schema_version, task_set_hash,
+  groups, families, tags, tasks}` with object keys sorted, vocab sorted by
+  slug, tasks by id, facet arrays sorted, donors in ordinal order, no
+  undefined values. The CLI computes the same digest; a golden vector is
+  tested in both runtimes.
+- Writer: inserts a new revision row with `active = 0`, then all vocabulary
+  and assignment rows in batches (all keyed by the new revision id, invisible
+  to readers), then re-validates counts in D1 (tasks assigned = task count of
+  the hash, tags referenced ⊆ tags inserted), then flips `active` in a single
+  statement (`UPDATE ... SET active = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE
+  task_set_hash = ?`). A crash before the flip leaves an inactive, garbage-
+  collectable revision and the previous active one untouched. Re-applying an
+  identical payload is a no-op by `(task_set_hash, digest)`.
+- `sync-taxonomy --apply` requires `--hash` or resolves the current hash from
+  the task-sets endpoint's `is_current` entry (never from the latest run), and
+  prints hash, task count and digest for confirmation before posting.
 
-### 5.3 Public API
+### 5.3 Public API: v2 alongside v1
 
-- `/api/v1/taxonomy`: adds `families[]`; each tag gains `family` and
-  `description`. Groups are the four formats. Response shape versioned by the
-  cache version bump.
-- `/api/v1/tasks` items and `/api/v1/tasks/<id>`: add `donors: string[]`
-  (empty for non-composites) and `tags` grouped as `facets: { mechanism[],
-  surface[], environment[] }` alongside the flat `tags` for one release.
-- `/api/v1/tasks?tag=` unchanged (AND semantics). The existing `?category=`
-  parameter keeps its name and accepts the four format slugs; the old nine
-  slugs are accepted as aliases that resolve to the surface or mechanism facet
-  they became, for one release, then removed.
-- `/api/v1/categories` returns the four formats with task counts.
+New endpoints; v1 endpoints keep their current meaning and data until sunset.
+
+- `/api/v2/taxonomy`: active revision for the set: groups, families, tags
+  (with family, description, hidden_by_default, task_count), revision digest.
+- `/api/v2/categories`: the format groups with task counts.
+- `/api/v2/tasks` and `/api/v2/tasks/<id>`: `group`, `facets` grouped by
+  family with `origin`, `donors[]`, `min_bc_version`. `?category=` accepts
+  format slugs; `?tag=` accepts tag slugs with AND semantics and returns
+  `400 unknown_tag` for a slug not in the active revision (v1 stays silent).
+- `/api/v2/leaderboard`: section 6.8 wire format.
+- v1 (`/api/v1/categories`, `/api/v1/taxonomy`, `/api/v1/tasks`,
+  `/api/v1/leaderboard`): unchanged semantics, served from the v1 tables,
+  which are frozen for a hash once a v2 revision is active. `Deprecation` and
+  `Sunset` headers with a date at least 90 days after v2 activation. No
+  aliases from old group slugs to facets: they are not equivalent sets. The
+  v1 assignment is retained as `legacy_group` on v2 task items for the
+  sunset window.
 
 ### 5.4 Caching
 
-- `CACHE_VERSION` bumps `v9` to `v10`.
-- The taxonomy digest from `taxonomy_meta` joins the cache keys of
-  `/api/v1/taxonomy`, `/api/v1/categories`, `/api/v1/tasks`, the leaderboard,
-  and `getTierMap`. A reassignment that keeps a slug and task count therefore
-  never serves a stale band.
+- `CACHE_VERSION` bumps `v9` to `v10` in the server deploy of release 1
+  (before any v2 revision is activated), not with the UI.
+- The active revision digest and the estimator version (6.9) join the cache
+  keys of every v2 endpoint and of the tier map. Activating a revision
+  therefore changes every key at once; v1 keys are unaffected.
 
 ## 6. Leaderboard statistics
 
-### 6.1 Tabs and slices
+### 6.1 Estimand
 
-Tabs: All, Build from spec, Runtime trap, Single-defect diagnose, Composite
-diagnose. A tab is a slice of tasks by group. Facets are a secondary filter on
-the tasks page and on the per-model analysis, never top-level tabs.
+Intervals and bands describe sensitivity to which independent benchmark
+components were included, conditional on the recorded runs and the
+best-across-runs aggregation. They do not include model-run stochasticity;
+that is reported separately as pass^k where trials exist (6.7). The
+methodology page states this in these words.
 
-### 6.2 Metric-aware score matrices
+### 6.2 Per-task score and slices
 
-`buildAucMatrix` becomes `buildScoreMatrix(hash, metric, slice)` with
-`metric ∈ {auc_2, pass_at_1, pass_at_n}`. Per (model, task) the score is:
-`pass_at_1` = 1 if attempt 1 passed; `pass_at_n` = 1 if any attempt passed;
-`auc_2` = 0, 0.5 or 1 as today. When a model has several runs on the hash the
-per-task score is the mean over runs, matching the leaderboard's aggregation.
-Tier bands are computed for the metric the table is sorted by; the table
-renders dividers under every sort, since the bands now describe that column.
+Per (model, task) the score is best across the model's runs on the hash, as
+today (`tier-data.ts`, `leaderboard.ts` P1/P2 expressions): `pass_at_1` = 1 if
+any run passed at attempt 1; `pass_at_n` = 1 if any run passed at any attempt;
+`auc_2` = 0, 0.5 or 1. `buildScoreMatrix(hash, metric, slice)` replaces
+`buildAucMatrix`. Tabs: All plus the four formats; a tab is a slice by group.
 
-### 6.3 Independent-unit resampling
+### 6.3 Coverage gate
 
-Replaces task-index resampling in `tiers.ts` for every slice.
+A model is scored on a slice only if it has at least one recorded attempt on
+every task of the slice. Otherwise its row shows "not evaluated on this
+slice" with the attempted count, is excluded from bands, and is not ranked.
+This replaces the current behaviour of scoring unattempted tasks as 0.
 
-- For task t in the slice: `units(t) = {t}` if t has no donors, else
-  `units(t) = donors(t)`. `U` = union of all `units(t)`. A donor is a unit
-  whether or not it is itself in the slice.
-- Iteration: draw `|U|` units with replacement (seeded RNG as today); `m(u)` =
-  multiplicity. Task weight `w(t)` = mean of `m(u)` over `units(t)`.
-- Weighted mean for model A: `Σ w(t)·a_t / Σ w(t)`. Paired difference A−B:
-  `Σ w(t)·(a_t − b_t) / Σ w(t)`. An iteration with `Σ w = 0` is redrawn.
-- Distinguishable when the (1−α) interval of the paired difference over
-  iterations excludes 0; tiers assembled exactly as today.
-- Standard error of a model's score on the slice = standard deviation of its
-  weighted mean over iterations.
-- Property: on a slice with no composites, `units(t) = {t}` and the procedure
-  is the current paired task bootstrap; the unit test asserts identical
-  output on identical seeds.
-- Display on every tab: `n tasks · m independent units`, where `m = |U|`.
-  Bands are computed whenever `m ≥ 10`; below that the tab shows scores with
-  standard errors and the note "too few independent units for tier bands".
-- Justification recorded on the methodology page: shared donors make
-  composite outcomes dependent; resampling the shared defects rather than the
-  tasks is the clustered-error treatment the eval-statistics literature
-  prescribes, extended to multi-membership by averaging unit multiplicities.
+### 6.4 Independent components
 
-### 6.4 The All tab
+Build the task-donor graph for the slice: tasks are nodes; two tasks are
+connected when one is a donor of the other or they share a donor; a donor is
+a node even when it is outside the slice. The resampling units are the
+connected components restricted to tasks in the slice. A single task with no
+donor edges is its own component. Every slice shows `n tasks · d distinct
+donors · c components`.
 
-Headline score on All = equal-weight mean of the four format means (each
-format's weighted mean per iteration, averaged), so 110 singles cannot drown
-29 composites. The pooled mean over all tasks is kept as a column named
-"pooled". Standard errors and bands for the All headline use the same
-iterations.
+Repository state on 2026-09-02: the 29 gated composites are one component;
+the All slice has 110 single-task components plus one 29-task component.
 
-### 6.5 Consistency and difficulty columns
+### 6.5 Component bootstrap
 
-- `pass^k` (first try) is shown for a model on a slice when it has at least
-  three runs on the hash: fraction of tasks passed at attempt 1 in every run.
-  Hidden otherwise. Matches BC-Bench's convention.
-- Task difficulty on the tasks page is displayed as "solved first try by k of n
-  panel models", computed from results at request time. It is a measurement,
-  versioned by the panel it came from, and never stored as a facet.
+- Iteration: draw `c` components with replacement (seeded RNG); a task's
+  weight is its component's multiplicity. Weighted mean for model A over the
+  slice: `Σ w(t)·a_t / Σ w(t)`; paired difference A−B: `Σ w(t)·(a_t − b_t) /
+  Σ w(t)`. The same draws feed every model and every pair.
+- Standard error of a model's score = standard deviation of its weighted mean
+  over iterations. Shown as `score (± se)`.
+- Bands are computed only when `c ≥ 20`; below that the slice shows scores
+  with standard errors, the counts, and "too few independent components for
+  tier bands". Twenty is provisional and is confirmed or moved by the
+  simulation in 6.9 before bands are enabled anywhere.
+- Property: a slice with no donor edges reduces to the current paired task
+  bootstrap; a test asserts identical output on identical seeds.
+- Leave-one-donor-out sensitivity on slices containing composites: for each
+  donor present in at least three composites, the model scores with those
+  composites removed. Shown as a descriptive table, labelled "not a
+  confidence interval".
+- Monte Carlo policy: 2000 draws, percentile intervals, labelled approximate;
+  seed = hash, metric, slice, revision digest, estimator version.
 
-### 6.6 Methodology page
+Consequence today: the composite tab shows scores, standard errors from a
+one-component resample (which equal zero and are shown as "n/a, single
+component"), counts, and the leave-one-donor-out table, and no bands. That is
+the honest state of the evidence, and it changes only when composites are
+built from disjoint donor sets.
 
-`/methodology` (static route) states: the four formats and how they are
-derived; the three facet families; the composite union rule; the resampling
-rule in one sentence with the unit definition; what a tier band means; the
-metric definitions; the pass^k rule; and a link to the taxonomy digest and
-task-set hash in force.
+### 6.6 Tiers and the All tab
+
+- Tier assembly stays anchor-based as in `tiers.ts`. The copy changes to
+  "not separated from this tier's top model at 95 percent (approximate, no
+  adjustment for multiple comparisons)". Pairwise intervals are available
+  through the compare endpoint.
+- Bands and dividers render only for `auc_2`, `pass_at_1`, `pass_at_n`. Sorts
+  by cost, latency or average score show no dividers.
+- All-tab headline: "format-macro score", the equal-weight mean of the four
+  format means computed within each joint replicate over the whole graph
+  (never four separate bootstraps, since single-defect donors also sit inside
+  composites). The pooled task mean is kept as a column. A format with no
+  scored model on the slice is excluded from the macro with a note.
+
+### 6.7 pass^k
+
+Shown for a model on a slice when it has at least three complete runs on the
+hash: `k = 3` fixed; the three most recent complete runs by started time; a
+task counts when attempt 1 passed in all three; the chosen run ids are
+exposed in the response. Hidden otherwise.
+
+### 6.8 Leaderboard v2 wire format
+
+```ts
+summary: { format: "all" | GroupSlug; metric: "auc_2" | "pass_at_1" | "pass_at_n";
+           task_count: number; donor_count: number; component_count: number;
+           inference: "bands" | "too_few_components"; estimator_version: string;
+           revision_digest: string }
+rows: [{ slug, coverage: "full" | "partial", attempted: number,
+         headline_score: number | null, pooled_score: number | null,
+         standard_error: number | null, tier: number | null,
+         pass_k: number | null, pass_k_runs: string[] | null }]
+sensitivity: [{ donor: string, composites: number, scores: Record<slug, number> }] | null
+```
+
+### 6.9 Validation before enabling bands
+
+Before any band is served under the new estimator: materialize the actual
+graph (components, sizes, donor degrees); simulate outcomes under a
+donor-plus-task random-effects model fitted offline to the recorded runs;
+measure interval coverage and false tier-split rate for task-index resampling
+and component resampling; choose the `c` threshold from that; publish the
+fixture graph and expected results in the repository. Estimator version
+`ev1` is assigned to the validated configuration and joins cache keys.
+
+### 6.10 Methodology page
+
+`/methodology`: the four formats and their rules; the facet families; the
+composite derivation; the estimand sentence; the component rule in one
+sentence ("tasks connected by a shared donor are resampled together"); what a
+band means and its limits; metric definitions; the coverage gate; pass^k;
+revision digest and task-set hash in force.
 
 ## 7. UI
 
-- `CategoryTabs.svelte` renders the four formats from `/api/v1/categories`;
-  copy updated; each tab header shows `n tasks · m units` and the band note.
-- `TaxonomyFilter.svelte` renders facets grouped by family with counts.
-- Task page shows group, facets by family, and for composites the donor list
-  with each donor's mechanism facets (provenance view).
-- Leaderboard cells show `score (± se)`; pooled column on All; pass^k column
-  when available.
-- Filter URLs: old group slugs redirect to the equivalent facet filter for one
-  release; a deprecation note names the mapping.
+- `CategoryTabs.svelte` renders the format groups from `/api/v2/categories`;
+  each tab header shows `n tasks · d donors · c components` and the inference
+  state.
+- `TaxonomyFilter.svelte` renders facets grouped by family with counts,
+  hidden-by-default tags behind "more".
+- Task page: group, facets by family with origin, donors with each donor's
+  mechanism and invariant facets, `legacy_group` during the sunset window.
+- Leaderboard: `score (± se)`, greyed "not evaluated on this slice" rows,
+  pooled column on All, pass^k column with a run-id tooltip, sensitivity
+  table on slices with composites.
 
-## 8. Migration and ship order
+## 8. Releases and ship order
 
-1. Pipeline rewrite and catalog v2 generated offline; validator green on
-   every task under `tasks/`; hand review of mechanism facets for the 174
-   single-defect and trap tasks; commit catalog and pipeline together
-   (GLM's reversion trap: the old `GROUP_RULES` must not survive).
-2. `0016_taxonomy_v2.sql` applied to prod D1 before any worker deploy
-   (repository rule: migrations before deploy).
-3. Worker deployed dual-stack: version 1 payloads still accepted, empty v2
-   tables tolerated, old response shapes served until a v2 taxonomy is
-   applied for the current hash.
-4. Only after the re-bench ingest and the task-set flip: `sync-catalog
-   --apply`, then `sync-taxonomy --apply --hash <64-hex>` (dry run first,
-   prune list inspected), then verification: coverage equals the task count,
-   `taxonomy_meta.digest` equals the CLI's expected digest, the benchmark hash
-   is unchanged, old runs and scores unchanged.
-5. UI switch (tabs, families, methodology page) and the cache version bump
-   ship as a second worker deploy after step 4 has verified, so the site never
-   renders format tabs against an unapplied v2 taxonomy.
-6. Aliases and dual response shapes removed after one release.
+**Release 1: taxonomy.** Sections 4, 5, 7 minus statistics. Bands on slices
+that contain composites are suppressed outright (`inference:
+too_few_components`, computed from the graph), bands elsewhere keep the
+current task bootstrap. Order:
+
+1. Pipeline rewrite, validator, v2 catalog, v2-capable CLI in one commit;
+   hand review of mechanism and invariant facets; validator green in CI.
+2. Migration 0016 applied to prod D1.
+3. Server deploy: revision-aware readers, v2 endpoints (404
+   `no_active_revision` until activation), coverage gate, cache version v10,
+   digest in keys, v1 untouched.
+4. After the re-bench ingest and the task-set flip: `sync-catalog --apply`,
+   then `sync-taxonomy --apply --hash <64-hex>` (dry run first): stages an
+   inactive revision, verifies, activates. Verify: assigned equals task count,
+   digest matches, benchmark hash unchanged, v1 responses unchanged.
+5. UI deploy switching to v2 endpoints behind a flag, methodology page,
+   deprecation headers on v1 with the sunset date.
+
+**Release 2: descriptive donor awareness.** Counts, sensitivity table,
+standard errors from component resampling on slices with `c ≥ 20`, format-
+macro headline, wire format 6.8.
+
+**Release 3: inferential redesign.** Bands under the validated estimator
+(6.9), tier copy, pass^k. Only after the simulation study is in the
+repository.
+
+v1 removal after the sunset date, once v2 traffic is observed.
 
 ## 9. Testing
 
-- Unit (`site/`, vitest on the built bundle): weighted resampling equals the
-  current bootstrap on donor-free input with the same seed; a synthetic slice
-  of ten composites sharing one donor yields an interval at least as wide as
-  the same ten as independent tasks and no band at `m < 10`; score matrices
-  for the three metrics; endpoint validation rejects partial coverage, unknown
-  family, unresolved donor, and a composite whose tags are not the donor
-  union; digest written only on full success; cache keys change with digest.
-- Pipeline (Deno tests): group rules on one fixture per format; prune rule;
-  alias canonicalization; composite union; determinism (two runs, identical
-  bytes); validator failure cases.
-- e2e (Playwright): tabs render the four formats; a composite task page shows
-  donors; old group URL redirects.
-- Operational: `sync-taxonomy` dry run against staging D1 before prod.
+- Pipeline (Deno): one fixture per format; alias table; composite derivation
+  incl. `min_bc_version` max; validator failure cases (unknown template,
+  donors on a non-composite, composite donor, self-donor, missing
+  description, derived mismatch); determinism (two runs, identical bytes);
+  every catalog example in this spec round-trips.
+- Server (`site/`, vitest on the built bundle): endpoint validation rejects
+  each listed defect; staging then activation is atomic under a simulated
+  failure before the flip; identical payload is a no-op; v1 apply after v2
+  activation returns 409; digest golden vector; cache keys change with digest
+  and estimator version; coverage gate excludes a partial model; graph
+  components computed correctly on a fixture with shared donors; component
+  bootstrap equals task bootstrap on a donor-free slice; `c < 20` suppresses
+  bands; unknown tag on v2 returns 400.
+- e2e (Playwright): format tabs render with counts; composite task page shows
+  donors and provenance; v1 endpoints unchanged after activation.
+- Operational: dry run against staging D1; v1 response snapshots diffed
+  before and after activation.
 
 ## 10. Success measures
 
 - Coverage 100 percent of tasks in the current set, zero unknown slugs, every
-  composite's donors resolved.
+  composite's donors resolved, validator green in CI.
 - The format axis explains the attempt-1 score variance the old axis cannot
   (between-group share of variance reported for both).
 - Facet-derived composite resistance reproduces the measured cross-tab
   (0 of 59 without a high-survival donor, 29 of 59 with one) without any
-  outcome-derived label in the taxonomy.
-- On the composite tab, bands under unit resampling are never tighter than
-  under task resampling; the methodology page and per-tab counts are live.
-- Rerunning the pipeline is deterministic; the CI validator catches an
-  untagged new task.
+  outcome-derived label.
+- Under the simulation in 6.9, component resampling achieves nominal
+  coverage where task resampling does not, and no band is ever shown on a
+  slice with fewer independent components than the validated threshold.
+- No v1 response changes at activation (snapshot diff empty).
+- Rerunning the pipeline is deterministic; a new untagged task fails CI.
 
 ## 11. Precedents consulted
 
@@ -409,10 +510,28 @@ area and patch size), Terminal-Bench 2.0 (16 categories, three tiers),
 LiveBench (category means averaged into the headline), HELM (scenarios by
 metric). Selection by measured solve rate: Aider polyglot (225 of 697 solved
 by at most 3 of 7 models), BigCodeBench-Hard (solve rate under 50 percent).
-Statistics: Miller 2024 "Adding Error Bars to Evals" (clustered standard
-errors up to three times naive, report cluster count with question count,
-paired differences, bootstrap justified for complicated sampling schemes);
-BC-Bench (five runs, BCa bootstrap intervals, pass^5, paired sign-flip
-permutation tests); Chatbot Arena (bootstrap intervals, overlap means
-indistinguishable). Continuous task validation: Terminal-Bench 2.1; ours is
-gold-ci.
+Statistics: Miller 2024 (clustered standard errors up to three times naive,
+report cluster count with question count, paired differences, bootstrap
+justified for complicated sampling schemes); BC-Bench (five runs, BCa
+bootstrap intervals, pass^5, paired sign-flip permutation tests); Chatbot
+Arena (bootstrap intervals, overlap means indistinguishable). Continuous task
+validation: Terminal-Bench 2.1; ours is gold-ci.
+
+## 12. Review record
+
+Revision 2 incorporates, from the two-model review: the multiplicity-average
+bootstrap withdrawn as invalid (identical donor sets gave zero variance;
+shared dominant donors were down-weighted), replaced by component resampling
+with a validated threshold and honest suppression; estimand stated;
+best-across-runs kept instead of a silent switch to mean-over-runs; coverage
+gate for models missing a slice; bands restricted to solve metrics; pass^k
+at fixed k with named runs; format-macro from joint replicates; revisioned
+storage with single-statement activation instead of digest-last on live
+rows; per-revision vocabulary; donor foreign keys and ordinal constraints;
+families stored; v1 writes refused after v2; full validation list; canonical
+digest; v2 API instead of redefining v1; no false aliases; dated sunset;
+`?tag=` unknown-slug behaviour; cache bump moved to the server deploy;
+locking mechanism added; invariants split from mechanisms; spec-induction
+dropped; prevalence pruning replaced by a reviewed vocabulary; version tags
+as a min-version field with max derivation; local composite facets; trap
+count corrected; three-release split; simulation study before any band.
