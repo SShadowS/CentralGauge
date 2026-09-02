@@ -2196,3 +2196,53 @@ building: either the launch bar is stated at attempt 1 (the contract-robust
 metric this file already argued for, and the one the composites were gated
 on), or best-of-2 stays and the only resistant material is the four-donor
 residue above.
+
+## Sonnet 5 and Luna on the 29 composites, and the first full three-model panel over 139 tasks (2026-09-02)
+
+`results/benchmark-results-1788349560086.json`, two attempts, fixed retry
+path, $9.17 (Sonnet $8.88, Luna $0.29 at catalog rates).
+
+| | claude-sonnet-5 | gpt-5.6-luna |
+| --- | --- | --- |
+| pass@1 | **0 / 29** | **0 / 29** |
+| best-of-2 | 19 / 29 | 16 / 29 |
+| best-of-2 failures | X185 X194 X249 X254 X257 X264 X271 X283 X296 X298 | X185 X239 X245 X248 X254 X257 X264 X271 X276 X278 X283 X296 X298 |
+
+Neither model solves a single composite first try. The retry residue widens
+below the frontier: X067 (four composites for both), X140, X114, X074,
+X079, X116 (Luna, three), X083, X076, X075. So the composites separate
+models at attempt 1 by construction (0, 0, 1, 3 of 29 across the four
+models) and at best-of-2 by consistency (16, 19, 23, 24 of 29).
+
+### The panel selection, three models with full coverage of all 139 tasks
+
+Opus 5, Sonnet 5 and Luna each have an uncapped two-attempt run over the
+110 singles (08-29) and the 29 composites (today). `panel-select.py`, Aider
+polyglot's rule ("retain tasks solved by at most N of the panel"):
+
+| metric | rule | n | retention | Opus 5 | Sonnet 5 | Luna |
+| --- | --- | --- | --- | --- | --- | --- |
+| best-of-2 | solved by <= 2 of 3 | 40 | 29% | 78% | 48% | 30% |
+| best-of-2 | solved by <= 1 of 3 | 16 | 12% | 62% | 25% | 0% |
+| **attempt 1** | **solved by <= 2 of 3** | **59** | **42%** | **39%** | **20%** | **10%** |
+| attempt 1 | solved by <= 1 of 3 | 45 | 32% | 20% | 7% | 2% |
+
+Scores are the metric named in the row, on the retained set. On the
+attempt-1 row the same 59 tasks score 85 / 64 / 53 at best-of-2, so the
+set separates the panel under both readings.
+
+**This is the first configuration that clears the operator bar with a
+publishable n.** Before the composite programme the attempt-1 ceiling was
+n = 14 (Opus 5 failed 7 of 109 first try); it is now 59 of 139 at a 42%
+retention, inside Aider's 5-50% band, with the strongest model at 39% and
+a 29-point spread to the weakest. Best-of-2 as the headline does not clear
+it at any retention that leaves a real set (n = 16 at 62%).
+
+Consequences:
+1. State the launch bar and the composite tier's headline at attempt 1.
+   AUC@2 and best-of-2 stay as profile columns.
+2. The retained 59 are a selection artifact of this three-model panel;
+   re-run the selection whenever a model joins the panel (GPT-5.5 still
+   lacks an uncapped run over the 110 singles, about $40).
+3. Cap per-donor representation when publishing the retained set: the
+   composites among the 59 ride on seven donors.
