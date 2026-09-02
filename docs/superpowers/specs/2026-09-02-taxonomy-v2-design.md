@@ -245,7 +245,10 @@ CREATE INDEX idx_taxonomy_task_tags_tag ON taxonomy_task_tags(revision_id, tag_s
 
 Vocabulary is versioned per revision, so a later revision cannot change what
 an earlier hash's taxonomy meant. Activation is one statement on one row, so
-readers never observe a half-written revision.
+readers never observe a half-written revision. Foreign keys are defence in
+depth: donor and task validity is enforced by the endpoint validation in 5.2,
+and the migration's staging run confirms D1 enforces the constraints before
+they are relied on.
 
 ### 5.2 Admin endpoint `/api/v1/admin/catalog/task-taxonomy`
 
@@ -364,7 +367,12 @@ the All slice has 110 single-task components plus one 29-task component.
   composites removed. Shown as a descriptive table, labelled "not a
   confidence interval".
 - Monte Carlo policy: 2000 draws, percentile intervals, labelled approximate;
-  seed = hash, metric, slice, revision digest, estimator version.
+  seed = hash, metric, slice, revision digest, estimator version. Percentile
+  index convention pinned to `ceil((B + 1) · q) − 1` on the sorted draws and
+  covered by a unit test.
+- One draw per iteration over the whole graph of the current task set; every
+  slice, the format-macro headline and the pooled column read that same
+  draw, so cross-format correlation through shared donors is preserved.
 
 Consequence today: the composite tab shows scores, standard errors from a
 one-component resample (which equal zero and are shown as "n/a, single
