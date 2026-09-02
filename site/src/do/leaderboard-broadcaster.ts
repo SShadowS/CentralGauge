@@ -1,4 +1,3 @@
-import type { DurableObjectState } from "@cloudflare/workers-types";
 import { eventToRoutes, routePatternMatches } from "../lib/server/sse-routes";
 
 const MAX_BUFFERED = 100;

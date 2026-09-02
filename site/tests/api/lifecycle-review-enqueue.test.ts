@@ -28,7 +28,15 @@ beforeEach(async () => {
 const PATH = "/api/v1/admin/lifecycle/review/enqueue";
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const d = await crypto.subtle.digest("SHA-256", bytes);
+  // `Uint8Array.buffer` is typed ArrayBufferLike (ArrayBuffer | SharedArrayBuffer)
+  // and digest() takes BufferSource, which excludes the shared variant. Slicing
+  // to the view's own range yields a plain ArrayBuffer and copies nothing the
+  // caller relies on.
+  const buf = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const d = await crypto.subtle.digest("SHA-256", buf);
   return [...new Uint8Array(d)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
