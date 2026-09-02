@@ -14,6 +14,7 @@ import {
   EPOCH_KEYED_TTL_SECONDS,
   DEGRADED_TTL_SECONDS,
 } from "$lib/server/data-epoch";
+import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
@@ -34,6 +35,26 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const cached = await cache.match(cacheKey);
     if (cached) {
       payload = (await cached.json()) as CategoriesIndexResponse;
+    }
+
+    // L2: globally shared. This route had L1 only, so every colo recomputed it.
+    // Its payload is under a kilobyte, which is exactly why it was skipped —
+    // and wrong: payload size is not query cost. Measured, this endpoint's
+    // query reads tens of thousands of rows to produce that kilobyte.
+    if (!payload) {
+      const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
+      if (shared) {
+        payload = JSON.parse(shared) as CategoriesIndexResponse;
+        await cache.put(
+          cacheKey,
+          new Response(shared, {
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "cache-control": `public, s-maxage=${ttl}`,
+            },
+          }),
+        ).catch((err) => console.error("[categories] L1 backfill failed:", err));
+      }
     }
 
     if (!payload) {
@@ -171,6 +192,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           "cache-control": `public, s-maxage=${ttl}`,
         },
       });
+      await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(payload));
       await cache.put(cacheKey, storeRes);
     }
 

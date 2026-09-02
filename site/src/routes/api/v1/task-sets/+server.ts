@@ -1,5 +1,6 @@
 import type { RequestHandler } from "./$types";
 import { bumpDataEpoch } from "$lib/server/data-epoch";
+import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
 import { verifySignedRequest } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { cachedJson } from "$lib/server/cache";
@@ -38,6 +39,26 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const cached = await cache.match(cacheKey);
     if (cached) {
       payload = (await cached.json()) as TaskSetsResponse;
+    }
+
+    // L2: globally shared. This route had L1 only, so every colo recomputed it.
+    // Its payload is under a kilobyte, which is exactly why it was skipped —
+    // and wrong: payload size is not query cost. Measured, this endpoint's
+    // query reads tens of thousands of rows to produce that kilobyte.
+    if (!payload) {
+      const shared = await sharedCacheGet(platform.env.DB, cacheKey.url, epoch);
+      if (shared) {
+        payload = JSON.parse(shared) as TaskSetsResponse;
+        await cache.put(
+          cacheKey,
+          new Response(shared, {
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "cache-control": `public, s-maxage=${ttl}`,
+            },
+          }),
+        ).catch((err) => console.error("[task-sets] L1 backfill failed:", err));
+      }
     }
 
     if (!payload) {
@@ -81,6 +102,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
             `public, s-maxage=${ttl}`,
         },
       });
+      await sharedCacheSet(platform.env.DB, cacheKey.url, epoch, JSON.stringify(payload));
       await cache.put(cacheKey, storeRes);
     }
 

@@ -1,4 +1,11 @@
-import { isFallbackEpoch, type EpochToken } from "$lib/server/data-epoch";
+import {
+  buildCacheKey,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+  isFallbackEpoch,
+  readDataEpoch,
+  type EpochToken,
+} from "$lib/server/data-epoch";
 
 /**
  * Globally-shared L2 for computed payloads (see migrations/0017_payload_cache.sql).
@@ -140,4 +147,87 @@ function epochToNumber(epoch: EpochToken): number | null {
   if (!epoch.startsWith("e")) return null;
   const n = Number(epoch.slice(1));
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The whole two-tier read path, in one call.
+ *
+ * Every JSON read endpoint wants exactly the same sequence: read the epoch
+ * first, build a normalized key, try the per-colo L1, try the global L2,
+ * compute, then populate both. Hand-writing that per route is how
+ * `/api/v1/families/[slug]` ended up with no cache at all while burning
+ * 104,781 rows per request, and how `/api/v1/categories` and `/api/v1/summary`
+ * ended up with L1 but no L2 — 4.5M rows/day between the three, because the
+ * original route list was drawn from a snapshot of expensive queries instead of
+ * an audit of every route that touches D1.
+ *
+ * Payload size is not query cost: `/api/v1/categories` runs a 57,952-row query
+ * to return under a kilobyte. Wrap the route; do not estimate.
+ *
+ * The ordering contract from data-epoch.ts is enforced here rather than trusted
+ * to each caller: the epoch is read before `compute` is invoked, and once.
+ */
+export async function epochCachedJson<T>(opts: {
+  db: D1Database;
+  caches: { open(name: string): Promise<Cache> };
+  /** Named Cache API bucket, e.g. "cg-families". */
+  cacheName: string;
+  /** Key namespace, distinct per logical resource, e.g. "family-detail". */
+  namespace: string;
+  /** Parsed, whitelisted params only — never the raw URL. */
+  params?: Record<string, string | number | boolean | null | undefined>;
+  compute: () => Promise<T>;
+}): Promise<T> {
+  const { db, caches, cacheName, namespace, params = {}, compute } = opts;
+
+  const epoch = await readDataEpoch(db);
+  const ttl = isFallbackEpoch(epoch)
+    ? DEGRADED_TTL_SECONDS
+    : EPOCH_KEYED_TTL_SECONDS;
+  const key = buildCacheKey(namespace, params, epoch);
+
+  const cache = await caches.open(cacheName);
+
+  const l1 = await cache.match(key);
+  if (l1) return (await l1.json()) as T;
+
+  const l2 = await sharedCacheGet(db, key.url, epoch);
+  if (l2) {
+    await backfill(cache, key, l2, ttl, namespace);
+    return JSON.parse(l2) as T;
+  }
+
+  const payload = await compute();
+  const body = JSON.stringify(payload);
+  await sharedCacheSet(db, key.url, epoch, body);
+  await backfill(cache, key, body, ttl, namespace);
+  return payload;
+}
+
+/**
+ * Populates L1. Best-effort: a cache write must never turn a computed response
+ * into an error. The stored copy carries a public s-maxage; the user-facing
+ * response is built by the caller and must stay `private`, or the adapter tees
+ * it into caches.default keyed by URL with no epoch — an un-invalidatable copy.
+ */
+async function backfill(
+  cache: Cache,
+  key: Request,
+  body: string,
+  ttl: number,
+  namespace: string,
+): Promise<void> {
+  try {
+    await cache.put(
+      key,
+      new Response(body, {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `public, s-maxage=${ttl}`,
+        },
+      }),
+    );
+  } catch (err) {
+    console.error(`[${namespace}] L1 backfill failed:`, err);
+  }
 }
