@@ -1,4 +1,5 @@
 import type { RequestHandler } from "./$types";
+import { bumpDataEpochStmt } from "$lib/server/data-epoch";
 import {
   assertSupportedEnvelopeVersion,
   envelopeSignedMessage,
@@ -441,6 +442,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           JSON.stringify({ missing_blob_count: missingBlobs.length }),
         ),
     );
+
+    // Ingest changes leaderboard-visible data, so retire every cached
+    // aggregate. In-batch (not after) so a committed ingest can never be
+    // paired with a failed bump. See src/lib/server/data-epoch.ts.
+    statements.push(bumpDataEpochStmt(db));
 
     await db.batch(statements);
 

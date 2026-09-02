@@ -9,6 +9,14 @@ import { getAll, getFirst } from "$lib/server/db";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { computeModelAggregates } from "$lib/server/model-aggregates";
 import { ServerTimer } from "$lib/server/server-timing";
+import {
+  buildCacheKey,
+  readDataEpoch,
+  isFallbackEpoch,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+} from "$lib/server/data-epoch";
+import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
 
 interface ModelRow {
   id: number;
@@ -70,6 +78,40 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
   const env = platform.env;
 
   try {
+    // Epoch-keyed named cache. This endpoint had no server-side cache: it runs
+    // computeModelAggregates plus the ~30k-row run trajectory query on every
+    // request. Ordering contract (data-epoch.ts): epoch first, never re-read.
+    const cache = await platform.caches.open("cg-models");
+    const epoch = await readDataEpoch(env.DB);
+    const ttl = isFallbackEpoch(epoch)
+      ? DEGRADED_TTL_SECONDS
+      : EPOCH_KEYED_TTL_SECONDS;
+    // The slug is path-derived, not a free-form query param, and a miss on an
+    // unknown slug 404s before any aggregate runs — so it is not the unbounded
+    // key space that `since` was.
+    const cacheKey = buildCacheKey("model-detail", { slug: params.slug ?? "" }, epoch);
+
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      return cachedJson(request, await cached.json());
+    }
+
+    // L2: globally shared, so only the first colo pays the compute after an
+    // invalidation. See src/lib/server/shared-cache.ts.
+    const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
+    if (shared) {
+      await cache.put(
+        cacheKey,
+        new Response(shared, {
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": `public, s-maxage=${EPOCH_KEYED_TTL_SECONDS}`,
+          },
+        }),
+      ).catch((err) => console.error("[model-detail] L1 backfill failed:", err));
+      return cachedJson(request, JSON.parse(shared));
+    }
+
     const model = await getFirst<ModelRow>(
       env.DB,
       `SELECT m.id, m.slug, m.display_name, m.api_model_id, m.generation, m.released_at,
@@ -303,6 +345,21 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       // entirely when there is no predecessor.
       ...(predecessor ? { predecessor } : {}),
     };
+
+    // Stored copy carries the public s-maxage; the user-facing response stays
+    // private so adapter-cloudflare cannot tee it into caches.default without
+    // an epoch in the key.
+    await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(body));
+
+    await cache.put(
+      cacheKey,
+      new Response(JSON.stringify(body), {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `public, s-maxage=${ttl}`,
+        },
+      }),
+    ).catch((err) => console.error("[model-detail] cache put failed:", err));
 
     return cachedJson(request, body, {
       extraHeaders: { "server-timing": timer.header() },

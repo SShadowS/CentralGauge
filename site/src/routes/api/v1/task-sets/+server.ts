@@ -1,4 +1,6 @@
 import type { RequestHandler } from "./$types";
+import { bumpDataEpoch } from "$lib/server/data-epoch";
+import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
 import { verifySignedRequest } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { cachedJson } from "$lib/server/cache";
@@ -7,9 +9,14 @@ import type {
   TaskSetSummary,
   TaskSetsResponse,
 } from "$lib/shared/api-types";
-import { CACHE_VERSION } from "$lib/server/cache-version";
 
-const TASK_SETS_CACHE_TTL_SECONDS = 60;
+import {
+  buildCacheKey,
+  readDataEpoch,
+  isFallbackEpoch,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+} from "$lib/server/data-epoch";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   if (!platform) {
@@ -19,16 +26,39 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
   }
   try {
     const cache = await platform.caches.open("cg-task-sets");
-    const cacheUrl = new URL(url.toString());
-    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
-    const cacheKey = new Request(cacheUrl.toString(), {
-      method: "GET",
-    });
+    // Ordering contract (see data-epoch.ts): epoch read BEFORE any
+    // query feeding the payload, and never re-read in the request.
+    const epoch = await readDataEpoch(platform.env.DB);
+    const ttl = isFallbackEpoch(epoch)
+      ? DEGRADED_TTL_SECONDS
+      : EPOCH_KEYED_TTL_SECONDS;
+    // Key off parsed params only — never the raw URL. See buildCacheKey.
+    const cacheKey = buildCacheKey("task-sets", {}, epoch);
 
     let payload: TaskSetsResponse | null = null;
     const cached = await cache.match(cacheKey);
     if (cached) {
       payload = (await cached.json()) as TaskSetsResponse;
+    }
+
+    // L2: globally shared. This route had L1 only, so every colo recomputed it.
+    // Its payload is under a kilobyte, which is exactly why it was skipped —
+    // and wrong: payload size is not query cost. Measured, this endpoint's
+    // query reads tens of thousands of rows to produce that kilobyte.
+    if (!payload) {
+      const shared = await sharedCacheGet(platform.env.DB, cacheKey.url, epoch);
+      if (shared) {
+        payload = JSON.parse(shared) as TaskSetsResponse;
+        await cache.put(
+          cacheKey,
+          new Response(shared, {
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "cache-control": `public, s-maxage=${ttl}`,
+            },
+          }),
+        ).catch((err) => console.error("[task-sets] L1 backfill failed:", err));
+      }
     }
 
     if (!payload) {
@@ -69,9 +99,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         headers: {
           "content-type": "application/json; charset=utf-8",
           "cache-control":
-            `public, s-maxage=${TASK_SETS_CACHE_TTL_SECONDS}`,
+            `public, s-maxage=${ttl}`,
         },
       });
+      await sharedCacheSet(platform.env.DB, cacheKey.url, epoch, JSON.stringify(payload));
       await cache.put(cacheKey, storeRes);
     }
 
@@ -181,34 +212,65 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       );
     }
 
-    if (setupStatements.length > 0) await db.batch(setupStatements);
+    // Chunked below, so this write cannot be a single atomic batch and the bump
+    // cannot ride along inside it. Instead the bump runs unconditionally after
+    // the attempt, and a bump failure is fatal to the request — see below.
+    let writeError: unknown = null;
+    try {
+      if (setupStatements.length > 0) await db.batch(setupStatements);
 
-    // Insert tasks with INSERT OR IGNORE so partial backfills are safe to
-    // retry (tasks table has PRIMARY KEY (task_set_hash, task_id) per schema).
-    const taskStatements: ReturnType<typeof db.prepare>[] = [];
-    for (const task of payload.tasks) {
-      taskStatements.push(
-        db
-          .prepare(
-            `INSERT OR IGNORE INTO tasks(task_set_hash, task_id, content_hash, difficulty, category_id, manifest_json)
-             VALUES (?, ?, ?, ?, (SELECT id FROM task_categories WHERE slug = ?), ?)`,
-          )
-          .bind(
-            payload.hash,
-            task.task_id,
-            task.content_hash,
-            task.difficulty,
-            task.category_slug,
-            JSON.stringify(task.manifest),
-          ),
-      );
-    }
-    if (taskStatements.length > 0) {
-      // D1 batch limit is ~50 statements/batch; chunk for safety on 64+ tasks.
-      const CHUNK = 40;
-      for (let i = 0; i < taskStatements.length; i += CHUNK) {
-        await db.batch(taskStatements.slice(i, i + CHUNK));
+      // Insert tasks with INSERT OR IGNORE so partial backfills are safe to
+      // retry (tasks table has PRIMARY KEY (task_set_hash, task_id) per schema).
+      const taskStatements: ReturnType<typeof db.prepare>[] = [];
+      for (const task of payload.tasks) {
+        taskStatements.push(
+          db
+            .prepare(
+              `INSERT OR IGNORE INTO tasks(task_set_hash, task_id, content_hash, difficulty, category_id, manifest_json)
+               VALUES (?, ?, ?, ?, (SELECT id FROM task_categories WHERE slug = ?), ?)`,
+            )
+            .bind(
+              payload.hash,
+              task.task_id,
+              task.content_hash,
+              task.difficulty,
+              task.category_slug,
+              JSON.stringify(task.manifest),
+            ),
+        );
       }
+      if (taskStatements.length > 0) {
+        // D1 batch limit is ~50 statements/batch; chunk for safety on 64+ tasks.
+        const CHUNK = 40;
+        for (let i = 0; i < taskStatements.length; i += CHUNK) {
+          await db.batch(taskStatements.slice(i, i + CHUNK));
+        }
+      }
+    } catch (err) {
+      writeError = err;
+    }
+
+    // Invalidate even when the writes threw: a partial write still changed
+    // leaderboard-visible data, so the caches must not be trusted either way.
+    const bumped = await bumpDataEpoch(db)
+      .then(() => true)
+      .catch((err) => {
+        console.error("[task-sets] epoch bump failed:", err);
+        return false;
+      });
+
+    // Surface the original write failure first — it is the more informative one.
+    if (writeError) throw writeError;
+    // Writes landed but invalidation did not. Reporting success here would tell
+    // the caller their publish is live when every colo is still serving the old
+    // aggregates for the next 24h, which is exactly the failure the epoch
+    // scheme exists to prevent. Fail loudly instead.
+    if (!bumped) {
+      throw new ApiError(
+        500,
+        "epoch_bump_failed",
+        "Writes committed but cache invalidation failed. Readers may serve pre-publish aggregates until the operator runs `npm run bump-epoch`.",
+      );
     }
 
     const status = existing ? "backfilled" : "created";

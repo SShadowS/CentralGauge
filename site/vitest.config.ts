@@ -99,6 +99,21 @@ export default defineConfig(async () => {
       __STATS_GOLDEN_VECTORS__: JSON.stringify(statsGoldenVectors),
     },
     test: {
+      // 15s, not vitest's 5s default.
+      //
+      // Several tests render an SSR page cold, and those pages fan out to
+      // multiple API endpoints. Each endpoint now does an epoch read and, on a
+      // cold path, a shared-cache read before computing — roughly double the D1
+      // round trips of the pre-cache design. That is a deliberate trade: those
+      // round trips are what replaced ~13M rows of per-colo re-warm after an
+      // invalidation (see src/lib/server/shared-cache.ts).
+      //
+      // Under parallel load that pushed rum-beacon-emit and canonical-link past
+      // 5s while both still passed in isolation. Raising the budget here rather
+      // than per-test avoids chasing whichever SSR test trips next; these are
+      // content assertions, not latency guards. A real latency guard should
+      // measure deliberately rather than piggyback on a timeout.
+      testTimeout: 15_000,
       setupFiles: ["./tests/setup.ts"],
       include: ["tests/**/*.test.ts"],
       exclude: [

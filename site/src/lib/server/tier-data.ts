@@ -115,7 +115,7 @@ export async function buildAucMatrix(
 /**
  * Compute (or read from named cache) the tier assignment for a task set.
  *
- * Cache key includes task-set hash, metric, cache version, and a freshness
+ * Cache key includes task-set hash, metric, cache version, and the data epoch
  * token (e.g. last ingest timestamp) so new ingests trigger recomputation.
  *
  * Returns a slug → tier number map.
@@ -128,15 +128,16 @@ export async function buildAucMatrix(
 export async function getTierMap(
   db: D1Database,
   opts: AucMatrixOptions,
-  freshnessToken: string,
+  epochToken: string,
 ): Promise<Map<string, number>> {
   const cache = await caches.open('cg-tiers');
-  // Fold the task-catalog count into the key. The freshness token is derived
-  // from last_run_at, which does NOT change when the `tasks` table is
-  // backfilled (e.g. via `populate-task-set` after a bench whose tasks weren't
-  // yet in the catalog). Without this, a tier result computed while the catalog
-  // was empty (→ no tiers) would be served stale for the 24h TTL even after
-  // backfill. The count flips 0→N on backfill, busting the key.
+  // Fold the task-catalog count into the key. This used to compensate for the
+  // freshness token being derived from last_run_at, which does not move on a
+  // catalog backfill (e.g. `populate-task-set` after a bench whose tasks were
+  // not yet catalogued). The token is now the data epoch, which any backfill
+  // going through an API route DOES bump — but `populate-task-set` writes to
+  // D1 out of band, so the count guard stays as the backstop for exactly that.
+  // It costs one COUNT on the compute path, which epoch keying makes rare.
   const countRow = await db
     .prepare(`SELECT COUNT(*) AS n FROM tasks WHERE task_set_hash = ?`)
     .bind(opts.taskSetHash)
@@ -148,7 +149,7 @@ export async function getTierMap(
   // set-wide event regardless of which category is being viewed.
   // Use 'global' (not 'all') so a hypothetical category slug "all" can't collide.
   const catKey = opts.category ? encodeURIComponent(opts.category) : 'global';
-  const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/c${catKey}/${CACHE_VERSION}/t${taskCount}/${encodeURIComponent(freshnessToken)}`;
+  const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/c${catKey}/${CACHE_VERSION}/t${taskCount}/${encodeURIComponent(epochToken)}`;
   const hit = await cache.match(keyUrl);
   if (hit) {
     const cached = (await hit.json()) as TierResult[];

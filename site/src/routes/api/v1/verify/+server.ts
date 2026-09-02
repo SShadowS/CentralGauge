@@ -2,6 +2,7 @@ import type { RequestHandler } from "./$types";
 import { verifySignedRequest } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { runBatch } from "$lib/server/db";
+import { BUMP_DATA_EPOCH_SQL } from "$lib/server/data-epoch";
 
 const PROMOTION_THRESHOLD = 0.9;
 
@@ -212,6 +213,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     }
 
     // Step 9: Execute batch atomically
+    // Verification promotes a run's tier, which the leaderboard filters on.
+    // In-batch so the promotion and the invalidation commit together.
+    ops.push({ sql: BUMP_DATA_EPOCH_SQL, params: [] });
+
     await runBatch(db, ops);
 
     // Step 10: Leaderboard cache (Cache API) is per-colo and cannot be

@@ -1,4 +1,5 @@
 import type { RequestHandler } from "./$types";
+import { bumpDataEpochStmt } from "$lib/server/data-epoch";
 import {
   type SignedAdminRequest,
   verifySignedRequest,
@@ -173,6 +174,9 @@ export const DELETE: RequestHandler = async (
       db.prepare(`DELETE FROM runs WHERE task_set_hash = ?`).bind(urlHash),
       db.prepare(`DELETE FROM tasks WHERE task_set_hash = ?`).bind(urlHash),
       db.prepare(`DELETE FROM task_sets WHERE hash = ?`).bind(urlHash),
+      // Deleting a task set changes every aggregate. In-batch, so the cascade
+      // and the invalidation are atomic together.
+      bumpDataEpochStmt(db),
     ]);
 
     // R2 cleanup happens AFTER D1 commits. If R2 partially fails, D1 stays

@@ -25,4 +25,10 @@
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = 'v9';
+/*
+ * v10: tier and since are now mirrored into the P1/P2 correlated subqueries.
+ * A v9 entry for a tier- or since-filtered view can hold pass numerators
+ * counted across out-of-scope runs, so those entries are retired rather than
+ * served for another day under epoch keying.
+ */
+export const CACHE_VERSION = 'v10';

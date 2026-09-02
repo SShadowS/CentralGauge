@@ -58,10 +58,14 @@ describe("OG image endpoints", () => {
     expect(res.headers.get("x-og-cache")).toBe("miss");
   });
 
-  it("second GET /og/index.png returns cache-hit", async () => {
+  it("second GET /og/index.png is served without recomputing", async () => {
     const res = await SELF.fetch("http://x/og/index.png");
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-og-cache")).toBe("hit");
+    // "epoch" means the epoch-keyed named cache served it, short-circuiting
+    // before any D1 work. That supersedes the old "hit", which only meant
+    // renderOgPng reused the Satori render — it still paid for
+    // computeModelAggregates and the count queries first, so it saved no rows.
+    expect(res.headers.get("x-og-cache")).toBe("epoch");
   });
 
   it("GET /og/models/sonnet-4-7.png returns image/png", async () => {

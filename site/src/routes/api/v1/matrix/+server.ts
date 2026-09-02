@@ -3,9 +3,15 @@ import { cachedJson } from "$lib/server/cache";
 import { computeMatrix } from "$lib/server/matrix";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import type { MatrixResponse } from "$lib/shared/api-types";
-import { CACHE_VERSION } from "$lib/server/cache-version";
 
-const CACHE_TTL_SECONDS = 60;
+import {
+  buildCacheKey,
+  readDataEpoch,
+  isFallbackEpoch,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+} from "$lib/server/data-epoch";
+import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
@@ -40,14 +46,39 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // full census. Compressed to ~80KB on the wire. 60s TTL handles flux
     // from new ingest events.
     const cache = await platform!.caches.open("cg-matrix");
-    const cacheUrl = new URL(url.toString());
-    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
-    const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+    // Ordering contract (see data-epoch.ts): epoch read BEFORE any
+    // query feeding the payload, and never re-read in the request.
+    const epoch = await readDataEpoch(env.DB);
+    const ttl = isFallbackEpoch(epoch)
+      ? DEGRADED_TTL_SECONDS
+      : EPOCH_KEYED_TTL_SECONDS;
+    // Key off parsed params only — never the raw URL. See buildCacheKey.
+    const cacheKey = buildCacheKey("matrix", { set, category, difficulty }, epoch);
 
     let payload: MatrixResponse | null = null;
     const cached = await cache.match(cacheKey);
     if (cached) {
       payload = (await cached.json()) as MatrixResponse;
+    }
+
+    // L2: globally shared. This route had L1 only, so every colo recomputed it.
+    // Its payload is under a kilobyte, which is exactly why it was skipped —
+    // and wrong: payload size is not query cost. Measured, this endpoint's
+    // query reads tens of thousands of rows to produce that kilobyte.
+    if (!payload) {
+      const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
+      if (shared) {
+        payload = JSON.parse(shared) as MatrixResponse;
+        await cache.put(
+          cacheKey,
+          new Response(shared, {
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "cache-control": `public, s-maxage=${ttl}`,
+            },
+          }),
+        ).catch((err) => console.error("[matrix] L1 backfill failed:", err));
+      }
     }
 
     if (!payload) {
@@ -59,9 +90,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
           "content-type": "application/json; charset=utf-8",
-          "cache-control": `public, s-maxage=${CACHE_TTL_SECONDS}`,
+          "cache-control": `public, s-maxage=${ttl}`,
         },
       });
+      await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(payload));
       await cache.put(cacheKey, storeRes);
     }
 

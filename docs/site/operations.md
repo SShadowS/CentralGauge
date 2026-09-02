@@ -96,6 +96,56 @@ wrangler rollback --message "P5.4 SSE regression — rolling to abc1234"
 Public post-mortem for any user-visible incident under
 `docs/postmortems/`. Use `docs/postmortems/_template.md`.
 
+## D1 cache epoch (read-budget invariant)
+
+Cached aggregates (`leaderboard`, `summary`, `categories`, `task-sets`, `matrix`,
+`shortcomings`, `cg-tiers`) are keyed by a monotonic counter in the `cache_epoch`
+table, not expired by a short TTL. Every API route that writes leaderboard-visible
+data bumps it inside its own write batch, so a publish retires every cached entry
+in every colo at once and the next request recomputes.
+
+Why it exists: Cloudflare's Cache API is per-colo and cannot be purged globally on
+the free plan, so correctness used to come from a 60s TTL. That made recompute
+frequency a function of the clock rather than the data — the leaderboard aggregate
+(~12.5k rows read per run) re-ran up to 1440x/day per cache key even on days with
+zero writes, which was ~95% of a 43M rows/day D1 bill against a 5M free-tier limit.
+
+**After any out-of-band D1 write, bump the epoch by hand:**
+
+```bash
+npm run bump-epoch              # production
+npm run bump-epoch -- --local   # local dev D1
+```
+
+Out-of-band means anything that does not go through an API route: `wrangler d1
+execute`, a restore from an R2 backup dump, `populate-task-set` and similar direct
+backfills, or a dashboard hand-edit. Skip it and every colo serves pre-change
+aggregates until the 24h TTL expires.
+
+**Check the read budget:**
+
+```bash
+npx wrangler d1 info centralgauge   # rows_read_24h against the 5,000,000 limit
+```
+
+Two invariants worth re-checking if `rows_read_24h` climbs again:
+
+1. **Cache keys are built from parsed params, never the request URL.** See
+   `buildCacheKey` in `src/lib/server/data-epoch.ts`. Keying off `url.toString()`
+   lets unknown params (`utm_source`, `fbclid`) and param ordering mint distinct
+   slots holding identical payloads, so every tracking-param variant becomes a
+   full recompute and junk params become an unbounded amplifier.
+2. **The user-facing `cache-control` stays `private`.** Only the response stored
+   in the named cache carries `public, s-maxage=`. `+page.server.ts` mirrors the
+   API's header onto the SSR'd HTML, so a public long-lived value there would let
+   the adapter store the homepage in `caches.default` with no epoch in its key —
+   un-invalidatable. Guarded by `tests/api/data-epoch.test.ts`.
+
+**If D1 read replication is ever enabled** (`read_replication.mode` in
+`wrangler.toml`), this scheme needs D1 Sessions: the epoch read and the compute
+queries must share one bookmark, or a fresh epoch can pair with a lagging
+replica's rows and poison that cache key for the full TTL.
+
 ## Monitoring
 
 | Layer | What                                                                  | Where                           |
