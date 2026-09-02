@@ -950,3 +950,50 @@ Append-only. Each entry: date, decision, why.
     Cronus28` and the runner reports only "Failed to create compiler
     folder". Run container-touching scripts with
     `DOCKER_CONTEXT=desktop-windows`.
+
+41. **A bare `Evaluate(Date, 'yyyy-MM-dd')` parses ISO text IDENTICALLY to
+    the format-9 overload on this container, under every session language
+    tried - R087 rejected (2026-09-02, Cronus28, BC 28.4, SOAP runner).**
+    Probe at `scratch/probe-evaldate/` (codeunit 80097, no tables),
+    re-runnable. Two tests, one run:
+
+    | input | bare `Evaluate` | `Evaluate(..., 9)` |
+    | --- | --- | --- |
+    | `2026-03-04` (the task's own discriminator) | Yes: 2026-03-04 | Yes: 2026-03-04 |
+    | `2026-04-05`, `2026-11-23`, `2026-12-13` | Yes, all correct | Yes, all correct |
+    | `20260304` | No | No |
+    | `03/04/2026` | Yes: 2026-03-04 (month-first) | **No** |
+    | `04.03.2026`, `04-03-2026` | Yes: 2026-04-03 (month-first) | **No** |
+    | `sometime in spring` | No | No |
+    | Decimal `149.9`, `2.5`, `1234.5` / Integer `10000` | identical to f9 | identical |
+    | `JsonValue.AsText()` of `"2026-03-04"` | `2026-03-04` (then parses as above) | |
+    | `JsonValue.AsDate()` on the same token | Yes: 2026-03-04 | |
+
+    Session locale is 1033 (`Format(DMY2Date(4,3,2026))` = `03/04/26`, as
+    entry 16 measured). The second test repeated the matrix after
+    `GlobalLanguage(1030)`, `(2057)` and `(1031)`: Boolean captions flipped
+    (Ja/Nej, Nein) but `Format(Date)` stayed `03/04/26` and the bare parser
+    still read `04.03.2026` as 3 April. So on BC28 the date culture used by
+    `Format`/`Evaluate` does NOT follow `GlobalLanguage`; it is a separate
+    session setting an oracle cannot flip from AL.
+
+    Consequences for task design:
+    - **R087's proposed defect (drop the `,9` from the date `Evaluate`) is
+      unobservable** with the feed the task defines (ISO only). The
+      sweep's own gating note anticipated exactly this outcome, and its
+      fallback (a missing/unconvertible required property as primary
+      defect) is a plain logic hole, not a platform-reasoning trap, so
+      R087 is rejected rather than re-aimed.
+    - Format 9 is the STRICTER parser, not merely the locale-free one: it
+      REJECTS every locale-shaped date. The only observable difference
+      between bare and format-9 `Evaluate` on a Date is that bare ACCEPTS
+      `MM/dd/yyyy`, `MM.dd.yyyy`, `MM-dd-yyyy` (all read month-first here)
+      while 9 refuses them. A task that wants a day/month swap must feed a
+      day-first locale shape through a bare `Evaluate`, and then the
+      correct fix is not `,9` (which rejects the input) but explicit
+      parsing or `JsonValue.AsDate()` on ISO input. Entry 16's `Format`
+      direction is unaffected: bare `Format(Date)` is still locale-shaped
+      and the dropped `,0,9` there stays exact-string assertable.
+    - The decimal and integer `,9` sites are equally unobservable for
+      JSON-shaped numbers (no group separator, dot decimal): this locale's
+      bare parser reads them the same way.
