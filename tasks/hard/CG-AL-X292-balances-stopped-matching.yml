@@ -1,0 +1,34 @@
+id: CG-AL-X292
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This is a subscription business''s application, running across every company it trades in. Codeunit "CG X075 Campaign Call List"''s BuildCallList shapes the "CG X075 Contact" view a caller then walks, so it visits every contact whose City is exactly the campaign''s target city and every contact whose "Credit Limit" is at or above the minimum, each exactly once, altering no contact; BuildCallListForCampaign does the same from a "CG X075 Campaign" record''s "Target City" and "Minimum Credit Limit". Codeunit "CG X076 Legacy Importer" converts amount texts: ParseAmount returns a well-formed, non-negative text''s value, zero included, else errors quoting that text as not a valid amount; TryParseAmount instead reports false with that error in FailureReason, describing only its latest attempt; ImportLine stores one "CG X076 Legacy Amount" row for an accepted text, none for a rejected one; codeunit "CG X076 Import Job"''s ImportBatch runs it per line, returning the count imported. On "CG X118 Journal Line", validating "Account No." takes that account''s "Currency Code" onto the line, clearing it when the account is cleared; validating "Counter Account No." has codeunit "CG X118 Journal Line Mgt" record a "Balancing Amount" that is the exact opposite of the line''s Amount, Amount staying as entered, so the two net to exactly zero whatever "Rounding Precision" the currency on either side carries; clearing it leaves zero there, a later Amount change is matched again, other entries stay as they are, and an account not on file is refused by name on either side. Codeunit "CG X154 Rate Service" reports in GetServiceRate the "Service Rate" configured in the named company''s own "CG X154 Rate Setup", Reset making the next lookup read that setup as it stands; codeunit "CG X154 Setup Mgt" records and reads back a company''s own rate and its "CG X154 Activity" Quantity through SetServiceRate, GetServiceRateDirect, SetActivityQuantity and GetActivityQuantity, each zero where none is configured, neither disturbed by another company''s; codeunit "CG X154 Statement Builder" returns from BuildCharges one charge per company on the database, each company''s own Quantity times its own rate. Codeunit "CG X157 Period Statement" reports a "CG X157 Cost Center"''s "CG X157 Cost Entry" figures: GetPeriodAmount returns the net amount posted to it between a From Date and To Date, both days counted, zero where nothing was; BuildStatement writes one "CG X157 Statement Line" per calendar month those dates span, each holding that month''s own net amount, replacing an earlier build''s rows and leaving another cost center''s alone. Complaints have arrived from across the business since the last update, each about a different report, and none of them narrows down where the trouble starts. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X075
+    - CG-AL-X076
+    - CG-AL-X118
+    - CG-AL-X154
+    - CG-AL-X157
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5-1
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X292.Test.al
+  testCodeunitId: 89514

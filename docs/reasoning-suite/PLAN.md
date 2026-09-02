@@ -226,6 +226,7 @@ Standing constraints (from CLAUDE.md + session rules):
 
 | Date | What moved |
 |---|---|
+| 2026-09-02 | Composite batch 7: X289-X298 at 5 sites with `--require`, 6 of 10 gated and promoted (X289 X290 X292 X293 X296 X298; 29 gated composites, 117 reasoning tasks) at $3.77 per gated task. Survival table refreshed via new scripts/composite-survival.py: X079 joins the high-survival set, X114 drops just under 25%; 0 of 59 composites without one ever gated. gold-ci 273/273. |
 | 2026-09-02 | Composite batch 6: X279-X288 screened at 8 sites, X283 promoted (23 gated composites). Per-donor survival over 316 cells: 0/70 composites without one of six donors (X076 X074 X140 X170 X075 X114) ever gated, 22/38 with one, flat across site counts - the site-count dose-response was a confound; composite-plan.py --require seeds one per composite. gold-ci replayed 267/267 under the post-retry-fix fingerprint. |
 | 2026-08-23 | Scaffolded; categories allocated; perf premise probe started. |
 | 2026-08-23 | Phase 2 batch 1 filtered (Sonnet 20/24, Fable 4/4; decision 9 closes raw filtering). Build batch 1: X066-X075 promoted, 11/100. |

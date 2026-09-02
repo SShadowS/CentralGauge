@@ -1,0 +1,34 @@
+id: CG-AL-X298
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application handles a company''s order and payment administration. Codeunit "CG X067 Freight Calculator": CalculateFreight returns 10 percent of an order''s amount to the nearest cent, unless a caller has taken the calculation over for that call, setting the charge returned. Codeunit "CG X067 Free Freight Promotion" waives freight to nothing on orders of 1,000 or more, only while a caller has switched it on for that call; below 1,000 the standard charge stands, and with nothing switched on it stands at any size. Codeunit "CG X074 Comment Mgt.": CountRelatedComments reports how many "CG X074 Comment Line" rows belong to the expense report the caller''s record names, zero when it names none. AddComment appends a comment at that report''s own next line number, 10000 for its first, 10000 more thereafter. UpdateReportSummary writes a "CG X074 Report" record''s own comment count into Total Comment Count, others untouched. Codeunit "CG X116 Remittance Composer" builds a payment''s remittance line, capped at 140 characters. AddInvoice records an entry: the invoice number, a space, the amount to exactly two decimals, dot separator, no thousand separators; one over 140 characters alone is refused, unrecorded, with an error naming the 140-character limit, earlier entries standing. GetRemittanceText joins them with a comma and a space, first added first: empty when none were added; exactly as built at 140 characters or fewer; once too long, the longest leading run that fits, closed with a further "and N more", N counting the invoices left out; or that closing entry alone when not even the first fits beside it. An entry is never split. Codeunit "CG X118 Journal Line Mgt" balances a "CG X118 Journal Line". Validating Account No. copies that "CG X118 Account" record''s Currency Code onto the line; clearing it clears the Currency Code too. Validating Counter Account No., and Amount afterwards, sets Balancing Amount so the two net to exactly zero whatever currency either account uses; clearing Counter Account No. leaves Balancing Amount zero. Setting an account or counter account that does not exist fails with an error; no other line changes. Codeunit "CG X163 Ledger Mgt" stores and reads a branch''s own amount for an account code through SetAmount and GetAmountDirect, on that branch''s "CG X163 Branch Ledger" record alone. Through GetGroupTotal, codeunit "CG X163 Group Totals" adds every branch''s own amount for an account code into one figure: a branch holding nothing contributes zero, an account on one branch alone contributes in full, an account nobody holds totals zero, another account on the same branch never entering it. Since the last release the paperwork this application produces keeps coming back from those receiving it, no two complaints alike. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X067
+    - CG-AL-X074
+    - CG-AL-X116
+    - CG-AL-X118
+    - CG-AL-X163
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5-1
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X298.Test.al
+  testCodeunitId: 89520

@@ -301,3 +301,7 @@ site count. The 4 -> 8 site curve was the chance of drawing one of them. Seed
 composites with `composite-plan.py --require`, build at five sites, and treat
 the gated composites as six knowledge gaps in many wrappers. Evidence in
 `hardening-levers-evidence.md`, "The dose-response was a confound".
+
+Batch 7, run the same day on that rule at five sites, gated 6 of 10 at $3.77
+per task - every resisting cell on a seeded donor. `scripts/composite-survival.py`
+refreshes the table; run it before planning.

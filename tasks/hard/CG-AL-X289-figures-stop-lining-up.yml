@@ -1,0 +1,34 @@
+id: CG-AL-X289
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This is a wholesaler''s finance back-office application. Codeunit "CG X074 Comment Mgt." handles expense-report comments: AddComment puts a report''s first comment at "Line No." 10000 and each later 10000 above that report''s own last, whatever other reports hold; CountRelatedComments reports how many "CG X074 Comment Line" rows belong to the report the line in hand names, however reached, zero for a brand-new report with no number yet; UpdateReportSummary writes that count onto "Total Comment Count", other reports'' counts untouched. Codeunit "CG X076 Legacy Importer" converts amount texts: ParseAmount returns a well-formed, non-negative text''s value, zero included, else errors quoting that text as not a valid amount; TryParseAmount instead reports false with that error in FailureReason, describing only its latest attempt; ImportLine stores one "CG X076 Legacy Amount" row for an accepted text, none for a rejected one; codeunit "CG X076 Import Job"''s ImportBatch runs it per line, returning the count imported. Codeunit "CG X116 Remittance Composer" composes a payment''s remittance line: AddInvoice records the invoice number, a space and the amount with exactly two decimals, a dot, no thousand separators, refusing an entry over 140 characters unrecorded, the error naming that limit; GetRemittanceText joins entries with comma and space as added, empty for none, as built at 140 or fewer, otherwise the longest leading run of whole entries plus ", and N more" for those left out, that suffix counting towards the 140, a suffixed 140 kept, just "and N more" when not even one fits. Codeunit "CG X120 Approval Reconciler" keeps "CG X120 Pending Verification" in step with "CG X120 Approved Record": InitializeRecord starts a record approved and nothing pending; SetContactName and SetCreditLimit record the new value, that field pending exactly while it differs from its approved value, letter case included, one entry per differing field however often set; ApproveCurrentValues takes current values as approved, nothing pending; IsPending, IsFieldPending and PendingFieldCount report that record''s own state alone. Codeunit "CG X140 Rebate Allocator" splits a "CG X140 Rebate Header" record''s "Total Rebate Amount" across its "CG X140 Rebate Line" rows by "Allocation Weight" into "Rebate Amount", marking the header Allocated: shares are whole cents summing exactly to that total, a line weighted zero beside other weight takes exactly zero, a document with no weight anywhere left as it stands, leftover cents going one at a time to the lines whose exact entitlement most exceeds what they hold, no share depending on which line came first, another document untouched; GetAllocatedTotal adds up a document''s lines. Month-end has run days late since the last release, and the accountants closing it cannot say which figures still deserve trust. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X074
+    - CG-AL-X076
+    - CG-AL-X116
+    - CG-AL-X120
+    - CG-AL-X140
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5-1
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X289.Test.al
+  testCodeunitId: 89511

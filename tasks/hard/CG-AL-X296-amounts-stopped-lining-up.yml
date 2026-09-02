@@ -1,0 +1,34 @@
+id: CG-AL-X296
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This application runs a service company''s back office. Codeunit "CG X072 Loyalty Gatekeeper" decides priority support for "CG X072 Loyalty Candidate" rows: a candidate qualifies on Lifetime Spend of 5,000 or more, on Manual VIP Override, or on both, those rules living in codeunits "CG X072 Loyalty Rule Spend" and "CG X072 Loyalty Rule VIP". EvaluateCandidate stores one verdict; EvaluateAllPending runs candidates not yet approved, leaving approved ones alone. Codeunit "CG X117 Order Xml Export": ExportOrder builds a partner document from a "CG X117 Sales Order", failing for an order that does not exist. Its declaration states version 1.0 and UTF-8. Root element SalesOrder carries no, customerNo and an orderDate giving the calendar day as an ISO year-month-day, plus a Customer element whose Name carries the customer name. Element Lines carries one Line per "CG X117 Order Line" of that order and none from another, by ascending Line No., with lineNo, no, description, quantity and unitPrice, numbers plain, never padded with zeros. Codeunit "CG X157 Period Statement" covers a "CG X157 Cost Center" and its "CG X157 Cost Entry" rows: GetPeriodAmount returns the net amount posted between a From Date and a To Date, both days counted, nothing outside, zero where none; BuildStatement writes one "CG X157 Statement Line" per calendar month the window spans, each carrying that month''s own net amount, replacing a previous run''s rows and leaving other cost centres alone. Codeunit "CG X170 Charge Allocator": AllocateCharge spreads a "CG X170 Charge Header" Total Amount over its "CG X170 Cost Center" rows in proportion to Weight, each share a whole number of cents in Allocated Amount summing exactly to that total, header Allocated; zero Weight earns exactly zero where other weight exists; a weightless charge keeps its amounts and stays unallocated. ReverseCharge records a payback under a Reversal No., one Reversed Amount per cost centre in "CG X170 Reversal Line", summing exactly to the amount reversed. However many reversals follow, a cost centre''s net, Allocated Amount less all reversed against it, is whole cents; the nets sum exactly to the part of Total Amount not yet reversed; each leftover cent goes to the cost centre cut back most against its exact entitlement. GetAllocatedTotal, GetReversedTotal, GetChargeReversedTotal and GetNetAmount report them. Codeunit "CG X079 Charge Allocator" allocates on those same terms through AllocateCharge, spreading a "CG X079 Charge Header" Total Charge Amount over its "CG X079 Charge Line" rows in proportion to Weight into each Allocated Amount, every line landing within a cent of its exact proportional share; GetAllocatedTotal reports the lines'' total. Since the last release the numbers this application produces have parted company with the records behind them. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X072
+    - CG-AL-X079
+    - CG-AL-X117
+    - CG-AL-X157
+    - CG-AL-X170
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5-1
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X296.Test.al
+  testCodeunitId: 89518

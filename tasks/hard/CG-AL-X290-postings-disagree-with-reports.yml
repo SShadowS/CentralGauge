@@ -1,0 +1,34 @@
+id: CG-AL-X290
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This is a logistics operator''s shipment and document intake application. Codeunit "CG X076 Legacy Importer" converts amount texts: ParseAmount returns a well-formed, non-negative text''s value, zero included, else errors quoting that text as not a valid amount; TryParseAmount instead reports false with that error in FailureReason, describing only its latest attempt; ImportLine stores one "CG X076 Legacy Amount" row for an accepted text, none for a rejected one; codeunit "CG X076 Import Job"''s ImportBatch runs it per line, returning the count imported. Codeunit "CG X083 Shipment Import Mgt." writes one "CG X083 Shipment Import Entry" per carrier status message in ImportShipmentStatus: the shipment named, a "Package Count" of one per package that message reports for that shipment however laid out, a "Tracking No. Count" of only packages carrying a tracking number, a "Weight Unit" from the first package naming one, Status Received with packages and "Empty Shipment" without; another partner''s packages and those with no shipment identity count towards nothing, GetLastImportedPackageCount returning a shipment''s most recent import "Package Count", zero for one never imported. Codeunit "CG X106 Archive Mgt" archives a "CG X106 Document" in ArchiveDocument, leaving it carrying an "Enrichment Note" of "NOTE-" plus its "Base Total" and an "Archive Tag" of "PRIORITY" at a "Base Total" of 100 or more and "STANDARD" below, another document left as it stands; RefreshArchiveTag sets that same tag without disturbing a document''s "Enrichment Note". Codeunit "CG X138 Doc Matcher" takes in partner documents: ImportInboundDoc stores a "CG X138 Inbound Doc" holding the external reference exactly as received and records it in "CG X138 Doc Index" under that reference''s letters and digits in upper case, the first 20, everything else dropped; PreviewMatchKey returns that same value without recording anything; TryMatchIncoming reports whether an incoming reference resolves to a recorded document and writes a "CG X138 Match Log" entry per attempt, most recent last, holding the reference as received, the value it resolved to, and the document found or blank; MatchByDocNo answers for a document''s own number. Codeunit "CG X157 Period Statement" reports a "CG X157 Cost Center"''s "CG X157 Cost Entry" figures: GetPeriodAmount returns the net amount posted to it between a From Date and To Date, both days counted, zero where nothing was; BuildStatement writes one "CG X157 Statement Line" per calendar month those dates span, each holding that month''s own net amount, replacing an earlier build''s rows and leaving another cost center''s alone. Since the newest build went live the operations desk keeps finding paperwork that disagrees with the screen, and no two accounts of it describe the same thing. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X076
+    - CG-AL-X083
+    - CG-AL-X106
+    - CG-AL-X138
+    - CG-AL-X157
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5-1
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X290.Test.al
+  testCodeunitId: 89512

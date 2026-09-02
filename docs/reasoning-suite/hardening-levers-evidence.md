@@ -2115,3 +2115,41 @@ is the artifact to keep updating.
    (the 08-30 overlay and 09-01 retry commits had staled all 266 records):
    267/267 green including X283. CG-AL-M003 fails only on Cronus28, where a
    resident Continia app defines codeunit 80013; it passes on Cronus282.
+
+### Batch 7 confirms it: seeded at five sites, 6 of 10 gate at $3.77 each (2026-09-02)
+
+The first batch planned with `--require` (one of X076 X074 X140 X170 X075
+X114 in every composite) at FIVE sites: `results/benchmark-results-1788340706048.json`
+screen, `1788341323692` / `1788342039612` confirmations. Six candidates at
+one trial, six confirmed at three (five at 3/3 for both models; X289 opus
+2/3 with one compile cell, X298 gpt-5.5 2/3), all promoted: X289 X290 X292
+X293 X296 X298. Batch spend $22.61 including a separate 3-trial run of
+X294 (its opus screen cell was a provider "overloaded" error; opus then
+solved it 3/3), i.e. **$3.77 per gated task** against $8.01 before.
+
+Every resisting cell fails on a seeded donor: X076 in five of the six
+gated composites, X074 in three, X075, X170 and X079 once each. X140 was
+present in four of the ten and survived in none, so its 63% is not a
+per-composite guarantee. Refreshed with `scripts/composite-survival.py`
+(new; reads provenance + results files):
+
+| donor | survived / included | rate |
+| --- | --- | --- |
+| X076 | 90 / 104 | 87% |
+| X074 | 20 / 25 | 80% |
+| X140 | 59 / 93 | 63% |
+| X170 | 10 / 16 | 62% |
+| X075 | 15 / 28 | 54% |
+| X079 | 12 / 44 | 27% |
+| X114 | 6 / 26 | 23% |
+| 46 donors | 0 / ~1,300 | 0% |
+
+At the 25% threshold X079 joins the set and X114 drops out; the cross-tab
+is unchanged in kind: 0 of 59 composites without a high-survival donor
+gated, 29 of 59 with one (35% at four sites, 58% at five, 57% at six, 54%
+at eight). Five sites is the right size: same rate, smallest apps, and
+gpt-5.5 produced one compile cell in ten instead of five.
+
+The 29 gated composites now rest on seven donors. Adding to that set is the
+programme's only remaining lever, and the test for a new donor is cheap:
+put it in five-site composites and see whether it survives.

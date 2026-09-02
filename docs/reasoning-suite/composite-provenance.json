@@ -1203,5 +1203,115 @@
   ],
   "objs": 27,
   "sites": 8
+ },
+ "CG-AL-X289": {
+  "donors": [
+   "CG-AL-X074",
+   "CG-AL-X076",
+   "CG-AL-X116",
+   "CG-AL-X120",
+   "CG-AL-X140"
+  ],
+  "objs": 14,
+  "sites": 5
+ },
+ "CG-AL-X290": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X083",
+   "CG-AL-X106",
+   "CG-AL-X138",
+   "CG-AL-X157"
+  ],
+  "objs": 18,
+  "sites": 5
+ },
+ "CG-AL-X291": {
+  "donors": [
+   "CG-AL-X068",
+   "CG-AL-X076",
+   "CG-AL-X116",
+   "CG-AL-X140",
+   "CG-AL-X157"
+  ],
+  "objs": 15,
+  "sites": 5
+ },
+ "CG-AL-X292": {
+  "donors": [
+   "CG-AL-X075",
+   "CG-AL-X076",
+   "CG-AL-X118",
+   "CG-AL-X154",
+   "CG-AL-X157"
+  ],
+  "objs": 20,
+  "sites": 5
+ },
+ "CG-AL-X293": {
+  "donors": [
+   "CG-AL-X076",
+   "CG-AL-X093",
+   "CG-AL-X106",
+   "CG-AL-X131",
+   "CG-AL-X140"
+  ],
+  "objs": 15,
+  "sites": 5
+ },
+ "CG-AL-X294": {
+  "donors": [
+   "CG-AL-X075",
+   "CG-AL-X079",
+   "CG-AL-X106",
+   "CG-AL-X148",
+   "CG-AL-X151"
+  ],
+  "objs": 18,
+  "sites": 5
+ },
+ "CG-AL-X295": {
+  "donors": [
+   "CG-AL-X073",
+   "CG-AL-X074",
+   "CG-AL-X083",
+   "CG-AL-X087",
+   "CG-AL-X140"
+  ],
+  "objs": 18,
+  "sites": 5
+ },
+ "CG-AL-X296": {
+  "donors": [
+   "CG-AL-X072",
+   "CG-AL-X079",
+   "CG-AL-X117",
+   "CG-AL-X157",
+   "CG-AL-X170"
+  ],
+  "objs": 18,
+  "sites": 5
+ },
+ "CG-AL-X297": {
+  "donors": [
+   "CG-AL-X106",
+   "CG-AL-X114",
+   "CG-AL-X118",
+   "CG-AL-X157",
+   "CG-AL-X163"
+  ],
+  "objs": 18,
+  "sites": 5
+ },
+ "CG-AL-X298": {
+  "donors": [
+   "CG-AL-X067",
+   "CG-AL-X074",
+   "CG-AL-X116",
+   "CG-AL-X118",
+   "CG-AL-X163"
+  ],
+  "objs": 15,
+  "sites": 5
  }
 }

@@ -2404,6 +2404,60 @@
       "inputsHash": "a3765681baa0391d4ba5b528be9e5e50cec09c0498797feea9cac81dfc92c92a",
       "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
       "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X290": {
+      "verdict": "pass",
+      "at": "2026-09-02T09:42:09.866Z",
+      "testsPassed": 47,
+      "testsTotal": 47,
+      "inputsHash": "9dc3a032f6160be253ce513e108d422887493cc6ee960029c9ad9037ef9e6140",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X292": {
+      "verdict": "pass",
+      "at": "2026-09-02T09:42:10.067Z",
+      "testsPassed": 57,
+      "testsTotal": 57,
+      "inputsHash": "4a978cafdecbb5be56bd4522dfc83d0f87ee35efbdf64f2e6e594846fe687728",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X293": {
+      "verdict": "pass",
+      "at": "2026-09-02T09:42:10.515Z",
+      "testsPassed": 49,
+      "testsTotal": 49,
+      "inputsHash": "2e0bdda48475726c85da3e4588d9fff0b2855bcc1c5841beb08629d7b3de56f1",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X289": {
+      "verdict": "pass",
+      "at": "2026-09-02T09:42:11.110Z",
+      "testsPassed": 57,
+      "testsTotal": 57,
+      "inputsHash": "048509cb3a11f297f8ddf8b88eb861e8177db1d9eafd009f9ea42f205049ee55",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X298": {
+      "verdict": "pass",
+      "at": "2026-09-02T09:42:33.938Z",
+      "testsPassed": 55,
+      "testsTotal": 55,
+      "inputsHash": "3553295cb1c41509a5e4219c4653a89131ae1120d66956222a75b36998a12704",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-X296": {
+      "verdict": "pass",
+      "at": "2026-09-02T09:42:36.481Z",
+      "testsPassed": 47,
+      "testsTotal": 47,
+      "inputsHash": "d95e043af302e0049b624645f103b0982527eca735a013ac5c90a9484e69f806",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
     }
   },
   "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443"

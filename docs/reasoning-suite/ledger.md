@@ -985,3 +985,30 @@ tables in hardening-levers-evidence.md, "The dose-response was a confound".
 Harness: gold-ci fully replayed under fingerprint 0634e0ee1c1c, 267/267
 green. Suite: 160 X-series tasks committed (49 traps + 111 reasoning incl.
 23 gated composites).
+
+## Composite batch 7 (2026-09-02) - X289-X298 screened at 5 sites with `--require`, six promoted
+
+The first batch run on the batch-6 finding: `composite-plan.py --sites 5
+--require CG-AL-X076,X074,X140,X170,X075,X114` seeded every composite with
+one high-survival donor (spec at `scratch/composite-plan/spec7.json`, all
+ten in provenance). Descriptions by two Opus writers, 436-450 words, lint
+clean; all ten probe-green (34-60 tests, starter fails 15-34 reaching
+assertions); staged, id-audit + oracle-audit clean. One-trial screen
+($8.69): **6 candidates** (X289 X290 X292 X293 X296 X298), all six
+confirmed at 3 trials ($12.42; five at 3/3 for both models, X289 opus 2/3
+with one compile cell, X298 gpt 2/3) and promoted with reference solutions
+recorded green in gold-ci (273/273). X294's opus screen cell was an
+Anthropic "overloaded" provider error, so it got its own 3 trials ($1.50):
+opus solves it 3/3, rejected. X291, X295, X297 rejected at the screen.
+All non-passers unstaged. Batch total $22.61, **$3.77 per gated task**
+against $8.01 for the programme before it.
+
+Survivors are the seeded donors again: X076 in five of the six, X074 in
+three, X075, X170 and X079 once each. X140 sat in four composites and
+survived in none this batch. Refreshed survival table (`scripts/
+composite-survival.py`, new): X076 87%, X074 80%, X140 63%, X170 62%,
+X075 54%, X079 27%, X114 23%; 46 donors have never survived; still 0 of 59
+composites without a high-survival donor gated versus 29 of 59 with one.
+
+Suite: 166 X-series tasks committed (49 traps + 117 reasoning incl. 29
+gated composites).

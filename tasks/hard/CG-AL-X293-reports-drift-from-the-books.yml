@@ -1,0 +1,34 @@
+id: CG-AL-X293
+prompt_template: diagnose-objects.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'This is a distributor''s order-desk application. Codeunit "CG X076 Legacy Importer" converts amount texts: ParseAmount returns a well-formed, non-negative text''s value, zero included, else errors quoting that text as not a valid amount; TryParseAmount instead reports false with that error in FailureReason, describing only its latest attempt; ImportLine stores one "CG X076 Legacy Amount" row for an accepted text, none for a rejected one; codeunit "CG X076 Import Job"''s ImportBatch runs it per line, returning the count imported. Codeunit "CG X093 Order Export"''s ExportOrder returns well-formed JSON for a "CG X093 Order": orderNo, customerNo, an orderDate giving the calendar day as a four-digit year, two-digit month and two-digit day joined by hyphens, such as "2026-01-05", and a lines array of that order''s own lines, lowest "Line No." first, each with lineNo, itemNo, description, quantity, unitPrice and the stored lineAmount, every number a plain unquoted JSON number, descriptions keeping their quotes and backslashes, the array empty without lines. Codeunit "CG X106 Archive Mgt" archives a "CG X106 Document" in ArchiveDocument, leaving it carrying an "Enrichment Note" of "NOTE-" plus its "Base Total" and an "Archive Tag" of "PRIORITY" at a "Base Total" of 100 or more and "STANDARD" below, another document left as it stands; RefreshArchiveTag sets that same tag without disturbing a document''s "Enrichment Note". Codeunit "CG X131 Import Checker"''s CheckLine measures a "CG X131 Import Line" against three rules, a blank "Item No." first, then a Quantity not above zero, then a negative "Unit Cost", reporting exactly one message for the first rule that line breaks: "Line ", its own "Line No.", then ": Item No. is missing.", ": Quantity must be greater than zero." or ": Unit Cost cannot be negative." A zero "Unit Cost" and a Quantity just above zero break nothing; CheckBatch reports one per problem line of its own "Batch Code", lowest "Line No." first, replacing what the list held. Codeunit "CG X140 Rebate Allocator" splits a "CG X140 Rebate Header" record''s "Total Rebate Amount" across its "CG X140 Rebate Line" rows by "Allocation Weight" into "Rebate Amount", marking the header Allocated: shares are whole cents summing exactly to that total, a line weighted zero beside other weight takes exactly zero, a document with no weight anywhere left as it stands, leftover cents going one at a time to the lines whose exact entitlement most exceeds what they hold, no share depending on which line came first, another document untouched; GetAllocatedTotal adds up a document''s lines. Ever since the latest deployment the numbers this application publishes need explaining to whoever receives them, and no two accounts of it agree. Fix the application so every contract above holds.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - multi-defect
+    - minimal-symptom
+    - defect-sites-5
+  difficulty: hard
+  cohort: reasoning-100
+  origin: composite-assembled
+  donors:
+    - CG-AL-X076
+    - CG-AL-X093
+    - CG-AL-X106
+    - CG-AL-X131
+    - CG-AL-X140
+  authoring_model: anthropic
+  authoring_model_slug: anthropic/claude-fable-5-1
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X293.Test.al
+  testCodeunitId: 89515

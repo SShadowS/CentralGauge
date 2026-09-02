@@ -44,15 +44,18 @@ the chance of drawing one of those donors. Batch 6 drew eight sites from a pool
 that `--prev`/`--max-reuse` had stripped of them and gated 1 of 10 with the
 models measured unchanged on a control.
 
-The six, by attempt-1 survival across 316 cells: X076 (84%), X074 (83%),
-X140 (76%), X170 (60%), X075 (57%), X114 (25%). Forty-five other donors have
-never survived once. So: pass `--require CG-AL-X076,CG-AL-X074,CG-AL-X140,CG-AL-X170,CG-AL-X075,CG-AL-X114`
-to the planner (it seeds one per composite), build at **5 sites** (cheapest,
-same rate), and treat the gated composites as six knowledge gaps in many
-wrappers when reading panel statistics. Refresh the survival table from the
-results files before each batch; a donor that has not been screened inside a
-composite has no measured survival, and standalone hardness does not predict it
-(X114 is 30/30 alone).
+Run `python scripts/composite-survival.py` before planning; it prints the
+per-donor survival table from provenance plus every results file and the
+exact `--require` list. As of 2026-09-02 after batch 7 (360 cells): X076 87%,
+X074 80%, X140 63%, X170 62%, X075 54%, X079 27%, X114 23%; 46 donors have
+never survived once. Pass that `--require` list to the planner (it seeds one
+per composite), build at **5 sites** (same rate, smallest apps, fewest gpt-5.5
+compile cells), and treat the gated composites as a handful of knowledge gaps
+in many wrappers when reading panel statistics. Batch 7 ran exactly this and
+gated 6 of 10 at $3.77 each. A donor that has not been screened inside a
+composite has no measured survival, and standalone hardness does not predict
+it (X114 is 30/30 alone); the only way to grow the set is to put new donors
+into five-site composites and see whether they survive.
 
 Two things that do NOT predict a hit, both tested and dead: **donor hardness**
 (X183 carried two of the suite's hardest donors and both models solved it,
@@ -90,13 +93,20 @@ while X185's donors are all 30/30-easy and it resists) and **defect quietness**
 2. **Scaffold, serially** (id allocation races):
    `deno task start task new --slug <symptom-slug> --id CG-AL-X<NNN> --diagnose`.
    Read each `.meta.json` back for its real `testCodeunitId`.
-3. **Assemble.** `python scripts/composite-assemble.py <spec.json>`. Donors are
-   copied verbatim; their `CG X<NNN>` name prefixes and disjoint id blocks make
-   collisions impossible. Then set both `app.json` ids
-   (`a1b2c3d4-a<NNN>-0000-0000-00000000000{1,2}`) and fill in `task.yml`:
-   `prompt_template: diagnose-objects.md`, the three metrics,
+3. **Assemble.** Write each scaffold's `testCodeunitId` into the spec, then
+   `python scripts/composite-assemble.py <spec.json>`. Donors are copied
+   verbatim; their `CG X<NNN>` name prefixes and disjoint id blocks make
+   collisions impossible. Then `python scripts/composite-prepare.py <spec.json>
+   <sites> scratch/composite-plan/donor-descriptions<N>.json`: it sets both
+   `app.json` ids (`a1b2c3d4-a<NNN>-0000-0000-00000000000{1,2}`), fills
+   `task.yml` (`prompt_template: diagnose-objects.md`, the three metrics,
    `cohort: reasoning-100`, `origin: composite-assembled`, the `donors:` list,
-   and a `defect-sites-N` tag.
+   a `defect-sites-N` tag, authoring model) and emits the description writers'
+   input: per composite, each donor's original description plus the merged
+   oracle's test names for that donor, which is what lets a writer state every
+   graded clause. Record the spec in
+   `docs/reasoning-suite/composite-provenance.json` (all screened composites
+   live there, gated or not; the survival script reads it).
 4. **Write descriptions** to
    [references/description-brief.md](references/description-brief.md), verbatim.
    This is the lever; everything else is mechanical. Parallel subagents work
