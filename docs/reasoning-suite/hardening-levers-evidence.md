@@ -2153,3 +2153,46 @@ gpt-5.5 produced one compile cell in ten instead of five.
 The 29 gated composites now rest on seven donors. Adding to that set is the
 programme's only remaining lever, and the test for a new donor is cheap:
 put it in five-site composites and see whether it survives.
+
+## Opus 5 and GPT-5.5 at two attempts on all 29 composites: attempt-1 resistant, best-of-2 not (2026-09-02)
+
+The figure the 09-02 Fable section said was owed. One trial, two attempts,
+fixed retry path, `results/benchmark-results-1788346529729.json`, $28.90
+(Opus $18.57, GPT $10.32).
+
+| | claude-opus-5 | gpt-5.5 |
+| --- | --- | --- |
+| pass@1 | 1 / 29 (X248) | 3 / 29 (X244 X249 X289) |
+| best-of-2 | **24 / 29** | **23 / 29** |
+| best-of-2 failures | X185 X214 X218 X244 X264 | X194 X239 X254 X257 X264 X272 |
+| non-behavioural attempt-1 cells | 0 | 1 (omission) |
+
+Bugs found: 250 of 326 defect sites on attempt 1, 311 of 326 after the
+retry. The residue after a pointed retry is again the knowledge-gap donors:
+X140 (X214 X218 X239), X074 (X194 X264 twice), X114 (X185), X076 (X272),
+plus one X083 and one X067 cell. Every other donor falls to a retry that
+names its failing tests.
+
+### What this does to the launch bar
+
+Opus 5 now has full coverage of the 139 reasoning tasks (110 singles from
+the 08-29 uncapped run plus these 29):
+
+| metric | Opus 5 fails | score over 139 | max n at <= 50% |
+| --- | --- | --- | --- |
+| best-of-2 | 4 singles + 5 composites = 9 | 93.5% | 18 |
+| attempt 1 (pass@1) | 8 singles + 28 composites = 36 | 74.1% | 72 |
+
+Sonnet 5 (99/110 best-of-2, 92/110 first try) and Luna (95/110, 86/110)
+have not run on the composites; GPT-5.5 has no uncapped run on the singles,
+so `panel-select.py` finds no task with full panel coverage yet.
+
+**The composite tier is an attempt-1 instrument.** It moves the strongest
+model's best-of-2 failure count from 4 to 9, which leaves the best-of-2
+bar where it was (n <= 18, unpublishable). Under attempt-1 scoring the same
+tier moves the ceiling to n = 72 of 139, a 52% retention that is inside the
+Aider band. The decision this forces is the headline metric, not more
+building: either the launch bar is stated at attempt 1 (the contract-robust
+metric this file already argued for, and the one the composites were gated
+on), or best-of-2 stays and the only resistant material is the four-donor
+residue above.
