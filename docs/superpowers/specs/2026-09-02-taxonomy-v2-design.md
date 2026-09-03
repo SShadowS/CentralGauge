@@ -252,6 +252,9 @@ through the validator in a test.
 Additive. v1 tables are untouched.
 
 ```sql
+ALTER TABLE task_sets ADD COLUMN scoring_rule TEXT NOT NULL DEFAULT 'v1'
+  CHECK (scoring_rule IN ('v1','v2'));       -- see 6.2; existing hashes stay v1
+
 CREATE TABLE taxonomy_revisions (
   id             INTEGER PRIMARY KEY,
   task_set_hash  TEXT NOT NULL REFERENCES task_sets(hash),
@@ -389,9 +392,16 @@ The eligible run cohort for a model on a hash: runs with `status =
 recent by `started_at`, tie-break by run id**. A model with more runs does
 not get more chances. Attempts served by a refusal fallback count for the
 requested model as today and are annotated; the cohort's fallback count is
-returned per row. This caps the current best-across-all-runs rule at three
-runs; it changes some published numbers and is an explicit decision for the
-owner before release 3.
+returned per row.
+
+The scoring rule is pinned per task set: migration 0016 adds
+`task_sets.scoring_rule TEXT NOT NULL DEFAULT 'v1'` (`v1` = best across all
+runs, today's rule; `v2` = the three-run cohort above). Sets created after
+the release-2 deploy get `v2`; every existing hash keeps `v1` forever, so
+old-hash views stay byte-identical and no published number changes.
+`buildScoreMatrix` and the leaderboard read the rule from the set, and every
+v2 response carries `scoring_rule` beside `task_set_hash`. The owner
+decision reduces to confirming `v2` as the default for new sets.
 
 Per (model, task): `pass_at_1` = 1 if any cohort run passed at attempt 1;
 `pass_at_n` = 1 if any cohort run passed at any attempt; `auc_2` = 0, 0.5 or
@@ -478,6 +488,7 @@ settings hash. Hidden with fewer than three cohort runs.
 ```ts
 {
   task_set_hash: string; revision_digest: string; estimator_version: string;
+  scoring_rule: "v1" | "v2";
   slice: { format: "all" | GroupSlug; metric: "auc_2" | "pass_at_1" | "pass_at_n";
            task_count: number; donor_count: number; component_count: number;
            effective_components: number; largest_component_share: number;
@@ -562,7 +573,7 @@ that separation appears everywhere at once under one estimator.
 
 **Release 3, separation under the validated estimator.** After 6.10 is in
 the repository: separation on slices passing the gate, pass^k, the
-three-run cohort cap confirmed or revised by the owner.
+three-run cohort rule confirmed as the default for new task sets (existing hashes keep `v1`).
 
 v1 removal after the sunset date, once v2 traffic is observed.
 
