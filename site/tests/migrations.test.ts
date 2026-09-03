@@ -169,17 +169,57 @@ describe("migration 0010 task_tags", () => {
 
 describe("0016_taxonomy_v2", () => {
   it("creates the revision, policy, release and capture schema", async () => {
-    const names = (await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all<{ name: string }>()).results.map((r) => r.name);
-    for (const t of ["taxonomy_revisions", "taxonomy_active", "taxonomy_groups", "taxonomy_families", "taxonomy_tags",
-      "taxonomy_revision_tasks", "taxonomy_task_tags", "taxonomy_task_donors", "taxonomy_v1_snapshots",
-      "scoring_policies", "benchmark_releases", "release_tasks", "admin_audit"]) {
+    const names = (
+      await env.DB.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table'`,
+      ).all<{ name: string }>()
+    ).results.map((r) => r.name);
+    for (const t of [
+      "taxonomy_revisions",
+      "taxonomy_active",
+      "taxonomy_groups",
+      "taxonomy_families",
+      "taxonomy_tags",
+      "taxonomy_revision_tasks",
+      "taxonomy_task_tags",
+      "taxonomy_task_donors",
+      "taxonomy_v1_snapshots",
+      "scoring_policies",
+      "benchmark_releases",
+      "release_tasks",
+      "admin_audit",
+    ]) {
       expect(names, t).toContain(t);
     }
-    const runCols = (await env.DB.prepare(`PRAGMA table_info(runs)`).all<{ name: string }>()).results.map((r) => r.name);
-    for (const c of ["harness_fingerprint", "retry_path_version", "environment_digest", "test_runner", "invocation_json"]) expect(runCols).toContain(c);
-    const resCols = (await env.DB.prepare(`PRAGMA table_info(results)`).all<{ name: string }>()).results.map((r) => r.name);
-    for (const c of ["test_vector_json", "termination_kind", "cap_reached", "prompt_digest", "failure_class"]) expect(resCols).toContain(c);
-    const tsCols = (await env.DB.prepare(`PRAGMA table_info(task_sets)`).all<{ name: string }>()).results.map((r) => r.name);
+    const runCols = (
+      await env.DB.prepare(`PRAGMA table_info(runs)`).all<{ name: string }>()
+    ).results.map((r) => r.name);
+    for (const c of [
+      "harness_fingerprint",
+      "retry_path_version",
+      "environment_digest",
+      "test_runner",
+      "invocation_json",
+    ])
+      expect(runCols).toContain(c);
+    const resCols = (
+      await env.DB.prepare(`PRAGMA table_info(results)`).all<{
+        name: string;
+      }>()
+    ).results.map((r) => r.name);
+    for (const c of [
+      "test_vector_json",
+      "termination_kind",
+      "cap_reached",
+      "prompt_digest",
+      "failure_class",
+    ])
+      expect(resCols).toContain(c);
+    const tsCols = (
+      await env.DB.prepare(`PRAGMA table_info(task_sets)`).all<{
+        name: string;
+      }>()
+    ).results.map((r) => r.name);
     expect(tsCols).toContain("scoring_policy_id");
   });
 });
