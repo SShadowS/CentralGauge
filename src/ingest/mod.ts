@@ -57,6 +57,25 @@ export interface BenchResultItem {
   failure_reasons: string[];
   transcript_bytes?: Uint8Array;
   code_bytes?: Uint8Array;
+  /**
+   * Per-attempt capture fields (taxonomy v2). All optional — absent on CLIs
+   * predating 2026-09. See `src/ingest/capture.ts`.
+   */
+  test_vector?: { id: string; name: string; passed: boolean }[];
+  termination_kind?:
+    | "response"
+    | "provider_error"
+    | "cap_reached"
+    | "refusal"
+    | "infra_exhausted"
+    | "cancelled";
+  provider_finish_reason?: string;
+  cap_reached?: boolean;
+  infra_retries?: number;
+  infra_exhaustion_reason?: string | null;
+  fallback_chain?: string[];
+  prompt_sha256?: string;
+  candidate_sha256?: string;
 }
 
 export interface BenchResults {

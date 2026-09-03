@@ -46,6 +46,33 @@ export interface ResultInput {
    * attempted (or when no fallback rescued it). Optional/absent = no refusal.
    */
   refusal_category?: string | null;
+  /**
+   * Per-test-case id vector for this attempt's test results, in oracle
+   * order. All fields below are absent on CLIs predating 2026-09.
+   */
+  test_vector?: { id: string; name: string; passed: boolean }[];
+  /** How the attempt terminated — see `src/ingest/capture.ts::TerminationKind`. */
+  termination_kind?:
+    | "response"
+    | "provider_error"
+    | "cap_reached"
+    | "refusal"
+    | "infra_exhausted"
+    | "cancelled";
+  /** Raw provider finish reason for this attempt. */
+  provider_finish_reason?: string;
+  /** Whether the response was truncated by the provider's output cap. */
+  cap_reached?: boolean;
+  /** Count of inline infra retries performed for this attempt. */
+  infra_retries?: number;
+  /** Why the infra retry budget was considered exhausted, when it was. */
+  infra_exhaustion_reason?: string | null;
+  /** Requested model, then served model when a refusal fallback rescued it. */
+  fallback_chain?: string[];
+  /** sha256 hex digest of the exact prompt sent for this attempt. */
+  prompt_sha256?: string;
+  /** sha256 hex digest of the compiled candidate source, when one exists. */
+  candidate_sha256?: string;
 }
 
 export interface ModelRef {

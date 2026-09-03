@@ -206,3 +206,42 @@ Deno.test("T5 ingest: served_model + refusal_category carry through from llmResp
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+Deno.test("Task 11: assembled item carries termination_kind, test_vector and prompt_sha256", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-t11-capture-" });
+  try {
+    const path = await writeResultsFile(dir, [
+      makeResult("CG-AL-E001", [
+        createMockExecutionAttempt({
+          attemptNumber: 1,
+          testResult: {
+            success: true,
+            totalTests: 2,
+            passedTests: 2,
+            failedTests: 0,
+            duration: 1,
+            output: "",
+            results: [
+              { name: "TestA", passed: true, duration: 1 },
+              { name: "TestB", passed: true, duration: 1 },
+            ],
+          },
+        }),
+      ]),
+    ]);
+    const outcome = await assembleBenchResultsForVariant(path, VARIANT, {
+      pricingVersion: "2026-07-01",
+      runId: "persisted-run",
+    });
+    assertEquals(outcome.kind, "assembled");
+    if (outcome.kind !== "assembled") return;
+
+    const [item] = outcome.benchResults.results;
+    if (!item) throw new Error("expected 1 assembled result item");
+    assertEquals(item.termination_kind, "response");
+    assertEquals(item.test_vector?.length, 2);
+    assertEquals(item.prompt_sha256?.length, 64);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

@@ -13,6 +13,12 @@ import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import { isInfraInvalidatedAttempt } from "../../../src/health/infra-invalidation.ts";
 import { ValidationError } from "../../../src/errors.ts";
 import * as colors from "@std/fmt/colors";
+import {
+  optionalSha,
+  sha256Hex,
+  terminationKind,
+  testVector,
+} from "../../../src/ingest/capture.ts";
 
 interface SavedResultsFile {
   results: TaskExecutionResult[];
@@ -130,7 +136,7 @@ export async function assembleBenchResultsForVariant(
           [`task ${r.taskId}: attemptNumber ${a.attemptNumber} exceeds 2`],
         );
       }
-      items.push(attemptToItem(r.taskId, a, encoder));
+      items.push(await attemptToItem(r.taskId, a, encoder));
     }
   }
 
@@ -183,11 +189,11 @@ export async function assembleBenchResultsForVariant(
   return { kind: "assembled", benchResults: br, infraExcludedAttempts };
 }
 
-function attemptToItem(
+async function attemptToItem(
   taskId: string,
   a: ExecutionAttempt,
   encoder: TextEncoder,
-): BenchResultItem {
+): Promise<BenchResultItem> {
   const transcriptText =
     `=== PROMPT ===\n${a.prompt}\n=== RESPONSE ===\n${a.llmResponse.content}\n`;
   const attemptNumber = a.attemptNumber <= 1 ? 1 : 2;
@@ -197,7 +203,14 @@ function attemptToItem(
   if (a.compileDuration !== undefined) durations_ms.compile = a.compileDuration;
   if (a.testDuration !== undefined) durations_ms.test = a.testDuration;
 
-  return {
+  const vector = await testVector(a, taskId);
+  const infraRetries = (a as { infraRetries?: unknown[] }).infraRetries
+    ?.length ?? 0;
+  const exhaustion =
+    (a as { infraRetryExhaustionReason?: string }).infraRetryExhaustionReason ??
+      null;
+
+  const item: BenchResultItem = {
     task_id: taskId,
     attempt: attemptNumber,
     passed: a.success,
@@ -217,7 +230,20 @@ function attemptToItem(
     failure_reasons: a.failureReasons,
     transcript_bytes: encoder.encode(transcriptText),
     code_bytes: encoder.encode(a.extractedCode ?? ""),
+    test_vector: vector,
+    termination_kind: terminationKind(a),
+    provider_finish_reason: a.llmResponse.finishReason,
+    cap_reached: a.llmResponse.finishReason === "length",
+    infra_retries: infraRetries,
+    infra_exhaustion_reason: exhaustion,
+    fallback_chain: a.llmResponse.servedModel
+      ? [a.llmResponse.model, a.llmResponse.servedModel]
+      : [a.llmResponse.model],
+    prompt_sha256: await sha256Hex(a.prompt),
   };
+  const candidateSha = await optionalSha(a.candidateCode ?? a.extractedCode);
+  if (candidateSha !== undefined) item.candidate_sha256 = candidateSha;
+  return item;
 }
 
 function computeRunTimeRange(
