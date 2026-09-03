@@ -1,127 +1,159 @@
 ---
 name: refresh-task-taxonomy
 description: >-
-  Refresh the CentralGauge task taxonomy — the 9 groups + ~72 facet tags that
-  power the site's task discoverability filter and per-category model analysis.
-  Use when tasks are added/changed/removed in tasks/, when the taxonomy feels
-  stale or under-covers a workflow, or on a periodic cadence. The taxonomy is
-  UI/analysis-only metadata, fully decoupled from the task_set hash, so
-  refreshing it NEVER triggers a re-bench. Produces site/catalog/task-categories.yml
-  and pushes it to prod via `sync-taxonomy --apply`.
+  Refresh the CentralGauge task taxonomy — the 4 format groups and the
+  mechanism/invariant/surface/environment facet tags that power the site's
+  task filter and the per-format leaderboard slices. Use when tasks are
+  added/changed/removed in tasks/, when a facet is wrong or missing, or on a
+  periodic cadence. The taxonomy is UI/analysis-only metadata, fully decoupled
+  from the task_set hash, so refreshing it NEVER triggers a re-bench. Produces
+  site/catalog/task-categories.yml (schema version 2) and pushes it to prod via
+  `sync-taxonomy --apply`.
 ---
 
 # Refresh Task Taxonomy
 
-The site categorizes benchmark tasks two ways, both filterable on `/tasks` and
-used for per-category model strength analysis:
+The catalog at `site/catalog/task-categories.yml` is **schema version 2**. It
+carries, for every task in `tasks/**/*.yml`:
 
-- **Groups** — 9 mutually-exclusive buckets (one per task): `data-modeling`,
-  `pages-ui`, `business-logic`, `interfaces-events`, `error-transactions`,
-  `integration-serialization`, `reflection-datatransfer`, `records-runtime`,
-  `queries-performance`.
-- **Facet tags** — ~72 cross-cutting facets (0..N per task), e.g. `recordref`,
-  `flowfield`, `json`, `secrettext`, `xrec`, `v16`. A tag may span groups.
+- **One group = the task's FORMAT**, derived by rule from the manifest, never
+  hand-assigned: `diagnose-composite` (manifest has `metadata.donors`),
+  `diagnose-single` (a diagnose prompt template), `runtime-trap`
+  (`code-gen.md` under cohort `ado-trap-2026`), `build-from-spec` (everything
+  else). Rule order and the compatibility matrix are spec 4.1, implemented in
+  `pipeline/format-rules.ts`.
+- **Facets in four families** (`pipeline/facet-definitions.ts` defines each
+  one): `mechanism` (the BC runtime semantic the task turns on), `invariant`
+  (the domain contract the oracle grades), `surface` (AL objects and APIs
+  touched), `environment` (execution requirements). A composite carries no
+  facets of its own: its `derived_facets` are the union over its donors,
+  computed by the pipeline.
+- **`min_bc_version`** per task, and `donors` on composites.
 
-Both live ONLY in `site/catalog/task-categories.yml` and in D1 columns/joins
-(`task_categories`, `tags`, `task_tags`, `tasks.category_id`). **None of this is
-part of the task_set hash** (which covers `tasks/**/*.yml` + `tests/al/**`), so
-editing the taxonomy and re-syncing is free — no re-bench, the leaderboard hash
-is untouched. See CLAUDE.md "Task taxonomy" for the runtime contract.
+**`metadata.category` in a task file is FROZEN and IGNORED.** It is hashed task
+content, so editing it would force a re-bench, and nothing reads it any more.
+The same goes for `metadata.tags`: the build step reads them only as raw input
+to the surface alias table. Never add a category or tag to a manifest to fix
+the taxonomy — fix the pipeline input instead.
+
+None of this is part of the task_set hash (which covers `tasks/**/*.yml` +
+`tests/al/**`), so editing the taxonomy and re-syncing is free.
 
 ## When to run this
 
-- **A task was added.** New tasks are absent from the catalog → they show under
-  no group/tags and are unfindable in the filter until re-tagged.
-- **Tasks were renamed/removed.** Removed groups/tags should be pruned (the sync
-  is declarative and prunes orphan groups; tags get replaced wholesale).
-- **The taxonomy under-covers a real workflow** (someone can't find tests for X).
-- **Periodic hygiene** — every few task-authoring rounds, refresh so coverage
-  keeps pace with the suite.
+- **Tasks were added, renamed or removed.** New tasks are absent from the
+  catalog and unfindable in the site filter until the pipeline runs.
+- **A facet is wrong.** Correct it in `pipeline/enriched-tags.json`, never in
+  the emitted YAML (see Gotchas).
+- **Periodic hygiene** — every few authoring rounds.
 
-This is cheap and safe to run anytime; it does not touch benchmark results.
+Cheap and safe to run anytime; it never touches benchmark results.
 
 ## Bundled scripts
 
-All in `.claude/skills/refresh-task-taxonomy/pipeline/` (run from the REPO ROOT
-so their relative `tasks/` and `site/catalog/` paths resolve):
+All in `.claude/skills/refresh-task-taxonomy/pipeline/`, run from the REPO
+ROOT (their `tasks/` and `site/catalog/` paths are relative):
 
 | Script | Role |
 |---|---|
-| `build-taxonomy.ts` | Rule-based GROUP assignment (slug/tag regexes + 5 manual overrides) + canonicalized author tags → first-pass `task-categories.yml`. Fast, deterministic, but tags are only as good as the thin author tags. |
-| `enrich-task-tags.workflow.js` | **The quality step.** A Workflow that fans out ~12 agents to read every task spec and assign facets from a controlled vocabulary by CONTENT (catches facets the author never tagged), and flags vocab gaps. |
-| `merge-taxonomy.ts` | Merge the workflow's content facets onto the rule-based groups → final `task-categories.yml`. Drops the ubiquitous `codeunit` noise facet; adds reviewed niche facets. |
-| `classify-categories.ts` | Group-only preview + counts (sanity check the group balance). |
-| `category-strength.ts` | Per-model strength-by-category from a `/api/v1/matrix` JSON (for analysis/blogging, not the sync). |
+| `format-rules.ts` | Group derivation + the compatibility matrix. No CLI. |
+| `aliases.ts` | Raw manifest tag -> surface facet table, and the slug speller (acronyms, AL type names). No CLI. |
+| `facet-definitions.ts` | The hand-written one-sentence definition of every mechanism, invariant and environment facet. No CLI. |
+| `build-taxonomy.ts` | **Step 1.** Manifests -> draft catalog: groups, surface facets, `min_bc_version`, donors. |
+| `enrich-task-tags.workflow.js` | **Step 2, the quality step.** A Workflow that fans agents out over the manifests (plus starter and reference code for diagnose tasks) to assign mechanism/invariant/environment facets from the closed vocabulary, and reports `vocabGaps`. |
+| `merge-taxonomy.ts` | **Step 3.** Folds the enrichment in, stamps tag names and definitions, derives every composite from its donors. |
+| `validate-taxonomy.ts` | **Step 4** (`deno task taxonomy-audit`). Exit 1 on any violation; also wired into CI. |
+| `graph-fixture.ts` | **Step 5.** Publishes the task-donor component census to `docs/reasoning-suite/taxonomy-graph-fixture.json`. |
+| `category-strength.ts` | Per-model strength profile from a `/api/v1/matrix` JSON. Analysis only, not part of the refresh. |
 
 ## Procedure
 
-### 1. First-pass groups + base tags (deterministic)
+### 1. Build the draft from the manifests
 ```bash
 deno run --allow-read --allow-write .claude/skills/refresh-task-taxonomy/pipeline/build-taxonomy.ts
 ```
-Review the printed group counts — aim for each group ≥ ~5 tasks. If a new task
-mis-grouped, add a manual override in `build-taxonomy.ts` (`GROUP_OVERRIDE`) or
-adjust a `GROUP_RULES` regex, and re-run.
+Prints the per-format counts. It exits 1 and changes nothing if any manifest
+violates the compatibility matrix — fix the manifest or, if the task is a
+genuine exception, add a justified entry to `overrides:` in the catalog.
 
-### 2. Content-based facet enrichment (the quality step) — Workflow
-This is why the tags are good: agents read each task's actual content, not just
-the author tags. Run the bundled workflow via the **Workflow tool**:
+### 2. Enrich the analytic facets (Workflow) — NEW TASKS ONLY
+Run the bundled workflow through the **Workflow tool**, passing only the
+manifests that have no mechanism/invariant facets yet. Re-running it over the
+whole suite discards the reviewed facets already in
+`pipeline/enriched-tags.json` and costs a full re-review.
 
-- Gather the task file paths: `ls tasks/easy/*.yml tasks/medium/*.yml tasks/hard/*.yml | jq -R . | jq -s -c .`
-- Invoke `Workflow({ scriptPath: ".claude/skills/refresh-task-taxonomy/pipeline/enrich-task-tags.workflow.js", args: <that JSON array of paths> })`.
-  (The script tolerates `args` arriving as a JSON string — it parses it.)
-- It returns `{ taskTags: {ID: [facets]}, facetFreq, vocabGaps, ... }`.
-- **Review `vocabGaps`** — facets agents wanted that aren't in the controlled
-  vocab. Fold each into an existing facet, or add it to the `VOCAB` array in the
-  workflow script (and re-run) if it's a genuinely new, searchable concept.
+- Collect the new manifests' paths (relative to the checkout).
+- `Workflow({ scriptPath: ".claude/skills/refresh-task-taxonomy/pipeline/enrich-task-tags.workflow.js", args: { root: "<checkout>", paths: [...], batch: 10 } })`
+  (`args` may also be a bare JSON array of paths; the script parses a string.)
+- **Merge** its `taskTags` into `pipeline/enriched-tags.json` — do not
+  overwrite the file.
+- **Review `vocabGaps`.** A gap that recurs on three or more tasks goes to the
+  owner as a vocabulary proposal; adding a slug means editing
+  `MECHANISM_VOCAB`/`INVARIANT_VOCAB`/`ENVIRONMENT_VOCAB` in
+  `site/src/lib/shared/taxonomy-schema.ts`, the workflow's `VOCAB` list and
+  `pipeline/facet-definitions.ts` together. Never ad hoc.
 
-Save the workflow's `taskTags` object to
-`.claude/skills/refresh-task-taxonomy/pipeline/enriched-tags.json`.
+Composites are deliberately left empty here; their facets come from donors.
 
-### 3. Merge → final catalog file
+### 3. Merge and derive the composites
 ```bash
 deno run --allow-read --allow-write .claude/skills/refresh-task-taxonomy/pipeline/merge-taxonomy.ts
 ```
-Writes `site/catalog/task-categories.yml` (groups from step 1 + content facets
-from step 2). Check the printed facet frequency + the "tasks with 0 facets" list
-(2–3 generic tasks with no facet is fine; a NEW task with 0 facets usually means
-it needs a manual `ADD` entry in `merge-taxonomy.ts` or a vocab gap to close).
 
-### 4. Sanity-review the YAML
-Skim `site/catalog/task-categories.yml`: every task has a sensible group; the new
-tasks carry the facets a developer would search by.
-
-### 5. Sync to prod (decoupled — no re-bench)
+### 4. Validate
 ```bash
-deno task start sync-taxonomy            # DRY-RUN: prints counts + target hash
-deno task start sync-taxonomy --apply    # POSTs to /api/v1/admin/catalog/task-taxonomy
+deno task taxonomy-audit
 ```
-The sync auto-discovers the current task-set hash and is declarative: it upserts
-groups+tags, repoints `tasks.category_id`, replaces `task_tags`, and **prunes
-orphan groups** (old groups no longer in the file, if unreferenced). It never
-writes `task_sets` or task content.
+Expects `[OK] taxonomy valid` and the per-format counts in
+`pipeline/expected-counts.json`. A count mismatch means either a task landed
+(update the expected counts deliberately, in the same commit) or a manifest
+regressed.
 
-> If migration `0010_task_tags.sql` has not been applied to a target D1 yet:
-> `cd site && wrangler d1 migrations apply centralgauge --remote` first.
+### 5. Publish the component fixture
+```bash
+deno run --allow-read --allow-write .claude/skills/refresh-task-taxonomy/pipeline/graph-fixture.ts
+```
+Writes `docs/reasoning-suite/taxonomy-graph-fixture.json`: the task-donor
+graph's components and the per-slice counts the leaderboard's resampling
+depends on (spec 6.4).
 
-### 6. Verify live
+**A new batch must pass steps 1, 2 (new tasks only), 3 and 4 before the tasks
+are promoted.** Determinism is part of the contract: running steps 1 and 3
+again on unchanged inputs must reproduce the catalog byte for byte.
+
+### 6. Sync to prod (decoupled — no re-bench)
+```bash
+deno task start sync-taxonomy                       # DRY-RUN: prints counts + digest
+deno task start sync-taxonomy --apply --hash <64-hex>
+```
+A schema-version-2 catalog **requires an explicit `--hash`** on `--apply`
+(there is no auto-discovery), and the server side needs the revision-aware
+admin endpoint and its migration deployed first — check before pushing. Add
+`--allow-non-current` only to target a hash the server does not consider
+current.
+
+### 7. Verify live
 ```bash
 curl -s "https://ai.sshadows.dk/api/v1/taxonomy?_cb=$(date +%s)" | jq '{groups:(.groups|length), tags:(.tags|length)}'
-curl -s "https://ai.sshadows.dk/api/v1/categories?_cb=$(date +%s)" | jq '[.data[]|{slug,task_count}]'   # all count>0, no orphans
-curl -s -o /dev/null -w "%{http_code}\n" "https://ai.sshadows.dk/tasks?category=pages-ui&tag=v16"        # 200
+curl -s -o /dev/null -w "%{http_code}\n" "https://ai.sshadows.dk/tasks?tag=exact-total"
 ```
-Confirm the group/tag counts look right, `/api/v1/categories` shows ONLY
-populated groups (no 0-count orphans), and the leaderboard hash is unchanged
-(`/api/v1/leaderboard?set=current` still shows the same #1 / hash → no re-bench).
+Confirm the leaderboard's task-set hash is unchanged (`/api/v1/leaderboard?set=current`)
+— a taxonomy push never moves it.
 
 ## Gotchas
 
-- **Run scripts from the repo root**, not the skill dir — they use relative
-  paths (`tasks/`, `site/catalog/`).
-- **Do NOT** add categories/tags back into the task YAML `metadata:` to "fix"
-  coverage — that's the hashed content and would force a re-bench. The catalog
-  file is the only source of truth for the UI.
-- The skill's scripts are the committed copies; the repo's `scripts/` copies are
-  gitignored scratch. Edit the skill copies when tuning rules/vocab.
-- `sync-taxonomy --apply` needs the admin ingest key configured (`.centralgauge.yml`)
-  and the worker deployed with the `/api/v1/admin/catalog/task-taxonomy` endpoint.
+- **Run the scripts from the repo root**, not the skill directory.
+- **Never hand-edit facets in `site/catalog/task-categories.yml`.** The build
+  step deliberately does not carry vocabulary facets over from the previous
+  catalog, so a hand-added facet vanishes on the next run and a hand-removed
+  one comes back. `pipeline/enriched-tags.json` is the source of truth for
+  mechanism/invariant/environment facets, the manifests plus `aliases.ts` for
+  surface facets. Only `overrides:` is hand-edited in the YAML.
+- **Tag names and definitions are generated too**: `aliases.ts` spells the
+  name, `facet-definitions.ts` writes the description, and the merge step
+  re-stamps both on every run. Edit those files, not the YAML.
+- **Do NOT** add categories or tags back into a task's `metadata:` to "fix"
+  coverage — that is hashed content and would force a re-bench.
+- The skill's `pipeline/` copies are the committed ones. `.claude/` is
+  gitignored as a whole except this skill directory, so a new file here needs
+  `git add -f`.

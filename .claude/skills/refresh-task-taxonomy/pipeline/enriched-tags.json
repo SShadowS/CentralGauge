@@ -1,0 +1,1099 @@
+{
+  "CG-AL-E001": [],
+  "CG-AL-E002": [],
+  "CG-AL-E003": [],
+  "CG-AL-E004": [],
+  "CG-AL-E005": [],
+  "CG-AL-E006": [],
+  "CG-AL-E007": [
+    "serialization-encoding"
+  ],
+  "CG-AL-E008": [],
+  "CG-AL-E009": [
+    "flowfield-sift",
+    "serialization-encoding"
+  ],
+  "CG-AL-E010": [
+    "event-binding"
+  ],
+  "CG-AL-E031": [
+    "error-flow",
+    "inclusive-boundary",
+    "validation-trigger"
+  ],
+  "CG-AL-E032": [],
+  "CG-AL-E045": [
+    "error-flow",
+    "exact-total",
+    "inclusive-boundary",
+    "validation-trigger"
+  ],
+  "CG-AL-E050": [],
+  "CG-AL-E051": [],
+  "CG-AL-E052": [
+    "culture-format-roundtrip"
+  ],
+  "CG-AL-E053": [],
+  "CG-AL-E054": [],
+  "CG-AL-E055": [
+    "recordref-reflection"
+  ],
+  "CG-AL-E056": [
+    "culture-format-roundtrip",
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-E057": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-E058": [
+    "test-permissions"
+  ],
+  "CG-AL-H001": [
+    "decimal-precision",
+    "exact-total",
+    "inclusive-boundary"
+  ],
+  "CG-AL-H002": [
+    "exact-total",
+    "filter-key-semantics",
+    "flowfield-sift"
+  ],
+  "CG-AL-H003": [
+    "decimal-precision",
+    "flowfield-sift",
+    "inclusive-boundary",
+    "temporary-record"
+  ],
+  "CG-AL-H004": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-H005": [
+    "single-instance-state",
+    "xrec-trigger-state"
+  ],
+  "CG-AL-H006": [
+    "idempotent-rebuild",
+    "single-instance-state"
+  ],
+  "CG-AL-H007": [
+    "error-flow",
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-H008": [
+    "error-flow",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-H009": [
+    "decimal-precision",
+    "exact-total"
+  ],
+  "CG-AL-H010": [
+    "event-binding",
+    "event-order"
+  ],
+  "CG-AL-H011": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-H013": [
+    "exact-total",
+    "inclusive-boundary"
+  ],
+  "CG-AL-H014": [
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-H015": [
+    "inclusive-boundary"
+  ],
+  "CG-AL-H016": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-H017": [
+    "exact-total",
+    "filter-key-semantics",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-H018": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-H019": [
+    "permission-check",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-H020": [
+    "exact-total"
+  ],
+  "CG-AL-H021": [],
+  "CG-AL-H022": [
+    "filter-key-semantics",
+    "recordref-reflection",
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-H023": [
+    "filter-key-semantics",
+    "recordref-reflection",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-H024": [
+    "recordref-reflection",
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-H025": [
+    "idempotent-rebuild",
+    "roundtrip-fidelity",
+    "upgrade-datatransfer"
+  ],
+  "CG-AL-H026": [
+    "recordref-reflection",
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-H027": [
+    "event-binding",
+    "exact-total",
+    "single-instance-state",
+    "xrec-trigger-state"
+  ],
+  "CG-AL-H028": [
+    "culture-format-roundtrip",
+    "filter-key-semantics",
+    "inclusive-boundary",
+    "serialization-encoding"
+  ],
+  "CG-AL-H029": [
+    "recordref-reflection",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-H030": [
+    "culture-format-roundtrip",
+    "recordref-reflection",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-H031": [
+    "exact-total",
+    "filter-key-semantics",
+    "flowfield-sift",
+    "recordref-reflection"
+  ],
+  "CG-AL-H032": [
+    "filter-key-semantics",
+    "recordref-reflection"
+  ],
+  "CG-AL-H033": [],
+  "CG-AL-H034": [
+    "commit-scope",
+    "error-flow",
+    "event-binding"
+  ],
+  "CG-AL-H035": [],
+  "CG-AL-H036": [
+    "serialization-encoding"
+  ],
+  "CG-AL-H037": [
+    "bounded-sql-cost",
+    "filter-key-semantics",
+    "sql-cost-scaling",
+    "upgrade-datatransfer"
+  ],
+  "CG-AL-H038": [
+    "commit-scope",
+    "error-flow",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-H039": [
+    "idempotent-rebuild"
+  ],
+  "CG-AL-H040": [
+    "event-binding"
+  ],
+  "CG-AL-H041": [
+    "commit-scope",
+    "error-flow",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-H042": [
+    "permission-check"
+  ],
+  "CG-AL-H043": [],
+  "CG-AL-H050": [
+    "error-flow",
+    "exact-total"
+  ],
+  "CG-AL-H051": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-H052": [
+    "filter-group-state",
+    "filter-key-semantics"
+  ],
+  "CG-AL-H053": [
+    "bounded-sql-cost",
+    "exact-total",
+    "flowfield-sift"
+  ],
+  "CG-AL-H054": [
+    "inclusive-boundary",
+    "single-instance-state"
+  ],
+  "CG-AL-H056": [],
+  "CG-AL-H057": [],
+  "CG-AL-H058": [
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-H205": [
+    "decimal-precision",
+    "error-flow",
+    "event-binding",
+    "exact-total"
+  ],
+  "CG-AL-M001": [
+    "error-flow",
+    "roundtrip-fidelity",
+    "validation-trigger"
+  ],
+  "CG-AL-M002": [
+    "error-flow",
+    "exact-total",
+    "inclusive-boundary"
+  ],
+  "CG-AL-M003": [
+    "error-flow",
+    "inclusive-boundary",
+    "validation-trigger"
+  ],
+  "CG-AL-M004": [
+    "flowfield-sift"
+  ],
+  "CG-AL-M005": [
+    "error-flow",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-M006": [
+    "error-flow",
+    "inclusive-boundary",
+    "validation-trigger"
+  ],
+  "CG-AL-M007": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-M008": [
+    "error-flow",
+    "event-binding"
+  ],
+  "CG-AL-M009": [],
+  "CG-AL-M010": [
+    "error-flow",
+    "exact-total",
+    "filter-key-semantics",
+    "validation-trigger"
+  ],
+  "CG-AL-M020": [
+    "exact-total",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-M021": [
+    "error-flow",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-M022": [
+    "error-flow",
+    "serialization-encoding"
+  ],
+  "CG-AL-M023": [
+    "bounded-sql-cost",
+    "exact-total",
+    "flowfield-sift",
+    "inclusive-boundary",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-M024": [
+    "decimal-precision",
+    "exact-total",
+    "serialization-encoding"
+  ],
+  "CG-AL-M025": [
+    "idempotent-rebuild",
+    "recordref-reflection",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-M026": [],
+  "CG-AL-M027": [
+    "error-flow",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-M028": [],
+  "CG-AL-M029": [],
+  "CG-AL-M031": [
+    "recordref-reflection"
+  ],
+  "CG-AL-M032": [
+    "filter-key-semantics",
+    "idempotent-rebuild",
+    "upgrade-datatransfer"
+  ],
+  "CG-AL-M033": [],
+  "CG-AL-M034": [
+    "exact-total",
+    "flowfield-sift",
+    "recordref-reflection"
+  ],
+  "CG-AL-M035": [],
+  "CG-AL-M036": [
+    "serialization-encoding"
+  ],
+  "CG-AL-M037": [],
+  "CG-AL-M038": [
+    "record-locking-concurrency",
+    "recordref-reflection"
+  ],
+  "CG-AL-M039": [],
+  "CG-AL-M040": [],
+  "CG-AL-M041": [
+    "exact-total",
+    "flowfield-sift"
+  ],
+  "CG-AL-M042": [
+    "exact-total",
+    "validation-trigger",
+    "xrec-trigger-state"
+  ],
+  "CG-AL-M043": [
+    "filter-key-semantics",
+    "roundtrip-fidelity",
+    "xrec-trigger-state"
+  ],
+  "CG-AL-M044": [
+    "filter-key-semantics",
+    "xrec-trigger-state"
+  ],
+  "CG-AL-M045": [
+    "event-binding",
+    "idempotent-rebuild",
+    "single-instance-state",
+    "validation-trigger",
+    "xrec-trigger-state"
+  ],
+  "CG-AL-M088": [
+    "decimal-precision",
+    "exact-total",
+    "inclusive-boundary"
+  ],
+  "CG-AL-M112": [
+    "error-flow",
+    "exact-total",
+    "flowfield-sift",
+    "validation-trigger"
+  ],
+  "CG-AL-X001": [
+    "event-binding"
+  ],
+  "CG-AL-X002": [
+    "commit-scope",
+    "error-flow",
+    "idempotent-rebuild",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-X003": [],
+  "CG-AL-X004": [
+    "exact-total",
+    "filter-key-semantics",
+    "idempotent-rebuild"
+  ],
+  "CG-AL-X005": [
+    "exact-total",
+    "inclusive-boundary"
+  ],
+  "CG-AL-X006": [
+    "exact-total",
+    "filter-key-semantics",
+    "temporary-record"
+  ],
+  "CG-AL-X007": [
+    "company-isolation",
+    "company-scope",
+    "exact-total",
+    "multi-company"
+  ],
+  "CG-AL-X008": [
+    "commit-scope",
+    "exact-total"
+  ],
+  "CG-AL-X009": [
+    "exact-total",
+    "validation-trigger"
+  ],
+  "CG-AL-X010": [
+    "exact-total"
+  ],
+  "CG-AL-X011": [
+    "record-locking-concurrency"
+  ],
+  "CG-AL-X012": [],
+  "CG-AL-X013": [
+    "inclusive-boundary"
+  ],
+  "CG-AL-X014": [
+    "filter-key-semantics"
+  ],
+  "CG-AL-X017": [
+    "exact-total"
+  ],
+  "CG-AL-X018": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-X019": [
+    "exact-total",
+    "filter-key-semantics",
+    "record-locking-concurrency"
+  ],
+  "CG-AL-X022": [
+    "exact-total",
+    "xrec-trigger-state"
+  ],
+  "CG-AL-X024": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-X025": [
+    "exact-total",
+    "temporary-record",
+    "validation-trigger"
+  ],
+  "CG-AL-X026": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-X027": [
+    "exact-total"
+  ],
+  "CG-AL-X029": [
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-X030": [],
+  "CG-AL-X031": [
+    "exact-total"
+  ],
+  "CG-AL-X033": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-X034": [
+    "culture-format-roundtrip",
+    "recordref-reflection"
+  ],
+  "CG-AL-X035": [
+    "commit-scope",
+    "error-flow",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-X037": [
+    "commit-scope",
+    "error-flow",
+    "reversal-conservation",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-X040": [
+    "commit-scope",
+    "error-flow",
+    "reversal-conservation",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-X041": [
+    "commit-scope",
+    "error-flow",
+    "filter-key-semantics",
+    "reversal-conservation",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-X043": [
+    "event-binding",
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-X044": [
+    "filter-key-semantics",
+    "recordref-reflection",
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-X045": [
+    "exact-total",
+    "validation-trigger"
+  ],
+  "CG-AL-X046": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-X047": [
+    "temporary-record"
+  ],
+  "CG-AL-X050": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-X051": [
+    "exact-total",
+    "flowfield-sift"
+  ],
+  "CG-AL-X052": [
+    "exact-total",
+    "validation-trigger"
+  ],
+  "CG-AL-X055": [
+    "inclusive-boundary"
+  ],
+  "CG-AL-X056": [
+    "error-flow",
+    "serialization-encoding"
+  ],
+  "CG-AL-X057": [
+    "error-flow",
+    "inclusive-boundary"
+  ],
+  "CG-AL-X058": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-X059": [
+    "error-flow"
+  ],
+  "CG-AL-X060": [
+    "bounded-sql-cost",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X061": [
+    "exact-total",
+    "flowfield-sift"
+  ],
+  "CG-AL-X062": [
+    "event-binding",
+    "exact-total"
+  ],
+  "CG-AL-X063": [
+    "error-flow",
+    "recordref-reflection"
+  ],
+  "CG-AL-X064": [
+    "error-flow",
+    "exact-total"
+  ],
+  "CG-AL-X065": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-X066": [
+    "decimal-precision",
+    "exact-total"
+  ],
+  "CG-AL-X067": [
+    "event-binding",
+    "exact-total"
+  ],
+  "CG-AL-X068": [
+    "exact-total",
+    "filter-group-state"
+  ],
+  "CG-AL-X069": [
+    "bounded-sql-cost",
+    "inclusive-boundary",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X070": [
+    "commit-scope",
+    "error-flow",
+    "idempotent-rebuild"
+  ],
+  "CG-AL-X071": [
+    "error-flow",
+    "flowfield-sift",
+    "inclusive-boundary"
+  ],
+  "CG-AL-X072": [
+    "event-order",
+    "inclusive-boundary"
+  ],
+  "CG-AL-X073": [
+    "exact-total"
+  ],
+  "CG-AL-X074": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-X075": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-X076": [
+    "error-flow",
+    "exact-total",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-X077": [
+    "exact-total",
+    "inclusive-boundary",
+    "temporary-record"
+  ],
+  "CG-AL-X078": [
+    "exact-total",
+    "idempotent-rebuild",
+    "temporary-record"
+  ],
+  "CG-AL-X079": [
+    "decimal-precision",
+    "exact-total",
+    "largest-remainder-allocation"
+  ],
+  "CG-AL-X080": [
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-X081": [
+    "event-binding",
+    "validation-trigger"
+  ],
+  "CG-AL-X082": [
+    "error-flow"
+  ],
+  "CG-AL-X083": [
+    "serialization-encoding"
+  ],
+  "CG-AL-X084": [
+    "bounded-sql-cost",
+    "flowfield-sift",
+    "idempotent-rebuild",
+    "sql-cost-scaling",
+    "temporary-record"
+  ],
+  "CG-AL-X085": [
+    "commit-scope",
+    "error-flow"
+  ],
+  "CG-AL-X086": [
+    "error-flow"
+  ],
+  "CG-AL-X087": [
+    "event-binding",
+    "event-order"
+  ],
+  "CG-AL-X088": [
+    "filter-key-semantics"
+  ],
+  "CG-AL-X089": [
+    "bounded-sql-cost",
+    "exact-total",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X090": [
+    "bounded-sql-cost",
+    "exact-total",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X091": [
+    "bounded-sql-cost",
+    "single-instance-state"
+  ],
+  "CG-AL-X092": [
+    "culture-format-roundtrip",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-X093": [
+    "culture-format-roundtrip",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-X094": [
+    "event-binding"
+  ],
+  "CG-AL-X095": [
+    "permission-check",
+    "test-permissions"
+  ],
+  "CG-AL-X096": [
+    "culture-format-roundtrip",
+    "error-flow",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-X097": [
+    "exact-total",
+    "inclusive-boundary",
+    "largest-remainder-allocation",
+    "temporary-record"
+  ],
+  "CG-AL-X098": [
+    "event-binding",
+    "event-order",
+    "validation-trigger"
+  ],
+  "CG-AL-X099": [
+    "bounded-sql-cost",
+    "exact-total",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X100": [
+    "error-flow",
+    "exact-total",
+    "idempotent-rebuild"
+  ],
+  "CG-AL-X101": [
+    "exact-total",
+    "filter-key-semantics"
+  ],
+  "CG-AL-X102": [
+    "temporary-record"
+  ],
+  "CG-AL-X103": [
+    "error-flow"
+  ],
+  "CG-AL-X104": [
+    "error-flow",
+    "serialization-encoding"
+  ],
+  "CG-AL-X105": [
+    "filter-key-semantics"
+  ],
+  "CG-AL-X106": [
+    "event-binding",
+    "event-order"
+  ],
+  "CG-AL-X107": [
+    "event-binding",
+    "event-order"
+  ],
+  "CG-AL-X108": [
+    "bounded-sql-cost",
+    "single-instance-state"
+  ],
+  "CG-AL-X109": [
+    "bounded-sql-cost",
+    "filter-key-semantics",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X110": [
+    "filter-key-semantics",
+    "idempotent-rebuild"
+  ],
+  "CG-AL-X111": [
+    "bounded-sql-cost",
+    "exact-total",
+    "flowfield-sift",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X112": [
+    "bounded-sql-cost",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X113": [
+    "bounded-sql-cost",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X114": [
+    "inclusive-boundary"
+  ],
+  "CG-AL-X115": [
+    "inclusive-boundary"
+  ],
+  "CG-AL-X116": [
+    "culture-format-roundtrip",
+    "decimal-precision",
+    "error-flow",
+    "inclusive-boundary"
+  ],
+  "CG-AL-X117": [
+    "culture-format-roundtrip",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-X118": [
+    "decimal-precision",
+    "exact-total",
+    "validation-trigger"
+  ],
+  "CG-AL-X119": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-X120": [
+    "idempotent-rebuild"
+  ],
+  "CG-AL-X121": [
+    "idempotent-rebuild",
+    "validation-trigger"
+  ],
+  "CG-AL-X122": [
+    "event-binding"
+  ],
+  "CG-AL-X123": [
+    "bounded-sql-cost",
+    "exact-total",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X124": [
+    "bounded-sql-cost",
+    "exact-total",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X125": [
+    "inclusive-boundary"
+  ],
+  "CG-AL-X126": [
+    "decimal-precision",
+    "inclusive-boundary"
+  ],
+  "CG-AL-X127": [
+    "company-isolation",
+    "company-scope",
+    "multi-company"
+  ],
+  "CG-AL-X128": [
+    "company-isolation",
+    "company-scope",
+    "multi-company"
+  ],
+  "CG-AL-X129": [
+    "decimal-precision",
+    "error-flow",
+    "exact-total"
+  ],
+  "CG-AL-X130": [],
+  "CG-AL-X131": [
+    "error-flow"
+  ],
+  "CG-AL-X132": [
+    "error-flow",
+    "temporary-record"
+  ],
+  "CG-AL-X133": [
+    "bounded-sql-cost",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X134": [
+    "bounded-sql-cost",
+    "filter-key-semantics",
+    "flowfield-sift",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X135": [
+    "error-flow"
+  ],
+  "CG-AL-X136": [
+    "inclusive-boundary"
+  ],
+  "CG-AL-X137": [
+    "error-flow",
+    "idempotent-rebuild",
+    "tryfunction-write-rollback"
+  ],
+  "CG-AL-X138": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-X139": [
+    "exact-total",
+    "reversal-conservation"
+  ],
+  "CG-AL-X140": [
+    "decimal-precision",
+    "exact-total",
+    "largest-remainder-allocation"
+  ],
+  "CG-AL-X141": [
+    "exact-total",
+    "filter-key-semantics",
+    "idempotent-rebuild"
+  ],
+  "CG-AL-X142": [
+    "decimal-precision",
+    "exact-total",
+    "largest-remainder-allocation"
+  ],
+  "CG-AL-X143": [
+    "bounded-sql-cost",
+    "filter-key-semantics",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X144": [
+    "error-flow"
+  ],
+  "CG-AL-X145": [
+    "exact-total",
+    "reversal-conservation"
+  ],
+  "CG-AL-X146": [
+    "decimal-precision",
+    "exact-total",
+    "largest-remainder-allocation"
+  ],
+  "CG-AL-X147": [
+    "filter-key-semantics"
+  ],
+  "CG-AL-X148": [
+    "roundtrip-fidelity"
+  ],
+  "CG-AL-X149": [
+    "decimal-precision",
+    "error-flow",
+    "exact-total"
+  ],
+  "CG-AL-X150": [
+    "decimal-precision",
+    "exact-total",
+    "largest-remainder-allocation"
+  ],
+  "CG-AL-X151": [
+    "single-instance-state"
+  ],
+  "CG-AL-X152": [
+    "error-flow",
+    "roundtrip-fidelity",
+    "serialization-encoding"
+  ],
+  "CG-AL-X153": [
+    "bounded-sql-cost",
+    "filter-key-semantics",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X154": [
+    "company-isolation",
+    "company-scope",
+    "multi-company",
+    "single-instance-state"
+  ],
+  "CG-AL-X155": [],
+  "CG-AL-X156": [
+    "error-flow"
+  ],
+  "CG-AL-X157": [
+    "exact-total",
+    "flowfield-sift",
+    "inclusive-boundary"
+  ],
+  "CG-AL-X158": [
+    "inclusive-boundary"
+  ],
+  "CG-AL-X159": [
+    "bounded-sql-cost",
+    "company-scope",
+    "multi-company",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X160": [
+    "error-flow",
+    "inclusive-boundary",
+    "reversal-conservation"
+  ],
+  "CG-AL-X161": [
+    "error-flow",
+    "filter-key-semantics",
+    "inclusive-boundary"
+  ],
+  "CG-AL-X162": [
+    "company-isolation",
+    "company-scope",
+    "idempotent-rebuild",
+    "multi-company"
+  ],
+  "CG-AL-X163": [
+    "company-isolation",
+    "company-scope",
+    "exact-total",
+    "multi-company"
+  ],
+  "CG-AL-X164": [
+    "error-flow",
+    "permission-check",
+    "test-permissions"
+  ],
+  "CG-AL-X165": [
+    "bounded-sql-cost",
+    "idempotent-rebuild",
+    "sql-cost-scaling",
+    "temporary-record"
+  ],
+  "CG-AL-X166": [
+    "bounded-sql-cost",
+    "idempotent-rebuild",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X167": [
+    "bounded-sql-cost",
+    "idempotent-rebuild",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X168": [
+    "bounded-sql-cost",
+    "idempotent-rebuild",
+    "sql-cost-scaling",
+    "temporary-record"
+  ],
+  "CG-AL-X169": [
+    "bounded-sql-cost",
+    "decimal-precision",
+    "idempotent-rebuild",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X170": [
+    "decimal-precision",
+    "exact-total",
+    "largest-remainder-allocation",
+    "reversal-conservation"
+  ],
+  "CG-AL-X171": [
+    "decimal-precision",
+    "exact-total",
+    "idempotent-rebuild",
+    "largest-remainder-allocation"
+  ],
+  "CG-AL-X172": [
+    "decimal-precision",
+    "exact-total",
+    "largest-remainder-allocation"
+  ],
+  "CG-AL-X173": [
+    "bounded-sql-cost",
+    "idempotent-rebuild",
+    "sql-cost-scaling"
+  ],
+  "CG-AL-X174": [
+    "company-isolation",
+    "decimal-precision",
+    "exact-total",
+    "largest-remainder-allocation",
+    "multi-company"
+  ],
+  "CG-AL-X185": [],
+  "CG-AL-X187": [],
+  "CG-AL-X194": [],
+  "CG-AL-X211": [],
+  "CG-AL-X214": [],
+  "CG-AL-X218": [],
+  "CG-AL-X234": [],
+  "CG-AL-X239": [],
+  "CG-AL-X244": [],
+  "CG-AL-X245": [],
+  "CG-AL-X248": [],
+  "CG-AL-X249": [],
+  "CG-AL-X254": [],
+  "CG-AL-X257": [],
+  "CG-AL-X263": [],
+  "CG-AL-X264": [],
+  "CG-AL-X270": [],
+  "CG-AL-X271": [],
+  "CG-AL-X272": [],
+  "CG-AL-X274": [],
+  "CG-AL-X276": [],
+  "CG-AL-X278": [],
+  "CG-AL-X283": [],
+  "CG-AL-X289": [],
+  "CG-AL-X290": [],
+  "CG-AL-X292": [],
+  "CG-AL-X293": [],
+  "CG-AL-X296": [],
+  "CG-AL-X298": []
+}
