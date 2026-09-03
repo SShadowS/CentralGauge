@@ -126,6 +126,12 @@ export async function buildGenerationPrompt(opts: {
  */
 export const FIX_PROMPT_PREVIOUS_CODE_CAP = 400_000;
 
+/**
+ * Retry-path version stamp for harness fingerprint tracking (2026-09-01 retry fix).
+ * Exported to bench ingest path so every run stamps its harness version.
+ */
+export const RETRY_PATH_VERSION = "rp2-overlay-2026-09-01";
+
 export function buildFixPrompt(opts: {
   attemptNumber: number;
   originalInstructions: string;

@@ -45,23 +45,10 @@
  */
 
 import { dirname, fromFileUrl, join } from "@std/path";
+import { harnessFingerprint } from "../src/utils/harness-fingerprint.ts";
 
 const REPO = dirname(dirname(fromFileUrl(import.meta.url)));
 const LEDGER = join(REPO, "docs", "reasoning-suite", "gold-ci.json");
-
-/**
- * Harness inputs that decide what a candidate app declares and depends on. A
- * change to any of these can flip a verdict for every task at once, which is
- * exactly the failure mode a per-task probe cannot see.
- */
-const HARNESS_INPUTS = [
-  "src/constants.ts",
-  "src/parallel/compile-queue.ts",
-  "src/tasks/executor-v2.ts",
-  "src/tasks/candidate-guard.ts",
-  "scripts/trap-probe.ts",
-  "mcp/al-tools-server.ts",
-];
 
 interface Replay {
   /** "pass" | "fail" | "error" */
@@ -82,7 +69,7 @@ interface Ledger {
   tasks: Record<string, Replay>;
 }
 
-async function sha256Of(paths: string[]): Promise<string> {
+async function sha256Of(paths: readonly string[]): Promise<string> {
   // Per-file framing (path + length + content) so a rename, or a byte moving
   // between files, cannot produce a colliding digest.
   //
@@ -95,7 +82,7 @@ async function sha256Of(paths: string[]): Promise<string> {
   // that cries wolf gets ignored, and CRLF cannot change a compile verdict.
   const parts: Uint8Array[] = [];
   const enc = new TextEncoder();
-  for (const p of paths.sort()) {
+  for (const p of [...paths].sort()) {
     let text: string;
     try {
       text = await Deno.readTextFile(join(REPO, p));
@@ -243,7 +230,7 @@ async function main(argv: string[]) {
     )
     : [];
 
-  const harnessHash = await sha256Of(HARNESS_INPUTS);
+  const harnessHash = await harnessFingerprint(".");
   const ledger = await loadLedger();
   const tasks = await inScopeTasks();
 
