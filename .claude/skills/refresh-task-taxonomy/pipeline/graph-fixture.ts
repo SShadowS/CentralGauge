@@ -1,5 +1,5 @@
 // Usage: deno run --allow-read --allow-write .claude/skills/refresh-task-taxonomy/pipeline/graph-fixture.ts
-import { parse } from "jsr:@std/yaml";
+import { parse } from "@std/yaml";
 import {
   buildComponents,
   sliceStats,
