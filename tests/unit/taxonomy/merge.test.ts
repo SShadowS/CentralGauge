@@ -120,7 +120,7 @@ Deno.test("deriveComposites strips overlapping local_facets, keeps the rest, uni
   assertEquals(comp.min_bc_version, 18);
 });
 
-Deno.test("mergeEnrichment silently skips an unknown task id and a composite id, but applies a valid single entry", () => {
+Deno.test("mergeEnrichment warns on an unknown task id, skips a composite id, and applies a valid single entry", () => {
   const catalog: CatalogV2 = {
     schema_version: 2,
     groups: [],
@@ -140,16 +140,28 @@ Deno.test("mergeEnrichment silently skips an unknown task id and a composite id,
       },
     },
   };
-  const merged = mergeEnrichment(catalog, {
-    "S1": ["inclusive-boundary"],
-    "CG-AL-DOES-NOT-EXIST": ["exact-total"],
-    "C1": ["exact-total"],
-  });
+  const warnings: string[] = [];
+  const realError = console.error;
+  console.error = (...args: unknown[]) => void warnings.push(args.join(" "));
+  let merged;
+  try {
+    merged = mergeEnrichment(catalog, {
+      "S1": ["inclusive-boundary"],
+      "CG-AL-DOES-NOT-EXIST": ["exact-total"],
+      "C1": ["exact-total"],
+    });
+  } finally {
+    console.error = realError;
+  }
   // Valid single entry is applied.
   const s1 = merged.tasks["S1"];
   if (!s1 || "donors" in s1) throw new Error("S1 must be a single task");
   assertEquals(s1.facets, ["inclusive-boundary"]);
-  // Unknown id: no task materializes for it, catalog is otherwise unchanged.
+  // Unknown id: warned about, but the merge still produces a catalog.
+  assertEquals(warnings, [
+    "[WARN] enrichment id not in catalog: CG-AL-DOES-NOT-EXIST",
+  ]);
+  // No task materializes for it, and the catalog is otherwise unchanged.
   assertEquals(merged.tasks["CG-AL-DOES-NOT-EXIST"], undefined);
   assertEquals(Object.keys(merged.tasks).sort(), ["C1", "S1", "S2"]);
   // Composite id: enrichment is skipped directly (no facets field to add
@@ -166,7 +178,9 @@ Deno.test("the enrichment workflow's VOCAB equals the shared vocabulary", async 
     ".claude/skills/refresh-task-taxonomy/pipeline/enrich-task-tags.workflow.js",
   );
   const m = /const VOCAB = \[([\s\S]*?)\];/.exec(js);
-  const inJs = [...(m?.[1] ?? "").matchAll(/'([a-z0-9-]+)'/g)].map((x) => x[1])
+  // deno fmt rewrites the script's quotes, so accept either style.
+  const inJs = [...(m?.[1] ?? "").matchAll(/["']([a-z0-9-]+)["']/g)]
+    .map((x) => x[1])
     .sort();
   const { MECHANISM_VOCAB, INVARIANT_VOCAB, ENVIRONMENT_VOCAB } = await import(
     "../../../site/src/lib/shared/taxonomy-schema.ts"

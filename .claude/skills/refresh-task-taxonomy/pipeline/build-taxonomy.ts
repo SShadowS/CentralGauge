@@ -69,10 +69,12 @@ const FAMILY_TEXT: Record<string, [string, string]> = {
 interface Manifest {
   id?: string;
   prompt_template?: string;
+  domains?: string[];
   metadata?: {
     cohort?: string;
     donors?: string[];
     tags?: string[];
+    domains?: string[];
   };
 }
 
@@ -119,9 +121,17 @@ export async function buildDraft(opts: {
       continue;
     }
     const raw = (doc.metadata?.tags ?? []).map((t) => t.toLowerCase());
+    // The X-series records the object types it touches under `domains:` rather
+    // than in metadata.tags, so both feed the surface facets through the same
+    // alias table. Support the metadata-nested spelling too: no manifest uses
+    // it today, but the two conventions differ per field already.
+    const domains = [
+      ...(doc.domains ?? []),
+      ...(doc.metadata?.domains ?? []),
+    ].map((d) => d.toLowerCase());
     const surface = [
       ...new Set(
-        raw
+        [...raw, ...domains]
           .map((t) => SURFACE_ALIASES[t] ?? null)
           .filter((x): x is string => x !== null),
       ),
@@ -137,13 +147,17 @@ export async function buildDraft(opts: {
         !SURFACE_TAGS.some((s) => s.slug === f) && !ENRICHED_FACETS.has(f)
       )
       : [];
+    // local_facets is the one field on a composite that is hand-authored: no
+    // enrichment step writes it, so it has to survive a rebuild. derived_facets
+    // is recomputed from the donors by merge-taxonomy.ts and is not carried.
+    const keepLocal = prev && "donors" in prev ? [...prev.local_facets] : [];
     const min_bc_version = minVersionFromTags(raw);
     if (group === "diagnose-composite") {
       tasks[doc.id] = {
         group,
         donors,
         derived_facets: [],
-        local_facets: [],
+        local_facets: keepLocal.sort(),
         min_bc_version,
       };
     } else {

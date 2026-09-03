@@ -61,6 +61,24 @@ export const SURFACE_ALIASES: Record<string, string | null> = {
   "system-part": "system-part",
   "systempart": "system-part",
   "page-action": "page-action",
+  // `domains:` entries. The X-series records object types there rather than in
+  // metadata.tags, so the same table has to speak plural. A domain that names a
+  // concern rather than an AL surface (error-handling, performance, posting,
+  // dimensions, testability, install-upgrade) is left out and dropped like any
+  // unknown value; the enrichment names those as mechanisms instead.
+  "codeunits": "codeunit",
+  "tables": "table",
+  "pages": "page",
+  "enums": "enum",
+  "interfaces": "interface",
+  "reports": "report",
+  "queries": "query",
+  "xmlports": "xml",
+  "flowfields": "flowfield",
+  "table-relations": "table-relation",
+  "web-services": "web-service",
+  "events": "event-subscriber",
+  "reflection": "recordref",
   // mechanism-shaped raw tags: not surfaces, handled by enrichment; drop here.
   "try-function": null,
   "tryfunction": null,

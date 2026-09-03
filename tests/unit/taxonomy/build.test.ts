@@ -9,6 +9,7 @@ import {
   SURFACE_TAGS,
 } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/aliases.ts";
 import { FACET_DEFINITIONS } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/facet-definitions.ts";
+import { mergeEnrichment } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/merge-taxonomy.ts";
 
 const opts = {
   tasksDir: "tests/fixtures/taxonomy/manifests",
@@ -33,6 +34,22 @@ Deno.test("build assigns one format per fixture and maps raw tags through the al
     ),
     false,
   );
+});
+
+Deno.test("domains map through the alias table like tags do", async () => {
+  const { catalog } = await buildDraft(opts);
+  const facets = (catalog.tasks["CG-AL-X076"]! as { facets: string[] }).facets;
+  // The X-series records object types under `domains:`, in the plural, and
+  // nowhere else. Spec 4.4's own X076 example expects codeunit and table.
+  assertEquals(facets.includes("codeunit"), true);
+  assertEquals(facets.includes("table"), true);
+  // "performance" names a concern, not an AL surface: dropped like any unknown
+  // value, and it never becomes a facet of its own.
+  assertEquals(facets.includes("performance"), false);
+  // a manifest with no domains at all is unaffected
+  assertEquals((catalog.tasks["CG-AL-H001"]! as { facets: string[] }).facets, [
+    "table",
+  ]);
 });
 
 Deno.test("YAML round-trips and is byte-deterministic", async () => {
@@ -73,6 +90,32 @@ Deno.test("previous catalog carry-over keeps unowned facets and re-derives the r
   assertEquals(catalog2.tasks["CG-AL-X999"], undefined);
 });
 
+Deno.test("a composite's local_facets survive a rebuild and merge strips only the overlap", async () => {
+  const { catalog } = await buildDraft(opts);
+  const composite = catalog.tasks["CG-AL-X283"]!;
+  if (!("donors" in composite)) throw new Error("X283 must be a composite");
+  // "table" is a surface facet donor X076 already carries, so the derivation
+  // owns it; "assembly-glue" is introduced by the composite itself.
+  composite.local_facets = ["table", "assembly-glue"];
+
+  const { catalog: catalog2 } = await buildDraft({
+    ...opts,
+    previous: parseCatalogYaml(emitCatalogYaml(catalog)),
+  });
+  const rebuilt = catalog2.tasks["CG-AL-X283"]!;
+  if (!("donors" in rebuilt)) throw new Error("X283 must still be a composite");
+  assertEquals(rebuilt.local_facets, ["assembly-glue", "table"]);
+  // the derivation is always recomputed, never carried
+  assertEquals(rebuilt.derived_facets, []);
+
+  const merged = mergeEnrichment(catalog2, {});
+  const derived = merged.tasks["CG-AL-X283"]!;
+  if (!("donors" in derived)) throw new Error("X283 must still be a composite");
+  assertEquals(derived.derived_facets.includes("table"), true);
+  // the overlap is dropped from local, the genuinely local facet stays
+  assertEquals(derived.local_facets, ["assembly-glue"]);
+});
+
 Deno.test("hand-written tag definitions survive a rebuild", async () => {
   const { catalog } = await buildDraft(opts);
   catalog.tags.push({
@@ -81,9 +124,11 @@ Deno.test("hand-written tag definitions survive a rebuild", async () => {
     name: "Inclusive Boundary",
     description: FACET_DEFINITIONS["inclusive-boundary"]!,
   });
+  // Go through the file on the way back in, the way a real rerun does, so the
+  // assertion cannot pass on reference identity alone.
   const { catalog: catalog2 } = await buildDraft({
     ...opts,
-    previous: catalog,
+    previous: parseCatalogYaml(emitCatalogYaml(catalog)),
   });
   const tag = catalog2.tags.find((t) => t.slug === "inclusive-boundary");
   assertEquals(tag?.description, FACET_DEFINITIONS["inclusive-boundary"]);

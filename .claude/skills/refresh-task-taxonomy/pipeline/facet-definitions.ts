@@ -28,7 +28,7 @@ export const FACET_DEFINITIONS: Record<string, string> = {
   "event-order":
     "Subscribers and their publisher share a record or parameter, so which one runs first, and what it writes, decides the result.",
   "validation-trigger":
-    "Table triggers and field validation run logic of their own, so what the platform computes on insert, modify or validate is part of the answer.",
+    "Table triggers, field validation and table-relation declarations make the platform run logic of its own, so what it computes or cascades on insert, modify, rename or validate is part of the answer.",
   "decimal-precision":
     "Where a decimal is rounded, in which direction and to which precision changes the value that ends up stored.",
   "culture-format-roundtrip":

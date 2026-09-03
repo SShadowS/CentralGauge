@@ -47,7 +47,14 @@ export function mergeEnrichment(
   const have = new Set(c.tags.map((t) => t.slug));
   for (const [id, slugs] of Object.entries(enriched)) {
     const e = c.tasks[id];
-    if (!e || isComposite(e)) continue; // composites never take enrichment directly
+    if (!e) {
+      // A renamed or deleted task leaves its entry behind in the enrichment
+      // file, where it would otherwise rot unseen. Not fatal: the merge still
+      // has to produce a catalog for every task that does exist.
+      console.error(`[WARN] enrichment id not in catalog: ${id}`);
+      continue;
+    }
+    if (isComposite(e)) continue; // composites never take enrichment directly
     for (const s of slugs) {
       const fam = VOCAB_FAMILY.get(s);
       if (!fam) {
