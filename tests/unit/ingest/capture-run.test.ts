@@ -98,6 +98,39 @@ Deno.test("environment manifest tolerates an inspect failure (best-effort contai
   }
 });
 
+Deno.test("environment manifest THROWS when a harness input is missing (capture must never block ingest is the caller's job)", async () => {
+  // Documents the exact failure mode Important-3 guards against: unlike the
+  // container/git facts above (both best-effort, both swallowed inside this
+  // function), `harnessFingerprint` fails loudly (`missing: "throw"`) on a
+  // fixed list of committed files. `buildEnvironmentManifest` does NOT catch
+  // this itself, by design (a narrowed/wrong fingerprint must never be
+  // silently substituted, see `promptTemplateDigest`'s opposite choice
+  // above) — so every caller of `buildEnvironmentManifest` MUST wrap the
+  // call in its own try/catch rather than let a bench-time ingest abort on
+  // it (`ingestBenchResults` in `cli/commands/bench-command.ts` does this).
+  const emptyRoot = await Deno.makeTempDir({ prefix: "cg-no-harness-" });
+  const mock = createCommandMock();
+  try {
+    installCleanGitMock(mock);
+    const fakeInspect = (): Promise<ContainerInspection | undefined> =>
+      Promise.resolve(undefined);
+    let threw = false;
+    try {
+      await buildEnvironmentManifest({
+        containerName: "Cronus28",
+        cwd: emptyRoot,
+        inspect: fakeInspect,
+      });
+    } catch {
+      threw = true;
+    }
+    assertEquals(threw, true);
+  } finally {
+    mock.restore();
+    await Deno.remove(emptyRoot, { recursive: true });
+  }
+});
+
 Deno.test("environment manifest reads git sha and dirty-tree state via Deno.Command", async () => {
   const mock = createCommandMock();
   try {

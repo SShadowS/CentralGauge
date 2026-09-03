@@ -57,6 +57,7 @@ import {
   buildEnvironmentManifest,
   invocationSnapshot,
 } from "../../src/ingest/capture.ts";
+import type { EnvironmentManifest } from "../../src/ingest/capture.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -916,11 +917,27 @@ async function ingestBenchResults(
 ): Promise<void> {
   const cwd = Deno.cwd();
   const centralgaugeSha = await readGitSha(cwd);
-  // Run-level capture (taxonomy v2): built ONCE per run (not per variant/file
-  // — the environment is the same regardless of which model produced which
+  // Run-level capture (taxonomy v2): built ONCE per run (not per variant/file,
+  // the environment is the same regardless of which model produced which
   // results file), then referenced from every (file × variant) assemble
-  // call below.
-  const environment = await buildEnvironmentManifest({ containerName, cwd });
+  // call below. Best-effort: `buildEnvironmentManifest` can throw (e.g. a
+  // missing harness input under `harnessFingerprint`'s `missing: "throw"`
+  // mode), and this call sits outside any try/catch of the caller's — a
+  // throw here would abort ingest for every result file of an otherwise
+  // successful multi-hour bench. Catch, warn, and ingest without the
+  // environment/invocation capture rather than lose the run.
+  let environment: EnvironmentManifest | undefined;
+  try {
+    environment = await buildEnvironmentManifest({ containerName, cwd });
+  } catch (err) {
+    console.warn(
+      colors.yellow(
+        `[WARN] Could not build environment manifest (${
+          err instanceof Error ? err.message : String(err)
+        }); ingesting without environment/invocation capture for this run.`,
+      ),
+    );
+  }
 
   console.log(
     colors.gray(
@@ -956,7 +973,6 @@ async function ingestBenchResults(
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
         {
           pricingVersion,
-          environment,
           invocation: invocationSnapshot({
             provider: variant.provider,
             model: variant.baseModel,
@@ -969,6 +985,9 @@ async function ingestBenchResults(
               { reasoning: variant.config.thinkingBudget }),
           }),
         };
+      // Best-effort (see the try/catch above): omit rather than send
+      // `environment: undefined` when the manifest build failed.
+      if (environment) assembleOpts.environment = environment;
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
       const persistedRunId = ingestMeta?.run_ids[variant.variantId];
       if (persistedRunId) assembleOpts.runId = persistedRunId;
