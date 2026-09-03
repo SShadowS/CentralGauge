@@ -43,6 +43,12 @@ Deno.test("previous catalog carry-over preserves non-surface facets", async () =
   if (!("donors" in task)) {
     task.facets = [...task.facets, "inclusive-boundary"];
   }
+  // Add a task with no manifest (vanished task)
+  catalog.tasks["CG-AL-X999"] = {
+    group: "build-from-spec",
+    facets: ["some-facet"],
+    min_bc_version: 15,
+  };
   // Build again with previous catalog
   const { catalog: catalog2 } = await buildDraft({
     ...opts,
@@ -55,6 +61,8 @@ Deno.test("previous catalog carry-over preserves non-surface facets", async () =
     // Surface facet from manifest still present
     assertEquals(task2.facets.includes("table"), true);
   }
+  // Vanished task is not in the new catalog
+  assertEquals(catalog2.tasks["CG-AL-X999"], undefined);
 });
 
 Deno.test("manifest parse failure records violation and continues", async () => {
