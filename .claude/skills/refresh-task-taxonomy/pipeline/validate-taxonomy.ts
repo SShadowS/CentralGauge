@@ -1,6 +1,7 @@
 import { parse } from "@std/yaml";
 import { walk } from "@std/fs/walk";
 import { exists } from "@std/fs/exists";
+import { red } from "@std/fmt/colors";
 import {
   validateCatalog,
   type ValidationIssue,
@@ -90,20 +91,37 @@ export async function validateRepo(
 }
 
 if (import.meta.main) {
-  const { issues, counts } = await validateRepo({
-    catalogPath: "site/catalog/task-categories.yml",
-    tasksDir: "tasks",
-    starterDir: "tasks/starter",
-    expectedCountsPath:
-      ".claude/skills/refresh-task-taxonomy/pipeline/expected-counts.json",
-  });
-  console.log("per-format counts", counts);
-  if (issues.length) {
-    for (const i of issues) {
-      console.error(`[${i.code}] ${i.where}: ${i.message}`);
+  try {
+    const { issues, counts } = await validateRepo({
+      catalogPath: "site/catalog/task-categories.yml",
+      tasksDir: "tasks",
+      starterDir: "tasks/starter",
+      expectedCountsPath:
+        ".claude/skills/refresh-task-taxonomy/pipeline/expected-counts.json",
+    });
+    console.log("per-format counts", counts);
+    if (issues.length) {
+      for (const i of issues) {
+        console.error(`[${i.code}] ${i.where}: ${i.message}`);
+      }
+      console.error(`${issues.length} taxonomy issue(s)`);
+      Deno.exit(1);
     }
-    console.error(`${issues.length} taxonomy issue(s)`);
+    console.log("[OK] taxonomy valid");
+  } catch (err) {
+    const reason = err instanceof Deno.errors.NotFound
+      ? "not found"
+      : err instanceof Error
+      ? err.message
+      : String(err);
+    const filePath = reason.includes("task-categories")
+      ? "site/catalog/task-categories.yml"
+      : reason.includes("expected-counts")
+      ? ".claude/skills/refresh-task-taxonomy/pipeline/expected-counts.json"
+      : "file";
+    console.error(
+      red(`[FAIL] cannot read ${filePath}: ${reason}`),
+    );
     Deno.exit(1);
   }
-  console.log("[OK] taxonomy valid");
 }

@@ -50,3 +50,22 @@ Deno.test("expected per-format counts are asserted", async () => {
   });
   assertEquals(issues.some((i) => i.code === "count_mismatch"), true);
 });
+
+Deno.test("a catalog entry without a manifest is reported", async () => {
+  const dir = await tmpCatalog((t) =>
+    t.concat(`  CG-AL-X998:
+    group: build-from-spec
+    description: Synthetic task
+    min_bc_version: 1
+`)
+  );
+  const { issues } = await validateRepo({
+    catalogPath: `${dir}/cat.yml`,
+    ...opts,
+    expectedCountsPath: `${dir}/counts.json`,
+  });
+  assertEquals(
+    issues.some((i) => i.code === "catalog_task_without_manifest"),
+    true,
+  );
+});
