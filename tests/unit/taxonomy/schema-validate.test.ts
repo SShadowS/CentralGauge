@@ -187,6 +187,67 @@ Deno.test("composite facets field rejection", () => {
   assertEquals(codes(c).includes("wrong_entry_form"), true);
 });
 
+Deno.test("single task without a facets array is reported, not thrown (missing_facets)", () => {
+  const c = base();
+  delete (c.tasks["CG-AL-X076"] as { facets?: string[] }).facets;
+  const got = codes(c);
+  assertEquals(got.includes("missing_facets"), true);
+  // normalizeCatalog must never be reached on invalid input in real callers,
+  // but assert it wouldn't have found an array to .map() over either.
+  assertEquals("facets" in c.tasks["CG-AL-X076"]!, false);
+});
+
+Deno.test("composite without derived_facets or local_facets is reported (missing_facets)", () => {
+  const c = base();
+  const comp = c.tasks["CG-AL-X999"] as unknown as {
+    derived_facets?: string[];
+    local_facets?: string[];
+  };
+  delete comp.derived_facets;
+  delete comp.local_facets;
+  const got = codes(c);
+  assertEquals(got.filter((code) => code === "missing_facets").length, 2);
+});
+
+Deno.test("composite without a donors array is reported (missing_donors)", () => {
+  const c = base();
+  const comp = c.tasks["CG-AL-X999"] as unknown as { donors?: string[] };
+  delete comp.donors;
+  assertEquals(codes(c).includes("missing_donors"), true);
+});
+
+Deno.test("non-array top-level collections are reported, not thrown (not_an_array)", () => {
+  for (const field of ["groups", "families", "tags", "aliases", "overrides"]) {
+    const c = base() as unknown as Record<string, unknown>;
+    c[field] = { not: "an array" };
+    const got = codes(c);
+    assertEquals(got.includes("not_an_array"), true, field);
+  }
+});
+
+Deno.test("non-array task facet fields are reported, not thrown (not_an_array)", () => {
+  const single = base();
+  (single.tasks["CG-AL-X076"] as unknown as { facets: unknown }).facets =
+    "not-an-array";
+  assertEquals(codes(single).includes("not_an_array"), true);
+
+  const compositeDonors = base();
+  (compositeDonors.tasks["CG-AL-X999"] as unknown as { donors: unknown })
+    .donors = "not-an-array";
+  assertEquals(codes(compositeDonors).includes("not_an_array"), true);
+
+  const compositeDerived = base();
+  (compositeDerived.tasks["CG-AL-X999"] as unknown as {
+    derived_facets: unknown;
+  }).derived_facets = "not-an-array";
+  assertEquals(codes(compositeDerived).includes("not_an_array"), true);
+
+  const compositeLocal = base();
+  (compositeLocal.tasks["CG-AL-X999"] as unknown as { local_facets: unknown })
+    .local_facets = "not-an-array";
+  assertEquals(codes(compositeLocal).includes("not_an_array"), true);
+});
+
 Deno.test("duplicate facets within a task", () => {
   const c = base();
   (c.tasks["CG-AL-X076"] as { facets: string[] }).facets = [

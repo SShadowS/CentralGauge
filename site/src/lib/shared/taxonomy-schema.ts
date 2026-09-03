@@ -206,6 +206,27 @@ export interface ValidationIssue {
 const VALID_GROUPS = new Set<string>(FORMATS);
 const VALID_FAMILIES = new Set<string>(FAMILIES);
 
+/**
+ * Read a would-be array field for validation: absent -> `[]` (some other
+ * check reports the absence where relevant), present-but-not-an-array ->
+ * `[]` plus a `not_an_array` issue, present-and-array -> itself unchanged.
+ * Callers never see anything but an array, so a malformed top-level
+ * collection can never reach a `for...of` and throw inside `validateCatalog`
+ * itself.
+ */
+function asArray<T>(
+  value: unknown,
+  where: string,
+  issue: (code: string, where: string, message: string) => void,
+): T[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    issue("not_an_array", where, `${where} must be an array`);
+    return [];
+  }
+  return value as T[];
+}
+
 export function validateCatalog(c: unknown): ValidationIssue[] {
   const out: ValidationIssue[] = [];
   const issue = (code: string, where: string, message: string) =>
@@ -217,12 +238,12 @@ export function validateCatalog(c: unknown): ValidationIssue[] {
   const cat = c as Partial<CatalogV2>;
   if (cat.schema_version !== 2)
     issue("bad_schema_version", "schema_version", "expected 2");
-  const groups = cat.groups ?? [],
-    families = cat.families ?? [],
-    tags = cat.tags ?? [];
-  const aliases = cat.aliases ?? [],
-    overrides = cat.overrides ?? [],
-    tasks = cat.tasks ?? {};
+  const groups = asArray<CatalogGroup>(cat.groups, "groups", issue);
+  const families = asArray<CatalogFamily>(cat.families, "families", issue);
+  const tags = asArray<CatalogTag>(cat.tags, "tags", issue);
+  const aliases = asArray<CatalogAlias>(cat.aliases, "aliases", issue);
+  const overrides = asArray<CatalogOverride>(cat.overrides, "overrides", issue);
+  const tasks = cat.tasks ?? {};
 
   const groupSlugs = new Set<string>();
   for (const g of groups) {
@@ -316,20 +337,49 @@ export function validateCatalog(c: unknown): ValidationIssue[] {
         "min_bc_version must be an integer",
       );
     }
-    const hasDonors =
-      "donors" in e &&
-      Array.isArray((e as CompositeTaskEntry).donors) &&
-      (e as CompositeTaskEntry).donors.length > 0;
     if (isComposite(e)) {
-      if (!hasDonors)
-        issue("composite_without_donors", where, "composite needs donors");
       if ("facets" in e)
         issue(
           "wrong_entry_form",
           where,
           "composites use derived_facets and local_facets",
         );
-      const donors = e.donors ?? [];
+      // Guard every facet-shaped field before a later `.map`/iteration can
+      // throw on it: absent -> missing_* (a composite must declare the
+      // field, even as an empty array for derived_facets/local_facets),
+      // present-but-wrong-type -> not_an_array. Either way the rest of this
+      // branch works from a guaranteed-array local, never the raw field.
+      const donorsRaw = (e as CompositeTaskEntry).donors;
+      if (donorsRaw === undefined) {
+        issue("missing_donors", where, "composite requires a donors array");
+      } else if (!Array.isArray(donorsRaw)) {
+        issue("not_an_array", where, "donors must be an array");
+      }
+      const donors = Array.isArray(donorsRaw) ? donorsRaw : [];
+      const derivedRaw = (e as CompositeTaskEntry).derived_facets;
+      if (derivedRaw === undefined) {
+        issue(
+          "missing_facets",
+          where,
+          "composite requires a derived_facets array",
+        );
+      } else if (!Array.isArray(derivedRaw)) {
+        issue("not_an_array", where, "derived_facets must be an array");
+      }
+      const derivedFacets = Array.isArray(derivedRaw) ? derivedRaw : [];
+      const localRaw = (e as CompositeTaskEntry).local_facets;
+      if (localRaw === undefined) {
+        issue(
+          "missing_facets",
+          where,
+          "composite requires a local_facets array",
+        );
+      } else if (!Array.isArray(localRaw)) {
+        issue("not_an_array", where, "local_facets must be an array");
+      }
+      const localFacets = Array.isArray(localRaw) ? localRaw : [];
+      if (donors.length === 0)
+        issue("composite_without_donors", where, "composite needs donors");
       if (donors.length < 4 || donors.length > 8)
         issue(
           "donor_count",
@@ -354,24 +404,21 @@ export function validateCatalog(c: unknown): ValidationIssue[] {
         maxVersion = Math.max(maxVersion, donor.min_bc_version);
       }
       const want = [...derived].sort();
-      const got = [...(e.derived_facets ?? [])].sort();
+      const got = [...derivedFacets].sort();
       if (JSON.stringify(want) !== JSON.stringify(got))
         issue(
           "derived_mismatch",
           where,
           `derived_facets must equal the donor union ${JSON.stringify(want)}`,
         );
-      for (const f of e.local_facets ?? []) {
+      for (const f of localFacets) {
         if (derived.has(f))
           issue("local_overlap", where, `${f} is already derived`);
       }
       if (Number.isFinite(maxVersion) && e.min_bc_version !== maxVersion) {
         issue("version_not_max", where, `min_bc_version must be ${maxVersion}`);
       }
-      const allFacets = [
-        ...(e.derived_facets ?? []),
-        ...(e.local_facets ?? []),
-      ];
+      const allFacets = [...derivedFacets, ...localFacets];
       const facetSet = new Set<string>();
       for (const f of allFacets) {
         if (facetSet.has(f))
@@ -381,11 +428,21 @@ export function validateCatalog(c: unknown): ValidationIssue[] {
           issue("unknown_facet", where, `${f} is not a tag`);
       }
     } else {
+      const hasDonors =
+        "donors" in e &&
+        Array.isArray((e as unknown as CompositeTaskEntry).donors) &&
+        (e as unknown as CompositeTaskEntry).donors.length > 0;
       if (hasDonors)
         issue("donors_on_single", where, "only composites carry donors");
       if ("derived_facets" in e || "local_facets" in e)
         issue("wrong_entry_form", where, "singles use facets");
-      const facets = (e as SingleTaskEntry).facets ?? [];
+      const facetsRaw = (e as SingleTaskEntry).facets;
+      if (facetsRaw === undefined) {
+        issue("missing_facets", where, "single tasks require a facets array");
+      } else if (!Array.isArray(facetsRaw)) {
+        issue("not_an_array", where, "facets must be an array");
+      }
+      const facets = Array.isArray(facetsRaw) ? facetsRaw : [];
       const facetSet = new Set<string>();
       for (const f of facets) {
         if (facetSet.has(f))
