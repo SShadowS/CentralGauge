@@ -5,7 +5,12 @@ import {
 } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { type TaxonomyPayload, applyTaxonomy } from "$lib/server/taxonomy";
-import { isV1Frozen } from "$lib/server/taxonomy-v2";
+import { applyRevision, isV1Frozen } from "$lib/server/taxonomy-v2";
+import {
+  type CatalogV2,
+  normalizeCatalog,
+  validateCatalog,
+} from "$lib/shared/taxonomy-schema";
 
 /** 64-hex string pattern for a task-set hash. */
 const HASH_RE = /^[0-9a-f]{64}$/i;
@@ -26,6 +31,16 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     if (body.version !== 1 && body.version !== 2) {
       throw new ApiError(400, "bad_version", "only versions 1 and 2 supported");
     }
+
+    // Signature verification runs FIRST for both versions, before the
+    // freeze check or either version branch — otherwise the freeze check
+    // leaks one bit (whether v1 is frozen) to an unauthenticated caller.
+    const verified = await verifySignedRequest(
+      db,
+      body as unknown as SignedAdminRequest,
+      "admin",
+    );
+
     if (body.version === 1 && (await isV1Frozen(db))) {
       throw new ApiError(
         409,
@@ -33,19 +48,84 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         "a schema-version-2 taxonomy is active; v1 writes are frozen site-wide",
       );
     }
+
     if (body.version === 2) {
-      // Task 5 fills this in.
-      throw new ApiError(
-        501,
-        "not_implemented",
-        "version 2 apply lands in Task 5",
+      const p = body.payload as Record<string, unknown>;
+      if (typeof p.hash !== "string" || !HASH_RE.test(p.hash)) {
+        throw new ApiError(
+          400,
+          "hash_required",
+          "version 2 requires an explicit 64-hex hash",
+        );
+      }
+      const hash = p.hash;
+      const set = await db
+        .prepare(`SELECT is_current FROM task_sets WHERE hash = ?`)
+        .bind(hash)
+        .first<{ is_current: number }>();
+      if (!set) throw new ApiError(400, "unknown_task_set", hash);
+      if (set.is_current !== 1 && p.allow_non_current !== true) {
+        throw new ApiError(
+          409,
+          "not_current_task_set",
+          "hash is not the current set; pass allow_non_current",
+        );
+      }
+      const catalog = {
+        schema_version: 2,
+        groups: p.groups,
+        families: p.families,
+        tags: p.tags,
+        aliases: p.aliases ?? [],
+        overrides: p.overrides ?? [],
+        tasks: p.tasks,
+      } as CatalogV2;
+      const issues = validateCatalog(catalog);
+      const setIds = new Set(
+        (
+          await db
+            .prepare(`SELECT task_id FROM tasks WHERE task_set_hash = ?`)
+            .bind(hash)
+            .all<{ task_id: string }>()
+        ).results.map((r) => r.task_id),
+      );
+      const payloadIds = new Set(Object.keys(catalog.tasks ?? {}));
+      const missing = [...setIds].filter((id) => !payloadIds.has(id));
+      const extra = [...payloadIds].filter((id) => !setIds.has(id));
+      if (missing.length || extra.length) {
+        issues.push({
+          code: "coverage",
+          where: "tasks",
+          message: `coverage mismatch: missing ${missing.length}, extra ${extra.length}`,
+        });
+      }
+      if (issues.length) {
+        throw new ApiError(
+          400,
+          "catalog_invalid",
+          issues.map((i) => `[${i.code}] ${i.where}: ${i.message}`).join("; "),
+        );
+      }
+      const normalized = normalizeCatalog(catalog, hash);
+      const provenance = (p.provenance ?? {}) as Record<string, unknown>;
+      const r = await applyRevision(db, {
+        hash,
+        normalized,
+        provenance,
+        actor: verified,
+        signature: (body as { signature: { value: string } }).signature.value,
+      });
+      return jsonResponse(
+        {
+          hash,
+          revision_id: r.revisionId,
+          digest: r.digest,
+          status: r.status,
+          tasks: Object.keys(catalog.tasks ?? {}).length,
+        },
+        200,
       );
     }
-    await verifySignedRequest(
-      db,
-      body as unknown as SignedAdminRequest,
-      "admin",
-    );
 
     const p = body.payload;
 

@@ -76,7 +76,12 @@ describe("v1 taxonomy writes after the first v2 activation", () => {
     expect(res.status).toBe(200);
   });
 
-  it("returns 501 not_implemented for version 2 (Task 5 fills this in)", async () => {
+  // Was a Task 2 placeholder asserting 501 not_implemented; Task 5 (this
+  // commit) implements the version-2 branch for real, so an authenticated
+  // v2 request with no hash now reaches the real validation path and gets
+  // 400 hash_required instead. Full version-2 coverage (staging, coverage
+  // checks, allow_non_current) lives in taxonomy-v2-apply.test.ts.
+  it("no longer 501s for version 2: an authenticated request without a hash gets 400 hash_required", async () => {
     const { keyId, keypair } = await registerMachineKey("root", "admin");
     const { signedRequest } = await createSignedPayload(
       { groups: [], tags: [], tasks: {} },
@@ -92,9 +97,9 @@ describe("v1 taxonomy writes after the first v2 activation", () => {
         body: JSON.stringify({ ...signedRequest, version: 2 }),
       },
     );
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("not_implemented");
+    expect(body.code).toBe("hash_required");
   });
 
   it("rejects an unknown version with 400 bad_version", async () => {
