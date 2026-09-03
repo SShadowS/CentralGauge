@@ -2,6 +2,7 @@ import type { RequestHandler } from "./$types";
 import { errorResponse } from "$lib/server/errors";
 import { resolveV2Context, v2Json } from "$lib/server/v2-context";
 import { listReleases } from "$lib/server/releases";
+import type { ExportV2Item } from "$lib/shared/api-types";
 
 interface ExportManifest {
   files: { key: string; sha256: string; bytes: number }[];
@@ -20,11 +21,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const ctx = await resolveV2Context(db, url);
     const releases = await listReleases(db, ctx.task_set_hash);
 
-    const data: {
-      release_slug: string;
-      files: { key: string; sha256: string; bytes: number }[];
-      manifest_sha256: string;
-    }[] = [];
+    const data: ExportV2Item[] = [];
     for (const r of releases) {
       if (!r.export_manifest_sha256) continue;
       const obj = await blobs.get(`exports/${r.slug}/manifest.json`);

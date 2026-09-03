@@ -13,6 +13,7 @@ import { appendAudit } from "./audit";
 import { readRevisionNormalized } from "./taxonomy-v2";
 import type { VerifiedKey } from "./signature";
 import type { ScoringPolicy } from "./scoring-policy";
+import type { ReleaseV2Summary } from "../shared/api-types";
 
 /**
  * sha256 of the canonical `{ model_slug: [run ids in cohort order] }` map
@@ -237,10 +238,16 @@ export async function writeExportBundle(
   const jsonl = (rows: unknown[]) =>
     rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
 
+  // Drop the raw JSON-encoded column in favor of the parsed panel_manifest
+  // field below — the export should carry one representation, not both.
+  const { panel_manifest_json, ...relWithoutRawManifest } = rel;
   await put(
     "release.json",
     JSON.stringify(
-      { ...rel, panel_manifest: JSON.parse(rel.panel_manifest_json as string) },
+      {
+        ...relWithoutRawManifest,
+        panel_manifest: JSON.parse(panel_manifest_json as string),
+      },
       null,
       1,
     ),
@@ -307,6 +314,10 @@ export async function writeExportBundle(
       ).results,
     ),
   );
+  // A full production set is a few megabytes of results at most (~29k rows
+  // at ~300 bytes each) — small enough for one D1 `.all()` call. If the
+  // Worker's memory limit is ever hit on a larger set, chunk this query by
+  // 5,000 rows instead of reading it all at once.
   await put(
     "results.jsonl",
     jsonl(
@@ -367,23 +378,12 @@ export async function writeExportBundle(
   };
 }
 
-export interface ReleaseSummary {
-  id: number;
-  slug: string;
-  hash: string;
-  revision_digest: string;
-  scoring_policy_digest: string;
-  estimator_version: string;
-  cohort_digest: string;
-  panel_manifest: Record<string, unknown>;
-  changelog: string;
-  supersedes_slug: string | null;
-  export_manifest_sha256: string | null;
-  published_at: string;
-  published_by: string;
-  retained_count: number;
-  full_count: number;
-}
+/**
+ * Same shape as `ReleaseV2Summary` (`$lib/shared/api-types`) — aliased
+ * rather than redeclared so the server-side query layer and the wire
+ * contract can never drift apart.
+ */
+export type ReleaseSummary = ReleaseV2Summary;
 
 interface ReleaseSummaryRow {
   id: number;

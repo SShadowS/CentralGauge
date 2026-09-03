@@ -186,10 +186,15 @@ describe("benchmark releases + export bundle", () => {
       retained_count: number;
       full_count: number;
       panel_manifest: { models: string[] };
+      revision_digest: string;
     };
     expect(rel.retained_count).toBe(2);
     expect(rel.full_count).toBe(5);
     expect(rel.panel_manifest.models).toEqual(["m1"]);
+    // The detail route pins the release's OWN revision (not whatever is
+    // live for the set), so the envelope's revision_digest must match what
+    // was actually published against.
+    expect(rel.revision_digest).toBe(rev.digest);
 
     const manifest = await env.BLOBS.get(
       "exports/2026-09-launch/manifest.json",
