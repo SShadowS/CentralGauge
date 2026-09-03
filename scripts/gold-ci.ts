@@ -45,7 +45,10 @@
  */
 
 import { dirname, fromFileUrl, join } from "@std/path";
-import { harnessFingerprint } from "../src/utils/harness-fingerprint.ts";
+import {
+  harnessFingerprint,
+  hashFiles,
+} from "../src/utils/harness-fingerprint.ts";
 
 const REPO = dirname(dirname(fromFileUrl(import.meta.url)));
 const LEDGER = join(REPO, "docs", "reasoning-suite", "gold-ci.json");
@@ -67,44 +70,6 @@ interface Ledger {
   what: string;
   harnessHash?: string;
   tasks: Record<string, Replay>;
-}
-
-async function sha256Of(paths: readonly string[]): Promise<string> {
-  // Per-file framing (path + length + content) so a rename, or a byte moving
-  // between files, cannot produce a colliding digest.
-  //
-  // Line endings are NORMALISED to LF before hashing. This repo has documented
-  // CRLF/LF drift (CLAUDE.md warns that `deno fmt` over a directory rewrites
-  // dozens of unrelated files), and `git checkout` of an LF working file writes
-  // CRLF back. Hashing raw bytes therefore invalidated every task on every
-  // line-ending churn — measured while building this: reverting an unrelated
-  // edit moved the fingerprint and dropped two green tasks to stale. A gate
-  // that cries wolf gets ignored, and CRLF cannot change a compile verdict.
-  const parts: Uint8Array[] = [];
-  const enc = new TextEncoder();
-  for (const p of [...paths].sort()) {
-    let text: string;
-    try {
-      text = await Deno.readTextFile(join(REPO, p));
-    } catch {
-      continue;
-    }
-    const bytes = enc.encode(text.split("\r\n").join("\n"));
-    parts.push(enc.encode(`${p}:${bytes.byteLength}:`));
-    parts.push(bytes);
-  }
-  let total = 0;
-  for (const p of parts) total += p.byteLength;
-  const buf = new Uint8Array(total);
-  let off = 0;
-  for (const p of parts) {
-    buf.set(p, off);
-    off += p.byteLength;
-  }
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", buf));
-  return Array.from(digest).map((b) => b.toString(16).padStart(2, "0")).join(
-    "",
-  );
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -230,7 +195,7 @@ async function main(argv: string[]) {
     )
     : [];
 
-  const harnessHash = await harnessFingerprint(".");
+  const harnessHash = await harnessFingerprint(REPO);
   const ledger = await loadLedger();
   const tasks = await inScopeTasks();
 
@@ -245,7 +210,9 @@ async function main(argv: string[]) {
       noRef.push(id);
       continue;
     }
-    const h = await sha256Of(await taskInputs(id, tier));
+    const h = await hashFiles(await taskInputs(id, tier), REPO, {
+      missing: "skip",
+    });
     inputs.set(id, h);
     const rec = ledger.tasks[id];
     if (rec === undefined) {
@@ -326,7 +293,11 @@ async function main(argv: string[]) {
         continue;
       }
       const r = await probe(id, container);
-      const h = inputs.get(id) ?? await sha256Of(await taskInputs(id, tier));
+      const h = inputs.get(id) ?? await hashFiles(
+        await taskInputs(id, tier),
+        REPO,
+        { missing: "skip" },
+      );
       ledger.tasks[id] = {
         verdict: r.verdict,
         at: new Date().toISOString(),
