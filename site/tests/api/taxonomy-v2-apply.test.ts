@@ -86,4 +86,17 @@ describe("POST task-taxonomy version 2", () => {
     );
     expect(ok.status).toBe(200);
   });
+
+  it("refuses a well-formed hash with no matching task_sets row", async () => {
+    const { keyId, keypair } = await registerMachineKey("root", "admin");
+    const unknownHash = "b".repeat(64);
+    const res = await post(
+      { ...smallCatalog(), version: 2, hash: unknownHash },
+      keyId,
+      keypair,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("unknown_task_set");
+  });
 });
