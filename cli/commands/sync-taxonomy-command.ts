@@ -7,11 +7,19 @@
  * invalidates a benchmark or forces a re-bench.
  *
  * Flow:
- *   1. Read + parse site/catalog/task-categories.yml.
- *   2. Build the payload: groups, tags (name = file name or Title-Cased slug),
- *      tasks map (group + tags), optional hash.
- *   3. Resolve target hash: --hash flag > auto-discover from /api/v1/runs
- *      (same strategy as populate-task-set).
+ *   1. Read + parse site/catalog/task-categories.yml, reading its
+ *      schema_version to pick a payload shape (absent = 1, the legacy
+ *      groups/tags/tasks shape; 2 = the taxonomy-v2 groups/families/facet
+ *      tags/aliases/overrides shape).
+ *   2. Build the payload: for schema 1, groups + tags (name = file name or
+ *      Title-Cased slug) + a tasks map (group + tags); for schema 2, the
+ *      catalog's groups/families/tags/aliases/overrides/tasks as-is, after
+ *      validateCatalog passes.
+ *   3. Resolve target hash. Schema 1: --hash flag > auto-discover from
+ *      /api/v1/runs (same strategy as populate-task-set) > omitted from the
+ *      payload entirely if discovery fails. Schema 2: --hash is REQUIRED on
+ *      --apply and NEVER auto-discovered (spec 5.2) — a mis-targeted taxonomy
+ *      write must be an explicit choice, not a stale guess from the last run.
  *   4. DRY-RUN BY DEFAULT: print counts + target hash, do not POST.
  *   5. On --apply: sign with admin key and POST; print server response.
  *
@@ -23,11 +31,12 @@ import * as colors from "@std/fmt/colors";
 import { parse as parseYaml } from "@std/yaml";
 import type { IngestCliFlags } from "../../src/ingest/config.ts";
 import { loadAdminConfig, readPrivateKey } from "../../src/ingest/config.ts";
+import type { AdminConfig } from "../../src/ingest/types.ts";
 import { signPayload } from "../../src/ingest/sign.ts";
 import { postWithRetry } from "../../src/ingest/client.ts";
+import type { CatalogV2 } from "../../site/src/lib/shared/taxonomy-schema.ts";
 import {
   catalogDigest,
-  type CatalogV2,
   normalizeCatalog,
   validateCatalog,
 } from "../../site/src/lib/shared/taxonomy-schema.ts";
@@ -152,6 +161,64 @@ export async function buildV2Payload(
     },
     digest,
   };
+}
+
+/**
+ * Fold envelope-level flags into a v2 payload just before it's sent. Pure
+ * and non-mutating (returns a new object; `payload` is left untouched) so
+ * it can be unit-tested without a network call. `allow_non_current` is
+ * added only when explicitly requested and is never part of the digest
+ * computed by {@link buildV2Payload} — the digest is a function of catalog
+ * content + hash alone.
+ */
+export function finalizeV2Payload(
+  payload: V2Payload,
+  opts: { allowNonCurrent?: boolean | undefined },
+): V2Payload {
+  return opts.allowNonCurrent
+    ? { ...payload, allow_non_current: true }
+    : payload;
+}
+
+/**
+ * Sign a taxonomy payload, POST it to the admin taxonomy endpoint, print the
+ * response, and exit(1) on a non-OK response. Shared by the schema-1 and
+ * schema-2 apply paths so the sign -> POST -> print sequence exists once.
+ * Pretty-prints a JSON response body (indent 2); falls back to the raw text
+ * when the body doesn't parse as JSON.
+ */
+async function signAndPost(
+  config: AdminConfig,
+  adminPriv: Uint8Array,
+  envelopeVersion: number,
+  payload: Record<string, unknown>,
+  label: string,
+): Promise<Response> {
+  const sig = await signPayload(payload, adminPriv, config.adminKeyId);
+  const resp = await postWithRetry(
+    `${config.url}/api/v1/admin/catalog/task-taxonomy`,
+    { version: envelopeVersion, signature: sig, payload },
+    { maxAttempts: 3 },
+  );
+  const respText = await resp.text();
+  let respJson: unknown = null;
+  try {
+    respJson = JSON.parse(respText);
+  } catch {
+    /* keep raw */
+  }
+  const tag = resp.ok
+    ? colors.green(`[${resp.status}]`)
+    : colors.red(`[${resp.status}]`);
+  console.log(
+    `${tag} ${label} ${
+      typeof respJson === "object" && respJson != null
+        ? JSON.stringify(respJson, null, 2)
+        : respText
+    }`,
+  );
+  if (!resp.ok) Deno.exit(1);
+  return resp;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,30 +362,20 @@ async function handleSyncTaxonomy(
       return;
     }
 
-    if (options.allowNonCurrent) payload.allow_non_current = true;
+    const finalPayload = finalizeV2Payload(payload, {
+      allowNonCurrent: options.allowNonCurrent,
+    });
 
     const config = await loadAdminConfig(cwd, flags);
     const adminPriv = await readPrivateKey(config.adminKeyPath);
-    const sig = await signPayload(
-      payload as unknown as Record<string, unknown>,
+    await signAndPost(
+      config,
       adminPriv,
-      config.adminKeyId,
-    );
-    const resp = await postWithRetry(
-      `${config.url}/api/v1/admin/catalog/task-taxonomy`,
-      { version: 2, signature: sig, payload },
-      { maxAttempts: 3 },
-    );
-    const body = await resp.text();
-    console.log(
-      `${
-        resp.ok
-          ? colors.green(`[${resp.status}]`)
-          : colors.red(`[${resp.status}]`)
-      } ${body}`,
+      2,
+      finalPayload as unknown as Record<string, unknown>,
+      "POST /api/v1/admin/catalog/task-taxonomy",
     );
     console.log(colors.gray(`[INFO] expected server digest ${digest}`));
-    if (!resp.ok) Deno.exit(1);
     return;
   }
 
@@ -418,40 +475,13 @@ async function handleSyncTaxonomy(
   const payload: TaxonomyPayload = { groups, tags, tasks };
   if (targetHash) payload.hash = targetHash;
 
-  const sig = await signPayload(
-    payload as unknown as Record<string, unknown>,
+  await signAndPost(
+    config,
     adminPriv,
-    config.adminKeyId,
+    1,
+    payload as unknown as Record<string, unknown>,
+    "POST /api/v1/admin/catalog/task-taxonomy",
   );
-  const envelope = { version: 1, signature: sig, payload };
-
-  const resp = await postWithRetry(
-    `${config.url}/api/v1/admin/catalog/task-taxonomy`,
-    envelope,
-    { maxAttempts: 3 },
-  );
-  const respText = await resp.text();
-  let respJson: unknown = null;
-  try {
-    respJson = JSON.parse(respText);
-  } catch {
-    /* keep raw */
-  }
-
-  const tag = resp.ok
-    ? colors.green(`[${resp.status}]`)
-    : colors.red(`[${resp.status}]`);
-  console.log(
-    `${tag} POST /api/v1/admin/catalog/task-taxonomy ${
-      typeof respJson === "object" && respJson != null
-        ? JSON.stringify(respJson, null, 2)
-        : respText
-    }`,
-  );
-
-  if (!resp.ok) {
-    Deno.exit(1);
-  }
 }
 
 // ---------------------------------------------------------------------------

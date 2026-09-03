@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import {
   buildV2Payload,
+  finalizeV2Payload,
   readCatalogFile,
 } from "../../../../cli/commands/sync-taxonomy-command.ts";
 import {
@@ -142,4 +143,22 @@ Deno.test("buildV2Payload carries aliases and overrides through, defaulting to e
   const { payload } = await buildV2Payload(catalog, "e".repeat(64));
   assertEquals(payload.overrides, catalog.overrides);
   assertEquals(payload.aliases, []);
+});
+
+Deno.test("finalizeV2Payload adds allow_non_current only when requested, without mutating the input", async () => {
+  const { payload } = await buildV2Payload(
+    parseCatalogYaml(emitCatalogYaml(validCatalog())),
+    "f".repeat(64),
+  );
+
+  const withFlag = finalizeV2Payload(payload, { allowNonCurrent: true });
+  assertEquals(withFlag.allow_non_current, true);
+
+  const withoutFlag = finalizeV2Payload(payload, {});
+  assertEquals("allow_non_current" in withoutFlag, false);
+  // No flag requested: the same object comes back untouched, not a copy.
+  assertEquals(withoutFlag, payload);
+
+  // Neither call mutated the original payload.
+  assertEquals("allow_non_current" in payload, false);
 });
