@@ -918,3 +918,26 @@ export interface SummaryStats {
   latest_changelog: ChangelogEntry | null;
   generated_at: string;
 }
+
+// =============================================================================
+// Taxonomy v2 (`/api/v2/*`) response envelope (Plan B)
+// =============================================================================
+
+/**
+ * Fields every `/api/v2/*` response is stamped with (`v2Envelope` in
+ * `$lib/server/v2-context.ts`), merged ahead of the route's own payload
+ * fields. `revision_digest` and `scoring_policy_digest` pin the response to
+ * the exact taxonomy revision / scoring policy it was generated under —
+ * `scoring_policy_digest` is `null` when the resolved task set carries no
+ * scoring policy.
+ */
+export interface V2Envelope {
+  schema_version: 2;
+  task_set_hash: string;
+  revision_digest: string;
+  scoring_policy_digest: string | null;
+  generated_at: string;
+  /** Echoed request query params, `_`-prefixed cache-buster keys dropped. */
+  query: Record<string, string>;
+}
+
