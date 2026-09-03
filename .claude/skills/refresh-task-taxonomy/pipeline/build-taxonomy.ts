@@ -76,7 +76,23 @@ export async function buildDraft(opts: {
   for await (
     const e of walk(opts.tasksDir, { exts: [".yml"], includeDirs: false })
   ) {
-    const doc = parse(await Deno.readTextFile(e.path)) as Manifest;
+    const basename = e.path.split(/[/\\]/).pop() ?? "";
+    const fileIdMatch = basename.match(/^(CG-AL-[A-Z]+\d{3})/);
+    const fileId = fileIdMatch?.[1];
+    if (!fileId) continue;
+    let doc: Manifest;
+    try {
+      doc = parse(await Deno.readTextFile(e.path)) as Manifest;
+    } catch {
+      if (!violations[fileId]) violations[fileId] = [];
+      violations[fileId]!.push("manifest_unparseable");
+      continue;
+    }
+    if (doc.id && doc.id !== fileId) {
+      if (!violations[fileId]) violations[fileId] = [];
+      violations[fileId]!.push("id_filename_mismatch");
+      continue;
+    }
     if (!doc.id) continue;
     const donors = doc.metadata?.donors ?? [];
     const hasStarter = await exists(`${opts.starterDir}/${doc.id}`);
