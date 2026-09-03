@@ -7,6 +7,7 @@ import type { RunV2Detail } from "$lib/shared/api-types";
 
 interface RunV2DetailRow {
   id: string;
+  task_set_hash: string;
   started_at: string;
   completed_at: string | null;
   status: string;
@@ -43,9 +44,18 @@ interface ResultV2Row {
  * `GET /api/v2/runs/[id]` — everything `/api/v2/runs`'s summary row carries
  * for this run, plus its settings hash, invocation record, environment
  * manifest fields and per-attempt results (including the run-time capture
- * fields from Task 8). 404 `no_run` when `id` isn't a run on the resolved
- * (task set, taxonomy revision) pair — same "scoped to one set" shape as
- * `/api/v2/tasks/[...id]`.
+ * fields from Task 8).
+ *
+ * A run's `task_set_hash` is fixed at ingest time, so — unlike
+ * `/api/v2/tasks/[...id]`, which is scoped to whatever set `?set=`
+ * resolves to — the run is looked up by id FIRST (globally, no set
+ * filter), and the v2 context is then resolved for THAT run's own set
+ * (any caller-supplied `?set=` is overridden, not honoured). This way the
+ * envelope always names the run's real set + its active revision, and an
+ * old run from a superseded set is still reachable without the caller
+ * having to know which hash it belongs to. 404 `no_run` when `id` isn't a
+ * run at all; 404 `no_active_revision` when the run's own set has no
+ * active schema-version-2 taxonomy.
  */
 export const GET: RequestHandler = async ({
   request,
@@ -55,11 +65,10 @@ export const GET: RequestHandler = async ({
 }) => {
   try {
     const db = platform!.env.DB;
-    const ctx = await resolveV2Context(db, url);
 
     const run = await getFirst<RunV2DetailRow>(
       db,
-      `SELECT runs.id, runs.started_at, runs.completed_at, runs.status,
+      `SELECT runs.id, runs.task_set_hash, runs.started_at, runs.completed_at, runs.status,
               runs.harness_fingerprint, runs.retry_path_version, runs.environment_digest,
               runs.test_runner, runs.settings_hash, runs.invocation_json,
               runs.bc_artifact, runs.container_image_digest, runs.bcch_version,
@@ -69,16 +78,16 @@ export const GET: RequestHandler = async ({
        FROM runs
        JOIN models m ON m.id = runs.model_id
        JOIN model_families mf ON mf.id = m.family_id
-       WHERE runs.id = ? AND runs.task_set_hash = ?`,
-      [params.id!, ctx.task_set_hash],
+       WHERE runs.id = ?`,
+      [params.id!],
     );
     if (!run) {
-      throw new ApiError(
-        404,
-        "no_run",
-        `no run ${params.id} in this set/revision`,
-      );
+      throw new ApiError(404, "no_run", `no run ${params.id}`);
     }
+
+    const ctxUrl = new URL(url);
+    ctxUrl.searchParams.set("set", run.task_set_hash);
+    const ctx = await resolveV2Context(db, ctxUrl);
 
     const resultRows = await getAll<ResultV2Row>(
       db,

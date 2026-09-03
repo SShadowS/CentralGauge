@@ -107,25 +107,28 @@ describe("ingest stores run-time capture fields; v2 runs endpoints serve them", 
     expect(ingestBody.missing_blobs).toContain("e".repeat(64));
 
     const row = await env.DB.prepare(
-      `SELECT harness_fingerprint, test_runner, invocation_json FROM runs WHERE id = ?`,
+      `SELECT harness_fingerprint, retry_path_version, test_runner, invocation_json FROM runs WHERE id = ?`,
     )
       .bind(runId)
       .first<{
         harness_fingerprint: string;
+        retry_path_version: string;
         test_runner: string;
         invocation_json: string;
       }>();
     expect(row?.harness_fingerprint).toBe("f".repeat(64));
+    expect(row?.retry_path_version).toBe("v3");
     expect(row?.test_runner).toBe("soap");
     expect(JSON.parse(row!.invocation_json).provider).toBe("anthropic");
 
     const r = await env.DB.prepare(
-      `SELECT test_vector_json, termination_kind, cap_reached, prompt_digest FROM results WHERE run_id = ?`,
+      `SELECT test_vector_json, termination_kind, provider_finish_reason, cap_reached, prompt_digest FROM results WHERE run_id = ?`,
     )
       .bind(runId)
       .first<{
         test_vector_json: string;
         termination_kind: string;
+        provider_finish_reason: string;
         cap_reached: number;
         prompt_digest: string;
       }>();
@@ -133,6 +136,7 @@ describe("ingest stores run-time capture fields; v2 runs endpoints serve them", 
       { id: "x", name: "T1", passed: true },
     ]);
     expect(r?.termination_kind).toBe("response");
+    expect(r?.provider_finish_reason).toBe("stop");
     expect(r?.cap_reached).toBe(0);
     expect(r?.prompt_digest).toBe("a".repeat(64));
 
@@ -142,6 +146,7 @@ describe("ingest stores run-time capture fields; v2 runs endpoints serve them", 
       capture: string;
       test_runner: string;
       harness_fingerprint: string;
+      retry_path_version: string;
       environment_digest: string;
       settings_hash: string;
       invocation: { provider: string } | null;
@@ -167,6 +172,7 @@ describe("ingest stores run-time capture fields; v2 runs endpoints serve them", 
     expect(detail.capture).toBe("full");
     expect(detail.test_runner).toBe("soap");
     expect(detail.harness_fingerprint).toBe("f".repeat(64));
+    expect(detail.retry_path_version).toBe("v3");
     expect(detail.environment_digest).toBe("e".repeat(64));
     expect(detail.settings_hash).toBeTruthy();
     expect(detail.invocation).toEqual({ provider: "anthropic" });
@@ -299,6 +305,106 @@ describe("ingest stores run-time capture fields; v2 runs endpoints serve them", 
     expect(res.status).toBe(400);
     const body = await res.json<{ code: string }>();
     expect(body.code).toBe("invalid_termination_kind");
+  });
+
+  it("rejects malformed run-time capture field shapes", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+
+    // Run-level: invocation must be a plain object.
+    {
+      const payload = makeRunPayload({
+        task_set_hash: HASH,
+        invocation: ["not", "an", "object"] as unknown as Record<
+          string,
+          unknown
+        >,
+      });
+      const { signedRequest } = await createSignedPayload(
+        payload as unknown as Record<string, unknown>,
+        keyId,
+        undefined,
+        keypair,
+      );
+      signedRequest.signature.key_id = keyId;
+      signedRequest.run_id = "run-bad-invocation";
+      const res = await SELF.fetch("https://x/api/v1/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signedRequest),
+      });
+      expect(res.status, "invocation").toBe(400);
+      const body = await res.json<{ code: string }>();
+      expect(body.code, "invocation").toBe("invalid_capture_field");
+    }
+
+    // Per-result fields: shape-invalid test_vector / fallback_chain /
+    // infra_retries / cap_reached each 400 the same way.
+    const badResultFields: Array<[string, Record<string, unknown>]> = [
+      ["test_vector", { test_vector: [{ id: "x" }] }], // missing name/passed
+      ["fallback_chain", { fallback_chain: [1, 2] }],
+      ["infra_retries", { infra_retries: -1 }],
+      ["cap_reached", { cap_reached: "yes" }],
+    ];
+    for (const [field, override] of badResultFields) {
+      const payload = makeRunPayload({ task_set_hash: HASH });
+      payload.results[0].task_id = "t1";
+      Object.assign(payload.results[0], override);
+      const { signedRequest } = await createSignedPayload(
+        payload as unknown as Record<string, unknown>,
+        keyId,
+        undefined,
+        keypair,
+      );
+      signedRequest.signature.key_id = keyId;
+      signedRequest.run_id = `run-bad-${field}`;
+      const res = await SELF.fetch("https://x/api/v1/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signedRequest),
+      });
+      expect(res.status, `field ${field}`).toBe(400);
+      const body = await res.json<{ code: string }>();
+      expect(body.code, `field ${field}`).toBe("invalid_capture_field");
+    }
+  });
+
+  it("looks a run up by id first, ignoring any caller ?set= (envelope names the run's own set)", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+    const payload = makeRunPayload({ task_set_hash: HASH });
+    payload.results[0].task_id = "t1";
+    const { signedRequest } = await createSignedPayload(
+      payload as unknown as Record<string, unknown>,
+      keyId,
+      undefined,
+      keypair,
+    );
+    signedRequest.signature.key_id = keyId;
+    const runId = "run-set-override-1";
+    signedRequest.run_id = runId;
+    const ingestRes = await SELF.fetch("https://x/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(ingestRes.status).toBe(202);
+
+    // Some other 64-hex hash — not the run's own set, and not registered
+    // at all. The route must ignore it and resolve the run's own set.
+    const otherHash = "f".repeat(64);
+    const res = await SELF.fetch(
+      `https://x/api/v2/runs/${runId}?set=${otherHash}&_cb=1`,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json<{ task_set_hash: string; id: string }>();
+    expect(body.task_set_hash).toBe(HASH);
+    expect(body.id).toBe(runId);
+  });
+
+  it("404s no_run for an id that doesn't exist", async () => {
+    const res = await SELF.fetch("https://x/api/v2/runs/no-such-run?_cb=1");
+    expect(res.status).toBe(404);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe("no_run");
   });
 
   it("GET /api/v2/task-sets mirrors v1 plus scoring_policy_digest and active_revision_digest", async () => {

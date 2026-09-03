@@ -281,6 +281,18 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         `test_runner must be "soap", "legacy", or absent`,
       );
     }
+    if (
+      payload.invocation !== undefined &&
+      (typeof payload.invocation !== "object" ||
+        payload.invocation === null ||
+        Array.isArray(payload.invocation))
+    ) {
+      throw new ApiError(
+        400,
+        "invalid_capture_field",
+        `invocation must be a plain object or absent`,
+      );
+    }
 
     // Idempotency: check if run_id already exists
     const existing = await db.prepare(
@@ -433,9 +445,57 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         throw new ApiError(
           400,
           "invalid_termination_kind",
-          `termination_kind must be one of ${
-            [...TERMINATION_KINDS].join(", ")
-          } (task ${r.task_id} attempt ${r.attempt})`,
+          `termination_kind must be one of ${[...TERMINATION_KINDS].join(
+            ", ",
+          )} (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      // Run-time capture (2026-09): remaining optional per-result fields —
+      // shape-validated so a buggy/stale client can't corrupt the columns.
+      if (
+        r.test_vector !== undefined &&
+        (!Array.isArray(r.test_vector) ||
+          !r.test_vector.every(
+            (v) =>
+              v !== null &&
+              typeof v === "object" &&
+              typeof v.id === "string" &&
+              typeof v.name === "string" &&
+              typeof v.passed === "boolean",
+          ))
+      ) {
+        throw new ApiError(
+          400,
+          "invalid_capture_field",
+          `test_vector must be an array of { id: string, name: string, passed: boolean } (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      if (
+        r.fallback_chain !== undefined &&
+        (!Array.isArray(r.fallback_chain) ||
+          !r.fallback_chain.every((s) => typeof s === "string"))
+      ) {
+        throw new ApiError(
+          400,
+          "invalid_capture_field",
+          `fallback_chain must be an array of strings (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      if (
+        r.infra_retries !== undefined &&
+        (!Number.isInteger(r.infra_retries) || r.infra_retries < 0)
+      ) {
+        throw new ApiError(
+          400,
+          "invalid_capture_field",
+          `infra_retries must be a non-negative integer (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      if (r.cap_reached !== undefined && typeof r.cap_reached !== "boolean") {
+        throw new ApiError(
+          400,
+          "invalid_capture_field",
+          `cap_reached must be a boolean (task ${r.task_id} attempt ${r.attempt})`,
         );
       }
       statements.push(
@@ -478,7 +538,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           r.termination_kind ?? null,
           r.provider_finish_reason ?? null,
           null, // provider_error_code: not yet produced by any client
-          r.cap_reached === undefined ? null : (r.cap_reached ? 1 : 0),
+          r.cap_reached === undefined ? null : r.cap_reached ? 1 : 0,
           r.infra_retries ?? null,
           r.infra_exhaustion_reason ?? null,
           r.fallback_chain ? JSON.stringify(r.fallback_chain) : null,
