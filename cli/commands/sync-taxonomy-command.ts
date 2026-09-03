@@ -20,11 +20,17 @@
 
 import { Command } from "@cliffy/command";
 import * as colors from "@std/fmt/colors";
-import { parse as parseYaml } from "jsr:@std/yaml@^1.1.0";
+import { parse as parseYaml } from "@std/yaml";
 import type { IngestCliFlags } from "../../src/ingest/config.ts";
 import { loadAdminConfig, readPrivateKey } from "../../src/ingest/config.ts";
 import { signPayload } from "../../src/ingest/sign.ts";
 import { postWithRetry } from "../../src/ingest/client.ts";
+import {
+  catalogDigest,
+  type CatalogV2,
+  normalizeCatalog,
+  validateCatalog,
+} from "../../site/src/lib/shared/taxonomy-schema.ts";
 
 // ---------------------------------------------------------------------------
 // YAML shape types
@@ -71,6 +77,84 @@ interface TaxonomyPayload {
 }
 
 // ---------------------------------------------------------------------------
+// Schema version 2 (taxonomy v2: groups + families + facet tags + aliases +
+// overrides + task entries; see site/src/lib/shared/taxonomy-schema.ts)
+// ---------------------------------------------------------------------------
+
+/** POST body for the version-2 admin taxonomy endpoint (server is Plan B). */
+export interface V2Payload {
+  version: 2;
+  hash: string;
+  groups: CatalogV2["groups"];
+  families: CatalogV2["families"];
+  tags: CatalogV2["tags"];
+  aliases: CatalogV2["aliases"];
+  overrides: CatalogV2["overrides"];
+  tasks: CatalogV2["tasks"];
+  /** Only present (and true) when --allow-non-current is passed. */
+  allow_non_current?: boolean;
+}
+
+/**
+ * Read a taxonomy catalog YAML file and report which schema version it
+ * declares. `schema_version` absent means version 1 (the legacy shape).
+ * Throws for any version this CLI does not know how to speak.
+ */
+export async function readCatalogFile(
+  path: string,
+): Promise<{ schema_version: 1 | 2; raw: unknown }> {
+  const raw = parseYaml(await Deno.readTextFile(path)) as
+    | { schema_version?: number }
+    | null;
+  if (!raw || typeof raw !== "object") {
+    throw new Error(`${path} is not a YAML object`);
+  }
+  const v = raw.schema_version ?? 1;
+  if (v !== 1 && v !== 2) {
+    throw new Error(
+      `${path}: schema_version ${v} is not supported by this CLI; upgrade centralgauge`,
+    );
+  }
+  return { schema_version: v, raw };
+}
+
+/**
+ * Validate a schema-version-2 catalog and build its POST payload plus the
+ * digest of its normalized form (a pure function of catalog content + the
+ * target hash — independent of any envelope-level flags added later, such
+ * as --allow-non-current). Throws with every validation issue when the
+ * catalog is invalid; callers must report that and exit non-zero before
+ * ever reaching the POST.
+ */
+export async function buildV2Payload(
+  catalog: CatalogV2,
+  hash: string,
+): Promise<{ payload: V2Payload; digest: string }> {
+  const issues = validateCatalog(catalog);
+  if (issues.length) {
+    throw new Error(
+      `catalog invalid: ${
+        issues.map((i) => `[${i.code}] ${i.where}: ${i.message}`).join("; ")
+      }`,
+    );
+  }
+  const digest = await catalogDigest(normalizeCatalog(catalog, hash));
+  return {
+    payload: {
+      version: 2,
+      hash,
+      groups: catalog.groups,
+      families: catalog.families,
+      tags: catalog.tags,
+      aliases: catalog.aliases ?? [],
+      overrides: catalog.overrides ?? [],
+      tasks: catalog.tasks,
+    },
+    digest,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
 
@@ -81,6 +165,11 @@ interface SyncTaxonomyOptions {
   adminKeyId?: number;
   machineId?: string;
   hash?: string;
+  // Plain (non --no-) cliffy boolean flag with no default: cliffy infers
+  // `true` when passed and omits the key otherwise, never an explicit
+  // `undefined` value -- match that shape exactly under
+  // exactOptionalPropertyTypes.
+  allowNonCurrent?: true | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,9 +230,12 @@ async function handleSyncTaxonomy(
 
   // -- Read taxonomy YAML ----------------------------------------------------
   const catalogPath = `${cwd}/site/catalog/task-categories.yml`;
-  let rawText: string;
+  let schemaVersion: 1 | 2;
+  let raw: unknown;
   try {
-    rawText = await Deno.readTextFile(catalogPath);
+    const read = await readCatalogFile(catalogPath);
+    schemaVersion = read.schema_version;
+    raw = read.raw;
   } catch (err) {
     console.error(
       colors.red(
@@ -155,13 +247,83 @@ async function handleSyncTaxonomy(
     Deno.exit(1);
   }
 
-  const taxonomy = parseYaml(rawText) as TaxonomyFile | null;
-  if (!taxonomy || typeof taxonomy !== "object") {
-    console.error(
-      colors.red(`[FAIL] ${catalogPath} is not a valid YAML object`),
+  // -- Schema version 2: distinct payload shape + apply path -----------------
+  if (schemaVersion === 2) {
+    if (options.apply) {
+      if (!options.hash) {
+        console.error(
+          colors.red(
+            "[FAIL] --apply with a schema_version 2 catalog requires --hash <64-hex> (no auto-discovery; see spec 5.2)",
+          ),
+        );
+        Deno.exit(1);
+      }
+      if (!/^[0-9a-f]{64}$/i.test(options.hash)) {
+        console.error(
+          colors.red(
+            `[FAIL] --hash must be 64 hex characters, got ${
+              JSON.stringify(options.hash)
+            }`,
+          ),
+        );
+        Deno.exit(1);
+      }
+    }
+    const hash = options.hash ?? "0".repeat(64); // dry run only
+
+    let payload: V2Payload;
+    let digest: string;
+    try {
+      ({ payload, digest } = await buildV2Payload(raw as CatalogV2, hash));
+    } catch (err) {
+      console.error(
+        colors.red(`[FAIL] ${err instanceof Error ? err.message : err}`),
+      );
+      Deno.exit(1);
+    }
+
+    console.log(
+      colors.gray(
+        `[INFO] schema 2: ${payload.groups.length} groups, ${payload.families.length} families, ${payload.tags.length} tags, ${
+          Object.keys(payload.tasks).length
+        } tasks; hash ${hash}; digest ${digest}`,
+      ),
     );
-    Deno.exit(1);
+
+    if (!options.apply) {
+      console.log(colors.yellow("[DRY] pass --apply --hash <hash> to POST"));
+      return;
+    }
+
+    if (options.allowNonCurrent) payload.allow_non_current = true;
+
+    const config = await loadAdminConfig(cwd, flags);
+    const adminPriv = await readPrivateKey(config.adminKeyPath);
+    const sig = await signPayload(
+      payload as unknown as Record<string, unknown>,
+      adminPriv,
+      config.adminKeyId,
+    );
+    const resp = await postWithRetry(
+      `${config.url}/api/v1/admin/catalog/task-taxonomy`,
+      { version: 2, signature: sig, payload },
+      { maxAttempts: 3 },
+    );
+    const body = await resp.text();
+    console.log(
+      `${
+        resp.ok
+          ? colors.green(`[${resp.status}]`)
+          : colors.red(`[${resp.status}]`)
+      } ${body}`,
+    );
+    console.log(colors.gray(`[INFO] expected server digest ${digest}`));
+    if (!resp.ok) Deno.exit(1);
+    return;
   }
+
+  // -- Schema version 1: legacy payload shape (unchanged behaviour) ----------
+  const taxonomy = raw as TaxonomyFile;
 
   // -- Build payload ---------------------------------------------------------
   const groups: GroupPayload[] = (taxonomy.groups ?? []).map((g) => ({
@@ -317,6 +479,10 @@ export function registerSyncTaxonomyCommand(cli: Command): void {
       "--apply",
       "Actually POST the taxonomy (default is dry-run)",
       { default: false },
+    )
+    .option(
+      "--allow-non-current",
+      "schema_version 2 only: allow applying against a hash the server does not consider current",
     )
     .example(
       "Preview without writing",
