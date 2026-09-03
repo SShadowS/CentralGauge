@@ -7,8 +7,11 @@ import { walk } from "@std/fs/walk";
 import { exists } from "@std/fs/exists";
 import {
   type CatalogV2,
+  ENVIRONMENT_VOCAB,
   FAMILIES,
   FORMATS,
+  INVARIANT_VOCAB,
+  MECHANISM_VOCAB,
   type TaskEntry,
 } from "../../../../site/src/lib/shared/taxonomy-schema.ts";
 import { deriveFormat } from "./format-rules.ts";
@@ -18,6 +21,13 @@ import {
   SURFACE_TAGS,
 } from "./aliases.ts";
 import { emitCatalogYaml, parseCatalogYaml } from "./catalog-yaml.ts";
+
+/** Facets owned by the enrichment file, not by this step. */
+const ENRICHED_FACETS = new Set<string>([
+  ...MECHANISM_VOCAB,
+  ...INVARIANT_VOCAB,
+  ...ENVIRONMENT_VOCAB,
+]);
 
 const GROUP_TEXT: Record<string, [string, string]> = {
   "build-from-spec": [
@@ -116,9 +126,16 @@ export async function buildDraft(opts: {
           .filter((x): x is string => x !== null),
       ),
     ].sort();
+    // Carry over only facets no later step owns: surface facets come from
+    // the alias table above, and mechanism/invariant/environment facets are
+    // re-applied by merge-taxonomy.ts from the enrichment file, which is the
+    // single source of truth for them. Carrying those forward would make a
+    // facet impossible to REMOVE from the emitted catalog once written.
     const prev = opts.previous?.tasks[doc.id];
     const keep = prev && !("donors" in prev)
-      ? prev.facets.filter((f) => !SURFACE_TAGS.some((s) => s.slug === f))
+      ? prev.facets.filter((f) =>
+        !SURFACE_TAGS.some((s) => s.slug === f) && !ENRICHED_FACETS.has(f)
+      )
       : [];
     const min_bc_version = minVersionFromTags(raw);
     if (group === "diagnose-composite") {

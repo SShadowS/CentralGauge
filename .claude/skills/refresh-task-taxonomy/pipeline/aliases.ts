@@ -94,11 +94,45 @@ const surfaceSlugs = [
   ),
 ].sort();
 const HIDDEN = new Set(["codeunit", "table", "page", "keys"]);
+
+/**
+ * Display spelling for slug words that plain title-casing gets wrong:
+ * acronyms, and AL type names whose canonical form is camel-cased.
+ * Keyed by the lower-case word as it appears in a slug.
+ */
+export const WORD_CASE: Record<string, string> = {
+  // acronyms
+  guid: "GUID",
+  http: "HTTP",
+  json: "JSON",
+  sift: "SIFT",
+  sql: "SQL",
+  tryfunction: "TryFunction",
+  xml: "XML",
+  // AL type names
+  datatransfer: "DataTransfer",
+  errorinfo: "ErrorInfo",
+  fieldref: "FieldRef",
+  flowfield: "FlowField",
+  flowfilter: "FlowFilter",
+  permissionset: "PermissionSet",
+  recordref: "RecordRef",
+  secrettext: "SecretText",
+  xrec: "xRec",
+};
+
+/** Title-case a slug for display, honouring the WORD_CASE spellings. */
+export function displayName(slug: string): string {
+  return slug
+    .split("-")
+    .map((w) => WORD_CASE[w] ?? (w[0] ?? "").toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 export const SURFACE_TAGS: CatalogTag[] = surfaceSlugs.map((slug) => ({
   slug,
   family: "surface",
-  name: slug.split("-").map((w) => (w[0] ?? "").toUpperCase() + w.slice(1))
-    .join(" "),
+  name: displayName(slug),
   description: `A ${
     slug.replace(/-/g, " ")
   } is created, extended or exercised.`,

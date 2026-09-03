@@ -9,6 +9,8 @@ import {
   isComposite,
   MECHANISM_VOCAB,
 } from "../../../../site/src/lib/shared/taxonomy-schema.ts";
+import { displayName } from "./aliases.ts";
+import { FACET_DEFINITIONS } from "./facet-definitions.ts";
 import { emitCatalogYaml, parseCatalogYaml } from "./catalog-yaml.ts";
 
 const VOCAB_FAMILY = new Map<string, "mechanism" | "invariant" | "environment">(
@@ -18,8 +20,6 @@ const VOCAB_FAMILY = new Map<string, "mechanism" | "invariant" | "environment">(
     ...ENVIRONMENT_VOCAB.map((s) => [s, "environment"] as const),
   ],
 );
-const titleOf = (slug: string) =>
-  slug.split("-").map((w) => w[0]!.toUpperCase() + w.slice(1)).join(" ");
 
 export function deriveComposites(c: CatalogV2): CatalogV2 {
   for (const e of Object.values(c.tasks)) {
@@ -59,8 +59,8 @@ export function mergeEnrichment(
         const tag: CatalogTag = {
           slug: s,
           family: fam,
-          name: titleOf(s),
-          description: `${titleOf(s)} (${fam}).`,
+          name: displayName(s),
+          description: FACET_DEFINITIONS[s] ?? `${displayName(s)} (${fam}).`,
         };
         c.tags.push(tag);
         have.add(s);
@@ -68,6 +68,16 @@ export function mergeEnrichment(
       if (!e.facets.includes(s)) e.facets.push(s);
     }
     e.facets.sort();
+  }
+  // The definitions file and the slug speller own every vocabulary tag's
+  // description and name, so re-stamp them: a catalog written before a
+  // definition was added, or before a spelling was corrected, is brought back
+  // in line here instead of keeping a stale generated placeholder forever.
+  for (const t of c.tags) {
+    if (!VOCAB_FAMILY.has(t.slug)) continue;
+    t.name = displayName(t.slug);
+    const def = FACET_DEFINITIONS[t.slug];
+    if (def) t.description = def;
   }
   return deriveComposites(c);
 }

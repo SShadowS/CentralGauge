@@ -4,6 +4,7 @@ import {
   deriveComposites,
   mergeEnrichment,
 } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/merge-taxonomy.ts";
+import { FACET_DEFINITIONS } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/facet-definitions.ts";
 import {
   type CatalogV2,
   validateCatalog,
@@ -173,5 +174,56 @@ Deno.test("the enrichment workflow's VOCAB equals the shared vocabulary", async 
   assertEquals(
     inJs,
     [...MECHANISM_VOCAB, ...INVARIANT_VOCAB, ...ENVIRONMENT_VOCAB].sort(),
+  );
+});
+
+Deno.test("every vocabulary slug carries a hand-written definition", async () => {
+  const { MECHANISM_VOCAB, INVARIANT_VOCAB, ENVIRONMENT_VOCAB } = await import(
+    "../../../site/src/lib/shared/taxonomy-schema.ts"
+  );
+  const missing = [
+    ...MECHANISM_VOCAB,
+    ...INVARIANT_VOCAB,
+    ...ENVIRONMENT_VOCAB,
+  ].filter((s) => !FACET_DEFINITIONS[s]);
+  assertEquals(missing, []);
+  // definitions are real sentences, not the "Slug (family)." placeholder
+  const placeholders = Object.entries(FACET_DEFINITIONS)
+    .filter(([, d]) => !d.endsWith(".") || d.length < 40)
+    .map(([s]) => s);
+  assertEquals(placeholders, []);
+});
+
+Deno.test("merge stamps the hand-written definition and refreshes a stale one", () => {
+  const catalog: CatalogV2 = {
+    schema_version: 2,
+    groups: [],
+    families: [],
+    // a catalog written before the definition existed
+    tags: [{
+      slug: "exact-total",
+      family: "invariant",
+      name: "Exact Total",
+      description: "Exact Total (invariant).",
+    }],
+    aliases: [],
+    overrides: [],
+    tasks: {
+      "S1": { group: "diagnose-single", facets: [], min_bc_version: 15 },
+    },
+  };
+  const merged = mergeEnrichment(catalog, {
+    "S1": ["exact-total", "inclusive-boundary"],
+  });
+  const bySlug = (s: string) => merged.tags.find((t) => t.slug === s);
+  // a newly created tag takes its definition from the file
+  assertEquals(
+    bySlug("inclusive-boundary")?.description,
+    FACET_DEFINITIONS["inclusive-boundary"],
+  );
+  // a pre-existing tag has its placeholder refreshed rather than kept
+  assertEquals(
+    bySlug("exact-total")?.description,
+    FACET_DEFINITIONS["exact-total"],
   );
 });
