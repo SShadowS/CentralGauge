@@ -81,9 +81,7 @@
               "origin": "derived"
             }
           ],
-          "donors": [
-            "CG-AL-X076"
-          ],
+          "donors": ["CG-AL-X076"],
           "min_bc_version": 17
         }
       }
@@ -115,7 +113,7 @@
           "slug": "test-unicode",
           "family": "mechanism",
           "name": "Unicode test",
-          "description": "café",
+          "description": "café",
           "hidden_by_default": false
         }
       ],

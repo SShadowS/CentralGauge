@@ -1,3 +1,6 @@
+// Pure module: no runtime imports, no Deno or Node globals beyond Web Crypto
+// and TextEncoder. Imported by the Deno pipeline, the CLI and the Worker.
+
 export const FORMATS = [
   "build-from-spec",
   "runtime-trap",
