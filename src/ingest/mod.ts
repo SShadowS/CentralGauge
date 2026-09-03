@@ -9,6 +9,10 @@ import { uploadMissing } from "./blobs.ts";
 import { postWithRetry } from "./client.ts";
 import type { IngestCliFlags } from "./config.ts";
 import type { IngestOutcome } from "./types.ts";
+import type {
+  CompileError,
+  ResultInput,
+} from "../../site/src/lib/shared/types.ts";
 
 export interface IngestOptions {
   cwd: string;
@@ -125,6 +129,65 @@ export async function resolveIngestTaskSetHash(
   return recomputed;
 }
 
+/**
+ * Map one {@link BenchResultItem} onto the {@link ResultInput} row shape
+ * sent in the signed envelope. Pure aside from hashing
+ * `transcript_bytes`/`code_bytes` (no shared/mutable state, no network).
+ * Taxonomy-v2 capture fields (`test_vector`, `termination_kind`, ...) are
+ * copied over ONLY when present on `r` — an item built by an old CLI that
+ * never set them produces a row with no such keys at all (not
+ * `undefined`-valued keys), so legacy-shaped payloads stay byte-identical.
+ * Exported for tests.
+ */
+export async function mapResultItemToInput(
+  r: BenchResultItem,
+): Promise<ResultInput> {
+  const transcript_sha256 = r.transcript_bytes
+    ? await hashHex(r.transcript_bytes)
+    : undefined;
+  const code_sha256 = r.code_bytes ? await hashHex(r.code_bytes) : undefined;
+
+  const out: ResultInput = {
+    task_id: r.task_id,
+    attempt: r.attempt,
+    passed: r.passed,
+    score: r.score,
+    compile_success: r.compile_success,
+    compile_errors: r.compile_errors as CompileError[],
+    tests_total: r.tests_total,
+    tests_passed: r.tests_passed,
+    tokens_in: r.tokens_in,
+    tokens_out: r.tokens_out,
+    tokens_reasoning: r.tokens_reasoning,
+    tokens_cache_read: r.tokens_cache_read,
+    tokens_cache_write: r.tokens_cache_write,
+    served_model: r.served_model,
+    refusal_category: r.refusal_category,
+    durations_ms: r.durations_ms,
+    failure_reasons: r.failure_reasons,
+  };
+  if (transcript_sha256) out.transcript_sha256 = transcript_sha256;
+  if (code_sha256) out.code_sha256 = code_sha256;
+  if (r.test_vector !== undefined) out.test_vector = r.test_vector;
+  if (r.termination_kind !== undefined) {
+    out.termination_kind = r.termination_kind;
+  }
+  if (r.provider_finish_reason !== undefined) {
+    out.provider_finish_reason = r.provider_finish_reason;
+  }
+  if (r.cap_reached !== undefined) out.cap_reached = r.cap_reached;
+  if (r.infra_retries !== undefined) out.infra_retries = r.infra_retries;
+  if (r.infra_exhaustion_reason !== undefined) {
+    out.infra_exhaustion_reason = r.infra_exhaustion_reason;
+  }
+  if (r.fallback_chain !== undefined) out.fallback_chain = r.fallback_chain;
+  if (r.prompt_sha256 !== undefined) out.prompt_sha256 = r.prompt_sha256;
+  if (r.candidate_sha256 !== undefined) {
+    out.candidate_sha256 = r.candidate_sha256;
+  }
+  return out;
+}
+
 export async function ingestRun(
   br: BenchResults,
   opts: IngestOptions,
@@ -145,37 +208,13 @@ export async function ingestRun(
 
   const blobTable = new Map<string, Uint8Array>();
   const results = await Promise.all(br.results.map(async (r) => {
-    const transcript_sha256 = r.transcript_bytes
-      ? await hashHex(r.transcript_bytes)
-      : undefined;
-    const code_sha256 = r.code_bytes ? await hashHex(r.code_bytes) : undefined;
-    if (transcript_sha256 && r.transcript_bytes) {
-      blobTable.set(transcript_sha256, r.transcript_bytes);
+    const out = await mapResultItemToInput(r);
+    if (out.transcript_sha256 && r.transcript_bytes) {
+      blobTable.set(out.transcript_sha256, r.transcript_bytes);
     }
-    if (code_sha256 && r.code_bytes) {
-      blobTable.set(code_sha256, r.code_bytes);
+    if (out.code_sha256 && r.code_bytes) {
+      blobTable.set(out.code_sha256, r.code_bytes);
     }
-    const out: Record<string, unknown> = {
-      task_id: r.task_id,
-      attempt: r.attempt,
-      passed: r.passed,
-      score: r.score,
-      compile_success: r.compile_success,
-      compile_errors: r.compile_errors,
-      tests_total: r.tests_total,
-      tests_passed: r.tests_passed,
-      tokens_in: r.tokens_in,
-      tokens_out: r.tokens_out,
-      tokens_reasoning: r.tokens_reasoning,
-      tokens_cache_read: r.tokens_cache_read,
-      tokens_cache_write: r.tokens_cache_write,
-      served_model: r.served_model,
-      refusal_category: r.refusal_category,
-      durations_ms: r.durations_ms,
-      failure_reasons: r.failure_reasons,
-    };
-    if (transcript_sha256) out["transcript_sha256"] = transcript_sha256;
-    if (code_sha256) out["code_sha256"] = code_sha256;
     return out;
   }));
 
@@ -214,9 +253,7 @@ export async function ingestRun(
     startedAt: br.startedAt,
     completedAt: br.completedAt,
     pricingVersion: br.pricingVersion,
-    results: results as unknown as Parameters<
-      typeof buildPayload
-    >[0]["results"],
+    results,
   };
   if (br.centralgaugeSha) payloadInput.centralgaugeSha = br.centralgaugeSha;
   if (reproductionBundleSha) {
