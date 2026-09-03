@@ -1,9 +1,9 @@
-name: Unit Tests and Audits
+name: Task Audits
 
 on:
   pull_request:
   push:
-    branches: [master, "backfill/**"]
+    branches: [master]
 
 jobs:
   test:
