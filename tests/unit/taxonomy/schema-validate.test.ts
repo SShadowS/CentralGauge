@@ -167,3 +167,37 @@ Deno.test("normalize sorts keys, facets and vocab and stamps origins", () => {
     true,
   );
 });
+
+Deno.test("override group validation", () => {
+  const c = base();
+  c.overrides.push({
+    task: "CG-AL-X076",
+    group: "unknown-format" as unknown as CatalogV2["groups"][0]["slug"],
+    rule: "r",
+    reason: "reason",
+  });
+  assertEquals(codes(c).includes("unknown_group"), true);
+});
+
+Deno.test("composite facets field rejection", () => {
+  const c = base();
+  (c.tasks["CG-AL-X999"] as unknown as {
+    facets: string[];
+  }).facets = ["codeunit"];
+  assertEquals(codes(c).includes("wrong_entry_form"), true);
+});
+
+Deno.test("duplicate facets within a task", () => {
+  const c = base();
+  (c.tasks["CG-AL-X076"] as { facets: string[] }).facets = [
+    "codeunit",
+    "codeunit",
+  ];
+  assertEquals(codes(c).includes("duplicate_facet"), true);
+  const comp = c.tasks["CG-AL-X999"] as Extract<
+    CatalogV2["tasks"][string],
+    { derived_facets: string[] }
+  >;
+  comp.derived_facets = ["codeunit", "table", "codeunit"];
+  assertEquals(codes(c).includes("duplicate_facet"), true);
+});

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import golden from "./fixtures/taxonomy-golden.json";
-import { canonicalJson, catalogDigest, validateCatalog } from "./taxonomy-schema";
+import {
+  canonicalJson,
+  catalogDigest,
+  validateCatalog,
+} from "./taxonomy-schema";
 
 describe("taxonomy-schema golden vectors", () => {
   it("reproduces canonical bytes and digests under Node", async () => {
