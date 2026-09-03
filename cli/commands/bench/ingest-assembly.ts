@@ -19,6 +19,7 @@ import {
   terminationKind,
   testVector,
 } from "../../../src/ingest/capture.ts";
+import type { EnvironmentManifest } from "../../../src/ingest/capture.ts";
 
 interface SavedResultsFile {
   results: TaskExecutionResult[];
@@ -41,6 +42,15 @@ export interface AssembleOptions {
    * (possibly-drifted) working tree. Absent on legacy schema-1 files.
    */
   taskSetHash?: string;
+  /**
+   * Run-level environment manifest (taxonomy v2), built once per run by the
+   * caller. When supplied, `harnessFingerprint`/`retryPathVersion` are
+   * derived from it onto {@link BenchResults} alongside the manifest itself
+   * (uploaded as a blob by `ingestRun`). See `src/ingest/capture.ts`.
+   */
+  environment?: EnvironmentManifest;
+  /** Redacted LLM invocation snapshot for this variant. See `invocationSnapshot`. */
+  invocation?: Record<string, unknown>;
 }
 
 /**
@@ -186,6 +196,12 @@ export async function assembleBenchResultsForVariant(
   };
   if (opts.centralgaugeSha) br.centralgaugeSha = opts.centralgaugeSha;
   if (opts.taskSetHash) br.taskSetHash = opts.taskSetHash;
+  if (opts.environment) {
+    br.environment = opts.environment;
+    br.harnessFingerprint = opts.environment.harness_fingerprint;
+    br.retryPathVersion = opts.environment.retry_path_version;
+  }
+  if (opts.invocation) br.invocation = opts.invocation;
   return { kind: "assembled", benchResults: br, infraExcludedAttempts };
 }
 
@@ -204,11 +220,8 @@ async function attemptToItem(
   if (a.testDuration !== undefined) durations_ms.test = a.testDuration;
 
   const vector = await testVector(a, taskId);
-  const infraRetries = (a as { infraRetries?: unknown[] }).infraRetries
-    ?.length ?? 0;
-  const exhaustion =
-    (a as { infraRetryExhaustionReason?: string }).infraRetryExhaustionReason ??
-      null;
+  const infraRetries = a.infraRetries?.length ?? 0;
+  const exhaustion = a.infraRetryExhaustionReason ?? null;
 
   const item: BenchResultItem = {
     task_id: taskId,

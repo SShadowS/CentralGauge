@@ -16,6 +16,13 @@ export interface ContainerInspection {
   artifactUrl: string | undefined;
   /** Docker's own view of whether the container is running. */
   running: boolean;
+  /**
+   * The container's image id (`sha256:...`), read from `docker inspect`'s
+   * top-level `Image` field.
+   *
+   * `undefined` when the field is absent or not a string.
+   */
+  imageDigest: string | undefined;
 }
 
 /**
@@ -34,6 +41,7 @@ export function parseInspectJson(raw: string): ContainerInspection | undefined {
   const entry = parsed[0] as {
     Config?: { Env?: unknown };
     State?: { Running?: unknown };
+    Image?: unknown;
   };
   const env = Array.isArray(entry.Config?.Env)
     ? entry.Config.Env as string[]
@@ -44,6 +52,7 @@ export function parseInspectJson(raw: string): ContainerInspection | undefined {
   return {
     artifactUrl: hit ? hit.slice("artifactUrl=".length) : undefined,
     running: entry.State?.Running === true,
+    imageDigest: typeof entry.Image === "string" ? entry.Image : undefined,
   };
 }
 

@@ -7,8 +7,10 @@ import { buildPayload } from "./envelope.ts";
 import { signEnvelopeV2, signHeaderRequest } from "./sign.ts";
 import { uploadMissing } from "./blobs.ts";
 import { postWithRetry } from "./client.ts";
+import { canonicalJSON } from "./canonical.ts";
 import type { IngestCliFlags } from "./config.ts";
 import type { IngestOutcome } from "./types.ts";
+import type { EnvironmentManifest } from "./capture.ts";
 import type {
   CompileError,
   ResultInput,
@@ -100,6 +102,17 @@ export interface BenchResults {
   taskSetHash?: string;
   results: BenchResultItem[];
   reproduction_bundle_bytes?: Uint8Array;
+  /**
+   * Per-run capture (taxonomy v2). All optional — absent on CLIs predating
+   * 2026-09. `environment` is uploaded as a blob (see `ingestRun`) and
+   * referenced by its SHA-256; `harnessFingerprint`/`retryPathVersion` are
+   * also duplicated at the top level of the payload for querying without
+   * dereferencing the blob. See `src/ingest/capture.ts`.
+   */
+  environment?: EnvironmentManifest;
+  invocation?: Record<string, unknown>;
+  harnessFingerprint?: string;
+  retryPathVersion?: string;
 }
 
 /**
@@ -224,6 +237,20 @@ export async function ingestRun(
     blobTable.set(reproductionBundleSha, br.reproduction_bundle_bytes);
   }
 
+  // Run-level capture (taxonomy v2): the full environment manifest is
+  // uploaded as a blob (same table as transcripts/code, deduped the same
+  // way), referenced from the payload by its SHA-256. A handful of headline
+  // fields are ALSO duplicated straight onto the payload so a leaderboard
+  // query never has to dereference the blob.
+  let environmentSha256: string | undefined;
+  if (br.environment) {
+    const manifestBytes = new TextEncoder().encode(
+      canonicalJSON(br.environment),
+    );
+    environmentSha256 = await hashHex(manifestBytes);
+    blobTable.set(environmentSha256, manifestBytes);
+  }
+
   const taskSetHash = await resolveIngestTaskSetHash(br.taskSetHash, opts.cwd);
   if (config.adminKeyId != null && config.adminKeyPath) {
     const adminPriv = await readPrivateKey(config.adminKeyPath);
@@ -258,6 +285,21 @@ export async function ingestRun(
   if (br.centralgaugeSha) payloadInput.centralgaugeSha = br.centralgaugeSha;
   if (reproductionBundleSha) {
     payloadInput.reproductionBundleSha256 = reproductionBundleSha;
+  }
+  if (br.harnessFingerprint) {
+    payloadInput.harnessFingerprint = br.harnessFingerprint;
+  }
+  if (br.retryPathVersion) payloadInput.retryPathVersion = br.retryPathVersion;
+  if (br.invocation) payloadInput.invocation = br.invocation;
+  if (environmentSha256 && br.environment) {
+    payloadInput.environmentSha256 = environmentSha256;
+    payloadInput.environment = {
+      bc_artifact: br.environment.bc_artifact,
+      container_image_digest: br.environment.container_image_digest,
+      bcch_version: br.environment.bcch_version,
+      test_runner: br.environment.test_runner,
+      prompt_template_digest: br.environment.prompt_template_digest,
+    };
   }
   const payload = buildPayload(payloadInput);
 

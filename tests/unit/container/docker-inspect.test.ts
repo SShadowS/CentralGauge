@@ -54,6 +54,30 @@ Deno.test("parseInspectJson returns an empty string for a present but empty arti
   assertEquals(out?.running, true);
 });
 
+Deno.test("parseInspectJson reads the image digest from the top-level Image field", () => {
+  const raw = JSON.stringify([{
+    Config: { Env: ["artifactUrl=https://x/sandbox/28.3/dk"] },
+    State: { Running: true },
+    Image: "sha256:abc123",
+  }]);
+  const out = parseInspectJson(raw);
+  assertEquals(out?.imageDigest, "sha256:abc123");
+});
+
+Deno.test("parseInspectJson returns undefined imageDigest when Image is absent or not a string", () => {
+  const out = parseInspectJson(inspectPayload(["foo=bar"], true));
+  assertEquals(out?.imageDigest, undefined);
+
+  const outBadType = parseInspectJson(
+    JSON.stringify([{
+      Config: { Env: [] },
+      State: { Running: true },
+      Image: 12345,
+    }]),
+  );
+  assertEquals(outBadType?.imageDigest, undefined);
+});
+
 // =============================================================================
 // inspectContainer - subprocess paths (must never throw; undefined on failure)
 // =============================================================================

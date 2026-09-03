@@ -53,6 +53,10 @@ import {
   resolveTracePath,
 } from "../../src/tracing/tracer.ts";
 import { acquireBenchLock } from "../../src/utils/bench-lock.ts";
+import {
+  buildEnvironmentManifest,
+  invocationSnapshot,
+} from "../../src/ingest/capture.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -719,10 +723,21 @@ export function registerBenchCommand(cli: Command): void {
                 }
               }
 
+              // Environment manifest is captured against ONE representative
+              // container for the run — the first of `--containers` when
+              // given, else the single `--container` (which always carries
+              // a default). Multi-container runs may span several BC
+              // artifacts; this is a best-effort headline fact, not a
+              // per-task record.
+              const runContainerName =
+                benchOptions.containers && benchOptions.containers.length > 0
+                  ? benchOptions.containers[0]!
+                  : options.container ?? DEFAULT_CONTAINER_NAME;
               await ingestBenchResults(
                 result.resultFilePaths!,
                 result.variants!,
                 options.yes ?? false,
+                runContainerName,
               );
             }
           }
@@ -897,9 +912,15 @@ async function ingestBenchResults(
   resultFilePaths: string[],
   variants: ModelVariant[],
   yes: boolean,
+  containerName: string,
 ): Promise<void> {
   const cwd = Deno.cwd();
   const centralgaugeSha = await readGitSha(cwd);
+  // Run-level capture (taxonomy v2): built ONCE per run (not per variant/file
+  // — the environment is the same regardless of which model produced which
+  // results file), then referenced from every (file × variant) assemble
+  // call below.
+  const environment = await buildEnvironmentManifest({ containerName, cwd });
 
   console.log(
     colors.gray(
@@ -933,7 +954,21 @@ async function ingestBenchResults(
     const pricingVersion = ingestMeta?.pricing_version ?? todayPricingVersion();
     for (const variant of variants) {
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
-        { pricingVersion };
+        {
+          pricingVersion,
+          environment,
+          invocation: invocationSnapshot({
+            provider: variant.provider,
+            model: variant.baseModel,
+            apiModelId: variant.model,
+            ...(variant.config.maxTokens !== undefined &&
+              { maxTokens: variant.config.maxTokens }),
+            ...(variant.config.temperature !== undefined &&
+              { temperature: variant.config.temperature }),
+            ...(variant.config.thinkingBudget !== undefined &&
+              { reasoning: variant.config.thinkingBudget }),
+          }),
+        };
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
       const persistedRunId = ingestMeta?.run_ids[variant.variantId];
       if (persistedRunId) assembleOpts.runId = persistedRunId;

@@ -347,6 +347,7 @@ Deno.test("rebuild pins the script to the host-resolved artifact URL", async () 
   const { script, folder } = await captureRebuild(p, {
     artifactUrl: url,
     running: true,
+    imageDigest: undefined,
   });
   try {
     assertStringIncludes(script, `$artifactUrl = '${url}'`);
@@ -407,6 +408,7 @@ Deno.test("rebuild writes no marker when the folder can never be adopted", async
   const { script, folder } = await captureRebuild(p, {
     artifactUrl: ARTIFACT_URL,
     running: true,
+    imageDigest: undefined,
   });
   try {
     assert(!script.includes("-cacheFolder"));

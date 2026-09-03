@@ -16,6 +16,7 @@ import { join } from "@std/path";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import type { ExecutionAttempt } from "../../../src/tasks/interfaces.ts";
 import { assembleBenchResultsForVariant } from "../../../cli/commands/bench/ingest-assembly.ts";
+import type { EnvironmentManifest } from "../../../src/ingest/capture.ts";
 import { ValidationError } from "../../../src/errors.ts";
 import {
   createMockExecutionAttempt,
@@ -241,6 +242,72 @@ Deno.test("Task 11: assembled item carries termination_kind, test_vector and pro
     assertEquals(item.termination_kind, "response");
     assertEquals(item.test_vector?.length, 2);
     assertEquals(item.prompt_sha256?.length, 64);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("Task 12: environment + invocation thread through AssembleOptions onto BenchResults", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-t12-capture-" });
+  try {
+    const path = await writeResultsFile(dir, [
+      makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
+    ]);
+    const environment: EnvironmentManifest = {
+      bc_artifact: "https://bcartifacts/onprem/28.4/w1",
+      container_image_digest: "sha256:abc",
+      bcch_version: "6.1.14",
+      test_runner: "soap",
+      host_os: "windows-x86_64",
+      centralgauge_sha: "deadbeef",
+      dirty_tree: false,
+      harness_fingerprint: "a".repeat(64),
+      retry_path_version: "rp2-overlay-2026-09-01",
+      prompt_policy_version: "pp1-diagnose-2026-08-23",
+      prompt_template_digest: "b".repeat(64),
+      culture: null,
+    };
+    const outcome = await assembleBenchResultsForVariant(path, VARIANT, {
+      pricingVersion: "2026-07-01",
+      runId: "persisted-run",
+      environment,
+      invocation: { provider: "mock", requested_model: "mock-gpt-4" },
+    });
+    assertEquals(outcome.kind, "assembled");
+    if (outcome.kind !== "assembled") return;
+
+    assertEquals(outcome.benchResults.environment, environment);
+    assertEquals(outcome.benchResults.invocation, {
+      provider: "mock",
+      requested_model: "mock-gpt-4",
+    });
+    assertEquals(outcome.benchResults.harnessFingerprint, "a".repeat(64));
+    assertEquals(
+      outcome.benchResults.retryPathVersion,
+      "rp2-overlay-2026-09-01",
+    );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("Task 12: environment/invocation are absent from BenchResults when not supplied", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-t12-capture-absent-" });
+  try {
+    const path = await writeResultsFile(dir, [
+      makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
+    ]);
+    const outcome = await assembleBenchResultsForVariant(path, VARIANT, {
+      pricingVersion: "2026-07-01",
+      runId: "persisted-run",
+    });
+    assertEquals(outcome.kind, "assembled");
+    if (outcome.kind !== "assembled") return;
+
+    assertEquals(outcome.benchResults.environment, undefined);
+    assertEquals(outcome.benchResults.invocation, undefined);
+    assertEquals(outcome.benchResults.harnessFingerprint, undefined);
+    assertEquals(outcome.benchResults.retryPathVersion, undefined);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

@@ -25,9 +25,9 @@ Deno.test("termination kind follows finish reason, refusal and infra state", () 
     }),
   });
   assertEquals(terminationKind(refused), "refusal");
-  const infra = createMockExecutionAttempt(
-    { infraRetryExhaustionReason: "budget_exhausted" } as never,
-  );
+  const infra = createMockExecutionAttempt({
+    infraRetryExhaustionReason: "budget_exhausted",
+  });
   assertEquals(terminationKind(infra), "infra_exhausted");
 });
 
