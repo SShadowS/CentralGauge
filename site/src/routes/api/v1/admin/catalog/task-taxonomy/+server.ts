@@ -4,10 +4,8 @@ import {
   verifySignedRequest,
 } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
-import {
-  type TaxonomyPayload,
-  applyTaxonomy,
-} from "$lib/server/taxonomy";
+import { type TaxonomyPayload, applyTaxonomy } from "$lib/server/taxonomy";
+import { isV1Frozen } from "$lib/server/taxonomy-v2";
 
 /** 64-hex string pattern for a task-set hash. */
 const HASH_RE = /^[0-9a-f]{64}$/i;
@@ -20,13 +18,28 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   }
   const db = platform.env.DB;
   try {
-    const body = await request.json() as {
+    const body = (await request.json()) as {
       version: number;
       signature: unknown;
       payload: Record<string, unknown>;
     };
-    if (body.version !== 1) {
-      throw new ApiError(400, "bad_version", "only version 1 supported");
+    if (body.version !== 1 && body.version !== 2) {
+      throw new ApiError(400, "bad_version", "only versions 1 and 2 supported");
+    }
+    if (body.version === 1 && (await isV1Frozen(db))) {
+      throw new ApiError(
+        409,
+        "taxonomy_v1_frozen",
+        "a schema-version-2 taxonomy is active; v1 writes are frozen site-wide",
+      );
+    }
+    if (body.version === 2) {
+      // Task 5 fills this in.
+      throw new ApiError(
+        501,
+        "not_implemented",
+        "version 2 apply lands in Task 5",
+      );
     }
     await verifySignedRequest(
       db,
@@ -37,7 +50,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const p = body.payload;
 
     // Validate required taxonomy fields.
-    if (!Array.isArray(p.groups) || !Array.isArray(p.tags) || p.tasks == null || typeof p.tasks !== "object" || Array.isArray(p.tasks)) {
+    if (
+      !Array.isArray(p.groups) ||
+      !Array.isArray(p.tags) ||
+      p.tasks == null ||
+      typeof p.tasks !== "object" ||
+      Array.isArray(p.tasks)
+    ) {
       throw new ApiError(
         400,
         "missing_field",
