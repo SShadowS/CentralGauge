@@ -1,0 +1,8 @@
+id: "CG-AL-H001"
+description: "Create a table with specific fields"
+prompt_template: "code-gen.md"
+metadata:
+  tags:
+    - table
+    - calculations
+    - rounding

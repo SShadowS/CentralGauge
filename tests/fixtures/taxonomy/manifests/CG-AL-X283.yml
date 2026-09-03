@@ -1,0 +1,17 @@
+id: "CG-AL-X283"
+description: "Diagnose and fix multiple interconnected defects"
+prompt_template: "diagnose-objects.md"
+cohort: "reasoning-100"
+metadata:
+  donors:
+    - "CG-AL-X076"
+    - "CG-AL-X074"
+    - "CG-AL-X140"
+    - "CG-AL-X170"
+    - "CG-AL-X075"
+    - "CG-AL-X079"
+    - "CG-AL-X050"
+    - "CG-AL-X051"
+  tags:
+    - multi-defect
+    - composite-reasoning
