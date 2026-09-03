@@ -1,8 +1,8 @@
 id: "CG-AL-X076"
 description: "Diagnose and fix a single defect in accounting logic"
 prompt_template: "diagnose.md"
-cohort: "reasoning-100"
 metadata:
+  cohort: "reasoning-100"
   tags:
     - decimal-precision
     - roundtrip-fidelity

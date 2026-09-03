@@ -1,8 +1,8 @@
 id: "CG-AL-X001"
 description: "Implement event subscriber with proper scope"
 prompt_template: "code-gen.md"
-cohort: "ado-trap-2026"
 metadata:
+  cohort: "ado-trap-2026"
   tags:
     - event-subscriber
     - try-function
