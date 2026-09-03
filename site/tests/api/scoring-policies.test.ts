@@ -91,6 +91,81 @@ describe("scoring policies", () => {
     ).toEqual({ n: 1 });
   });
 
+  it("audits scoring_policy_created once on first create, not again on repeat", async () => {
+    const { keyId, keypair } = await registerMachineKey("root", "admin");
+    const sign = (p: object) =>
+      createSignedPayload(
+        p as Record<string, unknown>,
+        keyId,
+        undefined,
+        keypair,
+      );
+    const post = async (path: string, p: object) =>
+      SELF.fetch(`https://x${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...(await sign(p)).signedRequest, version: 1 }),
+      });
+
+    await post("/api/v1/admin/catalog/scoring-policies", { policy });
+    expect(
+      await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM admin_audit WHERE event = 'scoring_policy_created'`,
+      ).first<{ n: number }>(),
+    ).toEqual({ n: 1 });
+
+    await post("/api/v1/admin/catalog/scoring-policies", { policy });
+    expect(
+      await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM admin_audit WHERE event = 'scoring_policy_created'`,
+      ).first<{ n: number }>(),
+    ).toEqual({ n: 1 });
+  });
+
+  it("is idempotent across key order — same digest, created: false", async () => {
+    const { keyId, keypair } = await registerMachineKey("root", "admin");
+    const sign = (p: object) =>
+      createSignedPayload(
+        p as Record<string, unknown>,
+        keyId,
+        undefined,
+        keypair,
+      );
+    const post = async (path: string, p: object) =>
+      SELF.fetch(`https://x${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...(await sign(p)).signedRequest, version: 1 }),
+      });
+
+    const a = (await (
+      await post("/api/v1/admin/catalog/scoring-policies", { policy })
+    ).json()) as { digest: string; created: boolean };
+    expect(a.created).toBe(true);
+
+    // Same policy, top-level keys reordered — canonicalJson sorts keys at
+    // every depth, so the digest and created:false must be unaffected.
+    const reordered = {
+      gate: policy.gate,
+      draws: policy.draws,
+      estimator_version: policy.estimator_version,
+      metrics: policy.metrics,
+      macro_weights: policy.macro_weights,
+      cells: policy.cells,
+      reduction: policy.reduction,
+      cohort: policy.cohort,
+      eligible: policy.eligible,
+      schema_version: policy.schema_version,
+    };
+    const b = (await (
+      await post("/api/v1/admin/catalog/scoring-policies", {
+        policy: reordered,
+      })
+    ).json()) as { digest: string; created: boolean };
+    expect(b.created).toBe(false);
+    expect(b.digest).toBe(a.digest);
+  });
+
   it("rejects a malformed policy", async () => {
     const { keyId, keypair } = await registerMachineKey("root", "admin");
     const { signedRequest } = await createSignedPayload(

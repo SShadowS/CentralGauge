@@ -1,4 +1,9 @@
-import { canonicalJson, sha256Hex } from "../shared/taxonomy-schema";
+import {
+  canonicalJson,
+  FORMATS,
+  sha256Hex,
+  type FormatSlug,
+} from "../shared/taxonomy-schema";
 import { ApiError } from "./errors";
 import { appendAudit } from "./audit";
 import type { VerifiedKey } from "./signature";
@@ -14,19 +19,12 @@ export interface ScoringPolicy {
     refusal: "count_for_requested_model";
     fallback: "count_for_requested_model";
   };
-  macro_weights: Record<string, number>;
+  macro_weights: Record<FormatSlug, number>;
   metrics: string[];
   estimator_version: string;
   draws: number;
   gate: { min_effective_components: number; max_largest_share: number };
 }
-
-const FORMAT_SLUGS = [
-  "build-from-spec",
-  "runtime-trap",
-  "diagnose-single",
-  "diagnose-composite",
-];
 
 export function validatePolicy(p: unknown): asserts p is ScoringPolicy {
   const bad = (m: string): never => {
@@ -67,7 +65,7 @@ export function validatePolicy(p: unknown): asserts p is ScoringPolicy {
   const keys = Object.keys(w);
   const sum = Object.values(w).reduce((s, x) => s + x, 0);
   const coversFormats =
-    keys.length === FORMAT_SLUGS.length && FORMAT_SLUGS.every((f) => f in w);
+    keys.length === FORMATS.length && FORMATS.every((f) => f in w);
   if (!coversFormats || Math.abs(sum - 1) > 1e-9) {
     return bad("macro_weights must cover the four formats and sum to 1");
   }
