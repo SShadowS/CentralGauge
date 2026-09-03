@@ -476,7 +476,19 @@ export async function applyRevision(
   }
   let rid: number;
   if (existing && existing.verified_at) {
-    rid = existing.id; // verified but not active: activate
+    // Verified but not active: re-verify before activating (spec 5.2's
+    // recovery rule) rather than trusting a possibly-stale `verified_at` -
+    // the child rows could have been damaged since the original
+    // verification. Same fail-closed shape as the fresh-stage path below:
+    // a mismatch deletes the (now-proven-bad) revision and rethrows,
+    // leaving whatever was previously active for this hash untouched.
+    rid = existing.id;
+    try {
+      await verifyRevision(db, rid, digest);
+    } catch (err) {
+      await deleteRevision(db, rid);
+      throw err;
+    }
   } else {
     if (existing) await deleteRevision(db, existing.id); // crashed stage: delete, re-stage
     rid = (

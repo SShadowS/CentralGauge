@@ -8,6 +8,7 @@ import {
   readActiveRevision,
   readRevisionNormalized,
   stageRevision,
+  verifyRevision,
 } from "../../src/lib/server/taxonomy-v2";
 import {
   catalogDigest,
@@ -226,6 +227,81 @@ describe("applyRevision", () => {
         `SELECT COUNT(*) AS n FROM taxonomy_revisions`,
       ).first<{ n: number }>(),
     ).toEqual({ n: 1 });
+  });
+
+  it("re-verifies a previously-verified-but-inactive revision before activating it, refusing a payload whose staged rows were damaged since verification", async () => {
+    // Important 5 from the Plan B final review: applyRevision used to trust
+    // a stale `verified_at` on the "verified but not active" recovery
+    // branch and activate straight through. This stages a second revision,
+    // verifies it WITHOUT activating (so it stays the non-active,
+    // verified-at-some-point row), corrupts one of its child rows directly,
+    // then re-applies the exact same payload and expects the re-verify to
+    // catch the corruption.
+    const n1 = normalizeCatalog(smallCatalog(), HASH);
+    const first = await applyRevision(env.DB, {
+      hash: HASH,
+      normalized: n1,
+      provenance: {},
+      actor,
+      signature: "s",
+    });
+
+    const n2 = normalizeCatalog(otherCatalog(), HASH);
+    const digest2 = await catalogDigest(n2);
+    const { revisionId: rid2 } = await stageRevision(env.DB, {
+      hash: HASH,
+      normalized: n2,
+      digest: digest2,
+      provenance: {},
+      actor,
+      signature: "s",
+    });
+    // Verify without activating - `first` stays the active revision for HASH.
+    await verifyRevision(env.DB, rid2, digest2);
+    expect((await readActiveRevision(env.DB, HASH))?.id).toBe(first.revisionId);
+
+    // Corrupt one of rid2's child rows directly - a re-read of rid2 will no
+    // longer digest to digest2.
+    const victim = await env.DB.prepare(
+      `SELECT task_id, tag_slug FROM taxonomy_task_tags WHERE revision_id = ? LIMIT 1`,
+    )
+      .bind(rid2)
+      .first<{ task_id: string; tag_slug: string }>();
+    expect(victim).not.toBeNull();
+    await env.DB.prepare(
+      `DELETE FROM taxonomy_task_tags WHERE revision_id = ? AND task_id = ? AND tag_slug = ?`,
+    )
+      .bind(rid2, victim!.task_id, victim!.tag_slug)
+      .run();
+
+    let thrown: unknown;
+    try {
+      await applyRevision(env.DB, {
+        hash: HASH,
+        normalized: n2,
+        provenance: {},
+        actor,
+        signature: "s",
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).code).toBe("revision_verification_failed");
+
+    // The previously active revision is still active - the damaged
+    // verified-but-inactive revision was never activated.
+    expect((await readActiveRevision(env.DB, HASH))?.id).toBe(first.revisionId);
+
+    // The damaged revision was deleted rather than left as an orphan
+    // masquerading as "verified".
+    expect(
+      await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM taxonomy_revisions WHERE id = ?`,
+      )
+        .bind(rid2)
+        .first<{ n: number }>(),
+    ).toEqual({ n: 0 });
   });
 });
 
