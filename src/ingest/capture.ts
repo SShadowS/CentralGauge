@@ -192,6 +192,10 @@ export async function buildEnvironmentManifest(opts: {
     retry_path_version: RETRY_PATH_VERSION,
     prompt_policy_version: PROMPT_POLICY_VERSION,
     prompt_template_digest: await promptTemplateDigest(opts.cwd),
+    // Reserved, like TerminationKind's "cancelled": no caller sets
+    // CENTRALGAUGE_BC_CULTURE today, so this is always null in practice.
+    // Kept for the spec's vocabulary and for whenever a culture override
+    // gets wired through the container/task pipeline.
     culture: Deno.env.get("CENTRALGAUGE_BC_CULTURE") ?? null,
   };
 }
@@ -200,6 +204,11 @@ export async function buildEnvironmentManifest(opts: {
  * Redacted snapshot of the LLM invocation config for one variant. Never
  * carries a full `baseUrl` (which may embed an API key or SAS token as a
  * query string) — only the endpoint host survives.
+ *
+ * `baseUrl` is accepted for completeness but neither current caller can
+ * supply it: it lives on the adapter-level `LLMConfig`, not on `ModelVariant`
+ * (see `src/llm/types.ts`), so `endpoint_host` is `null` on every real
+ * invocation snapshot today until that value gets threaded through.
  */
 export function invocationSnapshot(cfg: {
   provider: string;

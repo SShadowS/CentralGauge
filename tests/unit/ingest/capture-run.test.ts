@@ -1,4 +1,4 @@
-import { assertEquals, assertMatch } from "@std/assert";
+import { assertEquals, assertMatch, assertNotEquals } from "@std/assert";
 import {
   buildEnvironmentManifest,
   invocationSnapshot,
@@ -7,54 +7,95 @@ import {
 import type { ContainerInspection } from "../../../src/container/docker-inspect.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 
+/**
+ * Every `buildEnvironmentManifest` test installs this so the git facts come
+ * from the mock instead of a real subprocess spawn — even when a test
+ * doesn't assert on `centralgauge_sha`/`dirty_tree`, leaving git unmocked
+ * means a real `git rev-parse`/`git status` runs against this actual repo
+ * on every test run (slow, and non-deterministic across a dirty tree).
+ */
+function installCleanGitMock(mock: ReturnType<typeof createCommandMock>) {
+  mock.install();
+  mock.mockCommand(
+    { command: "git", argsExact: ["rev-parse", "HEAD"] },
+    {
+      code: 0,
+      stdout: "0000000000000000000000000000000000000000\n",
+      stderr: "",
+    },
+  );
+  mock.mockCommand(
+    { command: "git", argsExact: ["status", "--porcelain"] },
+    { code: 0, stdout: "", stderr: "" },
+  );
+}
+
 Deno.test("environment manifest reads the pinned BCH version, the runner knob and the harness fingerprint", async () => {
-  const fakeInspect = (): Promise<ContainerInspection | undefined> =>
-    Promise.resolve({
-      imageDigest: "sha256:abc",
-      artifactUrl: "https://bcartifacts/onprem/28.4/w1?sv=1",
-      running: true,
+  const mock = createCommandMock();
+  try {
+    installCleanGitMock(mock);
+    const fakeInspect = (): Promise<ContainerInspection | undefined> =>
+      Promise.resolve({
+        imageDigest: "sha256:abc",
+        artifactUrl: "https://bcartifacts/onprem/28.4/w1?sv=1",
+        running: true,
+      });
+    Deno.env.set("CENTRALGAUGE_SOAP_TEST_RUNNER", "0");
+    const m = await buildEnvironmentManifest({
+      containerName: "Cronus28",
+      cwd: ".",
+      inspect: fakeInspect,
     });
-  Deno.env.set("CENTRALGAUGE_SOAP_TEST_RUNNER", "0");
-  const m = await buildEnvironmentManifest({
-    containerName: "Cronus28",
-    cwd: ".",
-    inspect: fakeInspect,
-  });
-  Deno.env.delete("CENTRALGAUGE_SOAP_TEST_RUNNER");
-  assertEquals(m.bcch_version, "6.1.14");
-  assertEquals(m.test_runner, "legacy");
-  assertEquals(m.bc_artifact, "https://bcartifacts/onprem/28.4/w1"); // query string stripped
-  assertEquals(m.container_image_digest, "sha256:abc");
-  assertMatch(m.harness_fingerprint, /^[0-9a-f]{64}$/);
-  assertMatch(m.prompt_template_digest, /^[0-9a-f]{64}$/);
+    Deno.env.delete("CENTRALGAUGE_SOAP_TEST_RUNNER");
+    assertEquals(m.bcch_version, "6.1.14");
+    assertEquals(m.test_runner, "legacy");
+    assertEquals(m.bc_artifact, "https://bcartifacts/onprem/28.4/w1"); // query string stripped
+    assertEquals(m.container_image_digest, "sha256:abc");
+    assertMatch(m.harness_fingerprint, /^[0-9a-f]{64}$/);
+    assertMatch(m.prompt_template_digest, /^[0-9a-f]{64}$/);
+  } finally {
+    mock.restore();
+  }
 });
 
 Deno.test("environment manifest defaults test_runner to soap when the knob is unset", async () => {
-  const fakeInspect = (): Promise<ContainerInspection | undefined> =>
-    Promise.resolve(undefined);
-  Deno.env.delete("CENTRALGAUGE_SOAP_TEST_RUNNER");
-  const m = await buildEnvironmentManifest({
-    containerName: "Cronus28",
-    cwd: ".",
-    inspect: fakeInspect,
-  });
-  assertEquals(m.test_runner, "soap");
-  assertEquals(m.bc_artifact, null);
-  assertEquals(m.container_image_digest, null);
+  const mock = createCommandMock();
+  try {
+    installCleanGitMock(mock);
+    const fakeInspect = (): Promise<ContainerInspection | undefined> =>
+      Promise.resolve(undefined);
+    Deno.env.delete("CENTRALGAUGE_SOAP_TEST_RUNNER");
+    const m = await buildEnvironmentManifest({
+      containerName: "Cronus28",
+      cwd: ".",
+      inspect: fakeInspect,
+    });
+    assertEquals(m.test_runner, "soap");
+    assertEquals(m.bc_artifact, null);
+    assertEquals(m.container_image_digest, null);
+  } finally {
+    mock.restore();
+  }
 });
 
 Deno.test("environment manifest tolerates an inspect failure (best-effort container facts)", async () => {
-  const fakeInspect = (): Promise<ContainerInspection | undefined> =>
-    Promise.reject(new Error("docker unavailable"));
-  const m = await buildEnvironmentManifest({
-    containerName: "Cronus28",
-    cwd: ".",
-    inspect: fakeInspect,
-  });
-  assertEquals(m.bc_artifact, null);
-  assertEquals(m.container_image_digest, null);
-  // The rest of the manifest is still built despite the inspect failure.
-  assertMatch(m.harness_fingerprint, /^[0-9a-f]{64}$/);
+  const mock = createCommandMock();
+  try {
+    installCleanGitMock(mock);
+    const fakeInspect = (): Promise<ContainerInspection | undefined> =>
+      Promise.reject(new Error("docker unavailable"));
+    const m = await buildEnvironmentManifest({
+      containerName: "Cronus28",
+      cwd: ".",
+      inspect: fakeInspect,
+    });
+    assertEquals(m.bc_artifact, null);
+    assertEquals(m.container_image_digest, null);
+    // The rest of the manifest is still built despite the inspect failure.
+    assertMatch(m.harness_fingerprint, /^[0-9a-f]{64}$/);
+  } finally {
+    mock.restore();
+  }
 });
 
 Deno.test("environment manifest reads git sha and dirty-tree state via Deno.Command", async () => {
@@ -109,11 +150,57 @@ Deno.test("environment manifest reports a clean tree and null sha when git fails
   }
 });
 
-Deno.test("promptTemplateDigest is stable across calls and hashes missing templates as a marker", async () => {
-  const d1 = await promptTemplateDigest(".");
-  const d2 = await promptTemplateDigest(".");
-  assertEquals(d1, d2);
-  assertMatch(d1, /^[0-9a-f]{64}$/);
+Deno.test("promptTemplateDigest is deterministic and sensitive to a template's content", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-prompt-digest-" });
+  try {
+    await Deno.mkdir(`${dir}/templates`);
+    // Only 2 of the 5 fixed template names are present in this synthetic
+    // dir — the other 3 (diagnose.md, diagnose-objects.md,
+    // diagnose-contract.md) are intentionally absent so this also exercises
+    // the missing-template path without touching the real templates/ dir.
+    await Deno.writeTextFile(
+      `${dir}/templates/code-gen.md`,
+      "Generate AL code.\n",
+    );
+    await Deno.writeTextFile(`${dir}/templates/bugfix.md`, "Fix the bug.\n");
+
+    const d1 = await promptTemplateDigest(dir);
+    const d2 = await promptTemplateDigest(dir);
+    assertEquals(d1, d2);
+    assertMatch(d1, /^[0-9a-f]{64}$/);
+
+    await Deno.writeTextFile(
+      `${dir}/templates/code-gen.md`,
+      "Generate AL code, differently this time.\n",
+    );
+    const d3 = await promptTemplateDigest(dir);
+    assertNotEquals(d1, d3);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("promptTemplateDigest hashes a missing template as a distinct marker from an empty one", async () => {
+  const dirMissing = await Deno.makeTempDir({
+    prefix: "cg-prompt-digest-missing-",
+  });
+  const dirEmpty = await Deno.makeTempDir({
+    prefix: "cg-prompt-digest-empty-",
+  });
+  try {
+    await Deno.mkdir(`${dirMissing}/templates`);
+    // diagnose.md left entirely absent here -> hashed as the "<missing>" marker.
+
+    await Deno.mkdir(`${dirEmpty}/templates`);
+    await Deno.writeTextFile(`${dirEmpty}/templates/diagnose.md`, ""); // present but empty
+
+    const dMissing = await promptTemplateDigest(dirMissing);
+    const dEmpty = await promptTemplateDigest(dirEmpty);
+    assertNotEquals(dMissing, dEmpty);
+  } finally {
+    await Deno.remove(dirMissing, { recursive: true });
+    await Deno.remove(dirEmpty, { recursive: true });
+  }
 });
 
 Deno.test("invocation snapshot never carries secrets and keeps the host only", () => {
