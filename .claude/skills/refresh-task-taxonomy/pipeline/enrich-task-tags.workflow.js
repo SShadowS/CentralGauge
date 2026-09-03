@@ -1,6 +1,6 @@
 export const meta = {
   name: 'enrich-task-tags',
-  description: 'Content-based facet tagging of all 110 AL benchmark tasks for a discoverability filter, against a controlled vocabulary, with gap detection.',
+  description: 'Content-based facet tagging of all AL benchmark tasks (every prompt format) for a discoverability filter, against a controlled mechanism/invariant/environment vocabulary, with gap detection.',
   phases: [
     { title: 'Tag', detail: 'one agent per ~10-task batch reads specs + assigns facets' },
     { title: 'Reconcile', detail: 'merge + surface vocab gaps' },
@@ -10,35 +10,17 @@ export const meta = {
 const ROOT = 'U:\\Git\\CentralGauge';
 
 // Controlled facet vocabulary — agents assign ONLY these slugs (closed set).
+// Kept in lockstep with MECHANISM_VOCAB / INVARIANT_VOCAB / ENVIRONMENT_VOCAB
+// in site/src/lib/shared/taxonomy-schema.ts (tests/unit/taxonomy/merge.test.ts
+// asserts the two stay equal). Surface (object-type) facets are NOT enriched
+// here — build-taxonomy.ts derives those from the manifest's own tags.
 const VOCAB = [
-  // object types
-  'table','table-extension','page','page-extension','page-customization','report','query','xmlport','codeunit','enum','enum-extension','interface','permissionset',
-  // data / schema
-  'keys','sift-keys','flowfield','flowfilter','field-validation','table-relation','data-classification','field-properties','auto-increment',
-  // reflection
-  'recordref','fieldref','keyref','variant','datatransfer',
-  // events
-  'event-subscriber','event-publisher','integration-event','business-event',
-  // errors / transactions
-  'errorinfo','try-function','collectible-errors','transaction','locking','telemetry',
-  // integration
-  'json','xml','http','web-service','api-page','oauth',
-  // security
-  'permissions','secrettext','encryption','privacy',
-  // text / serialization
-  'text-builder','base64','encoding','string-formatting','guid','number-formatting',
-  // runtime / patterns
-  'single-instance','temporary-table','xrec','namespace','generics','collections','triggers',
-  // upgrade / lifecycle
-  'install','upgrade-tag','obsolete',
-  // testing
-  'test-codeunit','test-page','test-isolation',
-  // UI specifics
-  'factbox','system-part','page-action','page-view',
-  // numeric
-  'rounding','decimal-precision','calculations',
-  // version-gated features
-  'v15','v16','v17',
+  // mechanism — which BC runtime semantic the task turns on
+  'tryfunction-write-rollback','commit-scope','error-flow','filter-key-semantics','filter-group-state','temporary-record','xrec-trigger-state','event-binding','event-order','validation-trigger','decimal-precision','culture-format-roundtrip','serialization-encoding','company-scope','permission-check','flowfield-sift','sql-cost-scaling','single-instance-state','recordref-reflection','upgrade-datatransfer','record-locking-concurrency',
+  // invariant — which domain contract the hidden tests grade
+  'largest-remainder-allocation','reversal-conservation','exact-total','inclusive-boundary','idempotent-rebuild','company-isolation','roundtrip-fidelity','bounded-sql-cost',
+  // environment — which execution requirement applies
+  'multi-company','culture-sensitive','test-permissions',
 ];
 
 const SCHEMA = {
@@ -75,10 +57,10 @@ const results = await parallel(batches.map((batch, bi) => () => {
   const fileList = batch.map((p) => `${ROOT}\\${p.replaceAll('/', '\\')}`).join('\n');
   return agent(
     `You are tagging Microsoft Dynamics 365 Business Central AL benchmark tasks for a DISCOVERABILITY filter — so a BC developer can find the test that matches THEIR workflow.\n\n` +
-    `For EACH task file below, use the Read tool to read it, understand which AL features / APIs / workflow it exercises (from its description and the objects/IDs it asks for), and assign every facet a BC dev would plausibly search by to find this task.\n\n` +
+    `For EACH task file below, use the Read tool to read it, understand which AL features / APIs / workflow it exercises (from its description and the objects/IDs it asks for), and ASSIGN ONLY mechanism, invariant and environment facets: which Business Central runtime semantic the task turns on, which domain contract the hidden tests grade, and which execution requirement applies. Do NOT assign object-type surfaces (tables, pages, codeunits): those come from the manifest. A build-from-spec task grades invariants (boundaries, exact totals) as much as a diagnose task does; tag it the same way.\n\n` +
     `ASSIGN ONLY from this CONTROLLED VOCABULARY (use the exact slugs):\n${vocabStr}\n\n` +
     `Rules:\n` +
-    `- Assign all that genuinely apply (typically 3-7 per task). Be generous but accurate — a task that defines a secondary/SIFT key gets 'keys'/'sift-keys' even if its title is about something else.\n` +
+    `- Assign all that genuinely apply (typically 1-4 per task: usually one mechanism, one invariant, and an environment facet only when the task truly requires multi-company, culture-sensitive, or permission-restricted execution). Be generous but accurate — a task whose hidden tests check an exact-total invariant gets 'exact-total' even if its title is about something else.\n` +
     `- Use exact slugs from the vocabulary. Do NOT invent variants.\n` +
     `- If a task clearly needs a facet that is NOT in the vocabulary, put that (free-form) under suggestedNewTags so we can expand the vocab. Otherwise leave suggestedNewTags empty.\n` +
     `- The task id is the CG-AL-XXX code (in the file's id: field / filename).\n\n` +
