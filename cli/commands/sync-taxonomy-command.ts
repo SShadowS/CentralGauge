@@ -503,7 +503,10 @@ export function registerSyncTaxonomyCommand(cli: Command): void {
     .option("--machine-id <id:string>", "Override machine id")
     .option(
       "--hash <hash:string>",
-      "Target task_set hash (default: auto-discover from prod)",
+      "Target task_set hash. Schema 1 catalog: optional, auto-discovered " +
+        "from prod when omitted. Schema 2 catalog (the committed " +
+        "site/catalog/task-categories.yml today): REQUIRED on --apply, " +
+        "never auto-discovered (spec 5.2); --apply without it fails loudly.",
     )
     .option(
       "--apply",
@@ -515,15 +518,17 @@ export function registerSyncTaxonomyCommand(cli: Command): void {
       "schema_version 2 only: allow applying against a hash the server does not consider current",
     )
     .example(
-      "Preview without writing",
+      "Preview without writing (either schema)",
       "centralgauge sync-taxonomy",
     )
     .example(
-      "Push to production",
+      "Push to production (schema 1 catalog only; auto-discovers --hash)",
       "centralgauge sync-taxonomy --apply",
     )
     .example(
-      "Push under explicit hash",
+      "Push a schema-2 catalog under its explicit hash (required; the " +
+        "server accepts only version 1 today, so this fails with " +
+        "400 bad_version until Plan B's admin endpoint ships, see CLAUDE.md)",
       "centralgauge sync-taxonomy --apply --hash 1bf185c5c36f6975303dd07ee1ff781a5e652f374b61575356dfa4a9dcf37cf6",
     )
     .example(
