@@ -345,8 +345,13 @@ connected components restricted to tasks in the slice. A single task with no
 donor edges is its own component. Every slice shows `n tasks · d distinct
 donors · c components`.
 
-Repository state on 2026-09-02: the 29 gated composites are one component;
-the All slice has 110 single-task components plus one 29-task component.
+Repository state on 2026-09-02 (computed from `composite-provenance.json`
+over the 298 committed tasks): the 29 gated composites and their 51 donor
+singles form one 80-task component; every other task is its own component.
+So the composite slice has 1 component, the single-defect slice 110 (its
+donor edges lead outside the slice), the reasoning-only view 60, and the All
+slice 219. A donor single and the composites built from it share a defect
+and are correctly resampled together on any slice that contains both.
 
 ### 6.5 Component bootstrap
 
