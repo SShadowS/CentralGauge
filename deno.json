@@ -31,6 +31,7 @@
     "fmt": "deno fmt",
     "check": "deno check cli/centralgauge.ts",
     "id-audit": "deno run --allow-read scripts/id-audit.ts",
+    "taxonomy-audit": "deno run --allow-read .claude/skills/refresh-task-taxonomy/pipeline/validate-taxonomy.ts",
     "deploy": "CLOUDFLARE_ACCOUNT_ID=22c8fbe790464b492d9b178cc0f9255b npx wrangler pages deploy reports-output/ --project-name centralguage --commit-dirty=true"
   },
   "imports": {
