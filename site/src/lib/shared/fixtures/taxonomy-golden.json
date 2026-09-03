@@ -1,0 +1,139 @@
+[
+  {
+    "name": "single",
+    "normalized": {
+      "schema_version": 2,
+      "task_set_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "groups": [
+        {
+          "slug": "diagnose-single",
+          "name": "Single-defect diagnose",
+          "description": "d"
+        }
+      ],
+      "families": [
+        {
+          "slug": "mechanism",
+          "name": "Mechanism",
+          "description": "d"
+        }
+      ],
+      "tags": [
+        {
+          "slug": "tryfunction-write-rollback",
+          "family": "mechanism",
+          "name": "TryFunction write rollback",
+          "description": "d",
+          "hidden_by_default": false
+        }
+      ],
+      "tasks": {
+        "CG-AL-X076": {
+          "group": "diagnose-single",
+          "facets": [
+            {
+              "slug": "tryfunction-write-rollback",
+              "origin": "direct"
+            }
+          ],
+          "donors": [],
+          "min_bc_version": 17
+        }
+      }
+    },
+    "canonical": "{\"families\":[{\"description\":\"d\",\"name\":\"Mechanism\",\"slug\":\"mechanism\"}],\"groups\":[{\"description\":\"d\",\"name\":\"Single-defect diagnose\",\"slug\":\"diagnose-single\"}],\"schema_version\":2,\"tags\":[{\"description\":\"d\",\"family\":\"mechanism\",\"hidden_by_default\":false,\"name\":\"TryFunction write rollback\",\"slug\":\"tryfunction-write-rollback\"}],\"task_set_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tasks\":{\"CG-AL-X076\":{\"donors\":[],\"facets\":[{\"origin\":\"direct\",\"slug\":\"tryfunction-write-rollback\"}],\"group\":\"diagnose-single\",\"min_bc_version\":17}}}",
+    "digest": "07a9f1cb0776acfa966cc2812595d7ab8132300d08b41ae51b4d98ea4dbfde4d"
+  },
+  {
+    "name": "composite",
+    "normalized": {
+      "schema_version": 2,
+      "task_set_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "groups": [
+        {
+          "slug": "diagnose-composite",
+          "name": "Composite diagnose",
+          "description": "d"
+        }
+      ],
+      "families": [
+        {
+          "slug": "mechanism",
+          "name": "Mechanism",
+          "description": "d"
+        }
+      ],
+      "tags": [
+        {
+          "slug": "tryfunction-write-rollback",
+          "family": "mechanism",
+          "name": "TryFunction write rollback",
+          "description": "d",
+          "hidden_by_default": false
+        }
+      ],
+      "tasks": {
+        "CG-AL-COMPOSITE": {
+          "group": "diagnose-composite",
+          "facets": [
+            {
+              "slug": "tryfunction-write-rollback",
+              "origin": "derived"
+            }
+          ],
+          "donors": [
+            "CG-AL-X076"
+          ],
+          "min_bc_version": 17
+        }
+      }
+    },
+    "canonical": "{\"families\":[{\"description\":\"d\",\"name\":\"Mechanism\",\"slug\":\"mechanism\"}],\"groups\":[{\"description\":\"d\",\"name\":\"Composite diagnose\",\"slug\":\"diagnose-composite\"}],\"schema_version\":2,\"tags\":[{\"description\":\"d\",\"family\":\"mechanism\",\"hidden_by_default\":false,\"name\":\"TryFunction write rollback\",\"slug\":\"tryfunction-write-rollback\"}],\"task_set_hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"tasks\":{\"CG-AL-COMPOSITE\":{\"donors\":[\"CG-AL-X076\"],\"facets\":[{\"origin\":\"derived\",\"slug\":\"tryfunction-write-rollback\"}],\"group\":\"diagnose-composite\",\"min_bc_version\":17}}}",
+    "digest": "7743a9dbd43573957817b8eb1ad14a368f0ee2a1fc2a79f3f5f558d8e0fc0449"
+  },
+  {
+    "name": "unicode",
+    "normalized": {
+      "schema_version": 2,
+      "task_set_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "groups": [
+        {
+          "slug": "diagnose-single",
+          "name": "Single-defect diagnose",
+          "description": "d"
+        }
+      ],
+      "families": [
+        {
+          "slug": "mechanism",
+          "name": "Mechanism",
+          "description": "d"
+        }
+      ],
+      "tags": [
+        {
+          "slug": "test-unicode",
+          "family": "mechanism",
+          "name": "Unicode test",
+          "description": "café",
+          "hidden_by_default": false
+        }
+      ],
+      "tasks": {
+        "CG-AL-X077": {
+          "group": "diagnose-single",
+          "facets": [
+            {
+              "slug": "test-unicode",
+              "origin": "direct"
+            }
+          ],
+          "donors": [],
+          "min_bc_version": 17
+        }
+      }
+    },
+    "canonical": "{\"families\":[{\"description\":\"d\",\"name\":\"Mechanism\",\"slug\":\"mechanism\"}],\"groups\":[{\"description\":\"d\",\"name\":\"Single-defect diagnose\",\"slug\":\"diagnose-single\"}],\"schema_version\":2,\"tags\":[{\"description\":\"café\",\"family\":\"mechanism\",\"hidden_by_default\":false,\"name\":\"Unicode test\",\"slug\":\"test-unicode\"}],\"task_set_hash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"tasks\":{\"CG-AL-X077\":{\"donors\":[],\"facets\":[{\"origin\":\"direct\",\"slug\":\"test-unicode\"}],\"group\":\"diagnose-single\",\"min_bc_version\":17}}}",
+    "digest": "6a62e0f056a2501a3c3173ab7b79975d40dbb0ac91e242f380c19c8b62a04456"
+  }
+]
