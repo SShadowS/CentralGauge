@@ -21,12 +21,12 @@
  *
  * Any other value returns HTTP 400 from all endpoints.
  */
-export type SetFilter = 'current' | string;
+export type SetFilter = "current" | string;
 
 export interface LeaderboardQuery {
   set: SetFilter;
-  tier: 'verified' | 'claimed' | 'trusted' | 'all';
-  difficulty: 'easy' | 'medium' | 'hard' | null;
+  tier: "verified" | "claimed" | "trusted" | "all";
+  difficulty: "easy" | "medium" | "hard" | null;
   family: string | null;
   since: string | null;
   /**
@@ -42,7 +42,7 @@ export interface LeaderboardQuery {
    * openness. Models whose family has `open_weight = NULL` are excluded from
    * BOTH buckets — unknown openness does not claim either side.
    */
-  openness: 'open' | 'proprietary' | null;
+  openness: "open" | "proprietary" | null;
   /**
    * A.6 sort key. All whitelist fields are sorted in SQL before LIMIT
    * (except `latency_p95_ms` which uses a TS post-sort with wide fetch because
@@ -50,18 +50,18 @@ export interface LeaderboardQuery {
    * flipped from avg_score to pass_at_n in PR1, then to auc_2 in newranking).
    */
   sort:
-    | 'auc_2'
-    | 'pass_at_n'
-    | 'pass_at_1'
-    | 'avg_score'
-    | 'cost_per_pass_usd'
-    | 'latency_p95_ms'
-    | 'avg_cost_usd';
+    | "auc_2"
+    | "pass_at_n"
+    | "pass_at_1"
+    | "avg_score"
+    | "cost_per_pass_usd"
+    | "latency_p95_ms"
+    | "avg_cost_usd";
   /**
    * A.6 sort direction. Parsed from the `sort` query param as `field:dir`
    * (e.g. `pass_at_n:asc`). Defaults to `desc` when omitted.
    */
-  direction: 'asc' | 'desc';
+  direction: "asc" | "desc";
   limit: number;
   cursor: { score: number; id: number } | null;
 }
@@ -186,8 +186,8 @@ export interface ModelHistoryPoint {
   ts: string;
   score: number;
   cost_usd: number;
-  tier: 'verified' | 'claimed';
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  tier: "verified" | "claimed";
+  status: "pending" | "running" | "completed" | "failed";
   completed_at: string | null;
   /** Per-run distinct task count attempted. Matches RunsListItem semantics. */
   tasks_attempted: number;
@@ -198,9 +198,9 @@ export interface ModelHistoryPoint {
 }
 
 export interface FailureMode {
-  code: string;        // e.g., "AL0132"
+  code: string; // e.g., "AL0132"
   count: number;
-  pct: number;         // 0..1
+  pct: number; // 0..1
   example_message: string;
 }
 
@@ -311,8 +311,13 @@ export interface ModelDetail {
   };
   history: ModelHistoryPoint[];
   failure_modes: FailureMode[];
-  recent_runs: ModelHistoryPoint[];   // last 20
-  predecessor?: { slug: string; display_name: string; avg_score: number; avg_cost_usd: number };
+  recent_runs: ModelHistoryPoint[]; // last 20
+  predecessor?: {
+    slug: string;
+    display_name: string;
+    avg_score: number;
+    avg_cost_usd: number;
+  };
 }
 
 // =============================================================================
@@ -322,8 +327,8 @@ export interface ModelDetail {
 export interface RunsListItem {
   id: string;
   model: { slug: string; display_name: string; family_slug: string };
-  tier: 'verified' | 'claimed';
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  tier: "verified" | "claimed";
+  status: "pending" | "running" | "completed" | "failed";
   tasks_attempted: number;
   tasks_passed: number;
   avg_score: number;
@@ -364,13 +369,19 @@ export interface TaskSetsResponse {
 
 export interface PerTaskResult {
   task_id: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
   attempts: Array<{
     attempt: number;
     passed: boolean;
     score: number;
     compile_success: boolean;
-    compile_errors: Array<{ code: string; message: string; file?: string; line?: number; column?: number }>;
+    compile_errors: Array<{
+      code: string;
+      message: string;
+      file?: string;
+      line?: number;
+      column?: number;
+    }>;
     tests_total: number;
     tests_passed: number;
     duration_ms: number;
@@ -382,9 +393,14 @@ export interface PerTaskResult {
 
 export interface RunDetail {
   id: string;
-  model: { slug: string; display_name: string; api_model_id: string; family_slug: string };
-  tier: 'verified' | 'claimed';
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  model: {
+    slug: string;
+    display_name: string;
+    api_model_id: string;
+    family_slug: string;
+  };
+  tier: "verified" | "claimed";
+  status: "pending" | "running" | "completed" | "failed";
   machine_id: string;
   task_set_hash: string;
   pricing_version: string;
@@ -420,14 +436,14 @@ export interface RunDetail {
 
 export interface RunSignature {
   run_id: string;
-  payload_b64: string;       // base64-encoded canonical signed payload
+  payload_b64: string; // base64-encoded canonical signed payload
   signature: {
-    alg: 'Ed25519';
+    alg: "Ed25519";
     key_id: number;
     signed_at: string;
-    value_b64: string;       // base64 signature
+    value_b64: string; // base64 signature
   };
-  public_key_hex: string;    // hex-encoded public key
+  public_key_hex: string; // hex-encoded public key
   machine_id: string;
 }
 
@@ -438,7 +454,7 @@ export interface RunSignature {
 export interface Transcript {
   key: string;
   size_bytes: number;
-  text: string;              // already decoded UTF-8
+  text: string; // already decoded UTF-8
   meta?: {
     run_id?: string;
     task_id?: string;
@@ -533,7 +549,7 @@ export interface FamilyTrajectoryItem {
     api_model_id: string;
     generation: number | null;
   };
-  avg_score: number | null;       // null for models with zero runs in dominant set
+  avg_score: number | null; // null for models with zero runs in dominant set
   run_count: number;
   last_run_at: string | null;
   avg_cost_usd: number | null;
@@ -589,7 +605,8 @@ export interface FamilyDiffConcept {
   delta: number;
 }
 
-export type FamilyDiffStatus = 'comparable' | 'analyzer_mismatch' | 'baseline_missing';
+export type FamilyDiffStatus =
+  "comparable" | "analyzer_mismatch" | "baseline_missing";
 
 export interface FamilyDiff {
   status: FamilyDiffStatus;
@@ -627,7 +644,7 @@ export interface TaskCategory {
 
 export interface TasksIndexItem {
   id: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
   content_hash: string;
   task_set_hash: string;
   category: TaskCategory | null;
@@ -658,11 +675,11 @@ export interface TaskDetailSolvedBy {
 
 export interface TaskDetail {
   id: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
   content_hash: string;
   task_set_hash: string;
   category: TaskCategory | null;
-  manifest: unknown;     // JSON-shape; renderer does narrow type-guards
+  manifest: unknown; // JSON-shape; renderer does narrow type-guards
   solved_by: TaskDetailSolvedBy[];
 }
 
@@ -684,8 +701,8 @@ export interface CompareModel {
 
 export interface CompareTaskRow {
   task_id: string;
-  scores: Record<string, number | null>;   // keyed by model slug
-  divergent: boolean;                       // max-min > 0.01 across non-null values
+  scores: Record<string, number | null>; // keyed by model slug
+  divergent: boolean; // max-min > 0.01 across non-null values
 }
 
 export interface CompareResponse {
@@ -745,14 +762,18 @@ export interface TaxonomyResponse {
 
 export interface ShortcomingsIndexItem {
   al_concept: string;
-  models_affected: number;        // distinct model count
-  occurrence_count: number;       // total occurrences across models
-  avg_severity: 'low' | 'medium' | 'high';
-  first_seen: string;             // earliest first_seen across all rows
-  last_seen: string;              // latest last_seen across all rows
+  models_affected: number; // distinct model count
+  occurrence_count: number; // total occurrences across models
+  avg_severity: "low" | "medium" | "high";
+  first_seen: string; // earliest first_seen across all rows
+  last_seen: string; // latest last_seen across all rows
   example_run_id: string | null;
   example_task_id: string | null;
-  affected_models: Array<{ slug: string; display_name: string; occurrences: number }>;
+  affected_models: Array<{
+    slug: string;
+    display_name: string;
+    occurrences: number;
+  }>;
 }
 
 export interface ShortcomingsIndexResponse {
@@ -764,14 +785,14 @@ export interface ShortcomingsIndexResponse {
 // cmd-K palette index — GET /api/v1/internal/search-index.json  (P5.3 Task A11)
 // =============================================================================
 
-export type PaletteEntryKind = 'model' | 'family' | 'task' | 'run' | 'page';
+export type PaletteEntryKind = "model" | "family" | "task" | "run" | "page";
 
 export interface PaletteEntry {
   kind: PaletteEntryKind;
-  id: string;            // unique within kind (slug, task_id, run_id, path)
-  label: string;         // user-facing display string
-  href: string;          // navigation target
-  hint?: string;         // optional secondary text (e.g. family name for a model)
+  id: string; // unique within kind (slug, task_id, run_id, path)
+  label: string; // user-facing display string
+  href: string; // navigation target
+  hint?: string; // optional secondary text (e.g. family name for a model)
 }
 
 export interface PaletteIndex {
@@ -842,7 +863,7 @@ export interface MatrixCell {
 
 export interface MatrixTask {
   id: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
   category_slug: string | null;
   category_name: string | null;
 }
@@ -866,7 +887,7 @@ export interface MatrixFilters {
    */
   set: SetFilter;
   category: string | null;
-  difficulty: 'easy' | 'medium' | 'hard' | null;
+  difficulty: "easy" | "medium" | "hard" | null;
 }
 
 export interface MatrixResponse {
@@ -1049,4 +1070,40 @@ export interface RunV2Detail extends RunV2Summary {
 export interface TaskSetV2Summary extends TaskSetSummary {
   scoring_policy_digest: string | null;
   active_revision_digest: string | null;
+}
+
+// =============================================================================
+// Benchmark releases + exports (`/api/v2/*`) — Task 10 (Plan B)
+// =============================================================================
+
+/**
+ * One row of `GET /api/v2/releases`'s `data[]`, and the body of
+ * `GET /api/v2/releases/[slug]` (merged with `V2Envelope`).
+ * `retained_count` + `full_count` come from `release_tasks` —
+ * `full_count` is every task of the release's set (`retained` + `full_only`
+ * roles combined), `retained_count` is just the `retained` role.
+ */
+export interface ReleaseV2Summary {
+  id: number;
+  slug: string;
+  hash: string;
+  revision_digest: string;
+  scoring_policy_digest: string;
+  estimator_version: string;
+  cohort_digest: string;
+  panel_manifest: Record<string, unknown>;
+  changelog: string;
+  supersedes_slug: string | null;
+  export_manifest_sha256: string | null;
+  published_at: string;
+  published_by: string;
+  retained_count: number;
+  full_count: number;
+}
+
+/** One entry of `GET /api/v2/exports`'s `data[]` (merged with `V2Envelope`). */
+export interface ExportV2Item {
+  release_slug: string;
+  files: { key: string; sha256: string; bytes: number }[];
+  manifest_sha256: string;
 }
