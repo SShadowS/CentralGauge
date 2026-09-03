@@ -6,6 +6,20 @@ import { env } from "cloudflare:test";
 export async function resetDb(): Promise<void> {
   // D1: delete in strict FK-respecting order (leaves first).
   await env.DB.batch([
+    // 0016_taxonomy_v2.sql tables — children before parents. scoring_policies
+    // is deleted AFTER task_sets below (task_sets.scoring_policy_id FKs into it).
+    env.DB.prepare(`DELETE FROM release_tasks`),
+    env.DB.prepare(`DELETE FROM benchmark_releases`),
+    env.DB.prepare(`DELETE FROM taxonomy_active`),
+    env.DB.prepare(`DELETE FROM taxonomy_task_donors`),
+    env.DB.prepare(`DELETE FROM taxonomy_task_tags`),
+    env.DB.prepare(`DELETE FROM taxonomy_revision_tasks`),
+    env.DB.prepare(`DELETE FROM taxonomy_tags`),
+    env.DB.prepare(`DELETE FROM taxonomy_families`),
+    env.DB.prepare(`DELETE FROM taxonomy_groups`),
+    env.DB.prepare(`DELETE FROM taxonomy_revisions`),
+    env.DB.prepare(`DELETE FROM taxonomy_v1_snapshots`),
+    env.DB.prepare(`DELETE FROM admin_audit`),
     env.DB.prepare(`DELETE FROM shortcoming_occurrences`),
     env.DB.prepare(`DELETE FROM shortcomings`),
     env.DB.prepare(`DELETE FROM run_verifications`),
@@ -19,6 +33,7 @@ export async function resetDb(): Promise<void> {
     env.DB.prepare(`DELETE FROM cost_snapshots`),
     env.DB.prepare(`DELETE FROM models`),
     env.DB.prepare(`DELETE FROM task_sets`),
+    env.DB.prepare(`DELETE FROM scoring_policies`),
     env.DB.prepare(`DELETE FROM model_families`),
     env.DB.prepare(`DELETE FROM settings_profiles`),
     env.DB.prepare(`DELETE FROM machine_keys`),
