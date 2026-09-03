@@ -16,6 +16,15 @@ import type { IngestResponse, SignedRunPayload } from "$lib/shared/types";
 import { cachedJson, decodeCursor, encodeCursor } from "$lib/server/cache";
 import { getAll } from "$lib/server/db";
 
+const TERMINATION_KINDS = new Set([
+  "response",
+  "provider_error",
+  "cap_reached",
+  "refusal",
+  "infra_exhausted",
+  "cancelled",
+]);
+
 interface RunRow {
   id: string;
   task_set_hash: string;
@@ -260,6 +269,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       );
     }
 
+    // Run-time capture (2026-09): test_runner is optional but constrained.
+    if (
+      payload.test_runner !== undefined &&
+      payload.test_runner !== "soap" &&
+      payload.test_runner !== "legacy"
+    ) {
+      throw new ApiError(
+        400,
+        "invalid_test_runner",
+        `test_runner must be "soap", "legacy", or absent`,
+      );
+    }
+
     // Idempotency: check if run_id already exists
     const existing = await db.prepare(
       `SELECT id, status FROM runs WHERE id = ?`,
@@ -305,8 +327,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           id, task_set_hash, model_id, settings_hash, machine_id,
           started_at, completed_at, status, tier, source,
           centralgauge_sha, pricing_version, reproduction_bundle_r2_key,
-          ingest_signature, ingest_signed_at, ingest_public_key_id, ingest_signed_payload
-        ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?)
+          ingest_signature, ingest_signed_at, ingest_public_key_id, ingest_signed_payload,
+          harness_fingerprint, retry_path_version, environment_digest, bc_artifact,
+          container_image_digest, bcch_version, test_runner, prompt_template_digest, invocation_json
+        ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?)
       `).bind(
         signed.run_id,
         payload.task_set_hash,
@@ -327,6 +351,15 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         signed.signature.signed_at,
         verified.key_id,
         signedPayloadBytes,
+        payload.harness_fingerprint ?? null,
+        payload.retry_path_version ?? null,
+        payload.environment_sha256 ? `blobs/${payload.environment_sha256}` : null,
+        payload.bc_artifact ?? null,
+        payload.container_image_digest ?? null,
+        payload.bcch_version ?? null,
+        payload.test_runner ?? null,
+        payload.prompt_template_digest ?? null,
+        payload.invocation ? JSON.stringify(payload.invocation) : null,
       ),
     ];
 
@@ -392,6 +425,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         typeof r.refusal_category === "string" && r.refusal_category.length > 0
           ? r.refusal_category
           : null;
+      // Run-time capture (2026-09): termination_kind is optional but constrained.
+      if (
+        r.termination_kind !== undefined &&
+        !TERMINATION_KINDS.has(r.termination_kind)
+      ) {
+        throw new ApiError(
+          400,
+          "invalid_termination_kind",
+          `termination_kind must be one of ${
+            [...TERMINATION_KINDS].join(", ")
+          } (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
       statements.push(
         db.prepare(`
           INSERT INTO results(
@@ -400,8 +446,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
             tokens_in, tokens_out, tokens_reasoning, tokens_cache_read, tokens_cache_write,
             llm_duration_ms, compile_duration_ms, test_duration_ms,
             failure_reasons_json, transcript_r2_key, code_r2_key,
-            served_model, refusal_category
-          ) VALUES (?,?,?,?,?,?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?)
+            served_model, refusal_category,
+            test_vector_json, termination_kind, provider_finish_reason, provider_error_code,
+            cap_reached, infra_retries, infra_exhaustion_reason, fallback_chain_json,
+            prompt_digest, candidate_digest, overlay_base_digest, failure_class, failure_class_version
+          ) VALUES (?,?,?,?,?,?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?)
         `).bind(
           signed.run_id,
           r.task_id,
@@ -425,6 +474,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           r.code_sha256 ? `blobs/${r.code_sha256}` : null,
           servedModel,
           refusalCategory,
+          r.test_vector ? JSON.stringify(r.test_vector) : null,
+          r.termination_kind ?? null,
+          r.provider_finish_reason ?? null,
+          null, // provider_error_code: not yet produced by any client
+          r.cap_reached === undefined ? null : (r.cap_reached ? 1 : 0),
+          r.infra_retries ?? null,
+          r.infra_exhaustion_reason ?? null,
+          r.fallback_chain ? JSON.stringify(r.fallback_chain) : null,
+          r.prompt_sha256 ?? null,
+          r.candidate_sha256 ?? null,
+          null, // overlay_base_digest: not yet produced by any client
+          null, // failure_class: not yet produced by any client
+          null, // failure_class_version: not yet produced by any client
         ),
       );
     }

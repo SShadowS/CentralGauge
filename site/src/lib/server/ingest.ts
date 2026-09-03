@@ -22,11 +22,15 @@ export async function settingsHash(settings: SettingsInput): Promise<string> {
  */
 export function payloadBlobHashes(payload: {
   reproduction_bundle_sha256?: string;
+  environment_sha256?: string;
   results: Array<{ transcript_sha256?: string; code_sha256?: string }>;
 }): string[] {
   const hashes = new Set<string>();
   if (payload.reproduction_bundle_sha256) {
     hashes.add(payload.reproduction_bundle_sha256);
+  }
+  if (payload.environment_sha256) {
+    hashes.add(payload.environment_sha256);
   }
   for (const r of payload.results) {
     if (r.transcript_sha256) hashes.add(r.transcript_sha256);

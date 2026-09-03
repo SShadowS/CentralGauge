@@ -114,6 +114,22 @@ export interface SignedRunPayload {
     centralgauge_sha?: string;
     pricing_version: string;
     reproduction_bundle_sha256?: string;
+    /**
+     * Run-time capture fields (2026-09). All optional/absent on CLIs
+     * predating this addition; `capture` reads back as `"pre_capture"`
+     * when `harness_fingerprint` is absent. See
+     * `src/ingest/capture.ts` on the CLI side.
+     */
+    harness_fingerprint?: string;
+    retry_path_version?: string;
+    /** sha256 hex digest of the uploaded environment manifest blob. */
+    environment_sha256?: string;
+    bc_artifact?: string;
+    container_image_digest?: string;
+    bcch_version?: string;
+    test_runner?: "soap" | "legacy";
+    prompt_template_digest?: string;
+    invocation?: Record<string, unknown>;
     results: ResultInput[];
   };
 }

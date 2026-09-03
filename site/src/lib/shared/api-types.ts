@@ -989,3 +989,64 @@ export interface TaskV2Detail extends TasksV2Item {
   manifest: unknown;
   donors_detail: { id: string; facets: string[] }[];
 }
+
+// =============================================================================
+// Runs, task-sets, models (`/api/v2/*`) — Task 8 (Plan B)
+// =============================================================================
+
+/**
+ * One row of `GET /api/v2/runs`'s `data[]`, and the base shape
+ * `RunV2Detail` extends for the single-run detail route.
+ * `capture` is `"full"` when `harness_fingerprint` is non-null (a run
+ * captured under the 2026-09 harness), else `"pre_capture"` (a run ingested
+ * before capture fields existed, or a legacy CLI that never sent them).
+ * `environment_digest` is the bare sha256 hex digest of the uploaded
+ * environment-manifest blob (the `blobs/` prefix stripped), or `null`.
+ */
+export interface RunV2Summary {
+  id: string;
+  model: { slug: string; display_name: string; family: string };
+  started_at: string;
+  completed_at: string | null;
+  status: string;
+  harness_fingerprint: string | null;
+  retry_path_version: string | null;
+  environment_digest: string | null;
+  test_runner: "soap" | "legacy" | null;
+  capture: "full" | "pre_capture";
+}
+
+/** `GET /api/v2/runs/[id]` body (merged with `V2Envelope`). */
+export interface RunV2Detail extends RunV2Summary {
+  settings_hash: string;
+  invocation: Record<string, unknown> | null;
+  environment: {
+    bc_artifact: string | null;
+    container_image_digest: string | null;
+    bcch_version: string | null;
+    prompt_template_digest: string | null;
+  };
+  results: {
+    task_id: string;
+    attempt: number;
+    passed: boolean;
+    score: number;
+    termination_kind: string | null;
+    cap_reached: boolean | null;
+    infra_retries: number | null;
+    fallback_chain: string[] | null;
+    prompt_digest: string | null;
+    candidate_digest: string | null;
+    test_vector: { id: string; name: string; passed: boolean }[] | null;
+  }[];
+}
+
+/**
+ * One row of `GET /api/v2/task-sets`'s `data[]` — the v1 `TaskSetSummary`
+ * shape plus the digests of whatever scoring policy / taxonomy revision the
+ * set currently points at (either `null` when the set has neither).
+ */
+export interface TaskSetV2Summary extends TaskSetSummary {
+  scoring_policy_digest: string | null;
+  active_revision_digest: string | null;
+}
