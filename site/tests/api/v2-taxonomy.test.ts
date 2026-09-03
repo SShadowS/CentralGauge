@@ -3,7 +3,10 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resetDb } from "../utils/reset-db";
 import { HASH, seedSet, smallCatalog } from "../fixtures/taxonomy-v2";
 import { applyRevision } from "../../src/lib/server/taxonomy-v2";
-import { normalizeCatalog } from "../../src/lib/shared/taxonomy-schema";
+import {
+  normalizeCatalog,
+  type CatalogV2,
+} from "../../src/lib/shared/taxonomy-schema";
 
 const actor = { key_id: 1, machine_id: "m", scope: "admin" as const };
 beforeAll(async () => {
@@ -127,6 +130,80 @@ describe("v2 read API", () => {
     ).json()) as { data: { id: string }[]; next_cursor: string | null };
     expect(page2.data.map((t) => t.id)).toEqual(["t2", "t3", "t4"]);
     expect(page2.next_cursor).toBeNull();
+  });
+
+  it("limit=200 over 120 tasks batches facet/donor lookups under D1's bound-parameter cap", async () => {
+    // Regression for the Critical from the Plan B final review: `facetsFor`
+    // and `donorsFor` used to bind one parameter per task id, so a page at
+    // or above D1's ~100-variable cap 500'd on input `?limit=` itself
+    // declares legal (up to 200). This fixture and its seed are local to
+    // this test so the other cases above keep their 5-task fixture.
+    const bigHash = "b".repeat(64);
+    const ids = Array.from(
+      { length: 120 },
+      (_, i) => `big${String(i).padStart(3, "0")}`,
+    );
+    const bigCatalog: CatalogV2 = {
+      schema_version: 2,
+      groups: [{ slug: "diagnose-single", name: "S", description: "d" }],
+      families: [{ slug: "surface", name: "F", description: "d" }],
+      tags: [{ slug: "table", family: "surface", name: "n", description: "d" }],
+      aliases: [],
+      overrides: [],
+      tasks: Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            group: "diagnose-single" as const,
+            facets: ["table"],
+            min_bc_version: 15,
+          },
+        ]),
+      ),
+    };
+
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES (?, 't', ?, 0)`,
+    )
+      .bind(bigHash, ids.length)
+      .run();
+    for (let i = 0; i < ids.length; i += 40) {
+      await env.DB.batch(
+        ids
+          .slice(i, i + 40)
+          .map((id) =>
+            env.DB.prepare(
+              `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json) VALUES (?,?,?,'hard',NULL,'{}')`,
+            ).bind(bigHash, id, "h" + id),
+          ),
+      );
+    }
+
+    await applyRevision(env.DB, {
+      hash: bigHash,
+      normalized: normalizeCatalog(bigCatalog, bigHash),
+      provenance: {},
+      actor,
+      signature: "s",
+    });
+
+    const res = await get(`/api/v2/tasks?set=${bigHash}&limit=200`);
+    expect(res.status).toBe(200);
+    const b = (await res.json()) as {
+      data: {
+        id: string;
+        facets: { surface: string[] };
+        donors: string[];
+      }[];
+      next_cursor: string | null;
+    };
+    expect(b.data.length).toBe(120);
+    expect(b.data.map((t) => t.id)).toEqual(ids);
+    expect(b.next_cursor).toBeNull();
+    for (const t of b.data) {
+      expect(t.facets.surface).toEqual(["table"]);
+      expect(t.donors).toEqual([]);
+    }
   });
 
   it("without an active revision v2 returns 404 no_active_revision", async () => {

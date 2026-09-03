@@ -615,11 +615,20 @@ export async function listTasksV2(
   };
 }
 
+// Under D1's per-statement bound-parameter cap (~100) — kept well below it so
+// a page of task ids (up to 200, per `/api/v2/tasks?limit=`) never trips
+// "too many SQL variables" the way a single `task_id IN (...)` over the whole
+// page did (see `matrix.ts`'s identical note; this repo has been bitten by
+// this bug class before). One bound parameter is `rid`, so the id chunk size
+// stays comfortably under 100 even accounting for that.
+const ID_CHUNK = 90;
+
 /**
  * Batch-load facets for a set of task ids in one revision, grouped by the
  * four facet families and carrying each tag's `origin`. Every requested id
  * gets an entry (even with zero tags) so callers can spread the result onto
- * every row unconditionally.
+ * every row unconditionally. `ids` is chunked so the bound-parameter count
+ * per statement never scales with the caller's page size.
  */
 export async function facetsFor(
   db: D1Database,
@@ -648,32 +657,37 @@ export async function facetsFor(
     });
   }
   if (!ids.length) return out;
-  const rows = (
-    await db
-      .prepare(
-        `SELECT x.task_id, x.tag_slug, x.origin, g.family FROM taxonomy_task_tags x JOIN taxonomy_tags g ON g.revision_id = x.revision_id AND g.slug = x.tag_slug
-          WHERE x.revision_id = ? AND x.task_id IN (${ids.map(() => "?").join(",")}) ORDER BY x.task_id, x.tag_slug`,
-      )
-      .bind(rid, ...ids)
-      .all<{
-        task_id: string;
-        tag_slug: string;
-        origin: string;
-        family: string;
-      }>()
-  ).results;
-  for (const r of rows) {
-    const e = out.get(r.task_id)!;
-    // `family`/`origin` are DB-typed as plain `string`; both are FK/CHECK
-    // constrained (taxonomy_tags.family -> taxonomy_families, origin IN
-    // ('direct','derived','local')) so the narrowing cast is safe.
-    e.facets[r.family as FamilySlug].push(r.tag_slug);
-    e.facet_origins[r.tag_slug] = r.origin as FacetOrigin;
+  for (const idChunk of chunk(ids, ID_CHUNK)) {
+    const rows = (
+      await db
+        .prepare(
+          `SELECT x.task_id, x.tag_slug, x.origin, g.family FROM taxonomy_task_tags x JOIN taxonomy_tags g ON g.revision_id = x.revision_id AND g.slug = x.tag_slug
+            WHERE x.revision_id = ? AND x.task_id IN (${idChunk.map(() => "?").join(",")}) ORDER BY x.task_id, x.tag_slug`,
+        )
+        .bind(rid, ...idChunk)
+        .all<{
+          task_id: string;
+          tag_slug: string;
+          origin: string;
+          family: string;
+        }>()
+    ).results;
+    for (const r of rows) {
+      const e = out.get(r.task_id)!;
+      // `family`/`origin` are DB-typed as plain `string`; both are FK/CHECK
+      // constrained (taxonomy_tags.family -> taxonomy_families, origin IN
+      // ('direct','derived','local')) so the narrowing cast is safe.
+      e.facets[r.family as FamilySlug].push(r.tag_slug);
+      e.facet_origins[r.tag_slug] = r.origin as FacetOrigin;
+    }
   }
   return out;
 }
 
-/** Batch-load ordinal-ordered donor lists for a set of composite task ids in one revision. */
+/**
+ * Batch-load ordinal-ordered donor lists for a set of composite task ids in
+ * one revision. `ids` is chunked for the same reason as `facetsFor`.
+ */
 export async function donorsFor(
   db: D1Database,
   rid: number,
@@ -681,16 +695,18 @@ export async function donorsFor(
 ): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   if (!ids.length) return out;
-  const rows = (
-    await db
-      .prepare(
-        `SELECT task_id, donor_task_id FROM taxonomy_task_donors WHERE revision_id = ? AND task_id IN (${ids.map(() => "?").join(",")}) ORDER BY task_id, ordinal`,
-      )
-      .bind(rid, ...ids)
-      .all<{ task_id: string; donor_task_id: string }>()
-  ).results;
-  for (const r of rows) {
-    out.set(r.task_id, [...(out.get(r.task_id) ?? []), r.donor_task_id]);
+  for (const idChunk of chunk(ids, ID_CHUNK)) {
+    const rows = (
+      await db
+        .prepare(
+          `SELECT task_id, donor_task_id FROM taxonomy_task_donors WHERE revision_id = ? AND task_id IN (${idChunk.map(() => "?").join(",")}) ORDER BY task_id, ordinal`,
+        )
+        .bind(rid, ...idChunk)
+        .all<{ task_id: string; donor_task_id: string }>()
+    ).results;
+    for (const r of rows) {
+      out.set(r.task_id, [...(out.get(r.task_id) ?? []), r.donor_task_id]);
+    }
   }
   return out;
 }
