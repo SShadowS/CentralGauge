@@ -1,164 +1,182 @@
-// build-taxonomy.ts — generate the authoritative 2-level taxonomy:
-// 9 mutually-exclusive GROUPS + a curated, cross-cutting FACET-TAG vocabulary,
-// with each task assigned { group, tags }. Canonicalized from the tasks'
-// existing metadata.tags (faithful to author intent) + the approved group map.
-//
-// Output: site/catalog/task-categories.yml  (UI-only; NOT in the task hash)
-// Usage: deno run --allow-read --allow-write scripts/build-taxonomy.ts
-import { parse } from "jsr:@std/yaml";
-import { walk } from "jsr:@std/fs/walk";
+// Step 1 of the refresh: manifests -> draft catalog v2 (groups by rule,
+// surface facets by alias table, min_bc_version, donors; mechanism and
+// invariant facets are filled by the enrichment workflow and merge step).
+// Usage: deno run --allow-read --allow-write .claude/skills/refresh-task-taxonomy/pipeline/build-taxonomy.ts [--out path]
+import { parse } from "@std/yaml";
+import { walk } from "@std/fs/walk";
+import { exists } from "@std/fs/exists";
+import {
+  type CatalogV2,
+  FAMILIES,
+  FORMATS,
+  type TaskEntry,
+} from "../../../../site/src/lib/shared/taxonomy-schema.ts";
+import { deriveFormat } from "./format-rules.ts";
+import {
+  minVersionFromTags,
+  SURFACE_ALIASES,
+  SURFACE_TAGS,
+} from "./aliases.ts";
+import { emitCatalogYaml, parseCatalogYaml } from "./catalog-yaml.ts";
 
-// ---- GROUPS (mutually exclusive; one per task) ----
-const GROUPS: [string, string, string][] = [
-  ["data-modeling", "Data Modeling", "Tables, enums, fields, table extensions, keys, and FlowFields."],
-  ["pages-ui", "Pages, Reports & UI", "Pages, page extensions, customizations, system parts, and reports."],
-  ["business-logic", "Codeunits & Business Logic", "Procedures, calculations, string/text ops, and control flow."],
-  ["interfaces-events", "Interfaces & Events", "Interfaces, event publishers/subscribers, integration events."],
-  ["error-transactions", "Errors & Transactions", "ErrorInfo, try-functions, commit/rollback, permissions, collectible errors."],
-  ["integration-serialization", "Integration & Serialization", "JSON, XML, HTTP/web services, SecretText, base64."],
-  ["reflection-datatransfer", "Reflection & Data Transfer", "RecordRef/FieldRef, DataTransfer, upgrade tags."],
-  ["records-runtime", "Records & Runtime", "xRec, temporary tables, record marks, filter groups."],
-  ["queries-performance", "Queries & Performance", "Query objects, SIFT, caching, single-instance."],
-];
-
-// Group rules (first match wins) — approved, with the 5 manual overrides.
-const GROUP_RULES: [string, RegExp][] = [
-  ["reflection-datatransfer", /recordref|fieldref|keyref|datatransfer|setautocalcfields|field-metadata|setloadfields|upgrade-tag|upgradetag/],
-  ["integration-serialization", /\bjson|xmlport|\bxml\b|http|httpclient|secrettext|secretstr|base64|tempblob|external-api|\buri\b|ssrf|writewithsecrets/],
-  ["interfaces-events", /interface|event-subscriber|event-publisher|integration-event|eventsubscriber|externalbusinessevent|business-event/],
-  ["error-transactions", /errorinfo|tryfunction|transaction|rollback|commitbehavior|collectible-errors|\bpermissions?\b|privacy-notice|consent|atomic|defer/],
-  ["queries-performance", /\bquery|sift|aggregation|\bcache|singleinstance|single-instance|locktimeout/],
-  ["records-runtime", /xrec|temporary-table|filter-group|filtergroup|marked-only|record-mark|truncate|onnewrecord|onaftermodify|belowxrec/],
-  ["pages-ui", /\bpage|pageextension|page-extension|pagecustomization|report|systempart|listpart|testpart|dataset|visibility|conditional-layout|onaftergetrecord/],
-  ["data-modeling", /\btable|\benum|flowfield|calcformula|extendeddatatype|biginteger|masktype|\bkeys?\b|table-extension|tableextension|allowincustomizations/],
-  ["business-logic", /.*/],
-];
-const GROUP_OVERRIDE: Record<string, string> = {
-  "CG-AL-E052": "business-logic", "CG-AL-H005": "records-runtime",
-  "CG-AL-H027": "records-runtime", "CG-AL-M045": "records-runtime",
-  "CG-AL-H034": "error-transactions",
-  // Batch-7/8 perf tasks whose slugs dodge the perf regexes:
-  "CG-AL-X133": "queries-performance", "CG-AL-X134": "queries-performance",
-  "CG-AL-X143": "queries-performance",
+const GROUP_TEXT: Record<string, [string, string]> = {
+  "build-from-spec": [
+    "Build from spec",
+    "Write new AL objects from a behavioural specification.",
+  ],
+  "runtime-trap": [
+    "Runtime trap",
+    "Implement a compact requirement whose natural solution meets a Business Central runtime semantic.",
+  ],
+  "diagnose-single": [
+    "Single-defect diagnose",
+    "Repair a complete application with one planted defect, given a symptom.",
+  ],
+  "diagnose-composite": [
+    "Composite diagnose",
+    "Repair one application assembled from several donor applications with every defect live and no per-module symptom.",
+  ],
+};
+const FAMILY_TEXT: Record<string, [string, string]> = {
+  mechanism: [
+    "Mechanism",
+    "A Business Central runtime or language semantic the task turns on.",
+  ],
+  invariant: [
+    "Invariant",
+    "A domain contract the oracle grades independent of mechanism.",
+  ],
+  surface: [
+    "AL surface",
+    "AL objects and APIs the task touches.",
+  ],
+  environment: [
+    "Environment",
+    "Execution requirements: company scope, culture, permissions.",
+  ],
 };
 
-// ---- FACET TAG canonicalization ----
-// DROP: ubiquitous/non-discriminating or codecop-rule noise.
-const DROP = new Set([
-  "codeunit", "procedure", "fields", "record", "captions", "data-classification",
-  "test", "testtype", "requiredtestisolation", "aa0248", "al0896", "debugging",
-  "session", "type-conversion", "set-based", "task", "no-write",
-  "page-local-var", "readonly-trigger", "host-validation", "system-application",
-  "error-behavior", "batch-validation", "filter-preservation", "protected-scope",
-  "record-filter", "intersect", "set-based-update", "instance-passing",
-  "codeunit-self-reference", "obsolete", "deprecation", "idempotent", "format",
-  "session-scope", "fifo-eviction", "bounded-cache", "primary-key", "composite-key",
-  "instream-outstream", "textencoding", "unicode", "typed-getters", "fieldtype",
-  "fieldclass", "calcfield", "relation", "table-relation", "field-metadata",
-  "dynamic-visibility", "conditional-layout", "group", "setup", "visible", "enabled",
-  "data", "useservercertificatevalidation",
-  "adddestinationfilter", "writewithsecretsto", "jsonobject", "onprerendering",
-  "targetformat", "reportformat", "masktype", "allowincustomizations", "extendeddatatype",
-  "biginteger", "rename", "belowxrec", "onnewrecord", "marked-only", "external-api",
-  "httpheaders", "secretstr", "set-based",
-]);
-// CANON: raw tag -> canonical facet slug (synonym merges + roll-ups).
-const CANON: Record<string, string> = {
-  "tableextension": "table-extension", "table-extension": "table-extension",
-  "pageextension": "page-extension", "page-extension": "page-extension",
-  "pagecustomization": "page-customization", "customization": "page-customization", "editable": "page-customization",
-  "systempart": "system-part", "summary": "system-part", "listpart": "system-part", "testpart": "system-part",
-  "calcformula": "flowfield", "flowfield": "flowfield", "setautocalcfields": "flowfield",
-  "eventsubscriber": "event-subscriber", "event-subscriber": "event-subscriber",
-  "event-publisher": "event-publisher", "integration-event": "event-publisher",
-  "externalbusinessevent": "business-event",
-  "errorinfo": "error-info", "error-handling": "error-info",
-  "tryfunction": "try-function",
-  "transaction": "transaction", "rollback": "transaction", "commitbehavior": "transaction", "batch": "transaction",
-  "collectible-errors": "collectible-errors",
-  "permissions": "permissions",
-  "privacy-notice": "privacy-consent", "consent": "privacy-consent",
-  "json": "json",
-  "xml": "xml", "xmlport": "xml",
-  "http": "http", "httpclient": "http",
-  "secrettext": "secrettext",
-  "base64": "serialization", "tempblob": "serialization",
-  "security": "security", "ssrf": "security", "uri": "security",
-  "recordref": "recordref", "setloadfields": "recordref",
-  "fieldref": "fieldref", "keyref": "fieldref", "blob": "fieldref", "media": "fieldref",
-  "datatransfer": "datatransfer", "install": "datatransfer",
-  "upgrade-tag": "upgrade-tag", "upgrade": "upgrade-tag",
-  "xrec": "xrec",
-  "trigger": "triggers", "triggers": "triggers",
-  "onvalidate": "validation", "validation": "validation",
-  "temporary-table": "temporary-table",
-  "record-mark": "record-mark",
-  "filter-group": "filter-group", "filter": "filter-group",
-  "this-keyword": "this-keyword",
-  "query": "query", "query-object": "query", "aggregation": "query", "sift": "query",
-  "singleinstance": "single-instance", "single-instance": "single-instance",
-  "locktimeoutduration": "locktimeout", "database": "locktimeout",
-  "collections": "collections", "list": "collections", "generics": "collections",
-  "table": "table", "enum": "enum", "keys": "keys",
-  "page": "page", "report": "report", "dataset": "report", "api-page": "page",
-  "interface": "interface",
-  "guid": "guid", "totext": "text-conversion", "namespace": "namespace", "fqn": "namespace",
-  "calculations": "calculations", "numeric-precision": "calculations", "rounding": "calculations",
-  "string-operations": "text-conversion", "fluent-api": "fluent-api", "bulk-operations": "bulk-operations",
-  "v15": "v15", "v16": "v16", "v17": "v17",
-  "onaftergetrecord": "page-trigger",
-};
-const canon = (t: string): string | null => {
-  const k = t.toLowerCase();
-  if (DROP.has(k)) return null;
-  return CANON[k] ?? null; // unmapped, non-dropped -> drop (keeps vocab controlled)
-};
-
-type Task = { id: string; group: string; tags: string[] };
-const tasks: Task[] = [];
-for await (const e of walk("tasks", { exts: [".yml"], includeDirs: false })) {
-  const doc = parse(await Deno.readTextFile(e.path)) as { id?: string; metadata?: { tags?: string[] } };
-  if (!doc.id) continue;
-  const slug = e.name.replace(/\.yml$/, "").replace(/CG-AL-[A-Z]\d+-?/, "");
-  const raw = doc.metadata?.tags ?? [];
-  const hay = `${slug} ${raw.join(" ")}`.toLowerCase();
-  const group = GROUP_OVERRIDE[doc.id] ?? GROUP_RULES.find(([, re]) => re.test(hay))![0];
-  const facets = [...new Set(raw.map(canon).filter((x): x is string => !!x))].sort();
-  tasks.push({ id: doc.id, group, tags: facets });
-}
-tasks.sort((a, b) => a.id.localeCompare(b.id));
-
-// facet vocab (with which groups they actually appear in)
-const facetGroups = new Map<string, Set<string>>();
-const facetCount = new Map<string, number>();
-for (const t of tasks) for (const f of t.tags) {
-  facetCount.set(f, (facetCount.get(f) ?? 0) + 1);
-  (facetGroups.get(f) ?? facetGroups.set(f, new Set()).get(f)!).add(t.group);
+interface Manifest {
+  id?: string;
+  prompt_template?: string;
+  metadata?: {
+    cohort?: string;
+    donors?: string[];
+    tags?: string[];
+  };
 }
 
-// ---- emit YAML ----
-let out = "# Task taxonomy — authoritative for the SITE only (UI + analysis).\n";
-out += "# NOT part of the task_set hash: editing this file + re-syncing never\n";
-out += "# invalidates a benchmark or forces a re-bench. groups are mutually\n";
-out += "# exclusive (one per task); tags are cross-cutting facets (0..N).\n\n";
-out += "groups:\n";
-for (const [slug, name, desc] of GROUPS) out += `  - slug: ${slug}\n    name: ${name}\n    description: ${desc}\n`;
-out += "\ntags:\n";
-for (const [f, gs] of [...facetGroups.entries()].sort()) {
-  out += `  - slug: ${f}\n    groups: [${[...gs].sort().join(", ")}]\n`;
+export async function buildDraft(opts: {
+  tasksDir: string;
+  starterDir: string;
+  previous?: CatalogV2;
+}) {
+  const tasks: Record<string, TaskEntry> = {};
+  const violations: Record<string, string[]> = {};
+  for await (
+    const e of walk(opts.tasksDir, { exts: [".yml"], includeDirs: false })
+  ) {
+    const doc = parse(await Deno.readTextFile(e.path)) as Manifest;
+    if (!doc.id) continue;
+    const donors = doc.metadata?.donors ?? [];
+    const hasStarter = await exists(`${opts.starterDir}/${doc.id}`);
+    const formatOpts: Parameters<typeof deriveFormat>[0] = {
+      id: doc.id,
+      prompt_template: doc.prompt_template ?? "",
+      donors,
+      hasStarter,
+    };
+    if (doc.metadata?.cohort) formatOpts.cohort = doc.metadata.cohort;
+    const { group, violations: v } = deriveFormat(formatOpts);
+    if (v.length || !group) {
+      violations[doc.id] = v;
+      continue;
+    }
+    const raw = (doc.metadata?.tags ?? []).map((t) => t.toLowerCase());
+    const surface = [
+      ...new Set(
+        raw
+          .map((t) => SURFACE_ALIASES[t] ?? null)
+          .filter((x): x is string => x !== null),
+      ),
+    ].sort();
+    const prev = opts.previous?.tasks[doc.id];
+    const keep = prev && !("donors" in prev)
+      ? prev.facets.filter((f) => !SURFACE_TAGS.some((s) => s.slug === f))
+      : [];
+    const min_bc_version = minVersionFromTags(raw);
+    if (group === "diagnose-composite") {
+      tasks[doc.id] = {
+        group,
+        donors,
+        derived_facets: [],
+        local_facets: [],
+        min_bc_version,
+      };
+    } else {
+      tasks[doc.id] = {
+        group,
+        facets: [...new Set([...surface, ...keep])].sort(),
+        min_bc_version,
+      };
+    }
+  }
+  const catalog: CatalogV2 = {
+    schema_version: 2,
+    groups: FORMATS.map((slug) => ({
+      slug,
+      name: GROUP_TEXT[slug]?.[0] ?? slug,
+      description: GROUP_TEXT[slug]?.[1] ?? "",
+    })),
+    families: FAMILIES.map((slug) => ({
+      slug,
+      name: FAMILY_TEXT[slug]?.[0] ?? slug,
+      description: FAMILY_TEXT[slug]?.[1] ?? "",
+    })),
+    tags: [
+      ...SURFACE_TAGS,
+      ...(opts.previous?.tags.filter((t) => t.family !== "surface") ?? []),
+    ],
+    aliases: Object.entries(SURFACE_ALIASES)
+      .filter(([k, v]) => v !== null && v !== k)
+      .map(([from, to]) => ({ from, to: to as string })),
+    overrides: opts.previous?.overrides ?? [],
+    tasks,
+  };
+  return { catalog, violations };
 }
-out += "\ntasks:\n";
-for (const t of tasks) out += `  ${t.id}: { group: ${t.group}, tags: [${t.tags.join(", ")}] }\n`;
-await Deno.writeTextFile("site/catalog/task-categories.yml", out);
 
-// ---- report ----
-const gc = new Map<string, number>();
-for (const t of tasks) gc.set(t.group, (gc.get(t.group) ?? 0) + 1);
-console.log("GROUPS:");
-for (const [g, n] of [...gc.entries()].sort((a, b) => b[1] - a[1])) console.log(`  ${String(n).padStart(2)}  ${g}`);
-console.log(`\nFACET TAGS (${facetCount.size}):`);
-for (const [f, n] of [...facetCount.entries()].sort((a, b) => b[1] - a[1])) {
-  console.log(`  ${String(n).padStart(2)}  ${f.padEnd(18)} groups=${[...(facetGroups.get(f) ?? [])].length}`);
+if (import.meta.main) {
+  const outIdx = Deno.args.indexOf("--out");
+  const out = outIdx >= 0 && Deno.args[outIdx + 1]
+    ? Deno.args[outIdx + 1]!
+    : "site/catalog/task-categories.yml";
+  let previous: CatalogV2 | undefined;
+  try {
+    const prev = parseCatalogYaml(
+      await Deno.readTextFile(out),
+    );
+    if (prev.schema_version === 2) previous = prev; // keep mechanism/invariant facets and overrides across runs
+  } catch {
+    /* first run */
+  }
+  const opts: Parameters<typeof buildDraft>[0] = {
+    tasksDir: "tasks",
+    starterDir: "tasks/starter",
+  };
+  if (previous) opts.previous = previous;
+  const { catalog, violations } = await buildDraft(opts);
+  if (Object.keys(violations).length) {
+    console.error("format rule violations:");
+    for (const [id, v] of Object.entries(violations)) {
+      console.error(`  ${id}: ${v.join(", ")}`);
+    }
+    Deno.exit(1);
+  }
+  await Deno.writeTextFile(out, emitCatalogYaml(catalog));
+  const counts: Record<string, number> = {};
+  for (const e of Object.values(catalog.tasks)) {
+    counts[e.group] = (counts[e.group] ?? 0) + 1;
+  }
+  console.log(`wrote ${out}`, counts);
 }
-const noTags = tasks.filter((t) => t.tags.length === 0);
-console.log(`\ntasks with 0 facet tags: ${noTags.length}  ${noTags.map((t) => t.id).join(" ")}`);
