@@ -206,6 +206,40 @@ describe("v2 read API", () => {
     }
   });
 
+  it("serves the new revision after activation on the exact same URL, with no cache-buster (Important 1 regression)", async () => {
+    // Regression for the Plan B final review's Important 1: v2Json used to
+    // hand back a `public` cache-control, which adapter-cloudflare's own
+    // worker wrapper tees into `caches.default` keyed on the raw request
+    // URL (none of `_cv`/`_rev`/`_pol`). A hit there would be served BEFORE
+    // resolveV2Context runs again, so a stale revision's body could survive
+    // an activation for up to the TTL. This fetches the exact same URL
+    // (deliberately no `_cb` buster — the whole point is the raw-URL key)
+    // twice across an activation.
+    const url = `https://x/api/v2/taxonomy?set=${HASH}`;
+    const first = await SELF.fetch(url);
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as { revision_digest: string };
+
+    const updated = smallCatalog();
+    updated.groups = updated.groups.map((g) =>
+      g.slug === "diagnose-single" ? { ...g, name: "S (updated)" } : g,
+    );
+    const applied = await applyRevision(env.DB, {
+      hash: HASH,
+      normalized: normalizeCatalog(updated, HASH),
+      provenance: {},
+      actor,
+      signature: "s2",
+    });
+    expect(applied.digest).not.toBe(firstBody.revision_digest);
+
+    const second = await SELF.fetch(url);
+    expect(second.status).toBe(200);
+    const secondBody = (await second.json()) as { revision_digest: string };
+    expect(secondBody.revision_digest).toBe(applied.digest);
+    expect(secondBody.revision_digest).not.toBe(firstBody.revision_digest);
+  });
+
   it("without an active revision v2 returns 404 no_active_revision", async () => {
     await env.DB.prepare(`DELETE FROM taxonomy_active`).run();
     const res = await get("/api/v2/taxonomy");

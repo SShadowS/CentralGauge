@@ -126,6 +126,17 @@ export function v2Envelope(ctx: V2Context): V2Envelope {
  * served back for the exact (deploy version, revision, policy) it was
  * generated under — a stale revision can never be served past its own
  * change.
+ *
+ * The response handed to the CALLER carries `private, max-age=N` so
+ * `@sveltejs/adapter-cloudflare`'s worker wrapper does NOT also tee a copy
+ * into `caches.default` — that cache is keyed on the raw request URL (none
+ * of `_cv`/`_rev`/`_pol` included), so a hit there would serve a stale
+ * revision's body past an activation without `resolveV2Context` ever
+ * running again. The `"cg-v2"` named cache stays the sole authority: its
+ * stored copy uses `public, max-age=N` (workerd's Cache API rejects
+ * `private`/`no-store`/`no-cache` on `cache.put`), and a hit read back from
+ * it is relabelled to `private` before reaching the client. Same two-header
+ * pattern as `api/v1/families/[slug]/diff/+server.ts`.
  */
 export async function v2Json(
   req: Request,
@@ -141,9 +152,17 @@ export async function v2Json(
   const key = new Request(url.toString(), { method: "GET" });
 
   const hit = await cache.match(key);
-  if (hit) return hit;
+  if (hit) return relabelForClient(hit, ttlSeconds);
 
-  const res = new Response(JSON.stringify({ ...v2Envelope(ctx), ...body }), {
+  const bodyString = JSON.stringify({ ...v2Envelope(ctx), ...body });
+  const clientResponse = new Response(bodyString, {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": `private, max-age=${ttlSeconds}`,
+    },
+  });
+  const storedResponse = new Response(bodyString, {
     status: 200,
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -152,6 +171,26 @@ export async function v2Json(
   });
   // Inline (not ctx.waitUntil) so the next request — and tests — observe
   // the cached entry deterministically. CLAUDE.md "Workers KV / Cache API".
-  await cache.put(key, res.clone());
-  return res;
+  await cache.put(key, storedResponse);
+  return clientResponse;
+}
+
+/**
+ * Rewrite a response read from the `"cg-v2"` named cache so the
+ * cache-control header advertised to the client is `private, max-age=N`
+ * rather than the `public, max-age=N` the stored copy carries (workerd's
+ * Cache API rejects a non-cacheable cache-control on `put`, so the stored
+ * copy can never itself be `private`). Without this rewrite,
+ * adapter-cloudflare would tee the relayed `public` response into
+ * `caches.default` on every cache hit, silently reintroducing the
+ * stale-revision bug this function exists to avoid.
+ */
+function relabelForClient(cached: Response, ttlSeconds: number): Response {
+  const headers = new Headers(cached.headers);
+  headers.set("cache-control", `private, max-age=${ttlSeconds}`);
+  return new Response(cached.body, {
+    status: cached.status,
+    statusText: cached.statusText,
+    headers,
+  });
 }
