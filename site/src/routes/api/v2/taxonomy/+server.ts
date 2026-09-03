@@ -1,6 +1,7 @@
 import type { RequestHandler } from "./$types";
 import { errorResponse } from "$lib/server/errors";
 import { resolveV2Context, v2Json } from "$lib/server/v2-context";
+import { groupsFor } from "$lib/server/taxonomy-v2";
 import type { TaxonomyV2Response } from "$lib/shared/api-types";
 
 /**
@@ -14,21 +15,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const ctx = await resolveV2Context(db, url);
     const rid = ctx.revision.id;
 
-    const groups = (
-      await db
-        .prepare(
-          `SELECT g.slug, g.name, g.description,
-                  (SELECT COUNT(*) FROM taxonomy_revision_tasks rt WHERE rt.revision_id = g.revision_id AND rt.group_slug = g.slug) AS task_count
-             FROM taxonomy_groups g WHERE g.revision_id = ? ORDER BY g.slug`,
-        )
-        .bind(rid)
-        .all<{
-          slug: string;
-          name: string;
-          description: string;
-          task_count: number;
-        }>()
-    ).results;
+    const groups = await groupsFor(db, rid);
 
     const families = (
       await db
@@ -62,8 +49,11 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       hidden_by_default: t.hidden_by_default === 1,
     }));
 
-    const body: TaxonomyV2Response = { groups, families, tags };
-    return v2Json(request, ctx, body);
+    return v2Json(request, ctx, {
+      groups,
+      families,
+      tags,
+    } satisfies TaxonomyV2Response);
   } catch (err) {
     return errorResponse(err);
   }

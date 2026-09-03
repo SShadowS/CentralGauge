@@ -2,6 +2,7 @@ import type { RequestHandler } from "./$types";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { resolveV2Context, v2Json } from "$lib/server/v2-context";
 import { facetsFor, listTasksV2 } from "$lib/server/taxonomy-v2";
+import type { TaskV2Detail } from "$lib/shared/api-types";
 
 /**
  * `GET /api/v2/tasks/[...id]` — detail for a single task in the resolved
@@ -51,7 +52,11 @@ export const GET: RequestHandler = async ({
       return { id: donorId, facets };
     });
 
-    return v2Json(request, ctx, { ...task, manifest, donors_detail });
+    return v2Json(request, ctx, {
+      ...task,
+      manifest,
+      donors_detail,
+    } satisfies TaskV2Detail);
   } catch (err) {
     return errorResponse(err);
   }

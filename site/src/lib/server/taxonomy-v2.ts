@@ -12,6 +12,7 @@ import {
 import type { VerifiedKey } from "./signature";
 import { ApiError } from "./errors";
 import { appendAudit } from "./audit";
+import type { TasksV2Item } from "../shared/api-types";
 
 export interface ActiveRevision {
   id: number;
@@ -515,6 +516,34 @@ export interface TaskV2Row {
 }
 
 /**
+ * The resolved revision's format groups, each with a live task count.
+ * Shared by `/api/v2/taxonomy` (its `groups` field) and `/api/v2/categories`
+ * (its `data` field) — same query, two response shapes.
+ */
+export async function groupsFor(
+  db: D1Database,
+  rid: number,
+): Promise<
+  { slug: string; name: string; description: string; task_count: number }[]
+> {
+  return (
+    await db
+      .prepare(
+        `SELECT g.slug, g.name, g.description,
+                (SELECT COUNT(*) FROM taxonomy_revision_tasks rt WHERE rt.revision_id = g.revision_id AND rt.group_slug = g.slug) AS task_count
+           FROM taxonomy_groups g WHERE g.revision_id = ? ORDER BY g.slug`,
+      )
+      .bind(rid)
+      .all<{
+        slug: string;
+        name: string;
+        description: string;
+        task_count: number;
+      }>()
+  ).results;
+}
+
+/**
  * Page through the tasks of one revision, optionally filtered by format
  * group, an AND-list of tag slugs, or (`f.id`) a single task id for the
  * detail route. Cursor is a raw `task_id` (exclusive lower bound, matching
@@ -535,7 +564,7 @@ export async function listTasksV2(
     limit: number;
     id?: string;
   },
-) {
+): Promise<{ data: TasksV2Item[]; next_cursor: string | null }> {
   const params: (string | number)[] = [rid, hash];
   let where = `WHERE rt.revision_id = ? AND t.task_set_hash = ?`;
   if (f.category) {
@@ -599,12 +628,18 @@ export async function facetsFor(
 ): Promise<
   Map<
     string,
-    { facets: Record<string, string[]>; facet_origins: Record<string, string> }
+    {
+      facets: Record<FamilySlug, string[]>;
+      facet_origins: Record<string, FacetOrigin>;
+    }
   >
 > {
   const out = new Map<
     string,
-    { facets: Record<string, string[]>; facet_origins: Record<string, string> }
+    {
+      facets: Record<FamilySlug, string[]>;
+      facet_origins: Record<string, FacetOrigin>;
+    }
   >();
   for (const id of ids) {
     out.set(id, {
@@ -629,8 +664,11 @@ export async function facetsFor(
   ).results;
   for (const r of rows) {
     const e = out.get(r.task_id)!;
-    e.facets[r.family].push(r.tag_slug);
-    e.facet_origins[r.tag_slug] = r.origin;
+    // `family`/`origin` are DB-typed as plain `string`; both are FK/CHECK
+    // constrained (taxonomy_tags.family -> taxonomy_families, origin IN
+    // ('direct','derived','local')) so the narrowing cast is safe.
+    e.facets[r.family as FamilySlug].push(r.tag_slug);
+    e.facet_origins[r.tag_slug] = r.origin as FacetOrigin;
   }
   return out;
 }

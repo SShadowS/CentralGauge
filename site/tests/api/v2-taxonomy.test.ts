@@ -75,11 +75,13 @@ describe("v2 read API", () => {
 
     const badCategory = await get("/api/v2/tasks?category=nope");
     expect(badCategory.status).toBe(400);
-    expect((await badCategory.json()).code).toBe("invalid_category");
+    expect((await badCategory.json<{ code: string }>()).code).toBe(
+      "invalid_category",
+    );
 
     const badTag = await get("/api/v2/tasks?tag=nope");
     expect(badTag.status).toBe(400);
-    expect((await badTag.json()).code).toBe("unknown_tag");
+    expect((await badTag.json<{ code: string }>()).code).toBe("unknown_tag");
   });
 
   it("task detail includes donors with their facets", async () => {
@@ -99,13 +101,40 @@ describe("v2 read API", () => {
 
     const missing = await get("/api/v2/tasks/nope");
     expect(missing.status).toBe(404);
-    expect((await missing.json()).code).toBe("no_task");
+    expect((await missing.json<{ code: string }>()).code).toBe("no_task");
+  });
+
+  it("limit out of [1,200] is 400 invalid_limit", async () => {
+    const tooLow = await get("/api/v2/tasks?limit=0");
+    expect(tooLow.status).toBe(400);
+    expect((await tooLow.json<{ code: string }>()).code).toBe("invalid_limit");
+
+    const tooHigh = await get("/api/v2/tasks?limit=201");
+    expect(tooHigh.status).toBe(400);
+    expect((await tooHigh.json<{ code: string }>()).code).toBe("invalid_limit");
+  });
+
+  it("paginates via cursor across all 5 tasks in the fixture", async () => {
+    const page1 = (await (await get("/api/v2/tasks?limit=2")).json()) as {
+      data: { id: string }[];
+      next_cursor: string | null;
+    };
+    expect(page1.data.map((t) => t.id)).toEqual(["c1", "t1"]);
+    expect(page1.next_cursor).not.toBeNull();
+
+    const page2 = (await (
+      await get(`/api/v2/tasks?limit=3&cursor=${page1.next_cursor}`)
+    ).json()) as { data: { id: string }[]; next_cursor: string | null };
+    expect(page2.data.map((t) => t.id)).toEqual(["t2", "t3", "t4"]);
+    expect(page2.next_cursor).toBeNull();
   });
 
   it("without an active revision v2 returns 404 no_active_revision", async () => {
     await env.DB.prepare(`DELETE FROM taxonomy_active`).run();
     const res = await get("/api/v2/taxonomy");
     expect(res.status).toBe(404);
-    expect((await res.json()).code).toBe("no_active_revision");
+    expect((await res.json<{ code: string }>()).code).toBe(
+      "no_active_revision",
+    );
   });
 });

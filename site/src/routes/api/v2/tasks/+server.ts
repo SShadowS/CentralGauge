@@ -3,6 +3,7 @@ import { ApiError, errorResponse } from "$lib/server/errors";
 import { resolveV2Context, v2Json } from "$lib/server/v2-context";
 import { listTasksV2, tagExists } from "$lib/server/taxonomy-v2";
 import { FORMATS } from "$lib/shared/taxonomy-schema";
+import type { TasksV2Item } from "$lib/shared/api-types";
 
 const FORMAT_SET = new Set<string>(FORMATS);
 
@@ -51,7 +52,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 
     const cursor = url.searchParams.get("cursor")?.trim() || undefined;
 
-    const { data, next_cursor } = await listTasksV2(
+    const {
+      data,
+      next_cursor,
+    }: { data: TasksV2Item[]; next_cursor: string | null } = await listTasksV2(
       db,
       rid,
       ctx.task_set_hash,
