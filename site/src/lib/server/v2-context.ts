@@ -120,7 +120,7 @@ export function v2Envelope(ctx: V2Context): V2Envelope {
 
 /**
  * Serialize `body` merged with the v2 envelope, serving/storing through the
- * `"v2"` named Cache API store (never `caches.default` — see CLAUDE.md
+ * `"cg-v2"` named Cache API store (never `caches.default` — see CLAUDE.md
  * "Workers KV / Cache API"). The cache key folds in `CACHE_VERSION` plus the
  * resolved revision + scoring-policy digests, so a response is only ever
  * served back for the exact (deploy version, revision, policy) it was
@@ -133,7 +133,7 @@ export async function v2Json(
   body: Record<string, unknown>,
   ttlSeconds = 60,
 ): Promise<Response> {
-  const cache = await caches.open("v2");
+  const cache = await caches.open("cg-v2");
   const url = new URL(req.url);
   url.searchParams.set("_cv", CACHE_VERSION);
   url.searchParams.set("_rev", ctx.revision.digest);

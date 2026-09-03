@@ -941,3 +941,51 @@ export interface V2Envelope {
   query: Record<string, string>;
 }
 
+/** `GET /api/v2/taxonomy` body (merged with `V2Envelope`). */
+export interface TaxonomyV2Response {
+  groups: {
+    slug: string;
+    name: string;
+    description: string;
+    task_count: number;
+  }[];
+  families: { slug: string; name: string; description: string }[];
+  tags: {
+    slug: string;
+    family: string;
+    name: string;
+    description: string;
+    hidden_by_default: boolean;
+    task_count: number;
+  }[];
+}
+
+/**
+ * One row of `GET /api/v2/tasks`'s `data[]`, and the base shape
+ * `TaskV2Detail` extends for the single-task detail route.
+ * `facet_origins` is keyed by tag slug; `donors` is empty for a
+ * non-composite task.
+ */
+export interface TasksV2Item {
+  id: string;
+  difficulty: string;
+  content_hash: string;
+  group: string;
+  facets: {
+    mechanism: string[];
+    invariant: string[];
+    surface: string[];
+    environment: string[];
+  };
+  facet_origins: Record<string, "direct" | "derived" | "local">;
+  donors: string[];
+  min_bc_version: number;
+  /** The v1 `task_categories` slug for this task, or `null` if uncategorized. */
+  legacy_group: string | null;
+}
+
+/** `GET /api/v2/tasks/[...id]` body (merged with `V2Envelope`). */
+export interface TaskV2Detail extends TasksV2Item {
+  manifest: unknown;
+  donors_detail: { id: string; facets: string[] }[];
+}

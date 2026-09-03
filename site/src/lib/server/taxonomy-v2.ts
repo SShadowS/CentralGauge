@@ -499,3 +499,176 @@ export async function applyRevision(
   await activateRevision(db, a.hash, rid, a.actor);
   return { revisionId: rid, digest, status: "activated" };
 }
+
+// =============================================================================
+// v2 read-side query helpers (Task 7) — `/api/v2/{taxonomy,categories,tasks}`
+// =============================================================================
+
+/** One `taxonomy_revision_tasks` row joined to its `tasks`/`task_categories` row. */
+export interface TaskV2Row {
+  id: string;
+  difficulty: string;
+  content_hash: string;
+  group: string;
+  min_bc_version: number;
+  legacy_group: string | null;
+}
+
+/**
+ * Page through the tasks of one revision, optionally filtered by format
+ * group, an AND-list of tag slugs, or (`f.id`) a single task id for the
+ * detail route. Cursor is a raw `task_id` (exclusive lower bound, matching
+ * `ORDER BY rt.task_id`) — not base64-encoded, since it's never anything
+ * but a task id round-tripped from `next_cursor`. Facets and donors are
+ * fetched in two follow-up batched queries (`facetsFor`/`donorsFor`) rather
+ * than joined in, so a page of N tasks costs 3 queries total regardless of
+ * how many tags/donors each task carries.
+ */
+export async function listTasksV2(
+  db: D1Database,
+  rid: number,
+  hash: string,
+  f: {
+    category?: string;
+    tags: string[];
+    cursor?: string;
+    limit: number;
+    id?: string;
+  },
+) {
+  const params: (string | number)[] = [rid, hash];
+  let where = `WHERE rt.revision_id = ? AND t.task_set_hash = ?`;
+  if (f.category) {
+    where += ` AND rt.group_slug = ?`;
+    params.push(f.category);
+  }
+  for (const tag of f.tags) {
+    where += ` AND EXISTS (SELECT 1 FROM taxonomy_task_tags x WHERE x.revision_id = rt.revision_id AND x.task_id = rt.task_id AND x.tag_slug = ?)`;
+    params.push(tag);
+  }
+  if (f.id) {
+    where += ` AND rt.task_id = ?`;
+    params.push(f.id);
+  }
+  if (f.cursor) {
+    where += ` AND rt.task_id > ?`;
+    params.push(f.cursor);
+  }
+  params.push(f.limit + 1);
+  const rows = (
+    await db
+      .prepare(
+        `SELECT rt.task_id AS id, t.difficulty, t.content_hash, rt.group_slug AS "group", rt.min_bc_version, tc.slug AS legacy_group
+           FROM taxonomy_revision_tasks rt JOIN tasks t ON t.task_set_hash = rt.task_set_hash AND t.task_id = rt.task_id
+           LEFT JOIN task_categories tc ON tc.id = t.category_id ${where} ORDER BY rt.task_id LIMIT ?`,
+      )
+      .bind(...params)
+      .all<TaskV2Row>()
+  ).results;
+  const page = rows.slice(0, f.limit);
+  const facets = await facetsFor(
+    db,
+    rid,
+    page.map((r) => r.id),
+  );
+  const donors = await donorsFor(
+    db,
+    rid,
+    page.map((r) => r.id),
+  );
+  return {
+    data: page.map((r) => ({
+      ...r,
+      ...facets.get(r.id)!,
+      donors: donors.get(r.id) ?? [],
+    })),
+    next_cursor: rows.length > f.limit ? page[page.length - 1].id : null,
+  };
+}
+
+/**
+ * Batch-load facets for a set of task ids in one revision, grouped by the
+ * four facet families and carrying each tag's `origin`. Every requested id
+ * gets an entry (even with zero tags) so callers can spread the result onto
+ * every row unconditionally.
+ */
+export async function facetsFor(
+  db: D1Database,
+  rid: number,
+  ids: string[],
+): Promise<
+  Map<
+    string,
+    { facets: Record<string, string[]>; facet_origins: Record<string, string> }
+  >
+> {
+  const out = new Map<
+    string,
+    { facets: Record<string, string[]>; facet_origins: Record<string, string> }
+  >();
+  for (const id of ids) {
+    out.set(id, {
+      facets: { mechanism: [], invariant: [], surface: [], environment: [] },
+      facet_origins: {},
+    });
+  }
+  if (!ids.length) return out;
+  const rows = (
+    await db
+      .prepare(
+        `SELECT x.task_id, x.tag_slug, x.origin, g.family FROM taxonomy_task_tags x JOIN taxonomy_tags g ON g.revision_id = x.revision_id AND g.slug = x.tag_slug
+          WHERE x.revision_id = ? AND x.task_id IN (${ids.map(() => "?").join(",")}) ORDER BY x.task_id, x.tag_slug`,
+      )
+      .bind(rid, ...ids)
+      .all<{
+        task_id: string;
+        tag_slug: string;
+        origin: string;
+        family: string;
+      }>()
+  ).results;
+  for (const r of rows) {
+    const e = out.get(r.task_id)!;
+    e.facets[r.family].push(r.tag_slug);
+    e.facet_origins[r.tag_slug] = r.origin;
+  }
+  return out;
+}
+
+/** Batch-load ordinal-ordered donor lists for a set of composite task ids in one revision. */
+export async function donorsFor(
+  db: D1Database,
+  rid: number,
+  ids: string[],
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (!ids.length) return out;
+  const rows = (
+    await db
+      .prepare(
+        `SELECT task_id, donor_task_id FROM taxonomy_task_donors WHERE revision_id = ? AND task_id IN (${ids.map(() => "?").join(",")}) ORDER BY task_id, ordinal`,
+      )
+      .bind(rid, ...ids)
+      .all<{ task_id: string; donor_task_id: string }>()
+  ).results;
+  for (const r of rows) {
+    out.set(r.task_id, [...(out.get(r.task_id) ?? []), r.donor_task_id]);
+  }
+  return out;
+}
+
+/** Whether `slug` names a real tag in this revision — used to 400 an unknown `?tag=` early. */
+export async function tagExists(
+  db: D1Database,
+  rid: number,
+  slug: string,
+): Promise<boolean> {
+  return (
+    (await db
+      .prepare(
+        `SELECT 1 AS x FROM taxonomy_tags WHERE revision_id = ? AND slug = ?`,
+      )
+      .bind(rid, slug)
+      .first()) !== null
+  );
+}
