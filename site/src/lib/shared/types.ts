@@ -124,8 +124,8 @@ export interface SignedRunPayload {
     retry_path_version?: string;
     /** sha256 hex digest of the uploaded environment manifest blob. */
     environment_sha256?: string;
-    bc_artifact?: string;
-    container_image_digest?: string;
+    bc_artifact?: string | null;
+    container_image_digest?: string | null;
     bcch_version?: string;
     test_runner?: "soap" | "legacy";
     prompt_template_digest?: string;
