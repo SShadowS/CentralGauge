@@ -37,3 +37,24 @@ Deno.test("slice stats restrict components to the slice and count donors", () =>
   assertEquals(singles.component_count, 4); // donor edges lead outside the slice
   assertEquals(singles.effective_components, 4);
 });
+
+Deno.test("largest_component_share is fractional for balanced components", () => {
+  const g = buildComponents(tasks);
+  const s = sliceStats(g, ["S4", "C1"]);
+  assertEquals(s.task_count, 2);
+  assertEquals(s.component_count, 2); // S4 and C1 are separate within this slice
+  assertEquals(s.largest_component_share, 0.5);
+});
+
+Deno.test("duplicate ids in slice are deduplicated", () => {
+  const g = buildComponents(tasks);
+  const withDup = sliceStats(g, ["C1", "C2", "C1"]);
+  const withoutDup = sliceStats(g, ["C1", "C2"]);
+  assertEquals(withDup.task_count, withoutDup.task_count);
+  assertEquals(withDup.component_count, withoutDup.component_count);
+  assertEquals(withDup.donor_count, withoutDup.donor_count);
+  assertEquals(
+    withDup.largest_component_share,
+    withoutDup.largest_component_share,
+  );
+});

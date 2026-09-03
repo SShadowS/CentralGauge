@@ -56,17 +56,18 @@ export interface SliceStats {
 
 /** Components intersected with the slice; a donor edge that leaves the slice does not connect. */
 export function sliceStats(g: GraphComponents, sliceIds: string[]): SliceStats {
-  const inSlice = new Set(sliceIds);
+  const deduped = [...new Set(sliceIds)];
+  const inSlice = new Set(deduped);
   // Two slice members that share a donor OUTSIDE the slice are still connected through it.
   const byOutsideDonor = new Map<string, string[]>();
-  for (const id of sliceIds) {
+  for (const id of deduped) {
     for (const d of g.donorsOf.get(id) ?? []) {
       if (inSlice.has(d)) continue;
       byOutsideDonor.set(d, [...(byOutsideDonor.get(d) ?? []), id]);
     }
   }
   const merged = buildComponents(
-    sliceIds.map((id) => {
+    deduped.map((id) => {
       const viaOutside: string[] = [];
       for (const [, members] of byOutsideDonor)
         if (members.includes(id))
@@ -83,10 +84,10 @@ export function sliceStats(g: GraphComponents, sliceIds: string[]): SliceStats {
     }),
   );
   const sizes = merged.sizes;
-  const n = sliceIds.length;
+  const n = deduped.length;
   const sumSq = sizes.reduce((s, x) => s + x * x, 0);
   const donors = new Set<string>();
-  for (const id of sliceIds)
+  for (const id of deduped)
     for (const d of g.donorsOf.get(id) ?? []) donors.add(d);
   return {
     task_count: n,
