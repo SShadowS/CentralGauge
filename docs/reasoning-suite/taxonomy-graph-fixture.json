@@ -556,6 +556,13 @@
    "component_count": 1,
    "effective_components": 1,
    "largest_component_share": 1
+  },
+  "reasoning-only": {
+   "task_count": 138,
+   "donor_count": 51,
+   "component_count": 59,
+   "effective_components": 2.948900588417467,
+   "largest_component_share": 0.5797101449275363
   }
  }
 }

@@ -147,8 +147,15 @@ Confirm the leaderboard's task-set hash is unchanged (`/api/v1/leaderboard?set=c
   step deliberately does not carry vocabulary facets over from the previous
   catalog, so a hand-added facet vanishes on the next run and a hand-removed
   one comes back. `pipeline/enriched-tags.json` is the source of truth for
-  mechanism/invariant/environment facets, the manifests plus `aliases.ts` for
-  surface facets. Only `overrides:` is hand-edited in the YAML.
+  mechanism/invariant/environment facets, the manifests' `metadata.tags` and
+  `domains:` plus `aliases.ts` for surface facets.
+- **Two fields in the YAML are hand-edited, and only these two**: `overrides:`,
+  and a composite's `local_facets` — the facets the composite itself
+  introduces, which no enrichment step writes (spec 4.3). The build step
+  carries `local_facets` across a rebuild, and the merge step strips any entry
+  that a donor already contributes, so a local facet that turns out to be
+  derived disappears on its own. A composite's `derived_facets` is recomputed
+  from its donors every run; editing it is pointless.
 - **Tag names and definitions are generated too**: `aliases.ts` spells the
   name, `facet-definitions.ts` writes the description, and the merge step
   re-stamps both on every run. Edit those files, not the YAML.

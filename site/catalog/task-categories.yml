@@ -321,7 +321,7 @@ tags:
   - slug: validation-trigger
     family: mechanism
     name: "Validation Trigger"
-    description: "Table triggers and field validation run logic of their own, so what the platform computes on insert, modify or validate is part of the answer."
+    description: "Table triggers, field validation and table-relation declarations make the platform run logic of its own, so what it computes or cascades on insert, modify, rename or validate is part of the answer."
   - slug: variant
     family: surface
     name: "Variant"
@@ -342,21 +342,34 @@ tags:
 aliases:
   - { from: api-page, to: page }
   - { from: calcformula, to: flowfield }
+  - { from: codeunits, to: codeunit }
   - { from: customization, to: page-customization }
   - { from: dataset, to: report }
+  - { from: enums, to: enum }
   - { from: errorinfo, to: error-info }
+  - { from: events, to: event-subscriber }
   - { from: eventsubscriber, to: event-subscriber }
+  - { from: flowfields, to: flowfield }
   - { from: httpclient, to: http }
   - { from: integration-event, to: event-publisher }
+  - { from: interfaces, to: interface }
   - { from: keyref, to: fieldref }
   - { from: pagecustomization, to: page-customization }
   - { from: pageextension, to: page-extension }
+  - { from: pages, to: page }
+  - { from: queries, to: query }
   - { from: query-object, to: query }
+  - { from: reflection, to: recordref }
+  - { from: reports, to: report }
   - { from: sift, to: sift-keys }
   - { from: singleinstance, to: single-instance }
   - { from: systempart, to: system-part }
+  - { from: table-relations, to: table-relation }
   - { from: tableextension, to: table-extension }
+  - { from: tables, to: table }
+  - { from: web-services, to: web-service }
   - { from: xmlport, to: xml }
+  - { from: xmlports, to: xml }
 
 overrides:
   []
@@ -376,7 +389,7 @@ tasks:
     min_bc_version: 15
   CG-AL-E004:
     group: build-from-spec
-    facets: [keys, table-extension]
+    facets: [keys, table, table-extension]
     min_bc_version: 15
   CG-AL-E005:
     group: build-from-spec
@@ -384,7 +397,7 @@ tasks:
     min_bc_version: 15
   CG-AL-E006:
     group: build-from-spec
-    facets: [page-extension]
+    facets: [page, page-extension]
     min_bc_version: 15
   CG-AL-E007:
     group: build-from-spec
@@ -428,7 +441,7 @@ tasks:
     min_bc_version: 15
   CG-AL-E053:
     group: build-from-spec
-    facets: [page-extension, table]
+    facets: [page, page-extension, table]
     min_bc_version: 15
   CG-AL-E054:
     group: build-from-spec
@@ -436,7 +449,7 @@ tasks:
     min_bc_version: 15
   CG-AL-E055:
     group: build-from-spec
-    facets: [codeunit, recordref-reflection]
+    facets: [codeunit, recordref, recordref-reflection]
     min_bc_version: 15
   CG-AL-E056:
     group: build-from-spec
@@ -460,11 +473,11 @@ tasks:
     min_bc_version: 15
   CG-AL-H003:
     group: build-from-spec
-    facets: [codeunit, decimal-precision, flowfield-sift, inclusive-boundary, temporary-record, temporary-table]
+    facets: [codeunit, decimal-precision, flowfield-sift, inclusive-boundary, table, temporary-record, temporary-table]
     min_bc_version: 15
   CG-AL-H004:
     group: build-from-spec
-    facets: [enum, roundtrip-fidelity, table]
+    facets: [codeunit, enum, roundtrip-fidelity, table]
     min_bc_version: 15
   CG-AL-H005:
     group: build-from-spec
@@ -476,7 +489,7 @@ tasks:
     min_bc_version: 15
   CG-AL-H007:
     group: build-from-spec
-    facets: [codeunit, error-flow, error-info, roundtrip-fidelity]
+    facets: [codeunit, enum, error-flow, error-info, roundtrip-fidelity]
     min_bc_version: 15
   CG-AL-H008:
     group: build-from-spec
@@ -508,7 +521,7 @@ tasks:
     min_bc_version: 15
   CG-AL-H016:
     group: build-from-spec
-    facets: [codeunit, roundtrip-fidelity, secrettext]
+    facets: [codeunit, roundtrip-fidelity, secrettext, web-service]
     min_bc_version: 15
   CG-AL-H017:
     group: build-from-spec
@@ -536,7 +549,7 @@ tasks:
     min_bc_version: 15
   CG-AL-H023:
     group: build-from-spec
-    facets: [codeunit, fieldref, filter-key-semantics, recordref, recordref-reflection, roundtrip-fidelity, serialization-encoding]
+    facets: [codeunit, fieldref, filter-key-semantics, interface, recordref, recordref-reflection, roundtrip-fidelity, serialization-encoding]
     min_bc_version: 15
   CG-AL-H024:
     group: build-from-spec
@@ -580,19 +593,19 @@ tasks:
     min_bc_version: 15
   CG-AL-H034:
     group: build-from-spec
-    facets: [commit-scope, error-flow, event-binding, event-publisher]
+    facets: [codeunit, commit-scope, error-flow, event-binding, event-publisher, event-subscriber]
     min_bc_version: 15
   CG-AL-H035:
     group: build-from-spec
-    facets: [http, secrettext]
+    facets: [codeunit, http, secrettext, web-service]
     min_bc_version: 15
   CG-AL-H036:
     group: build-from-spec
-    facets: [json, secrettext, serialization-encoding]
+    facets: [codeunit, json, secrettext, serialization-encoding]
     min_bc_version: 15
   CG-AL-H037:
     group: build-from-spec
-    facets: [bounded-sql-cost, datatransfer, filter-key-semantics, install, sql-cost-scaling, upgrade-datatransfer]
+    facets: [bounded-sql-cost, codeunit, datatransfer, filter-key-semantics, install, sql-cost-scaling, upgrade-datatransfer]
     min_bc_version: 15
   CG-AL-H038:
     group: build-from-spec
@@ -600,7 +613,7 @@ tasks:
     min_bc_version: 15
   CG-AL-H039:
     group: build-from-spec
-    facets: [idempotent-rebuild, upgrade-tag]
+    facets: [codeunit, idempotent-rebuild, upgrade-tag]
     min_bc_version: 15
   CG-AL-H040:
     group: build-from-spec
@@ -612,11 +625,11 @@ tasks:
     min_bc_version: 15
   CG-AL-H042:
     group: build-from-spec
-    facets: [permission-check]
+    facets: [codeunit, permission-check]
     min_bc_version: 15
   CG-AL-H043:
     group: build-from-spec
-    facets: []
+    facets: [codeunit, web-service]
     min_bc_version: 15
   CG-AL-H050:
     group: build-from-spec
@@ -624,23 +637,23 @@ tasks:
     min_bc_version: 15
   CG-AL-H051:
     group: build-from-spec
-    facets: [exact-total, filter-key-semantics]
+    facets: [codeunit, exact-total, filter-key-semantics]
     min_bc_version: 15
   CG-AL-H052:
     group: build-from-spec
-    facets: [filter-group-state, filter-key-semantics]
+    facets: [codeunit, filter-group-state, filter-key-semantics]
     min_bc_version: 15
   CG-AL-H053:
     group: build-from-spec
-    facets: [bounded-sql-cost, exact-total, flowfield-sift, query, sift-keys]
+    facets: [bounded-sql-cost, codeunit, exact-total, flowfield-sift, query, sift-keys]
     min_bc_version: 15
   CG-AL-H054:
     group: build-from-spec
-    facets: [inclusive-boundary, single-instance, single-instance-state]
+    facets: [codeunit, inclusive-boundary, single-instance, single-instance-state]
     min_bc_version: 15
   CG-AL-H056:
     group: build-from-spec
-    facets: []
+    facets: [codeunit]
     min_bc_version: 15
   CG-AL-H057:
     group: build-from-spec
@@ -648,7 +661,7 @@ tasks:
     min_bc_version: 15
   CG-AL-H058:
     group: build-from-spec
-    facets: [base64, roundtrip-fidelity, serialization-encoding]
+    facets: [base64, codeunit, roundtrip-fidelity, serialization-encoding]
     min_bc_version: 15
   CG-AL-H205:
     group: build-from-spec
@@ -656,7 +669,7 @@ tasks:
     min_bc_version: 15
   CG-AL-M001:
     group: build-from-spec
-    facets: [error-flow, page, roundtrip-fidelity, table-extension, validation-trigger]
+    facets: [error-flow, page, roundtrip-fidelity, table, table-extension, validation-trigger]
     min_bc_version: 15
   CG-AL-M002:
     group: build-from-spec
@@ -664,7 +677,7 @@ tasks:
     min_bc_version: 15
   CG-AL-M003:
     group: build-from-spec
-    facets: [error-flow, inclusive-boundary, keys, table, validation-trigger]
+    facets: [error-flow, inclusive-boundary, keys, table, table-relation, validation-trigger]
     min_bc_version: 15
   CG-AL-M004:
     group: build-from-spec
@@ -672,11 +685,11 @@ tasks:
     min_bc_version: 15
   CG-AL-M005:
     group: build-from-spec
-    facets: [codeunit, error-flow, http, json, roundtrip-fidelity, serialization-encoding]
+    facets: [codeunit, error-flow, http, json, roundtrip-fidelity, serialization-encoding, web-service]
     min_bc_version: 15
   CG-AL-M006:
     group: build-from-spec
-    facets: [error-flow, inclusive-boundary, keys, table-extension, validation-trigger]
+    facets: [error-flow, inclusive-boundary, keys, table, table-extension, table-relation, validation-trigger]
     min_bc_version: 15
   CG-AL-M007:
     group: build-from-spec
@@ -692,7 +705,7 @@ tasks:
     min_bc_version: 15
   CG-AL-M010:
     group: build-from-spec
-    facets: [codeunit, error-flow, exact-total, filter-key-semantics, page, table, validation-trigger]
+    facets: [codeunit, error-flow, exact-total, filter-key-semantics, page, table, table-relation, validation-trigger]
     min_bc_version: 15
   CG-AL-M020:
     group: build-from-spec
@@ -704,7 +717,7 @@ tasks:
     min_bc_version: 15
   CG-AL-M022:
     group: build-from-spec
-    facets: [codeunit, error-flow, http, json, serialization-encoding]
+    facets: [codeunit, error-flow, http, json, serialization-encoding, web-service]
     min_bc_version: 15
   CG-AL-M023:
     group: build-from-spec
@@ -732,11 +745,11 @@ tasks:
     min_bc_version: 16
   CG-AL-M029:
     group: build-from-spec
-    facets: [page-customization]
+    facets: [page, page-customization]
     min_bc_version: 16
   CG-AL-M031:
     group: build-from-spec
-    facets: [codeunit, page, recordref, recordref-reflection, report]
+    facets: [codeunit, page, recordref, recordref-reflection, report, table]
     min_bc_version: 17
   CG-AL-M032:
     group: build-from-spec
@@ -752,19 +765,19 @@ tasks:
     min_bc_version: 15
   CG-AL-M035:
     group: build-from-spec
-    facets: [http]
+    facets: [codeunit, http, web-service]
     min_bc_version: 15
   CG-AL-M036:
     group: build-from-spec
-    facets: [secrettext, serialization-encoding]
+    facets: [codeunit, json, secrettext, serialization-encoding]
     min_bc_version: 15
   CG-AL-M037:
     group: build-from-spec
-    facets: [codeunit, enum]
+    facets: [codeunit, enum, event-subscriber]
     min_bc_version: 15
   CG-AL-M038:
     group: build-from-spec
-    facets: [record-locking-concurrency, recordref, recordref-reflection]
+    facets: [codeunit, record-locking-concurrency, recordref, recordref-reflection]
     min_bc_version: 16
   CG-AL-M039:
     group: build-from-spec
@@ -776,7 +789,7 @@ tasks:
     min_bc_version: 16
   CG-AL-M041:
     group: build-from-spec
-    facets: [exact-total, flowfield, flowfield-sift, table-extension]
+    facets: [exact-total, flowfield, flowfield-sift, table, table-extension]
     min_bc_version: 15
   CG-AL-M042:
     group: build-from-spec
@@ -784,11 +797,11 @@ tasks:
     min_bc_version: 15
   CG-AL-M043:
     group: build-from-spec
-    facets: [filter-key-semantics, roundtrip-fidelity, table, xrec-trigger-state]
+    facets: [filter-key-semantics, roundtrip-fidelity, table, table-relation, xrec-trigger-state]
     min_bc_version: 15
   CG-AL-M044:
     group: build-from-spec
-    facets: [filter-key-semantics, page, xrec-trigger-state]
+    facets: [codeunit, filter-key-semantics, page, xrec-trigger-state]
     min_bc_version: 15
   CG-AL-M045:
     group: build-from-spec
@@ -796,819 +809,819 @@ tasks:
     min_bc_version: 15
   CG-AL-M088:
     group: build-from-spec
-    facets: [codeunit, decimal-precision, exact-total, inclusive-boundary]
+    facets: [codeunit, decimal-precision, enum, exact-total, inclusive-boundary]
     min_bc_version: 15
   CG-AL-M112:
     group: build-from-spec
-    facets: [error-flow, exact-total, flowfield, flowfield-sift, keys, table, validation-trigger]
+    facets: [error-flow, exact-total, flowfield, flowfield-sift, keys, table, table-relation, validation-trigger]
     min_bc_version: 15
   CG-AL-X001:
     group: runtime-trap
-    facets: [event-binding, event-publisher]
+    facets: [codeunit, event-binding, event-publisher, event-subscriber]
     min_bc_version: 15
   CG-AL-X002:
     group: runtime-trap
-    facets: [commit-scope, error-flow, idempotent-rebuild, tryfunction-write-rollback]
+    facets: [codeunit, commit-scope, error-flow, idempotent-rebuild, tryfunction-write-rollback]
     min_bc_version: 15
   CG-AL-X003:
     group: runtime-trap
-    facets: []
+    facets: [codeunit]
     min_bc_version: 15
   CG-AL-X004:
     group: runtime-trap
-    facets: [exact-total, filter-key-semantics, idempotent-rebuild]
+    facets: [codeunit, exact-total, filter-key-semantics, idempotent-rebuild]
     min_bc_version: 15
   CG-AL-X005:
     group: runtime-trap
-    facets: [exact-total, inclusive-boundary]
+    facets: [codeunit, exact-total, inclusive-boundary]
     min_bc_version: 15
   CG-AL-X006:
     group: runtime-trap
-    facets: [exact-total, filter-key-semantics, table-relation, temporary-record]
+    facets: [codeunit, exact-total, filter-key-semantics, table-relation, temporary-record]
     min_bc_version: 15
   CG-AL-X007:
     group: runtime-trap
-    facets: [company-isolation, company-scope, exact-total, multi-company]
+    facets: [codeunit, company-isolation, company-scope, exact-total, multi-company]
     min_bc_version: 15
   CG-AL-X008:
     group: runtime-trap
-    facets: [commit-scope, exact-total]
+    facets: [codeunit, commit-scope, exact-total]
     min_bc_version: 15
   CG-AL-X009:
     group: runtime-trap
-    facets: [exact-total, validation-trigger]
+    facets: [codeunit, exact-total, table, validation-trigger]
     min_bc_version: 15
   CG-AL-X010:
     group: runtime-trap
-    facets: [exact-total]
+    facets: [codeunit, exact-total]
     min_bc_version: 15
   CG-AL-X011:
     group: runtime-trap
-    facets: [record-locking-concurrency]
+    facets: [codeunit, record-locking-concurrency]
     min_bc_version: 15
   CG-AL-X012:
     group: runtime-trap
-    facets: []
+    facets: [table, table-relation, validation-trigger]
     min_bc_version: 15
   CG-AL-X013:
     group: runtime-trap
-    facets: [inclusive-boundary]
+    facets: [codeunit, inclusive-boundary]
     min_bc_version: 15
   CG-AL-X014:
     group: runtime-trap
-    facets: [filter-key-semantics]
+    facets: [codeunit, filter-key-semantics]
     min_bc_version: 15
   CG-AL-X017:
     group: runtime-trap
-    facets: [exact-total]
+    facets: [codeunit, exact-total]
     min_bc_version: 15
   CG-AL-X018:
     group: runtime-trap
-    facets: [exact-total, filter-key-semantics]
+    facets: [codeunit, exact-total, filter-key-semantics]
     min_bc_version: 15
   CG-AL-X019:
     group: runtime-trap
-    facets: [exact-total, filter-key-semantics, record-locking-concurrency]
+    facets: [codeunit, exact-total, filter-key-semantics, record-locking-concurrency]
     min_bc_version: 15
   CG-AL-X022:
     group: runtime-trap
-    facets: [exact-total, xrec-trigger-state]
+    facets: [exact-total, table, xrec-trigger-state]
     min_bc_version: 15
   CG-AL-X024:
     group: runtime-trap
-    facets: [roundtrip-fidelity]
+    facets: [codeunit, roundtrip-fidelity, table]
     min_bc_version: 15
   CG-AL-X025:
     group: runtime-trap
-    facets: [exact-total, temporary-record, validation-trigger]
+    facets: [exact-total, table, temporary-record, validation-trigger]
     min_bc_version: 15
   CG-AL-X026:
     group: runtime-trap
-    facets: [exact-total, filter-key-semantics]
+    facets: [codeunit, exact-total, filter-key-semantics]
     min_bc_version: 15
   CG-AL-X027:
     group: runtime-trap
-    facets: [exact-total]
+    facets: [codeunit, exact-total]
     min_bc_version: 15
   CG-AL-X029:
     group: runtime-trap
-    facets: [roundtrip-fidelity, serialization-encoding]
+    facets: [codeunit, roundtrip-fidelity, serialization-encoding]
     min_bc_version: 15
   CG-AL-X030:
     group: runtime-trap
-    facets: []
+    facets: [codeunit]
     min_bc_version: 15
   CG-AL-X031:
     group: runtime-trap
-    facets: [exact-total]
+    facets: [codeunit, exact-total]
     min_bc_version: 15
   CG-AL-X033:
     group: runtime-trap
-    facets: [roundtrip-fidelity]
+    facets: [codeunit, roundtrip-fidelity, table]
     min_bc_version: 15
   CG-AL-X034:
     group: runtime-trap
-    facets: [culture-format-roundtrip, enum, recordref-reflection]
+    facets: [codeunit, culture-format-roundtrip, enum, recordref, recordref-reflection]
     min_bc_version: 15
   CG-AL-X035:
     group: runtime-trap
-    facets: [commit-scope, error-flow, tryfunction-write-rollback]
+    facets: [codeunit, commit-scope, error-flow, tryfunction-write-rollback]
     min_bc_version: 15
   CG-AL-X037:
     group: runtime-trap
-    facets: [commit-scope, error-flow, reversal-conservation, tryfunction-write-rollback]
+    facets: [codeunit, commit-scope, error-flow, reversal-conservation, tryfunction-write-rollback]
     min_bc_version: 15
   CG-AL-X040:
     group: runtime-trap
-    facets: [commit-scope, error-flow, reversal-conservation, tryfunction-write-rollback]
+    facets: [codeunit, commit-scope, error-flow, reversal-conservation, tryfunction-write-rollback]
     min_bc_version: 15
   CG-AL-X041:
     group: runtime-trap
-    facets: [commit-scope, error-flow, filter-key-semantics, reversal-conservation, tryfunction-write-rollback]
+    facets: [codeunit, commit-scope, error-flow, filter-key-semantics, reversal-conservation, tryfunction-write-rollback]
     min_bc_version: 15
   CG-AL-X043:
     group: runtime-trap
-    facets: [event-binding, event-subscriber, roundtrip-fidelity, table-extension]
+    facets: [event-binding, event-subscriber, roundtrip-fidelity, table, table-extension]
     min_bc_version: 15
   CG-AL-X044:
     group: runtime-trap
-    facets: [factbox, filter-key-semantics, recordref-reflection, roundtrip-fidelity]
+    facets: [codeunit, factbox, filter-key-semantics, recordref-reflection, roundtrip-fidelity, table]
     min_bc_version: 15
   CG-AL-X045:
     group: runtime-trap
-    facets: [exact-total, validation-trigger]
+    facets: [codeunit, exact-total, table, validation-trigger]
     min_bc_version: 15
   CG-AL-X046:
     group: runtime-trap
-    facets: [roundtrip-fidelity]
+    facets: [codeunit, roundtrip-fidelity, table, validation-trigger]
     min_bc_version: 15
   CG-AL-X047:
     group: runtime-trap
-    facets: [temporary-record]
+    facets: [codeunit, temporary-record]
     min_bc_version: 15
   CG-AL-X050:
     group: runtime-trap
-    facets: [exact-total, filter-key-semantics]
+    facets: [codeunit, exact-total, filter-key-semantics, table]
     min_bc_version: 15
   CG-AL-X051:
     group: runtime-trap
-    facets: [exact-total, flowfield, flowfield-sift, flowfilter]
+    facets: [codeunit, exact-total, flowfield, flowfield-sift, flowfilter]
     min_bc_version: 15
   CG-AL-X052:
     group: runtime-trap
-    facets: [exact-total, validation-trigger]
+    facets: [codeunit, exact-total, table, validation-trigger]
     min_bc_version: 15
   CG-AL-X055:
     group: runtime-trap
-    facets: [inclusive-boundary]
+    facets: [codeunit, inclusive-boundary]
     min_bc_version: 15
   CG-AL-X056:
     group: runtime-trap
-    facets: [error-flow, json, serialization-encoding]
+    facets: [codeunit, error-flow, json, serialization-encoding]
     min_bc_version: 15
   CG-AL-X057:
     group: runtime-trap
-    facets: [error-flow, inclusive-boundary]
+    facets: [codeunit, error-flow, inclusive-boundary]
     min_bc_version: 15
   CG-AL-X058:
     group: runtime-trap
-    facets: [exact-total, filter-key-semantics]
+    facets: [codeunit, exact-total, filter-key-semantics, table]
     min_bc_version: 15
   CG-AL-X059:
     group: runtime-trap
-    facets: [error-flow]
+    facets: [codeunit, error-flow, table]
     min_bc_version: 15
   CG-AL-X060:
     group: runtime-trap
-    facets: [bounded-sql-cost, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X061:
     group: runtime-trap
-    facets: [exact-total, flowfield, flowfield-sift]
+    facets: [codeunit, exact-total, flowfield, flowfield-sift]
     min_bc_version: 15
   CG-AL-X062:
     group: runtime-trap
-    facets: [event-binding, event-subscriber, exact-total]
+    facets: [codeunit, event-binding, event-subscriber, exact-total]
     min_bc_version: 15
   CG-AL-X063:
     group: runtime-trap
-    facets: [error-flow, fieldref, recordref, recordref-reflection]
+    facets: [codeunit, error-flow, fieldref, recordref, recordref-reflection]
     min_bc_version: 15
   CG-AL-X064:
     group: runtime-trap
-    facets: [error-flow, exact-total]
+    facets: [codeunit, error-flow, exact-total]
     min_bc_version: 15
   CG-AL-X065:
     group: diagnose-single
-    facets: [exact-total, filter-key-semantics]
+    facets: [codeunit, exact-total, filter-key-semantics]
     min_bc_version: 15
   CG-AL-X066:
     group: diagnose-single
-    facets: [decimal-precision, exact-total]
+    facets: [codeunit, decimal-precision, exact-total]
     min_bc_version: 15
   CG-AL-X067:
     group: diagnose-single
-    facets: [event-binding, event-subscriber, exact-total]
+    facets: [codeunit, event-binding, event-subscriber, exact-total]
     min_bc_version: 15
   CG-AL-X068:
     group: diagnose-single
-    facets: [exact-total, filter-group-state]
+    facets: [codeunit, exact-total, filter-group-state, table]
     min_bc_version: 15
   CG-AL-X069:
     group: diagnose-single
-    facets: [bounded-sql-cost, inclusive-boundary, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, inclusive-boundary, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X070:
     group: diagnose-single
-    facets: [commit-scope, error-flow, idempotent-rebuild]
+    facets: [codeunit, commit-scope, error-flow, idempotent-rebuild, table]
     min_bc_version: 15
   CG-AL-X071:
     group: diagnose-single
-    facets: [error-flow, event-subscriber, flowfield, flowfield-sift, inclusive-boundary]
+    facets: [codeunit, error-flow, event-subscriber, flowfield, flowfield-sift, inclusive-boundary]
     min_bc_version: 15
   CG-AL-X072:
     group: diagnose-single
-    facets: [event-order, event-subscriber, inclusive-boundary]
+    facets: [codeunit, event-order, event-subscriber, inclusive-boundary, table]
     min_bc_version: 15
   CG-AL-X073:
     group: diagnose-single
-    facets: [exact-total, table-relation]
+    facets: [codeunit, exact-total, table-relation]
     min_bc_version: 15
   CG-AL-X074:
     group: diagnose-single
-    facets: [exact-total, filter-key-semantics]
+    facets: [codeunit, exact-total, filter-key-semantics, table]
     min_bc_version: 15
   CG-AL-X075:
     group: diagnose-single
-    facets: [exact-total, filter-key-semantics]
+    facets: [codeunit, exact-total, filter-key-semantics]
     min_bc_version: 15
   CG-AL-X076:
     group: diagnose-single
-    facets: [error-flow, exact-total, tryfunction-write-rollback]
+    facets: [codeunit, error-flow, exact-total, table, tryfunction-write-rollback]
     min_bc_version: 15
   CG-AL-X077:
     group: diagnose-single
-    facets: [exact-total, inclusive-boundary, temporary-record]
+    facets: [codeunit, exact-total, inclusive-boundary, temporary-record]
     min_bc_version: 15
   CG-AL-X078:
     group: diagnose-single
-    facets: [exact-total, idempotent-rebuild, temporary-record]
+    facets: [codeunit, exact-total, idempotent-rebuild, temporary-record]
     min_bc_version: 15
   CG-AL-X079:
     group: diagnose-single
-    facets: [decimal-precision, exact-total, largest-remainder-allocation]
+    facets: [codeunit, decimal-precision, exact-total, largest-remainder-allocation, table]
     min_bc_version: 15
   CG-AL-X080:
     group: diagnose-single
-    facets: [enum, roundtrip-fidelity, serialization-encoding]
+    facets: [codeunit, enum, recordref, roundtrip-fidelity, serialization-encoding]
     min_bc_version: 15
   CG-AL-X081:
     group: diagnose-single
-    facets: [event-binding, event-subscriber, validation-trigger]
+    facets: [codeunit, event-binding, event-subscriber, table, validation-trigger]
     min_bc_version: 15
   CG-AL-X082:
     group: diagnose-single
-    facets: [error-flow]
+    facets: [codeunit, error-flow]
     min_bc_version: 15
   CG-AL-X083:
     group: diagnose-single
-    facets: [serialization-encoding, xml]
+    facets: [codeunit, serialization-encoding, table, xml]
     min_bc_version: 15
   CG-AL-X084:
     group: diagnose-single
-    facets: [bounded-sql-cost, flowfield-sift, idempotent-rebuild, sql-cost-scaling, temporary-record]
+    facets: [bounded-sql-cost, codeunit, flowfield-sift, idempotent-rebuild, sql-cost-scaling, table, temporary-record]
     min_bc_version: 15
   CG-AL-X085:
     group: diagnose-single
-    facets: [commit-scope, error-flow]
+    facets: [codeunit, commit-scope, error-flow, table]
     min_bc_version: 15
   CG-AL-X086:
     group: diagnose-single
-    facets: [error-flow]
+    facets: [codeunit, error-flow]
     min_bc_version: 15
   CG-AL-X087:
     group: diagnose-single
-    facets: [event-binding, event-order, event-subscriber]
+    facets: [codeunit, event-binding, event-order, event-subscriber]
     min_bc_version: 15
   CG-AL-X088:
     group: diagnose-single
-    facets: [filter-key-semantics]
+    facets: [codeunit, filter-key-semantics]
     min_bc_version: 15
   CG-AL-X089:
     group: diagnose-single
-    facets: [bounded-sql-cost, exact-total, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, exact-total, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X090:
     group: diagnose-single
-    facets: [bounded-sql-cost, exact-total, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, exact-total, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X091:
     group: diagnose-single
-    facets: [bounded-sql-cost, single-instance-state]
+    facets: [bounded-sql-cost, codeunit, single-instance-state]
     min_bc_version: 15
   CG-AL-X092:
     group: diagnose-single
-    facets: [culture-format-roundtrip, roundtrip-fidelity, serialization-encoding]
+    facets: [codeunit, culture-format-roundtrip, roundtrip-fidelity, serialization-encoding]
     min_bc_version: 15
   CG-AL-X093:
     group: diagnose-single
-    facets: [culture-format-roundtrip, json, roundtrip-fidelity, serialization-encoding]
+    facets: [codeunit, culture-format-roundtrip, json, roundtrip-fidelity, serialization-encoding, table]
     min_bc_version: 15
   CG-AL-X094:
     group: diagnose-single
-    facets: [event-binding, event-publisher, event-subscriber]
+    facets: [codeunit, event-publisher, event-subscriber]
     min_bc_version: 15
   CG-AL-X095:
     group: diagnose-single
-    facets: [permission-check, test-permissions]
+    facets: [codeunit, permission-check, test-permissions]
     min_bc_version: 15
   CG-AL-X096:
     group: diagnose-single
-    facets: [culture-format-roundtrip, error-flow, json, roundtrip-fidelity, serialization-encoding]
+    facets: [codeunit, culture-format-roundtrip, error-flow, interface, json, roundtrip-fidelity, serialization-encoding, table, web-service]
     min_bc_version: 15
   CG-AL-X097:
     group: diagnose-single
-    facets: [exact-total, inclusive-boundary, largest-remainder-allocation, temporary-record]
+    facets: [codeunit, exact-total, inclusive-boundary, largest-remainder-allocation, table, temporary-record]
     min_bc_version: 15
   CG-AL-X098:
     group: diagnose-single
-    facets: [event-binding, event-order, event-subscriber, validation-trigger]
+    facets: [codeunit, event-binding, event-order, event-subscriber, table, validation-trigger]
     min_bc_version: 15
   CG-AL-X099:
     group: diagnose-single
-    facets: [bounded-sql-cost, exact-total, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, exact-total, flowfield, query, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X100:
     group: diagnose-single
-    facets: [error-flow, exact-total, idempotent-rebuild]
+    facets: [codeunit, error-flow, exact-total, idempotent-rebuild]
     min_bc_version: 15
   CG-AL-X101:
     group: diagnose-single
-    facets: [exact-total, filter-key-semantics]
+    facets: [codeunit, exact-total, filter-key-semantics]
     min_bc_version: 15
   CG-AL-X102:
     group: diagnose-single
-    facets: [temporary-record, temporary-table]
+    facets: [codeunit, temporary-record, temporary-table]
     min_bc_version: 15
   CG-AL-X103:
     group: diagnose-single
-    facets: [error-flow]
+    facets: [codeunit, error-flow]
     min_bc_version: 15
   CG-AL-X104:
     group: diagnose-single
-    facets: [error-flow, json, serialization-encoding]
+    facets: [codeunit, error-flow, json, serialization-encoding, table]
     min_bc_version: 15
   CG-AL-X105:
     group: diagnose-single
-    facets: [filter-key-semantics]
+    facets: [codeunit, filter-key-semantics, table]
     min_bc_version: 15
   CG-AL-X106:
     group: diagnose-single
-    facets: [event-binding, event-order, event-subscriber]
+    facets: [codeunit, event-binding, event-order, event-subscriber]
     min_bc_version: 15
   CG-AL-X107:
     group: diagnose-single
-    facets: [event-binding, event-order, event-subscriber]
+    facets: [codeunit, event-binding, event-order, event-subscriber, table]
     min_bc_version: 15
   CG-AL-X108:
     group: diagnose-single
-    facets: [bounded-sql-cost, single-instance, single-instance-state]
+    facets: [bounded-sql-cost, codeunit, single-instance, single-instance-state]
     min_bc_version: 15
   CG-AL-X109:
     group: diagnose-single
-    facets: [bounded-sql-cost, filter-key-semantics, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, filter-key-semantics, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X110:
     group: diagnose-single
-    facets: [filter-key-semantics, idempotent-rebuild]
+    facets: [codeunit, filter-key-semantics, idempotent-rebuild]
     min_bc_version: 15
   CG-AL-X111:
     group: diagnose-single
-    facets: [bounded-sql-cost, exact-total, flowfield-sift, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, exact-total, flowfield-sift, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X112:
     group: diagnose-single
-    facets: [bounded-sql-cost, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X113:
     group: diagnose-single
-    facets: [bounded-sql-cost, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X114:
     group: diagnose-single
-    facets: [inclusive-boundary]
+    facets: [codeunit, inclusive-boundary]
     min_bc_version: 15
   CG-AL-X115:
     group: diagnose-single
-    facets: [inclusive-boundary]
+    facets: [codeunit, inclusive-boundary]
     min_bc_version: 15
   CG-AL-X116:
     group: diagnose-single
-    facets: [culture-format-roundtrip, decimal-precision, error-flow, inclusive-boundary]
+    facets: [codeunit, culture-format-roundtrip, decimal-precision, error-flow, inclusive-boundary]
     min_bc_version: 15
   CG-AL-X117:
     group: diagnose-single
-    facets: [culture-format-roundtrip, roundtrip-fidelity, serialization-encoding, xml]
+    facets: [codeunit, culture-format-roundtrip, roundtrip-fidelity, serialization-encoding, xml]
     min_bc_version: 15
   CG-AL-X118:
     group: diagnose-single
-    facets: [decimal-precision, exact-total, validation-trigger]
+    facets: [codeunit, decimal-precision, exact-total, table, validation-trigger]
     min_bc_version: 15
   CG-AL-X119:
     group: diagnose-single
-    facets: [roundtrip-fidelity]
+    facets: [codeunit, roundtrip-fidelity]
     min_bc_version: 15
   CG-AL-X120:
     group: diagnose-single
-    facets: [idempotent-rebuild]
+    facets: [codeunit, idempotent-rebuild, table]
     min_bc_version: 15
   CG-AL-X121:
     group: diagnose-single
-    facets: [idempotent-rebuild, validation-trigger]
+    facets: [codeunit, idempotent-rebuild, table, validation-trigger]
     min_bc_version: 15
   CG-AL-X122:
     group: diagnose-single
-    facets: [event-binding, event-subscriber]
+    facets: [codeunit, event-binding, event-subscriber]
     min_bc_version: 15
   CG-AL-X123:
     group: diagnose-single
-    facets: [bounded-sql-cost, exact-total, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, exact-total, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X124:
     group: diagnose-single
-    facets: [bounded-sql-cost, exact-total, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, exact-total, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X125:
     group: diagnose-single
-    facets: [inclusive-boundary]
+    facets: [codeunit, inclusive-boundary, table]
     min_bc_version: 15
   CG-AL-X126:
     group: diagnose-single
-    facets: [decimal-precision, inclusive-boundary]
+    facets: [codeunit, decimal-precision, inclusive-boundary]
     min_bc_version: 15
   CG-AL-X127:
     group: diagnose-single
-    facets: [company-isolation, company-scope, multi-company]
+    facets: [codeunit, company-isolation, company-scope, multi-company]
     min_bc_version: 15
   CG-AL-X128:
     group: diagnose-single
-    facets: [company-isolation, company-scope, multi-company]
+    facets: [codeunit, company-isolation, company-scope, multi-company, table]
     min_bc_version: 15
   CG-AL-X129:
     group: diagnose-single
-    facets: [decimal-precision, error-flow, exact-total]
+    facets: [codeunit, decimal-precision, error-flow, exact-total, table]
     min_bc_version: 15
   CG-AL-X130:
     group: diagnose-single
-    facets: []
+    facets: [codeunit]
     min_bc_version: 15
   CG-AL-X131:
     group: diagnose-single
-    facets: [collectible-errors, error-flow]
+    facets: [codeunit, collectible-errors, error-flow]
     min_bc_version: 15
   CG-AL-X132:
     group: diagnose-single
-    facets: [error-flow, temporary-record]
+    facets: [codeunit, error-flow, temporary-record]
     min_bc_version: 15
   CG-AL-X133:
     group: diagnose-single
-    facets: [bounded-sql-cost, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X134:
     group: diagnose-single
-    facets: [bounded-sql-cost, filter-key-semantics, flowfield-sift, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, filter-key-semantics, flowfield-sift, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X135:
     group: diagnose-single
-    facets: [error-flow]
+    facets: [codeunit, error-flow]
     min_bc_version: 15
   CG-AL-X136:
     group: diagnose-single
-    facets: [inclusive-boundary]
+    facets: [codeunit, inclusive-boundary, table]
     min_bc_version: 15
   CG-AL-X137:
     group: diagnose-single
-    facets: [error-flow, idempotent-rebuild, tryfunction-write-rollback]
+    facets: [codeunit, error-flow, idempotent-rebuild, tryfunction-write-rollback]
     min_bc_version: 15
   CG-AL-X138:
     group: diagnose-single
-    facets: [roundtrip-fidelity]
+    facets: [codeunit, roundtrip-fidelity, table]
     min_bc_version: 15
   CG-AL-X139:
     group: diagnose-single
-    facets: [exact-total, reversal-conservation]
+    facets: [codeunit, exact-total, reversal-conservation]
     min_bc_version: 15
   CG-AL-X140:
     group: diagnose-single
-    facets: [decimal-precision, exact-total, largest-remainder-allocation]
+    facets: [codeunit, decimal-precision, exact-total, largest-remainder-allocation, table]
     min_bc_version: 15
   CG-AL-X141:
     group: diagnose-single
-    facets: [exact-total, filter-key-semantics, idempotent-rebuild]
+    facets: [codeunit, enum, exact-total, filter-key-semantics, idempotent-rebuild, table]
     min_bc_version: 15
   CG-AL-X142:
     group: diagnose-single
-    facets: [decimal-precision, exact-total, largest-remainder-allocation]
+    facets: [codeunit, decimal-precision, exact-total, largest-remainder-allocation, table]
     min_bc_version: 15
   CG-AL-X143:
     group: diagnose-single
-    facets: [bounded-sql-cost, filter-key-semantics, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, filter-key-semantics, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X144:
     group: diagnose-single
-    facets: [collectible-errors, error-flow]
+    facets: [codeunit, collectible-errors, error-flow, table]
     min_bc_version: 15
   CG-AL-X145:
     group: diagnose-single
-    facets: [event-subscriber, exact-total, reversal-conservation]
+    facets: [codeunit, event-subscriber, exact-total, reversal-conservation]
     min_bc_version: 15
   CG-AL-X146:
     group: diagnose-single
-    facets: [decimal-precision, exact-total, largest-remainder-allocation]
+    facets: [codeunit, decimal-precision, exact-total, largest-remainder-allocation, table]
     min_bc_version: 15
   CG-AL-X147:
     group: diagnose-single
-    facets: [filter-key-semantics]
+    facets: [codeunit, filter-key-semantics]
     min_bc_version: 15
   CG-AL-X148:
     group: diagnose-single
-    facets: [roundtrip-fidelity]
+    facets: [codeunit, roundtrip-fidelity, table]
     min_bc_version: 15
   CG-AL-X149:
     group: diagnose-single
-    facets: [decimal-precision, error-flow, exact-total]
+    facets: [codeunit, decimal-precision, error-flow, exact-total]
     min_bc_version: 15
   CG-AL-X150:
     group: diagnose-single
-    facets: [decimal-precision, exact-total, largest-remainder-allocation]
+    facets: [codeunit, decimal-precision, exact-total, largest-remainder-allocation, table]
     min_bc_version: 15
   CG-AL-X151:
     group: diagnose-single
-    facets: [single-instance-state]
+    facets: [codeunit, single-instance-state, table]
     min_bc_version: 15
   CG-AL-X152:
     group: diagnose-single
-    facets: [error-flow, roundtrip-fidelity, serialization-encoding]
+    facets: [codeunit, error-flow, roundtrip-fidelity, serialization-encoding]
     min_bc_version: 15
   CG-AL-X153:
     group: diagnose-single
-    facets: [bounded-sql-cost, filter-key-semantics, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, filter-key-semantics, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X154:
     group: diagnose-single
-    facets: [company-isolation, company-scope, multi-company, single-instance-state]
+    facets: [codeunit, company-isolation, company-scope, multi-company, single-instance-state, table]
     min_bc_version: 15
   CG-AL-X155:
     group: diagnose-single
-    facets: [enum, keys, table]
+    facets: [codeunit, enum, keys, table]
     min_bc_version: 15
   CG-AL-X156:
     group: diagnose-single
-    facets: [error-flow]
+    facets: [codeunit, enum, error-flow, table]
     min_bc_version: 15
   CG-AL-X157:
     group: diagnose-single
-    facets: [exact-total, flowfield, flowfield-sift, inclusive-boundary]
+    facets: [codeunit, exact-total, flowfield, flowfield-sift, inclusive-boundary, table]
     min_bc_version: 15
   CG-AL-X158:
     group: diagnose-single
-    facets: [inclusive-boundary]
+    facets: [codeunit, inclusive-boundary, table]
     min_bc_version: 15
   CG-AL-X159:
     group: diagnose-single
-    facets: [bounded-sql-cost, company-scope, multi-company, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, company-scope, multi-company, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X160:
     group: diagnose-single
-    facets: [error-flow, inclusive-boundary, reversal-conservation]
+    facets: [codeunit, enum, error-flow, inclusive-boundary, reversal-conservation, table]
     min_bc_version: 15
   CG-AL-X161:
     group: diagnose-single
-    facets: [error-flow, filter-key-semantics, inclusive-boundary]
+    facets: [codeunit, enum, error-flow, filter-key-semantics, inclusive-boundary, interface, table]
     min_bc_version: 15
   CG-AL-X162:
     group: diagnose-single
-    facets: [company-isolation, company-scope, idempotent-rebuild, multi-company]
+    facets: [codeunit, company-isolation, company-scope, idempotent-rebuild, multi-company, table]
     min_bc_version: 15
   CG-AL-X163:
     group: diagnose-single
-    facets: [company-isolation, company-scope, exact-total, multi-company]
+    facets: [codeunit, company-isolation, company-scope, exact-total, multi-company, table]
     min_bc_version: 15
   CG-AL-X164:
     group: diagnose-single
-    facets: [error-flow, permission-check, test-permissions]
+    facets: [codeunit, error-flow, permission-check, test-permissions]
     min_bc_version: 15
   CG-AL-X165:
     group: diagnose-single
-    facets: [bounded-sql-cost, idempotent-rebuild, sql-cost-scaling, temporary-record]
+    facets: [bounded-sql-cost, codeunit, idempotent-rebuild, sql-cost-scaling, table, temporary-record]
     min_bc_version: 15
   CG-AL-X166:
     group: diagnose-single
-    facets: [bounded-sql-cost, idempotent-rebuild, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, idempotent-rebuild, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X167:
     group: diagnose-single
-    facets: [bounded-sql-cost, idempotent-rebuild, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, idempotent-rebuild, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X168:
     group: diagnose-single
-    facets: [bounded-sql-cost, idempotent-rebuild, sql-cost-scaling, temporary-record]
+    facets: [bounded-sql-cost, codeunit, idempotent-rebuild, sql-cost-scaling, table, temporary-record]
     min_bc_version: 15
   CG-AL-X169:
     group: diagnose-single
-    facets: [bounded-sql-cost, decimal-precision, idempotent-rebuild, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, decimal-precision, idempotent-rebuild, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X170:
     group: diagnose-single
-    facets: [decimal-precision, exact-total, largest-remainder-allocation, reversal-conservation]
+    facets: [codeunit, decimal-precision, exact-total, largest-remainder-allocation, reversal-conservation, table]
     min_bc_version: 15
   CG-AL-X171:
     group: diagnose-single
-    facets: [decimal-precision, exact-total, idempotent-rebuild, largest-remainder-allocation]
+    facets: [codeunit, decimal-precision, exact-total, idempotent-rebuild, largest-remainder-allocation, table]
     min_bc_version: 15
   CG-AL-X172:
     group: diagnose-single
-    facets: [decimal-precision, exact-total, largest-remainder-allocation]
+    facets: [codeunit, decimal-precision, exact-total, largest-remainder-allocation, table]
     min_bc_version: 15
   CG-AL-X173:
     group: diagnose-single
-    facets: [bounded-sql-cost, idempotent-rebuild, sql-cost-scaling]
+    facets: [bounded-sql-cost, codeunit, idempotent-rebuild, sql-cost-scaling, table]
     min_bc_version: 15
   CG-AL-X174:
     group: diagnose-single
-    facets: [company-isolation, decimal-precision, exact-total, largest-remainder-allocation, multi-company]
+    facets: [codeunit, company-isolation, decimal-precision, exact-total, largest-remainder-allocation, multi-company, table]
     min_bc_version: 15
   CG-AL-X185:
     group: diagnose-composite
     donors: [CG-AL-X092, CG-AL-X076, CG-AL-X114, CG-AL-X162]
-    derived_facets: [company-isolation, company-scope, culture-format-roundtrip, error-flow, exact-total, idempotent-rebuild, inclusive-boundary, multi-company, roundtrip-fidelity, serialization-encoding, tryfunction-write-rollback]
+    derived_facets: [codeunit, company-isolation, company-scope, culture-format-roundtrip, error-flow, exact-total, idempotent-rebuild, inclusive-boundary, multi-company, roundtrip-fidelity, serialization-encoding, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X187:
     group: diagnose-composite
     donors: [CG-AL-X115, CG-AL-X140, CG-AL-X104, CG-AL-X163]
-    derived_facets: [company-isolation, company-scope, decimal-precision, error-flow, exact-total, inclusive-boundary, json, largest-remainder-allocation, multi-company, serialization-encoding]
+    derived_facets: [codeunit, company-isolation, company-scope, decimal-precision, error-flow, exact-total, inclusive-boundary, json, largest-remainder-allocation, multi-company, serialization-encoding, table]
     local_facets: []
     min_bc_version: 15
   CG-AL-X194:
     group: diagnose-composite
     donors: [CG-AL-X083, CG-AL-X077, CG-AL-X070, CG-AL-X074]
-    derived_facets: [commit-scope, error-flow, exact-total, filter-key-semantics, idempotent-rebuild, inclusive-boundary, serialization-encoding, temporary-record, xml]
+    derived_facets: [codeunit, commit-scope, error-flow, exact-total, filter-key-semantics, idempotent-rebuild, inclusive-boundary, serialization-encoding, table, temporary-record, xml]
     local_facets: []
     min_bc_version: 15
   CG-AL-X211:
     group: diagnose-composite
     donors: [CG-AL-X076, CG-AL-X115, CG-AL-X150, CG-AL-X162]
-    derived_facets: [company-isolation, company-scope, decimal-precision, error-flow, exact-total, idempotent-rebuild, inclusive-boundary, largest-remainder-allocation, multi-company, tryfunction-write-rollback]
+    derived_facets: [codeunit, company-isolation, company-scope, decimal-precision, error-flow, exact-total, idempotent-rebuild, inclusive-boundary, largest-remainder-allocation, multi-company, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X214:
     group: diagnose-composite
     donors: [CG-AL-X106, CG-AL-X110, CG-AL-X127, CG-AL-X140]
-    derived_facets: [company-isolation, company-scope, decimal-precision, event-binding, event-order, event-subscriber, exact-total, filter-key-semantics, idempotent-rebuild, largest-remainder-allocation, multi-company]
+    derived_facets: [codeunit, company-isolation, company-scope, decimal-precision, event-binding, event-order, event-subscriber, exact-total, filter-key-semantics, idempotent-rebuild, largest-remainder-allocation, multi-company, table]
     local_facets: []
     min_bc_version: 15
   CG-AL-X218:
     group: diagnose-composite
     donors: [CG-AL-X081, CG-AL-X121, CG-AL-X140, CG-AL-X151]
-    derived_facets: [decimal-precision, event-binding, event-subscriber, exact-total, idempotent-rebuild, largest-remainder-allocation, single-instance-state, validation-trigger]
+    derived_facets: [codeunit, decimal-precision, event-binding, event-subscriber, exact-total, idempotent-rebuild, largest-remainder-allocation, single-instance-state, table, validation-trigger]
     local_facets: []
     min_bc_version: 15
   CG-AL-X234:
     group: diagnose-composite
     donors: [CG-AL-X072, CG-AL-X076, CG-AL-X140, CG-AL-X163]
-    derived_facets: [company-isolation, company-scope, decimal-precision, error-flow, event-order, event-subscriber, exact-total, inclusive-boundary, largest-remainder-allocation, multi-company, tryfunction-write-rollback]
+    derived_facets: [codeunit, company-isolation, company-scope, decimal-precision, error-flow, event-order, event-subscriber, exact-total, inclusive-boundary, largest-remainder-allocation, multi-company, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X239:
     group: diagnose-composite
     donors: [CG-AL-X128, CG-AL-X137, CG-AL-X140, CG-AL-X147, CG-AL-X157]
-    derived_facets: [company-isolation, company-scope, decimal-precision, error-flow, exact-total, filter-key-semantics, flowfield, flowfield-sift, idempotent-rebuild, inclusive-boundary, largest-remainder-allocation, multi-company, tryfunction-write-rollback]
+    derived_facets: [codeunit, company-isolation, company-scope, decimal-precision, error-flow, exact-total, filter-key-semantics, flowfield, flowfield-sift, idempotent-rebuild, inclusive-boundary, largest-remainder-allocation, multi-company, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X244:
     group: diagnose-composite
     donors: [CG-AL-X073, CG-AL-X081, CG-AL-X083, CG-AL-X140, CG-AL-X151]
-    derived_facets: [decimal-precision, event-binding, event-subscriber, exact-total, largest-remainder-allocation, serialization-encoding, single-instance-state, table-relation, validation-trigger, xml]
+    derived_facets: [codeunit, decimal-precision, event-binding, event-subscriber, exact-total, largest-remainder-allocation, serialization-encoding, single-instance-state, table, table-relation, validation-trigger, xml]
     local_facets: []
     min_bc_version: 15
   CG-AL-X245:
     group: diagnose-composite
     donors: [CG-AL-X076, CG-AL-X106, CG-AL-X116, CG-AL-X118, CG-AL-X157]
-    derived_facets: [culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, tryfunction-write-rollback, validation-trigger]
+    derived_facets: [codeunit, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, table, tryfunction-write-rollback, validation-trigger]
     local_facets: []
     min_bc_version: 15
   CG-AL-X248:
     group: diagnose-composite
     donors: [CG-AL-X076, CG-AL-X081, CG-AL-X116, CG-AL-X118, CG-AL-X157]
-    derived_facets: [culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, tryfunction-write-rollback, validation-trigger]
+    derived_facets: [codeunit, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, table, tryfunction-write-rollback, validation-trigger]
     local_facets: []
     min_bc_version: 15
   CG-AL-X249:
     group: diagnose-composite
     donors: [CG-AL-X106, CG-AL-X114, CG-AL-X140, CG-AL-X152, CG-AL-X157]
-    derived_facets: [decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, largest-remainder-allocation, roundtrip-fidelity, serialization-encoding]
+    derived_facets: [codeunit, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, largest-remainder-allocation, roundtrip-fidelity, serialization-encoding, table]
     local_facets: []
     min_bc_version: 15
   CG-AL-X254:
     group: diagnose-composite
     donors: [CG-AL-X072, CG-AL-X076, CG-AL-X083, CG-AL-X118, CG-AL-X132, CG-AL-X160]
-    derived_facets: [decimal-precision, error-flow, event-order, event-subscriber, exact-total, inclusive-boundary, reversal-conservation, serialization-encoding, temporary-record, tryfunction-write-rollback, validation-trigger, xml]
+    derived_facets: [codeunit, decimal-precision, enum, error-flow, event-order, event-subscriber, exact-total, inclusive-boundary, reversal-conservation, serialization-encoding, table, temporary-record, tryfunction-write-rollback, validation-trigger, xml]
     local_facets: []
     min_bc_version: 15
   CG-AL-X257:
     group: diagnose-composite
     donors: [CG-AL-X067, CG-AL-X086, CG-AL-X092, CG-AL-X130, CG-AL-X131, CG-AL-X140]
-    derived_facets: [collectible-errors, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, largest-remainder-allocation, roundtrip-fidelity, serialization-encoding]
+    derived_facets: [codeunit, collectible-errors, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, largest-remainder-allocation, roundtrip-fidelity, serialization-encoding, table]
     local_facets: []
     min_bc_version: 15
   CG-AL-X263:
     group: diagnose-composite
     donors: [CG-AL-X076, CG-AL-X092, CG-AL-X107, CG-AL-X126, CG-AL-X127, CG-AL-X150]
-    derived_facets: [company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, inclusive-boundary, largest-remainder-allocation, multi-company, roundtrip-fidelity, serialization-encoding, tryfunction-write-rollback]
+    derived_facets: [codeunit, company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, inclusive-boundary, largest-remainder-allocation, multi-company, roundtrip-fidelity, serialization-encoding, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X264:
     group: diagnose-composite
     donors: [CG-AL-X066, CG-AL-X067, CG-AL-X074, CG-AL-X076, CG-AL-X092, CG-AL-X128]
-    derived_facets: [company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, filter-key-semantics, multi-company, roundtrip-fidelity, serialization-encoding, tryfunction-write-rollback]
+    derived_facets: [codeunit, company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, filter-key-semantics, multi-company, roundtrip-fidelity, serialization-encoding, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X270:
     group: diagnose-composite
     donors: [CG-AL-X073, CG-AL-X076, CG-AL-X083, CG-AL-X087, CG-AL-X102, CG-AL-X137, CG-AL-X140, CG-AL-X157]
-    derived_facets: [decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, idempotent-rebuild, inclusive-boundary, largest-remainder-allocation, serialization-encoding, table-relation, temporary-record, temporary-table, tryfunction-write-rollback, xml]
+    derived_facets: [codeunit, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, idempotent-rebuild, inclusive-boundary, largest-remainder-allocation, serialization-encoding, table, table-relation, temporary-record, temporary-table, tryfunction-write-rollback, xml]
     local_facets: []
     min_bc_version: 15
   CG-AL-X271:
     group: diagnose-composite
     donors: [CG-AL-X067, CG-AL-X079, CG-AL-X085, CG-AL-X087, CG-AL-X092, CG-AL-X151, CG-AL-X157, CG-AL-X170]
-    derived_facets: [commit-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, largest-remainder-allocation, reversal-conservation, roundtrip-fidelity, serialization-encoding, single-instance-state]
+    derived_facets: [codeunit, commit-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, largest-remainder-allocation, reversal-conservation, roundtrip-fidelity, serialization-encoding, single-instance-state, table]
     local_facets: []
     min_bc_version: 15
   CG-AL-X272:
     group: diagnose-composite
     donors: [CG-AL-X066, CG-AL-X076, CG-AL-X105, CG-AL-X107, CG-AL-X116, CG-AL-X151, CG-AL-X152, CG-AL-X157]
-    derived_facets: [culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, filter-key-semantics, flowfield, flowfield-sift, inclusive-boundary, roundtrip-fidelity, serialization-encoding, single-instance-state, tryfunction-write-rollback]
+    derived_facets: [codeunit, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, filter-key-semantics, flowfield, flowfield-sift, inclusive-boundary, roundtrip-fidelity, serialization-encoding, single-instance-state, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X274:
     group: diagnose-composite
     donors: [CG-AL-X076, CG-AL-X087, CG-AL-X092, CG-AL-X103, CG-AL-X121, CG-AL-X127, CG-AL-X140, CG-AL-X162]
-    derived_facets: [company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, idempotent-rebuild, largest-remainder-allocation, multi-company, roundtrip-fidelity, serialization-encoding, tryfunction-write-rollback, validation-trigger]
+    derived_facets: [codeunit, company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, idempotent-rebuild, largest-remainder-allocation, multi-company, roundtrip-fidelity, serialization-encoding, table, tryfunction-write-rollback, validation-trigger]
     local_facets: []
     min_bc_version: 15
   CG-AL-X276:
     group: diagnose-composite
     donors: [CG-AL-X066, CG-AL-X075, CG-AL-X107, CG-AL-X110, CG-AL-X116, CG-AL-X148, CG-AL-X151, CG-AL-X163]
-    derived_facets: [company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, filter-key-semantics, idempotent-rebuild, inclusive-boundary, multi-company, roundtrip-fidelity, single-instance-state]
+    derived_facets: [codeunit, company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, filter-key-semantics, idempotent-rebuild, inclusive-boundary, multi-company, roundtrip-fidelity, single-instance-state, table]
     local_facets: []
     min_bc_version: 15
   CG-AL-X278:
     group: diagnose-composite
     donors: [CG-AL-X070, CG-AL-X075, CG-AL-X081, CG-AL-X093, CG-AL-X114, CG-AL-X140, CG-AL-X160, CG-AL-X163]
-    derived_facets: [commit-scope, company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, filter-key-semantics, idempotent-rebuild, inclusive-boundary, json, largest-remainder-allocation, multi-company, reversal-conservation, roundtrip-fidelity, serialization-encoding, validation-trigger]
+    derived_facets: [codeunit, commit-scope, company-isolation, company-scope, culture-format-roundtrip, decimal-precision, enum, error-flow, event-binding, event-subscriber, exact-total, filter-key-semantics, idempotent-rebuild, inclusive-boundary, json, largest-remainder-allocation, multi-company, reversal-conservation, roundtrip-fidelity, serialization-encoding, table, validation-trigger]
     local_facets: []
     min_bc_version: 15
   CG-AL-X283:
     group: diagnose-composite
     donors: [CG-AL-X076, CG-AL-X079, CG-AL-X087, CG-AL-X116, CG-AL-X127, CG-AL-X147, CG-AL-X152, CG-AL-X157]
-    derived_facets: [company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, filter-key-semantics, flowfield, flowfield-sift, inclusive-boundary, largest-remainder-allocation, multi-company, roundtrip-fidelity, serialization-encoding, tryfunction-write-rollback]
+    derived_facets: [codeunit, company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, filter-key-semantics, flowfield, flowfield-sift, inclusive-boundary, largest-remainder-allocation, multi-company, roundtrip-fidelity, serialization-encoding, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X289:
     group: diagnose-composite
     donors: [CG-AL-X074, CG-AL-X076, CG-AL-X116, CG-AL-X120, CG-AL-X140]
-    derived_facets: [culture-format-roundtrip, decimal-precision, error-flow, exact-total, filter-key-semantics, idempotent-rebuild, inclusive-boundary, largest-remainder-allocation, tryfunction-write-rollback]
+    derived_facets: [codeunit, culture-format-roundtrip, decimal-precision, error-flow, exact-total, filter-key-semantics, idempotent-rebuild, inclusive-boundary, largest-remainder-allocation, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X290:
     group: diagnose-composite
     donors: [CG-AL-X076, CG-AL-X083, CG-AL-X106, CG-AL-X138, CG-AL-X157]
-    derived_facets: [error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, roundtrip-fidelity, serialization-encoding, tryfunction-write-rollback, xml]
+    derived_facets: [codeunit, error-flow, event-binding, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, roundtrip-fidelity, serialization-encoding, table, tryfunction-write-rollback, xml]
     local_facets: []
     min_bc_version: 15
   CG-AL-X292:
     group: diagnose-composite
     donors: [CG-AL-X075, CG-AL-X076, CG-AL-X118, CG-AL-X154, CG-AL-X157]
-    derived_facets: [company-isolation, company-scope, decimal-precision, error-flow, exact-total, filter-key-semantics, flowfield, flowfield-sift, inclusive-boundary, multi-company, single-instance-state, tryfunction-write-rollback, validation-trigger]
+    derived_facets: [codeunit, company-isolation, company-scope, decimal-precision, error-flow, exact-total, filter-key-semantics, flowfield, flowfield-sift, inclusive-boundary, multi-company, single-instance-state, table, tryfunction-write-rollback, validation-trigger]
     local_facets: []
     min_bc_version: 15
   CG-AL-X293:
     group: diagnose-composite
     donors: [CG-AL-X076, CG-AL-X093, CG-AL-X106, CG-AL-X131, CG-AL-X140]
-    derived_facets: [collectible-errors, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, json, largest-remainder-allocation, roundtrip-fidelity, serialization-encoding, tryfunction-write-rollback]
+    derived_facets: [codeunit, collectible-errors, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-order, event-subscriber, exact-total, json, largest-remainder-allocation, roundtrip-fidelity, serialization-encoding, table, tryfunction-write-rollback]
     local_facets: []
     min_bc_version: 15
   CG-AL-X296:
     group: diagnose-composite
     donors: [CG-AL-X072, CG-AL-X079, CG-AL-X117, CG-AL-X157, CG-AL-X170]
-    derived_facets: [culture-format-roundtrip, decimal-precision, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, largest-remainder-allocation, reversal-conservation, roundtrip-fidelity, serialization-encoding, xml]
+    derived_facets: [codeunit, culture-format-roundtrip, decimal-precision, event-order, event-subscriber, exact-total, flowfield, flowfield-sift, inclusive-boundary, largest-remainder-allocation, reversal-conservation, roundtrip-fidelity, serialization-encoding, table, xml]
     local_facets: []
     min_bc_version: 15
   CG-AL-X298:
     group: diagnose-composite
     donors: [CG-AL-X067, CG-AL-X074, CG-AL-X116, CG-AL-X118, CG-AL-X163]
-    derived_facets: [company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, filter-key-semantics, inclusive-boundary, multi-company, validation-trigger]
+    derived_facets: [codeunit, company-isolation, company-scope, culture-format-roundtrip, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, filter-key-semantics, inclusive-boundary, multi-company, table, validation-trigger]
     local_facets: []
     min_bc_version: 15

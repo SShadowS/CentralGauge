@@ -438,7 +438,9 @@
   "CG-AL-X011": [
     "record-locking-concurrency"
   ],
-  "CG-AL-X012": [],
+  "CG-AL-X012": [
+    "validation-trigger"
+  ],
   "CG-AL-X013": [
     "inclusive-boundary"
   ],
@@ -529,7 +531,8 @@
     "validation-trigger"
   ],
   "CG-AL-X046": [
-    "roundtrip-fidelity"
+    "roundtrip-fidelity",
+    "validation-trigger"
   ],
   "CG-AL-X047": [
     "temporary-record"
@@ -709,9 +712,7 @@
     "roundtrip-fidelity",
     "serialization-encoding"
   ],
-  "CG-AL-X094": [
-    "event-binding"
-  ],
+  "CG-AL-X094": [],
   "CG-AL-X095": [
     "permission-check",
     "test-permissions"
