@@ -11,7 +11,14 @@ CREATE TABLE scoring_policies (
 ALTER TABLE task_sets ADD COLUMN scoring_policy_id INTEGER REFERENCES scoring_policies(id);
 
 CREATE TABLE taxonomy_revisions (
-  id              INTEGER PRIMARY KEY,
+  -- AUTOINCREMENT (not bare INTEGER PRIMARY KEY): applyRevision's crash
+  -- recovery path deletes a staged-but-never-verified revision and
+  -- re-stages under a fresh id (Task 4). Plain SQLite rowid reuse would
+  -- hand the freed id straight back to the next INSERT, defeating the
+  -- "this is provably a different write" guarantee callers rely on
+  -- (recoveredId !== crashedId). AUTOINCREMENT keeps ids monotonic via
+  -- sqlite_sequence even across deletes.
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   task_set_hash   TEXT NOT NULL REFERENCES task_sets(hash),
   schema_version  INTEGER NOT NULL,
   digest          TEXT NOT NULL,

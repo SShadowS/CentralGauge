@@ -2,8 +2,16 @@
 // the freeze-check + active-revision lookup needed by the admin endpoint's
 // v1/v2 branching (Task 2); Tasks 3-5 append the digest/apply/activate flow.
 
-import type { NormalizedCatalog } from "../shared/taxonomy-schema";
+import {
+  catalogDigest,
+  type FacetOrigin,
+  type FamilySlug,
+  type FormatSlug,
+  type NormalizedCatalog,
+} from "../shared/taxonomy-schema";
 import type { VerifiedKey } from "./signature";
+import { ApiError } from "./errors";
+import { appendAudit } from "./audit";
 
 export interface ActiveRevision {
   id: number;
@@ -157,4 +165,337 @@ export async function stageRevision(
   for (const batch of chunk(stmts)) await db.batch(batch);
 
   return { revisionId };
+}
+
+/**
+ * Delete a revision and every child row it owns, across all six FK-child
+ * tables (`taxonomy_task_donors`, `taxonomy_task_tags`,
+ * `taxonomy_revision_tasks`, `taxonomy_tags`, `taxonomy_families`,
+ * `taxonomy_groups`), then the revision row itself, in reverse FK order.
+ * Deliberately explicit rather than relying on `ON DELETE CASCADE`: the
+ * miniflare D1 test harness was directly probed and does cascade a bare
+ * `DELETE FROM taxonomy_revisions`, but production D1 is documented as
+ * NOT enforcing foreign keys by default (see the task-sets/[hash] DELETE
+ * handler's own note, and `reset-db.ts`'s leaves-first teardown, which
+ * assumes the same for every other table in this schema) - relying on
+ * cascade here would work in tests and silently orphan rows in
+ * production. `db.batch()` is atomic, so a mid-delete failure can't leave
+ * a partially-cleaned revision behind. Used by `applyRevision`'s two
+ * recovery paths: a crashed (staged but never verified) revision, and a
+ * staged revision that fails re-read verification.
+ */
+export async function deleteRevision(
+  db: D1Database,
+  rid: number,
+): Promise<void> {
+  await db.batch([
+    db
+      .prepare(`DELETE FROM taxonomy_task_donors WHERE revision_id = ?`)
+      .bind(rid),
+    db
+      .prepare(`DELETE FROM taxonomy_task_tags WHERE revision_id = ?`)
+      .bind(rid),
+    db
+      .prepare(`DELETE FROM taxonomy_revision_tasks WHERE revision_id = ?`)
+      .bind(rid),
+    db.prepare(`DELETE FROM taxonomy_tags WHERE revision_id = ?`).bind(rid),
+    db.prepare(`DELETE FROM taxonomy_families WHERE revision_id = ?`).bind(rid),
+    db.prepare(`DELETE FROM taxonomy_groups WHERE revision_id = ?`).bind(rid),
+    db.prepare(`DELETE FROM taxonomy_revisions WHERE id = ?`).bind(rid),
+  ]);
+}
+
+/**
+ * Rebuild a `NormalizedCatalog` from a staged revision's rows. Must
+ * reproduce exactly the shape and array order `normalizeCatalog` emits —
+ * canonical JSON sorts object keys (so `tasks`, being a `Record`, doesn't
+ * care about read order), but `groups`, `families`, `tags`, and each
+ * task's `facets`/`donors` are JSON arrays whose order feeds the digest
+ * directly. `groups`/`families`/`tags` sort by slug; each task's facets
+ * sort by slug; donors keep ordinal order — matching
+ * `normalizeCatalog`'s own sorts in `taxonomy-schema.ts`.
+ */
+export async function readRevisionNormalized(
+  db: D1Database,
+  rid: number,
+): Promise<NormalizedCatalog> {
+  const rev = await db
+    .prepare(`SELECT task_set_hash FROM taxonomy_revisions WHERE id = ?`)
+    .bind(rid)
+    .first<{ task_set_hash: string }>();
+  if (!rev) throw new ApiError(404, "no_revision", `revision ${rid}`);
+  const q = <T>(sql: string) =>
+    db
+      .prepare(sql)
+      .bind(rid)
+      .all<T>()
+      .then((r) => r.results ?? []);
+  const groups = await q<{
+    slug: FormatSlug;
+    name: string;
+    description: string;
+  }>(
+    `SELECT slug,name,description FROM taxonomy_groups WHERE revision_id=? ORDER BY slug`,
+  );
+  const families = await q<{
+    slug: FamilySlug;
+    name: string;
+    description: string;
+  }>(
+    `SELECT slug,name,description FROM taxonomy_families WHERE revision_id=? ORDER BY slug`,
+  );
+  const tagRows = await q<{
+    slug: string;
+    family: FamilySlug;
+    name: string;
+    description: string;
+    hidden_by_default: number;
+  }>(
+    `SELECT slug,family,name,description,hidden_by_default FROM taxonomy_tags WHERE revision_id=? ORDER BY slug`,
+  );
+  const taskRows = await q<{
+    task_id: string;
+    task_set_hash: string;
+    group_slug: FormatSlug;
+    min_bc_version: number;
+  }>(
+    `SELECT task_id,task_set_hash,group_slug,min_bc_version FROM taxonomy_revision_tasks WHERE revision_id=? ORDER BY task_id`,
+  );
+  const facetRows = await q<{
+    task_id: string;
+    tag_slug: string;
+    origin: FacetOrigin;
+  }>(
+    `SELECT task_id,tag_slug,origin FROM taxonomy_task_tags WHERE revision_id=? ORDER BY task_id, tag_slug`,
+  );
+  const donorRows = await q<{
+    task_id: string;
+    donor_task_id: string;
+    ordinal: number;
+  }>(
+    `SELECT task_id,donor_task_id,ordinal FROM taxonomy_task_donors WHERE revision_id=? ORDER BY task_id, ordinal`,
+  );
+  for (const t of taskRows) {
+    if (t.task_set_hash !== rev.task_set_hash) {
+      throw new ApiError(
+        500,
+        "revision_verification_failed",
+        `task ${t.task_id} carries hash ${t.task_set_hash}`,
+      );
+    }
+  }
+  const tasks: NormalizedCatalog["tasks"] = {};
+  for (const t of taskRows) {
+    tasks[t.task_id] = {
+      group: t.group_slug,
+      facets: [],
+      donors: [],
+      min_bc_version: t.min_bc_version,
+    };
+  }
+  for (const f of facetRows)
+    tasks[f.task_id]?.facets.push({ slug: f.tag_slug, origin: f.origin });
+  for (const d of donorRows) tasks[d.task_id]?.donors.push(d.donor_task_id);
+  return {
+    schema_version: 2,
+    task_set_hash: rev.task_set_hash,
+    groups,
+    families,
+    tags: tagRows.map((t) => ({
+      slug: t.slug,
+      family: t.family,
+      name: t.name,
+      description: t.description,
+      hidden_by_default: t.hidden_by_default === 1,
+    })),
+    tasks,
+  };
+}
+
+/**
+ * Re-read a staged revision and confirm it digests back to what was
+ * intended before it's trusted. Stamps `verified_at` on success; a
+ * mismatch is the caller's cue (`applyRevision`) to delete the revision
+ * rather than ever activate it.
+ */
+export async function verifyRevision(
+  db: D1Database,
+  rid: number,
+  expected: string,
+): Promise<void> {
+  const got = await catalogDigest(await readRevisionNormalized(db, rid));
+  if (got !== expected) {
+    throw new ApiError(
+      500,
+      "revision_verification_failed",
+      `re-read digest ${got} != ${expected}`,
+    );
+  }
+  await db
+    .prepare(`UPDATE taxonomy_revisions SET verified_at = ? WHERE id = ?`)
+    .bind(new Date().toISOString(), rid)
+    .run();
+}
+
+/**
+ * Freeze the v1 view of this task-set hash: the category per task, the
+ * tags per task, and the global vocab names, all as they stood at the
+ * moment of the first v2 activation. No-op when a snapshot already
+ * exists for this hash — the freeze is a one-time event per hash, not a
+ * running log.
+ */
+export async function snapshotV1(db: D1Database, hash: string): Promise<void> {
+  const exists = await db
+    .prepare(`SELECT 1 AS x FROM taxonomy_v1_snapshots WHERE task_set_hash = ?`)
+    .bind(hash)
+    .first();
+  if (exists) return;
+  const cats = (
+    await db
+      .prepare(
+        `SELECT id, slug, name, description FROM task_categories ORDER BY id`,
+      )
+      .all()
+  ).results;
+  const tags = (
+    await db.prepare(`SELECT id, slug, name FROM tags ORDER BY id`).all()
+  ).results;
+  const tasks = (
+    await db
+      .prepare(
+        `SELECT task_id, category_id FROM tasks WHERE task_set_hash = ? ORDER BY task_id`,
+      )
+      .bind(hash)
+      .all()
+  ).results;
+  const taskTags = (
+    await db
+      .prepare(
+        `SELECT task_id, tag_id FROM task_tags WHERE task_set_hash = ? ORDER BY task_id, tag_id`,
+      )
+      .bind(hash)
+      .all()
+  ).results;
+  await db
+    .prepare(
+      `INSERT INTO taxonomy_v1_snapshots(task_set_hash, snapshot_json, taken_at) VALUES (?,?,?)`,
+    )
+    .bind(
+      hash,
+      JSON.stringify({ cats, tags, tasks, taskTags }),
+      new Date().toISOString(),
+    )
+    .run();
+}
+
+/**
+ * Point `taxonomy_active` at a (verified) revision for this hash and
+ * audit the flip. `taxonomy_active.task_set_hash` is the primary key, so
+ * this is always a single-row upsert — never a second row for the same
+ * hash.
+ */
+export async function activateRevision(
+  db: D1Database,
+  hash: string,
+  rid: number,
+  actor: VerifiedKey,
+): Promise<{ before: string | null; after: string }> {
+  const before = (await readActiveRevision(db, hash))?.digest ?? null;
+  const after = (await db
+    .prepare(`SELECT digest FROM taxonomy_revisions WHERE id = ?`)
+    .bind(rid)
+    .first<{
+      digest: string;
+    }>())!.digest;
+  await db
+    .prepare(
+      `INSERT INTO taxonomy_active(task_set_hash, revision_id, activated_at) VALUES (?,?,?)
+       ON CONFLICT(task_set_hash) DO UPDATE SET revision_id = excluded.revision_id, activated_at = excluded.activated_at`,
+    )
+    .bind(hash, rid, new Date().toISOString())
+    .run();
+  await appendAudit(db, {
+    event: "taxonomy_activated",
+    actor,
+    taskSetHash: hash,
+    before,
+    after,
+    details: { revision_id: rid },
+  });
+  return { before, after };
+}
+
+/**
+ * The single entry point for "make this normalized catalog the active
+ * taxonomy for this hash", implementing spec 5.2's recovery rules:
+ *
+ *  - Same digest already active for this hash -> `already_active`, no
+ *    writes at all.
+ *  - Same digest staged and verified, but not the active one (e.g. a
+ *    previous hash's revision, or a verified-but-unactivated leftover)
+ *    -> skip straight to snapshot + activate.
+ *  - Same digest staged but NEVER verified (`verified_at IS NULL`) -> a
+ *    crashed prior attempt. Delete it (via `deleteRevision`, all six
+ *    child tables) and stage fresh rather than trust a possibly-partial
+ *    write.
+ *  - No existing row for this digest -> stage, then verify by re-reading
+ *    it back. A verification failure deletes the just-staged revision
+ *    (never left as an orphaned unverified row) and rethrows, leaving
+ *    whatever was previously active untouched.
+ *
+ * Snapshotting the v1 view and activating only ever happen after the
+ * revision is confirmed verified.
+ */
+export async function applyRevision(
+  db: D1Database,
+  a: {
+    hash: string;
+    normalized: NormalizedCatalog;
+    provenance: Record<string, unknown>;
+    actor: VerifiedKey;
+    signature: string;
+    /** test hook: pretend the payload's digest is this value so re-read verification must fail */
+    forceDigest?: string;
+  },
+): Promise<{
+  revisionId: number;
+  digest: string;
+  status: "activated" | "already_active";
+}> {
+  const digest = a.forceDigest ?? (await catalogDigest(a.normalized));
+  const existing = await db
+    .prepare(
+      `SELECT id, verified_at FROM taxonomy_revisions WHERE task_set_hash = ? AND digest = ?`,
+    )
+    .bind(a.hash, digest)
+    .first<{ id: number; verified_at: string | null }>();
+  const active = await readActiveRevision(db, a.hash);
+  if (existing && active?.id === existing.id) {
+    return { revisionId: existing.id, digest, status: "already_active" };
+  }
+  let rid: number;
+  if (existing && existing.verified_at) {
+    rid = existing.id; // verified but not active: activate
+  } else {
+    if (existing) await deleteRevision(db, existing.id); // crashed stage: delete, re-stage
+    rid = (
+      await stageRevision(db, {
+        hash: a.hash,
+        normalized: a.normalized,
+        digest,
+        provenance: a.provenance,
+        actor: a.actor,
+        signature: a.signature,
+      })
+    ).revisionId;
+    try {
+      await verifyRevision(db, rid, digest);
+    } catch (err) {
+      await deleteRevision(db, rid);
+      throw err;
+    }
+  }
+  await snapshotV1(db, a.hash);
+  await activateRevision(db, a.hash, rid, a.actor);
+  return { revisionId: rid, digest, status: "activated" };
 }
