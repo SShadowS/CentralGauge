@@ -1,7 +1,13 @@
 import { assertEquals } from "@std/assert";
 import { buildDraft } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/build-taxonomy.ts";
-import { mergeEnrichment } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/merge-taxonomy.ts";
-import { validateCatalog } from "../../../site/src/lib/shared/taxonomy-schema.ts";
+import {
+  deriveComposites,
+  mergeEnrichment,
+} from "../../../.claude/skills/refresh-task-taxonomy/pipeline/merge-taxonomy.ts";
+import {
+  type CatalogV2,
+  validateCatalog,
+} from "../../../site/src/lib/shared/taxonomy-schema.ts";
 
 const opts = {
   tasksDir: "tests/fixtures/taxonomy/manifests",
@@ -56,6 +62,102 @@ Deno.test("unknown enrichment slugs are refused, not silently dropped", async ()
     threw = true;
   }
   assertEquals(threw, true);
+});
+
+Deno.test("deriveComposites strips overlapping local_facets, keeps the rest, unions derived_facets, and maxes min_bc_version", () => {
+  // Synthetic catalog (not the fixture manifests): a composite with four
+  // donors whose facets exercise the overlap-stripping rule directly.
+  const catalog: CatalogV2 = {
+    schema_version: 2,
+    groups: [],
+    families: [],
+    tags: [],
+    aliases: [],
+    overrides: [],
+    tasks: {
+      "D1": {
+        group: "diagnose-single",
+        facets: ["facet-a"],
+        min_bc_version: 15,
+      },
+      "D2": {
+        group: "diagnose-single",
+        facets: ["facet-b"],
+        min_bc_version: 16,
+      },
+      "D3": {
+        group: "diagnose-single",
+        facets: ["facet-c"],
+        min_bc_version: 15,
+      },
+      "D4": {
+        group: "diagnose-single",
+        facets: ["facet-a", "facet-d"],
+        min_bc_version: 18,
+      },
+      "C1": {
+        group: "diagnose-composite",
+        donors: ["D1", "D2", "D3", "D4"],
+        derived_facets: [],
+        // "facet-b" duplicates donor D2's facet and must be stripped;
+        // "facet-local-only" duplicates no donor and must survive.
+        local_facets: ["facet-b", "facet-local-only"],
+        min_bc_version: 15,
+      },
+    },
+  };
+  const derived = deriveComposites(catalog);
+  const comp = derived.tasks["C1"];
+  if (!comp || !("donors" in comp)) throw new Error("C1 must be a composite");
+  assertEquals(comp.derived_facets, [
+    "facet-a",
+    "facet-b",
+    "facet-c",
+    "facet-d",
+  ]);
+  assertEquals(comp.local_facets, ["facet-local-only"]);
+  assertEquals(comp.min_bc_version, 18);
+});
+
+Deno.test("mergeEnrichment silently skips an unknown task id and a composite id, but applies a valid single entry", () => {
+  const catalog: CatalogV2 = {
+    schema_version: 2,
+    groups: [],
+    families: [],
+    tags: [],
+    aliases: [],
+    overrides: [],
+    tasks: {
+      "S1": { group: "diagnose-single", facets: [], min_bc_version: 15 },
+      "S2": { group: "diagnose-single", facets: [], min_bc_version: 15 },
+      "C1": {
+        group: "diagnose-composite",
+        donors: ["S2"],
+        derived_facets: [],
+        local_facets: [],
+        min_bc_version: 15,
+      },
+    },
+  };
+  const merged = mergeEnrichment(catalog, {
+    "S1": ["inclusive-boundary"],
+    "CG-AL-DOES-NOT-EXIST": ["exact-total"],
+    "C1": ["exact-total"],
+  });
+  // Valid single entry is applied.
+  const s1 = merged.tasks["S1"];
+  if (!s1 || "donors" in s1) throw new Error("S1 must be a single task");
+  assertEquals(s1.facets, ["inclusive-boundary"]);
+  // Unknown id: no task materializes for it, catalog is otherwise unchanged.
+  assertEquals(merged.tasks["CG-AL-DOES-NOT-EXIST"], undefined);
+  assertEquals(Object.keys(merged.tasks).sort(), ["C1", "S1", "S2"]);
+  // Composite id: enrichment is skipped directly (no facets field to add
+  // to); its derived_facets still only reflect its donor S2, which never
+  // received enrichment, so "exact-total" never appears on C1 at all.
+  const c1 = merged.tasks["C1"];
+  if (!c1 || !("donors" in c1)) throw new Error("C1 must be a composite");
+  assertEquals("facets" in c1, false);
+  assertEquals(c1.derived_facets, []);
 });
 
 Deno.test("the enrichment workflow's VOCAB equals the shared vocabulary", async () => {
