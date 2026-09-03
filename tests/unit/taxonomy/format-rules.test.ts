@@ -73,3 +73,48 @@ Deno.test("matrix violations are reported, never degraded", () => {
     ["cohort_mismatch"],
   );
 });
+
+Deno.test("matrix violations exhaustive coverage", () => {
+  // donor_count: composite with too few donors (< 4)
+  assertEquals(
+    f({
+      prompt_template: "diagnose-objects.md",
+      cohort: "reasoning-100",
+      hasStarter: true,
+      donors: ["A", "B", "C"],
+    }).violations,
+    ["donor_count"],
+  );
+  // donor_count: composite with too many donors (> 8)
+  assertEquals(
+    f({
+      prompt_template: "diagnose-objects.md",
+      cohort: "reasoning-100",
+      hasStarter: true,
+      donors: ["A", "B", "C", "D", "E", "F", "G", "H", "I"],
+    }).violations,
+    ["donor_count"],
+  );
+  // starter_forbidden: build-from-spec with starter (code-gen.md at top level)
+  assertEquals(
+    f({ prompt_template: "code-gen.md", hasStarter: true }).violations,
+    [
+      "starter_forbidden",
+    ],
+  );
+  // cohort_mismatch: build-from-spec carrying cohort
+  assertEquals(
+    f({ prompt_template: "code-gen.md", cohort: "reasoning-100" }).violations,
+    ["cohort_mismatch"],
+  );
+  // Multiple violations: composite with wrong template AND wrong cohort
+  assertEquals(
+    f({
+      prompt_template: "diagnose.md",
+      cohort: "ado-trap-2026",
+      hasStarter: true,
+      donors: ["A", "B", "C", "D"],
+    }).violations,
+    ["composite_template", "cohort_mismatch"],
+  );
+});
