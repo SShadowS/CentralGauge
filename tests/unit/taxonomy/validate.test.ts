@@ -27,7 +27,7 @@ async function tmpCatalog(mutate?: (text: string) => string): Promise<string> {
 
 Deno.test("a manifest missing from the catalog, and a catalog task missing from the manifests, are reported", async () => {
   const dir = await tmpCatalog((t) =>
-    t.replace(/  CG-AL-H001:[\s\S]*?min_bc_version: \d+\n/, "")
+    t.replace(/ {2}CG-AL-H001:[\s\S]*?min_bc_version: \d+\n/, "")
   );
   const { issues } = await validateRepo({
     catalogPath: `${dir}/cat.yml`,

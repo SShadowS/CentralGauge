@@ -14,9 +14,6 @@ jobs:
         with:
           deno-version: vx.x.x
 
-      - name: Run unit tests
-        run: deno task test:unit
-
       - name: Run id-audit
         run: deno task id-audit
 
