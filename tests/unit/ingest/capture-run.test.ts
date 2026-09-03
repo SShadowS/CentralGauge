@@ -58,6 +58,64 @@ Deno.test("environment manifest reads the pinned BCH version, the runner knob an
   }
 });
 
+Deno.test("environment manifest carries tenant/company defaults and the pinned BCCH knobs", async () => {
+  const mock = createCommandMock();
+  try {
+    installCleanGitMock(mock);
+    const fakeInspect = (): Promise<ContainerInspection | undefined> =>
+      Promise.resolve(undefined);
+    Deno.env.delete("CENTRALGAUGE_BC_TENANT");
+    Deno.env.delete("CENTRALGAUGE_BC_COMPANY");
+    Deno.env.delete("CENTRALGAUGE_BCCH_USE_PWSH_BC24");
+    Deno.env.delete("CENTRALGAUGE_BCCH_USE_PSSESSION_BC28");
+    const m = await buildEnvironmentManifest({
+      containerName: "Cronus28",
+      cwd: ".",
+      inspect: fakeInspect,
+    });
+    // Same defaults as bc-container-provider.ts's test-script builder.
+    assertEquals(m.tenant, "default");
+    assertEquals(m.company, "My Company");
+    // Same defaults as bcch-config.ts (GH #12): usePwshForBc24 true,
+    // usePsSessionForBc28 false.
+    assertEquals(m.bcch_use_pwsh_bc24, true);
+    assertEquals(m.bcch_use_pssession_bc28, false);
+  } finally {
+    mock.restore();
+  }
+});
+
+Deno.test("environment manifest reads tenant/company/BCCH knob overrides via the resolvers, not raw env parsing", async () => {
+  const mock = createCommandMock();
+  try {
+    installCleanGitMock(mock);
+    const fakeInspect = (): Promise<ContainerInspection | undefined> =>
+      Promise.resolve(undefined);
+    Deno.env.set("CENTRALGAUGE_BC_TENANT", "tenant-2");
+    Deno.env.set("CENTRALGAUGE_BC_COMPANY", "Other Company");
+    Deno.env.set("CENTRALGAUGE_BCCH_USE_PWSH_BC24", "0");
+    Deno.env.set("CENTRALGAUGE_BCCH_USE_PSSESSION_BC28", "1");
+    try {
+      const m = await buildEnvironmentManifest({
+        containerName: "Cronus28",
+        cwd: ".",
+        inspect: fakeInspect,
+      });
+      assertEquals(m.tenant, "tenant-2");
+      assertEquals(m.company, "Other Company");
+      assertEquals(m.bcch_use_pwsh_bc24, false);
+      assertEquals(m.bcch_use_pssession_bc28, true);
+    } finally {
+      Deno.env.delete("CENTRALGAUGE_BC_TENANT");
+      Deno.env.delete("CENTRALGAUGE_BC_COMPANY");
+      Deno.env.delete("CENTRALGAUGE_BCCH_USE_PWSH_BC24");
+      Deno.env.delete("CENTRALGAUGE_BCCH_USE_PSSESSION_BC28");
+    }
+  } finally {
+    mock.restore();
+  }
+});
+
 Deno.test("environment manifest defaults test_runner to soap when the knob is unset", async () => {
   const mock = createCommandMock();
   try {

@@ -299,6 +299,10 @@ export async function ingestRun(
       bcch_version: br.environment.bcch_version,
       test_runner: br.environment.test_runner,
       prompt_template_digest: br.environment.prompt_template_digest,
+      tenant: br.environment.tenant,
+      company: br.environment.company,
+      bcch_use_pssession_bc28: br.environment.bcch_use_pssession_bc28,
+      bcch_use_pwsh_bc24: br.environment.bcch_use_pwsh_bc24,
     };
   }
   const payload = buildPayload(payloadInput);

@@ -9,7 +9,11 @@
  */
 import type { ExecutionAttempt } from "../tasks/interfaces.ts";
 import { sha256Hex } from "../../site/src/lib/shared/taxonomy-schema.ts";
-import { BCCH_PINNED_VERSION } from "../container/bcch-config.ts";
+import {
+  BCCH_PINNED_VERSION,
+  bcchUsePsSessionForBc28,
+  bcchUsePwshForBc24,
+} from "../container/bcch-config.ts";
 import { inspectContainer } from "../container/docker-inspect.ts";
 import { harnessFingerprint } from "../utils/harness-fingerprint.ts";
 import { RETRY_PATH_VERSION } from "../llm/prompt-building.ts";
@@ -96,6 +100,14 @@ export interface EnvironmentManifest {
   prompt_policy_version: string;
   prompt_template_digest: string;
   culture: string | null;
+  /** `CENTRALGAUGE_BC_TENANT`, default `"default"`. Same read as `bc-container-provider.ts`. */
+  tenant: string;
+  /** `CENTRALGAUGE_BC_COMPANY`, default `"My Company"`. Same read as `bc-container-provider.ts`. */
+  company: string;
+  /** Resolved `usePsSessionForBc28` knob (`bcchUsePsSessionForBc28()`), not the raw env var. */
+  bcch_use_pssession_bc28: boolean;
+  /** Resolved `usePwshForBc24` knob (`bcchUsePwshForBc24()`), not the raw env var. */
+  bcch_use_pwsh_bc24: boolean;
 }
 
 async function gitFacts(
@@ -197,6 +209,17 @@ export async function buildEnvironmentManifest(opts: {
     // Kept for the spec's vocabulary and for whenever a culture override
     // gets wired through the container/task pipeline.
     culture: Deno.env.get("CENTRALGAUGE_BC_CULTURE") ?? null,
+    // Same env reads + defaults as `bc-container-provider.ts`'s test-script
+    // builder (CLAUDE.md's "SOAP Test Harness" env knobs) — kept in sync by
+    // reading the literal defaults documented there rather than importing
+    // that module, which pulls in container-process machinery this pure
+    // capture module must not depend on.
+    tenant: Deno.env.get("CENTRALGAUGE_BC_TENANT") ?? "default",
+    company: Deno.env.get("CENTRALGAUGE_BC_COMPANY") ?? "My Company",
+    // Resolved via the single source of truth in `bcch-config.ts` (GH #12) —
+    // never re-parse the raw env vars here.
+    bcch_use_pssession_bc28: bcchUsePsSessionForBc28(),
+    bcch_use_pwsh_bc24: bcchUsePwshForBc24(),
   };
 }
 

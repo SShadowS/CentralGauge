@@ -266,6 +266,10 @@ Deno.test("Task 12: environment + invocation thread through AssembleOptions onto
       prompt_policy_version: "pp1-diagnose-2026-08-23",
       prompt_template_digest: "b".repeat(64),
       culture: null,
+      tenant: "default",
+      company: "My Company",
+      bcch_use_pssession_bc28: false,
+      bcch_use_pwsh_bc24: true,
     };
     const outcome = await assembleBenchResultsForVariant(path, VARIANT, {
       pricingVersion: "2026-07-01",

@@ -29,6 +29,10 @@ export interface BuildPayloadInput {
     bcch_version: string;
     test_runner: "soap" | "legacy";
     prompt_template_digest: string;
+    tenant: string;
+    company: string;
+    bcch_use_pssession_bc28: boolean;
+    bcch_use_pwsh_bc24: boolean;
   };
   /** Redacted LLM invocation snapshot. See `invocationSnapshot`. */
   invocation?: Record<string, unknown>;
@@ -64,6 +68,10 @@ export function buildPayload(
     p["bcch_version"] = input.environment.bcch_version;
     p["test_runner"] = input.environment.test_runner;
     p["prompt_template_digest"] = input.environment.prompt_template_digest;
+    p["tenant"] = input.environment.tenant;
+    p["company"] = input.environment.company;
+    p["bcch_use_pssession_bc28"] = input.environment.bcch_use_pssession_bc28;
+    p["bcch_use_pwsh_bc24"] = input.environment.bcch_use_pwsh_bc24;
   }
   if (input.invocation) p["invocation"] = input.invocation;
   return p;

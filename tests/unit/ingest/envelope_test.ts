@@ -76,6 +76,10 @@ Deno.test("buildPayload carries the run-level capture when supplied", () => {
       bcch_version: "6.1.14",
       test_runner: "soap",
       prompt_template_digest: "c".repeat(64),
+      tenant: "default",
+      company: "My Company",
+      bcch_use_pssession_bc28: false,
+      bcch_use_pwsh_bc24: true,
     },
     invocation: { provider: "anthropic" },
   });
@@ -87,6 +91,10 @@ Deno.test("buildPayload carries the run-level capture when supplied", () => {
   assertEquals(p["bcch_version"], "6.1.14");
   assertEquals(p["test_runner"], "soap");
   assertEquals(p["prompt_template_digest"], "c".repeat(64));
+  assertEquals(p["tenant"], "default");
+  assertEquals(p["company"], "My Company");
+  assertEquals(p["bcch_use_pssession_bc28"], false);
+  assertEquals(p["bcch_use_pwsh_bc24"], true);
   assertEquals((p["invocation"] as { provider: string }).provider, "anthropic");
 });
 
@@ -112,6 +120,10 @@ Deno.test("buildPayload omits the run-level capture keys when absent", () => {
       "bcch_version",
       "test_runner",
       "prompt_template_digest",
+      "tenant",
+      "company",
+      "bcch_use_pssession_bc28",
+      "bcch_use_pwsh_bc24",
       "invocation",
     ]
   ) {
