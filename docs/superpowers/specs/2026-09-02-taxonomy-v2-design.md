@@ -556,7 +556,8 @@ A slice's units are the components intersected with the slice.
 Census on 2026-09-02: 298 tasks; the 29 gated composites and their 51 donor
 singles form one 80-task component; every other task is its own component.
 Composite slice: 1 component. Single-defect slice: 110 (the donor edges lead
-outside the slice). Reasoning-only view: 60. All: 219, with the largest
+outside the slice). Reasoning-only view: 59 (measured 2026-09-03: 138 tasks,
+59 components; the 60 was an estimate). All: 219, with the largest
 component holding 27 percent of the tasks.
 
 ### 6.5 Component resampling and when it is shown
@@ -685,7 +686,7 @@ digest and estimator version in force.
 ## 8. Releases and ship order
 
 **Release 1, dark data launch. No public ranking or v1 response changes.**
-1. Pipeline rewrite, shared schema module, validator, alias table, v2
+1. [x] done in Plan A (branch taxonomy-v2, 2026-09-03). Pipeline rewrite, shared schema module, validator, alias table, v2
    catalog with provenance slots, v2-capable CLI in one commit; hand review
    of mechanism and invariant facets across all formats; validator green in
    CI. Bench and ingest envelope extended with the 5.5 capture, so the
