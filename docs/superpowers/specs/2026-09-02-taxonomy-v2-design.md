@@ -1,7 +1,8 @@
 # Taxonomy v2: format groups, mechanism facets, donor-aware statistics
 
-Date: 2026-09-03. Status: design, revision 3 after two adversarial review
-rounds (GPT-5.6 Sol, GLM 5.3; raw reviews in `.panel/taxonomy-spec-review*`).
+Date: 2026-09-03. Status: design, revision 4 after two adversarial review
+rounds and one additions round (GPT-5.6 Sol, GLM 5.3; raw reviews in
+`.panel/taxonomy-*`).
 Awaiting owner review, then implementation plans.
 
 ## 1. Summary
@@ -25,9 +26,16 @@ graph, and separation is shown only where the components are numerous and
 none dominates; today that excludes the composite tab and the All headline,
 which show scores, counts and a subset-influence table instead. A model
 appears on a slice only when it was evaluated on all of it under the cohort.
-The taxonomy stays outside the task-set hash; no task file is edited. The
-work ships as a dark data launch, then a coherent statistics API and UI, then
-bands under a validated estimator.
+The taxonomy stays outside the task-set hash; no task file is edited.
+
+Because the schema and the ingest envelope open at the same time, the change
+also captures what cannot be backfilled later: per-test outcome vectors,
+harness and environment identity per run, attempt termination facts and the
+model invocation actually served; and it makes the scoring policy, the
+benchmark release (task set, taxonomy revision, policy, cohort, panel and
+retained set) and per-release dataset exports first-class, digest-addressed
+objects. The work ships as a dark data launch, then a coherent statistics API
+and UI, then bands under a validated estimator.
 
 ## 2. Why now, measured
 
@@ -252,8 +260,15 @@ through the validator in a test.
 Additive. v1 tables are untouched.
 
 ```sql
-ALTER TABLE task_sets ADD COLUMN scoring_rule TEXT NOT NULL DEFAULT 'v1'
-  CHECK (scoring_rule IN ('v1','v2'));       -- see 6.2; existing hashes stay v1
+CREATE TABLE scoring_policies (              -- see 6.2; immutable, digest-addressed
+  id             INTEGER PRIMARY KEY,
+  schema_version INTEGER NOT NULL,
+  digest         TEXT NOT NULL UNIQUE,
+  policy_json    TEXT NOT NULL,
+  created_at     TEXT NOT NULL
+);
+ALTER TABLE task_sets ADD COLUMN scoring_policy_id INTEGER REFERENCES scoring_policies(id);
+  -- NULL means the legacy rule (best across all runs); existing hashes keep NULL forever
 
 CREATE TABLE taxonomy_revisions (
   id             INTEGER PRIMARY KEY,
@@ -262,6 +277,8 @@ CREATE TABLE taxonomy_revisions (
   digest         TEXT NOT NULL,
   created_at     TEXT NOT NULL,
   verified_at    TEXT,                       -- set only after the re-read verification in 5.2
+  applied_by     TEXT NOT NULL,              -- machine_id of the signing CLI (ingest key machinery)
+  apply_signature TEXT NOT NULL,             -- Ed25519 over the digest, same scheme as ingest
   UNIQUE (task_set_hash, digest)
 );
 CREATE TABLE taxonomy_active (               -- the ONLY row readers consult
@@ -278,6 +295,9 @@ CREATE TABLE taxonomy_revision_tasks (        -- one row per task of the revisio
   task_id        TEXT NOT NULL,
   group_slug     TEXT NOT NULL,
   min_bc_version INTEGER NOT NULL,
+  provenance_json TEXT,                     -- structured, not facets: origin, defect_sites,
+                                             -- gate trials and models, mutation score, gold-ci
+                                             -- fingerprint, prompt-template digest, retired/reason
   PRIMARY KEY (revision_id, task_id),
   FOREIGN KEY (task_set_hash, task_id) REFERENCES tasks(task_set_hash, task_id),
   FOREIGN KEY (revision_id, group_slug) REFERENCES taxonomy_groups(revision_id, slug)
@@ -289,8 +309,60 @@ CREATE TABLE taxonomy_v1_snapshots (          -- frozen v1 responses, one per ha
   snapshot_json TEXT NOT NULL,
   taken_at      TEXT NOT NULL
 );
+CREATE TABLE benchmark_releases (             -- see 5.6; the object a citation points at
+  id                        INTEGER PRIMARY KEY,
+  slug                      TEXT NOT NULL UNIQUE,
+  task_set_hash             TEXT NOT NULL REFERENCES task_sets(hash),
+  taxonomy_revision_id      INTEGER NOT NULL REFERENCES taxonomy_revisions(id),
+  scoring_policy_id         INTEGER NOT NULL REFERENCES scoring_policies(id),
+  estimator_version         TEXT NOT NULL,
+  cohort_digest             TEXT NOT NULL,   -- digest of the ordered run ids per model used
+  panel_manifest_json       TEXT NOT NULL,   -- panel models, run ids, metric, rule, threshold, donor cap
+  export_manifest_sha256    TEXT,            -- set when the 5.6 export is written
+  changelog                 TEXT NOT NULL,
+  supersedes_release_id     INTEGER REFERENCES benchmark_releases(id),
+  published_at              TEXT NOT NULL,
+  published_by              TEXT NOT NULL,
+  publish_signature         TEXT NOT NULL
+);
+CREATE TABLE release_tasks (                  -- the retained (launch) set and the full set
+  release_id       INTEGER NOT NULL REFERENCES benchmark_releases(id) ON DELETE CASCADE,
+  task_id          TEXT NOT NULL,
+  role             TEXT NOT NULL CHECK (role IN ('retained','full_only')),
+  selection_reason TEXT NOT NULL,
+  PRIMARY KEY (release_id, task_id)
+);
+
+-- Run-time capture (see 5.5). All nullable so legacy rows stay valid.
+ALTER TABLE runs ADD COLUMN harness_fingerprint TEXT;      -- gold-ci harness hash
+ALTER TABLE runs ADD COLUMN retry_path_version TEXT;
+ALTER TABLE runs ADD COLUMN environment_digest TEXT;       -- content address of the R2 environment manifest
+ALTER TABLE runs ADD COLUMN bc_artifact TEXT;
+ALTER TABLE runs ADD COLUMN container_image_digest TEXT;
+ALTER TABLE runs ADD COLUMN bcch_version TEXT;
+ALTER TABLE runs ADD COLUMN test_runner TEXT CHECK (test_runner IN ('soap','legacy'));
+ALTER TABLE runs ADD COLUMN prompt_template_digest TEXT;
+ALTER TABLE runs ADD COLUMN invocation_json TEXT;          -- provider model id, returned version/fingerprint,
+                                                          -- endpoint, reasoning budget, effective limits, seed
+ALTER TABLE results ADD COLUMN test_vector_json TEXT;     -- [{id, name, passed}] in oracle order
+ALTER TABLE results ADD COLUMN termination_kind TEXT CHECK (termination_kind IN
+  ('response','provider_error','cap_reached','refusal','infra_exhausted','cancelled'));
+ALTER TABLE results ADD COLUMN provider_finish_reason TEXT;
+ALTER TABLE results ADD COLUMN provider_error_code TEXT;
+ALTER TABLE results ADD COLUMN cap_reached INTEGER CHECK (cap_reached IN (0,1));
+ALTER TABLE results ADD COLUMN infra_retries INTEGER;
+ALTER TABLE results ADD COLUMN infra_exhaustion_reason TEXT;
+ALTER TABLE results ADD COLUMN fallback_chain_json TEXT;
+ALTER TABLE results ADD COLUMN prompt_digest TEXT;        -- digest of the prompt actually sent
+ALTER TABLE results ADD COLUMN candidate_digest TEXT;     -- digest of the compiled candidate
+ALTER TABLE results ADD COLUMN overlay_base_digest TEXT;  -- changed-objects retries only
+ALTER TABLE results ADD COLUMN failure_class TEXT;        -- derived, versioned; recomputable
+ALTER TABLE results ADD COLUMN failure_class_version TEXT;
 CREATE INDEX idx_taxonomy_task_tags_tag ON taxonomy_task_tags(revision_id, tag_slug);
 ```
+
+The policy, release and run-time columns are additive and nullable; every
+legacy row keeps its meaning and the legacy scoring rule.
 
 Activation is an UPSERT of one row in `taxonomy_active`, so readers never
 observe a half-written revision and no multi-row flag swap exists. The
@@ -345,8 +417,14 @@ migration's staging run confirms D1 enforces the constraints.
 ### 5.3 Public API: v2 alongside a frozen v1
 
 - `/api/v2/taxonomy`, `/api/v2/categories`, `/api/v2/tasks`,
-  `/api/v2/tasks/<id>`, `/api/v2/leaderboard`, `/api/v2/compare`. Every v2
-  response carries `task_set_hash` and `revision_digest`. Set resolution:
+  `/api/v2/tasks/<id>`, `/api/v2/leaderboard`, `/api/v2/compare`,
+  `/api/v2/task-sets`, `/api/v2/models`, `/api/v2/runs`, `/api/v2/runs/<id>`
+  (with the run-time capture of 5.5 and the test vector per attempt),
+  `/api/v2/releases`, `/api/v2/releases/<slug>`, `/api/v2/exports`. Every v2
+  response carries `task_set_hash`, `revision_digest`, the resolved
+  `scoring_policy_digest`, `cohort_digest` where a cohort applies,
+  `schema_version`, `generated_at` and an echo of the resolved query; cursors
+  are stable. `?cohort=<digest>` re-selects an exact cohort. Set resolution:
   `?set=current` (default) or `?set=<64-hex>`; `?revision=<digest>` selects a
   non-active verified revision of that set for reproducibility. Unknown
   `?tag=` returns `400 unknown_tag`; `?category=` accepts format slugs.
@@ -366,6 +444,49 @@ migration's staging run confirms D1 enforces the constraints.
 - v2 cache keys include the resolved hash, the active revision digest (or
   `none` before activation), and the estimator version (6.10). v1 keys are
   unchanged.
+
+### 5.5 Run-time capture at ingest
+
+The bench writes, and the signed ingest envelope carries, facts that cannot
+be reconstructed after the fact. Per run: the gold-ci harness fingerprint,
+the retry-path version, an environment manifest (BC artifact and build,
+container image digest, platform and application versions, bccontainerhelper
+version and pinned knobs, runner, host OS, culture, tenant and company,
+CentralGauge commit and dirty state, prompt-template digest) uploaded to R2
+by content address with its critical fields indexed in D1, and the model
+invocation snapshot (requested provider model id, provider-returned version or
+fingerprint, endpoint, reasoning mode and budget, seed where supported,
+fallback configuration, effective context and output limits). Per attempt:
+the per-test outcome vector with stable test ids (`sha256(task_id, test
+name)` within the revision; composite tests already carry their donor
+prefix), termination kind, provider finish reason and error code, whether
+the cap was reached, infra retry count and exhaustion reason, fallback chain
+and served model, and digests of the prompt actually sent, the compiled
+candidate and, for changed-objects retries, the overlay base. A derived
+`failure_class` is stored with its classifier version and is recomputable.
+The task's `min_bc_version` requirement is distinct from the executed build.
+These fields are nullable; legacy rows stay valid and are labelled as
+pre-capture in v2 responses.
+
+### 5.6 Releases and exports
+
+A benchmark release (5.1) is the object a citation points at: task-set hash,
+taxonomy revision, scoring policy, estimator version, cohort digest, a panel
+manifest (models and run ids, selection metric, rule and threshold, donor
+cap, retained task ids with inclusion reasons), the retained set and the full
+set as `release_tasks`, a changelog and what it supersedes; signed with the
+admin key. The leaderboard offers "launch set" and "full set" as two views of
+one release. On publication a scheduled job writes a checksummed export
+bundle to R2 (release, task and taxonomy, donor graph fixture, model and
+invocation snapshots, run and attempt outcomes with test vectors, cohort and
+panel manifests, scoring policy and estimator configuration; JSONL and
+Parquet; schema files, data dictionary, licence, citation metadata,
+machine-readable changelog) addressed by `{task_set_hash, revision_digest,
+release_slug}` and listed at `/api/v2/exports` and a `/datasets` page.
+Raw transcripts, candidate code and hidden assertion text are captured and
+hashed but not exported until a redaction and secret-scanning policy exists.
+Taxonomy activation, task-set promotion, policy assignment and release
+publication append audit rows (signer, request id, before and after digests).
 
 ## 6. Leaderboard statistics
 
@@ -394,14 +515,21 @@ not get more chances. Attempts served by a refusal fallback count for the
 requested model as today and are annotated; the cohort's fallback count is
 returned per row.
 
-The scoring rule is pinned per task set: migration 0016 adds
-`task_sets.scoring_rule TEXT NOT NULL DEFAULT 'v1'` (`v1` = best across all
-runs, today's rule; `v2` = the three-run cohort above). Sets created after
-the release-2 deploy get `v2`; every existing hash keeps `v1` forever, so
-old-hash views stay byte-identical and no published number changes.
-`buildScoreMatrix` and the leaderboard read the rule from the set, and every
-v2 response carries `scoring_rule` beside `task_set_hash`. The owner
-decision reduces to confirming `v2` as the default for new sets.
+The scoring policy is an immutable, digest-addressed object
+(`scoring_policies`, 5.1) referenced from the task set, never a configuration
+value. `policy_json` states: eligible run statuses, sources and the canonical
+`settings_hash`; cohort size, ordering, tie-break and cutoff; the attempt to
+run to task reduction; treatment of infrastructure, provider-error, refusal
+and fallback-served cells; the format-macro weights; metric definitions;
+estimator version, resampling draws and the publication-gate thresholds.
+A task set with no policy uses the legacy rule (best across all runs). Sets
+created after the release-2 deploy reference the policy above; every existing
+hash keeps the legacy rule forever, so old-hash views stay byte-identical and
+no published number changes. `buildScoreMatrix` and the leaderboard read the
+policy from the set, and every v2 response carries `scoring_policy_digest`
+and the normalized policy beside `task_set_hash`. Changing any rule later is
+a new policy row, never a migration. The owner decision reduces to confirming
+this policy as the default for new sets.
 
 Per (model, task): `pass_at_1` = 1 if any cohort run passed at attempt 1;
 `pass_at_n` = 1 if any cohort run passed at any attempt; `auc_2` = 0, 0.5 or
@@ -488,7 +616,10 @@ settings hash. Hidden with fewer than three cohort runs.
 ```ts
 {
   task_set_hash: string; revision_digest: string; estimator_version: string;
-  scoring_rule: "v1" | "v2";
+  scoring_policy_digest: string | null; scoring_policy: object | null;   // null = legacy rule
+  release_slug: string | null; cohort_digest: string;
+  resampling: { seed: string; draws: number; graph_version: string; component_digest: string };
+  generated_at: string; query: object;
   slice: { format: "all" | GroupSlug; metric: "auc_2" | "pass_at_1" | "pass_at_n";
            task_count: number; donor_count: number; component_count: number;
            effective_components: number; largest_component_share: number;
@@ -502,6 +633,7 @@ settings hash. Hidden with fewer than three cohort runs.
     headline: Stat; pooled: Stat | null; macro_by_format: Record<GroupSlug, Stat> | null;
     tier: { rank: number; anchor_slug: string } | null;
     pass_k: { k: 3; value: number; excluded_cells: number; runs: string[] } | null;
+    metrics: Record<string, Stat>;   // keyed headroom: additive metrics never change the shape
   }];
   subset_influence: [{ donor: string; removed: number; remaining: number;
                        rows: [{ slug: string; baseline: number; without: number; delta: number }] }] | null;
@@ -516,8 +648,11 @@ type Stat = { value: number; se: number | null; ci: [number, number] | null;
 composite derivation; section 6.1 in these words; the run cohort; the
 coverage gate; the component rule in one sentence ("tasks connected through
 a shared donor are resampled together") and the publication gate; what
-separation means and its limits; metric definitions; pass^k; the revision
-digest, task-set hash and estimator version in force.
+separation means and its limits; metric definitions; pass^k with its
+exclusion rules stated inline; a crosswalk to BC-Bench naming which of our
+statistics corresponds to their mean-per-run, pass^5 and union and which has
+no counterpart; the revision digest, task-set hash, scoring policy, cohort
+digest and estimator version in force.
 
 ### 6.10 Validation before any separation is shown under the new estimator
 
@@ -551,9 +686,12 @@ digest, task-set hash and estimator version in force.
 
 **Release 1, dark data launch. No public ranking or v1 response changes.**
 1. Pipeline rewrite, shared schema module, validator, alias table, v2
-   catalog, v2-capable CLI in one commit; hand review of mechanism and
-   invariant facets across all formats; validator green in CI.
-2. Migration 0016 applied to prod D1; staging run confirms FK enforcement.
+   catalog with provenance slots, v2-capable CLI in one commit; hand review
+   of mechanism and invariant facets across all formats; validator green in
+   CI. Bench and ingest envelope extended with the 5.5 capture, so the
+   re-bench that follows is the first fully captured campaign.
+2. Migration 0016 applied to prod D1 (revisions, policies, releases,
+   run-time columns); staging run confirms FK enforcement.
 3. Server deploy: revision-aware readers, v2 endpoints returning `404
    no_active_revision` until activation, v1 snapshot support, `CACHE_VERSION`
    v10, digest and estimator version in v2 keys, v1 code paths untouched.
@@ -561,7 +699,9 @@ digest, task-set hash and estimator version in force.
    then `sync-taxonomy --apply --hash <64-hex>` (dry run first): stage,
    verify, snapshot v1, activate. Verify: v2 coverage equals task count,
    digest matches, benchmark hash unchanged, v1 responses byte-identical to
-   the pre-activation snapshot for that hash and for one older hash.
+   the pre-activation snapshot for that hash and for one older hash. Assign
+   the scoring policy to the new set, publish the first benchmark release
+   with its panel manifest and retained set, and write its export bundle.
 
 **Release 2, statistics API and UI together.** Sections 6.1 to 6.5 and 6.8
 with `inference` limited to `descriptive_only` and `sensitivity_only`; the
@@ -572,13 +712,19 @@ on any slice in this release: donor-free slices keep no bands either, so
 that separation appears everywhere at once under one estimator.
 
 **Release 3, separation under the validated estimator.** After 6.10 is in
-the repository: separation on slices passing the gate, pass^k, the
-three-run cohort rule confirmed as the default for new task sets (existing hashes keep `v1`).
+the repository: separation on slices passing the gate, pass^k, the scoring
+policy confirmed as the default for new task sets (existing hashes keep the
+legacy rule).
 
 v1 removal after the sunset date, once v2 traffic is observed.
 
 ## 9. Testing
 
+- Ingest (Deno): envelope carries every 5.5 field; test vector ids stable
+  across a run; signed envelope digest covers them; legacy envelopes still
+  ingest with nulls.
+- Releases: publish writes release, release_tasks and export manifest
+  atomically; export bundle checksums verify; `?cohort=` reselects exactly.
 - Pipeline (Deno): one fixture per format; compatibility matrix rejections;
   alias table; composite derivation incl. environment union and
   `min_bc_version` max; disjointness of local and derived; validator failure
@@ -654,3 +800,14 @@ revisions addressable by digest; enrichment over all formats; environment
 facets inherited; local and derived facets disjoint; compatibility matrix and
 expected counts; explicit `--hash` for apply; dark release 1 with no ranking
 change; separation withheld everywhere until the validated estimator lands.
+
+Revision 4 (from the additions round, consensus of both panelists plus the
+author): per-test outcome vectors with stable ids; harness, environment and
+invocation capture per run; attempt termination facts and digests; a
+digest-addressed scoring policy replacing the rule enum; signed benchmark
+releases with panel manifests and a retained set; task provenance slots in
+the revision; keyed metrics and resampling parameters on the wire; v2
+research endpoints and audit rows; per-release export bundles; a BC-Bench
+crosswalk on the methodology page. Deferred on purpose: campaign and
+replicate tables (a cohort digest gives the reproducibility), public raw
+transcripts, any outcome-derived facet.
