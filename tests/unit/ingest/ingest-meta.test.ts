@@ -15,6 +15,28 @@ import {
   todayPricingVersion,
   validateAttemptsForIngest,
 } from "../../../cli/commands/bench/ingest-meta.ts";
+import type { EnvironmentManifest } from "../../../src/ingest/capture.ts";
+
+function fakeEnvironment(): EnvironmentManifest {
+  return {
+    bc_artifact: "https://bcartifacts/onprem/28.4/w1",
+    container_image_digest: "sha256:abc",
+    bcch_version: "6.1.14",
+    test_runner: "soap",
+    host_os: "windows-x86_64",
+    centralgauge_sha: "deadbeef",
+    dirty_tree: false,
+    harness_fingerprint: "a".repeat(64),
+    retry_path_version: "rp2-overlay-2026-09-01",
+    prompt_policy_version: "pp1-diagnose-2026-08-23",
+    prompt_template_digest: "b".repeat(64),
+    culture: null,
+    tenant: "default",
+    company: "My Company",
+    bcch_use_pssession_bc28: false,
+    bcch_use_pwsh_bc24: true,
+  };
+}
 
 Deno.test("todayPricingVersion is a UTC YYYY-MM-DD stamp", () => {
   const v = todayPricingVersion();
@@ -45,6 +67,84 @@ Deno.test("buildIngestMeta stamps schema 2 + task_set_hash when a hash is given"
   const meta = buildIngestMeta([{ variantId: "mock/mock-gpt-4" }], hash);
   assertEquals(meta.schema, 2);
   assertEquals(meta.task_set_hash, hash);
+});
+
+Deno.test("buildIngestMeta stamps schema 3 + environment/invocations when capture is given", () => {
+  const hash = "a".repeat(64);
+  const environment = fakeEnvironment();
+  const invocations = {
+    "mock/mock-gpt-4": { provider: "mock", requested_model: "mock-gpt-4" },
+  };
+  const meta = buildIngestMeta(
+    [{ variantId: "mock/mock-gpt-4" }],
+    hash,
+    { environment, invocations },
+  );
+  assertEquals(meta.schema, 3);
+  assertEquals(meta.task_set_hash, hash);
+  assertEquals(meta.environment, environment);
+  assertEquals(meta.invocations, invocations);
+});
+
+Deno.test("buildIngestMeta omits environment/invocations entirely when capture is not given", () => {
+  const meta = buildIngestMeta(
+    [{ variantId: "mock/mock-gpt-4" }],
+    "a".repeat(64),
+  );
+  assertEquals(meta.schema, 2);
+  assertEquals("environment" in meta, false);
+  assertEquals("invocations" in meta, false);
+});
+
+Deno.test("parseIngestMeta round-trips a schema-3 file carrying environment + invocations", () => {
+  const environment = fakeEnvironment();
+  const invocations = {
+    "mock/mock-gpt-4": { provider: "mock", requested_model: "mock-gpt-4" },
+  };
+  const meta = buildIngestMeta(
+    [{ variantId: "mock/mock-gpt-4" }],
+    "b".repeat(64),
+    { environment, invocations },
+  );
+  const saved = JSON.parse(JSON.stringify({ results: [], ingest: meta }));
+  const parsed = parseIngestMeta(saved);
+  assert(parsed !== undefined, "schema-3 meta must parse");
+  assertEquals(parsed!.schema, 3);
+  assertEquals(parsed!.environment, environment);
+  assertEquals(parsed!.invocations, invocations);
+  assertEquals(parsed, meta);
+});
+
+Deno.test("parseIngestMeta omits environment/invocations for a legacy file that never carried them", () => {
+  const parsed = parseIngestMeta({
+    ingest: {
+      schema: 2,
+      pricing_version: "2026-07-17",
+      run_ids: { "mock/mock-gpt-4": "11111111-2222-3333-4444-555555555555" },
+      task_set_hash: "c".repeat(64),
+    },
+  });
+  assert(parsed !== undefined, "schema-2 meta must still parse");
+  assertEquals("environment" in parsed!, false);
+  assertEquals("invocations" in parsed!, false);
+});
+
+Deno.test("parseIngestMeta ignores a malformed environment/invocations shape rather than throwing", () => {
+  const parsed = parseIngestMeta({
+    ingest: {
+      schema: 3,
+      pricing_version: "2026-07-17",
+      run_ids: { "mock/mock-gpt-4": "11111111-2222-3333-4444-555555555555" },
+      environment: "not-an-object",
+      invocations: { "mock/mock-gpt-4": "not-an-object-either" },
+    },
+  });
+  assert(
+    parsed !== undefined,
+    "meta must still parse despite malformed capture fields",
+  );
+  assertEquals("environment" in parsed!, false);
+  assertEquals("invocations" in parsed!, false);
 });
 
 Deno.test("parseIngestMeta round-trips through JSON save/load", () => {

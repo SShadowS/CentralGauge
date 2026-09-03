@@ -6,11 +6,6 @@
 import { Command } from "@cliffy/command";
 import * as colors from "@std/fmt/colors";
 import { type BenchResults, ingestRun } from "../../src/ingest/mod.ts";
-import {
-  buildEnvironmentManifest,
-  invocationSnapshot,
-} from "../../src/ingest/capture.ts";
-import { DEFAULT_CONTAINER_NAME } from "../../src/constants.ts";
 import type { IngestCliFlags } from "../../src/ingest/config.ts";
 import type { TaskExecutionResult } from "../../src/tasks/interfaces.ts";
 import type { ModelVariant } from "../../src/llm/variant-types.ts";
@@ -175,27 +170,31 @@ async function handleIngest(
       ),
     );
 
-    // Run-level capture (taxonomy v2). Unlike the immediate-ingest path in
-    // bench-command.ts, this is a REPLAY: there is no live container name
-    // to thread through (no `--container` flag on this command), so the
-    // manifest is built against the default container, and every fact it
-    // captures — git sha/dirty-tree, docker image, harness fingerprint —
-    // reflects THIS process's state at replay time, not what the run was
-    // actually benched against. The results file's own `ingest` key (read
-    // above via `parseIngestMeta`) and the top-level `centralgauge_sha`
-    // payload field (from `readGitSha` above) stay the authoritative
-    // bench-time facts; this manifest is a best-effort supplement, not a
-    // replacement.
-    console.warn(
-      colors.yellow(
-        `[WARN] environment manifest captured at REPLAY time, not bench time — ` +
-          `git/container/harness facts reflect this machine right now, not the original bench run`,
-      ),
-    );
-    const environment = await buildEnvironmentManifest({
-      containerName: DEFAULT_CONTAINER_NAME,
-      cwd,
-    });
+    // Run-level capture (taxonomy v2). This is a REPLAY: the environment
+    // manifest and per-variant invocation snapshots are read from the
+    // results file's persisted `ingest` key, captured ONCE at BENCH time by
+    // the parallel executor — never rebuilt here. Rebuilding at replay time
+    // would describe the replaying machine (git sha, docker image, harness
+    // fingerprint) instead of the machine the run actually executed on,
+    // exactly the fact this capture exists to make trustworthy. A results
+    // file saved before this capture existed (or where the bench-time build
+    // failed) carries no `environment`/`invocations`, and this replay's
+    // ingest payload omits those fields entirely rather than guess them.
+    const environment = ingestMeta?.environment;
+    if (environment) {
+      console.log(
+        colors.gray(
+          `[INFO] environment manifest read from ${path} (captured at bench time)`,
+        ),
+      );
+    } else {
+      console.warn(
+        colors.yellow(
+          `[WARN] ${path} carries no captured environment manifest (pre-capture run) — ` +
+            `environment/invocation fields will be omitted from this replay's ingest payload, not rebuilt from this machine`,
+        ),
+      );
+    }
 
     let okCount = 0;
     let attempted = 0;
@@ -203,22 +202,11 @@ async function handleIngest(
     let infraSkipped = 0;
     let fatalFailure = false;
     for (const variant of variants) {
+      const invocation = ingestMeta?.invocations?.[variant.variantId];
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
-        {
-          pricingVersion,
-          environment,
-          invocation: invocationSnapshot({
-            provider: variant.provider,
-            model: variant.baseModel,
-            apiModelId: variant.model,
-            ...(variant.config.maxTokens !== undefined &&
-              { maxTokens: variant.config.maxTokens }),
-            ...(variant.config.temperature !== undefined &&
-              { temperature: variant.config.temperature }),
-            ...(variant.config.thinkingBudget !== undefined &&
-              { reasoning: variant.config.thinkingBudget }),
-          }),
-        };
+        { pricingVersion };
+      if (environment) assembleOpts.environment = environment;
+      if (invocation) assembleOpts.invocation = invocation;
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
       const persistedRunId = ingestMeta?.run_ids[variant.variantId];
       if (persistedRunId) assembleOpts.runId = persistedRunId;

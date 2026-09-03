@@ -56,6 +56,10 @@ import {
 } from "./container-setup.ts";
 import { computeConcurrencyDefaults } from "./concurrency-defaults.ts";
 import { buildIngestMeta } from "./ingest-meta.ts";
+import {
+  buildEnvironmentManifest,
+  invocationSnapshot,
+} from "../../../src/ingest/capture.ts";
 import { computeTaskSetHash } from "../../../src/ingest/catalog/task-set-hash.ts";
 import {
   displayBenchmarkSummary,
@@ -709,7 +713,52 @@ export async function executeParallelBenchmark(
             }); results file will use legacy schema-1 ingest meta.`,
           );
         }
-        const ingestMeta = buildIngestMeta(variants, benchTaskSetHash);
+        // Run-level environment capture (taxonomy v2, Important-2 fix):
+        // built ONCE, here, at bench time — right after the run finishes,
+        // against the actual container the run executed on — and persisted
+        // into the results file's `ingest` key. `centralgauge ingest <path>`
+        // replay reads it back instead of rebuilding it, which would
+        // otherwise describe the replaying machine (git sha, docker image,
+        // harness fingerprint) rather than the machine the run actually
+        // executed on. Best-effort, same as the hash above: a failure here
+        // must not lose the results file, just the capture.
+        let ingestCapture:
+          | Parameters<typeof buildIngestMeta>[2]
+          | undefined;
+        if (primaryContainerName) {
+          try {
+            const environment = await buildEnvironmentManifest({
+              containerName: primaryContainerName,
+              cwd: Deno.cwd(),
+            });
+            const invocations: Record<string, Record<string, unknown>> = {};
+            for (const v of variants) {
+              invocations[v.variantId] = invocationSnapshot({
+                provider: v.provider,
+                model: v.baseModel,
+                apiModelId: v.model,
+                ...(v.config.maxTokens !== undefined &&
+                  { maxTokens: v.config.maxTokens }),
+                ...(v.config.temperature !== undefined &&
+                  { temperature: v.config.temperature }),
+                ...(v.config.thinkingBudget !== undefined &&
+                  { reasoning: v.config.thinkingBudget }),
+              });
+            }
+            ingestCapture = { environment, invocations };
+          } catch (err) {
+            log.warn(
+              `Could not build environment manifest for persistence (${
+                err instanceof Error ? err.message : String(err)
+              }); results file will omit environment/invocation capture.`,
+            );
+          }
+        }
+        const ingestMeta = buildIngestMeta(
+          variants,
+          benchTaskSetHash,
+          ingestCapture,
+        );
         await saveResultsJson(
           resultsFile,
           finalResults,
