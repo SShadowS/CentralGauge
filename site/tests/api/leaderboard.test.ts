@@ -2,7 +2,32 @@ import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { LeaderboardRow } from "../../src/lib/shared/api-types";
 import { CACHE_VERSION } from "../../src/lib/server/cache-version";
+import { buildCacheKey } from "../../src/lib/server/data-epoch";
 import { resetDb } from "../utils/reset-db";
+
+/**
+ * Rebuilds the exact Cache API key the leaderboard handler uses for a default
+ * (unfiltered) request: NORMALIZED query params plus the cache version and the
+ * current data epoch. Deliberately not derived from a request URL — unknown
+ * params are excluded from the key by design.
+ */
+async function currentLeaderboardKey(): Promise<Request> {
+  const row = await env.DB.prepare(`SELECT epoch FROM cache_epoch WHERE id = 1`)
+    .first<{ epoch: number }>();
+  return buildCacheKey("leaderboard", {
+    set: "current",
+    tier: "all",
+    difficulty: null,
+    family: null,
+    since: null,
+    category: null,
+    openness: null,
+    sort: "auc_2",
+    direction: "desc",
+    limit: 50,
+    cursor: null,
+  }, `e${row!.epoch}`);
+}
 
 async function seed(): Promise<void> {
   await resetDb();
@@ -321,12 +346,12 @@ describe("GET /api/v1/leaderboard", () => {
     // Drain body so the inline cache.put commits before the next read.
     await res.arrayBuffer();
 
-    // The handler stores entries in a named cache (`cg-leaderboard`) keyed by
-    // a synthetic GET request URL with the current _cv cache version appended.
-    const cacheKeyUrl = `${url}&_cv=${CACHE_VERSION}`;
-    const cacheKey = new Request(cacheKeyUrl, { method: "GET" });
+    // Entries live in the named cache `cg-leaderboard` under a key built from
+    // the NORMALIZED query plus _cv and the data epoch — not from the request
+    // URL. `?test=cache-miss` is not a param the endpoint reads, so it is
+    // deliberately absent from the key.
     const cache = await caches.open("cg-leaderboard");
-    const cached = await cache.match(cacheKey);
+    const cached = await cache.match(await currentLeaderboardKey());
     expect(cached).toBeDefined();
     const body = (await cached!.json()) as { data: unknown[] };
     expect(body.data.length).toBe(2);
@@ -337,27 +362,39 @@ describe("GET /api/v1/leaderboard", () => {
     expect(res.status).toBe(400);
   });
 
-  it("cache key includes the _cv cache-version suffix", async () => {
-    // Use a fresh URL so we are guaranteed a cache miss → the handler writes
-    // a new entry. After the write we reconstruct the same _cv-bearing URL
-    // and assert the entry exists under it.
-    const url = "https://x/api/v1/leaderboard?test=cache-version";
-    const res = await SELF.fetch(url);
+  it("cache key carries _cv + _de and ignores unknown query params", async () => {
+    const urlA = "https://x/api/v1/leaderboard?test=cache-version";
+    const urlB = "https://x/api/v1/leaderboard?utm_source=twitter&fbclid=xyz";
+
+    const res = await SELF.fetch(urlA);
     expect(res.status).toBe(200);
     // Drain so the inline cache.put commits before we inspect.
     await res.arrayBuffer();
 
-    // The handler appends _cv=<CACHE_VERSION> to the synthetic cache key before
-    // storing. Reconstruct the exact URL the handler used and verify the entry exists.
-    const expectedKeyUrl = `${url}&_cv=${CACHE_VERSION}`;
     const cache = await caches.open("cg-leaderboard");
-    const cached = await cache.match(new Request(expectedKeyUrl, { method: "GET" }));
-    expect(cached, `cache entry must be stored under _cv=${CACHE_VERSION} key`).toBeDefined();
+    const key = await currentLeaderboardKey();
+    expect(
+      await cache.match(key),
+      "entry must be stored under the normalized epoch-keyed key",
+    ).toBeDefined();
+    expect(key.url).toContain(`_cv=${CACHE_VERSION}`);
+    expect(key.url, "key must carry a real data epoch").toMatch(/_de=e\d+/);
 
-    // Sanity: the entry is NOT stored under the bare URL (without _cv).
-    const bareKey = new Request(url, { method: "GET" });
-    const cachedBare = await cache.match(bareKey);
-    expect(cachedBare, "entry must NOT be stored under bare URL").toBeUndefined();
+    // Junk params must NOT mint their own slot. Before normalization every
+    // tracking-param variant was a guaranteed full recompute (~12.5k rows),
+    // which made an unlimited supply of junk params an unlimited supply of
+    // misses. Both URLs must resolve to the one key asserted above.
+    const resB = await SELF.fetch(urlB);
+    expect(resB.status).toBe(200);
+    await resB.arrayBuffer();
+    expect(
+      await cache.match(new Request(urlA, { method: "GET" })),
+      "must not be stored under the raw request URL",
+    ).toBeUndefined();
+    expect(
+      await cache.match(new Request(urlB, { method: "GET" })),
+      "junk params must not create a second cache slot",
+    ).toBeUndefined();
   });
 
   // ===========================================================================

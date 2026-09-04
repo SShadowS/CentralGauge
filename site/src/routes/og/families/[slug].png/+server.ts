@@ -4,6 +4,15 @@ import { loadFlags } from "$lib/server/flags";
 import { renderOgPng } from "$lib/server/og-render";
 import { isCanary } from "$lib/server/canary";
 import { computeModelAggregates } from "$lib/server/model-aggregates";
+import {
+  buildCacheKey,
+  readDataEpoch,
+  isFallbackEpoch,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+} from "$lib/server/data-epoch";
+import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
+import { b64ToBytes, bytesToB64 } from "$shared/base64";
 
 export const prerender = false;
 
@@ -14,6 +23,48 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
     );
   }
   const env = platform.env;
+
+  // Epoch-keyed named cache, checked BEFORE any D1 work. renderOgPng's own R2
+  // cache is keyed on a payload derived from D1, so it saves the Satori render
+  // and zero D1 rows — the caching has to happen here to matter.
+  // Ordering contract (data-epoch.ts): epoch read first, never re-read.
+  const ogCache = await platform.caches.open("cg-og");
+  const epoch = await readDataEpoch(env.DB);
+  const ogTtl = isFallbackEpoch(epoch)
+    ? DEGRADED_TTL_SECONDS
+    : EPOCH_KEYED_TTL_SECONDS;
+  const ogKey = buildCacheKey("og-family", { slug: params.slug ?? "" }, epoch);
+  const ogHit = await ogCache.match(ogKey);
+  if (ogHit) return ogHit;
+
+  // L2: globally shared. The expensive part of this route is the D1 aggregate
+  // above the render, so without a shared tier every colo repeats it after an
+  // invalidation. PNG bytes are base64'd for the TEXT column — roughly a third
+  // larger, still far under the 512KB cap.
+  const ogShared = await sharedCacheGet(env.DB, ogKey.url, epoch);
+  if (ogShared) {
+    const decoded = b64ToBytes(ogShared);
+    // Slice to an exact ArrayBuffer: Response wants a buffer, not a view, and
+    // a view could in principle span a larger backing buffer.
+    // `.buffer` is typed ArrayBufferLike (ArrayBuffer | SharedArrayBuffer);
+    // b64ToBytes only ever allocates a plain ArrayBuffer.
+    const bytes = decoded.buffer.slice(
+      decoded.byteOffset,
+      decoded.byteOffset + decoded.byteLength,
+    ) as ArrayBuffer;
+    const backfill = new Response(bytes, {
+      headers: {
+        "content-type": "image/png",
+        "cache-control": `public, s-maxage=${ogTtl}`,
+        "x-og-cache": "epoch",
+      },
+    });
+    await ogCache.put(ogKey, backfill.clone()).catch((err) =>
+      console.error("[og-family] L1 backfill failed:", err)
+    );
+    return backfill;
+  }
+
   const flags = loadFlags(
     env as unknown as Record<string, string | undefined>,
     isCanary(url),
@@ -84,11 +135,41 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
     },
   });
 
-  return new Response(out.body, {
+  const res = new Response(out.body, {
     headers: {
       "content-type": out.contentType,
+      // Deliberately NOT a long s-maxage: .png URLs are edge-cached by URL,
+      // and a URL-keyed copy carries no epoch, so a publish could not clear it.
       "cache-control": out.cacheControl,
       "x-og-cache": out.cacheHit ? "hit" : "miss",
     },
   });
+
+  // `out.body` is an ArrayBuffer, so both Responses are built from it directly.
+  // Do not use res.clone(): cloning ties the stored copy's body to the returned
+  // response's stream, and a failure there is swallowed by the catch below,
+  // producing a silent cache that never populates.
+  await sharedCacheSet(
+    env.DB,
+    ogKey.url,
+    epoch,
+    bytesToB64(new Uint8Array(out.body)),
+  );
+
+  await ogCache.put(
+    ogKey,
+    new Response(out.body, {
+      headers: {
+        "content-type": out.contentType,
+        "cache-control": `public, s-maxage=${ogTtl}`,
+        // Marks responses served from the epoch-keyed cache, which short-
+        // circuits before any D1 work. Distinct from renderOgPng's own
+        // "hit"/"miss", which only reports whether the Satori render was
+        // reused and says nothing about read cost.
+        "x-og-cache": "epoch",
+      },
+    }),
+  ).catch((err) => console.error("[og] cache put failed:", err));
+
+  return res;
 };

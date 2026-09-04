@@ -1,4 +1,4 @@
-// Taxonomy v2 server helpers (migration 0016_taxonomy_v2.sql). Starts with
+// Taxonomy v2 server helpers (migration 0018_taxonomy_v2.sql). Starts with
 // the freeze-check + active-revision lookup needed by the admin endpoint's
 // v1/v2 branching (Task 2); Tasks 3-5 append the digest/apply/activate flow.
 

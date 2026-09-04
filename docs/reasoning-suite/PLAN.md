@@ -12,6 +12,13 @@ Companion files:
 - `ledger.md` — one row per candidate, cradle to promoted task.
 - `decisions.md` — rulings made along the way. Append, never rewrite.
 
+Operator tooling (committed 2026-08-24): the `/build-batch` skill
+(`.claude/skills/build-batch/`) runs one batch end to end and bundles
+the consolidated builder brief; `/premise-probe` packages the
+decisions-13-mandated platform-fact measurement; the local-only
+`mutation-triager` agent (`.claude/agents/`) triages LethAL survivors.
+Start any new batch by invoking `/build-batch`.
+
 Standing constraints (from CLAUDE.md + session rules):
 
 - No rebench recommendation until the full new set is complete.

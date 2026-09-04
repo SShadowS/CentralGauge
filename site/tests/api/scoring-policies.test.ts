@@ -186,4 +186,37 @@ describe("scoring policies", () => {
     const json = (await res.json()) as { code: string };
     expect(json.code).toBe("invalid_policy");
   });
+
+  it("rejects macro_weights whose values are not finite numbers", async () => {
+    // String weights used to pass: `0 + "0.25"` is a string, subtracting 1
+    // gives NaN, and `Math.abs(NaN) > 1e-9` is false, so the sum check never
+    // fired. Every other field here is valid, so only the weights can fail it.
+    const { keyId, keypair } = await registerMachineKey("root", "admin");
+    const stringWeights = {
+      ...policy,
+      macro_weights: {
+        "build-from-spec": "0.25",
+        "runtime-trap": "0.25",
+        "diagnose-single": "0.25",
+        "diagnose-composite": "0.25",
+      },
+    };
+    const { signedRequest } = await createSignedPayload(
+      { policy: stringWeights },
+      keyId,
+      undefined,
+      keypair,
+    );
+    const res = await SELF.fetch(
+      "https://x/api/v1/admin/catalog/scoring-policies",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...signedRequest, version: 1 }),
+      },
+    );
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe("invalid_policy");
+  });
 });

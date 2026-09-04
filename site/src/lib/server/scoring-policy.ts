@@ -61,13 +61,23 @@ export function validatePolicy(p: unknown): asserts p is ScoringPolicy {
   ) {
     return bad("cells invalid");
   }
-  const w = o.macro_weights ?? {};
+  // Typed as unknown on purpose: the values arrive from a signed JSON payload,
+  // and a non-numeric weight used to slip through here. `0 + "0.25"` is the
+  // string "00.25", `"00.25" - 1` is NaN, and `Math.abs(NaN) > 1e-9` is false,
+  // so a policy with string weights passed the sum check.
+  const w = (o.macro_weights ?? {}) as Record<string, unknown>;
   const keys = Object.keys(w);
-  const sum = Object.values(w).reduce((s, x) => s + x, 0);
+  const values = Object.values(w);
+  const allFinite = values.every(
+    (x) => typeof x === "number" && Number.isFinite(x),
+  );
+  const sum = allFinite ? (values as number[]).reduce((s, x) => s + x, 0) : NaN;
   const coversFormats =
     keys.length === FORMATS.length && FORMATS.every((f) => f in w);
-  if (!coversFormats || Math.abs(sum - 1) > 1e-9) {
-    return bad("macro_weights must cover the four formats and sum to 1");
+  if (!coversFormats || !allFinite || Math.abs(sum - 1) > 1e-9) {
+    return bad(
+      "macro_weights must cover the four formats with finite numbers summing to 1",
+    );
   }
   if (!Array.isArray(o.metrics) || !o.metrics.length) {
     return bad("metrics required");

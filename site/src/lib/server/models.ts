@@ -2,10 +2,15 @@
  * Shared model-catalog list query for `GET /api/v1/models` and
  * `GET /api/v2/models` (Task 8 fix round 1) — the model catalog is global,
  * not scoped to any task set, so both routes want byte-identical rows; v2
- * only differs in gating + envelope, not in what this returns.
+ * only differs in gating + envelope, not in what this returns. Caching is the
+ * caller's concern: v1 wraps this in the epoch-keyed named cache plus the
+ * shared L2, v2 in `v2Json`'s revision-keyed cache.
  */
 import { getAll } from "./db";
-import { computeModelAggregates } from "./model-aggregates";
+import {
+  computeModelAggregatesLite,
+  type LiteAggregate,
+} from "./model-aggregates";
 import type { ModelsIndexItem } from "../shared/api-types";
 
 interface ModelRow {
@@ -22,6 +27,12 @@ interface ModelRow {
  * The models index is used for catalog discoverability — we want users to
  * find models that have runs on any task set, not just the current one.
  * See api-types.ts's `ModelsIndexItem` doc comment for the full contract.
+ *
+ * Lite path: this list reads only the four plain aggregates below, and the
+ * full `computeModelAggregates` costs 475,387 rows against production to
+ * produce them (it also computes P1/P2 correlated subqueries, cost, tokens,
+ * consistency and the CI denominator, none of which are read here). The lite
+ * query costs 1,406.
  */
 export async function listModels(db: D1Database): Promise<ModelsIndexItem[]> {
   const rows = await getAll<ModelRow>(
@@ -37,16 +48,8 @@ export async function listModels(db: D1Database): Promise<ModelsIndexItem[]> {
   const allModelIds = rows.map((r) => r.id);
   const aggMap =
     allModelIds.length === 0
-      ? new Map<
-          number,
-          {
-            run_count: number;
-            verified_runs: number;
-            avg_score: number | null;
-            last_run_at: string | null;
-          }
-        >()
-      : await computeModelAggregates(db, { modelIds: allModelIds });
+      ? new Map<number, LiteAggregate>()
+      : await computeModelAggregatesLite(db, { modelIds: allModelIds });
 
   return rows.map((r) => {
     const agg = aggMap.get(r.id);

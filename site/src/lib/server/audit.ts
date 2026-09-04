@@ -1,7 +1,7 @@
 import type { VerifiedKey } from "./signature";
 
 /**
- * Append one row to `admin_audit` (migration 0016_taxonomy_v2.sql). Every
+ * Append one row to `admin_audit` (migration 0018_taxonomy_v2.sql). Every
  * admin mutation that touches the v2 taxonomy tables writes one of these —
  * the table is append-only, there is no update/delete path.
  */

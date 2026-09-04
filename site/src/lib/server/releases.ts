@@ -1,5 +1,5 @@
 /**
- * Signed benchmark releases (Task 10, migration 0016_taxonomy_v2.sql).
+ * Signed benchmark releases (Task 10, migration 0018_taxonomy_v2.sql).
  *
  * A release freezes a panel manifest (which models/runs were compared, and
  * the rule that decided the retained-task subset) against a specific

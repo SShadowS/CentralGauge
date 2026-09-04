@@ -4,10 +4,25 @@ import { getAll, getFirst } from "$lib/server/db";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { computeDenominator } from "$lib/server/denominator";
 import { rowCostUsd } from "$lib/server/cost-sql";
+import { epochCachedJson } from "$lib/server/shared-cache";
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
   const env = platform!.env;
   try {
+    // This route had NO server-side cache and measured 104,781 rows per
+    // request — 1.99M/day, the single largest consumer. It was missed because
+    // the original cache rollout worked from a snapshot of expensive queries
+    // rather than an audit of every route touching D1.
+    //
+    // A 404 for an unknown family throws out of `compute` before anything is
+    // stored, so crawler-driven unknown slugs cannot fill the cache.
+    const payload = await epochCachedJson({
+      db: env.DB,
+      caches: platform!.caches,
+      cacheName: "cg-families",
+      namespace: "family-detail",
+      params: { slug: params.slug ?? "" },
+      compute: async () => {
     const fam = await getFirst<
       { id: number; slug: string; display_name: string; vendor: string }
     >(
@@ -158,7 +173,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       );
     }
 
-    return cachedJson(request, {
+    return {
       slug: fam.slug,
       display_name: fam.display_name,
       vendor: fam.vendor,
@@ -199,7 +214,11 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
           task_set_hash: t.dominant_task_set_hash ?? null,
         };
       }),
+    };
+      },
     });
+
+    return cachedJson(request, payload);
   } catch (err) {
     return errorResponse(err);
   }

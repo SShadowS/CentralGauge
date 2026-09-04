@@ -1,4 +1,5 @@
 import type { RequestHandler } from "./$types";
+import { bumpDataEpochStmt } from "$lib/server/data-epoch";
 import {
   type SignedAdminRequest,
   verifySignedRequest,
@@ -71,7 +72,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         `model '${p.slug}' already belongs to family '${existing.family_slug}', cannot change to '${p.family}'`,
       );
     }
-    await db.prepare(
+    const stmt = db.prepare(
       `INSERT INTO models(family_id, slug, api_model_id, display_name, generation, released_at, deprecated_at, max_input_tokens, max_output_tokens, capabilities)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(slug, api_model_id) DO UPDATE SET
@@ -93,7 +94,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       p.max_input_tokens ?? null,
       p.max_output_tokens ?? null,
       p.capabilities ? JSON.stringify(p.capabilities) : null,
-    ).run();
+    );
+    // Catalog edits move leaderboard columns (cost, metadata, openness),
+    // so retire every cached aggregate. In-batch with the write: a
+    // committed edit paired with a failed bump would serve pre-edit
+    // numbers until the 24h TTL. See src/lib/server/data-epoch.ts.
+    await db.batch([stmt, bumpDataEpochStmt(db)]);
     return jsonResponse({ ok: true }, 200);
   } catch (err) {
     return errorResponse(err);

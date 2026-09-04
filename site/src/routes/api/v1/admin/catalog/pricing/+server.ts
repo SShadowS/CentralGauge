@@ -1,4 +1,5 @@
 import type { RequestHandler } from "./$types";
+import { bumpDataEpochStmt } from "$lib/server/data-epoch";
 import {
   type SignedAdminRequest,
   verifySignedRequest,
@@ -61,7 +62,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // truth, so a repost RECONCILES the row (corrects values) instead of being
     // dropped. Reposting identical values is a harmless no-op write.
     // KEEP IN SYNC WITH migrations/0003_cost_source.sql (source, fetched_at)
-    await db.prepare(
+    const stmt = db.prepare(
       `INSERT INTO cost_snapshots(
          pricing_version, model_id, input_per_mtoken, output_per_mtoken,
          cache_read_per_mtoken, cache_write_per_mtoken, effective_from, effective_until,
@@ -87,7 +88,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       p.effective_until ?? null,
       p.source,
       p.fetched_at ?? null,
-    ).run();
+    );
+    // Catalog edits move leaderboard columns (cost, metadata, openness),
+    // so retire every cached aggregate. In-batch with the write: a
+    // committed edit paired with a failed bump would serve pre-edit
+    // numbers until the 24h TTL. See src/lib/server/data-epoch.ts.
+    await db.batch([stmt, bumpDataEpochStmt(db)]);
     return jsonResponse({ ok: true }, 200);
   } catch (err) {
     return errorResponse(err);

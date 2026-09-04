@@ -20,14 +20,19 @@
  * v9: fallback_count added to leaderboard rows. A v8 entry has no such key,
  * so the client would read every model as having zero refusal-fallback
  * results until the entry aged out.
- * v10: taxonomy v2 (`/api/v2/*`, Plan B) launches — `v2-context.ts`'s
- * `v2Json` folds this constant into every `/api/v2/*` cache key alongside
- * the resolved revision + scoring-policy digests. Bumped so a deploy is a
- * clean cutover: no pre-v2 entry cached under this same constant lingers
- * once the v2 routes are live.
+ * v10 retires every v9 entry, for two independent reasons that landed
+ * together:
+ *   - `tier` and `since` are now mirrored into the P1/P2 correlated
+ *     subqueries. A v9 entry for a tier- or since-filtered view can hold
+ *     pass numerators counted across out-of-scope runs, so those entries are
+ *     retired rather than served for another day under epoch keying.
+ *   - taxonomy v2 (`/api/v2/*`, Plan B) launches. `v2-context.ts`'s `v2Json`
+ *     folds this constant into every `/api/v2/*` cache key alongside the
+ *     resolved revision and scoring-policy digests, so a deploy is a clean
+ *     cutover with no pre-v2 entry lingering under the same constant.
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = 'v10';
+export const CACHE_VERSION = "v10";

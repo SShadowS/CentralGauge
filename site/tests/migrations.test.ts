@@ -167,7 +167,7 @@ describe("migration 0010 task_tags", () => {
   });
 });
 
-describe("0016_taxonomy_v2", () => {
+describe("0018_taxonomy_v2", () => {
   it("creates the revision, policy, release and capture schema", async () => {
     const names = (
       await env.DB.prepare(

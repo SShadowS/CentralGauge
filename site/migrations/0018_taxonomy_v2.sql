@@ -1,4 +1,4 @@
--- 0016_taxonomy_v2.sql - immutable taxonomy revisions, scoring policies,
+-- 0018_taxonomy_v2.sql - immutable taxonomy revisions, scoring policies,
 -- benchmark releases, run-time capture. Additive; v1 tables untouched.
 
 CREATE TABLE scoring_policies (
