@@ -1,4 +1,4 @@
-# Fall release: shipping the 298-task set
+# Fall release: shipping the new task set
 
 Status as of 2026-09-04. This is the operator runbook for taking the new
 benchmark set from "built and reviewed" to "published and ranked". Every step
@@ -13,8 +13,8 @@ Legend: **[x] done** · **[ ] not started** · **[!] blocked or decision needed*
 | Thing | State |
 | --- | --- |
 | Live task set in production | `b31c942bd4e8`, 110 tasks, current since 2026-05-16 |
-| Local task set | 298 tasks, never benched, never ingested |
-| Composition | 110 build-from-spec, 49 runtime-trap, 110 diagnose-single, 29 diagnose-composite |
+| Local task set | 298 tasks, never benched, never ingested; 238 if decision 3 retires the saturated 60 |
+| Composition | 110 build-from-spec, 49 runtime-trap, 110 diagnose-single, 29 diagnose-composite (50 / 49 / 110 / 29 after decision 3) |
 | Taxonomy v2 pipeline (Plan A) | shipped, merged, on master |
 | Taxonomy v2 site (Plan B, release 1) | shipped, merged, **deployed** at worker version `199f6cd2` |
 | D1 migration `0018_taxonomy_v2.sql` | applied to production |
@@ -67,10 +67,12 @@ Nothing below costs money, but the campaign cannot be sized without them.
 
   **Three things the numbers above do not say, and a reviewer will.**
 
-  1. **They are not a measurement of the 298-task set.** All 139 are
-     diagnose tasks: the 110 singles and the 29 composites. None of the 110
-     build-from-spec or 49 runtime-trap tasks is in them. A headline drawn
-     from the 59 makes no claim about two thirds of the benchmark, and it
+  1. **They are not a measurement of the whole set.** All 139 are diagnose
+     tasks: the 110 singles and the 29 composites. No build-from-spec or
+     runtime-trap task is in them, and decision 3's retirement does not
+     change that — it removes only build-from-spec tasks, so the two formats
+     the 59 say nothing about still number 99. A headline drawn from the 59
+     makes no claim about two fifths of the post-retirement benchmark, and it
      conflicts with the taxonomy design's own rule that the "All" score is an
      equal-weight mean over the four formats
      (`docs/superpowers/specs/2026-09-02-taxonomy-v2-design.md`, 6.x).
@@ -105,13 +107,64 @@ Nothing below costs money, but the campaign cannot be sized without them.
   composite programme has since cleared the bar under decision 1. Confirm the
   waves are superseded, or schedule them before the campaign.
 
-- [!] **Decision 3: the 25 tasks with no reference solution.** 22 easy tasks
-  (`CG-AL-E001` to `E058`), plus `M034`, `M040`, `X044`. They are outside
-  gold-ci's replay coverage, so nothing proves their oracles still pass under
-  the current harness. Either delete them (the plan of record for the easy
-  tier), or author references and replay them.
-  Reproduce the list with `scripts/` or by diffing `reference/solutions`
-  against `tasks/*/*.yml`.
+- [!] **Decision 3: retire the 60 tasks the frontier has saturated.**
+  Continuity with the published leaderboard is explicitly not a constraint
+  (owner ruling, 2026-09-04), so the set is free to shrink on evidence.
+
+  **Evidence.** On the published set `b31c942bd4e8`, sixty tasks are passed
+  on every attempt by all three of `anthropic/claude-fable-5`,
+  `gemini/gemini-3.1-pro-preview` and `anthropic/claude-opus-4-8`. They
+  cannot separate models at the frontier, and every one of them costs a
+  share of every campaign. All sixty are build-from-spec: 13 easy, 14
+  medium, 33 hard. The ids are in
+  `docs/reasoning-suite/retired-2026-09-04.txt`.
+
+  **Scope of the deletion: 188 paths.** 60 task YAMLs, 60 oracles under
+  `tests/al/<tier>/`, 5 companion AL files (`CG-AL-E008.MockProcessor.al`,
+  `CG-AL-E032.MockTokenProvider.al`, `CG-AL-H001.ProductType.al`,
+  `CG-AL-H205.Spy.al`, `CG-AL-H205.Subscriber.al`), 16 prereq directories
+  under `tests/al/dependencies/`, and 47 reference directories under
+  `reference/solutions/`.
+
+  **Safety checks, run 2026-09-04, all clean.** No kept task's prereq
+  depends on a retired task's prereq (0 hits across the chained
+  `dependencies` arrays). No kept manifest references a retired id (0 hits).
+  So nothing that stays behind breaks.
+
+  **Resulting campaign set: 238 tasks.**
+
+  | Format | Before | Retired | After |
+  | --- | --- | --- | --- |
+  | build-from-spec | 110 | 60 | 50 |
+  | runtime-trap | 49 | 0 | 49 |
+  | diagnose-single | 110 | 0 | 110 |
+  | diagnose-composite | 29 | 0 | 29 |
+  | **total** | **298** | **60** | **238** |
+
+  This also settles most of the old no-reference question: 13 of the 25
+  tasks with no reference solution are inside the retirement list. Twelve
+  survive it and still need a call — `E001`, `E006`, `E010`, `E050`, `E052`,
+  `E054`, `E056`, `E057`, `E058`, `M034`, `M040`, `X044`. They sit outside
+  gold-ci's replay coverage, so nothing proves their oracles still pass
+  under the current harness: either author references and replay them, or
+  delete them too.
+
+  **A separate question at the other end.** `M023`, `M034` and `M040` are
+  passed by nobody on any attempt. Two of the three are in the twelve above.
+  A task no model solves is either the benchmark's best signal or a broken
+  oracle, and today nothing distinguishes the two. Probe them before the
+  campaign.
+
+  **Required after deletion**, because all sixty ids appear in
+  `site/catalog/task-categories.yml`: re-run the `refresh-task-taxonomy`
+  pipeline, then `deno task taxonomy-audit`, `deno task id-audit` and
+  `python scripts/oracle-audit.py`. Deleting moves `task_sets.hash`, which
+  is expected — the campaign runs on the new hash.
+
+  **Standing rule for the next cycle.** After each campaign, retire every
+  task that every frontier model passes on every attempt. Regenerate the
+  list from that campaign's results the same way this one was generated, and
+  record it as `docs/reasoning-suite/retired-<date>.txt`.
 
 - [!] **Decision 4: vocabulary gaps.** Recurring facets the enrichment wanted
   and the frozen vocabulary lacks: `ishandled-gate` (3 tasks),
@@ -161,7 +214,10 @@ spent on numbers you will not trust.
       frontier models cost $28.90; the same across Sonnet and Luna cost $9.17;
       one uncapped pass over the 110 singles was estimated at about $40 per
       frontier model. Budget roughly $50 to $80 per frontier model for the
-      full 298, so $250 to $400 for a five-model panel.
+      full 298, so $250 to $400 for a five-model panel. Decision 3's
+      retirement drops that to about 238 tasks, and the sixty it removes are
+      the cheapest in the set, so expect roughly a fifth off the task count
+      and rather less than a fifth off the bill.
 - [ ] **Verify capture on the first finished run.** Open the results file and
       confirm the `ingest` block carries the environment manifest and the
       invocation snapshot, and that per-attempt test vectors are present. The
@@ -174,7 +230,8 @@ spent on numbers you will not trust.
 - [ ] **Ingest.** The bench auto-ingests unless `--no-ingest` was passed. A
       replayed run uses `centralgauge ingest <results-file>`.
 - [ ] **Confirm the new task set landed.** `GET /api/v1/task-sets` should list
-      the new 298-task hash alongside `b31c942bd4e8`.
+      the new hash alongside `b31c942bd4e8`, with the task count decision 3
+      settled on.
 - [ ] **Check capture stored.** `GET /api/v2/runs/<id>` will still 404 until
       activation, so verify in D1: `runs.harness_fingerprint` non-null and
       `results.test_vector_json` populated for the new runs.
