@@ -28,8 +28,9 @@ publication steps, not code.
 
 ## Phase 0 — already done
 
-- [x] **Suite built and gated.** 298 tasks, including 29 composites that no
-  frontier model solves on the first attempt.
+- [x] **Suite built and gated.** 298 tasks, including 29 composites that the
+  panel almost never solves on the first attempt: 0 of 29 for Sonnet 5 and
+  Luna, 1 of 29 for Opus 5, 3 of 29 for GPT-5.5.
 - [x] **Harness replay green.** `gold-ci` reports 273 trusted, 0 stale, 0
   failing, fingerprint `0634e0ee1c1c`.
   `deno run --allow-all scripts/gold-ci.ts --check`
@@ -55,14 +56,48 @@ Nothing below costs money, but the campaign cannot be sized without them.
 
   | Reading | n | Opus 5 | Sonnet 5 | Luna |
   | --- | --- | --- | --- | --- |
-  | best-of-2, whole set | 139 | 78% | 48% | 30% |
+  | best-of-2, whole reasoning set | 139 | 93.5% | 84.9% | 79.9% |
   | best-of-2, panel-selected | 40 | 78% | 48% | 30% |
   | **attempt 1, panel-selected** | **59** | **39%** | **20%** | **10%** |
 
-  Only the attempt-1 reading clears the bar with a publishable n. Either
-  adopt attempt 1 as the headline metric and publish, or keep hardening.
+  Only the attempt-1 reading clears the bar. Either adopt it as the headline
+  metric and publish, or keep hardening.
   `docs/reasoning-suite/hardening-levers-evidence.md` holds the evidence;
   `scripts/panel-select.py` reproduces the retention.
+
+  **Three things the numbers above do not say, and a reviewer will.**
+
+  1. **They are not a measurement of the 298-task set.** All 139 are
+     diagnose tasks: the 110 singles and the 29 composites. None of the 110
+     build-from-spec or 49 runtime-trap tasks is in them. A headline drawn
+     from the 59 makes no claim about two thirds of the benchmark, and it
+     conflicts with the taxonomy design's own rule that the "All" score is an
+     equal-weight mean over the four formats
+     (`docs/superpowers/specs/2026-09-02-taxonomy-v2-design.md`, 6.x).
+  2. **The 59 are not 59 independent observations.** All 29 composites
+     qualify under the attempt-1 rule, and the composites plus their donors
+     are one connected component in the task-donor graph. That is a
+     largest-component share near 49%, against the design's own publication
+     gate of 25%, under which only descriptive scores and a subset-influence
+     analysis may be shown. The 29 also rest on about seven donor mechanisms,
+     so the split weights a handful of AL semantics heavily.
+  3. **The panel is reused twice.** The composites were gated against Opus
+     and GPT-5.5 outcomes during construction, then the retained set was
+     selected against panel outcomes again. Opus's 39% is a development-panel
+     statistic, not an unbiased estimate on fresh tasks.
+
+  **Before adopting any reading, resolve the `pass_at_1` definition.** The
+  scoring policy in the spec sets `pass_at_1 = 1 if any cohort run passed at
+  attempt 1`, with a cohort of the three most recent runs. That is a union
+  over three first attempts, which will score higher than the single-run
+  attempt-1 numbers used for the selection above. Selecting on one-run
+  attempt 1 and publishing a union under the same name is not defensible.
+  Either average across the cohort's runs, report each run, or rename the
+  union.
+
+  **Freeze the metric and the selection rule before the campaign**, not
+  after. Choosing either once the 298-task numbers are in is metric shopping,
+  and it will read that way.
 
 - [!] **Decision 2: launch-hardening waves 2 to 4.**
   `docs/reasoning-suite/launch-hardening-plan.md` still has them open, and
@@ -186,7 +221,10 @@ sunsets. That is intended, and it will be visible on the live site.
 - [ ] **Assign it** to the new hash: the task-sets admin POST accepts
       `scoring_policy_digest`.
 - [ ] **Select the retained set.**
-      `python scripts/panel-select.py --metric pass1 --emit-tasks`
+      `python scripts/panel-select.py <results-file>... --metric pass1 --max-solvers 2 --emit-tasks`
+      The result files are positional and `--max-solvers` is what makes the
+      script emit task ids; without both, it does not reproduce the retained
+      set.
 - [ ] **Publish the release.** `POST /api/v1/admin/releases` with the slug,
       hash, revision digest, policy digest, estimator version, panel manifest,
       retained task ids and selection reasons.
