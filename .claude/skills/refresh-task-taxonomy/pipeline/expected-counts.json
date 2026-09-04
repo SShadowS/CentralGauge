@@ -1,5 +1,5 @@
 {
-  "build-from-spec": 110,
+  "build-from-spec": 50,
   "runtime-trap": 49,
   "diagnose-single": 110,
   "diagnose-composite": 29

@@ -13,8 +13,8 @@ Legend: **[x] done** · **[ ] not started** · **[!] blocked or decision needed*
 | Thing | State |
 | --- | --- |
 | Live task set in production | `b31c942bd4e8`, 110 tasks, current since 2026-05-16 |
-| Local task set | 298 tasks, never benched, never ingested; 238 if decision 3 retires the saturated 60 |
-| Composition | 110 build-from-spec, 49 runtime-trap, 110 diagnose-single, 29 diagnose-composite (50 / 49 / 110 / 29 after decision 3) |
+| Local task set | 238 tasks, never benched, never ingested (298 before decision 3 retired the saturated 60) |
+| Composition | 50 build-from-spec, 49 runtime-trap, 110 diagnose-single, 29 diagnose-composite |
 | Taxonomy v2 pipeline (Plan A) | shipped, merged, on master |
 | Taxonomy v2 site (Plan B, release 1) | shipped, merged, **deployed** at worker version `199f6cd2` |
 | D1 migration `0018_taxonomy_v2.sql` | applied to production |
@@ -28,7 +28,7 @@ publication steps, not code.
 
 ## Phase 0 — already done
 
-- [x] **Suite built and gated.** 298 tasks, including 29 composites that the
+- [x] **Suite built and gated.** 238 tasks after decision 3, including 29 composites that the
   panel almost never solves on the first attempt: 0 of 29 for Sonnet 5 and
   Luna, 1 of 29 for Opus 5, 3 of 29 for GPT-5.5.
 - [x] **Harness replay green.** `gold-ci` reports 273 trusted, 0 stale, 0
@@ -38,7 +38,7 @@ publication steps, not code.
 - [x] **Taxonomy generated and validated.** Schema version 2, four format
   groups, four facet families, composites deriving facets from donors.
   `deno task taxonomy-audit` prints `[OK] taxonomy valid` with counts
-  110 / 49 / 110 / 29.
+  50 / 49 / 110 / 29, re-run after decision 3's retirement.
 - [x] **Capture path live.** The bench records the harness fingerprint,
   environment manifest, invocation snapshot, per-attempt test vectors and
   termination facts; the worker has columns for all of it.
@@ -98,7 +98,7 @@ Nothing below costs money, but the campaign cannot be sized without them.
   union.
 
   **Freeze the metric and the selection rule before the campaign**, not
-  after. Choosing either once the 298-task numbers are in is metric shopping,
+  after. Choosing either once the campaign numbers are in is metric shopping,
   and it will read that way.
 
 - [!] **Decision 2: launch-hardening waves 2 to 4.**
@@ -107,7 +107,9 @@ Nothing below costs money, but the campaign cannot be sized without them.
   composite programme has since cleared the bar under decision 1. Confirm the
   waves are superseded, or schedule them before the campaign.
 
-- [!] **Decision 3: retire the 60 tasks the frontier has saturated.**
+- [x] **Decision 3: retire the 60 tasks the frontier has saturated.** DONE
+  2026-09-04 — the deletion is executed and committed; see "What the
+  retirement actually did" below.
   Continuity with the published leaderboard is explicitly not a constraint
   (owner ruling, 2026-09-04), so the set is free to shrink on evidence.
 
@@ -155,11 +157,39 @@ Nothing below costs money, but the campaign cannot be sized without them.
   oracle, and today nothing distinguishes the two. Probe them before the
   campaign.
 
-  **Required after deletion**, because all sixty ids appear in
-  `site/catalog/task-categories.yml`: re-run the `refresh-task-taxonomy`
-  pipeline, then `deno task taxonomy-audit`, `deno task id-audit` and
-  `python scripts/oracle-audit.py`. Deleting moves `task_sets.hash`, which
-  is expected — the campaign runs on the new hash.
+  **What the retirement actually did.** 315 files removed. The taxonomy
+  pipeline was re-run (build, merge, validate, graph fixture) and is
+  deterministic on the new tree; `taxonomy-audit`, `id-audit`,
+  `oracle-audit` and `gold-ci --check` are all green, and the unit suite is
+  1426 passed / 0 failed. Four things had to move with it:
+
+  - `expected-counts.json` build-from-spec 110 → 50, and the 60 retired ids
+    were pruned from `pipeline/enriched-tags.json` (238 entries left).
+  - `scripts/id-audit.ts` lost three now-stale allowlist entries — the
+    `table:69001` co-install set narrowed to M001 + X058, and the duplicate
+    pairs at `codeunit:80015` and `codeunit:80012` are gone with their
+    members. Same-folder duplicate test-codeunit pairs went from four to
+    two; cross-folder reuse from 24 ids to 2.
+  - Four unit tests were pinned to retired tasks and now point at surviving
+    ones (`E002` → `M001` for the two real-prereq tests, `E002` → `E010` in
+    the debug parser, `E008` → `E010` in the hasher).
+  - `.claude/rules/prereq-apps.md` had E002 as its worked example and a
+    chained H022 → H023 prereq that no longer exists. **No CG-to-CG prereq
+    chain survives anywhere in the tree**; the resolver still supports one,
+    but the section is now explicitly illustrative.
+
+  `task_sets.hash` has moved, which is expected — the campaign runs on the
+  new hash.
+
+  **One consequence a reviewer will raise.** Retiring 60 unconnected tasks
+  concentrates the set on the composite component. The whole-set
+  `largest_component_share` rose from **0.268 to 0.336**, against the
+  design's 25% publication gate (`taxonomy-graph-fixture.json`). It was
+  already over the gate and is now further over. This does not argue against
+  the retirement — those 60 tasks contributed no separation — but it does
+  mean the whole-set headline needs the subset-influence treatment the
+  design calls for, not just the reasoning-only slice discussed in decision
+  1.
 
   **Standing rule for the next cycle.** After each campaign, retire every
   task that every frontier model passes on every attempt. Regenerate the
@@ -214,10 +244,10 @@ spent on numbers you will not trust.
       frontier models cost $28.90; the same across Sonnet and Luna cost $9.17;
       one uncapped pass over the 110 singles was estimated at about $40 per
       frontier model. Budget roughly $50 to $80 per frontier model for the
-      full 298, so $250 to $400 for a five-model panel. Decision 3's
-      retirement drops that to about 238 tasks, and the sixty it removes are
-      the cheapest in the set, so expect roughly a fifth off the task count
-      and rather less than a fifth off the bill.
+      full 298. Decision 3 has since cut the set to 238, and the sixty it
+      removed were the cheapest in it, so expect roughly a fifth off the task
+      count and rather less than a fifth off the bill: budget $200 to $350
+      for a five-model panel.
 - [ ] **Verify capture on the first finished run.** Open the results file and
       confirm the `ingest` block carries the environment manifest and the
       invocation snapshot, and that per-attempt test vectors are present. The

@@ -379,59 +379,15 @@ tasks:
     group: build-from-spec
     facets: [keys, table]
     min_bc_version: 15
-  CG-AL-E002:
-    group: build-from-spec
-    facets: [page, table]
-    min_bc_version: 15
-  CG-AL-E003:
-    group: build-from-spec
-    facets: [enum]
-    min_bc_version: 15
-  CG-AL-E004:
-    group: build-from-spec
-    facets: [keys, table, table-extension]
-    min_bc_version: 15
-  CG-AL-E005:
-    group: build-from-spec
-    facets: [codeunit]
-    min_bc_version: 15
   CG-AL-E006:
     group: build-from-spec
     facets: [page, page-extension]
-    min_bc_version: 15
-  CG-AL-E007:
-    group: build-from-spec
-    facets: [report, serialization-encoding]
-    min_bc_version: 15
-  CG-AL-E008:
-    group: build-from-spec
-    facets: [codeunit, interface]
-    min_bc_version: 15
-  CG-AL-E009:
-    group: build-from-spec
-    facets: [flowfield-sift, serialization-encoding, xml]
     min_bc_version: 15
   CG-AL-E010:
     group: build-from-spec
     facets: [codeunit, event-binding, event-subscriber]
     min_bc_version: 15
-  CG-AL-E031:
-    group: build-from-spec
-    facets: [enum, error-flow, inclusive-boundary, keys, table, validation-trigger]
-    min_bc_version: 15
-  CG-AL-E032:
-    group: build-from-spec
-    facets: [codeunit, interface]
-    min_bc_version: 15
-  CG-AL-E045:
-    group: build-from-spec
-    facets: [enum, error-flow, exact-total, inclusive-boundary, keys, table, validation-trigger]
-    min_bc_version: 15
   CG-AL-E050:
-    group: build-from-spec
-    facets: [codeunit]
-    min_bc_version: 15
-  CG-AL-E051:
     group: build-from-spec
     facets: [codeunit]
     min_bc_version: 15
@@ -439,17 +395,9 @@ tasks:
     group: build-from-spec
     facets: [codeunit, culture-format-roundtrip, enum]
     min_bc_version: 15
-  CG-AL-E053:
-    group: build-from-spec
-    facets: [page, page-extension, table]
-    min_bc_version: 15
   CG-AL-E054:
     group: build-from-spec
     facets: [codeunit, guid]
-    min_bc_version: 15
-  CG-AL-E055:
-    group: build-from-spec
-    facets: [codeunit, recordref, recordref-reflection]
     min_bc_version: 15
   CG-AL-E056:
     group: build-from-spec
@@ -463,77 +411,21 @@ tasks:
     group: build-from-spec
     facets: [codeunit, test-permissions]
     min_bc_version: 16
-  CG-AL-H001:
-    group: build-from-spec
-    facets: [codeunit, decimal-precision, exact-total, inclusive-boundary]
-    min_bc_version: 15
-  CG-AL-H002:
-    group: build-from-spec
-    facets: [exact-total, filter-key-semantics, flowfield, flowfield-sift, keys, table]
-    min_bc_version: 15
-  CG-AL-H003:
-    group: build-from-spec
-    facets: [codeunit, decimal-precision, flowfield-sift, inclusive-boundary, table, temporary-record, temporary-table]
-    min_bc_version: 15
-  CG-AL-H004:
-    group: build-from-spec
-    facets: [codeunit, enum, roundtrip-fidelity, table]
-    min_bc_version: 15
-  CG-AL-H005:
-    group: build-from-spec
-    facets: [codeunit, single-instance, single-instance-state, table, xrec-trigger-state]
-    min_bc_version: 15
-  CG-AL-H006:
-    group: build-from-spec
-    facets: [codeunit, idempotent-rebuild, single-instance, single-instance-state]
-    min_bc_version: 15
   CG-AL-H007:
     group: build-from-spec
     facets: [codeunit, enum, error-flow, error-info, roundtrip-fidelity]
-    min_bc_version: 15
-  CG-AL-H008:
-    group: build-from-spec
-    facets: [codeunit, error-flow, tryfunction-write-rollback]
-    min_bc_version: 15
-  CG-AL-H009:
-    group: build-from-spec
-    facets: [codeunit, decimal-precision, exact-total]
-    min_bc_version: 15
-  CG-AL-H010:
-    group: build-from-spec
-    facets: [codeunit, event-binding, event-order, event-publisher, event-subscriber]
     min_bc_version: 15
   CG-AL-H011:
     group: build-from-spec
     facets: [exact-total, filter-key-semantics, query]
     min_bc_version: 15
-  CG-AL-H013:
-    group: build-from-spec
-    facets: [codeunit, exact-total, inclusive-boundary]
-    min_bc_version: 15
   CG-AL-H014:
     group: build-from-spec
     facets: [codeunit, json, roundtrip-fidelity, serialization-encoding]
     min_bc_version: 15
-  CG-AL-H015:
-    group: build-from-spec
-    facets: [codeunit, http, inclusive-boundary, interface, json]
-    min_bc_version: 15
-  CG-AL-H016:
-    group: build-from-spec
-    facets: [codeunit, roundtrip-fidelity, secrettext, web-service]
-    min_bc_version: 15
   CG-AL-H017:
     group: build-from-spec
     facets: [exact-total, filter-key-semantics, query, sql-cost-scaling]
-    min_bc_version: 15
-  CG-AL-H018:
-    group: build-from-spec
-    facets: [codeunit, roundtrip-fidelity]
-    min_bc_version: 15
-  CG-AL-H019:
-    group: build-from-spec
-    facets: [codeunit, permission-check, tryfunction-write-rollback]
     min_bc_version: 15
   CG-AL-H020:
     group: build-from-spec
@@ -543,33 +435,13 @@ tasks:
     group: build-from-spec
     facets: [codeunit, interface]
     min_bc_version: 15
-  CG-AL-H022:
-    group: build-from-spec
-    facets: [codeunit, fieldref, filter-key-semantics, recordref, recordref-reflection, roundtrip-fidelity]
-    min_bc_version: 15
   CG-AL-H023:
     group: build-from-spec
     facets: [codeunit, fieldref, filter-key-semantics, interface, recordref, recordref-reflection, roundtrip-fidelity, serialization-encoding]
     min_bc_version: 15
-  CG-AL-H024:
-    group: build-from-spec
-    facets: [codeunit, fieldref, recordref, recordref-reflection, roundtrip-fidelity]
-    min_bc_version: 15
-  CG-AL-H025:
-    group: build-from-spec
-    facets: [codeunit, datatransfer, idempotent-rebuild, install, roundtrip-fidelity, upgrade-datatransfer]
-    min_bc_version: 15
-  CG-AL-H026:
-    group: build-from-spec
-    facets: [codeunit, recordref, recordref-reflection, roundtrip-fidelity]
-    min_bc_version: 15
   CG-AL-H027:
     group: build-from-spec
     facets: [codeunit, event-binding, event-subscriber, exact-total, single-instance-state, table-extension, xrec-trigger-state]
-    min_bc_version: 15
-  CG-AL-H028:
-    group: build-from-spec
-    facets: [culture-format-roundtrip, fieldref, filter-key-semantics, inclusive-boundary, recordref, serialization-encoding, xml]
     min_bc_version: 15
   CG-AL-H029:
     group: build-from-spec
@@ -583,21 +455,9 @@ tasks:
     group: build-from-spec
     facets: [exact-total, fieldref, filter-key-semantics, flowfield, flowfield-sift, recordref, recordref-reflection]
     min_bc_version: 15
-  CG-AL-H032:
-    group: build-from-spec
-    facets: [filter-key-semantics, recordref, recordref-reflection, table-relation]
-    min_bc_version: 15
-  CG-AL-H033:
-    group: build-from-spec
-    facets: [page, table]
-    min_bc_version: 15
   CG-AL-H034:
     group: build-from-spec
     facets: [codeunit, commit-scope, error-flow, event-binding, event-publisher, event-subscriber]
-    min_bc_version: 15
-  CG-AL-H035:
-    group: build-from-spec
-    facets: [codeunit, http, secrettext, web-service]
     min_bc_version: 15
   CG-AL-H036:
     group: build-from-spec
@@ -607,45 +467,13 @@ tasks:
     group: build-from-spec
     facets: [bounded-sql-cost, codeunit, datatransfer, filter-key-semantics, install, sql-cost-scaling, upgrade-datatransfer]
     min_bc_version: 15
-  CG-AL-H038:
-    group: build-from-spec
-    facets: [commit-scope, error-flow, tryfunction-write-rollback]
-    min_bc_version: 15
-  CG-AL-H039:
-    group: build-from-spec
-    facets: [codeunit, idempotent-rebuild, upgrade-tag]
-    min_bc_version: 15
-  CG-AL-H040:
-    group: build-from-spec
-    facets: [event-binding, event-subscriber, upgrade-tag]
-    min_bc_version: 15
   CG-AL-H041:
     group: build-from-spec
     facets: [commit-scope, error-flow, tryfunction-write-rollback]
     min_bc_version: 15
-  CG-AL-H042:
-    group: build-from-spec
-    facets: [codeunit, permission-check]
-    min_bc_version: 15
-  CG-AL-H043:
-    group: build-from-spec
-    facets: [codeunit, web-service]
-    min_bc_version: 15
   CG-AL-H050:
     group: build-from-spec
     facets: [collectible-errors, error-flow, exact-total]
-    min_bc_version: 15
-  CG-AL-H051:
-    group: build-from-spec
-    facets: [codeunit, exact-total, filter-key-semantics]
-    min_bc_version: 15
-  CG-AL-H052:
-    group: build-from-spec
-    facets: [codeunit, filter-group-state, filter-key-semantics]
-    min_bc_version: 15
-  CG-AL-H053:
-    group: build-from-spec
-    facets: [bounded-sql-cost, codeunit, exact-total, flowfield-sift, query, sift-keys]
     min_bc_version: 15
   CG-AL-H054:
     group: build-from-spec
@@ -655,25 +483,9 @@ tasks:
     group: build-from-spec
     facets: [codeunit]
     min_bc_version: 15
-  CG-AL-H057:
-    group: build-from-spec
-    facets: [page]
-    min_bc_version: 15
-  CG-AL-H058:
-    group: build-from-spec
-    facets: [base64, codeunit, roundtrip-fidelity, serialization-encoding]
-    min_bc_version: 15
-  CG-AL-H205:
-    group: build-from-spec
-    facets: [codeunit, decimal-precision, error-flow, event-binding, event-subscriber, exact-total, interface]
-    min_bc_version: 15
   CG-AL-M001:
     group: build-from-spec
     facets: [error-flow, page, roundtrip-fidelity, table, table-extension, validation-trigger]
-    min_bc_version: 15
-  CG-AL-M002:
-    group: build-from-spec
-    facets: [codeunit, error-flow, exact-total, inclusive-boundary]
     min_bc_version: 15
   CG-AL-M003:
     group: build-from-spec
@@ -682,10 +494,6 @@ tasks:
   CG-AL-M004:
     group: build-from-spec
     facets: [flowfield-sift, page]
-    min_bc_version: 15
-  CG-AL-M005:
-    group: build-from-spec
-    facets: [codeunit, error-flow, http, json, roundtrip-fidelity, serialization-encoding, web-service]
     min_bc_version: 15
   CG-AL-M006:
     group: build-from-spec
@@ -711,21 +519,9 @@ tasks:
     group: build-from-spec
     facets: [codeunit, exact-total, json, roundtrip-fidelity, serialization-encoding]
     min_bc_version: 15
-  CG-AL-M021:
-    group: build-from-spec
-    facets: [codeunit, error-flow, json, roundtrip-fidelity, serialization-encoding]
-    min_bc_version: 15
-  CG-AL-M022:
-    group: build-from-spec
-    facets: [codeunit, error-flow, http, json, serialization-encoding, web-service]
-    min_bc_version: 15
   CG-AL-M023:
     group: build-from-spec
     facets: [bounded-sql-cost, codeunit, exact-total, flowfield-sift, inclusive-boundary, recordref, sql-cost-scaling]
-    min_bc_version: 15
-  CG-AL-M024:
-    group: build-from-spec
-    facets: [codeunit, decimal-precision, exact-total, json, serialization-encoding]
     min_bc_version: 15
   CG-AL-M025:
     group: build-from-spec
@@ -755,17 +551,9 @@ tasks:
     group: build-from-spec
     facets: [codeunit, datatransfer, filter-key-semantics, idempotent-rebuild, install, upgrade-datatransfer]
     min_bc_version: 17
-  CG-AL-M033:
-    group: build-from-spec
-    facets: [report]
-    min_bc_version: 15
   CG-AL-M034:
     group: build-from-spec
     facets: [exact-total, fieldref, flowfield, flowfield-sift, recordref, recordref-reflection]
-    min_bc_version: 15
-  CG-AL-M035:
-    group: build-from-spec
-    facets: [codeunit, http, web-service]
     min_bc_version: 15
   CG-AL-M036:
     group: build-from-spec
@@ -775,10 +563,6 @@ tasks:
     group: build-from-spec
     facets: [codeunit, enum, event-subscriber]
     min_bc_version: 15
-  CG-AL-M038:
-    group: build-from-spec
-    facets: [codeunit, record-locking-concurrency, recordref, recordref-reflection]
-    min_bc_version: 16
   CG-AL-M039:
     group: build-from-spec
     facets: [page]
@@ -787,33 +571,9 @@ tasks:
     group: build-from-spec
     facets: [table]
     min_bc_version: 16
-  CG-AL-M041:
-    group: build-from-spec
-    facets: [exact-total, flowfield, flowfield-sift, table, table-extension]
-    min_bc_version: 15
   CG-AL-M042:
     group: build-from-spec
     facets: [exact-total, table, validation-trigger, xrec-trigger-state]
-    min_bc_version: 15
-  CG-AL-M043:
-    group: build-from-spec
-    facets: [filter-key-semantics, roundtrip-fidelity, table, table-relation, xrec-trigger-state]
-    min_bc_version: 15
-  CG-AL-M044:
-    group: build-from-spec
-    facets: [codeunit, filter-key-semantics, page, xrec-trigger-state]
-    min_bc_version: 15
-  CG-AL-M045:
-    group: build-from-spec
-    facets: [codeunit, event-binding, event-subscriber, idempotent-rebuild, single-instance-state, validation-trigger, xrec-trigger-state]
-    min_bc_version: 15
-  CG-AL-M088:
-    group: build-from-spec
-    facets: [codeunit, decimal-precision, enum, exact-total, inclusive-boundary]
-    min_bc_version: 15
-  CG-AL-M112:
-    group: build-from-spec
-    facets: [error-flow, exact-total, flowfield, flowfield-sift, keys, table, table-relation, validation-trigger]
     min_bc_version: 15
   CG-AL-X001:
     group: runtime-trap

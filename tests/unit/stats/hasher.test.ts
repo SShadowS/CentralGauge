@@ -18,8 +18,8 @@ describe("hasher", () => {
   describe("extractTaskId", () => {
     it("should extract task ID from easy task manifest path", () => {
       assertEquals(
-        extractTaskId("tasks/easy/CG-AL-E008-basic-interface.yml"),
-        "CG-AL-E008",
+        extractTaskId("tasks/easy/CG-AL-E010-event-subscriber.yml"),
+        "CG-AL-E010",
       );
     });
 
@@ -139,16 +139,16 @@ describe("hasher", () => {
 
     it("should hash a real easy task with test files", async () => {
       const manifestPath =
-        `${projectRoot}/tasks/easy/CG-AL-E008-basic-interface.yml`;
+        `${projectRoot}/tasks/easy/CG-AL-E010-event-subscriber.yml`;
       const result = await hashTaskContent(manifestPath, projectRoot);
 
-      assertEquals(result.taskId, "CG-AL-E008");
+      assertEquals(result.taskId, "CG-AL-E010");
       assertExists(result.manifestHash);
       assertEquals(result.manifestHash.length, 16);
       assertExists(result.combinedHash);
       assertEquals(result.combinedHash.length, 16);
 
-      // E008 should have test file and mock processor
+      // E010 should have a test file
       assertEquals(result.testFiles.length >= 1, true);
     });
 
@@ -182,7 +182,7 @@ describe("hasher", () => {
     it("should hash multiple tasks", async () => {
       const manifests = [
         `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`,
-        `${projectRoot}/tasks/easy/CG-AL-E008-basic-interface.yml`,
+        `${projectRoot}/tasks/easy/CG-AL-E010-event-subscriber.yml`,
       ];
 
       const result = await generateComprehensiveTaskSetHash(
@@ -200,10 +200,10 @@ describe("hasher", () => {
     it("should be deterministic regardless of input order", async () => {
       const manifests1 = [
         `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`,
-        `${projectRoot}/tasks/easy/CG-AL-E008-basic-interface.yml`,
+        `${projectRoot}/tasks/easy/CG-AL-E010-event-subscriber.yml`,
       ];
       const manifests2 = [
-        `${projectRoot}/tasks/easy/CG-AL-E008-basic-interface.yml`,
+        `${projectRoot}/tasks/easy/CG-AL-E010-event-subscriber.yml`,
         `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`,
       ];
 

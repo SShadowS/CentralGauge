@@ -34,10 +34,10 @@ Deno.test("T11: prereq compile failure throws ContainerError(setup) instead of c
   ContainerProviderRegistry.register(providerName, () => mockProvider);
 
   try {
-    // CG-AL-E002 has a real prereq app at tests/al/dependencies/CG-AL-E002,
+    // CG-AL-M001 has a real prereq app at tests/al/dependencies/CG-AL-M001,
     // so findAllPrereqApps discovers it from the repo root cwd.
     const context = createMockTaskExecutionContext({
-      manifest: createMockTaskManifest({ id: "CG-AL-E002" }),
+      manifest: createMockTaskManifest({ id: "CG-AL-M001" }),
       containerProvider: providerName,
       containerName: "TestContainer",
       outputDir: tempDir,

@@ -87,29 +87,15 @@ const OBJECT_RE =
  */
 const KNOWN_COINSTALL_COLLISIONS = new Map<string, string[]>([
   ["table:69001", [
-    "prereq:CG-AL-E002",
     "prereq:CG-AL-M001",
     "prereq:CG-AL-X058",
-  ]],
-  ["table:69225", [
-    "prereq:CG-AL-H022",
-    "prereq:CG-AL-H023",
-    "prereq:CG-AL-H026",
   ]],
 ]);
 
 const KNOWN_DUPLICATES = new Map<string, string[]>([
-  ["alproject:tests/al/hard|codeunit:80015", [
-    "tests/al/hard/CG-AL-H014.Test.al",
-    "tests/al/hard/CG-AL-H015.Test.al",
-  ]],
   ["alproject:tests/al/hard|codeunit:80021", [
     "tests/al/hard/CG-AL-H020.Test.al",
     "tests/al/hard/CG-AL-H021.Test.al",
-  ]],
-  ["alproject:tests/al/medium|codeunit:80012", [
-    "tests/al/medium/CG-AL-M002.Test.al",
-    "tests/al/medium/CG-AL-M112.Test.al",
   ]],
   ["alproject:tests/al/medium|codeunit:80020", [
     "tests/al/medium/CG-AL-M010.Test.al",

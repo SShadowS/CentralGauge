@@ -1,43 +1,14 @@
 {
   "CG-AL-E001": [],
-  "CG-AL-E002": [],
-  "CG-AL-E003": [],
-  "CG-AL-E004": [],
-  "CG-AL-E005": [],
   "CG-AL-E006": [],
-  "CG-AL-E007": [
-    "serialization-encoding"
-  ],
-  "CG-AL-E008": [],
-  "CG-AL-E009": [
-    "flowfield-sift",
-    "serialization-encoding"
-  ],
   "CG-AL-E010": [
     "event-binding"
   ],
-  "CG-AL-E031": [
-    "error-flow",
-    "inclusive-boundary",
-    "validation-trigger"
-  ],
-  "CG-AL-E032": [],
-  "CG-AL-E045": [
-    "error-flow",
-    "exact-total",
-    "inclusive-boundary",
-    "validation-trigger"
-  ],
   "CG-AL-E050": [],
-  "CG-AL-E051": [],
   "CG-AL-E052": [
     "culture-format-roundtrip"
   ],
-  "CG-AL-E053": [],
   "CG-AL-E054": [],
-  "CG-AL-E055": [
-    "recordref-reflection"
-  ],
   "CG-AL-E056": [
     "culture-format-roundtrip",
     "roundtrip-fidelity"
@@ -48,118 +19,38 @@
   "CG-AL-E058": [
     "test-permissions"
   ],
-  "CG-AL-H001": [
-    "decimal-precision",
-    "exact-total",
-    "inclusive-boundary"
-  ],
-  "CG-AL-H002": [
-    "exact-total",
-    "filter-key-semantics",
-    "flowfield-sift"
-  ],
-  "CG-AL-H003": [
-    "decimal-precision",
-    "flowfield-sift",
-    "inclusive-boundary",
-    "temporary-record"
-  ],
-  "CG-AL-H004": [
-    "roundtrip-fidelity"
-  ],
-  "CG-AL-H005": [
-    "single-instance-state",
-    "xrec-trigger-state"
-  ],
-  "CG-AL-H006": [
-    "idempotent-rebuild",
-    "single-instance-state"
-  ],
   "CG-AL-H007": [
     "error-flow",
     "roundtrip-fidelity"
-  ],
-  "CG-AL-H008": [
-    "error-flow",
-    "tryfunction-write-rollback"
-  ],
-  "CG-AL-H009": [
-    "decimal-precision",
-    "exact-total"
-  ],
-  "CG-AL-H010": [
-    "event-binding",
-    "event-order"
   ],
   "CG-AL-H011": [
     "exact-total",
     "filter-key-semantics"
   ],
-  "CG-AL-H013": [
-    "exact-total",
-    "inclusive-boundary"
-  ],
   "CG-AL-H014": [
     "roundtrip-fidelity",
     "serialization-encoding"
-  ],
-  "CG-AL-H015": [
-    "inclusive-boundary"
-  ],
-  "CG-AL-H016": [
-    "roundtrip-fidelity"
   ],
   "CG-AL-H017": [
     "exact-total",
     "filter-key-semantics",
     "sql-cost-scaling"
   ],
-  "CG-AL-H018": [
-    "roundtrip-fidelity"
-  ],
-  "CG-AL-H019": [
-    "permission-check",
-    "tryfunction-write-rollback"
-  ],
   "CG-AL-H020": [
     "exact-total"
   ],
   "CG-AL-H021": [],
-  "CG-AL-H022": [
-    "filter-key-semantics",
-    "recordref-reflection",
-    "roundtrip-fidelity"
-  ],
   "CG-AL-H023": [
     "filter-key-semantics",
     "recordref-reflection",
     "roundtrip-fidelity",
     "serialization-encoding"
   ],
-  "CG-AL-H024": [
-    "recordref-reflection",
-    "roundtrip-fidelity"
-  ],
-  "CG-AL-H025": [
-    "idempotent-rebuild",
-    "roundtrip-fidelity",
-    "upgrade-datatransfer"
-  ],
-  "CG-AL-H026": [
-    "recordref-reflection",
-    "roundtrip-fidelity"
-  ],
   "CG-AL-H027": [
     "event-binding",
     "exact-total",
     "single-instance-state",
     "xrec-trigger-state"
-  ],
-  "CG-AL-H028": [
-    "culture-format-roundtrip",
-    "filter-key-semantics",
-    "inclusive-boundary",
-    "serialization-encoding"
   ],
   "CG-AL-H029": [
     "recordref-reflection",
@@ -178,17 +69,11 @@
     "flowfield-sift",
     "recordref-reflection"
   ],
-  "CG-AL-H032": [
-    "filter-key-semantics",
-    "recordref-reflection"
-  ],
-  "CG-AL-H033": [],
   "CG-AL-H034": [
     "commit-scope",
     "error-flow",
     "event-binding"
   ],
-  "CG-AL-H035": [],
   "CG-AL-H036": [
     "serialization-encoding"
   ],
@@ -198,68 +83,24 @@
     "sql-cost-scaling",
     "upgrade-datatransfer"
   ],
-  "CG-AL-H038": [
-    "commit-scope",
-    "error-flow",
-    "tryfunction-write-rollback"
-  ],
-  "CG-AL-H039": [
-    "idempotent-rebuild"
-  ],
-  "CG-AL-H040": [
-    "event-binding"
-  ],
   "CG-AL-H041": [
     "commit-scope",
     "error-flow",
     "tryfunction-write-rollback"
   ],
-  "CG-AL-H042": [
-    "permission-check"
-  ],
-  "CG-AL-H043": [],
   "CG-AL-H050": [
     "error-flow",
     "exact-total"
-  ],
-  "CG-AL-H051": [
-    "exact-total",
-    "filter-key-semantics"
-  ],
-  "CG-AL-H052": [
-    "filter-group-state",
-    "filter-key-semantics"
-  ],
-  "CG-AL-H053": [
-    "bounded-sql-cost",
-    "exact-total",
-    "flowfield-sift"
   ],
   "CG-AL-H054": [
     "inclusive-boundary",
     "single-instance-state"
   ],
   "CG-AL-H056": [],
-  "CG-AL-H057": [],
-  "CG-AL-H058": [
-    "roundtrip-fidelity",
-    "serialization-encoding"
-  ],
-  "CG-AL-H205": [
-    "decimal-precision",
-    "error-flow",
-    "event-binding",
-    "exact-total"
-  ],
   "CG-AL-M001": [
     "error-flow",
     "roundtrip-fidelity",
     "validation-trigger"
-  ],
-  "CG-AL-M002": [
-    "error-flow",
-    "exact-total",
-    "inclusive-boundary"
   ],
   "CG-AL-M003": [
     "error-flow",
@@ -268,11 +109,6 @@
   ],
   "CG-AL-M004": [
     "flowfield-sift"
-  ],
-  "CG-AL-M005": [
-    "error-flow",
-    "roundtrip-fidelity",
-    "serialization-encoding"
   ],
   "CG-AL-M006": [
     "error-flow",
@@ -299,26 +135,12 @@
     "roundtrip-fidelity",
     "serialization-encoding"
   ],
-  "CG-AL-M021": [
-    "error-flow",
-    "roundtrip-fidelity",
-    "serialization-encoding"
-  ],
-  "CG-AL-M022": [
-    "error-flow",
-    "serialization-encoding"
-  ],
   "CG-AL-M023": [
     "bounded-sql-cost",
     "exact-total",
     "flowfield-sift",
     "inclusive-boundary",
     "sql-cost-scaling"
-  ],
-  "CG-AL-M024": [
-    "decimal-precision",
-    "exact-total",
-    "serialization-encoding"
   ],
   "CG-AL-M025": [
     "idempotent-rebuild",
@@ -341,58 +163,21 @@
     "idempotent-rebuild",
     "upgrade-datatransfer"
   ],
-  "CG-AL-M033": [],
   "CG-AL-M034": [
     "exact-total",
     "flowfield-sift",
     "recordref-reflection"
   ],
-  "CG-AL-M035": [],
   "CG-AL-M036": [
     "serialization-encoding"
   ],
   "CG-AL-M037": [],
-  "CG-AL-M038": [
-    "record-locking-concurrency",
-    "recordref-reflection"
-  ],
   "CG-AL-M039": [],
   "CG-AL-M040": [],
-  "CG-AL-M041": [
-    "exact-total",
-    "flowfield-sift"
-  ],
   "CG-AL-M042": [
     "exact-total",
     "validation-trigger",
     "xrec-trigger-state"
-  ],
-  "CG-AL-M043": [
-    "filter-key-semantics",
-    "roundtrip-fidelity",
-    "xrec-trigger-state"
-  ],
-  "CG-AL-M044": [
-    "filter-key-semantics",
-    "xrec-trigger-state"
-  ],
-  "CG-AL-M045": [
-    "event-binding",
-    "idempotent-rebuild",
-    "single-instance-state",
-    "validation-trigger",
-    "xrec-trigger-state"
-  ],
-  "CG-AL-M088": [
-    "decimal-precision",
-    "exact-total",
-    "inclusive-boundary"
-  ],
-  "CG-AL-M112": [
-    "error-flow",
-    "exact-total",
-    "flowfield-sift",
-    "validation-trigger"
   ],
   "CG-AL-X001": [
     "event-binding"

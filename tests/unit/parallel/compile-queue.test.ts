@@ -1282,11 +1282,11 @@ describe({
     });
     const queue = new CompileQueue(provider, "test-container");
 
-    // CG-AL-E002 has a real prereq app at tests/al/dependencies/CG-AL-E002,
+    // CG-AL-M001 has a real prereq app at tests/al/dependencies/CG-AL-M001,
     // discovered from the repo-root cwd — its compile fails via the mock.
     const item = createMockCompileWorkItem({
       context: createMockTaskExecutionContext({
-        manifest: createMockTaskManifest({ id: "CG-AL-E002" }),
+        manifest: createMockTaskManifest({ id: "CG-AL-M001" }),
       }),
     });
 

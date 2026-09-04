@@ -14,12 +14,12 @@ tests/al/dependencies/{task-id}/
   {ObjectName}.{Type}.al  # AL object files
 ```
 
-Example for CG-AL-E002:
+Example for CG-AL-M001:
 
 ```
-tests/al/dependencies/CG-AL-E002/
+tests/al/dependencies/CG-AL-M001/
   app.json
-  ProductCategory.Table.al
+  Product.Table.al
 ```
 
 ## A sibling convention: starter code for diagnose tasks
@@ -57,18 +57,19 @@ complete corrected application. See `src/tasks/starter-code.ts`
 **App ID Convention:** Static UUIDs per task using pattern `a1b2c3d4-{segment}-0000-0000-{tail}`.
 
 **`{segment}` must be four HEX digits.** `0-9` and `a-f` only. The task
-letter is usually not one: `e002` happens to be valid hex, but `h022`,
+letter is usually not one: `e002` would happen to be valid hex, but `h022`,
 `m034` and `x053` are not, and an AL app whose `app.json` carries an invalid
-GUID fails to compile. Copying the shape of the `E002` line below onto an
-`H`/`M`/`X` task is the mistake this section exists to prevent.
+GUID fails to compile. Spelling the segment from the task id is the mistake
+this section exists to prevent - the segment is a fixed hex block, not the
+id.
 
 Real values from the committed tree:
 
 | Task | App id | Note |
 | --- | --- | --- |
-| E002 | `a1b2c3d4-e002-0000-0000-000000000001` | `e002` is valid hex - a coincidence, not the rule |
-| H022 | `a1b2c3d4-0ff0-0000-0000-000000000022` | 17 prereqs share `0ff0` and differ in the tail |
+| M001 | `a1b2c3d4-0ff0-0000-0000-000000000001` | prereqs sharing `0ff0` differ in the tail |
 | H023 | `a1b2c3d4-0ff1-0000-0000-000000000023` | |
+| M034 | `a1b2c3d4-a034-0000-0000-000000000001` | `a034` is a hex block, not `m034` |
 | X052 | `a1b2c3d4-0a52-0000-0000-000000000001` | X-series convention, below |
 
 **X-series (ado-trap-2026 trap tasks):** `CG-AL-X<NN>` uses segment `0a<NN>`
@@ -122,7 +123,7 @@ choice into a compile error rather than a wrong answer.
 
 When `al_verify` runs:
 
-1. **Detection**: Extracts task ID from test file path (e.g., `CG-AL-E002.Test.al` → `CG-AL-E002`)
+1. **Detection**: Extracts task ID from test file path (e.g., `CG-AL-M001.Test.al` → `CG-AL-M001`)
 2. **Lookup**: Checks for prereq at `tests/al/dependencies/{task-id}/`. A caller may
    override this ONE lookup with an explicit directory (`handleAlVerify`'s `prereqDir`,
    reached via `scripts/trap-probe.ts --prereq-dir`) — that is how an unpromoted
@@ -159,11 +160,11 @@ When using a prereq, update the task YAML to clarify the object exists:
 ```yaml
 # Before (ambiguous)
 description: >-
-  Create a page based on a table called "Product Category"...
+  Create a page based on a table called "Product"...
 
 # After (clear)
 description: >-
-  Create a page based on the existing "Product Category" table (ID 69001)...
+  Create a page based on the existing "Product" table (ID 69001)...
 ```
 
 ## Chained Prereq Dependencies
@@ -172,11 +173,11 @@ Prereq apps can depend on other prereq apps. Add a `dependencies` array in app.j
 
 ```json
 {
-  "id": "a1b2c3d4-h023-0000-0000-000000000001",
+  "id": "a1b2c3d4-0ff1-0000-0000-000000000023",
   "name": "CG-AL-H023 Prereq",
   "dependencies": [
     {
-      "id": "a1b2c3d4-h022-0000-0000-000000000001",
+      "id": "a1b2c3d4-0ff0-0000-0000-000000000022",
       "name": "CG-AL-H022 Prereq",
       "publisher": "CentralGauge",
       "version": "1.0.0.0"
@@ -207,6 +208,14 @@ The system resolves prereq dependencies recursively and publishes them in correc
 ```
 
 Publishing order: H022 → H023 → Benchmark App
+
+**The example above is illustrative; no CG-to-CG chain exists in the tree
+today.** H022 was retired on 2026-09-04 and H023's surviving prereq declares
+its own `CG Test Record` at 69225 with no `dependencies` array. The resolver
+still supports chains - the only `dependencies` entries left anywhere point
+at Microsoft's Base Application and Business Foundation (`CG-AL-X047`), which
+the resolver does not own. When you author a new chain, verify it end to end
+rather than trusting this section's shape.
 
 ## Files Involved
 
@@ -329,14 +338,13 @@ it does not buy a clean Problems panel. Expect an unresolved-reference
 diagnostic for the object each oracle exercises.
 
 One more pre-existing condition worth knowing before assuming a Problems
-panel finding is new: **four** pairs of duplicate test codeunit ids exist,
-across two difficulty folders. Full list, audited 2026-08-20:
+panel finding is new: **two** pairs of duplicate test codeunit ids exist,
+across two difficulty folders. Full list, re-audited 2026-09-04 after the
+retirement (it was four pairs; H015 and both of M002/M112 were retired):
 
 | Folder | Id | Files |
 | --- | --- | --- |
-| `tests/al/hard/` | 80015 | `CG-AL-H014.Test.al`, `CG-AL-H015.Test.al` |
 | `tests/al/hard/` | 80021 | `CG-AL-H020.Test.al`, `CG-AL-H021.Test.al` |
-| `tests/al/medium/` | 80012 | `CG-AL-M002.Test.al`, `CG-AL-M112.Test.al` |
 | `tests/al/medium/` | 80020 | `CG-AL-M010.Test.al`, `CG-AL-M020.Test.al` |
 
 In every case the task YAML's `expected.testCodeunitId` agrees with both sides,
@@ -349,7 +357,8 @@ unresolved-reference ones above. Deliberately not renumbered: changing a
 committed test codeunit id would edit `tests/al/**` content and move the
 task-set hash for no benchmark-visible benefit.
 
-Duplicates ACROSS folders (for example `easy/CG-AL-E002.Test.al` and
-`hard/CG-AL-H002.Test.al` both at 80002) are not listed and are not a problem:
-those folders are separate AL projects, so they never compile together. 24 ids
-are reused that way. Only same-folder collisions produce `AL0264`.
+Duplicates ACROSS folders (for example `medium/CG-AL-M008.Test.al` and
+`hard/CG-AL-H017.Test.al` both at 80018) are not listed and are not a problem:
+those folders are separate AL projects, so they never compile together. 2 ids
+are reused that way, down from 24 before the retirement. Only same-folder
+collisions produce `AL0264`.

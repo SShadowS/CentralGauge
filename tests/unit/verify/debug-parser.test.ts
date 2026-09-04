@@ -121,7 +121,7 @@ Deno.test("debug-parser: parseDebugDir finds compilation failures", async () => 
     };
     const failureEntry = {
       type: "compilation_result",
-      taskId: "CG-AL-E002",
+      taskId: "CG-AL-E010",
       model: "test-model",
       attempt: 1,
       success: false,
@@ -146,7 +146,7 @@ Deno.test("debug-parser: parseDebugDir finds compilation failures", async () => 
     const failures = await parseDebugDir(tempDir, sessionId);
     assertEquals(failures.length, 1);
     const failure = failures[0]!;
-    assertEquals(failure.taskId, "CG-AL-E002");
+    assertEquals(failure.taskId, "CG-AL-E010");
     assertEquals(failure.failureType, "compilation");
     assertEquals(failure.model, "test-model");
     assertExists(failure.compilationErrors);
@@ -171,7 +171,7 @@ Deno.test("debug-parser: parseDebugDir skips tasks that eventually succeeded", a
     };
     const failureEntry = {
       type: "compilation_result",
-      taskId: "CG-AL-E002",
+      taskId: "CG-AL-E010",
       model: "test-model",
       attempt: 1,
       success: false,
@@ -180,7 +180,7 @@ Deno.test("debug-parser: parseDebugDir skips tasks that eventually succeeded", a
     };
     const successEntry = {
       type: "compilation_result",
-      taskId: "CG-AL-E002",
+      taskId: "CG-AL-E010",
       model: "test-model",
       attempt: 2,
       success: true,
@@ -207,7 +207,7 @@ Deno.test("debug-parser: parseDebugDir skips tasks that eventually succeeded", a
     };
     const testEntry = {
       type: "test_result",
-      taskId: "CG-AL-E002",
+      taskId: "CG-AL-E010",
       model: "test-model",
       attempt: 2,
       success: true,
