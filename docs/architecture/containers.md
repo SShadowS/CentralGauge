@@ -111,7 +111,7 @@ Install-Module -Name bccontainerhelper -Force
 
 # Create a container
 $cred = New-Object PSCredential 'admin', (ConvertTo-SecureString 'admin' -AsPlainText -Force)
-New-BcContainer -containerName Cronus28 -credential $cred -artifactUrl (Get-BCArtifactUrl -country us -version 27) -includeTestToolkit
+New-BcContainer -containerName Cronus28 -credential $cred -artifactUrl (Get-BCArtifactUrl -country us -version 28) -includeTestToolkit
 ```
 
 ### Operations
