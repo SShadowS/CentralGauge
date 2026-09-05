@@ -148,7 +148,6 @@
     "serialization-encoding"
   ],
   "CG-AL-M028": [],
-  "CG-AL-M029": [],
   "CG-AL-M031": [
     "recordref-reflection"
   ],
@@ -165,8 +164,6 @@
   "CG-AL-M036": [
     "serialization-encoding"
   ],
-  "CG-AL-M037": [],
-  "CG-AL-M039": [],
   "CG-AL-M040": [],
   "CG-AL-M042": [
     "exact-total",

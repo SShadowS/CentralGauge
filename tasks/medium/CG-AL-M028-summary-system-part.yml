@@ -18,6 +18,8 @@ expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M028.Test.al
   testCodeunitId: 80028
+  mustContain:
+    - DefaultSummaryPart
 metrics:
   - compile_pass
   - tests_pass

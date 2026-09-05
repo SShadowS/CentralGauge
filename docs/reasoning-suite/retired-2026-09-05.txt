@@ -10,3 +10,17 @@
 # 2026-09-05: delete. Audit: FallRelease.md decision 3.
 CG-AL-E057
 CG-AL-E058
+#
+# Added later the same day from the M027-M041 batch sweep, same rule:
+# M029 - oracle never touches the candidate (all three tests hit prereq objects; a
+#        pagecustomization is unobservable via TestPage), and the manifest demanded a
+#        Caption on the pagecustomization that cannot compile (AL0246, 72 of 144 attempts).
+# M037 - manifest's Category argument is uncompilable (the platform requires enum
+#        EventCategory, not the custom enum; 146x AL0761), the only compiling route
+#        needs an enumextension the manifest never asks for, and the oracle passes an
+#        empty codeunit.
+# M039 - both assertions check Visible/Enabled at their AL defaults; the v16 subject
+#        (TestPart.Visible/Enabled) is a test-side API the candidate cannot exercise.
+CG-AL-M029
+CG-AL-M037
+CG-AL-M039

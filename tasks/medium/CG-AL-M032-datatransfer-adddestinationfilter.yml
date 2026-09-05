@@ -32,6 +32,8 @@ expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M032.Test.al
   testCodeunitId: 80032
+  mustContain:
+    - AddDestinationFilter
 metrics:
   - compile_pass
   - tests_pass

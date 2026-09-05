@@ -531,10 +531,6 @@ tasks:
     group: build-from-spec
     facets: [page, page-extension, system-part]
     min_bc_version: 16
-  CG-AL-M029:
-    group: build-from-spec
-    facets: [page, page-customization]
-    min_bc_version: 16
   CG-AL-M031:
     group: build-from-spec
     facets: [codeunit, page, recordref, recordref-reflection, report, table]
@@ -551,14 +547,6 @@ tasks:
     group: build-from-spec
     facets: [codeunit, json, secrettext, serialization-encoding]
     min_bc_version: 15
-  CG-AL-M037:
-    group: build-from-spec
-    facets: [codeunit, enum, event-subscriber]
-    min_bc_version: 15
-  CG-AL-M039:
-    group: build-from-spec
-    facets: [page]
-    min_bc_version: 16
   CG-AL-M040:
     group: build-from-spec
     facets: [table]
