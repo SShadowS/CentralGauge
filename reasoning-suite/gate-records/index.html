@@ -1,0 +1,5429 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/reasoning-suite/gate-records/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Hardening-gate records - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#hardening-gate-records" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Hardening-gate records
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#rollup-by-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollup by gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#b2-determinism-and-b7-mutation-by-tier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B2 determinism and B7 mutation, by tier
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-task" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per task
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/reasoning-suite/gate-records.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="hardening-gate-records">Hardening-gate records<a class="headerlink" href="#hardening-gate-records" title="Permanent link">&para;</a></h1>
+<p>Generated by <code>scripts/gate-records.ts</code> - do not hand-edit. The queryable
+artifact is <code>gate-records.json</code>; this file is a rollup for reading.</p>
+<p>Generated: 2026-08-27T09:24:59.085Z</p>
+<p>Status vocabulary:</p>
+<table>
+<thead>
+<tr>
+<th>token</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pass</code></td>
+<td>gate ran and the task passed it</td>
+</tr>
+<tr>
+<td><code>QUAR</code></td>
+<td>gate ran and the task FAILED it</td>
+</tr>
+<tr>
+<td><code>stale</code></td>
+<td>gate ran, but an artifact it depends on changed afterwards - the verdict describes something that no longer exists</td>
+</tr>
+<tr>
+<td><code>-</code></td>
+<td>gate has never run for this task</td>
+</tr>
+<tr>
+<td><code>n/a</code></td>
+<td>gate CANNOT run for this task as things stand (needs an unblocking step first, named in the JSON <code>detail</code>)</td>
+</tr>
+<tr>
+<td><code>n/t</code></td>
+<td>no tooling exists for this gate yet</td>
+</tr>
+<tr>
+<td><code>inc</code></td>
+<td>ran, but the result was inconclusive (infrastructure)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="rollup-by-gate">Rollup by gate<a class="headerlink" href="#rollup-by-gate" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>gate</th>
+<th>pass</th>
+<th>QUAR</th>
+<th>stale</th>
+<th>inc</th>
+<th>never ran</th>
+<th>not runnable</th>
+<th>no tooling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B1</td>
+<td>76</td>
+<td>5</td>
+<td>0</td>
+<td>118</td>
+<td>1</td>
+<td>25</td>
+<td>0</td>
+</tr>
+<tr>
+<td>B2</td>
+<td>196</td>
+<td>0</td>
+<td>0</td>
+<td>3</td>
+<td>22</td>
+<td>4</td>
+<td>0</td>
+</tr>
+<tr>
+<td>B3</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>225</td>
+</tr>
+<tr>
+<td>B4</td>
+<td>86</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>60</td>
+<td>79</td>
+<td>0</td>
+</tr>
+<tr>
+<td>B5</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>225</td>
+</tr>
+<tr>
+<td>B6</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>225</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>B7</td>
+<td>124</td>
+<td>55</td>
+<td>1</td>
+<td>0</td>
+<td>28</td>
+<td>17</td>
+<td>0</td>
+</tr>
+<tr>
+<td>C1</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>225</td>
+<td>0</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<h2 id="b2-determinism-and-b7-mutation-by-tier">B2 determinism and B7 mutation, by tier<a class="headerlink" href="#b2-determinism-and-b7-mutation-by-tier" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>tier</th>
+<th>tasks</th>
+<th>B2 pass</th>
+<th>B2 QUAR</th>
+<th>B2 inconclusive</th>
+<th>B2 not runnable</th>
+<th>B2 never ran</th>
+<th>B7 pass</th>
+<th>B7 QUAR</th>
+<th>B7 not measurable</th>
+<th>B7 stale</th>
+<th>B7 never ran</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hard</td>
+<td>150</td>
+<td>146</td>
+<td>0</td>
+<td>2</td>
+<td>2</td>
+<td>0</td>
+<td>103</td>
+<td>35</td>
+<td>8</td>
+<td>1</td>
+<td>3</td>
+</tr>
+<tr>
+<td>medium</td>
+<td>53</td>
+<td>50</td>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>0</td>
+<td>21</td>
+<td>20</td>
+<td>9</td>
+<td>0</td>
+<td>3</td>
+</tr>
+<tr>
+<td>easy</td>
+<td>22</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>22</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>22</td>
+</tr>
+</tbody>
+</table>
+<h2 id="per-task">Per task<a class="headerlink" href="#per-task" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>task</th>
+<th>tier</th>
+<th>kind</th>
+<th>ref?</th>
+<th>B1</th>
+<th>B2</th>
+<th>B3</th>
+<th>B4</th>
+<th>B5</th>
+<th>B6</th>
+<th>B7</th>
+<th>C1</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CG-AL-E001</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E002</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E003</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E004</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E005</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E006</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E007</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E008</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E009</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E010</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E031</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E032</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E045</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E050</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E051</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E052</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E053</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E054</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E055</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E056</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E057</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-E058</td>
+<td>easy</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H001</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H002</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H003</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H004</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H005</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H006</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H007</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H008</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H009</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H010</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H011</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>QUAR</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H013</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H014</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H015</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H016</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H017</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>QUAR</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H018</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H019</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H020</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H021</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H022</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H023</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H024</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>QUAR</td>
+<td>inc</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H025</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H026</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H027</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H028</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H029</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H030</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H031</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H032</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H033</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H034</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H035</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H036</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H037</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H038</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H039</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H040</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H041</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H042</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H043</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H050</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H051</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H052</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H053</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H054</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H056</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H057</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H058</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-H205</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M001</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M002</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M003</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M004</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M005</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M006</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M007</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M008</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M009</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M010</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M020</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M021</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M022</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M023</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>QUAR</td>
+<td>inc</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M024</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M025</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M026</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M027</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M028</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M029</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M031</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M032</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M033</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M034</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M035</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M036</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M037</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M038</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M039</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M040</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M041</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M042</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M043</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M044</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M045</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M088</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-M112</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X001</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>-</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X002</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X003</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X004</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X005</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X006</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X007</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X008</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X009</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X010</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X011</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X012</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/a</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X013</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X014</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X017</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X018</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X019</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X022</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X024</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X025</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X026</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X027</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X029</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X030</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X031</td>
+<td>medium</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X033</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X034</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X035</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X037</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X040</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X041</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X043</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X044</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>n</td>
+<td>n/a</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X045</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X046</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X047</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X050</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X051</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>inc</td>
+<td>pass</td>
+<td>n/t</td>
+<td>pass</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X052</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>QUAR</td>
+<td>inc</td>
+<td>n/t</td>
+<td>-</td>
+<td>n/t</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X055</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X056</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X057</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X058</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X059</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X060</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X061</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X062</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X063</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X064</td>
+<td>hard</td>
+<td>code-gen</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X065</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X066</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X067</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X068</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X069</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X070</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X071</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X072</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X073</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X074</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X075</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X076</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X077</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X078</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X079</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X080</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X081</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X082</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X083</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X084</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X085</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X086</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X087</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X088</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X089</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X090</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X091</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X092</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X093</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X094</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X095</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X096</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X097</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X098</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>stale</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X099</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X100</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X101</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X102</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X103</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X104</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X105</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X106</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X107</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X108</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X109</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X110</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X111</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X112</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X113</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X114</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X115</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X116</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X117</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X118</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X119</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X120</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X121</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X122</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>QUAR</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X123</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X124</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X125</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X126</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X127</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X128</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X129</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+<tr>
+<td>CG-AL-X130</td>
+<td>hard</td>
+<td>diagnose</td>
+<td>y</td>
+<td>pass</td>
+<td>pass</td>
+<td>n/t</td>
+<td>n/a</td>
+<td>n/t</td>
+<td>-</td>
+<td>pass</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

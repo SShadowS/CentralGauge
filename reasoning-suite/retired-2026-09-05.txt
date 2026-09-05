@@ -1,0 +1,12 @@
+# Retired 2026-09-05: oracle cannot verify the task's subject
+#
+# Both tasks test compile-time table/codeunit properties that have no runtime
+# surface in AL. Their oracles are storage round-trips (E057) or a single
+# smoke check (E058), so omitting the property, or choosing any valid-but-wrong
+# member, scores identically to the correct answer. A recorded E057 pass used
+# the deprecated `AllowInCustomizations = Always`; the correct `AsReadWrite`
+# appears nowhere in the results corpus. The only closings were unverified
+# companion-file compile tricks or new harness tooling. Owner ruling
+# 2026-09-05: delete. Audit: FallRelease.md decision 3.
+CG-AL-E057
+CG-AL-E058
