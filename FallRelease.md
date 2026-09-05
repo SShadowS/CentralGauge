@@ -31,8 +31,9 @@ publication steps, not code.
 - [x] **Suite built and gated.** 232 tasks after decision 3, including 29 composites that the
   panel almost never solves on the first attempt: 0 of 29 for Sonnet 5 and
   Luna, 1 of 29 for Opus 5, 3 of 29 for GPT-5.5.
-- [x] **Harness replay green.** `gold-ci` reports 273 trusted, 0 stale, 0
-  failing, fingerprint `0634e0ee1c1c`.
+- [x] **Harness replay green.** `gold-ci` reports 232 trusted, 0 stale, 0
+  failing, fingerprint `0634e0ee1c1c` - every task in the set, easy tier
+  included since 2026-09-05 (273 before decision 3's retirements).
   `deno run --allow-all scripts/gold-ci.ts --check`
 - [x] **Object ids clean.** `deno task id-audit`
 - [x] **Taxonomy generated and validated.** Schema version 2, four format
@@ -268,7 +269,7 @@ Run in this order. All are free and fast.
 - [ ] **Static oracle audit.** `python scripts/oracle-audit.py` must exit 0.
 - [ ] **Object ids.** `deno task id-audit`
 - [ ] **Harness replay.** `deno run --allow-all scripts/gold-ci.ts --check`
-      must stay at 273 trusted, 0 stale, 0 failing. Any edit to `tests/al/**`,
+      must stay at 232 trusted, 0 stale, 0 failing. Any edit to `tests/al/**`,
       a prereq, a reference or the harness invalidates it.
 - [ ] **Taxonomy.** `deno task taxonomy-audit`
 - [ ] **Catalog drift.** `deno task start sync-catalog --apply` so every model
@@ -296,10 +297,11 @@ spent on numbers you will not trust.
       frontier models cost $28.90; the same across Sonnet and Luna cost $9.17;
       one uncapped pass over the 110 singles was estimated at about $40 per
       frontier model. Budget roughly $50 to $80 per frontier model for the
-      full 298. Decision 3 has since cut the set to 238, and the sixty it
-      removed were the cheapest in it, so expect roughly a fifth off the task
-      count and rather less than a fifth off the bill: budget $200 to $350
-      for a five-model panel.
+      full 298. Decision 3 has since cut the set to 232, and the sixty
+      saturated tasks it removed were the cheapest in it, so expect roughly
+      a fifth off the task count and rather less than a fifth off the bill:
+      budget $200 to $350 for a five-model panel, per run. The spec's
+      three-run cohort (6.2) triples that - see decision 1.
 - [ ] **Verify capture on the first finished run.** Open the results file and
       confirm the `ingest` block carries the environment manifest and the
       invocation snapshot, and that per-attempt test vectors are present. The
