@@ -52,8 +52,41 @@ publication steps, not code.
 
 Nothing below costs money, but the campaign cannot be sized without them.
 
-- [!] **Decision 1: the headline reading.** The operator bar is "top model at
-  or below 50%". Measured on the current suite:
+- [x] **Decision 1: the headline reading.** FROZEN 2026-09-06, before any
+  campaign run, on three independent panel opinions (`.panel/decision1-*`:
+  GPT-5.6 Sol, Fable 5, GPT-5.6 Terra) that converged without seeing each
+  other:
+
+  - **Headline:** full-set (232-task) **format-macro AUC@2** - the
+    equal-weight mean over the four formats (spec 6.6), sort key `auc_2` as
+    the site already ships. **Labelled descriptive.** The All slice fails
+    both of spec 6.5's gates (`c_eff` 8.2 against a floor of 20; largest
+    component 34% against a cap of 25%), so All and the composite view show
+    scores, counts and the subset-influence table only: **no tiers, no
+    intervals, no separation dividers this release.** Composites are not
+    down-weighted post hoc; the composite programme is redesigned with
+    disconnected donor families for the next cycle.
+  - **Columns:** per-format rates, pooled task mean, first-try, best-of-2,
+    repair lift (best-of-2 minus first-try), cost.
+  - **Runs per model: three**, matching the spec's cohort (6.2). Every
+    published number is the mean across the three runs. The spec's union
+    ("passed at attempt 1 in any of three runs") does not travel under the
+    name `pass_at_1`: if shown it is `one_shot_any_of_3`, alongside the
+    strict all-of-3 figure. Run ids, settings hash and cohort digest are
+    published with the numbers.
+  - **The hard split** (panel-selected, attempt 1, reasoning-only) is
+    published as `development-selected` only, with no ranking claim for
+    the models that selected it. A holdout protocol (development panel
+    selects, disjoint holdout panel is ranked) is a later release.
+  - **The "top model at or below 50%" bar is retired.** A low score is a
+    consequence of a good hard set, not evidence of one; the targets are
+    precommitted metrics, separation on models not used to choose tasks,
+    and no single donor cluster deciding the outcome.
+  - Every leaderboard view carries one of three labels: `descriptive full
+    suite`, `development-selected`, `holdout-selected`.
+
+  The evidence that led here, kept for the record. The bar as originally
+  set was "top model at or below 50%". Measured on the current suite:
 
   | Reading | n | Opus 5 | Sonnet 5 | Luna |
   | --- | --- | --- | --- | --- |
@@ -61,8 +94,8 @@ Nothing below costs money, but the campaign cannot be sized without them.
   | best-of-2, panel-selected | 40 | 78% | 48% | 30% |
   | **attempt 1, panel-selected** | **59** | **39%** | **20%** | **10%** |
 
-  Only the attempt-1 reading clears the bar. Either adopt it as the headline
-  metric and publish, or keep hardening.
+  Only the attempt-1 reading clears that bar, which is exactly why the bar
+  was retired rather than the reading adopted.
   `docs/reasoning-suite/hardening-levers-evidence.md` holds the evidence;
   `scripts/panel-select.py` reproduces the retention.
 
@@ -291,8 +324,10 @@ spent on numbers you will not trust.
       Luna; adding a model changes which tasks the panel rule retains, so the
       selection must be re-run afterwards.
 - [ ] **Dry run first.** Never submit a real run without one.
-- [ ] **Run the full set, two attempts, uncapped.**
+- [ ] **Run the full set, two attempts, uncapped, three times per model.**
       `deno task start bench --llms <slugs> --tasks "tasks/**/*.yml" --attempts 2`
+      as three separate invocations per model (decision 1); each is its own
+      run id in the cohort. Never merge runs into one results file.
 - [ ] **Cost.** Anchors from the composite work: 29 composites across two
       frontier models cost $28.90; the same across Sonnet and Luna cost $9.17;
       one uncapped pass over the 110 singles was estimated at about $40 per
@@ -300,8 +335,8 @@ spent on numbers you will not trust.
       full 298. Decision 3 has since cut the set to 232, and the sixty
       saturated tasks it removed were the cheapest in it, so expect roughly
       a fifth off the task count and rather less than a fifth off the bill:
-      budget $200 to $350 for a five-model panel, per run. The spec's
-      three-run cohort (6.2) triples that - see decision 1.
+      budget $200 to $350 for a five-model panel per run, and decision 1
+      fixes three runs per model: **$600 to $1,050 for the campaign.**
 - [ ] **Verify capture on the first finished run.** Open the results file and
       confirm the `ingest` block carries the environment manifest and the
       invocation snapshot, and that per-attempt test vectors are present. The
