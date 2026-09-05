@@ -81,6 +81,22 @@ logging:
 # Run with: deno task start bench --preset <name>
 # List presets: deno task start bench --list-presets
 benchmarkPresets:
+  fall-2026:
+    description: "Fall 2026 release campaign panel (FallRelease.md decision 1: three runs per model). NOT launched until Phase 2 is green and the dry run is clean."
+    llms:
+      - "anthropic/claude-fable-5"
+      - "openai/gpt-6-astra"
+      - "gemini/gemini-3.8-flash"
+    containers:
+      - Cronus28
+      - Cronus281
+      - Cronus282
+      - Cronus283
+      - Cronus284
+      - Cronus285
+    runs: 3
+    attempts: 2
+    maxTokens: 64000 # bench-command.ts:106 still defaults --max-tokens to 4000; the preset escapes it, pass it on the CLI too
   flagship-2026-q2:
     description: "Current flagship models across providers (2026-04)"
     llms:

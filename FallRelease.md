@@ -327,10 +327,44 @@ Nothing below costs money, but the campaign cannot be sized without them.
     a three-run cohort per model is then six batch cycles, so the campaign
     is measured in days rather than hours. Acceptable per the owner.
 
-  Open for the panel review: is the saving worth a new orchestration path
-  before the first campaign on the new set, or should the first campaign
-  run synchronously as the known path and batch mode land for the next
-  cycle?
+  **Panel verdict 2026-09-06, unanimous: do not build batch mode before
+  this campaign.** Run the first campaign synchronously on the known path;
+  land batch mode for the next cycle. The reasons converge: the capture
+  path has never run end-to-end against a real bench (Phase 3), so
+  combining it with a never-built orchestration path maximises the chance
+  of numbers that cannot be ingested; the saving is smaller than written
+  (the three-model campaign is $360-$630, so batch saves $180-$315); and
+  the two-phase shape touches the orchestrator's most delicate invariant -
+  attempt 2 is built on attempt 1's compiled candidate
+  (`src/parallel/orchestrator.ts:919-933`), which would have to be
+  persisted across a days-long phase boundary. Design requirements the
+  panel recorded for the release-2 build, in severity order:
+
+  1. Refusal fallbacks: `createMessage` sends `betas:
+     [SERVER_FALLBACK_BETA]` + `fallbacks: "default"`; whether Message
+     Batches accepts either is unverified, and Fable 5 is the model with
+     documented HTTP-200 refusals. `servedModel` must be extracted per
+     batch item or capture and billing both break.
+  2. Pricing: a batch rate column in `pricing.yml` and in `rowCostUsd()`
+     must ship WITH batch mode, not after - cost is a headline column and
+     batch runs would otherwise show 2x.
+  3. Run and cohort identity: one run id spans both phases; three runs are
+     six multi-day cycles; `settings_hash` must distinguish batch from
+     sync so the two never share a cohort; `started_at` ordering with
+     interleaved multi-day runs needs a ruling.
+  4. Coverage: expired or errored batch items must become explicit
+     per-task terminal cells (`termination_kind`) or safe resubmission,
+     never missing rows, or the model fails spec 6.3's coverage gate.
+  5. Attempt-2 equivalence: the `generateFix` inputs (candidate, compiler
+     diagnostics, assertion failures) must be reconstructed identically to
+     the synchronous path or the two paths are not comparable.
+  6. Idempotency: stable custom ids per item (model, run, task, attempt,
+     prompt digest) so resubmission never double-counts.
+  7. Truncation detection moves from streaming to a post-hoc token audit.
+  8. Provider batch limits, chunk roll-up to one run id, and the
+     post-batch burst onto six containers (infra-retry budgets are shaped
+     for a trickle, not 232 candidates at once).
+  9. OpenRouter `:batch` variants are yet another model identity.
 
 ---
 
@@ -368,18 +402,64 @@ spent on numbers you will not trust.
       | GPT-6 Astra | `openai/gpt-6-astra` | live on the OpenAI API (`models -p openai --live`); NOT in the catalog yet, so the bench precheck auto-seeds it and the YAML must be committed afterwards |
       | Gemini 3.8 Flash | `gemini/gemini-3.8-flash` (expected) | exists: OpenRouter lists `google/gemini-3.8-flash` (and a `:batch` variant). The DIRECT Gemini discovery call returned 400 today (`models -p gemini --live`: Failed to list models), so either fix the Gemini key/endpoint before precheck or bench it as `openrouter/google/gemini-3.8-flash` |
 
-      Three models is the floor decision 1 allows. Fable 5 is one of the
-      three saturation-rule models; none of the three was a composite
-      construction-gate model (those were Opus 5 and GPT-5.5), so all three
-      are clean for the descriptive headline and only Fable 5 is in-sample
-      for the hard split. The published selection was measured on Opus 5,
+      Three models is the floor decision 1 allows. None of the three was a
+      composite construction-gate model (those were Opus 5 and GPT-5.5).
+      Fable 5 is one of the three saturation-rule models whose passes
+      selected the 60-task retirement, so it is mildly in-sample for the
+      descriptive headline too, not only for the hard split; disclose that
+      next to the headline. The published selection was measured on Opus 5,
       Sonnet 5 and Luna; with this panel the retained set is re-derived and
       labelled development-selected per decision 1.
+
+      **Panel review, 2026-09-06** (`.panel/choices-{anthropic,google,openai}.md`;
+      Fable 5, Gemini 3.8 Flash, GPT-5.5 - the Google seat is itself a
+      nominee and argued against its own tier, so its view is not
+      self-serving). Unanimous on three points, all still open for the
+      owner:
+
+      1. **Three models is the floor, and thin for a public board.** The
+         hardening plan's own finding stands: three models give the
+         retention dial three notches and "we cannot express that threshold
+         on 3 models" (`launch-hardening-plan.md:347-351`; Aider used 7).
+         Descriptive headline: publishable. Development-selected split:
+         re-derived from three models repeats the diagnosed failure. Two
+         of three panelists want five models (+$240-$420 for the cohort).
+      2. **Flash next to two flagships confounds family with tier.** All
+         three would put Gemini's flagship in the family slot, or run both
+         Flash and Pro with the tier labelled. Google's own seat expects
+         Flash to fail the composites outright.
+      3. **Do not route Gemini through OpenRouter for the campaign.** The
+         slug is the model identity in the catalog, pricing, cohort and the
+         signed release manifest; an OpenRouter run and a later direct run
+         never unify, and OpenRouter normalises the provider metadata the
+         capture path (spec 5.5) records. Fix direct Gemini discovery (the
+         400 today) before the dry run. Same discipline for GPT-6 Astra:
+         commit the auto-seeded catalog and pricing rows before publishing.
+
+      Split, owner's call: **Fable 5 vs 5.1.** Two panelists say a first
+      campaign on a rebuilt set should not open on a superseded model; the
+      third says 5 is the safe choice because 5.1's pricing row is marked
+      ASSUMED and must not be synced to prod unverified
+      (`site/catalog/pricing.yml:701-702`). Confirming the 5.1 list price
+      is minutes; then bench 5.1.
 - [ ] **Dry run first.** Never submit a real run without one.
 - [ ] **Run the full set, two attempts, uncapped, three times per model.**
-      `deno task start bench --llms <slugs> --tasks "tasks/**/*.yml" --attempts 2`
-      as three separate invocations per model (decision 1); each is its own
-      run id in the cohort. Never merge runs into one results file.
+      `deno task start bench --preset fall-2026 --llms <one slug> --max-tokens 64000`
+      once per model. The preset's `runs: 3` satisfies decision 1: the
+      `--runs` loop (`cli/commands/bench/parallel-executor.ts:439-834`)
+      builds a fresh orchestrator, writes its own results file and ingests
+      per iteration, so each of the three is its own run id in the cohort.
+      Never merge runs into one results file.
+      **`--max-tokens 64000` is mandatory on the command line**, not merely
+      in `.centralgauge.yml`: `cli/commands/bench-command.ts:106` still
+      declares the Cliffy option with `default: 4000`, and a Cliffy default
+      is a value, so it silently overrides the config file's 64000. That
+      exact defect once produced a fake 88% baseline
+      (`docs/reasoning-suite/launch-hardening-plan.md:177-206`). A preset
+      `maxTokens` also escapes it (`bench-command.ts:857` checks whether the
+      flag was typed), but put it on the command line anyway, and check
+      the per-attempt completion-token counts on the first finished run
+      against the cap before trusting anything.
 - [ ] **Cost.** Anchors from the composite work: 29 composites across two
       frontier models cost $28.90; the same across Sonnet and Luna cost $9.17;
       one uncapped pass over the 110 singles was estimated at about $40 per
@@ -387,8 +467,10 @@ spent on numbers you will not trust.
       full 298. Decision 3 has since cut the set to 232, and the sixty
       saturated tasks it removed were the cheapest in it, so expect roughly
       a fifth off the task count and rather less than a fifth off the bill:
-      budget $200 to $350 for a five-model panel per run, and decision 1
-      fixes three runs per model: **$600 to $1,050 for the campaign.**
+      budget $200 to $350 for a five-model panel per run. The chosen panel
+      is THREE models, one Flash-priced, so roughly **$120 to $210 per run
+      and $360 to $630 for the three-run campaign** (the earlier
+      $600-$1,050 figure was written against five models).
 - [ ] **Verify capture on the first finished run.** Open the results file and
       confirm the `ingest` block carries the environment manifest and the
       invocation snapshot, and that per-attempt test vectors are present. The
