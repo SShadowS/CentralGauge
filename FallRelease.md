@@ -205,8 +205,14 @@ Nothing below costs money, but the campaign cannot be sized without them.
   unproven.
   (3) ~~Four containers down~~ all six restarted 2026-09-05 and proven
   end-to-end (they had exited with `3221225786`, a host console-close).
-  (4) M032's real fix (callable `RunFilteredTransfer()` + oracle reset)
-  before the campaign; the gate alone leaves wrong filters undetected.
+  (4) M032: the proposed real fix (a callable `RunFilteredTransfer()` the
+  oracle resets around) is DEAD - probed 2026-09-05, `decisions.md` entry
+  42: `DataTransfer is only usable during upgrade and installation code`
+  is a runtime session check no wrapper reaches. The only behavioural fix
+  is a harness feature (per-attempt prereq data reset: uninstall with
+  `-DoNotSaveData` + reinstall so the seed re-runs), which does not exist.
+  Choose: build that, or delete M032 and keep the gate-only task out of
+  the set. Every future install/upgrade task has the same shape.
 
   **What the retirement actually did.** 315 files removed. The taxonomy
   pipeline was re-run (build, merge, validate, graph fixture) and is

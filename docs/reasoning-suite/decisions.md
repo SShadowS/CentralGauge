@@ -997,3 +997,30 @@ Append-only. Each entry: date, decision, why.
     - The decimal and integer `,9` sites are equally unobservable for
       JSON-shaped numbers (no group separator, dot decimal): this locale's
       bare parser reads them the same way.
+
+42. **`DataTransfer` refuses to run outside an install/upgrade session at
+    RUNTIME, not at compile time.** Measured 2026-09-05 on Cronus28 (BC
+    28.4.53241.53758), probe `scratch/probe-datatransfer-from-test/`: a
+    Public procedure on a `Subtype = Install` codeunit that builds a
+    DataTransfer compiles clean and installs clean (the install trigger
+    calls it), but the same procedure invoked from a test codeunit throws
+    `DataTransfer is only usable during upgrade and installation code.`
+    at `CopyFields`, with destination rows untouched (`A[] B[preset-b]
+    C[]`). The check is on the executing session, so no wrapper, no
+    `Codeunit.Run`, no `TryFunction` reaches it.
+    - Consequence for task design: an install-time-only API cannot be
+      re-exercised by an oracle. Its only run is the candidate's own
+      install, which happens BEFORE the tests and against whatever state
+      the shared container is in. The prereq's seed runs once per prereq
+      install (`if IsEmpty`), and per-task cleanup keeps the prereq with
+      its data, so after the first candidate on a container mutates the
+      rows every later candidate - including an empty trigger - sees the
+      post-transfer state and passes. The only behavioural fix is a
+      HARNESS reset of the prereq's data per attempt (uninstall with
+      `-DoNotSaveData` + reinstall so the seed re-runs), which does not
+      exist today. Until it does, M032's `mustContain:
+      [AddDestinationFilter]` plus the compiler's signature checks are the
+      whole oracle, and a wrong filter that compiles is invisible.
+    - Same shape applies to any future install/upgrade task (upgrade
+      codeunits, `NavApp.GetCurrentModuleInfo`-gated data moves): probe
+      before authoring, and budget the harness reset first.
