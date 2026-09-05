@@ -535,10 +535,6 @@ tasks:
     group: build-from-spec
     facets: [codeunit, page, recordref, recordref-reflection, report, table]
     min_bc_version: 17
-  CG-AL-M032:
-    group: build-from-spec
-    facets: [codeunit, datatransfer, filter-key-semantics, idempotent-rebuild, install, upgrade-datatransfer]
-    min_bc_version: 17
   CG-AL-M034:
     group: build-from-spec
     facets: [exact-total, fieldref, flowfield, flowfield-sift, recordref, recordref-reflection]

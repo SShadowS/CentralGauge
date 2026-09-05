@@ -13,8 +13,8 @@ Legend: **[x] done** · **[ ] not started** · **[!] blocked or decision needed*
 | Thing | State |
 | --- | --- |
 | Live task set in production | `b31c942bd4e8`, 110 tasks, current since 2026-05-16 |
-| Local task set | 233 tasks, never benched, never ingested (298 before decision 3 retired the saturated 60, then E057/E058, then M029/M037/M039) |
-| Composition | 45 build-from-spec, 49 runtime-trap, 110 diagnose-single, 29 diagnose-composite |
+| Local task set | 232 tasks, never benched, never ingested (298 before decision 3 retired the saturated 60, then E057/E058, M029/M037/M039 and M032) |
+| Composition | 44 build-from-spec, 49 runtime-trap, 110 diagnose-single, 29 diagnose-composite |
 | Taxonomy v2 pipeline (Plan A) | shipped, merged, on master |
 | Taxonomy v2 site (Plan B, release 1) | shipped, merged, **deployed** at worker version `199f6cd2` |
 | D1 migration `0018_taxonomy_v2.sql` | applied to production |
@@ -28,7 +28,7 @@ publication steps, not code.
 
 ## Phase 0 — already done
 
-- [x] **Suite built and gated.** 233 tasks after decision 3, including 29 composites that the
+- [x] **Suite built and gated.** 232 tasks after decision 3, including 29 composites that the
   panel almost never solves on the first attempt: 0 of 29 for Sonnet 5 and
   Luna, 1 of 29 for Opus 5, 3 of 29 for GPT-5.5.
 - [x] **Harness replay green.** `gold-ci` reports 273 trusted, 0 stale, 0
@@ -38,7 +38,7 @@ publication steps, not code.
 - [x] **Taxonomy generated and validated.** Schema version 2, four format
   groups, four facet families, composites deriving facets from donors.
   `deno task taxonomy-audit` prints `[OK] taxonomy valid` with counts
-  45 / 49 / 110 / 29, re-run after decision 3's retirements.
+  44 / 49 / 110 / 29, re-run after decision 3's retirements.
 - [x] **Capture path live.** The bench records the harness fingerprint,
   environment manifest, invocation snapshot, per-attempt test vectors and
   termination facts; the worker has columns for all of it.
@@ -174,20 +174,21 @@ Nothing below costs money, but the campaign cannot be sized without them.
   | M027 | KEEP | All 18 typed JSON getters invoked and asserted on both paths. Clean. |
   | M028 | gated | Oracle asserts only `No.`/`Name`; omitting the Summary system part *and* the pageextension scored 100 while a wrong identifier failed compile (70x AL0890). `mustContain: [DefaultSummaryPart]` - the compiler names it as the sole legal identifier. |
   | M036 | gated | Two `IsTrue` on Boolean returns; `exit(true)` passed. `mustContain: [WriteWithSecretsTo]`. |
-  | M032 | gated (stop-gap) | Sound on a virgin DB, dead in practice: the prereq seeds only `if IsEmpty` and republish/cleanup preserve data, so after the first candidate mutates the rows an empty install trigger passes 3/3 (38 of 38 recorded runs). `mustContain: [AddDestinationFilter]` now; the real fix is a callable `RunFilteredTransfer()` the oracle resets around - do it before the campaign. |
+  | M032 | **DELETED** | Sound on a virgin DB, dead in practice: the prereq seeds only `if IsEmpty` and republish/cleanup preserve data, so after the first candidate mutates the rows an empty install trigger passes 3/3 (38 of 38 recorded runs). The proposed fix was probed and is impossible: `DataTransfer` is session-gated at runtime (`decisions.md` 42), so no oracle can re-run it; only a harness-level per-attempt prereq reset could, and it does not exist. |
   | M031 | repaired + gated | Blind (integer overloads pass both tests; page, report and both compile-check procedures never referenced) and three manifest lines killed spec-followers: "each AL file must declare namespace" against a harness that concatenates into one file (65/140, AL0198), "Caption on each object" including codeunits (100/140, AL0124), "passed as a Text argument" against zero-arg oracle calls. All five edits applied; gate on the four FQN string literals whose content the manifest fixes exactly. The only v17 probe in the set. |
   | M029 | **DELETED** | Oracle never touches the candidate (all three tests hit prereq objects; a pagecustomization is unobservable via TestPage) and the manifest demanded a Caption on the pagecustomization that cannot compile (72/144, AL0246). |
   | M037 | **DELETED** | Manifest's `Category` argument is uncompilable (146x AL0761 - the platform requires `EventCategory`); the only compiling route needs an enumextension the manifest never asks for; the reference silently took it; the oracle passes an empty codeunit. |
   | M039 | **DELETED** | Both assertions check `Visible`/`Enabled` at their AL defaults. The v16 subject is `TestPart.Visible()/Enabled()`, a test-side API the candidate cannot exercise; the manifest's "demonstrate the instance methods" drove all 60 AL0127 failures. |
 
-  Batch tally: 13 tasks, 1 clean, 6 repaired or gated (M034 M040 M028 M036
-  M032 M031), 5 deleted (E057 E058 M029 M037 M039), 1 reference-only
-  (M023). All four gates are satisfied by the committed references.
+  Batch tally: 13 tasks, 1 clean, 5 repaired or gated (M034 M040 M028 M036
+  M031), 6 deleted (E057 E058 M029 M037 M039 M032), 1 reference-only
+  (M023). All three gates are satisfied by the committed references.
 
-  gold-ci after all of it: 226 trusted, 0 stale, 0 in-scope tasks without
-  a reference. The set is now **233 tasks** (45 / 49 / 110 / 29); the
-  taxonomy pipeline and every audit are green on it. `task_sets.hash` moved
-  again, which costs nothing until the campaign starts.
+  gold-ci after all of it, with the easy tier now in scope: 232 trusted,
+  0 stale, 0 tasks without a reference - every task in the set has a
+  verified reference. The set is now **232 tasks** (44 / 49 / 110 / 29);
+  the taxonomy pipeline and every audit are green on it. `task_sets.hash`
+  moved again, which costs nothing until the campaign starts.
 
   **On `mustContain` gates.** A gate is a raw case-sensitive substring
   test, so it proves presence, not correct use. It is legitimate only where
@@ -198,21 +199,15 @@ Nothing below costs money, but the campaign cannot be sized without them.
 
   **Still the owner's call.** (1) ~~E057 and E058~~ deleted 2026-09-05;
   ~~M027-M041 sweep~~ done, M029/M037/M039 deleted.
-  (2) The seven easy tasks that remain (`E001 E006 E010 E050 E052 E054
-  E056`), none with a reference: `seed-reference-solution.ts:255` and
-  gold-ci cover only `hard`/`medium`; either widen scope to `easy` (all
-  seven have a stored passing submission) or accept the tier stays
-  unproven.
+  (2) ~~The seven easy tasks with no reference~~ gold-ci and the seed
+  script now cover `easy`; all seven seeded and replayed green.
   (3) ~~Four containers down~~ all six restarted 2026-09-05 and proven
   end-to-end (they had exited with `3221225786`, a host console-close).
-  (4) M032: the proposed real fix (a callable `RunFilteredTransfer()` the
-  oracle resets around) is DEAD - probed 2026-09-05, `decisions.md` entry
-  42: `DataTransfer is only usable during upgrade and installation code`
-  is a runtime session check no wrapper reaches. The only behavioural fix
-  is a harness feature (per-attempt prereq data reset: uninstall with
-  `-DoNotSaveData` + reinstall so the seed re-runs), which does not exist.
-  Choose: build that, or delete M032 and keep the gate-only task out of
-  the set. Every future install/upgrade task has the same shape.
+  (4) ~~M032~~ deleted 2026-09-05 after the probe (`decisions.md` 42)
+  showed no oracle can re-run an install-time API. Release-2 item: a
+  harness-level per-attempt prereq data reset (uninstall with
+  `-DoNotSaveData` + reinstall) is the precondition for ANY future
+  install/upgrade task having a behavioural oracle.
 
   **What the retirement actually did.** 315 files removed. The taxonomy
   pipeline was re-run (build, merge, validate, graph fixture) and is

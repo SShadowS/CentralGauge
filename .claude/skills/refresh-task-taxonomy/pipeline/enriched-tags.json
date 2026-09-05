@@ -151,11 +151,6 @@
   "CG-AL-M031": [
     "recordref-reflection"
   ],
-  "CG-AL-M032": [
-    "filter-key-semantics",
-    "idempotent-rebuild",
-    "upgrade-datatransfer"
-  ],
   "CG-AL-M034": [
     "exact-total",
     "flowfield-sift",
