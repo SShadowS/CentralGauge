@@ -13,8 +13,8 @@ Legend: **[x] done** · **[ ] not started** · **[!] blocked or decision needed*
 | Thing | State |
 | --- | --- |
 | Live task set in production | `b31c942bd4e8`, 110 tasks, current since 2026-05-16 |
-| Local task set | 238 tasks, never benched, never ingested (298 before decision 3 retired the saturated 60) |
-| Composition | 50 build-from-spec, 49 runtime-trap, 110 diagnose-single, 29 diagnose-composite |
+| Local task set | 236 tasks, never benched, never ingested (298 before decision 3 retired the saturated 60, then E057/E058) |
+| Composition | 48 build-from-spec, 49 runtime-trap, 110 diagnose-single, 29 diagnose-composite |
 | Taxonomy v2 pipeline (Plan A) | shipped, merged, on master |
 | Taxonomy v2 site (Plan B, release 1) | shipped, merged, **deployed** at worker version `199f6cd2` |
 | D1 migration `0018_taxonomy_v2.sql` | applied to production |
@@ -28,7 +28,7 @@ publication steps, not code.
 
 ## Phase 0 — already done
 
-- [x] **Suite built and gated.** 238 tasks after decision 3, including 29 composites that the
+- [x] **Suite built and gated.** 236 tasks after decision 3, including 29 composites that the
   panel almost never solves on the first attempt: 0 of 29 for Sonnet 5 and
   Luna, 1 of 29 for Opus 5, 3 of 29 for GPT-5.5.
 - [x] **Harness replay green.** `gold-ci` reports 273 trusted, 0 stale, 0
@@ -38,7 +38,7 @@ publication steps, not code.
 - [x] **Taxonomy generated and validated.** Schema version 2, four format
   groups, four facet families, composites deriving facets from donors.
   `deno task taxonomy-audit` prints `[OK] taxonomy valid` with counts
-  50 / 49 / 110 / 29, re-run after decision 3's retirement.
+  48 / 49 / 110 / 29, re-run after decision 3's retirements.
 - [x] **Capture path live.** The bench records the harness fingerprint,
   environment manifest, invocation snapshot, per-attempt test vectors and
   termination facts; the worker has columns for all of it.
@@ -159,13 +159,14 @@ Nothing below costs money, but the campaign cannot be sized without them.
   | E052 | oracle FIXED | `Contains('2025')` failed the idiomatic `Format(Date)`, which locale 1033 renders as `06/15/25`; now accepts a 2-digit year. `IsShipped` value was never checked; now asserted both ways. |
   | E006 | manifest FIXED | Asked for a page extension only while the oracle needs the fields on the Customer table. One sentence added. |
   | E010 | manifest FIXED | Named a non-existent event `OnAfterInsert` (135 local AL0280 failures, Sonnet 4.6 at 1/12). Now described behaviourally, so the name is still the model's to know. |
-  | E057 | **open: FIX or DELETE** | Oracle never touches the three properties it exists to test; a submission with the deprecated `AllowInCustomizations = Always` scored 100. The correct `AsReadWrite` appears zero times in the corpus. Only closings: a companion-file compile gate (unverified, covers one property of three) or harness-level symbol inspection. |
-  | E058 | **open: FIX or DELETE** | Oracle is one `SmokeCheck()`; all 16 valid `TestType`/`RequiredTestIsolation` combinations pass, omission included. Same closing options as E057. |
+  | E057 | **DELETED** 2026-09-05 | Oracle never touched the three properties it existed to test; a submission with the deprecated `AllowInCustomizations = Always` scored 100, and the correct `AsReadWrite` appears zero times in the corpus. Only closings were an unverified companion-file compile gate or new harness tooling. `docs/reasoning-suite/retired-2026-09-05.txt`. |
+  | E058 | **DELETED** 2026-09-05 | Oracle was one `SmokeCheck()`; all 16 valid `TestType`/`RequiredTestIsolation` combinations passed, omission included. Same closing options as E057, same ruling. |
   | E001 E054 E056 E050 | KEEP | Clean; failures are real knowledge gaps. (An auditor first called E050 broken; 56 stored `@'...'` submissions that compiled and passed settled it.) |
 
   gold-ci after the fixes: 229 trusted, 0 stale, 0 in-scope tasks without a
-  reference. `task_sets.hash` moved again, which costs nothing until the
-  campaign starts.
+  reference. The set is now **236 tasks** (48 / 49 / 110 / 29); the taxonomy
+  pipeline and every audit are green on it. `task_sets.hash` moved again,
+  which costs nothing until the campaign starts.
 
   **Cross-cutting finding.** M040, E057 and E058 come from the 2026-05-08
   "v15-v17 features" batch and share one shape: the subject is a
@@ -175,10 +176,12 @@ Nothing below costs money, but the campaign cannot be sized without them.
   M027-M041, of which only M034 and M040 were audited. Sweep the rest
   before the campaign.
 
-  **Still the owner's call.** (1) E057 and E058: recommendation is delete
-  both. (2) The nine easy no-reference tasks: `seed-reference-solution.ts:255`
-  and gold-ci cover only `hard`/`medium`; either widen scope to `easy` (all
-  nine have a stored passing submission) or accept the tier stays unproven.
+  **Still the owner's call.** (1) ~~E057 and E058~~ deleted 2026-09-05.
+  (2) The seven easy tasks that remain (`E001 E006 E010 E050 E052 E054
+  E056`), none with a reference: `seed-reference-solution.ts:255` and
+  gold-ci cover only `hard`/`medium`; either widen scope to `easy` (all
+  seven have a stored passing submission) or accept the tier stays
+  unproven.
   (3) Only Cronus281 and Cronus283 were running on 2026-09-05; Cronus28,
   282, 284 and 285 were down, which showed up as `prepareCandidateApp
   failed` and 300 s pwsh session timeouts during the probes. Bring them

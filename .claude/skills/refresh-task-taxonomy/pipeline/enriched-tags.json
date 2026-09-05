@@ -13,12 +13,6 @@
     "culture-format-roundtrip",
     "roundtrip-fidelity"
   ],
-  "CG-AL-E057": [
-    "roundtrip-fidelity"
-  ],
-  "CG-AL-E058": [
-    "test-permissions"
-  ],
   "CG-AL-H007": [
     "error-flow",
     "roundtrip-fidelity"

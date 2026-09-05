@@ -403,14 +403,6 @@ tasks:
     group: build-from-spec
     facets: [codeunit, culture-format-roundtrip, roundtrip-fidelity]
     min_bc_version: 15
-  CG-AL-E057:
-    group: build-from-spec
-    facets: [roundtrip-fidelity, table]
-    min_bc_version: 16
-  CG-AL-E058:
-    group: build-from-spec
-    facets: [codeunit, test-permissions]
-    min_bc_version: 16
   CG-AL-H007:
     group: build-from-spec
     facets: [codeunit, enum, error-flow, error-info, roundtrip-fidelity]
