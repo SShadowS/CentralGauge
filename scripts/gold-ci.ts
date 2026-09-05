@@ -107,7 +107,7 @@ async function taskInputs(id: string, tier: string): Promise<string[]> {
 
 async function inScopeTasks(): Promise<Map<string, string>> {
   const tasks = new Map<string, string>();
-  for (const tier of ["hard", "medium"]) {
+  for (const tier of ["hard", "medium", "easy"]) {
     for await (const e of Deno.readDir(join(REPO, "tasks", tier))) {
       if (!e.isFile || !e.name.endsWith(".yml")) continue;
       const txt = await Deno.readTextFile(join(REPO, "tasks", tier, e.name));

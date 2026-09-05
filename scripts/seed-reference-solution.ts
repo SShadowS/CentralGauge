@@ -252,7 +252,7 @@ async function main(): Promise<void> {
 
   // Which in-scope tasks are missing a reference solution?
   const missing: string[] = [];
-  for (const tier of ["hard", "medium"]) {
+  for (const tier of ["hard", "medium", "easy"]) {
     for await (const e of Deno.readDir(join(REPO, "tasks", tier))) {
       if (!e.isFile || !e.name.endsWith(".yml")) continue;
       const id = e.name.match(/^(CG-AL-[A-Z0-9]+)/)?.[1];

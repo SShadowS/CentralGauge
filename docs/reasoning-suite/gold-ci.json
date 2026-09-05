@@ -2485,6 +2485,69 @@
       "inputsHash": "8d66e2f530159b8569c57a31c1f875fbda511cea98269e9d8339f0ed958d95e1",
       "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
       "detail": "[trap-probe] OK"
+    },
+    "CG-AL-E010": {
+      "verdict": "pass",
+      "at": "2026-09-05T20:46:19.775Z",
+      "testsPassed": 5,
+      "testsTotal": 5,
+      "inputsHash": "92c4a28e3d30ba383a1abd067fcc7fb9f48e6701927bef1dd7f726286d277716",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-E001": {
+      "verdict": "pass",
+      "at": "2026-09-05T20:46:20.876Z",
+      "testsPassed": 7,
+      "testsTotal": 7,
+      "inputsHash": "e3362587c74b041fc437710898b4d379fa4af85cb71018d00853703c4a57fc39",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-E050": {
+      "verdict": "pass",
+      "at": "2026-09-05T20:46:46.216Z",
+      "testsPassed": 13,
+      "testsTotal": 13,
+      "inputsHash": "e1ad61641c2f32066772ecf3602230b9dc58ecc5b59067c291f95920c9eadfbe",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-E052": {
+      "verdict": "pass",
+      "at": "2026-09-05T20:46:48.871Z",
+      "testsPassed": 16,
+      "testsTotal": 16,
+      "inputsHash": "0345fe040704b6331803a75d9fff93df3f4baf547e5f2b5166887dbad146013e",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-E006": {
+      "verdict": "pass",
+      "at": "2026-09-05T20:47:00.019Z",
+      "testsPassed": 7,
+      "testsTotal": 7,
+      "inputsHash": "36c2aae5c1dd9496a1900f72acc7d5555c8a38d5e3c14c809bee01a3f35630d6",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-E054": {
+      "verdict": "pass",
+      "at": "2026-09-05T20:47:12.116Z",
+      "testsPassed": 9,
+      "testsTotal": 9,
+      "inputsHash": "36156967f8f29f93234536854a2246798a026f4962a8fe90fe8c47f5d4b5f54c",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
+    },
+    "CG-AL-E056": {
+      "verdict": "pass",
+      "at": "2026-09-05T20:47:15.216Z",
+      "testsPassed": 15,
+      "testsTotal": 15,
+      "inputsHash": "d010d2341ad5c44e04caebef130f1e3fe7d10c5ef3e6e84d54b6e8fe3a90031b",
+      "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443",
+      "detail": "[trap-probe] OK"
     }
   },
   "harnessHash": "0634e0ee1c1c55044eb549c2f7e4a49ef8e1e296f725919db24dd04353266443"
