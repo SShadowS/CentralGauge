@@ -1,8 +1,9 @@
 # CG-AL-M023 - seeded reference solution
 
-**Not verified.** This was lifted from a stored bench submission that
-passed the oracle AS IT STOOD AT THE TIME OF THAT RUN. Oracles have
-changed since. Re-probe before recording any gate verdict against it:
+**Verified.** gold-ci recorded `pass`, 11/11 tests, at 2026-09-02T05:35:02Z
+under harness fingerprint `0634e0ee1c1c` (`docs/reasoning-suite/gold-ci.json`),
+against the oracle as repaired in 8a5896cd (2026-08-28: dedicated `ItemIter`
+cursor in `TestSumItemInventory_CalculatesSum`). Re-probe after any oracle edit:
 
 ```
 deno run -A scripts/trap-probe.ts --task CG-AL-M023 \

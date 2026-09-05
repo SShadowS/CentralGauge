@@ -1,0 +1,11 @@
+{
+  "id": "00000000-0044-0000-0000-c0de0000c001",
+  "name": "Probe X044 Correct",
+  "publisher": "CentralGauge",
+  "version": "1.0.0.0",
+  "platform": "27.0.0.0",
+  "application": "27.0.0.0",
+  "idRanges": [{ "from": 71330, "to": 71339 }],
+  "runtime": "16.0",
+  "features": ["NoImplicitWith"]
+}

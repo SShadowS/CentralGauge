@@ -15,9 +15,9 @@ description: >-
 
   3. Call RecRef.SetAutoCalcFields passing the field number of the "Total Amount" FlowField on the Parent table.
 
-  4. Use RecRef.Field on the primary key field (No.) to set the lookup filter to ParentNo (use SetRange-style filter with the FieldRef Value to find the record).
+  4. Use RecRef.Field on the primary key field (No.) to set the lookup filter to ParentNo.
 
-  5. Call RecRef.FindFirst (or Get equivalent on the RecordRef).
+  5. Call RecRef.FindFirst.
 
   6. Use RecRef.Field on the "Total Amount" field to obtain a FieldRef and read its Value into a Decimal local variable.
 
@@ -32,6 +32,8 @@ expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M034.Test.al
   testCodeunitId: 80034
+  mustContain:
+    - SetAutoCalcFields
 metrics:
   - compile_pass
   - tests_pass

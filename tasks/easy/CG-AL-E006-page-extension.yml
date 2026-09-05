@@ -9,6 +9,8 @@ description: >-
   - Customer Notes (Text field for internal notes)
   - VIP Customer (Boolean field to mark important customers)
 
+  These three fields do not exist on the Customer table yet; add them to the Customer table as well.
+
   Include proper captions and ensure the extension follows Business Central conventions.
   The new fields should appear in the existing General group on the Customer Card.
 domains: [pages]

@@ -120,7 +120,8 @@ codeunit 80052 "CG-AL-E052 Test"
         TestDate := DMY2Date(15, 6, 2025);
         Result := TypeConverter.DateToText(TestDate);
 
-        Assert.IsTrue(Result.Contains('2025'), 'Should contain year 2025');
+        // Accept a 2-digit year: the container's session locale renders Format(Date) as MM/DD/YY.
+        Assert.IsTrue(Result.Contains('2025') or Result.Contains('25'), 'Should contain year 2025');
         Assert.IsTrue(Result.Contains('6') or Result.Contains('06') or Result.Contains('Jun'),
             'Should contain month');
         Assert.IsTrue(Result.Contains('15'), 'Should contain day 15');
@@ -135,7 +136,7 @@ codeunit 80052 "CG-AL-E052 Test"
         TestDate := DMY2Date(1, 1, 2025);
         Result := TypeConverter.DateToText(TestDate);
 
-        Assert.IsTrue(Result.Contains('2025'), 'Should contain year');
+        Assert.IsTrue(Result.Contains('2025') or Result.Contains('25'), 'Should contain year');
         Assert.IsTrue(Result.Contains('1') or Result.Contains('01') or Result.Contains('Jan'),
             'Should contain January indicator');
     end;
@@ -154,6 +155,8 @@ codeunit 80052 "CG-AL-E052 Test"
         Assert.IsTrue(Result.Contains('Amount'), 'Should contain Amount label');
         Assert.IsTrue(Result.Contains('250'), 'Should contain amount value');
         Assert.IsTrue(Result.Contains('Shipped'), 'Should contain Shipped label');
+        Assert.IsTrue(Result.Contains('Yes') or Result.Contains('true') or Result.Contains('True'),
+            'Shipped order should render IsShipped as a true value');
     end;
 
     [Test]
@@ -168,6 +171,10 @@ codeunit 80052 "CG-AL-E052 Test"
         Assert.IsTrue(Result.Contains('2002'), 'Should contain order number');
         Assert.IsTrue(Result.Contains('99'), 'Should contain amount');
         Assert.IsTrue(Result.Contains('Date'), 'Should contain Date label');
+        Assert.IsTrue(Result.Contains('No') or Result.Contains('false') or Result.Contains('False'),
+            'Unshipped order should render IsShipped as a false value');
+        Assert.IsFalse(Result.Contains('Yes') or Result.Contains('true') or Result.Contains('True'),
+            'Unshipped order must not render IsShipped as a true value');
     end;
 
     [Test]

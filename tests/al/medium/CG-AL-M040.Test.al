@@ -14,7 +14,7 @@ codeunit 80040 "CG-AL-M040 Test"
     begin
         Demo.DeleteAll();
 
-        Evaluate(TaskId, '9223372036854775000');
+        Assert.IsTrue(Evaluate(TaskId, '9223372036854775000'), 'Test setup: boundary task id must parse');
         Demo.Init();
         Demo."No." := 'TASK-001';
         Demo."Task Reference" := TaskId;
@@ -31,17 +31,21 @@ codeunit 80040 "CG-AL-M040 Test"
     procedure TestTaskReferenceFieldZero()
     var
         Demo: Record "CG Task Demo";
+        ZeroTaskId: BigInteger;
     begin
         Demo.DeleteAll();
 
         Demo.Init();
         Demo."No." := 'TASK-ZERO';
-        Demo."Task Reference" := 0;
+        ZeroTaskId := 0;
+        Demo."Task Reference" := ZeroTaskId;
         Demo.Insert();
 
         Clear(Demo);
-        Demo.Get('TASK-ZERO');
-        Assert.AreEqual(0, Demo."Task Reference", 'Task Reference BigInteger should accept zero');
+        Assert.IsTrue(Demo.Get('TASK-ZERO'), 'Zero-valued record should be retrievable by primary key');
+        // Compare BigInteger against BigInteger: Assert.AreEqual is type-strict and an
+        // Integer literal 0 never equals a BigInteger 0, even though the values match.
+        Assert.AreEqual(ZeroTaskId, Demo."Task Reference", 'Task Reference BigInteger should accept zero');
 
         Demo.Delete();
     end;

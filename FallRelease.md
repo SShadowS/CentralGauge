@@ -143,19 +143,46 @@ Nothing below costs money, but the campaign cannot be sized without them.
   | diagnose-composite | 29 | 0 | 29 |
   | **total** | **298** | **60** | **238** |
 
-  This also settles most of the old no-reference question: 13 of the 25
-  tasks with no reference solution are inside the retirement list. Twelve
-  survive it and still need a call — `E001`, `E006`, `E010`, `E050`, `E052`,
-  `E054`, `E056`, `E057`, `E058`, `M034`, `M040`, `X044`. They sit outside
-  gold-ci's replay coverage, so nothing proves their oracles still pass
-  under the current harness: either author references and replay them, or
-  delete them too.
+  **The remainder, audited 2026-09-05.** Thirteen tasks were left open by
+  the retirement: twelve with no reference solution (`E001 E006 E010 E050
+  E052 E054 E056 E057 E058 M034 M040 X044`) and three passed by nobody
+  (`M023 M034 M040`). Five `al-test-auditor` runs, every load-bearing claim
+  re-verified against the files and the local results corpus (reports in
+  the session scratchpad `audit13/`). Outcome:
 
-  **A separate question at the other end.** `M023`, `M034` and `M040` are
-  passed by nobody on any attempt. Two of the three are in the twelve above.
-  A task no model solves is either the benchmark's best signal or a broken
-  oracle, and today nothing distinguishes the two. Probe them before the
-  campaign.
+  | Task | Verdict | Finding, and what was done |
+  | --- | --- | --- |
+  | M040 | oracle FIXED | Unpassable since creation: `Test.al:44` compared an Integer literal to a BigInteger field (type-strict). All 14 attempts that ever compiled passed RoundTrip and failed only this. Fixed with a BigInteger local; two unchecked returns (lines 17, 43) asserted. Reference lifted from a stored `ExtendedDatatype = Task` submission; probe 2/2. |
+  | M023 | KEEP | Oracle bug fixed 2026-08-28; reference gold-ci green. Published 0/78 predates the fix. `PROVENANCE.md` updated. |
+  | M034 | KEEP, hardened | Oracle bug fixed 2026-06-13; GPT-5.5 passed 2026-08-27. Reference seeded from that run, probe 2/2. `SetAutoCalcFields` was never verified (plain `CalcFields` passed) so `expected.mustContain: [SetAutoCalcFields]` was added, and two coaching parentheticals were cut from the manifest. |
+  | X044 | KEEP | Oracle discriminates (3-solution probe). Reference committed from `scratch/trap-probe/x044-correct/`; re-probed 3/3 on BC 28.4. |
+  | E052 | oracle FIXED | `Contains('2025')` failed the idiomatic `Format(Date)`, which locale 1033 renders as `06/15/25`; now accepts a 2-digit year. `IsShipped` value was never checked; now asserted both ways. |
+  | E006 | manifest FIXED | Asked for a page extension only while the oracle needs the fields on the Customer table. One sentence added. |
+  | E010 | manifest FIXED | Named a non-existent event `OnAfterInsert` (135 local AL0280 failures, Sonnet 4.6 at 1/12). Now described behaviourally, so the name is still the model's to know. |
+  | E057 | **open: FIX or DELETE** | Oracle never touches the three properties it exists to test; a submission with the deprecated `AllowInCustomizations = Always` scored 100. The correct `AsReadWrite` appears zero times in the corpus. Only closings: a companion-file compile gate (unverified, covers one property of three) or harness-level symbol inspection. |
+  | E058 | **open: FIX or DELETE** | Oracle is one `SmokeCheck()`; all 16 valid `TestType`/`RequiredTestIsolation` combinations pass, omission included. Same closing options as E057. |
+  | E001 E054 E056 E050 | KEEP | Clean; failures are real knowledge gaps. (An auditor first called E050 broken; 56 stored `@'...'` submissions that compiled and passed settled it.) |
+
+  gold-ci after the fixes: 229 trusted, 0 stale, 0 in-scope tasks without a
+  reference. `task_sets.hash` moved again, which costs nothing until the
+  campaign starts.
+
+  **Cross-cutting finding.** M040, E057 and E058 come from the 2026-05-08
+  "v15-v17 features" batch and share one shape: the subject is a
+  compile-time property with no runtime surface, and the oracle is a
+  storage round-trip. The compiler rejects a wrong *name* (AL0169) but
+  omission or a wrong *valid* value passes. That batch also produced
+  M027-M041, of which only M034 and M040 were audited. Sweep the rest
+  before the campaign.
+
+  **Still the owner's call.** (1) E057 and E058: recommendation is delete
+  both. (2) The nine easy no-reference tasks: `seed-reference-solution.ts:255`
+  and gold-ci cover only `hard`/`medium`; either widen scope to `easy` (all
+  nine have a stored passing submission) or accept the tier stays unproven.
+  (3) Only Cronus281 and Cronus283 were running on 2026-09-05; Cronus28,
+  282, 284 and 285 were down, which showed up as `prepareCandidateApp
+  failed` and 300 s pwsh session timeouts during the probes. Bring them
+  back before the campaign.
 
   **What the retirement actually did.** 315 files removed. The taxonomy
   pipeline was re-run (build, merge, validate, graph fixture) and is

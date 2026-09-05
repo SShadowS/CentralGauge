@@ -5,7 +5,7 @@ max_attempts: 2
 description: >-
   Create a simple AL codeunit called "Item Event Subscriber" with ID 70001 that subscribes to Item table events.
   Create an event subscriber procedure that:
-  - Subscribes to the OnAfterInsert event of the Item table
+  - Subscribes to the Item table event that fires after a new Item record has been inserted
   - Displays a message when a new item is created
   - Includes proper EventSubscriber attributes
 
