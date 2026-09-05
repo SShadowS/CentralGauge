@@ -398,16 +398,29 @@ spent on numbers you will not trust.
 
       | Model | Slug | Status 2026-09-06 |
       | --- | --- | --- |
-      | Claude Fable 5 | `anthropic/claude-fable-5` | live on the Anthropic API and in the catalog (Fable 5.1 also exists; the owner named 5) |
+      | Claude Opus 5 | `anthropic/claude-opus-5` | **scout, runs first.** In the catalog at $5/$25 per Mtok - half Fable's rate. Was a composite construction-gate model, so in-sample for the composite slice; disclosed. |
+      | Claude Fable 5.1 | `anthropic/claude-fable-5-1` | CHOSEN 2026-09-06 over Fable 5 after the panel split. In the catalog; its pricing row is marked ASSUMED equal to Fable 5 ($10/$50, `pricing.yml:701-702`) - **confirm the list price and fix the row before `sync-catalog --apply`**, that is a gate. |
       | GPT-6 Astra | `openai/gpt-6-astra` | live on the OpenAI API (`models -p openai --live`); NOT in the catalog yet, so the bench precheck auto-seeds it and the YAML must be committed afterwards |
       | Gemini 3.8 Flash | `gemini/gemini-3.8-flash` (expected) | exists: OpenRouter lists `google/gemini-3.8-flash` (and a `:batch` variant). The DIRECT Gemini discovery call returned 400 today (`models -p gemini --live`: Failed to list models), so either fix the Gemini key/endpoint before precheck or bench it as `openrouter/google/gemini-3.8-flash` |
 
-      Three models is the floor decision 1 allows. None of the three was a
-      composite construction-gate model (those were Opus 5 and GPT-5.5).
-      Fable 5 is one of the three saturation-rule models whose passes
-      selected the 60-task retirement, so it is mildly in-sample for the
-      descriptive headline too, not only for the hard split; disclose that
-      next to the headline. The published selection was measured on Opus 5,
+      Four models, one above decision 1's floor. Opus 5 was a composite
+      construction-gate model (in-sample for the composite slice). Fable 5,
+      not 5.1, was a saturation-rule model, so 5.1 is clean for the
+      headline; disclose the lineage. GPT-6 Astra and Gemini 3.8 Flash are
+      clean.
+
+      **Order of running, owner's rule 2026-09-06: Opus 5 first, alone.**
+      It costs half of Fable 5.1 and exercises everything that has never run
+      on this set - the capture path, the token-cap audit, six containers
+      under campaign load, ingest - before the expensive models spend. Its
+      first finished run is the Phase 3 "verify capture" gate. What the
+      scout does NOT do: it does not exempt Fable 5.1 from any task. The
+      idea "if Opus solves it, Fable will too, so skip it" was considered
+      and rejected: spec 6.3's coverage gate requires an attempt on every
+      task of a slice or the model is not ranked for it, Fable has
+      documented HTTP-200 refusals on tasks Opus passes (X041, X050-52),
+      and the retirement data itself showed Opus 4.8 and Fable 5 pass sets
+      differ. Every panel model runs the full set three times. The published selection was measured on Opus 5,
       Sonnet 5 and Luna; with this panel the retained set is re-derived and
       labelled development-selected per decision 1.
 
@@ -444,8 +457,22 @@ spent on numbers you will not trust.
       is minutes; then bench 5.1.
 - [ ] **Dry run first.** Never submit a real run without one.
 - [ ] **Run the full set, two attempts, uncapped, three times per model.**
-      `deno task start bench --preset fall-2026 --llms <one slug> --max-tokens 64000`
-      once per model. The preset's `runs: 3` satisfies decision 1: the
+      One invocation per model, Opus 5 first:
+
+      ```
+      deno task start bench --preset fall-2026 --llms anthropic/claude-opus-5 \
+        --max-tokens 64000 --debug --debug-level verbose --debug-output "h:\Temp3" \
+        --no-compiler-cache
+      ```
+
+      The preset carries the panel, five containers (Cronus281 is up and
+      healthy but was left out by the owner's habit - add it back to spread
+      load if wanted), `runs: 3`, `attempts: 2`, `stream`, `maxConcurrency
+      20`, `taskConcurrency 12` and `maxTokens 64000`. The debug flags and
+      `--no-compiler-cache` are not preset-mergeable and stay on the
+      command line; `--no-compiler-cache` costs a compiler-folder rebuild at
+      startup (~49 s across three containers even warm) and changes no
+      score. Then Fable 5.1, GPT-6 Astra, Gemini 3.8 Flash the same way. The preset's `runs: 3` satisfies decision 1: the
       `--runs` loop (`cli/commands/bench/parallel-executor.ts:439-834`)
       builds a fresh orchestrator, writes its own results file and ingests
       per iteration, so each of the three is its own run id in the cohort.
