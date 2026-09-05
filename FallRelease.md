@@ -135,11 +135,11 @@ Nothing below costs money, but the campaign cannot be sized without them.
   after. Choosing either once the campaign numbers are in is metric shopping,
   and it will read that way.
 
-- [!] **Decision 2: launch-hardening waves 2 to 4.**
-  `docs/reasoning-suite/launch-hardening-plan.md` still has them open, and
-  `PLAN.md` says "final bench and flip only on the hardened set". The
-  composite programme has since cleared the bar under decision 1. Confirm the
-  waves are superseded, or schedule them before the campaign.
+- [x] **Decision 2: launch-hardening waves 2 to 4.** CONFIRMED superseded
+  by the owner 2026-09-06. `docs/reasoning-suite/launch-hardening-plan.md`
+  still lists them and `PLAN.md` still says "final bench and flip only on
+  the hardened set"; both are historical now. The campaign runs on the set
+  as it stands after decision 3.
 
 - [x] **Decision 3: retire the 60 tasks the frontier has saturated.** DONE
   2026-09-04 — the deletion is executed and committed; see "What the
@@ -293,6 +293,45 @@ Nothing below costs money, but the campaign cannot be sized without them.
   forces a re-bench, but the vocabulary should be settled before the taxonomy
   is activated and consumers start filtering on it.
 
+- [!] **Decision 5: batch mode for the campaign.** Proposed by the owner
+  2026-09-06. The bench does not need answers instantly, so run each model
+  through its provider's batch API instead of the synchronous endpoint:
+  submit attempt 1 for every task in one batch, wait, compile and test all
+  of them, then submit attempt 2 for the failures as a second batch. Slower
+  by hours, roughly half the token bill - Anthropic Message Batches,
+  OpenAI Batch and Gemini batch mode all price at about 50% of synchronous
+  rates. On the campaign's $600 to $1,050 that is $300 to $525 saved.
+
+  What it costs to build, from the code as it stands:
+
+  - Today every attempt is one synchronous call inside the per-task loop
+    (`src/parallel/orchestrator.ts:895-905`: `executeLLMAttempt` then
+    `executeCompilation`, task by task, attempt by attempt). Batch mode
+    inverts that into two phases per model: LLM phase for all tasks, then
+    the compile/test phase, then the same again for the retry set. The
+    `LLMAdapter` interface (`src/llm/types.ts:138`) has no batch method and
+    no adapter speaks a batch endpoint (`grep batches src/llm` is empty).
+  - The per-model cohort semantics survive: a batch is still one run id;
+    three runs per model are three batch cycles. Capture (harness
+    fingerprint, invocation snapshot, test vectors) is unaffected because
+    the compile/test phase is unchanged.
+  - Refusal fallbacks (`shouldRequestServerFallback`, the beta header) must
+    be checked against the batch endpoint - the fallback param may not be
+    accepted there, and `servedModel` must still be recorded per item.
+  - Pricing: `site/catalog/pricing.yml` has no batch rate column and
+    `rowCostUsd()` prices by synchronous rates, so batch runs would be
+    over-reported by 2x on the site unless a batch flag and rate are added
+    (`model-discovery-types.ts:34` already carries a `batch` eligibility
+    bit from LiteLLM).
+  - Batch turnaround is provider-bound (up to 24 h per batch on all three);
+    a three-run cohort per model is then six batch cycles, so the campaign
+    is measured in days rather than hours. Acceptable per the owner.
+
+  Open for the panel review: is the saving worth a new orchestration path
+  before the first campaign on the new set, or should the first campaign
+  run synchronously as the known path and batch mode land for the next
+  cycle?
+
 ---
 
 ## Phase 2 — pre-campaign hygiene
@@ -319,10 +358,23 @@ spent on numbers you will not trust.
 
 ## Phase 3 — the campaign
 
-- [ ] **Choose the panel.** At least three models, and every model you intend
-      to rank. The published selection was measured on Opus 5, Sonnet 5 and
-      Luna; adding a model changes which tasks the panel rule retains, so the
-      selection must be re-run afterwards.
+- [x] **Choose the panel.** CHOSEN 2026-09-06, NOT YET RUN - the owner's
+      instruction is explicit: these models are expensive, and nothing is
+      launched until every gate above is green and the dry run is clean.
+
+      | Model | Slug | Status 2026-09-06 |
+      | --- | --- | --- |
+      | Claude Fable 5 | `anthropic/claude-fable-5` | live on the Anthropic API and in the catalog (Fable 5.1 also exists; the owner named 5) |
+      | GPT-6 Astra | `openai/gpt-6-astra` | live on the OpenAI API (`models -p openai --live`); NOT in the catalog yet, so the bench precheck auto-seeds it and the YAML must be committed afterwards |
+      | Gemini 3.8 Flash | `gemini/gemini-3.8-flash` (expected) | exists: OpenRouter lists `google/gemini-3.8-flash` (and a `:batch` variant). The DIRECT Gemini discovery call returned 400 today (`models -p gemini --live`: Failed to list models), so either fix the Gemini key/endpoint before precheck or bench it as `openrouter/google/gemini-3.8-flash` |
+
+      Three models is the floor decision 1 allows. Fable 5 is one of the
+      three saturation-rule models; none of the three was a composite
+      construction-gate model (those were Opus 5 and GPT-5.5), so all three
+      are clean for the descriptive headline and only Fable 5 is in-sample
+      for the hard split. The published selection was measured on Opus 5,
+      Sonnet 5 and Luna; with this panel the retained set is re-derived and
+      labelled development-selected per decision 1.
 - [ ] **Dry run first.** Never submit a real run without one.
 - [ ] **Run the full set, two attempts, uncapped, three times per model.**
       `deno task start bench --llms <slugs> --tasks "tasks/**/*.yml" --attempts 2`
