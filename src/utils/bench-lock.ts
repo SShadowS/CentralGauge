@@ -8,7 +8,9 @@
  * module publishes a heartbeat file so tooling — a Claude Code PreToolUse hook,
  * a shell wrapper, CI — can check the invariant mechanically.
  *
- * Liveness is **mtime-only** on purpose:
+ * The marker is an exclusive lock (spec D14): creation is atomic, the owner
+ * token guards heartbeat and release, and a stale marker is reclaimed by
+ * atomic rename. Liveness for READERS is still mtime-only:
  * - A crashed or killed bench leaves the file behind, but the heartbeat stops,
  *   so the lock ages out by itself. No pid liveness probing, which is awkward
  *   and unreliable across the Git-Bash/Windows boundary.
@@ -36,16 +38,18 @@ export const DEFAULT_HEARTBEAT_MS = 30_000;
  */
 export const DEFAULT_STALE_AFTER_MS = 120_000;
 
-/** Metadata written into the marker. Diagnostics only — never used for liveness. */
+/** Metadata written into the marker. Liveness still comes from the file's mtime. */
 export interface BenchLockInfo {
   /** Pid of the bench process that wrote the marker. */
   pid: number;
   /** ISO timestamp of when the bench acquired the lock. */
   startedAt: string;
-  /** ISO timestamp of the most recent heartbeat. */
+  /** ISO timestamp of the most recent heartbeat (the file's mtime). */
   heartbeatAt: string;
   /** Human-readable description of the run, e.g. `bench --llms sonnet`. */
   command: string;
+  /** Owner token; release only removes a marker carrying this token. */
+  token: string;
 }
 
 export interface AcquireBenchLockOptions {
@@ -53,6 +57,8 @@ export interface AcquireBenchLockOptions {
   command?: string;
   /** Heartbeat interval; defaults to {@link DEFAULT_HEARTBEAT_MS}. */
   heartbeatMs?: number;
+  /** Age past which an existing marker may be reclaimed; defaults to {@link DEFAULT_STALE_AFTER_MS}. */
+  staleAfterMs?: number;
 }
 
 export interface IsBenchRunningOptions {
@@ -62,106 +68,209 @@ export interface IsBenchRunningOptions {
   now?: number;
 }
 
+export type TryAcquireResult =
+  | { acquired: true; release: () => Promise<void>; token: string }
+  | { acquired: false; holder: BenchLockInfo | null };
+
+/** Thrown by {@link acquireBenchLock} when a live marker is held by someone else. */
+export class BenchLockHeldError extends Error {
+  constructor(
+    public readonly holder: BenchLockInfo | null,
+    public readonly path: string,
+  ) {
+    super(
+      holder
+        ? `bench lock is held by pid ${holder.pid} since ${holder.startedAt} (${
+          holder.command || "unknown command"
+        }); marker: ${path}`
+        : `bench lock is held; marker: ${path}`,
+    );
+    this.name = "BenchLockHeldError";
+  }
+}
+
 /** Absolute-or-relative path of the marker inside `dir`. */
 export function benchLockPath(dir: string = DEFAULT_BENCH_LOCK_DIR): string {
   return join(dir, BENCH_LOCK_FILENAME);
 }
 
-/**
- * Whether a bench is currently running, i.e. the marker exists and its mtime is
- * within the stale window. Never throws: any read problem answers `false` only
- * when the file genuinely is not there.
- */
 export function isBenchRunning(
   dir: string = DEFAULT_BENCH_LOCK_DIR,
   options: IsBenchRunningOptions = {},
 ): boolean {
   const staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
   const now = options.now ?? Date.now();
-
   let stat: Deno.FileInfo;
   try {
     stat = Deno.statSync(benchLockPath(dir));
   } catch {
     return false;
   }
-
-  // No mtime (rare filesystems) — treat the marker's presence as live rather
-  // than green-lighting container tests.
   const mtimeMs = stat.mtime?.getTime();
   if (mtimeMs === undefined) return true;
-
   return now - mtimeMs <= staleAfterMs;
 }
 
-/**
- * Parsed marker metadata, or `null` when absent or unreadable. Callers must not
- * use this for liveness — see {@link isBenchRunning}.
- */
+/** Parsed marker metadata, or `null` when absent or unreadable. Not for liveness. */
 export function readBenchLock(
   dir: string = DEFAULT_BENCH_LOCK_DIR,
 ): BenchLockInfo | null {
+  const path = benchLockPath(dir);
   try {
-    const raw = Deno.readTextFileSync(benchLockPath(dir));
+    const raw = Deno.readTextFileSync(path);
     const parsed = JSON.parse(raw) as Partial<BenchLockInfo>;
     if (typeof parsed.pid !== "number") return null;
+    let heartbeatAt = parsed.heartbeatAt ?? "";
+    try {
+      const mtime = Deno.statSync(path).mtime;
+      if (mtime) heartbeatAt = mtime.toISOString();
+    } catch {
+      // keep the stored value
+    }
     return {
       pid: parsed.pid,
       startedAt: parsed.startedAt ?? "",
-      heartbeatAt: parsed.heartbeatAt ?? "",
+      heartbeatAt,
       command: parsed.command ?? "",
+      token: typeof parsed.token === "string" ? parsed.token : "",
     };
   } catch {
     return null;
   }
 }
 
+/** Create the marker only if it does not exist. Returns false on AlreadyExists. */
+function createExclusive(path: string, body: string): boolean {
+  let file: Deno.FsFile;
+  try {
+    file = Deno.openSync(path, { write: true, createNew: true });
+  } catch (err) {
+    if (err instanceof Deno.errors.AlreadyExists) return false;
+    throw err;
+  }
+  try {
+    file.writeSync(new TextEncoder().encode(body));
+    file.syncSync();
+  } finally {
+    file.close();
+  }
+  return true;
+}
+
 /**
- * Publish the marker and start its heartbeat. Returns the release function;
- * call it from a `finally` so every exit path clears the marker. Release is
- * idempotent, and failures are swallowed — this is telemetry, it must never
- * fail a bench.
+ * Move a stale marker out of the way. Rename is atomic, so when two processes
+ * both see a stale marker only one rename succeeds; the other sees NotFound
+ * and simply retries the exclusive create.
+ */
+function reclaimStale(
+  path: string,
+  staleAfterMs: number,
+): "reclaimed" | "live" | "gone" {
+  let stat: Deno.FileInfo;
+  try {
+    stat = Deno.statSync(path);
+  } catch {
+    return "gone";
+  }
+  const mtimeMs = stat.mtime?.getTime();
+  if (mtimeMs === undefined || Date.now() - mtimeMs <= staleAfterMs) {
+    return "live";
+  }
+  const tomb = `${path}.stale-${crypto.randomUUID()}`;
+  try {
+    Deno.renameSync(path, tomb);
+  } catch (err) {
+    return err instanceof Deno.errors.NotFound ? "gone" : "live";
+  }
+  try {
+    Deno.removeSync(tomb);
+  } catch {
+    // best effort
+  }
+  return "reclaimed";
+}
+
+/**
+ * Try to take the exclusive bench lock. Exactly one process can hold a live
+ * marker: creation is `createNew`, a stale marker is reclaimed by atomic
+ * rename, the heartbeat only touches a marker that still carries our token,
+ * and release only removes a marker that still carries our token.
+ */
+export function tryAcquireBenchLock(
+  dir: string = DEFAULT_BENCH_LOCK_DIR,
+  options: AcquireBenchLockOptions = {},
+): TryAcquireResult {
+  const path = benchLockPath(dir);
+  const staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
+  const heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
+  const token = crypto.randomUUID();
+  const info: BenchLockInfo = {
+    pid: Deno.pid,
+    startedAt: new Date().toISOString(),
+    heartbeatAt: new Date().toISOString(),
+    command: options.command ?? "",
+    token,
+  };
+  Deno.mkdirSync(dir, { recursive: true });
+  const body = `${JSON.stringify(info, null, 2)}\n`;
+
+  let created = false;
+  for (let i = 0; i < 3 && !created; i++) {
+    created = createExclusive(path, body);
+    if (created) break;
+    const state = reclaimStale(path, staleAfterMs);
+    if (state === "live") {
+      return { acquired: false, holder: readBenchLock(dir) };
+    }
+  }
+  if (!created) return { acquired: false, holder: readBenchLock(dir) };
+
+  let lost = false;
+  const heartbeat = () => {
+    if (lost) return;
+    const current = readBenchLock(dir);
+    if (current?.token !== token) {
+      lost = true;
+      return;
+    }
+    try {
+      const now = new Date();
+      Deno.utimeSync(path, now, now);
+    } catch {
+      // best effort; the next tick tries again
+    }
+  };
+  const timer = setInterval(heartbeat, heartbeatMs);
+  Deno.unrefTimer(timer);
+
+  let released = false;
+  const release = () => {
+    if (released) return Promise.resolve();
+    released = true;
+    clearInterval(timer);
+    if (!lost && readBenchLock(dir)?.token === token) {
+      try {
+        Deno.removeSync(path);
+      } catch {
+        // already gone
+      }
+    }
+    return Promise.resolve();
+  };
+  return { acquired: true, release, token };
+}
+
+/**
+ * Take the exclusive bench lock or throw {@link BenchLockHeldError}. Returns
+ * the release function; call it from a `finally`.
  */
 export function acquireBenchLock(
   dir: string = DEFAULT_BENCH_LOCK_DIR,
   options: AcquireBenchLockOptions = {},
 ): () => Promise<void> {
-  const path = benchLockPath(dir);
-  const startedAt = new Date().toISOString();
-  const command = options.command ?? "";
-  const heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
-
-  const write = () => {
-    const info: BenchLockInfo = {
-      pid: Deno.pid,
-      startedAt,
-      heartbeatAt: new Date().toISOString(),
-      command,
-    };
-    try {
-      Deno.mkdirSync(dir, { recursive: true });
-      Deno.writeTextFileSync(path, `${JSON.stringify(info, null, 2)}\n`);
-    } catch {
-      // Best-effort only.
-    }
-  };
-
-  write();
-
-  const timer = setInterval(write, heartbeatMs);
-  // The heartbeat must not be a reason for the process to stay alive.
-  Deno.unrefTimer(timer);
-
-  let released = false;
-  return () => {
-    if (released) return Promise.resolve();
-    released = true;
-    clearInterval(timer);
-    try {
-      Deno.removeSync(path);
-    } catch {
-      // Already gone, or never written.
-    }
-    return Promise.resolve();
-  };
+  const result = tryAcquireBenchLock(dir, options);
+  if (!result.acquired) {
+    throw new BenchLockHeldError(result.holder, benchLockPath(dir));
+  }
+  return result.release;
 }

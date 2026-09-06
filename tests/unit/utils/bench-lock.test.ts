@@ -1,11 +1,13 @@
-import { assert, assertEquals, assertFalse } from "@std/assert";
+import { assert, assertEquals, assertFalse, assertThrows } from "@std/assert";
 import { join } from "@std/path";
 import {
   acquireBenchLock,
   BENCH_LOCK_FILENAME,
+  BenchLockHeldError,
   benchLockPath,
   isBenchRunning,
   readBenchLock,
+  tryAcquireBenchLock,
 } from "../../../src/utils/bench-lock.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
@@ -92,6 +94,114 @@ Deno.test("bench-lock", async (t) => {
       await Deno.writeTextFile(benchLockPath(dir), "{not json");
       assertEquals(readBenchLock(dir), null);
       assert(isBenchRunning(dir));
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  await t.step(
+    "second acquire fails with BenchLockHeldError naming the holder",
+    async () => {
+      const dir = await createTempDir("bench-lock-exclusive");
+      try {
+        const release = acquireBenchLock(dir, { command: "bench --llms a" });
+        const err = assertThrows(
+          () => acquireBenchLock(dir, { command: "bench --llms b" }),
+          BenchLockHeldError,
+        );
+        assertEquals(err.holder?.pid, Deno.pid);
+        assertEquals(err.holder?.command, "bench --llms a");
+        const second = tryAcquireBenchLock(dir);
+        assertEquals(second.acquired, false);
+        await release();
+        const third = tryAcquireBenchLock(dir);
+        assert(third.acquired, "lock is free again after release");
+        await third.release();
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    },
+  );
+
+  await t.step("a stale lock is reclaimed by the next acquirer", async () => {
+    const dir = await createTempDir("bench-lock-stale");
+    try {
+      const path = benchLockPath(dir);
+      Deno.writeTextFileSync(
+        path,
+        JSON.stringify({
+          pid: 1,
+          startedAt: "x",
+          command: "dead",
+          token: "dead-token",
+        }),
+      );
+      const past = new Date(Date.now() - 10 * 60_000);
+      Deno.utimeSync(path, past, past);
+      const got = tryAcquireBenchLock(dir, { command: "reclaimer" });
+      assert(got.acquired, "stale lock must be reclaimable");
+      assertEquals(readBenchLock(dir)?.pid, Deno.pid);
+      assertEquals(readBenchLock(dir)?.token, got.token);
+      await got.release();
+      assertFalse(isBenchRunning(dir));
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  await t.step("release leaves a lock it does not own in place", async () => {
+    const dir = await createTempDir("bench-lock-owner");
+    try {
+      const release = acquireBenchLock(dir, { command: "mine" });
+      const path = benchLockPath(dir);
+      Deno.writeTextFileSync(
+        path,
+        JSON.stringify({
+          pid: 99,
+          startedAt: "y",
+          command: "theirs",
+          token: "other-token",
+        }),
+      );
+      await release();
+      assertEquals(readBenchLock(dir)?.token, "other-token");
+      Deno.removeSync(path);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  await t.step("six processes race; exactly one acquires", async () => {
+    const dir = await createTempDir("bench-lock-race");
+    try {
+      const children = Array.from(
+        { length: 6 },
+        () =>
+          new Deno.Command(Deno.execPath(), {
+            args: [
+              "run",
+              "--allow-all",
+              "tests/fixtures/bench-lock-race-child.ts",
+              dir,
+            ],
+            stdout: "piped",
+            stderr: "piped",
+          }).output(),
+      );
+      const outputs = await Promise.all(children);
+      const verdicts = outputs.map((o) =>
+        new TextDecoder().decode(o.stdout).trim()
+      );
+      assertEquals(
+        verdicts.filter((v) => v === "acquired").length,
+        1,
+        verdicts.join(","),
+      );
+      assertEquals(
+        verdicts.filter((v) => v === "held").length,
+        5,
+        verdicts.join(","),
+      );
     } finally {
       await cleanupTempDir(dir);
     }

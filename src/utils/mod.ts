@@ -51,13 +51,16 @@ export type {
   AcquireBenchLockOptions,
   BenchLockInfo,
   IsBenchRunningOptions,
+  TryAcquireResult,
 } from "./bench-lock.ts";
 export {
   acquireBenchLock,
   BENCH_LOCK_FILENAME,
+  BenchLockHeldError,
   benchLockPath,
   isBenchRunning,
   readBenchLock,
+  tryAcquireBenchLock,
 } from "./bench-lock.ts";
 
 // Stream Parsers

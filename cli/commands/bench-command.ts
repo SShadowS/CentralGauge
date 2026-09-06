@@ -52,7 +52,10 @@ import {
   initTracer,
   resolveTracePath,
 } from "../../src/tracing/tracer.ts";
-import { acquireBenchLock } from "../../src/utils/bench-lock.ts";
+import {
+  acquireBenchLock,
+  BenchLockHeldError,
+} from "../../src/utils/bench-lock.ts";
 import {
   buildEnvironmentManifest,
   invocationSnapshot,
@@ -659,9 +662,21 @@ export function registerBenchCommand(cli: Command): void {
       // publish/unpublish on the real Cronus containers and corrupt this run's
       // BC NST PSSession. Released in the finally below; a crash lets it go
       // stale on its own.
-      const releaseBenchLock = acquireBenchLock(outputDir, {
-        command: `bench ${Deno.args.slice(1).join(" ")}`.trim(),
-      });
+      let releaseBenchLock: () => Promise<void>;
+      try {
+        releaseBenchLock = acquireBenchLock(outputDir, {
+          command: `bench ${Deno.args.slice(1).join(" ")}`.trim(),
+        });
+      } catch (err) {
+        if (err instanceof BenchLockHeldError) {
+          console.error(colors.red("[FAIL] ") + err.message);
+          console.error(
+            "  Wait for that bench to finish. A marker older than 2 minutes is reclaimed automatically.",
+          );
+          Deno.exit(1);
+        }
+        throw err;
+      }
       try {
         // CLI8: run the bench+ingest body inside the root span so the span
         // records the REAL outcome — endSpanWithOutcome tags ok:false + error
