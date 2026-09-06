@@ -95,9 +95,14 @@ export function synthesizeInfraFailureResult(
       : {}),
     ...(input.request ? { request: input.request } : {}),
     ...(input.llmResponse ? { llmResponse: input.llmResponse } : {}),
-    ...(input.context.containerName
-      ? { containerName: input.context.containerName }
-      : {}),
+    // NOT input.context.containerName: pre-branch, only a ContainerError
+    // named the failing container. In a multi-container pool,
+    // context.containerName is the primary/original container for the task,
+    // not necessarily the one the infra failure actually happened on, so
+    // stamping it here would misattribute a non-ContainerError infra
+    // failure. synthesizeInfraAttempt still accepts an explicit
+    // containerName from callers that genuinely know it (e.g. Plan B's
+    // batch path).
   });
   const attempts = [...(input.priorAttempts ?? []), attempt];
 

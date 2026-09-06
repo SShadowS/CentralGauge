@@ -368,7 +368,12 @@ Nothing below costs money, but the campaign cannot be sized without them.
 
   **Record, 2026-09-06:** Plan A landed (foundations); Plan B (runner) next.
   Spikes findings in
-  `docs/superpowers/specs/2026-09-06-batch-spikes-findings.md`.
+  `docs/superpowers/specs/2026-09-06-batch-spikes-findings.md`. The first
+  sync bench after this branch gets a new settings hash too - thinking
+  budget and mode now live in `extra_json` - so its runs sit in a separate
+  settings profile from the pre-branch runs of the same model; the
+  leaderboard pools profiles per model and flags the mix, as it does today
+  for any settings change.
 
 ---
 
@@ -406,12 +411,16 @@ Run in this order. All are free and fast.
       Plan B's OpenRouter and OpenAI hand runs must add real rates for both
       and rerun `sync-catalog --apply` before batching against either model.
 - [ ] **SvelteKit `mode` wiring not yet landed (Plan A landed 2026-09-06,
-      Plan B next).** The leaderboard, matrix, compare and families
-      `+page.server.ts` loaders do not pass a `?mode=` query parameter
-      through yet. The first batch run ingested into the current task set
-      will make those pages refuse with `mode_required` until that wiring
-      lands. Until then, batch hand-runs must use `--no-ingest` or target a
-      non-current task set.
+      Plan B next).** None of the page loaders pass a `?mode=` query
+      parameter through yet. The first batch run ingested into the current
+      task set will make ALL of the following refuse with `mode_required`:
+      the leaderboard, matrix, compare and families pages, the models index
+      (`models/+page.server.ts`), every model detail page
+      (`models/[...slug]/+page.server.ts`), the categories page,
+      `/api/v2/models`, and the three og image routes (index, models,
+      families), so social previews go 400 too. Until that wiring lands,
+      batch hand-runs must use `--no-ingest` or target a non-current task
+      set.
 
 If any of these fail, stop. A campaign run against a broken gate is money
 spent on numbers you will not trust.

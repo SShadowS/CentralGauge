@@ -517,8 +517,6 @@
   # Batch mode (D5): Anthropic publishes batch at 50% of the sync rate.
   batch_input_per_mtoken: 0.5
   batch_output_per_mtoken: 2.5
-  batch_cache_read_per_mtoken: 0
-  batch_cache_write_per_mtoken: 0
   source: litellm-api
   fetched_at: '2026-05-24T19:47:18.774Z'
 - pricing_version: '2026-05-24'

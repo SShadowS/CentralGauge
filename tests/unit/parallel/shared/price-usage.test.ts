@@ -29,6 +29,17 @@ function seed(): void {
       output_per_mtoken: 50,
       source: "manual",
     },
+    {
+      model_slug: "anthropic/claude-test-zero-cache",
+      effective_from: "2026-01-01",
+      input_per_mtoken: 10,
+      output_per_mtoken: 50,
+      // Explicit catalog zeros (unfilled placeholders), not merely absent
+      // fields, and must be treated the same as absent by loadCatalogPricing.
+      cache_read_per_mtoken: 0,
+      cache_write_per_mtoken: 0,
+      source: "manual",
+    },
   ]);
 }
 
@@ -68,6 +79,26 @@ Deno.test("priceUsage sync falls back to the 0.10 / 1.25 cache heuristic without
     requestedModel: "claude-opus-5",
     mode: "sync",
   });
+  assertAlmostEquals(
+    out.estimatedCost ?? -1,
+    0.01 + 0.05 + 0.01 * 0.10 + 0.01 * 1.25,
+    1e-9,
+  );
+});
+
+Deno.test("priceUsage sync falls back to the cache heuristic when the catalog rate is an explicit 0", () => {
+  seed();
+  const out = priceUsage({
+    usage,
+    provider: "anthropic",
+    requestedModel: "claude-test-zero-cache",
+    mode: "sync",
+  });
+  // A catalog cache rate of 0 means "unknown" (src/llm/pricing-service.ts
+  // CatalogPricingRow doc), so loadCatalogPricing leaves cacheRead/cacheWrite
+  // absent and priceUsage applies the same 0.10 / 1.25 heuristic as when the
+  // catalog omits the fields entirely (hand-computed, same as the opus-5
+  // no-cache-rates case above since both rows share input/output rates).
   assertAlmostEquals(
     out.estimatedCost ?? -1,
     0.01 + 0.05 + 0.01 * 0.10 + 0.01 * 1.25,

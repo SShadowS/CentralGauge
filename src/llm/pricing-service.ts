@@ -41,6 +41,17 @@ const CATALOG_PRICING_PATHS = [
  * Minimal shape of a `site/catalog/pricing.yml` row consumed by the runtime
  * tracker. Rates are per-MILLION tokens (catalog convention); they are
  * converted to per-1K on load to match {@link ModelPricing}.
+ *
+ * For the four cache-rate columns (`cache_read_per_mtoken`,
+ * `cache_write_per_mtoken`, `batch_cache_read_per_mtoken`,
+ * `batch_cache_write_per_mtoken`), a `0` (or `null`/missing) means the rate
+ * is UNKNOWN, not free: most catalog rows carry `0` as an unfilled
+ * placeholder. `PricingService.loadCatalogPricing` only maps a strictly
+ * positive finite value onto {@link ModelPricing}; `priceUsage` then falls
+ * back to its own heuristic (input rate x 0.10 for cache read, x 1.25 for
+ * cache write) whenever the field is absent. `batch_input_per_mtoken` /
+ * `batch_output_per_mtoken` are exempt from this rule: a real `0` there is a
+ * legitimate price, so they map whenever numeric.
  */
 export interface CatalogPricingRow {
   model_slug: string;
@@ -241,17 +252,28 @@ export class PricingService {
     for (const [slug, row] of latest) {
       const perK = (v: number | null | undefined): number | undefined =>
         typeof v === "number" ? v / 1000 : undefined;
+      // Cache rates: a catalog `0` means "unknown", not "free". Most rows
+      // are unfilled placeholders. Only a finite, strictly-positive value
+      // overrides `priceUsage`'s heuristic fallback (input * 0.10 / * 1.25);
+      // `batch_input_per_mtoken`/`batch_output_per_mtoken` keep the plain
+      // `perK` rule below since a real `0` there is a legitimate price.
+      const perKCacheRate = (
+        v: number | null | undefined,
+      ): number | undefined =>
+        typeof v === "number" && Number.isFinite(v) && v > 0
+          ? v / 1000
+          : undefined;
       const entry: ModelPricing = {
         input: row.input_per_mtoken / 1000,
         output: row.output_per_mtoken / 1000,
       };
       const optional: Array<[keyof ModelPricing, number | undefined]> = [
-        ["cacheRead", perK(row.cache_read_per_mtoken)],
-        ["cacheWrite", perK(row.cache_write_per_mtoken)],
+        ["cacheRead", perKCacheRate(row.cache_read_per_mtoken)],
+        ["cacheWrite", perKCacheRate(row.cache_write_per_mtoken)],
         ["batchInput", perK(row.batch_input_per_mtoken)],
         ["batchOutput", perK(row.batch_output_per_mtoken)],
-        ["batchCacheRead", perK(row.batch_cache_read_per_mtoken)],
-        ["batchCacheWrite", perK(row.batch_cache_write_per_mtoken)],
+        ["batchCacheRead", perKCacheRate(row.batch_cache_read_per_mtoken)],
+        ["batchCacheWrite", perKCacheRate(row.batch_cache_write_per_mtoken)],
       ];
       for (const [k, v] of optional) if (v !== undefined) entry[k] = v;
       map.set(slug, entry);

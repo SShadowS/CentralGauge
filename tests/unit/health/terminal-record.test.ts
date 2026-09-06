@@ -75,6 +75,38 @@ Deno.test("synthesized infra attempt has undefined containerName for generic err
 });
 
 Deno.test(
+  "a non-ContainerError does not inherit context.containerName (primary-container misattribution guard)",
+  () => {
+    // context.containerName is the task's PRIMARY container (a multi-container
+    // pool detail), not necessarily where a non-ContainerError infra failure
+    // actually happened. Pre-fix, this leaked context.containerName onto the
+    // synthesized attempt; it must now stay undefined.
+    const result = synthesizeInfraFailureResult({
+      manifestId: "T1",
+      context: { variantId: "v", containerName: "Cronus28" },
+      error: new Error("some non-container infra error"),
+      classification: { fingerprint: "test:xyz" },
+      startTime: new Date(0),
+    });
+    assertEquals(result.attempts[0]?.containerName, undefined);
+  },
+);
+
+Deno.test(
+  "a ContainerError still stamps its own containerName regardless of context",
+  () => {
+    const result = synthesizeInfraFailureResult({
+      manifestId: "T1",
+      context: { variantId: "v", containerName: "Cronus28" },
+      error: new ContainerError("publish exploded", "Cronus281", "publish"),
+      classification: { fingerprint: "test:xyz" },
+      startTime: new Date(0),
+    });
+    assertEquals(result.attempts[0]?.containerName, "Cronus281");
+  },
+);
+
+Deno.test(
   "synthesized result carries infraRetries + exhaustion fields when supplied",
   () => {
     const err = new ContainerError("PSSession lost", "Cronus28", "compile");

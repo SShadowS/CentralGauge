@@ -328,10 +328,13 @@ defaults to that mode; and three error codes cover the rest,
 `invalid_mode_for_metric` for `?mode=all` (there is no cross-mode ranking),
 `mode_required` when the task set has runs in both modes and no `mode` was
 given, and the endpoint's normal validation error for any other bad value.
-The SvelteKit page loaders (leaderboard, matrix, compare, families) do not
-pass `?mode=` through yet, so until that lands, a task set with both modes
-present will show `mode_required` on those pages for any request that omits
-the parameter.
+None of the SvelteKit page loaders pass `?mode=` through yet, so until that
+lands, a task set with both modes present will show `mode_required` on any
+request that omits the parameter to ALL of: the leaderboard, matrix, compare
+and families pages, the models index (`models/+page.server.ts`), every model
+detail page (`models/[...slug]/+page.server.ts`), the categories page,
+`/api/v2/models`, and the three og image routes (index, models, families) -
+so social previews go 400 too.
 
 ## Recipes
 

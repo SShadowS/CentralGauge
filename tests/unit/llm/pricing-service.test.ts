@@ -688,3 +688,26 @@ Deno.test("loadCatalogPricing maps cache and batch columns per 1K tokens", () =>
     batchOutput: 1,
   });
 });
+
+Deno.test("loadCatalogPricing treats a catalog cache_read_per_mtoken of 0 as unknown, not free", () => {
+  PricingService.clearCatalogPricing();
+  PricingService.loadCatalogPricing([{
+    model_slug: "x/zero-cache",
+    effective_from: "2026-01-01",
+    input_per_mtoken: 1000,
+    output_per_mtoken: 2000,
+    cache_read_per_mtoken: 0,
+    cache_write_per_mtoken: 0,
+    batch_cache_read_per_mtoken: 0,
+    batch_cache_write_per_mtoken: 0,
+    source: "manual",
+  }]);
+  const p = PricingService.getPriceSync("x", "zero-cache");
+  // A catalog `0` for a cache column must leave the field ABSENT so
+  // priceUsage's heuristic fallback (input * 0.10 / * 1.25) applies, rather
+  // than pricing cache tokens at $0.
+  assertEquals(p, {
+    input: 1,
+    output: 2,
+  });
+});

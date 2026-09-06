@@ -381,7 +381,7 @@ been driven by hand end to end.
 | Item error, non-retryable or integrity | record | `createFailedAttempt`, `termination_kind: provider_error`, `providerErrorCode` set, tokens 0 |
 | Unresolved after the resubmission round | records for both rounds | failed attempt, `termination_kind: provider_error`, `providerFinishReason: "batch_expired"` or the provider's error type |
 | Ok response: empty or refusal | record; shared mappers + `resolveCandidate` | failed attempt as sync scores it; not resubmitted; gets attempt 2 (D10) |
-| Compile/test infra exhaustion | `synthesizeInfraAttempt` (both modes) | task terminates; no attempt 2 (D10). Ingest excludes infra-invalidated attempts in both modes (`ingest-assembly.ts:126-155`, `infra-invalidation.ts:12-32`): the task is absent from the payload, an all-infra run is refused by assembly, and the strict denominator treats missing coverage as unsolved. Parity with today, not an improvement. |
+| Compile/test infra exhaustion | `synthesizeInfraAttempt` (both modes) | task terminates; no attempt 2 (D10). Ingest excludes infra-invalidated attempts in both modes (`ingest-assembly.ts:126-155`, `infra-invalidation.ts:12-32`): the infra-synthesized attempt itself is excluded from the payload, but any real prior attempt of the task stays in it (D10 as implemented) - so the task is absent from the payload only when every attempt was infra; an all-infra run is refused by assembly, and the strict denominator treats missing coverage as unsolved. Parity with today, not an improvement. |
 | Crash mid-evaluate | `attempts/` files for finished tasks | remaining tasks redone whole |
 | D13 drift | 4.6 | refuse |
 
