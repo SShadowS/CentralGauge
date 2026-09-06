@@ -52,8 +52,8 @@ import {
   type ContainerAppConfig,
   endOfRunNuke,
   setupContainer,
-  setupContainers,
 } from "./container-setup.ts";
+import { ContainerRuntime } from "../../../src/parallel/container-runtime.ts";
 import { computeConcurrencyDefaults } from "./concurrency-defaults.ts";
 import { buildIngestMeta } from "./ingest-meta.ts";
 import {
@@ -217,6 +217,10 @@ export async function executeParallelBenchmark(
   let primaryContainerName: string | undefined;
   let wasExisting = false;
   let containerNames: string[] | undefined;
+  // Set only for the explicit `--containers` path (ContainerRuntime's own
+  // scope: see its module doc). `undefined` for the single/auto-container
+  // path, which stays on `setupContainer`/`cleanupContainer` below.
+  let runtime: ContainerRuntime | undefined;
 
   try {
     await Deno.mkdir(options.outputDir, { recursive: true });
@@ -281,15 +285,30 @@ export async function executeParallelBenchmark(
     }
 
     if (options.containers && options.containers.length > 0) {
-      // Multi-container mode
-      const result = await setupContainers(
-        options.containers,
-        containerProviderName,
+      // Multi-container mode: setup + health monitor + (unused-by-this-
+      // caller) compile queue lifecycle now live in `ContainerRuntime`
+      // (shared with the batch compile phase, spec section 7). The
+      // orchestrator below still builds its OWN `CompileQueuePool` per run
+      // exactly as before: sharing `runtime.queue` across `--runs N`
+      // iterations would leak routing/drain state between runs that today
+      // starts fresh each time, so only `.provider`/`.containerNames`/
+      // `.monitor` are reused here. `recoveryProbeIntervalMs` is left
+      // unset (disabled) so `ContainerRuntime` does not also start its own
+      // recovery prober: the orchestrator's is still the only one, wired
+      // exactly as before via `parallelOptions.recoveryProbeIntervalMs`.
+      runtime = await ContainerRuntime.start({
+        containers: options.containers,
+        ...(containerProviderName !== undefined
+          ? { containerProviderName }
+          : {}),
         containerConfig,
-        setupOpts,
-      );
-      containerProvider = result.containerProvider;
-      containerNames = result.containerNames;
+        ...setupOpts,
+        // Matches `CompileQueue`'s own default: the orchestrator's pool
+        // construction never configures `compileConcurrency` either.
+        queue: { maxQueueSize: 100, timeout: 300_000, compileConcurrency: 3 },
+      });
+      containerProvider = runtime.provider;
+      containerNames = runtime.containerNames;
       primaryContainerName = containerNames[0]!;
       wasExisting = true; // multi-container always pre-existing
       log.info(
@@ -370,20 +389,19 @@ export async function executeParallelBenchmark(
     // orchestrator and the dashboard (if any) reference the same instance.
     // Window/expected-container options mirror what DashboardStateManager
     // would have constructed on its own — preserves behavior for runs
-    // that don't pass --no-dashboard.
+    // that don't pass --no-dashboard. Multi-container mode already built
+    // one (with the same `expectedContainers`/`expectedContainerNames`) as
+    // part of `ContainerRuntime.start()` above; reuse it rather than
+    // building a second, disconnected monitor instance.
     {
-      const { ContainerHealthMonitor } = await import(
-        "../../../src/health/mod.ts"
-      );
-      healthMonitor = new ContainerHealthMonitor({
-        windowSize: 20,
-        ...(containerNames && containerNames.length > 0
-          ? {
-            expectedContainers: containerNames.length,
-            expectedContainerNames: containerNames,
-          }
-          : {}),
-      });
+      if (runtime) {
+        healthMonitor = runtime.monitor;
+      } else {
+        const { ContainerHealthMonitor } = await import(
+          "../../../src/health/mod.ts"
+        );
+        healthMonitor = new ContainerHealthMonitor({ windowSize: 20 });
+      }
 
       // Alert-drain / quarantine / free-requeue needs at least 2
       // containers to be useful — with a single container, the first
@@ -943,25 +961,18 @@ export async function executeParallelBenchmark(
     // try specifically so they survive into this block even when the
     // throw happened mid-setup.
     if (containerProvider) {
-      if (containerNames && containerNames.length > 1) {
-        // Sweep the last task's candidate + prereq off every container
-        // (GH #13 footnote) — per-task cleanup only runs at NEXT-task prep,
-        // so the final task's apps otherwise stay published until the next
-        // bench. Both endOfRunNuke and cleanupContainer are best-effort
-        // internally and never throw.
-        await endOfRunNuke(containerProvider, containerNames);
-        // Multi-container: only cleanup compiler folders, don't remove containers
-        if (containerProvider.cleanupCompilerFolders) {
-          try {
-            await containerProvider.cleanupCompilerFolders();
-          } catch (e) {
-            log.warn(
-              `cleanupCompilerFolders threw (best-effort): ${
-                e instanceof Error ? e.message : String(e)
-              }`,
-            );
-          }
-        }
+      if (runtime) {
+        // Multi-container mode: `runtime.stop()` runs the same sweep this
+        // branch used to do by hand (prober stop, none started here, see
+        // the setup comment above, outcome-recorder unsubscribe, queue
+        // drain, `endOfRunNuke`, best-effort `cleanupCompilerFolders`),
+        // for ANY container count taken through this path. `containerNames
+        // .length === 1` used to fall through to the single-container
+        // branch below instead (reaching the same `endOfRunNuke` +
+        // `cleanupCompilerFolders` outcome via `wasExisting === true`
+        // skipping stop/remove in `cleanupContainer`); `runtime` now
+        // covers that case directly.
+        await runtime.stop();
       } else if (primaryContainerName !== undefined) {
         if (wasExisting) {
           // Container outlives the bench — sweep leftover CentralGauge apps.
