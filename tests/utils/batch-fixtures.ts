@@ -18,6 +18,9 @@ import type {
 import { STATE_SCHEMA_VERSION } from "../../src/batch/state.ts";
 import type { FrozenPromptInputs } from "../../src/parallel/shared/prompt-inputs.ts";
 import { buildCanonicalSettings } from "../../shared/settings-hash.ts";
+import type { RenderedItem } from "../../src/batch/render.ts";
+import { bodyDigest, itemIdFor } from "../../src/batch/items.ts";
+import type { BatchItem } from "../../src/llm/batch/types.ts";
 
 /** 64 hex chars: the shape every `frozen.*` digest field expects. */
 const DUMMY_DIGEST = "0".repeat(64);
@@ -109,4 +112,40 @@ export function frozenInputs(
     ),
   };
   return { ...base, ...overrides };
+}
+
+/** Fixed run id used only to derive deterministic item ids for fixtures. */
+const RENDERED_ITEMS_RUN_ID = "run-fixture";
+
+/**
+ * Builds `n` attempt-1, round-0 `RenderedItem`s for tasks `T1..Tn`, each
+ * with `body: { p: "x".repeat(size) }`. Item ids are derived via
+ * {@link itemIdFor} so they are deterministic across calls with the same
+ * `n`/`size`; `request` is a minimal `LLMRequest` stub, unused by the
+ * submission path.
+ */
+export async function renderedItems(
+  n: number,
+  size = 10,
+): Promise<RenderedItem[]> {
+  const items: RenderedItem[] = [];
+  for (let i = 1; i <= n; i++) {
+    const taskId = `T${i}`;
+    const body = { p: "x".repeat(size) };
+    items.push({
+      itemId: await itemIdFor(RENDERED_ITEMS_RUN_ID, taskId, 1, 0),
+      taskId,
+      attempt: 1,
+      round: 0,
+      request: { prompt: taskId },
+      body,
+      bodyDigest: await bodyDigest(body),
+    });
+  }
+  return items;
+}
+
+/** Wraps a chunk's items into a batch envelope for size/byte-length purposes. */
+export function wrap(items: BatchItem[]): unknown {
+  return { requests: items };
 }
