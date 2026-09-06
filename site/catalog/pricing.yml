@@ -698,18 +698,20 @@
   cache_write_per_mtoken: 0
   source: litellm-api
   fetched_at: '2026-05-31T14:36:29.400Z'
-# Fable 5.1 pricing is ASSUMED equal to Fable 5 until the list price is
-# confirmed. Do not `sync-catalog --apply` this row to prod before checking.
-- pricing_version: "2026-09-01"
+# Fable 5.1 confirmed 2026-09-06 against two independent sources (LiteLLM
+# model_prices_and_context_window.json `claude-fable-5-1`, and OpenRouter
+# `anthropic/claude-fable-5.1`): same input/output/cache-write as Fable 5,
+# but cache READ is $0.25/M, a quarter of Fable 5's $1.00/M.
+- pricing_version: "2026-09-06"
   model_slug: anthropic/claude-fable-5-1
   effective_from: "2026-09-01T00:00:00.000Z"
   effective_until: null
   input_per_mtoken: 10
   output_per_mtoken: 50
-  cache_read_per_mtoken: 1
+  cache_read_per_mtoken: 0.25
   cache_write_per_mtoken: 12.5
-  source: manual
-  fetched_at: "2026-09-01T00:00:00.000Z"
+  source: litellm-api
+  fetched_at: "2026-09-06T00:00:00.000Z"
 - pricing_version: "2026-06-09"
   model_slug: anthropic/claude-fable-5
   effective_from: "2026-06-09T00:00:00.000Z"

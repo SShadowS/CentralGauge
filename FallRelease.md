@@ -399,7 +399,7 @@ spent on numbers you will not trust.
       | Model | Slug | Status 2026-09-06 |
       | --- | --- | --- |
       | Claude Opus 5 | `anthropic/claude-opus-5` | **scout, runs first.** In the catalog at $5/$25 per Mtok - half Fable's rate. Was a composite construction-gate model, so in-sample for the composite slice; disclosed. |
-      | Claude Fable 5.1 | `anthropic/claude-fable-5-1` | CHOSEN 2026-09-06 over Fable 5 after the panel split. In the catalog; its pricing row is marked ASSUMED equal to Fable 5 ($10/$50, `pricing.yml:701-702`) - **confirm the list price and fix the row before `sync-catalog --apply`**, that is a gate. |
+      | Claude Fable 5.1 | `anthropic/claude-fable-5-1` | CHOSEN 2026-09-06 over Fable 5 after the panel split. In the catalog. Pricing CONFIRMED 2026-09-06 against LiteLLM and OpenRouter independently: $10/$50 per Mtok like Fable 5, cache write $12.50, but cache read $0.25/M (Fable 5: $1.00). Row corrected; the ASSUMED flag is gone. |
       | GPT-6 Astra | `openai/gpt-6-astra` | live on the OpenAI API (`models -p openai --live`); NOT in the catalog yet, so the bench precheck auto-seeds it and the YAML must be committed afterwards |
       | Gemini 3.8 Flash | `gemini/gemini-3.8-flash` (expected) | exists: OpenRouter lists `google/gemini-3.8-flash` (and a `:batch` variant). The DIRECT Gemini discovery call returned 400 today (`models -p gemini --live`: Failed to list models), so either fix the Gemini key/endpoint before precheck or bench it as `openrouter/google/gemini-3.8-flash` |
 
