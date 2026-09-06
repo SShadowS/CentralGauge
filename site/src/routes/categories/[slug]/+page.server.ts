@@ -4,18 +4,34 @@ import type {
   LeaderboardResponse,
 } from "$shared/api-types";
 import { error } from "@sveltejs/kit";
+import {
+  fetchWithModeFallback,
+  pageMode,
+  withMode,
+} from "$lib/server/page-mode";
 
 export const prerender = false;
 
-export const load: PageServerLoad = async (
-  { params, fetch, setHeaders, depends },
-) => {
+export const load: PageServerLoad = async ({
+  params,
+  url,
+  fetch,
+  setHeaders,
+  depends,
+}) => {
   depends("app:categories");
+
+  const requested = pageMode(url);
 
   // Resolve category metadata via the index endpoint (no dedicated detail
   // endpoint exists; the index payload includes name + task_count + avg
   // pass rate per slug, which is everything the detail page needs).
-  const idxRes = await fetch("/api/v1/categories");
+  const idxResult = await fetchWithModeFallback(
+    fetch,
+    (m) => withMode("/api/v1/categories", new URLSearchParams(), m),
+    requested,
+  );
+  const idxRes = idxResult.res;
   if (!idxRes.ok) {
     throw error(idxRes.status, "categories load failed");
   }
@@ -28,8 +44,16 @@ export const load: PageServerLoad = async (
   }
 
   // Filtered leaderboard scoped to this category.
-  const lbRes = await fetch(
-    `/api/v1/leaderboard?category=${encodeURIComponent(params.slug)}`,
+  const lbParams = new URLSearchParams();
+  lbParams.set("category", params.slug);
+  const {
+    res: lbRes,
+    mode,
+    modeSplit,
+  } = await fetchWithModeFallback(
+    fetch,
+    (m) => withMode("/api/v1/leaderboard", lbParams, m),
+    requested,
   );
   if (!lbRes.ok) {
     throw error(lbRes.status, "leaderboard load failed");
@@ -53,5 +77,7 @@ export const load: PageServerLoad = async (
   return {
     meta: { ...meta, avg_pass_rate: strictAvgPassRate },
     leaderboard,
+    mode,
+    modeSplit,
   };
 };

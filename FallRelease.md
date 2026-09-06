@@ -410,17 +410,15 @@ Run in this order. All are free and fast.
       3), and `openai/gpt-5-mini` has no catalog row at all, sync or batch.
       Plan B's OpenRouter and OpenAI hand runs must add real rates for both
       and rerun `sync-catalog --apply` before batching against either model.
-- [ ] **SvelteKit `mode` wiring not yet landed (Plan A landed 2026-09-06,
-      Plan B next).** None of the page loaders pass a `?mode=` query
-      parameter through yet. The first batch run ingested into the current
-      task set will make ALL of the following refuse with `mode_required`:
-      the leaderboard, matrix, compare and families pages, the models index
-      (`models/+page.server.ts`), every model detail page
-      (`models/[...slug]/+page.server.ts`), the categories page,
-      `/api/v2/models`, and the three og image routes (index, models,
-      families), so social previews go 400 too. Until that wiring lands,
-      batch hand-runs must use `--no-ingest` or target a non-current task
-      set.
+- [x] **SvelteKit `mode` wiring landed (Plan A 2026-09-06, page-loader
+      follow-up landed after).** The page loaders pass `?mode=` through and
+      fall back to `sync` (with a notice and a mode filter on the
+      leaderboard) when the current set has both modes, so a batch run may
+      be ingested into the current set. `/api/v2/models` and the three og
+      image routes (index, models, families) are not page loaders and are
+      untouched by this fix — they still refuse with `mode_required` on a
+      mixed-mode set with no `?mode=`, so a direct caller (including a
+      social-preview crawler) must pass it explicitly.
 
 If any of these fail, stop. A campaign run against a broken gate is money
 spent on numbers you will not trust.

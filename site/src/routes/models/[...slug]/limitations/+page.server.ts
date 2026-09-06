@@ -1,15 +1,35 @@
 import type { PageServerLoad } from "./$types";
 import { error } from "@sveltejs/kit";
+import {
+  fetchWithModeFallback,
+  pageMode,
+  withMode,
+} from "$lib/server/page-mode";
 
-export const load: PageServerLoad = async (
-  { params, fetch, setHeaders, depends },
-) => {
+export const load: PageServerLoad = async ({
+  params,
+  url,
+  fetch,
+  setHeaders,
+  depends,
+}) => {
   depends(`app:model:${params.slug}:limitations`);
 
-  // Fetch as markdown text (the API supports content negotiation)
-  const res = await fetch(`/api/v1/models/${params.slug}/limitations`, {
-    headers: { "accept": "text/markdown" },
-  });
+  const requested = pageMode(url);
+  // Fetch as markdown text (the API supports content negotiation). The
+  // helper's 400-detection reads the response as JSON on the failure path
+  // only; a markdown body on an ok response is untouched.
+  const { res, mode, modeSplit } = await fetchWithModeFallback(
+    (input, init) =>
+      fetch(input, { ...init, headers: { accept: "text/markdown" } }),
+    (m) =>
+      withMode(
+        `/api/v1/models/${params.slug}/limitations`,
+        new URLSearchParams(),
+        m,
+      ),
+    requested,
+  );
   if (!res.ok) {
     let body: unknown;
     try {
@@ -29,5 +49,7 @@ export const load: PageServerLoad = async (
   return {
     slug: params.slug,
     markdown: await res.text(),
+    mode,
+    modeSplit,
   };
 };

@@ -2,6 +2,11 @@ import type { ServerLoad } from "@sveltejs/kit";
 import type { FamilyDetail, FamilyDiff } from "$lib/shared/api-types";
 import { error } from "@sveltejs/kit";
 import { checkDebugBundleAvailable } from "$lib/server/lifecycle-debug-bundle";
+import {
+  fetchWithModeFallback,
+  pageMode,
+  withMode,
+} from "$lib/server/page-mode";
 
 /**
  * Family page loader. Fetches the existing FamilyDetail payload and the
@@ -23,34 +28,49 @@ import { checkDebugBundleAvailable } from "$lib/server/lifecycle-debug-bundle";
  * baseline_missing shell when no analysis events exist), so any non-200
  * response is a real error — surface via SvelteKit's `error()`.
  */
-export const load: ServerLoad = async (
-  { params, fetch, depends, setHeaders, platform },
-) => {
+export const load: ServerLoad = async ({
+  params,
+  url,
+  fetch,
+  depends,
+  setHeaders,
+  platform,
+}) => {
   const slug = params.slug!;
   depends(`app:family:${slug}`);
 
-  const [famR, diffR] = await Promise.all([
-    fetch(`/api/v1/families/${slug}`),
+  const requested = pageMode(url);
+  const [famResult, diffR] = await Promise.all([
+    fetchWithModeFallback(
+      fetch,
+      (m) => withMode(`/api/v1/families/${slug}`, new URLSearchParams(), m),
+      requested,
+    ),
     fetch(`/api/v1/families/${slug}/diff`),
   ]);
+  const { res: famR, mode, modeSplit } = famResult;
 
   if (!famR.ok) {
     let body: { error?: string } = {};
     try {
-      body = await famR.json() as { error?: string };
-    } catch { /* swallow */ }
+      body = (await famR.json()) as { error?: string };
+    } catch {
+      /* swallow */
+    }
     throw error(famR.status, body.error ?? `family fetch ${famR.status}`);
   }
   if (!diffR.ok) {
     let body: { error?: string } = {};
     try {
-      body = await diffR.json() as { error?: string };
-    } catch { /* swallow */ }
+      body = (await diffR.json()) as { error?: string };
+    } catch {
+      /* swallow */
+    }
     throw error(diffR.status, body.error ?? `diff fetch ${diffR.status}`);
   }
 
-  const family = await famR.json() as FamilyDetail;
-  const diff = await diffR.json() as FamilyDiff;
+  const family = (await famR.json()) as FamilyDetail;
+  const diff = (await diffR.json()) as FamilyDiff;
 
   // Propagate cache-control from the family endpoint so SvelteKit's response
   // TTL matches the API's (existing /api/v1/families/<slug> emits
@@ -79,5 +99,5 @@ export const load: ServerLoad = async (
     r2BundleAvailable = status.exists;
   }
 
-  return { family, diff, r2BundleAvailable };
+  return { family, diff, r2BundleAvailable, mode, modeSplit };
 };

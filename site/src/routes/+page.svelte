@@ -11,6 +11,7 @@
   import CategoryTabs from '$lib/components/domain/CategoryTabs.svelte';
   import SetPicker from '$lib/components/domain/SetPicker.svelte';
   import OpennessFilter from '$lib/components/domain/OpennessFilter.svelte';
+  import ModeFilter from '$lib/components/domain/ModeFilter.svelte';
   import ViewToggle from '$lib/components/domain/ViewToggle.svelte';
   import ValueMap from '$lib/components/domain/ValueMap.svelte';
   import { presetForSort, presetEligible } from '$lib/shared/sort-presets';
@@ -121,9 +122,22 @@
       onchange={(next) => pushFilter({ set: next === 'current' ? null : next })}
     />
     <OpennessFilter value={data.filters.openness ?? null} onselect={(v) => pushFilter({ openness: v })} />
+    {#if data.modeSplit || page.url.searchParams.has('mode')}
+      <ModeFilter
+        mode={data.mode}
+        modeSplit={data.modeSplit}
+        syncHref={data.modeLinks.sync}
+        batchHref={data.modeLinks.batch}
+      />
+    {/if}
   </FilterRail>
 
   <div class="results" data-cheat-scope>
+    {#if data.modeSplit}
+      <p class="mode-notice">
+        Showing sync runs. This task set also has batch runs. <a href={data.modeLinks.batch}>View batch</a>
+      </p>
+    {/if}
     {#if Array.from(page.url.searchParams.entries()).some(([k]) => FILTER_KEYS.has(k))}
       <div class="chips">
         {#each Array.from(page.url.searchParams.entries()).filter(([k]) => FILTER_KEYS.has(k)) as [key, value]}
@@ -185,6 +199,7 @@
     .layout { grid-template-columns: 1fr; }
   }
 
+  .mode-notice { font-size: var(--text-sm); color: var(--text-muted); margin: 0 0 var(--space-4); }
   .chips { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-5); align-items: center; }
   .clear {
     background: transparent; border: 0;

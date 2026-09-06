@@ -1,14 +1,29 @@
 import type { PageServerLoad } from "./$types";
 import type { CategoriesIndexResponse } from "$shared/api-types";
 import { error } from "@sveltejs/kit";
+import {
+  fetchWithModeFallback,
+  pageMode,
+  withMode,
+} from "$lib/server/page-mode";
 
 // Dynamic — depends on D1 catalog state.
 export const prerender = false;
 
-export const load: PageServerLoad = async ({ fetch, setHeaders, depends }) => {
+export const load: PageServerLoad = async ({
+  url,
+  fetch,
+  setHeaders,
+  depends,
+}) => {
   depends("app:categories");
 
-  const res = await fetch("/api/v1/categories");
+  const requested = pageMode(url);
+  const { res, mode, modeSplit } = await fetchWithModeFallback(
+    fetch,
+    (m) => withMode("/api/v1/categories", new URLSearchParams(), m),
+    requested,
+  );
   if (!res.ok) {
     let body: unknown;
     try {
@@ -27,5 +42,7 @@ export const load: PageServerLoad = async ({ fetch, setHeaders, depends }) => {
 
   return {
     categories: (await res.json()) as CategoriesIndexResponse,
+    mode,
+    modeSplit,
   };
 };

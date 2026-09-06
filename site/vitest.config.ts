@@ -44,8 +44,8 @@ export default defineConfig(async () => {
   // can access it without node:fs (which resolves paths under /bundle/ at
   // runtime, not the project root). Config-time read = single source of truth.
   const statsGoldenVectors = readFileSync(
-    path.resolve('../tests/fixtures/stats-golden-vectors.json'),
-    'utf8',
+    path.resolve("../tests/fixtures/stats-golden-vectors.json"),
+    "utf8",
   );
 
   return {
@@ -124,6 +124,7 @@ export default defineConfig(async () => {
         // Pure-logic test with no D1/Worker dependency: runs under
         // vitest.unit.config.ts (jsdom pool) instead, see that config.
         "tests/lib/cost-sql.test.ts",
+        "tests/lib/page-mode.test.ts",
       ],
     },
   };

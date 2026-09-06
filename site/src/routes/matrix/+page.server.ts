@@ -1,16 +1,21 @@
 import type { PageServerLoad } from "./$types";
-import type {
-  MatrixResponse,
-  TaskSetsResponse,
-} from "$lib/shared/api-types";
+import type { MatrixResponse, TaskSetsResponse } from "$lib/shared/api-types";
 import { error } from "@sveltejs/kit";
+import {
+  fetchWithModeFallback,
+  pageMode,
+  withMode,
+} from "$lib/server/page-mode";
 
 // Dynamic — depends on D1 catalog state.
 export const prerender = false;
 
-export const load: PageServerLoad = async (
-  { url, fetch, setHeaders, depends },
-) => {
+export const load: PageServerLoad = async ({
+  url,
+  fetch,
+  setHeaders,
+  depends,
+}) => {
   depends("app:matrix");
 
   // Mirror filters into the API query string. The endpoint validates the
@@ -19,7 +24,8 @@ export const load: PageServerLoad = async (
   const params = new URLSearchParams();
   const set = url.searchParams.get("set");
   if (
-    set === "current" || set === "all" ||
+    set === "current" ||
+    set === "all" ||
     (set && /^[0-9a-f]{64}$/.test(set))
   ) {
     params.set("set", set);
@@ -29,10 +35,13 @@ export const load: PageServerLoad = async (
   const difficulty = url.searchParams.get("difficulty");
   if (difficulty) params.set("difficulty", difficulty);
 
-  const qs = params.toString();
-  const apiPath = qs ? `/api/v1/matrix?${qs}` : "/api/v1/matrix";
-  const [res, tsRes] = await Promise.all([
-    fetch(apiPath),
+  const requested = pageMode(url);
+  const [{ res, mode, modeSplit }, tsRes] = await Promise.all([
+    fetchWithModeFallback(
+      fetch,
+      (m) => withMode("/api/v1/matrix", params, m),
+      requested,
+    ),
     fetch("/api/v1/task-sets"),
   ]);
   if (!res.ok) {
@@ -55,5 +64,5 @@ export const load: PageServerLoad = async (
   const taskSets = tsRes.ok
     ? ((await tsRes.json()) as TaskSetsResponse).data
     : [];
-  return { matrix, taskSets };
+  return { matrix, taskSets, mode, modeSplit };
 };

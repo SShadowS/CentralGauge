@@ -7,6 +7,11 @@ import type {
   TaskSetsResponse,
 } from "$shared/api-types";
 import { error } from "@sveltejs/kit";
+import {
+  fetchWithModeFallback,
+  pageMode,
+  withMode,
+} from "$lib/server/page-mode";
 
 // Explicit: this route MUST NOT be prerendered (dynamic per-request data,
 // SSE-tagged for live updates). SvelteKit's default for routes not in
@@ -14,26 +19,44 @@ import { error } from "@sveltejs/kit";
 // future routes-config sweep doesn't accidentally flip it.
 export const prerender = false;
 
-export const load: PageServerLoad = async (
-  { url, fetch, setHeaders, depends },
-) => {
+export const load: PageServerLoad = async ({
+  url,
+  fetch,
+  setHeaders,
+  depends,
+}) => {
   depends("app:leaderboard");
 
-  // Pass through user-supplied filter params verbatim to the API.
-  const apiUrl = `/api/v1/leaderboard?${url.searchParams.toString()}`;
-  // Load leaderboard + category list + summary band stats in parallel. The
-  // categories endpoint is cheap (single aggregate against task_categories
-  // with LEFT JOINs) and populates the sidebar's Category filter rail
-  // (P7 C5). The summary endpoint feeds the SummaryBand widget (P7 F1) and
-  // is cached at the edge with named cache `cg-summary` (Phase A7). Empty
-  // data is expected in CC-1 production; the band still renders zero-shaped
-  // values, the rail conditionally renders on data.
-  const [res, catRes, sumRes, tsRes] = await Promise.all([
-    fetch(apiUrl),
-    fetch("/api/v1/categories"),
-    fetch("/api/v1/summary"),
-    fetch("/api/v1/task-sets"),
-  ]);
+  // D4 follow-up: forward the caller's ?mode= to the API and fall back to
+  // sync when the current set has both modes and none was requested (see
+  // page-mode.ts). Every other filter param is passed through verbatim.
+  const requested = pageMode(url);
+  const [{ res, mode, modeSplit }, catResult, sumRes, tsRes] =
+    await Promise.all([
+      fetchWithModeFallback(
+        fetch,
+        (m) => withMode("/api/v1/leaderboard", url.searchParams, m),
+        requested,
+      ),
+      // Categories endpoint is cheap (single aggregate against
+      // task_categories with LEFT JOINs) and populates the sidebar's
+      // Category filter rail (P7 C5). Routed through the same helper: it
+      // is not itself ranked (no mode filtering happens server-side
+      // today), but is mode-scoped by design intent, so this stays
+      // consistent should that change.
+      fetchWithModeFallback(
+        fetch,
+        (m) => withMode("/api/v1/categories", new URLSearchParams(), m),
+        requested,
+      ),
+      // Summary band feeds the SummaryBand widget (P7 F1) and is cached at
+      // the edge with named cache `cg-summary` (Phase A7). Not mode-scoped:
+      // stays a plain fetch. Empty data is expected in CC-1 production, the
+      // band still renders zero-shaped values.
+      fetch("/api/v1/summary"),
+      fetch("/api/v1/task-sets"),
+    ]);
+  const catRes = catResult.res;
 
   if (!res.ok) {
     let body: unknown;
@@ -67,15 +90,15 @@ export const load: PageServerLoad = async (
   const summary: SummaryStats = sumRes.ok
     ? ((await sumRes.json()) as SummaryStats)
     : {
-      runs: 0,
-      models: 0,
-      tasks: 0,
-      total_cost_usd: 0,
-      total_tokens: 0,
-      last_run_at: null,
-      latest_changelog: null,
-      generated_at: new Date().toISOString(),
-    };
+        runs: 0,
+        models: 0,
+        tasks: 0,
+        total_cost_usd: 0,
+        total_tokens: 0,
+        last_run_at: null,
+        latest_changelog: null,
+        generated_at: new Date().toISOString(),
+      };
 
   const taskSets = tsRes.ok
     ? ((await tsRes.json()) as TaskSetsResponse).data
@@ -89,5 +112,13 @@ export const load: PageServerLoad = async (
     summary,
     taskSets,
     serverTime: new Date().toISOString(),
+    mode,
+    modeSplit,
+    // Precomputed here (server-only withMode) so the ModeFilter component
+    // and the mixed-mode notice stay plain presentational markup.
+    modeLinks: {
+      sync: withMode(url.pathname, url.searchParams, "sync"),
+      batch: withMode(url.pathname, url.searchParams, "batch"),
+    },
   };
 };

@@ -1,10 +1,18 @@
 import type { PageServerLoad } from "./$types";
 import type { CompareResponse } from "$shared/api-types";
 import { error } from "@sveltejs/kit";
+import {
+  fetchWithModeFallback,
+  pageMode,
+  withMode,
+} from "$lib/server/page-mode";
 
-export const load: PageServerLoad = async (
-  { url, fetch, setHeaders, depends },
-) => {
+export const load: PageServerLoad = async ({
+  url,
+  fetch,
+  setHeaders,
+  depends,
+}) => {
   const models = (url.searchParams.get("models") ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -14,15 +22,20 @@ export const load: PageServerLoad = async (
 
   if (models.length < 2) {
     // Empty state — no fetch, no error
-    return { compare: null, requested: models };
+    return { compare: null, requested: models, mode: null, modeSplit: false };
   }
   if (models.length > 4) {
     throw error(400, "compare supports at most 4 models");
   }
 
+  const requested = pageMode(url);
   const sp = new URLSearchParams();
   sp.set("models", models.join(","));
-  const res = await fetch(`/api/v1/compare?${sp.toString()}`);
+  const { res, mode, modeSplit } = await fetchWithModeFallback(
+    fetch,
+    (m) => withMode("/api/v1/compare", sp, m),
+    requested,
+  );
   if (!res.ok) {
     let body: unknown;
     try {
@@ -42,5 +55,7 @@ export const load: PageServerLoad = async (
   return {
     compare: (await res.json()) as CompareResponse,
     requested: models,
+    mode,
+    modeSplit,
   };
 };

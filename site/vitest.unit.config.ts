@@ -34,6 +34,8 @@ export default defineConfig({
       // individually so this stays disjoint from tests/lib/*.test.ts files
       // that DO need `cloudflare:test` (those run under vitest.config.ts).
       "tests/lib/cost-sql.test.ts",
+      // page-mode.ts is plain URL/fetch-stub logic, same reasoning.
+      "tests/lib/page-mode.test.ts",
     ],
     setupFiles: ["./tests/setup-unit.ts"],
     globals: false,
