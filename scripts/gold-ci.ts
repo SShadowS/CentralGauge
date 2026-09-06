@@ -40,6 +40,9 @@
  *   deno run --allow-all scripts/gold-ci.ts --replay --task CG-AL-H015
  *   deno run --allow-all scripts/gold-ci.ts --replay \
  *     --containers Cronus28,Cronus281,Cronus282   # one worker per container
+ *   deno run --allow-all scripts/gold-ci.ts --adopt-harness
+ *     # one-time re-baseline after HARNESS_INPUTS grows; refuses if a
+ *     # previously tracked file changed
  *
  * Ledger: docs/reasoning-suite/gold-ci.json (consumed by gate-records.ts).
  */
@@ -48,6 +51,7 @@ import { dirname, fromFileUrl, join } from "@std/path";
 import {
   harnessFingerprint,
   hashFiles,
+  LEGACY_HARNESS_INPUTS_2026_08,
 } from "../src/utils/harness-fingerprint.ts";
 
 const REPO = dirname(dirname(fromFileUrl(import.meta.url)));
@@ -69,6 +73,7 @@ interface Ledger {
   schemaVersion: number;
   what: string;
   harnessHash?: string;
+  harnessAdopted?: { from: string; to: string; at: string; reason: string };
   tasks: Record<string, Replay>;
 }
 
@@ -197,6 +202,47 @@ async function main(argv: string[]) {
 
   const harnessHash = await harnessFingerprint(REPO);
   const ledger = await loadLedger();
+
+  if (argv.includes("--adopt-harness")) {
+    const legacyHash = await hashFiles(
+      [...LEGACY_HARNESS_INPUTS_2026_08],
+      REPO,
+      { missing: "throw" },
+    );
+    if (ledger.harnessHash !== legacyHash) {
+      console.error(
+        `[gold-ci] refusing to adopt: the legacy input list hashes to ${
+          legacyHash.slice(0, 12)
+        } but the ledger records ${
+          (ledger.harnessHash ?? "(none)").slice(0, 12)
+        }; a tracked harness file changed, replay instead`,
+      );
+      return 1;
+    }
+    let adopted = 0;
+    for (const rec of Object.values(ledger.tasks)) {
+      if (rec.verdict === "pass" && rec.harnessHash === legacyHash) {
+        rec.harnessHash = harnessHash;
+        adopted++;
+      }
+    }
+    ledger.harnessHash = harnessHash;
+    ledger.harnessAdopted = {
+      from: legacyHash,
+      to: harnessHash,
+      at: new Date().toISOString(),
+      reason:
+        "HARNESS_INPUTS expanded to the shared execution units (batch mode plan A); no previously tracked file changed",
+    };
+    await Deno.writeTextFile(LEDGER, JSON.stringify(ledger, null, 2) + "\n");
+    console.log(
+      `[gold-ci] adopted harness ${
+        harnessHash.slice(0, 12)
+      } on ${adopted} trusted task(s)`,
+    );
+    return 0;
+  }
+
   const tasks = await inScopeTasks();
 
   const trusted: string[] = [];

@@ -7,14 +7,11 @@
  * behind.
  */
 
-import { join } from "@std/path";
+import { join, relative } from "@std/path";
+import { walk } from "@std/fs/walk";
 
-/**
- * Harness inputs that decide what a candidate app declares and depends on. A
- * change to any of these can flip a verdict for every task at once, which is
- * exactly the failure mode a per-task probe cannot see.
- */
-export const HARNESS_INPUTS = [
+/** The list before batch mode (2026-08). Kept only for the one-time gold-ci adoption check. */
+export const LEGACY_HARNESS_INPUTS_2026_08 = [
   "src/constants.ts",
   "src/parallel/compile-queue.ts",
   "src/tasks/executor-v2.ts",
@@ -22,6 +19,58 @@ export const HARNESS_INPUTS = [
   "scripts/trap-probe.ts",
   "mcp/al-tools-server.ts",
 ] as const;
+
+/**
+ * Harness inputs that decide what a candidate app declares and depends on. A
+ * change to any of these can flip a verdict for every task at once, which is
+ * exactly the failure mode a per-task probe cannot see. A directory entry
+ * means every `.ts` file under it.
+ */
+export const HARNESS_INPUTS = [
+  ...LEGACY_HARNESS_INPUTS_2026_08,
+  "src/parallel/shared",
+  "src/parallel/infra-retry.ts",
+  "src/llm/prompt-building.ts",
+  "src/tasks/object-overlay.ts",
+  "src/llm/candidate-resolution.ts",
+  "src/parallel/llm-work-pool.ts",
+] as const;
+
+/**
+ * Expand directory entries in `paths` to their sorted `.ts` files (posix
+ * separators, relative to `root`). A file entry, or a path that does not
+ * exist under `root`, passes through unchanged so `hashFiles`' `missing`
+ * policy still applies to it.
+ *
+ * @param paths File or directory paths, relative to `root`.
+ * @param root Directory the paths are resolved against.
+ * @returns Promise resolving to the sorted, expanded path list.
+ */
+export async function expandInputs(
+  paths: readonly string[],
+  root: string,
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const p of paths) {
+    let info: Deno.FileInfo;
+    try {
+      info = await Deno.stat(join(root, p));
+    } catch {
+      out.push(p);
+      continue;
+    }
+    if (!info.isDirectory) {
+      out.push(p);
+      continue;
+    }
+    for await (
+      const entry of walk(join(root, p), { includeDirs: false, exts: [".ts"] })
+    ) {
+      out.push(relative(root, entry.path).replaceAll("\\", "/"));
+    }
+  }
+  return out.sort();
+}
 
 /**
  * Compute a stable SHA-256 digest over a set of files.
@@ -56,7 +105,8 @@ export async function hashFiles(
   const onMissing = opts?.missing ?? "skip";
   const parts: Uint8Array[] = [];
   const enc = new TextEncoder();
-  for (const p of [...paths].sort()) {
+  const expanded = await expandInputs(paths, root);
+  for (const p of expanded) {
     let text: string;
     try {
       text = await Deno.readTextFile(join(root, p));
