@@ -31,7 +31,6 @@ import { buildTaskComparison, ResultAggregator } from "./result-aggregator.ts";
 import { Semaphore } from "./semaphore.ts";
 import { ProviderRateLimiter } from "./rate-limiter.ts";
 import { ContainerProviderRegistry } from "../container/registry.ts";
-import { TaskTransformer } from "../tasks/transformer.ts";
 import type { ContainerProvider } from "../container/interface.ts";
 import type { ModelVariant } from "../llm/variant-types.ts";
 import {
@@ -43,7 +42,6 @@ import {
 import type { RecoveryEvent } from "../health/mod.ts";
 import type { SynthContext } from "../health/terminal-record.ts";
 import { ContainerError } from "../errors.ts";
-import { withInfraRetry } from "./infra-retry.ts";
 import { InfraRetriesExhaustedError } from "./errors.ts";
 import type { AttemptLoopPartial } from "./shared/infra-attempt.ts";
 import { AttemptLoopAbort } from "./shared/infra-attempt.ts";
@@ -57,6 +55,8 @@ import { buildCompileWorkItem } from "./shared/compile-work-item.ts";
 import { evaluateAttempt } from "./shared/evaluate-attempt.ts";
 import { createFailedAttempt as createFailedAttemptShared } from "./shared/failed-attempt.ts";
 import { finalizeTaskResult } from "./shared/finalize-task.ts";
+import { runCompileWorkItem } from "./shared/run-compile.ts";
+import { buildAttemptContext } from "./shared/attempt-context.ts";
 
 /**
  * Event listener type
@@ -811,7 +811,7 @@ export class ParallelBenchmarkOrchestrator {
    * `retries` is empty when the original attempt succeeded without retry;
    * non-empty when one or more retries ran and the LAST one succeeded.
    */
-  private async executeCompilation(
+  private executeCompilation(
     manifest: TaskManifest,
     variant: ModelVariant,
     context: TaskExecutionContext,
@@ -835,71 +835,20 @@ export class ParallelBenchmarkOrchestrator {
       ...(overlayBase !== undefined ? { overlayBase } : {}),
     });
 
-    // Build the work item ONCE; emit `compile_queued` ONCE per attempt. The
-    // retry helper invokes the operation 1..(1+maxRetries) times, but the
-    // "queued" event represents the orchestrator's intent to compile — not
-    // the dispatcher's per-attempt routing. `compile_started` lives INSIDE
-    // the callback so it fires per attempt.
-    this.emit({
-      type: "compile_queued",
-      taskId: manifest.id,
-      model: variant.variantId,
-      queuePosition: this.compileQueue?.length ?? 0,
-    });
-
-    const maxRetries = options.infraRetriesPerAttempt ?? 1;
     const configuredContainers = this.config.containerNames &&
         this.config.containerNames.length > 0
       ? this.config.containerNames
       : [options.containerName];
 
-    const { result: compileResult, retries } = await withInfraRetry<
-      CompileWorkResult
-    >(
-      ({ excludeContainers, onRouted }) => {
-        this.emit({
-          type: "compile_started",
-          taskId: manifest.id,
-          model: variant.variantId,
-        });
-        return this.compileQueue!.enqueue(compileItem, {
-          excludeContainers,
-          onRouted,
-        });
-      },
-      {
-        maxRetries,
-        configuredContainers,
-        emit: this.emit.bind(this),
-        context: {
-          taskId: manifest.id,
-          variantId: variant.variantId,
-          attemptNumber,
-        },
-        ...(this.healthMonitor ? { healthMonitor: this.healthMonitor } : {}),
-        // Detect the quarantine sidecar attached by `runPipeline` (task #5).
-        // When present, the retry path treats the resolved-but-quarantined
-        // result as an infra error AND grants a budget waiver.
-        classifyResult: (r: CompileWorkResult) =>
-          r.quarantined
-            ? {
-              kind: "quarantined" as const,
-              alertId: r.quarantined.forcedByAlertId,
-              originContainer: r.quarantined.originContainer,
-              fingerprint: "container_quarantined",
-            }
-            : { kind: "ok" as const },
-      },
-    );
-
-    this.emit({
-      type: "compile_completed",
+    return runCompileWorkItem(compileItem, {
+      queue: this.compileQueue!,
+      configuredContainers,
+      maxRetries: options.infraRetriesPerAttempt ?? 1,
+      emit: this.emit.bind(this),
+      ...(this.healthMonitor ? { healthMonitor: this.healthMonitor } : {}),
       taskId: manifest.id,
-      model: variant.variantId,
-      success: compileResult.compilationResult.success,
+      variantId: variant.variantId,
     });
-
-    return { compileResult, infraRetries: retries };
   }
 
   /**
@@ -1022,37 +971,12 @@ export class ParallelBenchmarkOrchestrator {
   /**
    * Build execution context for a task with variant config applied
    */
-  private async buildContext(
+  private buildContext(
     manifest: TaskManifest,
     variant: ModelVariant,
     options: ParallelBenchmarkOptions,
   ): Promise<TaskExecutionContext> {
-    // Apply variant config overrides to temperature and maxTokens
-    const temperature = variant.config.temperature ?? options.temperature;
-    const maxTokens = variant.config.maxTokens ?? options.maxTokens;
-
-    // Build variantId with runLabel suffix if knowledge/custom label is used
-    let variantId = variant.variantId;
-    if (options.promptOverrides?.runLabel) {
-      variantId = `${variantId}${options.promptOverrides.runLabel}`;
-    }
-
-    return await TaskTransformer.createExecutionContext({
-      taskManifest: manifest,
-      llmProvider: variant.provider,
-      llmModel: variant.model,
-      variantId,
-      variantConfig: variant.hasVariant ? variant.config : undefined,
-      containerProvider: options.containerProvider,
-      containerName: options.containerName,
-      attemptLimit: options.attemptLimit,
-      temperature,
-      maxTokens,
-      outputDir: options.outputDir,
-      debugMode: options.debugMode,
-      ...(options.promptOverrides &&
-        { promptOverrides: options.promptOverrides }),
-    });
+    return buildAttemptContext(manifest, variant, options);
   }
 
   /**
