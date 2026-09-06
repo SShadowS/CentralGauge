@@ -208,3 +208,95 @@ Deno.test("collectEnded logs and skips an unknown item id and a stale-round id",
     await cleanupTempDir(dir);
   }
 });
+
+Deno.test("collectEnded resumes after a crash: repairs ItemSummary.state from an existing response file without recollecting", async () => {
+  const dir = await createTempDir("collect-resume");
+  try {
+    const fake = new FakeBatchProvider("anthropic", {
+      collect: {
+        "batch-2": [
+          {
+            itemId: "item-c",
+            ok: false,
+            error: { kind: "server", message: "boom", retryable: true },
+          },
+        ],
+      },
+    });
+
+    const record1 = makeRecord({
+      handle: { provider: "anthropic", batchId: "batch-1" },
+      state: "ended",
+      collected: false,
+      itemIds: ["item-a"],
+    });
+    const record2 = makeRecord({
+      handle: { provider: "anthropic", batchId: "batch-2" },
+      state: "ended",
+      collected: false,
+      itemIds: ["item-c"],
+    });
+    const state = minimalState({
+      batches: [record1, record2],
+      activeBatchIds: ["batch-1", "batch-2"],
+      tasks: {
+        "CG-AL-E001": { attempt1: itemSummary("item-a") },
+        "CG-AL-E003": { attempt1: itemSummary("item-c") },
+      },
+    });
+
+    // Simulate a crash that happened AFTER record 1's response file was
+    // written to disk but BEFORE record.collected / ItemSummary.state were
+    // persisted: the file exists, but the in-memory state passed in still
+    // says "submitted" / collected: false, exactly as a reloaded
+    // pre-crash state.json would.
+    await Deno.mkdir(join(dir, "responses"), { recursive: true });
+    const storedA = {
+      result: {
+        itemId: "item-a",
+        ok: true,
+        raw: { text: "OK" },
+        httpStatus: 200,
+      },
+      response: {
+        content: "OK",
+        model: "m",
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        duration: 0,
+        finishReason: "stop",
+      },
+    };
+    await Deno.writeTextFile(
+      responsePath(dir, "item-a"),
+      JSON.stringify(storedA),
+    );
+
+    const collected = await collectEnded(dir, state, fake, mapRaw);
+
+    // record 1 is repaired purely from the file on disk: provider.collect
+    // is never called again for it.
+    assertEquals(
+      fake.calls.filter((c) =>
+        c.op === "collect" &&
+        (c.args[0] as { batchId: string }).batchId === "batch-1"
+      ).length,
+      0,
+    );
+    assertEquals(state.tasks["CG-AL-E001"]?.attempt1.state, "responded");
+    assertEquals(state.batches[0]?.collected, true);
+    // The item was already collected before the crash, so this call does
+    // not report it as newly collected.
+    assertEquals(collected.some((c) => c.itemId === "item-a"), false);
+
+    // record 2 has no file yet and collects normally in the same call.
+    assertEquals(state.tasks["CG-AL-E003"]?.attempt1.state, "errored");
+    assertEquals(state.batches[1]?.collected, true);
+    assert(collected.some((c) => c.itemId === "item-c"));
+
+    const reloaded = await loadState(dir);
+    assertEquals(reloaded.batches[0]?.collected, true);
+    assertEquals(reloaded.batches[1]?.collected, true);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});

@@ -119,6 +119,12 @@ export interface CollectedItem {
   response?: LLMResponse;
 }
 
+/** The immutable, on-disk shape of `responses/<itemId>.json`. */
+interface StoredResponse {
+  result: BatchItemResult;
+  response?: LLMResponse;
+}
+
 /** Finds the `ItemSummary` (attempt 1 or 2) for `itemId` across every task. */
 function findItemSummary(
   state: BatchRunState,
@@ -131,20 +137,57 @@ function findItemSummary(
   return undefined;
 }
 
+/** `"responded"` for an ok result, `"expired"`/`"errored"` for an error result. */
+function deriveItemState(result: BatchItemResult): ItemSummary["state"] {
+  if (result.ok) return "responded";
+  return result.error.kind === "expired" ? "expired" : "errored";
+}
+
+/** Reads back a previously written `responses/<itemId>.json`. */
+async function readStoredResponse(path: string): Promise<StoredResponse> {
+  const raw = await Deno.readTextFile(path);
+  return JSON.parse(raw) as StoredResponse;
+}
+
+/**
+ * Repairs `item.state` from an already-written response file. Used both
+ * when a resumed run finds a file it wrote before a crash (the file was
+ * already validated - round-ownership and unknown-id checks passed - when
+ * it was first written, so it is trusted without re-checking).
+ */
+async function repairFromExistingFile(
+  state: BatchRunState,
+  itemId: string,
+  path: string,
+): Promise<void> {
+  const item = findItemSummary(state, itemId);
+  if (!item) return;
+  const stored = await readStoredResponse(path);
+  item.state = deriveItemState(stored.result);
+}
+
 /**
  * Collects every ended, uncollected `BatchRecord` in `state.batches`,
- * writing one immutable `responses/<itemId>.json` per item (skipping an id
- * whose response file already exists) and returning the items actually
- * written this call. An `ok` result is mapped through `mapRaw` and its
- * task's `ItemSummary.state` moves to `"responded"`; an error result moves
- * it to `"expired"` (error kind `"expired"`) or `"errored"` (any other
- * kind). An id not in the record's `itemIds`, or whose task's `ownerRound`
- * no longer matches the record's `round` (spec 4.4 - the item has since
- * been resubmitted for a later round and this is a stale result for the
- * round this record belongs to), is logged to `events.jsonl` and skipped
- * rather than applied. Every processed record is marked `collected = true`
- * regardless of how many of its items were skipped, so a record is never
- * collected from twice; `state.json` is persisted once at the end.
+ * writing one immutable `responses/<itemId>.json` per item and returning
+ * the items actually written this call. An `ok` result is mapped through
+ * `mapRaw` and its task's `ItemSummary.state` moves to `"responded"`; an
+ * error result moves it to `"expired"` (error kind `"expired"`) or
+ * `"errored"` (any other kind). An id not in the record's `itemIds`, or
+ * whose task's `ownerRound` no longer matches the record's `round` (spec
+ * 4.4 - the item has since been resubmitted for a later round and this is
+ * a stale result for the round this record belongs to), is logged to
+ * `events.jsonl` and skipped rather than applied.
+ *
+ * Crash resumption: when every item in a record already has a response
+ * file on disk (the process crashed after writing them but before
+ * `collected`/`state.json` were persisted), the record is repaired purely
+ * from those files without calling `provider.collect` again. When only
+ * some items already have files, `provider.collect` runs as normal and any
+ * result whose file already exists has its `ItemSummary.state` re-derived
+ * from that file instead of being silently skipped. Either way, each
+ * record's `collected = true` and the `ItemSummary` repairs are persisted
+ * with `writeState` before moving to the next record, so a crash mid-run
+ * never leaves an earlier record's state stale.
  */
 export async function collectEnded(
   dir: string,
@@ -157,6 +200,25 @@ export async function collectEnded(
 
   for (const record of state.batches) {
     if (record.state !== "ended" || record.collected) continue;
+
+    const missingItemIds: string[] = [];
+    for (const itemId of record.itemIds) {
+      if (!(await exists(responsePath(dir, itemId)))) {
+        missingItemIds.push(itemId);
+      }
+    }
+
+    if (missingItemIds.length === 0) {
+      // Every item already has a response file: a prior call wrote them
+      // all but crashed before this record was marked collected. Repair
+      // in place, never re-invoking the provider.
+      for (const itemId of record.itemIds) {
+        await repairFromExistingFile(state, itemId, responsePath(dir, itemId));
+      }
+      record.collected = true;
+      await writeState(dir, state);
+      continue;
+    }
 
     const itemIdSet = new Set(record.itemIds);
     const handle = toHandle(record.handle);
@@ -172,7 +234,10 @@ export async function collectEnded(
       }
 
       const path = responsePath(dir, result.itemId);
-      if (await exists(path)) continue;
+      if (await exists(path)) {
+        await repairFromExistingFile(state, result.itemId, path);
+        continue;
+      }
 
       const item = findItemSummary(state, result.itemId);
       if (!item) continue;
@@ -187,15 +252,10 @@ export async function collectEnded(
         continue;
       }
 
-      let response: LLMResponse | undefined;
-      if (result.ok) {
-        response = mapRaw(result.raw, result.itemId);
-        item.state = "responded";
-      } else if (result.error.kind === "expired") {
-        item.state = "expired";
-      } else {
-        item.state = "errored";
-      }
+      const response = result.ok
+        ? mapRaw(result.raw, result.itemId)
+        : undefined;
+      item.state = deriveItemState(result);
 
       await writeJsonAtomic(
         path,
@@ -209,8 +269,8 @@ export async function collectEnded(
     }
 
     record.collected = true;
+    await writeState(dir, state);
   }
 
-  await writeState(dir, state);
   return collected;
 }
