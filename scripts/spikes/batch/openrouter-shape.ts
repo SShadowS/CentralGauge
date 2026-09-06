@@ -9,14 +9,19 @@
  * endpoint.","code":400}}`. OpenRouter's own batch-quickstart docs give
  * `openai/gpt-4o` as a working example model, but that was ALSO rejected
  * with the identical `does not have a :batch endpoint` error (both recorded
- * in the findings doc) — every OpenAI-family model tried is batch-disabled
+ * in the findings doc): every OpenAI-family model tried is batch-disabled
  * for this account/key, while `google/gemini-3.8-flash` was accepted (202).
- * Phase B (the ceiling probes) therefore runs against the Gemini model —
- * the only model this key can actually submit a batch for — instead of the
+ * Phase B (the ceiling probes) therefore runs against the Gemini model,
+ * the only model this key can actually submit a batch for, instead of the
  * OpenAI model the brief originally specified, since probing ceilings
  * against a model that 400s on every call measures nothing.
  *
  *   deno run --allow-all scripts/spikes/batch/openrouter-shape.ts
+ *
+ * A second mode re-polls already-created batch ids (GET only, no new
+ * batches, costs nothing) and prints one line per batch:
+ *
+ *   deno run --allow-all scripts/spikes/batch/openrouter-shape.ts --poll <id1>,<id2>,...
  */
 import { EnvLoader } from "../../../src/utils/env-loader.ts";
 await EnvLoader.loadEnvironment();
@@ -25,6 +30,32 @@ const KEY = Deno.env.get("OPENROUTER_API_KEY");
 const BASE = "https://openrouter.ai/api/beta/batches";
 const CHEAP = "openai/gpt-4o";
 const WORKING = "google/gemini-3.8-flash";
+
+if (Deno.args[0] === "--poll") {
+  const ids = (Deno.args[1] ?? "").split(",").map((s) => s.trim()).filter(
+    Boolean,
+  );
+  for (const id of ids) {
+    const res = await fetch(`${BASE}/${id}`, {
+      headers: { Authorization: `Bearer ${KEY}` },
+    });
+    const json = await res.json() as Record<string, unknown>;
+    const data = (json["data"] as Record<string, unknown> | undefined) ?? json;
+    console.log(
+      "POLL",
+      id,
+      "status",
+      data["status"],
+      "request_counts",
+      JSON.stringify(data["request_counts"]),
+      "usage.cost",
+      (data["usage"] as Record<string, unknown> | undefined)?.["cost"] ?? null,
+      "error",
+      JSON.stringify(data["error"]),
+    );
+  }
+  Deno.exit(0);
+}
 
 function request(
   customId: string,
@@ -129,7 +160,7 @@ console.log("list", listed.status, await listed.text());
 
 // Phase B: ceilings. Doubling item count with a tiny body, then doubling body
 // size with one item. Uses WORKING (the only model this key can submit a
-// batch for) rather than CHEAP, which 400s unconditionally — see the header
+// batch for) rather than CHEAP, which 400s unconditionally: see the header
 // note.
 for (let n = 8; n <= 4096; n *= 2) {
   const res = await submit(

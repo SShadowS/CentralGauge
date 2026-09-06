@@ -4,7 +4,7 @@
  * and error lines.
  *
  * NOTE: the OpenAI Batch API rejects a JSONL file whose lines target more
- * than one model ("mismatched_model" — "Each batch must contain requests for
+ * than one model ("mismatched_model": "Each batch must contain requests for
  * a single model."). That is a structural constraint of the real API, not a
  * request choice this spike is testing, so each (model, endpoint) pair gets
  * its own file and its own batch below.
