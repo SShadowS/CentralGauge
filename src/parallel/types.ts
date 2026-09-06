@@ -48,6 +48,9 @@ export interface ParallelExecutionConfig {
 
   /** Container names for multi-container pool. If empty/undefined, uses single containerName from options. */
   containerNames?: string[] | undefined;
+
+  /** Directory containing tasks/starter/<id>/; defaults to Deno.cwd() at pool construction. */
+  starterRoot?: string;
 }
 
 /**

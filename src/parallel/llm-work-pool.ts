@@ -30,15 +30,11 @@ import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { priceUsage } from "./shared/price-usage.ts";
 import { resolveCandidate } from "../llm/candidate-resolution.ts";
-import {
-  buildFixPrompt,
-  buildGenerationPrompt,
-  DEFAULT_TEMPLATE_DIR,
-} from "../llm/prompt-building.ts";
-import { retrySourceFor, usesObjectOverlay } from "../tasks/object-overlay.ts";
-import { loadStarterCode, starterDirForTask } from "../tasks/starter-code.ts";
+import { DEFAULT_TEMPLATE_DIR } from "../llm/prompt-building.ts";
+import { retrySourceFor } from "../tasks/object-overlay.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
-import { PromptInjectionResolver } from "../prompts/mod.ts";
+import { extractFixErrors, renderLLMRequest } from "./shared/render-request.ts";
+import { renderInputsFor } from "./shared/prompt-inputs.ts";
 import {
   type ContinuationResult,
   createTruncationWarning,
@@ -144,6 +140,8 @@ export class LLMWorkPool {
   private activeRequests = 0;
   private shuttingDown = false;
   private templateRenderer: TemplateRenderer;
+  private templateDir: string;
+  private starterRoot: string;
   private continuationConfig: ContinuationConfig;
   private emptyRetryConfig: EmptyRetryConfig;
 
@@ -155,9 +153,9 @@ export class LLMWorkPool {
   ) {
     this.config = config;
     this.rateLimiter = rateLimiter ?? getGlobalRateLimiter();
-    this.templateRenderer = new TemplateRenderer(
-      config.templateDir || DEFAULT_TEMPLATE_DIR,
-    );
+    this.templateDir = config.templateDir || DEFAULT_TEMPLATE_DIR;
+    this.starterRoot = config.starterRoot ?? Deno.cwd();
+    this.templateRenderer = new TemplateRenderer(this.templateDir);
     this.continuationConfig = continuationConfig ?? DEFAULT_CONTINUATION_CONFIG;
     this.emptyRetryConfig = emptyRetryConfig ?? DEFAULT_EMPTY_RETRY_CONFIG;
   }
@@ -537,7 +535,7 @@ export class LLMWorkPool {
       if (item.attemptNumber === 1 || !previousAttempt) {
         return adapter.generateCodeStream(req, ctx, opts);
       } else {
-        const errors = this.extractErrors(previousAttempt);
+        const errors = extractFixErrors(previousAttempt);
         return adapter.generateFixStream(
           retrySourceFor(previousAttempt),
           errors,
@@ -605,106 +603,27 @@ export class LLMWorkPool {
   }
 
   /**
-   * Build LLM request for the work item
+   * Build LLM request for the work item.
+   *
+   * Delegates to the shared, explicit-inputs `renderLLMRequest` (spec D6,
+   * D13) so the batch runner renders attempt 2 days later from the exact
+   * same logic, with no `Deno.cwd()` reads along the way.
    */
-  private async buildRequest(
+  private buildRequest(
     item: LLMWorkItem,
     _context: GenerationContext,
   ): Promise<LLMRequest> {
-    const previousAttempt =
-      item.previousAttempts[item.previousAttempts.length - 1];
-
-    const stage = item.attemptNumber === 1 ? "generation" : "fix";
-
-    // Both branches render their base prompt AND apply prompt injections
-    // (knowledge bank, system prompt overrides) through `src/llm/
-    // prompt-building.ts`, which the authoring dashboard also calls — spec
-    // §2b: an author calibrates against the prompt the bench actually sends,
-    // so a second lookalike pipeline is not allowed to exist.
-    let applied;
-    if (item.attemptNumber === 1 || !previousAttempt) {
-      // First attempt - render template with task description. Diagnose-task
-      // manifests reference `{{starter_code}}` in their prompt_template; the
-      // starter app lives at tasks/starter/<id>/ (Task 1's starter-code.ts)
-      // and is rendered in here so attempt 1 sees the buggy app to diagnose.
-      // Non-diagnose templates don't reference the placeholder, so a missing
-      // starter dir (starterCode undefined) is silently fine for them —
-      // buildGenerationPrompt only throws when the rendered template still
-      // contains the literal placeholder.
-      const starterCode = await loadStarterCode(
-        starterDirForTask(Deno.cwd(), item.taskManifest.id),
-      );
-      applied = await buildGenerationPrompt({
-        renderer: this.templateRenderer,
-        promptTemplate: item.taskManifest.prompt_template,
-        description: item.context.instructions,
-        taskId: item.taskManifest.id,
-        maxAttempts: item.taskManifest.max_attempts,
-        ...(starterCode !== undefined ? { starterCode } : {}),
-        taskPrompts: item.taskManifest.prompts,
-        cliOverrides: item.context.promptOverrides,
-        provider: item.llmProvider,
-        stage,
-      });
-    } else {
-      // Retry attempt - build fix prompt with errors
-      const errors = this.extractErrors(previousAttempt);
-      const basePrompt = buildFixPrompt({
-        attemptNumber: item.attemptNumber,
-        originalInstructions: item.context.instructions,
-        previousCode: retrySourceFor(previousAttempt),
-        errors,
-        // Restate attempt 1's return contract, so a changed-objects task is
-        // not told to resend the whole app on retry.
-        contract: usesObjectOverlay(item.taskManifest)
-          ? "changed-objects"
-          : "full-app",
-      });
-      applied = PromptInjectionResolver.resolveAndApply(
-        basePrompt,
-        undefined, // globalConfig.prompts - not needed here
-        item.taskManifest.prompts,
-        item.context.promptOverrides,
-        item.llmProvider,
-        stage,
-      );
-    }
-
-    const request: LLMRequest = {
-      prompt: applied.prompt,
-      temperature: item.context.temperature,
-      maxTokens: item.context.maxTokens,
-    };
-
-    // Include system prompt if injection resolver produced one
-    if (applied.systemPrompt) {
-      request.systemPrompt = applied.systemPrompt;
-    }
-
-    // Variant systemPrompt is the controlled A/B parameter - it takes
-    // precedence over task-level injection (`!== undefined`, not truthiness).
-    const vc = item.context.variantConfig;
-    if (vc?.systemPrompt !== undefined) {
-      request.systemPrompt = vc.systemPrompt;
-    }
-
-    return request;
-  }
-
-  /**
-   * Extract error messages from a previous attempt
-   * Note: compilationResult.errors are already included in failureReasons,
-   * so we only use failureReasons to avoid duplicates
-   */
-  private extractErrors(
-    attempt: {
-      compilationResult?: { errors: Array<{ message: string }> } | undefined;
-      failureReasons: string[];
-    },
-  ): string[] {
-    // failureReasons already contains formatted compilation errors
-    // (e.g., "file:line: message"), so don't add compilationResult.errors again
-    return [...attempt.failureReasons];
+    const prior = item.previousAttempts[item.previousAttempts.length - 1];
+    return renderLLMRequest({
+      context: item.context,
+      attemptNumber: item.attemptNumber,
+      ...(prior ? { prior } : {}),
+      inputs: renderInputsFor(item, {
+        templateDir: this.templateDir,
+        starterRoot: this.starterRoot,
+      }),
+      renderer: this.templateRenderer,
+    });
   }
 
   /**
