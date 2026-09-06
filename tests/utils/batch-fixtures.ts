@@ -12,8 +12,11 @@
  * caring about the settings snapshot's exact values.
  */
 import type {
+  BatchRecord,
   BatchRunState,
   ContainerEnvironmentSet,
+  ItemSummary,
+  TaskSummary,
 } from "../../src/batch/state.ts";
 import { STATE_SCHEMA_VERSION } from "../../src/batch/state.ts";
 import type { FrozenPromptInputs } from "../../src/parallel/shared/prompt-inputs.ts";
@@ -21,6 +24,8 @@ import { buildCanonicalSettings } from "../../shared/settings-hash.ts";
 import type { RenderedItem } from "../../src/batch/render.ts";
 import { bodyDigest, itemIdFor } from "../../src/batch/items.ts";
 import type { BatchItem } from "../../src/llm/batch/types.ts";
+import type { ExecutionAttempt } from "../../src/tasks/interfaces.ts";
+import { createMockExecutionAttempt } from "./test-helpers.ts";
 
 /** 64 hex chars: the shape every `frozen.*` digest field expects. */
 const DUMMY_DIGEST = "0".repeat(64);
@@ -148,4 +153,59 @@ export async function renderedItems(
 /** Wraps a chunk's items into a batch envelope for size/byte-length purposes. */
 export function wrap(items: BatchItem[]): unknown {
   return { requests: items };
+}
+
+/**
+ * A minimal, schema-valid `BatchRecord` for `src/batch/transitions.ts`
+ * tests: `handle.batchId: "b1"` by default, so `record({ state: "..." })`
+ * paired with `activeBatchIds: ["b1"]` links up without every test having
+ * to restate the handle.
+ */
+export function record(overrides: Partial<BatchRecord> = {}): BatchRecord {
+  const base: BatchRecord = {
+    wave: 1,
+    round: 0,
+    chunk: 0,
+    handle: { provider: "anthropic", batchId: "b1" },
+    submittedAt: "2026-09-06T00:00:00.000Z",
+    providerStatus: "processing",
+    rawCounts: {},
+    state: "processing",
+    itemIds: [],
+    collected: false,
+  };
+  return { ...base, ...overrides };
+}
+
+/**
+ * A minimal, schema-valid `TaskSummary` with a single `attempt1`
+ * `ItemSummary` in `state`/`ownerRound` (`round` set to the same value:
+ * a task fixture never models a resubmitted item still carrying its
+ * pre-resubmission round). `itemId` is a fresh random id per call so
+ * `nextStep` tests that need to assert on it (e.g. a `resubmit` step's
+ * `itemIds`) read it back off the returned `TaskSummary` rather than
+ * relying on a name derived from the object key the caller assigns it to.
+ */
+export function task(
+  state: ItemSummary["state"],
+  ownerRound: 0 | 1 = 0,
+): TaskSummary {
+  return {
+    attempt1: {
+      itemId: `item-${crypto.randomUUID()}`,
+      round: ownerRound,
+      ownerRound,
+      state,
+    },
+  };
+}
+
+/**
+ * A minimal, schema-valid `ExecutionAttempt` carrying only the `success`
+ * flag `src/batch/transitions.ts`'s wave-2 eligibility check reads
+ * (`!a.success && !a.infraSynthesized`, spec D10); every other field comes
+ * from {@link createMockExecutionAttempt}'s own defaults.
+ */
+export function attempt(success: boolean): ExecutionAttempt {
+  return createMockExecutionAttempt({ success });
 }

@@ -116,7 +116,12 @@ export interface EnvironmentManifest {
   bcch_use_pwsh_bc24: boolean;
 }
 
-async function gitFacts(
+/**
+ * Exported so `src/batch/drift.ts`'s D13 drift check (spec 4.6) recomputes
+ * the SAME git sha/dirty facts `buildEnvironmentManifest` embeds, rather
+ * than a second lookalike implementation of the two `git` invocations.
+ */
+export async function gitFacts(
   cwd: string,
 ): Promise<{ sha: string | null; dirty: boolean }> {
   try {

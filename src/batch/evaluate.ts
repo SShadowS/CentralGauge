@@ -169,7 +169,11 @@ async function evaluateResponded(
     ...(overlayBase !== undefined ? { overlayBase } : {}),
   });
 
-  const variantId = deps.requestedModel;
+  // Same slug form the sync bench uses for `variant.variantId`
+  // (`generateVariantId` in `src/llm/variant-types.ts`): vendor-prefixed,
+  // so compile-queue/health-monitor telemetry attributes batch work to the
+  // same identity a sync run of the same model would use.
+  const variantId = `${deps.provider}/${deps.requestedModel}`;
   const attemptStart = new Date(Date.now() - pricedResponse.duration);
 
   try {
