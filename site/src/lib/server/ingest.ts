@@ -1,20 +1,11 @@
-import { canonicalJSON } from "$lib/shared/canonical";
-import { sha256Hex } from "$lib/shared/hash";
+import { settingsHashOf } from "$lib/shared/settings-hash";
 import type { SettingsInput } from "$lib/shared/types";
 
 /**
  * Canonical hash of a settings profile. Used as the primary key in settings_profiles.
  */
 export async function settingsHash(settings: SettingsInput): Promise<string> {
-  const canonical = canonicalJSON({
-    temperature: settings.temperature ?? null,
-    max_attempts: settings.max_attempts ?? null,
-    max_tokens: settings.max_tokens ?? null,
-    prompt_version: settings.prompt_version ?? null,
-    bc_version: settings.bc_version ?? null,
-    extra_json: settings.extra_json ?? null,
-  });
-  return await sha256Hex(canonical);
+  return settingsHashOf(settings);
 }
 
 /**

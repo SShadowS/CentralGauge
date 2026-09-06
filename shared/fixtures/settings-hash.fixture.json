@@ -1,0 +1,7 @@
+{
+  "cases": [
+    { "name": "legacy null extras", "settings": { "temperature": 0, "max_attempts": 2, "max_tokens": 64000 }, "hash": "12bcd5a3123e1d0bc5a9b0e07dc62347e9a02139aa66ba7bd625d892068690b7" },
+    { "name": "legacy string extras", "settings": { "temperature": 0, "max_attempts": 2, "extra_json": "{\"thinking\":true}" }, "hash": "2e939d4c1767315ca377fd2a50d2783c980e5bb68c527dae9b463777787ab988" },
+    { "name": "batch profile", "settings": { "temperature": 0, "max_attempts": 2, "max_tokens": 64000, "prompt_version": null, "bc_version": null, "extra_json": "{\"continuation\":{\"enabled\":false,\"max\":0},\"empty_retry\":{\"enabled\":false,\"max\":0},\"endpoint\":\"/v1/messages\",\"fallback_policy\":\"unavailable\",\"infra_retries_per_attempt\":1,\"invocation_mode\":\"batch\",\"prompt_profile_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"provider_route\":\"anthropic\",\"thinking_budget\":null}" }, "hash": "473a25c710dfbe312ebea627fb96f65d7d58362b99793b884285ba7282154a8c" }
+  ]
+}
