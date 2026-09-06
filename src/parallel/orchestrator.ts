@@ -53,6 +53,10 @@ import type {
   InfraRetryRecord,
 } from "../tasks/interfaces.ts";
 import type { CompileWorkResult } from "./types.ts";
+import { buildCompileWorkItem } from "./shared/compile-work-item.ts";
+import { evaluateAttempt } from "./shared/evaluate-attempt.ts";
+import { createFailedAttempt as createFailedAttemptShared } from "./shared/failed-attempt.ts";
+import { finalizeTaskResult } from "./shared/finalize-task.ts";
 
 /**
  * Event listener type
@@ -821,16 +825,15 @@ export class ParallelBenchmarkOrchestrator {
     compileResult: CompileWorkResult;
     infraRetries: InfraRetryRecord[];
   }> {
-    const compileItem: CompileWorkItem = {
-      id: `compile_${executionId}_${attemptNumber}`,
-      llmWorkItemId: workItemId,
-      code: llmResult.code!,
-      context,
+    const compileItem: CompileWorkItem = buildCompileWorkItem({
+      executionId,
       attemptNumber,
+      workItemId,
+      context,
+      code: llmResult.code!,
       llmResponse: llmResult.llmResponse!,
       ...(overlayBase !== undefined ? { overlayBase } : {}),
-      createdAt: new Date(),
-    };
+    });
 
     // Build the work item ONCE; emit `compile_queued` ONCE per attempt. The
     // retry helper invokes the operation 1..(1+maxRetries) times, but the
@@ -913,7 +916,6 @@ export class ParallelBenchmarkOrchestrator {
     const context = await this.buildContext(manifest, variant, options);
 
     let success = false;
-    let finalScore = 0;
     let finalCode: string | undefined;
     let passedAttemptNumber = 0;
 
@@ -1000,96 +1002,21 @@ export class ParallelBenchmarkOrchestrator {
         success = true;
         finalCode = llmResult.code;
         passedAttemptNumber = attemptNumber;
-        finalScore = this.calculateFinalScore(attempt.score, attemptNumber);
         break;
       }
     }
 
-    const metrics = this.calculateAttemptMetrics(attempts, success, finalScore);
-    return this.buildTaskResult({
+    return finalizeTaskResult({
       taskId: manifest.id,
       executionId,
       context,
       attempts,
       success,
-      metrics,
       passedAttemptNumber,
       finalCode,
-      startTime,
-    });
-  }
-
-  /**
-   * Calculate final metrics from attempts
-   */
-  private calculateAttemptMetrics(
-    attempts: ExecutionAttempt[],
-    success: boolean,
-    currentScore: number,
-  ): { finalScore: number; totalTokensUsed: number; totalCost: number } {
-    let finalScore = currentScore;
-    // If never succeeded, calculate final score from best attempt
-    if (!success && attempts.length > 0) {
-      const bestScore = Math.max(...attempts.map((a) => a.score));
-      finalScore = bestScore * 0.5; // 50% penalty for never passing
-    }
-    return {
-      finalScore,
-      totalTokensUsed: attempts.reduce((sum, a) => sum + a.tokensUsed, 0),
-      totalCost: attempts.reduce((sum, a) => sum + a.cost, 0),
-    };
-  }
-
-  /**
-   * Options for building a task execution result
-   */
-  private buildTaskResult(options: {
-    taskId: string;
-    executionId: string;
-    context: TaskExecutionContext;
-    attempts: ExecutionAttempt[];
-    success: boolean;
-    metrics: { finalScore: number; totalTokensUsed: number; totalCost: number };
-    passedAttemptNumber: number;
-    finalCode: string | undefined;
-    startTime: number;
-  }): TaskExecutionResult {
-    const {
-      taskId,
-      executionId,
-      context,
-      attempts,
-      success,
-      metrics,
-      passedAttemptNumber,
-      finalCode,
-      startTime,
-    } = options;
-
-    const result: TaskExecutionResult = {
-      taskId,
-      executionId,
-      context,
-      attempts,
-      success,
-      finalScore: metrics.finalScore,
-      totalTokensUsed: metrics.totalTokensUsed,
-      totalCost: metrics.totalCost,
       totalDuration: Date.now() - startTime,
-      passedAttemptNumber,
-      successRate: success ? 1 / passedAttemptNumber : 0,
-      executedAt: new Date(),
       executedBy: "parallel-orchestrator",
-      environment: {
-        denoVersion: Deno.version.deno,
-        os: Deno.build.os,
-        arch: Deno.build.arch,
-      },
-    };
-    if (finalCode) {
-      result.finalCode = finalCode;
-    }
-    return result;
+    });
   }
 
   /**
@@ -1137,121 +1064,12 @@ export class ParallelBenchmarkOrchestrator {
     compileResult: import("./types.ts").CompileWorkResult,
     context: TaskExecutionContext,
   ): ExecutionAttempt {
-    const startTime = new Date(
-      Date.now() - llmResult.duration - compileResult.duration,
-    );
-    const endTime = new Date();
-
-    // Evaluate success
-    const compilationSuccess = compileResult.compilationResult.success;
-    // A task that expects tests (expected.testApp set) but came back with no
-    // testResult (tests never ran) must NOT default to "passed" — that would
-    // silently score infra gaps as model successes. Compile-only tasks keep
-    // the old "no tests configured, no test result" => true default.
-    const testSuccess = context.manifest.expected?.testApp
-      ? (compileResult.testResult?.success ?? false)
-      : (compileResult.testResult?.success ?? true);
-
-    // Mirror executor-v2's evaluateAttempt (src/tasks/executor-v2.ts) pattern
-    // pass/fail semantics exactly (benchmark-consistency rule): mustContain/
-    // mustNotContain must gate `success`, not just contribute to `score`.
-    const code = llmResult.code || "";
-    const requiredPatterns = context.manifest.expected.mustContain ?? [];
-    const missingPatterns = requiredPatterns.filter((pattern) =>
-      !code.includes(pattern)
-    );
-    const forbiddenPatterns = context.manifest.expected.mustNotContain ?? [];
-    const foundForbidden = forbiddenPatterns.filter((pattern) =>
-      code.includes(pattern)
-    );
-    const patternsSuccess = missingPatterns.length === 0 &&
-      foundForbidden.length === 0;
-
-    const success = compilationSuccess && testSuccess && patternsSuccess;
-
-    // Calculate score
-    const score = this.calculateScore(
-      compileResult.compilationResult,
-      compileResult.testResult,
-      llmResult.code || "",
-      context,
-    );
-
-    // Collect failure reasons
-    const failureReasons: string[] = [];
-    if (!compilationSuccess) {
-      failureReasons.push("Compilation failed");
-      for (const error of compileResult.compilationResult.errors) {
-        failureReasons.push(`  ${error.file}:${error.line}: ${error.message}`);
-      }
-    }
-    if (compileResult.testResult && !compileResult.testResult.success) {
-      failureReasons.push("Tests failed");
-      for (
-        const test of compileResult.testResult.results.filter((t) => !t.passed)
-      ) {
-        failureReasons.push(`  ${test.name}: ${test.error}`);
-      }
-    } else if (
-      context.manifest.expected?.testApp && !compileResult.testResult
-    ) {
-      failureReasons.push(
-        "Tests expected but no test result was produced",
-      );
-    }
-    if (missingPatterns.length > 0) {
-      failureReasons.push(
-        `Missing required patterns: ${missingPatterns.join(", ")}`,
-      );
-    }
-    if (foundForbidden.length > 0) {
-      failureReasons.push(
-        `Contains forbidden patterns: ${foundForbidden.join(", ")}`,
-      );
-    }
-
-    const attempt: ExecutionAttempt = {
+    return evaluateAttempt({
       attemptNumber,
-      containerName: compileResult.containerName,
-      startTime,
-      endTime,
-      prompt: llmResult.request?.prompt ?? context.instructions,
-      llmResponse: llmResult.llmResponse!,
-      extractedCode: llmResult.code || "",
-      candidateCode: compileResult.candidateCode,
-      codeLanguage: "al",
-      ...(llmResult.llmResponse?.providerFinishReason !== undefined
-        ? { providerFinishReason: llmResult.llmResponse.providerFinishReason }
-        : {}),
-      compilationResult: compileResult.compilationResult,
-      success,
-      score,
-      failureReasons,
-      tokensUsed: llmResult.llmResponse?.usage.totalTokens ?? 0,
-      cost: llmResult.llmResponse?.usage.estimatedCost ?? 0,
-      duration: llmResult.duration + compileResult.duration,
-      // Step-by-step timing
-      llmDuration: llmResult.duration,
-      compileDuration: compileResult.compileDuration,
-      ...(llmResult.abandonedGenerations
-        ? { abandonedGenerations: llmResult.abandonedGenerations }
-        : {}),
-    };
-    if (compileResult.testResult) {
-      attempt.testResult = compileResult.testResult;
-    }
-    if (compileResult.testDuration !== undefined) {
-      attempt.testDuration = compileResult.testDuration;
-    }
-    // Lift the QuarantinedMarker from the sibling field on CompileWorkResult
-    // onto the attempt itself so the OutcomeRecorder + dashboard bridge can
-    // skip attribution to the alerted container. Without this copy the
-    // marker is lost during attempt construction and the skip checks turn
-    // into no-ops (caught by GPT-5.5 review of the initial gap-closure).
-    if (compileResult.quarantined !== undefined) {
-      attempt.quarantined = compileResult.quarantined;
-    }
-    return attempt;
+      llmResult,
+      compileResult,
+      context,
+    });
   }
 
   /**
@@ -1269,113 +1087,7 @@ export class ParallelBenchmarkOrchestrator {
     attemptNumber: number,
     llmResult: LLMWorkResult | undefined,
   ): ExecutionAttempt {
-    const now = new Date();
-    const attempt: ExecutionAttempt = {
-      attemptNumber,
-      startTime: new Date(now.getTime() - (llmResult?.duration ?? 0)),
-      endTime: now,
-      prompt: llmResult?.request?.prompt ?? "",
-      llmResponse: llmResult?.llmResponse ?? {
-        content: "",
-        model: "unknown",
-        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-        duration: 0,
-        finishReason: "error",
-      },
-      extractedCode: "",
-      codeLanguage: "al",
-      success: false,
-      score: 0,
-      failureReasons: [llmResult?.error ?? "LLM call failed"],
-      tokensUsed: llmResult?.llmResponse?.usage.totalTokens ?? 0,
-      cost: llmResult?.llmResponse?.usage.estimatedCost ?? 0,
-      duration: llmResult?.duration ?? 0,
-      // Step timing: only LLM was attempted
-      llmDuration: llmResult?.duration ?? 0,
-      ...(llmResult?.abandonedGenerations
-        ? { abandonedGenerations: llmResult.abandonedGenerations }
-        : {}),
-      compileDuration: 0,
-    };
-    // Mirror LLMWorkResult.failureKind onto the attempt (Task 8 sets it on
-    // the pool result but never carried it further) so downstream matrix
-    // reporters can distinguish "empty response" from other extraction
-    // failures without string-matching failureReasons.
-    if (llmResult?.failureKind !== undefined) {
-      attempt.failureKind = llmResult.failureKind;
-    }
-    if (llmResult?.llmResponse?.providerFinishReason !== undefined) {
-      attempt.providerFinishReason = llmResult.llmResponse.providerFinishReason;
-    }
-    if (llmResult?.providerErrorCode !== undefined) {
-      attempt.providerErrorCode = llmResult.providerErrorCode;
-    }
-    return attempt;
-  }
-
-  /**
-   * Calculate score for an attempt
-   */
-  private calculateScore(
-    compilationResult: import("./types.ts").CompilationResult,
-    testResult: import("./types.ts").TestResult | undefined,
-    code: string,
-    context: TaskExecutionContext,
-  ): number {
-    let score = 0;
-    let maxScore = 0;
-
-    // Compilation (50 points)
-    maxScore += 50;
-    if (compilationResult.success) {
-      score += 50;
-    }
-
-    // Tests (30 points if configured)
-    if (context.manifest.expected.testApp) {
-      maxScore += 30;
-      if (testResult?.success) {
-        score += 30;
-      }
-    }
-
-    // Required patterns (10 points)
-    const requiredPatterns = context.manifest.expected.mustContain ?? [];
-    if (requiredPatterns.length > 0) {
-      maxScore += 10;
-      const allFound = requiredPatterns.every((pattern) =>
-        code.includes(pattern)
-      );
-      if (allFound) {
-        score += 10;
-      }
-    }
-
-    // Forbidden patterns (10 points)
-    const forbiddenPatterns = context.manifest.expected.mustNotContain ?? [];
-    if (forbiddenPatterns.length > 0) {
-      maxScore += 10;
-      const noneFound = !forbiddenPatterns.some((pattern) =>
-        code.includes(pattern)
-      );
-      if (noneFound) {
-        score += 10;
-      }
-    }
-
-    return maxScore > 0 ? (score / maxScore) * 100 : 0;
-  }
-
-  /**
-   * Calculate final score with attempt penalty
-   */
-  private calculateFinalScore(
-    attemptScore: number,
-    attemptNumber: number,
-  ): number {
-    // Penalty of 10 points per additional attempt
-    const penalty = (attemptNumber - 1) * 10;
-    return Math.max(0, attemptScore - penalty);
+    return createFailedAttemptShared(attemptNumber, llmResult);
   }
 
   /**

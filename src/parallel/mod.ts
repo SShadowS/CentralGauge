@@ -77,3 +77,7 @@ export {
   ParallelBenchmarkOrchestrator,
 } from "./orchestrator.ts";
 export type { ParallelBenchmarkOptions } from "./orchestrator.ts";
+
+// Pure shared units (scoring, gating, pricing, finalization) — used by both
+// the sync orchestrator and the future batch runner (spec D6).
+export * from "./shared/mod.ts";
