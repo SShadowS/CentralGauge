@@ -25,6 +25,7 @@ import type { LeaderboardQuery } from "../../src/lib/shared/api-types";
 
 const baseQuery: LeaderboardQuery = {
   set: "current",
+  mode: "sync",
   tier: "all",
   difficulty: null,
   family: null,
@@ -149,7 +150,9 @@ describe("computeDenominator (A.4)", () => {
   });
 
   it("returns 0 when hash does not exist", async () => {
-    const n = await computeDenominator(env.DB, { taskSetHash: "does-not-exist" });
+    const n = await computeDenominator(env.DB, {
+      taskSetHash: "does-not-exist",
+    });
     expect(n).toBe(0);
   });
 
@@ -364,10 +367,20 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
       .bind(
-        "r-hash", HASH, 1, "s", "rig",
-        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
-        1, new Uint8Array([0]),
+        "r-hash",
+        HASH,
+        1,
+        "s",
+        "rig",
+        "2026-04-01T00:00:00Z",
+        "2026-04-01T01:00:00Z",
+        "completed",
+        "claimed",
+        "v1",
+        "sig",
+        "2026-04-01T00:00:00Z",
+        1,
+        new Uint8Array([0]),
       )
       .run();
     await insertResult("r-hash", "t1", 1, 1);
@@ -401,7 +414,9 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     const HASH = "c".repeat(64);
     await env.DB.prepare(
       `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES (?,?,10,0)`,
-    ).bind(HASH, "2026-01-01T00:00:00Z").run();
+    )
+      .bind(HASH, "2026-01-01T00:00:00Z")
+      .run();
 
     const capturedSql: string[] = [];
     const capturingDb = {
@@ -414,7 +429,7 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     await computeLeaderboard(capturingDb, { ...baseQuery, set: HASH });
 
     const mainQuerySql = capturedSql.find((sql) =>
-      sql.includes("tasks_passed_attempt_1")
+      sql.includes("tasks_passed_attempt_1"),
     );
     expect(mainQuerySql).toBeDefined();
     // The hash must NOT be string-interpolated into the SQL text.
@@ -434,28 +449,38 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     const HASH = "d".repeat(64);
     await env.DB.prepare(
       `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES (?,?,10,0)`,
-    ).bind(HASH, "2026-01-01T00:00:00Z").run();
+    )
+      .bind(HASH, "2026-01-01T00:00:00Z")
+      .run();
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
       .bind(
-        "r-hash-order", HASH, 1, "s", "rig",
-        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
-        1, new Uint8Array([0]),
+        "r-hash-order",
+        HASH,
+        1,
+        "s",
+        "rig",
+        "2026-04-01T00:00:00Z",
+        "2026-04-01T01:00:00Z",
+        "completed",
+        "claimed",
+        "v1",
+        "sig",
+        "2026-04-01T00:00:00Z",
+        1,
+        new Uint8Array([0]),
       )
       .run();
     await insertResult("r-hash-order", "t1", 1, 1);
 
-    for (
-      const sort of [
-        "auc_2",
-        "pass_at_n",
-        "pass_at_1",
-        "cost_per_pass_usd",
-      ] as const
-    ) {
+    for (const sort of [
+      "auc_2",
+      "pass_at_n",
+      "pass_at_1",
+      "cost_per_pass_usd",
+    ] as const) {
       const rows = await computeLeaderboard(env.DB, {
         ...baseQuery,
         set: HASH,
@@ -484,7 +509,9 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
   ): Promise<void> {
     await env.DB.prepare(
       `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES (?,?,10,0)`,
-    ).bind(hash, "2026-01-01T00:00:00Z").run();
+    )
+      .bind(hash, "2026-01-01T00:00:00Z")
+      .run();
     // 5 easy + 5 hard tasks under THIS specific hash (not the 'aaaa'
     // scaffold hash used elsewhere) so the category filter has something
     // real to scope against.
@@ -504,17 +531,29 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
       await env.DB.prepare(
         `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
          VALUES (?,?,?,?,?,'{}')`,
-      ).bind(hash, taskId, `hash-${taskId}`, difficulty, categoryId).run();
+      )
+        .bind(hash, taskId, `hash-${taskId}`, difficulty, categoryId)
+        .run();
     }
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
       .bind(
-        runId, hash, 1, "s", "rig",
-        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
-        1, new Uint8Array([0]),
+        runId,
+        hash,
+        1,
+        "s",
+        "rig",
+        "2026-04-01T00:00:00Z",
+        "2026-04-01T01:00:00Z",
+        "completed",
+        "claimed",
+        "v1",
+        "sig",
+        "2026-04-01T00:00:00Z",
+        1,
+        new Uint8Array([0]),
       )
       .run();
   }
@@ -852,7 +891,13 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
         `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
          VALUES (?,1,?,?,?,?)`,
       )
-        .bind(i, `M-${String.fromCharCode(64 + i)}`, `m-${i}`, `Model ${String.fromCharCode(64 + i)}`, i)
+        .bind(
+          i,
+          `M-${String.fromCharCode(64 + i)}`,
+          `m-${i}`,
+          `Model ${String.fromCharCode(64 + i)}`,
+          i,
+        )
         .run();
       await env.DB.prepare(
         `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
@@ -863,16 +908,29 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
     }
 
     // Helper: insert a run for a specific model_id.
-    async function insertRunForModel(runId: string, modelId: number): Promise<void> {
+    async function insertRunForModel(
+      runId: string,
+      modelId: number,
+    ): Promise<void> {
       await env.DB.prepare(
         `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
         .bind(
-          runId, "aaaa", modelId, "s", "rig",
-          "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-          "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
-          1, new Uint8Array([0]),
+          runId,
+          "aaaa",
+          modelId,
+          "s",
+          "rig",
+          "2026-04-01T00:00:00Z",
+          "2026-04-01T01:00:00Z",
+          "completed",
+          "claimed",
+          "v1",
+          "sig",
+          "2026-04-01T00:00:00Z",
+          1,
+          new Uint8Array([0]),
         )
         .run();
     }
@@ -892,7 +950,17 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms)
          VALUES (?,?,?,?,?,1,1,?,?,?,?)`,
       )
-        .bind(runId, taskId, attempt, passed, score, passed, tokensIn, tokensOut, llmDurationMs)
+        .bind(
+          runId,
+          taskId,
+          attempt,
+          passed,
+          score,
+          passed,
+          tokensIn,
+          tokensOut,
+          llmDurationMs,
+        )
         .run();
     }
 
@@ -929,17 +997,26 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
       latencyMs: number;
     }> = [
       { id: 1, passes: 1, score: 0.5, tokensIn: 1000, latencyMs: 500 },
-      { id: 2, passes: 8, score: 0.3, tokensIn: 100,  latencyMs: 100 },
-      { id: 3, passes: 3, score: 0.8, tokensIn: 500,  latencyMs: 300 },
-      { id: 4, passes: 5, score: 0.4, tokensIn: 200,  latencyMs: 800 },
-      { id: 5, passes: 2, score: 0.9, tokensIn: 150,  latencyMs: 200 },
+      { id: 2, passes: 8, score: 0.3, tokensIn: 100, latencyMs: 100 },
+      { id: 3, passes: 3, score: 0.8, tokensIn: 500, latencyMs: 300 },
+      { id: 4, passes: 5, score: 0.4, tokensIn: 200, latencyMs: 800 },
+      { id: 5, passes: 2, score: 0.9, tokensIn: 150, latencyMs: 200 },
     ];
 
     for (const m of models) {
       const runId = `r-${m.id}`;
       await insertRunForModel(runId, m.id);
       for (let i = 1; i <= m.passes; i++) {
-        await insertResultFull(runId, `t${i}`, 1, 1, m.score, m.tokensIn, 50, m.latencyMs);
+        await insertResultFull(
+          runId,
+          `t${i}`,
+          1,
+          1,
+          m.score,
+          m.tokensIn,
+          50,
+          m.latencyMs,
+        );
       }
     }
   });
@@ -1069,7 +1146,9 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
        VALUES (?,?,1,1,1.0,1,1,1,10000,50)`,
-    ).bind("r-ma", "e1").run();
+    )
+      .bind("r-ma", "e1")
+      .run();
 
     // M-B (id=2): passes 3 easy tasks with LOW token cost.
     //   tokens_in=100, tokens_out=10 → cost per result = (100*1 + 10*2)/1e6 = 120/1e6
@@ -1085,12 +1164,16 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES ('r-mb','aaaa',2,'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
-    ).bind(new Uint8Array([0])).run();
+    )
+      .bind(new Uint8Array([0]))
+      .run();
     for (const tid of ["e1", "e2", "e3"]) {
       await env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
          VALUES (?,?,1,1,1.0,1,1,1,100,10)`,
-      ).bind("r-mb", tid).run();
+      )
+        .bind("r-mb", tid)
+        .run();
     }
 
     // Expected ordering with category=easy, sort=cost_per_pass_usd:asc:
@@ -1132,12 +1215,20 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
         `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
          VALUES (?,1,?,?,?,?)`,
       )
-        .bind(i, `M-${String.fromCharCode(64 + i)}`, `m-${i}`, `Model ${String.fromCharCode(64 + i)}`, i)
+        .bind(
+          i,
+          `M-${String.fromCharCode(64 + i)}`,
+          `m-${i}`,
+          `Model ${String.fromCharCode(64 + i)}`,
+          i,
+        )
         .run();
       await env.DB.prepare(
         `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
          VALUES ('v1',?,1.0,2.0,'2026-01-01')`,
-      ).bind(i).run();
+      )
+        .bind(i)
+        .run();
     }
 
     // Each model gets one result with a distinct llm_duration_ms.
@@ -1149,16 +1240,28 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
         .bind(
-          runId, "aaaa", i, "s", "rig",
-          "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-          "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
-          1, new Uint8Array([0]),
+          runId,
+          "aaaa",
+          i,
+          "s",
+          "rig",
+          "2026-04-01T00:00:00Z",
+          "2026-04-01T01:00:00Z",
+          "completed",
+          "claimed",
+          "v1",
+          "sig",
+          "2026-04-01T00:00:00Z",
+          1,
+          new Uint8Array([0]),
         )
         .run();
       await env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms)
          VALUES (?,?,1,1,1.0,1,1,1,100,50,?)`,
-      ).bind(runId, `t-lat-${i}`, i * 100).run();
+      )
+        .bind(runId, `t-lat-${i}`, i * 100)
+        .run();
     }
 
     // Request limit=3, sort=latency_p95_ms:desc (highest latency first).
@@ -1241,7 +1344,10 @@ describe("filtered leaderboard aggregates use scope-aware metrics (B.3)", () => 
     const maEasy = rowsEasy.find((r) => r.model.slug === "M-A");
 
     expect(maAll, "M-A row should be present in whole-set query").toBeDefined();
-    expect(maEasy, "M-A row should be present in category=easy query").toBeDefined();
+    expect(
+      maEasy,
+      "M-A row should be present in category=easy query",
+    ).toBeDefined();
 
     const ciAll = maAll!.pass_rate_ci;
     const ciEasy = maEasy!.pass_rate_ci;
@@ -1309,7 +1415,10 @@ describe("filtered leaderboard aggregates use scope-aware metrics (B.3)", () => 
     expect(maEasy.cost_per_pass_usd).not.toBeNull();
     // Whole-set includes the expensive hard pass, raising cost_per_pass.
     // Easy-scoped excludes it, so cost_per_pass is much lower.
-    expect(maEasy.cost_per_pass_usd!).not.toBeCloseTo(maAll.cost_per_pass_usd!, 4);
+    expect(maEasy.cost_per_pass_usd!).not.toBeCloseTo(
+      maAll.cost_per_pass_usd!,
+      4,
+    );
     // Directional sanity: easy-only cost is lower (no expensive hard pass).
     expect(maEasy.cost_per_pass_usd!).toBeLessThan(maAll.cost_per_pass_usd!);
   });
@@ -1337,13 +1446,18 @@ describe("filtered leaderboard aggregates use scope-aware metrics (B.3)", () => 
     await seedScaffold();
 
     // Seed 99 task IDs for claimed run (use task_set_hash='aaaa', no category required).
-    const claimedTaskIds: string[] = Array.from({ length: 99 }, (_, i) => `lat-t${i + 1}`);
+    const claimedTaskIds: string[] = Array.from(
+      { length: 99 },
+      (_, i) => `lat-t${i + 1}`,
+    );
     // Insert tasks without a category (category_id=null is allowed by the schema).
     for (const tid of claimedTaskIds) {
       await env.DB.prepare(
         `INSERT OR IGNORE INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
          VALUES ('aaaa',?,?,?,'1','{}')`,
-      ).bind(tid, `hash-${tid}`, "easy").run();
+      )
+        .bind(tid, `hash-${tid}`, "easy")
+        .run();
     }
     // Claimed run: 99 low-latency results.
     await insertRun("r-claimed"); // default tier='claimed'
@@ -1351,7 +1465,9 @@ describe("filtered leaderboard aggregates use scope-aware metrics (B.3)", () => 
       await env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms)
          VALUES ('r-claimed',?,1,1,1.0,1,1,1,100,50,100)`,
-      ).bind(tid).run();
+      )
+        .bind(tid)
+        .run();
     }
 
     // Verified run: 1 task, high latency.
@@ -1359,12 +1475,16 @@ describe("filtered leaderboard aggregates use scope-aware metrics (B.3)", () => 
     await env.DB.prepare(
       `INSERT OR IGNORE INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
        VALUES ('aaaa',?,?,?,'1','{}')`,
-    ).bind(verifiedTaskId, `hash-${verifiedTaskId}`, "easy").run();
+    )
+      .bind(verifiedTaskId, `hash-${verifiedTaskId}`, "easy")
+      .run();
     await insertRun("r-verified", "verified");
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms)
        VALUES ('r-verified',?,1,1,1.0,1,1,1,100,50,900)`,
-    ).bind(verifiedTaskId).run();
+    )
+      .bind(verifiedTaskId)
+      .run();
 
     // tier=all: 99 * 100ms + 1 * 900ms = 100 data points; p95 ≈ 100ms
     const rowsAll = await computeLeaderboard(env.DB, baseQuery);
@@ -1462,13 +1582,17 @@ describe("pass_at_n tiebreak chain (production hotfix)", () => {
     await seedScaffold();
 
     // Override task_set 'aaaa' with task_count=10.
-    await env.DB.prepare(`UPDATE task_sets SET task_count = 10 WHERE hash = 'aaaa'`).run();
+    await env.DB.prepare(
+      `UPDATE task_sets SET task_count = 10 WHERE hash = 'aaaa'`,
+    ).run();
 
     // Insert 10 tasks t1..t10.
     for (let i = 1; i <= 10; i++) {
       await env.DB.prepare(
         `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json) VALUES ('aaaa',?,?, 'easy','{}')`,
-      ).bind(`t${i}`, `h${i}`).run();
+      )
+        .bind(`t${i}`, `h${i}`)
+        .run();
     }
 
     // Three models with reversed m.id ordering vs pass_at_1 ordering.
@@ -1482,39 +1606,47 @@ describe("pass_at_n tiebreak chain (production hotfix)", () => {
       await env.DB.prepare(
         `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
          VALUES (?,1,?,?,?,1)`,
-      ).bind(s.id, s.slug, `m-${s.id}`, s.slug).run();
+      )
+        .bind(s.id, s.slug, `m-${s.id}`, s.slug)
+        .run();
       await env.DB.prepare(
         `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
          VALUES ('v1',?,1.0,2.0,'2026-01-01')`,
-      ).bind(s.id).run();
+      )
+        .bind(s.id)
+        .run();
 
       const runId = `run-${s.id}`;
       await env.DB.prepare(
         `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      ).bind(
-        runId,
-        "aaaa",
-        s.id,
-        "s",
-        "rig",
-        "2026-04-01T00:00:00Z",
-        "2026-04-01T01:00:00Z",
-        "completed",
-        "claimed",
-        "v1",
-        "sig",
-        "2026-04-01T00:00:00Z",
-        1,
-        new Uint8Array([0]),
-      ).run();
+      )
+        .bind(
+          runId,
+          "aaaa",
+          s.id,
+          "s",
+          "rig",
+          "2026-04-01T00:00:00Z",
+          "2026-04-01T01:00:00Z",
+          "completed",
+          "claimed",
+          "v1",
+          "sig",
+          "2026-04-01T00:00:00Z",
+          1,
+          new Uint8Array([0]),
+        )
+        .run();
 
       // attempt-1 passes (p1)
       for (let i = 0; i < s.p1; i++) {
         await env.DB.prepare(
           `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
            VALUES (?,?,1,1,1.0,1,1,1,100,50)`,
-        ).bind(runId, `t${i + 1}`).run();
+        )
+          .bind(runId, `t${i + 1}`)
+          .run();
       }
       // attempt-2-only passes (p2only): attempt 1 fails, attempt 2 passes
       for (let i = 0; i < s.p2only; i++) {
@@ -1522,11 +1654,15 @@ describe("pass_at_n tiebreak chain (production hotfix)", () => {
         await env.DB.prepare(
           `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
            VALUES (?,?,1,0,0.0,0,1,0,100,50)`,
-        ).bind(runId, taskId).run();
+        )
+          .bind(runId, taskId)
+          .run();
         await env.DB.prepare(
           `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
            VALUES (?,?,2,1,1.0,1,1,1,100,50)`,
-        ).bind(runId, taskId).run();
+        )
+          .bind(runId, taskId)
+          .run();
       }
     }
   });
@@ -1541,7 +1677,9 @@ describe("pass_at_n tiebreak chain (production hotfix)", () => {
 
   it("all three models share pass_at_n=0.5 (tied at primary)", async () => {
     const rows = await computeLeaderboard(env.DB, baseQuery);
-    const subset = rows.filter((r) => ["M-HIGH", "M-MID", "M-LOW"].includes(r.model.slug));
+    const subset = rows.filter((r) =>
+      ["M-HIGH", "M-MID", "M-LOW"].includes(r.model.slug),
+    );
     for (const r of subset) {
       expect(r.pass_at_n).toBeCloseTo(0.5, 6);
     }
@@ -1576,7 +1714,9 @@ describe("auc_2 SQL ORDER BY sort (Task 4)", () => {
       await env.DB.prepare(
         `INSERT OR IGNORE INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json)
          VALUES ('aaaa',?,?,'easy','{}')`,
-      ).bind(`ta${i}`, `ha${i}`).run();
+      )
+        .bind(`ta${i}`, `ha${i}`)
+        .run();
     }
 
     // Three models with reversed m.id ordering vs auc_2 ordering so that a
@@ -1584,38 +1724,56 @@ describe("auc_2 SQL ORDER BY sort (Task 4)", () => {
     // M-FIRST  (highest auc_2=0.80) gets the LOWEST m.id so m.id-DESC would
     // put it last — if the test still passes we know SQL auc_2 sort is active.
     const seeds = [
-      { id: 100, slug: "M-FIRST",  p1: 8, p2only: 0 },
+      { id: 100, slug: "M-FIRST", p1: 8, p2only: 0 },
       { id: 200, slug: "M-SECOND", p1: 4, p2only: 4 },
-      { id: 300, slug: "M-THIRD",  p1: 0, p2only: 8 },
+      { id: 300, slug: "M-THIRD", p1: 0, p2only: 8 },
     ];
 
     for (const s of seeds) {
       await env.DB.prepare(
         `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
          VALUES (?,1,?,?,?,1)`,
-      ).bind(s.id, s.slug, `m-${s.id}`, s.slug).run();
+      )
+        .bind(s.id, s.slug, `m-${s.id}`, s.slug)
+        .run();
       await env.DB.prepare(
         `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
          VALUES ('v1',?,1.0,2.0,'2026-01-01')`,
-      ).bind(s.id).run();
+      )
+        .bind(s.id)
+        .run();
 
       const runId = `run-auc2-${s.id}`;
       await env.DB.prepare(
         `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      ).bind(
-        runId, "aaaa", s.id, "s", "rig",
-        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
-        1, new Uint8Array([0]),
-      ).run();
+      )
+        .bind(
+          runId,
+          "aaaa",
+          s.id,
+          "s",
+          "rig",
+          "2026-04-01T00:00:00Z",
+          "2026-04-01T01:00:00Z",
+          "completed",
+          "claimed",
+          "v1",
+          "sig",
+          "2026-04-01T00:00:00Z",
+          1,
+          new Uint8Array([0]),
+        )
+        .run();
 
       // attempt-1 passes
       for (let i = 0; i < s.p1; i++) {
         await env.DB.prepare(
           `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
            VALUES (?,?,1,1,1.0,1,1,1,100,50)`,
-        ).bind(runId, `ta${i + 1}`).run();
+        )
+          .bind(runId, `ta${i + 1}`)
+          .run();
       }
       // attempt-2-only passes: attempt 1 fails, attempt 2 passes
       for (let i = 0; i < s.p2only; i++) {
@@ -1623,11 +1781,15 @@ describe("auc_2 SQL ORDER BY sort (Task 4)", () => {
         await env.DB.prepare(
           `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
            VALUES (?,?,1,0,0.0,0,1,0,100,50)`,
-        ).bind(runId, taskId).run();
+        )
+          .bind(runId, taskId)
+          .run();
         await env.DB.prepare(
           `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
            VALUES (?,?,2,1,1.0,1,1,1,100,50)`,
-        ).bind(runId, taskId).run();
+        )
+          .bind(runId, taskId)
+          .run();
       }
     }
   });
@@ -1672,13 +1834,13 @@ describe("auc_2 SQL ORDER BY sort (Task 4)", () => {
       sort: "auc_2",
       direction: "desc",
     });
-    const first  = rows.find((r) => r.model.slug === "M-FIRST")!;
+    const first = rows.find((r) => r.model.slug === "M-FIRST")!;
     const second = rows.find((r) => r.model.slug === "M-SECOND")!;
-    const third  = rows.find((r) => r.model.slug === "M-THIRD")!;
+    const third = rows.find((r) => r.model.slug === "M-THIRD")!;
     // auc_2 = (2*p1 + p2_only) / (2 * denominator)
-    expect(first.auc_2).toBeCloseTo(16 / 20, 6);  // (2*8+0)/(2*10)
+    expect(first.auc_2).toBeCloseTo(16 / 20, 6); // (2*8+0)/(2*10)
     expect(second.auc_2).toBeCloseTo(12 / 20, 6); // (2*4+4)/(2*10)
-    expect(third.auc_2).toBeCloseTo(8  / 20, 6);  // (2*0+8)/(2*10)
+    expect(third.auc_2).toBeCloseTo(8 / 20, 6); // (2*0+8)/(2*10)
   });
 });
 
@@ -1752,20 +1914,38 @@ describe("open_weight on leaderboard rows (Phase 3 Task 3)", () => {
     ]);
 
     // One run + one result per model so each appears on the leaderboard.
-    for (const [runId, modelId] of [["r1", 1], ["r2", 2], ["r3", 3]] as const) {
+    for (const [runId, modelId] of [
+      ["r1", 1],
+      ["r2", 2],
+      ["r3", 3],
+    ] as const) {
       await env.DB.prepare(
         `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      ).bind(
-        runId, "aaaa", modelId, "s", "rig",
-        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
-        1, new Uint8Array([0]),
-      ).run();
+      )
+        .bind(
+          runId,
+          "aaaa",
+          modelId,
+          "s",
+          "rig",
+          "2026-04-01T00:00:00Z",
+          "2026-04-01T01:00:00Z",
+          "completed",
+          "claimed",
+          "v1",
+          "sig",
+          "2026-04-01T00:00:00Z",
+          1,
+          new Uint8Array([0]),
+        )
+        .run();
       await env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
          VALUES (?,?,1,1,1.0,1,1,1,100,50)`,
-      ).bind(runId, `t-${runId}`).run();
+      )
+        .bind(runId, `t-${runId}`)
+        .run();
     }
   });
 
@@ -1872,25 +2052,46 @@ describe("openness filter (Phase 3 Task 4)", () => {
     ]);
 
     // One run + one result per model so each appears on the leaderboard.
-    for (const [runId, modelId] of [["r1", 1], ["r2", 2], ["r3", 3]] as const) {
+    for (const [runId, modelId] of [
+      ["r1", 1],
+      ["r2", 2],
+      ["r3", 3],
+    ] as const) {
       await env.DB.prepare(
         `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      ).bind(
-        runId, "aaaa", modelId, "s", "rig",
-        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
-        1, new Uint8Array([0]),
-      ).run();
+      )
+        .bind(
+          runId,
+          "aaaa",
+          modelId,
+          "s",
+          "rig",
+          "2026-04-01T00:00:00Z",
+          "2026-04-01T01:00:00Z",
+          "completed",
+          "claimed",
+          "v1",
+          "sig",
+          "2026-04-01T00:00:00Z",
+          1,
+          new Uint8Array([0]),
+        )
+        .run();
       await env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
          VALUES (?,?,1,1,1.0,1,1,1,100,50)`,
-      ).bind(runId, `t-${runId}`).run();
+      )
+        .bind(runId, `t-${runId}`)
+        .run();
     }
   });
 
   it("openness=null returns all three models (open, proprietary, and null-openness)", async () => {
-    const rows = await computeLeaderboard(env.DB, { ...baseQuery, openness: null });
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      openness: null,
+    });
     const slugs = rows.map((r) => r.model.slug).sort();
     expect(slugs).toContain("M-OPEN");
     expect(slugs).toContain("M-PROP");
@@ -1899,14 +2100,20 @@ describe("openness filter (Phase 3 Task 4)", () => {
   });
 
   it("openness='open' returns ONLY the open-weight model (excludes proprietary AND null)", async () => {
-    const rows = await computeLeaderboard(env.DB, { ...baseQuery, openness: "open" });
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      openness: "open",
+    });
     expect(rows).toHaveLength(1);
     expect(rows[0].model.slug).toBe("M-OPEN");
     expect(rows[0].open_weight).toBe(true);
   });
 
   it("openness='proprietary' returns ONLY the proprietary model (excludes open AND null)", async () => {
-    const rows = await computeLeaderboard(env.DB, { ...baseQuery, openness: "proprietary" });
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      openness: "proprietary",
+    });
     expect(rows).toHaveLength(1);
     expect(rows[0].model.slug).toBe("M-PROP");
     expect(rows[0].open_weight).toBe(false);
@@ -1916,7 +2123,10 @@ describe("openness filter (Phase 3 Task 4)", () => {
     // M-OPEN has exactly 1 result that passed on attempt 1.
     // With openness='open', pass_at_n must still be 1/10 = 0.1 (strict).
     // If subquery mirroring were incorrectly applied it could corrupt the count.
-    const rows = await computeLeaderboard(env.DB, { ...baseQuery, openness: "open" });
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      openness: "open",
+    });
     expect(rows).toHaveLength(1);
     const row = rows[0];
     expect(row.tasks_passed_attempt_1).toBe(1);
@@ -1959,7 +2169,10 @@ describe("cost includes cache-read/cache-write tokens", () => {
        VALUES ('run-cache','t1',1,1,1.0,1,1,1,1000,200,4000,100)`,
     ).run();
 
-    const rows = await computeLeaderboard(env.DB, { ...baseQuery, sort: "avg_cost_usd" });
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      sort: "avg_cost_usd",
+    });
     expect(rows).toHaveLength(1);
     // Pre-fix (input+output only) this was 1400/1e6 = 0.0014 — the cache terms
     // (3000/1e6) were silently dropped. Asserting 0.0044 locks the fix in.
@@ -1982,7 +2195,10 @@ describe("cost includes cache-read/cache-write tokens", () => {
        VALUES ('run-null-cache','t1',1,1,1.0,1,1,1,1000,200,4000,100)`,
     ).run();
 
-    const rows = await computeLeaderboard(env.DB, { ...baseQuery, sort: "avg_cost_usd" });
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      sort: "avg_cost_usd",
+    });
     expect(rows).toHaveLength(1);
     expect(rows[0].avg_cost_usd).not.toBeNull();
     expect(rows[0].avg_cost_usd).toBeCloseTo(0.0014, 9);
@@ -2046,12 +2262,16 @@ describe("fallback_count on leaderboard rows (Task 7)", () => {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES ('run-none','aaaa',2,'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
-    ).bind(new Uint8Array([0])).run();
+    )
+      .bind(new Uint8Array([0]))
+      .run();
     // M-FB run in the OTHER (non-current) set.
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES ('run-other',?,1,'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
-    ).bind(OTHER_HASH, new Uint8Array([0])).run();
+    )
+      .bind(OTHER_HASH, new Uint8Array([0]))
+      .run();
 
     await env.DB.batch([
       // M-FB, t1: served by a fallback model.

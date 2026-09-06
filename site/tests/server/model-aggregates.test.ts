@@ -113,7 +113,10 @@ describe("computeModelAggregates", () => {
   });
 
   it("returns a single model aggregate", async () => {
-    const out = await computeModelAggregates(env.DB, { modelIds: [1] });
+    const out = await computeModelAggregates(env.DB, {
+      mode: "sync",
+      modelIds: [1],
+    });
     expect(out.size).toBe(1);
     const a = out.get(1);
     expect(a).toBeDefined();
@@ -129,7 +132,10 @@ describe("computeModelAggregates", () => {
   });
 
   it("returns multiple model aggregates in one query", async () => {
-    const out = await computeModelAggregates(env.DB, { modelIds: [1, 2, 3] });
+    const out = await computeModelAggregates(env.DB, {
+      mode: "sync",
+      modelIds: [1, 2, 3],
+    });
     expect(out.size).toBeLessThanOrEqual(3);
     for (const v of out.values()) {
       expect(typeof v.run_count).toBe("number");
@@ -137,8 +143,12 @@ describe("computeModelAggregates", () => {
   });
 
   it("current-task-set filter narrows results", async () => {
-    const all = await computeModelAggregates(env.DB, { modelIds: [1] });
+    const all = await computeModelAggregates(env.DB, {
+      mode: "sync",
+      modelIds: [1],
+    });
     const cur = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [1],
       taskSetCurrent: true,
     });
@@ -151,12 +161,16 @@ describe("computeModelAggregates", () => {
   });
 
   it("omits latency_p50_ms by default (null)", async () => {
-    const out = await computeModelAggregates(env.DB, { modelIds: [1] });
+    const out = await computeModelAggregates(env.DB, {
+      mode: "sync",
+      modelIds: [1],
+    });
     expect(out.get(1)?.latency_p50_ms).toBeNull();
   });
 
   it("computes latency_p50_ms when includeLatencyP50 is set", async () => {
     const out = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [1],
       includeLatencyP50: true,
     });
@@ -169,6 +183,7 @@ describe("computeModelAggregates", () => {
   it("latency_p50_ms median of even-length set averages two middle values", async () => {
     // Restrict to current task set (model 1 has only r1's two results: 600, 1200)
     const out = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [1],
       taskSetCurrent: true,
       includeLatencyP50: true,
@@ -181,6 +196,7 @@ describe("computeModelAggregates", () => {
     // model 1, taskSetCurrent: 1 run (r1), 2 attempt-1 results: easy/a passed,
     // hard/b failed (no attempt=2). Expected: distinct=2, a1=1, a2only=0.
     const out = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [1],
       taskSetCurrent: true,
     });
@@ -191,12 +207,14 @@ describe("computeModelAggregates", () => {
     expect(a!.tasks_passed_attempt_2_only).toBe(0);
     expect(a!.pass_at_n).toBeCloseTo(0.5, 6);
     // Invariant
-    expect(a!.tasks_passed_attempt_1 + a!.tasks_passed_attempt_2_only)
-      .toBeLessThanOrEqual(a!.tasks_attempted_distinct);
+    expect(
+      a!.tasks_passed_attempt_1 + a!.tasks_passed_attempt_2_only,
+    ).toBeLessThanOrEqual(a!.tasks_attempted_distinct);
   });
 
   it("settings_suffix renders when all runs share one settings_hash", async () => {
     const out = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [1],
       taskSetCurrent: true,
     });
@@ -258,26 +276,46 @@ async function seedB1(): Promise<void> {
   ]);
   // Seed tasks: 5 easy + 5 hard
   for (const [tid, diff, catId] of [
-    ["e1", "easy", 1], ["e2", "easy", 1], ["e3", "easy", 1],
-    ["e4", "easy", 1], ["e5", "easy", 1],
-    ["h1", "hard", 2], ["h2", "hard", 2], ["h3", "hard", 2],
-    ["h4", "hard", 2], ["h5", "hard", 2],
+    ["e1", "easy", 1],
+    ["e2", "easy", 1],
+    ["e3", "easy", 1],
+    ["e4", "easy", 1],
+    ["e5", "easy", 1],
+    ["h1", "hard", 2],
+    ["h2", "hard", 2],
+    ["h3", "hard", 2],
+    ["h4", "hard", 2],
+    ["h5", "hard", 2],
   ] as [string, string, number][]) {
     await env.DB.prepare(
       `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
        VALUES ('aaaa',?,?,?,?,'{}')`,
-    ).bind(tid, `h-${tid}`, diff, catId).run();
+    )
+      .bind(tid, `h-${tid}`, diff, catId)
+      .run();
   }
   // Insert run rb1 for M-A in task_set 'aaaa'
   await env.DB.prepare(
     `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).bind(
-    "rb1", "aaaa", MA_MODEL_ID, "s", "rig",
-    "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-    "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
-    1, new Uint8Array([0]),
-  ).run();
+  )
+    .bind(
+      "rb1",
+      "aaaa",
+      MA_MODEL_ID,
+      "s",
+      "rig",
+      "2026-04-01T00:00:00Z",
+      "2026-04-01T01:00:00Z",
+      "completed",
+      "claimed",
+      "v1",
+      "sig",
+      "2026-04-01T00:00:00Z",
+      1,
+      new Uint8Array([0]),
+    )
+    .run();
   // Results: pass e1, e2, e3; fail h1; e4/e5/h2-h5 not attempted
   await env.DB.batch([
     env.DB.prepare(
@@ -309,6 +347,7 @@ describe("computeModelAggregates filter scope (B.1)", () => {
 
   it("no filter: tasks_passed_attempt_1=3, tasks_attempted_distinct=4 (baseline)", async () => {
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
     });
@@ -321,6 +360,7 @@ describe("computeModelAggregates filter scope (B.1)", () => {
 
   it("category='easy': tasks_passed_attempt_1=3, tasks_attempted_distinct=3", async () => {
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       category: "easy",
@@ -334,6 +374,7 @@ describe("computeModelAggregates filter scope (B.1)", () => {
 
   it("category='hard': tasks_passed_attempt_1=0, tasks_attempted_distinct=1", async () => {
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       category: "hard",
@@ -346,6 +387,7 @@ describe("computeModelAggregates filter scope (B.1)", () => {
 
   it("difficulty='easy': tasks_passed_attempt_1=3, tasks_attempted_distinct=3", async () => {
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       difficulty: "easy",
@@ -358,6 +400,7 @@ describe("computeModelAggregates filter scope (B.1)", () => {
 
   it("difficulty='hard': tasks_passed_attempt_1=0, tasks_attempted_distinct=1", async () => {
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       difficulty: "hard",
@@ -370,6 +413,7 @@ describe("computeModelAggregates filter scope (B.1)", () => {
 
   it("category='easy' + difficulty='easy': tasks_passed_attempt_1=3", async () => {
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       category: "easy",
@@ -383,6 +427,7 @@ describe("computeModelAggregates filter scope (B.1)", () => {
 
   it("category='hard' + difficulty='hard': tasks_passed_attempt_1=0", async () => {
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       category: "hard",
@@ -447,7 +492,9 @@ describe("computeModelAggregates filter scope (B.1)", () => {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES ('rbo1','aaaa',${MA_MODEL_ID},'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','verified','v1','sig','2026-04-01T00:00:00Z',1,?)`,
-    ).bind(new Uint8Array([0])).run();
+    )
+      .bind(new Uint8Array([0]))
+      .run();
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
        VALUES ('rbo1','e-bo',1,1,1.0,1,1,1,100,50)`,
@@ -456,7 +503,9 @@ describe("computeModelAggregates filter scope (B.1)", () => {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES ('rbo2','aaaa',${MA_MODEL_ID},'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
-    ).bind(new Uint8Array([0])).run();
+    )
+      .bind(new Uint8Array([0]))
+      .run();
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
        VALUES ('rbo2','h-bo',1,1,1.0,1,1,1,100,50)`,
@@ -466,6 +515,7 @@ describe("computeModelAggregates filter scope (B.1)", () => {
     // Correct bind: scope-IN subquery gets 'easy' → finds e-bo → p1=1
     // Buggy bind:   scope-IN gets 'verified' → category='verified' → no match → p1=0
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       tier: "verified",
@@ -498,6 +548,7 @@ describe("computeModelAggregates filter scope (B.1)", () => {
     ]);
     // With category='easy': p1=3, p2_only=1 (e-extra), tasks_attempted_distinct=4 (e1,e2,e3,e-extra)
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       category: "easy",
@@ -533,6 +584,7 @@ describe("pass_rate_ci uses strict scope-aware denominator (B.2)", () => {
     // strict denominator = 10 (from task_sets.task_count)
     // CI for 3/10 (strict) around (0.11, 0.52) vs CI for 3/4 (per-attempted) around (0.30, 0.94)
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
     });
@@ -541,9 +593,9 @@ describe("pass_rate_ci uses strict scope-aware denominator (B.2)", () => {
     // CI for 3/10 (strict): lower ~0.107, upper ~0.518
     // CI for 3/4 (per-attempted): lower ~0.30, upper ~0.94
     // The strict lower must be below 0.20 (per-attempted lower is ~0.30)
-    expect(agg.pass_rate_ci.lower).toBeLessThan(0.20);
+    expect(agg.pass_rate_ci.lower).toBeLessThan(0.2);
     // The strict upper must be below 0.70 (per-attempted upper is ~0.94)
-    expect(agg.pass_rate_ci.upper).toBeLessThan(0.70);
+    expect(agg.pass_rate_ci.upper).toBeLessThan(0.7);
     // Sanity: lower < upper
     expect(agg.pass_rate_ci.lower).toBeLessThan(agg.pass_rate_ci.upper);
   });
@@ -554,6 +606,7 @@ describe("pass_rate_ci uses strict scope-aware denominator (B.2)", () => {
     // CI for 3/5: lower ~0.152, upper ~0.780
     // CI for 3/3 per-attempted: lower ~0.432, upper ~1.0
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       category: "easy",
@@ -561,10 +614,10 @@ describe("pass_rate_ci uses strict scope-aware denominator (B.2)", () => {
     const agg = aggMap.get(MA_MODEL_ID)!;
     expect(agg).toBeDefined();
     // Strict CI for 3/5: lower ~0.152, upper ~0.780
-    expect(agg.pass_rate_ci.lower).toBeGreaterThan(0.10);
+    expect(agg.pass_rate_ci.lower).toBeGreaterThan(0.1);
     expect(agg.pass_rate_ci.lower).toBeLessThan(0.25);
     expect(agg.pass_rate_ci.upper).toBeGreaterThan(0.65);
-    expect(agg.pass_rate_ci.upper).toBeLessThan(0.90);
+    expect(agg.pass_rate_ci.upper).toBeLessThan(0.9);
   });
 
   it("honors difficulty filter — denominator scopes to filtered task count (hard=5)", async () => {
@@ -572,6 +625,7 @@ describe("pass_rate_ci uses strict scope-aware denominator (B.2)", () => {
     // strict denominator = 5 (COUNT(*) hard tasks in 'aaaa')
     // CI for 0/5: lower=0, upper ~0.522
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
       difficulty: "hard",
@@ -590,6 +644,7 @@ describe("pass_rate_ci uses strict scope-aware denominator (B.2)", () => {
     // seedB1 uses is_current=1 on 'aaaa', so taskSetCurrent fetches the same data.
     // M-A: tasks_attempted_distinct=4, passed=3 → CI for 3/4 (per-attempted)
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetCurrent: true,
     });
@@ -624,6 +679,7 @@ describe("pass_at_n uses strict denominator, not per-attempted (C1)", () => {
   it("partial-coverage model: pass_at_n = passed/task_count not passed/attempted", async () => {
     // seedB1: task_count=10, M-A passed 3 tasks, attempted 4.
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
     });
@@ -670,6 +726,7 @@ describe("pass_at_n uses strict denominator, not per-attempted (C1)", () => {
       ),
     ]);
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetHash: "aaaa",
     });
@@ -684,6 +741,7 @@ describe("pass_at_n uses strict denominator, not per-attempted (C1)", () => {
     // When taskSetHash is not provided, strictDenominator is null,
     // so pass_at_n falls back to the per-attempted formula.
     const aggMap = await computeModelAggregates(env.DB, {
+      mode: "sync",
       modelIds: [MA_MODEL_ID],
       taskSetCurrent: true,
     });

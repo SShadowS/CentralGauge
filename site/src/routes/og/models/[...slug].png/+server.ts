@@ -5,6 +5,10 @@ import { renderOgPng } from "$lib/server/og-render";
 import { isCanary } from "$lib/server/canary";
 import { computeModelAggregates } from "$lib/server/model-aggregates";
 import {
+  parseModeParam,
+  resolveInvocationMode,
+} from "$lib/server/invocation-mode";
+import {
   buildCacheKey,
   readDataEpoch,
   isFallbackEpoch,
@@ -59,9 +63,9 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
         "x-og-cache": "epoch",
       },
     });
-    await ogCache.put(ogKey, backfill.clone()).catch((err) =>
-      console.error("[og-model] L1 backfill failed:", err)
-    );
+    await ogCache
+      .put(ogKey, backfill.clone())
+      .catch((err) => console.error("[og-model] L1 backfill failed:", err));
     return backfill;
   }
 
@@ -78,9 +82,9 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
     `SELECT m.id, m.display_name, mf.slug AS family_slug
      FROM models m JOIN model_families mf ON mf.id = m.family_id
      WHERE m.slug = ?`,
-  ).bind(slug).first<
-    { id: number; display_name: string; family_slug: string }
-  >();
+  )
+    .bind(slug)
+    .first<{ id: number; display_name: string; family_slug: string }>();
   if (!m) return new Response(`Unknown model: ${slug}`, { status: 404 });
 
   const taskSet = await env.DB.prepare(
@@ -88,9 +92,22 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   ).first<{ hash: string }>();
   const taskSetHash = taskSet?.hash ?? null;
 
-  const agg = (await computeModelAggregates(env.DB, { modelIds: [m.id], taskSetHash })).get(
-    m.id,
+  // D4: no query string reaches this image route in practice, so
+  // parseModeParam(url) resolves null and the default rule applies — a
+  // mixed-mode task set 400s here, which is acceptable and visible.
+  const mode = await resolveInvocationMode(
+    env.DB,
+    taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
+    parseModeParam(url),
   );
+
+  const agg = (
+    await computeModelAggregates(env.DB, {
+      modelIds: [m.id],
+      taskSetHash,
+      mode,
+    })
+  ).get(m.id);
 
   // Solve AUC@2: (2*passedA1 + passedA2Only) / (2*D)
   // D is back-derived: D = (p1 + p2) / pass_at_n when pass_at_n > 0.
@@ -101,9 +118,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   const passAtN = agg?.pass_at_n ?? 0;
   // Guard total === 0 (model passed zero tasks): pass_at_n is also 0 there,
   // so auc_2 = 0 is correct and avoids 0/0 = NaN ("NaN%" on the card).
-  const auc2 = total > 0
-    ? (2 * p1 + p2) * passAtN / (2 * total)
-    : 0;
+  const auc2 = total > 0 ? ((2 * p1 + p2) * passAtN) / (2 * total) : 0;
 
   const out = await renderOgPng({
     kind: "model",
@@ -140,20 +155,22 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
     bytesToB64(new Uint8Array(out.body)),
   );
 
-  await ogCache.put(
-    ogKey,
-    new Response(out.body, {
-      headers: {
-        "content-type": out.contentType,
-        "cache-control": `public, s-maxage=${ogTtl}`,
-        // Marks responses served from the epoch-keyed cache, which short-
-        // circuits before any D1 work. Distinct from renderOgPng's own
-        // "hit"/"miss", which only reports whether the Satori render was
-        // reused and says nothing about read cost.
-        "x-og-cache": "epoch",
-      },
-    }),
-  ).catch((err) => console.error("[og] cache put failed:", err));
+  await ogCache
+    .put(
+      ogKey,
+      new Response(out.body, {
+        headers: {
+          "content-type": out.contentType,
+          "cache-control": `public, s-maxage=${ogTtl}`,
+          // Marks responses served from the epoch-keyed cache, which short-
+          // circuits before any D1 work. Distinct from renderOgPng's own
+          // "hit"/"miss", which only reports whether the Satori render was
+          // reused and says nothing about read cost.
+          "x-og-cache": "epoch",
+        },
+      }),
+    )
+    .catch((err) => console.error("[og] cache put failed:", err));
 
   return res;
 };

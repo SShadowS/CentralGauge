@@ -437,4 +437,83 @@ describe("ingest stores run-time capture fields; v2 runs endpoints serve them", 
       v1Body.data.map((m) => m.slug).sort(),
     );
   });
+
+  it("stores invocation_mode from the payload (D4)", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+    const payload = makeRunPayload({
+      task_set_hash: HASH,
+      invocation_mode: "batch",
+    });
+    const { signedRequest } = await createSignedPayload(
+      payload as unknown as Record<string, unknown>,
+      keyId,
+      undefined,
+      keypair,
+    );
+    signedRequest.signature.key_id = keyId;
+    const runId = "run-mode-batch-1";
+    signedRequest.run_id = runId;
+    const res = await SELF.fetch("https://x/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(res.status).toBe(202);
+    const row = await env.DB.prepare(
+      `SELECT invocation_mode FROM runs WHERE id = ?`,
+    )
+      .bind(runId)
+      .first<{ invocation_mode: string }>();
+    expect(row?.invocation_mode).toBe("batch");
+  });
+
+  it("defaults invocation_mode to sync when the field is absent", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+    const payload = makeRunPayload({ task_set_hash: HASH });
+    const { signedRequest } = await createSignedPayload(
+      payload as unknown as Record<string, unknown>,
+      keyId,
+      undefined,
+      keypair,
+    );
+    signedRequest.signature.key_id = keyId;
+    const runId = "run-mode-default-1";
+    signedRequest.run_id = runId;
+    const res = await SELF.fetch("https://x/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(res.status).toBe(202);
+    const row = await env.DB.prepare(
+      `SELECT invocation_mode FROM runs WHERE id = ?`,
+    )
+      .bind(runId)
+      .first<{ invocation_mode: string }>();
+    expect(row?.invocation_mode).toBe("sync");
+  });
+
+  it("refuses an invocation_mode outside sync/batch", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+    const payload = {
+      ...makeRunPayload({ task_set_hash: HASH }),
+      invocation_mode: "turbo",
+    };
+    const { signedRequest } = await createSignedPayload(
+      payload as unknown as Record<string, unknown>,
+      keyId,
+      undefined,
+      keypair,
+    );
+    signedRequest.signature.key_id = keyId;
+    signedRequest.run_id = "run-mode-invalid-1";
+    const res = await SELF.fetch("https://x/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe("invalid_invocation_mode");
+  });
 });

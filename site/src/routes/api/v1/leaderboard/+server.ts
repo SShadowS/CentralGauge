@@ -1,28 +1,33 @@
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
 import {
   computeLeaderboard,
   type LeaderboardQuery,
   type LeaderboardResponse,
-} from '$lib/server/leaderboard';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { isRateLimited, type RateLimitBinding } from '$lib/server/rate-limit';
-import { ServerTimer } from '$lib/server/server-timing';
-import { isValidTaskSetHash } from '$lib/shared/task-set-hash';
-import { getTierMap } from '$lib/server/tier-data';
+} from "$lib/server/leaderboard";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { isRateLimited, type RateLimitBinding } from "$lib/server/rate-limit";
+import { ServerTimer } from "$lib/server/server-timing";
+import { isValidTaskSetHash } from "$lib/shared/task-set-hash";
+import { getTierMap } from "$lib/server/tier-data";
+import {
+  parseModeParam,
+  resolveInvocationMode,
+  type InvocationMode,
+} from "$lib/server/invocation-mode";
 import {
   buildCacheKey,
   readDataEpoch,
   isFallbackEpoch,
   EPOCH_KEYED_TTL_SECONDS,
   DEGRADED_TTL_SECONDS,
-} from '$lib/server/data-epoch';
-import { sharedCacheGet, sharedCacheSet } from '$lib/server/shared-cache';
+} from "$lib/server/data-epoch";
+import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
-    const q = parseQuery(url);
+    const parsed = parseQuery(url);
 
     // Cache API replaces the previous KV-backed cache. Cache API is per-colo
     // (not global) but has no daily put quota, which makes it the right tier
@@ -39,12 +44,26 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // dropping headers/cookies so identical query strings collide regardless
     // of conditional-request headers (If-None-Match etc.). ETag-based 304s
     // are still produced by `cachedJson` for the *outgoing* response.
-    const cache = await platform!.caches.open('cg-leaderboard');
+    const cache = await platform!.caches.open("cg-leaderboard");
     // Ordering contract (see data-epoch.ts): the epoch is read BEFORE any query
     // that feeds the payload, and is never re-read within the request. Reading
     // it after the compute would cache stale rows under a fresh key, poisoning
     // that key for the whole TTL.
     const epoch = await readDataEpoch(env.DB);
+
+    // D4: resolve the invocation mode BEFORE building the cache key, so the
+    // resolved value (not just the raw `?mode=`) is part of the key — a
+    // default resolved to "sync" must not keep being served once the first
+    // batch run lands on this task set under the same key.
+    const mode = await resolveInvocationMode(
+      env.DB,
+      parsed.set === "current"
+        ? { kind: "current" }
+        : { kind: "hash", hash: parsed.set },
+      parsed.mode,
+    );
+    const q: LeaderboardQuery = { ...parsed, mode };
+
     // Key off the PARSED query, never the raw URL. Unknown params (utm_source,
     // fbclid, ...) and param ordering must not fragment the key — see
     // buildCacheKey for why that mattered.
@@ -52,7 +71,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // scalar the key can encode), keyset paging is not implemented, and
     // parseQuery always returns null for it.
     const { cursor: _cursor, ...cacheParams } = q;
-    const cacheKey = buildCacheKey('leaderboard', cacheParams, epoch);
+    const cacheKey = buildCacheKey("leaderboard", cacheParams, epoch);
 
     let payload: LeaderboardResponse | null = null;
     let serverTimingHeader: string | null = null;
@@ -61,7 +80,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       payload = (await cached.json()) as LeaderboardResponse;
       // Cached hits carry the Server-Timing header from the original compute
       // request — expose it so observers can distinguish warm vs. cold paths.
-      serverTimingHeader = cached.headers.get('server-timing');
+      serverTimingHeader = cached.headers.get("server-timing");
     }
 
     // L2: the globally-shared payload cache. Cache API is per-colo, so without
@@ -75,15 +94,19 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         payload = JSON.parse(shared) as LeaderboardResponse;
         // Backfill L1 so this colo serves subsequent requests for 1 row. Full
         // TTL, not the degraded one: nothing degraded is ever stored in L2.
-        await cache.put(
-          cacheKey,
-          new Response(shared, {
-            headers: {
-              'content-type': 'application/json; charset=utf-8',
-              'cache-control': `public, s-maxage=${EPOCH_KEYED_TTL_SECONDS}`,
-            },
-          }),
-        ).catch((err) => console.error('[leaderboard] L1 backfill failed:', err));
+        await cache
+          .put(
+            cacheKey,
+            new Response(shared, {
+              headers: {
+                "content-type": "application/json; charset=utf-8",
+                "cache-control": `public, s-maxage=${EPOCH_KEYED_TTL_SECONDS}`,
+              },
+            }),
+          )
+          .catch((err) =>
+            console.error("[leaderboard] L1 backfill failed:", err),
+          );
       }
     }
 
@@ -102,21 +125,21 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       // had no rate limiting of any kind.
       const rl = (env as unknown as { RL?: RateLimitBinding }).RL;
       if (rl) {
-        const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
+        const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
         try {
           const { limited, retry_after } = await isRateLimited(rl, ip);
           if (limited) {
             throw new ApiError(
               429,
-              'rate_limited',
-              'Too many uncached leaderboard queries; retry shortly.',
+              "rate_limited",
+              "Too many uncached leaderboard queries; retry shortly.",
               { retry_after },
             );
           }
         } catch (err) {
           // A limiter outage must not take the endpoint down: fail open.
           if (err instanceof ApiError) throw err;
-          console.error('[leaderboard] rate limit check failed:', err);
+          console.error("[leaderboard] rate limit check failed:", err);
         }
       }
 
@@ -143,10 +166,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           let resolvedHash: string | null = null;
           if (isValidTaskSetHash(q.set)) {
             resolvedHash = q.set;
-          } else if (q.set === 'current') {
-            const row = await env.DB
-              .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
-              .first<{ hash: string }>();
+          } else if (q.set === "current") {
+            const row = await env.DB.prepare(
+              `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
+            ).first<{ hash: string }>();
             resolvedHash = row?.hash ?? null;
           }
           if (resolvedHash) {
@@ -156,7 +179,11 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
             // catalog/pricing edits, which do move leaderboard numbers.
             const tierMap = await getTierMap(
               env.DB,
-              { taskSetHash: resolvedHash, metric: 'auc_2', category: q.category ?? null },
+              {
+                taskSetHash: resolvedHash,
+                metric: "auc_2",
+                category: q.category ?? null,
+              },
               epoch,
             );
             // Only assign when a tier exists. Setting `r.tier = undefined`
@@ -175,7 +202,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           // Typical failure: caches.open() unavailable in some CF edge contexts,
           // or D1 latency on the tier-compute round trip. Log so CF Worker logs
           // capture it — but never rethrow, never alter the response path.
-          console.error('[leaderboard] tier attach failed:', err);
+          console.error("[leaderboard] tier attach failed:", err);
         }
       }
 
@@ -195,9 +222,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       // A degraded payload (tier attach failed) or a fallback-keyed entry must
       // NOT be held for a day: no publish will bump the epoch to retire it, so
       // it has to expire by clock the way everything used to.
-      const ttl = degraded || isFallbackEpoch(epoch)
-        ? DEGRADED_TTL_SECONDS
-        : EPOCH_KEYED_TTL_SECONDS;
+      const ttl =
+        degraded || isFallbackEpoch(epoch)
+          ? DEGRADED_TTL_SECONDS
+          : EPOCH_KEYED_TTL_SECONDS;
       // This cache-control is on the response STORED in the named cache only.
       // The user-facing response comes from `cachedJson` and MUST stay
       // `private`: a public long-lived s-maxage there would let the adapter
@@ -208,20 +236,27 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       // colo for 60s, but in L2 it would poison every colo until the next
       // publish.
       if (!degraded) {
-        await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(payload));
+        await sharedCacheSet(
+          env.DB,
+          cacheKey.url,
+          epoch,
+          JSON.stringify(payload),
+        );
       }
 
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'cache-control': `public, s-maxage=${ttl}`,
-          'server-timing': serverTimingHeader,
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `public, s-maxage=${ttl}`,
+          "server-timing": serverTimingHeader,
         },
       });
       await cache.put(cacheKey, storeRes);
     }
     return cachedJson(request, payload, {
-      extraHeaders: serverTimingHeader ? { 'server-timing': serverTimingHeader } : {},
+      extraHeaders: serverTimingHeader
+        ? { "server-timing": serverTimingHeader }
+        : {},
     });
   } catch (err) {
     return errorResponse(err);
@@ -233,7 +268,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
  * every run, so it selects the same rows while collapsing an infinite tail of
  * distinct cache keys onto one.
  */
-const SINCE_FLOOR_MS = Date.parse('2020-01-01T00:00:00.000Z');
+const SINCE_FLOOR_MS = Date.parse("2020-01-01T00:00:00.000Z");
 
 /**
  * Slug-shaped filter values (`family`, `category`).
@@ -257,30 +292,59 @@ function parseSlug(raw: string | null, field: string): string | null {
   return v;
 }
 
-function parseQuery(url: URL): LeaderboardQuery {
-  const set = url.searchParams.get('set') ?? 'current';
-  if (set === 'all') {
+/**
+ * `parseQuery`'s return shape before mode resolution: `mode` is whatever the
+ * caller explicitly requested via `?mode=` (or `null` when absent). The GET
+ * handler resolves the default (D4: the task set's sole mode, "sync" when
+ * empty) and only then builds the full `LeaderboardQuery`, whose `mode` field
+ * is non-nullable.
+ */
+type ParsedLeaderboardQuery = Omit<LeaderboardQuery, "mode"> & {
+  mode: InvocationMode | null;
+};
+
+function parseQuery(url: URL): ParsedLeaderboardQuery {
+  const requestedMode = parseModeParam(url);
+  const set = url.searchParams.get("set") ?? "current";
+  if (set === "all") {
     throw new ApiError(
       400,
-      'invalid_set_for_metric',
-      'set=all is not supported: cross-set aggregation has no well-defined denominator for the strict per-set ranking metric. Use set=current or a specific 64-char task_set hash.',
+      "invalid_set_for_metric",
+      "set=all is not supported: cross-set aggregation has no well-defined denominator for the strict per-set ranking metric. Use set=current or a specific 64-char task_set hash.",
     );
   }
-  if (set !== 'current' && !isValidTaskSetHash(set)) {
-    throw new ApiError(400, 'invalid_set', 'set must be current or a 64-char hex task_set hash');
+  if (set !== "current" && !isValidTaskSetHash(set)) {
+    throw new ApiError(
+      400,
+      "invalid_set",
+      "set must be current or a 64-char hex task_set hash",
+    );
   }
 
-  const tier = url.searchParams.get('tier') ?? 'all';
-  if (tier !== 'all' && tier !== 'verified' && tier !== 'claimed' && tier !== 'trusted') {
-    throw new ApiError(400, 'invalid_tier', 'tier must be verified, claimed, trusted, or all');
+  const tier = url.searchParams.get("tier") ?? "all";
+  if (
+    tier !== "all" &&
+    tier !== "verified" &&
+    tier !== "claimed" &&
+    tier !== "trusted"
+  ) {
+    throw new ApiError(
+      400,
+      "invalid_tier",
+      "tier must be verified, claimed, trusted, or all",
+    );
   }
 
-  const difficulty = url.searchParams.get('difficulty');
-  if (difficulty && !['easy', 'medium', 'hard'].includes(difficulty)) {
-    throw new ApiError(400, 'invalid_difficulty', 'difficulty must be easy, medium, or hard');
+  const difficulty = url.searchParams.get("difficulty");
+  if (difficulty && !["easy", "medium", "hard"].includes(difficulty)) {
+    throw new ApiError(
+      400,
+      "invalid_difficulty",
+      "difficulty must be easy, medium, or hard",
+    );
   }
 
-  const family = parseSlug(url.searchParams.get('family'), 'family');
+  const family = parseSlug(url.searchParams.get("family"), "family");
 
   // `since` is canonicalized to a UTC day boundary, and clamped at both ends.
   //
@@ -295,12 +359,16 @@ function parseQuery(url: URL): LeaderboardQuery {
   //
   // Both clamps preserve semantics exactly: a cutoff before any run is the same
   // query as no cutoff, and any cutoff in the future selects the same empty set.
-  const sinceRaw = url.searchParams.get('since');
+  const sinceRaw = url.searchParams.get("since");
   let since: string | null = null;
   if (sinceRaw) {
     const parsed = Date.parse(sinceRaw);
     if (Number.isNaN(parsed)) {
-      throw new ApiError(400, 'invalid_since', 'since must be an ISO-8601 date');
+      throw new ApiError(
+        400,
+        "invalid_since",
+        "since must be an ISO-8601 date",
+      );
     }
     const day = new Date(parsed);
     day.setUTCHours(0, 0, 0, 0);
@@ -315,13 +383,15 @@ function parseQuery(url: URL): LeaderboardQuery {
   }
 
   // P7 Phase B accepts the field; SQL filter wires up in Phase C (categories).
-  const category = parseSlug(url.searchParams.get('category'), 'category');
+  const category = parseSlug(url.searchParams.get("category"), "category");
 
   // Phase 3 Task 4: openness filter. Lenient parse — invalid values become null
   // (matching the lenient sort style: no 400, just ignore unknown values).
-  const opennessRaw = url.searchParams.get('openness');
-  const openness: 'open' | 'proprietary' | null =
-    opennessRaw === 'open' || opennessRaw === 'proprietary' ? opennessRaw : null;
+  const opennessRaw = url.searchParams.get("openness");
+  const openness: "open" | "proprietary" | null =
+    opennessRaw === "open" || opennessRaw === "proprietary"
+      ? opennessRaw
+      : null;
 
   // A.6 — sort key + direction. Format: `?sort=field:dir` (e.g. `auc_2:desc`).
   // The page may pass sort fields the SQL ORDER BY doesn't recognize
@@ -331,33 +401,36 @@ function parseQuery(url: URL): LeaderboardQuery {
   // default `auc_2:desc` ORDER BY (no 400). Default is `auc_2:desc` (Solve AUC@2
   // headline), flipped from avg_score to pass_at_n in PR1, then to auc_2 in the
   // newranking-auc2-tiers feature.
-  const sortRaw = url.searchParams.get('sort') ?? 'auc_2:desc';
-  const [sortFieldRaw, sortDirRaw = 'desc'] = sortRaw.split(':');
+  const sortRaw = url.searchParams.get("sort") ?? "auc_2:desc";
+  const [sortFieldRaw, sortDirRaw = "desc"] = sortRaw.split(":");
   const knownSorts = [
-    'auc_2',
-    'pass_at_n',
-    'pass_at_1',
-    'avg_score',
-    'cost_per_pass_usd',
-    'latency_p95_ms',
-    'avg_cost_usd',
+    "auc_2",
+    "pass_at_n",
+    "pass_at_1",
+    "avg_score",
+    "cost_per_pass_usd",
+    "latency_p95_ms",
+    "avg_cost_usd",
   ] as const;
   type KnownSort = (typeof knownSorts)[number];
-  const sort: KnownSort = (knownSorts as readonly string[]).includes(sortFieldRaw)
+  const sort: KnownSort = (knownSorts as readonly string[]).includes(
+    sortFieldRaw,
+  )
     ? (sortFieldRaw as KnownSort)
-    : 'auc_2';
-  const direction: 'asc' | 'desc' = sortDirRaw === 'asc' ? 'asc' : 'desc';
+    : "auc_2";
+  const direction: "asc" | "desc" = sortDirRaw === "asc" ? "asc" : "desc";
 
-  const limitRaw = url.searchParams.get('limit');
+  const limitRaw = url.searchParams.get("limit");
   const limit = limitRaw ? parseInt(limitRaw, 10) : 50;
   if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
-    throw new ApiError(400, 'invalid_limit', 'limit must be between 1 and 100');
+    throw new ApiError(400, "invalid_limit", "limit must be between 1 and 100");
   }
 
   return {
     set,
-    tier: tier as 'verified' | 'claimed' | 'trusted' | 'all',
-    difficulty: (difficulty as 'easy' | 'medium' | 'hard' | null) ?? null,
+    mode: requestedMode,
+    tier: tier as "verified" | "claimed" | "trusted" | "all",
+    difficulty: (difficulty as "easy" | "medium" | "hard" | null) ?? null,
     family,
     since,
     category,

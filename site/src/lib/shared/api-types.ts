@@ -23,8 +23,24 @@
  */
 export type SetFilter = "current" | string;
 
+/**
+ * Invocation profile a run executed under (spec D4). Declared locally here
+ * (not imported from `$lib/server/invocation-mode`) so `shared/` stays free
+ * of server-side runtime imports; keep the literal union in sync with
+ * `InvocationMode` in that module.
+ */
+export type InvocationMode = "sync" | "batch";
+
 export interface LeaderboardQuery {
   set: SetFilter;
+  /**
+   * Invocation mode the ranking query is scoped to (D4). Resolved
+   * server-side before the query runs: an explicit `?mode=` wins, otherwise
+   * the task set's sole mode is used, defaulting to `sync` when the set has
+   * no runs yet. Never `"all"` — sync and batch are distinct pricing/latency
+   * profiles and are never ranked together.
+   */
+  mode: InvocationMode;
   tier: "verified" | "claimed" | "trusted" | "all";
   difficulty: "easy" | "medium" | "hard" | null;
   family: string | null;

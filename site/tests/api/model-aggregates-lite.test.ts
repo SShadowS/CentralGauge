@@ -111,7 +111,10 @@ beforeEach(seed);
 describe("computeModelAggregatesLite matches the full aggregate", () => {
   it("agrees on all four consumed fields", async () => {
     const modelIds = [1, 2, 3, 4];
-    const full = await computeModelAggregates(env.DB, { modelIds });
+    const full = await computeModelAggregates(env.DB, {
+      mode: "sync",
+      modelIds,
+    });
     const lite = await computeModelAggregatesLite(env.DB, { modelIds });
 
     // Same key set: a model with no runs must be absent from both, not

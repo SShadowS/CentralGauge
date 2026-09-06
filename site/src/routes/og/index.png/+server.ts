@@ -5,6 +5,10 @@ import { renderOgPng } from "$lib/server/og-render";
 import { isCanary } from "$lib/server/canary";
 import { computeModelAggregates } from "$lib/server/model-aggregates";
 import {
+  parseModeParam,
+  resolveInvocationMode,
+} from "$lib/server/invocation-mode";
+import {
   buildCacheKey,
   readDataEpoch,
   isFallbackEpoch,
@@ -63,9 +67,9 @@ export const GET: RequestHandler = async ({ url, platform }) => {
         "x-og-cache": "epoch",
       },
     });
-    await ogCache.put(ogKey, backfill.clone()).catch((err) =>
-      console.error("[og-index] L1 backfill failed:", err)
-    );
+    await ogCache
+      .put(ogKey, backfill.clone())
+      .catch((err) => console.error("[og-index] L1 backfill failed:", err));
     return backfill;
   }
 
@@ -84,9 +88,11 @@ export const GET: RequestHandler = async ({ url, platform }) => {
          (SELECT COUNT(*) FROM models)                                         AS model_count,
          (SELECT COUNT(*) FROM runs)                                           AS run_count,
          (SELECT MAX(started_at) FROM runs)                                    AS last_run_at`,
-    ).first<
-      { model_count: number; run_count: number; last_run_at: string | null }
-    >(),
+    ).first<{
+      model_count: number;
+      run_count: number;
+      last_run_at: string | null;
+    }>(),
     // 2. Cache key needs current task-set hash so a promotion invalidates fresh.
     env.DB.prepare(
       `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
@@ -98,8 +104,17 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   //    The strict denominator D is not directly in the aggregate, but we can
   //    back-derive it: D = (passedA1 + passedA2Only) / pass_at_n (when > 0).
   //    Substituting: auc_2 = (2*p1 + p2) * pass_at_n / (2 * (p1 + p2))
+  // D4: no query string reaches this image route in practice, so
+  // parseModeParam(url) resolves null and the default rule applies — a
+  // mixed-mode task set 400s here, which is acceptable and visible.
+  const mode = await resolveInvocationMode(
+    env.DB,
+    taskSet?.hash ? { kind: "hash", hash: taskSet.hash } : { kind: "current" },
+    parseModeParam(url),
+  );
   const aggMap = await computeModelAggregates(env.DB, {
     taskSetHash: taskSet?.hash ?? null,
+    mode,
   });
   let topAuc2 = 0;
   for (const agg of aggMap.values()) {
@@ -108,9 +123,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     const total = p1 + p2;
     // Guard total === 0 (model passed zero tasks): pass_at_n is also 0 there,
     // so auc_2 = 0 is correct and avoids 0/0 = NaN ("NaN%" on the card).
-    const auc2 = total > 0
-      ? (2 * p1 + p2) * agg.pass_at_n / (2 * total)
-      : 0;
+    const auc2 = total > 0 ? ((2 * p1 + p2) * agg.pass_at_n) / (2 * total) : 0;
     if (auc2 > topAuc2) topAuc2 = auc2;
   }
 
@@ -151,20 +164,22 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     bytesToB64(new Uint8Array(out.body)),
   );
 
-  await ogCache.put(
-    ogKey,
-    new Response(out.body, {
-      headers: {
-        "content-type": out.contentType,
-        "cache-control": `public, s-maxage=${ogTtl}`,
-        // Marks responses served from the epoch-keyed cache, which short-
-        // circuits before any D1 work. Distinct from renderOgPng's own
-        // "hit"/"miss", which only reports whether the Satori render was
-        // reused and says nothing about read cost.
-        "x-og-cache": "epoch",
-      },
-    }),
-  ).catch((err) => console.error("[og-index] cache put failed:", err));
+  await ogCache
+    .put(
+      ogKey,
+      new Response(out.body, {
+        headers: {
+          "content-type": out.contentType,
+          "cache-control": `public, s-maxage=${ogTtl}`,
+          // Marks responses served from the epoch-keyed cache, which short-
+          // circuits before any D1 work. Distinct from renderOgPng's own
+          // "hit"/"miss", which only reports whether the Satori render was
+          // reused and says nothing about read cost.
+          "x-og-cache": "epoch",
+        },
+      }),
+    )
+    .catch((err) => console.error("[og-index] cache put failed:", err));
 
   return res;
 };

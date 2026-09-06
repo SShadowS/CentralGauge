@@ -10,6 +10,10 @@ import { ApiError, errorResponse } from "$lib/server/errors";
 import { computeModelAggregates } from "$lib/server/model-aggregates";
 import { ServerTimer } from "$lib/server/server-timing";
 import {
+  parseModeParam,
+  resolveInvocationMode,
+} from "$lib/server/invocation-mode";
+import {
   buildCacheKey,
   readDataEpoch,
   isFallbackEpoch,
@@ -37,7 +41,7 @@ function parseCapabilities(raw: string | null): string[] | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed as string[] : null;
+    return Array.isArray(parsed) ? (parsed as string[]) : null;
   } catch {
     return null;
   }
@@ -69,7 +73,12 @@ const HISTORY_LIMIT = 30;
 const RECENT_RUNS_LIMIT = 20;
 const FAILURE_MODES_LIMIT = 10;
 
-export const GET: RequestHandler = async ({ request, params, platform }) => {
+export const GET: RequestHandler = async ({
+  request,
+  params,
+  url,
+  platform,
+}) => {
   if (!platform) {
     return errorResponse(
       new ApiError(500, "no_platform", "platform env missing"),
@@ -89,7 +98,20 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     // The slug is path-derived, not a free-form query param, and a miss on an
     // unknown slug 404s before any aggregate runs — so it is not the unbounded
     // key space that `since` was.
-    const cacheKey = buildCacheKey("model-detail", { slug: params.slug ?? "" }, epoch);
+    //
+    // Known gap (D4): the key is NOT mode-scoped. Resolving the mode requires
+    // `taskSetHash`, which (by design) is only looked up below on a cache
+    // MISS — folding it in here would cost a D1 round trip on every cache HIT
+    // too. In practice this is safe today (every task set has exactly one
+    // mode), and if a set ever carries both, `resolveInvocationMode` throws
+    // a visible 400 rather than silently serving a wrong-mode number; a full
+    // fix (mode-aware key) is deferred alongside the rest of the tiers/matrix
+    // cache work.
+    const cacheKey = buildCacheKey(
+      "model-detail",
+      { slug: params.slug ?? "" },
+      epoch,
+    );
 
     const cached = await cache.match(cacheKey);
     if (cached) {
@@ -100,15 +122,19 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     // invalidation. See src/lib/server/shared-cache.ts.
     const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
     if (shared) {
-      await cache.put(
-        cacheKey,
-        new Response(shared, {
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-            "cache-control": `public, s-maxage=${EPOCH_KEYED_TTL_SECONDS}`,
-          },
-        }),
-      ).catch((err) => console.error("[model-detail] L1 backfill failed:", err));
+      await cache
+        .put(
+          cacheKey,
+          new Response(shared, {
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "cache-control": `public, s-maxage=${EPOCH_KEYED_TTL_SECONDS}`,
+            },
+          }),
+        )
+        .catch((err) =>
+          console.error("[model-detail] L1 backfill failed:", err),
+        );
       return cachedJson(request, JSON.parse(shared));
     }
 
@@ -131,14 +157,26 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     //    is no longer needed.
     const timer = new ServerTimer();
 
-    const currentSetRow = await env.DB
-      .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
-      .first<{ hash: string }>();
+    const currentSetRow = await env.DB.prepare(
+      `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
+    ).first<{ hash: string }>();
     const taskSetHash = currentSetRow?.hash ?? null;
+
+    // D4: this endpoint has no `?mode=` UI hookup yet and the cache key above
+    // is not (yet) mode-scoped, so this resolves against the default rule in
+    // the common case (one mode present) — see the route's cache-key comment
+    // for the known, deliberately-deferred gap (mixed-mode task sets could
+    // theoretically serve a stale-mode cached response within one TTL/epoch).
+    const mode = await resolveInvocationMode(
+      env.DB,
+      taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
+      parseModeParam(url),
+    );
 
     const aggMap = await computeModelAggregates(env.DB, {
       modelIds: [model.id],
       taskSetHash,
+      mode,
       includeLatencyP50: true,
       includePassHatAtN: true,
       timer,
@@ -242,9 +280,11 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     // 6. Predecessor — prior generation in the same family, if one exists.
     let predecessor: NonNullable<ModelDetail["predecessor"]> | undefined;
     if (model.generation !== null && model.generation > 1) {
-      const prior = await getFirst<
-        { id: number; slug: string; display_name: string }
-      >(
+      const prior = await getFirst<{
+        id: number;
+        slug: string;
+        display_name: string;
+      }>(
         env.DB,
         `SELECT id, slug, display_name FROM models
          WHERE family_id = ? AND generation = ?
@@ -256,15 +296,24 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         // predecessor has not been re-benched on the current task set (e.g. it's
         // an older model that only has runs on a prior set), fall back to
         // cross-set so the delta tile still renders on the detail page.
+        // Same resolved mode as the primary model's aggregates above: the
+        // predecessor comparison is a same-scope delta tile, not an
+        // independent ranking query, so it shares the page's one mode.
         let priorAgg = await computeModelAggregates(env.DB, {
           modelIds: [prior.id],
           taskSetHash,
+          mode,
         });
         let a = priorAgg.get(prior.id);
         if (!a || a.run_count === 0) {
           // Predecessor has no current-set runs — fall back to cross-set.
+          // Cross-set is already an approximation (mixes every task set the
+          // predecessor ever ran on); reusing the same resolved `mode` here
+          // is the least surprising choice available without a second
+          // scope-specific mode resolution for a fallback delta tile.
           priorAgg = await computeModelAggregates(env.DB, {
             modelIds: [prior.id],
+            mode,
           });
           a = priorAgg.get(prior.id);
         }
@@ -351,15 +400,17 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     // an epoch in the key.
     await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(body));
 
-    await cache.put(
-      cacheKey,
-      new Response(JSON.stringify(body), {
-        headers: {
-          "content-type": "application/json; charset=utf-8",
-          "cache-control": `public, s-maxage=${ttl}`,
-        },
-      }),
-    ).catch((err) => console.error("[model-detail] cache put failed:", err));
+    await cache
+      .put(
+        cacheKey,
+        new Response(JSON.stringify(body), {
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": `public, s-maxage=${ttl}`,
+          },
+        }),
+      )
+      .catch((err) => console.error("[model-detail] cache put failed:", err));
 
     return cachedJson(request, body, {
       extraHeaders: { "server-timing": timer.header() },
@@ -378,17 +429,18 @@ function toHistoryPoint(row: RunRow): ModelHistoryPoint {
   // Constrain status to the four documented values; legacy/unknown values
   // fall through to 'completed' so badges still render rather than crash.
   const status: ModelHistoryPoint["status"] =
-    row.status === "pending" || row.status === "running" ||
-        row.status === "completed" || row.status === "failed"
+    row.status === "pending" ||
+    row.status === "running" ||
+    row.status === "completed" ||
+    row.status === "failed"
       ? row.status
       : "completed";
   return {
     run_id: row.run_id,
     ts: row.ts,
     score: row.score === null ? 0 : Number(Number(row.score).toFixed(6)),
-    cost_usd: row.cost_usd === null
-      ? 0
-      : Number(Number(row.cost_usd).toFixed(6)),
+    cost_usd:
+      row.cost_usd === null ? 0 : Number(Number(row.cost_usd).toFixed(6)),
     tier,
     status,
     completed_at: row.completed_at,

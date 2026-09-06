@@ -14,6 +14,7 @@ import type { ServerTimer } from "./server-timing";
 import { computeDenominator } from "./denominator";
 import { ApiError } from "./errors";
 import { isValidTaskSetHash } from "../shared/task-set-hash";
+import { modePredicate } from "./invocation-mode";
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
@@ -128,8 +129,7 @@ export async function computeLeaderboard(
   let taskSetWhereParams: string[] = [];
 
   if (q.set === "current") {
-    taskSetWhere =
-      `runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
+    taskSetWhere = `runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     wheres.push(taskSetWhere);
     taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
@@ -149,6 +149,12 @@ export async function computeLeaderboard(
     taskSetParamsA2 = [q.set];
     taskSetParamsA2NotExists = [q.set];
   }
+
+  // D4: every ranking query selects exactly one invocation mode. `q.mode` is
+  // already resolved (never "all") by the time it reaches here — see
+  // resolveInvocationMode / the route's parseQuery.
+  wheres.push(modePredicate("runs"));
+  params.push(q.mode);
 
   // A.5: Scope-aware IN-clause for numerator correlated subqueries.
   // When category or difficulty filters are active, p1 / p2_only must count
@@ -199,9 +205,10 @@ export async function computeLeaderboard(
    * persists as the canonical answer served by every colo until the next
    * publish, rather than being recomputed within a minute.
    */
-  function buildRunScopeClause(
-    ruAlias: string,
-  ): { clause: string; params: Array<string | number> } {
+  function buildRunScopeClause(ruAlias: string): {
+    clause: string;
+    params: Array<string | number>;
+  } {
     const parts: string[] = [];
     const bind: Array<string | number> = [];
     if (q.tier !== "all") {
@@ -212,6 +219,12 @@ export async function computeLeaderboard(
       parts.push(`AND ${ruAlias}.started_at >= ?`);
       bind.push(q.since);
     }
+    // D4: mirror the mode predicate into every correlated numerator subquery
+    // (ru1/ru2/ru1b), unconditionally — same reasoning as tier/since above:
+    // without it a task passed by an out-of-mode run would leak into a
+    // mode-filtered leaderboard's numerator.
+    parts.push(`AND ${modePredicate(ruAlias)}`);
+    bind.push(q.mode);
     return { clause: parts.join(" "), params: bind };
   }
   const runScopeA1 = buildRunScopeClause("ru1");
@@ -232,10 +245,10 @@ export async function computeLeaderboard(
   // appear; it does NOT need subquery mirroring in p1/p2 correlated subqueries
   // because those subqueries correlate on model_id (not family) and the outer
   // WHERE already restricts which model_ids are in scope.
-  if (q.openness === 'open') {
-    wheres.push('mf.open_weight = 1');
-  } else if (q.openness === 'proprietary') {
-    wheres.push('mf.open_weight = 0');
+  if (q.openness === "open") {
+    wheres.push("mf.open_weight = 1");
+  } else if (q.openness === "proprietary") {
+    wheres.push("mf.open_weight = 0");
   }
   if (q.since) {
     wheres.push(`runs.started_at >= ?`);
@@ -247,7 +260,20 @@ export async function computeLeaderboard(
   const difficultyJoin = q.difficulty
     ? `JOIN tasks t ON t.task_id = r.task_id AND t.task_set_hash = runs.task_set_hash AND t.difficulty = ?`
     : "";
-  if (q.difficulty) params.push(q.difficulty);
+  // difficultyJoin's `?` is a JOIN ON condition that appears in the FROM
+  // clause, BEFORE the outer WHERE clause, in the final SQL text (see the sql
+  // template below: `${difficultyJoin} ${categoryJoin} JOIN cost_snapshots ...
+  // ${whereClause}`). It must therefore bind BEFORE `params` (the WHERE
+  // clause's own placeholders), not get pushed into the same array by push
+  // order — tracked separately here and spliced into `allParams` at the
+  // matching position, mirroring `difficultyParam` in model-aggregates.ts.
+  // (Pushing it into `params` inline used to happen to bind correctly only
+  // because, pre-D4, `params` frequently held zero or one prior entries by
+  // the time difficulty was reached; the mode predicate above made that
+  // coincidence break for the common "difficulty only" filter case.)
+  const difficultyParam: Array<string | number> = q.difficulty
+    ? [q.difficulty]
+    : [];
 
   // Category filter (P7 Phase C1) — JOINs tasks→task_categories scoped to the
   // run's task_set_hash so the filter respects the active set. Uses alias
@@ -303,8 +329,6 @@ export async function computeLeaderboard(
   // after the sort, so no row that belongs in the top-N is dropped early.
   const WIDE_FETCH = 500;
 
-
-
   // Pass@1 / Pass@2 use correlated subqueries scoped to model_id (NOT run_id),
   // so multi-run "best across runs per task" semantics hold (cf. plan B1 design
   // rationale). The settings_profile_json CASE emits NULL when the model's
@@ -353,7 +377,7 @@ export async function computeLeaderboard(
       -- fairer "what does X cost to use" number than per-attempt because a
       -- model that retries more would otherwise look cheaper (each retry
       -- is another data point dragging the per-attempt mean down).
-      SUM(${rowCostUsd('r', 'cs', 'runs')}) / NULLIF(COUNT(DISTINCT r.task_id), 0) AS avg_cost_usd,
+      SUM(${rowCostUsd("r", "cs", "runs")}) / NULLIF(COUNT(DISTINCT r.task_id), 0) AS avg_cost_usd,
       MAX(runs.started_at) AS last_run_at
     FROM runs
     JOIN models m ON m.id = runs.model_id
@@ -392,13 +416,16 @@ export async function computeLeaderboard(
   // tasks_passed_attempt_2_only) which is BEFORE the FROM/JOIN/WHERE
   // clauses, so their `?`s bind first. Within each pair, taskSetClauseSub*
   // (S7: bound task_set_hash) textually precedes scopeIn*.clause.
-  //   1. taskSetParamsA1 + scopeInA1.params  – inside tasks_passed_attempt_1
-  //   2. taskSetParamsA2NotExists + scopeInA2NotExists.params – inside the
-  //      NOT EXISTS
-  //   3. taskSetParamsA2 + scopeInA2.params  – for tasks_passed_attempt_2_only
-  //   4. params[]          – outer WHERE (task_set, tier, family, since,
-  //                          difficulty JOIN, category WHERE)
-  //   5. WIDE_FETCH        – LIMIT clause
+  //   1. taskSetParamsA1 + scopeInA1.params + runScopeA1.params (tier/since/
+  //      mode) – inside tasks_passed_attempt_1
+  //   2. taskSetParamsA2NotExists + scopeInA2NotExists.params +
+  //      runScopeA2NotExists.params – inside the NOT EXISTS
+  //   3. taskSetParamsA2 + scopeInA2.params + runScopeA2.params – for
+  //      tasks_passed_attempt_2_only
+  //   4. difficultyParam   – FROM-clause JOIN ON condition, before WHERE
+  //   5. params[]          – outer WHERE (task_set, mode [D4], tier, family,
+  //                          since, category)
+  //   6. WIDE_FETCH        – LIMIT clause
   //
   // There are no ORDER BY params any more: sorting is done in TS, which is
   // what retired the fragile "one param set per textual occurrence of
@@ -413,6 +440,7 @@ export async function computeLeaderboard(
     ...taskSetParamsA2,
     ...scopeInA2.params,
     ...runScopeA2.params,
+    ...difficultyParam,
     ...params,
     WIDE_FETCH,
   ];
@@ -468,6 +496,7 @@ export async function computeLeaderboard(
           difficulty: q.difficulty,
           tier: q.tier === "all" ? undefined : q.tier,
           since: q.since,
+          mode: q.mode,
           includeLatencyP50: true,
           includePassHatAtN: true,
           timer,
@@ -488,11 +517,17 @@ export async function computeLeaderboard(
   // `taskSetWhere`, plus the model ids that actually made the page. The row's
   // OTHER filters (tier / family / since / category / difficulty) are NOT
   // applied — this is a per-model caveat count, not a filtered metric, and
-  // api-types.ts documents it as such.
+  // api-types.ts documents it as such. `invocation_mode` (D4) is the one
+  // exception: it is not a row-scope filter like tier/family, it is a hard
+  // partition of the ranking universe (sync and batch are never mixed into
+  // one number anywhere on this page), so it is always applied here too.
   const fallbackByModel = new Map<number, number>();
   if (modelIds.length > 0) {
-    const fallbackWheres = ["results.served_model IS NOT NULL"];
-    const fallbackParams: Array<string | number> = [];
+    const fallbackWheres = [
+      "results.served_model IS NOT NULL",
+      modePredicate("runs"),
+    ];
+    const fallbackParams: Array<string | number> = [q.mode];
     if (taskSetWhere) {
       fallbackWheres.push(taskSetWhere);
       fallbackParams.push(...taskSetWhereParams);
@@ -546,7 +581,9 @@ export async function computeLeaderboard(
       denominator > 0 ? (2 * passedA1 + passedA2Only) / (2 * denominator) : 0;
     // Conditional repair rate; 0 when nothing failed first try.
     const repairRate =
-      passAt1Strict < 1 ? (passAtNStrict - passAt1Strict) / (1 - passAt1Strict) : 0;
+      passAt1Strict < 1
+        ? (passAtNStrict - passAt1Strict) / (1 - passAt1Strict)
+        : 0;
 
     const profile = r.settings_hash_unique
       ? (profileByHash.get(r.settings_hash_unique) ?? null)
@@ -562,7 +599,10 @@ export async function computeLeaderboard(
         settings_suffix: settingsSuffix,
       },
       family_slug: r.family_slug,
-      open_weight: r.open_weight === null || r.open_weight === undefined ? null : r.open_weight === 1,
+      open_weight:
+        r.open_weight === null || r.open_weight === undefined
+          ? null
+          : r.open_weight === 1,
       run_count: r.run_count,
       tasks_attempted: r.tasks_attempted,
       tasks_passed: r.tasks_passed ?? 0,
@@ -624,13 +664,15 @@ export async function computeLeaderboard(
     if (q.direction === "asc") {
       sortable.sort(
         (a, b) =>
-          (a.row.latency_p95_ms || Infinity) - (b.row.latency_p95_ms || Infinity) ||
+          (a.row.latency_p95_ms || Infinity) -
+            (b.row.latency_p95_ms || Infinity) ||
           b.row.model.slug.localeCompare(a.row.model.slug),
       );
     } else {
       sortable.sort(
         (a, b) =>
-          (b.row.latency_p95_ms || -Infinity) - (a.row.latency_p95_ms || -Infinity) ||
+          (b.row.latency_p95_ms || -Infinity) -
+            (a.row.latency_p95_ms || -Infinity) ||
           b.row.model.slug.localeCompare(a.row.model.slug),
       );
     }

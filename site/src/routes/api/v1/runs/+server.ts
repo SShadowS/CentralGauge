@@ -299,6 +299,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       );
     }
 
+    // Invocation profile (D4): defaults to "sync" for CLIs predating the
+    // field. Validated explicitly because payload is a signed-but-untyped
+    // JSON body — the SignedRunPayload type is a compile-time contract, not
+    // a runtime guarantee.
+    const invocationMode = payload.invocation_mode ?? "sync";
+    if (invocationMode !== "sync" && invocationMode !== "batch") {
+      throw new ApiError(
+        400,
+        "invalid_invocation_mode",
+        "invocation_mode must be sync or batch",
+      );
+    }
+
     // Idempotency: check if run_id already exists
     const existing = await db
       .prepare(`SELECT id, status FROM runs WHERE id = ?`)
@@ -353,8 +366,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           centralgauge_sha, pricing_version, reproduction_bundle_r2_key,
           ingest_signature, ingest_signed_at, ingest_public_key_id, ingest_signed_payload,
           harness_fingerprint, retry_path_version, environment_digest, bc_artifact,
-          container_image_digest, bcch_version, test_runner, prompt_template_digest, invocation_json
-        ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?)
+          container_image_digest, bcch_version, test_runner, prompt_template_digest, invocation_json,
+          invocation_mode
+        ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?)
       `,
         )
         .bind(
@@ -388,6 +402,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           payload.test_runner ?? null,
           payload.prompt_template_digest ?? null,
           payload.invocation ? JSON.stringify(payload.invocation) : null,
+          invocationMode,
         ),
     ];
 

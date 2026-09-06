@@ -5,6 +5,10 @@ import { renderOgPng } from "$lib/server/og-render";
 import { isCanary } from "$lib/server/canary";
 import { computeModelAggregates } from "$lib/server/model-aggregates";
 import {
+  parseModeParam,
+  resolveInvocationMode,
+} from "$lib/server/invocation-mode";
+import {
   buildCacheKey,
   readDataEpoch,
   isFallbackEpoch,
@@ -59,9 +63,9 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
         "x-og-cache": "epoch",
       },
     });
-    await ogCache.put(ogKey, backfill.clone()).catch((err) =>
-      console.error("[og-family] L1 backfill failed:", err)
-    );
+    await ogCache
+      .put(ogKey, backfill.clone())
+      .catch((err) => console.error("[og-family] L1 backfill failed:", err));
     return backfill;
   }
 
@@ -76,13 +80,15 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   const slug = params.slug;
   const fam = await env.DB.prepare(
     `SELECT id, display_name, vendor FROM model_families WHERE slug = ?`,
-  ).bind(slug).first<{ id: number; display_name: string; vendor: string }>();
+  )
+    .bind(slug)
+    .first<{ id: number; display_name: string; vendor: string }>();
   if (!fam) return new Response(`Unknown family: ${slug}`, { status: 404 });
 
   const [memberRows, taskSet] = await Promise.all([
-    env.DB.prepare(
-      `SELECT id, display_name FROM models WHERE family_id = ?`,
-    ).bind(fam.id).all<{ id: number; display_name: string }>(),
+    env.DB.prepare(`SELECT id, display_name FROM models WHERE family_id = ?`)
+      .bind(fam.id)
+      .all<{ id: number; display_name: string }>(),
     env.DB.prepare(
       `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
     ).first<{ hash: string }>(),
@@ -91,13 +97,31 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   const members = memberRows.results ?? [];
   const modelIds = members.map((m) => m.id);
 
+  // D4: no query string reaches this image route in practice, so
+  // parseModeParam(url) resolves null and the default rule applies — a
+  // mixed-mode task set 400s here, which is acceptable and visible.
+  const mode = await resolveInvocationMode(
+    env.DB,
+    taskSet?.hash ? { kind: "hash", hash: taskSet.hash } : { kind: "current" },
+    parseModeParam(url),
+  );
+
   // Compute Solve AUC@2 for all family members scoped to current task set.
-  const aggMap = modelIds.length > 0
-    ? await computeModelAggregates(env.DB, {
-      modelIds,
-      taskSetHash: taskSet?.hash ?? null,
-    })
-    : new Map<number, { pass_at_n: number; tasks_passed_attempt_1: number; tasks_passed_attempt_2_only: number }>();
+  const aggMap =
+    modelIds.length > 0
+      ? await computeModelAggregates(env.DB, {
+          modelIds,
+          taskSetHash: taskSet?.hash ?? null,
+          mode,
+        })
+      : new Map<
+          number,
+          {
+            pass_at_n: number;
+            tasks_passed_attempt_1: number;
+            tasks_passed_attempt_2_only: number;
+          }
+        >();
 
   // Pick the member with the highest auc_2; derive its display name.
   // auc_2 = (2*p1 + p2) * pass_at_n / (2 * (p1 + p2)) (D back-derived from pass_at_n)
@@ -111,9 +135,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
     const passAtN = agg?.pass_at_n ?? 0;
     // Guard total === 0 (model passed zero tasks): pass_at_n is also 0 there,
     // so auc_2 = 0 is correct and avoids 0/0 = NaN ("NaN%" on the card).
-    const auc2 = total > 0
-      ? (2 * p1 + p2) * passAtN / (2 * total)
-      : 0;
+    const auc2 = total > 0 ? ((2 * p1 + p2) * passAtN) / (2 * total) : 0;
     if (auc2 > topAuc2) {
       topAuc2 = auc2;
       topModelDisplay = m.display_name;
@@ -156,20 +178,22 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
     bytesToB64(new Uint8Array(out.body)),
   );
 
-  await ogCache.put(
-    ogKey,
-    new Response(out.body, {
-      headers: {
-        "content-type": out.contentType,
-        "cache-control": `public, s-maxage=${ogTtl}`,
-        // Marks responses served from the epoch-keyed cache, which short-
-        // circuits before any D1 work. Distinct from renderOgPng's own
-        // "hit"/"miss", which only reports whether the Satori render was
-        // reused and says nothing about read cost.
-        "x-og-cache": "epoch",
-      },
-    }),
-  ).catch((err) => console.error("[og] cache put failed:", err));
+  await ogCache
+    .put(
+      ogKey,
+      new Response(out.body, {
+        headers: {
+          "content-type": out.contentType,
+          "cache-control": `public, s-maxage=${ogTtl}`,
+          // Marks responses served from the epoch-keyed cache, which short-
+          // circuits before any D1 work. Distinct from renderOgPng's own
+          // "hit"/"miss", which only reports whether the Satori render was
+          // reused and says nothing about read cost.
+          "x-og-cache": "epoch",
+        },
+      }),
+    )
+    .catch((err) => console.error("[og] cache put failed:", err));
 
   return res;
 };

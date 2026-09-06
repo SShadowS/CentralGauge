@@ -27,6 +27,7 @@ import type { LeaderboardQuery } from "../../src/lib/shared/api-types";
 
 const baseQuery: LeaderboardQuery = {
   set: "current",
+  mode: "sync",
   tier: "all",
   difficulty: null,
   family: null,
@@ -79,10 +80,20 @@ async function insertRun(runId: string): Promise<void> {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
     .bind(
-      runId, "prop", 1, "sp", "rig",
-      "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
-      "completed", "claimed", "v1",
-      "sig", "2026-04-01T00:00:00Z", 1, new Uint8Array([0]),
+      runId,
+      "prop",
+      1,
+      "sp",
+      "rig",
+      "2026-04-01T00:00:00Z",
+      "2026-04-01T01:00:00Z",
+      "completed",
+      "claimed",
+      "v1",
+      "sig",
+      "2026-04-01T00:00:00Z",
+      1,
+      new Uint8Array([0]),
     )
     .run();
 }
@@ -130,43 +141,145 @@ interface Config {
 
 const CONFIGS: Config[] = [
   // Edge: nothing attempted
-  { label: "nothing attempted",             totalTasks: 10, attempted: 0,  p1: 0,  p2Only: 0 },
+  {
+    label: "nothing attempted",
+    totalTasks: 10,
+    attempted: 0,
+    p1: 0,
+    p2Only: 0,
+  },
   // Edge: all tasks attempted, all pass p1
-  { label: "perfect p1 coverage",           totalTasks: 10, attempted: 10, p1: 10, p2Only: 0 },
+  {
+    label: "perfect p1 coverage",
+    totalTasks: 10,
+    attempted: 10,
+    p1: 10,
+    p2Only: 0,
+  },
   // Edge: all tasks attempted, all pass p2 only
-  { label: "perfect p2-only coverage",      totalTasks: 10, attempted: 10, p1: 0,  p2Only: 10 },
+  {
+    label: "perfect p2-only coverage",
+    totalTasks: 10,
+    attempted: 10,
+    p1: 0,
+    p2Only: 10,
+  },
   // Edge: attempted == totalTasks, none pass
-  { label: "all attempted, none pass",      totalTasks: 10, attempted: 10, p1: 0,  p2Only: 0 },
+  {
+    label: "all attempted, none pass",
+    totalTasks: 10,
+    attempted: 10,
+    p1: 0,
+    p2Only: 0,
+  },
   // Typical: partial coverage, mixed pass
-  { label: "partial coverage mixed",        totalTasks: 10, attempted: 5,  p1: 3,  p2Only: 1 },
+  {
+    label: "partial coverage mixed",
+    totalTasks: 10,
+    attempted: 5,
+    p1: 3,
+    p2Only: 1,
+  },
   // Typical: model only touched 1 task and passed it
-  { label: "1 of 20 attempted, passed",     totalTasks: 20, attempted: 1,  p1: 1,  p2Only: 0 },
+  {
+    label: "1 of 20 attempted, passed",
+    totalTasks: 20,
+    attempted: 1,
+    p1: 1,
+    p2Only: 0,
+  },
   // Typical: model only touched 1 task and failed it
-  { label: "1 of 20 attempted, failed",     totalTasks: 20, attempted: 1,  p1: 0,  p2Only: 0 },
+  {
+    label: "1 of 20 attempted, failed",
+    totalTasks: 20,
+    attempted: 1,
+    p1: 0,
+    p2Only: 0,
+  },
   // Large set, low attempted ratio
-  { label: "large set, low ratio",          totalTasks: 30, attempted: 3,  p1: 2,  p2Only: 1 },
+  {
+    label: "large set, low ratio",
+    totalTasks: 30,
+    attempted: 3,
+    p1: 2,
+    p2Only: 1,
+  },
   // Large set, high attempted ratio
-  { label: "large set, high ratio",         totalTasks: 30, attempted: 28, p1: 20, p2Only: 5 },
+  {
+    label: "large set, high ratio",
+    totalTasks: 30,
+    attempted: 28,
+    p1: 20,
+    p2Only: 5,
+  },
   // Small set, full coverage
-  { label: "small set full coverage",       totalTasks: 3,  attempted: 3,  p1: 2,  p2Only: 1 },
+  {
+    label: "small set full coverage",
+    totalTasks: 3,
+    attempted: 3,
+    p1: 2,
+    p2Only: 1,
+  },
   // Single task set
-  { label: "single task, pass p1",          totalTasks: 1,  attempted: 1,  p1: 1,  p2Only: 0 },
-  { label: "single task, pass p2",          totalTasks: 1,  attempted: 1,  p1: 0,  p2Only: 1 },
-  { label: "single task, fail",             totalTasks: 1,  attempted: 1,  p1: 0,  p2Only: 0 },
+  {
+    label: "single task, pass p1",
+    totalTasks: 1,
+    attempted: 1,
+    p1: 1,
+    p2Only: 0,
+  },
+  {
+    label: "single task, pass p2",
+    totalTasks: 1,
+    attempted: 1,
+    p1: 0,
+    p2Only: 1,
+  },
+  { label: "single task, fail", totalTasks: 1, attempted: 1, p1: 0, p2Only: 0 },
   // Mixed: half attempted, half pass
-  { label: "half-half",                     totalTasks: 10, attempted: 5,  p1: 5,  p2Only: 0 },
+  { label: "half-half", totalTasks: 10, attempted: 5, p1: 5, p2Only: 0 },
   // p2Only dominant
-  { label: "p2-only dominant",              totalTasks: 15, attempted: 10, p1: 1,  p2Only: 9 },
+  {
+    label: "p2-only dominant",
+    totalTasks: 15,
+    attempted: 10,
+    p1: 1,
+    p2Only: 9,
+  },
   // p1 dominant
-  { label: "p1 dominant",                   totalTasks: 15, attempted: 10, p1: 9,  p2Only: 1 },
+  { label: "p1 dominant", totalTasks: 15, attempted: 10, p1: 9, p2Only: 1 },
   // Exactly attempted == totalTasks, partial pass
-  { label: "all attempted, partial pass",   totalTasks: 8,  attempted: 8,  p1: 3,  p2Only: 2 },
+  {
+    label: "all attempted, partial pass",
+    totalTasks: 8,
+    attempted: 8,
+    p1: 3,
+    p2Only: 2,
+  },
   // Very large denominator, tiny numerator
-  { label: "huge set, minimal pass",        totalTasks: 30, attempted: 2,  p1: 1,  p2Only: 0 },
+  {
+    label: "huge set, minimal pass",
+    totalTasks: 30,
+    attempted: 2,
+    p1: 1,
+    p2Only: 0,
+  },
   // Equal numerator for strict and per-attempted (attempted == totalTasks, all pass)
-  { label: "attempted==total, all pass",    totalTasks: 5,  attempted: 5,  p1: 3,  p2Only: 2 },
+  {
+    label: "attempted==total, all pass",
+    totalTasks: 5,
+    attempted: 5,
+    p1: 3,
+    p2Only: 2,
+  },
   // Zero passes but multiple attempts
-  { label: "multiple attempts, zero pass",  totalTasks: 10, attempted: 6,  p1: 0,  p2Only: 0 },
+  {
+    label: "multiple attempts, zero pass",
+    totalTasks: 10,
+    attempted: 6,
+    p1: 0,
+    p2Only: 0,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -234,14 +347,23 @@ describe("property: pass_at_n invariants (PR2.1 — strict denominator only)", (
       }
 
       const mProp = rows.find((r) => r.model.slug === "M-PROP");
-      expect(mProp, `M-PROP row must be present for config: ${cfg.label}`).toBeDefined();
+      expect(
+        mProp,
+        `M-PROP row must be present for config: ${cfg.label}`,
+      ).toBeDefined();
 
       const strict = mProp!.pass_at_n;
       const expectedNumerator = cfg.p1 + cfg.p2Only;
 
       // Invariant 1: pass_at_n is in [0, 1] (numerator ≤ denominator).
-      expect(strict, `pass_at_n must be ≥ 0 for config: ${cfg.label}`).toBeGreaterThanOrEqual(0);
-      expect(strict, `pass_at_n must be ≤ 1 for config: ${cfg.label}`).toBeLessThanOrEqual(1 + 1e-9);
+      expect(
+        strict,
+        `pass_at_n must be ≥ 0 for config: ${cfg.label}`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        strict,
+        `pass_at_n must be ≤ 1 for config: ${cfg.label}`,
+      ).toBeLessThanOrEqual(1 + 1e-9);
 
       // Invariant 2: denominator == totalTasks.
       expect(mProp!.denominator).toBe(cfg.totalTasks);

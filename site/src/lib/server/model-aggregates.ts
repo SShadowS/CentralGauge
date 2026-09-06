@@ -1,7 +1,11 @@
-import { formatSettingsSuffix, type SettingsProfileLike } from './settings-suffix';
-import type { ServerTimer } from './server-timing';
-import { computeDenominator } from './denominator';
-import { rowCostUsd } from './cost-sql';
+import {
+  formatSettingsSuffix,
+  type SettingsProfileLike,
+} from "./settings-suffix";
+import type { ServerTimer } from "./server-timing";
+import { computeDenominator } from "./denominator";
+import { rowCostUsd } from "./cost-sql";
+import { modePredicate, type InvocationMode } from "./invocation-mode";
 
 /**
  * Single source of truth for per-model aggregates (run_count, verified_runs,
@@ -118,9 +122,16 @@ export interface ComputeOpts {
   /** Scope aggregate to tasks in this category slug. */
   category?: string | null;
   /** Scope aggregate to tasks with this difficulty. */
-  difficulty?: 'easy' | 'medium' | 'hard' | null;
+  difficulty?: "easy" | "medium" | "hard" | null;
   tier?: string;
   since?: string | null;
+  /**
+   * Invocation mode the aggregate is scoped to (D4). Required: every ranking
+   * aggregate must select exactly one of sync/batch rather than silently
+   * mixing both pricing/latency profiles into one number. Callers resolve it
+   * via `resolveInvocationMode` before calling in.
+   */
+  mode: InvocationMode;
   /**
    * When true, also computes `latency_p50_ms` and `latency_p95_ms` for each
    * model. Off by default because it adds a second query; the leaderboard
@@ -161,12 +172,12 @@ function buildScopeInClause(
   ruAlias: string,
   opts: ComputeOpts,
 ): { clause: string; params: Array<string | number> } {
-  if (!opts.category && !opts.difficulty) return { clause: '', params: [] };
+  if (!opts.category && !opts.difficulty) return { clause: "", params: [] };
   const tc = opts.category
     ? `JOIN task_categories tc_sub ON tc_sub.id = t_sub.category_id`
-    : '';
-  const tcWhere = opts.category ? `AND tc_sub.slug = ?` : '';
-  const diffWhere = opts.difficulty ? `AND t_sub.difficulty = ?` : '';
+    : "";
+  const tcWhere = opts.category ? `AND tc_sub.slug = ?` : "";
+  const diffWhere = opts.difficulty ? `AND t_sub.difficulty = ?` : "";
   const clause = `AND ${rAlias}.task_id IN (
     SELECT t_sub.task_id FROM tasks t_sub ${tc}
     WHERE t_sub.task_set_hash = ${ruAlias}.task_set_hash ${diffWhere} ${tcWhere}
@@ -212,14 +223,23 @@ export interface LiteAggregate {
  */
 export async function computeModelAggregatesLite(
   db: D1Database,
-  opts: { modelIds?: number[] } = {},
+  opts: { modelIds?: number[]; mode?: InvocationMode } = {},
 ): Promise<Map<number, LiteAggregate>> {
+  const where: string[] = [];
   const params: Array<string | number> = [];
-  let whereClause = '';
   if (opts.modelIds && opts.modelIds.length > 0) {
-    whereClause = `WHERE runs.model_id IN (${opts.modelIds.map(() => '?').join(',')})`;
+    where.push(`runs.model_id IN (${opts.modelIds.map(() => "?").join(",")})`);
     params.push(...opts.modelIds);
   }
+  // D4: unlike computeModelAggregates, mode is OPTIONAL here — this helper
+  // also backs the catalog-wide `/api/v1/models` list (see models.ts), which
+  // is deliberately cross-set and cross-mode for discoverability. Callers
+  // that DO want a single-mode scope (D4 ranking surfaces) pass `mode`.
+  if (opts.mode) {
+    where.push(modePredicate("runs"));
+    params.push(opts.mode);
+  }
+  const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
   const sql = `
     SELECT runs.model_id AS model_id,
@@ -234,22 +254,26 @@ export async function computeModelAggregatesLite(
     GROUP BY runs.model_id
   `;
 
-  const rs = await db.prepare(sql).bind(...params).all<{
-    model_id: number;
-    run_count: number | null;
-    verified_runs: number | null;
-    avg_score: number | null;
-    last_run_at: string | null;
-  }>();
+  const rs = await db
+    .prepare(sql)
+    .bind(...params)
+    .all<{
+      model_id: number;
+      run_count: number | null;
+      verified_runs: number | null;
+      avg_score: number | null;
+      last_run_at: string | null;
+    }>();
 
   const out = new Map<number, LiteAggregate>();
   for (const row of rs.results ?? []) {
     out.set(row.model_id, {
       run_count: Number(row.run_count ?? 0),
       verified_runs: Number(row.verified_runs ?? 0),
-      avg_score: row.avg_score === null || row.avg_score === undefined
-        ? null
-        : Number(row.avg_score),
+      avg_score:
+        row.avg_score === null || row.avg_score === undefined
+          ? null
+          : Number(row.avg_score),
       last_run_at: row.last_run_at ?? null,
     });
   }
@@ -258,7 +282,7 @@ export async function computeModelAggregatesLite(
 
 export async function computeModelAggregates(
   db: D1Database,
-  opts: ComputeOpts = {},
+  opts: ComputeOpts,
 ): Promise<Map<number, Aggregate>> {
   const where: string[] = [];
   const params: Array<string | number> = [];
@@ -266,12 +290,12 @@ export async function computeModelAggregates(
   // Subquery interpolation slots — must mirror outer task_set scoping inside
   // correlated subqueries (CR-5). Without these, attempt-1 successes from a
   // non-current task set would bleed into the current-set leaderboard.
-  let taskSetClauseSubA1 = '';
-  let taskSetClauseSubA2 = '';
-  let taskSetClauseSubA2NotExists = '';
+  let taskSetClauseSubA1 = "";
+  let taskSetClauseSubA2 = "";
+  let taskSetClauseSubA2NotExists = "";
 
   if (opts.modelIds && opts.modelIds.length > 0) {
-    const ph = opts.modelIds.map(() => '?').join(',');
+    const ph = opts.modelIds.map(() => "?").join(",");
     where.push(`runs.model_id IN (${ph})`);
     params.push(...opts.modelIds);
   }
@@ -282,11 +306,12 @@ export async function computeModelAggregates(
     taskSetClauseSubA2 = `AND ru2.task_set_hash = ?`;
     taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash = ?`;
   } else if (opts.taskSetCurrent) {
-    where.push(`runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`);
+    where.push(
+      `runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
+    );
     taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
-    taskSetClauseSubA2NotExists =
-      `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
+    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
   }
   if (opts.tier) {
     where.push(`runs.tier = ?`);
@@ -296,13 +321,25 @@ export async function computeModelAggregates(
     where.push(`runs.started_at >= ?`);
     params.push(opts.since);
   }
+  // D4: every ranking aggregate selects exactly one invocation mode.
+  where.push(modePredicate("runs"));
+  params.push(opts.mode);
+
+  // D4 mirror for the ru1/ru2/ru1b correlated subqueries — same reasoning as
+  // taskSetClauseSub*: without this, an out-of-mode run's attempt-1/2 pass
+  // would bleed into a mode-scoped aggregate's numerator. Unconditional
+  // (mode is required), appended after the scope-IN clause in each subquery
+  // — mirrors leaderboard.ts's buildRunScopeClause ordering.
+  const modeClauseA1 = `AND ${modePredicate("ru1")}`;
+  const modeClauseA2 = `AND ${modePredicate("ru2")}`;
+  const modeClauseA2NotExists = `AND ${modePredicate("ru1b")}`;
 
   // Build scope-IN clauses for the three correlated subquery slots.
   // These appear in the SELECT list (before FROM/WHERE), so their bind params
   // must be positioned before the main where params in allSqlParams.
-  const scopeInA1 = buildScopeInClause('r1', 'ru1', opts);
-  const scopeInA2 = buildScopeInClause('r2', 'ru2', opts);
-  const scopeInA2NotExists = buildScopeInClause('r1b', 'ru1b', opts);
+  const scopeInA1 = buildScopeInClause("r1", "ru1", opts);
+  const scopeInA2 = buildScopeInClause("r2", "ru2", opts);
+  const scopeInA2NotExists = buildScopeInClause("r1b", "ru1b", opts);
 
   // Difficulty filter: JOIN tasks to restrict which result rows contribute.
   // The JOIN clause contains a `?` that appears BETWEEN the SELECT subqueries
@@ -310,10 +347,12 @@ export async function computeModelAggregates(
   // subquery params but before the WHERE params.
   const difficultyJoin = opts.difficulty
     ? `JOIN tasks t_diff ON t_diff.task_id = r.task_id AND t_diff.task_set_hash = runs.task_set_hash AND t_diff.difficulty = ?`
-    : '';
+    : "";
   // difficultyParam is tracked separately — NOT pushed to params[] — so it can
   // be spliced into the correct textual position in allSqlParams below.
-  const difficultyParam: Array<string | number> = opts.difficulty ? [opts.difficulty] : [];
+  const difficultyParam: Array<string | number> = opts.difficulty
+    ? [opts.difficulty]
+    : [];
 
   // Category filter: JOIN tasks→task_categories scoped to the run's task_set_hash.
   // Uses alias `t_cat` to avoid colliding with `t_diff`. The category slug
@@ -321,13 +360,13 @@ export async function computeModelAggregates(
   const categoryJoin = opts.category
     ? `JOIN tasks t_cat ON t_cat.task_id = r.task_id AND t_cat.task_set_hash = runs.task_set_hash
        JOIN task_categories tc ON tc.id = t_cat.category_id`
-    : '';
+    : "";
   if (opts.category) {
     where.push(`tc.slug = ?`);
     params.push(opts.category);
   }
 
-  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
   // -----------------------------------------------------------------------
   // Bind order MUST match textual `?` position in the SQL string.
@@ -337,30 +376,37 @@ export async function computeModelAggregates(
   //   [SELECT list]
   //   1. taskSetClauseSubA1 ?  — hash mode only (ru1.task_set_hash = ?)
   //   2. scopeInA1 ?s          — difficulty?, category? inside A1 subquery
-  //   3. taskSetClauseSubA2NotExists ?  — hash mode only
-  //   4. scopeInA2NotExists ?s — difficulty?, category? inside NOT EXISTS
-  //   5. taskSetClauseSubA2 ?  — hash mode only
-  //   6. scopeInA2 ?s          — difficulty?, category? inside A2 subquery
+  //   3. modeClauseA1 ?        — ru1.invocation_mode = ? (D4, unconditional)
+  //   4. taskSetClauseSubA2NotExists ?  — hash mode only
+  //   5. scopeInA2NotExists ?s — difficulty?, category? inside NOT EXISTS
+  //   6. modeClauseA2NotExists ? — ru1b.invocation_mode = ? (D4, unconditional)
+  //   7. taskSetClauseSubA2 ?  — hash mode only
+  //   8. scopeInA2 ?s          — difficulty?, category? inside A2 subquery
+  //   9. modeClauseA2 ?        — ru2.invocation_mode = ? (D4, unconditional)
   //
   //   [FROM / JOINs]
-  //   7. difficultyJoin ?      — t_diff.difficulty = ? (JOIN ON condition)
+  //   10. difficultyJoin ?     — t_diff.difficulty = ? (JOIN ON condition)
   //
   //   [WHERE]
-  //   8+. params[]             — modelIds, taskSetHash (outer), tier, since, category
+  //   11+. params[]            — modelIds, taskSetHash (outer), tier, since,
+  //                              invocation_mode (D4), category
   //
   // NOTE: when taskSetCurrent is used the subquery slots use a subselect (no ?).
   // -----------------------------------------------------------------------
   const allParamsSub1: Array<string | number> = [
     ...(opts.taskSetHash ? [opts.taskSetHash] : []),
     ...scopeInA1.params,
+    opts.mode,
   ];
   const allParamsNotExists: Array<string | number> = [
     ...(opts.taskSetHash ? [opts.taskSetHash] : []),
     ...scopeInA2NotExists.params,
+    opts.mode,
   ];
   const allParamsSub2: Array<string | number> = [
     ...(opts.taskSetHash ? [opts.taskSetHash] : []),
     ...scopeInA2.params,
+    opts.mode,
   ];
 
   const sql = `
@@ -369,10 +415,10 @@ export async function computeModelAggregates(
            COUNT(DISTINCT CASE WHEN runs.tier = 'verified' THEN runs.id ELSE NULL END) AS verified_runs,
            AVG(r.score)                                                  AS avg_score,
            -- Per-task cost (matches /api/v1/leaderboard semantics).
-           SUM(${rowCostUsd('r', 'cs', 'runs')})
+           SUM(${rowCostUsd("r", "cs", "runs")})
              / NULLIF(COUNT(DISTINCT r.task_id), 0)                      AS avg_cost_usd,
            -- Total cost (un-divided) — used for cost_per_pass_usd.
-           SUM(${rowCostUsd('r', 'cs', 'runs')})
+           SUM(${rowCostUsd("r", "cs", "runs")})
                                                                           AS total_cost_usd,
            MAX(runs.started_at)                                          AS last_run_at,
            COUNT(r.id) AS tasks_attempted,
@@ -387,6 +433,7 @@ export async function computeModelAggregates(
             WHERE ru1.model_id = runs.model_id AND r1.attempt = 1 AND r1.passed = 1
               ${taskSetClauseSubA1}
               ${scopeInA1.clause}
+              ${modeClauseA1}
            ) AS tasks_passed_attempt_1,
            (SELECT COUNT(DISTINCT r2.task_id)
             FROM results r2 JOIN runs ru2 ON ru2.id = r2.run_id
@@ -397,9 +444,11 @@ export async function computeModelAggregates(
                   AND r1b.attempt = 1 AND r1b.passed = 1
                   ${taskSetClauseSubA2NotExists}
                   ${scopeInA2NotExists.clause}
+                  ${modeClauseA2NotExists}
               )
               ${taskSetClauseSubA2}
               ${scopeInA2.clause}
+              ${modeClauseA2}
            ) AS tasks_passed_attempt_2_only
     FROM runs
     LEFT JOIN results r ON r.run_id = runs.id
@@ -414,28 +463,30 @@ export async function computeModelAggregates(
     ...allParamsSub1,
     ...allParamsNotExists,
     ...allParamsSub2,
-    ...difficultyParam,  // JOIN ON condition (before WHERE)
-    ...params,           // WHERE clause params: modelIds, taskSetHash, tier, since, category
+    ...difficultyParam, // JOIN ON condition (before WHERE)
+    ...params, // WHERE clause params: modelIds, taskSetHash, tier, since, mode (D4), category
   ];
 
   const stmt = db.prepare(sql).bind(...allSqlParams);
   const rs = await (opts.timer
-    ? opts.timer.measure('aggregates_main', () => stmt.all<{
-        model_id: number;
-        run_count: number | string | null;
-        verified_runs: number | string | null;
-        avg_score: number | string | null;
-        avg_cost_usd: number | string | null;
-        total_cost_usd: number | string | null;
-        last_run_at: string | null;
-        tasks_attempted: number | string | null;
-        tasks_passed: number | string | null;
-        tasks_attempted_distinct: number | string | null;
-        tasks_passed_attempt_1: number | string | null;
-        tasks_passed_attempt_2_only: number | string | null;
-        settings_hash_unique: string | null;
-        settings_hash_count: number | string | null;
-      }>())
+    ? opts.timer.measure("aggregates_main", () =>
+        stmt.all<{
+          model_id: number;
+          run_count: number | string | null;
+          verified_runs: number | string | null;
+          avg_score: number | string | null;
+          avg_cost_usd: number | string | null;
+          total_cost_usd: number | string | null;
+          last_run_at: string | null;
+          tasks_attempted: number | string | null;
+          tasks_passed: number | string | null;
+          tasks_attempted_distinct: number | string | null;
+          tasks_passed_attempt_1: number | string | null;
+          tasks_passed_attempt_2_only: number | string | null;
+          settings_hash_unique: string | null;
+          settings_hash_count: number | string | null;
+        }>(),
+      )
     : stmt.all<{
         model_id: number;
         run_count: number | string | null;
@@ -467,19 +518,21 @@ export async function computeModelAggregates(
     SettingsProfileLike & { extra_json: string | null }
   >();
   if (uniqueHashes.length > 0) {
-    const ph = uniqueHashes.map(() => '?').join(',');
+    const ph = uniqueHashes.map(() => "?").join(",");
     const profileStmt = db
       .prepare(
         `SELECT hash, temperature, max_tokens, extra_json FROM settings_profiles WHERE hash IN (${ph})`,
       )
       .bind(...uniqueHashes);
     const profileRs = await (opts.timer
-      ? opts.timer.measure('settings_profiles', () => profileStmt.all<{
-          hash: string;
-          temperature: number | null;
-          max_tokens: number | null;
-          extra_json: string | null;
-        }>())
+      ? opts.timer.measure("settings_profiles", () =>
+          profileStmt.all<{
+            hash: string;
+            temperature: number | null;
+            max_tokens: number | null;
+            extra_json: string | null;
+          }>(),
+        )
       : profileStmt.all<{
           hash: string;
           temperature: number | null;
@@ -488,9 +541,9 @@ export async function computeModelAggregates(
         }>());
     for (const p of profileRs.results ?? []) {
       profileByHash.set(p.hash, {
-        temperature: typeof p.temperature === 'number' ? p.temperature : null,
-        max_tokens: typeof p.max_tokens === 'number' ? p.max_tokens : null,
-        extra_json: typeof p.extra_json === 'string' ? p.extra_json : null,
+        temperature: typeof p.temperature === "number" ? p.temperature : null,
+        max_tokens: typeof p.max_tokens === "number" ? p.max_tokens : null,
+        extra_json: typeof p.extra_json === "string" ? p.extra_json : null,
       });
     }
   }
@@ -512,15 +565,20 @@ export async function computeModelAggregates(
   // Bind order for result-joining secondary helpers (extraJoins before WHERE):
   //   1. difficultyParam — JOIN ON condition `?` (before WHERE)
   //   2. params[] — WHERE: modelIds, taskSetHash, tier, since, category
-  const resultJoinsStr = [difficultyJoin, categoryJoin].filter(Boolean).join('\n');
+  const resultJoinsStr = [difficultyJoin, categoryJoin]
+    .filter(Boolean)
+    .join("\n");
   // params for helpers that join results (have the full JOIN + WHERE):
-  const secondaryParams: Array<string | number> = [...difficultyParam, ...params];
+  const secondaryParams: Array<string | number> = [
+    ...difficultyParam,
+    ...params,
+  ];
   // params for computeSettingsConsistency (no results join, no task-level filter):
   // rebuild WHERE and params from run-level conditions only.
   const whereForSettings: string[] = [];
   const paramsForSettings: Array<string | number> = [];
   if (opts.modelIds && opts.modelIds.length > 0) {
-    const ph = opts.modelIds.map(() => '?').join(',');
+    const ph = opts.modelIds.map(() => "?").join(",");
     whereForSettings.push(`runs.model_id IN (${ph})`);
     paramsForSettings.push(...opts.modelIds);
   }
@@ -528,7 +586,9 @@ export async function computeModelAggregates(
     whereForSettings.push(`runs.task_set_hash = ?`);
     paramsForSettings.push(opts.taskSetHash);
   } else if (opts.taskSetCurrent) {
-    whereForSettings.push(`runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`);
+    whereForSettings.push(
+      `runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
+    );
   }
   if (opts.tier) {
     whereForSettings.push(`runs.tier = ?`);
@@ -538,28 +598,64 @@ export async function computeModelAggregates(
     whereForSettings.push(`runs.started_at >= ?`);
     paramsForSettings.push(opts.since);
   }
+  // D4: this helper builds its own WHERE from scratch (it has no results/task
+  // join to piggyback on the outer `where`), so the mode predicate must be
+  // added here too rather than inherited.
+  whereForSettings.push(modePredicate("runs"));
+  paramsForSettings.push(opts.mode);
 
   const modelIdsInResult = (rs.results ?? []).map((r) => r.model_id);
   const { timer } = opts;
   const tokensByModel = await (timer
-    ? timer.measure('tokens', () => computeTokensAvgPerRun(db, where, secondaryParams, resultJoinsStr))
+    ? timer.measure("tokens", () =>
+        computeTokensAvgPerRun(db, where, secondaryParams, resultJoinsStr),
+      )
     : computeTokensAvgPerRun(db, where, secondaryParams, resultJoinsStr));
   const consistencyByModel = await (timer
-    ? timer.measure('consistency', () => computeConsistencyPct(db, where, secondaryParams, resultJoinsStr))
+    ? timer.measure("consistency", () =>
+        computeConsistencyPct(db, where, secondaryParams, resultJoinsStr),
+      )
     : computeConsistencyPct(db, where, secondaryParams, resultJoinsStr));
   const settingsConsistencyByModel = await (timer
-    ? timer.measure('settings', () => computeSettingsConsistency(db, whereForSettings, paramsForSettings, modelIdsInResult))
-    : computeSettingsConsistency(db, whereForSettings, paramsForSettings, modelIdsInResult));
+    ? timer.measure("settings", () =>
+        computeSettingsConsistency(
+          db,
+          whereForSettings,
+          paramsForSettings,
+          modelIdsInResult,
+        ),
+      )
+    : computeSettingsConsistency(
+        db,
+        whereForSettings,
+        paramsForSettings,
+        modelIdsInResult,
+      ));
 
   // Optionally fetch per-result durations and compute percentiles in TS. We do
   // this in a second query (rather than a SQL window function) so the math
   // stays visible & testable, and so the helper degrades gracefully on D1
   // builds without PERCENTILE_CONT.
-  let latencyPercentilesByModel: Map<number, { p50: number; p95: number }> | null = null;
+  let latencyPercentilesByModel: Map<
+    number,
+    { p50: number; p95: number }
+  > | null = null;
   if (opts.includeLatencyP50) {
     latencyPercentilesByModel = await (timer
-      ? timer.measure('latency_pct', () => computeLatencyPercentilesByModel(db, where, secondaryParams, resultJoinsStr))
-      : computeLatencyPercentilesByModel(db, where, secondaryParams, resultJoinsStr));
+      ? timer.measure("latency_pct", () =>
+          computeLatencyPercentilesByModel(
+            db,
+            where,
+            secondaryParams,
+            resultJoinsStr,
+          ),
+        )
+      : computeLatencyPercentilesByModel(
+          db,
+          where,
+          secondaryParams,
+          resultJoinsStr,
+        ));
   }
 
   // Optionally compute pass^n (strict all-runs-pass fraction). Off by default
@@ -568,7 +664,9 @@ export async function computeModelAggregates(
   let passHatByModel: Map<number, number> | null = null;
   if (opts.includePassHatAtN) {
     passHatByModel = await (timer
-      ? timer.measure('pass_hat', () => computePassHatAtN(db, where, secondaryParams, resultJoinsStr))
+      ? timer.measure("pass_hat", () =>
+          computePassHatAtN(db, where, secondaryParams, resultJoinsStr),
+        )
       : computePassHatAtN(db, where, secondaryParams, resultJoinsStr));
   }
 
@@ -580,11 +678,17 @@ export async function computeModelAggregates(
   let strictDenominator: number | null = null;
   if (opts.taskSetHash) {
     strictDenominator = await (timer
-      ? timer.measure('ci_denominator', () => computeDenominator(db, {
-          taskSetHash: opts.taskSetHash!,
-          category: opts.category ?? null,
-          difficulty: opts.difficulty ?? null,
-        }, timer))
+      ? timer.measure("ci_denominator", () =>
+          computeDenominator(
+            db,
+            {
+              taskSetHash: opts.taskSetHash!,
+              category: opts.category ?? null,
+              difficulty: opts.difficulty ?? null,
+            },
+            timer,
+          ),
+        )
       : computeDenominator(db, {
           taskSetHash: opts.taskSetHash,
           category: opts.category ?? null,
@@ -602,14 +706,12 @@ export async function computeModelAggregates(
     // ONLY when the caller did not provide taskSetHash (legacy/no-current-set
     // path). A strict denominator that comes back as 0 keeps using strict so
     // an empty-scope filter doesn't silently inflate the rate.
-    const passAtNDenominator = strictDenominator === null
-      ? attemptedDistinct
-      : strictDenominator;
-    const passAtN = passAtNDenominator > 0
-      ? tasksPassedDistinct / passAtNDenominator
-      : 0;
+    const passAtNDenominator =
+      strictDenominator === null ? attemptedDistinct : strictDenominator;
+    const passAtN =
+      passAtNDenominator > 0 ? tasksPassedDistinct / passAtNDenominator : 0;
     const profile = row.settings_hash_unique
-      ? profileByHash.get(row.settings_hash_unique) ?? null
+      ? (profileByHash.get(row.settings_hash_unique) ?? null)
       : null;
     const settingsSuffix = formatSettingsSuffix(profile);
 
@@ -631,21 +733,34 @@ export async function computeModelAggregates(
       thinkingBudget = null;
     }
 
-    const latencyPercentiles = latencyPercentilesByModel?.get(row.model_id) ?? null;
+    const latencyPercentiles =
+      latencyPercentilesByModel?.get(row.model_id) ?? null;
 
-    const totalCostUsd = row.total_cost_usd === null ? null : Number(row.total_cost_usd);
-    const costPerPassUsd = tasksPassedDistinct > 0 && totalCostUsd !== null
-      ? Number((totalCostUsd / tasksPassedDistinct).toFixed(6))
-      : null;
+    const totalCostUsd =
+      row.total_cost_usd === null ? null : Number(row.total_cost_usd);
+    const costPerPassUsd =
+      tasksPassedDistinct > 0 && totalCostUsd !== null
+        ? Number((totalCostUsd / tasksPassedDistinct).toFixed(6))
+        : null;
 
     out.set(row.model_id, {
       run_count: Number(row.run_count ?? 0),
       verified_runs: Number(row.verified_runs ?? 0),
-      avg_score: row.avg_score === null ? null : Number(Number(row.avg_score).toFixed(6)),
-      avg_cost_usd: row.avg_cost_usd === null ? null : Number(Number(row.avg_cost_usd).toFixed(6)),
+      avg_score:
+        row.avg_score === null
+          ? null
+          : Number(Number(row.avg_score).toFixed(6)),
+      avg_cost_usd:
+        row.avg_cost_usd === null
+          ? null
+          : Number(Number(row.avg_cost_usd).toFixed(6)),
       last_run_at: row.last_run_at,
-      latency_p50_ms: latencyPercentiles ? Math.round(latencyPercentiles.p50) : null,
-      latency_p95_ms: latencyPercentiles ? Math.round(latencyPercentiles.p95) : null,
+      latency_p50_ms: latencyPercentiles
+        ? Math.round(latencyPercentiles.p50)
+        : null,
+      latency_p95_ms: latencyPercentiles
+        ? Math.round(latencyPercentiles.p95)
+        : null,
       pass_rate_ci: wilsonInterval(tasksPassedDistinct, passAtNDenominator),
       pass_hat_at_n: passHatByModel?.get(row.model_id) ?? 0,
       cost_per_pass_usd: costPerPassUsd,
@@ -671,7 +786,9 @@ export async function computeModelAggregates(
  * named tier (e.g. `"high"`, `"low"`, `"max"`); we normalize to string for
  * uniform display.
  */
-function parseThinkingBudget(extraJson: string | null | undefined): string | null {
+function parseThinkingBudget(
+  extraJson: string | null | undefined,
+): string | null {
   if (!extraJson) return null;
   let parsed: unknown;
   try {
@@ -679,10 +796,11 @@ function parseThinkingBudget(extraJson: string | null | undefined): string | nul
   } catch {
     return null;
   }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+    return null;
   const tb = (parsed as Record<string, unknown>).thinking_budget;
-  if (typeof tb === 'number' && Number.isFinite(tb)) return String(tb);
-  if (typeof tb === 'string' && tb.length > 0) return tb;
+  if (typeof tb === "number" && Number.isFinite(tb)) return String(tb);
+  if (typeof tb === "string" && tb.length > 0) return tb;
   return null;
 }
 
@@ -695,9 +813,9 @@ async function computeTokensAvgPerRun(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
-  extraJoins = '',
+  extraJoins = "",
 ): Promise<Map<number, number>> {
-  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
   const sql = `
     SELECT runs.model_id AS model_id,
            runs.id       AS run_id,
@@ -708,11 +826,14 @@ async function computeTokensAvgPerRun(
     ${whereSql}
     GROUP BY runs.model_id, runs.id
   `;
-  const rs = await db.prepare(sql).bind(...params).all<{
-    model_id: number;
-    run_id: string;
-    run_tokens: number | string | null;
-  }>();
+  const rs = await db
+    .prepare(sql)
+    .bind(...params)
+    .all<{
+      model_id: number;
+      run_id: string;
+      run_tokens: number | string | null;
+    }>();
 
   const buckets = new Map<number, number[]>();
   for (const row of rs.results ?? []) {
@@ -743,9 +864,9 @@ async function computeConsistencyPct(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
-  extraJoins = '',
+  extraJoins = "",
 ): Promise<Map<number, number>> {
-  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
   const sql = `
     SELECT runs.model_id AS model_id,
            r.task_id     AS task_id,
@@ -757,16 +878,22 @@ async function computeConsistencyPct(
     ${extraJoins}
     ${whereSql}
   `;
-  const rs = await db.prepare(sql).bind(...params).all<{
-    model_id: number;
-    task_id: string;
-    run_id: string;
-    attempt: number | string | null;
-    passed: number | string | null;
-  }>();
+  const rs = await db
+    .prepare(sql)
+    .bind(...params)
+    .all<{
+      model_id: number;
+      task_id: string;
+      run_id: string;
+      attempt: number | string | null;
+      passed: number | string | null;
+    }>();
 
   // bucket: model_id -> task_id -> run_id -> { a1: 0|1, a2: 0|1 }
-  const byModel = new Map<number, Map<string, Map<string, { a1: number; a2: number }>>>();
+  const byModel = new Map<
+    number,
+    Map<string, Map<string, { a1: number; a2: number }>>
+  >();
   for (const row of rs.results ?? []) {
     const attempt = Number(row.attempt ?? 0);
     const passed = Number(row.passed ?? 0) === 1 ? 1 : 0;
@@ -816,11 +943,16 @@ async function computeSettingsConsistency(
   where: string[],
   params: Array<string | number>,
   modelIds: number[],
-  extraJoins = '',
-): Promise<Map<number, { temperature: number | null; thinking_budget: string | null }>> {
-  const out = new Map<number, { temperature: number | null; thinking_budget: string | null }>();
+  extraJoins = "",
+): Promise<
+  Map<number, { temperature: number | null; thinking_budget: string | null }>
+> {
+  const out = new Map<
+    number,
+    { temperature: number | null; thinking_budget: string | null }
+  >();
   if (modelIds.length === 0) return out;
-  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
   const sql = `
     SELECT DISTINCT runs.model_id AS model_id,
                     sp.temperature AS temperature,
@@ -830,17 +962,23 @@ async function computeSettingsConsistency(
     ${extraJoins}
     ${whereSql}
   `;
-  const rs = await db.prepare(sql).bind(...params).all<{
-    model_id: number;
-    temperature: number | null;
-    extra_json: string | null;
-  }>();
+  const rs = await db
+    .prepare(sql)
+    .bind(...params)
+    .all<{
+      model_id: number;
+      temperature: number | null;
+      extra_json: string | null;
+    }>();
 
-  const byModel = new Map<number, Array<{ temp: number | null; thinking: string | null }>>();
+  const byModel = new Map<
+    number,
+    Array<{ temp: number | null; thinking: string | null }>
+  >();
   for (const row of rs.results ?? []) {
     const arr = byModel.get(row.model_id) ?? [];
     arr.push({
-      temp: typeof row.temperature === 'number' ? row.temperature : null,
+      temp: typeof row.temperature === "number" ? row.temperature : null,
       thinking: parseThinkingBudget(row.extra_json),
     });
     byModel.set(row.model_id, arr);
@@ -850,18 +988,23 @@ async function computeSettingsConsistency(
       out.set(modelId, { temperature: null, thinking_budget: null });
       continue;
     }
-    const tempSet = new Set(arr.map((r) => (r.temp === null ? '__null__' : String(r.temp))));
+    const tempSet = new Set(
+      arr.map((r) => (r.temp === null ? "__null__" : String(r.temp))),
+    );
     const thinkingSet = new Set(
-      arr.map((r) => (r.thinking === null ? '__null__' : r.thinking)),
+      arr.map((r) => (r.thinking === null ? "__null__" : r.thinking)),
     );
     out.set(modelId, {
-      temperature: tempSet.size === 1 && arr[0]!.temp !== null ? arr[0]!.temp : null,
-      thinking_budget: thinkingSet.size === 1 && arr[0]!.thinking !== null ? arr[0]!.thinking : null,
+      temperature:
+        tempSet.size === 1 && arr[0]!.temp !== null ? arr[0]!.temp : null,
+      thinking_budget:
+        thinkingSet.size === 1 && arr[0]!.thinking !== null
+          ? arr[0]!.thinking
+          : null,
     });
   }
   return out;
 }
-
 
 /**
  * Per-model latency percentiles (p50 and p95) of total per-result duration.
@@ -877,9 +1020,9 @@ export async function computeLatencyPercentilesByModel(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
-  extraJoins = '',
+  extraJoins = "",
 ): Promise<Map<number, { p50: number; p95: number }>> {
-  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
   const sql = `
     SELECT runs.model_id AS model_id,
            (COALESCE(r.llm_duration_ms,0) + COALESCE(r.compile_duration_ms,0) + COALESCE(r.test_duration_ms,0)) AS dur_ms
@@ -889,10 +1032,13 @@ export async function computeLatencyPercentilesByModel(
     ${whereSql}
   `;
 
-  const rs = await db.prepare(sql).bind(...params).all<{
-    model_id: number;
-    dur_ms: number | string | null;
-  }>();
+  const rs = await db
+    .prepare(sql)
+    .bind(...params)
+    .all<{
+      model_id: number;
+      dur_ms: number | string | null;
+    }>();
 
   // Bucket durations by model_id, ignoring zero-only rows (no signal).
   const byModel = new Map<number, number[]>();
@@ -969,9 +1115,9 @@ export async function computePassHatAtN(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
-  extraJoins = '',
+  extraJoins = "",
 ): Promise<Map<number, number>> {
-  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
   const sql = `
     WITH per_run_task AS (
       SELECT runs.model_id AS model_id,
@@ -996,10 +1142,13 @@ export async function computePassHatAtN(
     FROM per_task
     GROUP BY model_id;
   `;
-  const rs = await db.prepare(sql).bind(...params).all<{
-    model_id: number;
-    pass_hat: number | string | null;
-  }>();
+  const rs = await db
+    .prepare(sql)
+    .bind(...params)
+    .all<{
+      model_id: number;
+      pass_hat: number | string | null;
+    }>();
   const out = new Map<number, number>();
   for (const row of rs.results ?? []) {
     out.set(row.model_id, Number(row.pass_hat ?? 0));

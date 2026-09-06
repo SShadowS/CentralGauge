@@ -12,21 +12,27 @@ import { resetDb } from "../utils/reset-db";
  * params are excluded from the key by design.
  */
 async function currentLeaderboardKey(): Promise<Request> {
-  const row = await env.DB.prepare(`SELECT epoch FROM cache_epoch WHERE id = 1`)
-    .first<{ epoch: number }>();
-  return buildCacheKey("leaderboard", {
-    set: "current",
-    tier: "all",
-    difficulty: null,
-    family: null,
-    since: null,
-    category: null,
-    openness: null,
-    sort: "auc_2",
-    direction: "desc",
-    limit: 50,
-    cursor: null,
-  }, `e${row!.epoch}`);
+  const row = await env.DB.prepare(
+    `SELECT epoch FROM cache_epoch WHERE id = 1`,
+  ).first<{ epoch: number }>();
+  return buildCacheKey(
+    "leaderboard",
+    {
+      set: "current",
+      mode: "sync",
+      tier: "all",
+      difficulty: null,
+      family: null,
+      since: null,
+      category: null,
+      openness: null,
+      sort: "auc_2",
+      direction: "desc",
+      limit: 50,
+      cursor: null,
+    },
+    `e${row!.epoch}`,
+  );
 }
 
 async function seed(): Promise<void> {
@@ -90,22 +96,24 @@ async function seed(): Promise<void> {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).bind(
-      id,
-      ts,
-      mid,
-      sh,
-      machine,
-      `${date}T00:00:00Z`,
-      `${date}T01:00:00Z`,
-      "completed",
-      tier,
-      "v2026-04",
-      "sig",
-      `${date}T00:00:00Z`,
-      1,
-      new Uint8Array([0]),
-    ).run();
+    )
+      .bind(
+        id,
+        ts,
+        mid,
+        sh,
+        machine,
+        `${date}T00:00:00Z`,
+        `${date}T01:00:00Z`,
+        "completed",
+        tier,
+        "v2026-04",
+        "sig",
+        `${date}T00:00:00Z`,
+        1,
+        new Uint8Array([0]),
+      )
+      .run();
   }
 
   const results = [
@@ -122,13 +130,24 @@ async function seed(): Promise<void> {
     ["r4", "easy/a", 1, 1, 1.0, 1, 3, 3, 1000, 500],
     ["r4", "hard/b", 1, 1, 1.0, 1, 3, 3, 1000, 500],
   ];
-  for (
-    const [run, task, attempt, passed, score, cs, tt, tp, tin, tout] of results
-  ) {
+  for (const [
+    run,
+    task,
+    attempt,
+    passed,
+    score,
+    cs,
+    tt,
+    tp,
+    tin,
+    tout,
+  ] of results) {
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    ).bind(run, task, attempt, passed, score, cs, tt, tp, tin, tout).run();
+    )
+      .bind(run, task, attempt, passed, score, cs, tt, tp, tin, tout)
+      .run();
   }
 }
 
@@ -161,7 +180,7 @@ describe("LeaderboardRow — contract completeness", () => {
   it("each row in /api/v1/leaderboard includes exactly every field declared in the LeaderboardRow type", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?test=contract");
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     expect(body.data.length).toBeGreaterThan(0);
 
     // REQUIRED: every key in this array must match LeaderboardRow
@@ -220,16 +239,19 @@ describe("GET /api/v1/leaderboard", () => {
     // is asserted separately below.
     expect(res.headers.get("cache-control")).toContain("max-age=60");
 
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       data: Array<Record<string, unknown>>;
       next_cursor: string | null;
     };
     expect(body.data).toHaveLength(2); // sonnet + opus on current
-    const sonnet = body.data.find((r) =>
-      r.model && (r.model as Record<string, unknown>)["slug"] === "sonnet-4.7"
+    const sonnet = body.data.find(
+      (r) =>
+        r.model &&
+        (r.model as Record<string, unknown>)["slug"] === "sonnet-4.7",
     );
-    const opus = body.data.find((r) =>
-      r.model && (r.model as Record<string, unknown>)["slug"] === "opus-4.7"
+    const opus = body.data.find(
+      (r) =>
+        r.model && (r.model as Record<string, unknown>)["slug"] === "opus-4.7",
     );
     expect(sonnet!.run_count).toBe(2);
     expect(opus!.run_count).toBe(1);
@@ -239,14 +261,14 @@ describe("GET /api/v1/leaderboard", () => {
     expect(Math.abs((opus!.avg_score as number) - 1.0)).toBeLessThan(0.001);
 
     // New tier-1/2 metrics present on each row.
-    expect(typeof sonnet!.latency_p95_ms).toBe('number');
+    expect(typeof sonnet!.latency_p95_ms).toBe("number");
     expect(sonnet!.pass_rate_ci).toMatchObject({
       lower: expect.any(Number),
       upper: expect.any(Number),
     });
-    expect(typeof sonnet!.pass_hat_at_n).toBe('number');
+    expect(typeof sonnet!.pass_hat_at_n).toBe("number");
     const sonnetCost = sonnet!.cost_per_pass_usd as number | null;
-    expect(sonnetCost === null || typeof sonnetCost === 'number').toBe(true);
+    expect(sonnetCost === null || typeof sonnetCost === "number").toBe(true);
 
     // Opus is higher → sorted first
     const firstSlug = (body.data[0].model as Record<string, unknown>)["slug"];
@@ -256,7 +278,7 @@ describe("GET /api/v1/leaderboard", () => {
   it("set=all returns 400 (not supported for strict pass_at_n metric)", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all");
     expect(res.status).toBe(400);
-    const body = await res.json() as { code?: string };
+    const body = (await res.json()) as { code?: string };
     expect(body.code).toBe("invalid_set_for_metric");
   });
 
@@ -280,9 +302,11 @@ describe("GET /api/v1/leaderboard", () => {
 
     const res = await SELF.fetch(`https://x/api/v1/leaderboard?set=${HASH}`);
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const sonnet = body.data.find((r) =>
-      r.model && (r.model as Record<string, unknown>)["slug"] === "sonnet-4.7"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find(
+      (r) =>
+        r.model &&
+        (r.model as Record<string, unknown>)["slug"] === "sonnet-4.7",
     );
     expect(sonnet).toBeDefined();
     // Only run rH should contribute — the three ts-current runs and the
@@ -294,13 +318,13 @@ describe("GET /api/v1/leaderboard", () => {
   it("set=<bogus> returns 400", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?set=ts-current");
     expect(res.status).toBe(400);
-    const body = await res.json() as { code?: string };
+    const body = (await res.json()) as { code?: string };
     expect(body.code).toBe("invalid_set");
   });
 
   it("tier=verified filters to verified runs only", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?tier=verified");
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     expect(body.data).toHaveLength(1);
     expect((body.data[0].model as Record<string, unknown>)["slug"]).toBe(
       "sonnet-4.7",
@@ -312,16 +336,18 @@ describe("GET /api/v1/leaderboard", () => {
     const res = await SELF.fetch(
       "https://x/api/v1/leaderboard?difficulty=easy",
     );
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const sonnet = body.data.find((r) =>
-      r.model && (r.model as Record<string, unknown>)["slug"] === "sonnet-4.7"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find(
+      (r) =>
+        r.model &&
+        (r.model as Record<string, unknown>)["slug"] === "sonnet-4.7",
     );
     expect(sonnet!.avg_score).toBe(1.0); // both easy-attempts passed
   });
 
   it("family=claude filters to that family", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?family=claude");
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     expect(body.data.every((r) => r.family_slug === "claude")).toBe(true);
   });
 
@@ -446,17 +472,21 @@ describe("GET /api/v1/leaderboard", () => {
       await env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
          VALUES (?,?,?,?,?,1,3,3,1000,500)`,
-      ).bind(run, task, attempt, passed, score).run();
+      )
+        .bind(run, task, attempt, passed, score)
+        .run();
     }
 
     const res = await SELF.fetch("https://x/api/v1/leaderboard?test=fixA");
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const fixA = body.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "fixA"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const fixA = body.data.find(
+      (r) => (r.model as Record<string, unknown>).slug === "fixA",
     );
     expect(fixA, "Fixture A: model row missing").toBeDefined();
-    expect(fixA!.tasks_passed_attempt_1, "Fixture A: 2 attempt-1 successes")
-      .toBe(2);
+    expect(
+      fixA!.tasks_passed_attempt_1,
+      "Fixture A: 2 attempt-1 successes",
+    ).toBe(2);
     expect(
       fixA!.tasks_passed_attempt_2_only,
       "Fixture A: 1 attempt-2-only success",
@@ -498,13 +528,15 @@ describe("GET /api/v1/leaderboard", () => {
       await env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
          VALUES (?,?,?,?,?,1,3,3,1000,500)`,
-      ).bind(run, task, attempt, passed, score).run();
+      )
+        .bind(run, task, attempt, passed, score)
+        .run();
     }
 
     const res = await SELF.fetch("https://x/api/v1/leaderboard?test=fixB");
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const fixB = body.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "fixB"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const fixB = body.data.find(
+      (r) => (r.model as Record<string, unknown>).slug === "fixB",
     );
     expect(fixB).toBeDefined();
     // "best across runs per task": Run-1 first-try success classifies T1 → attempt_1.
@@ -512,8 +544,10 @@ describe("GET /api/v1/leaderboard", () => {
       fixB!.tasks_passed_attempt_1,
       "Fixture B: Run-1 first-try success classifies T1",
     ).toBe(1);
-    expect(fixB!.tasks_passed_attempt_2_only, "Fixture B: NOT double-counted")
-      .toBe(0);
+    expect(
+      fixB!.tasks_passed_attempt_2_only,
+      "Fixture B: NOT double-counted",
+    ).toBe(0);
     expect(fixB!.tasks_attempted_distinct, "Fixture B: 1 distinct task").toBe(
       1,
     );
@@ -552,17 +586,21 @@ describe("GET /api/v1/leaderboard", () => {
       await env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
          VALUES (?,?,?,?,?,1,3,3,1000,500)`,
-      ).bind(run, task, attempt, passed, score).run();
+      )
+        .bind(run, task, attempt, passed, score)
+        .run();
     }
 
     const res = await SELF.fetch("https://x/api/v1/leaderboard?test=fixC");
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const fixC = body.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "fixC"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const fixC = body.data.find(
+      (r) => (r.model as Record<string, unknown>).slug === "fixC",
     );
     expect(fixC).toBeDefined();
-    expect(fixC!.tasks_passed_attempt_1, "Fixture C: never first-try success")
-      .toBe(0);
+    expect(
+      fixC!.tasks_passed_attempt_1,
+      "Fixture C: never first-try success",
+    ).toBe(0);
     expect(
       fixC!.tasks_passed_attempt_2_only,
       "Fixture C: Run-2 retry succeeded",
@@ -603,19 +641,23 @@ describe("GET /api/v1/leaderboard", () => {
       await env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
          VALUES (?,?,?,?,?,1,3,3,1000,500)`,
-      ).bind(run, task, attempt, passed, score).run();
+      )
+        .bind(run, task, attempt, passed, score)
+        .run();
     }
 
     // Default scope is set=current. Run-OLD MUST NOT bleed in.
     const res = await SELF.fetch(
       "https://x/api/v1/leaderboard?test=fixD-current",
     );
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const fixD = body.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "fixD"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const fixD = body.data.find(
+      (r) => (r.model as Record<string, unknown>).slug === "fixD",
     );
-    expect(fixD, "Fixture D: model present in current-set leaderboard")
-      .toBeDefined();
+    expect(
+      fixD,
+      "Fixture D: model present in current-set leaderboard",
+    ).toBeDefined();
     expect(
       fixD!.tasks_passed_attempt_1,
       "Fixture D: Run-OLD attempt-1 success MUST NOT bleed into CURRENT set (taskSetClauseSubA1 missing)",
@@ -639,15 +681,15 @@ describe("GET /api/v1/leaderboard", () => {
       "https://x/api/v1/leaderboard?set=all&test=fixD-all",
     );
     expect(resAll.status).toBe(400);
-    const bodyAllErr = await resAll.json() as { code?: string };
+    const bodyAllErr = (await resAll.json()) as { code?: string };
     expect(bodyAllErr.code).toBe("invalid_set_for_metric");
   });
 
   it("emits settings_suffix when all runs share one settings_hash", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?test=settings");
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const sonnet = body.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "sonnet-4.7"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find(
+      (r) => (r.model as Record<string, unknown>).slug === "sonnet-4.7",
     );
     expect(sonnet).toBeDefined();
     const m = sonnet!.model as Record<string, unknown>;
@@ -661,9 +703,9 @@ describe("GET /api/v1/leaderboard", () => {
     const res = await SELF.fetch(
       "https://x/api/v1/leaderboard?sort=pass_at_n&_cb=1",
     );
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const slugs = body.data.map((r) =>
-      (r.model as Record<string, unknown>).slug
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const slugs = body.data.map(
+      (r) => (r.model as Record<string, unknown>).slug,
     );
     // Both rows have pass_at_n=1.0 (each task in current set passed at-1
     // for both models in seed) — tie-break is alphabetical model.slug.
@@ -674,7 +716,7 @@ describe("GET /api/v1/leaderboard", () => {
   // I-1 complete-fix — cost_per_pass_usd + latency_p95_ms sort
   // ===========================================================================
 
-  it('?sort=cost_per_pass_usd:asc orders rows ascending by cost per passed task (I-1)', async () => {
+  it("?sort=cost_per_pass_usd:asc orders rows ascending by cost per passed task (I-1)", async () => {
     // seed cost_snapshots:
     //   sonnet (model_id=1): input=3.0, output=15.0 $/M
     //   opus   (model_id=2): input=15.0, output=75.0 $/M
@@ -682,15 +724,17 @@ describe("GET /api/v1/leaderboard", () => {
     // that opus (10x more expensive) ends up AFTER sonnet when sorted ascending.
     // Verify: rows are sorted ascending (each row cost_per_pass_usd ≤ next).
     // Note: A.6 default direction is 'desc'; use ':asc' suffix for ascending order.
-    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=cost_per_pass_usd:asc&_cb=cpp');
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?sort=cost_per_pass_usd:asc&_cb=cpp",
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     expect(body.data.length).toBeGreaterThanOrEqual(2);
 
     // Assert ascending cost order: each row's cost_per_pass_usd ≤ next.
     // Nulls (0 tasks passed) go last → treat as Infinity for the check.
     const costs = body.data.map((r) =>
-      r.cost_per_pass_usd === null ? Infinity : (r.cost_per_pass_usd as number)
+      r.cost_per_pass_usd === null ? Infinity : (r.cost_per_pass_usd as number),
     );
     for (let i = 0; i < costs.length - 1; i++) {
       expect(costs[i]).toBeLessThanOrEqual(costs[i + 1]);
@@ -698,43 +742,52 @@ describe("GET /api/v1/leaderboard", () => {
 
     // Sonnet is cheaper (lower $/M) so should appear first when ascending.
     const firstSlug = (body.data[0].model as Record<string, unknown>).slug;
-    expect(firstSlug).toBe('sonnet-4.7');
+    expect(firstSlug).toBe("sonnet-4.7");
   });
 
-  it('?sort=latency_p95_ms orders rows ascending by p95 latency (I-1)', async () => {
+  it("?sort=latency_p95_ms orders rows ascending by p95 latency (I-1)", async () => {
     // latency_p95_ms is computed by computeModelAggregates from run durations.
     // The default seed rows all use duration_ms from the results table — which
     // does not have a duration column directly; the aggregates use result-level
     // tokens to proxy timing in tests. We just assert the sort invariant holds.
-    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=latency_p95_ms&_cb=lat');
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?sort=latency_p95_ms&_cb=lat",
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     expect(body.data.length).toBeGreaterThanOrEqual(1);
 
     // Assert ascending latency order: each row's latency_p95_ms ≤ next.
     // Rows with 0 (no latency data) sort last.
     const latencies = body.data.map((r) =>
-      (r.latency_p95_ms as number) === 0 ? Infinity : (r.latency_p95_ms as number)
+      (r.latency_p95_ms as number) === 0
+        ? Infinity
+        : (r.latency_p95_ms as number),
     );
     for (let i = 0; i < latencies.length - 1; i++) {
       expect(latencies[i]).toBeLessThanOrEqual(latencies[i + 1]);
     }
   });
 
-  it('?sort=invalid falls back to default auc_2 sort (Task 5)', async () => {
+  it("?sort=invalid falls back to default auc_2 sort (Task 5)", async () => {
     // An unrecognised sort value must not 400 — it silently falls back to auc_2
     // (default flipped from pass_at_n to auc_2 in Task 5).
-    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=bogus_field&_cb=inv');
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?sort=bogus_field&_cb=inv",
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     // Default seed: both sonnet and opus have auc_2=1.0 (both pass 2/2 tasks at attempt 1).
     // Tiebreaker is m.id DESC → opus (id=2) sorts before sonnet (id=1).
     const firstSlug = (body.data[0].model as Record<string, unknown>).slug;
-    expect(firstSlug).toBe('opus-4.7');
+    expect(firstSlug).toBe("opus-4.7");
     // filters.sort should reflect the normalised fallback value.
     expect((body as Record<string, unknown>).filters).toBeDefined();
-    const filters = (body as Record<string, unknown>).filters as Record<string, unknown>;
-    expect(filters.sort).toBe('auc_2');
+    const filters = (body as Record<string, unknown>).filters as Record<
+      string,
+      unknown
+    >;
+    expect(filters.sort).toBe("auc_2");
   });
 
   // ===========================================================================
@@ -745,7 +798,7 @@ describe("GET /api/v1/leaderboard", () => {
   // match auc_2:desc, not avg_score:desc.
   // ===========================================================================
 
-  it('no sort param: default is auc_2:desc not avg_score:desc (Task 5)', async () => {
+  it("no sort param: default is auc_2:desc not avg_score:desc (Task 5)", async () => {
     // Add a third model (M-X, id=20) with HIGH avg_score but LOW auc_2,
     // to force a divergence between auc_2 and avg_score orderings.
     //   sonnet (id=1): r1+r2 combined → auc_2 = 1.0, avg_score ~0.75
@@ -776,22 +829,29 @@ describe("GET /api/v1/leaderboard", () => {
     ]);
 
     // No sort param → must use default (auc_2:desc).
-    const res = await SELF.fetch('https://x/api/v1/leaderboard?_cb=default-sort');
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?_cb=default-sort",
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     // filters.sort must reflect the default auc_2 value.
-    const filters = (body as Record<string, unknown>).filters as Record<string, unknown>;
-    expect(filters.sort).toBe('auc_2');
+    const filters = (body as Record<string, unknown>).filters as Record<
+      string,
+      unknown
+    >;
+    expect(filters.sort).toBe("auc_2");
 
     // M-X has lower auc_2 than sonnet/opus (only 1 of 2 tasks passed, all at attempt 1
     // → pass_at_1=0.5, pass_at_n=0.5 → auc_2=0.5 vs 1.0 for others).
     // Under avg_score:desc, M-X would tie opus at 1.0.
-    const slugs = body.data.map((r) => (r.model as Record<string, unknown>).slug);
-    const mxPos = slugs.indexOf('m-x');
+    const slugs = body.data.map(
+      (r) => (r.model as Record<string, unknown>).slug,
+    );
+    const mxPos = slugs.indexOf("m-x");
     expect(mxPos).toBeGreaterThan(-1);
     // sonnet and opus both have auc_2=1.0 and must precede M-X.
-    const sonnetPos = slugs.indexOf('sonnet-4.7');
-    const opusPos = slugs.indexOf('opus-4.7');
+    const sonnetPos = slugs.indexOf("sonnet-4.7");
+    const opusPos = slugs.indexOf("opus-4.7");
     expect(sonnetPos).toBeLessThan(mxPos);
     expect(opusPos).toBeLessThan(mxPos);
   });
@@ -807,9 +867,9 @@ describe("GET /api/v1/leaderboard", () => {
       "https://x/api/v1/leaderboard?category=easy&_cb=cat-easy",
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const sonnet = body.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "sonnet-4.7"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find(
+      (r) => (r.model as Record<string, unknown>).slug === "sonnet-4.7",
     );
     expect(sonnet, "category=easy: sonnet present").toBeDefined();
     // r1.easy/a passed (1.0) + r2.easy/a passed (1.0) = avg 1.0
@@ -821,9 +881,9 @@ describe("GET /api/v1/leaderboard", () => {
       "https://x/api/v1/leaderboard?category=hard&_cb=cat-hard",
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const sonnet = body.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "sonnet-4.7"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find(
+      (r) => (r.model as Record<string, unknown>).slug === "sonnet-4.7",
     );
     expect(sonnet, "category=hard: sonnet present").toBeDefined();
     // r1.hard/b failed (0.0) + r2.hard/b passed (1.0) = avg 0.5
@@ -835,7 +895,7 @@ describe("GET /api/v1/leaderboard", () => {
       "https://x/api/v1/leaderboard?category=nonexistent-slug&_cb=cat-none",
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: unknown[] };
+    const body = (await res.json()) as { data: unknown[] };
     expect(body.data).toEqual([]);
   });
 
@@ -857,9 +917,9 @@ describe("GET /api/v1/leaderboard", () => {
     const res = await SELF.fetch(
       "https://x/api/v1/leaderboard?test=mixed-settings",
     );
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const sonnet = body.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "sonnet-4.7"
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find(
+      (r) => (r.model as Record<string, unknown>).slug === "sonnet-4.7",
     );
     expect(sonnet).toBeDefined();
     const m = sonnet!.model as Record<string, unknown>;
@@ -870,9 +930,11 @@ describe("GET /api/v1/leaderboard", () => {
   // PR1 — set=all rejection body shape
   // ---------------------------------------------------------------------------
   it("set=all returns informative error body (error field is non-empty string)", async () => {
-    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all&extra=param");
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?set=all&extra=param",
+    );
     expect(res.status).toBe(400);
-    const body = await res.json() as { code?: string; error?: string };
+    const body = (await res.json()) as { code?: string; error?: string };
     expect(body.code).toBe("invalid_set_for_metric");
     expect(typeof body.error).toBe("string");
     expect((body.error as string).length).toBeGreaterThan(0);
@@ -882,20 +944,24 @@ describe("GET /api/v1/leaderboard", () => {
   // Task 5 — auc_2 default sort + whitelist
   // ---------------------------------------------------------------------------
 
-  it('defaults to auc_2:desc when no sort param is supplied', async () => {
-    const res = await SELF.fetch('https://x/api/v1/leaderboard?set=current&_cb=t5-default');
-    const body = await res.json() as Record<string, unknown>;
+  it("defaults to auc_2:desc when no sort param is supplied", async () => {
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?set=current&_cb=t5-default",
+    );
+    const body = (await res.json()) as Record<string, unknown>;
     const filters = body.filters as Record<string, unknown>;
-    expect(filters.sort).toBe('auc_2');
-    expect(filters.direction).toBe('desc');
+    expect(filters.sort).toBe("auc_2");
+    expect(filters.direction).toBe("desc");
   });
 
-  it('accepts ?sort=auc_2:asc as a known sort', async () => {
-    const res = await SELF.fetch('https://x/api/v1/leaderboard?set=current&sort=auc_2:asc&_cb=t5-asc');
-    const body = await res.json() as Record<string, unknown>;
+  it("accepts ?sort=auc_2:asc as a known sort", async () => {
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?set=current&sort=auc_2:asc&_cb=t5-asc",
+    );
+    const body = (await res.json()) as Record<string, unknown>;
     const filters = body.filters as Record<string, unknown>;
-    expect(filters.sort).toBe('auc_2');
-    expect(filters.direction).toBe('asc');
+    expect(filters.sort).toBe("auc_2");
+    expect(filters.direction).toBe("asc");
   });
 
   // ---------------------------------------------------------------------------
@@ -903,14 +969,18 @@ describe("GET /api/v1/leaderboard", () => {
   // ---------------------------------------------------------------------------
   describe("GET /api/v1/leaderboard — tier filter (PR1)", () => {
     it("accepts tier=trusted and returns 200", async () => {
-      const res = await SELF.fetch("https://x/api/v1/leaderboard?tier=trusted&_cb=trusted");
+      const res = await SELF.fetch(
+        "https://x/api/v1/leaderboard?tier=trusted&_cb=trusted",
+      );
       expect(res.status).toBe(200);
     });
 
     it("rejects unknown tier with 400 and invalid_tier code", async () => {
-      const res = await SELF.fetch("https://x/api/v1/leaderboard?tier=bogus&_cb=bogus-tier");
+      const res = await SELF.fetch(
+        "https://x/api/v1/leaderboard?tier=bogus&_cb=bogus-tier",
+      );
       expect(res.status).toBe(400);
-      const body = await res.json() as { code?: string };
+      const body = (await res.json()) as { code?: string };
       expect(body.code).toBe("invalid_tier");
     });
   });
@@ -919,11 +989,17 @@ describe("GET /api/v1/leaderboard", () => {
   // Task 12 — attach paired-bootstrap tier numbers on auc_2 sort
   // ---------------------------------------------------------------------------
   it("annotates rows with a 1-based tier when sorted by auc_2 on a concrete set", async () => {
-    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=current&sort=auc_2:desc&_cb=t12-tier");
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?set=current&sort=auc_2:desc&_cb=t12-tier",
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     expect(body.data.length).toBeGreaterThan(0);
-    expect(body.data.every((r) => typeof r.tier === "number" && (r.tier as number) >= 1)).toBe(true);
+    expect(
+      body.data.every(
+        (r) => typeof r.tier === "number" && (r.tier as number) >= 1,
+      ),
+    ).toBe(true);
   });
 
   it("annotates rows with a tier under a non-auc_2 sort too (tier is sort-independent)", async () => {
@@ -931,10 +1007,16 @@ describe("GET /api/v1/leaderboard", () => {
     // attached regardless of the table's sort field — the tiles rely on it
     // under the Value/Speed presets. (The table only renders tier dividers +
     // dim-rank under the auc_2 sort.)
-    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=current&sort=pass_at_n:desc&_cb=t12-tier-anysort");
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?set=current&sort=pass_at_n:desc&_cb=t12-tier-anysort",
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     expect(body.data.length).toBeGreaterThan(0);
-    expect(body.data.every((r) => typeof r.tier === "number" && (r.tier as number) >= 1)).toBe(true);
+    expect(
+      body.data.every(
+        (r) => typeof r.tier === "number" && (r.tier as number) >= 1,
+      ),
+    ).toBe(true);
   });
 });
