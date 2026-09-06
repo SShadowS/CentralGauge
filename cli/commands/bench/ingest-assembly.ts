@@ -14,12 +14,17 @@ import { isInfraInvalidatedAttempt } from "../../../src/health/infra-invalidatio
 import { ValidationError } from "../../../src/errors.ts";
 import * as colors from "@std/fmt/colors";
 import {
+  isInvocationRecord,
   optionalSha,
   sha256Hex,
   terminationKind,
   testVector,
 } from "../../../src/ingest/capture.ts";
 import type { EnvironmentManifest } from "../../../src/ingest/capture.ts";
+import {
+  buildCanonicalSettings,
+  type InvocationMode,
+} from "../../../shared/settings-hash.ts";
 
 interface SavedResultsFile {
   results: TaskExecutionResult[];
@@ -161,15 +166,55 @@ export async function assembleBenchResultsForVariant(
 
   const slug = `${variant.provider}/${variant.model}`;
   const family_slug = inferFamilyFromProvider(variant.provider, variant.model);
-  const settings: Record<string, unknown> = {};
-  if (variant.config.temperature !== undefined) {
-    settings["temperature"] = variant.config.temperature;
-  }
-  if (variant.config.maxTokens !== undefined) {
-    settings["max_tokens"] = variant.config.maxTokens;
-  }
-  if (variant.config.thinkingBudget !== undefined) {
-    settings["thinking_budget"] = variant.config.thinkingBudget;
+
+  // D4/Task 11: a typed InvocationRecord (schema 4+) drives the canonical
+  // six-key settings + hashed extra_json via buildCanonicalSettings, so the
+  // settings hash actually changes between a sync and a batch invocation.
+  // A legacy/untyped invocation (older results files, or the pre-assembled
+  // `centralgauge ingest` path) falls back to the original three-key object
+  // exactly as before — no behavior change for files that predate capture.
+  //
+  // prompt_version/bc_version stay null: today's client never sends them,
+  // so every historical settings hash has them null; filling them now would
+  // move every model onto a new profile for no batch-mode reason.
+  let settings: Record<string, unknown>;
+  let invocationMode: InvocationMode = "sync";
+  if (opts.invocation && isInvocationRecord(opts.invocation)) {
+    const inv = opts.invocation;
+    invocationMode = inv.mode;
+    settings = {
+      ...buildCanonicalSettings(
+        {
+          temperature: variant.config.temperature ?? null,
+          max_attempts: inv.max_attempts,
+          max_tokens: variant.config.maxTokens ?? null,
+          prompt_version: null,
+          bc_version: null,
+        },
+        {
+          invocation_mode: inv.mode,
+          continuation: inv.continuation,
+          empty_retry: inv.empty_retry,
+          fallback_policy: inv.fallback_policy,
+          provider_route: inv.provider_route,
+          endpoint: inv.endpoint,
+          thinking_budget: variant.config.thinkingBudget ?? null,
+          prompt_profile_digest: inv.prompt_profile_digest,
+          infra_retries_per_attempt: inv.infra_retries_per_attempt,
+        },
+      ),
+    };
+  } else {
+    settings = {};
+    if (variant.config.temperature !== undefined) {
+      settings["temperature"] = variant.config.temperature;
+    }
+    if (variant.config.maxTokens !== undefined) {
+      settings["max_tokens"] = variant.config.maxTokens;
+    }
+    if (variant.config.thinkingBudget !== undefined) {
+      settings["thinking_budget"] = variant.config.thinkingBudget;
+    }
   }
 
   // T3: reuse the run identity persisted in the results file so replays
@@ -193,6 +238,7 @@ export async function assembleBenchResultsForVariant(
     completedAt,
     pricingVersion: opts.pricingVersion,
     results: items,
+    invocationMode,
   };
   if (opts.centralgaugeSha) br.centralgaugeSha = opts.centralgaugeSha;
   if (opts.taskSetHash) br.taskSetHash = opts.taskSetHash;

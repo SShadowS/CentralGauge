@@ -179,6 +179,23 @@ export class LLMWorkPool {
   }
 
   /**
+   * The continuation + empty-retry policies actually in effect for this
+   * pool right now. Used by the executor to stamp the invocation record
+   * (D4, Task 11) with the real resolved policy rather than re-deriving it
+   * from config defaults, which would drift the moment `setContinuationConfig`/
+   * `setEmptyRetryConfig` override them per-run.
+   */
+  getResolvedRetryPolicies(): {
+    continuation: ContinuationConfig;
+    emptyRetry: EmptyRetryConfig;
+  } {
+    return {
+      continuation: this.continuationConfig,
+      emptyRetry: this.emptyRetryConfig,
+    };
+  }
+
+  /**
    * Submit a single work item
    */
   async submit(item: LLMWorkItem): Promise<LLMWorkResult> {

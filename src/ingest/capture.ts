@@ -18,6 +18,12 @@ import { inspectContainer } from "../container/docker-inspect.ts";
 import { harnessFingerprint } from "../utils/harness-fingerprint.ts";
 import { RETRY_PATH_VERSION } from "../llm/prompt-building.ts";
 import { PROMPT_POLICY_VERSION } from "./catalog/task-set-hash.ts";
+import { endpointFor, providerRouteFor } from "../llm/endpoint.ts";
+import type { ContinuationConfig, EmptyRetryConfig } from "../llm/types.ts";
+import type {
+  FallbackPolicy,
+  InvocationMode,
+} from "../../shared/settings-hash.ts";
 
 /**
  * How a single attempt terminated, in precedence order:
@@ -224,9 +230,36 @@ export async function buildEnvironmentManifest(opts: {
 }
 
 /**
- * Redacted snapshot of the LLM invocation config for one variant. Never
- * carries a full `baseUrl` (which may embed an API key or SAS token as a
- * query string) — only the endpoint host survives.
+ * Executor-resolved invocation record (D4, Task 11). Carries the seven
+ * legacy redacted-snapshot fields plus the resolved invocation profile: the
+ * transport (`endpoint`/`provider_route`), the retry policies actually in
+ * effect for this run, and the prompt-profile digest that feeds
+ * `buildCanonicalSettings`'s `extra_json` (see `shared/settings-hash.ts`).
+ */
+export interface InvocationRecord {
+  provider: string;
+  requested_model: string;
+  api_model_id: string;
+  endpoint_host: string | null;
+  max_tokens: number | null;
+  temperature: number | null;
+  reasoning: unknown;
+  mode: InvocationMode;
+  endpoint: string;
+  provider_route: string;
+  fallback_policy: FallbackPolicy;
+  continuation: { enabled: boolean; max: number };
+  empty_retry: { enabled: boolean; max: number };
+  infra_retries_per_attempt: number;
+  max_attempts: number;
+  prompt_profile_digest: string;
+}
+
+/**
+ * Redacted snapshot of the LLM invocation config for one variant, PLUS the
+ * executor-resolved invocation profile (mode, transport, retry policies).
+ * Never carries a full `baseUrl` (which may embed an API key or SAS token as
+ * a query string) — only the endpoint host survives.
  *
  * `baseUrl` is accepted for completeness but neither current caller can
  * supply it: it lives on the adapter-level `LLMConfig`, not on `ModelVariant`
@@ -241,7 +274,14 @@ export function invocationSnapshot(cfg: {
   maxTokens?: number;
   temperature?: number;
   reasoning?: unknown;
-}): Record<string, unknown> {
+  mode: InvocationMode;
+  fallbackPolicy: FallbackPolicy;
+  continuation: ContinuationConfig;
+  emptyRetry: EmptyRetryConfig;
+  infraRetriesPerAttempt: number;
+  maxAttempts: number;
+  promptProfileDigest: string;
+}): InvocationRecord {
   let host: string | null = null;
   try {
     host = cfg.baseUrl ? new URL(cfg.baseUrl).host : null;
@@ -258,5 +298,47 @@ export function invocationSnapshot(cfg: {
     reasoning: cfg.reasoning === undefined
       ? null
       : JSON.parse(JSON.stringify(cfg.reasoning)),
+    mode: cfg.mode,
+    endpoint: endpointFor(cfg.provider, cfg.apiModelId),
+    provider_route: providerRouteFor(cfg.provider, cfg.apiModelId),
+    fallback_policy: cfg.fallbackPolicy,
+    continuation: {
+      enabled: cfg.continuation.enabled,
+      max: cfg.continuation.maxContinuations,
+    },
+    empty_retry: {
+      enabled: cfg.emptyRetry.enabled,
+      max: cfg.emptyRetry.maxRetries,
+    },
+    infra_retries_per_attempt: cfg.infraRetriesPerAttempt,
+    max_attempts: cfg.maxAttempts,
+    prompt_profile_digest: cfg.promptProfileDigest,
   };
+}
+
+/**
+ * Structural check for a schema-4 (typed) invocation record, as opposed to
+ * a legacy `Record<string, unknown>` snapshot (schema <=3, or hand-built by
+ * a caller like `centralgauge ingest`'s pre-assembled BenchResults path).
+ * Used by `ingest-assembly.ts` to decide whether to build canonical
+ * settings via `buildCanonicalSettings` or fall back to the legacy
+ * three-key settings object, and by Plan B for the same distinction.
+ */
+export function isInvocationRecord(v: unknown): v is InvocationRecord {
+  if (!v || typeof v !== "object") return false;
+  const r = v as Record<string, unknown>;
+  return (r["mode"] === "sync" || r["mode"] === "batch") &&
+    typeof r["endpoint"] === "string" &&
+    typeof r["provider_route"] === "string" &&
+    (r["fallback_policy"] === "requested" ||
+      r["fallback_policy"] === "unavailable") &&
+    typeof r["infra_retries_per_attempt"] === "number" &&
+    typeof r["max_attempts"] === "number" &&
+    typeof r["prompt_profile_digest"] === "string" &&
+    typeof (r["continuation"] as Record<string, unknown> | undefined)?.[
+        "max"
+      ] === "number" &&
+    typeof (r["empty_retry"] as Record<string, unknown> | undefined)?.[
+        "max"
+      ] === "number";
 }

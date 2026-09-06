@@ -22,6 +22,35 @@ Deno.test("buildPayload maps required fields and omits optionals when absent", (
   assertEquals("reproduction_bundle_sha256" in payload, false);
 });
 
+Deno.test("buildPayload defaults invocation_mode to sync and carries batch through when set", () => {
+  const syncPayload = buildPayload({
+    runId: "run-1",
+    taskSetHash: "abc123",
+    model: { slug: "s", api_model_id: "m", family_slug: "f" },
+    settings: {},
+    machineId: "mach-1",
+    startedAt: "2026-04-21T00:00:00.000Z",
+    completedAt: "2026-04-21T00:01:00.000Z",
+    pricingVersion: "2026-04-01",
+    results: [],
+  });
+  assertEquals(syncPayload["invocation_mode"], "sync");
+
+  const batchPayload = buildPayload({
+    runId: "run-1",
+    taskSetHash: "abc123",
+    model: { slug: "s", api_model_id: "m", family_slug: "f" },
+    settings: {},
+    machineId: "mach-1",
+    startedAt: "2026-04-21T00:00:00.000Z",
+    completedAt: "2026-04-21T00:01:00.000Z",
+    pricingVersion: "2026-04-01",
+    results: [],
+    invocationMode: "batch",
+  });
+  assertEquals(batchPayload["invocation_mode"], "batch");
+});
+
 Deno.test("buildPayload includes optional fields when provided", () => {
   const payload = buildPayload({
     runId: "run-1",

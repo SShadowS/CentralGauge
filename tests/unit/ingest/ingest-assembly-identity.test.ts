@@ -17,6 +17,7 @@ import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import type { ExecutionAttempt } from "../../../src/tasks/interfaces.ts";
 import { assembleBenchResultsForVariant } from "../../../cli/commands/bench/ingest-assembly.ts";
 import type { EnvironmentManifest } from "../../../src/ingest/capture.ts";
+import { invocationSnapshot } from "../../../src/ingest/capture.ts";
 import { ValidationError } from "../../../src/errors.ts";
 import {
   createMockExecutionAttempt,
@@ -312,6 +313,67 @@ Deno.test("Task 12: environment/invocation are absent from BenchResults when not
     assertEquals(outcome.benchResults.invocation, undefined);
     assertEquals(outcome.benchResults.harnessFingerprint, undefined);
     assertEquals(outcome.benchResults.retryPathVersion, undefined);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("Task 11: assembly builds canonical settings from a typed invocation and legacy settings otherwise", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-t11-canonical-settings-" });
+  try {
+    const path = await writeResultsFile(dir, [
+      makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
+    ]);
+    const invocation = invocationSnapshot({
+      provider: "anthropic",
+      model: "claude-opus-5",
+      apiModelId: "claude-opus-5",
+      maxTokens: 64000,
+      temperature: 0,
+      mode: "batch",
+      fallbackPolicy: "unavailable",
+      continuation: { enabled: false, maxContinuations: 0 },
+      emptyRetry: {
+        enabled: false,
+        maxRetries: 0,
+        baseDelayMs: 0,
+        jitterMs: 0,
+      },
+      infraRetriesPerAttempt: 1,
+      maxAttempts: 2,
+      promptProfileDigest: "d".repeat(64),
+    });
+    const typed = await assembleBenchResultsForVariant(path, VARIANT, {
+      pricingVersion: "2026-09-06",
+      invocation: { ...invocation },
+    });
+    assert(typed.kind === "assembled");
+    assertEquals(
+      Object.keys(typed.benchResults.settings).sort(),
+      [
+        "bc_version",
+        "extra_json",
+        "max_attempts",
+        "max_tokens",
+        "prompt_version",
+        "temperature",
+      ],
+    );
+    assertEquals(typed.benchResults.settings["max_attempts"], 2);
+    assertEquals(typed.benchResults.invocationMode, "batch");
+    const extras = JSON.parse(
+      typed.benchResults.settings["extra_json"] as string,
+    );
+    assertEquals(extras.invocation_mode, "batch");
+    assertEquals(extras.thinking_budget, null);
+
+    const legacy = await assembleBenchResultsForVariant(path, VARIANT, {
+      pricingVersion: "2026-09-06",
+      invocation: { provider: "anthropic" },
+    });
+    assert(legacy.kind === "assembled");
+    assertEquals("extra_json" in legacy.benchResults.settings, false);
+    assertEquals(legacy.benchResults.invocationMode, "sync");
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

@@ -29,12 +29,15 @@ export interface IngestMeta {
   /**
    * `1` = legacy files predating the persisted task-set hash.
    * `2` = carries `task_set_hash` (see below).
-   * `3` = also carries `environment`/`invocations` (see below). New saves
-   * are schema 3 whenever the run-level capture succeeded; the parser below
-   * reads every field independently of the declared number, same as it
-   * already does for `task_set_hash` on a schema-1 file.
+   * `3` = also carries `environment`/`invocations` (see below), where each
+   * invocation is a legacy untyped snapshot.
+   * `4` = `invocations` entries are the typed `InvocationRecord` (D4, Task
+   * 11) — the capture is always typed now, so new saves are schema 4
+   * whenever the run-level capture succeeded. The parser below reads every
+   * field independently of the declared number, same as it already does
+   * for `task_set_hash` on a schema-1 file.
    */
-  schema: 1 | 2 | 3;
+  schema: 1 | 2 | 3 | 4;
   /** UTC YYYY-MM-DD, minted at save time. */
   pricing_version: string;
   /** variantId -> run UUID, minted ONCE per bench run. */
@@ -98,7 +101,7 @@ export function buildIngestMeta(
   },
 ): IngestMeta {
   const meta: IngestMeta = {
-    schema: capture ? 3 : (taskSetHash ? 2 : 1),
+    schema: capture ? 4 : (taskSetHash ? 2 : 1),
     pricing_version: todayPricingVersion(),
     run_ids: Object.fromEntries(
       variants.map((v) => [v.variantId, crypto.randomUUID()]),
@@ -123,7 +126,9 @@ export function parseIngestMeta(parsed: unknown): IngestMeta | undefined {
   if (!ingest || typeof ingest !== "object") return undefined;
   const m = ingest as Record<string, unknown>;
   const schema = m["schema"];
-  if (schema !== 1 && schema !== 2 && schema !== 3) return undefined;
+  if (schema !== 1 && schema !== 2 && schema !== 3 && schema !== 4) {
+    return undefined;
+  }
   if (typeof m["pricing_version"] !== "string") return undefined;
   const runIds = m["run_ids"];
   if (!runIds || typeof runIds !== "object" || Array.isArray(runIds)) {

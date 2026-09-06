@@ -8,6 +8,29 @@ import type { ContainerInspection } from "../../../src/container/docker-inspect.
 import { createCommandMock } from "../../utils/command-mock.ts";
 
 /**
+ * Executor-resolved profile fields `invocationSnapshot` now requires
+ * (Task 11). These pre-date-the-tests call sites only care about the
+ * legacy seven fields (host redaction, defaults, reasoning round-trip), so
+ * they spread a fixed sync/default profile rather than each spelling it out.
+ */
+function syncInvocationProfile() {
+  return {
+    mode: "sync" as const,
+    fallbackPolicy: "unavailable" as const,
+    continuation: { enabled: true, maxContinuations: 3 },
+    emptyRetry: {
+      enabled: true,
+      maxRetries: 2,
+      baseDelayMs: 1000,
+      jitterMs: 250,
+    },
+    infraRetriesPerAttempt: 1,
+    maxAttempts: 2,
+    promptProfileDigest: "e".repeat(64),
+  };
+}
+
+/**
  * Every `buildEnvironmentManifest` test installs this so the git facts come
  * from the mock instead of a real subprocess spawn — even when a test
  * doesn't assert on `centralgauge_sha`/`dirty_tree`, leaving git unmocked
@@ -301,6 +324,7 @@ Deno.test("invocation snapshot never carries secrets and keeps the host only", (
     apiModelId: "z-ai/glm-5.3",
     baseUrl: "https://openrouter.ai/api/v1?key=SECRET",
     maxTokens: 64000,
+    ...syncInvocationProfile(),
   });
   assertEquals(s["endpoint_host"], "openrouter.ai");
   assertEquals(JSON.stringify(s).includes("SECRET"), false);
@@ -312,6 +336,7 @@ Deno.test("invocation snapshot defaults optional fields to null and never throws
     model: "sonnet",
     apiModelId: "claude-sonnet-5",
     baseUrl: "not a url",
+    ...syncInvocationProfile(),
   });
   assertEquals(s["endpoint_host"], null);
   assertEquals(s["max_tokens"], null);
@@ -325,6 +350,7 @@ Deno.test("invocation snapshot round-trips a reasoning config through JSON (drop
     model: "sonnet",
     apiModelId: "claude-sonnet-5",
     reasoning: { budget: 4096, effort: "high" },
+    ...syncInvocationProfile(),
   });
   assertEquals(s["reasoning"], { budget: 4096, effort: "high" });
 });

@@ -61,6 +61,8 @@ import {
   invocationSnapshot,
 } from "../../../src/ingest/capture.ts";
 import { computeTaskSetHash } from "../../../src/ingest/catalog/task-set-hash.ts";
+import { promptProfileDigest } from "../../../shared/settings-hash.ts";
+import { shouldRequestServerFallback } from "../../../src/llm/anthropic-adapter.ts";
 import {
   displayBenchmarkSummary,
   displayFormattedOutput,
@@ -732,18 +734,45 @@ export async function executeParallelBenchmark(
               cwd: Deno.cwd(),
             });
             const invocations: Record<string, Record<string, unknown>> = {};
+            const policies = orchestrator.getResolvedRetryPolicies();
             for (const v of variants) {
-              invocations[v.variantId] = invocationSnapshot({
-                provider: v.provider,
-                model: v.baseModel,
-                apiModelId: v.model,
-                ...(v.config.maxTokens !== undefined &&
-                  { maxTokens: v.config.maxTokens }),
-                ...(v.config.temperature !== undefined &&
-                  { temperature: v.config.temperature }),
-                ...(v.config.thinkingBudget !== undefined &&
-                  { reasoning: v.config.thinkingBudget }),
-              });
+              invocations[v.variantId] = {
+                ...invocationSnapshot({
+                  provider: v.provider,
+                  model: v.baseModel,
+                  apiModelId: v.model,
+                  ...(v.config.maxTokens !== undefined &&
+                    { maxTokens: v.config.maxTokens }),
+                  ...(v.config.temperature !== undefined &&
+                    { temperature: v.config.temperature }),
+                  ...(v.config.thinkingBudget !== undefined &&
+                    { reasoning: v.config.thinkingBudget }),
+                  mode: "sync",
+                  fallbackPolicy: v.provider === "anthropic" &&
+                      shouldRequestServerFallback(
+                        v.model,
+                        Deno.env.get("CENTRALGAUGE_REFUSAL_FALLBACK"),
+                      )
+                    ? "requested"
+                    : "unavailable",
+                  continuation: policies.continuation,
+                  emptyRetry: policies.emptyRetry,
+                  infraRetriesPerAttempt,
+                  maxAttempts: options.attempts,
+                  promptProfileDigest: await promptProfileDigest({
+                    overrides: options.promptOverrides
+                      ? Object.fromEntries(
+                        Object.entries(options.promptOverrides).filter((
+                          [k],
+                        ) => k !== "knowledgeContent"),
+                      )
+                      : null,
+                    knowledge: options.promptOverrides?.knowledgeContent ??
+                      null,
+                    variantSystemPrompt: v.config.systemPrompt ?? null,
+                  }),
+                }),
+              };
             }
             ingestCapture = { environment, invocations };
           } catch (err) {

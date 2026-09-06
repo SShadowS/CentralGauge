@@ -209,6 +209,19 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
+   * The continuation + empty-retry policies actually resolved for this
+   * run's LLM work pool. See `LLMWorkPool.getResolvedRetryPolicies` (D4,
+   * Task 11) — the executor stamps these onto the per-variant invocation
+   * record rather than re-deriving config defaults.
+   */
+  getResolvedRetryPolicies(): {
+    continuation: import("../llm/types.ts").ContinuationConfig;
+    emptyRetry: import("../llm/types.ts").EmptyRetryConfig;
+  } {
+    return this.llmPool.getResolvedRetryPolicies();
+  }
+
+  /**
    * Subscribe to execution events
    */
   on(listener: EventListener): () => void {

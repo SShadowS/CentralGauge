@@ -11,6 +11,7 @@ import { canonicalJSON } from "./canonical.ts";
 import type { IngestCliFlags } from "./config.ts";
 import type { IngestOutcome } from "./types.ts";
 import type { EnvironmentManifest } from "./capture.ts";
+import type { InvocationMode } from "../../shared/settings-hash.ts";
 import type {
   CompileError,
   ResultInput,
@@ -112,6 +113,13 @@ export interface BenchResults {
    */
   environment?: EnvironmentManifest;
   invocation?: Record<string, unknown>;
+  /**
+   * The invocation profile this run executed under (D4, Task 11). Required
+   * because `assembleBenchResultsForVariant` always sets it (defaulting to
+   * `"sync"` when the persisted invocation isn't a typed `InvocationRecord`)
+   * — see `cli/commands/bench/ingest-assembly.ts`.
+   */
+  invocationMode: InvocationMode;
   harnessFingerprint?: string;
   retryPathVersion?: string;
 }
@@ -285,6 +293,7 @@ export async function ingestRun(
     completedAt: br.completedAt,
     pricingVersion: br.pricingVersion,
     results,
+    invocationMode: br.invocationMode,
   };
   if (br.centralgaugeSha) payloadInput.centralgaugeSha = br.centralgaugeSha;
   if (reproductionBundleSha) {

@@ -47,6 +47,16 @@ function modelRejectsTemperature(model: string): boolean {
   );
 }
 
+/**
+ * Check if the model requires the Responses API instead of Chat Completions.
+ * Codex models (gpt-5.2-codex, gpt-5.3-codex, etc.) are Responses API only.
+ * Module-level (not just the class method) so `src/llm/endpoint.ts` can
+ * derive the transport path without instantiating an adapter.
+ */
+export function isResponsesOnlyModel(model: string): boolean {
+  return /\bcodex\b/.test(model);
+}
+
 export class OpenAIAdapter extends BaseLLMAdapter
   implements DiscoverableAdapter {
   readonly name = "openai";
@@ -100,7 +110,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
    * Codex models (gpt-5.2-codex, gpt-5.3-codex, etc.) are Responses API only.
    */
   private isResponsesOnlyModel(model: string): boolean {
-    return /\bcodex\b/.test(model);
+    return isResponsesOnlyModel(model);
   }
 
   /**

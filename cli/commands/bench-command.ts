@@ -56,10 +56,7 @@ import {
   acquireBenchLock,
   BenchLockHeldError,
 } from "../../src/utils/bench-lock.ts";
-import {
-  buildEnvironmentManifest,
-  invocationSnapshot,
-} from "../../src/ingest/capture.ts";
+import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import type { EnvironmentManifest } from "../../src/ingest/capture.ts";
 
 /**
@@ -988,18 +985,17 @@ async function ingestBenchResults(
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
         {
           pricingVersion,
-          invocation: invocationSnapshot({
-            provider: variant.provider,
-            model: variant.baseModel,
-            apiModelId: variant.model,
-            ...(variant.config.maxTokens !== undefined &&
-              { maxTokens: variant.config.maxTokens }),
-            ...(variant.config.temperature !== undefined &&
-              { temperature: variant.config.temperature }),
-            ...(variant.config.thinkingBudget !== undefined &&
-              { reasoning: variant.config.thinkingBudget }),
-          }),
         };
+      // The executor-resolved invocation record (D4, Task 11) was already
+      // built once and persisted by `parallel-executor.ts` into THIS same
+      // file's `ingest.invocations` moments ago, in this same process —
+      // reuse it verbatim rather than recomputing a legacy 7-field snapshot
+      // here (which cannot know the real resolved retry policies/mode
+      // anyway, since the orchestrator that resolved them is gone by the
+      // time this runs). Absent only when the bench-time capture itself
+      // failed (best-effort, see the try/catch above) or predates it.
+      const persistedInvocation = ingestMeta?.invocations?.[variant.variantId];
+      if (persistedInvocation) assembleOpts.invocation = persistedInvocation;
       // Best-effort (see the try/catch above): omit rather than send
       // `environment: undefined` when the manifest build failed.
       if (environment) assembleOpts.environment = environment;

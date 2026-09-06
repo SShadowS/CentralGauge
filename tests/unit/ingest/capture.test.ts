@@ -1,5 +1,10 @@
 import { assertEquals } from "@std/assert";
-import { terminationKind, testVector } from "../../../src/ingest/capture.ts";
+import {
+  invocationSnapshot,
+  isInvocationRecord,
+  terminationKind,
+  testVector,
+} from "../../../src/ingest/capture.ts";
 import {
   createMockExecutionAttempt,
   createMockLLMResponse,
@@ -61,4 +66,35 @@ Deno.test("test vector carries stable ids in oracle order", async () => {
   }
   assertEquals(first.id, sameTask.id);
   assertEquals(first.id !== otherTask.id, true);
+});
+
+Deno.test("invocationSnapshot carries the executor-resolved profile fields", () => {
+  const rec = invocationSnapshot({
+    provider: "anthropic",
+    model: "claude-opus-5",
+    apiModelId: "claude-opus-5",
+    maxTokens: 64000,
+    temperature: 0,
+    mode: "sync",
+    fallbackPolicy: "requested",
+    continuation: { enabled: true, maxContinuations: 3 },
+    emptyRetry: {
+      enabled: true,
+      maxRetries: 2,
+      baseDelayMs: 1000,
+      jitterMs: 250,
+    },
+    infraRetriesPerAttempt: 1,
+    maxAttempts: 2,
+    promptProfileDigest: "d".repeat(64),
+  });
+  assertEquals(rec.mode, "sync");
+  assertEquals(rec.endpoint, "/v1/messages");
+  assertEquals(rec.provider_route, "anthropic");
+  assertEquals(rec.continuation, { enabled: true, max: 3 });
+  assertEquals(rec.empty_retry, { enabled: true, max: 2 });
+  assertEquals(rec.max_attempts, 2);
+  assertEquals(rec.max_tokens, 64000);
+  assertEquals(isInvocationRecord(rec), true);
+  assertEquals(isInvocationRecord({ provider: "anthropic" }), false);
 });

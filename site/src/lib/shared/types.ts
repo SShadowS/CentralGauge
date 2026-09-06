@@ -132,6 +132,8 @@ export interface SignedRunPayload {
     test_runner?: "soap" | "legacy";
     prompt_template_digest?: string;
     invocation?: Record<string, unknown>;
+    /** The invocation profile a run executed under (D4). Absent on payloads predating this field. */
+    invocation_mode?: "sync" | "batch";
     results: ResultInput[];
   };
 }

@@ -69,7 +69,7 @@ Deno.test("buildIngestMeta stamps schema 2 + task_set_hash when a hash is given"
   assertEquals(meta.task_set_hash, hash);
 });
 
-Deno.test("buildIngestMeta stamps schema 3 + environment/invocations when capture is given", () => {
+Deno.test("buildIngestMeta stamps schema 4 + environment/invocations when capture is given", () => {
   const hash = "a".repeat(64);
   const environment = fakeEnvironment();
   const invocations = {
@@ -80,10 +80,21 @@ Deno.test("buildIngestMeta stamps schema 3 + environment/invocations when captur
     hash,
     { environment, invocations },
   );
-  assertEquals(meta.schema, 3);
+  assertEquals(meta.schema, 4);
   assertEquals(meta.task_set_hash, hash);
   assertEquals(meta.environment, environment);
   assertEquals(meta.invocations, invocations);
+});
+
+Deno.test("buildIngestMeta writes schema 4 with a capture and parseIngestMeta accepts it", () => {
+  const meta = buildIngestMeta([{ variantId: "v" }], "h".repeat(64), {
+    environment: {} as never,
+    invocations: { v: { provider: "anthropic", mode: "sync" } },
+  });
+  assertEquals(meta.schema, 4);
+  const parsed = parseIngestMeta({ ingest: { ...meta } });
+  assertEquals(parsed?.schema, 4);
+  assertEquals(parsed?.invocations?.["v"]?.["mode"], "sync");
 });
 
 Deno.test("buildIngestMeta omits environment/invocations entirely when capture is not given", () => {
@@ -96,7 +107,7 @@ Deno.test("buildIngestMeta omits environment/invocations entirely when capture i
   assertEquals("invocations" in meta, false);
 });
 
-Deno.test("parseIngestMeta round-trips a schema-3 file carrying environment + invocations", () => {
+Deno.test("parseIngestMeta round-trips a schema-4 file carrying environment + invocations", () => {
   const environment = fakeEnvironment();
   const invocations = {
     "mock/mock-gpt-4": { provider: "mock", requested_model: "mock-gpt-4" },
@@ -108,8 +119,8 @@ Deno.test("parseIngestMeta round-trips a schema-3 file carrying environment + in
   );
   const saved = JSON.parse(JSON.stringify({ results: [], ingest: meta }));
   const parsed = parseIngestMeta(saved);
-  assert(parsed !== undefined, "schema-3 meta must parse");
-  assertEquals(parsed!.schema, 3);
+  assert(parsed !== undefined, "schema-4 meta must parse");
+  assertEquals(parsed!.schema, 4);
   assertEquals(parsed!.environment, environment);
   assertEquals(parsed!.invocations, invocations);
   assertEquals(parsed, meta);

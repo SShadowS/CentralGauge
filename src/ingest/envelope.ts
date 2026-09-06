@@ -1,4 +1,5 @@
 import type { ResultInput } from "../../site/src/lib/shared/types.ts";
+import type { InvocationMode } from "../../shared/settings-hash.ts";
 
 export interface BuildPayloadInput {
   runId: string;
@@ -36,6 +37,8 @@ export interface BuildPayloadInput {
   };
   /** Redacted LLM invocation snapshot. See `invocationSnapshot`. */
   invocation?: Record<string, unknown>;
+  /** The invocation profile a run executed under (D4). Defaults to `"sync"` on the payload when absent. */
+  invocationMode?: InvocationMode;
 }
 
 export function buildPayload(
@@ -74,5 +77,6 @@ export function buildPayload(
     p["bcch_use_pwsh_bc24"] = input.environment.bcch_use_pwsh_bc24;
   }
   if (input.invocation) p["invocation"] = input.invocation;
+  p["invocation_mode"] = input.invocationMode ?? "sync";
   return p;
 }
