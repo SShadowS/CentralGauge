@@ -393,16 +393,19 @@ Run in this order. All are free and fast.
       keys, connectivity and catalog state in one signed round trip.
 - [ ] **Containers healthy.** All six Cronus containers up, no bench running,
       `DOCKER_CONTEXT=desktop-windows` exported.
-- [ ] **Migration 0019 deploy order (batch mode invocation profile, Plan A
-      landed 2026-09-06).** Any deploy that includes
-      `site/migrations/0019_batch_mode.sql` must go in this order: (1)
-      `npx wrangler d1 migrations apply centralgauge --remote`, (2)
-      `deno task start sync-catalog --apply` (now also pushes
-      `cost_snapshots.batch_*_per_mtoken` rates from
-      `site/catalog/pricing.yml`; expect 429 pauses at ~10 req/min), (3) bump
-      the leaderboard cache to `_cv=v11`, (4) `cd site && npm run deploy`.
-      Same failure mode as migration `0011`/`open_weight` if the worker
-      deploys first. Two catalog gaps a batch hand-run needs closed first:
+- [x] **Migration 0019 deployed 2026-09-06** (batch mode invocation profile,
+      Plan A landed and merged the same day). Order actually used, which is the
+      right order whenever a change adds catalog FIELDS the admin endpoint
+      must accept: (1) `npx wrangler d1 migrations apply centralgauge --remote`
+      (9 statements, applied), (2) `cd site && npm run deploy` (worker version
+      8ae7977f, `_cv=v11` already in source), (3) `deno task start sync-catalog
+      --apply` (77 pricing rows, all 200; the OLD worker ignored the
+      `batch_*_per_mtoken` fields, so running it before the deploy would have
+      been a no-op for them), (4) smoke: `GET /api/v1/leaderboard?mode=all`
+      is `400 invalid_mode_for_metric`, the leaderboard, matrix and model
+      pages answer 200. The generic rule in CLAUDE.md (migration, then
+      sync-catalog, then deploy) still holds when a migration adds a COLUMN
+      the new worker reads and sync-catalog backfills. Two catalog gaps a batch hand-run needs closed first:
       `gemini/gemini-3.8-flash` has sync rates but its `batch_*` columns are
       deliberately NULL (no OpenRouter `:batch` rate for
       `google/gemini-3.8-flash` is known yet - see
