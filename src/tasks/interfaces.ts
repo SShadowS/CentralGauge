@@ -402,6 +402,13 @@ export interface ExecutionAttempt {
    */
   infraRetries?: InfraRetryRecord[] | undefined;
   /**
+   * LLM generations abandoned at the adapter's deadline and retried. The
+   * provider billed each one; their tokens appear in no usage field. Count
+   * and the total deadline time they consumed, so an invoice can be
+   * reconciled against this file. Absent when none occurred.
+   */
+  abandonedGenerations?: { count: number; totalMs: number } | undefined;
+  /**
    * Present when the work executed on a container that an alert raised on
    * mid-flight (the orchestrator's drain path tagged the entry with
    * `forcedByAlertId`). Marker is copied from the sibling field on

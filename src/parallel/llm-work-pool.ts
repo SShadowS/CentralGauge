@@ -4,6 +4,7 @@
  */
 
 import type {
+  AbandonedGenerations,
   LLMWorkItem,
   LLMWorkResult,
   ParallelExecutionConfig,
@@ -43,6 +44,45 @@ import {
   type StreamingContinuationResult,
 } from "../llm/continuation.ts";
 import type { TokenUsage } from "../llm/types.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("llm-pool");
+
+/** Ordinary transient errors (connection resets, rate limits) retry this many times. */
+export const MAX_IMMEDIATE_RETRIES = 7;
+
+/**
+ * Retries allowed after the provider ran a generation to the adapter's
+ * deadline. One, not seven: on a thinking model each abandoned generation is
+ * up to a full deadline of thinking billed as output, and a seven-rung ladder
+ * multiplies that bill while the results file records only the last rung.
+ * Stored direct Gemini 3.1 Pro runs showed 122 such generations on 818
+ * attempts under the old ladder, 41% of all LLM wall time.
+ */
+export const MAX_RETRIES_AFTER_ABANDONED_GENERATION = 1;
+
+/**
+ * The deadline (ms) a provider generation ran to before this process
+ * abandoned it, when the error says so; undefined for every other error.
+ * Adapters mark their deadline errors with `abandonedGenerationMs` in the
+ * `LLMProviderError` context (see `GeminiAdapter.raceWithTimeout`).
+ */
+export function abandonedGenerationMs(error: unknown): number | undefined {
+  if (!(error instanceof LLMProviderError)) return undefined;
+  const v = error.context?.["abandonedGenerationMs"];
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+}
+
+/**
+ * How many immediate retries a transient error earns: the small budget when
+ * the error marks an abandoned (already billed) generation, the ordinary one
+ * otherwise. Pure, so the policy is unit-testable without a pool.
+ */
+export function transientRetryLimit(error: unknown): number {
+  return abandonedGenerationMs(error) !== undefined
+    ? MAX_RETRIES_AFTER_ABANDONED_GENERATION
+    : MAX_IMMEDIATE_RETRIES;
+}
 
 /**
  * Fold token usage across every attempt of an empty-retry sequence onto
@@ -204,10 +244,14 @@ export class LLMWorkPool {
    * Execute a single work item with rate limiting
    * @param item The work item to execute
    * @param retryCount Number of immediate retries already attempted for transient errors
+   * @param abandoned Running tally of provider generations abandoned at the
+   *   adapter's deadline on earlier rungs of this ladder; attached to the
+   *   result so the attempt record carries them.
    */
   private async executeWork(
     item: LLMWorkItem,
     retryCount = 0,
+    abandoned: AbandonedGenerations = { count: 0, totalMs: 0 },
   ): Promise<LLMWorkResult> {
     const startTime = Date.now();
 
@@ -264,6 +308,7 @@ export class LLMWorkPool {
         readyForCompile: resolution.isReadyForCompile,
         continuationCount: continuationResult.continuationCount,
         emptyRetryCount,
+        ...(abandoned.count > 0 ? { abandonedGenerations: abandoned } : {}),
       };
 
       // Set error message for extraction failures (categorizes as model failure, not transient)
@@ -285,12 +330,32 @@ export class LLMWorkPool {
 
       this.rateLimiter.release(lease);
 
-      // Retry up to 7 times for transient errors with escalating delays
-      const MAX_IMMEDIATE_RETRIES = 7;
-      if (this.isTransientError(error) && retryCount < MAX_IMMEDIATE_RETRIES) {
-        const delayMs = 1000 * (retryCount + 1); // 1s, 2s, 3s
+      // A deadline expiry is not an ordinary transient error: the provider
+      // already generated, and billed, up to the deadline's worth of work
+      // that this process abandoned. Count it, and let the retry budget for
+      // it be the small one (see `transientRetryLimit`).
+      const abandonedMs = abandonedGenerationMs(error);
+      if (abandonedMs !== undefined) {
+        abandoned = {
+          count: abandoned.count + 1,
+          totalMs: abandoned.totalMs + abandonedMs,
+        };
+        log.warn("Abandoned a billed generation at the adapter deadline", {
+          workItemId: item.id,
+          provider: item.llmProvider,
+          model: item.llmModel,
+          deadlineMs: abandonedMs,
+          abandonedSoFar: abandoned.count,
+        });
+      }
+
+      // Retry transient errors with escalating delays (1s, 2s, 3s, ...)
+      if (
+        this.isTransientError(error) && retryCount < transientRetryLimit(error)
+      ) {
+        const delayMs = 1000 * (retryCount + 1);
         await this.delay(delayMs);
-        return this.executeWork(item, retryCount + 1);
+        return this.executeWork(item, retryCount + 1, abandoned);
       }
 
       return {
@@ -299,6 +364,7 @@ export class LLMWorkPool {
         error: error instanceof Error ? error.message : String(error),
         duration: Date.now() - startTime,
         readyForCompile: false,
+        ...(abandoned.count > 0 ? { abandonedGenerations: abandoned } : {}),
       };
     }
   }

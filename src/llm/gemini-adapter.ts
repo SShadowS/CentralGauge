@@ -69,12 +69,19 @@ const log = Logger.create("llm:gemini");
 
 /**
  * Deadline (ms) that bounds an otherwise-indefinite `generateContent` call.
- * Generous by default so it never kills a legitimate long reasoning
- * generation; a variant's explicit `config.timeout` overrides it. The
- * lightweight models-list call uses the shorter {@link DEFAULT_API_TIMEOUT_MS}
- * instead.
+ * A variant's explicit `config.timeout` overrides it. The lightweight
+ * models-list call uses the shorter {@link DEFAULT_API_TIMEOUT_MS} instead.
+ *
+ * Raised from 300 s to 900 s on 2026-09-06. On a thinking model the stream is
+ * silent while the model thinks, and a hard task routinely thinks for longer
+ * than five minutes. Every expiry abandoned a generation Google had already
+ * billed (thinking is billed as output) and the work pool then retried it:
+ * across 818 stored direct gemini-3.1-pro attempts, 96 exceeded 300 s of LLM
+ * wall time and implied 122 abandoned generations, 41% of all LLM wall time,
+ * none of it visible in any results file. OpenRouter's worst case on the same
+ * model was 389 s, so 900 s covers legitimate thinking with margin.
  */
-const GEMINI_GENERATE_TIMEOUT_MS = 300_000;
+const GEMINI_GENERATE_TIMEOUT_MS = 900_000;
 
 /**
  * Build the request for Gemini's `GET /v1beta/models` list endpoint.
@@ -461,6 +468,12 @@ export class GeminiAdapter extends BaseLLMAdapter
             `Gemini request timed out after ${timeoutMs}ms`,
             "gemini",
             true,
+            undefined,
+            // The provider has already generated (and billed) up to
+            // `timeoutMs` of work that this process will never see. The
+            // work pool reads this to cap retries at one and to record the
+            // abandoned generation on the attempt.
+            { abandonedGenerationMs: timeoutMs },
           ),
         );
       }, timeoutMs);

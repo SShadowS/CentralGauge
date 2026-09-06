@@ -1180,6 +1180,9 @@ export class ParallelBenchmarkOrchestrator {
       // Step-by-step timing
       llmDuration: llmResult.duration,
       compileDuration: compileResult.compileDuration,
+      ...(llmResult.abandonedGenerations
+        ? { abandonedGenerations: llmResult.abandonedGenerations }
+        : {}),
     };
     if (compileResult.testResult) {
       attempt.testResult = compileResult.testResult;
@@ -1236,6 +1239,9 @@ export class ParallelBenchmarkOrchestrator {
       duration: llmResult?.duration ?? 0,
       // Step timing: only LLM was attempted
       llmDuration: llmResult?.duration ?? 0,
+      ...(llmResult?.abandonedGenerations
+        ? { abandonedGenerations: llmResult.abandonedGenerations }
+        : {}),
       compileDuration: 0,
     };
     // Mirror LLMWorkResult.failureKind onto the attempt (Task 8 sets it on

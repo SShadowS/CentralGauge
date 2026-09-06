@@ -135,6 +135,19 @@ export interface LLMWorkItem {
 /**
  * Result of LLM work execution
  */
+/**
+ * Provider generations that ran to the adapter's deadline and were abandoned
+ * by this process before a retry. The provider billed each one in full up to
+ * the deadline (on a thinking model that is mostly thinking, billed as
+ * output); no usage field ever carries those tokens.
+ */
+export interface AbandonedGenerations {
+  /** How many generations were abandoned across the retry ladder. */
+  count: number;
+  /** Sum of the deadline each abandoned generation ran to, in ms. */
+  totalMs: number;
+}
+
 export interface LLMWorkResult {
   /** Reference to original work item ID */
   workItemId: string;
@@ -173,6 +186,13 @@ export interface LLMWorkResult {
 
   /** Number of empty-response retries performed (0 if none) */
   emptyRetryCount?: number;
+  /**
+   * Generations the provider ran to a deadline and this process abandoned
+   * before retrying. The provider billed them; no results field carries
+   * their tokens, so this is the only trace that reconciles an invoice
+   * against a results file. Absent when none occurred.
+   */
+  abandonedGenerations?: AbandonedGenerations;
 }
 
 /**

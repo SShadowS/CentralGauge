@@ -801,3 +801,56 @@ describe("Diagnose-task starter code rendering", () => {
     }
   });
 });
+
+Deno.test("transient retry budget - abandoned generations retry once, everything else seven times", async (t) => {
+  const { LLMProviderError } = await import("../../../src/errors.ts");
+  const {
+    abandonedGenerationMs,
+    transientRetryLimit,
+    MAX_IMMEDIATE_RETRIES,
+    MAX_RETRIES_AFTER_ABANDONED_GENERATION,
+  } = await import("../../../src/parallel/llm-work-pool.ts");
+
+  await t.step(
+    "an adapter deadline error carries the abandoned deadline",
+    () => {
+      const err = new LLMProviderError(
+        "Gemini request timed out after 900000ms",
+        "gemini",
+        true,
+        undefined,
+        { abandonedGenerationMs: 900_000 },
+      );
+      assertEquals(abandonedGenerationMs(err), 900_000);
+      assertEquals(
+        transientRetryLimit(err),
+        MAX_RETRIES_AFTER_ABANDONED_GENERATION,
+      );
+      assertEquals(MAX_RETRIES_AFTER_ABANDONED_GENERATION, 1);
+    },
+  );
+
+  await t.step("an ordinary transient error keeps the ordinary budget", () => {
+    const err = new LLMProviderError(
+      "rate limit exceeded",
+      "gemini",
+      true,
+      5000,
+    );
+    assertEquals(abandonedGenerationMs(err), undefined);
+    assertEquals(transientRetryLimit(err), MAX_IMMEDIATE_RETRIES);
+    assertEquals(MAX_IMMEDIATE_RETRIES, 7);
+  });
+
+  await t.step(
+    "a non-provider error and a malformed marker are not abandoned generations",
+    () => {
+      assertEquals(abandonedGenerationMs(new Error("timeout")), undefined);
+      const bad = new LLMProviderError("x", "gemini", true, undefined, {
+        abandonedGenerationMs: -1,
+      });
+      assertEquals(abandonedGenerationMs(bad), undefined);
+      assertEquals(transientRetryLimit(bad), MAX_IMMEDIATE_RETRIES);
+    },
+  );
+});
