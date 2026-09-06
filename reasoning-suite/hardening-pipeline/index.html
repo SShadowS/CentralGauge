@@ -1,0 +1,2910 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/reasoning-suite/hardening-pipeline/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>The hardening pipeline - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#the-hardening-pipeline" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              The hardening pipeline
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-revision-2-got-wrong-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What revision 2 got wrong, measured
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-objective-is-not-cheapest-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The objective is not "cheapest first"
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#this-is-four-loops-not-one-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        This is four loops, not one chain
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#loop-0-hygiene-every-commit-static-free" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loop 0 — Hygiene (every commit, static, free)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#loop-a-screening-pre-authoring-no-container" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loop A — Screening (pre-authoring, no container)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#loop-b-validity-the-executable-core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loop B — Validity (the executable core)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#loop-c-selection-per-model-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loop C — Selection (per model generation)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#loop-d-lifecycle-post-bench" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loop D — Lifecycle (post-bench)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#open-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-changed-from-revision-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What changed from revision 1
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-changed-from-revision-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What changed from revision 2
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/reasoning-suite/hardening-pipeline.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="the-hardening-pipeline">The hardening pipeline<a class="headerlink" href="#the-hardening-pipeline" title="Permanent link">&para;</a></h1>
+<p>The staged gate sequence every task passes before it counts. Companion to
+<code>hardness-strategy.md</code> (what makes a task hard) and <code>tooling-plan.md</code> (the
+tools). This answers: <strong>what runs when, what admits, and what happens on
+failure.</strong></p>
+<p>Revision 3. Revision 2 was rewritten after independent critiques from Fable 5
+and GPT-5.6 found four structural errors in revision 1. Revision 3 is different
+in kind: it is written after the gates were <strong>run against the legacy suite and
+found to have passed defective tasks</strong>, and after a five-lane survey of how
+SWE-bench, EvalPlus, SWE-smith, BigCodeBench and their auditors do this
+(<code>benchmark-practice-synthesis.md</code>, <code>research/</code>). What changed, and why, is
+recorded at the end.</p>
+<h2 id="what-revision-2-got-wrong-measured">What revision 2 got wrong, measured<a class="headerlink" href="#what-revision-2-got-wrong-measured" title="Permanent link">&para;</a></h2>
+<p>Revision 2's gate set was already SWE-bench-literate — B3 is PASS_TO_PASS, B4
+is Verified's over-strictness deletion class, B5 is EvalPlus amplification, A4
+cites Defects4J's minimal-diff rule. The spec was not the weak point. Three
+things were:</p>
+<ol>
+<li><strong>The spec ran ahead of the tooling.</strong> B3/B5/B6/B8 were PENDING, so in
+   practice the battery was B1/B2/B4/B7 — and even those had false-pass modes
+   nobody had looked for.</li>
+<li><strong>Nothing forced the legacy suite through the gates.</strong> Every defect found in
+   August 2026 lived in tasks authored before this pipeline existed.</li>
+<li><strong>Every gate asked "does a correct solution pass?" and none asked "does a
+   wrong one fail?"</strong> — outside B1, which only the X-series ever ran.</li>
+</ol>
+<p>The consequence, measured on our own suite: two oracles (H011, H017) whose
+every test is <code>Assert.IsTrue(true, ...)</code> <strong>passed B1, B2 and B4</strong>. A hollow
+oracle is perfectly deterministic, accepts every implementation, and satisfies
+any correct-leg-only probe. It sailed through.</p>
+<p>The field's record says this is normal, not embarrassing: original SWE-bench
+68.3% filtered, Verified's hard residue &gt;=59.4% flawed, SWE-bench Pro ~30%
+defective after professional review, HumanEval 11% wrong ground truths. In
+every case the defects were found by <strong>mechanical adversarial pressure</strong> — test
+augmentation, mutation, twin sets, agent red-teaming — and <strong>not by expert
+review, which repeatedly missed them</strong>. UTBoost found false passes inside the
+human-verified set; Pro shipped ~30% defects through engineer curation.</p>
+<p><strong>Governing rule for revision 3: executable checks are load-bearing. Human and
+LLM review is a supplement for the judgements executables cannot make, never a
+substitute for one that could exist.</strong></p>
+<h2 id="the-objective-is-not-cheapest-first">The objective is not "cheapest first"<a class="headerlink" href="#the-objective-is-not-cheapest-first" title="Permanent link">&para;</a></h2>
+<p>Revision 1 ordered gates by raw cost. That is wrong, and the correction
+matters more than any individual gate.</p>
+<p><strong>Order by expected wasted cost, subject to validity dependencies.</strong> Two
+consequences that pure cost-ordering gets backwards:</p>
+<ul>
+<li>A cheap gate with weak predictive power is theatre, however cheap.</li>
+<li><strong>An expensive validity check must sometimes precede a cheaper hardness
+  selector, because otherwise the hardness signal is uninterpretable.</strong>
+  Solver failure means nothing until you know the oracle is deterministic
+  and not over-strict.</li>
+</ul>
+<p>The benchmark record is what justifies gating at all: SWE-bench Verified
+deleted 38.3% of mined tasks, HLE-Verified retained ~27% on correctness
+re-audit, GPQA found 28.3% of expert disagreements were bad questions.
+<strong>Most candidates are defective.</strong> Gates exist to find that out in the
+cheapest order that keeps each verdict meaningful.</p>
+<h2 id="this-is-four-loops-not-one-chain">This is four loops, not one chain<a class="headerlink" href="#this-is-four-loops-not-one-chain" title="Permanent link">&para;</a></h2>
+<p>Revision 1 conflated four different activities into a linear G0-G10. They
+have different owners, cadences, and failure modes:</p>
+<table>
+<thead>
+<tr>
+<th>Loop</th>
+<th>Question</th>
+<th>Cadence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0 — Hygiene</strong></td>
+<td>Does this oracle assert anything at all?</td>
+<td>every commit, every task, free</td>
+</tr>
+<tr>
+<td><strong>A — Screening</strong></td>
+<td>Is this candidate worth authoring?</td>
+<td>per candidate, pre-build</td>
+</tr>
+<tr>
+<td><strong>B — Validity</strong></td>
+<td>Does this task measure what it claims?</td>
+<td>per task, pre-promotion</td>
+</tr>
+<tr>
+<td><strong>C — Selection</strong></td>
+<td>Which tier does it belong in?</td>
+<td>per task, re-run per model generation</td>
+</tr>
+<tr>
+<td><strong>D — Lifecycle</strong></td>
+<td>Is it still measuring anything?</td>
+<td>per bench run</td>
+</tr>
+</tbody>
+</table>
+<p>Loop B is a <strong>fixpoint</strong>, not a funnel. Any oracle, starter, or prompt edit
+invalidates the <em>executable</em> gates, which sit upstream of the audits that
+usually trigger the edit. <code>build-batch</code> Phase 4 already knows this ("ANY
+oracle/starter/task.yml edit invalidates the probe"). Revision 1's rule said
+edits invalidate gates <em>downstream</em>, which is backwards and would have
+skipped re-probes.</p>
+<p><strong>Invalidation rule:</strong> an edit to prompt, starter, reference, negative
+patches, or oracle re-enters loop B at B1. Record a hash of all six
+artifacts plus the container image at every gate, so "did this change?" is
+answerable rather than remembered.</p>
+<hr />
+<h2 id="loop-0-hygiene-every-commit-static-free">Loop 0 — Hygiene (every commit, static, free)<a class="headerlink" href="#loop-0-hygiene-every-commit-static-free" title="Permanent link">&para;</a></h2>
+<p><em>New in revision 3.</em> Everything here is a <strong>hard failure</strong>, runs in
+milliseconds, needs no container and no model, and applies to <strong>every task in
+the suite on every commit</strong> — not just to new ones. This loop exists because
+the defects it catches were sitting in committed oracles for months while four
+executable gates reported green.</p>
+<p><code>scripts/oracle-audit.py</code> (exit 1 fails the build):</p>
+<p><strong>0a. Hollow oracle.</strong> Every <code>[Test]</code> asserting only
+<code>Assert.IsTrue(true, ...)</code>. Found H011 (5/5 tests) and H017 (3/3). CLAUDE.md
+already forbade the pattern; nothing enforced it. Six more oracles carry it
+among real assertions.</p>
+<p><strong>0b. Vacuous test.</strong> A test whose fixture guard — <code>if not
+Customer.FindFirst() then exit;</code> — sits <em>before</em> its first assertion, so it
+passes having checked nothing whenever the fixture is absent. Found H003, H031.
+The same shape <em>after</em> an assertion is ordinary control flow and is not flagged.</p>
+<p><strong>0c. Nondeterminism sources.</strong> <strong>This is the check B2 structurally cannot
+be:</strong> B2 measures <em>observed</em> variation, and an oracle whose random draws stay
+inside the passing range looks perfectly stable while being nondeterministic by
+construction. BigCodeBench writes this into its curation rubric;
+competitive-judge ecosystems mandate seeded RNG outright.</p>
+<p>What the check flags is read off Microsoft's source for <code>codeunit 130500
+"Any"</code>, because the library's naming inverts the intuition:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>local procedure GetNextValue(MaxValue: Integer): Integer
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>begin
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    if (not SeedSet) then
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        SetSeed(1);                  // no SetSeed call =&gt; fixed seed 1
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    exit(Random(MaxValue));
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>end;
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>procedure SetDefaultSeed()
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>begin
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    SeedSet := true;
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    SetSeed(Time() - 000000T);       // wall clock =&gt; nondeterministic
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>end;
+</code></pre></div>
+<p>So <code>Any.*</code> with no seeding call is the <strong>deterministic</strong> case, and the
+innocuous-sounding <code>SetDefaultSeed()</code> is the defect. The first revision of this
+check asserted the opposite and reported 13 false positives; reading the
+library settled it. <code>Any</code> is not <code>SingleInstance</code> and its seed is instance
+state, so a method-local <code>Any</code> re-seeds to 1 on its first draw and each test's
+sequence is independent of which other tests ran — which is why Microsoft's own
+doc comment requires the local form.</p>
+<p>The three findings that survived are all <strong>codeunit-global <code>Any</code></strong> (X081, X098,
+X124): one shared instance seeds once, so every test's values then depend on
+execution order, on which tests ran, and on any <code>Random</code> the <em>candidate's</em> code
+happens to call between the oracle's draws. Fixed by moving the declaration
+into each test and passing it to helpers by reference — a fresh instance per
+helper <em>call</em> would re-seed to 1 and hand back the same value every time.
+Also flagged: argless <code>Randomize()</code>, and bare <code>Random()</code> with no fixed
+<code>Randomize(&lt;literal&gt;)</code>.</p>
+<p>Sub-day wall-clock reads (<code>CurrentDateTime</code>, <code>Time()</code>) are reported as an
+<strong>advisory</strong>, not a promote blocker: whether the value reaches an assertion
+cannot be decided from the token, and both committed hits (X083, X096) only
+stamp a field no assertion reads.</p>
+<p><strong>0d. Toolkit namespace collisions</strong> (<code>src/tasks/candidate-guard.ts</code>, enforced
+at runtime in both harnesses rather than statically). A candidate declaring an
+object named <code>Any</code>, <code>Assert</code>, <code>Library - *</code> or into the <code>CG-AL-*</code> oracle
+namespace is scored malformed and never compiled. Three bench "passes" in
+August 2026 were a stub <code>codeunit 70354 Any</code> shadowing the library the oracle
+binds to — CAISI-class grader gaming, accepted by our own harness.</p>
+<p>A check is not a check until it has reproduced a known defect count. All four
+above were validated against hand-counted ground truth before being trusted;
+two of them silently found nothing on first write because of escaping bugs.</p>
+<hr />
+<h2 id="loop-a-screening-pre-authoring-no-container">Loop A — Screening (pre-authoring, no container)<a class="headerlink" href="#loop-a-screening-pre-authoring-no-container" title="Permanent link">&para;</a></h2>
+<p><strong>A1. Premise gate.</strong> Would a competent model, writing fresh from the
+description, plausibly produce the wrong form? Reasoning only. Reject with a
+premise note in the style of <code>x020-premise-note.md</code>. Cheapest and
+highest-yield gate you have.</p>
+<p><strong>A2. Redundancy screen.</strong> <em>Moved to the front from revision 1's G9.</em> Check
+the candidate against the promoted suite on: <code>decisions.md</code> fact id, defect
+mechanism, required repair operation, affected object type, symptom path. A
+duplicate caught here costs nothing; caught after authoring it costs a build
+slot. Empirical redundancy stays in loop D, where real response data can
+measure it.</p>
+<p><strong>A3. Knowledge-gap banking</strong> (<code>premise-probe</code>). Any task whose fix turns on
+a platform-behaviour claim cites a <strong>measured</strong> fact, not a recalled one. No
+measured fact, no build slot.</p>
+<p><strong>A4. Build.</strong> Give this a real admit criterion — compiles, packages,
+starter↔reference diff is <strong>minimal and single-cause</strong> (Defects4J practice).
+An accidental second behavioural difference in the starter poisons mutation
+triage and solver attribution downstream.</p>
+<p><strong>A5. Cheap-model artifact screen.</strong> <em>New in revision 3, the easy-end
+counterpart to C1.</em> Run a deliberately weak model against the rendered prompt.
+If a weak model solves a task intended as hard, the task is leaking its answer
+somewhere — in the prompt, the starter, or the fixture shapes — and that is a
+defect, not an easy task.</p>
+<p>This is AFLite's logic (AI2): train cheap classifiers, remove what they get
+right, because surface-solvable items measure artifacts rather than the
+intended skill. WinoGrande's SOTA fell from ~90% to 59-79% after filtering
+while humans stayed ~94%. AutoCodeBench's execution-scored version discards any
+problem a mid-tier model solves 10/10 (~25% rejection).</p>
+<p><strong>The directionality trap, stated so we do not walk into it:</strong> filtering only
+to "items current frontier models fail" bakes those models' idiosyncratic
+failure modes into the suite, and later models' progress on it is partly
+progress on those quirks. HLE mitigates with expert review after the model
+filter; AutoCodeBench keeps easy and medium strata deliberately. We keep
+demoted tasks as anchors (settled decision, loop D) for the same reason.</p>
+<p><strong>Not a gate: static defect-visibility</strong> (<code>alsem analyze</code>, T2). Revision 1
+made this G3 and claimed detector-miss implies the discriminating tier. That
+implication is unsupported — detector silence may mean the detector set lacks
+the pattern, or parsing failed. Keep it as a <strong>difficulty prior</strong> written to
+the ledger, which is what <code>tooling-plan.md</code> originally called it. Validate it
+against real bench outcomes in loop D; if it predicts nothing, delete it.
+Its one blocking use stays: unused procedures mean dead filler, prune before
+building.</p>
+<hr />
+<h2 id="loop-b-validity-the-executable-core">Loop B — Validity (the executable core)<a class="headerlink" href="#loop-b-validity-the-executable-core" title="Permanent link">&para;</a></h2>
+<p><strong>B1. Discrimination probe.</strong> Reference passes its oracle on a real
+container; the negative patch fails it <strong>having reached the assertions</strong>.
+Both legs executed, never assumed. This is stricter than any published
+injected-bug gate — SWE-smith accepts a candidate as soon as one test flips,
+without requiring the failure to be an assertion failure rather than a crash.</p>
+<p>Canonicalise the artifact names here. The docs currently alternate between
+<code>starter</code> and <code>naive</code> for the failing leg, which will eventually be read
+wrong by someone.</p>
+<p><strong>B1b. Harness agreement.</strong> <em>New in revision 3, and the gate whose absence
+cost the most.</em> The reference must pass <strong>in the bench execution path</strong>, not
+only under trap-probe. Passing one harness is not evidence about another.</p>
+<p>We ran three harnesses (trap-probe/workbench, bench, LethAL) with three
+dependency manifests. An April 2026 refactor filtered the <code>Any</code> test-library
+dependency out of the bench candidate manifest while probe kept declaring it,
+so <strong>20 tasks passed B1 and then failed 100% of bench attempts</strong> — and the only
+submissions the bench accepted were stubs shadowing the missing library. After
+unification those same 20 tasks run at 85% for frontier models: they were never
+hard, they were unrunnable.</p>
+<p>SWE-bench's entire containerization saga is this lesson at scale — multiple
+execution paths giving different verdicts for one task is the disease, one
+canonical harness plus frozen environments the cure, and "pinning the
+Dockerfile is not pinning the environment; only frozen images are."</p>
+<p>Two standing requirements follow:
+- <strong>One dependency manifest</strong>, consumed by every app.json writer, no per-site
+  filters. A filter at a call site is how harness drift is born.
+- <strong><code>scripts/gold-ci.ts</code> is the enforcement.</strong> It replays references and keeps
+  a content-addressed ledger under two fingerprints: one over the oracle,
+  companions, reference and prereq; one over the <strong>harness inputs</strong> (manifest,
+  both app.json writers, candidate guard, probe entry point). Either changing
+  invalidates the recorded green. The harness fingerprint is the one a hand-run
+  probe always forgets, and the one the <code>Any</code> incident turned on.</p>
+<p>BigCodeBench checks a groundtruth pass rate on <em>every</em> evaluation run; METR
+re-runs golds on every task revision. SWE-bench does neither, which is how
+gold patches quietly rotted for a year under dependency drift (issue #484).
+Ours must run: on any <code>tests/al/**</code> or harness edit, as a sampled preflight at
+bench startup, and as a full sweep on a schedule.</p>
+<p><strong>B2. Determinism.</strong> <em>Moved ahead of mutation.</em> Both reviewers were
+emphatic and independently right: a kill/survive verdict on a flaky oracle
+is noise, and you will author kill tests against it.</p>
+<p>Revision 1's "rerun 3× on the same container" is too weak. Require:</p>
+<ul>
+<li>fresh container or tenant state, not the same container three times</li>
+<li>both execution orders (reference→negative and negative→reference)</li>
+<li>stable assertion <strong>counts and identities</strong>, not just aggregate PASS/FAIL</li>
+</ul>
+<p>State leakage and order dependence are the failures that matter, and
+same-container repetition cannot see either.</p>
+<p><strong>And B2 is not sufficient on its own — pair it with 0c.</strong> B2 observes
+variation; 0c reads sources. An order-dependent oracle whose draws stay inside
+the passing band is stable under any number of reruns and still
+nondeterministic by construction. Three oracles were exactly that (a
+codeunit-global <code>Any</code>), and B2 had cleared them. Neither check subsumes the
+other: 0c cannot see state leakage, B2 cannot see an unfired source. Both,
+always.</p>
+<p>For reference on rerun counts: TDD-Bench keeps an instance only if three runs
+in independent containers agree; SWE-bench Multimodal ran validation 10x and
+dropped 5.3% at that stage; SWE-rebench requires identical structured outcomes
+across three runs. Our fresh-state + both-orders requirement is stronger per
+run than any of them, which is why 2 runs suffice where they need 3-10.</p>
+<p><strong>B3. Regression preservation (PASS_TO_PASS).</strong> SWE-bench's second test set,
+absent from revision 1 entirely. Unrelated baseline tests stay green on the
+starter, and the reference passes both trigger and baseline suites. Today
+this is a reviewer instruction in <code>build-batch</code>, not an executable gate.</p>
+<p><strong>B4. Over-strictness — the largest hole in revision 1.</strong></p>
+<p>B1 proves <em>one</em> reference passes. It does not prove the oracle accepts any
+<em>other</em> correct fix. An independently correct implementation that the oracle
+rejects will be triaged in loop C as a model gap when it is a task defect.
+<strong>Mutation cannot see this axis at all</strong> — it detects oracles that are too
+weak, never too strong. This is SWE-bench Verified's second-largest deletion
+class.</p>
+<p>Require <strong>two</strong> independent prompt-only solutions, authored from the rendered
+prompt with no access to the oracle. <strong>Both must pass.</strong> If only the
+reference passes, treat it as oracle overfitting until adjudicated.</p>
+<p><strong>Who writes them, and why it is not "use the strongest models".</strong> B4 and C1
+want opposite things from a model, and conflating them breaks both:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>B4 over-strictness</th>
+<th>C1 hard-tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Signal</td>
+<td>the model <strong>solves</strong> it, differently</td>
+<td>the model <strong>fails</strong> it</td>
+</tr>
+<tr>
+<td>Wants</td>
+<td>diversity of correct approach</td>
+<td>frontier capability</td>
+</tr>
+</tbody>
+</table>
+<p>A frontier model is not better at B4. It may converge on the same canonical
+solution the author wrote, which proves nothing about whether the oracle
+accepts anything else. So: <strong>two models, neither from the authoring model's
+family.</strong> Opus plus GPT-5.6 is a good pair for a Fable-authored task;
+Fable itself is the worst choice, being the one most likely to reproduce the
+author's own solution and hand back a false clean bill.</p>
+<p><strong>The hard-tier exception, which is structural rather than incidental.</strong> Any
+task that survives C1 is by definition one frontier models fail. Those same
+models therefore cannot supply B4's alternative solution — a failure there is
+uninformative, because "the oracle is too strict" and "the model could not do
+it" look identical.</p>
+<p>For hard-tier tasks the second solution must come from someone who can
+actually solve it: the author writing a deliberately different
+implementation, or a human. This is legitimate, not a loophole. The author
+holds the measured fact from A3; the solver never saw the container. That
+asymmetry is the entire hardness mechanism (<code>hardness-strategy.md</code> §2), so
+the author being able to solve what the solver cannot is the design working,
+not a leak.</p>
+<p><strong>B5. Input and state amplification</strong> (EvalPlus/HumanEval+). LethAL mutates
+the program; this mutates the oracle's <em>inputs</em>. Vary boundary values, empty
+and singleton and duplicate record sets, event subscription order,
+transaction and commit sequences, same-session repeats. Reference still
+passes, negatives still fail.</p>
+<p>This is urgent rather than optional because <code>hardness-strategy.md</code> §6 wants
+conditional infection — defects that manifest only for specific data shapes.
+A single-shape oracle is exactly what that design makes fragile.</p>
+<p><strong>B6a. Blind prompt audit.</strong> <em>Split out of revision 1's single G6, and moved
+ahead of mutation.</em> Rendered-prompt clarity, leak check, intended behaviour,
+allowed change scope, unrelated assertions, oracle tamper paths. Cheap, and
+it can reject a task before any mutation effort is spent on it.</p>
+<p>Give this a rubric. Revision 1 cited GPQA's 28.3% figure without adopting
+anything like Verified's structured underspecification scale, which leaves
+the judgement exactly where <code>hardness-strategy.md</code> says it cannot be trusted.</p>
+<p><strong>Adopt Verified's rubric shape</strong>, which is the field's most-copied template:
+two axes scored <strong>0-3</strong> — (i) is the task underspecified, (ii) would the oracle
+reject a valid solution — plus a catch-all and a difficulty estimate. Three
+independent annotators, <strong>max-severity ensemble</strong> (one worried annotator kills
+the task), severity &gt;=2 discards. Their rates: 38.3% underspecified, 61.1%
+unfair tests, 68.3% filtered overall. Where agreement is low the field's
+practice is <em>exclusion</em>, not adjudication (ANLI drops non-agreement examples
+from eval splits entirely).</p>
+<p><strong>B6a gains one executable-adjacent rule: spec derivability.</strong> <em>New in
+revision 3 (synthesis G9).</em> Every behavioural claim the oracle asserts must be
+derivable from the rendered task text. An assertion that is not is either a
+missing spec sentence or an over-strict oracle, and both are task defects.</p>
+<p>This is not a style preference; it is the field's largest measured false-negative
+source. SWE-bench Pro's ablation: GPT-5 scores <strong>25.9% with problem statement +
+requirements + interface versus 8.4% with the bare statement</strong> — most of that
+gap is correct solutions rejected over naming and API mismatches, not
+capability. Their fix is exactly this: rewrite the statement, list requirements
+grounded in what the tests check, and pin the interface.</p>
+<p>The mutation round already produced our worked examples. M007's six survivors
+are unclosable because the only observation channel is a dataset <strong>column name
+the spec never fixes</strong>; M008's four are delete-time cleanup the YAML never
+specifies (and the reference itself only half-does it); M003 and H205 have
+written, passing kill tests <strong>gated on a spec sentence that does not exist yet</strong>,
+with the exact sentence recorded. Those gates are the rule working: the test
+waits for the spec, rather than the spec being invented to match one
+implementation.</p>
+<p><strong>B7. Mutation</strong> (T1, LethAL). Move from post-batch to pre-promotion: the
+sweep found 12 real holes in twice-audited oracles.</p>
+<p>Admission: every surviving mutant is triaged by <code>mutation-triager</code>.
+<strong>"Unreached" is not an acceptable disposition</strong> — revision 1 accepted it,
+which was wrong. An unreached mutant in task-relevant behaviour is direct
+evidence the oracle does not exercise that code. Admit only if the location
+is proved outside the task's behavioural scope; otherwise it is a coverage
+hole.</p>
+<p>Prefer LCR-class operators; <strong>deprioritise and sample</strong> ABS/UOI-class
+survivors rather than discarding them. Operator-level priors do not classify
+individual mutants.</p>
+<p>Budget: none. The X077 pilot ran 47 mutants in 41 seconds, so run the full
+sweep per task and re-run it after any oracle edit. Do not ration it and do
+not defer it to a batch step; at this cost, rationing it only buys back
+seconds while giving up the strongest oracle-validity signal available.</p>
+<p>Track: changed-line coverage, branch coverage in the defect slice, assertion
+reachability, mutation score with equivalent and out-of-scope mutants
+removed, and kills of empirical solver patches.</p>
+<p><strong>B8. Negative contrast set.</strong> One hand-written wrong patch is too easy for
+an author-model to design around. Build 3-5 plausible wrong fixes from failed
+solver patches, surviving non-equivalent mutants, wrong-layer fixes, and
+over/under-broad predicates. Each must compile, reach the assertions, and
+fail for the intended reason.</p>
+<p>Mutation alone does not cover this: its operators are syntactic, and the
+fault classes that matter here — omission, wrong-layer, wrong-algorithm — are
+the ~27% mutation cannot express (Just et al.), as <code>hardness-strategy.md</code>
+already notes.</p>
+<p><strong>B6b. Survivor triage and independent validity audit.</strong> The second half of
+the split audit, now armed with mutation and contrast-set evidence.</p>
+<hr />
+<h2 id="loop-c-selection-per-model-generation">Loop C — Selection (per model generation)<a class="headerlink" href="#loop-c-selection-per-model-generation" title="Permanent link">&para;</a></h2>
+<p><strong>Why this loop can work at all.</strong> The obvious objection is that a
+Fable-authored task cannot defeat Fable: same weights, same reasoning
+ceiling. The answer is not to out-think the solver but to <strong>out-know</strong> it,
+and it is <code>hardness-strategy.md</code> §2 restated in pipeline terms.</p>
+<p>The author has a container and can MEASURE what BC actually does. The solver
+has neither, and can only recall or reason from priors. That is GPQA's real
+finding — its skilled non-experts with unlimited web access scored 34%
+against in-domain experts' 72%, a gap of access, not intelligence. Three
+levers follow, and only these three:</p>
+<ol>
+<li><strong>Bank measured facts before authoring</strong> (A3). Author tasks whose fix
+   requires a fact measured on a container. Counterintuitive and thinly
+   documented means recall fails and first-principles reasoning fails too.
+   This is the only lever with measured attempt-2 resistance.</li>
+<li><strong>Select, do not author.</strong> Nobody hand-writes frontier-resistant tasks.
+   HLE needed 70k attempts for 13k stumpers. Build cheap and in volume; let
+   C1 pick survivors.</li>
+<li><strong>Compose.</strong> Merge two or three already-validated defects whose fixes
+   interact or whose symptoms mask each other. Scope is the strongest failure
+   predictor in the SWE data, and the 36 validated defects on hand are the
+   inventory.</li>
+</ol>
+<p>What does not work, because round 4 measured it: opacity and collision
+engineering. They bought no attempt-2 resistance.</p>
+<p><strong>C1. Clean-room solver.</strong> <code>hardness-strategy.md</code>'s #1 lever, still unbuilt.</p>
+<p>Clean room means: rendered prompt only, fresh conversation, no authoring
+artifacts, no oracle, the benchmark's own tool budget. The X097 spot-check
+leaked <code>task.yml</code> tags because the solver was handed the file.</p>
+<p><strong>Classify every run into four outcomes</strong>, because revision 1 treated
+"failure" as one thing:</p>
+<table>
+<thead>
+<tr>
+<th>Outcome</th>
+<th>Evidence value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Valid solve</td>
+<td>demote from hard tier</td>
+</tr>
+<tr>
+<td><strong>Behavioural failure</strong></td>
+<td><strong>the only strong hardness evidence</strong></td>
+</tr>
+<tr>
+<td>Agent failure (malformed output, budget exhausted)</td>
+<td>weak</td>
+</tr>
+<tr>
+<td>Infrastructure failure (container, compile, timeout)</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p>Preserve the patch and trajectory for every failure, re-execute it
+independently, and feed it to B8's contrast set.</p>
+<p><strong>Solver failure nominates a task for the hard tier; it does not admit it.</strong>
+Admission requires failure <em>plus</em> independent validity evidence — which is
+what loop B produced. This is the structural answer to HLE's 27% problem:
+their model-fails gate selected for broken tasks as readily as hard ones,
+because nothing executable stood behind it.</p>
+<p>Use at least two model families. Fable authors and Fable solves; a
+single-family gate measures the author's own blind spots — the
+generator-solver paradox re-entering sideways. GPQA used different
+populations for exactly this reason.</p>
+<p><strong>C0. Authoring-model metadata is a build requirement.</strong> <em>New in revision 3
+(synthesis G6).</em> Every task records the model family that authored it, in
+<code>task.yml</code> under <code>authoring.model</code>, mirrored into the ledger. Gate tooling
+reads it and mechanically excludes that family from B4-checker, B6-auditor and
+C1-solver roles.</p>
+<p>Without the record the exclusion rule is folklore. It already bit: the August
+2026 B4 recovery had to <em>assume</em> "anthropic authored everything" as a
+conservative default, because no task says. Backfill existing tasks from the
+ledger and git history where known, <code>assumed: anthropic</code> otherwise, and mark
+which it is — an assumption recorded as a fact is worse than a gap.</p>
+<p><strong>Why the rule is stronger than "avoid the same model".</strong> Self-preference is
+mechanistic, not incidental. Panickssery et al. (NeurIPS 2024) show evaluators
+recognise their own generations and that self-recognition strength correlates
+linearly with self-preference — causation, not correlation. Worse, the bias is
+<strong>perplexity-driven, so it survives anonymisation</strong>: a judge scores
+low-perplexity text higher, and a model's own output is necessarily
+low-perplexity to itself. And it <strong>compounds across two independent axes</strong>
+(arXiv 2509.26600): question-generation bias (a model authors tasks aligned
+with its own capability distribution) and judge bias are separate defects, so
+fixing one leaves the other intact.</p>
+<p>Two consequences we should hold to:
+- <strong>Execution scoring eliminates judge bias entirely</strong>, which is why the
+  primary verdict must always be a real test run and LLM judges are confined
+  to meta-checks. This is already true of our harness and worth not losing.
+- Where models must judge, prefer a <strong>panel of disjoint families</strong> over one
+  strong judge (PoLL: three small cross-family judges beat single GPT-4 on
+  human agreement at ~1/7 the cost). But note the 2026 caveat: correlated
+  errors can collapse a nine-judge panel to two effective votes — <strong>family
+  diversity buys independence, judge count does not.</strong></p>
+<p>Verdicts decay: re-run per model generation, and record the model, harness,
+budget and date with the verdict.</p>
+<p><strong>C2. Held-out split.</strong> <em>Dropped from revision 1; <code>hardness-strategy.md</code> §7
+explicitly calls for it.</em> Decide public-versus-private at promotion, because
+it is irreversible once the repo is scraped. Detection in loop D is not a
+substitute for prevention.</p>
+<hr />
+<h2 id="loop-d-lifecycle-post-bench">Loop D — Lifecycle (post-bench)<a class="headerlink" href="#loop-d-lifecycle-post-bench" title="Permanent link">&para;</a></h2>
+<p><strong>D1. Discrimination.</strong> Corrected item-total correlation (excluding the item
+itself), with bootstrap confidence intervals. State a minimum N of models ×
+attempts before any retirement decision — point-biserial on a handful of
+models is noise, and revision 1's flat "near-zero discrimination retires the
+item" would retire good items on sampling error.</p>
+<p><strong>Quarantine, do not auto-retire.</strong> Distinguish: universally easy anchor,
+currently-too-hard floor item, negative-discrimination validity defect,
+model-family-specific item, redundant item, flaky item. A floor item may
+become informative for the next generation.</p>
+<p>Note the trap revision 1 walked into: a suite selected only for current
+frontier failures fills with all-fail items, which D1 then says carry no
+discrimination. C1's nominate-don't-admit rule is what keeps these
+consistent.</p>
+<p><strong>D2. Empirical redundancy.</strong> Response correlation and local dependence
+across trap families — the real version of A2's cheap metadata screen.</p>
+<p><strong>D3. Contamination.</strong> Evaluate on tasks released <em>after</em> a model's cutoff
+and compare across time windows (LiveCodeBench's actual method). Revision 1's
+"pass rate jumped for post-cutoff models therefore memorised" confounds
+contamination with genuine capability improvement.</p>
+<p><strong>D4. Prior validation.</strong> Does the al-sem difficulty prior predict anything?
+If not after a full bench, delete it.</p>
+<p><strong>D5. Unsolved-residue audit.</strong> <em>New in revision 3, and the single most
+important addition (synthesis G4).</em></p>
+<p><strong>Rule: an ALL-FAIL task may not be labelled hard until it has passed a defect
+triage.</strong> Every task no model solved gets, automatically, after every bench:</p>
+<ol>
+<li><strong>Failure-mode clustering</strong> across models: compile error / test failure /
+   malformed / infra. All-compile-error means no oracle ever ran, so the task
+   carries no oracle evidence at all.</li>
+<li><strong>Identical-fingerprint detection.</strong> The same error text and count across
+   independent model families is a task defect until proven otherwise. This is
+   what would have caught the <code>Any</code> incident on day one: <code>Codeunit 'Any' is
+   missing</code>, identical across three families, once per oracle reference.</li>
+<li><strong>Red-baseline check</strong> — does the reference still pass? (gold-ci answers
+   this for free.)</li>
+<li><strong>Spec-vs-oracle audit</strong> for whatever survives 1-3.</li>
+</ol>
+<p><strong>Why this is not optional.</strong> Defect discovery is <em>score-dependent</em>: bad
+instances are invisible while nobody solves their neighbours and dominate once
+everything solvable is solved. OpenAI retired SWE-bench Verified on exactly
+this finding — auditing the ~27.6% of tasks o3 consistently failed across 64
+runs, <strong>&gt;=59.4% had test-design or problem-statement defects</strong>, 35.5%
+overly-narrow tests rejecting correct solutions. Five months later they
+retracted their SWE-bench Pro recommendation after finding <strong>~30% of its public
+tasks broken</strong>. Two independent one-time human validation campaigns both left
+30-60% defect rates <em>in the region that matters</em>.</p>
+<p>Our own first full run reproduced the pattern exactly: <strong>of 34 all-fail tasks,
+20 were the <code>Any</code> harness defect, 1 a red baseline, several more suspect.</strong> The
+honest hard tail was 14, not 34. Had we crowned those 34 as hard, more than
+half the "hardest" tier would have been broken tasks.</p>
+<p>Method the field converged on, worth copying directly: OpenAI used <strong>model-based
+investigator agents plus independent human engineers</strong>, cross-checked (pipeline
+flagged 27.4%, humans 34.1% — neither subsumed the other). Platinum Benchmarks'
+cheaper variant: show each item to multiple models and <strong>manually inspect only
+the items where at least one errs</strong>, which is targeted human review at a
+fraction of full-review cost.</p>
+<p><strong>D6. Dead-task retirement.</strong> <em>New in revision 3 (synthesis G8, easy end).</em>
+A task passed first-try by every benched model for <strong>N consecutive model
+generations</strong> is retired to the smoke set: kept (per the settled decision that
+demoted tasks anchor scores and supply loop-D variance) but out of the headline
+denominator.</p>
+<p>This is now the suite's dominant problem, not the hard tail. The first full run
+found <strong>61 of 203 tasks (30%) solved first-try by all three models</strong>, rising to
+~78 (~38%) once the <code>Any</code> tasks were fixed and revealed as 85%-solvable. Closing
+their mutation holes made those oracles <em>honest</em>; it did nothing to their
+difficulty and was never going to. Oracle coverage and item difficulty are
+independent axes — this pipeline hardens the first, and only C1 and authoring
+address the second.</p>
+<p>Note the interaction with D1 and C1: a suite selected only for current frontier
+failures fills with all-fail items that D1 reads as non-discriminating, while
+D5 says most of them are probably defective. C1's nominate-don't-admit rule plus
+D5's triage is what keeps those three consistent.</p>
+<hr />
+<h2 id="build-order">Build order<a class="headerlink" href="#build-order" title="Permanent link">&para;</a></h2>
+<p>Revision 2's order is superseded: items 1-4 below are <strong>built</strong> as of
+2026-08-28, and the ordering principle changed. Revision 2 ordered by expected
+wasted cost within loop B. Revision 3 puts <strong>free static checks first</strong> and
+<strong>harness integrity before any task-level gate</strong>, because a harness defect
+invalidates every task-level verdict at once — one bad manifest silently voided
+20 tasks' B1 results, which no amount of per-task rigour would have caught.</p>
+<p><strong>Done:</strong></p>
+<ol>
+<li>~~Loop 0 static hygiene~~ — <code>oracle-audit.py</code>, four checks, exit 1.</li>
+<li>~~Harness unification + anti-gaming guard~~ — one manifest, candidate
+   namespace guard in both paths, validated by the 20 <code>Any</code> tasks going 0% to
+   85%.</li>
+<li>~~Gold-solution CI~~ — <code>gold-ci.ts</code>, content-addressed over task inputs AND
+   harness inputs.</li>
+<li>~~Mutation pre-promotion, determinism ahead of it, split audit~~ (revision
+   2 items 1-3).</li>
+</ol>
+<p><strong>Next, in order:</strong></p>
+<ol>
+<li><strong>Authoring-model metadata</strong> (C0). Cheap, unblocks mechanical family
+   exclusion, and every day without it adds tasks whose provenance must be
+   assumed rather than read.</li>
+<li><strong>Unsolved-residue audit</strong> (D5). Highest value per hour of the remaining
+   work: it is what stops a broken task being crowned hard, and the first full
+   run showed 20 of 34 all-fail tasks were defective.</li>
+<li><strong>Dead-task retirement</strong> (D6) and the <strong>cheap-model artifact screen</strong> (A5) —
+   the two-sided difficulty discipline. 30-38% of the suite is at ceiling.</li>
+<li><strong>Build over-strictness properly</strong> (B4). Evidence is recovered from the bench
+   corpus today; the 109 author-written second implementations remain owed.</li>
+<li><strong>Solver gate</strong> (C1) with four-way outcome classification.</li>
+<li><strong>Held-out split</strong> (C2) — see Open decisions; it is now recommended rather
+    than merely open.</li>
+<li><strong>Input amplification</strong> (B5), <strong>contrast set</strong> (B8), <strong>PASS_TO_PASS</strong> (B3).</li>
+<li><strong>Loop D</strong> discrimination statistics after the next full bench.</li>
+</ol>
+<h2 id="open-decisions">Open decisions<a class="headerlink" href="#open-decisions" title="Permanent link">&para;</a></h2>
+<p>Two of revision 1's three are now settled by the reviews:</p>
+<ul>
+<li><strong>G7-demoted tasks: keep</strong> as easy/mid tier. They passed loop B, so they
+  measure something executable; they anchor scores, separate sub-frontier
+  models, and supply the response variance loop D needs. Freeze the solver
+  model and demotion date in metadata.</li>
+<li>
+<p><strong>Solver strictness: fail-across-k, not temperature 0.</strong> Agent execution,
+  tool outputs and backends vary even at temperature 0. Two families, admit
+  only on all-fail. <strong>Defer the exact k</strong> until a pilot gives the base rate.</p>
+</li>
+<li>
+<p><strong>Mutation budget: run it whenever you need it.</strong> Operator ruling,
+  2026-08-26. The X077 pilot measured 47 mutants in 41 seconds; at that cost
+  there is nothing to ration. Full LethAL per task, and re-run it freely
+  after any oracle edit rather than treating a re-run as expensive. This
+  closes the one decision the two reviews split on, in Fable's direction.</p>
+</li>
+<li>
+<p><strong>B4 checkers: two, neither from the author's family.</strong> Operator ruling,
+  2026-08-26. Hard-tier tasks take an author-written second implementation
+  instead, since no model that would qualify as a checker can solve them. See
+  B4 for the reasoning.</p>
+</li>
+</ul>
+<p><strong>Revision 3 reopens one and adds one.</strong></p>
+<ul>
+<li><strong>C2 held-out split: recommended, not merely open.</strong> Revision 2 left this as
+  "whether to take this on". The evidence now says take it on. It is the only
+  mechanism the field has validated for <em>durable</em> signal against contamination:
+  SWE-bench Multimodal withholds its test split's oracles and evaluates only via
+  a cloud tool; SWE-bench Pro keeps 858 instances private specifically to detect
+  future overfitting, plus 276 commercial repos never published; GSM1k's private
+  mirror exposed up-to-13-point drops in overfit families. Detection alone is
+  not a substitute — LiveCodeBench's time windows <em>measure</em> contamination,
+  private holdouts <em>prevent</em> it. <code>benchmark-redesign.md</code> §3.2 already contains
+  the architecture (public decoy app + private custom app cloned at eval time);
+  what it needs is the operator decision, which is genuinely the maintainer's:
+  it is the one item here with a real ongoing operational burden.</li>
+<li><strong>Contamination hygiene: adopt now, no decision needed</strong> (synthesis G7).
+  Embed a project canary GUID in every task YAML and oracle header, and record
+  <code>authored_at</code>. Both are free and both are one-way doors — a canary added after
+  scraping proves nothing. BIG-bench's canary GUID was reproduced verbatim by
+  pre-RLHF GPT-4 and by Claude 3.5 Sonnet, so the tripwire demonstrably works.
+  Note what it does not do: n-gram and exact-match decontamination are defeated
+  by rephrasing (LMSYS showed a 13B model "beating GPT-4" by training on
+  rephrased test sets that passed n-gram filters), so the canary is a detector,
+  not a defence.</li>
+</ul>
+<p>Otherwise the remaining work is building, in the order below.</p>
+<h2 id="what-changed-from-revision-1">What changed from revision 1<a class="headerlink" href="#what-changed-from-revision-1" title="Permanent link">&para;</a></h2>
+<p>Four structural errors, all found by review rather than by me:</p>
+<ol>
+<li><strong>The invalidation rule pointed the wrong way</strong> — edits invalidate gates
+   upstream, not downstream. Loop B is a fixpoint.</li>
+<li><strong>"Cost-ascending" was the wrong objective.</strong> Expected wasted cost subject
+   to validity dependencies.</li>
+<li><strong>Over-strictness was absent entirely</strong>, and mutation structurally cannot
+   cover it.</li>
+<li><strong>"Unreached" was accepted as a mutation disposition.</strong> It is a coverage
+   hole.</li>
+</ol>
+<p>Plus: determinism was too late and too weak, the audit should be split, the
+redundancy screen belongs at the front, al-sem visibility is a prior and not
+a gate, the held-out split was dropped, solver failure needed four outcome
+classes rather than one, and the psychometrics needed confidence intervals
+and a minimum N.</p>
+<h2 id="what-changed-from-revision-2">What changed from revision 2<a class="headerlink" href="#what-changed-from-revision-2" title="Permanent link">&para;</a></h2>
+<p>Revision 2 was corrected by reviewers reasoning about the spec. Revision 3 is
+corrected by <strong>running it</strong>, and by reading how the field's benchmarks failed.
+The distinction matters: every change below is anchored to a measured defect in
+our own suite or a published defect rate in someone else's.</p>
+<p><strong>New loop.</strong> Loop 0 — static hygiene, free, every commit, every task, hard
+failure. Hollow oracles, vacuous fixture guards, nondeterminism sources,
+toolkit namespace collisions. Justified by H011 and H017 passing B1, B2 and B4
+while asserting nothing at all.</p>
+<p><strong>New gates.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>Catches</th>
+<th>Why revision 2 missed it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0a-0d hygiene</td>
+<td>oracles that assert nothing; unseeded randomness; grader gaming</td>
+<td>assumed authoring discipline; nothing enforced CLAUDE.md's own rules</td>
+</tr>
+<tr>
+<td>B1b harness agreement + gold CI</td>
+<td>a verdict that holds in one harness and not another</td>
+<td>treated "the harness" as singular when we run three</td>
+</tr>
+<tr>
+<td>A5 cheap-model screen</td>
+<td>tasks that leak their answer</td>
+<td>screened only the hard end (C1)</td>
+</tr>
+<tr>
+<td>C0 authoring metadata</td>
+<td>family exclusion being unenforceable</td>
+<td>stated the rule without recording the fact it depends on</td>
+</tr>
+<tr>
+<td>D5 residue audit</td>
+<td>broken tasks crowned as hard</td>
+<td>had the principle in a design note, not as a gate</td>
+</tr>
+<tr>
+<td>D6 dead-task retirement</td>
+<td>30-38% of the suite at ceiling</td>
+<td>treated saturation as a redesign topic, not a lifecycle rule</td>
+</tr>
+<tr>
+<td>B6a spec derivability</td>
+<td>oracles asserting what the spec never says</td>
+<td>rubric had no rule connecting assertions to task text</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Reordered.</strong> Free static checks before everything; harness integrity before
+any task-level gate. A harness defect voids every task-level verdict
+simultaneously, which per-task rigour cannot detect — one filtered dependency
+silently invalidated 20 tasks' B1 results.</p>
+<p><strong>Strengthened.</strong> B2 now explicitly insufficient alone and paired with 0c
+(observed variation vs sources — neither subsumes the other). B6a gains
+Verified's 0-3 two-axis rubric with three annotators and max-severity
+ensembling. B4's family-exclusion rule gains the mechanism (C0) that makes it
+enforceable, and the reasoning behind it (self-preference is perplexity-driven,
+survives anonymisation, and compounds across generation and judging).</p>
+<p><strong>Settled.</strong> C2 held-out split moves from open to recommended, with the
+operator decision named as the one genuine cost. Contamination hygiene (canary,
+<code>authored_at</code>) is adopted outright — free, and a one-way door.</p>
+<p><strong>The governing correction.</strong> Revision 2 built a gate battery that asked, at
+every stage, whether a correct solution passes. Revision 3's additions all ask
+the complementary question — whether a wrong solution fails, whether the
+verdict transfers, whether the task measures anything — because that is the
+question the field's failures were all made of, and ours were too.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

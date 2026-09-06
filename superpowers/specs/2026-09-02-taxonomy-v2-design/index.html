@@ -1,0 +1,3233 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/specs/2026-09-02-taxonomy-v2-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Taxonomy v2: format groups, mechanism facets, donor-aware statistics - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#taxonomy-v2-format-groups-mechanism-facets-donor-aware-statistics" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Taxonomy v2: format groups, mechanism facets, donor-aware statistics
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-why-now-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Why now, measured
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Non-goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-taxonomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Taxonomy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Taxonomy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-group-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Group = format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-facet-families" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Facet families
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-composite-derivation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Composite derivation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-catalog-file-schema-version-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Catalog file, schema version 2
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-pipeline-claudeskillsrefresh-task-taxonomypipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 Pipeline (.claude/skills/refresh-task-taxonomy/pipeline/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-storage-and-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Storage and API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Storage and API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-d1-migration-0016_taxonomy_revisionssql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 D1 migration 0016_taxonomy_revisions.sql
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-admin-endpoint-apiv1admincatalogtask-taxonomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Admin endpoint /api/v1/admin/catalog/task-taxonomy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-public-api-v2-alongside-a-frozen-v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Public API: v2 alongside a frozen v1
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-caching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Caching
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-run-time-capture-at-ingest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Run-time capture at ingest
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-releases-and-exports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 Releases and exports
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-leaderboard-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Leaderboard statistics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Leaderboard statistics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-what-the-numbers-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 What the numbers mean
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-run-cohort-and-per-task-score" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Run cohort and per-task score
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-coverage-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Coverage gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-independent-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 Independent components
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#65-component-resampling-and-when-it-is-shown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.5 Component resampling and when it is shown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#66-separation-and-the-all-headline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.6 Separation and the All headline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#67-passk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.7 pass^k
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#68-leaderboard-v2-wire-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.8 Leaderboard v2 wire format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#69-methodology-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.9 Methodology page
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#610-validation-before-any-separation-is-shown-under-the-new-estimator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.10 Validation before any separation is shown under the new estimator
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. UI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-releases-and-ship-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Releases and ship order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Testing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-success-measures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Success measures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-precedents-consulted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Precedents consulted
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-review-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Review record
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/specs/2026-09-02-taxonomy-v2-design.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="taxonomy-v2-format-groups-mechanism-facets-donor-aware-statistics">Taxonomy v2: format groups, mechanism facets, donor-aware statistics<a class="headerlink" href="#taxonomy-v2-format-groups-mechanism-facets-donor-aware-statistics" title="Permanent link">&para;</a></h1>
+<p>Date: 2026-09-03. Status: design, revision 4 after two adversarial review
+rounds and one additions round (GPT-5.6 Sol, GLM 5.3; raw reviews in
+<code>.panel/taxonomy-*</code>).
+Awaiting owner review, then implementation plans.</p>
+<h2 id="1-summary">1. Summary<a class="headerlink" href="#1-summary" title="Permanent link">&para;</a></h2>
+<p>The site's task taxonomy is rebuilt on two orthogonal dimensions. The
+single-valued <strong>group</strong> becomes the task's evaluation format, derived
+mechanically from fields the task files already carry. <strong>Facets</strong> become four
+explicit families (mechanism, invariant, surface, environment); a composite's
+derived facets are the union of its donors' facets, with the donor list stored
+so provenance is reconstructable. Taxonomy data is stored as immutable
+revisions with one active pointer per task set, addressable by digest, served
+through a versioned v2 API while v1 is served from a frozen per-hash snapshot
+until a dated sunset.</p>
+<p>The leaderboard cuts tabs on format and states what its statistics mean: the
+suite is authored and gated, not sampled, so every interval and band is a
+<strong>benchmark-composition sensitivity</strong> measure, conditional on a defined run
+cohort, and is labelled as such rather than as a population confidence
+interval. Resampling runs over the connected components of the task-donor
+graph, and separation is shown only where the components are numerous and
+none dominates; today that excludes the composite tab and the All headline,
+which show scores, counts and a subset-influence table instead. A model
+appears on a slice only when it was evaluated on all of it under the cohort.
+The taxonomy stays outside the task-set hash; no task file is edited.</p>
+<p>Because the schema and the ingest envelope open at the same time, the change
+also captures what cannot be backfilled later: per-test outcome vectors,
+harness and environment identity per run, attempt termination facts and the
+model invocation actually served; and it makes the scoring policy, the
+benchmark release (task set, taxonomy revision, policy, cohort, panel and
+retained set) and per-release dataset exports first-class, digest-addressed
+objects. The work ships as a dark data launch, then a coherent statistics API
+and UI, then bands under a validated estimator.</p>
+<h2 id="2-why-now-measured">2. Why now, measured<a class="headerlink" href="#2-why-now-measured" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Coverage stops at CG-AL-X146: 57 reasoning tasks, including all 29 gated
+  composites, have no group and no facets.</li>
+<li>The nine groups classify the objects a solution touches. 77 X-series tasks
+  and all 29 composites sit in <code>business-logic</code>; a composite spans five to
+  eight mechanisms.</li>
+<li>Format is the dominant score signal: composites score 0, 0, 3 and 10 percent
+  at attempt 1 across the four frontier models against 80 to 93 percent on the
+  singles (<code>hardening-levers-evidence.md</code>, panel section). What predicts a
+  composite's resistance is which donor mechanisms it carries (0 of 59
+  composites without a high-survival donor ever gated, 29 of 59 with one).</li>
+<li><code>tiers.ts</code> resamples task indices (line 80). The 29 gated composites and
+  their 51 donor singles form one 80-task connected component of the
+  task-donor graph (X076 in 16 composites, X140 in 13, X157 in 11). Bands
+  computed over them as independent tasks overclaim.</li>
+<li>The task files' <code>metadata.category</code> is inside the hashed content. Fixing it
+  there would move <code>task_sets.hash</code> and orphan every run.</li>
+<li>Precedents: BC-Bench, Terminal-Bench and LiveBench group by kind of work or
+  domain; Aider polyglot and BigCodeBench-Hard select by measured solve rate;
+  Miller 2024 ("Adding Error Bars to Evals") prescribes clustered errors and
+  reporting cluster counts next to question counts; Chatbot Arena treats
+  overlapping bootstrap intervals as indistinguishable.</li>
+</ul>
+<h2 id="3-non-goals">3. Non-goals<a class="headerlink" href="#3-non-goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Changing any file under <code>tasks/</code> or <code>tests/al/</code>. <code>metadata.category</code> is
+  frozen and documented as a historical authoring label.</li>
+<li>The launch-bar metric policy and the published selection rule (donor cap,
+  "solved by at most k of n"). Section 6 is correct under any headline choice.</li>
+<li>A request-time difficulty display: it needs a versioned panel manifest that
+  does not exist; deferred.</li>
+<li>Composites assembled from trap or composite donors: unsupported; the
+  validator refuses them and the methodology page says so.</li>
+<li>A hierarchical multiple-membership outcome model in production. It is the
+  offline validation instrument in 6.10, not the site estimator.</li>
+</ul>
+<h2 id="4-taxonomy">4. Taxonomy<a class="headerlink" href="#4-taxonomy" title="Permanent link">&para;</a></h2>
+<h3 id="41-group-format">4.1 Group = format<a class="headerlink" href="#41-group-format" title="Permanent link">&para;</a></h3>
+<p>One group per task, derived by the first matching rule over the manifest, with
+every field value validated against an enumerated set:</p>
+<table>
+<thead>
+<tr>
+<th>order</th>
+<th>rule</th>
+<th>slug</th>
+<th>display name</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>metadata.donors</code> non-empty</td>
+<td><code>diagnose-composite</code></td>
+<td>Composite diagnose</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>prompt_template</code> in {<code>diagnose.md</code>, <code>diagnose-objects.md</code>, <code>diagnose-contract.md</code>}</td>
+<td><code>diagnose-single</code></td>
+<td>Single-defect diagnose</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>metadata.cohort</code> = <code>ado-trap-2026</code></td>
+<td><code>runtime-trap</code></td>
+<td>Runtime trap</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>prompt_template</code> = <code>code-gen.md</code></td>
+<td><code>build-from-spec</code></td>
+<td>Build from spec</td>
+</tr>
+</tbody>
+</table>
+<p>Compatibility matrix, enforced by the validator (any other combination fails):</p>
+<table>
+<thead>
+<tr>
+<th>group</th>
+<th>prompt_template</th>
+<th>cohort</th>
+<th>donors</th>
+<th><code>tasks/starter/&lt;id&gt;/</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>diagnose-composite</td>
+<td>diagnose-objects.md or diagnose-contract.md</td>
+<td>reasoning-100</td>
+<td>4..8</td>
+<td>required</td>
+</tr>
+<tr>
+<td>diagnose-single</td>
+<td>diagnose.md, diagnose-objects.md or diagnose-contract.md</td>
+<td>reasoning-100 or ado-trap-2026</td>
+<td>none</td>
+<td>required</td>
+</tr>
+<tr>
+<td>runtime-trap</td>
+<td>code-gen.md</td>
+<td>ado-trap-2026</td>
+<td>none</td>
+<td>absent</td>
+</tr>
+<tr>
+<td>build-from-spec</td>
+<td>code-gen.md</td>
+<td>absent</td>
+<td>none</td>
+<td>absent</td>
+</tr>
+</tbody>
+</table>
+<p>Known cohort values: <code>ado-trap-2026</code>, <code>reasoning-100</code>. An unknown cohort or
+template fails validation rather than degrading a task to build-from-spec. A
+reviewed catalog override list exists for exceptions; every override names
+the rule it overrides and why, and the validator reports overrides in use.</p>
+<p>Repository census on 2026-09-02: 298 committed tasks; 29 manifests carry
+donors, 139 use a diagnose template, 50 carry the trap cohort (one of them a
+diagnose task, handled by rule order), 159 use <code>code-gen.md</code>; the promoted
+trap set is 49 tasks. The validator asserts these per-format counts against
+an expected table that is updated deliberately when a batch lands.</p>
+<p>Definitions carried in the catalog: <code>build-from-spec</code>, write new AL objects
+from a behavioural specification; <code>runtime-trap</code>, implement a compact
+requirement whose natural solution meets a Business Central runtime semantic;
+<code>diagnose-single</code>, repair a complete application with one planted defect,
+given a symptom; <code>diagnose-composite</code>, repair one application assembled from
+several donor applications with every defect live and no per-module symptom.</p>
+<h3 id="42-facet-families">4.2 Facet families<a class="headerlink" href="#42-facet-families" title="Permanent link">&para;</a></h3>
+<p>Every tag carries a <code>family</code>, a <code>name</code> and a <code>description</code>; so does every
+family and group. Four families:</p>
+<p><strong>mechanism</strong>, a Business Central runtime or language semantic:
+<code>tryfunction-write-rollback</code>, <code>commit-scope</code>, <code>error-flow</code>,
+<code>filter-key-semantics</code>, <code>filter-group-state</code>, <code>temporary-record</code>,
+<code>xrec-trigger-state</code>, <code>event-binding</code> (subscriber lifetime and instance
+scope), <code>event-order</code>, <code>validation-trigger</code>, <code>decimal-precision</code>,
+<code>culture-format-roundtrip</code>, <code>serialization-encoding</code>, <code>company-scope</code>,
+<code>permission-check</code>, <code>flowfield-sift</code>, <code>sql-cost-scaling</code>,
+<code>single-instance-state</code>, <code>recordref-reflection</code>, <code>upgrade-datatransfer</code>,
+<code>record-locking-concurrency</code>.</p>
+<p><strong>invariant</strong>, a domain contract the oracle grades independent of mechanism:
+<code>largest-remainder-allocation</code>, <code>reversal-conservation</code>, <code>exact-total</code>,
+<code>inclusive-boundary</code>, <code>idempotent-rebuild</code>, <code>company-isolation</code>,
+<code>roundtrip-fidelity</code>, <code>bounded-sql-cost</code>.</p>
+<p><strong>surface</strong>, AL objects and APIs touched: a reviewed vocabulary seeded from
+the current tags through an explicit alias table (schema in 4.4). No
+prevalence-based pruning; common surfaces such as <code>codeunit</code> and <code>table</code> stay
+in the vocabulary and are <code>hidden_by_default</code> in filter suggestions.</p>
+<p><strong>environment</strong>, execution requirements: <code>multi-company</code>,
+<code>culture-sensitive</code>, <code>test-permissions</code>; plus the structured
+<code>min_bc_version</code> field (the current <code>v15</code>/<code>v16</code>/<code>v17</code> tags express a
+requirement, not the execution version, and become that field).</p>
+<p>Retired from the facet namespace: <code>diagnose</code>, <code>composite</code>, <code>multi-defect</code>,
+<code>minimal-symptom</code>, <code>defect-sites-N</code>, and generic labels (<code>calculations</code>).
+Administrative facts (cohort, difficulty, defect-site count, gated status,
+authoring model) are structured metadata, not facets.</p>
+<p>Mechanism and invariant facets are assigned by the enrichment workflow
+against the vocabulary for <strong>every</strong> format, including build-from-spec (a
+code-generation task grades boundaries and exact totals as much as a
+diagnose task does), then reviewed by hand once. The vocabulary grows only
+through the workflow's <code>vocabGaps</code> output plus a human decision; a
+vocabulary-gap audit against every current tag precedes freezing the list.</p>
+<h3 id="43-composite-derivation">4.3 Composite derivation<a class="headerlink" href="#43-composite-derivation" title="Permanent link">&para;</a></h3>
+<p>For a composite C with donors D1..Dn, each a <code>diagnose-single</code> task in the
+same set:</p>
+<ul>
+<li><code>derived(C)</code> = union over donors of their mechanism, invariant, surface
+  <strong>and environment</strong> facets, deduplicated. <code>min_bc_version(C)</code> = max over
+  donors, and the validator requires exactly that value.</li>
+<li><code>local(C)</code> = facets the composite itself introduces (assembly glue, an
+  environment condition no donor carried). Must be disjoint from
+  <code>derived(C)</code>; the validator refuses overlap.</li>
+<li><code>facets(C)</code> = <code>derived(C)</code> ∪ <code>local(C)</code>; each stored with its origin
+  (<code>derived</code> or <code>local</code>). Singles store origin <code>direct</code>.</li>
+<li>The donor list is stored with C in order. Facet provenance is reconstructed
+  as <code>facet ∈ facets(Di)</code> when needed.</li>
+<li>Derived facets are materialized by the pipeline, never computed by the
+  site. A donor's facet change regenerates every composite on the next run.</li>
+<li>Outcome-derived properties (survival, resistance) are never facets.</li>
+</ul>
+<h3 id="44-catalog-file-schema-version-2">4.4 Catalog file, schema version 2<a class="headerlink" href="#44-catalog-file-schema-version-2" title="Permanent link">&para;</a></h3>
+<p><code>site/catalog/task-categories.yml</code> conforms to a published JSON Schema
+(<code>site/src/lib/shared/taxonomy-schema.ts</code>, a pure module with no runtime
+dependencies, imported by the Deno pipeline and the Worker alike, so there is
+one validator). Shape:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">schema_version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">groups</span><span class="p">:</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">slug</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">diagnose-composite</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Composite diagnose</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Repair one application assembled from several donor applications ...</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">families</span><span class="p">:</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">slug</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mechanism</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Mechanism</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">A Business Central runtime or language semantic the task turns on.</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="nt">tags</span><span class="p">:</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">slug</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tryfunction-write-rollback</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="nt">family</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mechanism</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TryFunction write rollback</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Writes inside a failed TryFunction are rolled back ...</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">slug</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">table</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">family</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">surface</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Table</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">A table object is created or changed.</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span><span class="nt">hidden_by_default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="nt">aliases</span><span class="p">:</span><span class="w">                      </span><span class="c1"># old slug -&gt; new slug, family-aware, reviewed</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">try-function</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">    </span><span class="nt">to</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tryfunction-write-rollback</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">    </span><span class="nt">note</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mechanism, not surface</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">numeric-precision</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">    </span><span class="nt">to</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">decimal-precision</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="nt">overrides</span><span class="p">:</span><span class="w">                    </span><span class="c1"># rule exceptions, each justified</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">  </span><span class="p p-Indicator">[]</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="nt">tasks</span><span class="p">:</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">  </span><span class="nt">CG-AL-X076</span><span class="p">:</span>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">    </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">diagnose-single</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">    </span><span class="nt">facets</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">tryfunction-write-rollback</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">codeunit</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">table</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">    </span><span class="nt">min_bc_version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">17</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">  </span><span class="nt">CG-AL-X283</span><span class="p">:</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">    </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">diagnose-composite</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">    </span><span class="nt">donors</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">CG-AL-X076</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">CG-AL-X079</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">CG-AL-X087</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">CG-AL-X116</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">CG-AL-X127</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">CG-AL-X147</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">CG-AL-X152</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">CG-AL-X157</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">    </span><span class="nt">derived_facets</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">tryfunction-write-rollback</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">largest-remainder-allocation</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">inclusive-boundary</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">culture-format-roundtrip</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">company-scope</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">codeunit</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">table</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">    </span><span class="nt">local_facets</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">    </span><span class="nt">min_bc_version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">17</span>
+</code></pre></div>
+<p>Slugs match <code>^[a-z0-9]+(-[a-z0-9]+)*$</code>. Singles use <code>facets</code>; composites use
+<code>derived_facets</code> plus <code>local_facets</code>; the validator refuses the other form.
+The facet examples above (including the CG-AL-X076/CG-AL-X283 values) are
+illustrative of the shape, not literal excerpts of the generated catalog;
+the pipeline derives the real per-task facets and <code>min_bc_version</code> from the
+manifests and <code>enriched-tags.json</code>, so a specific example here can disagree
+with what is actually generated (CG-AL-X076's <code>min_bc_version</code> above is 17;
+the generated entry is 15, since the manifest carries no version tag). The
+schema shape itself round-trips through <code>validateCatalog</code> and
+<code>normalizeCatalog</code> in the golden-vector test
+(<code>site/src/lib/shared/fixtures/taxonomy-golden.json</code>).</p>
+<h3 id="45-pipeline-claudeskillsrefresh-task-taxonomypipeline">4.5 Pipeline (<code>.claude/skills/refresh-task-taxonomy/pipeline/</code>)<a class="headerlink" href="#45-pipeline-claudeskillsrefresh-task-taxonomypipeline" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>build-taxonomy.ts</code>: rewritten. Groups by 4.1 and the compatibility
+  matrix. Surface facets through the alias table. Reads <code>metadata.donors</code>.
+  Emits a draft with mechanism and invariant facets empty where none exist
+  yet. The v1 <code>GROUP_RULES</code> and <code>GROUP_OVERRIDE</code> are deleted in the same
+  commit.</li>
+<li><code>enrich-task-tags.workflow.js</code>: vocabulary replaced by the mechanism and
+  invariant lists; runs over tasks lacking those facets (or all, with a flag).</li>
+<li><code>merge-taxonomy.ts</code>: merges enrichment, computes composite derivations.</li>
+<li><code>validate-taxonomy.ts</code> (new), exit 1 on any failure, using the shared
+  schema module: every task under <code>tasks/**/*.yml</code> has exactly one group and
+  satisfies the compatibility matrix; per-format counts match the expected
+  table; donors present iff composite, 4..8, distinct, not self, each a
+  <code>diagnose-single</code> task in the set; <code>derived_facets</code> equals the union
+  exactly and <code>local_facets</code> is disjoint; <code>min_bc_version</code> present on every
+  task and equal to the donor max on composites; every slug valid, known,
+  with family, name and description; no retired or duplicate slug; alias
+  targets exist; overrides justified. Wired into CI next to <code>id-audit</code>.</li>
+<li>Rerunning the pipeline on unchanged inputs reproduces the file byte for
+  byte.</li>
+<li><code>sync-taxonomy</code> refuses a catalog whose <code>schema_version</code> it does not
+  implement. The v2-capable CLI ships in the same commit as the v2 catalog.</li>
+</ul>
+<h2 id="5-storage-and-api">5. Storage and API<a class="headerlink" href="#5-storage-and-api" title="Permanent link">&para;</a></h2>
+<h3 id="51-d1-migration-0016_taxonomy_revisionssql">5.1 D1 migration <code>0016_taxonomy_revisions.sql</code><a class="headerlink" href="#51-d1-migration-0016_taxonomy_revisionssql" title="Permanent link">&para;</a></h3>
+<p>Additive. v1 tables are untouched.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">scoring_policies</span><span class="w"> </span><span class="p">(</span><span class="w">              </span><span class="c1">-- see 6.2; immutable, digest-addressed</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="n">id</span><span class="w">             </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="n">schema_version</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="n">digest</span><span class="w">         </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">UNIQUE</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="n">policy_json</span><span class="w">    </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="n">created_at</span><span class="w">     </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">);</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">task_sets</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">scoring_policy_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">scoring_policies</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="c1">-- NULL means the legacy rule (best across all runs); existing hashes keep NULL forever</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">taxonomy_revisions</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="n">id</span><span class="w">             </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="n">task_set_hash</span><span class="w">  </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">task_sets</span><span class="p">(</span><span class="n">hash</span><span class="p">),</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="n">schema_version</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">  </span><span class="n">digest</span><span class="w">         </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">  </span><span class="n">created_at</span><span class="w">     </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">  </span><span class="n">verified_at</span><span class="w">    </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                       </span><span class="c1">-- set only after the re-read verification in 5.2</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">  </span><span class="n">applied_by</span><span class="w">     </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">              </span><span class="c1">-- machine_id of the signing CLI (ingest key machinery)</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">  </span><span class="n">apply_signature</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">             </span><span class="c1">-- Ed25519 over the digest, same scheme as ingest</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">  </span><span class="k">UNIQUE</span><span class="w"> </span><span class="p">(</span><span class="n">task_set_hash</span><span class="p">,</span><span class="w"> </span><span class="n">digest</span><span class="p">)</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="p">);</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">taxonomy_active</span><span class="w"> </span><span class="p">(</span><span class="w">               </span><span class="c1">-- the ONLY row readers consult</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">  </span><span class="n">task_set_hash</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">task_sets</span><span class="p">(</span><span class="n">hash</span><span class="p">),</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">  </span><span class="n">revision_id</span><span class="w">   </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_revisions</span><span class="p">(</span><span class="n">id</span><span class="p">),</span>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">  </span><span class="n">activated_at</span><span class="w">  </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="p">);</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">taxonomy_groups</span><span class="w">   </span><span class="p">(</span><span class="n">revision_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_revisions</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span><span class="w"> </span><span class="n">slug</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">slug</span><span class="p">));</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">taxonomy_families</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_revisions</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span><span class="w"> </span><span class="n">slug</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">slug</span><span class="p">));</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">taxonomy_tags</span><span class="w">     </span><span class="p">(</span><span class="n">revision_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_revisions</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span><span class="w"> </span><span class="n">slug</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">family</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">hidden_by_default</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">hidden_by_default</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">)),</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">slug</span><span class="p">),</span><span class="w"> </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">family</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_families</span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">slug</span><span class="p">));</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">taxonomy_revision_tasks</span><span class="w"> </span><span class="p">(</span><span class="w">        </span><span class="c1">-- one row per task of the revision's set</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">  </span><span class="n">revision_id</span><span class="w">    </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_revisions</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">  </span><span class="n">task_set_hash</span><span class="w">  </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">  </span><span class="n">task_id</span><span class="w">        </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="w">  </span><span class="n">group_slug</span><span class="w">     </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="w">  </span><span class="n">min_bc_version</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="w">  </span><span class="n">provenance_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                     </span><span class="c1">-- structured, not facets: origin, defect_sites,</span>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="w">                                             </span><span class="c1">-- gate trials and models, mutation score, gold-ci</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a><span class="w">                                             </span><span class="c1">-- fingerprint, prompt-template digest, retired/reason</span>
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="w">  </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">),</span>
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="w">  </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">task_set_hash</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">tasks</span><span class="p">(</span><span class="n">task_set_hash</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">),</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a><span class="w">  </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">group_slug</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_groups</span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">slug</span><span class="p">)</span>
+<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a><span class="p">);</span>
+<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">taxonomy_task_tags</span><span class="w">   </span><span class="p">(</span><span class="n">revision_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">tag_slug</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">origin</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">origin</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'direct'</span><span class="p">,</span><span class="s1">'derived'</span><span class="p">,</span><span class="s1">'local'</span><span class="p">)),</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">,</span><span class="w"> </span><span class="n">tag_slug</span><span class="p">),</span><span class="w"> </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_revision_tasks</span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span><span class="w"> </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">tag_slug</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_tags</span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">slug</span><span class="p">));</span>
+<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">taxonomy_task_donors</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">donor_task_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">ordinal</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">ordinal</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mi">0</span><span class="p">),</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">,</span><span class="w"> </span><span class="n">donor_task_id</span><span class="p">),</span><span class="w"> </span><span class="k">UNIQUE</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">,</span><span class="w"> </span><span class="n">ordinal</span><span class="p">),</span><span class="w"> </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_revision_tasks</span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span><span class="w"> </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">donor_task_id</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_revision_tasks</span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">));</span>
+<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">taxonomy_v1_snapshots</span><span class="w"> </span><span class="p">(</span><span class="w">          </span><span class="c1">-- frozen v1 responses, one per hash</span>
+<a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a><span class="w">  </span><span class="n">task_set_hash</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">task_sets</span><span class="p">(</span><span class="n">hash</span><span class="p">),</span>
+<a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a><span class="w">  </span><span class="n">snapshot_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a><span class="w">  </span><span class="n">taken_at</span><span class="w">      </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span>
+<a id="__codelineno-1-49" name="__codelineno-1-49" href="#__codelineno-1-49"></a><span class="p">);</span>
+<a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">benchmark_releases</span><span class="w"> </span><span class="p">(</span><span class="w">             </span><span class="c1">-- see 5.6; the object a citation points at</span>
+<a id="__codelineno-1-51" name="__codelineno-1-51" href="#__codelineno-1-51"></a><span class="w">  </span><span class="n">id</span><span class="w">                        </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<a id="__codelineno-1-52" name="__codelineno-1-52" href="#__codelineno-1-52"></a><span class="w">  </span><span class="n">slug</span><span class="w">                      </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">UNIQUE</span><span class="p">,</span>
+<a id="__codelineno-1-53" name="__codelineno-1-53" href="#__codelineno-1-53"></a><span class="w">  </span><span class="n">task_set_hash</span><span class="w">             </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">task_sets</span><span class="p">(</span><span class="n">hash</span><span class="p">),</span>
+<a id="__codelineno-1-54" name="__codelineno-1-54" href="#__codelineno-1-54"></a><span class="w">  </span><span class="n">taxonomy_revision_id</span><span class="w">      </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">taxonomy_revisions</span><span class="p">(</span><span class="n">id</span><span class="p">),</span>
+<a id="__codelineno-1-55" name="__codelineno-1-55" href="#__codelineno-1-55"></a><span class="w">  </span><span class="n">scoring_policy_id</span><span class="w">         </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">scoring_policies</span><span class="p">(</span><span class="n">id</span><span class="p">),</span>
+<a id="__codelineno-1-56" name="__codelineno-1-56" href="#__codelineno-1-56"></a><span class="w">  </span><span class="n">estimator_version</span><span class="w">         </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-57" name="__codelineno-1-57" href="#__codelineno-1-57"></a><span class="w">  </span><span class="n">cohort_digest</span><span class="w">             </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">   </span><span class="c1">-- digest of the ordered run ids per model used</span>
+<a id="__codelineno-1-58" name="__codelineno-1-58" href="#__codelineno-1-58"></a><span class="w">  </span><span class="n">panel_manifest_json</span><span class="w">       </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">   </span><span class="c1">-- panel models, run ids, metric, rule, threshold, donor cap</span>
+<a id="__codelineno-1-59" name="__codelineno-1-59" href="#__codelineno-1-59"></a><span class="w">  </span><span class="n">export_manifest_sha256</span><span class="w">    </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">            </span><span class="c1">-- set when the 5.6 export is written</span>
+<a id="__codelineno-1-60" name="__codelineno-1-60" href="#__codelineno-1-60"></a><span class="w">  </span><span class="n">changelog</span><span class="w">                 </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-61" name="__codelineno-1-61" href="#__codelineno-1-61"></a><span class="w">  </span><span class="n">supersedes_release_id</span><span class="w">     </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">benchmark_releases</span><span class="p">(</span><span class="n">id</span><span class="p">),</span>
+<a id="__codelineno-1-62" name="__codelineno-1-62" href="#__codelineno-1-62"></a><span class="w">  </span><span class="n">published_at</span><span class="w">              </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-63" name="__codelineno-1-63" href="#__codelineno-1-63"></a><span class="w">  </span><span class="n">published_by</span><span class="w">              </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-64" name="__codelineno-1-64" href="#__codelineno-1-64"></a><span class="w">  </span><span class="n">publish_signature</span><span class="w">         </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span>
+<a id="__codelineno-1-65" name="__codelineno-1-65" href="#__codelineno-1-65"></a><span class="p">);</span>
+<a id="__codelineno-1-66" name="__codelineno-1-66" href="#__codelineno-1-66"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">release_tasks</span><span class="w"> </span><span class="p">(</span><span class="w">                  </span><span class="c1">-- the retained (launch) set and the full set</span>
+<a id="__codelineno-1-67" name="__codelineno-1-67" href="#__codelineno-1-67"></a><span class="w">  </span><span class="n">release_id</span><span class="w">       </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">benchmark_releases</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span>
+<a id="__codelineno-1-68" name="__codelineno-1-68" href="#__codelineno-1-68"></a><span class="w">  </span><span class="n">task_id</span><span class="w">          </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-69" name="__codelineno-1-69" href="#__codelineno-1-69"></a><span class="w">  </span><span class="k">role</span><span class="w">             </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="k">role</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'retained'</span><span class="p">,</span><span class="s1">'full_only'</span><span class="p">)),</span>
+<a id="__codelineno-1-70" name="__codelineno-1-70" href="#__codelineno-1-70"></a><span class="w">  </span><span class="n">selection_reason</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-71" name="__codelineno-1-71" href="#__codelineno-1-71"></a><span class="w">  </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">release_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">)</span>
+<a id="__codelineno-1-72" name="__codelineno-1-72" href="#__codelineno-1-72"></a><span class="p">);</span>
+<a id="__codelineno-1-73" name="__codelineno-1-73" href="#__codelineno-1-73"></a>
+<a id="__codelineno-1-74" name="__codelineno-1-74" href="#__codelineno-1-74"></a><span class="c1">-- Run-time capture (see 5.5). All nullable so legacy rows stay valid.</span>
+<a id="__codelineno-1-75" name="__codelineno-1-75" href="#__codelineno-1-75"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">harness_fingerprint</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">      </span><span class="c1">-- gold-ci harness hash</span>
+<a id="__codelineno-1-76" name="__codelineno-1-76" href="#__codelineno-1-76"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">retry_path_version</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-77" name="__codelineno-1-77" href="#__codelineno-1-77"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">environment_digest</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">       </span><span class="c1">-- content address of the R2 environment manifest</span>
+<a id="__codelineno-1-78" name="__codelineno-1-78" href="#__codelineno-1-78"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">bc_artifact</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-79" name="__codelineno-1-79" href="#__codelineno-1-79"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">container_image_digest</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-80" name="__codelineno-1-80" href="#__codelineno-1-80"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">bcch_version</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-81" name="__codelineno-1-81" href="#__codelineno-1-81"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">test_runner</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">test_runner</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'soap'</span><span class="p">,</span><span class="s1">'legacy'</span><span class="p">));</span>
+<a id="__codelineno-1-82" name="__codelineno-1-82" href="#__codelineno-1-82"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">prompt_template_digest</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-83" name="__codelineno-1-83" href="#__codelineno-1-83"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">invocation_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">          </span><span class="c1">-- provider model id, returned version/fingerprint,</span>
+<a id="__codelineno-1-84" name="__codelineno-1-84" href="#__codelineno-1-84"></a><span class="w">                                                          </span><span class="c1">-- endpoint, reasoning budget, effective limits, seed</span>
+<a id="__codelineno-1-85" name="__codelineno-1-85" href="#__codelineno-1-85"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">test_vector_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">     </span><span class="c1">-- [{id, name, passed}] in oracle order</span>
+<a id="__codelineno-1-86" name="__codelineno-1-86" href="#__codelineno-1-86"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">termination_kind</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">termination_kind</span><span class="w"> </span><span class="k">IN</span>
+<a id="__codelineno-1-87" name="__codelineno-1-87" href="#__codelineno-1-87"></a><span class="w">  </span><span class="p">(</span><span class="s1">'response'</span><span class="p">,</span><span class="s1">'provider_error'</span><span class="p">,</span><span class="s1">'cap_reached'</span><span class="p">,</span><span class="s1">'refusal'</span><span class="p">,</span><span class="s1">'infra_exhausted'</span><span class="p">,</span><span class="s1">'cancelled'</span><span class="p">));</span>
+<a id="__codelineno-1-88" name="__codelineno-1-88" href="#__codelineno-1-88"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">provider_finish_reason</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-89" name="__codelineno-1-89" href="#__codelineno-1-89"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">provider_error_code</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-90" name="__codelineno-1-90" href="#__codelineno-1-90"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">cap_reached</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">cap_reached</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">));</span>
+<a id="__codelineno-1-91" name="__codelineno-1-91" href="#__codelineno-1-91"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">infra_retries</span><span class="w"> </span><span class="nb">INTEGER</span><span class="p">;</span>
+<a id="__codelineno-1-92" name="__codelineno-1-92" href="#__codelineno-1-92"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">infra_exhaustion_reason</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-93" name="__codelineno-1-93" href="#__codelineno-1-93"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">fallback_chain_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-94" name="__codelineno-1-94" href="#__codelineno-1-94"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">prompt_digest</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">        </span><span class="c1">-- digest of the prompt actually sent</span>
+<a id="__codelineno-1-95" name="__codelineno-1-95" href="#__codelineno-1-95"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">candidate_digest</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">     </span><span class="c1">-- digest of the compiled candidate</span>
+<a id="__codelineno-1-96" name="__codelineno-1-96" href="#__codelineno-1-96"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">overlay_base_digest</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">  </span><span class="c1">-- changed-objects retries only</span>
+<a id="__codelineno-1-97" name="__codelineno-1-97" href="#__codelineno-1-97"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">failure_class</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">        </span><span class="c1">-- derived, versioned; recomputable</span>
+<a id="__codelineno-1-98" name="__codelineno-1-98" href="#__codelineno-1-98"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">failure_class_version</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span>
+<a id="__codelineno-1-99" name="__codelineno-1-99" href="#__codelineno-1-99"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_taxonomy_task_tags_tag</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">taxonomy_task_tags</span><span class="p">(</span><span class="n">revision_id</span><span class="p">,</span><span class="w"> </span><span class="n">tag_slug</span><span class="p">);</span>
+</code></pre></div>
+<p>The policy, release and run-time columns are additive and nullable; every
+legacy row keeps its meaning and the legacy scoring rule.</p>
+<p>Activation is an UPSERT of one row in <code>taxonomy_active</code>, so readers never
+observe a half-written revision and no multi-row flag swap exists. The
+<code>task_set_hash</code> on <code>taxonomy_revision_tasks</code> is verified against
+<code>taxonomy_revisions.task_set_hash</code> by the writer's re-read (5.2), since
+SQLite cannot express that cross-table equality. Foreign keys are defence in
+depth: the endpoint validation and the re-read are the guards, and the
+migration's staging run confirms D1 enforces the constraints.</p>
+<h3 id="52-admin-endpoint-apiv1admincatalogtask-taxonomy">5.2 Admin endpoint <code>/api/v1/admin/catalog/task-taxonomy</code><a class="headerlink" href="#52-admin-endpoint-apiv1admincatalogtask-taxonomy" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>version: 1</code> payloads keep their behaviour until the first v2 activation
+  anywhere on the site; after that every v1 apply is refused with
+  <code>409 taxonomy_v1_frozen</code>, because the v1 vocabulary tables are global and
+  a v1 write for one hash would alter another hash's frozen responses.</li>
+<li><code>version: 2</code> payload: <code>{ version: 2, hash, groups[], families[], tags[],
+  aliases[], overrides[], tasks: { id: { group, facets[] |
+  derived_facets[] + local_facets[], donors?[], min_bc_version } } }</code>.
+  <code>hash</code> is required.</li>
+<li>Validation: the shared schema validator (4.4, 4.5) runs on the payload in
+  the Worker; in addition the payload's task ids must equal the task ids of
+  that hash exactly, and every donor must resolve within the payload to a
+  <code>diagnose-single</code> task.</li>
+<li>Normalization and digest: validation produces one normalized form, the
+  <code>NormalizedCatalog</code>: <code>{schema_version, task_set_hash, groups[], families[],
+  tags[], tasks: {id: {group, facets: [{slug, origin}], donors[],
+  min_bc_version}}}</code> (singles and composites both normalize to the same task
+  shape), facets sorted by slug, donors by ordinal, no absent or null
+  optionals, NFC strings, integers as integers. The digest is SHA-256 of the
+  canonical JSON of this <code>NormalizedCatalog</code> object with sorted keys at every
+  depth (<code>schema_version</code> and <code>task_set_hash</code> are fields of the normalized
+  object itself, not a wrapper around it); both runtimes share the encoder
+  and a golden-vector test that covers the two equivalent input forms,
+  Unicode and numeric edge cases.</li>
+<li>Writer: insert the revision row (<code>verified_at</code> null); write vocabulary and
+  assignment rows in batches keyed by the new revision id (invisible to
+  readers); <strong>re-read the complete revision from D1, re-normalize, recompute
+  the digest and compare, check every row's <code>task_set_hash</code> equals the
+  revision's, and check counts (tasks, tags, donors) against the payload</strong>;
+  set <code>verified_at</code>; take the v1 snapshot for the hash if none exists;
+  UPSERT <code>taxonomy_active</code>. Concurrent applies serialize on the revision
+  row's <code>(hash, digest)</code> uniqueness: a second writer for the same digest
+  finds the row and follows the recovery path below; a different digest
+  creates its own revision and the last activation wins deterministically by
+  <code>activated_at</code>.</li>
+<li>Recovery: a revision row with a matching digest and <code>verified_at</code> null is
+  a crashed stage. The writer deletes it (cascade) and restarts. A matching
+  revision with <code>verified_at</code> set but not active is verified again and
+  activated. A matching active revision is a no-op. A daily job deletes
+  unverified revisions older than one day.</li>
+<li><code>sync-taxonomy --apply</code> requires an explicit <code>--hash</code>. Dry run may suggest
+  the current hash from the admin task-sets endpoint (uncached) and prints
+  hash, task count and digest; the server confirms the hash is the current
+  set and refuses otherwise unless <code>--allow-non-current</code> is passed.</li>
+</ul>
+<h3 id="53-public-api-v2-alongside-a-frozen-v1">5.3 Public API: v2 alongside a frozen v1<a class="headerlink" href="#53-public-api-v2-alongside-a-frozen-v1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>/api/v2/taxonomy</code>, <code>/api/v2/categories</code>, <code>/api/v2/tasks</code>,
+  <code>/api/v2/tasks/&lt;id&gt;</code>, <code>/api/v2/leaderboard</code>, <code>/api/v2/compare</code>,
+  <code>/api/v2/task-sets</code>, <code>/api/v2/models</code>, <code>/api/v2/runs</code>, <code>/api/v2/runs/&lt;id&gt;</code>
+  (with the run-time capture of 5.5 and the test vector per attempt),
+  <code>/api/v2/releases</code>, <code>/api/v2/releases/&lt;slug&gt;</code>, <code>/api/v2/exports</code>. Every v2
+  response carries <code>task_set_hash</code>, <code>revision_digest</code>, the resolved
+  <code>scoring_policy_digest</code>, <code>cohort_digest</code> where a cohort applies,
+  <code>schema_version</code>, <code>generated_at</code> and an echo of the resolved query; cursors
+  are stable. <code>?cohort=&lt;digest&gt;</code> re-selects an exact cohort. Set resolution:
+  <code>?set=current</code> (default) or <code>?set=&lt;64-hex&gt;</code>; <code>?revision=&lt;digest&gt;</code> selects a
+  non-active verified revision of that set for reproducibility. Unknown
+  <code>?tag=</code> returns <code>400 unknown_tag</code>; <code>?category=</code> accepts format slugs.</li>
+<li>v1 endpoints: after the first v2 activation for a hash, served from
+  <code>taxonomy_v1_snapshots</code> for that hash, byte-identical to the pre-activation
+  responses (the snapshot is taken by the writer from the live v1 tables
+  before activation). <code>Deprecation</code> and <code>Sunset</code> headers carry one site-wide
+  date fixed at the first v2 activation, at least 90 days out. No aliases
+  from old group slugs to facets; the v1 assignment is exposed as
+  <code>legacy_group</code> on v2 task items until sunset.</li>
+<li>Model rows in v2 responses carry <code>slug</code>, <code>display_name</code>, <code>family</code>, and
+  <code>open_weight</code> as today.</li>
+</ul>
+<h3 id="54-caching">5.4 Caching<a class="headerlink" href="#54-caching" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>CACHE_VERSION</code> bumps <code>v9</code> to <code>v10</code> in the release-1 server deploy.</li>
+<li>v2 cache keys include the resolved hash, the active revision digest (or
+  <code>none</code> before activation), and the estimator version (6.10). v1 keys are
+  unchanged.</li>
+</ul>
+<h3 id="55-run-time-capture-at-ingest">5.5 Run-time capture at ingest<a class="headerlink" href="#55-run-time-capture-at-ingest" title="Permanent link">&para;</a></h3>
+<p>The bench writes, and the signed ingest envelope carries, facts that cannot
+be reconstructed after the fact. Per run: the gold-ci harness fingerprint,
+the retry-path version, an environment manifest (BC artifact and build,
+container image digest, platform and application versions, bccontainerhelper
+version and pinned knobs, runner, host OS, culture, tenant and company,
+CentralGauge commit and dirty state, prompt-template digest) uploaded to R2
+by content address with its critical fields indexed in D1, and the model
+invocation snapshot (requested provider model id, provider-returned version or
+fingerprint, endpoint, reasoning mode and budget, seed where supported,
+fallback configuration, effective context and output limits). Per attempt:
+the per-test outcome vector with stable test ids (<code>sha256(task_id, test
+name)</code> within the revision; composite tests already carry their donor
+prefix), termination kind, provider finish reason and error code, whether
+the cap was reached, infra retry count and exhaustion reason, fallback chain
+and served model, and digests of the prompt actually sent, the compiled
+candidate and, for changed-objects retries, the overlay base. A derived
+<code>failure_class</code> is stored with its classifier version and is recomputable.
+The task's <code>min_bc_version</code> requirement is distinct from the executed build.
+These fields are nullable; legacy rows stay valid and are labelled as
+pre-capture in v2 responses.</p>
+<h3 id="56-releases-and-exports">5.6 Releases and exports<a class="headerlink" href="#56-releases-and-exports" title="Permanent link">&para;</a></h3>
+<p>A benchmark release (5.1) is the object a citation points at: task-set hash,
+taxonomy revision, scoring policy, estimator version, cohort digest, a panel
+manifest (models and run ids, selection metric, rule and threshold, donor
+cap, retained task ids with inclusion reasons), the retained set and the full
+set as <code>release_tasks</code>, a changelog and what it supersedes; signed with the
+admin key. The leaderboard offers "launch set" and "full set" as two views of
+one release. On publication a scheduled job writes a checksummed export
+bundle to R2 (release, task and taxonomy, donor graph fixture, model and
+invocation snapshots, run and attempt outcomes with test vectors, cohort and
+panel manifests, scoring policy and estimator configuration; JSONL and
+Parquet; schema files, data dictionary, licence, citation metadata,
+machine-readable changelog) addressed by <code>{task_set_hash, revision_digest,
+release_slug}</code> and listed at <code>/api/v2/exports</code> and a <code>/datasets</code> page.
+Raw transcripts, candidate code and hidden assertion text are captured and
+hashed but not exported until a redaction and secret-scanning policy exists.
+Taxonomy activation, task-set promotion, policy assignment and release
+publication append audit rows (signer, request id, before and after digests).</p>
+<h2 id="6-leaderboard-statistics">6. Leaderboard statistics<a class="headerlink" href="#6-leaderboard-statistics" title="Permanent link">&para;</a></h2>
+<h3 id="61-what-the-numbers-mean">6.1 What the numbers mean<a class="headerlink" href="#61-what-the-numbers-mean" title="Permanent link">&para;</a></h3>
+<p>The task set is authored and, for composites, gated on model outcomes. It is
+not a sample from a population of AL tasks, so no interval here is a
+population confidence interval. The site publishes two kinds of statement:</p>
+<ul>
+<li><strong>Scores</strong>: observed pass rates on the defined run cohort (6.2).</li>
+<li><strong>Composition sensitivity</strong>: how much a score, a difference or an ordering
+  moves when the benchmark's independent components are resampled. Standard
+  errors, intervals and separation are all of this kind, are labelled
+  "composition sensitivity" on the site, and assume components are
+  exchangeable conditional on the donor graph; correlation through shared
+  mechanisms or authorship is out of scope and is stated as such. Run
+  stochasticity is not included; it is reported separately as pass^k (6.7).</li>
+</ul>
+<h3 id="62-run-cohort-and-per-task-score">6.2 Run cohort and per-task score<a class="headerlink" href="#62-run-cohort-and-per-task-score" title="Permanent link">&para;</a></h3>
+<p>The eligible run cohort for a model on a hash: runs with <code>status =
+'completed'</code>, <code>source = 'bench'</code>, and the site's canonical settings profile
+(one <code>settings_hash</code> designated per hash in configuration), the <strong>three most
+recent by <code>started_at</code>, tie-break by run id</strong>. A model with more runs does
+not get more chances. Attempts served by a refusal fallback count for the
+requested model as today and are annotated; the cohort's fallback count is
+returned per row.</p>
+<p>The scoring policy is an immutable, digest-addressed object
+(<code>scoring_policies</code>, 5.1) referenced from the task set, never a configuration
+value. <code>policy_json</code> states: eligible run statuses, sources and the canonical
+<code>settings_hash</code>; cohort size, ordering, tie-break and cutoff; the attempt to
+run to task reduction; treatment of infrastructure, provider-error, refusal
+and fallback-served cells; the format-macro weights; metric definitions;
+estimator version, resampling draws and the publication-gate thresholds.
+A task set with no policy uses the legacy rule (best across all runs). Sets
+created after the release-2 deploy reference the policy above; every existing
+hash keeps the legacy rule forever, so old-hash views stay byte-identical and
+no published number changes. <code>buildScoreMatrix</code> and the leaderboard read the
+policy from the set, and every v2 response carries <code>scoring_policy_digest</code>
+and the normalized policy beside <code>task_set_hash</code>. Changing any rule later is
+a new policy row, never a migration. The owner decision reduces to confirming
+this policy as the default for new sets.</p>
+<p>Per (model, task): <code>pass_at_1</code> = 1 if any cohort run passed at attempt 1;
+<code>pass_at_n</code> = 1 if any cohort run passed at any attempt; <code>auc_2</code> = 0, 0.5 or
+1. <code>buildScoreMatrix(hash, metric, slice, cohort)</code> replaces <code>buildAucMatrix</code>.
+Tabs: All plus the four formats; a tab is a slice by group.</p>
+<h3 id="63-coverage-gate">6.3 Coverage gate<a class="headerlink" href="#63-coverage-gate" title="Permanent link">&para;</a></h3>
+<p>A model is scored on a slice only if its cohort holds an attempt on every
+task of the slice. Otherwise its row shows "not evaluated on this slice" with
+the attempted count, is excluded from sensitivity computations, and is not
+ranked. On the All tab a model is ranked only if it has full coverage of
+every format; the format-macro is then always over all four formats.</p>
+<h3 id="64-independent-components">6.4 Independent components<a class="headerlink" href="#64-independent-components" title="Permanent link">&para;</a></h3>
+<p>Task-donor graph for the whole task set: tasks are nodes; a composite is
+connected to each of its donors. Components are computed once per revision
+by one implementation (<code>site/src/lib/shared/taxonomy-graph.ts</code>) shared by the
+statistics, the API counts and the test fixtures, and the component
+membership of the current set is published as a fixture in the repository.
+A slice's units are the components intersected with the slice: two slice
+members are joined into the same unit only when they share a donor that
+itself sits outside the slice; a donor edge that leads outside the slice to
+a donor no other slice member also uses does not connect anything, so a
+single-defect donor with no sibling in the slice stays its own unit even
+though it feeds a composite elsewhere in the graph. The reasoning-only view
+spans every format and is selected by manifest cohort (<code>metadata.cohort:
+reasoning-100</code>), which is administrative task metadata the catalog does not
+carry, so it is computed from the task manifests directly rather than from
+any catalog field.</p>
+<p>Census on 2026-09-02: 298 tasks; the 29 gated composites and their 51 donor
+singles form one 80-task component; every other task is its own component.
+Composite slice: 1 component. Single-defect slice: 110 (the donor edges lead
+outside the slice). Reasoning-only view: 59 (measured 2026-09-03: 138 tasks,
+59 components; the 60 was an estimate). All: 219, with the largest
+component holding 27 percent of the tasks.</p>
+<h3 id="65-component-resampling-and-when-it-is-shown">6.5 Component resampling and when it is shown<a class="headerlink" href="#65-component-resampling-and-when-it-is-shown" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Iteration: draw <code>c</code> components with replacement (seeded RNG); a task's
+  weight is its component's multiplicity; one draw per iteration over the
+  whole set, read by every slice. Weighted mean for model A over a slice:
+  <code>Σ w(t)·a_t / Σ w(t)</code>; paired difference: <code>Σ w(t)·(a_t − b_t) / Σ w(t)</code>.
+  Iterations in which a slice receives zero weight are counted and reported
+  as <code>omitted_iterations</code>; a slice with any omission publishes no sensitivity
+  statistics.</li>
+<li>Gate for publishing sensitivity statistics on a slice (both conditions):
+  effective component count <code>c_eff = (Σ s_i)² / Σ s_i²</code> over component sizes
+  <code>s_i</code> in the slice at least 20, and the largest component at most 25
+  percent of the slice's tasks. Both numbers are shown on every slice. Below
+  the gate the slice shows scores, counts and the subset-influence table
+  only. Twenty and 25 percent are provisional until 6.10 fixes them.</li>
+<li>Composition standard error of a score = standard deviation of the weighted
+  mean over iterations. Intervals are percentile intervals with the index
+  convention <code>ceil((B + 1) · q) − 1</code>; B = 4000; Monte Carlo error of the
+  interval endpoints is reported.</li>
+<li>Property: a slice with no donor edges reduces to the current paired task
+  bootstrap; a test asserts identical output on identical seeds.</li>
+<li>Subset influence (slices containing composites): for each donor present in
+  at least three composites, the model scores with those composites removed,
+  shown with baseline score, removed count, remaining count and delta,
+  labelled "subset influence, not an interval".</li>
+</ul>
+<p>Today: the composite tab (1 component) and the All tab (largest component 27
+percent) show scores, counts and subset influence, no standard errors and no
+separation. The single-defect, trap and build tabs pass the gate.</p>
+<h3 id="66-separation-and-the-all-headline">6.6 Separation and the All headline<a class="headerlink" href="#66-separation-and-the-all-headline" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Separation ("not separated from this tier's top model under composition
+  resampling at 95 percent, approximate, no adjustment for multiple
+  comparisons") is computed only where 6.5's gate passes, only for <code>auc_2</code>,
+  <code>pass_at_1</code> and <code>pass_at_n</code>; sorts by cost, latency or average score show
+  no dividers. Tier assembly stays anchor-based; pairwise intervals are
+  served by <code>/api/v2/compare</code>.</li>
+<li>All-tab headline: "format-macro score", the equal-weight mean of the four
+  format means. It is descriptive until every format passes 6.5's gate; then
+  its sensitivity is computed from the same joint replicates, and a replicate
+  that omits a format is counted in <code>omitted_iterations</code> and disqualifies the
+  statistic. The pooled task mean is kept as a column.</li>
+</ul>
+<h3 id="67-passk">6.7 pass^k<a class="headerlink" href="#67-passk" title="Permanent link">&para;</a></h3>
+<p><code>pass^3</code> for a model on a slice when its cohort (6.2) has exactly three
+complete runs: a task counts when attempt 1 passed in all three; cells that
+were infrastructure failures or fallback-served in any run are excluded and
+the excluded count is returned. The response carries the run ids and the
+settings hash. Hidden with fewer than three cohort runs.</p>
+<h3 id="68-leaderboard-v2-wire-format">6.8 Leaderboard v2 wire format<a class="headerlink" href="#68-leaderboard-v2-wire-format" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nx">task_set_hash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">revision_digest</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">estimator_version</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nx">scoring_policy_digest</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">scoring_policy</span><span class="o">:</span><span class="w"> </span><span class="kt">object</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w">   </span><span class="c1">// null = legacy rule</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nx">release_slug</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">cohort_digest</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nx">resampling</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">seed</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">draws</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">graph_version</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">component_digest</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nx">generated_at</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">query</span><span class="o">:</span><span class="w"> </span><span class="kt">object</span><span class="p">;</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nx">slice</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">format</span><span class="o">:</span><span class="w"> </span><span class="s2">"all"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nx">GroupSlug</span><span class="p">;</span><span class="w"> </span><span class="nx">metric</span><span class="o">:</span><span class="w"> </span><span class="s2">"auc_2"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"pass_at_1"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"pass_at_n"</span><span class="p">;</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">           </span><span class="nx">task_count</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">donor_count</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">component_count</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">           </span><span class="nx">effective_components</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">largest_component_share</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">           </span><span class="nx">omitted_iterations</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">monte_carlo_draws</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">           </span><span class="nx">inference</span><span class="o">:</span><span class="w"> </span><span class="s2">"separation"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"sensitivity_only"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"descriptive_only"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"not_applicable_sort"</span><span class="p">;</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">           </span><span class="nx">gate_reason</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nx">rows</span><span class="o">:</span><span class="w"> </span><span class="p">[{</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="nx">model</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">slug</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">display_name</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">family</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">open_weight</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="nx">coverage</span><span class="o">:</span><span class="w"> </span><span class="s2">"full"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"partial"</span><span class="p">;</span><span class="w"> </span><span class="nx">attempted</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">cohort_runs</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span><span class="w"> </span><span class="nx">settings_hash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">    </span><span class="nx">fallback_attempts</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">    </span><span class="nx">headline</span><span class="o">:</span><span class="w"> </span><span class="kt">Stat</span><span class="p">;</span><span class="w"> </span><span class="nx">pooled</span><span class="o">:</span><span class="w"> </span><span class="kt">Stat</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">macro_by_format</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="nx">GroupSlug</span><span class="p">,</span><span class="w"> </span><span class="nx">Stat</span><span class="o">&gt;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">    </span><span class="nx">tier</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">rank</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">anchor_slug</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">    </span><span class="nx">pass_k</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">k</span><span class="o">:</span><span class="w"> </span><span class="kt">3</span><span class="p">;</span><span class="w"> </span><span class="nx">value</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">excluded_cells</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">runs</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[]</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">    </span><span class="nx">metrics</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">Stat</span><span class="o">&gt;</span><span class="p">;</span><span class="w">   </span><span class="c1">// keyed headroom: additive metrics never change the shape</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">  </span><span class="p">}];</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="w">  </span><span class="nx">subset_influence</span><span class="o">:</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nx">donor</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">removed</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">remaining</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="w">                       </span><span class="nx">rows</span><span class="o">:</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nx">slug</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">baseline</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">without</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">delta</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">}]</span><span class="w"> </span><span class="p">}]</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="p">}</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="kr">type</span><span class="w"> </span><span class="nx">Stat</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">value</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">se</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">ci</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="kt">number</span><span class="p">,</span><span class="w"> </span><span class="kt">number</span><span class="p">]</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a><span class="w">              </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s2">"score_only"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"sensitivity"</span><span class="w"> </span><span class="p">};</span>
+</code></pre></div>
+<h3 id="69-methodology-page">6.9 Methodology page<a class="headerlink" href="#69-methodology-page" title="Permanent link">&para;</a></h3>
+<p><code>/methodology</code>: the four formats and their rules; the facet families; the
+composite derivation; section 6.1 in these words; the run cohort; the
+coverage gate; the component rule in one sentence ("tasks connected through
+a shared donor are resampled together") and the publication gate; what
+separation means and its limits; metric definitions; pass^k with its
+exclusion rules stated inline; a crosswalk to BC-Bench naming which of our
+statistics corresponds to their mean-per-run, pass^5 and union and which has
+no counterpart; the revision digest, task-set hash, scoring policy, cohort
+digest and estimator version in force.</p>
+<h3 id="610-validation-before-any-separation-is-shown-under-the-new-estimator">6.10 Validation before any separation is shown under the new estimator<a class="headerlink" href="#610-validation-before-any-separation-is-shown-under-the-new-estimator" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Materialize the graph fixture (components, sizes, degrees, leverage).</li>
+<li>Simulate outcomes under several data-generating processes: donor random
+  effects plus task residuals; a dominant-donor process; a process with
+  correlation across disconnected components through a shared mechanism; a
+  selection process that keeps only composites failed by a reference model.</li>
+<li>Measure interval coverage and false-separation rate for task resampling
+  and component resampling at several <code>c_eff</code> and dominance levels; precommit
+  the acceptance criteria (coverage within 3 points of nominal, false
+  separation at most 5 percent) before choosing the gate values.</li>
+<li>Publish the fixture and the results in the repository; assign estimator
+  version <code>ev1</code> to the accepted configuration.</li>
+</ul>
+<h2 id="7-ui">7. UI<a class="headerlink" href="#7-ui" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Leaderboard tabs from <code>/api/v2/categories</code>; each tab header shows task,
+  donor and component counts, effective components, largest share and the
+  inference state with its reason.</li>
+<li><code>TaxonomyFilter.svelte</code> renders facets grouped by family with counts and a
+  "more" disclosure for hidden-by-default tags.</li>
+<li>Task page: group, facets by family with origin, donors with each donor's
+  mechanism and invariant facets, <code>legacy_group</code> until sunset.</li>
+<li>Leaderboard rows: <code>score (± se)</code> where status is <code>sensitivity</code>, plain score
+  otherwise; greyed "not evaluated on this slice"; pooled and macro columns on
+  All; pass^k with a run tooltip; subset-influence table on slices with
+  composites.</li>
+</ul>
+<h2 id="8-releases-and-ship-order">8. Releases and ship order<a class="headerlink" href="#8-releases-and-ship-order" title="Permanent link">&para;</a></h2>
+<p><strong>Release 1, dark data launch. No public ranking or v1 response changes.</strong>
+1. [x] done in Plan A (branch taxonomy-v2, 2026-09-03). Pipeline rewrite, shared schema module, validator, alias table, v2
+   catalog with provenance slots, v2-capable CLI in one commit; hand review
+   of mechanism and invariant facets across all formats; validator green in
+   CI. Bench and ingest envelope extended with the 5.5 capture, so the
+   re-bench that follows is the first fully captured campaign.
+2. Migration 0016 applied to prod D1 (revisions, policies, releases,
+   run-time columns); staging run confirms FK enforcement.
+3. Server deploy: revision-aware readers, v2 endpoints returning <code>404
+   no_active_revision</code> until activation, v1 snapshot support, <code>CACHE_VERSION</code>
+   v10, digest and estimator version in v2 keys, v1 code paths untouched.
+4. After the re-bench ingest and the task-set flip: <code>sync-catalog --apply</code>,
+   then <code>sync-taxonomy --apply --hash &lt;64-hex&gt;</code> (dry run first): stage,
+   verify, snapshot v1, activate. Verify: v2 coverage equals task count,
+   digest matches, benchmark hash unchanged, v1 responses byte-identical to
+   the pre-activation snapshot for that hash and for one older hash. Assign
+   the scoring policy to the new set, publish the first benchmark release
+   with its panel manifest and retained set, and write its export bundle.</p>
+<p><strong>Release 2, statistics API and UI together.</strong> Sections 6.1 to 6.5 and 6.8
+with <code>inference</code> limited to <code>descriptive_only</code> and <code>sensitivity_only</code>; the
+coverage gate and run cohort (6.2, 6.3) take effect here, with their effect
+on rankings reviewed by the owner before deploy; UI (7) switched to v2 behind
+a flag; methodology page; deprecation headers on v1. Separation is not shown
+on any slice in this release: donor-free slices keep no bands either, so
+that separation appears everywhere at once under one estimator.</p>
+<p><strong>Release 3, separation under the validated estimator.</strong> After 6.10 is in
+the repository: separation on slices passing the gate, pass^k, the scoring
+policy confirmed as the default for new task sets (existing hashes keep the
+legacy rule).</p>
+<p>v1 removal after the sunset date, once v2 traffic is observed.</p>
+<h2 id="9-testing">9. Testing<a class="headerlink" href="#9-testing" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Ingest (Deno): envelope carries every 5.5 field; test vector ids stable
+  across a run; signed envelope digest covers them; legacy envelopes still
+  ingest with nulls.</li>
+<li>Releases: publish writes release, release_tasks and export manifest
+  atomically; export bundle checksums verify; <code>?cohort=</code> reselects exactly.</li>
+<li>Pipeline (Deno): one fixture per format; compatibility matrix rejections;
+  alias table; composite derivation incl. environment union and
+  <code>min_bc_version</code> max; disjointness of local and derived; validator failure
+  cases (unknown template, unknown cohort, donors on a non-composite,
+  composite or trap donor, self-donor, missing description, derived
+  mismatch, bad slug, count table mismatch); determinism; every catalog
+  example in this spec round-trips.</li>
+<li>Shared schema module: same validator and digest encoder run under Deno and
+  under vitest with the golden vectors.</li>
+<li>Server (<code>site/</code>, vitest on the built bundle): endpoint validation rejects
+  each listed defect; stage-verify-activate with a simulated crash before
+  verification (revision deleted on retry) and after verification (activated
+  on retry); identical payload no-op; v1 apply after first activation returns
+  409; v1 responses for two hashes byte-identical before and after activation;
+  cache keys change with digest and estimator version; coverage gate and
+  cohort selection (most recent three, tie-break by id, settings filter);
+  graph components on the published fixture; component bootstrap equals task
+  bootstrap on a donor-free slice; gate suppression on <code>c_eff</code> and dominance;
+  <code>omitted_iterations</code> disqualifies a statistic; <code>?revision=</code> lookup; unknown
+  tag on v2 returns 400.</li>
+<li>e2e (Playwright): format tabs with counts and inference state; composite
+  task page with donors and provenance; v1 endpoints unchanged after
+  activation.</li>
+<li>Operational: dry run against staging D1; v1 snapshot diff empty.</li>
+</ul>
+<h2 id="10-success-measures">10. Success measures<a class="headerlink" href="#10-success-measures" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Coverage 100 percent of tasks in the current set, zero unknown slugs, every
+  composite's donors resolved, validator green in CI.</li>
+<li>The format axis explains the attempt-1 score variance the old axis cannot
+  (between-group share of variance reported for both).</li>
+<li>Facet-derived composite resistance reproduces the measured cross-tab
+  (0 of 59 without a high-survival donor, 29 of 59 with one) without any
+  outcome-derived label.</li>
+<li>Under 6.10, component resampling meets the precommitted coverage and
+  false-separation criteria where task resampling does not; no separation is
+  ever shown on a slice failing the gate.</li>
+<li>v1 responses byte-identical across activation (snapshot diff empty).</li>
+<li>Rerunning the pipeline is deterministic; a new untagged task fails CI.</li>
+</ul>
+<h2 id="11-precedents-consulted">11. Precedents consulted<a class="headerlink" href="#11-precedents-consulted" title="Permanent link">&para;</a></h2>
+<p>Format or domain grouping: BC-Bench, Terminal-Bench 2.0, LiveBench, HELM.
+Selection by measured solve rate: Aider polyglot, BigCodeBench-Hard.
+Statistics: Miller 2024 (clustered standard errors, cluster counts beside
+question counts, paired differences, bootstrap for complicated sampling
+schemes); BC-Bench (five runs, BCa intervals, pass^5, paired permutation
+tests); Chatbot Arena (bootstrap intervals, overlap means indistinguishable).
+Continuous task validation: Terminal-Bench 2.1; ours is gold-ci.</p>
+<h2 id="12-review-record">12. Review record<a class="headerlink" href="#12-review-record" title="Permanent link">&para;</a></h2>
+<p>Revision 2 (from round one): multiplicity-average bootstrap withdrawn;
+best-across-runs kept; coverage gate; bands limited to solve metrics;
+revisioned storage; v2 API; families and invariants; locking added;
+prevalence pruning dropped; three releases.</p>
+<p>Revision 3 (from round two): component census corrected (80-task component,
+219 components on All); statistics relabelled as composition sensitivity with
+the authored-and-gated suite stated as the reason; publication gate on
+effective component count and dominance instead of a raw count; All-tab
+macro descriptive until every format passes the gate, and replicates that
+omit a format disqualify a statistic; run cohort defined (completed, bench,
+canonical settings, three most recent) and the best-across-all-runs change
+flagged as an owner decision; coverage on All requires every format; pass^3
+on the cohort with fallback and infra cells excluded; complete wire format
+with per-statistic status; activation through a pointer table instead of a
+multi-row flag swap; re-read verification and recomputed digest before
+activation; crash recovery defined; digest over the normalized form with
+golden vectors; assignment tables keyed to a per-revision task table with
+donor foreign keys; v1 frozen by per-hash snapshots and a site-wide 409;
+revisions addressable by digest; enrichment over all formats; environment
+facets inherited; local and derived facets disjoint; compatibility matrix and
+expected counts; explicit <code>--hash</code> for apply; dark release 1 with no ranking
+change; separation withheld everywhere until the validated estimator lands.</p>
+<p>Revision 4 (from the additions round, consensus of both panelists plus the
+author): per-test outcome vectors with stable ids; harness, environment and
+invocation capture per run; attempt termination facts and digests; a
+digest-addressed scoring policy replacing the rule enum; signed benchmark
+releases with panel manifests and a retained set; task provenance slots in
+the revision; keyed metrics and resampling parameters on the wire; v2
+research endpoints and audit rows; per-release export bundles; a BC-Bench
+crosswalk on the methodology page. Deferred on purpose: campaign and
+replicate tables (a cohort digest gives the reproducibility), public raw
+transcripts, any outcome-derived facet.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
