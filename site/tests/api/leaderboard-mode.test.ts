@@ -1,6 +1,6 @@
 import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { LeaderboardRow } from "../../src/lib/shared/api-types";
+import type { LeaderboardResponse } from "../../src/lib/shared/api-types";
 import { resetDb } from "../utils/reset-db";
 
 /**
@@ -67,20 +67,24 @@ describe("leaderboard invocation mode", () => {
   it("refuses mode=all and requires mode when both modes exist", async () => {
     const all = await SELF.fetch("https://x/api/v1/leaderboard?mode=all");
     expect(all.status).toBe(400);
-    expect((await all.json()).code).toBe("invalid_mode_for_metric");
+    const allBody = (await all.json()) as { code?: string };
+    expect(allBody.code).toBe("invalid_mode_for_metric");
     const none = await SELF.fetch("https://x/api/v1/leaderboard");
     expect(none.status).toBe(400);
-    expect((await none.json()).code).toBe("mode_required");
+    const noneBody = (await none.json()) as { code?: string };
+    expect(noneBody.code).toBe("mode_required");
   });
 
   it("counts only the selected mode's runs in every numerator", async () => {
-    const sync = (
-      await (await SELF.fetch("https://x/api/v1/leaderboard?mode=sync")).json()
-    ).data as LeaderboardRow[];
+    const syncBody = (await (
+      await SELF.fetch("https://x/api/v1/leaderboard?mode=sync")
+    ).json()) as LeaderboardResponse;
+    const sync = syncBody.data;
     expect(sync[0]?.tasks_passed_attempt_1).toBe(1);
-    const batch = (
-      await (await SELF.fetch("https://x/api/v1/leaderboard?mode=batch")).json()
-    ).data as LeaderboardRow[];
+    const batchBody = (await (
+      await SELF.fetch("https://x/api/v1/leaderboard?mode=batch")
+    ).json()) as LeaderboardResponse;
+    const batch = batchBody.data;
     expect(batch[0]?.tasks_passed_attempt_1).toBe(1);
     expect(sync[0]?.pass_at_1).toBe(batch[0]?.pass_at_1);
   });
@@ -90,6 +94,7 @@ describe("leaderboard invocation mode", () => {
     await env.DB.prepare(`DELETE FROM runs WHERE id = 'r-batch'`).run();
     const res = await SELF.fetch("https://x/api/v1/leaderboard");
     expect(res.status).toBe(200);
-    expect((await res.json()).filters.mode).toBe("sync");
+    const body = (await res.json()) as LeaderboardResponse;
+    expect(body.filters.mode).toBe("sync");
   });
 });

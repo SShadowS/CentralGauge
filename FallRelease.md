@@ -366,6 +366,10 @@ Nothing below costs money, but the campaign cannot be sized without them.
      for a trickle, not 232 candidates at once).
   9. OpenRouter `:batch` variants are yet another model identity.
 
+  **Record, 2026-09-06:** Plan A landed (foundations); Plan B (runner) next.
+  Spikes findings in
+  `docs/superpowers/specs/2026-09-06-batch-spikes-findings.md`.
+
 ---
 
 ## Phase 2 — pre-campaign hygiene
@@ -384,6 +388,30 @@ Run in this order. All are free and fast.
       keys, connectivity and catalog state in one signed round trip.
 - [ ] **Containers healthy.** All six Cronus containers up, no bench running,
       `DOCKER_CONTEXT=desktop-windows` exported.
+- [ ] **Migration 0019 deploy order (batch mode invocation profile, Plan A
+      landed 2026-09-06).** Any deploy that includes
+      `site/migrations/0019_batch_mode.sql` must go in this order: (1)
+      `npx wrangler d1 migrations apply centralgauge --remote`, (2)
+      `deno task start sync-catalog --apply` (now also pushes
+      `cost_snapshots.batch_*_per_mtoken` rates from
+      `site/catalog/pricing.yml`; expect 429 pauses at ~10 req/min), (3) bump
+      the leaderboard cache to `_cv=v11`, (4) `cd site && npm run deploy`.
+      Same failure mode as migration `0011`/`open_weight` if the worker
+      deploys first. Two catalog gaps a batch hand-run needs closed first:
+      `gemini/gemini-3.8-flash` has sync rates but its `batch_*` columns are
+      deliberately NULL (no OpenRouter `:batch` rate for
+      `google/gemini-3.8-flash` is known yet - see
+      `docs/superpowers/specs/2026-09-06-batch-spikes-findings.md` section
+      3), and `openai/gpt-5-mini` has no catalog row at all, sync or batch.
+      Plan B's OpenRouter and OpenAI hand runs must add real rates for both
+      and rerun `sync-catalog --apply` before batching against either model.
+- [ ] **SvelteKit `mode` wiring not yet landed (Plan A landed 2026-09-06,
+      Plan B next).** The leaderboard, matrix, compare and families
+      `+page.server.ts` loaders do not pass a `?mode=` query parameter
+      through yet. The first batch run ingested into the current task set
+      will make those pages refuse with `mode_required` until that wiring
+      lands. Until then, batch hand-runs must use `--no-ingest` or target a
+      non-current task set.
 
 If any of these fail, stop. A campaign run against a broken gate is money
 spent on numbers you will not trust.

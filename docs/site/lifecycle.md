@@ -311,6 +311,28 @@ Cutover, in order:
    and `FLAG_REQUIRE_SIGNED_FINALIZE = "on"` in `wrangler.toml [vars]` and
    redeploy. (Nonce-required enforcement is a later, separate flip.)
 
+## Invocation profile and the `mode` query parameter (batch mode, D4)
+
+Every ingested run now carries an invocation profile: a typed
+`InvocationRecord` (mode, endpoint, provider route, fallback policy,
+continuation, empty-retry, infra retries per attempt, max attempts, prompt
+profile digest) that ingest assembly folds into the canonical settings hash,
+and a top-level `invocation_mode` (`sync` or `batch`) stored on D1
+`runs.invocation_mode` (migration `0019`). Every ranking query, leaderboard,
+aggregates, tiers, matrix and compare, requires a resolved mode and includes
+it in its cache keys, because sync and batch are different pricing and
+latency profiles that are never ranked together. The `mode` query parameter
+resolves to one of three outcomes: an explicit `?mode=sync` or `?mode=batch`
+selects that mode; an omitted `mode` on a task set with runs in only one mode
+defaults to that mode; and three error codes cover the rest,
+`invalid_mode_for_metric` for `?mode=all` (there is no cross-mode ranking),
+`mode_required` when the task set has runs in both modes and no `mode` was
+given, and the endpoint's normal validation error for any other bad value.
+The SvelteKit page loaders (leaderboard, matrix, compare, families) do not
+pass `?mode=` through yet, so until that lands, a task set with both modes
+present will show `mode_required` on those pages for any request that omits
+the parameter.
+
 ## Recipes
 
 ### Onboarding a new model
