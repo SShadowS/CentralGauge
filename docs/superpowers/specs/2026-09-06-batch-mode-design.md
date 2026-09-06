@@ -1,9 +1,9 @@
 # Batch mode for the bench
 
 **Date:** 2026-09-06
-**Status:** revision 2, after two independent spec reviews (GPT-5.6 Sol,
-Gemini 3.6 Flash; `.panel/batch-spec-*.md`). Awaiting owner approval, then
-an implementation plan.
+**Status:** revision 3, after two review rounds by GPT-5.6 Sol and Gemini
+3.6 Flash (`.panel/batch-spec-*.md`, `.panel/batch-spec-r2-*.md`). Awaiting
+owner approval, then an implementation plan.
 **Owner rulings:** build it before the fall campaign; Gemini rides
 OpenRouter's batch API; Anthropic, OpenAI and OpenRouter are all in scope.
 
@@ -22,9 +22,9 @@ path's schema, priced at the batch rate, ingested by the same pipeline, and
 published as its own invocation profile.
 
 Measured on the fall-2026 panel (four models, three runs each, 232 tasks):
-roughly $360-$630 synchronous, roughly half of that in batch. The
-compile/test work is unchanged in volume - up to 464 container jobs per
-run - it is concentrated after each wave rather than spread across it.
+roughly $360-$630 synchronous, roughly half of that in batch. Compile/test
+work is unchanged in volume - up to 464 container jobs per run - and is
+concentrated after each wave rather than spread across it.
 
 ## 2. Non-goals
 
@@ -32,95 +32,103 @@ run - it is concentrated after each wave rather than spread across it.
   output), the immediate empty-response retry, and streaming. Each needs a
   second round trip inside an attempt. Measured at the campaign's 64,000
   token cap across 6,928 stored attempts, `finishReason: length` occurred 3
-  times, so continuation is practically inert at that cap; it is excluded
-  for cleanliness, and the exclusion is why batch is a distinct invocation
-  profile (D4).
+  times; the exclusion is for cleanliness and is one reason batch is a
+  distinct invocation profile (D4).
+- Server-side refusal fallback. Anthropic's Message Batches API does not
+  support the `fallbacks` parameter (an item carrying it returns an errored
+  result; refusals return as successful items with `stop_reason: refusal`).
+  Batch runs are therefore a fallback-less profile (D12).
 - Direct Gemini batch. Gemini rides OpenRouter's batch API (owner ruling),
-  and is published under the OpenRouter identity
-  `openrouter/google/gemini-3.8-flash`, distinct from `gemini/...`.
+  published as `openrouter/google/gemini-3.8-flash`, distinct from
+  `gemini/...`.
 - Agent benchmarks. Batch mode is the LLM path only.
-- Leaderboard UI beyond a per-run invocation-mode marker.
-- Mixing modes inside one run. A run is entirely batch or entirely sync.
-- Pricing fallback-served attempts by the served model. That gap exists in
-  the synchronous path today (CLAUDE.md, refusal fallbacks) and stays a
-  separate item.
-- A provider request id column on the site. Recorded in the run directory
-  only.
+- Leaderboard UI beyond a per-run invocation-mode marker and a mode filter.
+- Mixing modes inside one run.
+- Pricing fallback-served attempts by the served model (pre-existing gap;
+  irrelevant under D12 for batch runs).
+- A provider request id column on the site.
 
 ## 3. Decisions
 
 | # | Decision | Reason |
 | --- | --- | --- |
-| D1 | Submit-and-exit, resumable, with a write-ahead submission intent and a reconcile step. No long-running process. | A batch waits up to 24 h and a campaign is a week of wall time. A remote submit and a local state write cannot be made atomic, so the crash window between them is handled by intent + reconcile, never by silently resubmitting a paid batch. |
-| D2 | Three batch adapters: Anthropic, OpenAI, OpenRouter, landed in that order, each usable alone. | Anthropic and OpenAI carry ~95% of the campaign bill. OpenRouter carries Gemini (owner ruling) under an OpenRouter identity. |
-| D3 | One run id per model x task-set x cycle, minted and persisted before the first network call. `submit` takes one model; `--runs N` creates N run directories up front. | The run id is embedded in every `custom_id`, so it must exist before submission. Multi-model expansion is a wrapper over single-model runs, not part of the state machine. |
-| D4 | Batch is a **distinct invocation profile**: `invocation_mode` enters the canonical settings hash and is stored as a queryable run column. Batch and sync runs are not pooled into one cohort by default. | Batch drops continuation and empty retries, has a different retry ladder, may lack the refusal-fallback beta, and routes Gemini differently. Reviewers were unanimous; the campaign is all-batch so nothing is lost. |
-| D5 | Cost from explicit batch columns on `cost_snapshots`, never an assumed factor. Provider-reported cost (OpenRouter `usage.cost`) recorded per attempt for reconciliation, not published. | The site bills from snapshots joined by `pricing_version`; the `v_results_with_cost` view and `rowCostUsd()` must both see the new columns. |
-| D6 | Nine units are shared between sync and batch: context construction, request rendering, provider body construction, raw response parsing, candidate resolution, compile work-item construction, attempt evaluation, failed-attempt construction, task-result finalization. | Sharing only the prompt builder and the compile step leaves scoring, pattern gates, failure formatting and finalization to drift. |
-| D7 | Semantic equivalence, not byte identity: identical rendered prompts, identical model parameters, identical candidate resolution, identical response-field mapping where the provider returns the data. Transport fields, duration, price mode and retry metadata are exempt. | Streaming fields, batch duration and batch price cannot be identical by construction. |
-| D8 | One immutable result record per submitted item, plus an append-only event log; current task state is derived from them. | A single mutable `error` field records only the latest failure; the owner wants to see and retry what the provider did. |
-| D9 | Two separate budgets: transport errors on submit/poll/collect get bounded exponential backoff inside `advance` and never create a new round; a retryable item failure gets **one** explicit resubmission; invalid requests are terminal at once. Exactly one final `ExecutionAttempt` per logical attempt, always. | Spec 6.3's coverage gate needs an attempt on every task; a missing row un-ranks the model. Three child rounds was arbitrary and could pay four times for one attempt. |
-| D10 | Attempt 2 runs for every task that did not pass attempt 1, including tasks whose attempt 1 was a provider failure, with the fix prompt built from the (possibly empty) attempt-1 record. | This is what the synchronous loop does (`orchestrator.ts:895-919` pushes the failed attempt and continues). Batch matches it rather than inventing a kinder rule. |
-| D11 | The rendered prompt is captured on the attempt in both modes. | The sync path stores `context.instructions` as `attempt.prompt` and ingest hashes it as "the prompt sent" (`orchestrator.ts:1168`, `ingest-assembly.ts:255`). That is a pre-existing capture bug; batch cannot be equivalent to it, so both modes are fixed. |
+| D1 | Submit-and-exit, resumable, with a write-ahead submission intent and **provider-specific** reconciliation. A run whose submission outcome is unknown never resubmits on its own. | A remote submit and a local write cannot be atomic. OpenAI batches carry user metadata and can be matched automatically; Anthropic and OpenRouter expose neither item ids nor metadata while a batch is processing, so their reconciliation is by candidate inspection or operator adoption. |
+| D2 | Three batch adapters: Anthropic, OpenAI, OpenRouter, landed in that order, each usable alone. | Anthropic and OpenAI carry ~95% of the campaign bill. OpenRouter carries Gemini under an OpenRouter identity. |
+| D3 | One run id per model x task-set x cycle, minted and fsynced before the first network call. `submit` takes one model; `--runs N` creates N run directories up front. | The run id is embedded in every item; multi-model expansion is a wrapper over single-model runs. |
+| D4 | Batch is a **distinct invocation profile**. `invocation_mode` is part of the canonical settings profile (so a different `settings_hash`) and a queryable run column, and **every ranking query selects one invocation profile**: aggregates and tiers filter on `runs.invocation_mode`; the leaderboard API takes `mode` with no "all" for ranked metrics, exactly as `set=all` is refused today. | Batch drops continuation, empty retries and fallback, and has a different retry ladder. Today's aggregates pool runs across settings and only flag the ambiguity (`model-aggregates.ts:381-384`); tiers do not scope at all (`tier-data.ts:63-97`). Declaring a profile without enforcing it would blend the modes silently. |
+| D5 | Cost from explicit batch columns on `cost_snapshots`, never an assumed factor. OpenRouter's batch-level `usage.cost` is recorded on the batch record for reconciliation, not published. | The site bills from snapshots joined by `pricing_version`; `v_results_with_cost` and `rowCostUsd()` must both see the columns. OpenRouter reports cost per batch, not per item. |
+| D6 | Ten pure units are shared between sync and batch (section 6). The batch runner owns no scoring, gating, pricing or finalization logic. | Sharing only the prompt builder and the compile step leaves everything that decides a score free to drift. |
+| D7 | Semantic equivalence: identical rendered prompts, model parameters, candidate resolution and response-field mapping where the provider returns the data. Transport fields, duration, price mode and retry metadata are exempt. | Byte identity is impossible by construction. |
+| D8 | One immutable result record per submitted item plus an append-only event log; task state is derived, never edited in place. | The owner wants to see and retry what the provider did. |
+| D9 | Two budgets: transport errors on submit/poll/collect get bounded exponential backoff inside `advance` and never create a round; a retryable item failure gets **one** explicit resubmission; invalid requests are terminal at once. Exactly one attempt file per logical attempt, always. | Coverage needs an attempt for every task; an unbounded ladder can pay several times for one attempt. |
+| D10 | Attempt 2 runs for every task without a passing attempt 1, including tasks whose attempt 1 was a provider failure, with the fix prompt built from that attempt-1 record (empty candidate, the failure reason). | The synchronous loop does exactly this (`orchestrator.ts:895-919`); batch matches it. |
+| D11 | The rendered `LLMRequest` is carried through success and failure and captured on the attempt in both modes. | The sync path stores `context.instructions` as `attempt.prompt` and ingest hashes it as the prompt sent (`orchestrator.ts:1168`, `ingest-assembly.ts:255`); failed attempts store `""`. Pre-existing capture bug, fixed in both modes. |
+| D12 | `fallbackPolicy` is a frozen input, `"unavailable"` for every batch run, set before the run id and settings hash exist and never mutated. | Provider documentation, above. A refusal in batch is a successful item with `stop_reason: refusal`, scored as the sync path scores an unrescued refusal. |
+| D13 | A run refuses to advance if any input that shaped attempt 1 has changed: task set, every referenced template, harness code, prompt overrides and injected knowledge, git SHA with a clean tree, and the BC artifact and test runner of the containers used. | A fix prompt rendered days after attempt 1 must come from the same harness, and attempt-2 diagnostics from one BC build must not be evaluated under another. |
 
 ## 4. Run state
 
 A run lives at `<output>/batch/<runId>/`. Every command loads it, acts,
-writes state atomically (temp file + rename), and exits.
+writes state atomically (temp file + rename, fsync before any network
+call), and exits.
 
 ```
-state.json                 phase, settings, batch records, per-item summaries (no large payloads)
+state.json                 phase, frozen inputs, batch records, per-item summaries (no payloads)
 intent.json                write-ahead record of a submission about to be made
-items.jsonl                one line per submitted request: id, task, attempt, round, digest, body
-events.jsonl               append-only log: submit, poll, collect, compile, retry, error, finalize
+items.jsonl                one line per submitted request: itemId, task, attempt, round, chunk, digest, body
+events.jsonl               append-only: submit, poll, collect, compile, retry, error, finalize, ingest
 responses/<itemId>.json    immutable raw provider result per item (response or error)
-attempts/<taskId>-a<N>.json  immutable ExecutionAttempt once compile/test has run
-mutate.lock                short-lived lock around a state mutation (seconds, refreshed)
+requests/<itemId>.json     the rendered LLMRequest for the item (D11)
+attempts/<taskId>-a<N>.json  immutable ExecutionAttempt once evaluated
+mutate.lock                short-lived lock around a state mutation
 ```
 
-Large payloads never enter `state.json`; it stays small enough to rewrite
-after every task.
+JSONL loaders ignore a torn final line and de-duplicate by `itemId`
+(items) or `eventId` (events). `state.json` holds no payloads and no
+attempt bodies, so rewriting it after every task is cheap. Attempt files
+are written through a versioned serializer (`Date` fields as ISO strings,
+`schemaVersion` on the file) and read back through the matching parser.
 
 ### 4.1 Item ids
 
-Anthropic restricts `custom_id` to `[A-Za-z0-9_-]{1,64}`, and the id is also
-a Windows filename. The id is:
+Anthropic restricts `custom_id` to `[A-Za-z0-9_-]{1,64}`; the id is also a
+Windows filename. The id is opaque and collision-resistant:
 
 ```
-<runShort8>-<taskId>-a<attempt>-r<round>     e.g. 7f3a2b1c-CG-AL-X044-a1-r0
+"b" + first 31 hex chars of sha256(`${runId}|${taskId}|${attempt}|${round}`)   (32 chars)
 ```
 
-Task ids are `CG-AL-[A-Z]\d+`, so the whole id is in the safe alphabet and
-under 40 characters. The structured mapping is stored in `items.jsonl`;
-nothing parses the id back.
+The structured mapping lives in `items.jsonl`; nothing parses the id.
 
 ### 4.2 `state.json`
 
 ```ts
 interface BatchRunState {
   schemaVersion: 1;
-  runId: string;                       // minted at submit, before any network call
+  runId: string;                       // UUID, minted at submit, before any network call
   createdAt: string;
   model: { slug: string; provider: "anthropic" | "openai" | "openrouter"; apiModelId: string };
-  settings: {                          // effective settings, canonicalized (D4)
-    attempts: number; maxTokens: number; temperature?: number; thinkingBudget?: number;
-    invocationMode: "batch"; continuation: false; emptyRetry: false;
-    fallbackPolicy: "requested" | "unavailable";   // set after the first Anthropic submit/spike
-    providerRoute: string;             // e.g. "openrouter:google/gemini-3.8-flash"
-    endpoint: string;                  // e.g. "/v1/messages", "/v1/chat/completions"
+  frozen: {                            // every input that shapes a request or a verdict (D13)
+    settings: CanonicalSettings;       // section 10, the exact object that is hashed
     settingsHash: string;
-    taskSetHash: string; harnessFingerprint: string; templateDigest: string; gitSha?: string;
+    taskSetHash: string;
+    harnessFingerprint: string;        // over the expanded HARNESS_INPUTS (section 10)
+    templateDigests: Record<string, string>;   // every template referenced by any task in the run
+    promptOverridesDigest: string;     // CLI/task/provider prompt injections + knowledge content
+    gitSha: string; gitClean: boolean;
+    variantConfig: VariantConfig;      // effective, after preset and CLI merge
     tasksGlob: string; taskIds: string[];
+    environment: EnvironmentManifest;  // wave-1 containers; wave 2 is checked against it (D13)
   };
   phase:
-    | "prepared"                       // run dir + items rendered, nothing submitted
-    | "submitting" | "submit-unknown"  // intent written; handle not yet persisted / outcome unknown
+    | "prepared"
+    | "submitting" | "submit-unknown"
     | "attempt-1-submitted" | "attempt-1-collected"
     | "attempt-2-submitted" | "attempt-2-collected"
     | "finalizing" | "finalized" | "abandoned";
   wave: 1 | 2;
   batches: BatchRecord[];
-  activeBatchIds: string[];            // chunks of the current wave/round still to collect
+  activeBatchIds: string[];            // chunks of the current wave/round not yet collected
   tasks: Record<string, TaskSummary>;
   lastError?: { at: string; step: string; message: string; retryable: boolean };
   resultsFile?: string; ingestedRunId?: string; finalizedAt?: string;
@@ -128,81 +136,103 @@ interface BatchRunState {
 
 interface BatchRecord {
   wave: 1 | 2; round: 0 | 1; chunk: number; parentBatchId?: string;
-  handle: BatchHandle;                 // provider batch id; OpenAI adds inputFileId/outputFileId/errorFileId as they appear
+  handle: BatchHandle;
   submittedAt: string; lastPolledAt?: string;
-  providerStatus: string;              // verbatim, never normalized away
-  rawCounts: Record<string, number>;   // verbatim provider counts
-  state: "processing" | "ended";       // the only normalization: has the provider stopped working on it
+  providerStatus: string;              // verbatim
+  rawCounts: Record<string, number>;   // verbatim
+  state: "processing" | "ended";       // the only normalization
   itemIds: string[];
+  providerReportedCostUsd?: number;    // OpenRouter batch-level usage.cost (D5)
+  collected: boolean;                  // every itemId accounted for in responses/
 }
 
-interface TaskSummary {
-  attempt1: ItemSummary; attempt2?: ItemSummary;
-}
+interface TaskSummary { attempt1: ItemSummary; attempt2?: ItemSummary }
 interface ItemSummary {
-  itemId: string; round: 0 | 1;
-  state: "pending" | "submitted" | "responded" | "errored" | "expired" | "compiled";
-  attemptFile?: string;                // attempts/<taskId>-a<N>.json once compiled
+  itemId: string; round: 0 | 1; ownerRound: 0 | 1;
+  state: "pending" | "submitted" | "responded" | "errored" | "expired" | "evaluated";
+  attemptFile?: string;
 }
 ```
 
 `intent.json` holds `{ runId, wave, round, chunk, itemIds, bodyDigests, nonce, writtenAt }`
 and is deleted only after the handle is in `state.json`.
 
-### 4.3 Submission and reconcile (D1)
+### 4.3 Submission and reconciliation (D1)
 
-1. Write `intent.json`; phase `submitting`.
-2. Submit. Pass the nonce as provider metadata where supported (OpenAI
-   `metadata`); Anthropic and OpenRouter batches carry it implicitly through
-   the unique item ids.
-3. Persist the handle into `state.json`; delete `intent.json`; phase
-   `<wave>-submitted`.
+1. Write and fsync `intent.json`; phase `submitting`.
+2. Submit. OpenAI receives the nonce in `metadata`. Anthropic and OpenRouter
+   have no metadata field.
+3. Persist the handle; delete `intent.json`; phase `<wave>-submitted`.
 
 If `advance` finds `intent.json` with no matching handle, the phase becomes
-`submit-unknown` and reconcile runs: list the provider's recent batches
-(all three expose a list endpoint) and match by item-id set (or nonce). A
-match adopts the batch. No match after the provider's list has settled
-returns the run to `prepared` for that wave. `advance` never resubmits
-from `submit-unknown` on its own; `status` shows it and `retry` resolves it.
+`submit-unknown` and reconciliation is provider-specific:
 
-### 4.4 Which response owns an attempt
+- **OpenAI:** `batches.list()`; a batch whose `metadata.nonce` equals the
+  intent's nonce is adopted. None found after the list has been re-read
+  once more than 60 s after the intent → the submission is treated as not
+  made and the phase returns to `prepared`. This is the only provider where
+  a no-match is evidence.
+- **Anthropic:** `messages.batches.list()` returns id, status, counts and
+  timestamps only. Candidates are batches created at or after
+  `intent.writtenAt` whose `request_counts` total equals the intent's item
+  count. A candidate is adopted only when it has ended and its results
+  contain the intent's item ids. Until then the run stays `submit-unknown`
+  and `status` shows the candidates; `retry --adopt <batchId>` lets the
+  operator adopt one. A no-match is **not** evidence of non-submission and
+  never returns the run to `prepared`.
+- **OpenRouter:** `GET /api/beta/batches?created_after=` returns metadata
+  only (`results` is always null in lists). Candidates are batches created
+  at or after the intent with matching `model` and `request_counts.total`;
+  adoption is by inspecting results once `completed`, or by operator
+  adoption. Same rule: no automatic return to `prepared`.
 
-Round 0 owns it if it responded. A round-1 resubmission is created only for
-items unresolved after round 0, so at most one round can respond per item.
-If a late round-0 result appears after round 1 was submitted (possible on
-Anthropic, where `ended` is batch-level), the earlier round wins and the
-round-1 result for that item is recorded and ignored. The collector reads
-`responses/` by item id, never by scanning.
+### 4.4 Round ownership
+
+An item is eligible for round 1 only after every chunk of its wave's round
+0 has ended **and** collection has positively accounted for every item of
+those chunks (`collected: true` on each record). At round-1 submission,
+`ownerRound` is set to 1 for the resubmitted items and never changes. A
+round-0 record that surfaces later is written to `responses/` and logged
+as an integrity event; it is never a winner. An interrupted collection is
+resumed, not treated as unresolved.
 
 ### 4.5 Transitions
 
 ```
-submit            prepared            -> submitting -> attempt-1-submitted
-advance           *-submitted, any active batch processing      -> refresh; exit 3
-advance           *-submitted, all active batches ended         -> collect -> compile/test -> *-collected
-advance           attempt-1-collected, unresolved items remain  -> round-1 resubmission (at most once) -> attempt-1-submitted
-advance           attempt-1-collected, every task has attempt 1 -> render fix prompts for non-passing tasks -> attempt-2-submitted
-                                                                   (or finalizing when attempts == 1 or nothing to fix)
-advance           attempt-2-collected                           -> finalizing -> finalized
-advance           submit-unknown                                -> reconcile (adopt or back to prepared); exit 4
-advance           non-retryable submit rejection                -> lastError; phase stays prepared; exit 4
-retry             prepared with lastError, or submit-unknown resolved -> submit
-abandon           any non-finalized                             -> provider cancel where it exists; phase abandoned; never finalized or ingested
+submit            prepared -> submitting -> attempt-1-submitted
+advance           *-submitted, any active batch processing         -> refresh; exit 3
+advance           *-submitted, all active batches ended            -> collect all -> evaluate -> *-collected
+advance           attempt-1-collected, unresolved items remain     -> single resubmission round -> attempt-1-submitted
+advance           attempt-1-collected, every task has attempt 1    -> render fix prompts for non-passing tasks -> attempt-2-submitted
+                                                                      (or finalizing when attempts == 1 or nothing to fix)
+advance           attempt-2-collected                              -> finalizing -> finalized
+advance           submit-unknown                                   -> reconcile per 4.3; exit 4 unless adopted
+advance           any phase, D13 drift detected                    -> refuse; exit 4
+retry             prepared with retryable lastError                -> submit byte-identical bodies
+retry --adopt     submit-unknown                                   -> adopt the named batch
+abandon           any non-finalized                                -> provider cancel where one exists; cleanup; abandoned; never finalized or ingested
 ```
 
-Every transition is idempotent against the files: collect skips ids present
-in `responses/`, compile skips tasks with an `attempts/` file, finalize
-re-uses `resultsFile` and `ingestedRunId` if present, and the results file
-path is deterministic (`benchmark-results-<runId>.json`), so a crash after
-writing but before recording it cannot produce a second file.
+Idempotency against the files: collect skips ids present in `responses/`;
+evaluate skips tasks with an `attempts/` file; finalize re-uses
+`resultsFile` and `ingestedRunId` when present, and the results path is
+deterministic (`benchmark-results-<runId>.json`). If the process dies after
+the server accepted the ingest but before `ingestedRunId` was written, the
+next finalize re-sends with the same run id, which the server treats as a
+replay.
 
-### 4.6 Suspended-run integrity
+### 4.6 Suspended-run integrity (D13)
 
-At every `advance`, the current task-set hash, harness fingerprint and
-template digest are compared with the frozen settings. A mismatch refuses
-to proceed (exit 4) with the differing digest named; the owner either
-restores the tree or abandons the run. This is what makes a fix prompt
-rendered days after attempt 1 come from the same harness.
+At every `advance`, each entry of `frozen` is recomputed and compared:
+task-set hash, the digest of every referenced template (not a fixed list -
+`promptTemplateDigest` today hashes five names, `capture.ts:129-153`, while
+`prompt_template` accepts any name), the harness fingerprint over the
+expanded input list (section 10), the prompt-overrides digest, the git SHA
+and clean-tree state, and - before any compile wave - the BC artifact url
+and test-runner version of every container that will be used. Any
+difference refuses to proceed (exit 4) naming the input; the operator
+restores the tree or abandons the run. A BC change between waves
+invalidates the run rather than annotating it.
 
 ## 5. `BatchProvider`
 
@@ -212,9 +242,10 @@ rendered days after attempt 1 come from the same harness.
 export interface BatchItem { itemId: string; body: unknown }
 export interface BatchHandle { provider: BatchProviderName; batchId: string; extra?: Record<string, string> }
 export interface BatchPoll {
-  processing: boolean;                 // the only normalization
+  processing: boolean;
   providerStatus: string; rawCounts: Record<string, number>;
-  extra?: Record<string, string>;      // OpenAI: output/error file ids once present
+  extra?: Record<string, string>;      // OpenAI: outputFileId / errorFileId once present
+  providerReportedCostUsd?: number;    // OpenRouter, batch level
 }
 export type BatchItemResult =
   | { itemId: string; ok: true; raw: unknown; httpStatus: number }
@@ -223,219 +254,268 @@ export type BatchErrorKind = "expired" | "cancelled" | "overloaded" | "rate_limi
 
 export interface BatchProvider {
   readonly provider: BatchProviderName;
-  submit(model: string, items: BatchItem[], nonce: string): Promise<BatchHandle>;   // throws BatchSubmitRejected
+  submit(model: string, items: BatchItem[], nonce: string): Promise<BatchHandle>;     // throws BatchSubmitRejected
   poll(handle: BatchHandle): Promise<BatchPoll>;
-  collect(handle: BatchHandle): Promise<BatchItemResult[]>;                        // callable whenever processing === false
-  list(since: Date): Promise<Array<{ batchId: string; createdAt: Date; itemIds?: string[] }>>;  // for reconcile
-  cancel?(handle: BatchHandle): Promise<void>;                                     // absent where the provider has none
-  maxItemsPerBatch: number; maxBytesPerBatch: number;                              // measured or documented; used for chunking
+  collect(handle: BatchHandle): Promise<BatchItemResult[]>;                          // when processing === false
+  listCandidates(since: Date): Promise<Array<{ batchId: string; createdAt: Date; total?: number; nonce?: string; model?: string }>>;
+  cancel?(handle: BatchHandle): Promise<void>;
+  cleanup?(handle: BatchHandle): Promise<void>;                                      // OpenAI: remote input file
+  readonly limits: { maxItems: number; maxBytes: number };                           // conservative, configurable
 }
 ```
 
-`collect` returns raw items only. Turning a raw item into an `LLMResponse`
-is the sync adapter's `parseResponse(raw, requestedModel)` (D7); turning
-that into a compile candidate is `resolveCandidate` (D6). An HTTP-200 empty
-answer and an HTTP-200 refusal are therefore *responses* that the shared
-evaluation turns into failed attempts, exactly as in sync; they are never
-`BatchItemResult` errors.
+`collect` returns raw items only. A raw item becomes an `LLMResponse`
+through the shared response mappers (section 6), then `resolveCandidate`;
+an HTTP-200 empty answer and an HTTP-200 refusal are responses that the
+shared evaluation turns into failed attempts, never `BatchItemResult`
+errors. A 413 or a validation error naming a size limit on submit triggers
+re-chunking at half the size, not a failure.
 
-`submit` throws `BatchSubmitRejected { status, retryable }`: 400 not
-retryable; 402, 429, 5xx retryable. Transport-level failures on any
-operation are retried inside `advance` with bounded exponential backoff
-(5 tries, 2 s base, capped at 60 s) before surfacing (D9).
+`submit` throws `BatchSubmitRejected { status, retryable }`: 400 (other
+than size) not retryable; 402, 429, 5xx retryable. Transport failures on
+any operation get bounded exponential backoff inside `advance` (5 tries,
+2 s base, 60 s cap) before surfacing (D9).
 
-### 5.1 Anthropic (`src/llm/batch/anthropic-batch.ts`)
+### 5.1 Anthropic
 
 | Op | Behaviour |
 | --- | --- |
-| body | the sync adapter's Messages params (a configured `AnthropicAdapter` instance's `buildRequestParams`), plus the fallback envelope the batch adapter builds itself: `betas: [SERVER_FALLBACK_BETA]` and `fallbacks: "default"` for models where `shouldRequestServerFallback` is true, submitted through the beta batches namespace. Whether the batch endpoint accepts this is spike 1; if not, `settings.fallbackPolicy = "unavailable"` and the run is a distinct profile from any fallback-enabled run. |
+| body | Messages params from a configured `AnthropicAdapter`'s `buildRequestParams(request)`; no `fallbacks`, no fallback beta (D12) |
 | submit | `messages.batches.create({ requests: [{ custom_id, params }] })` |
-| poll | `processing = processing_status !== "ended"`; `canceling` is still processing; `rawCounts` = `request_counts` verbatim (processing, succeeded, errored, canceled, expired) |
-| collect | stream `results_url` JSONL; `succeeded` → ok with `result.message`; `errored` → kind from `error.type` (`overloaded_error`, `rate_limit_error`, `api_error` retryable; `invalid_request_error` terminal); `expired` / `canceled` → those kinds. Always collect on `ended`, even when every item errored - the per-item results are what build the attempts. |
-| list | `messages.batches.list()` filtered by `created_at` |
+| poll | `processing = processing_status !== "ended"`; `canceling` is processing; `rawCounts = request_counts` |
+| collect | stream `results_url` JSONL; always on `ended`, even if every item errored; `succeeded` → ok (a refusal is `succeeded` with `stop_reason: refusal`); `errored` → kind from `error.type`; `expired` / `canceled` → those kinds |
+| listCandidates | `messages.batches.list()` → id, createdAt, total |
 | limits | 100,000 items / 256 MB |
 
-### 5.2 OpenAI (`src/llm/batch/openai-batch.ts`)
+### 5.2 OpenAI
 
 | Op | Behaviour |
 | --- | --- |
-| body | the sync adapter's **non-streaming** chat-completions params (`buildRequestParams(request, false)`), wrapped per line as `{ custom_id, method: "POST", url: ENDPOINT, body }`. `ENDPOINT` is `/v1/chat/completions` unless spike 2 shows GPT-6 Astra requires `/v1/responses`, in which case a Responses builder and parser are added to the sync adapter first (D6) and reused. |
-| submit | write the JSONL to a temp file under the run dir; `files.create({ purpose: "batch" })`; `batches.create({ input_file_id, endpoint, completion_window: "24h", metadata: { nonce, runId } })`. If batch creation fails after upload, delete the uploaded file before throwing. |
-| poll | `processing` unless status in `completed | failed | expired | cancelled`; `cancelling` is processing; `rawCounts` = `request_counts`; `extra` gains `outputFileId` / `errorFileId` when present |
-| collect | download output and error files (both may exist on `expired`, which can be partial); merge by `custom_id`, error file wins on conflict; `response.status_code` 200 → ok; else kind from status/body. After a successful collect, delete the input file; output/error files are left to OpenAI's 30-day expiry. |
-| list | `batches.list()`, match on `metadata.nonce` |
+| body | non-streaming chat-completions params `buildRequestParams(request, false)`, wrapped per line as `{ custom_id, method: "POST", url: ENDPOINT, body }`. `ENDPOINT` is `/v1/chat/completions` unless spike 2 shows GPT-6 Astra needs `/v1/responses`, in which case a Responses builder and mapper are added to the sync adapter first (D6). |
+| submit | JSONL to a temp file in the run dir → `files.create({ purpose: "batch" })` → persist `inputFileId` into `intent.json` → `batches.create({ input_file_id, endpoint, completion_window: "24h", metadata: { nonce, runId } })` → delete the local temp file. If batch creation fails after upload, delete the remote input file, then throw. A crash between upload and creation is recovered by the persisted `inputFileId`: reconcile checks for a batch with the nonce, else deletes the file and returns to `prepared`. |
+| poll | processing unless status in `completed | failed | expired | cancelled`; `cancelling` is processing; `extra` gains `outputFileId` / `errorFileId` when present |
+| collect | download output and error files (both may exist on `expired`, whose completed items are billed and kept). Merge by `custom_id`; an id present in **both** files is an integrity error: that item is marked `errored/unknown`, not retried, and logged. |
+| cleanup | delete the remote input file after a successful collect and on every terminal or abandon path; output/error files are left to OpenAI's 30-day expiry |
+| listCandidates | `batches.list()` → id, createdAt, nonce from metadata |
 | limits | 50,000 items / 200 MB |
 
-### 5.3 OpenRouter (`src/llm/batch/openrouter-batch.ts`)
+### 5.3 OpenRouter
 
 | Op | Behaviour |
 | --- | --- |
-| body | the OpenRouter adapter's non-streaming chat-completions params, extracted into `buildRequestParams` (D6). Google models: every item in a batch must share `response_format`; the builder asserts it. |
-| submit | `POST /api/beta/batches` with the body serialized as `{ endpoint: "/v1/chat/completions", model, requests }` in that key order (plain `JSON.stringify` of an object literal preserves it). Plain slug; the API bills the batch tier. |
-| poll | `processing` unless status in `completed | failed | expired | cancelled` |
-| collect | `results[]` inline on `completed`. On `failed` / `expired` / `cancelled` the documented response has `results: null`: every item of that batch is unresolved and eligible for the single resubmission. `usage.cost` from each result body is stored on the attempt as `providerReportedCostUsd`. |
-| list | `GET /api/beta/batches?created_after=` |
+| body | non-streaming chat-completions params from `OpenRouterAdapter.buildRequestParams(request, false)` (extracted, D6). Google models: every item in a batch must share `response_format`; asserted at chunking. |
+| submit | `POST /api/beta/batches`, body `{ endpoint: "/v1/chat/completions", model, requests }` in that key order; plain slug |
+| poll | processing unless status in `completed | failed | expired | cancelled`; `providerReportedCostUsd` from the batch-level `usage.cost` when completed |
+| collect | `results[]` inline on `completed`. On `failed` / `expired` / `cancelled` `results` is null: every item of that batch is unresolved, eligible for the single resubmission round, and the duplicate provider work is reported in the scores file. |
+| listCandidates | `GET /api/beta/batches?created_after=` → id, createdAt, model, total |
 | cancel | none documented; `abandon` marks the run locally and says so |
-| limits | undocumented. `maxItemsPerBatch` and `maxBytesPerBatch` are set from spike 3's measurement and the wave is chunked to stay under both; chunks roll up to one wave under `activeBatchIds`. |
-
-### 5.4 Adapter refactors (D6, D7)
-
-- `AnthropicAdapter.buildRequestParams` becomes public; `OpenAIAdapter.buildRequestParams(request, stream)` becomes public; `OpenRouterAdapter` gains `buildRequestParams(request, stream)` extracted from its two inline call sites.
-- Each of the three gains `parseResponse(raw, requestedModel): LLMResponse`, extracted from its synchronous non-streaming success path, carrying usage mapping, `servedModel`/refusal via `extractFallbackInfo(raw, requestedModel)`, stop reason and truncation. The sync path calls the same function.
-- `LLMResponse.duration` for a batch item is the provider's per-item processing time where reported, else 0, and `attempt.llmDuration` is documented as "0 in batch mode"; batch queue time is recorded on the run, not the attempt.
+| limits | undocumented; a conservative configurable ceiling (initially the spike-3 measurement, halved), with 413/limit responses re-chunking |
 
 ## 6. Shared units (D6)
 
 All in `src/parallel/shared/`, each extracted from its current home with the
-sync path re-pointed at it in the same commit and the sync suites green:
+sync path re-pointed at it in the same commit and the sync suites green.
 
-| Unit | From | Signature (essentials) |
+| Unit | From | Contract |
 | --- | --- | --- |
-| `buildAttemptContext` | orchestrator | `(manifest, variant, runSettings, attempt, prior?) => TaskExecutionContext` |
-| `renderLLMRequest` | `LLMWorkPool.executeWork` / `prompt-building.ts` | `(context, attempt, prior?) => LLMRequest` - task prompt for attempt 1; fix prompt for attempt 2 from `prior.candidateCode ?? prior.extractedCode`, the ordered `failureReasons`, the first-20-errors rule, the 400,000-char cap, `retrySourceFor`, prompt injections and variant system prompt, exactly as today |
-| `buildRequestParams` / `parseResponse` | adapters | per 5.4 |
-| `resolveCandidate` | `candidate-resolution.ts` | already shared; batch calls it on every ok response |
-| `buildCompileWorkItem` | orchestrator | `(context, attempt, llmResponse, candidateCode, overlayBase) => CompileWorkItem` - overlay base is the previous compiled candidate for attempt 2 |
-| `runCompileWorkItem` | orchestrator `executeCompilation` | routes through `CompileQueuePool` with inline infra retry, drain, quarantine and the outcome recorder |
-| `evaluateAttempt` | orchestrator `createAttempt` | pattern gates (`mustContain` / `mustNotContain` gate success), score, failure reasons, timings, usage, cost at the run's price mode |
-| `createFailedAttempt` | orchestrator | for LLM-level failures (provider terminal, empty, refusal) |
-| `finalizeTaskResult` | orchestrator `buildTaskResult` + `calculateAttemptMetrics` | final code, success, metrics, ids |
+| `buildAttemptContext` | orchestrator | `(manifest, variantConfig, runSettings, attempt, prior?) => TaskExecutionContext` |
+| `renderLLMRequest` | `LLMWorkPool.executeWork` / `prompt-building.ts` | `(context, attempt, prior?, inputs: { templateDir, starterRoot, promptOverrides, knowledge, variantSystemPrompt }) => LLMRequest`. Attempt 2 from `prior.candidateCode ?? prior.extractedCode`, ordered `failureReasons`, first-20-errors rule, 400,000-char cap, `retrySourceFor`. Every input is explicit, none read from `Deno.cwd()` implicitly. |
+| `buildRequestParams` | adapters | per 5.x; `(request, stream)` on OpenAI and OpenRouter |
+| **response mappers** | adapters | pure functions per provider: `extractContent(raw)`, `mapUsage(raw)`, `mapFinishReason(raw) → { finishReason, providerFinishReason }`, `extractFallback(raw, requestedModel)`, `assembleResponse(parts)`. Streaming finalization and batch parsing both call these with the data each transport has; OpenAI's streaming path has no raw final object (`openai-adapter.ts:292-302`), so it assembles from accumulated deltas through the same mappers. Usage is returned **without** price. |
+| `priceUsage` | new, over `PricingService` | `(usage, model, mode: "sync" \| "batch") => usage with estimatedCost`. The only place cost is computed. |
+| `resolveCandidate` | `candidate-resolution.ts` | already shared |
+| `buildCompileWorkItem` | orchestrator | `(context, attempt, llmResponse, candidateCode, overlayBase) => CompileWorkItem` |
+| `runCompileWorkItem` | orchestrator | `(item, deps: { queue: CompileWorkQueue, containers, healthMonitor?, events, infraRetry }) => { compileResult, infraRetries }` - the `CompileWorkQueue` interface, not the pool class; single and injected queues keep working |
+| `evaluateAttempt` | orchestrator `createAttempt` | pattern gates, score, failure reasons, timings, usage, priced cost, `prompt` from the rendered request, `providerFinishReason`, `providerErrorCode` |
+| `createFailedAttempt` | orchestrator | `(attempt, failure, request: LLMRequest, providerError?) => ExecutionAttempt` - carries the rendered prompt (D11) and the raw error |
+| `synthesizeInfraAttempt` | new, beside `terminal-record.ts` | an attempt-level infra record that preserves prior attempts and the attempt number; the existing whole-result synthesizer stays for the sync path's task-level use |
+| `finalizeTaskResult` | orchestrator | final code, success, metrics; `totalDuration` in batch = sum of attempt durations (LLM 0 + compile + test); queue time is on the run |
 
-The batch runner contains no scoring, gating or finalization logic of its
-own. The `ResultAggregator`, `saveResultsJson`, `saveScoresFile` and the
-ingest client are called as they are.
+`LLMWorkResult` gains `request?: LLMRequest` so the sync pool carries the
+rendered request through transport failures (D11).
 
 ## 7. Compile/test phase
 
-`advance` bootstraps containers the way the parallel executor does - a
-`ContainerRuntime` extracted from `parallel-executor.ts`: container setup,
-health monitor, recovery prober, outcome recorder, end-of-run nuke - and
-feeds the pool with a bounded feeder (`taskConcurrency` from the preset,
-12 for the campaign), never 232 promises at once. It holds the **global
-bench lock** (`acquireBenchLock`, heartbeat every 30 s, stale at 120 s)
-for the whole phase, so a synchronous bench, a second `advance`, or the
-container test suite cannot collide with it. `mutate.lock` guards only
-`state.json` writes and is held for milliseconds.
+`advance` bootstraps containers through a `ContainerRuntime` extracted from
+`parallel-executor.ts` - setup, health monitor, recovery prober, outcome
+recorder, end-of-run nuke - and feeds the queue with a bounded feeder
+(`taskConcurrency` from the preset), never all promises at once. It holds
+the **global bench lock** (`acquireBenchLock`, heartbeat 30 s, stale 120 s)
+for the whole phase. `mutate.lock` guards only `state.json` writes.
 
-Environment capture happens per compile wave: the participating containers'
-artifact urls and versions are recorded on the run, and a wave-2 environment
-that differs from wave 1 is recorded as such (the run stays valid; the
-difference is visible).
+Before each wave the runtime captures every participating container's
+artifact url and test-runner version; wave 2 must match wave 1 (D13).
 
 ## 8. Commands
 
-`cli/commands/bench-batch-command.ts`, registered as `bench batch`.
-
 | Command | Does | Exit |
 | --- | --- | --- |
-| `submit --preset P --llms <one slug> [--runs N] [--output DIR] [--no-ingest]` | precheck (`doctor ingest`, catalog, batch pricing present); mint N run ids and directories; render wave 1 for each; submit each in turn (a later failure leaves earlier runs submitted) | 0 / 4 |
-| `status [runId] [--json]` | every run or one: phase, wave, batches (id, provider status, raw counts, age), unresolved items, last error, next action | 0 |
-| `advance <runId> \| --all` | one step as in 4.5; `--all` is serial | 0 done / 3 waiting / 4 needs operator |
-| `retry <runId>` | resolves `prepared`+error or `submit-unknown`, or performs the one resubmission round | 0 / 4 |
-| `abandon <runId>` | provider cancel where one exists; phase `abandoned` | 0 |
+| `submit --preset P --llms <one slug> [--runs N] [--output DIR] [--no-ingest]` | precheck; freeze inputs; mint N run ids and directories; render and submit wave 1 per run | 0 / 4 |
+| `status [runId] [--json]` | per run: phase, wave, batches (id, provider status, raw counts, age, reported cost), unresolved items, candidates when `submit-unknown`, last error, next action | 0 |
+| `advance <runId> \| --all` | one step per 4.5; `--all` serial | 0 / 3 waiting / 4 operator |
+| `retry <runId> [--adopt <batchId>]` | resubmit identical bodies, or adopt a reconciled batch, or run the single resubmission round | 0 / 4 |
+| `abandon <runId>` | provider cancel and cleanup where they exist; phase `abandoned` | 0 |
 
-`submit` refuses a model whose snapshot lacks batch pricing. There is no
-balance estimator (cut); a 402 lands in `lastError` and `status`.
+`submit` refuses a model whose snapshot lacks batch pricing. No balance
+estimator. Scheduled `advance --all` is documented only after a run has
+been driven by hand end to end.
 
-Scheduled `advance --all` is documented as an option **after** the first
-run has been driven by hand end to end, not before.
-
-## 9. Failure handling (D8, D9, D10)
+## 9. Failure handling
 
 | Where | Recorded | Outcome |
 | --- | --- | --- |
-| Submit rejected, retryable (402/429/5xx after backoff) | `lastError`, phase `prepared` | `retry` resubmits the identical bodies |
-| Submit rejected, non-retryable (400) | `lastError`, phase `prepared` | code or request fix, then `retry`; no attempt is manufactured |
-| Crash after submit, before handle persisted | `intent.json` present → `submit-unknown` | reconcile via `list` |
-| Batch ended with unresolved items (errored retryable / expired / cancelled; OpenRouter `results: null`) | per-item result records | one resubmission round of exactly those items; then terminal |
-| Item error, non-retryable (`invalid_request`) | result record | failed `ExecutionAttempt` via `createFailedAttempt`, `termination_kind: provider_error`, tokens 0 |
-| Item unresolved after the resubmission round | result records for both rounds | failed `ExecutionAttempt`, `termination_kind: provider_error`, `provider_finish_reason: "batch_expired"` or the provider's error type |
-| Ok response, empty or refusal | result record; `resolveCandidate` / refusal detection in the shared evaluation | failed attempt exactly as sync scores it; not resubmitted |
-| Compile/test infra failure | existing infra retry / drain / quarantine; on exhaustion the existing synthesized infra record, which ingest excludes as today | `advance` re-attempts only tasks without an `attempts/` file |
-| Crash mid-compile | `attempts/` files for finished tasks | remaining tasks redone; a task's compile/test is re-run whole |
-| Harness drift while suspended | 4.6 | refuse; operator restores or abandons |
+| Submit rejected, retryable (402/429/5xx after backoff) | `lastError`, phase `prepared` | `retry` resubmits identical bodies |
+| Submit rejected, non-retryable (400, not a size limit) | `lastError`, phase `prepared` | if the classification was wrong, `retry` resubmits identical bodies; if the bodies are wrong, `abandon` and create a new run - bodies are never edited under a run id |
+| Submit rejected for size (413 / limit message) | event | re-chunk at half size and resubmit within the same `advance` |
+| Crash after submit, before handle persisted | `intent.json` → `submit-unknown` | 4.3 |
+| Batch ended with unresolved items (retryable error, expired, cancelled; OpenRouter results null) | per-item records | one resubmission round of exactly those items, then terminal |
+| Item error, non-retryable | record | `createFailedAttempt`, `termination_kind: provider_error`, `providerErrorCode` set, tokens 0 |
+| Item unresolved after the resubmission round | records for both rounds | failed attempt, `termination_kind: provider_error`, `providerFinishReason: "batch_expired"` or the provider's error type |
+| Ok response: empty or refusal | record; shared mappers + `resolveCandidate` | failed attempt exactly as sync scores it; not resubmitted |
+| Compile/test infra failure | existing inline retry / drain / quarantine; on exhaustion `synthesizeInfraAttempt` | the attempt file exists locally; ingest excludes infra-invalidated attempts **in both modes** (`ingest-assembly.ts:126-155`), so published coverage depends on container health equally in both |
+| Crash mid-evaluate | `attempts/` files for finished tasks | remaining tasks redone whole; compile/test replay relies on the candidate-publish cleanup that every attempt already relies on |
+| D13 drift | 4.6 | refuse |
 
-Every logical attempt ends in exactly one `attempts/<taskId>-a<N>.json`.
-Attempt 2 is rendered for every task without a passing attempt 1 (D10).
+## 10. Results, capture, settings, site
 
-## 10. Results, capture, pricing, site
+**Canonical settings (D4).** One object, one hash, one implementation
+shared by client and server (`src/ingest/settings-hash.ts`, ported from
+`site/src/lib/server/ingest.ts:7-18` and tested for equality against a
+fixture the server also asserts):
 
-**Results file.** Written by `saveResultsJson` / `saveScoresFile` at the
-deterministic path. `IngestMeta` is extended (schema 4), and `parseIngestMeta`
-with it: `invocations[variant]` gains `mode: "batch"`, `endpoint`,
-`providerRoute`, `fallbackPolicy`, and a `batch` object (provider, per-wave
-batch ids and rounds, submitted/ended timestamps, raw counts, resubmitted
-items, chunk count). The scores file's `# Batch` block prints the same
-facts plus a synchronous-rate cost computed at finalize for display only
-(not persisted).
+```ts
+interface CanonicalSettings {           // wire names; hashed via canonicalJSON in this exact shape
+  temperature: number | null;
+  max_attempts: number | null;
+  max_tokens: number | null;
+  prompt_version: string | null;
+  bc_version: string | null;
+  extra_json: {
+    invocation_mode: "sync" | "batch";
+    continuation: { enabled: boolean; max: number };
+    empty_retry: { enabled: boolean; max: number };
+    fallback_policy: "requested" | "unavailable";
+    provider_route: string;             // "anthropic", "openrouter:google/gemini-3.8-flash"
+    endpoint: string;                   // "/v1/messages", "/v1/chat/completions", "/v1/responses"
+    thinking_budget: number | string | null;
+  } | null;
+}
+```
 
-**Attempt record.** `ExecutionAttempt` gains `prompt` as the rendered prompt
-(D11, both modes), `providerReportedCostUsd?` and `providerRequestId?`
-(run-directory and results-file only; not ingested in v1). `llmDuration`
-is 0 in batch mode.
+The server's six-key hash function is unchanged; the new facts live in
+`extra_json`, which it already hashes. Historical runs are never
+recomputed. The client fills `max_attempts` and every `extra_json` field
+from **effective** run settings (`TaskExecutionResult.context` and the
+merged variant config), not from variant overrides; today it sends
+`thinking_budget` as a top-level key the server ignores and omits
+`max_attempts` (`ingest-assembly.ts:157-176`). A legacy payload without
+`extra_json` canonicalizes as before. Future sync runs get a new hash;
+that is correct.
 
-**Ingest.** `assembleBenchResultsForVariant` reads `provider_finish_reason`
-from the parsed response's raw stop reason, and `prompt_sha256` from the
-now-correct prompt. `invocation_mode` is sent per run.
+**Query enforcement (D4).** `runs.invocation_mode` becomes a required
+predicate in the aggregate, tier and matrix queries; the leaderboard,
+matrix and compare APIs take `mode` (`sync` | `batch`), defaulting to the
+mode of the current task set's most recent run and refusing `all` for
+ranked metrics with `400 invalid_mode_for_metric`. The `settings_hash_count`
+ambiguity flag stays.
 
-**Settings hash (D4).** The canonical settings serialized by
-`ingest-assembly.ts` become the *effective* settings, not only variant
-overrides: attempts, maxTokens, temperature, thinking budget, prompt policy,
-`invocation_mode`, continuation and empty-retry policy, fallback policy,
-provider route, endpoint. This changes the hash of future sync runs too;
-that is correct, since today's hash omits settings that matter. The server's
-`computeSettingsHash` input is extended the same way.
+**Harness fingerprint.** `HARNESS_INPUTS` (`harness-fingerprint.ts:13-21`,
+six files today) is extended with `src/parallel/shared/**`,
+`src/llm/prompt-building.ts`, `src/tasks/object-overlay.ts`,
+`src/llm/candidate-resolution.ts`, `src/parallel/llm-work-pool.ts`. gold-ci
+re-baselines once.
+
+**Attempt record.** `ExecutionAttempt` gains `prompt` as the rendered
+prompt (D11, both modes; failed attempts included), `providerFinishReason?`,
+`providerErrorCode?`, `providerRequestId?`. Ingest (`BenchResultItem`,
+`ResultInput`, the server insert that hardcodes `provider_error_code` null,
+`runs/+server.ts:420-475`) maps `provider_finish_reason` and
+`provider_error_code` through; `provider_request_id` stays local.
+
+**Results file.** `IngestMeta` schema 4: `invocations[variant]` gains a
+typed `mode`, `endpoint`, `provider_route`, `fallback_policy`, and
+`batch?: { provider; waves: [{ wave; round; chunk; batchId; submittedAt; endedAt; providerStatus; rawCounts; providerReportedCostUsd? }]; resubmittedItems; environmentByWave: Record<1|2, EnvironmentManifest> }`.
+`parseIngestMeta` accepts schema 4; `src/ingest/mod.ts` and
+`src/ingest/envelope.ts` send `invocation_mode`; the run's environment
+column carries wave 1. `saveScoresFile` takes a typed optional batch block
+and prints `# Batch` (waves, rounds, resubmissions, reported cost, and a
+synchronous-rate cost computed at finalize for display only).
 
 **Site.** Migration `0019_batch_mode.sql`: `runs.invocation_mode TEXT NOT NULL DEFAULT 'sync'`;
 four nullable batch rate columns on `cost_snapshots`; `v_results_with_cost`
-recreated to pick the batch columns when the joined run is `batch`;
-`rowCostUsd()` gets the same branch; `sync-catalog` learns the four fields;
-`_cv` bump. Where the site scopes by `settings_hash` today it keeps doing
-so; the run column exists so any query that pools by model can exclude or
-label batch runs explicitly. A "batch" marker on the run.
+recreated to pick them when the joined run is `batch`; `rowCostUsd()` the
+same branch; `results.provider_finish_reason` and
+`results.provider_error_code` populated. `sync-catalog` learns the four
+fields; `_cv` bump; migration → sync-catalog → deploy.
 
 ## 11. Spikes, run as the plan's first task
 
-Each is one tiny paid batch and settles a design input above. Their
-outcomes are recorded in the plan ledger before any adapter is written.
-
-1. **Anthropic batch + fallback envelope** (Haiku 4.5, three items): accepted → `fallbackPolicy: "requested"`; rejected → `"unavailable"` and the runbook says Fable/Opus batch runs are a fallback-less profile.
-2. **GPT-6 Astra endpoint** (gpt-5-mini then Astra, one item each on chat-completions and responses): fixes `ENDPOINT` and whether a Responses builder/parser is needed.
-3. **OpenRouter shape and limits** (small model): field order, inline results, reasoning params for Gemini 3.8 Flash, and a measured ceiling for items and bytes to set the chunk size.
+1. **Anthropic refusal in batch** (Haiku 4.5, three items, one designed to
+   refuse): confirms refusals return as `succeeded` items with
+   `stop_reason: refusal` and that the shared mappers score them as sync
+   scores an unrescued refusal. No fallback acceptance test (D12).
+2. **GPT-6 Astra endpoint** (gpt-5-mini then Astra, one item each on
+   chat-completions and responses): fixes `ENDPOINT` and whether a
+   Responses builder/mapper is needed.
+3. **OpenRouter shape and limits** (small model): key order, inline results,
+   reasoning params for Gemini 3.8 Flash, batch-level `usage.cost`, and a
+   measured item/byte ceiling for the initial chunk size.
 
 ## 12. Testing
 
-- **State machine** with a scripted fake provider: every transition in 4.5, including `submit-unknown` reconcile (adopt and no-match), the single resubmission round, late round-0 results, harness-drift refusal, deterministic finalize after a crash, and the exit codes.
-- **Persistence:** crash injection between each pair of writes in 4.3 and 4.5, then `advance` recovers without duplicate submission or duplicate attempts.
-- **Equivalence (D7):** per provider, batch body vs sync `buildRequestParams` (non-stream) for the same request; the same raw response through `parseResponse` in both paths. OpenRouter key order; OpenAI JSONL framing and merge of output + error files; Anthropic JSONL with every `result.type`; Anthropic `canceling` and OpenAI `cancelling` are processing.
-- **Shared-unit refactor:** the sync suites stay green; a normalized golden (ids, timestamps, durations, cost mode masked) shows batch and sync produce the same `TaskExecutionResult[]` from identical fake responses.
-- **Prompt capture (D11):** `attempt.prompt` equals the rendered request in both modes.
-- **Pricing:** batch columns applied; refusal without them; `providerReportedCostUsd` recorded.
-- **Site:** migration, view, `rowCostUsd` branch, `parseIngestMeta` schema 4, under the built-bundle vitest.
+- **State machine** with a scripted fake provider: every transition in 4.5;
+  provider-specific reconcile (OpenAI adopt/no-match, Anthropic candidate
+  inspection and `--adopt`, OpenRouter candidate); the single resubmission
+  round; ownership freezing and a late round-0 record logged, not adopted;
+  D13 refusal for each frozen input; deterministic finalize and ingest
+  replay after a crash; exit codes.
+- **Persistence:** crash injection between every pair of writes in 4.3 and
+  4.5; torn JSONL lines; duplicate appends; OpenAI upload-then-crash
+  recovery.
+- **Equivalence (D7):** per provider, batch body vs `buildRequestParams(…, false)`;
+  the same raw response through the shared mappers yields the same
+  `LLMResponse` fields; OpenRouter key order; OpenAI JSONL framing and
+  output/error merge including the both-files integrity case; Anthropic
+  JSONL with every `result.type` including refusal.
+- **Shared-unit refactor:** sync suites green; a normalized golden shows
+  batch and sync produce the same `TaskExecutionResult[]` from identical
+  fake responses; failed attempts carry the rendered prompt in both modes.
+- **Settings hash:** client and server produce the same hash for the same
+  `CanonicalSettings`; legacy payloads hash as before; `mode=all` refused.
+- **Pricing:** `priceUsage` at both modes; refusal without batch columns.
+- **Site:** migration, view, `rowCostUsd` branch, mode predicates in
+  aggregates and tiers, `parseIngestMeta` schema 4, under the built-bundle
+  vitest.
 
 ## 13. File map
 
 ```
 src/llm/batch/{types,anthropic-batch,openai-batch,openrouter-batch,registry}.ts
-src/llm/{anthropic,openai,openrouter}-adapter.ts     buildRequestParams public/extracted; parseResponse extracted
-src/llm/pricing-service.ts                             price mode
-src/parallel/shared/{attempt-context,render-request,compile-work-item,run-compile,evaluate-attempt,failed-attempt,finalize-task}.ts
-src/parallel/{llm-work-pool,orchestrator}.ts           re-pointed at the shared units (no behaviour change)
+src/llm/{anthropic,openai,openrouter}-adapter.ts       buildRequestParams public/extracted; response mappers extracted
+src/llm/pricing-service.ts + src/parallel/shared/price-usage.ts
+src/parallel/shared/{attempt-context,render-request,compile-work-item,run-compile,evaluate-attempt,failed-attempt,infra-attempt,finalize-task}.ts
+src/parallel/{llm-work-pool,orchestrator}.ts           re-pointed; LLMWorkResult.request
 src/parallel/container-runtime.ts                       extracted from cli/commands/bench/parallel-executor.ts
-src/batch/{state,intent,journal,run,advance,retry,results}.ts
+src/batch/{state,intent,journal,reconcile,run,advance,retry,results}.ts
+src/ingest/{settings-hash,mod,envelope}.ts; cli/commands/bench/{ingest-meta,ingest-assembly,results-writer}.ts
+src/utils/harness-fingerprint.ts; src/ingest/capture.ts (templates by reference)
+src/tasks/interfaces.ts (ExecutionAttempt fields)
 cli/commands/bench-batch-command.ts
-cli/commands/bench/{ingest-meta,ingest-assembly}.ts    schema 4; effective settings; prompt hash
 site/migrations/0019_batch_mode.sql
-site/src/lib/server/{cost-sql,ingest}.ts; site/src/lib/shared/types.ts
-site/catalog/pricing.yml                               batch columns for the panel models
-FallRelease.md, CLAUDE.md                              operator notes; decision 5 and the panel table updated for the Gemini route
+site/src/lib/server/{cost-sql,ingest,model-aggregates,tier-data}.ts; site/src/routes/api/v1/{leaderboard,matrix,runs}/…; site/src/lib/shared/types.ts
+site/catalog/pricing.yml
+FallRelease.md, CLAUDE.md
 ```
 
 ## 14. Rollout
 
-1. Shared-unit extraction and the prompt-capture fix, sync suites green, no behaviour change except the corrected `attempt.prompt`.
-2. Effective-settings canonicalization and `invocation_mode` (client and server), migration, pricing columns; deploy in the standard order.
+1. Shared-unit extraction, `LLMWorkResult.request`, the prompt-capture fix,
+   `providerFinishReason`/`providerErrorCode`; sync suites green.
+2. Canonical settings on client and server, `invocation_mode` end to end,
+   mode predicates, migration, pricing columns; deploy in the standard
+   order; gold-ci re-baseline for the expanded fingerprint.
 3. Spikes.
-4. Anthropic batch end to end on Haiku 4.5, one run, driven by hand; verify capture on its results file as Phase 3 of the runbook requires.
+4. Anthropic batch end to end on Haiku 4.5, one run, driven by hand;
+   verify capture on its results file as Phase 3 of the runbook requires.
 5. OpenAI, then OpenRouter, each with its own hand-driven run.
 6. Campaign scout: Opus 5 through `bench batch`.
