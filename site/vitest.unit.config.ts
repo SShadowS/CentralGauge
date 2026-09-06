@@ -29,6 +29,11 @@ export default defineConfig({
       "src/**/*.test.ts",
       "src/**/*.test.svelte.ts",
       "scripts/**/*.test.ts",
+      // Pure-logic tests colocated under tests/lib/ that need no D1/Worker
+      // runtime (cost-sql.ts is plain string generation) — named
+      // individually so this stays disjoint from tests/lib/*.test.ts files
+      // that DO need `cloudflare:test` (those run under vitest.config.ts).
+      "tests/lib/cost-sql.test.ts",
     ],
     setupFiles: ["./tests/setup-unit.ts"],
     globals: false,

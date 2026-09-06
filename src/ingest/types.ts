@@ -11,6 +11,17 @@ export interface PricingRates {
   output_per_mtoken: number;
   cache_read_per_mtoken: number;
   cache_write_per_mtoken: number;
+  /**
+   * Batch-tier rates (spec D5, docs/superpowers/specs/2026-09-06-batch-mode-design.md).
+   * Optional and independently nullable: a provider/model with no known
+   * batch pricing simply omits these, and `v_results_with_cost` /
+   * `rowCostUsd` then price a batch-mode run as NULL rather than guessing
+   * from the sync rate.
+   */
+  batch_input_per_mtoken?: number | null;
+  batch_output_per_mtoken?: number | null;
+  batch_cache_read_per_mtoken?: number | null;
+  batch_cache_write_per_mtoken?: number | null;
   source: Source;
   fetched_at: string;
 }

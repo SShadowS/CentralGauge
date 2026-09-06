@@ -10,8 +10,8 @@
  * It sums every billable token class priced by `cost_snapshots`:
  *   input + output + cache-read + cache-write, each x its per-MTok rate, /1e6.
  *
- * The `v_results_with_cost` view (migration 0013) encodes the SAME four-term,
- * COALESCE-guarded formula; a few read endpoints (`/models/[slug]`, `/runs`,
+ * The `v_results_with_cost` view (migration 0013, mode-aware since 0019)
+ * encodes the SAME formula; a few read endpoints (`/models/[slug]`, `/runs`,
  * `/runs/[id]`) query the view directly instead of interpolating this helper
  * (SQLite views cannot call JS, so the two are kept in lockstep by hand). The
  * only intentional difference: the view ROUNDs its per-row `cost_usd` to 6 dp
@@ -25,28 +25,45 @@
  * adding `tokens_reasoning` would double-count, since it is a subset of
  * `tokens_out` already billed at the output rate.
  *
- * Callers must alias the results row and cost_snapshots row; defaults match the
- * conventional `r` / `cs` aliases used across the query layer. The join must be
+ * Callers must alias the results row, cost_snapshots row, and the `runs` row
+ * the enclosing query joins; defaults match the conventional `r` / `cs` /
+ * `runs` aliases used across the query layer. The join must be
  * `cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version`
- * so each historical run is costed at its own pricing snapshot.
+ * so each historical run is costed at its own pricing snapshot. If a caller's
+ * query joins `cost_snapshots` without also joining `runs`, add
+ * `JOIN runs ON runs.id = r.run_id` — the pricing join already implies it.
  *
- * The cache-rate columns are nullable (`REAL DEFAULT 0`), so they are wrapped in
- * COALESCE: a legacy snapshot row with a NULL cache rate would otherwise turn the
- * whole `x * NULL` term — and thus the entire row's cost — into NULL, silently
- * zeroing a model out of cost sorts. input/output rates are NOT NULL per schema.
+ * Batch mode (spec D5, docs/superpowers/specs/2026-09-06-batch-mode-design.md):
+ * when the joined run's `invocation_mode = 'batch'`, pricing switches to the
+ * `batch_*` columns instead of the sync ones. Those columns are independently
+ * nullable and NOT COALESCEd — a batch run priced against a snapshot with no
+ * known batch rate must cost NULL, not a silently-wrong sync-rate guess.
  *
- * @param r  SQL alias for the `results` row (default `r`).
- * @param cs SQL alias for the `cost_snapshots` row (default `cs`).
+ * The sync-side cache-rate columns are nullable (`REAL DEFAULT 0`), so they
+ * stay wrapped in COALESCE: a legacy snapshot row with a NULL cache rate
+ * would otherwise turn the whole `x * NULL` term — and thus the entire row's
+ * cost — into NULL, silently zeroing a model out of cost sorts. Sync
+ * input/output rates are NOT NULL per schema.
+ *
+ * @param r    SQL alias for the `results` row (default `r`).
+ * @param cs   SQL alias for the `cost_snapshots` row (default `cs`).
+ * @param runs SQL alias for the `runs` row the enclosing query joins (default `runs`).
  */
-export function rowCostUsd(r = 'r', cs = 'cs'): string {
+export function rowCostUsd(r = "r", cs = "cs", runs = "runs"): string {
   const rr = assertSqlAlias(r);
   const cc = assertSqlAlias(cs);
-  return (
+  const ru = assertSqlAlias(runs);
+  const sync =
     `(${rr}.tokens_in * ${cc}.input_per_mtoken` +
     ` + ${rr}.tokens_out * ${cc}.output_per_mtoken` +
     ` + ${rr}.tokens_cache_read * COALESCE(${cc}.cache_read_per_mtoken, 0)` +
-    ` + ${rr}.tokens_cache_write * COALESCE(${cc}.cache_write_per_mtoken, 0)) / 1000000.0`
-  );
+    ` + ${rr}.tokens_cache_write * COALESCE(${cc}.cache_write_per_mtoken, 0))`;
+  const batch =
+    `(${rr}.tokens_in * ${cc}.batch_input_per_mtoken` +
+    ` + ${rr}.tokens_out * ${cc}.batch_output_per_mtoken` +
+    ` + ${rr}.tokens_cache_read * COALESCE(${cc}.batch_cache_read_per_mtoken, 0)` +
+    ` + ${rr}.tokens_cache_write * COALESCE(${cc}.batch_cache_write_per_mtoken, 0))`;
+  return `(CASE WHEN ${ru}.invocation_mode = 'batch' THEN ${batch} ELSE ${sync} END) / 1000000.0`;
 }
 
 /**

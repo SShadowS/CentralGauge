@@ -514,6 +514,11 @@
   output_per_mtoken: 5
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
+  # Batch mode (D5): Anthropic publishes batch at 50% of the sync rate.
+  batch_input_per_mtoken: 0.5
+  batch_output_per_mtoken: 2.5
+  batch_cache_read_per_mtoken: 0
+  batch_cache_write_per_mtoken: 0
   source: litellm-api
   fetched_at: '2026-05-24T19:47:18.774Z'
 - pricing_version: '2026-05-24'
@@ -710,6 +715,11 @@
   output_per_mtoken: 50
   cache_read_per_mtoken: 0.25
   cache_write_per_mtoken: 12.5
+  # Batch mode (D5): Anthropic publishes batch at 50% of the sync rate.
+  batch_input_per_mtoken: 5
+  batch_output_per_mtoken: 25
+  batch_cache_read_per_mtoken: 0.125
+  batch_cache_write_per_mtoken: 6.25
   source: litellm-api
   fetched_at: "2026-09-06T00:00:00.000Z"
 - pricing_version: "2026-06-09"
@@ -730,6 +740,11 @@
   output_per_mtoken: 25
   cache_read_per_mtoken: 0.5
   cache_write_per_mtoken: 6.25
+  # Batch mode (D5): Anthropic publishes batch at 50% of the sync rate.
+  batch_input_per_mtoken: 2.5
+  batch_output_per_mtoken: 12.5
+  batch_cache_read_per_mtoken: 0.25
+  batch_cache_write_per_mtoken: 3.125
   source: anthropic-api
   fetched_at: "2026-08-22T00:00:00.000Z"
 - pricing_version: "2026-08-22"
@@ -750,8 +765,18 @@
   output_per_mtoken: 50
   cache_read_per_mtoken: 1
   cache_write_per_mtoken: 12.5
+  # Batch mode (D5): OpenAI publishes batch at 50% of the sync rate.
+  batch_input_per_mtoken: 5
+  batch_output_per_mtoken: 25
+  batch_cache_read_per_mtoken: 0.5
+  batch_cache_write_per_mtoken: 6.25
   source: litellm-api
   fetched_at: "2026-09-06T00:00:00.000Z"
+# openai/gpt-5-mini has no pricing row in this catalog at all (no sync rates
+# to derive batch_* from), so Task 12 (D5) does not add one here: inventing
+# sync numbers to seed a batch row would violate the "no invented pricing"
+# rule. See .superpowers/sdd/2026-09-06-batch-mode-plan-a-foundations/
+# task-12-report.md for the full note.
 - pricing_version: "2026-09-06"
   model_slug: gemini/gemini-3.8-flash
   effective_from: "2026-09-06T00:00:00.000Z"
@@ -760,5 +785,9 @@
   output_per_mtoken: 3.75
   cache_read_per_mtoken: 0.075
   cache_write_per_mtoken: 0
+  # Batch mode (D5): no per-token OpenRouter `:batch` rate for
+  # google/gemini-3.8-flash is known, see the note added to
+  # docs/superpowers/specs/2026-09-06-batch-spikes-findings.md section 3.
+  # batch_* fields deliberately left absent (NULL), not 0.
   source: litellm-api
   fetched_at: "2026-09-06T00:00:00.000Z"
