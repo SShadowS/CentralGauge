@@ -1,10 +1,10 @@
 # Batch mode for the bench
 
 **Date:** 2026-09-06
-**Status:** revision 4, after three review rounds by GPT-5.6 Sol and
-Gemini 3.6 Flash (`.panel/batch-spec-*.md`, `-r2-*`, `-r3-*`). Gemini
-approved revision 3; Sol's revision-3 minimum edits are folded in here.
-Awaiting owner approval, then an implementation plan.
+**Status:** revision 4, APPROVED by the owner 2026-09-06 after three
+review rounds by GPT-5.6 Sol and Gemini 3.6 Flash (`.panel/batch-spec-*.md`,
+`-r2-*`, `-r3-*`). Gemini approved revision 3; Sol's revision-3 minimum
+edits are folded in here. Implementation plan follows.
 **Owner rulings:** build it before the fall campaign; Gemini rides
 OpenRouter's batch API; Anthropic, OpenAI and OpenRouter are all in scope.
 
