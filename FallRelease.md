@@ -416,7 +416,7 @@ Run in this order. All are free and fast.
       leaderboard) when the current set has both modes, so a batch run may
       be ingested into the current set. `/api/v2/models` and the three og
       image routes (index, models, families) are not page loaders and are
-      untouched by this fix — they still refuse with `mode_required` on a
+      untouched by this fix - they still refuse with `mode_required` on a
       mixed-mode set with no `?mode=`, so a direct caller (including a
       social-preview crawler) must pass it explicitly.
 
