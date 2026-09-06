@@ -129,7 +129,20 @@ export function buildGeminiUsage(
 ): Omit<TokenUsage, "estimatedCost"> {
   const promptTokens = um?.promptTokenCount ?? estPrompt;
   const visibleTokens = um?.candidatesTokenCount ?? estVisible;
-  const thoughtsTokens = um?.thoughtsTokenCount ?? 0;
+  // `thoughtsTokenCount` is routinely ABSENT from the usage metadata the
+  // adapter receives even when the model thought: across 3,371 stored direct
+  // Gemini attempts (2026-02 to 2026-05) it never appeared once, while
+  // `totalTokenCount` exceeded prompt + candidates by 4-7k tokens per attempt.
+  // Those tokens are billed as output, so without this derivation the
+  // recorded cost was 6.7x-15.4x too low (gemini-3.1-pro: $0.0064/attempt
+  // recorded against $0.0988 true - the same figure OpenRouter reported for
+  // the same model). When the field is missing, the only place the thoughts
+  // survive is the total: derive them from it.
+  const reportedThoughts = um?.thoughtsTokenCount;
+  const derivedThoughts = um?.totalTokenCount !== undefined
+    ? Math.max(0, um.totalTokenCount - promptTokens - visibleTokens)
+    : 0;
+  const thoughtsTokens = reportedThoughts ?? derivedThoughts;
   const completionTokens = visibleTokens + thoughtsTokens;
   return {
     promptTokens,

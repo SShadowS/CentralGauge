@@ -223,6 +223,44 @@ Deno.test("buildGeminiUsage - folds thinking tokens into billable output", async
   });
 
   await t.step(
+    "thoughtsTokenCount absent but total exceeds prompt+candidates -> thoughts derived from the total",
+    () => {
+      // The production shape: every stored direct Gemini attempt had this
+      // metadata - no thoughtsTokenCount, total far above prompt + candidates.
+      const u = buildGeminiUsage(
+        {
+          promptTokenCount: 1500,
+          candidatesTokenCount: 540,
+          totalTokenCount: 9534,
+        },
+        0,
+        0,
+      );
+      assertEquals(u.reasoningTokens, 7494);
+      assertEquals(u.completionTokens, 540 + 7494);
+      assertEquals(u.totalTokens, 9534);
+    },
+  );
+
+  await t.step(
+    "reported thoughtsTokenCount wins over the derivation",
+    () => {
+      const u = buildGeminiUsage(
+        {
+          promptTokenCount: 100,
+          candidatesTokenCount: 50,
+          thoughtsTokenCount: 30,
+          totalTokenCount: 180,
+        },
+        0,
+        0,
+      );
+      assertEquals(u.reasoningTokens, 30);
+      assertEquals(u.completionTokens, 80);
+    },
+  );
+
+  await t.step(
     "no thoughts -> completion is visible only, no reasoning key",
     () => {
       const u = buildGeminiUsage(
