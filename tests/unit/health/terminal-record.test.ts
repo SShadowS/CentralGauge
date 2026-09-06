@@ -223,3 +223,43 @@ Deno.test("executionId is unique across calls", () => {
   });
   assertEquals(a.executionId === b.executionId, false);
 });
+
+Deno.test("synthesized result appends to prior attempts and numbers the infra attempt", () => {
+  const err = new ContainerError("Boom", "Cronus281", "test", { exitCode: 1 });
+  const ctx = { variantId: "v", containerName: "Cronus281" };
+  const prior = {
+    attemptNumber: 1,
+    startTime: new Date(),
+    endTime: new Date(),
+    prompt: "p",
+    llmResponse: {
+      content: "",
+      model: "m",
+      duration: 1,
+      finishReason: "stop" as const,
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    },
+    extractedCode: "",
+    codeLanguage: "al" as const,
+    success: false,
+    score: 0,
+    failureReasons: ["Compilation failed"],
+    tokensUsed: 2,
+    cost: 0.5,
+    duration: 1,
+  };
+  const r = synthesizeInfraFailureResult({
+    manifestId: "CG-AL-H024",
+    context: ctx,
+    error: err,
+    classification: { fingerprint: "test:abc" },
+    startTime: new Date(),
+    priorAttempts: [prior],
+    attemptNumber: 2,
+  });
+  assertEquals(r.attempts.length, 2);
+  assertEquals(r.attempts[1]?.attemptNumber, 2);
+  assertEquals(r.attempts[1]?.infraSynthesized, true);
+  assertEquals(r.totalCost, 0.5);
+  assertEquals(r.totalTokensUsed, 2);
+});

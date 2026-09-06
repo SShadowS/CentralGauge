@@ -134,3 +134,77 @@ Deno.test("P5: quarantine exhaustion (non-infra cause) still synthesizes an 'Inf
   assertEquals(taskResults.length, 1);
   assertEquals(taskResults[0]!.modelResults.size, 1);
 });
+
+Deno.test("compile-phase infra exhaustion on attempt 2 keeps attempt 1 and records attempt 2 as infra", async () => {
+  // Same wiring as the first test in this file, but the queue succeeds once
+  // (attempt 1 fails tests normally) and quarantines from the second call on.
+  class SecondCallQuarantines extends MultiContainerMockCompileQueue {
+    calls = 0;
+    override async enqueue(
+      item: CompileWorkItem,
+      options?: CompileEnqueueOptions,
+    ): Promise<CompileWorkResult> {
+      const result = await super.enqueue(item, options);
+      this.calls++;
+      if (this.calls === 1) {
+        result.testResult = {
+          success: false,
+          totalTests: 1,
+          passedTests: 0,
+          failedTests: 1,
+          duration: 1,
+          results: [{ name: "T", passed: false, duration: 1, error: "nope" }],
+          output: "",
+        };
+        return result;
+      }
+      result.quarantined = {
+        quarantined: true,
+        forcedByAlertId: "alert-1",
+        originContainer: CONTAINER,
+        classificationReason: "container_quarantined",
+      };
+      return result;
+    }
+  }
+
+  const llmPool = buildLLMPool();
+  const mockContainerProvider = createMockContainerProvider();
+  const mockQueue = new SecondCallQuarantines([CONTAINER]);
+
+  const orchestrator = new ParallelBenchmarkOrchestrator(
+    { containerNames: [CONTAINER] },
+    {
+      llmPool: llmPool as unknown as LLMWorkPool,
+      containerProviderFactory: () => mockContainerProvider,
+      compileWorkQueueFactory: () => mockQueue,
+    },
+  );
+
+  const manifest = createMockTaskManifest({
+    id: "CG-AL-X001",
+    expected: { compile: true, testApp: "CG-AL-X001.Test.al" },
+  });
+  const { taskResults } = await orchestrator.runParallel(
+    [manifest],
+    buildVariants(),
+    {
+      containerProvider: "mock",
+      containerName: CONTAINER,
+      attemptLimit: 2,
+      temperature: 0.1,
+      maxTokens: 4000,
+      outputDir: "/tmp/test-output",
+      debugMode: false,
+      infraRetriesPerAttempt: 1,
+    },
+  );
+
+  const task = taskResults[0]!.modelResults.get("mock/mock-gpt-4")!;
+  assertEquals(task.attempts.length, 2);
+  assertEquals(task.attempts[0]?.attemptNumber, 1);
+  assertEquals(task.attempts[0]?.infraSynthesized, undefined);
+  assertEquals(task.attempts[1]?.attemptNumber, 2);
+  assertEquals(task.attempts[1]?.infraSynthesized, true);
+  assert(task.attempts[1]?.failureReasons[0]?.startsWith("Infra error:"));
+});

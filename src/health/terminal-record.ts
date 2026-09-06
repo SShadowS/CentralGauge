@@ -7,7 +7,8 @@ import type {
   TaskExecutionContext,
   TaskExecutionResult,
 } from "../tasks/interfaces.ts";
-import { ContainerError } from "../errors.ts";
+import type { LLMRequest, LLMResponse } from "../llm/types.ts";
+import { synthesizeInfraAttempt } from "../parallel/shared/infra-attempt.ts";
 import type { ClassifyResult } from "./types.ts";
 
 /**
@@ -42,6 +43,23 @@ interface SynthInput {
   infraRetryExhausted?: boolean;
   /** Reason the retry budget was exhausted, when known. */
   infraRetryExhaustionReason?: InfraRetryExhaustionReason;
+  /**
+   * Attempts already finished before this infra failure escaped the attempt
+   * loop (spec D10). Absent (or empty) for the original single-attempt
+   * synthesis path, where there is nothing to preserve.
+   */
+  priorAttempts?: ExecutionAttempt[];
+  /**
+   * Attempt number for the synthesized infra attempt itself. Defaults to
+   * `priorAttempts.length + 1` (or 1 with no prior attempts) when omitted.
+   */
+  attemptNumber?: number;
+  /** Rendered request for the attempt that hit the infra failure, if any. */
+  request?: LLMRequest;
+  /** LLM response for the attempt that hit the infra failure, if any. */
+  llmResponse?: LLMResponse;
+  /** Reuse an existing execution id (e.g. the loop's) instead of minting one. */
+  executionId?: string;
 }
 
 /**
@@ -62,82 +80,40 @@ interface SynthInput {
 export function synthesizeInfraFailureResult(
   input: SynthInput,
 ): TaskExecutionResult {
-  const endTime = new Date();
   const err = input.error;
-  const errMessage = err instanceof Error ? err.message : String(err);
-  const containerName = err instanceof ContainerError
-    ? err.containerName
-    : (input.context.containerName ?? "unknown");
-  const operation = err instanceof ContainerError ? err.operation : "unknown";
-  const sigLabel = input.classification.signature?.label ?? "(unclassified)";
 
-  const reasons = [
-    `Infra error: ${errMessage}`,
-    `Container: ${containerName}, Operation: ${operation}`,
-    `Signature: ${sigLabel}`,
-    `Fingerprint: ${input.classification.fingerprint}`,
-  ];
-
-  const attempt: ExecutionAttempt = {
-    attemptNumber: 1,
+  const attempt = synthesizeInfraAttempt({
+    attemptNumber: input.attemptNumber ??
+      (input.priorAttempts?.length ?? 0) + 1,
     startTime: input.startTime,
-    endTime,
-    prompt: "",
-    llmResponse: {
-      content: "",
-      model: "",
-      duration: 0,
-      finishReason: "stop",
-      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-    },
-    extractedCode: "",
-    codeLanguage: "al",
-    success: false,
-    score: 0,
-    failureReasons: reasons,
-    tokensUsed: 0,
-    cost: 0,
-    duration: endTime.getTime() - input.startTime.getTime(),
-  };
-  if (err instanceof ContainerError) {
-    attempt.containerName = err.containerName;
-  }
-  // Unconditional marker: this function ONLY ever runs for a failure the
-  // caller has already classified as infra (see orchestrator.ts's
-  // `wasInfraExhaustion || isInfraError(err)` gate), so every attempt it
-  // builds is infra-synthesized regardless of whether a retry budget
-  // existed to exhaust. Consumers that need "is this attempt infra, not
-  // model" without string-matching `failureReasons` must read this instead
-  // of (or in addition to) `infraRetryExhausted` — see the field's doc in
-  // `src/tasks/interfaces.ts`.
-  attempt.infraSynthesized = true;
-  // Attach inline-retry metadata so downstream consumers (JSON, dashboard)
-  // can show the full retry trail + exhaustion reason without re-parsing the
-  // prose `failureReasons[]` block (which remains unchanged for backward
-  // compatibility with Phase A's downstream parsers).
-  if (input.infraRetries && input.infraRetries.length > 0) {
-    attempt.infraRetries = input.infraRetries;
-  }
-  if (input.infraRetryExhausted) {
-    attempt.infraRetryExhausted = true;
-  }
-  if (input.infraRetryExhaustionReason !== undefined) {
-    attempt.infraRetryExhaustionReason = input.infraRetryExhaustionReason;
-  }
+    error: err,
+    classification: input.classification,
+    ...(input.infraRetries ? { infraRetries: input.infraRetries } : {}),
+    ...(input.infraRetryExhausted ? { infraRetryExhausted: true } : {}),
+    ...(input.infraRetryExhaustionReason !== undefined
+      ? { infraRetryExhaustionReason: input.infraRetryExhaustionReason }
+      : {}),
+    ...(input.request ? { request: input.request } : {}),
+    ...(input.llmResponse ? { llmResponse: input.llmResponse } : {}),
+    ...(input.context.containerName
+      ? { containerName: input.context.containerName }
+      : {}),
+  });
+  const attempts = [...(input.priorAttempts ?? []), attempt];
 
   return {
     taskId: input.manifestId,
-    executionId:
+    executionId: input.executionId ??
       `${input.manifestId}_${input.context.variantId}_infra_${Date.now()}_${
         Math.random().toString(36).slice(2, 8)
       }`,
     context: input.context as unknown as TaskExecutionContext,
-    attempts: [attempt],
+    attempts,
     success: false,
     finalScore: 0,
-    totalTokensUsed: 0,
-    totalCost: 0,
-    totalDuration: attempt.duration,
+    totalTokensUsed: attempts.reduce((s, a) => s + a.tokensUsed, 0),
+    totalCost: attempts.reduce((s, a) => s + a.cost, 0),
+    totalDuration: attempts.reduce((s, a) => s + a.duration, 0),
     passedAttemptNumber: 0,
     successRate: 0,
     executedAt: input.startTime,

@@ -45,6 +45,8 @@ import type { SynthContext } from "../health/terminal-record.ts";
 import { ContainerError } from "../errors.ts";
 import { withInfraRetry } from "./infra-retry.ts";
 import { InfraRetriesExhaustedError } from "./errors.ts";
+import type { AttemptLoopPartial } from "./shared/infra-attempt.ts";
+import { AttemptLoopAbort } from "./shared/infra-attempt.ts";
 import type { ContainerHealthMonitor } from "../health/monitor.ts";
 import type {
   InfraRetryExhaustionReason,
@@ -587,6 +589,16 @@ export class ParallelBenchmarkOrchestrator {
       } catch (error) {
         let err = error instanceof Error ? error : new Error(String(error));
 
+        // Unwrap `AttemptLoopAbort` FIRST: a compile-phase error that escaped
+        // the attempt loop carries the attempts already finished (`partial`)
+        // so the synthesis call below can APPEND to them instead of
+        // replacing the whole task result with a single one-attempt record.
+        let partial: AttemptLoopPartial | undefined;
+        if (err instanceof AttemptLoopAbort) {
+          partial = err.partial;
+          err = err.cause;
+        }
+
         // Unwrap `InfraRetriesExhaustedError` so downstream classification +
         // dashboard plumbing sees the LAST REAL infra error (PSSession lost,
         // SYSLIB0014, etc.) — not the operational wrapper. The wrapper still
@@ -666,13 +678,14 @@ export class ParallelBenchmarkOrchestrator {
         // cause classification or those attempts vanish from `.results[]`.
         if (wasInfraExhaustion || isInfraError(err)) {
           try {
-            const context = await this.buildContext(manifest, variant, options);
+            const context = partial?.context ??
+              await this.buildContext(manifest, variant, options);
             const synth = synthesizeInfraFailureResult({
               manifestId: manifest.id,
               context: context as unknown as SynthContext,
               error: err,
               classification: cls,
-              startTime: new Date(),
+              startTime: partial?.attemptStart ?? new Date(),
               ...(trailingRetries.length > 0
                 ? { infraRetries: trailingRetries }
                 : {}),
@@ -680,6 +693,17 @@ export class ParallelBenchmarkOrchestrator {
                 ? {
                   infraRetryExhausted: true,
                   infraRetryExhaustionReason: exhaustionReason,
+                }
+                : {}),
+              ...(partial
+                ? {
+                  priorAttempts: partial.attempts,
+                  attemptNumber: partial.attemptNumber,
+                  executionId: partial.executionId,
+                  ...(partial.request ? { request: partial.request } : {}),
+                  ...(partial.llmResponse
+                    ? { llmResponse: partial.llmResponse }
+                    : {}),
                 }
                 : {}),
             });
@@ -916,24 +940,50 @@ export class ParallelBenchmarkOrchestrator {
       // `executeCompilation` wraps the compile/test work item in the inline
       // infra-retry helper. The returned `infraRetries` trail is attached to
       // the attempt so JSON/dashboard consumers can show the retry history.
-      // On terminal exhaustion the helper throws `InfraRetriesExhaustedError`
-      // which we re-throw — `processTask`'s catch synthesizes the infra
-      // failure result using the wrapper's `cause`, `retries`, `reason`.
-      const { compileResult, infraRetries } = await this.executeCompilation(
-        manifest,
-        variant,
-        context,
-        executionId,
-        attemptNumber,
-        llmResult,
-        workItemId,
-        options,
-        // Attempt N is built on attempt N-1's full compiled candidate, not the
-        // starter: under diagnose-objects.md the model returns only changed
-        // objects, and overlaying those onto the starter would silently revert
-        // every fix the previous attempt made (2026-09-01 root cause).
-        attempts[attempts.length - 1]?.candidateCode,
-      );
+      // On terminal exhaustion the helper throws `InfraRetriesExhaustedError`.
+      // We catch it HERE (rather than letting it escape all the way to
+      // `processTask`'s catch) so the attempts already finished in `attempts`
+      // survive the failure — wrapped in `AttemptLoopAbort`, whose `partial`
+      // carries them for `processTask`'s catch to append to instead of
+      // replacing the whole task result with a single one-attempt record.
+      const attemptStart = new Date(Date.now() - llmResult.duration);
+      let compiled: {
+        compileResult: CompileWorkResult;
+        infraRetries: InfraRetryRecord[];
+      };
+      try {
+        compiled = await this.executeCompilation(
+          manifest,
+          variant,
+          context,
+          executionId,
+          attemptNumber,
+          llmResult,
+          workItemId,
+          options,
+          // Attempt N is built on attempt N-1's full compiled candidate, not
+          // the starter: under diagnose-objects.md the model returns only
+          // changed objects, and overlaying those onto the starter would
+          // silently revert every fix the previous attempt made (2026-09-01
+          // root cause).
+          attempts[attempts.length - 1]?.candidateCode,
+        );
+      } catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        throw new AttemptLoopAbort(cause, {
+          attempts,
+          attemptNumber,
+          attemptStart,
+          executionId,
+          context,
+          startTime,
+          ...(llmResult.request ? { request: llmResult.request } : {}),
+          ...(llmResult.llmResponse
+            ? { llmResponse: llmResult.llmResponse }
+            : {}),
+        });
+      }
+      const { compileResult, infraRetries } = compiled;
 
       const attempt = this.createAttempt(
         attemptNumber,
