@@ -1,3 +1,23 @@
+- slug: openai/gpt-6-astra
+  api_model_id: gpt-6-astra
+  family: gpt
+  display_name: GPT-6 Astra
+  generation: 6
+  released_at: "2026-09-04"
+  max_input_tokens: 922000
+  max_output_tokens: 128000
+  capabilities: ["thinking", "image", "pdf", "structured", "batch"]
+
+- slug: gemini/gemini-3.8-flash
+  api_model_id: gemini-3.8-flash
+  family: gemini
+  display_name: Gemini 3.8 Flash
+  generation: 3
+  released_at: "2026-09-02"
+  max_input_tokens: 1048576
+  max_output_tokens: 65536
+  capabilities: ["thinking", "image", "pdf", "structured", "batch"]
+
 - slug: anthropic/claude-fable-5-1
   api_model_id: claude-fable-5-1
   family: claude

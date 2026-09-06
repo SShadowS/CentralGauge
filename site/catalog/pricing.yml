@@ -742,3 +742,23 @@
   cache_write_per_mtoken: 2.5
   source: anthropic-api
   fetched_at: "2026-08-22T00:00:00.000Z"
+- pricing_version: "2026-09-06"
+  model_slug: openai/gpt-6-astra
+  effective_from: "2026-09-06T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 10
+  output_per_mtoken: 50
+  cache_read_per_mtoken: 1
+  cache_write_per_mtoken: 12.5
+  source: litellm-api
+  fetched_at: "2026-09-06T00:00:00.000Z"
+- pricing_version: "2026-09-06"
+  model_slug: gemini/gemini-3.8-flash
+  effective_from: "2026-09-06T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 0.75
+  output_per_mtoken: 3.75
+  cache_read_per_mtoken: 0.075
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: "2026-09-06T00:00:00.000Z"
