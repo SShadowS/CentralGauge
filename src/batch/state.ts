@@ -13,8 +13,8 @@
  *
  * @module src/batch/state
  */
-import { z } from "zod";
 import { join } from "@std/path";
+import { z } from "zod";
 import { RUN_FILES } from "./paths.ts";
 
 /** Bumped whenever `BatchRunState`'s on-disk shape changes incompatibly. */
