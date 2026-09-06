@@ -1,0 +1,210 @@
+import { assert, assertEquals } from "@std/assert";
+import { exists } from "@std/fs";
+import { join } from "@std/path";
+import { collectEnded, pollActive } from "../../../src/batch/collect.ts";
+import { loadState } from "../../../src/batch/state.ts";
+import type { BatchRecord, ItemSummary } from "../../../src/batch/state.ts";
+import { responsePath, RUN_FILES } from "../../../src/batch/paths.ts";
+import { loadJsonl } from "../../../src/batch/journal.ts";
+import type { EventLine } from "../../../src/batch/journal.ts";
+import type { LLMResponse } from "../../../src/llm/types.ts";
+import { FakeBatchProvider } from "../../utils/fake-batch-provider.ts";
+import { minimalState } from "../../utils/batch-fixtures.ts";
+import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+
+function makeRecord(overrides: Partial<BatchRecord> = {}): BatchRecord {
+  return {
+    wave: 1,
+    round: 0,
+    chunk: 0,
+    handle: { provider: "anthropic", batchId: "batch-1" },
+    submittedAt: "2026-09-06T00:00:00.000Z",
+    providerStatus: "in_progress",
+    rawCounts: {},
+    state: "processing",
+    itemIds: ["item-a", "item-b"],
+    collected: false,
+    ...overrides,
+  };
+}
+
+function itemSummary(
+  itemId: string,
+  overrides: Partial<ItemSummary> = {},
+): ItemSummary {
+  return { itemId, round: 0, ownerRound: 0, state: "submitted", ...overrides };
+}
+
+const mapRaw = (raw: unknown): LLMResponse => ({
+  content: (raw as { text: string }).text,
+  model: "m",
+  usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+  duration: 0,
+  finishReason: "stop",
+});
+
+Deno.test("pollActive updates records and reports processing until every batch ended", async () => {
+  const dir = await createTempDir("poll");
+  try {
+    const fake = new FakeBatchProvider("anthropic", {
+      poll: {
+        "batch-1": [
+          {
+            processing: true,
+            providerStatus: "in_progress",
+            rawCounts: { processing: 2 },
+          },
+          {
+            processing: false,
+            providerStatus: "ended",
+            rawCounts: { succeeded: 2 },
+          },
+        ],
+      },
+    });
+    const record = makeRecord();
+    const state = minimalState({
+      batches: [record],
+      activeBatchIds: ["batch-1"],
+    });
+
+    const first = await pollActive(dir, state, fake);
+    assertEquals(first.anyProcessing, true);
+    assertEquals(first.records.length, 1);
+    assertEquals(first.records[0]?.state, "processing");
+    assertEquals(first.records[0]?.providerStatus, "in_progress");
+    assert(first.records[0]?.lastPolledAt !== undefined);
+
+    const second = await pollActive(dir, state, fake);
+    assertEquals(second.anyProcessing, false);
+    assertEquals(second.records[0]?.state, "ended");
+    assertEquals(second.records[0]?.providerStatus, "ended");
+    assertEquals(second.records[0]?.rawCounts, { succeeded: 2 });
+
+    const reloaded = await loadState(dir);
+    assertEquals(reloaded.batches[0]?.state, "ended");
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("collectEnded writes one immutable response per item, maps ok items, and is idempotent", async () => {
+  const dir = await createTempDir("collect");
+  try {
+    const fake = new FakeBatchProvider("anthropic", {
+      collect: {
+        "batch-1": [
+          { itemId: "item-a", ok: true, raw: { text: "OK" }, httpStatus: 200 },
+          {
+            itemId: "item-b",
+            ok: false,
+            error: {
+              kind: "overloaded",
+              message: "overloaded",
+              retryable: true,
+            },
+          },
+        ],
+      },
+    });
+    const record = makeRecord({ state: "ended" });
+    const state = minimalState({
+      batches: [record],
+      activeBatchIds: ["batch-1"],
+      tasks: {
+        "CG-AL-E001": { attempt1: itemSummary("item-a") },
+        "CG-AL-E002": { attempt1: itemSummary("item-b") },
+      },
+    });
+
+    const collected = await collectEnded(dir, state, fake, mapRaw);
+    assertEquals(collected.length, 2);
+
+    assert(await exists(responsePath(dir, "item-a")));
+    assert(await exists(responsePath(dir, "item-b")));
+    const aFile = JSON.parse(
+      await Deno.readTextFile(responsePath(dir, "item-a")),
+    );
+    assertEquals(aFile.response.content, "OK");
+    const bFile = JSON.parse(
+      await Deno.readTextFile(responsePath(dir, "item-b")),
+    );
+    assertEquals(bFile.response, undefined);
+    assertEquals(bFile.result.error.kind, "overloaded");
+
+    assertEquals(state.tasks["CG-AL-E001"]?.attempt1.state, "responded");
+    assertEquals(state.tasks["CG-AL-E002"]?.attempt1.state, "errored");
+    assertEquals(state.batches[0]?.collected, true);
+
+    const reloaded = await loadState(dir);
+    assertEquals(reloaded.batches[0]?.collected, true);
+
+    const second = await collectEnded(dir, state, fake, mapRaw);
+    assertEquals(second, []);
+    assertEquals(fake.calls.filter((c) => c.op === "collect").length, 1);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("collectEnded logs and skips an unknown item id and a stale-round id", async () => {
+  const dir = await createTempDir("collect-integrity");
+  try {
+    const fake = new FakeBatchProvider("anthropic", {
+      collect: {
+        "batch-1": [
+          {
+            itemId: "item-unknown",
+            ok: true,
+            raw: { text: "??" },
+            httpStatus: 200,
+          },
+          {
+            itemId: "item-a",
+            ok: true,
+            raw: { text: "late" },
+            httpStatus: 200,
+          },
+        ],
+      },
+    });
+    // Record still belongs to round 0, but item-a's task has already been
+    // resubmitted for round 1 (ownerRound flipped), so this collect result
+    // is a stale round-0 result arriving late.
+    const record = makeRecord({ state: "ended", itemIds: ["item-a"] });
+    const state = minimalState({
+      batches: [record],
+      activeBatchIds: ["batch-1"],
+      tasks: {
+        "CG-AL-E001": { attempt1: itemSummary("item-a", { ownerRound: 1 }) },
+      },
+    });
+
+    const collected = await collectEnded(dir, state, fake, mapRaw);
+    assertEquals(collected, []);
+    assertEquals(await exists(responsePath(dir, "item-unknown")), false);
+    assertEquals(await exists(responsePath(dir, "item-a")), false);
+
+    const events = await loadJsonl<EventLine>(
+      join(dir, RUN_FILES.events),
+      (e) => e.eventId,
+    );
+    assertEquals(
+      events.map((e) => e.kind).sort(),
+      ["integrity_stale_round", "integrity_unknown_item"],
+    );
+    const unknownEvent = events.find((e) =>
+      e.kind === "integrity_unknown_item"
+    );
+    assertEquals(unknownEvent?.data["itemId"], "item-unknown");
+    const staleEvent = events.find((e) => e.kind === "integrity_stale_round");
+    assertEquals(staleEvent?.data["itemId"], "item-a");
+    assertEquals(staleEvent?.data["recordRound"], 0);
+    assertEquals(staleEvent?.data["ownerRound"], 1);
+
+    assertEquals(state.tasks["CG-AL-E001"]?.attempt1.state, "submitted");
+    assertEquals(state.batches[0]?.collected, true);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
