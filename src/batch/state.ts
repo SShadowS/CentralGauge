@@ -1,0 +1,191 @@
+/**
+ * Batch run state: types (mirroring spec section 4.2 verbatim), the
+ * Zod-validated parser, and the atomic write/load primitives every batch
+ * command builds on.
+ *
+ * `state.json` never carries payloads (bodies, raw responses). Those live in
+ * `items.jsonl`, `responses/<itemId>.json`, `requests/<itemId>.json`, and
+ * `attempts/<taskId>-a<N>.json` (see `./paths.ts`), so `state.json` stays
+ * small enough to read and rewrite atomically on every mutation.
+ *
+ * `FrozenPromptInputs` (the shape of `prompt-inputs.json`) is Plan A's, not
+ * redeclared here — see `src/parallel/shared/prompt-inputs.ts`.
+ *
+ * @module src/batch/state
+ */
+import { z } from "zod";
+import { join } from "@std/path";
+import { RUN_FILES } from "./paths.ts";
+
+/** Bumped whenever `BatchRunState`'s on-disk shape changes incompatibly. */
+export const STATE_SCHEMA_VERSION = 1;
+
+const BatchProviderNameSchema = z.enum(["anthropic", "openai", "openrouter"]);
+
+/** Mirrors `BatchHandle` from `../llm/batch/types.ts`. */
+const BatchHandleSchema = z.object({
+  provider: BatchProviderNameSchema,
+  batchId: z.string(),
+  extra: z.record(z.string(), z.string()).optional(),
+});
+
+export const ContainerEnvironmentSetSchema = z.object({
+  /** A mode, not a version (`EnvironmentManifest.test_runner`). */
+  testRunner: z.enum(["soap", "legacy"]),
+  /** Sorted by name. */
+  containers: z.array(z.object({
+    name: z.string(),
+    bcArtifact: z.string().nullable(),
+    imageDigest: z.string().nullable(),
+  })),
+});
+export type ContainerEnvironmentSet = z.infer<
+  typeof ContainerEnvironmentSetSchema
+>;
+
+export const ItemSummarySchema = z.object({
+  itemId: z.string(),
+  round: z.union([z.literal(0), z.literal(1)]),
+  ownerRound: z.union([z.literal(0), z.literal(1)]),
+  state: z.enum([
+    "pending",
+    "submitted",
+    "responded",
+    "errored",
+    "expired",
+    "evaluated",
+  ]),
+  attemptFile: z.string().optional(),
+});
+export type ItemSummary = z.infer<typeof ItemSummarySchema>;
+
+export const TaskSummarySchema = z.object({
+  attempt1: ItemSummarySchema,
+  attempt2: ItemSummarySchema.optional(),
+});
+export type TaskSummary = z.infer<typeof TaskSummarySchema>;
+
+export const BatchRecordSchema = z.object({
+  wave: z.union([z.literal(1), z.literal(2)]),
+  round: z.union([z.literal(0), z.literal(1)]),
+  chunk: z.number().int(),
+  parentBatchId: z.string().optional(),
+  handle: BatchHandleSchema,
+  submittedAt: z.string(),
+  lastPolledAt: z.string().optional(),
+  providerStatus: z.string(),
+  rawCounts: z.record(z.string(), z.number()),
+  state: z.enum(["processing", "ended"]),
+  itemIds: z.array(z.string()),
+  providerReportedCostUsd: z.number().optional(),
+  collected: z.boolean(),
+});
+export type BatchRecord = z.infer<typeof BatchRecordSchema>;
+
+/** The ten phases a run moves through (spec section 4.5). */
+const PHASES = [
+  "prepared",
+  "submitting",
+  "submit-unknown",
+  "attempt-1-submitted",
+  "attempt-1-collected",
+  "attempt-2-submitted",
+  "attempt-2-collected",
+  "finalizing",
+  "finalized",
+  "abandoned",
+] as const;
+export const BatchPhaseSchema = z.enum(PHASES);
+export type BatchPhase = z.infer<typeof BatchPhaseSchema>;
+
+export const BatchRunStateSchema = z.object({
+  schemaVersion: z.literal(STATE_SCHEMA_VERSION),
+  runId: z.string(),
+  createdAt: z.string(),
+  model: z.object({
+    slug: z.string(),
+    provider: BatchProviderNameSchema,
+    apiModelId: z.string(),
+  }),
+  frozen: z.object({
+    settingsHash: z.string(),
+    taskSetHash: z.string(),
+    harnessFingerprint: z.string(),
+    /** Every template referenced by any task in the run. */
+    templateDigests: z.record(z.string(), z.string()),
+    promptInputsDigest: z.string(),
+    gitSha: z.string(),
+    gitClean: z.boolean(),
+    /** Wave-1 containers (spec section 4.6). */
+    environment: ContainerEnvironmentSetSchema,
+    tasksGlob: z.string(),
+    taskIds: z.array(z.string()),
+  }),
+  phase: BatchPhaseSchema,
+  wave: z.union([z.literal(1), z.literal(2)]),
+  batches: z.array(BatchRecordSchema),
+  activeBatchIds: z.array(z.string()),
+  tasks: z.record(z.string(), TaskSummarySchema),
+  lastError: z.object({
+    at: z.string(),
+    step: z.string(),
+    message: z.string(),
+    retryable: z.boolean(),
+  }).optional(),
+  resultsFile: z.string().optional(),
+  ingestedRunId: z.string().optional(),
+  finalizedAt: z.string().optional(),
+});
+export type BatchRunState = z.infer<typeof BatchRunStateSchema>;
+
+/** Validates `raw` against {@link BatchRunStateSchema}; throws on drift. */
+export function parseState(raw: unknown): BatchRunState {
+  return BatchRunStateSchema.parse(raw);
+}
+
+/**
+ * Write `value` to `path` atomically: a uniquely-named temp file is written
+ * and fsynced, then renamed onto `path`. `Deno.rename` replaces an existing
+ * destination on Windows (verified), so no reader ever observes a partial
+ * write or a missing file.
+ */
+export async function writeJsonAtomic(
+  path: string,
+  value: unknown,
+): Promise<void> {
+  const tmp = `${path}.tmp-${crypto.randomUUID()}`;
+  const file = await Deno.open(tmp, { write: true, createNew: true });
+  try {
+    await file.write(
+      new TextEncoder().encode(JSON.stringify(value, null, 2) + "\n"),
+    );
+    await file.sync();
+  } finally {
+    file.close();
+  }
+  await Deno.rename(tmp, path);
+}
+
+/** Writes `state.json` for the run at `dir` atomically. */
+export async function writeState(
+  dir: string,
+  state: BatchRunState,
+): Promise<void> {
+  await writeJsonAtomic(join(dir, RUN_FILES.state), state);
+}
+
+/** Loads and validates `state.json` for the run at `dir`. */
+export async function loadState(dir: string): Promise<BatchRunState> {
+  const raw = await Deno.readTextFile(join(dir, RUN_FILES.state));
+  return parseState(JSON.parse(raw));
+}
+
+const TERMINAL_PHASES: ReadonlySet<BatchPhase> = new Set([
+  "finalized",
+  "abandoned",
+]);
+
+/** `true` once a run has reached a phase `advance` will never move past. */
+export function isTerminal(phase: BatchRunState["phase"]): boolean {
+  return TERMINAL_PHASES.has(phase);
+}
