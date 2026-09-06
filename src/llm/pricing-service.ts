@@ -48,6 +48,12 @@ export interface CatalogPricingRow {
   effective_until?: string | null;
   input_per_mtoken: number;
   output_per_mtoken: number;
+  cache_read_per_mtoken?: number | null;
+  cache_write_per_mtoken?: number | null;
+  batch_input_per_mtoken?: number | null;
+  batch_output_per_mtoken?: number | null;
+  batch_cache_read_per_mtoken?: number | null;
+  batch_cache_write_per_mtoken?: number | null;
   source?: string;
 }
 
@@ -233,10 +239,22 @@ export class PricingService {
 
     const map = new Map<string, ModelPricing>();
     for (const [slug, row] of latest) {
-      map.set(slug, {
+      const perK = (v: number | null | undefined): number | undefined =>
+        typeof v === "number" ? v / 1000 : undefined;
+      const entry: ModelPricing = {
         input: row.input_per_mtoken / 1000,
         output: row.output_per_mtoken / 1000,
-      });
+      };
+      const optional: Array<[keyof ModelPricing, number | undefined]> = [
+        ["cacheRead", perK(row.cache_read_per_mtoken)],
+        ["cacheWrite", perK(row.cache_write_per_mtoken)],
+        ["batchInput", perK(row.batch_input_per_mtoken)],
+        ["batchOutput", perK(row.batch_output_per_mtoken)],
+        ["batchCacheRead", perK(row.batch_cache_read_per_mtoken)],
+        ["batchCacheWrite", perK(row.batch_cache_write_per_mtoken)],
+      ];
+      for (const [k, v] of optional) if (v !== undefined) entry[k] = v;
+      map.set(slug, entry);
     }
     this.catalogPricing = map;
   }

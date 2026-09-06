@@ -11,6 +11,18 @@ export interface ModelPricing {
   input: number;
   /** Cost per 1K output tokens in USD */
   output: number;
+  /** USD per 1K tokens; present only when the catalog row carries the column. */
+  cacheRead?: number;
+  /** USD per 1K tokens; present only when the catalog row carries the column. */
+  cacheWrite?: number;
+  /** USD per 1K tokens; present only when the catalog row carries the column. */
+  batchInput?: number;
+  /** USD per 1K tokens; present only when the catalog row carries the column. */
+  batchOutput?: number;
+  /** USD per 1K tokens; present only when the catalog row carries the column. */
+  batchCacheRead?: number;
+  /** USD per 1K tokens; present only when the catalog row carries the column. */
+  batchCacheWrite?: number;
 }
 
 /**

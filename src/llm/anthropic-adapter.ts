@@ -15,6 +15,7 @@ import type {
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
 import { PricingService } from "./pricing-service.ts";
+import { pricingSlugForAttempt } from "../parallel/shared/price-usage.ts";
 
 const log = Logger.create("llm:anthropic");
 import {
@@ -194,25 +195,10 @@ export function extractFallbackInfo(
   return {};
 }
 
-/**
- * Fallback-served attempts bill at the SERVED model's rates (API contract).
- * Swap the model segment of the vendor-prefixed slug when a servedModel is
- * recorded. This function has no visibility into the pricing catalog and
- * never falls back to the requested slug -- a served model absent from
- * `site/catalog/models.yml` silently resolves through
- * `PricingService.getPriceSync`'s own fallthrough (API cache, then JSON
- * config, then the provider default, or the global $3/$15-per-MTok default
- * if the service was never initialized). No throw, no log; the resulting
- * price lands in `attempt.cost` as-is.
- */
-export function pricingSlugForAttempt(
-  requestedSlug: string,
-  servedModel?: string,
-): string {
-  if (servedModel === undefined) return requestedSlug;
-  const vendor = requestedSlug.split("/")[0];
-  return `${vendor}/${servedModel}`;
-}
+// Moved to src/parallel/shared/price-usage.ts so both the sync orchestrator
+// and the future batch runner share one definition; re-exported here so
+// existing importers of this module keep working unchanged.
+export { pricingSlugForAttempt };
 
 /** A capability node in the Anthropic /v1/models response: `{ supported: bool }`. */
 interface AnthropicCapability {

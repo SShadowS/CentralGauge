@@ -666,3 +666,25 @@ describe("PricingService", () => {
     });
   });
 });
+
+Deno.test("loadCatalogPricing maps cache and batch columns per 1K tokens", () => {
+  PricingService.clearCatalogPricing();
+  PricingService.loadCatalogPricing([{
+    model_slug: "x/y",
+    effective_from: "2026-01-01",
+    input_per_mtoken: 1000,
+    output_per_mtoken: 2000,
+    cache_read_per_mtoken: 100,
+    batch_input_per_mtoken: 500,
+    batch_output_per_mtoken: 1000,
+    source: "manual",
+  }]);
+  const p = PricingService.getPriceSync("x", "y");
+  assertEquals(p, {
+    input: 1,
+    output: 2,
+    cacheRead: 0.1,
+    batchInput: 0.5,
+    batchOutput: 1,
+  });
+});

@@ -12,6 +12,7 @@ export type {
   SynthesizeInfraAttemptInput,
 } from "./infra-attempt.ts";
 export type { RunCompileDeps } from "./run-compile.ts";
+export type { PriceMode, PriceUsageInput } from "./price-usage.ts";
 
 export { calculateAttemptScore, evaluateAttempt } from "./evaluate-attempt.ts";
 export { createFailedAttempt } from "./failed-attempt.ts";
@@ -24,3 +25,8 @@ export { buildCompileWorkItem } from "./compile-work-item.ts";
 export { AttemptLoopAbort, synthesizeInfraAttempt } from "./infra-attempt.ts";
 export { runCompileWorkItem } from "./run-compile.ts";
 export { buildAttemptContext } from "./attempt-context.ts";
+export {
+  BatchPricingUnavailableError,
+  priceUsage,
+  pricingSlugForAttempt,
+} from "./price-usage.ts";

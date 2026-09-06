@@ -28,6 +28,7 @@ import {
 import { providerErrorCode } from "../llm/provider-error-code.ts";
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
+import { priceUsage } from "./shared/price-usage.ts";
 import { resolveCandidate } from "../llm/candidate-resolution.ts";
 import {
   buildFixPrompt,
@@ -121,10 +122,10 @@ function mergeUsageAcrossAttempts(
       merged.reasoningTokens = (merged.reasoningTokens ?? 0) +
         a.totalUsage.reasoningTokens;
     }
-    if (a.totalUsage.estimatedCost !== undefined) {
-      merged.estimatedCost = (merged.estimatedCost ?? 0) +
-        a.totalUsage.estimatedCost;
-    }
+    // estimatedCost is NOT summed here: priceUsage (executeWork, after this
+    // merge) is the single place cost is computed for an attempt (spec
+    // section 6), pricing the merged totals once at the correct sync/batch
+    // rate rather than accumulating each retry's adapter-internal estimate.
   }
 
   return {
@@ -290,6 +291,20 @@ export class LLMWorkPool {
         retryOutcome.attempts,
       );
       const emptyRetryCount = retryOutcome.retryCount;
+
+      // Price the merged usage once (spec section 6): the single place an
+      // attempt's cost is computed, at the sync (interactive-API) rate.
+      // Overwrites whatever adapter-internal estimate was on the merged
+      // response's usage.
+      continuationResult.response.usage = priceUsage({
+        usage: continuationResult.response.usage,
+        provider: item.llmProvider,
+        requestedModel: item.llmModel,
+        ...(continuationResult.response.servedModel !== undefined
+          ? { servedModel: continuationResult.response.servedModel }
+          : {}),
+        mode: "sync",
+      });
 
       // Extract code from response, clean it, and gate readiness — the same
       // pipeline the authoring dashboard reviews (src/llm/candidate-resolution.ts).
