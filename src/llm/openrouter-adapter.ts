@@ -95,6 +95,13 @@ import {
   forwardAbort,
   handleStreamError,
 } from "./stream-handler.ts";
+import { priceUsage } from "../parallel/shared/price-usage.ts";
+import {
+  assembleResponse,
+  mapContent,
+  mapFinishReason,
+  mapUsage,
+} from "./mappers/openrouter.ts";
 
 /**
  * OpenRouter adapter using the OpenAI SDK with custom base URL.
@@ -113,6 +120,11 @@ export class OpenRouterAdapter extends BaseLLMAdapter
   };
 
   private client: OpenAI | null = null;
+
+  constructor(config?: LLMConfig) {
+    super();
+    if (config) this.configure(config);
+  }
 
   configure(config: LLMConfig): void {
     this.config = { ...this.config, ...config };
@@ -240,40 +252,29 @@ export class OpenRouterAdapter extends BaseLLMAdapter
   ): Promise<ProviderCallResult> {
     const startTime = Date.now();
     const client = this.ensureClient();
-    const messages = this.buildMessages(request);
+    const params = this.buildRequestParams(request);
 
-    const completion = await client.chat.completions.create({
-      model: this.config.model,
-      messages,
-      temperature: request.temperature ?? this.config.temperature ?? 0.1,
-      max_tokens: this.resolveMaxTokens(request, 4000),
-      ...(request.stop ? { stop: request.stop } : {}),
-    });
+    const completion = await client.chat.completions.create(
+      params as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming,
+    );
 
     const duration = Date.now() - startTime;
     const choice = completion.choices[0];
-
-    const usage: TokenUsage = {
-      promptTokens: completion.usage?.prompt_tokens ?? 0,
-      completionTokens: completion.usage?.completion_tokens ?? 0,
-      totalTokens: completion.usage?.total_tokens ?? 0,
-      estimatedCost: this.estimateCost(
-        completion.usage?.prompt_tokens ?? 0,
-        completion.usage?.completion_tokens ?? 0,
-      ),
-    };
+    const usage = priceUsage({
+      usage: mapUsage(completion.usage ?? {}),
+      provider: this.name,
+      requestedModel: this.config.model,
+      mode: "sync",
+    });
 
     return {
-      response: {
-        content: choice?.message?.content ?? "",
+      response: assembleResponse({
+        content: mapContent(choice?.message?.content),
         model: this.config.model,
         usage,
         duration,
-        finishReason: this.mapFinishReason(choice?.finish_reason),
-        ...(choice?.finish_reason
-          ? { providerFinishReason: choice.finish_reason }
-          : {}),
-      },
+        finish: mapFinishReason(choice?.finish_reason),
+      }),
       rawResponse: includeRaw ? completion : undefined,
     };
   }
@@ -284,20 +285,14 @@ export class OpenRouterAdapter extends BaseLLMAdapter
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
     const state = createStreamState();
     const client = this.ensureClient();
-    const messages = this.buildMessages(request);
+    const params = this.buildRequestParams(request, true);
 
     let finalUsage: TokenUsage | undefined;
 
     try {
-      const stream = await client.chat.completions.create({
-        model: this.config.model,
-        messages,
-        temperature: request.temperature ?? this.config.temperature ?? 0.1,
-        max_tokens: this.resolveMaxTokens(request, 4000),
-        ...(request.stop ? { stop: request.stop } : {}),
-        stream: true,
-        stream_options: { include_usage: true },
-      });
+      const stream = await client.chat.completions.create(
+        params as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+      );
 
       // Handle abort signal (fires synchronously for a pre-aborted signal).
       forwardAbort(options?.abortSignal, () => stream.controller.abort());
@@ -319,15 +314,12 @@ export class OpenRouterAdapter extends BaseLLMAdapter
 
         // Capture usage from final chunk (when stream_options.include_usage is true)
         if (chunk.usage) {
-          finalUsage = {
-            promptTokens: chunk.usage.prompt_tokens,
-            completionTokens: chunk.usage.completion_tokens,
-            totalTokens: chunk.usage.total_tokens,
-            estimatedCost: this.estimateCost(
-              chunk.usage.prompt_tokens,
-              chunk.usage.completion_tokens,
-            ),
-          };
+          finalUsage = priceUsage({
+            usage: mapUsage(chunk.usage),
+            provider: this.name,
+            requestedModel: this.config.model,
+            mode: "sync",
+          });
         }
       }
 
@@ -335,18 +327,20 @@ export class OpenRouterAdapter extends BaseLLMAdapter
       const usage: TokenUsage = finalUsage ??
         createFallbackUsage(request.prompt, state.accumulatedText);
 
+      // "stop" only when the API never sent a finish_reason
+      const finish = streamFinishReason == null
+        ? { finishReason: "stop" as const }
+        : mapFinishReason(streamFinishReason);
+
       const { finalChunk, result } = finalizeStream({
         state,
         model: this.config.model,
         usage,
-        // "stop" only when the API never sent a finish_reason
-        finishReason: streamFinishReason == null
-          ? "stop"
-          : this.mapFinishReason(streamFinishReason),
+        finishReason: finish.finishReason,
         options,
       });
-      if (streamFinishReason) {
-        result.response.providerFinishReason = streamFinishReason;
+      if (finish.providerFinishReason !== undefined) {
+        result.response.providerFinishReason = finish.providerFinishReason;
       }
 
       yield finalChunk;
@@ -404,18 +398,33 @@ export class OpenRouterAdapter extends BaseLLMAdapter
     return messages;
   }
 
-  private mapFinishReason(
-    reason: string | undefined | null,
-  ): "stop" | "length" | "content_filter" | "error" {
-    switch (reason) {
-      case "stop":
-        return "stop";
-      case "length":
-        return "length";
-      case "content_filter":
-        return "content_filter";
-      default:
-        return "error";
+  /**
+   * Builds request parameters for OpenRouter's OpenAI-compatible Chat
+   * Completions endpoint. Public so the batch runner can build request
+   * bodies directly. Mirrors `OpenAIAdapter.buildRequestParams`'s
+   * `(request, stream?)` shape.
+   */
+  buildRequestParams(
+    request: LLMRequest,
+    stream = false,
+  ): OpenAI.Chat.ChatCompletionCreateParams {
+    const messages = this.buildMessages(request);
+    const params = {
+      model: this.config.model,
+      messages,
+      temperature: request.temperature ?? this.config.temperature ?? 0.1,
+      max_tokens: this.resolveMaxTokens(request, 4000),
+      ...(request.stop ? { stop: request.stop } : {}),
+    };
+
+    if (stream) {
+      return {
+        ...params,
+        stream: true,
+        stream_options: { include_usage: true },
+      } as OpenAI.Chat.ChatCompletionCreateParamsStreaming;
     }
+
+    return params as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming;
   }
 }

@@ -14,6 +14,13 @@ import type {
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
 import { PricingService } from "./pricing-service.ts";
+import { priceUsage } from "../parallel/shared/price-usage.ts";
+import {
+  assembleResponse,
+  mapContent,
+  mapFinishReason,
+  mapUsage,
+} from "./mappers/openai.ts";
 
 const log = Logger.create("llm:openai");
 import {
@@ -70,6 +77,11 @@ export class OpenAIAdapter extends BaseLLMAdapter
   };
 
   private client: OpenAI | null = null;
+
+  constructor(config?: LLMConfig) {
+    super();
+    if (config) this.configure(config);
+  }
 
   configure(config: LLMConfig): void {
     this.config = { ...this.config, ...config };
@@ -221,19 +233,21 @@ export class OpenAIAdapter extends BaseLLMAdapter
 
     const duration = Date.now() - startTime;
     const choice = completion.choices[0];
-    const usage = this.buildUsageFromCompletion(completion.usage);
+    const usage = priceUsage({
+      usage: mapUsage(completion.usage ?? {}),
+      provider: this.name,
+      requestedModel: this.config.model,
+      mode: "sync",
+    });
 
     return {
-      response: {
-        content: choice?.message?.content ?? "",
+      response: assembleResponse({
+        content: mapContent(choice?.message?.content),
         model: this.config.model,
         usage,
         duration,
-        finishReason: this.mapFinishReason(choice?.finish_reason),
-        ...(choice?.finish_reason
-          ? { providerFinishReason: choice.finish_reason }
-          : {}),
-      },
+        finish: mapFinishReason(choice?.finish_reason),
+      }),
       rawResponse: includeRaw ? completion : undefined,
     };
   }
@@ -327,6 +341,11 @@ export class OpenAIAdapter extends BaseLLMAdapter
       const usage: TokenUsage = finalUsage ??
         createFallbackUsage(request.prompt, state.accumulatedText);
 
+      // "stop" only when the API never sent a finish_reason
+      const finish = streamFinishReason == null
+        ? { finishReason: "stop" as const }
+        : mapFinishReason(streamFinishReason);
+
       // No `rawResponse` here, deliberately. Anthropic's stream exposes
       // `finalMessage()` - a real, complete `Message` - so its streaming path
       // can log the same payload the non-streaming one did. The OpenAI-shaped
@@ -338,14 +357,11 @@ export class OpenAIAdapter extends BaseLLMAdapter
         state,
         model: this.config.model,
         usage,
-        // "stop" only when the API never sent a finish_reason
-        finishReason: streamFinishReason == null
-          ? "stop"
-          : this.mapFinishReason(streamFinishReason),
+        finishReason: finish.finishReason,
         options,
       });
-      if (streamFinishReason) {
-        result.response.providerFinishReason = streamFinishReason;
+      if (finish.providerFinishReason !== undefined) {
+        result.response.providerFinishReason = finish.providerFinishReason;
       }
 
       yield finalChunk;
@@ -464,21 +480,6 @@ export class OpenAIAdapter extends BaseLLMAdapter
   // Private OpenAI-specific helpers
   // ============================================================================
 
-  private mapFinishReason(
-    reason: string | undefined | null,
-  ): "stop" | "length" | "content_filter" | "error" {
-    switch (reason) {
-      case "stop":
-        return "stop";
-      case "length":
-        return "length";
-      case "content_filter":
-        return "content_filter";
-      default:
-        return "error";
-    }
-  }
-
   /**
    * Ensures the OpenAI client is initialized.
    * @throws Error if API key is not configured.
@@ -528,8 +529,9 @@ export class OpenAIAdapter extends BaseLLMAdapter
   /**
    * Builds request parameters for OpenAI API calls.
    * Handles model-specific parameters (reasoning models, GPT-5, etc.)
+   * Public so the batch runner can build request bodies directly.
    */
-  private buildRequestParams(
+  buildRequestParams(
     request: LLMRequest,
     stream = false,
   ): OpenAI.Chat.ChatCompletionCreateParams {
@@ -566,27 +568,6 @@ export class OpenAIAdapter extends BaseLLMAdapter
     }
 
     return params as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming;
-  }
-
-  /**
-   * Builds token usage from completion response.
-   */
-  private buildUsageFromCompletion(
-    usage: OpenAI.Completions.CompletionUsage | undefined,
-  ): TokenUsage {
-    const reasoningTokens =
-      (usage as { completion_tokens_details?: { reasoning_tokens?: number } })
-        ?.completion_tokens_details?.reasoning_tokens;
-    return {
-      promptTokens: usage?.prompt_tokens ?? 0,
-      completionTokens: usage?.completion_tokens ?? 0,
-      totalTokens: usage?.total_tokens ?? 0,
-      ...(reasoningTokens ? { reasoningTokens } : {}),
-      estimatedCost: this.estimateCost(
-        usage?.prompt_tokens ?? 0,
-        usage?.completion_tokens ?? 0,
-      ),
-    };
   }
 
   /**
@@ -637,7 +618,12 @@ export class OpenAIAdapter extends BaseLLMAdapter
 
       // Capture usage from final chunk (when stream_options.include_usage is true)
       if (chunk.usage) {
-        finalUsage = this.buildUsageFromCompletion(chunk.usage);
+        finalUsage = priceUsage({
+          usage: mapUsage(chunk.usage),
+          provider: this.name,
+          requestedModel: this.config.model,
+          mode: "sync",
+        });
       }
     }
 
