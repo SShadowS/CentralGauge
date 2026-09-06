@@ -24,7 +24,7 @@ export function envelopeBytes(
  * Greedy, in item order: a new chunk starts whenever adding the next item
  * would push the running chunk past `limits.maxItems` or make
  * {@link envelopeBytes} exceed `limits.maxBytes`. A single item that alone
- * exceeds `maxBytes` still gets its own one-item chunk — the submit path
+ * exceeds `maxBytes` still gets its own one-item chunk: the submit path
  * reports that chunk as operator-blocked rather than silently dropping the
  * item. Chunk numbers are assigned in order starting at 0.
  */
@@ -66,7 +66,7 @@ export function chunkItems(
 /**
  * Splits `chunk` at `Math.ceil(items.length / 2)`: the left half keeps
  * `chunk.chunk`'s number, the right half is renumbered `nextChunkNumber`.
- * Returns `null` when the chunk holds a single item — there is nothing left
+ * Returns `null` when the chunk holds a single item: there is nothing left
  * to split, so the caller reports it as operator-blocked instead.
  */
 export function halveChunk(

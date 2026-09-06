@@ -5,7 +5,6 @@
  *
  * @module src/batch/render
  */
-import { renderLLMRequest } from "../parallel/shared/render-request.ts";
 import type { FrozenPromptInputs } from "../parallel/shared/prompt-inputs.ts";
 import type {
   ExecutionAttempt,
@@ -13,6 +12,7 @@ import type {
   TaskManifest,
 } from "../tasks/interfaces.ts";
 import type { LLMRequest } from "../llm/types.ts";
+import { renderLLMRequest } from "../parallel/shared/render-request.ts";
 import type { BatchRunState, TaskSummary } from "./state.ts";
 import { bodyDigest, itemIdFor } from "./items.ts";
 
@@ -42,7 +42,7 @@ export interface WaveRenderDeps {
  * Renders one item per task id for `wave`. Wave 1 renders the generation
  * prompt (`renderLLMRequest({ context, attemptNumber: 1, inputs })`); wave 2
  * renders the fix prompt from the task's attempt-1 record and throws if
- * that prior is missing — a caller must already have filtered to
+ * that prior is missing: a caller must already have filtered to
  * {@link attempt2Eligible} task ids before calling this for wave 2.
  */
 export async function renderWave(

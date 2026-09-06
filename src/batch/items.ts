@@ -15,7 +15,7 @@ import { canonicalJSON } from "../../shared/canonical.ts";
 
 /**
  * `"b"` + the first 31 hex characters of
- * `sha256(`${runId}|${taskId}|${attempt}|${round}`)` — 32 characters total.
+ * `sha256(`${runId}|${taskId}|${attempt}|${round}`)`, 32 characters total.
  * The leading `"b"` guarantees an alphanumeric first character (some
  * providers reject a custom/item id that starts with a digit).
  */
