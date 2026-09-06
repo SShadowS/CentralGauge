@@ -137,6 +137,8 @@ scripts/*
 !scripts/composite-assemble.py
 !scripts/composite-verdict.py
 !scripts/stamp-provenance.ts
+!scripts/spikes/
+!scripts/spikes/**
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
