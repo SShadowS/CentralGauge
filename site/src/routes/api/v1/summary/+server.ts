@@ -62,17 +62,15 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
       if (shared) {
         payload = JSON.parse(shared) as SummaryStats;
-        await cache
-          .put(
-            cacheKey,
-            new Response(shared, {
-              headers: {
-                "content-type": "application/json; charset=utf-8",
-                "cache-control": `public, s-maxage=${ttl}`,
-              },
-            }),
-          )
-          .catch((err) => console.error("[summary] L1 backfill failed:", err));
+        await cache.put(
+          cacheKey,
+          new Response(shared, {
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "cache-control": `public, s-maxage=${ttl}`,
+            },
+          }),
+        ).catch((err) => console.error("[summary] L1 backfill failed:", err));
       }
     }
 
@@ -125,7 +123,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         runs: +(counts?.runs ?? 0),
         models: +(counts?.models ?? 0),
         tasks: +(counts?.tasks ?? 0),
-        total_cost_usd: Math.round(+(cost?.total_cost_usd ?? 0) * 1e6) / 1e6,
+        total_cost_usd: Math.round((+(cost?.total_cost_usd ?? 0)) * 1e6) / 1e6,
         total_tokens: +(cost?.total_tokens ?? 0),
         last_run_at: counts?.last_run_at ?? null,
         // Build-time markdown parse of docs/site/changelog.md (Phase H).
@@ -141,12 +139,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           "cache-control": `public, s-maxage=${ttl}`,
         },
       });
-      await sharedCacheSet(
-        env.DB,
-        cacheKey.url,
-        epoch,
-        JSON.stringify(payload),
-      );
+      await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(payload));
       await cache.put(cacheKey, storeRes);
     }
 

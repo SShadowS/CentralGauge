@@ -96,7 +96,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // truth, so a repost RECONCILES the row (corrects values) instead of being
     // dropped. Reposting identical values is a harmless no-op write.
     // KEEP IN SYNC WITH migrations/0003_cost_source.sql (source, fetched_at)
-    // and 0019_batch_mode.sql (batch_* — bound `?? null`, NEVER `?? 0`: NULL
+    // and 0019_batch_mode.sql (batch_* bound `?? null`, NEVER `?? 0`: NULL
     // must stay distinguishable from "priced at zero").
     const stmt = db
       .prepare(

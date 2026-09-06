@@ -31,18 +31,18 @@
  * `cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version`
  * so each historical run is costed at its own pricing snapshot. If a caller's
  * query joins `cost_snapshots` without also joining `runs`, add
- * `JOIN runs ON runs.id = r.run_id` — the pricing join already implies it.
+ * `JOIN runs ON runs.id = r.run_id`, since the pricing join already implies it.
  *
  * Batch mode (spec D5, docs/superpowers/specs/2026-09-06-batch-mode-design.md):
  * when the joined run's `invocation_mode = 'batch'`, pricing switches to the
  * `batch_*` columns instead of the sync ones. Those columns are independently
- * nullable and NOT COALESCEd — a batch run priced against a snapshot with no
+ * nullable and NOT COALESCEd: a batch run priced against a snapshot with no
  * known batch rate must cost NULL, not a silently-wrong sync-rate guess.
  *
  * The sync-side cache-rate columns are nullable (`REAL DEFAULT 0`), so they
  * stay wrapped in COALESCE: a legacy snapshot row with a NULL cache rate
- * would otherwise turn the whole `x * NULL` term — and thus the entire row's
- * cost — into NULL, silently zeroing a model out of cost sorts. Sync
+ * would otherwise turn the whole `x * NULL` term, and thus the entire row's
+ * cost, into NULL, silently zeroing a model out of cost sorts. Sync
  * input/output rates are NOT NULL per schema.
  *
  * @param r    SQL alias for the `results` row (default `r`).

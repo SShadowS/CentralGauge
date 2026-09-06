@@ -1,5 +1,5 @@
 /**
- * Pure unit tests for `rowCostUsd` — no D1 needed, so this runs under
+ * Pure unit tests for `rowCostUsd`. No D1 needed, so this runs under
  * `vitest.unit.config.ts` (jsdom pool) rather than the workers pool.
  */
 import { describe, expect, it } from "vitest";

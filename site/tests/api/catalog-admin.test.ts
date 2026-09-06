@@ -30,9 +30,7 @@ describe("admin catalog endpoints", () => {
     // ensure model family exists for model upsert test
     await env.DB.prepare(
       `INSERT OR IGNORE INTO model_families(slug, vendor, display_name) VALUES (?, ?, ?)`,
-    )
-      .bind("claude", "Anthropic", "Claude")
-      .run();
+    ).bind("claude", "Anthropic", "Claude").run();
   });
 
   it("upserts a family", async () => {
@@ -51,9 +49,7 @@ describe("admin catalog endpoints", () => {
 
     const row = await env.DB.prepare(
       `SELECT vendor, display_name FROM model_families WHERE slug = ?`,
-    )
-      .bind("test-fam")
-      .first<{ vendor: string; display_name: string }>();
+    ).bind("test-fam").first<{ vendor: string; display_name: string }>();
     expect(row?.vendor).toBe("TestVendor");
     expect(row?.display_name).toBe("Test Family");
   });
@@ -73,9 +69,7 @@ describe("admin catalog endpoints", () => {
     expect(resp.status).toBe(200);
     const row = await env.DB.prepare(
       `SELECT open_weight FROM model_families WHERE slug = ?`,
-    )
-      .bind("open-fam")
-      .first<{ open_weight: number | null }>();
+    ).bind("open-fam").first<{ open_weight: number | null }>();
     expect(row?.open_weight).toBe(1);
   });
 
@@ -94,9 +88,7 @@ describe("admin catalog endpoints", () => {
     expect(resp.status).toBe(200);
     const row = await env.DB.prepare(
       `SELECT open_weight FROM model_families WHERE slug = ?`,
-    )
-      .bind("closed-fam")
-      .first<{ open_weight: number | null }>();
+    ).bind("closed-fam").first<{ open_weight: number | null }>();
     expect(row?.open_weight).toBe(0);
   });
 
@@ -114,9 +106,7 @@ describe("admin catalog endpoints", () => {
     expect(resp.status).toBe(200);
     const row = await env.DB.prepare(
       `SELECT open_weight FROM model_families WHERE slug = ?`,
-    )
-      .bind("unknown-fam")
-      .first<{ open_weight: number | null }>();
+    ).bind("unknown-fam").first<{ open_weight: number | null }>();
     expect(row?.open_weight).toBeNull();
   });
 
@@ -150,9 +140,7 @@ describe("admin catalog endpoints", () => {
     // 3) open_weight still 1 (not clobbered to NULL)
     const row = await env.DB.prepare(
       `SELECT open_weight FROM model_families WHERE slug = ?`,
-    )
-      .bind("preserve-fam")
-      .first<{ open_weight: number | null }>();
+    ).bind("preserve-fam").first<{ open_weight: number | null }>();
     expect(row?.open_weight).toBe(1);
   });
 
@@ -182,9 +170,7 @@ describe("admin catalog endpoints", () => {
 
     const row = await env.DB.prepare(
       `SELECT vendor, display_name FROM model_families WHERE slug = ?`,
-    )
-      .bind("test-fam-2")
-      .first<{ vendor: string; display_name: string }>();
+    ).bind("test-fam-2").first<{ vendor: string; display_name: string }>();
     expect(row?.vendor).toBe("NewVendor");
     expect(row?.display_name).toBe("New Name");
   });
@@ -199,7 +185,7 @@ describe("admin catalog endpoints", () => {
       body: JSON.stringify(signedRequest),
     });
     expect(resp.status).toBe(400);
-    const json = (await resp.json()) as { code: string };
+    const json = await resp.json() as { code: string };
     expect(json.code).toBe("missing_field");
   });
 
@@ -222,7 +208,7 @@ describe("admin catalog endpoints", () => {
       body: JSON.stringify(signedRequest),
     });
     expect(resp.status).toBe(403);
-    const json = (await resp.json()) as { code: string };
+    const json = await resp.json() as { code: string };
     expect(json.code).toBe("insufficient_scope");
   });
 
@@ -244,9 +230,7 @@ describe("admin catalog endpoints", () => {
 
     const row = await env.DB.prepare(
       `SELECT display_name FROM models WHERE slug = ?`,
-    )
-      .bind("anthropic/claude-opus-test")
-      .first<{ display_name: string }>();
+    ).bind("anthropic/claude-opus-test").first<{ display_name: string }>();
     expect(row?.display_name).toBe("Claude Opus (Test)");
   });
 
@@ -272,9 +256,9 @@ describe("admin catalog endpoints", () => {
     const row = await env.DB.prepare(
       `SELECT max_input_tokens AS inp, max_output_tokens AS outp, capabilities AS caps
          FROM models WHERE slug = ?`,
-    )
-      .bind("anthropic/claude-meta-test")
-      .first<{ inp: number; outp: number; caps: string }>();
+    ).bind("anthropic/claude-meta-test").first<
+      { inp: number; outp: number; caps: string }
+    >();
     expect(row?.inp).toBe(1_000_000);
     expect(row?.outp).toBe(128_000);
     expect(JSON.parse(row?.caps ?? "[]")).toEqual(["thinking", "image", "pdf"]);
@@ -296,9 +280,7 @@ describe("admin catalog endpoints", () => {
 
     const row = await env.DB.prepare(
       `SELECT task_count FROM task_sets WHERE hash = ?`,
-    )
-      .bind("h".repeat(64))
-      .first<{ task_count: number }>();
+    ).bind("h".repeat(64)).first<{ task_count: number }>();
     expect(row?.task_count).toBe(42);
   });
 
@@ -338,9 +320,9 @@ describe("admin catalog endpoints", () => {
 
     const row = await env.DB.prepare(
       `SELECT input_per_mtoken, source FROM cost_snapshots WHERE pricing_version = ?`,
-    )
-      .bind("test-2026-04-20")
-      .first<{ input_per_mtoken: number; source: string }>();
+    ).bind("test-2026-04-20").first<
+      { input_per_mtoken: number; source: string }
+    >();
     expect(row?.input_per_mtoken).toBe(15);
     expect(row?.source).toBe("anthropic-api");
   });
@@ -385,9 +367,9 @@ describe("admin catalog endpoints", () => {
     const rows = await env.DB.prepare(
       `SELECT input_per_mtoken AS inp, output_per_mtoken AS outp, source
          FROM cost_snapshots WHERE pricing_version = ?`,
-    )
-      .bind("test-reconcile")
-      .all<{ inp: number; outp: number; source: string }>();
+    ).bind("test-reconcile").all<
+      { inp: number; outp: number; source: string }
+    >();
     // Exactly one row (no duplicate), carrying the corrected values.
     expect(rows.results.length).toBe(1);
     expect(rows.results[0]?.inp).toBe(3);
@@ -436,9 +418,9 @@ describe("admin catalog endpoints", () => {
       `SELECT batch_input_per_mtoken AS bi, batch_output_per_mtoken AS bo,
               batch_cache_read_per_mtoken AS bcr, batch_cache_write_per_mtoken AS bcw
          FROM cost_snapshots WHERE pricing_version = ?`,
-    )
-      .bind("test-batch")
-      .first<{ bi: number; bo: number; bcr: number; bcw: number }>();
+    ).bind("test-batch").first<
+      { bi: number; bo: number; bcr: number; bcw: number }
+    >();
     expect(row?.bi).toBe(7.5);
     expect(row?.bo).toBe(37.5);
     expect(row?.bcr).toBe(0.75);
@@ -480,14 +462,9 @@ describe("admin catalog endpoints", () => {
       `SELECT batch_input_per_mtoken AS bi, batch_output_per_mtoken AS bo,
               batch_cache_read_per_mtoken AS bcr, batch_cache_write_per_mtoken AS bcw
          FROM cost_snapshots WHERE pricing_version = ?`,
-    )
-      .bind("test-batch-omit")
-      .first<{
-        bi: number | null;
-        bo: number | null;
-        bcr: number | null;
-        bcw: number | null;
-      }>();
+    ).bind("test-batch-omit").first<
+      { bi: number | null; bo: number | null; bcr: number | null; bcw: number | null }
+    >();
     expect(row?.bi).toBeNull();
     expect(row?.bo).toBeNull();
     expect(row?.bcr).toBeNull();
@@ -525,7 +502,7 @@ describe("admin catalog endpoints", () => {
       body: JSON.stringify(signedRequest),
     });
     expect(resp.status).toBe(400);
-    const json = (await resp.json()) as { code: string };
+    const json = await resp.json() as { code: string };
     expect(json.code).toBe("invalid_pricing_field");
   });
 
@@ -549,7 +526,7 @@ describe("admin catalog endpoints", () => {
       body: JSON.stringify(signedRequest),
     });
     expect(resp.status).toBe(403);
-    const json = (await resp.json()) as { code: string };
+    const json = await resp.json() as { code: string };
     expect(json.code).toBe("insufficient_scope");
   });
 
@@ -566,7 +543,7 @@ describe("admin catalog endpoints", () => {
       body: JSON.stringify(signedRequest),
     });
     expect(resp.status).toBe(400);
-    const json = (await resp.json()) as { code: string };
+    const json = await resp.json() as { code: string };
     expect(json.code).toBe("unknown_family");
   });
 
@@ -585,7 +562,7 @@ describe("admin catalog endpoints", () => {
       body: JSON.stringify(signedRequest),
     });
     expect(resp.status).toBe(400);
-    const json = (await resp.json()) as { code: string };
+    const json = await resp.json() as { code: string };
     expect(json.code).toBe("unknown_model");
   });
 });
@@ -651,15 +628,13 @@ describe("admin catalog — family_mismatch", () => {
       body: JSON.stringify(signedRequest),
     });
     expect(resp.status).toBe(409);
-    const json = (await resp.json()) as { code: string };
+    const json = await resp.json() as { code: string };
     expect(json.code).toBe("family_mismatch");
 
     // Confirm DB still shows the original family
     const row = await env.DB.prepare(
       `SELECT f.slug AS family_slug FROM models m JOIN model_families f ON f.id = m.family_id WHERE m.slug = ?`,
-    )
-      .bind("anthropic/claude-x")
-      .first<{ family_slug: string }>();
+    ).bind("anthropic/claude-x").first<{ family_slug: string }>();
     expect(row?.family_slug).toBe("claude");
   });
 });
