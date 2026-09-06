@@ -5,7 +5,7 @@ import type { MatrixResponse } from "$shared/api-types";
 
 function makeMatrix(overrides: Partial<MatrixResponse> = {}): MatrixResponse {
   return {
-    filters: { set: "current", category: null, difficulty: null },
+    filters: { set: "current", category: null, difficulty: null, mode: "sync" },
     tasks: [
       {
         id: "easy/t1",
@@ -118,7 +118,12 @@ describe("TaskResultsMatrix", () => {
 
   it("renders empty table without crashing when matrix has no tasks", () => {
     const empty: MatrixResponse = {
-      filters: { set: "current", category: null, difficulty: null },
+      filters: {
+        set: "current",
+        category: null,
+        difficulty: null,
+        mode: "sync",
+      },
       tasks: [],
       models: [],
       cells: [],

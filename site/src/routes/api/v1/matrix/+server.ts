@@ -3,6 +3,11 @@ import { cachedJson } from "$lib/server/cache";
 import { computeMatrix } from "$lib/server/matrix";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import type { MatrixResponse } from "$lib/shared/api-types";
+import {
+  parseModeParam,
+  resolveInvocationMode,
+  type SetScope,
+} from "$lib/server/invocation-mode";
 
 import {
   buildCacheKey,
@@ -36,6 +41,8 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       );
     }
 
+    const requestedMode = parseModeParam(url);
+
     // Named cache (cg-matrix). Same pattern as /api/v1/leaderboard:
     // - per-colo, no daily put quota (Cache API tier)
     // - named cache so the adapter doesn't replay raw entries from caches.default
@@ -49,11 +56,27 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // Ordering contract (see data-epoch.ts): epoch read BEFORE any
     // query feeding the payload, and never re-read in the request.
     const epoch = await readDataEpoch(env.DB);
+
+    // D4: resolve the invocation mode BEFORE building the cache key (same
+    // ordering contract as the leaderboard route). `set=all` keeps its
+    // existing task-set meaning here (every task_set, no filter), but the
+    // mode still resolves against the current task_set's runs — there is no
+    // well-defined "mode across every task_set" concept.
+    const scope: SetScope =
+      set === "current" || set === "all"
+        ? { kind: "current" }
+        : { kind: "hash", hash: set };
+    const mode = await resolveInvocationMode(env.DB, scope, requestedMode);
+
     const ttl = isFallbackEpoch(epoch)
       ? DEGRADED_TTL_SECONDS
       : EPOCH_KEYED_TTL_SECONDS;
     // Key off parsed params only — never the raw URL. See buildCacheKey.
-    const cacheKey = buildCacheKey("matrix", { set, category, difficulty }, epoch);
+    const cacheKey = buildCacheKey(
+      "matrix",
+      { set, category, difficulty, mode },
+      epoch,
+    );
 
     let payload: MatrixResponse | null = null;
     const cached = await cache.match(cacheKey);
@@ -69,15 +92,17 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
       if (shared) {
         payload = JSON.parse(shared) as MatrixResponse;
-        await cache.put(
-          cacheKey,
-          new Response(shared, {
-            headers: {
-              "content-type": "application/json; charset=utf-8",
-              "cache-control": `public, s-maxage=${ttl}`,
-            },
-          }),
-        ).catch((err) => console.error("[matrix] L1 backfill failed:", err));
+        await cache
+          .put(
+            cacheKey,
+            new Response(shared, {
+              headers: {
+                "content-type": "application/json; charset=utf-8",
+                "cache-control": `public, s-maxage=${ttl}`,
+              },
+            }),
+          )
+          .catch((err) => console.error("[matrix] L1 backfill failed:", err));
       }
     }
 
@@ -86,6 +111,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         set,
         category,
         difficulty: difficulty as "easy" | "medium" | "hard" | null,
+        mode,
       });
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
@@ -93,7 +119,12 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           "cache-control": `public, s-maxage=${ttl}`,
         },
       });
-      await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(payload));
+      await sharedCacheSet(
+        env.DB,
+        cacheKey.url,
+        epoch,
+        JSON.stringify(payload),
+      );
       await cache.put(cacheKey, storeRes);
     }
 

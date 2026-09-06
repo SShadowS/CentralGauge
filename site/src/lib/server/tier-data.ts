@@ -5,16 +5,23 @@
  * ordering of a task set, and a cached helper that feeds the pure tiering
  * engine in tiers.ts.
  */
-import type { TierInput, TierResult } from './tiers';
-import { computeTiers } from './tiers';
-import { CACHE_VERSION } from './cache-version';
+import type { TierInput, TierResult } from "./tiers";
+import { computeTiers } from "./tiers";
+import { CACHE_VERSION } from "./cache-version";
+import type { InvocationMode } from "./invocation-mode";
 
 export interface AucMatrixOptions {
   taskSetHash: string;
-  metric: 'auc_2';
+  metric: "auc_2";
   /** Optional category slug. When set, the matrix spans only this category's
    * tasks (task universe + per-task scores both restricted). */
   category?: string | null;
+  /**
+   * Invocation mode the matrix is scoped to (D4). Every ranking surface
+   * selects exactly one mode; the tier matrix is no exception, since sync
+   * and batch runs are never ranked together.
+   */
+  mode: InvocationMode;
 }
 
 /**
@@ -51,7 +58,9 @@ export async function buildAucMatrix(
         .bind(opts.taskSetHash, cat)
         .all<{ task_id: string }>()
     : await db
-        .prepare(`SELECT task_id FROM tasks WHERE task_set_hash = ? ORDER BY task_id ASC`)
+        .prepare(
+          `SELECT task_id FROM tasks WHERE task_set_hash = ? ORDER BY task_id ASC`,
+        )
         .bind(opts.taskSetHash)
         .all<{ task_id: string }>();
   const taskIds = (taskRows.results ?? []).map((r) => r.task_id);
@@ -80,9 +89,10 @@ export async function buildAucMatrix(
              JOIN tasks t  ON t.task_id = r.task_id AND t.task_set_hash = ru.task_set_hash
              JOIN task_categories tc ON tc.id = t.category_id
             WHERE ru.task_set_hash = ? AND tc.slug = ?
+              AND ru.invocation_mode = ?
             GROUP BY ru.model_id, r.task_id`,
         )
-        .bind(opts.taskSetHash, cat)
+        .bind(opts.taskSetHash, cat, opts.mode)
         .all<{ slug: string; task_id: string; p1: number; p2: number }>()
     : await db
         .prepare(
@@ -94,9 +104,10 @@ export async function buildAucMatrix(
              JOIN runs ru  ON ru.id = r.run_id
              JOIN models m ON m.id = ru.model_id
             WHERE ru.task_set_hash = ?
+              AND ru.invocation_mode = ?
             GROUP BY ru.model_id, r.task_id`,
         )
-        .bind(opts.taskSetHash)
+        .bind(opts.taskSetHash, opts.mode)
         .all<{ slug: string; task_id: string; p1: number; p2: number }>();
 
   const bySlug = new Map<string, number[]>();
@@ -109,7 +120,10 @@ export async function buildAucMatrix(
     bySlug.get(r.slug)![idx] = r.p1 === 1 ? 1 : r.p2 === 1 ? 0.5 : 0;
   }
 
-  return Array.from(bySlug.entries()).map(([slug, scores]) => ({ slug, scores }));
+  return Array.from(bySlug.entries()).map(([slug, scores]) => ({
+    slug,
+    scores,
+  }));
 }
 
 /**
@@ -130,7 +144,7 @@ export async function getTierMap(
   opts: AucMatrixOptions,
   epochToken: string,
 ): Promise<Map<string, number>> {
-  const cache = await caches.open('cg-tiers');
+  const cache = await caches.open("cg-tiers");
   // Fold the task-catalog count into the key. This used to compensate for the
   // freshness token being derived from last_run_at, which does not move on a
   // catalog backfill (e.g. `populate-task-set` after a bench whose tasks were
@@ -148,21 +162,24 @@ export async function getTierMap(
   // bust the cache on catalog backfill (tasks table goes 0→N), which is a
   // set-wide event regardless of which category is being viewed.
   // Use 'global' (not 'all') so a hypothetical category slug "all" can't collide.
-  const catKey = opts.category ? encodeURIComponent(opts.category) : 'global';
-  const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/c${catKey}/${CACHE_VERSION}/t${taskCount}/${encodeURIComponent(epochToken)}`;
+  const catKey = opts.category ? encodeURIComponent(opts.category) : "global";
+  const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/c${catKey}/m${opts.mode}/${CACHE_VERSION}/t${taskCount}/${encodeURIComponent(epochToken)}`;
   const hit = await cache.match(keyUrl);
   if (hit) {
     const cached = (await hit.json()) as TierResult[];
     return new Map(cached.map((t) => [t.slug, t.tier]));
   }
   const matrix = await buildAucMatrix(db, opts);
-  const tiers = computeTiers(matrix, { seed: opts.taskSetHash, iterations: 2000 });
+  const tiers = computeTiers(matrix, {
+    seed: opts.taskSetHash,
+    iterations: 2000,
+  });
   await cache.put(
     keyUrl,
     new Response(JSON.stringify(tiers), {
       headers: {
-        'content-type': 'application/json',
-        'cache-control': 'max-age=86400',
+        "content-type": "application/json",
+        "cache-control": "max-age=86400",
       },
     }),
   );

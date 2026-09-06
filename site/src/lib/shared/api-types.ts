@@ -721,9 +721,20 @@ export interface CompareTaskRow {
   divergent: boolean; // max-min > 0.01 across non-null values
 }
 
+export interface CompareFilters {
+  /**
+   * Invocation mode the comparison is scoped to (D4). Resolved server-side
+   * against the current task set: an explicit `?mode=` wins, otherwise the
+   * set's sole mode is used. Every numerator (pass_at_n, pass_at_1, the
+   * per-task scores) reflects only runs in this mode.
+   */
+  mode: InvocationMode;
+}
+
 export interface CompareResponse {
   models: CompareModel[];
   tasks: CompareTaskRow[];
+  filters: CompareFilters;
 }
 
 // =============================================================================
@@ -904,6 +915,12 @@ export interface MatrixFilters {
   set: SetFilter;
   category: string | null;
   difficulty: "easy" | "medium" | "hard" | null;
+  /**
+   * Invocation mode the matrix is scoped to (D4). Resolved server-side the
+   * same way as the leaderboard's `mode`: an explicit `?mode=` wins,
+   * otherwise the resolved set's sole mode is used.
+   */
+  mode: InvocationMode;
 }
 
 export interface MatrixResponse {

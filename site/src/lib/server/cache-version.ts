@@ -30,9 +30,11 @@
  *     folds this constant into every `/api/v2/*` cache key alongside the
  *     resolved revision and scoring-policy digests, so a deploy is a clean
  *     cutover with no pre-v2 entry lingering under the same constant.
+ * v11: invocation_mode enters every ranking query, tier/matrix/compare cache
+ *   keys, and the cost view branches on it (migration 0019).
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = "v10";
+export const CACHE_VERSION = "v11";

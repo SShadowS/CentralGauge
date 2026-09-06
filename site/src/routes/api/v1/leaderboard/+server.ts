@@ -183,6 +183,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
                 taskSetHash: resolvedHash,
                 metric: "auc_2",
                 category: q.category ?? null,
+                mode: q.mode,
               },
               epoch,
             );

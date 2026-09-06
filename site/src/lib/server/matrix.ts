@@ -25,6 +25,7 @@ import {
   formatSettingsSuffix,
   type SettingsProfileLike,
 } from "./settings-suffix";
+import type { InvocationMode } from "./invocation-mode";
 
 export { cellColorBucket } from "$lib/client/matrix-helpers";
 export type { CellBucket } from "$lib/client/matrix-helpers";
@@ -34,6 +35,11 @@ export interface ComputeMatrixOpts {
   set: string;
   category: string | null;
   difficulty: "easy" | "medium" | "hard" | null;
+  /**
+   * Invocation mode the matrix is scoped to (D4). Resolved upstream in the
+   * route; every runs-joined query in this module predicates on it.
+   */
+  mode: InvocationMode;
 }
 
 const HASH_RE = /^[0-9a-f]{64}$/;
@@ -48,6 +54,7 @@ function emptyResponse(opts: ComputeMatrixOpts): MatrixResponse {
       set: opts.set,
       category: opts.category,
       difficulty: opts.difficulty,
+      mode: opts.mode,
     },
     tasks: [],
     models: [],
@@ -129,16 +136,18 @@ export async function computeMatrix(
   // also scoped to current task_set (CR-5). The settings_hash subquery is
   // similarly task_set-scoped — the suffix should reflect ONLY the runs
   // that contributed to the visible cells, not the model's lifetime runs.
-  const taskSetSubFilter = opts.set === "current"
-    ? `AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
-    : opts.set !== "all" && HASH_RE.test(opts.set)
-    ? `AND task_set_hash = '${opts.set}'`
-    : "";
-  const taskSetRunsFilter = opts.set === "current"
-    ? `AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
-    : opts.set !== "all" && HASH_RE.test(opts.set)
-    ? `AND runs.task_set_hash = '${opts.set}'`
-    : "";
+  const taskSetSubFilter =
+    opts.set === "current"
+      ? `AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
+      : opts.set !== "all" && HASH_RE.test(opts.set)
+        ? `AND task_set_hash = '${opts.set}'`
+        : "";
+  const taskSetRunsFilter =
+    opts.set === "current"
+      ? `AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
+      : opts.set !== "all" && HASH_RE.test(opts.set)
+        ? `AND runs.task_set_hash = '${opts.set}'`
+        : "";
 
   // The settings_hash uniqueness is computed per-model in TS rather than via
   // a correlated subquery so we can also resolve the actual settings profile
@@ -159,10 +168,11 @@ export async function computeMatrix(
         JOIN results r ON r.run_id = runs.id
         WHERE r.task_id IN (${taskIdSubquery})
           ${taskSetRunsFilter}
+          AND runs.invocation_mode = ?
       )
       ORDER BY m.id ASC
     `,
-    taskParams,
+    [...taskParams, opts.mode],
   );
 
   if (modelRows.length === 0) {
@@ -172,6 +182,7 @@ export async function computeMatrix(
         set: opts.set,
         category: opts.category,
         difficulty: opts.difficulty,
+        mode: opts.mode,
       },
       tasks,
       models: [],
@@ -196,9 +207,10 @@ export async function computeMatrix(
       FROM runs
       WHERE model_id IN (${modelIdsPh})
         ${taskSetSubFilter}
+        AND invocation_mode = ?
       GROUP BY model_id
     `,
-    modelIds,
+    [...modelIds, opts.mode],
   );
 
   const uniqueHashByModel = new Map<number, string>();
@@ -231,7 +243,7 @@ export async function computeMatrix(
 
   const models: MatrixModel[] = modelRows.map((m) => {
     const hash = uniqueHashByModel.get(m.model_id);
-    const profile = hash ? profileByHash.get(hash) ?? null : null;
+    const profile = hash ? (profileByHash.get(hash) ?? null) : null;
     return {
       model_id: m.model_id,
       slug: m.slug,
@@ -269,9 +281,10 @@ export async function computeMatrix(
       JOIN runs ON runs.id = r.run_id
       WHERE r.task_id IN (${taskIdSubquery})
         ${taskSetRunsFilter}
+        AND runs.invocation_mode = ?
       GROUP BY r.task_id, runs.model_id
     `,
-    taskParams,
+    [...taskParams, opts.mode],
   );
 
   const cellMap = new Map<string, MatrixCell>();
@@ -291,7 +304,7 @@ export async function computeMatrix(
           attempted: 0,
           concept: null,
         },
-    )
+    ),
   );
 
   return {
@@ -299,6 +312,7 @@ export async function computeMatrix(
       set: opts.set,
       category: opts.category,
       difficulty: opts.difficulty,
+      mode: opts.mode,
     },
     tasks,
     models,

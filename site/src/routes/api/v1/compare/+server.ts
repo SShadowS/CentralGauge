@@ -3,13 +3,30 @@ import { cachedJson } from "$lib/server/cache";
 import { getAll, getFirst } from "$lib/server/db";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { computeDenominator } from "$lib/server/denominator";
+import {
+  parseModeParam,
+  resolveInvocationMode,
+} from "$lib/server/invocation-mode";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
-    const parsed = (url.searchParams.get("models") ?? "").split(",").map((s) =>
-      s.trim()
-    ).filter(Boolean);
+    // D4: resolve the invocation mode FIRST, before the models list is even
+    // validated. Compare has no `?set=` — it always scopes to the current
+    // task set, so mode resolution needs no other input. Resolving early
+    // means a task set with both sync and batch runs refuses with
+    // `mode_required` regardless of what (or how few) models were requested.
+    const requestedMode = parseModeParam(url);
+    const mode = await resolveInvocationMode(
+      env.DB,
+      { kind: "current" },
+      requestedMode,
+    );
+
+    const parsed = (url.searchParams.get("models") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     // Dedup explicitly: request-order matters for response stability, so keep first occurrence.
     const seen = new Set<string>();
     const raw: string[] = [];
@@ -51,9 +68,11 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       : 0;
 
     const placeholders = raw.map(() => "?").join(",");
-    const models = await getAll<
-      { id: number; slug: string; display_name: string }
-    >(
+    const models = await getAll<{
+      id: number;
+      slug: string;
+      display_name: string;
+    }>(
       env.DB,
       `SELECT id, slug, display_name FROM models WHERE slug IN (${placeholders})`,
       raw,
@@ -62,9 +81,9 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       throw new ApiError(
         404,
         "model_not_found",
-        `Unknown model(s): ${
-          raw.filter((s) => !models.some((m) => m.slug === s)).join(",")
-        }`,
+        `Unknown model(s): ${raw
+          .filter((s) => !models.some((m) => m.slug === s))
+          .join(",")}`,
       );
     }
 
@@ -100,6 +119,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           JOIN current_hash ON ru1.task_set_hash = current_hash.hash
           WHERE r1.attempt = 1 AND r1.passed = 1
             AND ru1.model_id IN (${modelIdPlaceholders})
+            AND ru1.invocation_mode = ?
           GROUP BY ru1.model_id
         ),
         p2_only AS (
@@ -110,6 +130,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           JOIN current_hash ON ru2.task_set_hash = current_hash.hash
           WHERE r2.attempt = 2 AND r2.passed = 1
             AND ru2.model_id IN (${modelIdPlaceholders})
+            AND ru2.invocation_mode = ?
             AND NOT EXISTS (
               SELECT 1 FROM results r1b
               JOIN runs ru1b ON ru1b.id = r1b.run_id
@@ -117,6 +138,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
               WHERE ru1b.model_id = ru2.model_id
                 AND r1b.task_id = r2.task_id
                 AND r1b.attempt = 1 AND r1b.passed = 1
+                AND ru1b.invocation_mode = ?
             )
           GROUP BY ru2.model_id
         ),
@@ -127,6 +149,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           JOIN results r ON r.run_id = runs.id
           JOIN current_hash ON runs.task_set_hash = current_hash.hash
           WHERE runs.model_id IN (${modelIdPlaceholders})
+            AND runs.invocation_mode = ?
           GROUP BY runs.model_id
         )
         SELECT m.id AS model_id,
@@ -139,7 +162,17 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         LEFT JOIN attempted att ON att.model_id = m.id
         WHERE m.id IN (${modelIdPlaceholders})
         `,
-        [taskSetHash, ...modelIds, ...modelIds, ...modelIds, ...modelIds],
+        [
+          taskSetHash,
+          ...modelIds,
+          mode,
+          ...modelIds,
+          mode,
+          mode,
+          ...modelIds,
+          mode,
+          ...modelIds,
+        ],
       );
     }
 
@@ -167,6 +200,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
            JOIN models m ON m.id = runs.model_id
            WHERE m.slug IN (${placeholders})
              AND runs.task_set_hash = ?
+             AND runs.invocation_mode = ?
            GROUP BY r.task_id, m.id
            ORDER BY r.task_id, m.id`
         : `SELECT r.task_id, m.slug AS model_slug, AVG(r.score) AS avg_score, COUNT(DISTINCT runs.id) AS runs
@@ -174,25 +208,25 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
            JOIN runs ON runs.id = r.run_id
            JOIN models m ON m.id = runs.model_id
            WHERE m.slug IN (${placeholders})
+             AND runs.invocation_mode = ?
            GROUP BY r.task_id, m.id
            ORDER BY r.task_id, m.id`,
-      taskSetHash ? [...raw, taskSetHash] : raw,
+      taskSetHash ? [...raw, taskSetHash, mode] : [...raw, mode],
     );
 
     const byTask = new Map<string, Record<string, number | null>>();
     for (const r of rows) {
       if (!byTask.has(r.task_id)) byTask.set(r.task_id, {});
-      byTask.get(r.task_id)![r.model_slug] = r.avg_score == null
-        ? null
-        : Number((+r.avg_score).toFixed(6));
+      byTask.get(r.task_id)![r.model_slug] =
+        r.avg_score == null ? null : Number((+r.avg_score).toFixed(6));
     }
 
     const tasks = Array.from(byTask.entries()).map(([task_id, scores]) => {
-      const values = Object.values(scores).filter((v): v is number =>
-        v != null
+      const values = Object.values(scores).filter(
+        (v): v is number => v != null,
       );
-      const divergent = values.length > 1 &&
-        Math.max(...values) - Math.min(...values) > 0.01;
+      const divergent =
+        values.length > 1 && Math.max(...values) - Math.min(...values) > 0.01;
       return { task_id, scores, divergent };
     });
 
@@ -217,18 +251,18 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         slug: m.slug,
         display_name: m.display_name,
         pass_at_n:
-          passAtNStrict === null
-            ? null
-            : Math.round(passAtNStrict * 1e6) / 1e6,
+          passAtNStrict === null ? null : Math.round(passAtNStrict * 1e6) / 1e6,
         pass_at_1:
-          passAt1Strict === null
-            ? null
-            : Math.round(passAt1Strict * 1e6) / 1e6,
+          passAt1Strict === null ? null : Math.round(passAt1Strict * 1e6) / 1e6,
         denominator: hasRuns ? (denominator > 0 ? denominator : null) : null,
       };
     });
 
-    return cachedJson(request, { models: enrichedModels, tasks });
+    return cachedJson(request, {
+      models: enrichedModels,
+      tasks,
+      filters: { mode },
+    });
   } catch (err) {
     return errorResponse(err);
   }

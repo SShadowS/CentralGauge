@@ -87,6 +87,7 @@ describe("GET /api/v1/matrix", () => {
       set: "current",
       category: null,
       difficulty: null,
+      mode: "sync",
     });
     expect(body.tasks).toHaveLength(2);
     expect(body.models).toHaveLength(2);
@@ -297,5 +298,104 @@ describe("GET /api/v1/matrix", () => {
     const cell = body.cells[0][0];
     expect(cell.passed).toBe(0);
     expect(cell.attempted).toBe(1);
+  });
+
+  // ---------------------------------------------------------------------
+  // D4: invocation mode. One model, two runs on the same current task set —
+  // a sync run passing easy/t1 on attempt 1, a batch run passing
+  // medium/t2 on attempt 1. Every ranking query selects exactly one mode.
+  // ---------------------------------------------------------------------
+  async function seedModeFixture(): Promise<void> {
+    await resetDb();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('current','2026-04-01T00:00:00Z',2,1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO task_categories(id,slug,name) VALUES (1,'tables','Tables')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json) VALUES
+           ('current','easy/t1','h1','easy',1,'{"id":"easy/t1"}'),
+           ('current','medium/t2','h2','medium',1,'{"id":"medium/t2"}')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (1,'claude','anthropic','Claude')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (1,1,'sonnet','claude-sonnet','Sonnet',47)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO settings_profiles(hash,temperature,max_attempts,max_tokens,prompt_version,bc_version) VALUES ('s1',0.0,2,8192,'v1','Cronus28')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',1,3,15,'2026-01-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO machine_keys(id,machine_id,public_key,scope,created_at) VALUES (1,'r',?,'ingest','2026-04-01T00:00:00Z')`,
+      ).bind(new Uint8Array([0])),
+    ]);
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload,invocation_mode)
+         VALUES ('r-sync','current',1,'s1','r','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?,'sync')`,
+      ).bind(new Uint8Array([0])),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload,invocation_mode)
+         VALUES ('r-batch','current',1,'s1','r','2026-04-02T00:00:00Z','2026-04-02T01:00:00Z','completed','claimed','v1','sig','2026-04-02T00:00:00Z',1,?,'batch')`,
+      ).bind(new Uint8Array([0])),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES
+           ('r-sync','easy/t1',1,1,1.0,1),
+           ('r-batch','medium/t2',1,1,1.0,1)`,
+      ),
+    ]);
+  }
+
+  it("requires mode when the current task set has both sync and batch runs", async () => {
+    await seedModeFixture();
+    const res = await SELF.fetch("https://x/api/v1/matrix?_cb=mode-none");
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe("mode_required");
+  });
+
+  it("scopes cells to the requested mode and echoes it in filters", async () => {
+    await seedModeFixture();
+    const res = await SELF.fetch(
+      "https://x/api/v1/matrix?_cb=mode-sync&mode=sync",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as MatrixResponse;
+    expect(body.filters.mode).toBe("sync");
+
+    const t1Idx = body.tasks.findIndex((t) => t.id === "easy/t1");
+    const t2Idx = body.tasks.findIndex((t) => t.id === "medium/t2");
+    const modelIdx = body.models.findIndex((m) => m.slug === "sonnet");
+    expect(modelIdx).toBeGreaterThanOrEqual(0);
+
+    // Sync run passed easy/t1 — visible under mode=sync.
+    expect(body.cells[t1Idx][modelIdx]).toEqual({
+      passed: 1,
+      attempted: 1,
+      concept: null,
+    });
+    // Batch run passed medium/t2 — invisible under mode=sync: no result row
+    // for (medium/t2, sonnet) survives the mode filter.
+    expect(body.cells[t2Idx][modelIdx]).toEqual({
+      passed: 0,
+      attempted: 0,
+      concept: null,
+    });
+  });
+
+  it("rejects mode=all", async () => {
+    await seedModeFixture();
+    const res = await SELF.fetch(
+      "https://x/api/v1/matrix?_cb=mode-all&mode=all",
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe("invalid_mode_for_metric");
   });
 });

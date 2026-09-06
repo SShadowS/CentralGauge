@@ -45,7 +45,10 @@ describe("GET /api/v1/compare", () => {
       "https://x/api/v1/compare?models=sonnet-4.7,gpt-4o",
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { models: Array<any>; tasks: Array<any> };
+    const body = (await res.json()) as {
+      models: Array<any>;
+      tasks: Array<any>;
+    };
     expect(body.models).toHaveLength(2);
     const taskA = body.tasks.find((t: any) => t.task_id === "easy/a");
     expect(taskA.scores["sonnet-4.7"]).toBe(1.0);
@@ -111,7 +114,10 @@ describe("GET /api/v1/compare", () => {
       "https://x/api/v1/compare?models=sonnet-4.7,gpt-4o",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { models: Array<any>; tasks: Array<any> };
+    const body = (await res.json()) as {
+      models: Array<any>;
+      tasks: Array<any>;
+    };
 
     const sonnet = body.models.find((m: any) => m.slug === "sonnet-4.7");
     const gpt = body.models.find((m: any) => m.slug === "gpt-4o");
@@ -168,7 +174,10 @@ describe("GET /api/v1/compare", () => {
       "https://x/api/v1/compare?models=sonnet-4.7,gpt-4o",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { models: Array<any>; tasks: Array<any> };
+    const body = (await res.json()) as {
+      models: Array<any>;
+      tasks: Array<any>;
+    };
 
     const sonnet = body.models.find((m: any) => m.slug === "sonnet-4.7");
     expect(sonnet).toBeDefined();
@@ -200,7 +209,10 @@ describe("GET /api/v1/compare", () => {
       "https://x/api/v1/compare?models=sonnet-4.7,gemini-pro",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { models: Array<any>; tasks: Array<any> };
+    const body = (await res.json()) as {
+      models: Array<any>;
+      tasks: Array<any>;
+    };
 
     const sonnet = body.models.find((m: any) => m.slug === "sonnet-4.7");
     const gemini = body.models.find((m: any) => m.slug === "gemini-pro");
@@ -217,5 +229,127 @@ describe("GET /api/v1/compare", () => {
     expect(gemini.denominator).toBeNull();
     // pass_at_n_per_attempted removed in PR2.1
     expect(gemini.pass_at_n_per_attempted).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D4: invocation mode. One model ('m') has a sync run passing t1 on
+// attempt 1 and a batch run passing t2 on attempt 1 in the current task set;
+// a second model ('m2') exists but has no runs (only there to satisfy
+// compare's "at least 2 distinct models" requirement). Every ranking query
+// selects exactly one mode.
+// ---------------------------------------------------------------------------
+async function seedModeFixture(): Promise<void> {
+  await resetDb();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (1,'fam','v','Fam')`,
+    ),
+    env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (1,1,'m','api-m','M'),(2,1,'m2','api-m2','M2')`,
+    ),
+    env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('ts','2026-01-01T00:00:00Z',2,1)`,
+    ),
+    env.DB.prepare(
+      `INSERT INTO settings_profiles(hash,temperature,max_attempts) VALUES ('s',0.0,2)`,
+    ),
+    env.DB.prepare(
+      `INSERT INTO machine_keys(id,machine_id,public_key,scope,created_at) VALUES (1,'rig',?,'ingest','2026-01-01T00:00:00Z')`,
+    ).bind(new Uint8Array([0])),
+    env.DB.prepare(
+      `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json) VALUES ('ts','t1','h1','easy','{}'),('ts','t2','h2','easy','{}')`,
+    ),
+  ]);
+
+  const run = (id: string, mode: string) =>
+    env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,
+                        ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload,invocation_mode)
+       VALUES (?,'ts',1,'s','rig','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z','completed','claimed','v1','sig','2026-01-01T00:00:00Z',1,'{}',?)`,
+    ).bind(id, mode);
+
+  await env.DB.batch([run("r-sync", "sync"), run("r-batch", "batch")]);
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ('r-sync','t1',1,1,1.0,1)`,
+    ),
+    env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ('r-batch','t2',1,1,1.0,1)`,
+    ),
+  ]);
+}
+
+describe("GET /api/v1/compare — invocation mode (D4)", () => {
+  it("resolves mode before validating the model list: mode_required wins over too_few_models", async () => {
+    await seedModeFixture();
+    // Only 1 model given (normally too_few_models), but the current set has
+    // both sync and batch runs, so mode resolution must refuse first.
+    const res = await SELF.fetch("https://x/api/v1/compare?models=m");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("mode_required");
+  });
+
+  it("rejects mode=all", async () => {
+    await seedModeFixture();
+    const res = await SELF.fetch(
+      "https://x/api/v1/compare?models=m,m2&mode=all",
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("invalid_mode_for_metric");
+  });
+
+  it("scopes pass_at_1 and per-task scores to the batch run only, echoing mode in filters", async () => {
+    await seedModeFixture();
+    const res = await SELF.fetch(
+      "https://x/api/v1/compare?models=m,m2&mode=batch",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      models: Array<{
+        slug: string;
+        pass_at_1: number | null;
+        pass_at_n: number | null;
+      }>;
+      tasks: Array<{ task_id: string; scores: Record<string, number | null> }>;
+      filters: { mode: string };
+    };
+    expect(body.filters.mode).toBe("batch");
+
+    const m = body.models.find((x) => x.slug === "m")!;
+    // Only the batch run's t2 pass counts toward the numerator under
+    // mode=batch: 1 task passed out of a denominator of 2 tasks.
+    expect(m.pass_at_1).toBe(0.5);
+    expect(m.pass_at_n).toBe(0.5);
+
+    // t1 was passed only by the SYNC run, so it is invisible entirely under
+    // mode=batch — the per-task rows query is mode-filtered, not merely
+    // null-scored. t2 (passed by the batch run) surfaces with score 1.0.
+    expect(body.tasks.find((t) => t.task_id === "t1")).toBeUndefined();
+    const t2 = body.tasks.find((t) => t.task_id === "t2");
+    expect(t2?.scores["m"]).toBe(1.0);
+  });
+
+  it("mode=sync surfaces the opposite task", async () => {
+    await seedModeFixture();
+    const res = await SELF.fetch(
+      "https://x/api/v1/compare?models=m,m2&mode=sync",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      models: Array<{ slug: string; pass_at_1: number | null }>;
+      tasks: Array<{ task_id: string; scores: Record<string, number | null> }>;
+      filters: { mode: string };
+    };
+    expect(body.filters.mode).toBe("sync");
+    const m = body.models.find((x) => x.slug === "m")!;
+    expect(m.pass_at_1).toBe(0.5);
+
+    expect(body.tasks.find((t) => t.task_id === "t2")).toBeUndefined();
+    const t1 = body.tasks.find((t) => t.task_id === "t1");
+    expect(t1?.scores["m"]).toBe(1.0);
   });
 });
