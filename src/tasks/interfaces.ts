@@ -362,6 +362,12 @@ export interface ExecutionAttempt {
    */
   candidateCode?: string | undefined;
   codeLanguage: "al" | "diff";
+  /** Provider's raw stop reason (`end_turn`, `max_tokens`, `refusal`, `length`, ...). */
+  providerFinishReason?: string | undefined;
+  /** Structured provider error code when the LLM call failed (`http_529`, `http_400:invalid_request_error`). */
+  providerErrorCode?: string | undefined;
+  /** Provider request id when the SDK exposes one. Local only; never ingested. */
+  providerRequestId?: string | undefined;
 
   // Compilation/test results
   compilationResult?: CompilationResult | undefined;

@@ -63,6 +63,18 @@ Deno.test("mapResultItemToInput carries all nine capture fields through when pre
   assertEquals(out.candidate_sha256, "c".repeat(64));
 });
 
+Deno.test("mapResultItemToInput forwards provider_error_code", async () => {
+  const item = baseItem({
+    provider_finish_reason: "max_tokens",
+    provider_error_code: "http_400:invalid_request_error",
+  });
+
+  const out = await mapResultItemToInput(item);
+
+  assertEquals(out.provider_finish_reason, "max_tokens");
+  assertEquals(out.provider_error_code, "http_400:invalid_request_error");
+});
+
 Deno.test("mapResultItemToInput omits all nine capture keys entirely when absent (legacy shape)", async () => {
   const item = baseItem();
 

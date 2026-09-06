@@ -95,6 +95,8 @@ export interface LLMResponse {
   usage: TokenUsage;
   duration: number; // milliseconds
   finishReason: "stop" | "length" | "content_filter" | "error";
+  /** Provider's raw stop reason before mapping to `finishReason`. */
+  providerFinishReason?: string | undefined;
   /**
    * Model that actually served the response, when the server-side refusal
    * fallback rerouted it (bare API id, e.g. "claude-opus-4-8"). Absent when

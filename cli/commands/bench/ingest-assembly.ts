@@ -245,7 +245,9 @@ async function attemptToItem(
     code_bytes: encoder.encode(a.extractedCode ?? ""),
     test_vector: vector,
     termination_kind: terminationKind(a),
-    provider_finish_reason: a.llmResponse.finishReason,
+    provider_finish_reason: a.providerFinishReason ??
+      a.llmResponse.finishReason,
+    provider_error_code: a.providerErrorCode ?? null,
     cap_reached: a.llmResponse.finishReason === "length",
     infra_retries: infraRetries,
     infra_exhaustion_reason: exhaustion,

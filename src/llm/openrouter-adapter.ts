@@ -270,6 +270,9 @@ export class OpenRouterAdapter extends BaseLLMAdapter
         usage,
         duration,
         finishReason: this.mapFinishReason(choice?.finish_reason),
+        ...(choice?.finish_reason
+          ? { providerFinishReason: choice.finish_reason }
+          : {}),
       },
       rawResponse: includeRaw ? completion : undefined,
     };
@@ -342,6 +345,9 @@ export class OpenRouterAdapter extends BaseLLMAdapter
           : this.mapFinishReason(streamFinishReason),
         options,
       });
+      if (streamFinishReason) {
+        result.response.providerFinishReason = streamFinishReason;
+      }
 
       yield finalChunk;
       return result;

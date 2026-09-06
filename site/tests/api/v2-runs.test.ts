@@ -76,7 +76,8 @@ describe("ingest stores run-time capture fields; v2 runs endpoints serve them", 
           failure_reasons: [],
           test_vector: [{ id: "x", name: "T1", passed: true }],
           termination_kind: "response",
-          provider_finish_reason: "stop",
+          provider_finish_reason: "overloaded",
+          provider_error_code: "http_529",
           cap_reached: false,
           infra_retries: 1,
           infra_exhaustion_reason: null,
@@ -122,13 +123,14 @@ describe("ingest stores run-time capture fields; v2 runs endpoints serve them", 
     expect(JSON.parse(row!.invocation_json).provider).toBe("anthropic");
 
     const r = await env.DB.prepare(
-      `SELECT test_vector_json, termination_kind, provider_finish_reason, cap_reached, prompt_digest FROM results WHERE run_id = ?`,
+      `SELECT test_vector_json, termination_kind, provider_finish_reason, provider_error_code, cap_reached, prompt_digest FROM results WHERE run_id = ?`,
     )
       .bind(runId)
       .first<{
         test_vector_json: string;
         termination_kind: string;
         provider_finish_reason: string;
+        provider_error_code: string;
         cap_reached: number;
         prompt_digest: string;
       }>();
@@ -136,7 +138,8 @@ describe("ingest stores run-time capture fields; v2 runs endpoints serve them", 
       { id: "x", name: "T1", passed: true },
     ]);
     expect(r?.termination_kind).toBe("response");
-    expect(r?.provider_finish_reason).toBe("stop");
+    expect(r?.provider_finish_reason).toBe("overloaded");
+    expect(r?.provider_error_code).toBe("http_529");
     expect(r?.cap_reached).toBe(0);
     expect(r?.prompt_digest).toBe("a".repeat(64));
 

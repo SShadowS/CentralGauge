@@ -220,6 +220,9 @@ export class OpenAIAdapter extends BaseLLMAdapter
         usage,
         duration,
         finishReason: this.mapFinishReason(choice?.finish_reason),
+        ...(choice?.finish_reason
+          ? { providerFinishReason: choice.finish_reason }
+          : {}),
       },
       rawResponse: includeRaw ? completion : undefined,
     };
@@ -278,6 +281,9 @@ export class OpenAIAdapter extends BaseLLMAdapter
           : response.status === "failed"
           ? "error"
           : "stop",
+        providerFinishReason: response.status === "incomplete"
+          ? "incomplete:" + (response.incomplete_details?.reason ?? "unknown")
+          : String(response.status),
       },
     };
   }
@@ -328,6 +334,9 @@ export class OpenAIAdapter extends BaseLLMAdapter
           : this.mapFinishReason(streamFinishReason),
         options,
       });
+      if (streamFinishReason) {
+        result.response.providerFinishReason = streamFinishReason;
+      }
 
       yield finalChunk;
       return result;
@@ -429,6 +438,11 @@ export class OpenAIAdapter extends BaseLLMAdapter
           : "stop",
         options,
       });
+      if (responseStatus !== undefined) {
+        result.response.providerFinishReason = responseStatus === "incomplete"
+          ? "incomplete:" + (incompleteReason ?? "unknown")
+          : String(responseStatus);
+      }
       yield finalChunk;
       return result;
     } catch (error) {

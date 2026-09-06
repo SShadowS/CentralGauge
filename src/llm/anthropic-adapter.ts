@@ -456,6 +456,9 @@ export class AnthropicAdapter extends BaseLLMAdapter
         usage,
         duration,
         finishReason: this.mapFinishReason(message.stop_reason),
+        ...(message.stop_reason
+          ? { providerFinishReason: message.stop_reason }
+          : {}),
         ...(fb.servedModel !== undefined
           ? { servedModel: fb.servedModel }
           : {}),
@@ -505,6 +508,9 @@ export class AnthropicAdapter extends BaseLLMAdapter
         result.response.servedModel = fb.servedModel;
       }
       if (fb.refusal !== undefined) result.response.refusal = fb.refusal;
+      if (finalMessage.stop_reason) {
+        result.response.providerFinishReason = finalMessage.stop_reason;
+      }
 
       yield finalChunk;
       return result;

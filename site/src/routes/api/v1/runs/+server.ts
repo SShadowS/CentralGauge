@@ -73,7 +73,8 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const taskSet = url.searchParams.get("task_set");
     const since = url.searchParams.get("since");
     if (
-      since !== null && (since.trim() === "" || Number.isNaN(Date.parse(since)))
+      since !== null &&
+      (since.trim() === "" || Number.isNaN(Date.parse(since)))
     ) {
       throw new ApiError(
         400,
@@ -195,9 +196,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const blobs = platform.env.BLOBS;
 
   try {
-    const signed = await request.json() as SignedRunPayload;
-    const requireV2 = (platform.env as { FLAG_REQUIRE_ENVELOPE_V2?: string })
-      .FLAG_REQUIRE_ENVELOPE_V2 === "on";
+    const signed = (await request.json()) as SignedRunPayload;
+    const requireV2 =
+      (platform.env as { FLAG_REQUIRE_ENVELOPE_V2?: string })
+        .FLAG_REQUIRE_ENVELOPE_V2 === "on";
     assertSupportedEnvelopeVersion(signed.version, requireV2);
     if (!signed.run_id) {
       throw new ApiError(400, "missing_run_id", "run_id required");
@@ -232,10 +234,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     }
 
     // Validate task_set_hash exists
-    const taskSet = await db.prepare(
-      `SELECT hash FROM task_sets WHERE hash = ?`,
-    )
-      .bind(payload.task_set_hash).first();
+    const taskSet = await db
+      .prepare(`SELECT hash FROM task_sets WHERE hash = ?`)
+      .bind(payload.task_set_hash)
+      .first();
     if (!taskSet) {
       throw new ApiError(
         400,
@@ -245,11 +247,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     }
 
     // Resolve model id from api_model_id + slug
-    const model = await db.prepare(
-      `SELECT id FROM models WHERE api_model_id = ? AND slug = ?`,
-    ).bind(payload.model.api_model_id, payload.model.slug).first<
-      { id: number }
-    >();
+    const model = await db
+      .prepare(`SELECT id FROM models WHERE api_model_id = ? AND slug = ?`)
+      .bind(payload.model.api_model_id, payload.model.slug)
+      .first<{ id: number }>();
     if (!model) {
       throw new ApiError(
         400,
@@ -259,9 +260,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     }
 
     // Validate pricing_version exists for this model
-    const pricing = await db.prepare(
-      `SELECT id FROM cost_snapshots WHERE pricing_version = ? AND model_id = ?`,
-    ).bind(payload.pricing_version, model.id).first();
+    const pricing = await db
+      .prepare(
+        `SELECT id FROM cost_snapshots WHERE pricing_version = ? AND model_id = ?`,
+      )
+      .bind(payload.pricing_version, model.id)
+      .first();
     if (!pricing) {
       throw new ApiError(
         400,
@@ -296,9 +300,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     }
 
     // Idempotency: check if run_id already exists
-    const existing = await db.prepare(
-      `SELECT id, status FROM runs WHERE id = ?`,
-    ).bind(signed.run_id).first<{ id: string; status: string }>();
+    const existing = await db
+      .prepare(`SELECT id, status FROM runs WHERE id = ?`)
+      .bind(signed.run_id)
+      .first<{ id: string; status: string }>();
     const missingBlobs = await findMissingBlobs(
       blobs,
       payloadBlobHashes(payload),
@@ -323,19 +328,25 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const signedPayloadBytes = new TextEncoder().encode(canonical);
 
     const statements: D1PreparedStatement[] = [
-      db.prepare(`
+      db
+        .prepare(
+          `
         INSERT OR IGNORE INTO settings_profiles(hash, temperature, max_attempts, max_tokens, prompt_version, bc_version, extra_json)
         VALUES (?,?,?,?,?,?,?)
-      `).bind(
-        setHash,
-        payload.settings.temperature ?? null,
-        payload.settings.max_attempts ?? null,
-        payload.settings.max_tokens ?? null,
-        payload.settings.prompt_version ?? null,
-        payload.settings.bc_version ?? null,
-        payload.settings.extra_json ?? null,
-      ),
-      db.prepare(`
+      `,
+        )
+        .bind(
+          setHash,
+          payload.settings.temperature ?? null,
+          payload.settings.max_attempts ?? null,
+          payload.settings.max_tokens ?? null,
+          payload.settings.prompt_version ?? null,
+          payload.settings.bc_version ?? null,
+          payload.settings.extra_json ?? null,
+        ),
+      db
+        .prepare(
+          `
         INSERT INTO runs(
           id, task_set_hash, model_id, settings_hash, machine_id,
           started_at, completed_at, status, tier, source,
@@ -344,36 +355,40 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           harness_fingerprint, retry_path_version, environment_digest, bc_artifact,
           container_image_digest, bcch_version, test_runner, prompt_template_digest, invocation_json
         ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?)
-      `).bind(
-        signed.run_id,
-        payload.task_set_hash,
-        model.id,
-        setHash,
-        payload.machine_id,
-        payload.started_at,
-        null,
-        "running",
-        "claimed",
-        "bench",
-        payload.centralgauge_sha ?? null,
-        payload.pricing_version,
-        payload.reproduction_bundle_sha256
-          ? `blobs/${payload.reproduction_bundle_sha256}`
-          : null,
-        signed.signature.value,
-        signed.signature.signed_at,
-        verified.key_id,
-        signedPayloadBytes,
-        payload.harness_fingerprint ?? null,
-        payload.retry_path_version ?? null,
-        payload.environment_sha256 ? `blobs/${payload.environment_sha256}` : null,
-        payload.bc_artifact ?? null,
-        payload.container_image_digest ?? null,
-        payload.bcch_version ?? null,
-        payload.test_runner ?? null,
-        payload.prompt_template_digest ?? null,
-        payload.invocation ? JSON.stringify(payload.invocation) : null,
-      ),
+      `,
+        )
+        .bind(
+          signed.run_id,
+          payload.task_set_hash,
+          model.id,
+          setHash,
+          payload.machine_id,
+          payload.started_at,
+          null,
+          "running",
+          "claimed",
+          "bench",
+          payload.centralgauge_sha ?? null,
+          payload.pricing_version,
+          payload.reproduction_bundle_sha256
+            ? `blobs/${payload.reproduction_bundle_sha256}`
+            : null,
+          signed.signature.value,
+          signed.signature.signed_at,
+          verified.key_id,
+          signedPayloadBytes,
+          payload.harness_fingerprint ?? null,
+          payload.retry_path_version ?? null,
+          payload.environment_sha256
+            ? `blobs/${payload.environment_sha256}`
+            : null,
+          payload.bc_artifact ?? null,
+          payload.container_image_digest ?? null,
+          payload.bcch_version ?? null,
+          payload.test_runner ?? null,
+          payload.prompt_template_digest ?? null,
+          payload.invocation ? JSON.stringify(payload.invocation) : null,
+        ),
     ];
 
     for (const r of payload.results) {
@@ -499,8 +514,21 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           `cap_reached must be a boolean (task ${r.task_id} attempt ${r.attempt})`,
         );
       }
+      if (
+        r.provider_error_code !== undefined &&
+        r.provider_error_code !== null &&
+        typeof r.provider_error_code !== "string"
+      ) {
+        throw new ApiError(
+          400,
+          "invalid_capture_field",
+          `provider_error_code must be a string or null (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
       statements.push(
-        db.prepare(`
+        db
+          .prepare(
+            `
           INSERT INTO results(
             run_id, task_id, attempt, passed, score, compile_success, compile_errors_json,
             tests_total, tests_passed,
@@ -512,50 +540,53 @@ export const POST: RequestHandler = async ({ request, platform }) => {
             cap_reached, infra_retries, infra_exhaustion_reason, fallback_chain_json,
             prompt_digest, candidate_digest, overlay_base_digest, failure_class, failure_class_version
           ) VALUES (?,?,?,?,?,?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?)
-        `).bind(
-          signed.run_id,
-          r.task_id,
-          r.attempt,
-          r.passed ? 1 : 0,
-          r.score,
-          r.compile_success ? 1 : 0,
-          JSON.stringify(r.compile_errors),
-          r.tests_total,
-          r.tests_passed,
-          r.tokens_in,
-          r.tokens_out,
-          tokensReasoning,
-          r.tokens_cache_read,
-          r.tokens_cache_write,
-          r.durations_ms.llm ?? null,
-          r.durations_ms.compile ?? null,
-          r.durations_ms.test ?? null,
-          JSON.stringify(r.failure_reasons),
-          r.transcript_sha256 ? `blobs/${r.transcript_sha256}` : null,
-          r.code_sha256 ? `blobs/${r.code_sha256}` : null,
-          servedModel,
-          refusalCategory,
-          r.test_vector ? JSON.stringify(r.test_vector) : null,
-          r.termination_kind ?? null,
-          r.provider_finish_reason ?? null,
-          null, // provider_error_code: not yet produced by any client
-          r.cap_reached === undefined ? null : r.cap_reached ? 1 : 0,
-          r.infra_retries ?? null,
-          r.infra_exhaustion_reason ?? null,
-          r.fallback_chain ? JSON.stringify(r.fallback_chain) : null,
-          r.prompt_sha256 ?? null,
-          r.candidate_sha256 ?? null,
-          null, // overlay_base_digest: not yet produced by any client
-          null, // failure_class: not yet produced by any client
-          null, // failure_class_version: not yet produced by any client
-        ),
+        `,
+          )
+          .bind(
+            signed.run_id,
+            r.task_id,
+            r.attempt,
+            r.passed ? 1 : 0,
+            r.score,
+            r.compile_success ? 1 : 0,
+            JSON.stringify(r.compile_errors),
+            r.tests_total,
+            r.tests_passed,
+            r.tokens_in,
+            r.tokens_out,
+            tokensReasoning,
+            r.tokens_cache_read,
+            r.tokens_cache_write,
+            r.durations_ms.llm ?? null,
+            r.durations_ms.compile ?? null,
+            r.durations_ms.test ?? null,
+            JSON.stringify(r.failure_reasons),
+            r.transcript_sha256 ? `blobs/${r.transcript_sha256}` : null,
+            r.code_sha256 ? `blobs/${r.code_sha256}` : null,
+            servedModel,
+            refusalCategory,
+            r.test_vector ? JSON.stringify(r.test_vector) : null,
+            r.termination_kind ?? null,
+            r.provider_finish_reason ?? null,
+            r.provider_error_code ?? null,
+            r.cap_reached === undefined ? null : r.cap_reached ? 1 : 0,
+            r.infra_retries ?? null,
+            r.infra_exhaustion_reason ?? null,
+            r.fallback_chain ? JSON.stringify(r.fallback_chain) : null,
+            r.prompt_sha256 ?? null,
+            r.candidate_sha256 ?? null,
+            null, // overlay_base_digest: not yet produced by any client
+            null, // failure_class: not yet produced by any client
+            null, // failure_class_version: not yet produced by any client
+          ),
       );
     }
 
     statements.push(
-      db.prepare(
-        `INSERT INTO ingest_events(run_id, event, machine_id, ts, details_json) VALUES (?,?,?,?,?)`,
-      )
+      db
+        .prepare(
+          `INSERT INTO ingest_events(run_id, event, machine_id, ts, details_json) VALUES (?,?,?,?,?)`,
+        )
         .bind(
           signed.run_id,
           "signature_verified",

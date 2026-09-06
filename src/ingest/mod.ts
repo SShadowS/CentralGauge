@@ -76,6 +76,7 @@ export interface BenchResultItem {
     | "infra_exhausted"
     | "cancelled";
   provider_finish_reason?: string;
+  provider_error_code?: string | null;
   cap_reached?: boolean;
   infra_retries?: number;
   infra_exhaustion_reason?: string | null;
@@ -187,6 +188,9 @@ export async function mapResultItemToInput(
   }
   if (r.provider_finish_reason !== undefined) {
     out.provider_finish_reason = r.provider_finish_reason;
+  }
+  if (r.provider_error_code !== undefined) {
+    out.provider_error_code = r.provider_error_code;
   }
   if (r.cap_reached !== undefined) out.cap_reached = r.cap_reached;
   if (r.infra_retries !== undefined) out.infra_retries = r.infra_retries;

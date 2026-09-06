@@ -1170,6 +1170,9 @@ export class ParallelBenchmarkOrchestrator {
       extractedCode: llmResult.code || "",
       candidateCode: compileResult.candidateCode,
       codeLanguage: "al",
+      ...(llmResult.llmResponse?.providerFinishReason !== undefined
+        ? { providerFinishReason: llmResult.llmResponse.providerFinishReason }
+        : {}),
       compilationResult: compileResult.compilationResult,
       success,
       score,
@@ -1250,6 +1253,12 @@ export class ParallelBenchmarkOrchestrator {
     // failures without string-matching failureReasons.
     if (llmResult?.failureKind !== undefined) {
       attempt.failureKind = llmResult.failureKind;
+    }
+    if (llmResult?.llmResponse?.providerFinishReason !== undefined) {
+      attempt.providerFinishReason = llmResult.llmResponse.providerFinishReason;
+    }
+    if (llmResult?.providerErrorCode !== undefined) {
+      attempt.providerErrorCode = llmResult.providerErrorCode;
     }
     return attempt;
   }

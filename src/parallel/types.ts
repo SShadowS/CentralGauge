@@ -172,6 +172,13 @@ export interface LLMWorkResult {
   error?: string;
 
   /**
+   * Structured provider error code (`http_529`, `http_400:invalid_request_error`,
+   * ...) extracted from the thrown error when the LLM call failed. Absent
+   * when `success` is true or when the error carried nothing structured.
+   */
+  providerErrorCode?: string;
+
+  /**
    * Structured classification of why extraction failed (set alongside
    * `error` for the same three branches). Absent when `success` is true.
    * `empty_response` carries zero trap signal and must not be read as a

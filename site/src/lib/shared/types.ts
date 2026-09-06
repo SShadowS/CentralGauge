@@ -61,6 +61,8 @@ export interface ResultInput {
     | "cancelled";
   /** Raw provider finish reason for this attempt. */
   provider_finish_reason?: string;
+  /** Structured provider error code when the LLM call failed (`http_529`, ...). */
+  provider_error_code?: string | null;
   /** Whether the response was truncated by the provider's output cap. */
   cap_reached?: boolean;
   /** Count of inline infra retries performed for this attempt. */

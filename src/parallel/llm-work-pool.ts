@@ -25,6 +25,7 @@ import {
   isRetryableEmptyResponse,
   withEmptyRetry,
 } from "../llm/empty-retry.ts";
+import { providerErrorCode } from "../llm/provider-error-code.ts";
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { resolveCandidate } from "../llm/candidate-resolution.ts";
@@ -369,6 +370,7 @@ export class LLMWorkPool {
         return this.executeWork(item, retryCount + 1, abandoned);
       }
 
+      const errorCode = providerErrorCode(error);
       return {
         workItemId: item.id,
         success: false,
@@ -377,6 +379,7 @@ export class LLMWorkPool {
         readyForCompile: false,
         ...(abandoned.count > 0 ? { abandonedGenerations: abandoned } : {}),
         ...(prepared ? { request: prepared.request } : {}),
+        ...(errorCode !== undefined ? { providerErrorCode: errorCode } : {}),
       };
     }
   }
