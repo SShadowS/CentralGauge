@@ -46,7 +46,28 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     const ogTtl = isFallbackEpoch(epoch)
       ? DEGRADED_TTL_SECONDS
       : EPOCH_KEYED_TTL_SECONDS;
-    const ogKey = buildCacheKey("og-index", {}, epoch);
+
+    // D4: the task-set hash is needed to resolve the invocation mode, and the
+    // resolved mode must enter the cache key BEFORE the cache is checked —
+    // otherwise a bare request and an explicit `?mode=batch` request collide
+    // on the same `cg-og` entry, and whichever mode rendered first "wins" for
+    // both. Single cheap lookup (one row), paid even on a cache hit.
+    const taskSet = await env.DB.prepare(
+      `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
+    ).first<{ hash: string }>();
+    // D4: no query string reaches this image route in practice, so
+    // parseModeParam(url) resolves null and the default rule applies — a
+    // mixed-mode task set 400s here, now actually surfaced as a visible 400
+    // by the try/catch around this whole handler (see above).
+    const mode = await resolveInvocationMode(
+      env.DB,
+      taskSet?.hash
+        ? { kind: "hash", hash: taskSet.hash }
+        : { kind: "current" },
+      parseModeParam(url),
+    );
+
+    const ogKey = buildCacheKey("og-index", { mode }, epoch);
     const ogHit = await ogCache.match(ogKey);
     if (ogHit) return ogHit;
 
@@ -86,40 +107,24 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       return new Response("og_dynamic flag is off", { status: 404 });
     }
 
-    // 1. Aggregate inputs from D1 (counts + current task-set hash in parallel).
-    const [counts, taskSet] = await Promise.all([
-      env.DB.prepare(
-        `SELECT
+    // 1. Aggregate inputs from D1. taskSet was already fetched above
+    //    (needed to resolve mode before the cache key), so only counts is new.
+    const counts = await env.DB.prepare(
+      `SELECT
          (SELECT COUNT(*) FROM models)                                         AS model_count,
          (SELECT COUNT(*) FROM runs)                                           AS run_count,
          (SELECT MAX(started_at) FROM runs)                                    AS last_run_at`,
-      ).first<{
-        model_count: number;
-        run_count: number;
-        last_run_at: string | null;
-      }>(),
-      // 2. Cache key needs current task-set hash so a promotion invalidates fresh.
-      env.DB.prepare(
-        `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
-      ).first<{ hash: string }>(),
-    ]);
+    ).first<{
+      model_count: number;
+      run_count: number;
+      last_run_at: string | null;
+    }>();
 
-    // 3. Compute Solve AUC@2 for all models to find the leading value.
+    // 2. Compute Solve AUC@2 for all models to find the leading value.
     //    auc_2 = (2*passedA1 + passedA2Only) / (2*D)
     //    The strict denominator D is not directly in the aggregate, but we can
     //    back-derive it: D = (passedA1 + passedA2Only) / pass_at_n (when > 0).
     //    Substituting: auc_2 = (2*p1 + p2) * pass_at_n / (2 * (p1 + p2))
-    // D4: no query string reaches this image route in practice, so
-    // parseModeParam(url) resolves null and the default rule applies — a
-    // mixed-mode task set 400s here, now actually surfaced as a visible 400
-    // by the try/catch around this whole handler (see above).
-    const mode = await resolveInvocationMode(
-      env.DB,
-      taskSet?.hash
-        ? { kind: "hash", hash: taskSet.hash }
-        : { kind: "current" },
-      parseModeParam(url),
-    );
     const aggMap = await computeModelAggregates(env.DB, {
       taskSetHash: taskSet?.hash ?? null,
       mode,

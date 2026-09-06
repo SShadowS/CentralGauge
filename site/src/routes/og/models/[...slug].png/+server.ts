@@ -42,7 +42,31 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
     const ogTtl = isFallbackEpoch(epoch)
       ? DEGRADED_TTL_SECONDS
       : EPOCH_KEYED_TTL_SECONDS;
-    const ogKey = buildCacheKey("og-model", { slug: params.slug ?? "" }, epoch);
+
+    // D4: the task-set hash is needed to resolve the invocation mode, and the
+    // resolved mode must enter the cache key BEFORE the cache is checked —
+    // otherwise a bare request and an explicit `?mode=batch` request collide
+    // on the same `cg-og` entry. Single cheap lookup (one row), paid even on
+    // a cache hit.
+    const taskSet = await env.DB.prepare(
+      `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
+    ).first<{ hash: string }>();
+    const taskSetHash = taskSet?.hash ?? null;
+    // D4: no query string reaches this image route in practice, so
+    // parseModeParam(url) resolves null and the default rule applies — a
+    // mixed-mode task set 400s here, now actually surfaced as a visible 400
+    // by the try/catch around this whole handler (see above).
+    const mode = await resolveInvocationMode(
+      env.DB,
+      taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
+      parseModeParam(url),
+    );
+
+    const ogKey = buildCacheKey(
+      "og-model",
+      { slug: params.slug ?? "", mode },
+      epoch,
+    );
     const ogHit = await ogCache.match(ogKey);
     if (ogHit) return ogHit;
 
@@ -92,21 +116,8 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
       .first<{ id: number; display_name: string; family_slug: string }>();
     if (!m) return new Response(`Unknown model: ${slug}`, { status: 404 });
 
-    const taskSet = await env.DB.prepare(
-      `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
-    ).first<{ hash: string }>();
-    const taskSetHash = taskSet?.hash ?? null;
-
-    // D4: no query string reaches this image route in practice, so
-    // parseModeParam(url) resolves null and the default rule applies — a
-    // mixed-mode task set 400s here, now actually surfaced as a visible 400
-    // by the try/catch around this whole handler (see above).
-    const mode = await resolveInvocationMode(
-      env.DB,
-      taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
-      parseModeParam(url),
-    );
-
+    // taskSetHash and mode were already resolved above (needed before the
+    // cache key).
     const agg = (
       await computeModelAggregates(env.DB, {
         modelIds: [m.id],

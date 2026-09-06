@@ -42,9 +42,30 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
     const ogTtl = isFallbackEpoch(epoch)
       ? DEGRADED_TTL_SECONDS
       : EPOCH_KEYED_TTL_SECONDS;
+
+    // D4: the task-set hash is needed to resolve the invocation mode, and the
+    // resolved mode must enter the cache key BEFORE the cache is checked —
+    // otherwise a bare request and an explicit `?mode=batch` request collide
+    // on the same `cg-og` entry. Single cheap lookup (one row), paid even on
+    // a cache hit.
+    const taskSet = await env.DB.prepare(
+      `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
+    ).first<{ hash: string }>();
+    // D4: no query string reaches this image route in practice, so
+    // parseModeParam(url) resolves null and the default rule applies — a
+    // mixed-mode task set 400s here, now actually surfaced as a visible 400
+    // by the try/catch around this whole handler (see above).
+    const mode = await resolveInvocationMode(
+      env.DB,
+      taskSet?.hash
+        ? { kind: "hash", hash: taskSet.hash }
+        : { kind: "current" },
+      parseModeParam(url),
+    );
+
     const ogKey = buildCacheKey(
       "og-family",
-      { slug: params.slug ?? "" },
+      { slug: params.slug ?? "", mode },
       epoch,
     );
     const ogHit = await ogCache.match(ogKey);
@@ -94,29 +115,16 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
       .first<{ id: number; display_name: string; vendor: string }>();
     if (!fam) return new Response(`Unknown family: ${slug}`, { status: 404 });
 
-    const [memberRows, taskSet] = await Promise.all([
-      env.DB.prepare(`SELECT id, display_name FROM models WHERE family_id = ?`)
-        .bind(fam.id)
-        .all<{ id: number; display_name: string }>(),
-      env.DB.prepare(
-        `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
-      ).first<{ hash: string }>(),
-    ]);
+    // taskSet and mode were already resolved above (needed before the cache
+    // key); only the member list is new here.
+    const memberRows = await env.DB.prepare(
+      `SELECT id, display_name FROM models WHERE family_id = ?`,
+    )
+      .bind(fam.id)
+      .all<{ id: number; display_name: string }>();
 
     const members = memberRows.results ?? [];
     const modelIds = members.map((m) => m.id);
-
-    // D4: no query string reaches this image route in practice, so
-    // parseModeParam(url) resolves null and the default rule applies — a
-    // mixed-mode task set 400s here, now actually surfaced as a visible 400
-    // by the try/catch around this whole handler (see above).
-    const mode = await resolveInvocationMode(
-      env.DB,
-      taskSet?.hash
-        ? { kind: "hash", hash: taskSet.hash }
-        : { kind: "current" },
-      parseModeParam(url),
-    );
 
     // Compute Solve AUC@2 for all family members scoped to current task set.
     const aggMap =

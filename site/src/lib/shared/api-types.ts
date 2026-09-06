@@ -590,6 +590,12 @@ export interface FamilyDetail {
   slug: string;
   display_name: string;
   vendor: string;
+  /**
+   * Invocation mode the trajectory aggregate is scoped to (D4). Resolved
+   * server-side against the current task set: an explicit `?mode=` wins,
+   * otherwise the set's sole mode is used.
+   */
+  filters: { mode: InvocationMode };
   trajectory: FamilyTrajectoryItem[];
 }
 
