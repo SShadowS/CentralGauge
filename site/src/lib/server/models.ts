@@ -11,7 +11,7 @@ import {
   computeModelAggregatesLite,
   type LiteAggregate,
 } from "./model-aggregates";
-import type { ModelsIndexItem } from "../shared/api-types";
+import type { ModelsIndexItem, InvocationMode } from "../shared/api-types";
 
 interface ModelRow {
   id: number;
@@ -23,10 +23,20 @@ interface ModelRow {
 }
 
 /**
- * `avg_score_all_runs` is intentionally cross-set (no taskSetHash filter).
+ * `avg_score_all_runs` is intentionally cross-SET (no taskSetHash filter).
  * The models index is used for catalog discoverability — we want users to
  * find models that have runs on any task set, not just the current one.
  * See api-types.ts's `ModelsIndexItem` doc comment for the full contract.
+ *
+ * It is NOT cross-MODE (D4 fix round 1, controller ruling): `mode` is
+ * required and every row's aggregates are scoped to that one mode, so
+ * `avg_score_all_runs` never pools a model's sync and batch runs into one
+ * number. Callers resolve `mode` via `resolveInvocationMode`, scoped to the
+ * current task set (there is no natural "task set" scope for a cross-set
+ * list, so the current set stands in as the decision basis — same pattern
+ * as `/og/index.png`). A current set with both modes present and no
+ * explicit `?mode=` refuses with `mode_required`, same as every other D4
+ * ranking surface.
  *
  * Lite path: this list reads only the four plain aggregates below, and the
  * full `computeModelAggregates` costs 475,387 rows against production to
@@ -34,7 +44,10 @@ interface ModelRow {
  * consistency and the CI denominator, none of which are read here). The lite
  * query costs 1,406.
  */
-export async function listModels(db: D1Database): Promise<ModelsIndexItem[]> {
+export async function listModels(
+  db: D1Database,
+  mode: InvocationMode,
+): Promise<ModelsIndexItem[]> {
   const rows = await getAll<ModelRow>(
     db,
     `SELECT m.id, m.slug, m.display_name, m.api_model_id, m.generation,
@@ -49,7 +62,7 @@ export async function listModels(db: D1Database): Promise<ModelsIndexItem[]> {
   const aggMap =
     allModelIds.length === 0
       ? new Map<number, LiteAggregate>()
-      : await computeModelAggregatesLite(db, { modelIds: allModelIds });
+      : await computeModelAggregatesLite(db, { modelIds: allModelIds, mode });
 
   return rows.map((r) => {
     const agg = aggMap.get(r.id);

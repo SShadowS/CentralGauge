@@ -95,21 +95,31 @@ export const GET: RequestHandler = async ({
     const ttl = isFallbackEpoch(epoch)
       ? DEGRADED_TTL_SECONDS
       : EPOCH_KEYED_TTL_SECONDS;
+
+    // D4: resolve the current task-set hash and the invocation mode BEFORE
+    // building the cache key — same ordering as the leaderboard route. A
+    // cached response computed under a resolved "sync" default must not
+    // outlive the set's first batch run under the same key; the only way to
+    // guarantee that is to fold the resolved mode into the key itself. This
+    // costs one extra D1 round trip on every request, including cache HITs
+    // (the task_sets lookup used to happen only on a MISS) — a deliberate
+    // trade for correctness over the prior, cheaper-but-stale-prone shape.
+    const currentSetRow = await env.DB.prepare(
+      `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
+    ).first<{ hash: string }>();
+    const taskSetHash = currentSetRow?.hash ?? null;
+    const mode = await resolveInvocationMode(
+      env.DB,
+      taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
+      parseModeParam(url),
+    );
+
     // The slug is path-derived, not a free-form query param, and a miss on an
     // unknown slug 404s before any aggregate runs — so it is not the unbounded
     // key space that `since` was.
-    //
-    // Known gap (D4): the key is NOT mode-scoped. Resolving the mode requires
-    // `taskSetHash`, which (by design) is only looked up below on a cache
-    // MISS — folding it in here would cost a D1 round trip on every cache HIT
-    // too. In practice this is safe today (every task set has exactly one
-    // mode), and if a set ever carries both, `resolveInvocationMode` throws
-    // a visible 400 rather than silently serving a wrong-mode number; a full
-    // fix (mode-aware key) is deferred alongside the rest of the tiers/matrix
-    // cache work.
     const cacheKey = buildCacheKey(
       "model-detail",
-      { slug: params.slug ?? "" },
+      { slug: params.slug ?? "", mode },
       epoch,
     );
 
@@ -154,24 +164,9 @@ export const GET: RequestHandler = async ({
     // 1. Aggregates (run_count, verified_runs, avg_score, avg_cost_usd,
     //    latency_p50_ms, tasks_*, pass_at_n, settings_suffix). Helper now
     //    supplies all per-task counts, so the legacy per-attempt SELECT below
-    //    is no longer needed.
+    //    is no longer needed. `taskSetHash` and `mode` were already resolved
+    //    above (before the cache key was built).
     const timer = new ServerTimer();
-
-    const currentSetRow = await env.DB.prepare(
-      `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
-    ).first<{ hash: string }>();
-    const taskSetHash = currentSetRow?.hash ?? null;
-
-    // D4: this endpoint has no `?mode=` UI hookup yet and the cache key above
-    // is not (yet) mode-scoped, so this resolves against the default rule in
-    // the common case (one mode present) — see the route's cache-key comment
-    // for the known, deliberately-deferred gap (mixed-mode task sets could
-    // theoretically serve a stale-mode cached response within one TTL/epoch).
-    const mode = await resolveInvocationMode(
-      env.DB,
-      taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
-      parseModeParam(url),
-    );
 
     const aggMap = await computeModelAggregates(env.DB, {
       modelIds: [model.id],

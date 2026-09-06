@@ -115,7 +115,10 @@ describe("computeModelAggregatesLite matches the full aggregate", () => {
       mode: "sync",
       modelIds,
     });
-    const lite = await computeModelAggregatesLite(env.DB, { modelIds });
+    const lite = await computeModelAggregatesLite(env.DB, {
+      modelIds,
+      mode: "sync",
+    });
 
     // Same key set: a model with no runs must be absent from both, not
     // zero-filled by one and missing from the other.
@@ -149,6 +152,7 @@ describe("computeModelAggregatesLite matches the full aggregate", () => {
     // equivalence test above silently weakens.
     const lite = await computeModelAggregatesLite(env.DB, {
       modelIds: [1, 2, 3, 4],
+      mode: "sync",
     });
     expect(lite.get(1)?.run_count, "model 1 has multiple runs").toBe(2);
     expect(lite.get(1)?.verified_runs, "model 1 has one verified run").toBe(1);
@@ -158,7 +162,10 @@ describe("computeModelAggregatesLite matches the full aggregate", () => {
   });
 
   it("honours the modelIds filter", async () => {
-    const lite = await computeModelAggregatesLite(env.DB, { modelIds: [2] });
+    const lite = await computeModelAggregatesLite(env.DB, {
+      modelIds: [2],
+      mode: "sync",
+    });
     expect([...lite.keys()]).toEqual([2]);
   });
 });

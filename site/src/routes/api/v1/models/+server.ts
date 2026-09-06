@@ -3,6 +3,10 @@ import { cachedJson } from "$lib/server/cache";
 import { errorResponse } from "$lib/server/errors";
 import { listModels } from "$lib/server/models";
 import {
+  parseModeParam,
+  resolveInvocationMode,
+} from "$lib/server/invocation-mode";
+import {
   buildCacheKey,
   readDataEpoch,
   isFallbackEpoch,
@@ -11,7 +15,7 @@ import {
 } from "$lib/server/data-epoch";
 import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
 
-export const GET: RequestHandler = async ({ request, platform }) => {
+export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
     // Epoch-keyed named cache. Before this the endpoint had no server-side
@@ -25,7 +29,17 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     const ttl = isFallbackEpoch(epoch)
       ? DEGRADED_TTL_SECONDS
       : EPOCH_KEYED_TTL_SECONDS;
-    const cacheKey = buildCacheKey("models", {}, epoch);
+
+    // D4 fix round 1 (controller ruling): the catalog list is cross-set but
+    // not cross-mode — resolve BEFORE the cache key is built (same ordering
+    // as the leaderboard and model-detail routes) so a resolved default
+    // cannot outlive the current set's first batch run under the same key.
+    const mode = await resolveInvocationMode(
+      env.DB,
+      { kind: "current" },
+      parseModeParam(url),
+    );
+    const cacheKey = buildCacheKey("models", { mode }, epoch);
 
     const cached = await cache.match(cacheKey);
     if (cached) {
@@ -53,7 +67,7 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     // Row build is shared with `GET /api/v2/models` — see server/models.ts,
     // which also documents the cross-set `avg_score_all_runs` contract and the
     // lite-aggregate cost.
-    const data = await listModels(env.DB);
+    const data = await listModels(env.DB, mode);
 
     // The response STORED in the named cache carries the public s-maxage. The
     // user-facing response stays `private` via cachedJson, or adapter-cloudflare

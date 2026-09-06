@@ -10,7 +10,10 @@ import {
 } from "../fixtures/ingest-helpers";
 import { sha256Hex } from "../../src/lib/shared/hash";
 import { resetDb } from "../utils/reset-db";
-import { buildCacheKey, isFallbackEpoch } from "../../src/lib/server/data-epoch";
+import {
+  buildCacheKey,
+  isFallbackEpoch,
+} from "../../src/lib/server/data-epoch";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -22,8 +25,9 @@ beforeEach(async () => {
 });
 
 async function epoch(): Promise<number> {
-  const row = await env.DB.prepare(`SELECT epoch FROM cache_epoch WHERE id = 1`)
-    .first<{ epoch: number }>();
+  const row = await env.DB.prepare(
+    `SELECT epoch FROM cache_epoch WHERE id = 1`,
+  ).first<{ epoch: number }>();
   return row!.epoch;
 }
 
@@ -48,8 +52,16 @@ describe("cache key normalization", () => {
   });
 
   it("is insensitive to param ordering", () => {
-    const a = buildCacheKey("leaderboard", { set: "current", tier: "all" }, "e1");
-    const b = buildCacheKey("leaderboard", { tier: "all", set: "current" }, "e1");
+    const a = buildCacheKey(
+      "leaderboard",
+      { set: "current", tier: "all" },
+      "e1",
+    );
+    const b = buildCacheKey(
+      "leaderboard",
+      { tier: "all", set: "current" },
+      "e1",
+    );
     expect(a.url).toBe(b.url);
   });
 
@@ -108,11 +120,13 @@ describe("write paths bump the data epoch", () => {
     const base = makeRunPayload();
     const payload = makeRunPayload({
       reproduction_bundle_sha256: bundleSha,
-      results: [{
-        ...base.results[0],
-        transcript_sha256: transcriptSha,
-        code_sha256: codeSha,
-      }],
+      results: [
+        {
+          ...base.results[0],
+          transcript_sha256: transcriptSha,
+          code_sha256: codeSha,
+        },
+      ],
     });
     const { signedRequest } = await createSignedPayload(
       payload as unknown as Record<string, unknown>,
@@ -127,13 +141,11 @@ describe("write paths bump the data epoch", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(signedRequest),
     });
-    for (
-      const [sha, body] of [
-        [transcriptSha, transcriptBody],
-        [codeSha, codeBody],
-        [bundleSha, bundleBody],
-      ] as const
-    ) {
+    for (const [sha, body] of [
+      [transcriptSha, transcriptBody],
+      [codeSha, codeBody],
+      [bundleSha, bundleBody],
+    ] as const) {
       await signedBlobPut(`/api/v1/blobs/${sha}`, body, keyId, keypair);
     }
 
@@ -155,20 +167,20 @@ describe("write paths bump the data epoch", () => {
       keypair,
     );
     await expectBump("POST /api/v1/admin/catalog/families", async () => {
-      const res = await SELF.fetch(
-        "https://x/api/v1/admin/catalog/families",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(signedRequest),
-        },
-      );
+      const res = await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(signedRequest),
+      });
       expect(res.status).toBe(200);
     });
   });
 
   it("admin task-set creation bumps", async () => {
-    const { keyId, keypair } = await registerMachineKey("epoch-admin2", "admin");
+    const { keyId, keypair } = await registerMachineKey(
+      "epoch-admin2",
+      "admin",
+    );
     const { signedRequest } = await createSignedPayload(
       {
         hash: "b".repeat(64),
@@ -180,14 +192,11 @@ describe("write paths bump the data epoch", () => {
       keypair,
     );
     await expectBump("POST /api/v1/admin/catalog/task-sets", async () => {
-      const res = await SELF.fetch(
-        "https://x/api/v1/admin/catalog/task-sets",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(signedRequest),
-        },
-      );
+      const res = await SELF.fetch("https://x/api/v1/admin/catalog/task-sets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(signedRequest),
+      });
       expect(res.status).toBe(200);
     });
   });
@@ -225,9 +234,9 @@ describe("query canonicalization bounds the cache-key space", () => {
     );
     expect(a.status).toBe(200);
     expect(b.status).toBe(200);
-    const [ja, jb] = [await a.json(), await b.json()] as Array<
-      { filters: { since: string | null } }
-    >;
+    const [ja, jb] = [await a.json(), await b.json()] as Array<{
+      filters: { since: string | null };
+    }>;
     // Both normalize to the same UTC day boundary, so they share a slot.
     expect(ja.filters.since).toBe(jb.filters.since);
     expect(ja.filters.since).toBe("2026-05-05T00:00:00.000Z");
@@ -251,9 +260,9 @@ describe("query canonicalization bounds the cache-key space", () => {
     const b = await SELF.fetch(
       "https://x/api/v1/leaderboard?since=2998-06-15T00:00:00.000Z",
     );
-    const [ja, jb] = [await a.json(), await b.json()] as Array<
-      { filters: { since: string | null } }
-    >;
+    const [ja, jb] = [await a.json(), await b.json()] as Array<{
+      filters: { since: string | null };
+    }>;
     // Both select the empty set; they must not be two distinct keys.
     expect(ja.filters.since).toBe(jb.filters.since);
   });
@@ -289,25 +298,38 @@ describe("newly-cached endpoints actually populate their cache", () => {
     expect(res.status).toBe(200);
     await res.arrayBuffer();
 
-    const row = await env.DB.prepare(`SELECT epoch FROM cache_epoch WHERE id = 1`)
-      .first<{ epoch: number }>();
+    const row = await env.DB.prepare(
+      `SELECT epoch FROM cache_epoch WHERE id = 1`,
+    ).first<{ epoch: number }>();
     const cache = await caches.open("cg-models");
-    const hit = await cache.match(buildCacheKey("models", {}, `e${row!.epoch}`));
+    const hit = await cache.match(
+      buildCacheKey("models", { mode: "sync" }, `e${row!.epoch}`),
+    );
     expect(hit, "cg-models entry must exist after a miss").toBeDefined();
   });
 
   it("a bump retires the models entry", async () => {
     await SELF.fetch("https://x/api/v1/models").then((r) => r.arrayBuffer());
-    const before = await env.DB.prepare(`SELECT epoch FROM cache_epoch WHERE id = 1`)
-      .first<{ epoch: number }>();
+    const before = await env.DB.prepare(
+      `SELECT epoch FROM cache_epoch WHERE id = 1`,
+    ).first<{ epoch: number }>();
 
-    await env.DB.prepare(`UPDATE cache_epoch SET epoch = epoch + 1 WHERE id = 1`).run();
+    await env.DB.prepare(
+      `UPDATE cache_epoch SET epoch = epoch + 1 WHERE id = 1`,
+    ).run();
 
     // The old key still holds its entry, but nothing will ever request it
     // again: the new epoch produces a different key, which is empty until
     // recomputed. That is the whole invalidation mechanism.
     const cache = await caches.open("cg-models");
-    const newKey = buildCacheKey("models", {}, `e${before!.epoch + 1}`);
-    expect(await cache.match(newKey), "new epoch must start cold").toBeUndefined();
+    const newKey = buildCacheKey(
+      "models",
+      { mode: "sync" },
+      `e${before!.epoch + 1}`,
+    );
+    expect(
+      await cache.match(newKey),
+      "new epoch must start cold",
+    ).toBeUndefined();
   });
 });

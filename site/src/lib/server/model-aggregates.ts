@@ -216,14 +216,22 @@ export interface LiteAggregate {
  * with no results still reports run_count with a null avg_score, matching the
  * full path.
  *
- * Do NOT grow this function. If a caller needs more than these four fields it
- * wants `computeModelAggregates`; the whole point here is that the query stays
- * small enough to be cheap. `tests/api/model-aggregates-lite.test.ts` asserts
- * the two agree on all four fields.
+ * `mode: InvocationMode` is REQUIRED (D4 fix round 1, controller ruling): the
+ * catalog list is cross-SET (no `taskSetHash` filter — see `models.ts`'s
+ * `listModels` doc comment), but it is NOT cross-MODE. `avg_score_all_runs`
+ * must not silently pool a model's sync and batch runs into one number; the
+ * caller resolves a single mode (via `resolveInvocationMode`, scoped to the
+ * current task set) and passes it in, same as every other D4 ranking surface.
+ *
+ * Do NOT grow this function beyond these four fields. If a caller needs more
+ * than that it wants `computeModelAggregates`; the whole point here is that
+ * the query stays small enough to be cheap. `tests/api/model-aggregates-lite.test.ts`
+ * asserts the two agree on all four fields **per mode** — equivalence no
+ * longer holds unconditionally once a model has runs in both modes.
  */
 export async function computeModelAggregatesLite(
   db: D1Database,
-  opts: { modelIds?: number[]; mode?: InvocationMode } = {},
+  opts: { modelIds?: number[]; mode: InvocationMode },
 ): Promise<Map<number, LiteAggregate>> {
   const where: string[] = [];
   const params: Array<string | number> = [];
@@ -231,14 +239,8 @@ export async function computeModelAggregatesLite(
     where.push(`runs.model_id IN (${opts.modelIds.map(() => "?").join(",")})`);
     params.push(...opts.modelIds);
   }
-  // D4: unlike computeModelAggregates, mode is OPTIONAL here — this helper
-  // also backs the catalog-wide `/api/v1/models` list (see models.ts), which
-  // is deliberately cross-set and cross-mode for discoverability. Callers
-  // that DO want a single-mode scope (D4 ranking surfaces) pass `mode`.
-  if (opts.mode) {
-    where.push(modePredicate("runs"));
-    params.push(opts.mode);
-  }
+  where.push(modePredicate("runs"));
+  params.push(opts.mode);
   const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
   const sql = `
