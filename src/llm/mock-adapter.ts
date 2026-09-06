@@ -189,6 +189,9 @@ export class MockLLMAdapter implements LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    if (this.config.model === "mock-throws") {
+      throw new Error("mock adapter failure (model mock-throws)");
+    }
     const result = await this.generateCode(request, context);
     const content = result.response.content;
     yield { text: content, accumulatedText: content, done: false, index: 0 };
@@ -202,6 +205,9 @@ export class MockLLMAdapter implements LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    if (this.config.model === "mock-throws") {
+      throw new Error("mock adapter failure (model mock-throws)");
+    }
     const result = await this.generateFix(
       originalCode,
       errors,

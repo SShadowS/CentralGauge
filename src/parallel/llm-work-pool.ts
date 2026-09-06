@@ -261,9 +261,19 @@ export class LLMWorkPool {
       item.context.metadata.estimatedTokens,
     );
 
+    // Populated as soon as the prompt is rendered, so the catch block below
+    // can still attach the rendered request to a failure result (spec D11)
+    // even though the throw happened after rendering completed.
+    let prepared:
+      | { context: GenerationContext; request: LLMRequest }
+      | undefined;
+
     try {
       // Get or create LLM adapter
       const adapter = this.getAdapter(item);
+
+      prepared = await this.prepareGeneration(item);
+      const ready = prepared;
 
       // Generate code with continuation + empty-retry support.
       // withEmptyRetry re-invokes the underlying generation when the
@@ -271,7 +281,7 @@ export class LLMWorkPool {
       // reasoning models). Each retry's tokens are still billed, so we
       // fold usage across all attempts onto the final result.
       const retryOutcome = await withEmptyRetry(
-        () => this.generateCodeWithContinuation(item, adapter),
+        () => this.generateCodeWithContinuation(item, adapter, ready),
         (r) => isRetryableEmptyResponse(r.response),
         this.emptyRetryConfig,
       );
@@ -304,6 +314,7 @@ export class LLMWorkPool {
         success: resolution.isReadyForCompile,
         code: resolution.cleanedCode,
         llmResponse: continuationResult.response,
+        request: ready.request,
         duration: Date.now() - startTime,
         readyForCompile: resolution.isReadyForCompile,
         continuationCount: continuationResult.continuationCount,
@@ -365,6 +376,7 @@ export class LLMWorkPool {
         duration: Date.now() - startTime,
         readyForCompile: false,
         ...(abandoned.count > 0 ? { abandonedGenerations: abandoned } : {}),
+        ...(prepared ? { request: prepared.request } : {}),
       };
     }
   }
@@ -410,12 +422,14 @@ export class LLMWorkPool {
   }
 
   /**
-   * Generate code with continuation support
+   * Render the prompt for an item. Pure apart from template and starter
+   * reads: no adapter call happens here, so the rendered request is
+   * available to the caller before (and independent of) whether generation
+   * itself succeeds or throws.
    */
-  private async generateCodeWithContinuation(
+  private async prepareGeneration(
     item: LLMWorkItem,
-    adapter: LLMAdapter,
-  ): Promise<ContinuationResult> {
+  ): Promise<{ context: GenerationContext; request: LLMRequest }> {
     const context: GenerationContext = {
       taskId: item.taskManifest.id,
       attempt: item.attemptNumber,
@@ -434,7 +448,17 @@ export class LLMWorkPool {
 
     // Build the request
     const request = await this.buildRequest(item, context);
+    return { context, request };
+  }
 
+  /**
+   * Generate code with continuation support
+   */
+  private generateCodeWithContinuation(
+    item: LLMWorkItem,
+    adapter: LLMAdapter,
+    prepared: { context: GenerationContext; request: LLMRequest },
+  ): Promise<ContinuationResult> {
     // Transport is decided by adapter capability ALONE, never by whether the
     // caller wants progress events. `item.onChunk` is a UI concern; streaming
     // is a wire concern, and coupling them made `--stream` silently control
@@ -469,8 +493,8 @@ export class LLMWorkPool {
     return this.generateCodeWithStreaming(
       item,
       adapter as StreamingLLMAdapter,
-      request,
-      context,
+      prepared.request,
+      prepared.context,
     );
   }
 

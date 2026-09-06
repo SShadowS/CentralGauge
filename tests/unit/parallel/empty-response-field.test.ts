@@ -191,4 +191,17 @@ describe("failureKind bridge: LLMWorkResult -> ExecutionAttempt -> EMPTY categor
     assertEquals(attempt.failureKind, "safety_refusal");
     assertEquals(categorizeAttempt(attempt, true), "COMPILE");
   });
+
+  it("carries the rendered prompt on a failed attempt", () => {
+    const orchestrator = new ParallelBenchmarkOrchestrator();
+    const attempt = orchestrator.createFailedAttempt(1, {
+      workItemId: "w",
+      success: false,
+      error: "boom",
+      duration: 10,
+      readyForCompile: false,
+      request: { prompt: "RENDERED PROMPT", maxTokens: 100 },
+    });
+    assertEquals(attempt.prompt, "RENDERED PROMPT");
+  });
 });

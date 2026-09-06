@@ -1165,7 +1165,7 @@ export class ParallelBenchmarkOrchestrator {
       containerName: compileResult.containerName,
       startTime,
       endTime,
-      prompt: context.instructions,
+      prompt: llmResult.request?.prompt ?? context.instructions,
       llmResponse: llmResult.llmResponse!,
       extractedCode: llmResult.code || "",
       candidateCode: compileResult.candidateCode,
@@ -1221,7 +1221,7 @@ export class ParallelBenchmarkOrchestrator {
       attemptNumber,
       startTime: new Date(now.getTime() - (llmResult?.duration ?? 0)),
       endTime: now,
-      prompt: "",
+      prompt: llmResult?.request?.prompt ?? "",
       llmResponse: llmResult?.llmResponse ?? {
         content: "",
         model: "unknown",

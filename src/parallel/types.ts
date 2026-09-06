@@ -2,7 +2,7 @@
  * Type definitions for parallel execution system
  */
 
-import type { LLMResponse } from "../llm/types.ts";
+import type { LLMRequest, LLMResponse } from "../llm/types.ts";
 import type { VariantConfig } from "../llm/variant-types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
 import type {
@@ -160,6 +160,13 @@ export interface LLMWorkResult {
 
   /** LLM response details */
   llmResponse?: LLMResponse;
+
+  /**
+   * The rendered request that was (or would have been) sent. Present on every
+   * result that got as far as rendering, success or failure (spec D11), so the
+   * attempt record can carry the prompt actually sent.
+   */
+  request?: LLMRequest;
 
   /** Error message (if failed) */
   error?: string;
