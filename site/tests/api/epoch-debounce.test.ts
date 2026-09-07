@@ -34,11 +34,19 @@ beforeEach(async () => {
   await resetDb();
 });
 
-async function state(): Promise<{ epoch: number; pending_since: number }> {
+async function state(): Promise<
+  { epoch: number; pending_since: number; last_bump_at: number }
+> {
   const row = await env.DB
-    .prepare(`SELECT epoch, pending_since FROM cache_epoch WHERE id = 1`)
-    .first<{ epoch: number; pending_since: number }>();
-  return { epoch: row!.epoch, pending_since: Number(row!.pending_since) };
+    .prepare(
+      `SELECT epoch, pending_since, last_bump_at FROM cache_epoch WHERE id = 1`,
+    )
+    .first<{ epoch: number; pending_since: number; last_bump_at: number }>();
+  return {
+    epoch: row!.epoch,
+    pending_since: Number(row!.pending_since),
+    last_bump_at: Number(row!.last_bump_at),
+  };
 }
 
 /** Backdates the pending mark so the debounce window has provably elapsed. */
@@ -100,7 +108,8 @@ describe("a reader promotes once the window has passed", () => {
     const after = await state();
     expect(after.epoch).toBe(before.epoch + 1);
     expect(after.pending_since, "mark cleared on promotion").toBe(0);
-    expect(after.last_bump_at ?? 0).toBeGreaterThan(0);
+    expect(after.last_bump_at, "promotion records its time")
+      .toBeGreaterThan(0);
   });
 
   it("promotes exactly once even with concurrent readers", async () => {
