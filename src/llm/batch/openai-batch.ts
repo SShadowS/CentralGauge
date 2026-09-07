@@ -354,8 +354,17 @@ export class OpenAIBatchProvider implements BatchProvider {
   }
 
   async collect(handle: BatchHandle): Promise<BatchItemResult[]> {
-    const outputFileId = handle.extra?.["outputFileId"];
-    const errorFileId = handle.extra?.["errorFileId"];
+    // Self-sufficient: a real handle carries only `inputFileId`/`nonce`
+    // (`submit`'s own extras) unless a caller has already merged `poll`'s
+    // extras onto it, so re-retrieve the batch here rather than trust
+    // `handle.extra` to already hold the output/error file ids.
+    const batch = await this.client.batches.retrieve(handle.batchId);
+    let outputFileId = batch.output_file_id ?? undefined;
+    let errorFileId = batch.error_file_id ?? undefined;
+    if (outputFileId === undefined && errorFileId === undefined) {
+      outputFileId = handle.extra?.["outputFileId"];
+      errorFileId = handle.extra?.["errorFileId"];
+    }
 
     const outputLines = outputFileId
       ? parseJsonl(

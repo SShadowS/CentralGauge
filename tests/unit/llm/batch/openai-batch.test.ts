@@ -306,6 +306,15 @@ Deno.test("OpenAIBatchProvider.collect merges output and error files, flags a du
     },
   ];
   const client = makeClient({
+    batchesRetrieve: () =>
+      Promise.resolve(
+        batchStatus({
+          id: "batch_1",
+          status: "completed",
+          output_file_id: "file-out",
+          error_file_id: "file-err",
+        }),
+      ),
     filesContent: (id) => {
       const lines = id === "file-out" ? outputLines : errorLines;
       return Promise.resolve({
@@ -364,14 +373,23 @@ Deno.test("OpenAIBatchProvider.collect treats an expired batch's completed outpu
     error: null,
   };
   const client = makeClient({
+    batchesRetrieve: () =>
+      Promise.resolve(
+        batchStatus({
+          id: "batch_1",
+          status: "expired",
+          output_file_id: "file-out",
+        }),
+      ),
     filesContent: () =>
       Promise.resolve({ text: () => Promise.resolve(JSON.stringify(line)) }),
   });
   const provider = new OpenAIBatchProvider(client);
 
-  // Mirrors what `poll` returns for an `expired` batch that still completed
-  // some items before running out of its 24h window: collect never looks at
-  // batch status itself, only at whatever output/error files the handle names.
+  // Mirrors what a retrieve returns for an `expired` batch that still
+  // completed some items before running out of its 24h window: collect
+  // never treats `status` itself as disqualifying, only the file ids the
+  // retrieved batch (or, failing that, the handle) names.
   const results = await provider.collect({
     provider: "openai",
     batchId: "batch_1",
@@ -386,13 +404,75 @@ Deno.test("OpenAIBatchProvider.collect treats an expired batch's completed outpu
   }]);
 });
 
-Deno.test("OpenAIBatchProvider.collect returns nothing when the handle carries no file ids", async () => {
-  const provider = new OpenAIBatchProvider(makeClient({}));
+Deno.test("OpenAIBatchProvider.collect returns nothing when neither the retrieved batch nor the handle carries file ids", async () => {
+  const client = makeClient({
+    batchesRetrieve: () =>
+      Promise.resolve(batchStatus({ id: "batch_1", status: "completed" })),
+  });
+  const provider = new OpenAIBatchProvider(client);
   const results = await provider.collect({
     provider: "openai",
     batchId: "batch_1",
   });
   assertEquals(results, []);
+});
+
+Deno.test("OpenAIBatchProvider.collect is self-sufficient: it retrieves the batch to find its output and error files even when the handle carries neither", async () => {
+  const outputLine = {
+    custom_id: "ok",
+    response: { status_code: 200, body: { text: "OK" } },
+    error: null,
+  };
+  const errorLine = {
+    custom_id: "bad",
+    response: { status_code: 400, body: null },
+    error: { code: "invalid_request", message: "bad request" },
+  };
+  let retrievedId: string | undefined;
+  const contentCalls: string[] = [];
+  const client = makeClient({
+    batchesRetrieve: (id) => {
+      retrievedId = id;
+      return Promise.resolve(
+        batchStatus({
+          id,
+          status: "completed",
+          output_file_id: "file-out",
+          error_file_id: "file-err",
+        }),
+      );
+    },
+    filesContent: (id) => {
+      contentCalls.push(id);
+      const line = id === "file-out" ? outputLine : errorLine;
+      return Promise.resolve({
+        text: () => Promise.resolve(JSON.stringify(line)),
+      });
+    },
+  });
+  const provider = new OpenAIBatchProvider(client);
+
+  // Mirrors a real handle as `pollActive` persists it before the extras
+  // merge, and as a handle adopted through reconciliation always looks:
+  // only `inputFileId`/`nonce`, never the output/error file ids.
+  const results = await provider.collect({
+    provider: "openai",
+    batchId: "batch_1",
+    extra: { inputFileId: "file-in", nonce: "n1" },
+  });
+
+  assertEquals(retrievedId, "batch_1");
+  assertEquals(new Set(contentCalls), new Set(["file-out", "file-err"]));
+  const byId = new Map(results.map((r) => [r.itemId, r]));
+  assertEquals(byId.get("ok"), {
+    itemId: "ok",
+    ok: true,
+    raw: { text: "OK" },
+    httpStatus: 200,
+  });
+  const bad = byId.get("bad");
+  if (!bad || bad.ok) throw new Error("expected an invalid_request error");
+  assertEquals(bad.error.kind, "invalid_request");
 });
 
 Deno.test("OpenAIBatchProvider.cleanup deletes the input file and any listed file named with the nonce", async () => {

@@ -54,7 +54,11 @@ export interface PollOutcome {
  * matching `BatchRecord` is skipped) and updates that record in place: on
  * a normal poll, `providerStatus`, `rawCounts`, `lastPolledAt`, and
  * `providerReportedCostUsd` when the provider reports one, plus `state`
- * flips to `"ended"` once `!processing`. On `sizeRejected`, the record is
+ * flips to `"ended"` once `!processing`. Whenever `poll.extra` is present
+ * it is merged onto `record.handle.extra` (provider-neutral; OpenAI uses
+ * it to carry `outputFileId`/`errorFileId`), so the persisted handle stays
+ * complete for `cleanup` and for audit even though `collect` itself no
+ * longer depends on it. On `sizeRejected`, the record is
  * marked `"ended"` with `rawCounts` collapsed to `{ sizeRejected: 1 }` and
  * a `size_rejected_async` event is appended. Persists `state.json` once at
  * the end.
@@ -77,6 +81,9 @@ export async function pollActive(
     record.lastPolledAt = new Date().toISOString();
     if (poll.providerReportedCostUsd !== undefined) {
       record.providerReportedCostUsd = poll.providerReportedCostUsd;
+    }
+    if (poll.extra) {
+      record.handle.extra = { ...record.handle.extra, ...poll.extra };
     }
 
     if (poll.sizeRejected) {

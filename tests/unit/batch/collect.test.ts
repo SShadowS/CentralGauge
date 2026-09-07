@@ -88,6 +88,51 @@ Deno.test("pollActive updates records and reports processing until every batch e
   }
 });
 
+Deno.test("pollActive merges poll.extra into the record's handle.extra, keeping pre-existing keys, and persists it", async () => {
+  const dir = await createTempDir("poll-extra");
+  try {
+    const fake = new FakeBatchProvider("openai", {
+      poll: {
+        "batch-1": [
+          {
+            processing: false,
+            providerStatus: "completed",
+            rawCounts: { completed: 2 },
+            extra: { outputFileId: "file-out" },
+          },
+        ],
+      },
+    });
+    const record = makeRecord({
+      handle: {
+        provider: "openai",
+        batchId: "batch-1",
+        extra: { inputFileId: "file-in", nonce: "n1" },
+      },
+    });
+    const state = minimalState({
+      batches: [record],
+      activeBatchIds: ["batch-1"],
+    });
+
+    const outcome = await pollActive(dir, state, fake);
+    assertEquals(outcome.records[0]?.handle.extra, {
+      inputFileId: "file-in",
+      nonce: "n1",
+      outputFileId: "file-out",
+    });
+
+    const reloaded = await loadState(dir);
+    assertEquals(reloaded.batches[0]?.handle.extra, {
+      inputFileId: "file-in",
+      nonce: "n1",
+      outputFileId: "file-out",
+    });
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
 Deno.test("collectEnded writes one immutable response per item, maps ok items, and is idempotent", async () => {
   const dir = await createTempDir("collect");
   try {
