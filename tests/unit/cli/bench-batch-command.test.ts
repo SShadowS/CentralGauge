@@ -11,6 +11,7 @@ import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import {
   advanceAllRuns,
+  advanceFailureMessage,
   buildAdvanceDeps,
   buildBatchCommand,
   buildFinalizeDeps,
@@ -50,6 +51,30 @@ Deno.test("bench batch registers submit, status, advance, retry, abandon", () =>
     new Set(names),
     new Set(["submit", "status", "advance", "retry", "abandon"]),
   );
+});
+
+Deno.test("advanceFailureMessage returns the blocked reason, and undefined for a reasonless step", () => {
+  // deno-lint-ignore no-explicit-any
+  const state = {} as any;
+
+  const blocked: AdvanceResult = {
+    exit: 4,
+    step: { kind: "blocked", reason: "bench lock held by pid 123" },
+    state,
+  };
+  assertEquals(advanceFailureMessage(blocked), "bench lock held by pid 123");
+
+  // `reconcile` also exits 4 (an intent.json means `retry` owns the run,
+  // spec 4.3) but carries no reason - `advance` prints nothing for it.
+  const reconcile: AdvanceResult = {
+    exit: 4,
+    step: { kind: "reconcile" },
+    state,
+  };
+  assertEquals(advanceFailureMessage(reconcile), undefined);
+
+  const done: AdvanceResult = { exit: 0, step: { kind: "done" }, state };
+  assertEquals(advanceFailureMessage(done), undefined);
 });
 
 Deno.test("advanceAllRuns iterates run dirs in name order and returns the max exit code", async () => {

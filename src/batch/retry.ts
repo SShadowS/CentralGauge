@@ -270,15 +270,24 @@ async function retrySubmitUnknown(
 
 /**
  * Runs the `retry` command for the run at `dir` (spec 4.5). A
- * `submit-unknown` run is handled entirely by
- * {@link retrySubmitUnknown}. Otherwise, a non-retryable `lastError`
- * blocks (exit 4) unless `deps.force` overrides it - the classification
- * was wrong, per spec 9 - after which the same resubmission runs as the
- * retryable case. A `prepared` run with no `lastError` at all (notably
- * one `--confirm-not-submitted` just returned to `prepared`, which sets
- * no `lastError`) still resubmits when it has orphaned pending items;
- * only a `prepared` run with nothing pending falls through to the
- * "nothing to retry" exit 4.
+ * `submit-unknown` run is handled entirely by {@link retrySubmitUnknown}
+ * - routed to it not only on `state.phase === "submit-unknown"` but also
+ * whenever a live `intent.json` is on disk, mirroring `nextStep`'s own
+ * priority rule in `transitions.ts` ("a live intent is stronger evidence
+ * than a possibly-stale phase"). Nothing in this codebase ever persists
+ * `phase = "submit-unknown"` - `nextStep` derives that condition purely
+ * from intent presence - so a crash between the OpenAI upload and batch
+ * creation on a run's very FIRST submission leaves `state.phase` still
+ * `"prepared"` with an orphan intent; without this check
+ * `--confirm-not-submitted`/`--adopt` would be unreachable for exactly
+ * that crash. Otherwise, a non-retryable `lastError` blocks (exit 4)
+ * unless `deps.force` overrides it - the classification was wrong, per
+ * spec 9 - after which the same resubmission runs as the retryable case.
+ * A `prepared` run with no `lastError` at all (notably one
+ * `--confirm-not-submitted` just returned to `prepared`, which sets no
+ * `lastError`) still resubmits when it has orphaned pending items; only a
+ * `prepared` run with nothing pending falls through to the "nothing to
+ * retry" exit 4.
  */
 export async function retryRun(
   dir: string,
@@ -287,7 +296,7 @@ export async function retryRun(
   return await withMutateLock(dir, async () => {
     const state = await loadState(dir);
 
-    if (state.phase === "submit-unknown") {
+    if (state.phase === "submit-unknown" || (await readIntent(dir)) !== null) {
       return await retrySubmitUnknown(dir, state, deps);
     }
 

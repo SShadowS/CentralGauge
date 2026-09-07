@@ -317,6 +317,21 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
 }
 
 /**
+ * The message to print for a failed (`exit === 4`) `advanceRun` result, or
+ * `undefined` when the result carries none. `step.kind === "blocked"` is
+ * the only `Step` with a reason (a non-retryable `lastError`, a size-blocked
+ * item, drift, or the bench lock); `step.kind === "reconcile"` also exits 4
+ * (an intent.json means `retry` owns this run now, spec 4.3) but has
+ * nothing to say - `advance` prints nothing for it, same as before this
+ * helper existed.
+ */
+export function advanceFailureMessage(
+  result: AdvanceResult,
+): string | undefined {
+  return result.step.kind === "blocked" ? result.step.reason : undefined;
+}
+
+/**
  * The pure driver behind `advance --all` (spec section 8): every run
  * directory under `<output>/batch/`, in name order, advanced ONE step each
  * (serially), returning the highest exit code seen. `0` when there are no
@@ -501,6 +516,12 @@ export function buildBatchCommand(): Command {
       const dir = runDir(opts.output, runId);
       const deps = await buildAdvanceDeps(dir);
       const result = await advanceRun(dir, deps);
+      if (result.exit === 4) {
+        const message = advanceFailureMessage(result);
+        if (message) {
+          console.error(`${colors.red("[FAIL]")} ${message}`);
+        }
+      }
       Deno.exit(result.exit);
     });
 

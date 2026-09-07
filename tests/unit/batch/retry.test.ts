@@ -420,9 +420,12 @@ Deno.test("retryRun: end to end after --confirm-not-submitted", async () => {
       inputFileId: "file-123",
     };
     await writeIntent(dir, intent);
+    // The crash this recovers from happens on the run's very FIRST
+    // submission, so `state.phase` never left `"prepared"` - nothing ever
+    // persists `"submit-unknown"` (see `retryRun`'s doc comment).
     const state = minimalState({
       model: { slug: "openai/gpt-6", provider: "openai", apiModelId: "gpt-6" },
-      phase: "submit-unknown",
+      phase: "prepared",
       tasks: {
         T1: {
           attempt1: { itemId, round: 0, ownerRound: 0, state: "pending" },
@@ -438,6 +441,15 @@ Deno.test("retryRun: end to end after --confirm-not-submitted", async () => {
       makeDeps(fake, { confirmNotSubmitted: true }),
     );
     assertEquals(confirmResult.exit, 0);
+
+    const cleanupCalls = fake.calls.filter((c) => c.op === "cleanup");
+    assertEquals(cleanupCalls.length, 1);
+    const handle = cleanupCalls[0]?.args[0] as
+      | { extra?: Record<string, string> }
+      | undefined;
+    assertEquals(handle?.extra?.["inputFileId"], "file-123");
+
+    assertEquals(await readIntent(dir), null);
 
     const afterConfirm = await loadState(dir);
     assertEquals(afterConfirm.phase, "prepared");
