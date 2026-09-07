@@ -69,6 +69,7 @@ export function minimalState(
     batches: [],
     activeBatchIds: [],
     tasks: {},
+    ingest: true,
   };
   return { ...base, ...overrides };
 }

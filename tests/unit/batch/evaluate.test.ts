@@ -134,6 +134,7 @@ function makeState(
     batches: [],
     activeBatchIds: [],
     tasks,
+    ingest: true,
   };
 }
 

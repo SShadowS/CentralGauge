@@ -242,6 +242,7 @@ Deno.test("advanceRun drives a two-task run from attempt-1-submitted to finalize
         },
       },
     },
+    ingest: true,
   };
   await writeState(dir, initialState);
 
@@ -401,6 +402,7 @@ Deno.test("advanceRun refuses on D13 drift without mutating state", async () => 
     batches: [],
     activeBatchIds: [],
     tasks: {},
+    ingest: true,
   };
   await writeState(dir, corrupted);
   const before = await Deno.readTextFile(join(dir, "state.json"));
@@ -485,6 +487,7 @@ Deno.test("advanceRun's evaluate step exits 4 naming the bench-lock holder", asy
         },
       },
     },
+    ingest: true,
   };
   await writeState(dir, state);
 
@@ -615,6 +618,7 @@ Deno.test("advanceRun re-chunks an async size rejection before evaluating, witho
         },
       },
     },
+    ingest: true,
   };
   await writeState(dir, state);
 

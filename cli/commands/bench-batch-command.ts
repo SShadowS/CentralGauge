@@ -9,12 +9,12 @@
  * does (`apiKeyForBatchProvider`), then exits with `Deno.exit(code)` after
  * the underlying action resolves. `status` always exits 0.
  *
- * `submit` is the only command that needs a full preset resolution — it
+ * `submit` is the only command that needs a full preset resolution: it
  * mints new runs. `advance`/`retry`/`status`/`abandon` all operate on an
  * EXISTING run directory and rebuild everything they need (manifests,
  * `TaskExecutionContext`s, the reconstructed `ModelVariant`) from that
  * run's own frozen `state.json`/`prompt-inputs.json`, never from a
- * preset — a run must remain drivable long after the preset that created
+ * preset. A run must remain drivable long after the preset that created
  * it has changed or been removed (spec 4.6's whole premise: the run
  * carries its own frozen truth).
  *
@@ -30,6 +30,25 @@
 import { Command } from "@cliffy/command";
 import { dirname, join } from "@std/path";
 import * as colors from "@std/fmt/colors";
+
+import type { VariantProbe } from "../../src/doctor/mod.ts";
+import type { ModelVariant } from "../../src/llm/variant-types.ts";
+import type {
+  BatchItem,
+  BatchProviderName,
+} from "../../src/llm/batch/types.ts";
+import type { LLMRequest, LLMResponse } from "../../src/llm/types.ts";
+import type { ParallelBenchmarkOptions } from "../../src/parallel/orchestrator.ts";
+import type { FrozenPromptInputs } from "../../src/parallel/shared/prompt-inputs.ts";
+import type {
+  TaskExecutionContext,
+  TaskManifest,
+} from "../../src/tasks/interfaces.ts";
+import type { SubmitDeps } from "../../src/batch/submit.ts";
+import type { AdvanceDeps, AdvanceResult } from "../../src/batch/advance.ts";
+import type { FinalizeDeps } from "../../src/batch/results.ts";
+import type { BatchRunState } from "../../src/batch/state.ts";
+
 import { ConfigManager } from "../../src/config/config.ts";
 import { EnvLoader } from "../../src/utils/env-loader.ts";
 import { familySlugForModelSlug } from "../../src/catalog/seed/inference.ts";
@@ -38,43 +57,26 @@ import {
   formatReportToTerminal,
   ingestSection,
   runDoctor,
-  type VariantProbe,
 } from "../../src/doctor/mod.ts";
 import { todayPricingVersion } from "./bench/ingest-meta.ts";
 import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
-import type { ModelVariant } from "../../src/llm/variant-types.ts";
 import { ModelPresetRegistry } from "../../src/llm/model-presets.ts";
-import type {
-  BatchItem,
-  BatchProviderName,
-} from "../../src/llm/batch/types.ts";
 import { createBatchProvider } from "../../src/llm/batch/mod.ts";
-import type { LLMRequest, LLMResponse } from "../../src/llm/types.ts";
-import type { ParallelBenchmarkOptions } from "../../src/parallel/orchestrator.ts";
 import { buildAttemptContext } from "../../src/parallel/shared/mod.ts";
-import type { FrozenPromptInputs } from "../../src/parallel/shared/prompt-inputs.ts";
 import { ContainerRuntime } from "../../src/parallel/container-runtime.ts";
-import type {
-  TaskExecutionContext,
-  TaskManifest,
-} from "../../src/tasks/interfaces.ts";
 import { loadTaskManifestsWithHashes } from "../helpers/task-loader.ts";
 import {
   apiKeyForBatchProvider,
   wireProvider,
 } from "../../src/batch/provider-wiring.ts";
 import { parseTasksGlobs, submitRuns } from "../../src/batch/submit.ts";
-import type { SubmitDeps } from "../../src/batch/submit.ts";
 import { formatStatus, runStatus } from "../../src/batch/status.ts";
 import { advanceRun } from "../../src/batch/advance.ts";
-import type { AdvanceDeps, AdvanceResult } from "../../src/batch/advance.ts";
 import { retryRun } from "../../src/batch/retry.ts";
 import { abandonRun } from "../../src/batch/abandon.ts";
 import { finalizeRun } from "../../src/batch/results.ts";
-import type { FinalizeDeps } from "../../src/batch/results.ts";
 import { RUN_FILES, runDir } from "../../src/batch/paths.ts";
 import { loadState } from "../../src/batch/state.ts";
-import type { BatchRunState } from "../../src/batch/state.ts";
 import { DEFAULT_CONTAINER_NAME } from "../../src/constants.ts";
 
 const DEFAULT_QUEUE = {
@@ -129,7 +131,7 @@ async function runIngestPrecheck(variant: ModelVariant): Promise<void> {
   throw new Error(formatReportToTerminal(report));
 }
 
-/** Reconstructs a `ModelVariant` from a run's own frozen state — never re-resolved from a preset. */
+/** Reconstructs a `ModelVariant` from a run's own frozen state, never re-resolved from a preset. */
 function reconstructVariant(
   state: BatchRunState,
   inputs: FrozenPromptInputs,
@@ -198,13 +200,40 @@ async function loadManifestsAndContexts(
 }
 
 /**
+ * Builds the `FinalizeDeps` for `state`'s finalize step. Extracted as its
+ * own function (rather than inlined into `buildAdvanceDeps`'s `finalize`
+ * closure) so `state.ingest` -> `FinalizeDeps.ingest` wiring is testable in
+ * isolation, with mock manifests/contexts/variant, WITHOUT needing a
+ * working `createBatchProvider` (every provider still throws today -
+ * Task 12/14/16 territory, unrelated to this wiring).
+ */
+export async function buildFinalizeDeps(
+  state: BatchRunState,
+  variant: ModelVariant,
+  manifests: Map<string, TaskManifest>,
+  contexts: Map<string, TaskExecutionContext>,
+  containerName: string,
+): Promise<FinalizeDeps> {
+  return {
+    manifests,
+    contexts,
+    variant,
+    environment: await buildEnvironmentManifest({
+      containerName,
+      cwd: Deno.cwd(),
+    }),
+    taskSetHash: state.frozen.taskSetHash,
+    ingest: state.ingest,
+    cwd: Deno.cwd(),
+    ingestFlags: {},
+  };
+}
+
+/**
  * Builds `AdvanceDeps` (also used by `retry`, which extends it) for the run
  * at `dir` from that run's own frozen state alone.
  */
-async function buildAdvanceDeps(
-  dir: string,
-  opts: { ingest: boolean },
-): Promise<AdvanceDeps> {
+async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
   const state = await loadState(dir);
   const inputs = await readJsonFile<FrozenPromptInputs>(
     join(dir, RUN_FILES.promptInputs),
@@ -235,24 +264,18 @@ async function buildAdvanceDeps(
   };
   const containerNames = state.frozen.environment.containers.map((c) => c.name);
 
-  // Built lazily, only on the `finalize` step itself — every other step
+  // Built lazily, only on the `finalize` step itself: every other step
   // (poll, collect, evaluate, resubmit) never needs it, and building it
   // eagerly here would pay for a container inspect on every single
   // `advance` tick regardless of how close the run is to finishing.
   const finalize = async (d: string, s: BatchRunState) => {
-    const finalizeDeps: FinalizeDeps = {
+    const finalizeDeps = await buildFinalizeDeps(
+      s,
+      variant,
       manifests,
       contexts,
-      variant,
-      environment: await buildEnvironmentManifest({
-        containerName: parallelOptions.containerName,
-        cwd: Deno.cwd(),
-      }),
-      taskSetHash: state.frozen.taskSetHash,
-      ingest: opts.ingest,
-      cwd: Deno.cwd(),
-      ingestFlags: {},
-    };
+      parallelOptions.containerName,
+    );
     return await finalizeRun(d, s, finalizeDeps);
   };
 
@@ -317,7 +340,7 @@ export async function advanceAllRuns(
 /**
  * Builds the `bench batch` command tree: `submit`, `status`, `advance`,
  * `retry`, `abandon`. Attach with `cli.getCommand("bench")?.command("batch",
- * buildBatchCommand())` — see `registerBenchCommand` in `bench-command.ts`.
+ * buildBatchCommand())`; see `registerBenchCommand` in `bench-command.ts`.
  */
 export function buildBatchCommand(): Command {
   const parent = new Command()
@@ -453,7 +476,7 @@ export function buildBatchCommand(): Command {
       if (opts.all) {
         const exit = await advanceAllRuns(
           opts.output,
-          (dir) => buildAdvanceDeps(dir, { ingest: true }),
+          (dir) => buildAdvanceDeps(dir),
         );
         Deno.exit(exit);
       }
@@ -464,7 +487,7 @@ export function buildBatchCommand(): Command {
         Deno.exit(4);
       }
       const dir = runDir(opts.output, runId);
-      const deps = await buildAdvanceDeps(dir, { ingest: true });
+      const deps = await buildAdvanceDeps(dir);
       const result = await advanceRun(dir, deps);
       Deno.exit(result.exit);
     });
@@ -487,7 +510,7 @@ export function buildBatchCommand(): Command {
     .action(async (opts, runId) => {
       await EnvLoader.loadEnvironment();
       const dir = runDir(opts.output, runId);
-      const advanceDeps = await buildAdvanceDeps(dir, { ingest: true });
+      const advanceDeps = await buildAdvanceDeps(dir);
       const outcome = await retryRun(dir, {
         ...advanceDeps,
         ...(opts.force !== undefined ? { force: opts.force } : {}),
@@ -496,7 +519,11 @@ export function buildBatchCommand(): Command {
           ? { confirmNotSubmitted: opts.confirmNotSubmitted }
           : {}),
       });
-      console.log(outcome.message);
+      if (outcome.exit === 0) {
+        console.log(outcome.message);
+      } else {
+        console.error(`${colors.red("[FAIL]")} ${outcome.message}`);
+      }
       Deno.exit(outcome.exit);
     });
 

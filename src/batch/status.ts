@@ -54,7 +54,7 @@ async function readJsonFile<T>(path: string): Promise<T> {
 
 /**
  * Every `ExecutionAttempt` already on disk for the run's CURRENT wave,
- * keyed by task id — the same shape `advance.ts`'s private
+ * keyed by task id, the same shape `advance.ts`'s private
  * `loadAttemptsForWave` builds, needed here only for `nextStep`'s wave-2
  * eligibility decision (spec D10).
  */
@@ -118,7 +118,7 @@ function countItems(
 /**
  * `attemptLimit` for `nextStep`, read back from the run's own frozen
  * `prompt-inputs.json` (`settings.max_attempts`) rather than re-resolved
- * from a preset — a `prepared` run with no prompt-inputs.json yet (should
+ * from a preset. A `prepared` run with no prompt-inputs.json yet (should
  * not happen in practice; `submit` writes it before `state.json`) defaults
  * to 2, `nextStep`'s only other observed value.
  */

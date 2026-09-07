@@ -185,10 +185,36 @@ Deno.test("submitRuns", async (t) => {
           perRunDigests.push(byTask);
 
           assertEquals(state.frozen.environment, ENVIRONMENT);
+          // `baseOptions` submits with `ingest: false`; the choice must be
+          // persisted onto the run, not just consulted at submit time.
+          assertEquals(state.ingest, false);
         }
 
         // Same tasks render to identical bodies across runs.
         assertEquals(perRunDigests[0], perRunDigests[1]);
+      } finally {
+        await cleanupTempDir(output);
+      }
+    },
+  );
+
+  await t.step(
+    "persists ingest: true onto the run when requested",
+    async () => {
+      const output = await createTempDir("batch-submit-ingest-true");
+      try {
+        setFixturePreset([task1, task2]);
+        seedBatchPricing(true);
+        const deps = makeFakeDeps();
+
+        const result = await submitRuns(
+          baseOptions(output, [task1, task2], { ingest: true }),
+          deps,
+        );
+
+        assertEquals(result.exit, 0);
+        const state = await loadState(runDir(output, result.runIds[0]!));
+        assertEquals(state.ingest, true);
       } finally {
         await cleanupTempDir(output);
       }

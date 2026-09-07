@@ -127,6 +127,13 @@ export const BatchRunStateSchema = z.object({
   batches: z.array(BatchRecordSchema),
   activeBatchIds: z.array(z.string()),
   tasks: z.record(z.string(), TaskSummarySchema),
+  /**
+   * The `--ingest`/`--no-ingest` choice made at `submit` time, persisted so
+   * a much later `advance`/`retry` finalize step honors what the operator
+   * actually asked for rather than a caller-supplied default. Defaults to
+   * `true` so a state file written before this field existed still parses.
+   */
+  ingest: z.boolean().default(true),
   lastError: z.object({
     at: z.string(),
     step: z.string(),

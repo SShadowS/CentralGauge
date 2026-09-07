@@ -151,6 +151,7 @@ Deno.test({
         batches: [],
         activeBatchIds: [],
         tasks: {},
+        ingest: true,
       };
 
       const clean = await checkDrift(root, state, { cwd: root });

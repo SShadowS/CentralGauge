@@ -6,11 +6,11 @@
  * (a slug naming more than one model, or an unsupported provider, refuses
  * before anything else runs); then the ingest precheck and the batch
  * pricing gate run, in that order, BEFORE `deps.providerFor` is ever
- * called — a model with no batch pricing in the catalog is refused
+ * called: a model with no batch pricing in the catalog is refused
  * without touching the provider at all. Only then are task manifests
  * loaded, the run's `TaskExecutionContext`s built, the wave-1 container
  * environment captured (once, shared by every minted run), and the frozen
- * inputs written per run — `state.json` (phase `prepared`) is fsynced to
+ * inputs written per run: `state.json` (phase `prepared`) is fsynced to
  * disk before wave 1 is ever rendered or submitted, so a crash between
  * minting a run and submitting it always leaves a resumable `prepared`
  * run behind rather than a half-written directory.
@@ -19,6 +19,7 @@
  */
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
+import * as colors from "@std/fmt/colors";
 import type {
   BatchItem,
   BatchProvider,
@@ -76,7 +77,7 @@ export interface SubmitOptions {
   output: string;
   ingest: boolean;
   /**
-   * Overrides the preset's `tasks` glob(s) — a comma-separated list of
+   * Overrides the preset's `tasks` glob(s): a comma-separated list of
    * patterns. Mainly for tests; the CLI surface does not expose it.
    */
   tasks?: string;
@@ -177,13 +178,15 @@ export async function submitRuns(
   const config = await ConfigManager.loadConfig();
   const preset = config.benchmarkPresets?.[opts.preset];
   if (!preset) {
-    deps.log(`[FAIL] batch submit: preset "${opts.preset}" not found`);
+    deps.log(
+      `${colors.red("[FAIL]")} batch submit: preset "${opts.preset}" not found`,
+    );
     return { runIds: [], exit: 4 };
   }
 
   const resolved = resolveSingleVariant(opts.llms, config);
   if (!resolved.ok) {
-    deps.log(`[FAIL] ${resolved.message}`);
+    deps.log(`${colors.red("[FAIL]")} ${resolved.message}`);
     return { runIds: [], exit: 4 };
   }
   const variant = resolved.variant;
@@ -193,7 +196,7 @@ export async function submitRuns(
     await deps.precheck();
   } catch (err) {
     deps.log(
-      `[FAIL] batch submit: precheck failed: ${
+      `${colors.red("[FAIL]")} batch submit: precheck failed: ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
@@ -210,7 +213,7 @@ export async function submitRuns(
     });
   } catch (err) {
     if (err instanceof BatchPricingUnavailableError) {
-      deps.log(`[FAIL] ${err.message}`);
+      deps.log(`${colors.red("[FAIL]")} ${err.message}`);
       return { runIds: [], exit: 4 };
     }
     throw err;
@@ -356,6 +359,7 @@ export async function submitRuns(
       batches: [],
       activeBatchIds: [],
       tasks,
+      ingest: opts.ingest,
     };
     await writeState(dir, state);
 
@@ -398,7 +402,7 @@ export async function submitRuns(
           retryable: false,
         };
       await writeState(dir, state);
-      deps.log(`[FAIL] batch submit: ${runId}: ${reason}`);
+      deps.log(`${colors.red("[FAIL]")} batch submit: ${runId}: ${reason}`);
       overallExit = 4;
     }
 
