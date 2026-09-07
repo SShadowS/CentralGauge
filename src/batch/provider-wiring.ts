@@ -7,13 +7,14 @@
  * envelope"), and mapping one raw collected item back into an
  * `LLMResponse` through the shared response mappers (spec D6).
  *
- * Anthropic (Task 12) is wired below; Task 14 (OpenAI) and Task 16
- * (OpenRouter) still throw until their own providers register.
+ * Anthropic (Task 12) and OpenAI (Task 14) are wired below; Task 16
+ * (OpenRouter) still throws until its own provider registers.
  *
  * @module src/batch/provider-wiring
  */
 import { AnthropicAdapter } from "../llm/anthropic-adapter.ts";
 import type { AnthropicBatchMessage } from "../llm/batch/anthropic-batch.ts";
+import { OPENAI_BATCH_ENDPOINT } from "../llm/batch/openai-batch.ts";
 import type { BatchItem, BatchProviderName } from "../llm/batch/types.ts";
 import {
   assembleResponse,
@@ -22,8 +23,25 @@ import {
   mapFinishReason,
   mapUsage,
 } from "../llm/mappers/anthropic.ts";
+import { OpenAIAdapter } from "../llm/openai-adapter.ts";
+import {
+  assembleResponse as assembleOpenAIResponse,
+  type ChatUsageFragment,
+  mapContent as mapOpenAIContent,
+  mapFinishReason as mapOpenAIFinishReason,
+  mapUsage as mapOpenAIUsage,
+} from "../llm/mappers/openai.ts";
 import type { LLMRequest, LLMResponse } from "../llm/types.ts";
 import type { VariantConfig } from "../llm/variant-types.ts";
+
+/** The fields this module's `mapRaw` reads off an OpenAI chat-completion body (spec 5.2). */
+interface OpenAIBatchChatCompletionBody {
+  choices?: Array<{
+    message?: { content?: string | null };
+    finish_reason?: string | null;
+  }>;
+  usage?: ChatUsageFragment;
+}
 
 export interface ProviderWiring {
   readonly provider: BatchProviderName;
@@ -86,7 +104,43 @@ export function wireProvider(
         },
       };
     }
-    case "openai":
+    case "openai": {
+      const adapter = new OpenAIAdapter({
+        provider: "openai",
+        model: model.apiModelId,
+        apiKey,
+        ...(model.variantConfig?.thinkingBudget !== undefined
+          ? { thinkingBudget: model.variantConfig.thinkingBudget }
+          : {}),
+        ...(model.variantConfig?.timeout !== undefined
+          ? { timeout: model.variantConfig.timeout }
+          : {}),
+      });
+      return {
+        provider: "openai",
+        buildBody: (request) => adapter.buildRequestParams(request, false),
+        wrap: (items) =>
+          items.map((item) =>
+            JSON.stringify({
+              custom_id: item.itemId,
+              method: "POST",
+              url: OPENAI_BATCH_ENDPOINT,
+              body: item.body,
+            })
+          ).join("\n"),
+        mapRaw: (raw, _itemId) => {
+          const body = raw as OpenAIBatchChatCompletionBody;
+          const choice = body.choices?.[0];
+          return assembleOpenAIResponse({
+            content: mapOpenAIContent(choice?.message?.content),
+            model: model.apiModelId,
+            usage: mapOpenAIUsage(body.usage ?? {}),
+            duration: 0,
+            finish: mapOpenAIFinishReason(choice?.finish_reason),
+          });
+        },
+      };
+    }
     case "openrouter":
       throw new Error(`batch provider ${name} is not wired yet`);
     default: {

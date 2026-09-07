@@ -166,6 +166,12 @@ async function repairFromExistingFile(
  * record's `collected = true` and the `ItemSummary` repairs are persisted
  * with `writeState` before moving to the next record, so a crash mid-run
  * never leaves an earlier record's state stale.
+ *
+ * After a record is collected via `provider.collect` (not the pure-repair
+ * path above), `provider.cleanup` runs once for it, best-effort - a
+ * provider that defines one (OpenAI, spec 5.2) uses it to delete the
+ * uploaded input file now that its results are safely on disk. A throwing
+ * `cleanup` never fails the collect.
  */
 export async function collectEnded(
   dir: string,
@@ -248,6 +254,15 @@ export async function collectEnded(
 
     record.collected = true;
     await writeState(dir, state);
+
+    if (provider.cleanup) {
+      try {
+        await provider.cleanup(handle);
+      } catch {
+        // best effort: a provider-side cleanup failure (e.g. an already
+        // deleted input file) must never fail the collect itself.
+      }
+    }
   }
 
   return collected;

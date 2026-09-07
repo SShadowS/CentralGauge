@@ -300,3 +300,106 @@ Deno.test("collectEnded resumes after a crash: repairs ItemSummary.state from an
     await cleanupTempDir(dir);
   }
 });
+
+Deno.test("collectEnded calls provider.cleanup once per provider-collected batch, best-effort", async () => {
+  const dir = await createTempDir("collect-cleanup");
+  try {
+    const fake = new FakeBatchProvider("anthropic", {
+      collect: {
+        "batch-1": [
+          { itemId: "item-a", ok: true, raw: { text: "OK" }, httpStatus: 200 },
+        ],
+        "batch-2": [
+          { itemId: "item-b", ok: true, raw: { text: "OK" }, httpStatus: 200 },
+        ],
+      },
+    });
+    // Override the fake's default no-op cleanup: record every call, and make
+    // the SECOND one throw, proving a throwing cleanup neither fails
+    // collectEnded nor skips a later record's own collected/cleanup handling.
+    const cleanupCalls: string[] = [];
+    fake.cleanup = (handle) => {
+      cleanupCalls.push(handle.batchId);
+      if (handle.batchId === "batch-2") {
+        return Promise.reject(new Error("cleanup boom"));
+      }
+      return Promise.resolve();
+    };
+
+    const record1 = makeRecord({ state: "ended", itemIds: ["item-a"] });
+    const record2 = makeRecord({
+      handle: { provider: "anthropic", batchId: "batch-2" },
+      state: "ended",
+      itemIds: ["item-b"],
+    });
+    const state = minimalState({
+      batches: [record1, record2],
+      activeBatchIds: ["batch-1", "batch-2"],
+      tasks: {
+        "CG-AL-E001": { attempt1: itemSummary("item-a") },
+        "CG-AL-E002": { attempt1: itemSummary("item-b") },
+      },
+    });
+
+    const collected = await collectEnded(dir, state, fake, mapRaw);
+
+    assertEquals(collected.length, 2);
+    assertEquals(cleanupCalls, ["batch-1", "batch-2"]);
+    assertEquals(state.batches[0]?.collected, true);
+    assertEquals(state.batches[1]?.collected, true);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("collectEnded does not call provider.cleanup for a record repaired purely from an existing response file", async () => {
+  const dir = await createTempDir("collect-cleanup-repair");
+  try {
+    const fake = new FakeBatchProvider("anthropic", {});
+    const cleanupCalls: string[] = [];
+    fake.cleanup = (handle) => {
+      cleanupCalls.push(handle.batchId);
+      return Promise.resolve();
+    };
+
+    const record = makeRecord({ state: "ended", itemIds: ["item-a"] });
+    const state = minimalState({
+      batches: [record],
+      activeBatchIds: ["batch-1"],
+      tasks: {
+        "CG-AL-E001": { attempt1: itemSummary("item-a") },
+      },
+    });
+
+    // Simulate a crash after the response file was written but before
+    // `collected`/`state.json` were persisted (same setup as the resume test
+    // above): the repair path never calls `provider.collect`, so it must not
+    // call `provider.cleanup` either - there is nothing new to clean up.
+    await Deno.mkdir(join(dir, "responses"), { recursive: true });
+    await Deno.writeTextFile(
+      responsePath(dir, "item-a"),
+      JSON.stringify({
+        result: {
+          itemId: "item-a",
+          ok: true,
+          raw: { text: "OK" },
+          httpStatus: 200,
+        },
+        response: {
+          content: "OK",
+          model: "m",
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+          duration: 0,
+          finishReason: "stop",
+        },
+      }),
+    );
+
+    await collectEnded(dir, state, fake, mapRaw);
+
+    assertEquals(cleanupCalls, []);
+    assertEquals(state.batches[0]?.collected, true);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});

@@ -15,6 +15,7 @@ export type {
   BatchPoll,
   BatchProvider,
   BatchProviderName,
+  SubmitHooks,
 } from "./types.ts";
 export { BatchSubmitRejected } from "./types.ts";
 

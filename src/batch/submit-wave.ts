@@ -116,6 +116,10 @@ export async function submitChunks(
         deps.model,
         chunk.items,
         nonce,
+        {
+          onInputFile: (inputFileId) =>
+            writeIntent(dir, { ...intent, inputFileId }),
+        },
       );
       const record: BatchRecord = {
         wave,

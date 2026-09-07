@@ -74,6 +74,17 @@ export class BatchSubmitRejected extends Error {
   }
 }
 
+/**
+ * Optional per-submission callbacks a `BatchProvider.submit` implementation
+ * may invoke. Only OpenAI's provider calls `onInputFile` today (it uploads
+ * an input file before creating the batch, and the caller needs that file
+ * id persisted into the write-ahead intent before the batch is created in
+ * case the process crashes in between); every other provider ignores it.
+ */
+export interface SubmitHooks {
+  onInputFile?: (inputFileId: string) => Promise<void>;
+}
+
 export interface BatchProvider {
   readonly provider: BatchProviderName;
   /** Throws {@link BatchSubmitRejected} on a synchronous submission rejection. */
@@ -81,6 +92,7 @@ export interface BatchProvider {
     model: string,
     items: BatchItem[],
     nonce: string,
+    hooks?: SubmitHooks,
   ): Promise<BatchHandle>;
   poll(handle: BatchHandle): Promise<BatchPoll>;
   /** Only called after {@link poll} reported `processing: false`. */

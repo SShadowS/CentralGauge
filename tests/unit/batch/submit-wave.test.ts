@@ -8,6 +8,7 @@ import { loadState } from "../../../src/batch/state.ts";
 import { requestPath, RUN_FILES } from "../../../src/batch/paths.ts";
 import { loadJsonl } from "../../../src/batch/journal.ts";
 import type { ItemLine } from "../../../src/batch/journal.ts";
+import type { BatchProvider } from "../../../src/llm/batch/types.ts";
 import { BatchSubmitRejected } from "../../../src/llm/batch/types.ts";
 import { FakeBatchProvider } from "../../utils/fake-batch-provider.ts";
 import {
@@ -170,6 +171,55 @@ Deno.test("a network throw leaves the intent behind for reconciliation", async (
       )
     );
     assertEquals((await readIntent(dir))?.itemIds, [items[0]!.itemId]);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("submitChunks passes an onInputFile hook that persists inputFileId into the write-ahead intent before the handle is returned", async () => {
+  const dir = await createTempDir("submit-hook");
+  try {
+    // A purpose-built stub, not FakeBatchProvider: FakeBatchProvider ignores
+    // the hook (only OpenAI's real provider calls it), so this test exercises
+    // the wiring in submitChunks itself against a provider that does call it.
+    const provider: BatchProvider = {
+      provider: "openai",
+      limits: { maxItems: 10, maxBytes: 1_000_000 },
+      submit: async (_model, _items, _nonce, hooks) => {
+        await hooks?.onInputFile?.("file-123");
+        // Read back the intent while it is still on disk (submitChunks only
+        // clears it after this submit() call returns) to prove the hook
+        // persisted inputFileId before the handle came back.
+        const mid = await readIntent(dir);
+        assertEquals(mid?.inputFileId, "file-123");
+        return { provider: "openai", batchId: "batch-1" };
+      },
+      poll: () => {
+        throw new Error("not used");
+      },
+      collect: () => {
+        throw new Error("not used");
+      },
+      listCandidates: () => Promise.resolve([]),
+    };
+    const items = await renderedItems(1);
+    const outcome = await submitChunks(
+      dir,
+      minimalState({ runId: "r" }),
+      chunkItems(
+        items.map((i) => ({ itemId: i.itemId, body: i.body })),
+        provider.limits,
+        wrap,
+      ),
+      items,
+      1,
+      0,
+      { provider, model: "m", wrap },
+    );
+
+    assert(outcome.kind === "submitted");
+    // Cleared after the successful submit, same as every other provider.
+    assertEquals(await readIntent(dir), null);
   } finally {
     await cleanupTempDir(dir);
   }
