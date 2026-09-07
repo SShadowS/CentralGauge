@@ -43,9 +43,15 @@ import {
 // Starting with GPT-5.5, OpenAI returns 400 "Only the default (1) value is
 // supported" for any custom temperature. Match exact IDs, dated variants
 // (e.g. "gpt-5.5-2026-04-23"), and sub-variants (e.g. "gpt-5.5-pro").
+// "gpt-5-mini" was added 2026-09-07 (Plan B Task 15): `models openai/gpt-5-mini
+// --check` returned the identical 400 ("temperature does not support 0 ...
+// Only the default (1) value is supported") even though it predates the
+// GPT-5.5 numbering - the mini tier is temperature-locked independently of
+// the base GPT-5 model, which is not.
 const TEMPERATURE_LOCKED_MODELS: readonly string[] = [
   "gpt-5.5",
   "gpt-5.6",
+  "gpt-5-mini",
 ];
 
 function modelRejectsTemperature(model: string): boolean {
