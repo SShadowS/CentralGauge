@@ -238,107 +238,120 @@ async function setupRun(): Promise<{
 }
 
 Deno.test("finalizeRun writes the results file with schema-4 ingest meta and per-task totalDuration", async () => {
-  const { output: _output, dir, manifests, contexts, state } = await setupRun();
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    const next = await finalizeRun(dir, state, {
+      manifests,
+      contexts,
+      variant: mockVariant(),
+      environment: mockEnvironment(),
+      taskSetHash: state.frozen.taskSetHash,
+      ingest: false,
+      cwd: Deno.cwd(),
+      ingestFlags: {},
+    });
 
-  const next = await finalizeRun(dir, state, {
-    manifests,
-    contexts,
-    variant: mockVariant(),
-    environment: mockEnvironment(),
-    taskSetHash: state.frozen.taskSetHash,
-    ingest: false,
-    cwd: Deno.cwd(),
-    ingestFlags: {},
-  });
+    assertExists(next.resultsFile);
+    assertEquals(next.phase, "finalized");
+    assertExists(next.finalizedAt);
+    assertEquals(next.ingestedRunId, undefined);
 
-  assertExists(next.resultsFile);
-  assertEquals(next.phase, "finalized");
-  assertExists(next.finalizedAt);
-  assertEquals(next.ingestedRunId, undefined);
-
-  const parsed = JSON.parse(await Deno.readTextFile(next.resultsFile!));
-  assertEquals(parsed.ingest.schema, 4);
-  assertEquals(parsed.ingest.run_ids[VARIANT_ID], RUN_ID);
-  assertEquals(parsed.ingest.invocations[VARIANT_ID].mode, "batch");
-  assertEquals(parsed.ingest.invocations[VARIANT_ID].batch.resubmittedItems, 2);
-
-  assertEquals(parsed.results.length, 2);
-  for (const r of parsed.results) {
-    const summedDuration = r.attempts.reduce(
-      (sum: number, a: { duration: number }) => sum + a.duration,
-      0,
+    const parsed = JSON.parse(await Deno.readTextFile(next.resultsFile!));
+    assertEquals(parsed.ingest.schema, 4);
+    assertEquals(parsed.ingest.run_ids[VARIANT_ID], RUN_ID);
+    assertEquals(parsed.ingest.invocations[VARIANT_ID].mode, "batch");
+    assertEquals(
+      parsed.ingest.invocations[VARIANT_ID].batch.resubmittedItems,
+      2,
     );
-    assertEquals(r.totalDuration, summedDuration);
+
+    assertEquals(parsed.results.length, 2);
+    for (const r of parsed.results) {
+      const summedDuration = r.attempts.reduce(
+        (sum: number, a: { duration: number }) => sum + a.duration,
+        0,
+      );
+      assertEquals(r.totalDuration, summedDuration);
+    }
+
+    const taskA = parsed.results.find((r: { taskId: string }) =>
+      r.taskId === "CG-AL-E001"
+    );
+    assertEquals(taskA.success, true);
+    assertEquals(taskA.totalDuration, 3000);
+
+    const taskB = parsed.results.find((r: { taskId: string }) =>
+      r.taskId === "CG-AL-E002"
+    );
+    assertEquals(taskB.success, false);
+    assertEquals(taskB.totalDuration, 2500);
+  } finally {
+    await Deno.remove(output, { recursive: true });
   }
-
-  const taskA = parsed.results.find((r: { taskId: string }) =>
-    r.taskId === "CG-AL-E001"
-  );
-  assertEquals(taskA.success, true);
-  assertEquals(taskA.totalDuration, 3000);
-
-  const taskB = parsed.results.find((r: { taskId: string }) =>
-    r.taskId === "CG-AL-E002"
-  );
-  assertEquals(taskB.success, false);
-  assertEquals(taskB.totalDuration, 2500);
 });
 
 Deno.test("finalizeRun is idempotent against the results file on a second call", async () => {
-  const { dir, manifests, contexts, state } = await setupRun();
-  const deps = {
-    manifests,
-    contexts,
-    variant: mockVariant(),
-    environment: mockEnvironment(),
-    taskSetHash: state.frozen.taskSetHash,
-    ingest: false,
-    cwd: Deno.cwd(),
-    ingestFlags: {},
-  };
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    const deps = {
+      manifests,
+      contexts,
+      variant: mockVariant(),
+      environment: mockEnvironment(),
+      taskSetHash: state.frozen.taskSetHash,
+      ingest: false,
+      cwd: Deno.cwd(),
+      ingestFlags: {},
+    };
 
-  const first = await finalizeRun(dir, state, deps);
-  assertExists(first.resultsFile);
-  const mtimeBefore = (await Deno.stat(first.resultsFile!)).mtime;
+    const first = await finalizeRun(dir, state, deps);
+    assertExists(first.resultsFile);
+    const mtimeBefore = (await Deno.stat(first.resultsFile!)).mtime;
 
-  const second = await finalizeRun(dir, first, deps);
-  const mtimeAfter = (await Deno.stat(second.resultsFile!)).mtime;
+    const second = await finalizeRun(dir, first, deps);
+    const mtimeAfter = (await Deno.stat(second.resultsFile!)).mtime;
 
-  assertEquals(second, first);
-  assertEquals(mtimeAfter?.getTime(), mtimeBefore?.getTime());
+    assertEquals(second, first);
+    assertEquals(mtimeAfter?.getTime(), mtimeBefore?.getTime());
+  } finally {
+    await Deno.remove(output, { recursive: true });
+  }
 });
 
 Deno.test("finalizeRun ingests when requested and does not replay on a second call", async () => {
-  const { dir, manifests, contexts, state } = await setupRun();
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    let ingestCalls = 0;
+    const stubIngestRun = (_br: BenchResults): Promise<IngestOutcome> => {
+      ingestCalls++;
+      return Promise.resolve({
+        kind: "success",
+        runId: RUN_ID,
+        bytesUploaded: 0,
+        referencedBytes: 0,
+      });
+    };
 
-  let ingestCalls = 0;
-  const stubIngestRun = (_br: BenchResults): Promise<IngestOutcome> => {
-    ingestCalls++;
-    return Promise.resolve({
-      kind: "success",
-      runId: RUN_ID,
-      bytesUploaded: 0,
-      referencedBytes: 0,
-    });
-  };
+    const deps = {
+      manifests,
+      contexts,
+      variant: mockVariant(),
+      environment: mockEnvironment(),
+      taskSetHash: state.frozen.taskSetHash,
+      ingest: true,
+      cwd: Deno.cwd(),
+      ingestFlags: {},
+      ingestRun: stubIngestRun,
+    };
 
-  const deps = {
-    manifests,
-    contexts,
-    variant: mockVariant(),
-    environment: mockEnvironment(),
-    taskSetHash: state.frozen.taskSetHash,
-    ingest: true,
-    cwd: Deno.cwd(),
-    ingestFlags: {},
-    ingestRun: stubIngestRun,
-  };
+    const first = await finalizeRun(dir, state, deps);
+    assertEquals(ingestCalls, 1);
+    assertEquals(first.ingestedRunId, RUN_ID);
 
-  const first = await finalizeRun(dir, state, deps);
-  assertEquals(ingestCalls, 1);
-  assertEquals(first.ingestedRunId, RUN_ID);
-
-  const second = await finalizeRun(dir, first, deps);
-  assertEquals(ingestCalls, 1);
-  assertEquals(second.ingestedRunId, RUN_ID);
+    const second = await finalizeRun(dir, first, deps);
+    assertEquals(ingestCalls, 1);
+    assertEquals(second.ingestedRunId, RUN_ID);
+  } finally {
+    await Deno.remove(output, { recursive: true });
+  }
 });
