@@ -393,4 +393,155 @@ describe("appendPricingIfChanged", () => {
       await cleanupTempDir(dir);
     }
   });
+
+  describe("batch_* carry-forward (D5, GH freshness-refresh shadowing)", () => {
+    it("carries batch fields forward from the latest prior row when the incoming row has none (append path)", async () => {
+      const dir = await createTempDir("seed-pricing-batch-carry-append");
+      const path = `${dir}/pricing.yml`;
+      const existing: PricingRow = {
+        ...sampleRow(),
+        pricing_version: "2026-09-06",
+        input_per_mtoken: 1,
+        batch_input_per_mtoken: 0.5,
+        batch_output_per_mtoken: 1,
+        batch_cache_read_per_mtoken: 0.1,
+        batch_cache_write_per_mtoken: 0.2,
+      };
+      await Deno.writeTextFile(path, stringify([existing], { lineWidth: -1 }));
+
+      try {
+        const incoming: PricingRow = {
+          ...sampleRow(),
+          pricing_version: "2026-09-07",
+          input_per_mtoken: 1.5,
+        };
+        const result = await appendPricingIfChanged(path, incoming);
+        assertEquals(result.added, true);
+
+        const parsed = parseYaml(await Deno.readTextFile(path)) as PricingRow[];
+        const rowsForSlug = parsed.filter((r) =>
+          r.model_slug === sampleRow().model_slug
+        );
+        assertEquals(rowsForSlug.length, 2);
+
+        const newRow = parsed.find((r) => r.pricing_version === "2026-09-07");
+        assertEquals(newRow?.batch_input_per_mtoken, 0.5);
+        assertEquals(newRow?.batch_output_per_mtoken, 1);
+        assertEquals(newRow?.batch_cache_read_per_mtoken, 0.1);
+        assertEquals(newRow?.batch_cache_write_per_mtoken, 0.2);
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    });
+
+    it("leaves batch fields absent when no prior row carries any (no invented zeros)", async () => {
+      const dir = await createTempDir("seed-pricing-batch-carry-none");
+      const path = `${dir}/pricing.yml`;
+      const existing: PricingRow = {
+        ...sampleRow(),
+        pricing_version: "2026-09-06",
+        input_per_mtoken: 1,
+      };
+      await Deno.writeTextFile(path, stringify([existing], { lineWidth: -1 }));
+
+      try {
+        const incoming: PricingRow = {
+          ...sampleRow(),
+          pricing_version: "2026-09-07",
+          input_per_mtoken: 1.5,
+        };
+        const result = await appendPricingIfChanged(path, incoming);
+        assertEquals(result.added, true);
+
+        const parsed = parseYaml(await Deno.readTextFile(path)) as PricingRow[];
+        const newRow = parsed.find((r) => r.pricing_version === "2026-09-07");
+        assertEquals("batch_input_per_mtoken" in (newRow ?? {}), false);
+        assertEquals("batch_output_per_mtoken" in (newRow ?? {}), false);
+        assertEquals("batch_cache_read_per_mtoken" in (newRow ?? {}), false);
+        assertEquals("batch_cache_write_per_mtoken" in (newRow ?? {}), false);
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    });
+
+    it("carries batch fields forward on the replace path (same-version row already exists)", async () => {
+      const dir = await createTempDir("seed-pricing-batch-carry-replace");
+      const path = `${dir}/pricing.yml`;
+      const existingSameVersion: PricingRow = {
+        ...sampleRow(),
+        pricing_version: "2026-09-07",
+        output_per_mtoken: 2.5,
+        batch_input_per_mtoken: 0.6,
+        batch_output_per_mtoken: 1.2,
+        batch_cache_read_per_mtoken: 0.15,
+        batch_cache_write_per_mtoken: 0.25,
+      };
+      await Deno.writeTextFile(
+        path,
+        stringify([existingSameVersion], { lineWidth: -1 }),
+      );
+
+      try {
+        const incoming: PricingRow = {
+          ...sampleRow(),
+          pricing_version: "2026-09-07",
+          output_per_mtoken: 3,
+        };
+        const result = await appendPricingIfChanged(path, incoming);
+        assertEquals(result.added, true);
+
+        const parsed = parseYaml(await Deno.readTextFile(path)) as PricingRow[];
+        const rowsForVersion = parsed.filter((r) =>
+          r.model_slug === sampleRow().model_slug &&
+          r.pricing_version === "2026-09-07"
+        );
+        assertEquals(rowsForVersion.length, 1);
+        assertEquals(rowsForVersion[0]?.output_per_mtoken, 3);
+        assertEquals(rowsForVersion[0]?.batch_input_per_mtoken, 0.6);
+        assertEquals(rowsForVersion[0]?.batch_output_per_mtoken, 1.2);
+        assertEquals(rowsForVersion[0]?.batch_cache_read_per_mtoken, 0.15);
+        assertEquals(rowsForVersion[0]?.batch_cache_write_per_mtoken, 0.25);
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    });
+
+    it("writes the incoming row's own batch fields verbatim, without carry-forward overwrite", async () => {
+      const dir = await createTempDir("seed-pricing-batch-own-fields");
+      const path = `${dir}/pricing.yml`;
+      const existing: PricingRow = {
+        ...sampleRow(),
+        pricing_version: "2026-09-06",
+        input_per_mtoken: 1,
+        batch_input_per_mtoken: 0.5,
+        batch_output_per_mtoken: 1,
+        batch_cache_read_per_mtoken: 0.1,
+        batch_cache_write_per_mtoken: 0.2,
+      };
+      await Deno.writeTextFile(path, stringify([existing], { lineWidth: -1 }));
+
+      try {
+        const incoming: PricingRow = {
+          ...sampleRow(),
+          pricing_version: "2026-09-07",
+          input_per_mtoken: 1.5,
+          batch_input_per_mtoken: 0.75,
+          batch_output_per_mtoken: 1.5,
+          batch_cache_read_per_mtoken: 0.2,
+          batch_cache_write_per_mtoken: 0.3,
+        };
+        const result = await appendPricingIfChanged(path, incoming);
+        assertEquals(result.added, true);
+
+        const parsed = parseYaml(await Deno.readTextFile(path)) as PricingRow[];
+        const newRow = parsed.find((r) => r.pricing_version === "2026-09-07");
+        assertEquals(newRow?.batch_input_per_mtoken, 0.75);
+        assertEquals(newRow?.batch_output_per_mtoken, 1.5);
+        assertEquals(newRow?.batch_cache_read_per_mtoken, 0.2);
+        assertEquals(newRow?.batch_cache_write_per_mtoken, 0.3);
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    });
+  });
 });

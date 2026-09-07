@@ -21,7 +21,15 @@ deno task start bench batch abandon <runId>
 - `submit` takes exactly ONE model slug (comma-separated multiple slugs are refused) and a
   preset that supplies `tasks`, `containers`, `attempts`, `maxTokens`. It refuses up front
   if the catalog has no `batch_input_per_mtoken`/`batch_output_per_mtoken` for the model -
-  there is no assumed batch discount factor.
+  there is no assumed batch discount factor. The catalog's daily freshness refresh once
+  appended a new dated pricing row for anthropic/claude-haiku-4-5 that lacked the four
+  `batch_*` fields, silently shadowing the batch-priced row under the "latest version
+  wins" pricing lookup and making `submit` refuse with no batch pricing (found and
+  restored by hand on 2026-09-07, commit `bcccdccb`). The seed writer
+  (`appendPricingIfChanged` in `src/catalog/seed/writer.ts`) now carries the four
+  `batch_*` fields forward from the most recent prior row for the same model whenever a
+  freshly fetched row has none, so a freshness refresh can no longer shadow an existing
+  batch rate.
 - `status` never contacts the provider. It only reads `state.json` and prints the
   provider status/counts recorded by the LAST `advance` call. Waiting for a batch to
   finish means calling `advance`, not `status`, on a loop.

@@ -39,6 +39,16 @@ export interface PricingRow {
   // seed runner now emits "litellm-api" (correctly scaled, ×1,000,000).
   source: "manual" | "litellm" | "litellm-api" | "openrouter";
   fetched_at: string;
+  // Batch-API rates (spec D5). LiteLLM/OpenRouter snapshots never carry
+  // these, so a freshly fetched row omits them entirely - never `undefined`
+  // as an explicit value, never a placeholder `0`. appendPricingIfChanged
+  // carries them forward from the most recent prior row for the same
+  // model_slug that has any, so a daily freshness refresh does not shadow
+  // an existing batch rate with a row that has none.
+  batch_input_per_mtoken?: number;
+  batch_output_per_mtoken?: number;
+  batch_cache_read_per_mtoken?: number;
+  batch_cache_write_per_mtoken?: number;
 }
 
 export interface OpenRouterMeta {
