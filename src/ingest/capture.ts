@@ -239,7 +239,7 @@ export async function buildEnvironmentManifest(opts: {
 /**
  * Batch-mode invocation facts (spec section 10): per-wave batch handles,
  * timing, provider-reported cost, and which containers each wave ran
- * against. Optional on {@link InvocationRecord} — a sync run's invocation
+ * against. Optional on {@link InvocationRecord}: a sync run's invocation
  * carries no `batch` block at all, and `isInvocationRecord` never inspects
  * it (the block itself is the only batch-specific surface on an otherwise
  * mode-agnostic record).

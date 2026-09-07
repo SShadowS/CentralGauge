@@ -671,7 +671,7 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     lines.push(`flap_capped_containers: [${[...flapped].join(",") || "none"}]`);
   }
 
-  // # Batch block — batch-mode run summary (spec section 10). Emitted only
+  // # Batch block: batch-mode run summary (spec section 10). Emitted only
   // when the caller supplies one, which happens only for a batch-mode run's
   // finalize (`src/batch/results.ts`); a sync run's `ScoreLineInput` never
   // sets `batch` at all.

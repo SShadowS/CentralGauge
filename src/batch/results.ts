@@ -1,7 +1,7 @@
 /**
  * Finalize: turn a batch run's collected `attempts/*.json` files into the
  * same results/scores artifacts a sync bench run produces, and (optionally)
- * ingest them into the scoreboard — idempotently, so a resumed `advance`
+ * ingest them into the scoreboard, idempotently, so a resumed `advance`
  * after a crash never rewrites the results file or double-ingests (spec
  * section 10, and the idempotency paragraph closing spec section 4.5).
  *
@@ -11,18 +11,17 @@
  * the sync executor uses, then writes `benchmark-results-<runId>.json` and
  * `benchmark-scores-<runId>.txt` (the sync path names its scores file
  * `scores-<timestamp>.txt`; batch mode pairs it with the results file's
- * `benchmark-` prefix instead so the two files sort and glob together).
+ * `benchmark-` prefix instead so the two files sort and glob together). The
+ * invocation record's settings extras (mode, retry policies, prompt-profile
+ * digest, and so on) are read back from the run's own frozen
+ * `prompt-inputs.json`, never recomputed or hardcoded here, since that is
+ * exactly what waves 1/2 actually ran under.
  *
  * @module src/batch/results
  */
 import { join } from "@std/path";
 import { exists } from "@std/fs";
-import {
-  buildTaskComparison,
-  ResultAggregator,
-} from "../parallel/result-aggregator.ts";
 import type { ParallelTaskResult } from "../parallel/types.ts";
-import { finalizeTaskResult } from "../parallel/shared/mod.ts";
 import type {
   ExecutionAttempt,
   TaskExecutionContext,
@@ -35,23 +34,30 @@ import type {
   EnvironmentManifest,
   InvocationRecord,
 } from "../ingest/capture.ts";
-import { invocationSnapshot } from "../ingest/capture.ts";
-import { ingestRun } from "../ingest/mod.ts";
 import type { IngestOptions } from "../ingest/mod.ts";
 import type { AssembleOptions } from "../../cli/commands/bench/ingest-assembly.ts";
+import type { HashResult } from "../../cli/commands/bench/results-writer.ts";
+import type { CanonicalSettingsExtras } from "../../shared/settings-hash.ts";
+import type { FrozenPromptInputs } from "../parallel/shared/prompt-inputs.ts";
+import type { BatchRecord, BatchRunState, TaskSummary } from "./state.ts";
+import {
+  buildTaskComparison,
+  ResultAggregator,
+} from "../parallel/result-aggregator.ts";
+import { finalizeTaskResult } from "../parallel/shared/mod.ts";
+import { invocationSnapshot } from "../ingest/capture.ts";
+import { ingestRun } from "../ingest/mod.ts";
 import { assembleBenchResultsForVariant } from "../../cli/commands/bench/ingest-assembly.ts";
 import {
   buildIngestMeta,
   parseIngestMeta,
 } from "../../cli/commands/bench/ingest-meta.ts";
-import type { HashResult } from "../../cli/commands/bench/results-writer.ts";
 import {
   saveResultsJson,
   saveScoresFile,
 } from "../../cli/commands/bench/results-writer.ts";
-import type { BatchRecord, BatchRunState, TaskSummary } from "./state.ts";
 import { writeState } from "./state.ts";
-import { attemptPath } from "./paths.ts";
+import { attemptPath, RUN_FILES } from "./paths.ts";
 
 /** Dependencies `finalizeRun` needs beyond the run directory and its state. */
 export interface FinalizeDeps {
@@ -98,7 +104,7 @@ function rehydrateAttempt(raw: ExecutionAttempt): ExecutionAttempt {
 /**
  * Load a task's evaluated attempts in order (1, then 2 when present). A
  * task with only an infra attempt (attempt 1 synthesized as an infra
- * failure, no resubmission) still yields exactly that one attempt here —
+ * failure, no resubmission) still yields exactly that one attempt here.
  * `buildTaskResult` below scores it `success: false` and it stays in the
  * results, matching the sync executor's own treatment of an exhausted
  * infra retry.
@@ -169,7 +175,7 @@ async function buildTaskResult(
 /**
  * Aggregate stats + comparisons over the full result set via
  * `ResultAggregator`, exactly as the sync executor's `computeFinalSummary`
- * does (`cli/commands/bench/parallel-executor.ts`) — reimplemented here
+ * does (`cli/commands/bench/parallel-executor.ts`). Reimplemented here
  * rather than imported, since that module pulls in the CLI/TUI/dashboard
  * graph that a batch-mode pure module has no business depending on.
  */
@@ -259,6 +265,32 @@ function countResubmittedItems(tasks: BatchRunState["tasks"]): number {
   return count;
 }
 
+/**
+ * Read the run's frozen `prompt-inputs.json` and parse its settings extras
+ * (the same `CanonicalSettingsExtras` the executor builds via
+ * `buildCanonicalSettings`, spec section 10 / D4). `finalizeRun` sources the
+ * whole invocation record from these frozen values instead of recomputing
+ * or hardcoding them: they are what waves 1 and 2 actually ran under, not
+ * whatever is configured in the process that happens to call `finalizeRun`
+ * (which may run hours or days later).
+ */
+async function readFrozenExtras(
+  dir: string,
+): Promise<{ inputs: FrozenPromptInputs; extras: CanonicalSettingsExtras }> {
+  const inputs = await readJson<FrozenPromptInputs>(
+    join(dir, RUN_FILES.promptInputs),
+  );
+  if (!inputs.settings.extra_json) {
+    throw new Error(
+      `finalizeRun: frozen prompt-inputs.json carries no extra_json settings; the run directory may be corrupted`,
+    );
+  }
+  const extras = JSON.parse(
+    inputs.settings.extra_json,
+  ) as CanonicalSettingsExtras;
+  return { inputs, extras };
+}
+
 /** Build the `batch` block shared by `InvocationRecord.batch` and the `# Batch` scores block. */
 function buildBatchInvocationSummary(
   state: BatchRunState,
@@ -318,44 +350,65 @@ export async function finalizeRun(
     const anyContext = deps.contexts.values().next().value as
       | TaskExecutionContext
       | undefined;
-    const maxAttempts = anyContext?.attemptLimit ?? 2;
     const variantId = deps.variant.variantId;
+
+    // Everything settings-shaped comes back from the run's own frozen
+    // `prompt-inputs.json`, never recomputed or hardcoded: it is what waves
+    // 1/2 actually ran under, not whatever a later `finalizeRun` caller
+    // happens to be configured with.
+    const { inputs: promptInputs, extras } = await readFrozenExtras(dir);
+    const maxAttempts = promptInputs.settings.max_attempts ??
+      (anyContext?.attemptLimit ?? 2);
 
     const invocationRecord: InvocationRecord = {
       ...invocationSnapshot({
         provider: deps.variant.provider,
         model: deps.variant.baseModel,
         apiModelId: deps.variant.model,
-        ...(deps.variant.config.maxTokens !== undefined
-          ? { maxTokens: deps.variant.config.maxTokens }
+        ...(promptInputs.settings.max_tokens !== null
+          ? { maxTokens: promptInputs.settings.max_tokens }
           : {}),
-        ...(deps.variant.config.temperature !== undefined
-          ? { temperature: deps.variant.config.temperature }
+        ...(promptInputs.settings.temperature !== null
+          ? { temperature: promptInputs.settings.temperature }
           : {}),
-        ...(deps.variant.config.thinkingBudget !== undefined
-          ? { reasoning: deps.variant.config.thinkingBudget }
+        ...(extras.thinking_budget !== null
+          ? { reasoning: extras.thinking_budget }
           : {}),
-        mode: "batch",
-        fallbackPolicy: "unavailable",
-        continuation: { enabled: false, maxContinuations: 0 },
+        mode: extras.invocation_mode,
+        fallbackPolicy: extras.fallback_policy,
+        continuation: {
+          enabled: extras.continuation.enabled,
+          maxContinuations: extras.continuation.max,
+        },
         emptyRetry: {
-          enabled: false,
-          maxRetries: 0,
+          enabled: extras.empty_retry.enabled,
+          maxRetries: extras.empty_retry.max,
           baseDelayMs: 0,
           jitterMs: 0,
         },
-        // Not threaded through `FinalizeDeps` (unlike `AdvanceDeps`, which
-        // resolves it per `advance` call) — batch mode's compile-phase
-        // infra-retry budget is a per-invocation operator setting, not a
-        // fact recorded in `state.json`. Recorded here as 0 pending a
-        // future thread-through; informational only (settings-hash extras
-        // and analytics), never re-scored.
-        infraRetriesPerAttempt: 0,
+        infraRetriesPerAttempt: extras.infra_retries_per_attempt,
         maxAttempts,
-        promptProfileDigest: next.frozen.promptInputsDigest,
+        promptProfileDigest: extras.prompt_profile_digest,
       }),
       batch: buildBatchInvocationSummary(next),
     };
+
+    // `endpoint`/`provider_route` are pure functions of `(provider,
+    // apiModelId)` inside `invocationSnapshot`, so they are re-derived
+    // rather than copied from the frozen extras. A disagreement here means
+    // the run directory does not describe the model this call thinks it is
+    // finalizing, which is a corruption, not a recoverable state.
+    if (
+      invocationRecord.endpoint !== extras.endpoint ||
+      invocationRecord.provider_route !== extras.provider_route
+    ) {
+      throw new Error(
+        `finalizeRun: frozen settings extras disagree with the derived transport for run ${next.runId}. ` +
+          `endpoint: frozen=${extras.endpoint} derived=${invocationRecord.endpoint}. ` +
+          `provider_route: frozen=${extras.provider_route} derived=${invocationRecord.provider_route}. ` +
+          `The run directory may be corrupted.`,
+      );
+    }
 
     const ingestMeta = buildIngestMeta(
       [deps.variant],
@@ -367,7 +420,7 @@ export async function finalizeRun(
         },
       },
     );
-    // Replay idempotency (spec 4.5): the run's OWN id, never a fresh mint —
+    // Replay idempotency (spec 4.5): the run's OWN id, never a fresh mint.
     // `buildIngestMeta` mints one fresh UUID per call, which would make a
     // resumed/replayed ingest create a NEW server-side run every time.
     ingestMeta.run_ids[variantId] = next.runId;
@@ -453,12 +506,12 @@ export async function finalizeRun(
         );
       } else {
         console.warn(
-          `[WARN] batch finalize: ingest failed transiently for ${variantId}: ${outcome.lastError.message} — replay: centralgauge ingest ${resultsFile}`,
+          `[WARN] batch finalize: ingest failed transiently for ${variantId}: ${outcome.lastError.message}. Replay: centralgauge ingest ${resultsFile}`,
         );
       }
     } else if (assembled.kind === "all_infra") {
       console.warn(
-        `[WARN] batch finalize: every attempt for ${variantId} was infra-invalidated — not ingested (${assembled.infraExcludedAttempts} excluded)`,
+        `[WARN] batch finalize: every attempt for ${variantId} was infra-invalidated; not ingested (${assembled.infraExcludedAttempts} excluded)`,
       );
     }
   }

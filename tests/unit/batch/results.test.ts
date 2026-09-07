@@ -3,15 +3,19 @@
 // `finalizeRun` (spec section 10, and the idempotency paragraph closing
 // section 4.5): turns a batch run's evaluated `attempts/*.json` files into
 // the same results/scores artifacts a sync bench run produces, and
-// optionally replays them into the ingest pipeline — idempotently against
+// optionally replays them into the ingest pipeline, idempotently against
 // `state.resultsFile` / `state.ingestedRunId`.
-import { assertEquals, assertExists } from "@std/assert";
+import {
+  assertEquals,
+  assertExists,
+  assertNotEquals,
+  assertRejects,
+} from "@std/assert";
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import { finalizeRun } from "../../../src/batch/results.ts";
 import type { BatchRunState, TaskSummary } from "../../../src/batch/state.ts";
-import { runDir } from "../../../src/batch/paths.ts";
-import { attemptPath } from "../../../src/batch/paths.ts";
+import { attemptPath, RUN_FILES, runDir } from "../../../src/batch/paths.ts";
 import {
   createMockExecutionAttempt,
   createMockTaskExecutionContext,
@@ -26,6 +30,9 @@ import type {
   TaskExecutionContext,
   TaskManifest,
 } from "../../../src/tasks/interfaces.ts";
+import type { CanonicalSettingsExtras } from "../../../shared/settings-hash.ts";
+import { extrasJson } from "../../../shared/settings-hash.ts";
+import type { FrozenPromptInputs } from "../../../src/parallel/shared/prompt-inputs.ts";
 
 const VARIANT_ID = "anthropic/claude-haiku-4-5";
 const RUN_ID = "run-fin-001";
@@ -61,6 +68,63 @@ function mockEnvironment(): EnvironmentManifest {
     bcch_use_pssession_bc28: false,
     bcch_use_pwsh_bc24: true,
   };
+}
+
+/**
+ * Default settings extras a wave's `renderLLMRequest` would have frozen for
+ * `provider: "anthropic", apiModelId: "claude-haiku-4-5"` (matches
+ * `mockVariant()`'s identity, so `endpointFor`/`providerRouteFor` derive the
+ * same `endpoint`/`provider_route` `finalizeRun` verifies against).
+ */
+function baseExtras(
+  overrides?: Partial<CanonicalSettingsExtras>,
+): CanonicalSettingsExtras {
+  return {
+    invocation_mode: "batch",
+    continuation: { enabled: false, max: 0 },
+    empty_retry: { enabled: false, max: 0 },
+    fallback_policy: "unavailable",
+    provider_route: "anthropic",
+    endpoint: "/v1/messages",
+    thinking_budget: null,
+    prompt_profile_digest: "digest-default",
+    infra_retries_per_attempt: 0,
+    ...overrides,
+  };
+}
+
+/** Writes the run's frozen `prompt-inputs.json` (spec D13) with the given settings extras. */
+async function writePromptInputs(
+  dir: string,
+  extras: CanonicalSettingsExtras,
+  settingsOverrides?: {
+    maxAttempts?: number | null;
+    maxTokens?: number | null;
+    temperature?: number | null;
+  },
+): Promise<void> {
+  const inputs: FrozenPromptInputs = {
+    provider: "anthropic",
+    apiModelId: "claude-haiku-4-5",
+    variantConfig: null,
+    variantSystemPrompt: null,
+    promptOverrides: null,
+    knowledge: null,
+    templateDir: "templates",
+    starterRoot: "tasks/starter",
+    settings: {
+      temperature: settingsOverrides?.temperature ?? null,
+      max_attempts: settingsOverrides?.maxAttempts ?? 2,
+      max_tokens: settingsOverrides?.maxTokens ?? null,
+      prompt_version: null,
+      bc_version: null,
+      extra_json: extrasJson(extras),
+    },
+  };
+  await Deno.writeTextFile(
+    join(dir, RUN_FILES.promptInputs),
+    JSON.stringify(inputs),
+  );
 }
 
 function makeState(
@@ -150,11 +214,12 @@ async function setupRun(): Promise<{
   const output = await Deno.makeTempDir({ prefix: "cg-batch-finalize-" });
   const dir = runDir(output, RUN_ID);
   await ensureDir(join(dir, "attempts"));
+  await writePromptInputs(dir, baseExtras());
 
   const taskA = "CG-AL-E001"; // passed on attempt 2
   const taskB = "CG-AL-E002"; // failed twice
 
-  // Task A: attempt 1 fails, attempt 2 (a resubmission — ownerRound 1)
+  // Task A: attempt 1 fails, attempt 2 (a resubmission, ownerRound 1)
   // passes.
   await writeAttempt(dir, taskA, 1, {
     success: false,
@@ -170,7 +235,7 @@ async function setupRun(): Promise<{
     candidateCode: "codeunit 70000 Foo { }",
   });
 
-  // Task B: attempt 1 (itself a resubmission — ownerRound 1) and attempt 2
+  // Task B: attempt 1 (itself a resubmission, ownerRound 1) and attempt 2
   // both fail.
   await writeAttempt(dir, taskB, 1, {
     success: false,
@@ -351,6 +416,66 @@ Deno.test("finalizeRun ingests when requested and does not replay on a second ca
     const second = await finalizeRun(dir, first, deps);
     assertEquals(ingestCalls, 1);
     assertEquals(second.ingestedRunId, RUN_ID);
+  } finally {
+    await Deno.remove(output, { recursive: true });
+  }
+});
+
+Deno.test("finalizeRun sources invocation extras from the frozen prompt-inputs.json settings", async () => {
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    await writePromptInputs(
+      dir,
+      baseExtras({
+        infra_retries_per_attempt: 2,
+        prompt_profile_digest: "distinctive-digest-xyz",
+      }),
+    );
+
+    const next = await finalizeRun(dir, state, {
+      manifests,
+      contexts,
+      variant: mockVariant(),
+      environment: mockEnvironment(),
+      taskSetHash: state.frozen.taskSetHash,
+      ingest: false,
+      cwd: Deno.cwd(),
+      ingestFlags: {},
+    });
+
+    const parsed = JSON.parse(await Deno.readTextFile(next.resultsFile!));
+    const invocation = parsed.ingest.invocations[VARIANT_ID];
+    assertEquals(invocation.infra_retries_per_attempt, 2);
+    assertEquals(invocation.prompt_profile_digest, "distinctive-digest-xyz");
+    assertNotEquals(
+      invocation.prompt_profile_digest,
+      state.frozen.promptInputsDigest,
+    );
+  } finally {
+    await Deno.remove(output, { recursive: true });
+  }
+});
+
+Deno.test("finalizeRun throws when the frozen extras disagree with the derived transport", async () => {
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    await writePromptInputs(dir, baseExtras({ endpoint: "/v1/wrong" }));
+
+    await assertRejects(
+      () =>
+        finalizeRun(dir, state, {
+          manifests,
+          contexts,
+          variant: mockVariant(),
+          environment: mockEnvironment(),
+          taskSetHash: state.frozen.taskSetHash,
+          ingest: false,
+          cwd: Deno.cwd(),
+          ingestFlags: {},
+        }),
+      Error,
+      "frozen settings extras disagree",
+    );
   } finally {
     await Deno.remove(output, { recursive: true });
   }
