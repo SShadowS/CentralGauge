@@ -268,6 +268,23 @@ async function runPoll(
   return await runCollectThenEvaluate(dir, state, deps);
 }
 
+/**
+ * Every task whose wave item exists and has not reached `"evaluated"`,
+ * rendered as `<taskId> is "<state>"` (sorted by task id) -- the stuck-item
+ * listing for `runEvaluate`'s no-progress guard.
+ */
+function unevaluatedItemsFor(state: BatchRunState, wave: 1 | 2): string[] {
+  const taskIds = Object.keys(state.tasks).sort();
+  const lines: string[] = [];
+  for (const taskId of taskIds) {
+    const summary = state.tasks[taskId]!;
+    const item = wave === 1 ? summary.attempt1 : summary.attempt2;
+    if (!item || item.state === "evaluated") continue;
+    lines.push(`${taskId} is "${item.state}"`);
+  }
+  return lines;
+}
+
 async function runEvaluate(
   dir: string,
   state: BatchRunState,
@@ -288,6 +305,7 @@ async function runEvaluate(
   }
 
   let runtime: ContainerRuntime | undefined;
+  let outcome: { evaluated: string[]; unresolved: string[] };
   try {
     runtime = await deps.runtimeFactory();
     const environment = await runtime.environmentSet();
@@ -298,7 +316,7 @@ async function runEvaluate(
       return { exit: 4, step: { kind: "blocked", reason }, state };
     }
 
-    await evaluateCollected(dir, state, wave, {
+    outcome = await evaluateCollected(dir, state, wave, {
       runtime,
       taskConcurrency: deps.taskConcurrency,
       infraRetriesPerAttempt: deps.infraRetriesPerAttempt,
@@ -312,6 +330,22 @@ async function runEvaluate(
       if (runtime) await runtime.stop();
     } finally {
       await lockResult.release();
+    }
+  }
+
+  // Nothing evaluated, nothing left unresolved, yet the wave still has an
+  // item that never reached "evaluated": every item is stuck in a state
+  // `evaluateCollected` does not act on (e.g. still "pending" after a
+  // collect that wrote no response files). Refuse instead of flipping the
+  // phase and exiting 0 -- that used to make `advance` spin forever with no
+  // progress and no signal (task 14c).
+  if (outcome.evaluated.length === 0 && outcome.unresolved.length === 0) {
+    const stuck = unevaluatedItemsFor(state, wave);
+    if (stuck.length > 0) {
+      const reason = `wave ${wave} has no evaluable item; ${
+        stuck.join(", ")
+      } (run status, then retry)`;
+      return { exit: 4, step: { kind: "blocked", reason }, state };
     }
   }
 

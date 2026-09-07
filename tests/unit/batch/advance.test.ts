@@ -21,6 +21,7 @@ import type { EventLine, ItemLine } from "../../../src/batch/journal.ts";
 import {
   attemptPath,
   requestPath,
+  responsePath,
   RUN_FILES,
   runDir,
 } from "../../../src/batch/paths.ts";
@@ -694,6 +695,198 @@ Deno.test("advanceRun re-chunks an async size rejection before evaluating, witho
     (e) => e.eventId,
   );
   assert(events.some((e) => e.kind === "size_rechunk_async"));
+
+  await Deno.remove(output, { recursive: true });
+});
+
+Deno.test("advanceRun's evaluate step exits 4 instead of looping silently when nothing is evaluable", async () => {
+  // Task 14c: reproduces the live gpt-5-mini incident -- phase
+  // "attempt-1-collected", the batch already marked collected, but both
+  // items still "pending" (a collect that wrote no response files). Before
+  // this fix `evaluateCollected` skipped both items (neither "responded"
+  // nor "errored"/"expired"), and `advance` flipped the phase and returned
+  // exit 0 anyway: silent, permanent no-progress.
+  const { manifests, contexts } = taskFixtures();
+  const output = await Deno.makeTempDir({ prefix: "cg-batch-advance-stuck-" });
+  const runId = "run-advance-stuck";
+  const dir = runDir(output, runId);
+  await ensureDir(dir);
+
+  const frozen = await buildFrozen(
+    REPO_ROOT,
+    manifests,
+    join(dir, "prompt-inputs.json"),
+  );
+
+  const itemA1 = await itemIdFor(runId, "A", 1, 0);
+  const itemB1 = await itemIdFor(runId, "B", 1, 0);
+
+  const state: BatchRunState = {
+    schemaVersion: 1,
+    runId,
+    createdAt: new Date().toISOString(),
+    model: {
+      slug: `anthropic/${MODEL_SLUG}`,
+      provider: "anthropic",
+      apiModelId: MODEL_SLUG,
+    },
+    frozen,
+    phase: "attempt-1-collected",
+    wave: 1,
+    batches: [{
+      wave: 1,
+      round: 0,
+      chunk: 0,
+      handle: { provider: "anthropic", batchId: "batch-stuck" },
+      submittedAt: new Date().toISOString(),
+      providerStatus: "ended",
+      rawCounts: {},
+      state: "ended",
+      itemIds: [itemA1, itemB1],
+      collected: true,
+    }],
+    activeBatchIds: [],
+    tasks: {
+      A: {
+        attempt1: { itemId: itemA1, round: 0, ownerRound: 0, state: "pending" },
+      },
+      B: {
+        attempt1: { itemId: itemB1, round: 0, ownerRound: 0, state: "pending" },
+      },
+    },
+    ingest: true,
+  };
+  await writeState(dir, state);
+
+  const stopCalls = { count: 0 };
+  const queue = new MultiContainerMockCompileQueue(["Cronus28"]);
+  const provider = new FakeBatchProvider("anthropic", {});
+  const deps = baseDeps(
+    {
+      provider,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(queue, stopCalls),
+      finalize: () => {
+        throw new Error(
+          "must not finalize when the wave has no evaluable item",
+        );
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  const result = await advanceRun(dir, deps);
+  assertEquals(result.exit, 4);
+  assertEquals(result.step.kind, "blocked");
+  if (result.step.kind === "blocked") {
+    assert(
+      result.step.reason.includes("A"),
+      `expected task A named in "${result.step.reason}"`,
+    );
+    assert(
+      result.step.reason.includes("B"),
+      `expected task B named in "${result.step.reason}"`,
+    );
+    assert(
+      result.step.reason.includes("pending"),
+      `expected "pending" in "${result.step.reason}"`,
+    );
+  }
+
+  await Deno.remove(output, { recursive: true });
+});
+
+Deno.test("advanceRun's evaluate step still evaluates a responded item and exits 0", async () => {
+  // Control case for the guard above: a wave that DOES make progress must
+  // not be caught by the "nothing evaluable" refusal.
+  const { manifests, contexts } = taskFixtures();
+  const output = await Deno.makeTempDir({
+    prefix: "cg-batch-advance-progress-",
+  });
+  const runId = "run-advance-progress";
+  const dir = runDir(output, runId);
+  await ensureDir(dir);
+
+  const frozen = await buildFrozen(
+    REPO_ROOT,
+    manifests,
+    join(dir, "prompt-inputs.json"),
+  );
+
+  const itemA1 = await itemIdFor(runId, "A", 1, 0);
+  await writeRequestFile(dir, itemA1, { prompt: "generate A" });
+  await ensureDir(join(dir, "responses"));
+  await writeJsonAtomic(responsePath(dir, itemA1), {
+    result: { itemId: itemA1, ok: true, raw: { who: "A1" }, httpStatus: 200 },
+    response: mockResponse(),
+  });
+
+  const state: BatchRunState = {
+    schemaVersion: 1,
+    runId,
+    createdAt: new Date().toISOString(),
+    model: {
+      slug: `anthropic/${MODEL_SLUG}`,
+      provider: "anthropic",
+      apiModelId: MODEL_SLUG,
+    },
+    frozen,
+    phase: "attempt-1-collected",
+    wave: 1,
+    batches: [{
+      wave: 1,
+      round: 0,
+      chunk: 0,
+      handle: { provider: "anthropic", batchId: "batch-progress" },
+      submittedAt: new Date().toISOString(),
+      providerStatus: "ended",
+      rawCounts: { succeeded: 1 },
+      state: "ended",
+      itemIds: [itemA1],
+      collected: true,
+    }],
+    activeBatchIds: [],
+    tasks: {
+      A: {
+        attempt1: {
+          itemId: itemA1,
+          round: 0,
+          ownerRound: 0,
+          state: "responded",
+        },
+      },
+    },
+    ingest: true,
+  };
+  await writeState(dir, state);
+
+  seedPricing();
+  const stopCalls = { count: 0 };
+  const queue = new MultiContainerMockCompileQueue(["Cronus28"]);
+  const provider = new FakeBatchProvider("anthropic", {});
+  const deps = baseDeps(
+    {
+      provider,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(queue, stopCalls),
+      finalize: () => {
+        throw new Error("must not finalize on this call");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  const result = await advanceRun(dir, deps);
+  assertEquals(result.exit, 0);
+  assertEquals(result.step.kind, "evaluate");
+  assertEquals(result.state.phase, "attempt-1-collected");
+
+  const attemptA1 = JSON.parse(
+    await Deno.readTextFile(attemptPath(dir, "A", 1)),
+  );
+  assertEquals(attemptA1.attempt.success, true);
 
   await Deno.remove(output, { recursive: true });
 });

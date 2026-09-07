@@ -161,4 +161,46 @@ Deno.test("nextStep walks the spec 4.5 table", () => {
     kind: "evaluate",
     wave: 1,
   });
+
+  // An ended-but-uncollected batch wins from `*-collected` too, not only
+  // `*-submitted` (the bug behind the silent stuck loop, task 14c): a
+  // `stepForCollected` phase never looked at `state.batches` before this
+  // fix, so an operator's `collected: false` repair had no effect.
+  const collectedPhaseEnded = minimalState({
+    phase: "attempt-1-collected",
+    batches: [record({ state: "ended", collected: false })],
+    activeBatchIds: ["b1"],
+    tasks: { A: task("pending") },
+  });
+  assertEquals(
+    nextStep(collectedPhaseEnded, false, new Map(), 2).kind,
+    "collect",
+  );
+
+  // Poll still wins over collect in `*-collected`: a processing batch means
+  // more work is in flight, regardless of any other ended-but-uncollected
+  // batch.
+  const collectedPhaseProcessing = minimalState({
+    phase: "attempt-1-collected",
+    batches: [record({ state: "processing" })],
+    activeBatchIds: ["b1"],
+    tasks: { A: task("pending") },
+  });
+  assertEquals(
+    nextStep(collectedPhaseProcessing, false, new Map(), 2).kind,
+    "poll",
+  );
+
+  // Same check, `attempt-2-collected`.
+  const attempt2CollectedEnded = minimalState({
+    phase: "attempt-2-collected",
+    wave: 2,
+    batches: [record({ state: "ended", collected: false, wave: 2 })],
+    activeBatchIds: ["b1"],
+    tasks: { A: task("pending") },
+  });
+  assertEquals(
+    nextStep(attempt2CollectedEnded, false, new Map(), 2).kind,
+    "collect",
+  );
 });

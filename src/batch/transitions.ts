@@ -141,11 +141,29 @@ export function nextStep(
     return { kind: "blocked", reason: state.lastError.message };
   }
 
-  switch (state.phase) {
-    case "finalized":
-    case "abandoned":
-      return { kind: "done" };
+  if (state.phase === "finalized" || state.phase === "abandoned") {
+    return { kind: "done" };
+  }
 
+  // An ended-but-uncollected batch always wins over whatever the phase
+  // itself would otherwise decide (poll still wins over collect: a
+  // processing batch means more work is still in flight). This is what
+  // makes an operator's `collected: false` repair (or a collect step that
+  // ended a batch without yet running) actually take effect from ANY
+  // non-terminal phase, not only `*-submitted` -- previously `*-collected`
+  // never looked at `state.batches` at all, so a batch left uncollected
+  // there fell through to `stepForCollected`, which can return `evaluate`
+  // on items that are still `"pending"` and therefore un-evaluable
+  // (`evaluateCollected` only picks up `responded`/`errored`/`expired`),
+  // silently spinning `advance` at exit 0 forever.
+  if (state.batches.some((b) => b.state === "processing")) {
+    return { kind: "poll" };
+  }
+  if (state.batches.some((b) => b.state === "ended" && !b.collected)) {
+    return { kind: "collect" };
+  }
+
+  switch (state.phase) {
     case "attempt-1-submitted":
     case "attempt-2-submitted":
       return stepForSubmitted(state);
