@@ -58,6 +58,7 @@ import {
 } from "../../src/utils/bench-lock.ts";
 import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import type { EnvironmentManifest } from "../../src/ingest/capture.ts";
+import { buildBatchCommand } from "./bench-batch-command.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -782,6 +783,10 @@ export function registerBenchCommand(cli: Command): void {
         Deno.exit(0);
       }
     });
+
+  // Batch mode (spec section 8): `bench batch submit/status/advance/retry/
+  // abandon`, attached to the bench command instance registered above.
+  cli.getCommand("bench")?.command("batch", buildBatchCommand());
 }
 
 /**

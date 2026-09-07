@@ -5,6 +5,7 @@
 
 export { registerAgentsCommand } from "./agents-command.ts";
 export { registerBenchCommand } from "./bench-command.ts";
+export { buildBatchCommand } from "./bench-batch-command.ts";
 export { registerCompileTestCommands } from "./compile-test-command.ts";
 export { registerConfigCommands } from "./config-command.ts";
 export { registerContainerCommands } from "./container-command.ts";
