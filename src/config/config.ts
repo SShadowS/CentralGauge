@@ -105,6 +105,16 @@ export interface CentralGaugeConfig {
    */
   bench?: BenchConfig;
 
+  /**
+   * Batch-mode (`bench batch ...`) provider settings (spec section 5's
+   * async batch runner). Today only OpenRouter needs an override: its
+   * measured 202/completed ceiling (`OPENROUTER_BATCH_MAX_ITEMS`/
+   * `OPENROUTER_BATCH_MAX_BYTES` in `src/llm/batch/openrouter-batch.ts`)
+   * is conservative (half the observed spike ceiling), and an operator may
+   * want to raise or lower it once more spike data lands.
+   */
+  batch?: BatchConfig;
+
   // Container settings
   container?: {
     provider?: string;
@@ -344,6 +354,55 @@ export function mergeBenchDefaults(
 }
 
 /**
+ * Batch-mode provider settings (spec section 5's async batch runner).
+ * Owned by the `bench batch ...` CLI surface. All fields optional -
+ * `undefined` means "use the provider's own built-in default"
+ * (`OPENROUTER_BATCH_MAX_ITEMS`/`OPENROUTER_BATCH_MAX_BYTES` in
+ * `src/llm/batch/openrouter-batch.ts`), so unlike `BenchConfig` there is no
+ * `Required<...>` defaults object to merge into - `validateBatchConfig`
+ * only rejects an explicitly-set bad value, never fills one in.
+ */
+export interface BatchConfig {
+  openrouter?: {
+    /**
+     * Overrides the provider's own conservative defaults (half the
+     * spike-measured ceiling; see
+     * `docs/superpowers/specs/2026-09-06-batch-spikes-findings.md`
+     * section 3). Both fields optional; each must be a finite, positive
+     * number when set.
+     */
+    limits?: {
+      maxItems?: number;
+      maxBytes?: number;
+    };
+  };
+}
+
+/**
+ * Validates `batch.openrouter.limits` when present: each of `maxItems`/
+ * `maxBytes` must be a finite, positive number. Returns `config`
+ * unchanged (no defaults filled - see {@link BatchConfig}'s doc comment).
+ * Throws `ConfigurationError` on an invalid explicit value.
+ */
+export function validateBatchConfig(
+  config: BatchConfig | undefined,
+): BatchConfig | undefined {
+  const limits = config?.openrouter?.limits;
+  if (!limits) return config;
+  for (const [field, value] of Object.entries(limits)) {
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      throw new ConfigurationError(
+        `batch.openrouter.limits.${field} must be a finite, positive number, got ${
+          JSON.stringify(value)
+        }`,
+      );
+    }
+  }
+  return config;
+}
+
+/**
  * Lifecycle configuration (Plan F-owned). All fields optional; `loadConfig`
  * fills defaults via `validateLifecycleConfig` when the section is present.
  */
@@ -517,6 +576,10 @@ export class ConfigManager {
     // YAML/env/CLI can each contribute. Note: ConfigurationError propagates
     // (unlike YAML parse errors above, which we intentionally swallow).
     config.bench = this.resolveBenchConfig(config.bench);
+    const validatedBatch = validateBatchConfig(config.batch);
+    if (validatedBatch !== undefined) {
+      config.batch = validatedBatch;
+    }
 
     this.config = config;
     this.configLoaded = true;
@@ -904,6 +967,28 @@ export class ConfigManager {
     }
     if (override.bench) {
       result.bench = { ...result.bench, ...override.bench };
+    }
+    if (override.batch) {
+      // Deep merge, matching `container.credentials`'s pattern below:
+      // preserve a base `openrouter.limits` value the override doesn't
+      // re-specify (e.g. only `maxBytes` set in the home config, only
+      // `maxItems` overridden in the cwd config).
+      const baseOpenrouter = result.batch?.openrouter;
+      const overrideOpenrouter = override.batch.openrouter;
+      result.batch = { ...result.batch, ...override.batch };
+      if (baseOpenrouter || overrideOpenrouter) {
+        result.batch = {
+          ...result.batch,
+          openrouter: {
+            ...baseOpenrouter,
+            ...overrideOpenrouter,
+            limits: {
+              ...baseOpenrouter?.limits,
+              ...overrideOpenrouter?.limits,
+            },
+          },
+        };
+      }
     }
     if (override.container) {
       // Save base credentials before shallow spread overwrites them

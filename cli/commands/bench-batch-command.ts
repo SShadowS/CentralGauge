@@ -253,9 +253,15 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
   const variant = reconstructVariant(state, inputs);
   const providerName = state.model.provider;
   const apiKey = apiKeyForBatchProvider(providerName) ?? "";
-  const batchProvider = createBatchProvider(providerName, { apiKey });
-
   const config = await ConfigManager.loadConfig();
+  const openrouterLimits = config.batch?.openrouter?.limits;
+  const batchProvider = createBatchProvider(providerName, {
+    apiKey,
+    ...(providerName === "openrouter" && openrouterLimits !== undefined
+      ? { limits: openrouterLimits }
+      : {}),
+  });
+
   const outputDir = outputRootFor(dir);
   const parallelOptions = parallelOptionsFrom(
     inputs,
@@ -413,7 +419,14 @@ export function buildBatchCommand(): Command {
         (preset?.container ? [preset.container] : [DEFAULT_CONTAINER_NAME]);
 
       const deps: SubmitDeps = {
-        providerFor: (name, key) => createBatchProvider(name, { apiKey: key }),
+        providerFor: (name, key) =>
+          createBatchProvider(name, {
+            apiKey: key,
+            ...(name === "openrouter" &&
+                config.batch?.openrouter?.limits !== undefined
+              ? { limits: config.batch.openrouter.limits }
+              : {}),
+          }),
         buildBody: (r) =>
           wireProvider(providerName, wiringModel, apiKey).buildBody(r),
         wrap: (items) =>

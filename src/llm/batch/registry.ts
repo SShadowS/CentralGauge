@@ -2,13 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "@openai/openai";
 import { AnthropicBatchProvider } from "./anthropic-batch.ts";
 import { OpenAIBatchProvider } from "./openai-batch.ts";
+import { OpenRouterBatchProvider } from "./openrouter-batch.ts";
 import type { BatchProvider, BatchProviderName } from "./types.ts";
 
-/**
- * Creates a {@link BatchProvider} for the named vendor.
- *
- * `openrouter` throws until its provider registers (Task 16).
- */
+/** Creates a {@link BatchProvider} for the named vendor. */
 export function createBatchProvider(
   name: BatchProviderName,
   config: { apiKey: string; limits?: Partial<BatchProvider["limits"]> },
@@ -22,8 +19,12 @@ export function createBatchProvider(
       const client = new OpenAI({ apiKey: config.apiKey });
       return new OpenAIBatchProvider(client, config.limits);
     }
-    case "openrouter":
-      throw new Error(`unknown batch provider: ${name}`);
+    case "openrouter": {
+      return new OpenRouterBatchProvider(
+        { fetch, apiKey: config.apiKey },
+        config.limits,
+      );
+    }
     default: {
       const exhaustive: never = name;
       throw new Error(`unknown batch provider: ${exhaustive}`);
