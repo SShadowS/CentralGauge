@@ -147,6 +147,69 @@ Deno.test("collectEnded writes one immutable response per item, maps ok items, a
   }
 });
 
+Deno.test("collectEnded synthesizes an unresolved item for every id a provider strands (empty collect result on an expired record)", async () => {
+  const dir = await createTempDir("collect-unresolved");
+  try {
+    const fake = new FakeBatchProvider("openrouter", {
+      collect: {
+        // The provider returns nothing at all for this batch - mirrors an
+        // OpenRouter batch that failed async validation, or an OpenAI
+        // batch that expired before any item completed (spec 5.3).
+        "batch-1": [],
+      },
+    });
+    const record = makeRecord({
+      handle: { provider: "openrouter", batchId: "batch-1" },
+      state: "ended",
+      providerStatus: "expired",
+      itemIds: ["item-a", "item-b"],
+    });
+    const state = minimalState({
+      batches: [record],
+      activeBatchIds: ["batch-1"],
+      tasks: {
+        "CG-AL-E001": { attempt1: itemSummary("item-a") },
+        "CG-AL-E002": { attempt1: itemSummary("item-b") },
+      },
+    });
+
+    const collected = await collectEnded(dir, state, fake, mapRaw);
+    assertEquals(collected, []);
+
+    assert(await exists(responsePath(dir, "item-a")));
+    assert(await exists(responsePath(dir, "item-b")));
+    const aFile = JSON.parse(
+      await Deno.readTextFile(responsePath(dir, "item-a")),
+    );
+    assertEquals(aFile.response, undefined);
+    assertEquals(aFile.result.ok, false);
+    assertEquals(aFile.result.error.kind, "expired");
+    assertEquals(aFile.result.error.retryable, true);
+
+    assertEquals(state.tasks["CG-AL-E001"]?.attempt1.state, "expired");
+    assertEquals(state.tasks["CG-AL-E002"]?.attempt1.state, "expired");
+    assertEquals(state.batches[0]?.collected, true);
+
+    const events = await loadJsonl<EventLine>(
+      join(dir, RUN_FILES.events),
+      (e) => e.eventId,
+    );
+    const unresolvedEvents = events.filter((e) =>
+      e.kind === "batch_unresolved_items"
+    );
+    assertEquals(unresolvedEvents.length, 1);
+    assertEquals(unresolvedEvents[0]?.data["provider"], "openrouter");
+    assertEquals(unresolvedEvents[0]?.data["batchId"], "batch-1");
+    assertEquals(unresolvedEvents[0]?.data["providerStatus"], "expired");
+    assertEquals(unresolvedEvents[0]?.data["itemIds"], ["item-a", "item-b"]);
+
+    const reloaded = await loadState(dir);
+    assertEquals(reloaded.batches[0]?.collected, true);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
 Deno.test("collectEnded logs and skips an unknown item id and a stale-round id", async () => {
   const dir = await createTempDir("collect-integrity");
   try {

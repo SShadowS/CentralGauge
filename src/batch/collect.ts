@@ -19,11 +19,24 @@
  * (`integrity_stale_round`, spec 4.4). Both provider operations run behind
  * {@link withTransportBackoff}.
  *
+ * After the provider's results are applied, any id still named in
+ * `record.itemIds` with no response file (a provider that strands work -
+ * an OpenRouter batch that failed async validation and returned no inline
+ * results, or an OpenAI batch that expired mid-flight - never reports a
+ * result for every item it accepted) is synthesized as an unresolved
+ * error (`expired`/`cancelled`/`unknown`, from `record.providerStatus`)
+ * and logged once as a `batch_unresolved_items` event, so a provider gap
+ * can never leave an item stuck `"submitted"` forever.
+ *
  * @module src/batch/collect
  */
 import { ensureDir, exists } from "@std/fs";
 import { dirname } from "@std/path";
-import type { BatchItemResult, BatchProvider } from "../llm/batch/types.ts";
+import type {
+  BatchErrorKind,
+  BatchItemResult,
+  BatchProvider,
+} from "../llm/batch/types.ts";
 import type { LLMResponse } from "../llm/types.ts";
 import type { BatchRecord, BatchRunState, ItemSummary } from "./state.ts";
 import { toBatchHandle, writeJsonAtomic, writeState } from "./state.ts";
@@ -119,6 +132,65 @@ function findItemSummary(
 function deriveItemState(result: BatchItemResult): ItemSummary["state"] {
   if (result.ok) return "responded";
   return result.error.kind === "expired" ? "expired" : "errored";
+}
+
+/** Maps a record's terminal `providerStatus` to the synthesized error kind. */
+function unresolvedErrorKind(providerStatus: string): BatchErrorKind {
+  if (providerStatus === "expired") return "expired";
+  if (providerStatus === "cancelled") return "cancelled";
+  return "unknown";
+}
+
+/**
+ * For every id in `record.itemIds` that still has no response file after
+ * the provider's own results were applied (and whose task is still owned
+ * by this record's round - a stale-round id is left for the record that
+ * actually owns it), synthesizes a not-ok `BatchItemResult`, writes its
+ * response file, and moves `ItemSummary.state` accordingly. A provider
+ * that returns fewer results than items it accepted (spec 5.3's async
+ * `sizeRejected` collapse, an expired batch, or any other partial/short
+ * result set) would otherwise leave those items stuck `"submitted"`
+ * forever. Appends exactly one `batch_unresolved_items` event naming every
+ * synthesized id, only when at least one was found - never when the
+ * provider fully accounted for the record.
+ */
+async function synthesizeUnresolvedItems(
+  dir: string,
+  state: BatchRunState,
+  record: BatchRecord,
+): Promise<void> {
+  const missing: string[] = [];
+  for (const itemId of record.itemIds) {
+    if (await exists(responsePath(dir, itemId))) continue;
+    const item = findItemSummary(state, itemId);
+    if (!item || item.ownerRound !== record.round) continue;
+    missing.push(itemId);
+  }
+  if (missing.length === 0) return;
+
+  const kind = unresolvedErrorKind(record.providerStatus);
+  for (const itemId of missing) {
+    const result: BatchItemResult = {
+      itemId,
+      ok: false,
+      error: {
+        kind,
+        retryable: true,
+        message:
+          `no result returned for batch ${record.handle.batchId} (provider status: ${record.providerStatus})`,
+      },
+    };
+    const item = findItemSummary(state, itemId)!;
+    item.state = deriveItemState(result);
+    await writeJsonAtomic(responsePath(dir, itemId), { result });
+  }
+
+  await appendEvent(dir, "batch_unresolved_items", {
+    provider: record.handle.provider,
+    batchId: record.handle.batchId,
+    providerStatus: record.providerStatus,
+    itemIds: missing,
+  });
 }
 
 /** Reads back a previously written `responses/<itemId>.json`. */
@@ -251,6 +323,8 @@ export async function collectEnded(
           : { itemId: result.itemId, result },
       );
     }
+
+    await synthesizeUnresolvedItems(dir, state, record);
 
     record.collected = true;
     await writeState(dir, state);
