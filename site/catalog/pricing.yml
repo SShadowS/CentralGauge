@@ -789,3 +789,21 @@
   # batch_* fields deliberately left absent (NULL), not 0.
   source: litellm-api
   fetched_at: "2026-09-06T00:00:00.000Z"
+- pricing_version: '2026-09-07'
+  model_slug: anthropic/claude-haiku-4-5
+  effective_from: '2026-09-07T02:07:11.393Z'
+  effective_until: null
+  input_per_mtoken: 1
+  output_per_mtoken: 5
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  # Batch mode (D5): Anthropic publishes batch at 50% of the sync rate.
+  # The catalog auto-seed's daily LiteLLM freshness refresh appends a new
+  # dated snapshot without carrying forward batch_* from the prior version
+  # (site/src's "most recent effective_from wins" pricing lookup would
+  # otherwise silently shadow the batch-priced 2026-05-24 row) - restored
+  # here so `bench batch submit` keeps finding batch pricing for this model.
+  batch_input_per_mtoken: 0.5
+  batch_output_per_mtoken: 2.5
+  source: litellm-api
+  fetched_at: '2026-09-07T02:07:11.393Z'
