@@ -24,24 +24,51 @@ beforeEach(async () => {
   await seedMinimalRefData();
 });
 
-async function epoch(): Promise<number> {
+async function epochState(): Promise<{ epoch: number; pending: number }> {
   const row = await env.DB.prepare(
-    `SELECT epoch FROM cache_epoch WHERE id = 1`,
-  ).first<{ epoch: number }>();
-  return row!.epoch;
+    `SELECT epoch, pending_since FROM cache_epoch WHERE id = 1`,
+  ).first<{ epoch: number; pending_since: number }>();
+  return { epoch: row!.epoch, pending: Number(row!.pending_since) };
 }
 
 /**
- * Asserts that `fn` moves the data epoch. This is deliberately an integration
- * assertion against real D1 rather than a lint that the route imports the bump
- * helper: importing it and forgetting the statement, or calling it outside the
- * batch, both pass an import check and both reintroduce the stale-cache bug.
+ * Asserts that `fn` invalidates the cache.
+ *
+ * Since migration 0020 a write no longer increments the epoch directly — it
+ * MARKS the cache dirty and a reader promotes the mark once the debounce
+ * window passes (see src/lib/server/data-epoch.ts). So the contract a write
+ * path must satisfy is "the cache will be invalidated", which is satisfied by
+ * either outcome: a pending mark, or an increment if the window had already
+ * elapsed. Asserting only the increment is what made these four tests fail
+ * when the debounce landed.
+ *
+ * What must NOT weaken is the reason this is an integration assertion against
+ * real D1 rather than a lint that the route imports the helper: importing it
+ * and forgetting the statement, or calling it outside the batch, both pass an
+ * import check and both reintroduce the stale-cache bug. A route that does
+ * neither leaves pending at 0 and the epoch unmoved, and still fails here.
  */
 async function expectBump(label: string, fn: () => Promise<void>) {
-  const before = await epoch();
+  // Clear any mark left by fixture setup — the finalize case has to ingest a
+  // run first, and that ingest legitimately marks the cache. Clearing here
+  // rather than demanding the fixture start clean keeps the assertion measuring
+  // only what `fn` did, while still refusing to pass on a pre-existing mark.
+  await env.DB
+    .prepare(`UPDATE cache_epoch SET pending_since = 0 WHERE id = 1`)
+    .run();
+
+  const before = await epochState();
+  expect(before.pending, `${label}: mark must be cleared before the action`)
+    .toBe(0);
   await fn();
-  const after = await epoch();
-  expect(after, `${label} must bump the data epoch`).toBeGreaterThan(before);
+  const after = await epochState();
+  const invalidated = after.pending !== 0 || after.epoch > before.epoch;
+  expect(
+    invalidated,
+    `${label} must invalidate the cache (mark it pending, or bump if the ` +
+      `debounce window had elapsed); saw epoch ${before.epoch}->${after.epoch}, ` +
+      `pending ${before.pending}->${after.pending}`,
+  ).toBe(true);
 }
 
 describe("cache key normalization", () => {

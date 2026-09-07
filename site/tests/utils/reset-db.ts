@@ -62,7 +62,13 @@ export async function resetDb(): Promise<void> {
     // API route) mid-`it` and then re-fetches will read its own stale cache,
     // because a direct write bumps nothing. Seed before the first fetch, or
     // call bumpEpochForTest() after the direct write.
-    env.DB.prepare(`UPDATE cache_epoch SET epoch = epoch + 1 WHERE id = 1`),
+    // Also clears pending_since: writes now MARK rather than increment
+    // (migration 0020), so a mark left by one `it` block would make the
+    // next block's 'this write invalidated the cache' assertion pass
+    // vacuously.
+    env.DB.prepare(
+      `UPDATE cache_epoch SET epoch = epoch + 1, pending_since = 0 WHERE id = 1`,
+    ),
   ]);
 
   const blobs = await env.BLOBS.list();
@@ -115,6 +121,8 @@ export async function resetDb(): Promise<void> {
  * endpoint expecting to see the change.
  */
 export async function bumpEpochForTest(): Promise<void> {
-  await env.DB.prepare(`UPDATE cache_epoch SET epoch = epoch + 1 WHERE id = 1`)
+  await env.DB.prepare(
+    `UPDATE cache_epoch SET epoch = epoch + 1, pending_since = 0 WHERE id = 1`,
+  )
     .run();
 }

@@ -1,0 +1,32 @@
+-- 0020_epoch_debounce.sql
+-- Coalesce epoch bumps so a bench batch causes a handful of cache
+-- invalidations instead of one per write.
+--
+-- The epoch scheme (0016) was built on the assumption that publishes are rare.
+-- They are not, during an active bench run: every run ingest and every finalize
+-- bumped the epoch, and each bump invalidates every cached aggregate in every
+-- colo at once. Measured 2026-09-07: the epoch had reached 559, up from 4 on
+-- 2026-09-02 — 555 global invalidations in five days, roughly 111/day. Reads
+-- tracked it exactly:
+--
+--     Sep 7 07:00     12,470 read   1,331 written   ingest burst
+--     Sep 7 08:00    666,097 read      33 written   re-warm
+--     Sep 7 09:00    742,572 read      18 written   re-warm
+--
+-- 90.9% of the daily cap, while quiet hours stayed at 6-45 rows. The caching
+-- was working; it was being torn down a hundred times a day. Mode-scoped keys
+-- (0019) multiply the keyspace, so each teardown now costs more than it did.
+--
+-- New model: writes MARK the cache dirty rather than incrementing. A reader
+-- promotes the pending mark to a real bump once the debounce window has passed.
+-- That bounds invalidations to one per window while still guaranteeing every
+-- write becomes visible, without needing a scheduler.
+--
+--   pending_since  unix ms of the FIRST write since the last bump; 0 = clean.
+--                  Kept as the first rather than the latest write so the
+--                  window measures how long data has been stale, not how
+--                  recently it changed — otherwise a steady write stream would
+--                  postpone the bump forever.
+--   last_bump_at   unix ms of the last promotion, for observability.
+ALTER TABLE cache_epoch ADD COLUMN pending_since INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE cache_epoch ADD COLUMN last_bump_at INTEGER NOT NULL DEFAULT 0;
