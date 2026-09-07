@@ -24,6 +24,8 @@ import type {
   FallbackPolicy,
   InvocationMode,
 } from "../../shared/settings-hash.ts";
+import type { BatchProviderName } from "../llm/batch/types.ts";
+import type { ContainerEnvironmentSet } from "../batch/state.ts";
 
 /**
  * How a single attempt terminated, in precedence order:
@@ -235,6 +237,27 @@ export async function buildEnvironmentManifest(opts: {
 }
 
 /**
+ * Batch-mode invocation facts (spec section 10): per-wave batch handles,
+ * timing, provider-reported cost, and which containers each wave ran
+ * against. Optional on {@link InvocationRecord} — a sync run's invocation
+ * carries no `batch` block at all, and `isInvocationRecord` never inspects
+ * it (the block itself is the only batch-specific surface on an otherwise
+ * mode-agnostic record).
+ */
+export interface BatchInvocationSummary {
+  provider: BatchProviderName;
+  waves: Array<{
+    wave: 1 | 2;
+    batchIds: string[];
+    submittedAt: string;
+    endedAt: string | null;
+    providerReportedCostUsd: number | null;
+  }>;
+  resubmittedItems: number;
+  environmentByWave: Record<"1" | "2", ContainerEnvironmentSet>;
+}
+
+/**
  * Executor-resolved invocation record (D4, Task 11). Carries the seven
  * legacy redacted-snapshot fields plus the resolved invocation profile: the
  * transport (`endpoint`/`provider_route`), the retry policies actually in
@@ -258,6 +281,8 @@ export interface InvocationRecord {
   infra_retries_per_attempt: number;
   max_attempts: number;
   prompt_profile_digest: string;
+  /** Batch-mode facts (schema 4, section 10). Absent on a sync invocation. */
+  batch?: BatchInvocationSummary;
 }
 
 /**
