@@ -96,8 +96,8 @@ guide's own history.
 | Bench lock held (exit 4) | Another bench or batch process (sync or batch) is running | Wait for it to finish, or investigate if it looks crashed (`src/utils/bench-lock.ts`'s 120s heartbeat staleness) |
 | `mutate.lock` stuck after a hard kill (observed live, see Incident A below) | `advance`/`retry`/`submit` was killed (crash, `Ctrl-C`, `taskkill`) mid-step, before its `finally` block removed the lock | **Self-heals with no operator action.** The lock reclaims itself once it is older than 10 minutes (`DEFAULT_STALE_AFTER_MS` in `src/batch/mutate-lock.ts`). Just retry `advance` after the window passes - do not delete the lock file by hand unless you need to unblock something faster than 10 minutes, and even then prefer waiting. |
 | `advance` throws `BatchPricingUnavailableError` uncaught (observed live, see Incident B below) | Fixed in this repo as of commit `ac1d2e0a` (`buildAdvanceDeps` now calls `PricingService.initialize()`). If you see this on an older checkout, `git pull`/rebuild before retrying - it is a code bug, not a data problem. | Update, then `advance` again |
-| `advance` returns exit=0 forever with no compile/test output and the phase never changes (observed live, see Incident C below) | **Known unfixed bug** in `evaluateCollected` (`src/batch/evaluate.ts`): if a task's attempt file already exists on disk when `evaluateCollected` runs but `state.json` never recorded that task as `"evaluated"` (a crash between finishing that task and the wave's single end-of-loop `writeState` leaves exactly this gap), the function silently treats the task as done without repairing `state.json`, and every future `advance` call re-derives the identical (still stuck) decision - a scheduled `advance --all` loop would spin on this silently forever. | Check whether the stuck task already has a valid `attempts/<taskId>-a<N>.json` (non-empty `startTime`/`endTime`/`success`/`score`). If so, hand-repair `state.json`: set that task's `ItemSummary.state` to `"evaluated"` and `attemptFile` to the existing file's path (back up `state.json` first, validate the edited JSON with `jq empty` before overwriting - do not `mv` an unvalidated temp file over the original). This is a `results/` run artifact, not a tracked source file, so editing it carries no drift risk. A source fix belongs in `evaluateCollected`'s exists-early-return path, mirroring how `collect.ts`'s `repairFromExistingFile` already repairs `ItemSummary.state` on its own idempotent path. |
-| Crash mid-evaluate, otherwise clean | `attempts/` files for finished tasks | The next `advance` picks up only the remaining tasks - each task's `attempts/<taskId>-a<N>.json` existing is itself the "already done" marker (subject to the Incident C caveat above) |
+| `advance` returned exit=0 forever with no compile/test output and the phase never changed (historical, observed live, see Incident C below) | **Fixed.** `evaluateCollected` (`src/batch/evaluate.ts`) used to silently treat a task as done, without repairing `state.json`, whenever its attempt file already existed on disk but `state.json` never recorded that task as `"evaluated"` (a crash between finishing that task and the wave's single end-of-loop `writeState` left exactly this gap) - every future `advance` call re-derived the identical stuck decision, so a scheduled `advance --all` loop would have spun on it silently forever. `evaluateCollected`'s exists-early-return path now repairs `ItemSummary.state` to `"evaluated"` and sets `attemptFile` to the existing file's path in place, before the wave's end-of-loop `writeState` persists it - mirroring how `collect.ts`'s `repairFromExistingFile` already repaired state on its own idempotent path. Covered by a regression test in `tests/unit/batch/evaluate.test.ts`. | Nothing manual - resuming `advance` repairs the stuck task's state on its own. If you hit this on a checkout older than the fix, hand-repair `state.json` the same way: set the stuck task's `ItemSummary.state` to `"evaluated"` and `attemptFile` to the existing attempt file's path (back up `state.json` first, validate the edited JSON with `jq empty` before overwriting), or update the checkout. |
+| Crash mid-evaluate, otherwise clean | `attempts/` files for finished tasks | The next `advance` picks up only the remaining tasks - each task's `attempts/<taskId>-a<N>.json` existing is itself the "already done" marker, and `state.json` is repaired to match on that same call (see Incident C above) |
 | Crash mid-collect | `responses/<itemId>.json` files for finished items | The next `advance`'s `collectEnded` skips any item whose response file already exists and repairs its state from that file - verified by reading `collect.ts`, not empirically triggered in this guide's own drill (see Crash drill below) |
 
 ## Crash drill observations (this run's own drill)
@@ -125,10 +125,10 @@ specifically to interrupt `advance` mid-flight and confirm clean resumption.
   for two tiny items completed in well under the shortest timeout tried. Collect's
   crash-safety (skip-and-repair from an existing response file) is verified by reading
   `collect.ts`, not by an empirical kill, in this guide's own drill.
-- **Incident C - a real, currently unfixed bug**, described in the Recovery table above.
+- **Incident C - a real bug, since fixed**, described in the Recovery table above.
   Found because of Incident A's timing, not by design - a valuable reminder that
-  `advance --all` running unattended could hit this same gap with nobody there to notice
-  the silent stall.
+  `advance --all` running unattended could have hit this same gap with nobody there to
+  notice the silent stall, before the resume path was made to repair `state.json` itself.
 
 ## Cost comparison
 
@@ -151,6 +151,6 @@ expected discount rather than contradicting it.
 ## Status
 
 Two Anthropic runs on Haiku 4.5 have now been driven by hand end to end, including a
-deliberate crash drill. **Scheduled `advance --all` is not yet recommended** - Task 18
-lifts that once the Incident C bug above (and its regression test) are fixed, since an
-unattended loop has no way to notice that kind of silent stall today.
+deliberate crash drill. The Incident C bug above is fixed and covered by a regression
+test. **Scheduled `advance --all` is still not yet recommended** - that is Task 18's
+remaining call to make, independent of this one bug.

@@ -317,6 +317,13 @@ export async function evaluateCollected(
     const attemptNumber = wave;
     const filePath = attemptPath(dir, taskId, attemptNumber);
     if (await exists(filePath)) {
+      // Crash resume: a prior process wrote this attempt file but was
+      // killed before this item's `ItemSummary` (and `state.json`) were
+      // updated to match. Repair in place rather than merely returning, or
+      // a resumed run keeps rediscovering this file forever without ever
+      // persisting the fix (mirrors `collect.ts`'s `repairFromExistingFile`).
+      itemSummary.state = "evaluated";
+      itemSummary.attemptFile = filePath;
       evaluated.push(taskId);
       return;
     }

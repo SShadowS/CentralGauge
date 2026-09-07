@@ -16,7 +16,7 @@ import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import { evaluateCollected } from "../../../src/batch/evaluate.ts";
 import type { BatchRunState, TaskSummary } from "../../../src/batch/state.ts";
-import { writeJsonAtomic } from "../../../src/batch/state.ts";
+import { loadState, writeJsonAtomic } from "../../../src/batch/state.ts";
 import {
   attemptPath,
   requestPath,
@@ -557,4 +557,74 @@ Deno.test("calling evaluateCollected twice writes nothing the second time", asyn
   assertEquals(secondOutcome.unresolved, []);
   // No second compile: the attempt file already existed.
   assertEquals(queue.getCompileCallCount("Cronus28"), 1);
+});
+
+Deno.test("resuming after a crash repairs item state from an existing attempt file", async () => {
+  seedBatchPricing();
+  const dir = await tempRunDir("crash-resume");
+  const taskId = "CG-AL-E008";
+  const itemId = "b-item-e008-a1";
+
+  const manifest = createMockTaskManifest({ id: taskId });
+  const context = createMockTaskExecutionContext({ manifest });
+  const manifests = new Map([[taskId, manifest]]);
+  const contexts = new Map([[taskId, context]]);
+
+  // The attempt file was written by a prior process before it was killed,
+  // so it is already on disk - but state.json was never re-persisted, so a
+  // freshly loaded state still shows this item as "responded".
+  await ensureDir(join(dir, "attempts"));
+  await writeJsonAtomic(attemptPath(dir, taskId, 1), {
+    schemaVersion: 1,
+    attempt: {
+      attemptNumber: 1,
+      success: true,
+      candidateCode: "codeunit 70000 Foo { }",
+    },
+  });
+
+  const events: ParallelExecutionEvent[] = [];
+  const monitor = makeMonitor(["Cronus28"]);
+  let enqueueCalls = 0;
+  const queue: FakeQueue = {
+    length: 0,
+    enqueue: () => {
+      enqueueCalls++;
+      throw new Error("must not be called: attempt file already resolved");
+    },
+  };
+  const runtime = makeRuntime(queue, ["Cronus28"], events, monitor);
+
+  const state = makeState([taskId], {
+    [taskId]: {
+      attempt1: { itemId, round: 0, ownerRound: 0, state: "responded" },
+    },
+  });
+
+  const outcome = await evaluateCollected(
+    dir,
+    state,
+    1,
+    deps(runtime, manifests, contexts),
+  );
+
+  assertEquals(outcome.evaluated, [taskId]);
+  assertEquals(outcome.unresolved, []);
+  assertEquals(enqueueCalls, 0);
+
+  // The in-memory state must be repaired...
+  assertEquals(state.tasks[taskId]!.attempt1.state, "evaluated");
+  assertEquals(
+    state.tasks[taskId]!.attempt1.attemptFile,
+    attemptPath(dir, taskId, 1),
+  );
+
+  // ...and, critically, persisted to disk - a resumed `advance` reads
+  // state.json fresh, so an in-memory-only repair is invisible to it.
+  const persisted = await loadState(dir);
+  assertEquals(persisted.tasks[taskId]!.attempt1.state, "evaluated");
+  assertEquals(
+    persisted.tasks[taskId]!.attempt1.attemptFile,
+    attemptPath(dir, taskId, 1),
+  );
 });
