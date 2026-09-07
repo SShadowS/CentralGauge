@@ -11,17 +11,25 @@ import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import {
   advanceAllRuns,
+  buildAdvanceDeps,
   buildBatchCommand,
   buildFinalizeDeps,
 } from "../../../cli/commands/bench-batch-command.ts";
 import type { AdvanceDeps, AdvanceResult } from "../../../src/batch/advance.ts";
 import { finalizeRun } from "../../../src/batch/results.ts";
 import { attemptPath, RUN_FILES, runDir } from "../../../src/batch/paths.ts";
-import { writeJsonAtomic } from "../../../src/batch/state.ts";
-import { frozenInputs, minimalState } from "../../utils/batch-fixtures.ts";
+import { writeJsonAtomic, writeState } from "../../../src/batch/state.ts";
+import { encodeTasksGlob } from "../../../src/batch/submit.ts";
+import {
+  frozenInputs,
+  minimalState,
+  task,
+} from "../../utils/batch-fixtures.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import type { BenchResults } from "../../../src/ingest/mod.ts";
 import type { IngestOutcome } from "../../../src/ingest/types.ts";
+import { PricingService } from "../../../src/llm/pricing-service.ts";
+import { priceUsage } from "../../../src/parallel/shared/price-usage.ts";
 import {
   cleanupTempDir,
   createMockExecutionAttempt,
@@ -180,6 +188,62 @@ Deno.test("buildFinalizeDeps threads state.ingest into finalizeRun: false skips 
     assertEquals(ingestCalls, 0);
     assertEquals(result.ingestedRunId, undefined);
     assertEquals(result.phase, "finalized");
+  } finally {
+    await cleanupTempDir(output);
+  }
+});
+
+Deno.test("buildAdvanceDeps initializes the pricing catalog before advance's pricing-dependent steps", async () => {
+  // Regression for a live-run incident (Plan B Task 13): `submit` calls
+  // `PricingService.initialize()` itself before its own batch-pricing
+  // gate, but `advance`/`retry`/`advance --all` all route through this
+  // one function and none of them did - so a fresh `advance` process hit
+  // `evaluateResponded`'s `priceUsage(mode: "batch")` against an EMPTY
+  // catalog map and threw `BatchPricingUnavailableError` even though the
+  // on-disk catalog row for the model was fine. `PricingService.reset()`
+  // below simulates that fresh-process state; if `buildAdvanceDeps` still
+  // does its job, `priceUsage` for this exact model succeeds afterward.
+  const output = await createTempDir("bench-batch-advance-pricing-init");
+  try {
+    const runId = "run-pricing-init";
+    const dir = runDir(output, runId);
+    await ensureDir(dir);
+
+    const base = minimalState({ runId });
+    const state = {
+      ...base,
+      frozen: {
+        ...base.frozen,
+        // A real, committed task file - `buildAdvanceDeps` loads task
+        // manifests off disk via `state.frozen.tasksGlob`, it does not
+        // accept mock manifests.
+        tasksGlob: encodeTasksGlob(["tasks/easy/CG-AL-E001-basic-table.yml"]),
+        taskIds: ["CG-AL-E001"],
+      },
+      tasks: { "CG-AL-E001": task("pending") },
+    };
+    await writeState(dir, state);
+    await writeJsonAtomic(join(dir, RUN_FILES.promptInputs), frozenInputs());
+
+    PricingService.reset();
+    try {
+      await buildAdvanceDeps(dir);
+
+      const usage = priceUsage({
+        usage: {
+          promptTokens: 1000,
+          completionTokens: 1000,
+          totalTokens: 2000,
+        },
+        provider: "anthropic",
+        requestedModel: "claude-haiku-4-5",
+        mode: "batch",
+      });
+      assertEquals(usage.estimatedCost !== undefined, true);
+      assertEquals((usage.estimatedCost ?? 0) > 0, true);
+    } finally {
+      PricingService.reset();
+    }
   } finally {
     await cleanupTempDir(output);
   }

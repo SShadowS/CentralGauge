@@ -61,6 +61,7 @@ import {
 import { todayPricingVersion } from "./bench/ingest-meta.ts";
 import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import { ModelPresetRegistry } from "../../src/llm/model-presets.ts";
+import { PricingService } from "../../src/llm/pricing-service.ts";
 import { createBatchProvider } from "../../src/llm/batch/mod.ts";
 import { buildAttemptContext } from "../../src/parallel/shared/mod.ts";
 import { ContainerRuntime } from "../../src/parallel/container-runtime.ts";
@@ -233,7 +234,18 @@ export async function buildFinalizeDeps(
  * Builds `AdvanceDeps` (also used by `retry`, which extends it) for the run
  * at `dir` from that run's own frozen state alone.
  */
-async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
+export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
+  // `evaluateResponded` prices every responded item via `priceUsage(mode:
+  // "batch")`, which reads `PricingService`'s in-memory catalog map -
+  // never populated in this process unless something calls `initialize()`
+  // first. `submit` does (via its own `PricingService.initialize()` before
+  // the submit-time pricing gate), but `advance`/`retry`/`advance --all`
+  // all route through this one function and none of them did, so the
+  // evaluate step of a fresh `advance` process threw
+  // `BatchPricingUnavailableError` against an empty map even though the
+  // catalog row on disk was fine. `initialize()` is idempotent (no-ops
+  // once `this.config` is set), so calling it here is free on every tick.
+  await PricingService.initialize();
   const state = await loadState(dir);
   const inputs = await readJsonFile<FrozenPromptInputs>(
     join(dir, RUN_FILES.promptInputs),
