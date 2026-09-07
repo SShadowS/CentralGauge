@@ -7,12 +7,21 @@
  * envelope"), and mapping one raw collected item back into an
  * `LLMResponse` through the shared response mappers (spec D6).
  *
- * Every branch throws today; Task 12 (Anthropic), Task 14 (OpenAI) and
- * Task 16 (OpenRouter) register the real implementations.
+ * Anthropic (Task 12) is wired below; Task 14 (OpenAI) and Task 16
+ * (OpenRouter) still throw until their own providers register.
  *
  * @module src/batch/provider-wiring
  */
+import { AnthropicAdapter } from "../llm/anthropic-adapter.ts";
+import type { AnthropicBatchMessage } from "../llm/batch/anthropic-batch.ts";
 import type { BatchItem, BatchProviderName } from "../llm/batch/types.ts";
+import {
+  assembleResponse,
+  extractFallback,
+  mapContent,
+  mapFinishReason,
+  mapUsage,
+} from "../llm/mappers/anthropic.ts";
 import type { LLMRequest, LLMResponse } from "../llm/types.ts";
 import type { VariantConfig } from "../llm/variant-types.ts";
 
@@ -31,11 +40,52 @@ export interface ProviderWiring {
  */
 export function wireProvider(
   name: BatchProviderName,
-  _model: { apiModelId: string; variantConfig: VariantConfig | null },
-  _apiKey: string,
+  model: { apiModelId: string; variantConfig: VariantConfig | null },
+  apiKey: string,
 ): ProviderWiring {
   switch (name) {
-    case "anthropic":
+    case "anthropic": {
+      const adapter = AnthropicAdapter.forBatch({
+        provider: "anthropic",
+        model: model.apiModelId,
+        apiKey,
+        ...(model.variantConfig?.thinkingBudget !== undefined
+          ? { thinkingBudget: model.variantConfig.thinkingBudget }
+          : {}),
+        ...(model.variantConfig?.timeout !== undefined
+          ? { timeout: model.variantConfig.timeout }
+          : {}),
+      });
+      return {
+        provider: "anthropic",
+        buildBody: (request) => adapter.buildRequestParams(request),
+        wrap: (items) => ({
+          requests: items.map((item) => ({
+            custom_id: item.itemId,
+            params: item.body,
+          })),
+        }),
+        mapRaw: (raw, _itemId) => {
+          const message = raw as AnthropicBatchMessage;
+          const text = message.content
+            .filter((
+              block,
+            ): block is { type: string; text: string } =>
+              block.type === "text" && typeof block.text === "string"
+            )
+            .map((block) => block.text)
+            .join("");
+          return assembleResponse({
+            content: mapContent(text),
+            model: model.apiModelId,
+            usage: mapUsage(message.usage),
+            duration: 0,
+            finish: mapFinishReason(message.stop_reason),
+            ...extractFallback(message, model.apiModelId),
+          });
+        },
+      };
+    }
     case "openai":
     case "openrouter":
       throw new Error(`batch provider ${name} is not wired yet`);
