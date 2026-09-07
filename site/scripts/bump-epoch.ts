@@ -33,7 +33,13 @@ function d1(sql: string, extra = ""): string {
 }
 
 console.log(`Bumping data epoch (${local ? "local" : "remote"})...`);
-d1("UPDATE cache_epoch SET epoch = epoch + 1 WHERE id = 1");
+// Force path: clears any pending mark too, so this means "visible now"
+// rather than "data changed". Ordinary writes go through the debounce
+// in src/lib/server/data-epoch.ts.
+d1(
+  "UPDATE cache_epoch SET epoch = epoch + 1, pending_since = 0, "
+    + "last_bump_at = CAST(strftime('%s','now') AS INTEGER) * 1000 WHERE id = 1",
+);
 const out = d1("SELECT epoch FROM cache_epoch WHERE id = 1", "--json");
 const epoch = JSON.parse(out.slice(out.indexOf("[")))[0].results[0].epoch;
 console.log(

@@ -70,16 +70,62 @@ export const EPOCH_KEYED_TTL_SECONDS = 86_400;
 export const DEGRADED_TTL_SECONDS = 60;
 
 /**
- * Reads the current data epoch. Never throws: on any failure (including a DB
- * that predates migration 0016, where `.first()` returns null) it returns a
- * time-bucket token so the caller degrades to 60s-TTL behaviour.
+ * How long a write may stay invisible before a reader promotes it.
+ *
+ * Sized against what it is coalescing: a bench batch writes continuously for
+ * minutes, so anything in the tens of seconds collapses it to a handful of
+ * invalidations. 60s is the largest value that still reads as "immediately"
+ * for someone who has just published and gone to look.
+ */
+const DEBOUNCE_MS = 60_000;
+
+/**
+ * Reads the current data epoch, promoting a pending write if the debounce
+ * window has passed.
+ *
+ * Writes no longer increment the epoch themselves (see BUMP_DATA_EPOCH_SQL);
+ * they only mark it dirty. Promotion happens here, on the read path, because
+ * that is the only place guaranteed to run again after the window elapses —
+ * a scheduler would be the alternative and the nightly cron is far too coarse.
+ *
+ * The promotion is a compare-and-set on the exact `pending_since` value that
+ * was read, so concurrent readers across colos produce at most one increment
+ * per window: the first CAS wins, the rest match zero rows and fall through.
+ * Either way the caller gets `epoch + 1`, which is correct for both the winner
+ * and the losers — nothing can have bumped twice inside one window.
+ *
+ * Never throws: on any failure (including a DB predating migration 0016, where
+ * `.first()` returns null) it returns a time-bucket token and the caller
+ * degrades to 60s-TTL behaviour.
  */
 export async function readDataEpoch(db: D1Database): Promise<EpochToken> {
   try {
     const row = await db
-      .prepare(`SELECT epoch FROM cache_epoch WHERE id = 1`)
-      .first<{ epoch: number }>();
-    if (row && Number.isFinite(row.epoch)) return `e${row.epoch}`;
+      .prepare(`SELECT epoch, pending_since FROM cache_epoch WHERE id = 1`)
+      .first<{ epoch: number; pending_since: number }>();
+    if (!row || !Number.isFinite(row.epoch)) return fallbackToken();
+
+    const pending = Number(row.pending_since ?? 0);
+    const due = pending !== 0 && Date.now() - pending >= DEBOUNCE_MS;
+    if (!due) return `e${row.epoch}`;
+
+    // Promotion is best-effort: if it fails we simply serve the current epoch
+    // and the next reader tries again. A failed promotion must never fail a
+    // request, and cannot lose the write — `pending_since` stays set.
+    try {
+      await db
+        .prepare(
+          `UPDATE cache_epoch
+              SET epoch = epoch + 1, pending_since = 0, last_bump_at = ?
+            WHERE id = 1 AND pending_since = ?`,
+        )
+        .bind(Date.now(), pending)
+        .run();
+    } catch (err) {
+      console.error("[data-epoch] promotion failed:", err);
+      return `e${row.epoch}`;
+    }
+    return `e${row.epoch + 1}`;
   } catch (err) {
     console.error("[data-epoch] read failed, falling back to time bucket:", err);
   }
@@ -105,8 +151,26 @@ export function isFallbackEpoch(token: EpochToken): boolean {
  * fails leaves every colo serving stale data for the full 24h TTL — precisely
  * the failure this design exists to prevent.
  */
+/**
+ * Marks the cache dirty. Despite the name this no longer increments anything —
+ * `readDataEpoch` promotes the mark once DEBOUNCE_MS has passed. The name and
+ * signature are kept so the eleven write sites that splice this into their
+ * batches need no change.
+ *
+ * `pending_since` is only set when currently zero, so it records the FIRST
+ * write since the last bump. Taking the latest write instead would let a steady
+ * stream of writes push the deadline out indefinitely and never promote.
+ *
+ * It MUST still go inside the same batch as the write it accompanies. Outside
+ * the batch a committed write can pair with a failed mark, leaving every colo
+ * serving stale data until something else writes.
+ */
 export const BUMP_DATA_EPOCH_SQL =
-  `UPDATE cache_epoch SET epoch = epoch + 1 WHERE id = 1`;
+  `UPDATE cache_epoch
+      SET pending_since = CASE WHEN pending_since = 0
+                               THEN CAST(strftime('%s','now') AS INTEGER) * 1000
+                               ELSE pending_since END
+    WHERE id = 1`;
 
 export function bumpDataEpochStmt(db: D1Database): D1PreparedStatement {
   return db.prepare(BUMP_DATA_EPOCH_SQL);
@@ -145,4 +209,22 @@ export function buildCacheKey(
   u.searchParams.set("_cv", CACHE_VERSION);
   u.searchParams.set("_de", epoch);
   return new Request(u.toString(), { method: "GET" });
+}
+
+/**
+ * Bumps immediately, skipping the debounce.
+ *
+ * For the operator script and any caller that means "make this visible now"
+ * rather than "data changed". Ordinary write paths should use
+ * `bumpDataEpochStmt` so bench batches stay coalesced.
+ */
+export async function forceBumpDataEpoch(db: D1Database): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE cache_epoch
+          SET epoch = epoch + 1, pending_since = 0, last_bump_at = ?
+        WHERE id = 1`,
+    )
+    .bind(Date.now())
+    .run();
 }
