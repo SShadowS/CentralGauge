@@ -206,3 +206,17 @@
   generation: 3
   max_input_tokens: 1048576
   max_output_tokens: 65536
+- slug: openai/gpt-5-mini
+  api_model_id: gpt-5-mini
+  family: gpt
+  display_name: 'OpenAI: GPT-5 Mini'
+  generation: 5
+  released_at: '2025-08-07'
+  max_input_tokens: 400000
+  max_output_tokens: 128000
+  capabilities:
+    - thinking
+    - image
+    - pdf
+    - structured
+    - tools

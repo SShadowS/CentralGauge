@@ -807,3 +807,19 @@
   batch_output_per_mtoken: 2.5
   source: litellm-api
   fetched_at: '2026-09-07T02:07:11.393Z'
+- pricing_version: '2026-09-07'
+  model_slug: openai/gpt-5-mini
+  effective_from: '2026-09-07T07:56:05.567Z'
+  effective_until: null
+  input_per_mtoken: 0.25
+  output_per_mtoken: 2
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  # Batch mode (Plan B Task 15): OpenAI publishes batch at 50% of the sync
+  # rate, same as the other OpenAI rows in this file.
+  batch_input_per_mtoken: 0.125
+  batch_output_per_mtoken: 1
+  batch_cache_read_per_mtoken: 0
+  batch_cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-09-07T07:56:05.567Z'
