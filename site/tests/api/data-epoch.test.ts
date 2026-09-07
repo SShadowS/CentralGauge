@@ -49,8 +49,17 @@ async function epochState(): Promise<{ epoch: number; pending: number }> {
  * neither leaves pending at 0 and the epoch unmoved, and still fails here.
  */
 async function expectBump(label: string, fn: () => Promise<void>) {
+  // Clear any mark left by fixture setup — the finalize case has to ingest a
+  // run first, and that ingest legitimately marks the cache. Clearing here
+  // rather than demanding the fixture start clean keeps the assertion measuring
+  // only what `fn` did, while still refusing to pass on a pre-existing mark.
+  await env.DB
+    .prepare(`UPDATE cache_epoch SET pending_since = 0 WHERE id = 1`)
+    .run();
+
   const before = await epochState();
-  expect(before.pending, `${label}: fixture must start unmarked`).toBe(0);
+  expect(before.pending, `${label}: mark must be cleared before the action`)
+    .toBe(0);
   await fn();
   const after = await epochState();
   const invalidated = after.pending !== 0 || after.epoch > before.epoch;
