@@ -81,6 +81,18 @@ logging:
 # Run with: deno task start bench --preset <name>
 # List presets: deno task start bench --list-presets
 benchmarkPresets:
+  batch-smoke:
+    description: "Hand-driven Anthropic batch-mode smoke run on Haiku 4.5 (batch-mode spec section 14, step 4). Small easy glob, two containers, driven by 'bench batch submit/advance' rather than 'bench --preset'."
+    llms:
+      - "anthropic/claude-haiku-4-5"
+    tasks:
+      - "tasks/easy/CG-AL-E00*.yml"
+    containers:
+      - Cronus28
+      - Cronus282
+    attempts: 2
+    maxTokens: 16000
+    taskConcurrency: 4
   fall-2026:
     description: "Fall 2026 release campaign panel (FallRelease.md decision 1: three runs per model). Run ONE model per invocation via --llms, Opus 5 first as the scout. NOT launched until Phase 2 is green and the dry run is clean."
     llms:
