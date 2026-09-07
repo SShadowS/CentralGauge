@@ -88,6 +88,16 @@ function findUnsubmittedItems(state: BatchRunState): PendingItem[] {
  * retry can never drift from what was originally journaled), groups by
  * the wave/round it was journaled under, and resubmits each group via
  * {@link submitChunks}. Clears `state.lastError` on full success.
+ *
+ * On full success, when `state.phase` was still `"prepared"` (the
+ * `--confirm-not-submitted` return state, or a run that never got past
+ * its very first submission attempt), advances it to
+ * `"attempt-1-submitted"` or `"attempt-2-submitted"` per the wave that
+ * was resubmitted - mirroring what `submit.ts` sets after its own
+ * `submitChunks` call. A run already past `prepared` (e.g. a rejected
+ * resubmission or wave-2 round) keeps whatever phase it was in;
+ * `resubmitPending` only ever recovers orphaned items, never drives the
+ * phase backwards or sideways on its own.
  */
 async function resubmitPending(
   dir: string,
@@ -126,6 +136,7 @@ async function resubmitPending(
   }
 
   let resubmitted = 0;
+  let resubmittedWave: 1 | 2 = 1;
   for (const group of groups.values()) {
     const renderedItems: RenderedItem[] = [];
     for (const p of group.items) {
@@ -178,8 +189,16 @@ async function resubmitPending(
       return { exit: 4, message: reason };
     }
     resubmitted += renderedItems.length;
+    if (group.wave === 2) {
+      resubmittedWave = 2;
+    }
   }
 
+  if (state.phase === "prepared") {
+    state.phase = resubmittedWave === 2
+      ? "attempt-2-submitted"
+      : "attempt-1-submitted";
+  }
   delete state.lastError;
   await writeState(dir, state);
   return { exit: 0, message: `resubmitted ${resubmitted} item(s)` };
@@ -255,7 +274,11 @@ async function retrySubmitUnknown(
  * {@link retrySubmitUnknown}. Otherwise, a non-retryable `lastError`
  * blocks (exit 4) unless `deps.force` overrides it - the classification
  * was wrong, per spec 9 - after which the same resubmission runs as the
- * retryable case.
+ * retryable case. A `prepared` run with no `lastError` at all (notably
+ * one `--confirm-not-submitted` just returned to `prepared`, which sets
+ * no `lastError`) still resubmits when it has orphaned pending items;
+ * only a `prepared` run with nothing pending falls through to the
+ * "nothing to retry" exit 4.
  */
 export async function retryRun(
   dir: string,
@@ -269,6 +292,14 @@ export async function retryRun(
     }
 
     if (!state.lastError) {
+      // A `prepared` run with orphaned pending items (e.g. one just
+      // returned from `--confirm-not-submitted`, spec 4.5) has nothing
+      // to say in `lastError` but still needs resubmitting.
+      if (
+        state.phase === "prepared" && findUnsubmittedItems(state).length > 0
+      ) {
+        return await resubmitPending(dir, state, deps);
+      }
       return {
         exit: 4,
         message: "nothing to retry: no lastError and run is not submit-unknown",

@@ -126,6 +126,83 @@ Deno.test("retryRun: prepared with a retryable lastError resubmits identical bod
     assertEquals(reloaded.lastError, undefined);
     assertEquals(reloaded.activeBatchIds.length, 1);
     assertEquals(reloaded.batches[0]?.itemIds, [itemId]);
+    assertEquals(reloaded.phase, "attempt-1-submitted");
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("retryRun: a prepared run with pending items and no lastError resubmits and moves to attempt-1-submitted", async () => {
+  const dir = await createTempDir("retry-prepared-no-lasterror-resubmit");
+  try {
+    const itemId1 = "item-p1";
+    const itemId2 = "item-p2";
+    await seedPendingItem(dir, itemId1, { taskId: "T1" });
+    await seedPendingItem(dir, itemId2, { taskId: "T2" });
+
+    const state: BatchRunState = minimalState({
+      phase: "prepared",
+      tasks: {
+        T1: {
+          attempt1: {
+            itemId: itemId1,
+            round: 0,
+            ownerRound: 0,
+            state: "pending",
+          },
+        },
+        T2: {
+          attempt1: {
+            itemId: itemId2,
+            round: 0,
+            ownerRound: 0,
+            state: "pending",
+          },
+        },
+      },
+    });
+    await writeState(dir, state);
+
+    const fake = new FakeBatchProvider("anthropic", {});
+    const result = await retryRun(dir, makeDeps(fake));
+    assertEquals(result.exit, 0);
+
+    const submitCalls = fake.calls.filter((c) => c.op === "submit");
+    assertEquals(submitCalls.length, 1);
+    const submittedItems = submitCalls[0]!.args[1] as Array<{ itemId: string }>;
+    assertEquals(
+      submittedItems.map((i) => i.itemId).sort(),
+      [itemId1, itemId2].sort(),
+    );
+
+    const reloaded = await loadState(dir);
+    assertEquals(reloaded.batches.length, 1);
+    assertEquals(reloaded.activeBatchIds, [
+      reloaded.batches[0]?.handle.batchId,
+    ]);
+    assertEquals(reloaded.phase, "attempt-1-submitted");
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("retryRun: a prepared run with nothing pending and no lastError still exits 4", async () => {
+  const dir = await createTempDir("retry-prepared-nothing-pending");
+  try {
+    const state: BatchRunState = minimalState({ phase: "prepared" });
+    await writeState(dir, state);
+
+    const fake = new FakeBatchProvider("anthropic", {});
+    const result = await retryRun(dir, makeDeps(fake));
+    assertEquals(result.exit, 4);
+    assertEquals(
+      result.message,
+      "nothing to retry: no lastError and run is not submit-unknown",
+    );
+    assertEquals(fake.calls.filter((c) => c.op === "submit").length, 0);
+
+    const reloaded = await loadState(dir);
+    assertEquals(reloaded.phase, "prepared");
   } finally {
     await cleanupTempDir(dir);
   }
@@ -320,6 +397,62 @@ Deno.test("retryRun: --confirm-not-submitted returns the run to prepared and cle
     const reloaded = await loadState(dir);
     assertEquals(reloaded.phase, "prepared");
     assertEquals(await readIntent(dir), null);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("retryRun: end to end after --confirm-not-submitted", async () => {
+  const dir = await createTempDir("retry-confirm-then-resubmit");
+  try {
+    const itemId = "item-a";
+    await seedPendingItem(dir, itemId, { taskId: "T1" });
+
+    const intent: SubmissionIntent = {
+      runId: "run-fixture",
+      wave: 1,
+      round: 0,
+      chunk: 0,
+      itemIds: [itemId],
+      bodyDigests: ["digest-a"],
+      nonce: "nonce-1",
+      writtenAt: "2026-09-06T00:00:00.000Z",
+      inputFileId: "file-123",
+    };
+    await writeIntent(dir, intent);
+    const state = minimalState({
+      model: { slug: "openai/gpt-6", provider: "openai", apiModelId: "gpt-6" },
+      phase: "submit-unknown",
+      tasks: {
+        T1: {
+          attempt1: { itemId, round: 0, ownerRound: 0, state: "pending" },
+        },
+      },
+    });
+    await writeState(dir, state);
+
+    const fake = new FakeBatchProvider("openai", {});
+
+    const confirmResult = await retryRun(
+      dir,
+      makeDeps(fake, { confirmNotSubmitted: true }),
+    );
+    assertEquals(confirmResult.exit, 0);
+
+    const afterConfirm = await loadState(dir);
+    assertEquals(afterConfirm.phase, "prepared");
+
+    const resubmitResult = await retryRun(dir, makeDeps(fake));
+    assertEquals(resubmitResult.exit, 0);
+
+    const submitCalls = fake.calls.filter((c) => c.op === "submit");
+    assertEquals(submitCalls.length, 1);
+    const submittedItems = submitCalls[0]!.args[1] as Array<{ itemId: string }>;
+    assertEquals(submittedItems.map((i) => i.itemId), [itemId]);
+
+    const reloaded = await loadState(dir);
+    assertEquals(reloaded.phase, "attempt-1-submitted");
+    assertEquals(reloaded.activeBatchIds.length, 1);
   } finally {
     await cleanupTempDir(dir);
   }
