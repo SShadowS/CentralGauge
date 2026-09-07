@@ -15,6 +15,7 @@
  */
 import { join } from "@std/path";
 import { z } from "zod";
+import type { BatchHandle } from "../llm/batch/types.ts";
 import { RUN_FILES } from "./paths.ts";
 
 /** Bumped whenever `BatchRunState`'s on-disk shape changes incompatibly. */
@@ -188,4 +189,23 @@ const TERMINAL_PHASES: ReadonlySet<BatchPhase> = new Set([
 /** `true` once a run has reached a phase `advance` will never move past. */
 export function isTerminal(phase: BatchRunState["phase"]): boolean {
   return TERMINAL_PHASES.has(phase);
+}
+
+/**
+ * Rebuilds a plain {@link BatchHandle} from a `BatchRecord.handle`. The
+ * zod-inferred type of the latter types `extra` as
+ * `Record<string, string> | undefined` even when present (zod's
+ * `.optional()`), which `exactOptionalPropertyTypes` rejects against the
+ * interface's `extra?: Record<string, string>` unless the key is omitted
+ * outright when absent. Every stored handle (from `state.batches[].handle`)
+ * MUST pass through this before `provider.cancel`/`cleanup`/`collect`/`poll`.
+ */
+export function toBatchHandle(handle: BatchRecord["handle"]): BatchHandle {
+  return handle.extra !== undefined
+    ? {
+      provider: handle.provider,
+      batchId: handle.batchId,
+      extra: handle.extra,
+    }
+    : { provider: handle.provider, batchId: handle.batchId };
 }

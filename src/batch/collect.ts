@@ -23,35 +23,13 @@
  */
 import { ensureDir, exists } from "@std/fs";
 import { dirname } from "@std/path";
-import type {
-  BatchHandle,
-  BatchItemResult,
-  BatchProvider,
-} from "../llm/batch/types.ts";
+import type { BatchItemResult, BatchProvider } from "../llm/batch/types.ts";
 import type { LLMResponse } from "../llm/types.ts";
 import type { BatchRecord, BatchRunState, ItemSummary } from "./state.ts";
-import { writeJsonAtomic, writeState } from "./state.ts";
+import { toBatchHandle, writeJsonAtomic, writeState } from "./state.ts";
 import { responsePath } from "./paths.ts";
 import { appendEvent } from "./journal.ts";
 import { withTransportBackoff } from "./backoff.ts";
-
-/**
- * Rebuilds a plain {@link BatchHandle} from a `BatchRecord.handle`. The
- * zod-inferred type of the latter types `extra` as
- * `Record<string, string> | undefined` even when present (zod's
- * `.optional()`), which `exactOptionalPropertyTypes` rejects against the
- * interface's `extra?: Record<string, string>` unless the key is omitted
- * outright when absent.
- */
-function toHandle(handle: BatchRecord["handle"]): BatchHandle {
-  return handle.extra !== undefined
-    ? {
-      provider: handle.provider,
-      batchId: handle.batchId,
-      extra: handle.extra,
-    }
-    : { provider: handle.provider, batchId: handle.batchId };
-}
 
 export interface PollOutcome {
   anyProcessing: boolean;
@@ -81,7 +59,7 @@ export async function pollActive(
     const record = byBatchId.get(batchId);
     if (!record) continue;
 
-    const handle = toHandle(record.handle);
+    const handle = toBatchHandle(record.handle);
     const poll = await withTransportBackoff(() => provider.poll(handle));
     record.lastPolledAt = new Date().toISOString();
     if (poll.providerReportedCostUsd !== undefined) {
@@ -221,7 +199,7 @@ export async function collectEnded(
     }
 
     const itemIdSet = new Set(record.itemIds);
-    const handle = toHandle(record.handle);
+    const handle = toBatchHandle(record.handle);
     const results = await withTransportBackoff(() => provider.collect(handle));
 
     for (const result of results) {

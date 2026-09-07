@@ -92,6 +92,15 @@ export class FakeBatchProvider implements BatchProvider {
     if (scripted) {
       return Promise.resolve(scripted);
     }
+    if (!this.submittedByBatch.has(handle.batchId)) {
+      // Never submitted through this fake: a reconciliation candidate
+      // discovered via listCandidates. Serve its scripted result set, when
+      // one is given, instead of falling through to "no items submitted".
+      const byCandidate = this.script.collectByCandidate?.[handle.batchId];
+      if (byCandidate) {
+        return Promise.resolve(byCandidate);
+      }
+    }
     const items = this.submittedByBatch.get(handle.batchId) ?? [];
     return Promise.resolve(
       items.map((item): BatchItemResult => ({
