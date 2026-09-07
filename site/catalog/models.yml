@@ -18,6 +18,16 @@
   max_output_tokens: 65536
   capabilities: ["thinking", "image", "pdf", "structured", "batch"]
 
+- slug: openrouter/google/gemini-3.8-flash
+  api_model_id: google/gemini-3.8-flash
+  family: gemini
+  display_name: Gemini 3.8 Flash (OpenRouter)
+  generation: 3
+  released_at: "2026-09-02"
+  max_input_tokens: 1048576
+  max_output_tokens: 65536
+  capabilities: ["thinking", "image", "pdf", "structured", "batch"]
+
 - slug: anthropic/claude-fable-5-1
   api_model_id: claude-fable-5-1
   family: claude

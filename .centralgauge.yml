@@ -105,6 +105,18 @@ benchmarkPresets:
     attempts: 2
     maxTokens: 16000
     taskConcurrency: 4
+  batch-smoke-openrouter:
+    description: "Hand-driven OpenRouter batch-mode smoke run on Gemini 3.8 Flash (batch-mode Plan B Task 17). Same shape as batch-smoke, one model swap."
+    llms:
+      - "openrouter/google/gemini-3.8-flash"
+    tasks:
+      - "tasks/easy/CG-AL-E00*.yml"
+    containers:
+      - Cronus28
+      - Cronus282
+    attempts: 2
+    maxTokens: 16000
+    taskConcurrency: 4
   fall-2026:
     description: "Fall 2026 release campaign panel (FallRelease.md decision 1: three runs per model). Run ONE model per invocation via --llms, Opus 5 first as the scout. NOT launched until Phase 2 is green and the dry run is clean."
     llms:
