@@ -474,3 +474,14 @@ exactly how that happened on hand-driven runs.
 Wave timings: Anthropic waves ended within 20 to 80 minutes; OpenAI gpt-5-mini wave 1 took
 8h33m (two items) and wave 2 12h12m (one item); OpenRouter Gemini completed in about 4
 minutes.
+
+## Site cost is list price
+
+The scoreboard prices every run at the model's published sync rates, whatever
+its invocation mode (migration `0021`, `rowCostUsd()` in the worker). A batch
+run therefore shows the same per-task cost a sync run of the same model would;
+the batch discount is real money saved by the operator, not a property of the
+model, and it would make models without a batch tier look more expensive than
+they are. The batch-priced figure stays in the local results file and the
+`# Batch` block. The Opus 5 scout, for example, cost $20.86 at batch rates and
+appears on the site at about $41.7 (list price) for its 232 tasks.

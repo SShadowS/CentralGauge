@@ -33,11 +33,16 @@
  * query joins `cost_snapshots` without also joining `runs`, add
  * `JOIN runs ON runs.id = r.run_id`, since the pricing join already implies it.
  *
- * Batch mode (spec D5, docs/superpowers/specs/2026-09-06-batch-mode-design.md):
- * when the joined run's `invocation_mode = 'batch'`, pricing switches to the
- * `batch_*` columns instead of the sync ones. Those columns are independently
- * nullable and NOT COALESCEd: a batch run priced against a snapshot with no
- * known batch rate must cost NULL, not a silently-wrong sync-rate guess.
+ * List price, regardless of invocation mode (decided 2026-09-08, superseding
+ * the mode branch spec D5 introduced with migration 0019): the leaderboard's
+ * cost answers "what does this model cost to run at its published sync
+ * rates", which is the only figure comparable across models, since not every
+ * model has a batch tier. A batch run is therefore priced from the sync
+ * columns exactly like a sync run. The `batch_*` snapshot columns stay in the
+ * schema for the local bench (which prices batch runs at the batch rates in
+ * its results file) and for any future "billed" column; nothing on the site
+ * reads them any more. Migration 0021 re-defines `v_results_with_cost` the
+ * same way.
  *
  * The sync-side cache-rate columns are nullable (`REAL DEFAULT 0`), so they
  * stay wrapped in COALESCE: a legacy snapshot row with a NULL cache rate
@@ -47,23 +52,22 @@
  *
  * @param r    SQL alias for the `results` row (default `r`).
  * @param cs   SQL alias for the `cost_snapshots` row (default `cs`).
- * @param runs SQL alias for the `runs` row the enclosing query joins (default `runs`).
+ * @param runs SQL alias for the `runs` row the enclosing query joins (default
+ *             `runs`). Validated and otherwise unused since the list-price
+ *             decision; kept so every call site's mode-predicate join stays
+ *             explicit and the signature stable.
  */
 export function rowCostUsd(r = "r", cs = "cs", runs = "runs"): string {
   const rr = assertSqlAlias(r);
   const cc = assertSqlAlias(cs);
-  const ru = assertSqlAlias(runs);
-  const sync =
+  assertSqlAlias(runs);
+  return (
     `(${rr}.tokens_in * ${cc}.input_per_mtoken` +
     ` + ${rr}.tokens_out * ${cc}.output_per_mtoken` +
     ` + ${rr}.tokens_cache_read * COALESCE(${cc}.cache_read_per_mtoken, 0)` +
-    ` + ${rr}.tokens_cache_write * COALESCE(${cc}.cache_write_per_mtoken, 0))`;
-  const batch =
-    `(${rr}.tokens_in * ${cc}.batch_input_per_mtoken` +
-    ` + ${rr}.tokens_out * ${cc}.batch_output_per_mtoken` +
-    ` + ${rr}.tokens_cache_read * COALESCE(${cc}.batch_cache_read_per_mtoken, 0)` +
-    ` + ${rr}.tokens_cache_write * COALESCE(${cc}.batch_cache_write_per_mtoken, 0))`;
-  return `(CASE WHEN ${ru}.invocation_mode = 'batch' THEN ${batch} ELSE ${sync} END) / 1000000.0`;
+    ` + ${rr}.tokens_cache_write * COALESCE(${cc}.cache_write_per_mtoken, 0))` +
+    ` / 1000000.0`
+  );
 }
 
 /**
