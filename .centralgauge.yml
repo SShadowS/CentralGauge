@@ -77,6 +77,20 @@ logging:
 #     enabled: true                       # Enable/disable notifications
 #     accessToken: "o.xxxxx"              # Or use PUSHBULLET_ACCESS_TOKEN env var
 
+# Batch mode settings (docs/batch-mode.md, rule .claude/rules/batch-mode.md).
+# Documentation only below - commented out, no behaviour change until uncommented.
+# batch:
+#   # How often a scheduler should call `bench batch advance --all`, in minutes.
+#   # Exit 3 (still processing) is normal and just means "call again later"; exit 4
+#   # means an operator has to look at `status --json` before the next call.
+#   advanceIntervalMinutes: 30
+#   openrouter:
+#     limits:
+#       # Overrides OPENROUTER_BATCH_MAX_ITEMS / OPENROUTER_BATCH_MAX_BYTES in
+#       # src/llm/batch/openrouter-batch.ts (defaults: 2048 items, 1048576 bytes).
+#       maxItems: 2048
+#       maxBytes: 1048576
+
 # Benchmark presets - save complex benchmark configurations as reusable presets
 # Run with: deno task start bench --preset <name>
 # List presets: deno task start bench --list-presets

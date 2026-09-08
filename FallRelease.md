@@ -375,6 +375,17 @@ Nothing below costs money, but the campaign cannot be sized without them.
   leaderboard pools profiles per model and flags the mix, as it does today
   for any settings change.
 
+  **Landed, 2026-09-08:** Plan B (runner) is built and reviewed on branch
+  `batch-mode-plan-b`. Three hand-driven runs have exercised all three
+  providers: Anthropic Haiku 4.5 (two runs, `09b9a437` and `a616b047`, both
+  finalized with a deliberate crash drill on the second), OpenAI gpt-5-mini
+  (one run, `28755d71`, finalized with its own crash drill), and OpenRouter
+  Gemini 3.8 Flash (in progress at the time of writing; figures to follow).
+  Every real defect the drills found is fixed and reviewed. Operator
+  guide: `docs/batch-mode.md`. Operator rule: `.claude/rules/batch-mode.md`.
+  This does not by itself decide whether the campaign in Phase 3 below runs
+  batch or sync - see the command alternative there.
+
 ---
 
 ## Phase 2 — pre-campaign hygiene
@@ -525,6 +536,46 @@ spent on numbers you will not trust.
       flag was typed), but put it on the command line anyway, and check
       the per-attempt completion-token counts on the first finished run
       against the cap before trusting anything.
+
+      **Batch alternative.** Decision 5 landed batch mode on branch
+      `batch-mode-plan-b` (see above); the campaign is not required to run
+      synchronously. The batch equivalent, one invocation per model, Opus 5
+      first:
+
+      ```
+      deno task start bench batch submit --preset fall-2026 \
+        --llms anthropic/claude-opus-5 --runs 3
+      ```
+
+      followed by repeated `deno task start bench batch advance --all`
+      calls (or a scheduled one, see `docs/batch-mode.md` and
+      `.claude/rules/batch-mode.md`) until every run for that model reaches
+      `finalized`, then the same for Fable 5.1, GPT-6 Astra, Gemini 3.8
+      Flash. `--runs 3` on `submit` is not yet a loop the way the sync
+      preset's `runs: 3` is - each of the three runs per model is its own
+      `submit` invocation with its own run id, driven to `finalized`
+      independently. `submit` refuses up front if the catalog has no
+      `batch_*_per_mtoken` rate for the model - confirm that before
+      launching, the same discipline as the sync path's pricing checks.
+      Turnaround is provider-bound and can be hours to half a day per wave
+      (the OpenAI gpt-5-mini drill saw single waves take 8h33m and 12h12m),
+      so a batch campaign is measured in days, not the sync path's hours -
+      acceptable per the owner's original Decision 5 note, not yet
+      exercised at this campaign's scale (232 tasks, four models, three
+      runs) but exercised end to end at smoke scale on every provider.
+
+      Measured cost, smoke scale (two tasks, two attempts, `--no-ingest`):
+
+      | Provider | Model | Batch cost | Sync comparison |
+      | --- | --- | --- | --- |
+      | Anthropic | claude-haiku-4-5, run `09b9a437` | $0.004293 | $0.007069 (2026-05-29 sync run), 39% cheaper |
+      | Anthropic | claude-haiku-4-5, run `a616b047` | $0.003195 | same sync run, 55% cheaper |
+      | OpenAI | gpt-5-mini, run `28755d71` | $0.005798 | no sync run of gpt-5-mini exists; comparison unavailable |
+      | OpenRouter | google/gemini-3.8-flash | (run in progress; figures to follow) | (to follow) |
+
+      These are two-task smoke numbers, not a projection of the panel's
+      per-run cost above - they confirm the roughly-half-price direction
+      Decision 5 predicted for Anthropic, not a campaign-scale total.
 - [ ] **Cost.** Anchors from the composite work: 29 composites across two
       frontier models cost $28.90; the same across Sonnet and Luna cost $9.17;
       one uncapped pass over the 110 singles was estimated at about $40 per
