@@ -88,6 +88,85 @@ Deno.test("pollActive updates records and reports processing until every batch e
   }
 });
 
+Deno.test("pollActive stamps endedAt on the poll that first observes the batch ended, and never moves it on a later re-poll", async () => {
+  const dir = await createTempDir("poll-ended-at");
+  try {
+    const fake = new FakeBatchProvider("anthropic", {
+      poll: {
+        "batch-1": [
+          {
+            processing: false,
+            providerStatus: "ended",
+            rawCounts: { succeeded: 2 },
+          },
+        ],
+      },
+    });
+    const record = makeRecord();
+    const state = minimalState({
+      batches: [record],
+      activeBatchIds: ["batch-1"],
+    });
+
+    const first = await pollActive(dir, state, fake);
+    const firstRecord = first.records[0]!;
+    assertEquals(firstRecord.state, "ended");
+    assert(firstRecord.endedAt !== undefined);
+    assertEquals(firstRecord.endedAt, firstRecord.lastPolledAt);
+    const firstEndedAt = firstRecord.endedAt;
+
+    // A later re-poll (an operator running `advance`/`status` again after
+    // the batch already ended) still reports ended and moves
+    // `lastPolledAt` forward, but must never move `endedAt`.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const second = await pollActive(dir, state, fake);
+    const secondRecord = second.records[0]!;
+    assertEquals(secondRecord.state, "ended");
+    assertEquals(secondRecord.endedAt, firstEndedAt);
+    assert(secondRecord.lastPolledAt !== undefined);
+    assert(secondRecord.lastPolledAt! >= firstRecord.lastPolledAt!);
+
+    const reloaded = await loadState(dir);
+    assertEquals(reloaded.batches[0]?.endedAt, firstEndedAt);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("pollActive stamps endedAt on a sizeRejected poll too", async () => {
+  const dir = await createTempDir("poll-ended-at-size-rejected");
+  try {
+    const fake = new FakeBatchProvider("openrouter", {
+      poll: {
+        "batch-1": [
+          {
+            processing: false,
+            providerStatus: "rejected",
+            rawCounts: {},
+            sizeRejected: true,
+          },
+        ],
+      },
+    });
+    const record = makeRecord({
+      handle: { provider: "openrouter", batchId: "batch-1" },
+    });
+    const state = minimalState({
+      batches: [record],
+      activeBatchIds: ["batch-1"],
+    });
+
+    const outcome = await pollActive(dir, state, fake);
+    const result = outcome.records[0]!;
+    assertEquals(result.state, "ended");
+    assertEquals(result.rawCounts, { sizeRejected: 1 });
+    assert(result.endedAt !== undefined);
+    assertEquals(result.endedAt, result.lastPolledAt);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
 Deno.test("pollActive merges poll.extra into the record's handle.extra, keeping pre-existing keys, and persists it", async () => {
   const dir = await createTempDir("poll-extra");
   try {

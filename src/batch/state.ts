@@ -74,6 +74,16 @@ export const BatchRecordSchema = z.object({
   handle: BatchHandleSchema,
   submittedAt: z.string(),
   lastPolledAt: z.string().optional(),
+  /**
+   * The timestamp of the FIRST poll that observed this batch as no longer
+   * processing (`state` flipping to `"ended"`, including a `sizeRejected`
+   * rejection). Set once by `pollActive` and never overwritten, so a later
+   * re-poll (recovery, a `status`-driven poll, a repeated `advance`) that
+   * moves `lastPolledAt` forward does not also move the reported end time.
+   * Optional so state files written before this field existed still parse;
+   * `summarizeWaves` falls back to `lastPolledAt` for those.
+   */
+  endedAt: z.string().optional(),
   providerStatus: z.string(),
   rawCounts: z.record(z.string(), z.number()),
   state: z.enum(["processing", "ended"]),

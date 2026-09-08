@@ -13,8 +13,12 @@ import {
 } from "@std/assert";
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
-import { finalizeRun } from "../../../src/batch/results.ts";
-import type { BatchRunState, TaskSummary } from "../../../src/batch/state.ts";
+import { finalizeRun, summarizeWaves } from "../../../src/batch/results.ts";
+import type {
+  BatchRecord,
+  BatchRunState,
+  TaskSummary,
+} from "../../../src/batch/state.ts";
 import { attemptPath, RUN_FILES, runDir } from "../../../src/batch/paths.ts";
 import {
   createMockExecutionAttempt,
@@ -480,4 +484,43 @@ Deno.test("finalizeRun throws when the frozen extras disagree with the derived t
   } finally {
     await Deno.remove(output, { recursive: true });
   }
+});
+
+function makeBatchRecord(overrides: Partial<BatchRecord> = {}): BatchRecord {
+  return {
+    wave: 1,
+    round: 0,
+    chunk: 0,
+    handle: { provider: "anthropic", batchId: "batch-1" },
+    submittedAt: "2026-09-07T16:00:00.000Z",
+    providerStatus: "ended",
+    rawCounts: {},
+    state: "ended",
+    itemIds: [],
+    collected: true,
+    ...overrides,
+  };
+}
+
+Deno.test("summarizeWaves reports a record's endedAt over a later lastPolledAt", () => {
+  const record = makeBatchRecord({
+    // Really ended near 16:35, but re-polled (recovery/status/advance)
+    // much later - lastPolledAt drifts forward, endedAt must not.
+    endedAt: "2026-09-07T16:35:00.000Z",
+    lastPolledAt: "2026-09-08T04:57:00.000Z",
+  });
+
+  const waves = summarizeWaves([record]);
+  assertEquals(waves.length, 1);
+  assertEquals(waves[0]?.endedAt, "2026-09-07T16:35:00.000Z");
+});
+
+Deno.test("summarizeWaves falls back to lastPolledAt for a record with no endedAt (old runs)", () => {
+  const record = makeBatchRecord({
+    lastPolledAt: "2026-09-07T16:40:00.000Z",
+  });
+
+  const waves = summarizeWaves([record]);
+  assertEquals(waves.length, 1);
+  assertEquals(waves[0]?.endedAt, "2026-09-07T16:40:00.000Z");
 });

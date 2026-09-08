@@ -221,11 +221,15 @@ function minimalHashResult(hash: string): HashResult {
 /**
  * Group `state.batches` by wave into the per-wave summary both the
  * `InvocationRecord.batch` block and the `# Batch` scores block are built
- * from. `endedAt` is `null` unless EVERY batch of the wave has ended;
- * `providerReportedCostUsd` is the sum of whichever records reported one,
- * or `null` when none did.
+ * from. `endedAt` is `null` unless EVERY batch of the wave has ended; per
+ * record it prefers `endedAt` (the first observed end, stamped once by
+ * `pollActive`) and falls back to `lastPolledAt` only for a record written
+ * before that field existed. Across records in the wave it is still the
+ * latest of those per-record values - a wave with multiple chunks only
+ * "ends" once its last chunk does. `providerReportedCostUsd` is the sum of
+ * whichever records reported one, or `null` when none did.
  */
-function summarizeWaves(
+export function summarizeWaves(
   batches: BatchRecord[],
 ): BatchInvocationSummary["waves"] {
   const byWave = new Map<1 | 2, BatchRecord[]>();
@@ -242,7 +246,9 @@ function summarizeWaves(
       const submittedAt = [...records.map((r) => r.submittedAt)].sort()[0]!;
       const allEnded = records.every((r) => r.state === "ended");
       const endedAt = allEnded
-        ? [...records.map((r) => r.lastPolledAt ?? r.submittedAt)].sort()
+        ? [
+          ...records.map((r) => r.endedAt ?? r.lastPolledAt ?? r.submittedAt),
+        ].sort()
           .at(-1)!
         : null;
       const costs = records

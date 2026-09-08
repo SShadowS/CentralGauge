@@ -54,7 +54,13 @@ export interface PollOutcome {
  * matching `BatchRecord` is skipped) and updates that record in place: on
  * a normal poll, `providerStatus`, `rawCounts`, `lastPolledAt`, and
  * `providerReportedCostUsd` when the provider reports one, plus `state`
- * flips to `"ended"` once `!processing`. Whenever `poll.extra` is present
+ * flips to `"ended"` once `!processing`. The first poll that observes a
+ * record ending (either `!processing` or `sizeRejected`) also stamps
+ * `record.endedAt` from that same `lastPolledAt` timestamp, once and only
+ * once - a later re-poll of an already-ended record advances
+ * `lastPolledAt` but never touches `endedAt`, so a report built from
+ * `endedAt` reflects the first observed end rather than however late the
+ * batch happened to be re-polled. Whenever `poll.extra` is present
  * it is merged onto `record.handle.extra` (provider-neutral; OpenAI uses
  * it to carry `outputFileId`/`errorFileId`), so the persisted handle stays
  * complete for `cleanup` and for audit even though `collect` itself no
@@ -90,6 +96,7 @@ export async function pollActive(
       record.providerStatus = poll.providerStatus;
       record.rawCounts = { sizeRejected: 1 };
       record.state = "ended";
+      if (record.endedAt === undefined) record.endedAt = record.lastPolledAt;
       await appendEvent(dir, "size_rejected_async", {
         batchId,
         wave: record.wave,
@@ -101,6 +108,9 @@ export async function pollActive(
       record.providerStatus = poll.providerStatus;
       record.rawCounts = poll.rawCounts;
       record.state = poll.processing ? "processing" : "ended";
+      if (!poll.processing && record.endedAt === undefined) {
+        record.endedAt = record.lastPolledAt;
+      }
     }
 
     if (record.state === "processing") anyProcessing = true;
