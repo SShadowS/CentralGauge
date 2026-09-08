@@ -452,7 +452,18 @@ spent on numbers you will not trust.
       | GPT-6 Astra | `openai/gpt-6-astra` | live on the OpenAI API (`models -p openai --live`). Catalog rows SEEDED 2026-09-06 from LiteLLM and OpenRouter (they agree): $10/$50 per Mtok, cache read $1.00, 922K in / 128K out, released 2026-09-04. `sync-catalog --apply` still owed (Phase 2). |
       | Gemini 3.8 Flash | `gemini/gemini-3.8-flash` | Catalog rows SEEDED 2026-09-06 (LiteLLM and OpenRouter agree): $0.75/$3.75 per Mtok, cache read $0.075, 1M in / 64K out, released 2026-09-02. **The direct-discovery 400 is a bad key, not an endpoint problem**: Google answers `API_KEY_INVALID` for the `GOOGLE_API_KEY` in the environment (`GEMINI_API_KEY` is unset). Rotate the key at AI Studio and replace it in `.env`; then `models -p gemini --live` and `models gemini/gemini-3.8-flash --check` must pass before the dry run. Do not fall back to OpenRouter (panel, unanimous). **The owner's preference for OpenRouter rested on a cost-reporting bug, fixed 2026-09-06:** the direct adapter never received `thoughtsTokenCount`, so thinking tokens (4-7k per attempt) were excluded from output and the recorded cost was 6.7x-15.4x too low; corrected, direct Gemini 3.1 Pro costs $0.0988/attempt, within a tenth of a cent of what the OpenRouter route reported for the same model. Both routes cost the same per recorded attempt; only the direct one under-reported. Every direct-Gemini row already in D1 (and the live leaderboard's Gemini cost columns) carries the undercount. **The INVOICE gap was a second bug, also fixed 2026-09-06:** the adapter's 300 s deadline abandoned generations mid-thinking and the work pool retried up to seven times, each rung billed by Google and invisible to the harness - 122 abandoned generations on 818 stored 3.1 Pro attempts, 41% of LLM wall time, roughly doubling the invoice against the work. Now: deadline 900 s, one retry after an abandoned generation, and `attempts[].abandonedGenerations {count, totalMs}` recorded so an invoice reconciles against the results file. |
 
-      Four models, one above decision 1's floor. Opus 5 was a composite
+      Four models, one above decision 1's floor.
+
+      **How the site reports a cohort.** Every leaderboard metric is a MEAN
+      across the model's runs, not the best of them: for each run, count the
+      tasks it solved first try and the tasks it solved on retry having failed
+      attempt 1 in that same run, then divide by the run count. Cost is per
+      run-task cell, so it answers what one task costs once. A three-run cohort
+      and a one-run model are therefore directly comparable, and a model below
+      three runs is marked `n=<runs>` as provisional but still ranks. An
+      unrecovered provider refusal (the provider declined and no fallback model
+      served it) scores as an ordinary failure and is reported separately as
+      `refusal_count`, so a policy refusal is not read as a capability gap. Opus 5 was a composite
       construction-gate model (in-sample for the composite slice). Fable 5,
       not 5.1, was a saturation-rule model, so 5.1 is clean for the
       headline; disclose the lineage. GPT-6 Astra and Gemini 3.8 Flash are
@@ -576,17 +587,17 @@ spent on numbers you will not trust.
       These are two-task smoke numbers, not a projection of the panel's
       per-run cost above - they confirm the roughly-half-price direction
       Decision 5 predicted for Anthropic, not a campaign-scale total.
-- [ ] **Cost.** Anchors from the composite work: 29 composites across two
-      frontier models cost $28.90; the same across Sonnet and Luna cost $9.17;
-      one uncapped pass over the 110 singles was estimated at about $40 per
-      frontier model. Budget roughly $50 to $80 per frontier model for the
-      full 298. Decision 3 has since cut the set to 232, and the sixty
-      saturated tasks it removed were the cheapest in it, so expect roughly
-      a fifth off the task count and rather less than a fifth off the bill:
-      budget $200 to $350 for a five-model panel per run. The chosen panel
-      is THREE models, one Flash-priced, so roughly **$120 to $210 per run
-      and $360 to $630 for the three-run campaign** (the earlier
-      $600-$1,050 figure was written against five models).
+- [ ] **Cost.** Measured, not estimated, now that Opus 5 has run: one Opus 5
+      batch run over the 232-task set costs about **$21 at batch rates**
+      (about $42 at list). The chosen panel is FOUR models (Opus 5, Fable 5.1,
+      GPT-6 Astra, Gemini 3.8 Flash), three of them still to run. Fable 5.1
+      and GPT-6 Astra price at roughly $42 per run each and Gemini 3.8 Flash at
+      roughly $3, so the three remaining cohorts come to about **$262 at batch
+      rates**, on top of the **$63 already spent** on the Opus 5 cohort. That
+      is a planning estimate: it extrapolates per-model list rates from one
+      measured cohort, and a model that thinks longer than Opus 5 will exceed
+      it. The earlier $360-$630 figure was written against three models and a
+      pre-batch price.
 - [ ] **Verify capture on the first finished run.** Open the results file and
       confirm the `ingest` block carries the environment manifest and the
       invocation snapshot, and that per-attempt test vectors are present. The

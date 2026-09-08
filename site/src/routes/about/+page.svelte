@@ -132,6 +132,14 @@
       The Pass@1 / Pass@2 stacked bar on each leaderboard row visualizes the per-task breakdown: green for first-try success, amber for retry-recovery, red for unsolved.
     </p>
 
+    <h3>Cohorts: every metric is a mean across runs</h3>
+    <p>
+      A model is benched as a cohort of runs, currently three. Every pass rate above is the <strong>mean of the per-run rates</strong>, and cost is the cost of running one task once. Attempt-2 credit is decided within a run: a task solved on retry counts as a retry solve for that run even if another run solved it first try.
+    </p>
+    <p>
+      This is what makes models with different run counts comparable. Under the earlier rule a task counted as solved if <em>any</em> run solved it, so a three-run cohort scored higher than the same model benched once. A model with fewer runs than the cohort size is marked <code>n=&lt;runs&gt;</code> on its row and still ranks; the marker says the average rests on fewer samples.
+    </p>
+
     <h3>Repair rate (<code>repair_rate</code>)</h3>
     <p>
       Conditional on failing the first attempt: the fraction of first-try failures the model recovers on the second attempt.

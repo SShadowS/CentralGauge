@@ -381,6 +381,19 @@ would otherwise re-precheck).
   summary's "Score" column. Pre-PR1 readers may have stored URLs using
   `pass_at_n` with the per-attempted denominator; that field is now
   exposed under `pass_at_n_per_attempted` (deprecated; removed in PR2).
+- **Cohort metrics (2026-09).** Every pass metric on the leaderboard is the
+  MEAN of the per-run strict metrics, not the best across runs: per run, count
+  the tasks passed at attempt 1 and the tasks passed at attempt 2 having failed
+  attempt 1 in THAT run, sum over the in-scope runs, divide by the run count.
+  `tasks_passed_attempt_1` / `tasks_passed_attempt_2_only` are therefore
+  fractional. `avg_cost_usd` divides by the number of (run, task) cells, and
+  the tier matrix scores each task as the mean per-run score. So a three-run
+  cohort is directly comparable with a one-run model; the old union rule made
+  both pass rate and cost grow with run count. Cohort size is `COHORT_RUNS`
+  (3) in `site/src/lib/shared/cohort.ts`; a row below it carries
+  `provisional: true` and renders an `n=<runs>` marker. `refusal_count` counts
+  results the provider refused with no fallback (`provider_finish_reason =
+  'refusal'`, `served_model IS NULL`), scoped like `fallback_count`.
 - `set=all` is no longer accepted on `/api/v1/leaderboard` - strict
   pass rate has no well-defined denominator across multiple sets.
   Use `set=current` or a specific 64-char hash. Returns `400
