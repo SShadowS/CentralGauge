@@ -153,6 +153,7 @@ async function buildFrozen(
   await writeJsonAtomic(promptInputsPath, frozenInputs());
   return await freezeInputs(
     root,
+    "templates",
     ["A", "B"],
     manifests,
     promptInputsPath,
@@ -172,6 +173,7 @@ function baseDeps(
     mapRaw: overrides.mapRaw!,
     runtimeFactory: overrides.runtimeFactory!,
     cwd: REPO_ROOT,
+    templateDir: "templates",
     taskConcurrency: 4,
     infraRetriesPerAttempt: 1,
     attemptLimit: 2,

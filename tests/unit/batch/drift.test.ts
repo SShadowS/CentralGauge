@@ -129,6 +129,7 @@ Deno.test({
 
       const frozen = await freezeInputs(
         root,
+        "templates",
         [TASK_ID],
         manifests,
         promptInputsPath,
@@ -154,7 +155,10 @@ Deno.test({
         ingest: true,
       };
 
-      const clean = await checkDrift(root, state, { cwd: root });
+      const clean = await checkDrift(root, state, {
+        cwd: root,
+        templateDir: "templates",
+      });
       assertEquals(clean.changed, []);
       assert(clean.ok);
 
@@ -166,7 +170,10 @@ Deno.test({
         originalYaml.replace("Product Category", "Product Category Edited"),
       );
       try {
-        const afterYamlEdit = await checkDrift(root, state, { cwd: root });
+        const afterYamlEdit = await checkDrift(root, state, {
+          cwd: root,
+          templateDir: "templates",
+        });
         assert(!afterYamlEdit.ok);
         assert(
           afterYamlEdit.changed.some((c) => c.input === "taskSetHash"),
@@ -186,6 +193,7 @@ Deno.test({
       try {
         const afterTemplateEdit = await checkDrift(root, state, {
           cwd: root,
+          templateDir: "templates",
         });
         assert(!afterTemplateEdit.ok);
         assert(
@@ -209,6 +217,7 @@ Deno.test({
       try {
         const afterPromptInputsEdit = await checkDrift(root, state, {
           cwd: root,
+          templateDir: "templates",
         });
         assert(!afterPromptInputsEdit.ok);
         assert(
@@ -225,11 +234,15 @@ Deno.test({
 
       // A different wave-1 environment: only "environment" moves, and only
       // when an environment is actually passed in.
-      const withoutEnvCheck = await checkDrift(root, state, { cwd: root });
+      const withoutEnvCheck = await checkDrift(root, state, {
+        cwd: root,
+        templateDir: "templates",
+      });
       assertEquals(withoutEnvCheck.changed, []);
 
       const withDifferentEnv = await checkDrift(root, state, {
         cwd: root,
+        templateDir: "templates",
         environment: ENV_B,
       });
       assert(!withDifferentEnv.ok);
@@ -240,6 +253,7 @@ Deno.test({
 
       const withSameEnv = await checkDrift(root, state, {
         cwd: root,
+        templateDir: "templates",
         environment: ENV_A,
       });
       assertEquals(withSameEnv.changed, []);
@@ -252,6 +266,104 @@ Deno.test({
       for (const rel of expanded) {
         const info = await Deno.stat(join(root, rel));
         assert(info.isFile, `expected ${rel} to exist under the checkout`);
+      }
+    } finally {
+      await Deno.remove(root, { recursive: true });
+    }
+  },
+});
+Deno.test({
+  name: "a custom templateDir is what freezeInputs and checkDrift digest",
+  ignore: !gitAvailable,
+  fn: async () => {
+    const { root, manifests } = await setupCheckout();
+    try {
+      // The same template, moved to where `benchmark.templateDir` points.
+      const customDir = "prompts/custom";
+      await ensureDir(join(root, customDir));
+      await Deno.copyFile(
+        join(root, "templates", "code-gen.md"),
+        join(root, customDir, "code-gen.md"),
+      );
+
+      const promptInputsPath = join(root, RUN_FILES.promptInputs);
+      await writeJsonAtomic(
+        promptInputsPath,
+        frozenInputs({ templateDir: customDir }),
+      );
+
+      const frozen = await freezeInputs(
+        root,
+        customDir,
+        [TASK_ID],
+        manifests,
+        promptInputsPath,
+        ENV_A,
+      );
+      const state = {
+        schemaVersion: 1 as const,
+        runId: "run-drift-custom",
+        createdAt: new Date().toISOString(),
+        model: {
+          slug: "anthropic/claude-haiku-4-5",
+          provider: "anthropic" as const,
+          apiModelId: "claude-haiku-4-5",
+        },
+        frozen,
+        phase: "attempt-1-submitted" as const,
+        wave: 1 as const,
+        batches: [],
+        activeBatchIds: [],
+        tasks: {},
+        ingest: true,
+      };
+
+      const clean = await checkDrift(root, state, {
+        cwd: root,
+        templateDir: customDir,
+      });
+      assertEquals(clean.changed, []);
+
+      // Editing the template the run actually renders from is drift.
+      const customTemplate = join(root, customDir, "code-gen.md");
+      const original = await Deno.readTextFile(customTemplate);
+      await Deno.writeTextFile(
+        customTemplate,
+        original + "\n<!-- custom dir edit -->\n",
+      );
+      const drifted = await checkDrift(root, state, {
+        cwd: root,
+        templateDir: customDir,
+      });
+      assert(!drifted.ok);
+      assert(
+        drifted.changed.some((c) => c.input === "templateDigests.code-gen.md"),
+        `expected templateDigests.code-gen.md in ${
+          JSON.stringify(drifted.changed)
+        }`,
+      );
+
+      // Editing the default `templates/` copy is not: nothing renders it.
+      await Deno.writeTextFile(customTemplate, original);
+      const defaultTemplate = join(root, "templates", "code-gen.md");
+      const defaultOriginal = await Deno.readTextFile(defaultTemplate);
+      try {
+        await Deno.writeTextFile(
+          defaultTemplate,
+          defaultOriginal + "\n<!-- default dir edit -->\n",
+        );
+        const unaffected = await checkDrift(root, state, {
+          cwd: root,
+          templateDir: customDir,
+        });
+        assertEquals(
+          unaffected.changed.filter((c) =>
+            c.input.startsWith("templateDigests.")
+          ),
+          [],
+        );
+      } finally {
+        await Deno.writeTextFile(defaultTemplate, defaultOriginal);
       }
     } finally {
       await Deno.remove(root, { recursive: true });

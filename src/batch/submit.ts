@@ -221,6 +221,8 @@ export async function submitRuns(
     throw err;
   }
 
+  const templateDir = config.benchmark?.templateDir || "templates";
+
   const patterns = opts.tasks
     ? splitCsv(opts.tasks)
     : (preset.tasks && preset.tasks.length > 0
@@ -295,7 +297,6 @@ export async function submitRuns(
     await benchLock.release();
   }
 
-  const templateDir = config.benchmark?.templateDir || "templates";
   const variantSystemPrompt = variant.config.systemPrompt ?? null;
   const infraRetriesPerAttempt = config.bench?.infraRetriesPerAttempt ?? 1;
 
@@ -354,6 +355,7 @@ export async function submitRuns(
 
     const frozenBase = await freezeInputs(
       opts.cwd,
+      templateDir,
       taskIds,
       manifestsMap,
       promptInputsPath,

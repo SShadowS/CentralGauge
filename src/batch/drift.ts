@@ -46,10 +46,14 @@ async function sha256OfFile(path: string): Promise<string> {
  * of to a fixed concatenation, so a template that legitimately doesn't
  * exist on this deployment digests stably instead of throwing.
  */
-async function templateDigestFor(cwd: string, name: string): Promise<string> {
+async function templateDigestFor(
+  cwd: string,
+  templateDir: string,
+  name: string,
+): Promise<string> {
   let text: string;
   try {
-    text = await Deno.readTextFile(join(cwd, "templates", name));
+    text = await Deno.readTextFile(join(cwd, templateDir, name));
   } catch {
     text = "<missing>";
   }
@@ -67,7 +71,17 @@ async function templateDigestFor(cwd: string, name: string): Promise<string> {
 export async function checkDrift(
   dir: string,
   state: BatchRunState,
-  opts: { cwd: string; environment?: ContainerEnvironmentSet },
+  opts: {
+    cwd: string;
+    /**
+     * Where the run's prompt templates live, relative to `cwd`
+     * (`benchmark.templateDir`, default `templates`). It must be the SAME
+     * directory `renderLLMRequest` renders from, or a wave-2 render reads
+     * a template this check never looked at.
+     */
+    templateDir: string;
+    environment?: ContainerEnvironmentSet;
+  },
 ): Promise<DriftReport> {
   const changed: DriftReport["changed"] = [];
 
@@ -83,7 +97,7 @@ export async function checkDrift(
   for (
     const [name, frozenDigest] of Object.entries(state.frozen.templateDigests)
   ) {
-    const current = await templateDigestFor(opts.cwd, name);
+    const current = await templateDigestFor(opts.cwd, opts.templateDir, name);
     if (current !== frozenDigest) {
       changed.push({
         input: `templateDigests.${name}`,
@@ -169,6 +183,7 @@ export async function checkDrift(
  */
 export async function freezeInputs(
   cwd: string,
+  templateDir: string,
   taskIds: string[],
   manifests: Map<string, TaskManifest>,
   promptInputsPath: string,
@@ -184,7 +199,7 @@ export async function freezeInputs(
   }
   const templateDigests: Record<string, string> = {};
   for (const name of [...templateNames].sort()) {
-    templateDigests[name] = await templateDigestFor(cwd, name);
+    templateDigests[name] = await templateDigestFor(cwd, templateDir, name);
   }
 
   const promptInputsDigest = await sha256OfFile(promptInputsPath);

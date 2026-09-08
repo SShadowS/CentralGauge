@@ -45,6 +45,12 @@ export interface AdvanceDeps {
   /** Started lazily, only for the `evaluate` step. */
   runtimeFactory: () => Promise<ContainerRuntime>;
   cwd: string;
+  /**
+   * `benchmark.templateDir` (default `templates`), resolved exactly as
+   * `renderLLMRequest` resolves it. The D13 template digests must be taken
+   * over the directory a wave-2 render actually reads.
+   */
+  templateDir: string;
   taskConcurrency: number;
   infraRetriesPerAttempt: number;
   attemptLimit: 1 | 2;
@@ -341,7 +347,11 @@ async function runEvaluate(
   try {
     runtime = await deps.runtimeFactory();
     const environment = await runtime.environmentSet();
-    const drift = await checkDrift(dir, state, { cwd: deps.cwd, environment });
+    const drift = await checkDrift(dir, state, {
+      cwd: deps.cwd,
+      templateDir: deps.templateDir,
+      environment,
+    });
     if (!drift.ok) {
       const reason = driftReason(drift.changed);
       deps.log(reason);
@@ -562,7 +572,10 @@ export async function advanceRun(
       return { exit: 0, step: { kind: "done" }, state };
     }
 
-    const drift = await checkDrift(dir, state, { cwd: deps.cwd });
+    const drift = await checkDrift(dir, state, {
+      cwd: deps.cwd,
+      templateDir: deps.templateDir,
+    });
     if (!drift.ok) {
       const reason = driftReason(drift.changed);
       deps.log(reason);

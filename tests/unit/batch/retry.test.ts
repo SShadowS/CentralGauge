@@ -76,6 +76,7 @@ function makeDeps(
       throw new Error("runtimeFactory should not be called by retryRun");
     },
     cwd: Deno.cwd(),
+    templateDir: "templates",
     taskConcurrency: 1,
     infraRetriesPerAttempt: 1,
     attemptLimit: 2,

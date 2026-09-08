@@ -313,6 +313,7 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
         queue: DEFAULT_QUEUE,
       }),
     cwd: Deno.cwd(),
+    templateDir: config.benchmark?.templateDir || "templates",
     taskConcurrency: DEFAULT_TASK_CONCURRENCY,
     infraRetriesPerAttempt: config.bench?.infraRetriesPerAttempt ?? 1,
     attemptLimit: inputs.settings.max_attempts === 1 ? 1 : 2,

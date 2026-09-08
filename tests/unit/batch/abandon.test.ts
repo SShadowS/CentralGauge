@@ -61,6 +61,7 @@ function unusedAdvanceDeps(provider: BatchProvider): AdvanceDeps {
     mapRaw: boom("mapRaw"),
     runtimeFactory: boom("runtimeFactory"),
     cwd: Deno.cwd(),
+    templateDir: "templates",
     taskConcurrency: 1,
     infraRetriesPerAttempt: 1,
     attemptLimit: 2,
