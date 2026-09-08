@@ -160,6 +160,16 @@ export const BatchRunStateSchema = z.object({
     message: z.string(),
     retryable: z.boolean(),
   }).optional(),
+  /**
+   * The pricing version (`YYYY-MM-DD`) the submit-time pricing gate
+   * resolved against. `finalizeRun` stamps THIS into the ingest payload
+   * rather than the day it happens to run: a batch window is 24 hours, so
+   * a run routinely finalizes on a later day, and a payload stamped with
+   * that later day makes `ensurePricing` fetch a fresh (batch-less)
+   * snapshot the run was never priced against. Optional so state files
+   * written before this field existed still parse.
+   */
+  pricingVersion: z.string().optional(),
   resultsFile: z.string().optional(),
   ingestedRunId: z.string().optional(),
   finalizedAt: z.string().optional(),

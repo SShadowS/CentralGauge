@@ -438,6 +438,13 @@ export async function finalizeRun(
     // `buildIngestMeta` mints one fresh UUID per call, which would make a
     // resumed/replayed ingest create a NEW server-side run every time.
     ingestMeta.run_ids[variantId] = next.runId;
+    // The attempts were priced at the version `submit` froze, which is not
+    // today: a 24-hour batch window routinely finalizes on a later day, and
+    // stamping that day would make ingest fetch a fresh snapshot with no
+    // batch rates and price the whole run NULL on the site.
+    if (next.pricingVersion !== undefined) {
+      ingestMeta.pricing_version = next.pricingVersion;
+    }
 
     await saveResultsJson(
       resultsFile,

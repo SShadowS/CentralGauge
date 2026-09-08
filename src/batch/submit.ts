@@ -48,6 +48,7 @@ import {
 import { ConfigManager } from "../config/config.ts";
 import { ModelPresetRegistry } from "../llm/model-presets.ts";
 import { loadTaskManifestsWithHashes } from "../../cli/helpers/task-loader.ts";
+import { todayPricingVersion } from "../../cli/commands/bench/ingest-meta.ts";
 import { DEFAULT_CONTAINER_NAME } from "../constants.ts";
 import { tryAcquireBenchLock } from "../utils/bench-lock.ts";
 import { apiKeyForBatchProvider } from "./provider-wiring.ts";
@@ -339,6 +340,7 @@ export async function submitRuns(
     settings,
   };
 
+  const pricingVersion = todayPricingVersion();
   const runIds: string[] = [];
   let overallExit: 0 | 4 = 0;
 
@@ -387,6 +389,9 @@ export async function submitRuns(
       activeBatchIds: [],
       tasks,
       ingest: opts.ingest,
+      // The version the pricing gate above resolved against; `finalizeRun`
+      // stamps it into the ingest payload however much later it runs.
+      pricingVersion,
     };
     await writeState(dir, state);
 

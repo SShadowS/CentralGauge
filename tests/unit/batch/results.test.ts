@@ -607,3 +607,35 @@ Deno.test("a finalize whose ingest throws stays finalizing, and the retry ingest
     await Deno.remove(output, { recursive: true });
   }
 });
+
+Deno.test("finalizeRun stamps the pricing version frozen at submit, not the finalize day", async () => {
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    // A 24-hour batch window routinely finalizes on a later day than the
+    // one whose snapshot priced the attempts.
+    const submitDay = "2026-09-01";
+    const next = await finalizeRun(
+      dir,
+      { ...state, pricingVersion: submitDay },
+      {
+        manifests,
+        contexts,
+        variant: mockVariant(),
+        environment: mockEnvironment(),
+        taskSetHash: state.frozen.taskSetHash,
+        ingest: false,
+        cwd: Deno.cwd(),
+        ingestFlags: {},
+      },
+    );
+
+    const parsed = JSON.parse(await Deno.readTextFile(next.resultsFile!));
+    assertEquals(parsed.ingest.pricing_version, submitDay);
+    assertNotEquals(
+      parsed.ingest.pricing_version,
+      new Date().toISOString().slice(0, 10),
+    );
+  } finally {
+    await Deno.remove(output, { recursive: true });
+  }
+});

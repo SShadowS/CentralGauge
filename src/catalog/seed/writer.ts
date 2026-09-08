@@ -7,6 +7,7 @@
 import { parse as parseYaml, stringify } from "@std/yaml";
 import type { FamilyRow, ModelRow, PricingRow } from "./types.ts";
 import { CatalogSeedError } from "../../errors.ts";
+import { withBatchRatesCarriedForward } from "../batch-rates.ts";
 
 export interface AppendResult {
   added: boolean;
@@ -102,60 +103,6 @@ function pricingRowToYaml(row: PricingRow): string {
   return stringify([row], { lineWidth: -1 });
 }
 
-const BATCH_FIELDS = [
-  "batch_input_per_mtoken",
-  "batch_output_per_mtoken",
-  "batch_cache_read_per_mtoken",
-  "batch_cache_write_per_mtoken",
-] as const;
-
-function rowHasBatchFields(row: PricingRow): boolean {
-  return BATCH_FIELDS.some((field) => row[field] !== undefined);
-}
-
-/**
- * Most recent = highest pricing_version string; last occurrence wins on
- * ties (same-version rows included), matching findPricingAtVersion's
- * last-match-wins convention above.
- */
-function findLatestBatchRow(
-  parsed: PricingRow[],
-  slug: string,
-): PricingRow | null {
-  let best: PricingRow | null = null;
-  for (const r of parsed) {
-    if (r.model_slug !== slug || !rowHasBatchFields(r)) continue;
-    if (best === null || r.pricing_version >= best.pricing_version) {
-      best = r;
-    }
-  }
-  return best;
-}
-
-/**
- * D5 / GH freshness-refresh shadowing fix: a freshly fetched row from
- * LiteLLM/OpenRouter never carries batch_* fields. Writing it as-is would
- * shadow an existing batch rate under the "latest version wins" lookup
- * PricingService and priceUsage use. When the incoming row has none of the
- * four batch fields, copy them from the most recent prior row for the same
- * model_slug that has any; an incoming row that already carries any batch
- * field is written unchanged.
- */
-function withCarriedBatchFields(
-  row: PricingRow,
-  parsed: PricingRow[],
-): PricingRow {
-  if (rowHasBatchFields(row)) return row;
-  const source = findLatestBatchRow(parsed, row.model_slug);
-  if (!source) return row;
-  const carried: PricingRow = { ...row };
-  for (const field of BATCH_FIELDS) {
-    const value = source[field];
-    if (value !== undefined) carried[field] = value;
-  }
-  return carried;
-}
-
 /**
  * Last match wins: a prior bug let appendPricingIfChanged accumulate
  * duplicate (slug, pricing_version) rows (D2). Reading the LAST occurrence
@@ -220,7 +167,7 @@ export async function appendPricingIfChanged(
   const parsed = existing.trim().length === 0
     ? []
     : ((parseYaml(existing) as PricingRow[] | null) ?? []);
-  const rowToWrite = withCarriedBatchFields(row, parsed);
+  const rowToWrite = withBatchRatesCarriedForward(parsed, row);
   const matches = parsed.filter(
     (r) =>
       r.model_slug === rowToWrite.model_slug &&
