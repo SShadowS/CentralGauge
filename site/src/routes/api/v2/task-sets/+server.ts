@@ -9,6 +9,7 @@ interface TaskSetV2Row {
   display_name: string | null;
   task_count: number;
   run_count: number;
+  excluded_run_count: number;
   is_current: number;
   created_at: string;
   scoring_policy_digest: string | null;
@@ -37,7 +38,12 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
          ts.task_count,
          ts.is_current,
          ts.created_at,
+         -- Same pair as v1: run_count is the inventory, excluded_run_count
+         -- is how many of those leave every statistic (0022).
          (SELECT COUNT(*) FROM runs WHERE task_set_hash = ts.hash) AS run_count,
+         (SELECT COUNT(*) FROM runs
+           WHERE task_set_hash = ts.hash AND excluded_at IS NOT NULL)
+           AS excluded_run_count,
          sp.digest AS scoring_policy_digest,
          tr.digest AS active_revision_digest
        FROM task_sets ts
@@ -54,6 +60,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       display_name: r.display_name,
       task_count: +(r.task_count ?? 0),
       run_count: +(r.run_count ?? 0),
+      excluded_run_count: +(r.excluded_run_count ?? 0),
       is_current: r.is_current === 1,
       created_at: r.created_at,
       scoring_policy_digest: r.scoring_policy_digest ?? null,

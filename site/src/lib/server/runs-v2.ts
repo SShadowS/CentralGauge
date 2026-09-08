@@ -9,6 +9,8 @@ import type { RunV2Summary } from "../shared/api-types";
 
 export interface RunV2Row {
   id: string;
+  excluded_at: string | null;
+  excluded_reason: string | null;
   started_at: string;
   completed_at: string | null;
   status: string;
@@ -26,6 +28,10 @@ export interface RunV2Row {
  * captured under the 2026-09 harness), else `"pre_capture"`.
  * `environment_digest` is the bare sha256 hex digest of the uploaded
  * environment-manifest blob (the `blobs/` prefix stripped), or `null`.
+ *
+ * `excluded_at` / `excluded_reason` mirror the v1 run shapes (migration
+ * 0022): the v2 run endpoints are a record, so they still serve an excluded
+ * run, and carry the mark so a consumer can tell it apart.
  */
 export function toRunV2Summary(r: RunV2Row): RunV2Summary {
   return {
@@ -45,5 +51,7 @@ export function toRunV2Summary(r: RunV2Row): RunV2Summary {
       : null,
     test_runner: r.test_runner ?? null,
     capture: r.harness_fingerprint ? "full" : "pre_capture",
+    excluded_at: r.excluded_at ?? null,
+    excluded_reason: r.excluded_reason ?? null,
   };
 }

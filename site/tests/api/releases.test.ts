@@ -248,6 +248,75 @@ describe("benchmark releases + export bundle", () => {
     expect(listBody.data.map((r) => r.slug)).toContain("2026-09-launch");
   });
 
+  // Soft run exclusion (migration 0022). The export bundle is a
+  // reproducibility archive, so it still lists an excluded run. It carries
+  // the mark, so a reader of the archive can tell which runs were ranked.
+  it("exports an excluded run with its mark in runs.jsonl", async () => {
+    const { keyId, keypair } = await registerMachineKey(
+      "test-machine",
+      "admin",
+    );
+    const pol = await createPolicy(env.DB, policy as never);
+    const rev = await applyRevision(env.DB, {
+      hash: HASH,
+      normalized: normalizeCatalog(smallCatalog(), HASH),
+      provenance: {},
+      actor,
+      signature: "s",
+    });
+    await ingestCompletedRun("run-a", "t1", keyId, keypair);
+    await ingestCompletedRun("run-b", "c1", keyId, keypair);
+    await env.DB.prepare(
+      `UPDATE runs SET excluded_at = ?, excluded_reason = ? WHERE id = 'run-b'`,
+    )
+      .bind("2026-09-08T00:00:00.000Z", "host OOM during evaluation")
+      .run();
+
+    const { signedRequest } = await createSignedPayload(
+      {
+        slug: "2026-09-excluded",
+        hash: HASH,
+        revision_digest: rev.digest,
+        scoring_policy_digest: pol.digest,
+        estimator_version: "ev0",
+        panel_manifest: {
+          models: ["m1"],
+          run_ids: { m1: ["run-a", "run-b"] },
+          metric: "pass_at_1",
+          rule: "solved_by_at_most",
+          threshold: 2,
+          donor_cap: 4,
+        },
+        retained_task_ids: ["t1", "c1"],
+        selection_reasons: { t1: "r", c1: "r" },
+        changelog: "excluded-run release",
+      },
+      keyId,
+      undefined,
+      keypair,
+    );
+    const res = await SELF.fetch("https://x/api/v1/admin/releases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...signedRequest, version: 1 }),
+    });
+    expect(res.status).toBe(200);
+
+    const runsJsonl = await (await env.BLOBS.get(
+      "exports/2026-09-excluded/runs.jsonl",
+    ))!.text();
+    const lines = runsJsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    const dropped = lines.find((l) => l["id"] === "run-b");
+    expect(dropped?.["excluded_at"]).toBe("2026-09-08T00:00:00.000Z");
+    expect(dropped?.["excluded_reason"]).toBe("host OOM during evaluation");
+    const kept = lines.find((l) => l["id"] === "run-a");
+    expect(kept?.["excluded_at"]).toBe(null);
+    expect(kept?.["excluded_reason"]).toBe(null);
+  });
+
   it("rejects publishing against a revision_digest that is not a verified revision of that hash", async () => {
     const { keyId, keypair } = await registerMachineKey(
       "test-machine",

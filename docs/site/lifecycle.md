@@ -363,9 +363,14 @@ centralgauge runs include 20a0f409-7e1a-4ea8-a060-b3a8429bcf31
 Both post the signed `POST /api/v1/admin/runs/exclude` using the same admin
 key as `sync-catalog`, so the same `admin_key_path` / `admin_key_id` config
 applies. Each call writes a `run.excluded` or `run.included` row to
-`admin_audit` and bumps the data epoch, which retires every cached ranking
-immediately. The operation is idempotent in both directions: re-excluding an
-already-excluded run updates its reason, which is how you correct one.
+`admin_audit`, and forces the data epoch in the same batch as the write, which
+retires every cached ranking at once. Forcing it is the point: the ordinary
+ingest path only marks the epoch dirty and lets a reader promote the mark up
+to a minute later, which would leave you looking at the old numbers wondering
+whether the command worked. The operation is idempotent in both directions:
+re-excluding an already-excluded run updates its reason, which is how you
+correct one, and including an already-included run writes nothing and does not
+retire any cache.
 
 Three things worth knowing before you use it.
 
@@ -387,9 +392,20 @@ is not retro-purged; rebuild the DB if that matters.
 
 **What is deliberately still counted.** `/api/v1/task-sets` reports a per-set
 `run_count` that includes excluded runs, because that number is an inventory
-of what is stored rather than a statistic. The same goes for search results
-and a model's run history. If you want to know how many runs actually feed the
-rankings, read the site summary, which does drop them.
+of what is stored rather than a statistic. It is served alongside
+`excluded_run_count`, so the set picker shows "12 runs (3 excluded)" and you
+can see both figures without guessing which one you are reading. The same
+inventory rule covers search results, a model's run history, and the v2 run
+endpoints, all of which carry `excluded_at` and `excluded_reason` so a
+consumer can tell the marked runs apart.
+
+A release is NOT in that category. `cohortDigest` picks the runs a release's
+numbers are computed from, so it skips excluded runs, which matters most under
+a small cohort size where an excluded run would otherwise displace an
+includable one (the order is most-recent-first, and an infra-tainted run is
+usually the newest). The export bundle still lists every run of the set,
+because it is a reproducibility archive, and `runs.jsonl` carries the mark on
+each line.
 
 ## Recipes
 

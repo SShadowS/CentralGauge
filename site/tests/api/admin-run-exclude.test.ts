@@ -16,14 +16,17 @@ beforeAll(async () => {
 const URL = "https://x/api/v1/admin/runs/exclude";
 const REASON = "host OOM during evaluation";
 
-async function readEpoch(): Promise<number> {
+async function readEpochRow(): Promise<{
+  epoch: number;
+  pending_since: number;
+}> {
   const row = await env.DB.prepare(
     `SELECT epoch, pending_since FROM cache_epoch WHERE id = 1`,
   ).first<{ epoch: number; pending_since: number }>();
-  // The bump is debounced: it sets `pending_since` rather than incrementing
-  // `epoch` directly (see data-epoch.ts), so a caller checking "was the epoch
-  // retired" has to look at both.
-  return Number(row?.epoch ?? 0) + Number(row?.pending_since ?? 0);
+  return {
+    epoch: Number(row?.epoch ?? 0),
+    pending_since: Number(row?.pending_since ?? 0),
+  };
 }
 
 async function runRow(id: string) {
@@ -81,7 +84,7 @@ describe("admin run exclude endpoint", () => {
   });
 
   it("excludes a run, writes an audit row and retires cached rankings", async () => {
-    const before = await readEpoch();
+    const before = await readEpochRow();
     const res = await post({ run_id: "r1", reason: REASON, exclude: true });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -111,7 +114,29 @@ describe("admin run exclude endpoint", () => {
       reason: REASON,
     });
 
-    expect(await readEpoch()).toBeGreaterThan(before);
+    // FORCED bump, not the debounced mark. The ordinary write path sets
+    // `pending_since` and waits out DEBOUNCE_MS, which would leave an
+    // operator staring at the old numbers for up to a minute after running
+    // `centralgauge runs exclude`. An exclusion is a deliberate operator
+    // action, so `epoch` increments now and `pending_since` returns to 0.
+    const after = await readEpochRow();
+    expect(after.epoch).toBe(before.epoch + 1);
+    expect(after.pending_since).toBe(0);
+  });
+
+  it("forces the epoch on include too, and not on a no-op", async () => {
+    await post({ run_id: "r1", reason: REASON, exclude: true });
+    const afterExclude = await readEpochRow();
+
+    await post({ run_id: "r1", reason: "", exclude: false });
+    const afterInclude = await readEpochRow();
+    expect(afterInclude.epoch).toBe(afterExclude.epoch + 1);
+    expect(afterInclude.pending_since).toBe(0);
+
+    // Including an already-included run changes nothing, so it must not
+    // retire every cached ranking either.
+    await post({ run_id: "r1", reason: "", exclude: false });
+    expect((await readEpochRow()).epoch).toBe(afterInclude.epoch);
   });
 
   it("re-includes a run, clearing both columns", async () => {

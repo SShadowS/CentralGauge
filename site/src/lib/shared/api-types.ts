@@ -431,7 +431,18 @@ export interface TaskSetSummary {
   short_hash: string;
   display_name: string | null;
   task_count: number;
+  /**
+   * Every run stored against this set, INCLUDING soft-excluded ones
+   * (migration 0022). This is an inventory of what is stored, not a count of
+   * what is ranked, which is why exclusion does not narrow it.
+   */
   run_count: number;
+  /**
+   * How many of `run_count` are soft-excluded and therefore contribute to no
+   * statistic. `0` for a set with nothing excluded. Absent on a response
+   * cached before this field existed, so read it defensively.
+   */
+  excluded_run_count: number;
   is_current: boolean;
   created_at: string;
 }
@@ -1145,6 +1156,14 @@ export interface RunV2Summary {
   environment_digest: string | null;
   test_runner: "soap" | "legacy" | null;
   capture: "full" | "pre_capture";
+  /**
+   * ISO timestamp at which an operator soft-excluded this run, or `null`
+   * (migration 0022). Mirrors the v1 run shapes: an excluded run is still
+   * served here, it simply reaches no statistic.
+   */
+  excluded_at: string | null;
+  /** Operator-supplied reason for the exclusion; `null` when not excluded. */
+  excluded_reason: string | null;
 }
 
 /** `GET /api/v2/runs/[id]` body (merged with `V2Envelope`). */

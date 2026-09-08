@@ -20,7 +20,7 @@
  * transition from a repeat.
  */
 import type { RequestHandler } from "./$types";
-import { bumpDataEpochStmt } from "$lib/server/data-epoch";
+import { forceBumpDataEpochStmt } from "$lib/server/data-epoch";
 import {
   type SignedAdminRequest,
   verifySignedRequest,
@@ -130,7 +130,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // In-batch with the write, same contract as every other admin mutation:
     // a committed change can never be paired with a failed epoch bump, so a
     // cached leaderboard cannot survive a change to what it ranks.
-    await db.batch([update, bumpDataEpochStmt(db)]);
+    //
+    // FORCED rather than the ordinary debounced mark. `bumpDataEpochStmt`
+    // sets `pending_since` and lets a reader promote it once DEBOUNCE_MS has
+    // passed, which is right for a bench ingest writing continuously for
+    // minutes. This is a deliberate operator action on one row: someone who
+    // just ran `centralgauge runs exclude` should not stare at the old
+    // numbers for up to a minute wondering whether it worked.
+    await db.batch([update, forceBumpDataEpochStmt(db)]);
 
     await appendAudit(db, {
       event: p.exclude ? "run.excluded" : "run.included",

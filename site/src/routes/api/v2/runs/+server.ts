@@ -52,7 +52,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       db,
       `SELECT runs.id, runs.started_at, runs.completed_at, runs.status,
               runs.harness_fingerprint, runs.retry_path_version, runs.environment_digest,
-              runs.test_runner,
+              runs.test_runner, runs.excluded_at, runs.excluded_reason,
               m.slug AS model_slug, m.display_name AS model_display,
               mf.slug AS family_slug
        FROM runs
