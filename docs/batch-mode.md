@@ -285,6 +285,81 @@ does not report a batch-level cost the way Anthropic does). No prior sync run of
 gpt-5-mini on CG-AL-E001/CG-AL-E006 exists under `results/`, so no before/after cost
 comparison is available for this model.
 
+## OpenRouter hand-driven run (Gemini 3.8 Flash)
+
+The first hand-driven run on the OpenRouter provider, against the `batch-smoke-openrouter`
+preset (same shape as `batch-smoke`: `tasks/easy/CG-AL-E00*.yml`, containers Cronus28 +
+Cronus282, 2 attempts, 16000 maxTokens), run id
+`bf175561-5cc2-40f9-a343-3e2b1240c8f3`, model `openrouter/google/gemini-3.8-flash`.
+
+### Setup
+
+`openrouter/google/gemini-3.8-flash` had a catalog row prepared ahead of this run (not
+auto-seeded): OpenRouter lists a separate model id `google/gemini-3.8-flash:batch` with
+explicit per-token batch pricing, exactly 50% of the sync input/output/cache-read rates
+(cache write unchanged) - a real vendor-published batch rate, not an assumed discount
+factor. `sync-catalog --apply` ran clean before submit: exit=0, no 429, no drift the tool
+wanted to write back to the YAML.
+
+### Preflight-timing note
+
+The team lead flagged a real gap in how this run's own status got reported: the
+background poll loop (bounded ~10-minute background call, `advance` every 60s on exit 3)
+produces no interim output by design, so a plain "has anything happened yet" check from
+outside the loop saw nothing for a stretch even though submit had already succeeded and
+polling was actively progressing. Worth remembering for Task 18's scheduled loop design:
+a bounded background poll needs either an early heartbeat line or a companion `status`
+call available on demand, not just silence until it ends.
+
+### Daily freshness refresh during a live run
+
+The submit precheck's daily freshness refresh appended a new 2026-09-08 pricing row for
+this model (sync rates from OpenRouter, `effective_from` timestamped mid-run) while the
+batch was in flight - after the run's frozen `state.json` block had already captured
+`gitClean: false` at submit time, so this did not trip a D13 drift refusal on any later
+`advance` call. The carry-forward fix from Task 13b (`appendPricingIfChanged` copying
+`batch_*` fields from the latest prior row when a freshly fetched row has none) worked
+correctly in production: the new row's four `batch_*_per_mtoken` fields exactly match the
+2026-09-07 row. One new gap the fresh row exposes: its own sync-side
+`cache_read_per_mtoken` and `cache_write_per_mtoken` are both `0`, because OpenRouter's
+freshness source does not supply per-token cache pricing for this model at all (unlike
+`batch_*`, there is no carry-forward for the plain sync cache fields). Committed
+separately, after finalize, as `fix(catalog): daily refresh row for Gemini 3.8 Flash on
+OpenRouter with carried batch rates` - the tree was left untouched between submit and
+finalize per D13.
+
+### Timing
+
+Single wave, 2 items. Submitted `2026-09-08T05:41:53.460Z`, batch ended
+`2026-09-08T05:46:19.359Z` - about 4.5 minutes, matching the spike findings' "OpenRouter
+completed Gemini batches within about ten minutes" estimate and well inside the 2-hour
+per-wave budget this task allowed. Both tasks solved on attempt 1, so no wave 2 was
+needed.
+
+### Verification
+
+`results/benchmark-results-bf175561-5cc2-40f9-a343-3e2b1240c8f3.json`: `ingest.schema` 4,
+`ingest.run_ids` matches, `ingest.invocations["openrouter/google/gemini-3.8-flash"].mode`
+`"batch"`. CG-AL-E001 solved on attempt 1 (cost $0.001523625, promptLen 1176); CG-AL-E006
+solved on attempt 1 (cost $0.002362125, promptLen 1439). Both attempts have non-empty
+prompts and `cost > 0`. `responses/` and `attempts/` each hold exactly 2 files (one per
+item/task). No `events.jsonl` file exists for this run (no async rejections, no
+integrity conflicts, no abandon) - a clean run.
+
+Scores file `# Batch` block: `provider: openrouter`, `run_id` matches, `waves: 1`,
+`wave_1: ... reported_cost_usd=0.0039`, `resubmitted_items: 0`.
+
+**Provider-cost comparison (brief's required check):** `state.json`'s
+`batches[0].providerReportedCostUsd` is `0.00388575`. The sum of per-attempt `cost` in the
+results JSON is `0.001523625 + 0.002362125 = 0.00388575`. **These are exactly equal** - a
+0% gap, well inside the brief's 10% tolerance. No discrepancy to record; the site still
+bills from the catalog pricing snapshot, and this run happens to show that snapshot
+tracking OpenRouter's own reported cost precisely for this model.
+
+No prior sync run of `openrouter/google/gemini-3.8-flash` on CG-AL-E001/CG-AL-E006 exists
+under `results/`, so no before/after batch-vs-sync cost comparison is available for this
+model (unlike the Anthropic Haiku 4.5 and OpenAI gpt-5-mini sections above).
+
 ## Cost comparison
 
 Two real Anthropic Haiku 4.5 batch runs against the `batch-smoke` preset
@@ -306,11 +381,19 @@ expected discount rather than contradicting it.
 The OpenAI gpt-5-mini run's cost ($0.005798 total) is in the OpenAI section above; no
 prior sync run of that model on the same two tasks exists to compare against.
 
+The OpenRouter Gemini 3.8 Flash run's cost ($0.00388575 total, exactly matching
+OpenRouter's own `providerReportedCostUsd`) is in the OpenRouter section above; no prior
+sync run of that model on the same two tasks exists to compare against either.
+
 ## Status
 
-Two Anthropic runs on Haiku 4.5 and one OpenAI run on gpt-5-mini have now been driven by
-hand end to end, each including a deliberate crash drill. The Anthropic drill's Incident C
-bug and the OpenAI drill's three retry defects, empty-collect bug, and stuck-collect hole
-are all fixed and reviewed (commits `ac1d2e0a`, `74c1ee7d`, `41f97b5b`, `e8951d5b`,
-`71f5a98e`). **Scheduled `advance --all` is still not yet recommended** - that is Task 18's
-remaining call to make, independent of these bugs.
+Two Anthropic runs on Haiku 4.5, one OpenAI run on gpt-5-mini, and one OpenRouter run on
+Gemini 3.8 Flash have now been driven by hand end to end. The Anthropic and OpenAI runs
+each included a deliberate crash drill; the OpenRouter run completed in a single wave
+with no incident to drill into. The Anthropic drill's Incident C bug and the OpenAI
+drill's three retry defects, empty-collect bug, and stuck-collect hole are all fixed and
+reviewed (commits `ac1d2e0a`, `74c1ee7d`, `41f97b5b`, `e8951d5b`, `71f5a98e`). The
+OpenRouter run additionally confirmed the Task 13b pricing carry-forward fix works in
+production against a live daily freshness refresh. **Scheduled `advance --all` is still
+not yet recommended** - that is Task 18's remaining call to make, independent of these
+bugs.
