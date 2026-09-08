@@ -1550,3 +1550,138 @@ Deno.test("advanceRun exits 4 naming the candidates when nothing matches the int
 
   await Deno.remove(run.output, { recursive: true });
 });
+Deno.test("a rejected re-chunk resubmission leaves the halves resubmittable", async () => {
+  const { manifests, contexts } = taskFixtures();
+  const output = await Deno.makeTempDir({
+    prefix: "cg-batch-rechunk-rejected-",
+  });
+  const runId = "run-rechunk-rejected";
+  const dir = runDir(output, runId);
+  await ensureDir(dir);
+
+  const frozen = await buildFrozen(
+    REPO_ROOT,
+    manifests,
+    join(dir, "prompt-inputs.json"),
+  );
+
+  const itemA1 = await itemIdFor(runId, "A", 1, 0);
+  const itemB1 = await itemIdFor(runId, "B", 1, 0);
+  for (const [itemId, taskId] of [[itemA1, "A"], [itemB1, "B"]] as const) {
+    await writeRequestFile(dir, itemId, { prompt: `generate ${taskId}` });
+    const line: ItemLine = {
+      itemId,
+      taskId,
+      attempt: 1,
+      round: 0,
+      chunk: 0,
+      wave: 1,
+      bodyDigest: `digest-${taskId}`,
+      body: { prompt: `body ${taskId}` },
+      renderedAt: new Date().toISOString(),
+    };
+    await appendJsonl(join(dir, RUN_FILES.items), line);
+  }
+
+  const state: BatchRunState = {
+    schemaVersion: 1,
+    runId,
+    createdAt: new Date().toISOString(),
+    model: {
+      slug: `anthropic/${MODEL_SLUG}`,
+      provider: "anthropic",
+      apiModelId: MODEL_SLUG,
+    },
+    frozen,
+    phase: "attempt-1-submitted",
+    wave: 1,
+    batches: [{
+      wave: 1,
+      round: 0,
+      chunk: 0,
+      handle: { provider: "anthropic", batchId: "batch-oversize" },
+      submittedAt: new Date().toISOString(),
+      providerStatus: "in_progress",
+      rawCounts: {},
+      state: "processing",
+      itemIds: [itemA1, itemB1],
+      collected: false,
+    }],
+    activeBatchIds: ["batch-oversize"],
+    tasks: {
+      A: {
+        attempt1: {
+          itemId: itemA1,
+          round: 0,
+          ownerRound: 0,
+          state: "pending",
+        },
+      },
+      B: {
+        attempt1: {
+          itemId: itemB1,
+          round: 0,
+          ownerRound: 0,
+          state: "pending",
+        },
+      },
+    },
+    ingest: true,
+  };
+  await writeState(dir, state);
+
+  // The provider asynchronously rejects the chunk for size, then refuses
+  // the halves with a retryable creation-rate 429.
+  const provider = new FakeBatchProvider("anthropic", {
+    poll: {
+      "batch-oversize": [{
+        processing: false,
+        providerStatus: "failed",
+        rawCounts: {},
+        sizeRejected: true,
+      }],
+    },
+    submit: [
+      { throws: new BatchSubmitRejected("rate limited", 429, true, false) },
+    ],
+  });
+  const deps = baseDeps(
+    {
+      provider,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: () => {
+        throw new Error("must not start a runtime for a refused re-chunk");
+      },
+      finalize: () => {
+        throw new Error("must not finalize a refused re-chunk");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  const refused = await advanceRun(dir, deps);
+  assertEquals(refused.exit, 4);
+  assertEquals(refused.step.kind, "blocked");
+
+  const afterRefusal = await loadState(dir);
+  assertEquals(afterRefusal.lastError?.message, "rate limited");
+  assertEquals(afterRefusal.lastError?.retryable, true);
+  const dead = afterRefusal.batches.find((b) =>
+    b.handle.batchId === "batch-oversize"
+  );
+  assertEquals(dead?.superseded, true);
+  assertEquals(afterRefusal.activeBatchIds, []);
+
+  // The dead record no longer counts as "in flight", so retry resubmits
+  // exactly the two items it used to name.
+  const healthy = new FakeBatchProvider("anthropic", {});
+  const retried = await retryRun(dir, { ...deps, provider: healthy });
+  assertEquals(retried.exit, 0);
+  assertEquals(
+    submittedItemIds(healthy).sort(),
+    [itemA1, itemB1].sort(),
+  );
+
+  await Deno.remove(output, { recursive: true });
+});

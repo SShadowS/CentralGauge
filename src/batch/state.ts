@@ -90,6 +90,16 @@ export const BatchRecordSchema = z.object({
   itemIds: z.array(z.string()),
   providerReportedCostUsd: z.number().optional(),
   collected: z.boolean(),
+  /**
+   * `true` once this record's chunk was re-chunked after a size rejection
+   * (spec section 5): its `itemIds` moved to the halves, so the record is
+   * history, not evidence that those items are in flight. Everything that
+   * asks "was this item submitted?" or "is there work outstanding?" skips
+   * a superseded record; the record itself stays for the audit trail and
+   * the results block. Optional so state files written before this field
+   * existed still parse.
+   */
+  superseded: z.boolean().optional(),
 });
 export type BatchRecord = z.infer<typeof BatchRecordSchema>;
 

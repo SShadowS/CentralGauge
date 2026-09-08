@@ -64,6 +64,7 @@ function isResubmitEligible(item: ItemSummary): boolean {
 export function liveBatchItemIds(state: BatchRunState): Set<string> {
   const ids = new Set<string>();
   for (const record of state.batches) {
+    if (record.superseded) continue;
     for (const id of record.itemIds) ids.add(id);
   }
   return ids;
@@ -92,13 +93,24 @@ export function pendingUnsubmittedItemIds(
   return out;
 }
 
-/** `*-submitted`: refresh while anything is processing, else collect, else evaluate. */
+/**
+ * `*-submitted`: refresh while anything is processing, else collect, else
+ * finish an interrupted submission (a chunk the provider refused, so its
+ * items are journaled but in no live record), else evaluate.
+ */
 function stepForSubmitted(state: BatchRunState): Step {
-  if (state.batches.some((b) => b.state === "processing")) {
+  if (state.batches.some((b) => !b.superseded && b.state === "processing")) {
     return { kind: "poll" };
   }
-  if (state.batches.some((b) => b.state === "ended" && !b.collected)) {
+  if (
+    state.batches.some((b) =>
+      !b.superseded && b.state === "ended" && !b.collected
+    )
+  ) {
     return { kind: "collect" };
+  }
+  if (pendingUnsubmittedItemIds(state, state.wave).length > 0) {
+    return { kind: "submit-pending", wave: state.wave };
   }
   return { kind: "evaluate", wave: state.wave };
 }
@@ -224,10 +236,14 @@ export function nextStep(
   // on items that are still `"pending"` and therefore un-evaluable
   // (`evaluateCollected` only picks up `responded`/`errored`/`expired`),
   // silently spinning `advance` at exit 0 forever.
-  if (state.batches.some((b) => b.state === "processing")) {
+  if (state.batches.some((b) => !b.superseded && b.state === "processing")) {
     return { kind: "poll" };
   }
-  if (state.batches.some((b) => b.state === "ended" && !b.collected)) {
+  if (
+    state.batches.some((b) =>
+      !b.superseded && b.state === "ended" && !b.collected
+    )
+  ) {
     return { kind: "collect" };
   }
 

@@ -81,6 +81,9 @@ export async function pollActive(
   for (const batchId of state.activeBatchIds) {
     const record = byBatchId.get(batchId);
     if (!record) continue;
+    // A re-chunked (size-rejected) record's items live in its halves now;
+    // polling it again would report on work nothing is waiting for.
+    if (record.superseded) continue;
 
     const handle = toBatchHandle(record.handle);
     const poll = await withTransportBackoff(() => provider.poll(handle));

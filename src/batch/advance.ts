@@ -119,9 +119,11 @@ function outputDirFor(dir: string): string {
  * Re-chunks any `BatchRecord` the provider asynchronously rejected for
  * size (`rawCounts.sizeRejected === 1`, set by `pollActive`) BEFORE
  * evaluation runs, per spec section 5: same round, same item ids, a fresh
- * chunk number for the new half. Returns a blocking reason when a
- * single-item chunk cannot be split further (operator-blocked); `null`
- * otherwise.
+ * chunk number for the new half. The dead record is marked `superseded`,
+ * so its items count as un-submitted again and a refusal is recoverable.
+ * Returns a blocking reason when a single-item chunk cannot be split
+ * further (operator-blocked) or when the halves themselves were refused;
+ * `null` otherwise.
  */
 async function rechunkSizeRejected(
   dir: string,
@@ -161,6 +163,10 @@ async function rechunkSizeRejected(
     const activeIdx = state.activeBatchIds.indexOf(record.handle.batchId);
     if (activeIdx !== -1) state.activeBatchIds.splice(activeIdx, 1);
     record.collected = true;
+    // The items move to the halves below: this record stops being evidence
+    // that they are in flight, so a rejected resubmission leaves them
+    // recoverable by `submit-pending`/`retry` instead of stranded.
+    record.superseded = true;
 
     if (halved === null) {
       state.lastError = {
@@ -203,7 +209,7 @@ async function rechunkSizeRejected(
     });
     await writeState(dir, state);
 
-    await submitChunks(
+    const outcome = await submitChunks(
       dir,
       state,
       [left, right],
@@ -216,6 +222,26 @@ async function rechunkSizeRejected(
         wrap: deps.wrap,
       },
     );
+
+    if (outcome.kind !== "submitted") {
+      // The halves were refused (an OpenRouter creation-rate 429 is the
+      // likely case). Record why, exactly as a rejected wave submission
+      // does: the items are journaled, pending and named by no live
+      // record, so `submit-pending`/`retry` picks up exactly them.
+      const reason = outcome.kind === "rejected"
+        ? outcome.lastError?.message ?? "size re-chunk resubmission rejected"
+        : outcome.reason;
+      state.lastError = outcome.kind === "rejected" && outcome.lastError
+        ? outcome.lastError
+        : {
+          at: new Date().toISOString(),
+          step: "size_rechunk",
+          message: reason,
+          retryable: false,
+        };
+      await writeState(dir, state);
+      return reason;
+    }
   }
 
   return null;
