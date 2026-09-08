@@ -645,3 +645,59 @@ Deno.test("OpenAIBatchProvider default limits are 50,000 items and 200 MiB", () 
   });
   assert(provider.provider === "openai");
 });
+
+Deno.test("OpenAIBatchProvider.submit rethrows a status-less transport failure and keeps the uploaded file", async () => {
+  // The upload leg.
+  const uploadBoom = new Error("ECONNRESET");
+  const uploadFailed = new OpenAIBatchProvider(
+    makeClient({ filesCreate: () => Promise.reject(uploadBoom) }),
+  );
+  const uploadErr = await assertRejects(
+    () => uploadFailed.submit("gpt-6", [{ itemId: "a", body: {} }], "nonce-1"),
+    Error,
+    "ECONNRESET",
+  );
+  assert(!(uploadErr instanceof BatchSubmitRejected));
+
+  // The create leg: the batch may already reference the uploaded file, so
+  // the file must not be deleted out from under it either.
+  const createBoom = new Error("request timed out");
+  let deleted = 0;
+  const createFailed = new OpenAIBatchProvider(makeClient({
+    filesCreate: () => Promise.resolve({ id: "file-abc" }),
+    filesDelete: () => {
+      deleted++;
+      return Promise.resolve({ id: "file-abc", deleted: true });
+    },
+    batchesCreate: () => Promise.reject(createBoom),
+  }));
+  const createErr = await assertRejects(
+    () => createFailed.submit("gpt-6", [{ itemId: "a", body: {} }], "nonce-1"),
+    Error,
+    "request timed out",
+  );
+  assert(!(createErr instanceof BatchSubmitRejected));
+  assertEquals(deleted, 0);
+});
+
+Deno.test("OpenAIBatchProvider.submit still deletes the input file on an HTTP rejection", async () => {
+  let deleted = 0;
+  const provider = new OpenAIBatchProvider(makeClient({
+    filesCreate: () => Promise.resolve({ id: "file-abc" }),
+    filesDelete: () => {
+      deleted++;
+      return Promise.resolve({ id: "file-abc", deleted: true });
+    },
+    batchesCreate: () =>
+      Promise.reject({ status: 400, message: "invalid endpoint" }),
+  }));
+
+  const err = await assertRejects(
+    () => provider.submit("gpt-6", [{ itemId: "a", body: {} }], "nonce-1"),
+    BatchSubmitRejected,
+    "invalid endpoint",
+  );
+  assertEquals(err.status, 400);
+  assertEquals(err.retryable, false);
+  assertEquals(deleted, 1);
+});

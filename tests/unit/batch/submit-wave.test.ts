@@ -9,6 +9,15 @@ import { requestPath, RUN_FILES } from "../../../src/batch/paths.ts";
 import { loadJsonl } from "../../../src/batch/journal.ts";
 import type { ItemLine } from "../../../src/batch/journal.ts";
 import type { BatchProvider } from "../../../src/llm/batch/types.ts";
+import {
+  type AnthropicBatchClient,
+  AnthropicBatchProvider,
+} from "../../../src/llm/batch/anthropic-batch.ts";
+import {
+  type OpenAIBatchClient,
+  OpenAIBatchProvider,
+} from "../../../src/llm/batch/openai-batch.ts";
+import { OpenRouterBatchProvider } from "../../../src/llm/batch/openrouter-batch.ts";
 import { BatchSubmitRejected } from "../../../src/llm/batch/types.ts";
 import { FakeBatchProvider } from "../../utils/fake-batch-provider.ts";
 import {
@@ -227,5 +236,73 @@ Deno.test("submitChunks passes an onInputFile hook that persists inputFileId int
     assertEquals(await readIntent(dir), null);
   } finally {
     await cleanupTempDir(dir);
+  }
+});
+Deno.test("a transport failure from a real provider leaves the intent behind", async (t) => {
+  // Every provider's `submit` must rethrow a status-less error unchanged so
+  // `submitChunks` keeps `intent.json`: the batch may exist server-side, and
+  // the intent is the only record that can identify it (spec 4.3).
+  const boom = new Error("connection reset by peer");
+  const providers: Array<[string, BatchProvider]> = [
+    [
+      "anthropic",
+      new AnthropicBatchProvider(
+        {
+          messages: {
+            batches: { create: () => Promise.reject(boom) },
+          },
+        } as unknown as AnthropicBatchClient,
+      ),
+    ],
+    [
+      "openai",
+      new OpenAIBatchProvider(
+        {
+          files: { create: () => Promise.reject(boom) },
+          batches: {},
+        } as unknown as OpenAIBatchClient,
+      ),
+    ],
+    [
+      "openrouter",
+      new OpenRouterBatchProvider({
+        fetch: () => Promise.reject(boom),
+        apiKey: "test-key",
+      }),
+    ],
+  ];
+
+  for (const [name, provider] of providers) {
+    await t.step(name, async () => {
+      const dir = await createTempDir(`submit-transport-${name}`);
+      try {
+        const items = await renderedItems(1);
+        const chunks = chunkItems(
+          items.map((i) => ({ itemId: i.itemId, body: i.body })),
+          provider.limits,
+          wrap,
+        );
+        await journalItems(dir, chunks, items, 1, 0);
+        await assertRejects(
+          () =>
+            submitChunks(
+              dir,
+              minimalState({ runId: `r-${name}` }),
+              chunks,
+              items,
+              1,
+              0,
+              { provider, model: "m", wrap },
+            ),
+          Error,
+          "connection reset by peer",
+        );
+        const intent = await readIntent(dir);
+        assert(intent !== null, `${name}: the intent must survive`);
+        assertEquals(intent?.itemIds, [items[0]!.itemId]);
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    });
   }
 });

@@ -135,10 +135,21 @@ function mentionsSizeLimit(message: string): boolean {
     (/\bsize\b/i.test(message) || /request[ -]?count/i.test(message));
 }
 
-function toBatchSubmitRejected(err: unknown): BatchSubmitRejected {
+/**
+ * Fails a submission the way the caller must see it. ONLY an error the API
+ * actually answered with (an SDK `APIError`, which carries an HTTP
+ * `status`) is a `BatchSubmitRejected`: `submitChunks` treats that as a
+ * decided rejection and clears the write-ahead intent. A transport failure
+ * (connection reset, timeout, abort, unparseable body) carries no status
+ * and is rethrown unchanged, because the batch may well exist server-side
+ * - that is exactly the case `intent.json` and spec 4.3's reconciliation
+ * were built for.
+ */
+function throwSubmitFailure(err: unknown): never {
   const status = statusOf(err);
+  if (status === undefined) throw err;
   const message = messageOf(err);
-  return new BatchSubmitRejected(
+  throw new BatchSubmitRejected(
     message,
     status,
     isRetryableStatus(status),
@@ -255,7 +266,7 @@ export class AnthropicBatchProvider implements BatchProvider {
       });
       return { provider: "anthropic", batchId: batch.id };
     } catch (err) {
-      throw toBatchSubmitRejected(err);
+      throwSubmitFailure(err);
     }
   }
 

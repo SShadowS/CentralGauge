@@ -138,11 +138,6 @@ export interface OpenRouterBatchDeps {
   sleep?: (ms: number) => Promise<void>;
 }
 
-function messageOf(err: unknown): string {
-  const message = (err as { message?: unknown } | null)?.message;
-  return typeof message === "string" ? message : String(err);
-}
-
 /**
  * Whether `message` names a size/byte/token-count/item-count limit
  * (spec 5.3's submission-rejection and async `sizeRejected` mapping).
@@ -331,7 +326,11 @@ export class OpenRouterBatchProvider implements BatchProvider {
         body,
       });
     } catch (err) {
-      throw toBatchSubmitRejected(undefined, messageOf(err));
+      // A fetch that never produced a response is a transport failure: the
+      // request may still have created the batch, so it is rethrown
+      // unchanged and `intent.json` stays for reconciliation (spec 4.3).
+      // Only the non-2xx response below is a decided rejection.
+      throw err;
     }
 
     if (!response.ok) {

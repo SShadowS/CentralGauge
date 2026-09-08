@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
   OPENROUTER_BATCH_ENDPOINT,
   OPENROUTER_BATCH_URL,
@@ -473,4 +473,23 @@ Deno.test("wireProvider(openrouter).wrap allows differing response_format for a 
     { itemId: "b", body: { response_format: { type: "text" } } },
   ]);
   assert(wrapped !== undefined);
+});
+
+Deno.test("OpenRouterBatchProvider.submit rethrows a status-less transport failure unchanged", async () => {
+  const boom = new TypeError("error sending request for url");
+  const provider = new OpenRouterBatchProvider({
+    fetch: () => Promise.reject(boom),
+    apiKey: "test-key",
+  });
+
+  const err = await assertRejects(
+    () =>
+      provider.submit("google/gemini-3.8-flash", [{
+        itemId: "a",
+        body: {},
+      }], "nonce-1"),
+    TypeError,
+    "error sending request for url",
+  );
+  assert(!(err instanceof BatchSubmitRejected));
 });

@@ -175,10 +175,21 @@ function mentionsSizeLimit(text: string): boolean {
       /file size/i.test(normalized));
 }
 
-function toBatchSubmitRejected(err: unknown): BatchSubmitRejected {
+/**
+ * Fails a submission the way the caller must see it. ONLY an error the API
+ * actually answered with (an SDK `APIError`, which carries an HTTP
+ * `status`) is a `BatchSubmitRejected`: `submitChunks` treats that as a
+ * decided rejection and clears the write-ahead intent. A transport failure
+ * (connection reset, timeout, abort) carries no status and is rethrown
+ * unchanged, because the batch may well exist server-side - that is
+ * exactly the case `intent.json` and spec 4.3's reconciliation were built
+ * for.
+ */
+function throwSubmitFailure(err: unknown): never {
   const status = statusOf(err);
+  if (status === undefined) throw err;
   const message = messageOf(err);
-  return new BatchSubmitRejected(
+  throw new BatchSubmitRejected(
     message,
     status,
     isRetryableSubmitStatus(status),
@@ -302,7 +313,7 @@ export class OpenAIBatchProvider implements BatchProvider {
       });
       inputFileId = file.id;
     } catch (err) {
-      throw toBatchSubmitRejected(err);
+      throwSubmitFailure(err);
     }
 
     await hooks?.onInputFile?.(inputFileId);
@@ -320,13 +331,20 @@ export class OpenAIBatchProvider implements BatchProvider {
         extra: { inputFileId, nonce },
       };
     } catch (err) {
+      if (statusOf(err) === undefined) {
+        // Transport failure: the create request may have reached the API,
+        // so a batch referencing this file may exist. Delete nothing and
+        // rethrow, leaving `intent.json` (with its `inputFileId`) to drive
+        // reconciliation.
+        throw err;
+      }
       try {
         await this.client.files.delete(inputFileId);
       } catch {
         // best effort: the upload already exists remotely, but the batch
         // never started, so nothing else depends on this cleanup succeeding.
       }
-      throw toBatchSubmitRejected(err);
+      throwSubmitFailure(err);
     }
   }
 

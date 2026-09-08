@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
   type AnthropicBatchClient,
   type AnthropicBatchMessage,
@@ -268,4 +268,20 @@ Deno.test("wireProvider(anthropic).mapRaw on a refusal message yields content_fi
   assertEquals(response.content, "");
   assertEquals(response.finishReason, "content_filter");
   assertEquals(response.providerFinishReason, "refusal");
+});
+
+Deno.test("AnthropicBatchProvider.submit rethrows a status-less transport failure unchanged", async () => {
+  // No HTTP status means the API never answered: the batch may exist, so
+  // this must NOT become a BatchSubmitRejected (which would clear the
+  // write-ahead intent and defeat spec 4.3's reconciliation).
+  const boom = new Error("socket hang up");
+  const client = makeClient({ create: () => Promise.reject(boom) });
+  const provider = new AnthropicBatchProvider(client);
+
+  const err = await assertRejects(
+    () => provider.submit("claude-haiku-4-5", [{ itemId: "a", body: {} }], "n"),
+    Error,
+    "socket hang up",
+  );
+  assert(!(err instanceof BatchSubmitRejected));
 });
