@@ -759,6 +759,11 @@
   cache_write_per_mtoken: 2.5
   source: anthropic-api
   fetched_at: "2026-08-22T00:00:00.000Z"
+  # Batch mode (D5): Anthropic publishes batch at 50% of the sync rate, cache rates included.
+  batch_input_per_mtoken: 1
+  batch_output_per_mtoken: 5
+  batch_cache_read_per_mtoken: 0.1
+  batch_cache_write_per_mtoken: 1.25
 - pricing_version: "2026-09-06"
   model_slug: openai/gpt-6-astra
   effective_from: "2026-09-06T00:00:00.000Z"
