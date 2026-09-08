@@ -2,9 +2,15 @@
  * Chunk submission with a write-ahead intent and size re-chunking
  * (spec sections 4.3, 5, 9).
  *
- * For a wave's chunks, in order: every item is journaled to `items.jsonl`
- * and its rendered request written to `requests/<itemId>.json` once, up
- * front. Then each chunk is submitted behind a fsynced `intent.json`: on
+ * {@link journalItems} writes a wave's items to `items.jsonl` and their
+ * rendered requests to `requests/<itemId>.json`. Every caller runs it
+ * BEFORE persisting the items' `ItemSummary`s and BEFORE
+ * {@link submitChunks}, so a submission that is rejected or interrupted
+ * always leaves a journal complete enough to resubmit exactly the items
+ * that never reached the provider (`src/batch/resubmit.ts`).
+ *
+ * {@link submitChunks} then submits each chunk behind a fsynced
+ * `intent.json`, in order: on
  * success the resulting `BatchRecord` is persisted into `state.json` and
  * the intent cleared; on a synchronous size rejection the chunk is halved
  * and both halves re-enter the same submission loop (same round, same item
@@ -43,32 +49,36 @@ export type SubmitOutcome =
   | { kind: "blocked"; itemId: string; reason: string };
 
 /**
- * Submits `chunks` for `wave`/`round`, mutating `state` in place with every
- * successfully submitted `BatchRecord` (pushed to `state.batches` and
- * `state.activeBatchIds`, persisted via `writeState` per chunk). See the
- * module doc for the full per-chunk protocol.
+ * Journals every item of `chunks` to `items.jsonl` and writes its rendered
+ * request to `requests/<itemId>.json`. Callers run this BEFORE persisting
+ * the matching `ItemSummary`s and before {@link submitChunks}: the journal
+ * is what a later `retry`/`submit-pending` re-reads to resubmit an item
+ * whose submission was rejected or interrupted, so an item that exists in
+ * `state.json` but not here would be unrecoverable.
+ *
+ * Appending the same item twice is harmless (`loadJsonl` de-duplicates by
+ * `itemId`, keeping the last write), so a resumed step may re-journal.
  */
-export async function submitChunks(
+export async function journalItems(
   dir: string,
-  state: BatchRunState,
   chunks: Chunk[],
   items: RenderedItem[],
   wave: 1 | 2,
   round: 0 | 1,
-  deps: SubmitWaveDeps,
-): Promise<SubmitOutcome> {
-  const now = deps.now ?? (() => new Date());
+  now: () => Date = () => new Date(),
+): Promise<void> {
   const byId = new Map(items.map((item) => [item.itemId, item]));
-
-  // Journal every item and write its rendered request once, before any
-  // intent is written for this wave's submission.
   const renderedAt = now().toISOString();
   const itemsJsonlPath = join(dir, RUN_FILES.items);
   await ensureDir(dirname(requestPath(dir, "_")));
   for (const chunk of chunks) {
     for (const chunkItem of chunk.items) {
       const rendered = byId.get(chunkItem.itemId);
-      if (!rendered) continue;
+      if (!rendered) {
+        throw new Error(
+          `journalItems: chunk ${chunk.chunk} names ${chunkItem.itemId}, which is not among the rendered items`,
+        );
+      }
       const line: ItemLine = {
         itemId: chunkItem.itemId,
         taskId: rendered.taskId,
@@ -87,6 +97,26 @@ export async function submitChunks(
       );
     }
   }
+}
+
+/**
+ * Submits `chunks` for `wave`/`round`, mutating `state` in place with every
+ * successfully submitted `BatchRecord` (pushed to `state.batches` and
+ * `state.activeBatchIds`, persisted via `writeState` per chunk). Every item
+ * of every chunk must already be journaled by {@link journalItems}. See the
+ * module doc for the full per-chunk protocol.
+ */
+export async function submitChunks(
+  dir: string,
+  state: BatchRunState,
+  chunks: Chunk[],
+  items: RenderedItem[],
+  wave: 1 | 2,
+  round: 0 | 1,
+  deps: SubmitWaveDeps,
+): Promise<SubmitOutcome> {
+  const now = deps.now ?? (() => new Date());
+  const byId = new Map(items.map((item) => [item.itemId, item]));
 
   const records: BatchRecord[] = [];
   const queue: Chunk[] = [...chunks];
@@ -97,7 +127,15 @@ export async function submitChunks(
   while (index < queue.length) {
     const chunk = queue[index]!;
     const chunkItemIds = chunk.items.map((item) => item.itemId);
-    const bodyDigests = chunkItemIds.map((id) => byId.get(id)!.bodyDigest);
+    const bodyDigests = chunkItemIds.map((id) => {
+      const rendered = byId.get(id);
+      if (!rendered) {
+        throw new Error(
+          `submitChunks: chunk ${chunk.chunk} names ${id}, which is not among the rendered items`,
+        );
+      }
+      return rendered.bodyDigest;
+    });
     const nonce = crypto.randomUUID();
     const intent: SubmissionIntent = {
       runId: state.runId,

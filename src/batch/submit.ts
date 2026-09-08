@@ -53,7 +53,7 @@ import { apiKeyForBatchProvider } from "./provider-wiring.ts";
 import { itemIdFor } from "./items.ts";
 import { chunkItems } from "./chunking.ts";
 import { renderWave } from "./render.ts";
-import { submitChunks } from "./submit-wave.ts";
+import { journalItems, submitChunks } from "./submit-wave.ts";
 import { freezeInputs } from "./drift.ts";
 import { RUN_FILES, runDir } from "./paths.ts";
 import type { BatchRunState, TaskSummary } from "./state.ts";
@@ -375,6 +375,11 @@ export async function submitRuns(
       batchProvider.limits,
       deps.wrap,
     );
+
+    // Journal every item before the first provider call: `state.json`
+    // already carries them as `"pending"`, and a rejection or a crash then
+    // leaves them resubmittable from disk (`retry`, `submit-pending`).
+    await journalItems(dir, chunks, rendered, 1, 0);
 
     const outcome = await submitChunks(dir, state, chunks, rendered, 1, 0, {
       provider: batchProvider,

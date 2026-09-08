@@ -86,6 +86,7 @@ function nextActionFor(step: Step): string {
       return "advance (processing)";
     case "collect":
     case "evaluate":
+    case "submit-pending":
     case "resubmit":
     case "submit-wave-2":
     case "finalize":

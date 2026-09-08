@@ -4,7 +4,7 @@
 // I/O, so this test drives it directly as a function of its four
 // arguments, building states with `minimalState`/`record`/`task`/`attempt`
 // from `tests/utils/batch-fixtures.ts`.
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import { nextStep } from "../../../src/batch/transitions.ts";
 import type { ExecutionAttempt } from "../../../src/tasks/interfaces.ts";
 import {
@@ -203,4 +203,80 @@ Deno.test("nextStep walks the spec 4.5 table", () => {
     nextStep(attempt2CollectedEnded, false, new Map(), 2).kind,
     "collect",
   );
+});
+Deno.test("nextStep routes a journaled-but-unsubmitted item to submit-pending", () => {
+  // A wave-2 chunk was rejected (or the process died before the provider
+  // call): the item is `"pending"` and no batch record names it.
+  const rejected = task("pending");
+  const collected = minimalState({
+    phase: "attempt-1-collected",
+    tasks: { A: task("evaluated"), B: rejected },
+  });
+  assertEquals(nextStep(collected, false, new Map(), 2), {
+    kind: "submit-pending",
+    wave: 1,
+  });
+
+  // The same item, once a batch record names it, is in flight: it is
+  // evaluate's problem, never submit-pending's.
+  const inFlight = minimalState({
+    phase: "attempt-1-collected",
+    batches: [
+      record({
+        state: "ended",
+        collected: true,
+        itemIds: [rejected.attempt1.itemId],
+      }),
+    ],
+    tasks: { A: task("evaluated"), B: rejected },
+  });
+  assertEquals(nextStep(inFlight, false, new Map(), 2), {
+    kind: "evaluate",
+    wave: 1,
+  });
+
+  // submit-pending outranks the single resubmission round: round 1 is only
+  // eligible once every round-0 item is accounted for (spec 4.4).
+  const bothConditions = minimalState({
+    phase: "attempt-1-collected",
+    tasks: { A: task("errored", 0), B: rejected },
+  });
+  assertEquals(
+    nextStep(bothConditions, false, new Map(), 2).kind,
+    "submit-pending",
+  );
+
+  // A wave-2 item that was already minted is never re-rendered by
+  // submit-wave-2. Nothing writes this state (wave and the summaries are
+  // persisted together), so reaching it means the file was corrupted:
+  // refuse rather than finalize the run with attempt 1 only.
+  const mintedButWaveOne = minimalState({
+    phase: "attempt-1-collected",
+    tasks: {
+      A: {
+        attempt1: {
+          itemId: "item-a1",
+          round: 0,
+          ownerRound: 0,
+          state: "evaluated",
+        },
+        attempt2: {
+          itemId: "item-a2",
+          round: 0,
+          ownerRound: 0,
+          state: "evaluated",
+        },
+      },
+    },
+  });
+  const step = nextStep(
+    mintedButWaveOne,
+    false,
+    new Map<string, ExecutionAttempt>([["A", attempt(false)]]),
+    2,
+  );
+  assertEquals(step.kind, "blocked");
+  if (step.kind === "blocked") {
+    assert(step.reason.includes("A"), step.reason);
+  }
 });

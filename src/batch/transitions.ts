@@ -28,6 +28,7 @@ export type Step =
   | { kind: "poll" } // any active batch processing
   | { kind: "collect" } // all active batches ended, some uncollected
   | { kind: "evaluate"; wave: 1 | 2 } // collected, attempts missing
+  | { kind: "submit-pending"; wave: 1 | 2 } // journaled items never submitted
   | {
     kind: "resubmit";
     wave: 1 | 2;
@@ -53,6 +54,44 @@ function isResubmitEligible(item: ItemSummary): boolean {
     item.round === 0;
 }
 
+/**
+ * Every item id named by a `BatchRecord` the run still counts as evidence
+ * that the item reached the provider. A `"pending"` item named here is
+ * legitimately in flight; a `"pending"` item NOT named here was journaled
+ * but never submitted (a rejected chunk, or a crash between the state
+ * write and the provider call) and is what `submit-pending` recovers.
+ */
+export function liveBatchItemIds(state: BatchRunState): Set<string> {
+  const ids = new Set<string>();
+  for (const record of state.batches) {
+    for (const id of record.itemIds) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * The item ids of `wave` that are still `"pending"` and not named by any
+ * live batch record, sorted by task id. Non-empty exactly when a
+ * submission for this wave was journaled but never completed, which is
+ * what {@link nextStep} routes to `submit-pending` and what
+ * `runEvaluate` reads to know it must not flip the phase yet.
+ */
+export function pendingUnsubmittedItemIds(
+  state: BatchRunState,
+  wave: 1 | 2,
+): string[] {
+  const named = liveBatchItemIds(state);
+  const out: string[] = [];
+  for (const taskId of Object.keys(state.tasks).sort()) {
+    const item = itemFor(state.tasks[taskId]!, wave);
+    if (!item) continue;
+    if (item.state === "pending" && !named.has(item.itemId)) {
+      out.push(item.itemId);
+    }
+  }
+  return out;
+}
+
 /** `*-submitted`: refresh while anything is processing, else collect, else evaluate. */
 function stepForSubmitted(state: BatchRunState): Step {
   if (state.batches.some((b) => b.state === "processing")) {
@@ -65,12 +104,18 @@ function stepForSubmitted(state: BatchRunState): Step {
 }
 
 /**
- * `*-collected`: resubmit round-0 unresolved items first (they must clear
- * before anything else in the wave can finalize); otherwise evaluate
- * whatever hasn't reached `"evaluated"` yet (a never-tried `"responded"`
- * item, or a round-1 error/expiry that still needs to become a terminal
- * failed attempt); otherwise the wave is fully resolved, so decide between
- * a wave-2 submission and finalizing.
+ * `*-collected`: finish an interrupted submission first (any journaled
+ * item of this wave that never reached the provider, spec 4.3's crash
+ * case and a partially rejected chunk set), then resubmit round-0
+ * unresolved items (they must clear before anything else in the wave can
+ * finalize); otherwise evaluate whatever hasn't reached `"evaluated"` yet
+ * (a never-tried `"responded"` item, or a round-1 error/expiry that still
+ * needs to become a terminal failed attempt); otherwise the wave is fully
+ * resolved, so decide between a wave-2 submission and finalizing.
+ *
+ * `submit-pending` deliberately outranks `resubmit`: round 1 is only
+ * eligible once every item of round 0 is accounted for (spec 4.4), and an
+ * item that was never submitted is not accounted for.
  */
 function stepForCollected(
   state: BatchRunState,
@@ -95,6 +140,9 @@ function stepForCollected(
     }
   }
 
+  if (pendingUnsubmittedItemIds(state, wave).length > 0) {
+    return { kind: "submit-pending", wave };
+  }
   if (resubmitIds.length > 0) {
     return { kind: "resubmit", wave, itemIds: resubmitIds };
   }
@@ -109,11 +157,31 @@ function stepForCollected(
   if (attemptLimit === 1) {
     return { kind: "finalize" };
   }
+  // A task whose `attempt2` summary already exists was minted by an
+  // earlier `submit-wave-2` (which journals and persists the summaries
+  // BEFORE the provider call), so re-rendering it would submit and bill it
+  // twice. `submit-pending` above owns whatever of that wave never
+  // reached the provider.
+  const minted = taskIds.filter((id) =>
+    state.tasks[id]!.attempt2 !== undefined
+  );
   const eligible = taskIds.filter((id) => {
+    if (state.tasks[id]!.attempt2 !== undefined) return false;
     const a = attempts.get(id);
     return a !== undefined && !a.success && !a.infraSynthesized;
   });
   if (eligible.length === 0) {
+    if (minted.length > 0) {
+      // Wave-2 items exist while `state.wave` still says 1: the two are
+      // written together, so this is a corrupted or hand-edited state.
+      // Finalizing here would score the run with attempt 1 only.
+      return {
+        kind: "blocked",
+        reason:
+          `wave is 1 but attempt-2 items exist for ${minted.join(", ")}; ` +
+          `run status and repair state.json before advancing`,
+      };
+    }
     return { kind: "finalize" };
   }
   return { kind: "submit-wave-2", taskIds: eligible };

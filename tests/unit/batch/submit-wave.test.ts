@@ -1,7 +1,7 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
-import { submitChunks } from "../../../src/batch/submit-wave.ts";
+import { journalItems, submitChunks } from "../../../src/batch/submit-wave.ts";
 import { readIntent } from "../../../src/batch/intent.ts";
 import { chunkItems } from "../../../src/batch/chunking.ts";
 import { loadState } from "../../../src/batch/state.ts";
@@ -32,6 +32,11 @@ Deno.test("submitChunks writes intent before submit and clears it after the hand
       fake.limits,
       wrap,
     );
+    // Journaling is the caller's job now (every submission path runs it
+    // BEFORE persisting the item summaries and before the provider call),
+    // so a rejected or interrupted submission always leaves the bodies on
+    // disk for `retry` / `submit-pending` to resubmit.
+    await journalItems(dir, chunks, items, 1, 0);
     const outcome = await submitChunks(dir, state, chunks, items, 1, 0, {
       provider: fake,
       model: "m",

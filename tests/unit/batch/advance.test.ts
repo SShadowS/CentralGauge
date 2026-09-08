@@ -9,12 +9,14 @@
 // `tests/unit/batch/drift.test.ts`); `state.frozen` is built once via the
 // real `freezeInputs` so the happy-path run never trips its own drift
 // check.
-import { assert, assertEquals, assertExists } from "@std/assert";
+import { assert, assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { ensureDir, exists } from "@std/fs";
 import { advanceRun } from "../../../src/batch/advance.ts";
 import type { AdvanceDeps } from "../../../src/batch/advance.ts";
 import { freezeInputs } from "../../../src/batch/drift.ts";
+import { readIntent } from "../../../src/batch/intent.ts";
+import { retryRun } from "../../../src/batch/retry.ts";
 import { itemIdFor } from "../../../src/batch/items.ts";
 import { appendJsonl, loadJsonl } from "../../../src/batch/journal.ts";
 import type { EventLine, ItemLine } from "../../../src/batch/journal.ts";
@@ -45,6 +47,7 @@ import { PricingService } from "../../../src/llm/pricing-service.ts";
 import type { ContainerRuntime } from "../../../src/parallel/container-runtime.ts";
 import type { LLMRequest, LLMResponse } from "../../../src/llm/types.ts";
 import type { BatchItemResult } from "../../../src/llm/batch/types.ts";
+import { BatchSubmitRejected } from "../../../src/llm/batch/types.ts";
 import type {
   TaskExecutionContext,
   TaskManifest,
@@ -889,4 +892,548 @@ Deno.test("advanceRun's evaluate step still evaluates a responded item and exits
   assertEquals(attemptA1.attempt.success, true);
 
   await Deno.remove(output, { recursive: true });
+});
+// ---------------------------------------------------------------------------
+// C1: wave-2 and round-1 submissions are crash-safe and idempotent.
+//
+// Every one of these drives a real submission failure (a rejected chunk, a
+// status-less transport throw before the provider call, and the same throw
+// after it) and then asserts the ONE property the whole design rests on: an
+// item that already reached the provider is never submitted a second time,
+// and an item that never reached it is never forgotten.
+// ---------------------------------------------------------------------------
+
+/** A fake whose `submit` throws a status-less error, before or after the provider call. */
+class CrashingSubmitProvider extends FakeBatchProvider {
+  constructor(
+    private readonly when: "before" | "after",
+    script: ConstructorParameters<typeof FakeBatchProvider>[1],
+    limits?: ConstructorParameters<typeof FakeBatchProvider>[2],
+  ) {
+    super("anthropic", script, limits);
+  }
+
+  override async submit(
+    model: string,
+    items: Array<{ itemId: string; body: unknown }>,
+    nonce: string,
+  ): Promise<never> {
+    if (this.when === "after") await super.submit(model, items, nonce);
+    throw new Error("connection reset");
+  }
+}
+
+/** Every item id handed to `provider.submit`, in call order. */
+function submittedItemIds(provider: FakeBatchProvider): string[] {
+  return provider.calls
+    .filter((c) => c.op === "submit")
+    .flatMap((c) =>
+      (c.args[1] as Array<{ itemId: string }>).map((i) => i.itemId)
+    );
+}
+
+interface SeededRun {
+  output: string;
+  dir: string;
+  runId: string;
+  itemA1: string;
+  itemB1: string;
+}
+
+/**
+ * A run whose wave-1 batch has ended and is uncollected, advanced once so
+ * `collect` + `evaluate` run. `"failed"` leaves both tasks at a real failed
+ * attempt (both are wave-2 eligible); `"errored"` leaves both items
+ * `errored` at round 0 (both are resubmission eligible).
+ */
+async function seedCollectedWaveOne(
+  outcome: "failed" | "errored",
+  prefix: string,
+  manifests: Map<string, TaskManifest>,
+  contexts: Map<string, TaskExecutionContext>,
+): Promise<SeededRun> {
+  seedPricing();
+  const output = await Deno.makeTempDir({ prefix });
+  const runId = `${prefix}run`;
+  const dir = runDir(output, runId);
+  await ensureDir(dir);
+
+  const frozen = await buildFrozen(
+    REPO_ROOT,
+    manifests,
+    join(dir, "prompt-inputs.json"),
+  );
+
+  const itemA1 = await itemIdFor(runId, "A", 1, 0);
+  const itemB1 = await itemIdFor(runId, "B", 1, 0);
+  for (const [itemId, taskId] of [[itemA1, "A"], [itemB1, "B"]] as const) {
+    await writeRequestFile(dir, itemId, { prompt: `generate ${taskId}` });
+    const line: ItemLine = {
+      itemId,
+      taskId,
+      attempt: 1,
+      round: 0,
+      chunk: 0,
+      wave: 1,
+      bodyDigest: `digest-${taskId}`,
+      body: { prompt: `body ${taskId}` },
+      renderedAt: new Date().toISOString(),
+    };
+    await appendJsonl(join(dir, RUN_FILES.items), line);
+  }
+
+  const state: BatchRunState = {
+    schemaVersion: 1,
+    runId,
+    createdAt: new Date().toISOString(),
+    model: {
+      slug: `anthropic/${MODEL_SLUG}`,
+      provider: "anthropic",
+      apiModelId: MODEL_SLUG,
+    },
+    frozen,
+    phase: "attempt-1-submitted",
+    wave: 1,
+    batches: [{
+      wave: 1,
+      round: 0,
+      chunk: 0,
+      handle: { provider: "anthropic", batchId: "batch-1" },
+      submittedAt: new Date().toISOString(),
+      providerStatus: "ended",
+      rawCounts: { succeeded: 2 },
+      state: "ended",
+      itemIds: [itemA1, itemB1],
+      collected: false,
+    }],
+    activeBatchIds: ["batch-1"],
+    tasks: {
+      A: {
+        attempt1: {
+          itemId: itemA1,
+          round: 0,
+          ownerRound: 0,
+          state: "submitted",
+        },
+      },
+      B: {
+        attempt1: {
+          itemId: itemB1,
+          round: 0,
+          ownerRound: 0,
+          state: "submitted",
+        },
+      },
+    },
+    ingest: true,
+  };
+  await writeState(dir, state);
+
+  const results: BatchItemResult[] = outcome === "failed"
+    ? [itemA1, itemB1].map((itemId) => ({
+      itemId,
+      ok: true as const,
+      raw: { who: "refusal" },
+      httpStatus: 200,
+    }))
+    : [itemA1, itemB1].map((itemId) => ({
+      itemId,
+      ok: false as const,
+      error: {
+        kind: "overloaded" as const,
+        message: "overloaded",
+        retryable: true,
+      },
+    }));
+
+  const provider = new FakeBatchProvider("anthropic", {
+    collect: { "batch-1": results },
+  });
+  const queue = new MultiContainerMockCompileQueue(["Cronus28"]);
+  const deps = baseDeps(
+    {
+      provider,
+      // Wave 1 is a refusal for the "failed" seed: an empty answer that
+      // scores as a real (non-infra) failed attempt, so both tasks are
+      // wave-2 eligible without any compile work.
+      mapRaw: () =>
+        mockResponse({ content: "", finishReason: "content_filter" }),
+      runtimeFactory: makeRuntimeFactory(queue, { count: 0 }),
+      finalize: () => {
+        throw new Error("must not finalize while seeding wave 1");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  const seeded = await advanceRun(dir, deps);
+  assertEquals(seeded.state.phase, "attempt-1-collected");
+
+  return { output, dir, runId, itemA1, itemB1 };
+}
+
+Deno.test("a partially rejected wave-2 submission resubmits only the rejected chunk", async () => {
+  const { manifests, contexts } = taskFixtures();
+  const run = await seedCollectedWaveOne(
+    "failed",
+    "cg-batch-w2-partial-",
+    manifests,
+    contexts,
+  );
+
+  // One item per chunk: chunk 0 (task A) is accepted, chunk 1 (task B) is
+  // rejected with a retryable 529.
+  const provider = new FakeBatchProvider("anthropic", {
+    submit: [
+      { handleId: "batch-w2a" },
+      { throws: new BatchSubmitRejected("overloaded", 529, true, false) },
+    ],
+  }, { maxItems: 1, maxBytes: 1_000_000 });
+  const queue = new MultiContainerMockCompileQueue(["Cronus28"]);
+  const deps = baseDeps(
+    {
+      provider,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(queue, { count: 0 }),
+      finalize: () => {
+        throw new Error("must not finalize a half-submitted wave 2");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  const rejected = await advanceRun(run.dir, deps);
+  assertEquals(rejected.exit, 4);
+  // The bookkeeping is on disk even though the submission failed.
+  const afterReject = await loadState(run.dir);
+  assertEquals(afterReject.wave, 2);
+  assertEquals(afterReject.phase, "attempt-1-collected");
+  const itemA2 = afterReject.tasks["A"]!.attempt2!.itemId;
+  const itemB2 = afterReject.tasks["B"]!.attempt2!.itemId;
+  assertEquals(afterReject.batches.at(-1)?.itemIds, [itemA2]);
+  assertEquals(afterReject.lastError?.retryable, true);
+
+  // Poll + collect + evaluate the accepted chunk. The phase must NOT flip:
+  // wave 2 is not fully submitted yet.
+  const collected = await advanceRun(run.dir, deps);
+  assertEquals(collected.exit, 0);
+  assertEquals(collected.step.kind, "evaluate");
+  assertEquals((await loadState(run.dir)).phase, "attempt-1-collected");
+  assert(await exists(attemptPath(run.dir, "A", 2)));
+
+  // Only the rejected item is submitted now.
+  const recovered = await advanceRun(run.dir, deps);
+  assertEquals(recovered.exit, 0);
+  assertEquals(recovered.step, { kind: "submit-pending", wave: 2 });
+  const afterRecovery = await loadState(run.dir);
+  assertEquals(afterRecovery.phase, "attempt-2-submitted");
+  assertEquals(afterRecovery.lastError, undefined);
+
+  const submitted = submittedItemIds(provider);
+  assertEquals(submitted.filter((id) => id === itemA2).length, 1);
+  assertEquals(submitted.filter((id) => id === itemB2).length, 2);
+
+  await Deno.remove(run.output, { recursive: true });
+});
+
+Deno.test("a wave-2 submission killed before the provider call is recovered by retry, once", async () => {
+  const { manifests, contexts } = taskFixtures();
+  const run = await seedCollectedWaveOne(
+    "failed",
+    "cg-batch-w2-crash-before-",
+    manifests,
+    contexts,
+  );
+
+  const crashing = new CrashingSubmitProvider("before", {});
+  const crashDeps = baseDeps(
+    {
+      provider: crashing,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(
+        new MultiContainerMockCompileQueue(["Cronus28"]),
+        { count: 0 },
+      ),
+      finalize: () => {
+        throw new Error("must not finalize");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  await assertRejects(
+    () => advanceRun(run.dir, crashDeps),
+    Error,
+    "connection reset",
+  );
+
+  // The intent survives (that is what reconciliation needs) and the wave-2
+  // bookkeeping is already persisted.
+  assertExists(await readIntent(run.dir));
+  const afterCrash = await loadState(run.dir);
+  assertEquals(afterCrash.wave, 2);
+  const itemA2 = afterCrash.tasks["A"]!.attempt2!.itemId;
+  const itemB2 = afterCrash.tasks["B"]!.attempt2!.itemId;
+  assertEquals(afterCrash.tasks["A"]!.attempt2!.state, "pending");
+
+  const healthy = new FakeBatchProvider("anthropic", {});
+  const retryDeps = { ...crashDeps, provider: healthy };
+
+  const confirmed = await retryRun(run.dir, {
+    ...retryDeps,
+    confirmNotSubmitted: true,
+  });
+  assertEquals(confirmed.exit, 0);
+  assertEquals((await loadState(run.dir)).phase, "prepared");
+
+  const resubmitted = await retryRun(run.dir, retryDeps);
+  assertEquals(resubmitted.exit, 0);
+
+  const afterRetry = await loadState(run.dir);
+  assertEquals(afterRetry.phase, "attempt-2-submitted");
+  const submitted = submittedItemIds(healthy);
+  assertEquals(submitted.filter((id) => id === itemA2).length, 1);
+  assertEquals(submitted.filter((id) => id === itemB2).length, 1);
+
+  await Deno.remove(run.output, { recursive: true });
+});
+
+Deno.test("a wave-2 submission killed after the provider call is adopted and evaluated", async () => {
+  const { manifests, contexts } = taskFixtures();
+  const run = await seedCollectedWaveOne(
+    "failed",
+    "cg-batch-w2-crash-after-",
+    manifests,
+    contexts,
+  );
+
+  const crashing = new CrashingSubmitProvider("after", {
+    submit: [{ handleId: "batch-w2-orphan" }],
+    candidates: [{
+      batchId: "batch-w2-orphan",
+      createdAt: new Date(Date.now() - 1000),
+      total: 2,
+      ended: true,
+    }],
+  });
+  const deps = baseDeps(
+    {
+      provider: crashing,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(
+        new MultiContainerMockCompileQueue(["Cronus28"]),
+        { count: 0 },
+      ),
+      finalize: () => {
+        throw new Error("must not finalize");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  await assertRejects(
+    () => advanceRun(run.dir, deps),
+    Error,
+    "connection reset",
+  );
+
+  const adopted = await retryRun(run.dir, {
+    ...deps,
+    adopt: "batch-w2-orphan",
+  });
+  assertEquals(adopted.exit, 0);
+
+  const afterAdopt = await loadState(run.dir);
+  assertEquals(afterAdopt.phase, "attempt-2-submitted");
+  assertEquals(afterAdopt.wave, 2);
+  assertEquals(afterAdopt.batches.at(-1)?.wave, 2);
+
+  // The adopted batch's results map onto the attempt-2 summaries that were
+  // written before the provider call, so evaluate produces attempt-2 files.
+  const evaluated = await advanceRun(run.dir, deps);
+  assertEquals(evaluated.exit, 0);
+  assertEquals(evaluated.state.phase, "attempt-2-collected");
+  assert(await exists(attemptPath(run.dir, "A", 2)));
+  assert(await exists(attemptPath(run.dir, "B", 2)));
+
+  await Deno.remove(run.output, { recursive: true });
+});
+
+Deno.test("a partially rejected round-1 resubmission resubmits only the rejected chunk", async () => {
+  const { manifests, contexts } = taskFixtures();
+  const run = await seedCollectedWaveOne(
+    "errored",
+    "cg-batch-r1-partial-",
+    manifests,
+    contexts,
+  );
+
+  const provider = new FakeBatchProvider("anthropic", {
+    submit: [
+      { handleId: "batch-r1a" },
+      { throws: new BatchSubmitRejected("overloaded", 529, true, false) },
+    ],
+  }, { maxItems: 1, maxBytes: 1_000_000 });
+  const deps = baseDeps(
+    {
+      provider,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(
+        new MultiContainerMockCompileQueue(["Cronus28"]),
+        { count: 0 },
+      ),
+      finalize: () => {
+        throw new Error("must not finalize a half-submitted round 1");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  const rejected = await advanceRun(run.dir, deps);
+  assertEquals(rejected.exit, 4);
+
+  const afterReject = await loadState(run.dir);
+  assertEquals(afterReject.phase, "attempt-1-collected");
+  const roundOneA = afterReject.tasks["A"]!.attempt1.itemId;
+  const roundOneB = afterReject.tasks["B"]!.attempt1.itemId;
+  assertEquals(afterReject.tasks["A"]!.attempt1.round, 1);
+  assertEquals(afterReject.tasks["A"]!.attempt1.ownerRound, 1);
+  assertEquals(afterReject.batches.at(-1)?.itemIds, [roundOneA]);
+
+  const collected = await advanceRun(run.dir, deps);
+  assertEquals(collected.exit, 0);
+  assertEquals((await loadState(run.dir)).phase, "attempt-1-collected");
+  assert(await exists(attemptPath(run.dir, "A", 1)));
+
+  const recovered = await advanceRun(run.dir, deps);
+  assertEquals(recovered.exit, 0);
+  assertEquals(recovered.step, { kind: "submit-pending", wave: 1 });
+  assertEquals((await loadState(run.dir)).phase, "attempt-1-submitted");
+
+  const submitted = submittedItemIds(provider);
+  assertEquals(submitted.filter((id) => id === roundOneA).length, 1);
+  assertEquals(submitted.filter((id) => id === roundOneB).length, 2);
+
+  await Deno.remove(run.output, { recursive: true });
+});
+
+Deno.test("a round-1 resubmission killed before the provider call is recovered by retry, once", async () => {
+  const { manifests, contexts } = taskFixtures();
+  const run = await seedCollectedWaveOne(
+    "errored",
+    "cg-batch-r1-crash-before-",
+    manifests,
+    contexts,
+  );
+
+  const crashing = new CrashingSubmitProvider("before", {});
+  const crashDeps = baseDeps(
+    {
+      provider: crashing,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(
+        new MultiContainerMockCompileQueue(["Cronus28"]),
+        { count: 0 },
+      ),
+      finalize: () => {
+        throw new Error("must not finalize");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  await assertRejects(
+    () => advanceRun(run.dir, crashDeps),
+    Error,
+    "connection reset",
+  );
+
+  assertExists(await readIntent(run.dir));
+  const afterCrash = await loadState(run.dir);
+  const roundOneA = afterCrash.tasks["A"]!.attempt1.itemId;
+  const roundOneB = afterCrash.tasks["B"]!.attempt1.itemId;
+  assertEquals(afterCrash.tasks["A"]!.attempt1.round, 1);
+
+  const healthy = new FakeBatchProvider("anthropic", {});
+  const retryDeps = { ...crashDeps, provider: healthy };
+
+  const confirmed = await retryRun(run.dir, {
+    ...retryDeps,
+    confirmNotSubmitted: true,
+  });
+  assertEquals(confirmed.exit, 0);
+
+  const resubmitted = await retryRun(run.dir, retryDeps);
+  assertEquals(resubmitted.exit, 0);
+  assertEquals((await loadState(run.dir)).phase, "attempt-1-submitted");
+
+  const submitted = submittedItemIds(healthy);
+  assertEquals(submitted.filter((id) => id === roundOneA).length, 1);
+  assertEquals(submitted.filter((id) => id === roundOneB).length, 1);
+
+  await Deno.remove(run.output, { recursive: true });
+});
+
+Deno.test("a round-1 resubmission killed after the provider call is adopted and evaluated", async () => {
+  const { manifests, contexts } = taskFixtures();
+  const run = await seedCollectedWaveOne(
+    "errored",
+    "cg-batch-r1-crash-after-",
+    manifests,
+    contexts,
+  );
+
+  const crashing = new CrashingSubmitProvider("after", {
+    submit: [{ handleId: "batch-r1-orphan" }],
+    candidates: [{
+      batchId: "batch-r1-orphan",
+      createdAt: new Date(Date.now() - 1000),
+      total: 2,
+      ended: true,
+    }],
+  });
+  const deps = baseDeps(
+    {
+      provider: crashing,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(
+        new MultiContainerMockCompileQueue(["Cronus28"]),
+        { count: 0 },
+      ),
+      finalize: () => {
+        throw new Error("must not finalize");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  await assertRejects(
+    () => advanceRun(run.dir, deps),
+    Error,
+    "connection reset",
+  );
+
+  const adopted = await retryRun(run.dir, {
+    ...deps,
+    adopt: "batch-r1-orphan",
+  });
+  assertEquals(adopted.exit, 0);
+
+  const afterAdopt = await loadState(run.dir);
+  assertEquals(afterAdopt.batches.at(-1)?.round, 1);
+
+  const evaluated = await advanceRun(run.dir, deps);
+  assertEquals(evaluated.exit, 0);
+  assertEquals(evaluated.state.phase, "attempt-1-collected");
+  assert(await exists(attemptPath(run.dir, "A", 1)));
+  assert(await exists(attemptPath(run.dir, "B", 1)));
+
+  await Deno.remove(run.output, { recursive: true });
 });

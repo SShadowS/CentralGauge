@@ -28,11 +28,12 @@ import { withMutateLock } from "./mutate-lock.ts";
 import { attemptPath, requestPath, RUN_FILES } from "./paths.ts";
 import type { RenderedItem } from "./render.ts";
 import { renderWave } from "./render.ts";
-import { nextStep } from "./transitions.ts";
+import { resubmitPending } from "./resubmit.ts";
+import { nextStep, pendingUnsubmittedItemIds } from "./transitions.ts";
 import type { Step } from "./transitions.ts";
 import type { BatchRunState } from "./state.ts";
 import { isTerminal, loadState, writeState } from "./state.ts";
-import { submitChunks } from "./submit-wave.ts";
+import { journalItems, submitChunks } from "./submit-wave.ts";
 import type { FrozenPromptInputs } from "../parallel/shared/prompt-inputs.ts";
 
 export interface AdvanceDeps {
@@ -271,15 +272,19 @@ async function runPoll(
 /**
  * Every task whose wave item exists and has not reached `"evaluated"`,
  * rendered as `<taskId> is "<state>"` (sorted by task id) -- the stuck-item
- * listing for `runEvaluate`'s no-progress guard.
+ * listing for `runEvaluate`'s no-progress guard. An item that is merely
+ * awaiting (re)submission is NOT stuck: `submit-pending` is its next step,
+ * so it is excluded rather than reported as a reason to refuse.
  */
 function unevaluatedItemsFor(state: BatchRunState, wave: 1 | 2): string[] {
+  const awaiting = new Set(pendingUnsubmittedItemIds(state, wave));
   const taskIds = Object.keys(state.tasks).sort();
   const lines: string[] = [];
   for (const taskId of taskIds) {
     const summary = state.tasks[taskId]!;
     const item = wave === 1 ? summary.attempt1 : summary.attempt2;
     if (!item || item.state === "evaluated") continue;
+    if (awaiting.has(item.itemId)) continue;
     lines.push(`${taskId} is "${item.state}"`);
   }
   return lines;
@@ -349,9 +354,41 @@ async function runEvaluate(
     }
   }
 
+  // An item of this wave was journaled but never reached the provider (a
+  // rejected chunk, or a crash between the state write and the submission).
+  // Flipping the phase here would advance the run past a wave that is not
+  // fully submitted; `submit-pending` takes precedence on the next call.
+  if (pendingUnsubmittedItemIds(state, wave).length > 0) {
+    return { exit: 0, step: { kind: "evaluate", wave }, state };
+  }
+
   state.phase = wave === 1 ? "attempt-1-collected" : "attempt-2-collected";
   await writeState(dir, state);
   return { exit: 0, step: { kind: "evaluate", wave }, state };
+}
+
+/**
+ * Submits every journaled item of the run that no `BatchRecord` names yet
+ * (spec 4.3's crash case and a partially rejected chunk set), through the
+ * one shared submission path in `src/batch/resubmit.ts`. `submit-wave-2`
+ * and `resubmit` both finish through here too, so an item that already
+ * reached the provider is never submitted a second time.
+ */
+async function runSubmitPending(
+  dir: string,
+  state: BatchRunState,
+  deps: AdvanceDeps,
+  step: Step,
+): Promise<AdvanceResult> {
+  const outcome = await resubmitPending(dir, state, deps);
+  if (outcome.exit !== 0) {
+    return {
+      exit: 4,
+      step: { kind: "blocked", reason: outcome.message },
+      state,
+    };
+  }
+  return { exit: 0, step, state };
 }
 
 /**
@@ -359,6 +396,11 @@ async function runEvaluate(
  * per unresolved item (never reuses the round-0 id, so a late round-0
  * result can never be mistaken for this one), copies the identical
  * request/body forward, and resubmits.
+ *
+ * The new items are journaled and their `ItemSummary`s persisted as
+ * `"pending"` BEFORE the provider is called, so a rejection or a crash
+ * leaves exactly the un-submitted ones recoverable (`submit-pending`,
+ * `retry`) instead of re-minting the whole round.
  */
 async function runResubmit(
   dir: string,
@@ -388,15 +430,6 @@ async function runResubmit(
       requestPath(dir, oldItemId),
     );
 
-    const summary = state.tasks[line.taskId]!;
-    const key = line.attempt === 1 ? "attempt1" as const : "attempt2" as const;
-    summary[key] = {
-      itemId: newItemId,
-      round: 1,
-      ownerRound: 1,
-      state: "pending",
-    };
-
     renderedItems.push({
       itemId: newItemId,
       taskId: line.taskId,
@@ -414,38 +447,33 @@ async function runResubmit(
     deps.wrap,
   );
 
-  const outcome = await submitChunks(
-    dir,
-    state,
-    chunks,
-    renderedItems,
-    step.wave,
-    1,
-    { provider: deps.provider, model: state.model.apiModelId, wrap: deps.wrap },
-  );
+  await journalItems(dir, chunks, renderedItems, step.wave, 1);
 
-  if (outcome.kind !== "submitted") {
-    const reason = outcome.kind === "rejected"
-      ? outcome.lastError?.message ?? "resubmission rejected"
-      : outcome.reason;
-    state.lastError = outcome.kind === "rejected" ? outcome.lastError : {
-      at: new Date().toISOString(),
-      step: "resubmit",
-      message: reason,
-      retryable: false,
+  for (const item of renderedItems) {
+    const summary = state.tasks[item.taskId]!;
+    const key = item.attempt === 1 ? "attempt1" as const : "attempt2" as const;
+    summary[key] = {
+      itemId: item.itemId,
+      round: 1,
+      ownerRound: 1,
+      state: "pending",
     };
-    await writeState(dir, state);
-    return { exit: 4, step: { kind: "blocked", reason }, state };
   }
-
-  state.phase = step.wave === 1 ? "attempt-1-submitted" : "attempt-2-submitted";
   await writeState(dir, state);
-  return { exit: 0, step, state };
+
+  return await runSubmitPending(dir, state, deps, step);
 }
 
 /**
  * D10's fix-prompt wave: renders wave 2 for exactly `step.taskIds` (already
  * filtered to real, non-infra failures by {@link nextStep}) and submits.
+ *
+ * The rendered items are journaled and `state.json` is rewritten with the
+ * new `attempt2` summaries (`"pending"`) and `wave: 2` BEFORE the provider
+ * is called. `nextStep` therefore never chooses `submit-wave-2` twice for
+ * the same task: once a summary exists, `submit-pending` owns whatever of
+ * the wave did not reach the provider, so a partial rejection or a crash
+ * can never re-render and re-bill an item that was already submitted.
  */
 async function runSubmitWave2(
   dir: string,
@@ -466,6 +494,14 @@ async function runSubmitWave2(
     priorAttempts,
   });
 
+  const chunks = chunkItems(
+    rendered.map((r) => ({ itemId: r.itemId, body: r.body })),
+    deps.provider.limits,
+    deps.wrap,
+  );
+
+  await journalItems(dir, chunks, rendered, 2, 0);
+
   for (const item of rendered) {
     const summary = state.tasks[item.taskId]!;
     summary.attempt2 = {
@@ -475,37 +511,10 @@ async function runSubmitWave2(
       state: "pending",
     };
   }
-
-  const chunks = chunkItems(
-    rendered.map((r) => ({ itemId: r.itemId, body: r.body })),
-    deps.provider.limits,
-    deps.wrap,
-  );
-
-  const outcome = await submitChunks(dir, state, chunks, rendered, 2, 0, {
-    provider: deps.provider,
-    model: state.model.apiModelId,
-    wrap: deps.wrap,
-  });
-
-  if (outcome.kind !== "submitted") {
-    const reason = outcome.kind === "rejected"
-      ? outcome.lastError?.message ?? "wave-2 submission rejected"
-      : outcome.reason;
-    state.lastError = outcome.kind === "rejected" ? outcome.lastError : {
-      at: new Date().toISOString(),
-      step: "submit",
-      message: reason,
-      retryable: false,
-    };
-    await writeState(dir, state);
-    return { exit: 4, step: { kind: "blocked", reason }, state };
-  }
-
-  state.phase = "attempt-2-submitted";
   state.wave = 2;
   await writeState(dir, state);
-  return { exit: 0, step, state };
+
+  return await runSubmitPending(dir, state, deps, step);
 }
 
 /**
@@ -554,6 +563,9 @@ export async function advanceRun(
 
       case "evaluate":
         return await runEvaluate(dir, state, deps, step.wave);
+
+      case "submit-pending":
+        return await runSubmitPending(dir, state, deps, step);
 
       case "resubmit":
         return await runResubmit(dir, state, deps, step);
