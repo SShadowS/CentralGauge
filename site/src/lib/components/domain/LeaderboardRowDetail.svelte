@@ -1,8 +1,9 @@
 <!-- site/src/lib/components/domain/LeaderboardRowDetail.svelte -->
 <script lang="ts">
   import type { LeaderboardRow } from '$shared/api-types';
-  import { formatCost, formatRelativeTime } from '$lib/client/format';
+  import { formatCost, formatMeanCount, formatRelativeTime } from '$lib/client/format';
   import MetricInfo from './MetricInfo.svelte';
+  import { COHORT_RUNS } from '$lib/shared/cohort';
 
   interface Props { row: LeaderboardRow; }
   let { row }: Props = $props();
@@ -13,6 +14,7 @@
     v === null || v === undefined ? '—' : formatCost(v);
   const secs = (v: number | null | undefined) =>
     v === null || v === undefined ? '—' : `${(v / 1000).toFixed(1)}s`;
+  // Both attempt fields are per-run MEANS, so the total can be fractional.
   const passedTotal = $derived(row.tasks_passed_attempt_1 + row.tasks_passed_attempt_2_only);
   const denom = $derived(row.denominator ?? row.tasks_attempted_distinct);
 </script>
@@ -24,9 +26,12 @@
       <div><dt>First try <MetricInfo id="pass_at_1" /></dt><dd>{pct(row.pass_at_1)}</dd></div>
       <div><dt>Solve@2 <MetricInfo id="pass_at_n" /></dt><dd>{pct(row.pass_at_n)}</dd></div>
       <div><dt>Repair <MetricInfo id="repair_rate" /></dt><dd>{pct(row.repair_rate)}</dd></div>
-      <div><dt>Solved</dt><dd>{passedTotal}/{denom}</dd></div>
+      <div><dt>Solved</dt><dd>{formatMeanCount(passedTotal)}/{denom}</dd></div>
       {#if row.fallback_count > 0}
         <div><dt>Fallback-served results</dt><dd>{row.fallback_count}</dd></div>
+      {/if}
+      {#if row.refusal_count > 0}
+        <div><dt>Refusals (no fallback)</dt><dd>{row.refusal_count}</dd></div>
       {/if}
     </dl>
   </div>
@@ -41,7 +46,14 @@
     <h3 class="h">Latency &amp; coverage</h3>
     <dl>
       <div><dt>p95 <MetricInfo id="latency_p95_ms" /></dt><dd>{secs(row.latency_p95_ms)}</dd></div>
-      <div><dt>Runs</dt><dd>{row.run_count}{#if row.verified_runs} ({row.verified_runs} verified){/if}</dd></div>
+      <div>
+        <dt>Runs</dt>
+        <dd>
+          {row.run_count}{#if row.verified_runs} ({row.verified_runs} verified){/if}{#if row.provisional}
+            <span class="note" title="A full cohort is {COHORT_RUNS} runs. Metrics are means across runs, so this value is comparable; it rests on fewer samples.">provisional</span>
+          {/if}
+        </dd>
+      </div>
       <div><dt>Last seen</dt><dd>{formatRelativeTime(row.last_run_at)}</dd></div>
     </dl>
   </div>
@@ -62,4 +74,5 @@
   .report { color: var(--accent); text-decoration: none; font-weight: var(--weight-semi); font-size: var(--text-sm); }
   .report:hover { text-decoration: underline; }
   .hint { font-size: var(--text-xs); color: var(--text-faint); margin: 0; }
+  .note { margin-left: var(--space-1); color: var(--text-faint); font-size: var(--text-xs); }
 </style>

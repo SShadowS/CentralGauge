@@ -47,7 +47,11 @@ export interface Aggregate {
   pass_rate_ci: { lower: number; upper: number };
   /** Strict consistency: fraction of tasks where ALL runs passed. 0 when no runs. */
   pass_hat_at_n: number;
-  /** Total cost across all results ÷ tasks_passed_distinct. null when 0 passed. */
+  /**
+   * Total cost across all results ÷ total PASSED (run, task) cells. null when
+   * nothing passed. Cells, not the per-run mean, so numerator and denominator
+   * span the same runs and the figure does not move with cohort size.
+   */
   cost_per_pass_usd: number | null;
   /**
    * @deprecated Per-attempt count (COUNT(*) over results). Preserved for
@@ -66,13 +70,17 @@ export interface Aggregate {
    */
   tasks_attempted_distinct: number;
   /**
-   * Distinct tasks where SOME run in scope had attempt=1 passed=1
-   * ("best across runs per task" semantics; P7 Mini-phase B).
+   * MEAN number of tasks passed at attempt 1 per in-scope run: (run, task)
+   * cells passed at attempt 1, divided by `run_count`. Fractional whenever the
+   * model's runs disagree. Cohort metrics, 2026-09; this used to be the count
+   * of distinct tasks SOME run passed first try, which grew with run count.
    */
   tasks_passed_attempt_1: number;
   /**
-   * Distinct tasks where SOME run had attempt=2 passed=1 AND NO run had
-   * attempt=1 passed=1 (mutually exclusive with tasks_passed_attempt_1).
+   * MEAN number of tasks per in-scope run passed at attempt 2 having failed
+   * attempt 1 IN THAT SAME RUN. Mutually exclusive with
+   * `tasks_passed_attempt_1` within a run, so their sum is the mean number of
+   * tasks a run solved.
    */
   tasks_passed_attempt_2_only: number;
   /**
@@ -292,9 +300,12 @@ export async function computeModelAggregates(
   // Subquery interpolation slots — must mirror outer task_set scoping inside
   // correlated subqueries (CR-5). Without these, attempt-1 successes from a
   // non-current task set would bleed into the current-set leaderboard.
+  //
+  // Two slots, not three: the attempt-2-only NOT EXISTS correlates on
+  // `r1b.run_id = r2.run_id`, which already pins the task set, mode, tier and
+  // start time of the run it belongs to (cohort metrics, 2026-09).
   let taskSetClauseSubA1 = "";
   let taskSetClauseSubA2 = "";
-  let taskSetClauseSubA2NotExists = "";
 
   if (opts.modelIds && opts.modelIds.length > 0) {
     const ph = opts.modelIds.map(() => "?").join(",");
@@ -306,14 +317,12 @@ export async function computeModelAggregates(
     params.push(opts.taskSetHash);
     taskSetClauseSubA1 = `AND ru1.task_set_hash = ?`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash = ?`;
-    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash = ?`;
   } else if (opts.taskSetCurrent) {
     where.push(
       `runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
     );
     taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
-    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
   }
   if (opts.tier) {
     where.push(`runs.tier = ?`);
@@ -327,21 +336,50 @@ export async function computeModelAggregates(
   where.push(modePredicate("runs"));
   params.push(opts.mode);
 
-  // D4 mirror for the ru1/ru2/ru1b correlated subqueries — same reasoning as
-  // taskSetClauseSub*: without this, an out-of-mode run's attempt-1/2 pass
-  // would bleed into a mode-scoped aggregate's numerator. Unconditional
-  // (mode is required), appended after the scope-IN clause in each subquery
-  // — mirrors leaderboard.ts's buildRunScopeClause ordering.
-  const modeClauseA1 = `AND ${modePredicate("ru1")}`;
-  const modeClauseA2 = `AND ${modePredicate("ru2")}`;
-  const modeClauseA2NotExists = `AND ${modePredicate("ru1b")}`;
+  /**
+   * Run-level filters mirrored into the correlated A1/A2 subqueries, in the
+   * same order and for the same reason as leaderboard.ts's
+   * `buildRunScopeClause`: the subqueries join their OWN `runs` alias, so
+   * without this an out-of-scope run's pass bleeds into a filtered aggregate's
+   * numerator.
+   *
+   * `tier` and `since` were missing here until the cohort-metrics change made
+   * the damage visible. Under `?tier=verified` the numerator counted passes
+   * from claimed runs too; COUNT(DISTINCT task_id) hid it whenever the extra
+   * runs solved the same tasks, but counting (run, task) cells does not, and a
+   * numerator above the denominator drove `wilsonInterval` to NaN, which
+   * `canonicalJSON` refuses to serialize (a 500 on the whole endpoint).
+   *
+   * `modelIds` / `category` / `difficulty` need no mirroring here: the first
+   * two are already correlated (`ru.model_id = runs.model_id`, scope-IN), and
+   * difficulty rides in the scope-IN clause.
+   */
+  function buildRunScopeClause(ruAlias: string): {
+    clause: string;
+    params: Array<string | number>;
+  } {
+    const parts: string[] = [];
+    const bind: Array<string | number> = [];
+    if (opts.tier) {
+      parts.push(`AND ${ruAlias}.tier = ?`);
+      bind.push(opts.tier);
+    }
+    if (opts.since) {
+      parts.push(`AND ${ruAlias}.started_at >= ?`);
+      bind.push(opts.since);
+    }
+    parts.push(`AND ${modePredicate(ruAlias)}`);
+    bind.push(opts.mode);
+    return { clause: parts.join(" "), params: bind };
+  }
+  const runScopeA1 = buildRunScopeClause("ru1");
+  const runScopeA2 = buildRunScopeClause("ru2");
 
   // Build scope-IN clauses for the three correlated subquery slots.
   // These appear in the SELECT list (before FROM/WHERE), so their bind params
   // must be positioned before the main where params in allSqlParams.
   const scopeInA1 = buildScopeInClause("r1", "ru1", opts);
   const scopeInA2 = buildScopeInClause("r2", "ru2", opts);
-  const scopeInA2NotExists = buildScopeInClause("r1b", "ru1b", opts);
 
   // Difficulty filter: JOIN tasks to restrict which result rows contribute.
   // The JOIN clause contains a `?` that appears BETWEEN the SELECT subqueries
@@ -378,19 +416,20 @@ export async function computeModelAggregates(
   //   [SELECT list]
   //   1. taskSetClauseSubA1 ?  — hash mode only (ru1.task_set_hash = ?)
   //   2. scopeInA1 ?s          — difficulty?, category? inside A1 subquery
-  //   3. modeClauseA1 ?        — ru1.invocation_mode = ? (D4, unconditional)
-  //   4. taskSetClauseSubA2NotExists ?  — hash mode only
-  //   5. scopeInA2NotExists ?s — difficulty?, category? inside NOT EXISTS
-  //   6. modeClauseA2NotExists ? — ru1b.invocation_mode = ? (D4, unconditional)
-  //   7. taskSetClauseSubA2 ?  — hash mode only
-  //   8. scopeInA2 ?s          — difficulty?, category? inside A2 subquery
-  //   9. modeClauseA2 ?        — ru2.invocation_mode = ? (D4, unconditional)
+  //   3. runScopeA1 ?s        : tier?, since?, then ru1.invocation_mode = ?
+  //   4. taskSetClauseSubA2 ? : hash mode only
+  //   5. scopeInA2 ?s         : difficulty?, category? inside A2 subquery
+  //   6. runScopeA2 ?s        : tier?, since?, then ru2.invocation_mode = ?
+  //
+  // The NOT EXISTS inside the A2 subquery carries no placeholders: it
+  // correlates on `r1b.run_id = r2.run_id`, so it needs no scope mirroring
+  // of its own (cohort metrics, 2026-09).
   //
   //   [FROM / JOINs]
-  //   10. difficultyJoin ?     — t_diff.difficulty = ? (JOIN ON condition)
+  //   7. difficultyJoin ?     : t_diff.difficulty = ? (JOIN ON condition)
   //
   //   [WHERE]
-  //   11+. params[]            — modelIds, taskSetHash (outer), tier, since,
+  //   8+. params[]            , modelIds, taskSetHash (outer), tier, since,
   //                              invocation_mode (D4), category
   //
   // NOTE: when taskSetCurrent is used the subquery slots use a subselect (no ?).
@@ -398,17 +437,12 @@ export async function computeModelAggregates(
   const allParamsSub1: Array<string | number> = [
     ...(opts.taskSetHash ? [opts.taskSetHash] : []),
     ...scopeInA1.params,
-    opts.mode,
-  ];
-  const allParamsNotExists: Array<string | number> = [
-    ...(opts.taskSetHash ? [opts.taskSetHash] : []),
-    ...scopeInA2NotExists.params,
-    opts.mode,
+    ...runScopeA1.params,
   ];
   const allParamsSub2: Array<string | number> = [
     ...(opts.taskSetHash ? [opts.taskSetHash] : []),
     ...scopeInA2.params,
-    opts.mode,
+    ...runScopeA2.params,
   ];
 
   const sql = `
@@ -416,9 +450,9 @@ export async function computeModelAggregates(
            COUNT(DISTINCT runs.id)                                       AS run_count,
            COUNT(DISTINCT CASE WHEN runs.tier = 'verified' THEN runs.id ELSE NULL END) AS verified_runs,
            AVG(r.score)                                                  AS avg_score,
-           -- Per-task cost (matches /api/v1/leaderboard semantics).
+           -- Per run-task cell cost (matches /api/v1/leaderboard semantics).
            SUM(${rowCostUsd("r", "cs", "runs")})
-             / NULLIF(COUNT(DISTINCT r.task_id), 0)                      AS avg_cost_usd,
+             / NULLIF(COUNT(DISTINCT r.run_id || ':' || r.task_id), 0)   AS avg_cost_usd,
            -- Total cost (un-divided) — used for cost_per_pass_usd.
            SUM(${rowCostUsd("r", "cs", "runs")})
                                                                           AS total_cost_usd,
@@ -430,28 +464,30 @@ export async function computeModelAggregates(
                 THEN MAX(runs.settings_hash) ELSE NULL END
              AS settings_hash_unique,
            COUNT(DISTINCT runs.settings_hash) AS settings_hash_count,
-           (SELECT COUNT(DISTINCT r1.task_id)
+           -- (run, task) cells passed at attempt 1 across the model's in-scope
+           -- runs. Divided by run_count below to give the per-run mean.
+           (SELECT COUNT(DISTINCT r1.run_id || ':' || r1.task_id)
             FROM results r1 JOIN runs ru1 ON ru1.id = r1.run_id
             WHERE ru1.model_id = runs.model_id AND r1.attempt = 1 AND r1.passed = 1
               ${taskSetClauseSubA1}
               ${scopeInA1.clause}
-              ${modeClauseA1}
-           ) AS tasks_passed_attempt_1,
-           (SELECT COUNT(DISTINCT r2.task_id)
+              ${runScopeA1.clause}
+           ) AS cells_passed_attempt_1,
+           -- (run, task) cells passed at attempt 2 having failed attempt 1 in
+           -- the SAME run. The NOT EXISTS correlates on run_id, which pins the
+           -- task set, mode and every other run-level predicate for free.
+           (SELECT COUNT(DISTINCT r2.run_id || ':' || r2.task_id)
             FROM results r2 JOIN runs ru2 ON ru2.id = r2.run_id
             WHERE ru2.model_id = runs.model_id AND r2.attempt = 2 AND r2.passed = 1
               AND NOT EXISTS (
-                SELECT 1 FROM results r1b JOIN runs ru1b ON ru1b.id = r1b.run_id
-                WHERE ru1b.model_id = runs.model_id AND r1b.task_id = r2.task_id
+                SELECT 1 FROM results r1b
+                WHERE r1b.run_id = r2.run_id AND r1b.task_id = r2.task_id
                   AND r1b.attempt = 1 AND r1b.passed = 1
-                  ${taskSetClauseSubA2NotExists}
-                  ${scopeInA2NotExists.clause}
-                  ${modeClauseA2NotExists}
               )
               ${taskSetClauseSubA2}
               ${scopeInA2.clause}
-              ${modeClauseA2}
-           ) AS tasks_passed_attempt_2_only
+              ${runScopeA2.clause}
+           ) AS cells_passed_attempt_2_only
     FROM runs
     LEFT JOIN results r ON r.run_id = runs.id
     LEFT JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version
@@ -463,7 +499,6 @@ export async function computeModelAggregates(
 
   const allSqlParams = [
     ...allParamsSub1,
-    ...allParamsNotExists,
     ...allParamsSub2,
     ...difficultyParam, // JOIN ON condition (before WHERE)
     ...params, // WHERE clause params: modelIds, taskSetHash, tier, since, mode (D4), category
@@ -483,8 +518,8 @@ export async function computeModelAggregates(
           tasks_attempted: number | string | null;
           tasks_passed: number | string | null;
           tasks_attempted_distinct: number | string | null;
-          tasks_passed_attempt_1: number | string | null;
-          tasks_passed_attempt_2_only: number | string | null;
+          cells_passed_attempt_1: number | string | null;
+          cells_passed_attempt_2_only: number | string | null;
           settings_hash_unique: string | null;
           settings_hash_count: number | string | null;
         }>(),
@@ -500,8 +535,8 @@ export async function computeModelAggregates(
         tasks_attempted: number | string | null;
         tasks_passed: number | string | null;
         tasks_attempted_distinct: number | string | null;
-        tasks_passed_attempt_1: number | string | null;
-        tasks_passed_attempt_2_only: number | string | null;
+        cells_passed_attempt_1: number | string | null;
+        cells_passed_attempt_2_only: number | string | null;
         settings_hash_unique: string | null;
         settings_hash_count: number | string | null;
       }>());
@@ -700,8 +735,16 @@ export async function computeModelAggregates(
 
   const out = new Map<number, Aggregate>();
   for (const row of rs.results ?? []) {
-    const passedA1 = Number(row.tasks_passed_attempt_1 ?? 0);
-    const passedA2Only = Number(row.tasks_passed_attempt_2_only ?? 0);
+    // Cohort metrics: the attempt counts are MEANS over the model's in-scope
+    // runs, so the SQL returns (run, task) cell counts and the division happens
+    // here. `passedCells` keeps the undivided total for cost_per_pass_usd,
+    // whose numerator (total cost) also spans every run.
+    const runCount = Number(row.run_count ?? 0);
+    const cellsA1 = Number(row.cells_passed_attempt_1 ?? 0);
+    const cellsA2Only = Number(row.cells_passed_attempt_2_only ?? 0);
+    const passedCells = cellsA1 + cellsA2Only;
+    const passedA1 = runCount > 0 ? cellsA1 / runCount : 0;
+    const passedA2Only = runCount > 0 ? cellsA2Only / runCount : 0;
     const attemptedDistinct = Number(row.tasks_attempted_distinct ?? 0);
     const tasksPassedDistinct = passedA1 + passedA2Only;
     // Strict pass rate denominator. The fallback to attemptedDistinct triggers
@@ -741,8 +784,8 @@ export async function computeModelAggregates(
     const totalCostUsd =
       row.total_cost_usd === null ? null : Number(row.total_cost_usd);
     const costPerPassUsd =
-      tasksPassedDistinct > 0 && totalCostUsd !== null
-        ? Number((totalCostUsd / tasksPassedDistinct).toFixed(6))
+      passedCells > 0 && totalCostUsd !== null
+        ? Number((totalCostUsd / passedCells).toFixed(6))
         : null;
 
     out.set(row.model_id, {
@@ -769,8 +812,8 @@ export async function computeModelAggregates(
       tasks_attempted: Number(row.tasks_attempted ?? 0),
       tasks_passed: Number(row.tasks_passed ?? 0),
       tasks_attempted_distinct: attemptedDistinct,
-      tasks_passed_attempt_1: passedA1,
-      tasks_passed_attempt_2_only: passedA2Only,
+      tasks_passed_attempt_1: Math.round(passedA1 * 1e6) / 1e6,
+      tasks_passed_attempt_2_only: Math.round(passedA2Only * 1e6) / 1e6,
       pass_at_n: Math.round(passAtN * 1e6) / 1e6,
       settings_suffix: settingsSuffix,
       temperature,
@@ -1093,7 +1136,12 @@ export function wilsonInterval(
 ): { lower: number; upper: number } {
   if (trials <= 0) return { lower: 0, upper: 1 };
   const z = 1.96;
-  const p = successes / trials;
+  // Clamped: a proportion outside [0, 1] makes p*(1-p) negative and the
+  // interval NaN, and canonicalJSON refuses to serialize a non-finite number,
+  // so one bad numerator would 500 the whole endpoint rather than skew one
+  // row. Successes are per-run means now, which are fractional but bounded;
+  // the clamp is a backstop against a scoping bug, not an expected path.
+  const p = Math.min(1, Math.max(0, successes / trials));
   const z2 = z * z;
   const denom = 1 + z2 / trials;
   const center = (p + z2 / (2 * trials)) / denom;

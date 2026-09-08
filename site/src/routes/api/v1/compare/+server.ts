@@ -90,10 +90,16 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // Compute strict pass_at_n numerators per model, scoped to the current
     // task set hash (CR-5: explicit hash filter on every subquery prevents
     // cross-set bleed when a model has runs in multiple task sets).
+    //
+    // Cohort metrics (2026-09): the numerators are per-run MEANS, matching the
+    // leaderboard. The CTEs count (run, task) cells and the `attempted` CTE
+    // carries the run count they are divided by, so comparing a one-run model
+    // with a three-run cohort compares like with like.
     type PassRow = {
       model_id: number;
-      tasks_passed_attempt_1: number | string | null;
-      tasks_passed_attempt_2_only: number | string | null;
+      cells_passed_attempt_1: number | string | null;
+      cells_passed_attempt_2_only: number | string | null;
+      run_count: number | string | null;
       tasks_attempted_distinct: number | string | null;
     };
 
@@ -102,9 +108,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const modelIdPlaceholders = models.map(() => "?").join(",");
       const modelIds = models.map((m) => m.id);
 
-      // p1: distinct tasks where attempt=1 passed, scoped to current task set.
-      // p2_only: distinct tasks where attempt=2 passed and no attempt=1 passed,
-      //          scoped to current task set.
+      // p1: (run, task) cells where attempt=1 passed, scoped to current set.
+      // p2_only: (run, task) cells where attempt=2 passed and attempt=1 did not
+      //          pass IN THE SAME RUN, scoped to current set. The NOT EXISTS
+      //          correlates on run_id, which pins the hash and mode for free.
       // Both use explicit hash filters (CR-5) so runs from other task sets
       // cannot inflate the numerator beyond the denominator.
       passRows = await getAll<PassRow>(
@@ -113,7 +120,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         WITH current_hash AS (SELECT ? AS hash),
         p1 AS (
           SELECT ru1.model_id,
-                 COUNT(DISTINCT r1.task_id) AS tasks_passed_attempt_1
+                 COUNT(DISTINCT r1.run_id || ':' || r1.task_id) AS cells_passed_attempt_1
           FROM results r1
           JOIN runs ru1 ON ru1.id = r1.run_id
           JOIN current_hash ON ru1.task_set_hash = current_hash.hash
@@ -124,7 +131,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         ),
         p2_only AS (
           SELECT ru2.model_id,
-                 COUNT(DISTINCT r2.task_id) AS tasks_passed_attempt_2_only
+                 COUNT(DISTINCT r2.run_id || ':' || r2.task_id) AS cells_passed_attempt_2_only
           FROM results r2
           JOIN runs ru2 ON ru2.id = r2.run_id
           JOIN current_hash ON ru2.task_set_hash = current_hash.hash
@@ -133,18 +140,16 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
             AND ru2.invocation_mode = ?
             AND NOT EXISTS (
               SELECT 1 FROM results r1b
-              JOIN runs ru1b ON ru1b.id = r1b.run_id
-              JOIN current_hash cs1b ON ru1b.task_set_hash = cs1b.hash
-              WHERE ru1b.model_id = ru2.model_id
+              WHERE r1b.run_id = r2.run_id
                 AND r1b.task_id = r2.task_id
                 AND r1b.attempt = 1 AND r1b.passed = 1
-                AND ru1b.invocation_mode = ?
             )
           GROUP BY ru2.model_id
         ),
         attempted AS (
           SELECT runs.model_id,
-                 COUNT(DISTINCT r.task_id) AS tasks_attempted_distinct
+                 COUNT(DISTINCT r.task_id) AS tasks_attempted_distinct,
+                 COUNT(DISTINCT runs.id)   AS run_count
           FROM runs
           JOIN results r ON r.run_id = runs.id
           JOIN current_hash ON runs.task_set_hash = current_hash.hash
@@ -153,9 +158,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           GROUP BY runs.model_id
         )
         SELECT m.id AS model_id,
-               COALESCE(p1.tasks_passed_attempt_1, 0) AS tasks_passed_attempt_1,
-               COALESCE(p2_only.tasks_passed_attempt_2_only, 0) AS tasks_passed_attempt_2_only,
-               COALESCE(att.tasks_attempted_distinct, 0) AS tasks_attempted_distinct
+               COALESCE(p1.cells_passed_attempt_1, 0) AS cells_passed_attempt_1,
+               COALESCE(p2_only.cells_passed_attempt_2_only, 0) AS cells_passed_attempt_2_only,
+               COALESCE(att.tasks_attempted_distinct, 0) AS tasks_attempted_distinct,
+               COALESCE(att.run_count, 0) AS run_count
         FROM models m
         LEFT JOIN p1 ON p1.model_id = m.id
         LEFT JOIN p2_only ON p2_only.model_id = m.id
@@ -167,7 +173,6 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           ...modelIds,
           mode,
           ...modelIds,
-          mode,
           mode,
           ...modelIds,
           mode,
@@ -234,8 +239,12 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const pass = passMap.get(m.id);
       // COALESCE in the SQL always returns a row per model, so `pass` is always
       // defined. Detect "no current-set runs" via all-zero numerators + attempted.
-      const p1 = Number(pass?.tasks_passed_attempt_1 ?? 0);
-      const p2Only = Number(pass?.tasks_passed_attempt_2_only ?? 0);
+      const runCount = Number(pass?.run_count ?? 0);
+      const cellsP1 = Number(pass?.cells_passed_attempt_1 ?? 0);
+      const cellsP2Only = Number(pass?.cells_passed_attempt_2_only ?? 0);
+      // Per-run means, same rule as the leaderboard.
+      const p1 = runCount > 0 ? cellsP1 / runCount : 0;
+      const p2Only = runCount > 0 ? cellsP2Only / runCount : 0;
       const attempted = Number(pass?.tasks_attempted_distinct ?? 0);
       // A model with no runs in the current task set returns all-zero from the
       // COALESCE; treat it as no-runs (null metrics) rather than 0%.

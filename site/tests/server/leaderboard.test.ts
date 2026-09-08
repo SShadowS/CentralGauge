@@ -429,15 +429,18 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     await computeLeaderboard(capturingDb, { ...baseQuery, set: HASH });
 
     const mainQuerySql = capturedSql.find((sql) =>
-      sql.includes("tasks_passed_attempt_1"),
+      sql.includes("cells_passed_attempt_1"),
     );
     expect(mainQuerySql).toBeDefined();
     // The hash must NOT be string-interpolated into the SQL text.
     expect(mainQuerySql).not.toContain(HASH);
-    // It must be bound via `?` on each of the three subquery aliases.
+    // It must be bound via `?` on each subquery alias. There are two, not
+    // three: the attempt-2-only NOT EXISTS correlates on run_id, so it has no
+    // runs alias of its own to scope (cohort metrics).
     expect(mainQuerySql).toMatch(/ru1\.task_set_hash = \?/);
     expect(mainQuerySql).toMatch(/ru2\.task_set_hash = \?/);
-    expect(mainQuerySql).toMatch(/ru1b\.task_set_hash = \?/);
+    expect(mainQuerySql).not.toMatch(/ru1b\./);
+    expect(mainQuerySql).toMatch(/r1b\.run_id = r2\.run_id/);
   });
 
   it("S7: specific-hash query works for every ORDER BY sort that duplicates the task-set clause (bind-order/count regression)", async () => {

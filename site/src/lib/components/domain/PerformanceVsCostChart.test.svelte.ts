@@ -19,6 +19,8 @@ function row(
     },
     family_slug: "fam",
     fallback_count: 0,
+    refusal_count: 0,
+    provisional: false,
     run_count: 1,
     tasks_attempted: 0,
     tasks_passed: 0,

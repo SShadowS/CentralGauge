@@ -71,16 +71,17 @@ describe('METRICS registry', () => {
     }
   });
 
-  it('documents avg_cost_usd as per-task cost, not per-run', () => {
-    // Pins the relabel applied in task #3. The underlying SQL in
-    // leaderboard.ts and model-aggregates.ts divides by COUNT(DISTINCT task_id);
-    // the registry must agree so all UI tooltips inherit the correct semantic.
+  it('documents avg_cost_usd as the cost of running one task once', () => {
+    // Pins the relabel applied in task #3 and the cohort-metrics divisor. The
+    // SQL in leaderboard.ts and model-aggregates.ts divides by the number of
+    // (run, task) cells, so the registry must say so: dividing by distinct
+    // tasks multiplied the figure by a cohort's run count.
     expect(METRICS.avg_cost_usd).toMatchObject({
       label: 'Avg cost / task',
       unit: 'usd',
     });
-    expect(METRICS.avg_cost_usd.short).toContain('per distinct benchmark task');
-    expect(METRICS.avg_cost_usd.formula).toContain('COUNT(DISTINCT task_id)');
+    expect(METRICS.avg_cost_usd.short).toContain('one benchmark task once');
+    expect(METRICS.avg_cost_usd.formula).toContain('COUNT(DISTINCT (run_id, task_id))');
   });
 
   it('rate-typed metrics do not describe themselves as percent-scaled storage', () => {

@@ -53,8 +53,8 @@ export const METRICS: Record<string, MetricDef> = {
     id: 'pass_at_n',
     label: 'Pass rate',
     short: 'Tasks solved / tasks in scope, up to 2 attempts (strict per-set denominator).',
-    formula: '(tasks_passed_attempt_1 + tasks_passed_attempt_2_only) / task_set_size',
-    when: 'Includes unattempted tasks as failures. Scope-aware; reflects active filters (set, category, difficulty). Final assisted solve rate with up to 2 attempts; drill-down companion to Solve AUC@2.',
+    formula: '(tasks_passed_attempt_1 + tasks_passed_attempt_2_only) / task_set_size, where both numerator terms are means across the runs.',
+    when: 'Includes unattempted tasks as failures. Scope-aware; reflects active filters (set, category, difficulty). A model benched several times scores the average of its runs, so run count does not inflate it. Final assisted solve rate with up to 2 attempts; drill-down companion to Solve AUC@2.',
     unit: 'rate',
     link: { href: 'https://arxiv.org/abs/2107.03374', text: 'HumanEval paper (Chen et al., 2021)' },
   },
@@ -63,7 +63,7 @@ export const METRICS: Record<string, MetricDef> = {
     id: 'pass_at_1',
     label: 'First-try pass rate',
     short: 'Tasks solved on the first attempt / tasks in scope (strict).',
-    formula: 'tasks_passed_attempt_1 / task_set_size',
+    formula: 'tasks_passed_attempt_1 / task_set_size, where the numerator is the mean number of first-try solves per run.',
     when: 'Measures single-shot accuracy without retry credit. Useful when comparing models where the second attempt is not available.',
     unit: 'rate',
   },
@@ -134,16 +134,18 @@ export const METRICS: Record<string, MetricDef> = {
   },
 
   // The API field name is `avg_cost_usd` for back-compat. The value is total
-  // result cost in scope / COUNT(DISTINCT task_id). Splitting one benchmark
-  // across multiple runs stays comparable by task coverage; repeated re-runs
-  // of the same tasks still add cost because they represent additional spend.
+  // result cost in scope divided by the number of (run, task) cells it covers,
+  // so it answers "what does one task cost once" and a three-run cohort reads
+  // the same as a single run of the same model (cohort metrics, 2026-09). It
+  // used to divide by COUNT(DISTINCT task_id), which multiplied the answer by
+  // the number of runs.
   // The registry label is the user-facing source of truth; a future task may
   // rename the SQL field once a migration window is acceptable.
   avg_cost_usd: {
     id: 'avg_cost_usd',
     label: 'Avg cost / task',
-    short: 'Average LLM cost per distinct benchmark task in USD.',
-    formula: 'SUM(cost_usd) / COUNT(DISTINCT task_id) across all the model\'s results in scope.',
+    short: 'Average LLM cost of running one benchmark task once, in USD.',
+    formula: 'SUM(cost_usd) / COUNT(DISTINCT (run_id, task_id)) across all the model\'s results in scope.',
     when: 'Use to compare operating cost across models with similar pass rates. Does not account for quality. Combine with $/Pass for a cost-efficiency view.',
     unit: 'usd',
   },
@@ -152,7 +154,7 @@ export const METRICS: Record<string, MetricDef> = {
     id: 'cost_per_pass_usd',
     label: '$/Pass',
     short: 'Average USD cost per solved task (any-attempt pass).',
-    formula: 'SUM(cost_usd) / tasks_passed_distinct across all runs.',
+    formula: 'SUM(cost_usd) / number of passed (run, task) cells across all runs.',
     when: 'Best single cost-efficiency metric. Penalises expensive models that pass few tasks and rewards cheap models with high pass rates.',
     unit: 'usd',
   },
@@ -197,7 +199,7 @@ export const METRICS: Record<string, MetricDef> = {
     id: 'tasks_passed',
     label: 'Tasks passed',
     short: 'Distinct tasks solved in any attempt across all runs.',
-    formula: 'COUNT(DISTINCT task_id) where best outcome = pass.',
+    formula: 'COUNT(DISTINCT task_id) where best outcome = pass. Unlike the pass rates, a union across runs rather than a per-run mean.',
     when: 'Absolute count version of pass_at_n. Useful when comparing models that have attempted different task counts.',
     unit: 'count',
   },
@@ -207,7 +209,7 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'Runs',
     short: 'Total number of benchmark runs recorded for this model.',
     formula: 'COUNT(DISTINCT run_id) for this model.',
-    when: 'More runs = more data, tighter confidence intervals, and more reliable pass^n / consistency metrics.',
+    when: 'More runs = more data, tighter confidence intervals, and more reliable pass^n / consistency metrics. Pass rates and cost are averaged per run, so more runs sharpen the estimate rather than raise it. A model below the standard cohort size is marked provisional.',
     unit: 'count',
   },
 

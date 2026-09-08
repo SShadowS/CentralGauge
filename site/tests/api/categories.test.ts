@@ -111,6 +111,35 @@ describe("GET /api/v1/categories", () => {
     expect(typeof body.generated_at).toBe("string");
   });
 
+  it("averages a model's per-run pass counts rather than unioning them", async () => {
+    // A second run of the same model solves the OTHER tables task and neither
+    // pages task. Per run the model solves 1 of 2 tables tasks, so the category
+    // average stays 0.5; a union across runs would report 1.0 for tables and
+    // would also halve pages (2 solved cells over 2 runs is a mean of 1, which
+    // is still 2/2 of the category, so pages stays 1.0 only under the mean).
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r2','ts',1,'s','r','2026-04-02T00:00:00Z','2026-04-02T01:00:00Z','completed','claimed','v1','sig','2026-04-02T00:00:00Z',1,?)`,
+    )
+      .bind(new Uint8Array([0]))
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES
+         ('r2','easy/t1',1,0,0.0,1),
+         ('r2','easy/t2',1,1,1.0,1),
+         ('r2','medium/p1',1,1,1.0,1),
+         ('r2','medium/p2',1,1,1.0,1)`,
+    ).run();
+
+    const res = await SELF.fetch("https://x/api/v1/categories?_cb=cohort");
+    const body = (await res.json()) as CategoriesIndexResponse;
+    const tables = body.data.find((c) => c.slug === "tables")!;
+    const pages = body.data.find((c) => c.slug === "pages")!;
+    // Union across runs would make tables 1.0 (both tasks solved somewhere).
+    expect(tables.avg_pass_rate).toBeCloseTo(0.5, 5);
+    expect(pages.avg_pass_rate).toBeCloseTo(1.0, 5);
+  });
+
   it("excludes orphan categories (0 tasks in current set) from response", async () => {
     // Seed an extra orphan category with no tasks pointing to it in the current set.
     await env.DB.prepare(
@@ -170,7 +199,24 @@ describe("GET /api/v1/categories", () => {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).bind("r1","ts2",1,"s","r","2026-04-01T00:00:00Z","2026-04-01T01:00:00Z","completed","claimed","v1","sig","2026-04-01T00:00:00Z",1,new Uint8Array([0])).run();
+    )
+      .bind(
+        "r1",
+        "ts2",
+        1,
+        "s",
+        "r",
+        "2026-04-01T00:00:00Z",
+        "2026-04-01T01:00:00Z",
+        "completed",
+        "claimed",
+        "v1",
+        "sig",
+        "2026-04-01T00:00:00Z",
+        1,
+        new Uint8Array([0]),
+      )
+      .run();
     // Model only attempts n1 and passes it; n2 and n3 not attempted.
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ('r1','n1',1,1,1.0,1)`,

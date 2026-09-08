@@ -12,7 +12,7 @@ function row(p: Partial<LeaderboardRow>): LeaderboardRow {
     cost_per_pass_usd: 0.27, avg_score: 70, avg_cost_usd: 0.21, verified_runs: 1,
     pass_hat_at_n: 0.79,
     pass_rate_ci: { lower: 0.64, upper: 0.70 }, latency_p95_ms: 8400,
-    fallback_count: 0,
+    fallback_count: 0, refusal_count: 0, provisional: false,
     last_run_at: '2026-05-30T00:00:00Z', ...p,
   } as LeaderboardRow;
 }
@@ -81,5 +81,72 @@ describe('LeaderboardTable fallback badge', () => {
     expect(title).not.toMatch(/task result/);
     expect(label).toMatch(/across the full task set/);
     expect(label).not.toMatch(/task result/);
+  });
+});
+
+describe('LeaderboardTable refusal badge', () => {
+  it('shows a refusal badge carrying the count when refusal_count > 0', () => {
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ refusal_count: 5 })], sort: 'auc_2:desc' },
+    });
+    const badge = container.querySelector('[data-test="refusal-badge"]');
+    expect(badge).not.toBeNull();
+    expect(badge?.textContent).toContain('5');
+    expect(badge?.getAttribute('aria-label')).toMatch(/5 results across the full task set refused by the model/);
+  });
+
+  it('renders no refusal badge when the count is 0 or the field is absent', () => {
+    const zero = render(LeaderboardTable, {
+      props: { rows: [row({ refusal_count: 0 })], sort: 'auc_2:desc' },
+    });
+    expect(zero.container.querySelector('[data-test="refusal-badge"]')).toBeNull();
+
+    const absent = render(LeaderboardTable, {
+      props: { rows: [row({ refusal_count: undefined as unknown as number })], sort: 'auc_2:desc' },
+    });
+    expect(absent.container.querySelector('[data-test="refusal-badge"]')).toBeNull();
+  });
+
+  it('uses the singular noun for a count of one and says the refusal was not recovered', () => {
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ refusal_count: 1 })], sort: 'auc_2:desc' },
+    });
+    const badge = container.querySelector('[data-test="refusal-badge"]');
+    expect(badge?.getAttribute('aria-label')).toMatch(/1 result across the full task set refused by the model/);
+    expect(badge?.getAttribute('title')).toMatch(/scored as (a )?failure/i);
+  });
+
+  it('sits beside the fallback badge when both apply', () => {
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ fallback_count: 2, refusal_count: 3 })], sort: 'auc_2:desc' },
+    });
+    expect(container.querySelector('[data-test="fallback-badge"]')).not.toBeNull();
+    expect(container.querySelector('[data-test="refusal-badge"]')).not.toBeNull();
+  });
+});
+
+describe('LeaderboardTable provisional marker', () => {
+  it('marks a row with fewer runs than the cohort and names the run count', () => {
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ provisional: true, run_count: 2 })], sort: 'auc_2:desc' },
+    });
+    const marker = container.querySelector('[data-test="provisional-marker"]');
+    expect(marker).not.toBeNull();
+    expect(marker?.textContent).toContain('n=2');
+    expect(marker?.getAttribute('title')).toMatch(/3 runs/);
+  });
+
+  it('renders no marker for a full cohort', () => {
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ provisional: false, run_count: 3 })], sort: 'auc_2:desc' },
+    });
+    expect(container.querySelector('[data-test="provisional-marker"]')).toBeNull();
+  });
+
+  it('renders no marker when the row predates the field', () => {
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ provisional: undefined as unknown as boolean })], sort: 'auc_2:desc' },
+    });
+    expect(container.querySelector('[data-test="provisional-marker"]')).toBeNull();
   });
 });

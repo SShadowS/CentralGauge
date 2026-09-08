@@ -45,15 +45,19 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
       if (shared) {
         payload = JSON.parse(shared) as CategoriesIndexResponse;
-        await cache.put(
-          cacheKey,
-          new Response(shared, {
-            headers: {
-              "content-type": "application/json; charset=utf-8",
-              "cache-control": `public, s-maxage=${ttl}`,
-            },
-          }),
-        ).catch((err) => console.error("[categories] L1 backfill failed:", err));
+        await cache
+          .put(
+            cacheKey,
+            new Response(shared, {
+              headers: {
+                "content-type": "application/json; charset=utf-8",
+                "cache-control": `public, s-maxage=${ttl}`,
+              },
+            }),
+          )
+          .catch((err) =>
+            console.error("[categories] L1 backfill failed:", err),
+          );
       }
     }
 
@@ -66,9 +70,13 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       // avg_pass_rate uses the strict per-set formula (same denominator as
       // pass_at_n on the leaderboard) so index and detail show the same value.
       // Formula: for each model with current-set runs, compute
-      //   (tasks_passed_in_category) / (tasks_in_category)
+      //   (mean tasks passed per run in category) / (tasks_in_category)
       // then average across models. Equivalent to:
-      //   SUM(per-model passes in category) / (model_count * category_task_count)
+      //   SUM(per-model mean passes in category) / (model_count * category_task_count)
+      //
+      // The per-model term is a MEAN across that model's runs, matching the
+      // leaderboard (cohort metrics, 2026-09). It used to be the union of
+      // tasks any run passed, which rose with the number of runs a model had.
       //
       // Production-shape note: when `tasks_in_catalog = 0` (CC-1; current
       // production), the LEFT JOIN yields `task_count = 0` for every
@@ -89,47 +97,49 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           WHERE t.task_set_hash = (SELECT hash FROM cur)
         ),
         models_with_runs AS (
-          SELECT DISTINCT model_id
+          SELECT model_id, COUNT(DISTINCT id) AS run_count
           FROM runs
           WHERE task_set_hash = (SELECT hash FROM cur)
+          GROUP BY model_id
         ),
-        -- p1: best-across-runs per (model, task): attempt=1 passed
+        -- p1: (model, run, task) cells passed at attempt 1
         p1 AS (
-          SELECT ru.model_id, r.task_id
+          SELECT ru.model_id, r.run_id, r.task_id
           FROM results r
           JOIN runs ru ON ru.id = r.run_id
           WHERE ru.task_set_hash = (SELECT hash FROM cur)
             AND r.attempt = 1 AND r.passed = 1
-          GROUP BY ru.model_id, r.task_id
+          GROUP BY r.run_id, r.task_id
         ),
-        -- p2_only: attempt=2 passed and attempt=1 did NOT pass (for this model+task)
+        -- p2_only: attempt=2 passed and attempt=1 did NOT pass IN THE SAME RUN.
+        -- Correlating on run_id also pins the task set, so the NOT EXISTS needs
+        -- no scope clause of its own (cohort metrics, 2026-09).
         p2_only AS (
-          SELECT ru.model_id, r.task_id
+          SELECT ru.model_id, r.run_id, r.task_id
           FROM results r
           JOIN runs ru ON ru.id = r.run_id
           WHERE ru.task_set_hash = (SELECT hash FROM cur)
             AND r.attempt = 2 AND r.passed = 1
             AND NOT EXISTS (
               SELECT 1 FROM results r1b
-              JOIN runs ru1b ON ru1b.id = r1b.run_id
-              WHERE ru1b.model_id = ru.model_id
+              WHERE r1b.run_id = r.run_id
                 AND r1b.task_id = r.task_id
                 AND r1b.attempt = 1 AND r1b.passed = 1
-                AND ru1b.task_set_hash = (SELECT hash FROM cur)
             )
-          GROUP BY ru.model_id, r.task_id
+          GROUP BY r.run_id, r.task_id
         ),
-        -- All passes per (model, task) with category annotation
+        -- All passed cells with category annotation
         passes_in_cat AS (
           SELECT ct.category_id, p.model_id
           FROM (
-            SELECT model_id, task_id FROM p1
+            SELECT model_id, run_id, task_id FROM p1
             UNION
-            SELECT model_id, task_id FROM p2_only
+            SELECT model_id, run_id, task_id FROM p2_only
           ) p
           JOIN cat_tasks ct ON ct.task_id = p.task_id
         ),
-        -- Per (category, model): count of passed tasks
+        -- Per (category, model): passed (run, task) cells, divided by the
+        -- model's run count below to give the mean tasks passed per run.
         model_cat_passes AS (
           SELECT category_id, model_id, COUNT(*) AS passes
           FROM passes_in_cat
@@ -142,11 +152,11 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           GROUP BY category_id
         ),
         -- Strict avg_pass_rate per category:
-        -- SUM(model passes) / (model_count * category_task_count)
+        -- SUM(model's MEAN passes per run) / (model_count * category_task_count)
         cat_avg AS (
           SELECT
             ctc.category_id,
-            CAST(SUM(COALESCE(mcp.passes, 0)) AS REAL)
+            SUM(CAST(COALESCE(mcp.passes, 0) AS REAL) / mwr.run_count)
               / NULLIF(CAST(COUNT(DISTINCT mwr.model_id) AS REAL) * ctc.n, 0)
               AS avg_pass_rate
           FROM cat_task_count ctc
@@ -174,9 +184,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         slug: r.slug,
         name: r.name,
         task_count: +(r.task_count ?? 0),
-        avg_pass_rate: r.avg_pass_rate === null || r.avg_pass_rate === undefined
-          ? null
-          : Math.round(+(r.avg_pass_rate) * 1e6) / 1e6,
+        avg_pass_rate:
+          r.avg_pass_rate === null || r.avg_pass_rate === undefined
+            ? null
+            : Math.round(+r.avg_pass_rate * 1e6) / 1e6,
       }));
 
       payload = {
@@ -192,7 +203,12 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           "cache-control": `public, s-maxage=${ttl}`,
         },
       });
-      await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(payload));
+      await sharedCacheSet(
+        env.DB,
+        cacheKey.url,
+        epoch,
+        JSON.stringify(payload),
+      );
       await cache.put(cacheKey, storeRes);
     }
 

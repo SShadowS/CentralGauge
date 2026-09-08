@@ -14,6 +14,7 @@ import type { ServerTimer } from "./server-timing";
 import { computeDenominator } from "./denominator";
 import { ApiError } from "./errors";
 import { isValidTaskSetHash } from "../shared/task-set-hash";
+import { COHORT_RUNS } from "../shared/cohort";
 import { modePredicate } from "./invocation-mode";
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
@@ -107,10 +108,13 @@ export async function computeLeaderboard(
   // task_set / category / difficulty filters. Without these, correlated
   // subqueries that aggregate across `runs` would bleed in cross-task-set or
   // cross-category data (CR-5: Phase B critical fix).
+  //
+  // There are TWO slots, not three: the attempt-2-only NOT EXISTS now
+  // correlates on `r1b.run_id = r2.run_id` (same run), which implies the same
+  // task set, mode, tier and start time, so it needs no mirroring of its own.
   let taskSetClauseSubA1 = "";
   let taskSetClauseSubA2 = "";
-  let taskSetClauseSubA2NotExists = "";
-  // S7: bind params for the `?` placeholders in the three slots above.
+  // S7: bind params for the `?` placeholders in the two slots above.
   // q.set is already regex-validated (isValidTaskSetHash) before the
   // specific-hash branch below runs, so the prior string interpolation was
   // not exploitable — but it was a footgun inconsistent with the sibling
@@ -119,7 +123,6 @@ export async function computeLeaderboard(
   // not a literal value, so it needs no param).
   let taskSetParamsA1: string[] = [];
   let taskSetParamsA2: string[] = [];
-  let taskSetParamsA2NotExists: string[] = [];
 
   // The outer WHERE's task-set predicate, captured verbatim so the
   // fallback_count merge query further down can reuse the SAME clause text
@@ -133,7 +136,6 @@ export async function computeLeaderboard(
     wheres.push(taskSetWhere);
     taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
-    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
   } else if (q.set !== "all" && isValidTaskSetHash(q.set)) {
     // Specific task_set hash — every WHERE and correlated subquery slot
     // must scope to it so cross-hash data does not bleed into per-task
@@ -144,10 +146,8 @@ export async function computeLeaderboard(
     params.push(q.set);
     taskSetClauseSubA1 = `AND ru1.task_set_hash = ?`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash = ?`;
-    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash = ?`;
     taskSetParamsA1 = [q.set];
     taskSetParamsA2 = [q.set];
-    taskSetParamsA2NotExists = [q.set];
   }
 
   // D4: every ranking query selects exactly one invocation mode. `q.mode` is
@@ -161,8 +161,9 @@ export async function computeLeaderboard(
   // only tasks that belong to the active scope — otherwise a model that passed
   // easy tasks would show inflated numerators on a hard-filtered leaderboard.
   //
-  // Three slots are needed because each correlated subquery uses a different
-  // run/result alias (r1/ru1, r2/ru2, r1b/ru1b for the NOT EXISTS inner query).
+  // Two slots, one per correlated subquery alias pair (r1/ru1 and r2/ru2). The
+  // NOT EXISTS inside the second one needs none: it correlates on the same run
+  // AND the same task_id as its parent row, so both are in scope already.
   function buildScopeInClause(
     rAlias: string,
     ruAlias: string,
@@ -185,7 +186,6 @@ export async function computeLeaderboard(
 
   const scopeInA1 = buildScopeInClause("r1", "ru1");
   const scopeInA2 = buildScopeInClause("r2", "ru2");
-  const scopeInA2NotExists = buildScopeInClause("r1b", "ru1b");
 
   /**
    * Run-level filters mirrored into the correlated P1/P2 subqueries.
@@ -229,7 +229,6 @@ export async function computeLeaderboard(
   }
   const runScopeA1 = buildRunScopeClause("ru1");
   const runScopeA2 = buildRunScopeClause("ru2");
-  const runScopeA2NotExists = buildRunScopeClause("ru1b");
   if (q.tier !== "all") {
     wheres.push(`runs.tier = ?`);
     params.push(q.tier);
@@ -303,25 +302,9 @@ export async function computeLeaderboard(
   // LATENCY_WIDE_FETCH so the TS post-sort operates on enough rows, then trim
   // to q.limit. Direction is honoured in the TS sort.
   //
-  // Bind order for the ORDER BY expressions that contain ? placeholders:
-  //   1. taskSetParamsA1 + scopeInA1.params  (pass_at_1 / pass_at_n numerator
-  //                                           SELECT subqueries)
-  //   2. taskSetParamsA2NotExists + scopeInA2NotExists.params
-  //   3. taskSetParamsA2 + scopeInA2.params
-  //   4. params[]          (outer WHERE: task_set, tier, family, since,
-  //                         difficulty JOIN, category WHERE)
-  //   5. orderBy.extraParams  (task-set + scope-IN params for ORDER BY
-  //                            subquery expressions + denominator for /N)
-  //   6. sqlLimit          (LIMIT clause)
-  //
-  // The ORDER BY expressions for pass_at_n / pass_at_1 / cost_per_pass_usd are
-  // correlated subqueries that reference m.id from the outer GROUP BY. They
-  // duplicate the same task-set + scope-IN params used in the SELECT list
-  // (those params appear at positions 1-3 above). SQLite textually evaluates
-  // ORDER BY after GROUP BY, so the ORDER BY ?s come AFTER the WHERE ?s in
-  // bind order. Within each P1_EXPR/P2_ONLY_EXPR occurrence, taskSetClauseSub*
-  // textually precedes scopeIn*.clause (S7), so its param(s) must be spread
-  // first.
+  // The bind order that matters now is the SELECT-list one, documented in full
+  // at the `allParams` array below. This block used to describe an ORDER BY
+  // param interleaving as well; that clause is gone (sorting moved to TS).
   // ---------------------------------------------------------------------------
 
   // Sorting moved out of SQL entirely — see the TS sort near the end of this
@@ -329,10 +312,21 @@ export async function computeLeaderboard(
   // after the sort, so no row that belongs in the top-N is dropped early.
   const WIDE_FETCH = 500;
 
-  // Pass@1 / Pass@2 use correlated subqueries scoped to model_id (NOT run_id),
-  // so multi-run "best across runs per task" semantics hold (cf. plan B1 design
-  // rationale). The settings_profile_json CASE emits NULL when the model's
-  // runs span multiple settings_hash values (suffix is ambiguous → omit).
+  // Pass@1 / Pass@2 count (run, task) CELLS, not distinct tasks. The row mapper
+  // then divides by `run_count` to get the per-run mean (cohort metrics, 2026-09).
+  //
+  // The old rule counted a task as first-try solved if ANY of the model's runs
+  // solved it first try. That grew with run count: the first Opus 5 three-run
+  // cohort reported pass_at_1 0.733 where its runs individually scored 0.677,
+  // 0.659 and 0.672, so a three-run model was not comparable with a one-run one.
+  //
+  // Attempt-2-only is now decided WITHIN a run (`r1b.run_id = r2.run_id`): a
+  // task that a different run happened to solve first try no longer suppresses
+  // this run's retry credit. Because the metrics are linear, summing the cells
+  // and dividing once equals averaging the per-run rates.
+  //
+  // The settings_profile_json CASE emits NULL when the model's runs span
+  // multiple settings_hash values (suffix is ambiguous → omit).
   const sql = `
     SELECT
       m.id AS model_id,
@@ -350,34 +344,38 @@ export async function computeLeaderboard(
       COUNT(*) AS tasks_attempted,
       SUM(r.passed) AS tasks_passed,
       COUNT(DISTINCT r.task_id) AS tasks_attempted_distinct,
-      (SELECT COUNT(DISTINCT r1.task_id)
+      -- (run, task) cells passed at attempt 1, summed over the model's
+      -- in-scope runs. UNIQUE(run_id, task_id, attempt) makes each row one cell.
+      (SELECT COUNT(DISTINCT r1.run_id || ':' || r1.task_id)
        FROM results r1 JOIN runs ru1 ON ru1.id = r1.run_id
        WHERE ru1.model_id = m.id AND r1.attempt = 1 AND r1.passed = 1
          ${taskSetClauseSubA1}
          ${scopeInA1.clause}
          ${runScopeA1.clause}
-      ) AS tasks_passed_attempt_1,
-      (SELECT COUNT(DISTINCT r2.task_id)
+      ) AS cells_passed_attempt_1,
+      -- (run, task) cells passed at attempt 2 having failed attempt 1 in the
+      -- SAME run. The NOT EXISTS correlates on run_id, so it inherits that
+      -- run's task set / mode / tier / start time and needs no scope mirroring.
+      (SELECT COUNT(DISTINCT r2.run_id || ':' || r2.task_id)
        FROM results r2 JOIN runs ru2 ON ru2.id = r2.run_id
        WHERE ru2.model_id = m.id AND r2.attempt = 2 AND r2.passed = 1
          AND NOT EXISTS (
-           SELECT 1 FROM results r1b JOIN runs ru1b ON ru1b.id = r1b.run_id
-           WHERE ru1b.model_id = m.id AND r1b.task_id = r2.task_id
+           SELECT 1 FROM results r1b
+           WHERE r1b.run_id = r2.run_id AND r1b.task_id = r2.task_id
              AND r1b.attempt = 1 AND r1b.passed = 1
-             ${taskSetClauseSubA2NotExists}
-             ${scopeInA2NotExists.clause}
-             ${runScopeA2NotExists.clause}
          )
          ${taskSetClauseSubA2}
          ${scopeInA2.clause}
          ${runScopeA2.clause}
-      ) AS tasks_passed_attempt_2_only,
+      ) AS cells_passed_attempt_2_only,
       AVG(r.score) AS avg_score,
-      -- Per-task cost: total $ spent / distinct task count. Per-task is a
-      -- fairer "what does X cost to use" number than per-attempt because a
-      -- model that retries more would otherwise look cheaper (each retry
-      -- is another data point dragging the per-attempt mean down).
-      SUM(${rowCostUsd("r", "cs", "runs")}) / NULLIF(COUNT(DISTINCT r.task_id), 0) AS avg_cost_usd,
+      -- Per run-task cell cost: total $ spent / number of (run, task) cells.
+      -- Per-cell is a fairer "what does one task cost with this model" number
+      -- than per-attempt (a model that retries more would look cheaper, each
+      -- retry dragging the per-attempt mean down) and, unlike the old distinct
+      -- task divisor, it does not multiply with the number of runs in a cohort.
+      SUM(${rowCostUsd("r", "cs", "runs")})
+        / NULLIF(COUNT(DISTINCT r.run_id || ':' || r.task_id), 0) AS avg_cost_usd,
       MAX(runs.started_at) AS last_run_at
     FROM runs
     JOIN models m ON m.id = runs.model_id
@@ -403,29 +401,31 @@ export async function computeLeaderboard(
     tasks_attempted: number;
     tasks_passed: number;
     tasks_attempted_distinct: number;
-    tasks_passed_attempt_1: number | string | null;
-    tasks_passed_attempt_2_only: number | string | null;
+    cells_passed_attempt_1: number | string | null;
+    cells_passed_attempt_2_only: number | string | null;
     avg_score: number;
     avg_cost_usd: number;
     last_run_at: string;
   };
 
   // Bind order MUST follow textual `?` position in the SQL string, not
-  // execution order. The three task-set + scope-IN subquery pairs appear in
-  // the SELECT list (lines for tasks_passed_attempt_1 and
-  // tasks_passed_attempt_2_only) which is BEFORE the FROM/JOIN/WHERE
+  // execution order. The two task-set + scope-IN subquery pairs appear in
+  // the SELECT list (lines for cells_passed_attempt_1 and
+  // cells_passed_attempt_2_only) which is BEFORE the FROM/JOIN/WHERE
   // clauses, so their `?`s bind first. Within each pair, taskSetClauseSub*
   // (S7: bound task_set_hash) textually precedes scopeIn*.clause.
   //   1. taskSetParamsA1 + scopeInA1.params + runScopeA1.params (tier/since/
-  //      mode) – inside tasks_passed_attempt_1
-  //   2. taskSetParamsA2NotExists + scopeInA2NotExists.params +
-  //      runScopeA2NotExists.params – inside the NOT EXISTS
-  //   3. taskSetParamsA2 + scopeInA2.params + runScopeA2.params – for
-  //      tasks_passed_attempt_2_only
-  //   4. difficultyParam   – FROM-clause JOIN ON condition, before WHERE
-  //   5. params[]          – outer WHERE (task_set, mode [D4], tier, family,
+  //      mode): inside cells_passed_attempt_1
+  //   2. taskSetParamsA2 + scopeInA2.params + runScopeA2.params: for
+  //      cells_passed_attempt_2_only
+  //   3. difficultyParam  : FROM-clause JOIN ON condition, before WHERE
+  //   4. params[]         , outer WHERE (task_set, mode [D4], tier, family,
   //                          since, category)
-  //   6. WIDE_FETCH        – LIMIT clause
+  //   5. WIDE_FETCH       : LIMIT clause
+  //
+  // The NOT EXISTS group that used to sit between 1 and 2 is gone: correlating
+  // it on `r1b.run_id = r2.run_id` removed its runs join, and with it every
+  // placeholder it carried (cohort metrics, 2026-09).
   //
   // There are no ORDER BY params any more: sorting is done in TS, which is
   // what retired the fragile "one param set per textual occurrence of
@@ -434,9 +434,6 @@ export async function computeLeaderboard(
     ...taskSetParamsA1,
     ...scopeInA1.params,
     ...runScopeA1.params,
-    ...taskSetParamsA2NotExists,
-    ...scopeInA2NotExists.params,
-    ...runScopeA2NotExists.params,
     ...taskSetParamsA2,
     ...scopeInA2.params,
     ...runScopeA2.params,
@@ -507,6 +504,12 @@ export async function computeLeaderboard(
   // requested model refused (`results.served_model IS NOT NULL`, migration
   // 0015).
   //
+  // refusal_count rides along in the same query: result rows the provider
+  // refused and NOTHING rescued (`provider_finish_reason = 'refusal'` with a
+  // NULL `served_model`). Those score as ordinary failures, so the badge is
+  // the only place a reader can tell a capability gap from a policy refusal.
+  // Same scope, same grouping, one round trip.
+  //
   // Deliberately a SEPARATE query rather than another correlated subquery in
   // the ranked SQL above. That statement's SELECT/ORDER BY bind order is
   // positional and hand-maintained (see the allParams comment); adding a
@@ -522,9 +525,11 @@ export async function computeLeaderboard(
   // partition of the ranking universe (sync and batch are never mixed into
   // one number anywhere on this page), so it is always applied here too.
   const fallbackByModel = new Map<number, number>();
+  const refusalByModel = new Map<number, number>();
   if (modelIds.length > 0) {
     const fallbackWheres = [
-      "results.served_model IS NOT NULL",
+      `(results.served_model IS NOT NULL
+        OR (results.provider_finish_reason = 'refusal' AND results.served_model IS NULL))`,
       modePredicate("runs"),
     ];
     const fallbackParams: Array<string | number> = [q.mode];
@@ -538,33 +543,42 @@ export async function computeLeaderboard(
     fallbackParams.push(...modelIds);
 
     const fallbackSql = `
-      SELECT runs.model_id AS model_id, COUNT(*) AS n
+      SELECT runs.model_id AS model_id,
+             SUM(CASE WHEN results.served_model IS NOT NULL THEN 1 ELSE 0 END) AS n_fallback,
+             SUM(CASE WHEN results.provider_finish_reason = 'refusal'
+                       AND results.served_model IS NULL THEN 1 ELSE 0 END) AS n_refusal
       FROM results
       JOIN runs ON runs.id = results.run_id
       WHERE ${fallbackWheres.join(" AND ")}
       GROUP BY runs.model_id
     `;
+    type CaveatRow = {
+      model_id: number;
+      n_fallback: number | null;
+      n_refusal: number | null;
+    };
     const fallbackRows = await (timer
       ? timer.measure("leaderboard_fallback", () =>
-          getAll<{ model_id: number; n: number }>(
-            db,
-            fallbackSql,
-            fallbackParams,
-          ),
+          getAll<CaveatRow>(db, fallbackSql, fallbackParams),
         )
-      : getAll<{ model_id: number; n: number }>(
-          db,
-          fallbackSql,
-          fallbackParams,
-        ));
+      : getAll<CaveatRow>(db, fallbackSql, fallbackParams));
     for (const fr of fallbackRows) {
-      fallbackByModel.set(Number(fr.model_id), Number(fr.n ?? 0));
+      fallbackByModel.set(Number(fr.model_id), Number(fr.n_fallback ?? 0));
+      refusalByModel.set(Number(fr.model_id), Number(fr.n_refusal ?? 0));
     }
   }
 
   const mapped: LeaderboardRow[] = rows.map((r, idx) => {
-    const passedA1 = Number(r.tasks_passed_attempt_1 ?? 0);
-    const passedA2Only = Number(r.tasks_passed_attempt_2_only ?? 0);
+    // Cell counts summed over the model's in-scope runs, divided by that run
+    // count: the per-run mean. Fractional by construction (a task solved first
+    // try in two runs of three contributes 2/3 of a task). run_count comes from
+    // the same query and counts runs that produced at least one in-scope
+    // result, which is exactly the set the cells were drawn from.
+    const runCount = Number(r.run_count ?? 0);
+    const cellsA1 = Number(r.cells_passed_attempt_1 ?? 0);
+    const cellsA2Only = Number(r.cells_passed_attempt_2_only ?? 0);
+    const passedA1 = runCount > 0 ? cellsA1 / runCount : 0;
+    const passedA2Only = runCount > 0 ? cellsA2Only / runCount : 0;
     const attemptedDistinct = Number(r.tasks_attempted_distinct ?? 0);
 
     // Strict pass rates: denominator = task_count of the active scope.
@@ -604,17 +618,19 @@ export async function computeLeaderboard(
           ? null
           : r.open_weight === 1,
       run_count: r.run_count,
+      provisional: runCount < COHORT_RUNS,
       tasks_attempted: r.tasks_attempted,
       tasks_passed: r.tasks_passed ?? 0,
       tasks_attempted_distinct: attemptedDistinct,
-      tasks_passed_attempt_1: passedA1,
-      tasks_passed_attempt_2_only: passedA2Only,
+      tasks_passed_attempt_1: Math.round(passedA1 * 1e6) / 1e6,
+      tasks_passed_attempt_2_only: Math.round(passedA2Only * 1e6) / 1e6,
       pass_at_n: Math.round(passAtNStrict * 1e6) / 1e6,
       pass_at_1: Math.round(passAt1Strict * 1e6) / 1e6,
       auc_2: Math.round(aucStrict * 1e6) / 1e6,
       repair_rate: Math.round(repairRate * 1e6) / 1e6,
       denominator,
       fallback_count: fallbackByModel.get(r.model_id) ?? 0,
+      refusal_count: refusalByModel.get(r.model_id) ?? 0,
       avg_score: Math.round(+(r.avg_score ?? 0) * 1e6) / 1e6,
       avg_cost_usd: Math.round(+(r.avg_cost_usd ?? 0) * 1e6) / 1e6,
       verified_runs: aggMap.get(r.model_id)?.verified_runs ?? 0,

@@ -1,13 +1,16 @@
 <script lang="ts">
   import StatTile from './StatTile.svelte';
   import AttemptStackedBar from './AttemptStackedBar.svelte';
-  import { formatTaskRatio } from '$lib/client/format';
+  import { formatMeanCount, formatTaskRatio } from '$lib/client/format';
 
   /**
    * Replaces the simple "Tasks pass" StatTile on /models/[slug] with a tile
    * that shows per-attempt breakdown alongside the aggregate ratio (P7
    * Mini-phase B). Reads `tasks_attempted_distinct` (NOT legacy
    * tasks_attempted) for the denominator.
+   *
+   * The two attempt counts are MEANS across the model's runs (cohort metrics,
+   * 2026-09), so they can be fractional and are rendered to one decimal.
    */
   interface Props {
     aggregates: {
@@ -35,9 +38,9 @@
     />
   </div>
   <div class="legend">
-    <span class="leg leg-a1">1st: {aggregates.tasks_passed_attempt_1}</span>
-    <span class="leg leg-a2">2nd: {aggregates.tasks_passed_attempt_2_only}</span>
-    <span class="leg leg-fail">Failed: {failed}</span>
+    <span class="leg leg-a1">1st: {formatMeanCount(aggregates.tasks_passed_attempt_1)}</span>
+    <span class="leg leg-a2">2nd: {formatMeanCount(aggregates.tasks_passed_attempt_2_only)}</span>
+    <span class="leg leg-fail">Failed: {formatMeanCount(failed)}</span>
   </div>
 </div>
 

@@ -35,9 +35,13 @@
  * v12: cost is list price for every invocation mode (migration 0021); the
  *   per-task cost of batch runs changes, so every cached ranking response
  *   must be retired.
+ * v13: cohort metrics. Pass metrics are per-run means rather than best across
+ *   runs, cost divides by run-task cells rather than distinct tasks, and rows
+ *   gain `refusal_count` + `provisional`. Every cached value and every cached
+ *   shape changes for a multi-run model, so no v12 entry may be served on.
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = "v12";
+export const CACHE_VERSION = "v13";

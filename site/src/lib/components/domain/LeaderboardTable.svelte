@@ -8,6 +8,7 @@
   import { ChevronDown, ChevronUp } from '$lib/components/ui/icons';
   import { auc2Display, outcomeMix } from '$lib/shared/leaderboard-derive';
   import { isCostProvisional } from '$lib/shared/cost-provisional';
+  import { COHORT_RUNS } from '$lib/shared/cohort';
   import LeaderboardRowDetail from './LeaderboardRowDetail.svelte';
   import { SvelteSet } from 'svelte/reactivity';
 
@@ -135,6 +136,20 @@
               api_model_id={row.model.api_model_id}
               family_slug={row.family_slug}
             /><SettingsBadge suffix={row.model.settings_suffix} />
+            {#if row.provisional}
+              <!--
+                Fewer runs than the standard cohort. The row still ranks: its
+                metrics are means across the runs that exist, so they compare
+                like for like with a full cohort. The marker only says how many
+                runs the mean rests on.
+              -->
+              <span
+                class="provisional-marker"
+                data-test="provisional-marker"
+                aria-label="Provisional: {row.run_count} of {COHORT_RUNS} cohort runs"
+                title="Provisional. A full cohort is {COHORT_RUNS} runs and this model has {row.run_count}. Metrics are means across runs, so the value is comparable; it just rests on fewer samples."
+              >n={row.run_count}</span>
+            {/if}
           </th>
           <td class="score" data-test="auc-cell">
             <span class="headline">
@@ -157,6 +172,21 @@
                   aria-label="{row.fallback_count} result{row.fallback_count === 1 ? '' : 's'} across the full task set served by a fallback model"
                   title="{row.fallback_count} result{row.fallback_count === 1 ? '' : 's'} across the full task set {row.fallback_count === 1 ? 'was' : 'were'} served by a fallback model after a refusal. Not narrowed by the active filters. See the model detail."
                 >⤵{row.fallback_count}</span>
+              {/if}
+              {#if row.refusal_count > 0}
+                <!--
+                  Unrecovered refusals: the provider declined and nothing served
+                  the request, so these rows scored as plain failures. Same
+                  muted treatment and same whole-task-set scope as the fallback
+                  badge beside it; a reader who does not see this cannot tell a
+                  policy refusal from a capability gap.
+                -->
+                <span
+                  class="refusal-badge"
+                  data-test="refusal-badge"
+                  aria-label="{row.refusal_count} result{row.refusal_count === 1 ? '' : 's'} across the full task set refused by the model with no fallback"
+                  title="{row.refusal_count} result{row.refusal_count === 1 ? '' : 's'} across the full task set {row.refusal_count === 1 ? 'was' : 'were'} refused by the provider with no fallback, and {row.refusal_count === 1 ? 'is' : 'are'} scored as a failure. Not narrowed by the active filters."
+                >⊘{row.refusal_count}</span>
               {/if}
             </span>
             <OutcomeMixBar firstTryPct={mix.firstTryPct} retryPct={mix.retryPct} failedPct={mix.failedPct} />
@@ -246,6 +276,8 @@
   /* Same muted register as SettingsBadge — a qualifier on the value, not a
    * competing signal. */
   .fallback-badge { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .refusal-badge { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .provisional-marker { margin-left: var(--space-2); color: var(--text-faint); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .legend { display: flex; gap: var(--space-4); padding: var(--space-3); font-size: var(--text-xs); color: var(--text-muted); border-top: 1px solid var(--border); }
   .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: var(--space-2); }
   .legend .sw.a1 { background: var(--chart-success); }

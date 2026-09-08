@@ -86,9 +86,10 @@ async function firstRow(query: string): Promise<LeaderboardRow | undefined> {
 }
 
 describe("run-level filters scope the pass numerators", () => {
-  it("counts both passes when unfiltered", async () => {
+  it("averages both runs' passes when unfiltered", async () => {
     const row = await firstRow("set=current");
-    expect(row?.tasks_passed_attempt_1).toBe(2);
+    // Two runs, one first-try pass each: 2 cells over 2 runs is a mean of 1.
+    expect(row?.tasks_passed_attempt_1).toBe(1);
   });
 
   it("tier=verified counts only the verified run's pass", async () => {

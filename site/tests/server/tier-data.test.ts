@@ -1,12 +1,14 @@
 /**
  * Unit tests for buildAucMatrix (Task 11).
  *
- * AUC@2 per-(model, task) scoring semantics (best across runs per task):
- *   1.0  any run passed on attempt 1
- *   0.5  no attempt-1 pass, but some run passed on attempt 2
- *   0.0  never passed within 2 attempts (unattempted task → absent row → 0)
- * Task ordering fixed (task_id ASC); unattempted tasks score 0 so all
- * score vectors share length and alignment.
+ * AUC@2 per-(model, task) scoring semantics (mean across the model's in-scope
+ * runs of the per-run score):
+ *   1.0  that run passed on attempt 1
+ *   0.5  that run failed attempt 1 and passed attempt 2
+ *   0.0  that run never passed within 2 attempts, or has no row for the task
+ * The per-task value is the mean of those over the model's in-scope run count,
+ * so it is continuous in [0, 1]. Task ordering fixed (task_id ASC);
+ * unattempted tasks score 0 so all score vectors share length and alignment.
  *
  * Uses the same miniflare D1 harness as leaderboard.test.ts:
  *   applyD1Migrations, env.DB, seedScaffold, insertRun, insertResult, insertTasks
@@ -78,6 +80,16 @@ async function insertRun(
     .run();
 }
 
+/** Insert a SECOND run for model 1 (same task set + mode, later start). */
+async function insertSecondRun(runId: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+     VALUES (?,'aaaa',1,'s','rig','2026-04-02T00:00:00Z','2026-04-02T01:00:00Z','completed','claimed','v1','sig','2026-04-02T00:00:00Z',1,?)`,
+  )
+    .bind(runId, new Uint8Array([0]))
+    .run();
+}
+
 /** Insert a result row. */
 async function insertResult(
   runId: string,
@@ -119,7 +131,7 @@ describe("buildAucMatrix", () => {
     await seedScaffold();
   });
 
-  it("maps attempt-1 pass→1.0, attempt-2-only pass→0.5, unsolved→0 (best across runs)", async () => {
+  it("maps attempt-1 pass→1.0, attempt-2-only pass→0.5, unsolved→0 (single run)", async () => {
     // Two tasks: t1 passed on attempt 1 (→1.0), t2 failed attempt 1 but passed attempt 2 (→0.5).
     await insertTasks(["t1", "t2"]);
     await insertRun("r1");
@@ -161,20 +173,16 @@ describe("buildAucMatrix", () => {
     expect([...m!.scores].sort((a, b) => a - b)).toEqual([0, 1, 1]);
   });
 
-  it("best across runs: attempt-1 pass in any run scores 1.0", async () => {
+  it("mean across runs: a first-try pass in one run of two scores 0.5", async () => {
     // Two runs; t1 fails attempt 1 in run r1 but passes attempt 1 in run r2.
-    // Best across runs → 1.0.
+    // Mean across runs → (0 + 1) / 2. The old "best across runs" rule scored
+    // this 1.0, which is what made a three-run cohort outrank a one-run model.
     await insertTasks(["t1"]);
     await insertRun("r1");
     await insertResult("r1", "t1", 1, 0); // fail in r1
 
     // Insert a second run for the same model.
-    await env.DB.prepare(
-      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
-       VALUES ('r2','aaaa',1,'s','rig','2026-04-02T00:00:00Z','2026-04-02T01:00:00Z','completed','claimed','v1','sig','2026-04-02T00:00:00Z',1,?)`,
-    )
-      .bind(new Uint8Array([0]))
-      .run();
+    await insertSecondRun("r2");
     await insertResult("r2", "t1", 1, 1); // pass in r2
 
     const matrix = await buildAucMatrix(env.DB, {
@@ -183,7 +191,45 @@ describe("buildAucMatrix", () => {
       mode: "sync",
     });
     const m = matrix.find((x) => x.slug === "M")!;
-    expect(m.scores).toEqual([1]);
+    expect(m.scores).toEqual([0.5]);
+  });
+
+  it("mean across runs: first-try in one run, attempt-2-only in the other scores 0.75", async () => {
+    await insertTasks(["t1"]);
+    await insertRun("r1");
+    await insertResult("r1", "t1", 1, 1); // first try → 1.0 for this run
+
+    await insertSecondRun("r2");
+    await insertResult("r2", "t1", 1, 0);
+    await insertResult("r2", "t1", 2, 1); // attempt-2 only → 0.5 for this run
+
+    const matrix = await buildAucMatrix(env.DB, {
+      taskSetHash: "aaaa",
+      metric: "auc_2",
+      mode: "sync",
+    });
+    const m = matrix.find((x) => x.slug === "M")!;
+    expect(m.scores).toEqual([0.75]);
+  });
+
+  it("a run with no row for a task contributes 0 to that task's mean", async () => {
+    // Two in-scope runs. Only r1 has a row for t1; r2 ran t2 instead. t1's mean
+    // divides by the model's run count (2), not by the number of rows (1).
+    await insertTasks(["t1", "t2"]);
+    await insertRun("r1");
+    await insertResult("r1", "t1", 1, 1);
+
+    await insertSecondRun("r2");
+    await insertResult("r2", "t2", 1, 1);
+
+    const matrix = await buildAucMatrix(env.DB, {
+      taskSetHash: "aaaa",
+      metric: "auc_2",
+      mode: "sync",
+    });
+    const m = matrix.find((x) => x.slug === "M")!;
+    // task_id ASC: t1 (idx 0), t2 (idx 1). Each solved in one run of two.
+    expect(m.scores).toEqual([0.5, 0.5]);
   });
 
   it("returns empty array when no runs exist for the task set", async () => {

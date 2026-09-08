@@ -190,12 +190,14 @@ describe("LeaderboardRow — contract completeness", () => {
     // Task 12: added tier. Now attached under ANY sort with a concrete hash
     // (tier is intrinsic to the AUC matrix); this contract test uses the default.
     // Refusal-fallback Task 7: added fallback_count (merge query, always emitted).
+    // Cohort metrics: added refusal_count (same merge query) and provisional.
     const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
       "rank",
       "model",
       "family_slug",
       "open_weight",
       "run_count",
+      "provisional",
       "tasks_attempted",
       "tasks_passed",
       "tasks_attempted_distinct",
@@ -208,6 +210,7 @@ describe("LeaderboardRow — contract completeness", () => {
       "tier",
       "denominator",
       "fallback_count",
+      "refusal_count",
       "latency_p95_ms",
       "pass_rate_ci",
       "pass_hat_at_n",
@@ -539,19 +542,21 @@ describe("GET /api/v1/leaderboard", () => {
       (r) => (r.model as Record<string, unknown>).slug === "fixB",
     );
     expect(fixB).toBeDefined();
-    // "best across runs per task": Run-1 first-try success classifies T1 → attempt_1.
+    // Mean across runs: run 1 solved T1 first try, run 2 solved it on retry, so
+    // each run contributes half a task to its own bucket. The old union rule
+    // reported 1 and 0, crediting the better run's outcome to both runs.
     expect(
       fixB!.tasks_passed_attempt_1,
-      "Fixture B: Run-1 first-try success classifies T1",
-    ).toBe(1);
+      "Fixture B: one of two runs solved T1 first try",
+    ).toBe(0.5);
     expect(
       fixB!.tasks_passed_attempt_2_only,
-      "Fixture B: NOT double-counted",
-    ).toBe(0);
+      "Fixture B: the other run solved it on retry",
+    ).toBe(0.5);
     expect(fixB!.tasks_attempted_distinct, "Fixture B: 1 distinct task").toBe(
       1,
     );
-    // A.4: strict pass_at_n = (p1+p2only) / denominator = 1 / task_count(2) = 0.5.
+    // Strict pass_at_n = mean tasks solved per run (1.0) / task_count(2) = 0.5.
     expect(Math.abs((fixB!.pass_at_n as number) - 0.5)).toBeLessThan(1e-6);
     expect(fixB!.denominator).toBe(2);
     expect(
@@ -603,11 +608,11 @@ describe("GET /api/v1/leaderboard", () => {
     ).toBe(0);
     expect(
       fixC!.tasks_passed_attempt_2_only,
-      "Fixture C: Run-2 retry succeeded",
-    ).toBe(1);
+      "Fixture C: one of two runs recovered on retry",
+    ).toBe(0.5);
     expect(fixC!.tasks_attempted_distinct).toBe(1);
-    // A.4: strict pass_at_n = 1 / task_count(2) = 0.5.
-    expect(Math.abs((fixC!.pass_at_n as number) - 0.5)).toBeLessThan(1e-6);
+    // Strict pass_at_n = mean tasks solved per run (0.5) / task_count(2) = 0.25.
+    expect(Math.abs((fixC!.pass_at_n as number) - 0.25)).toBeLessThan(1e-6);
     expect(fixC!.denominator).toBe(2);
     expect(
       (fixC!.tasks_passed_attempt_1 as number) +

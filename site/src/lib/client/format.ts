@@ -65,7 +65,18 @@ export function formatRelativeTime(
 }
 
 export function formatTaskRatio(passed: number, total: number): string {
-  return `${passed}/${total}`;
+  return `${formatMeanCount(passed)}/${total}`;
+}
+
+/**
+ * Renders a task count that may be a MEAN across a cohort's runs, so it can be
+ * fractional (cohort metrics, 2026-09). Whole values print as integers; the
+ * rest get one decimal, which is all the precision a reader can use and keeps
+ * the column from wrapping. Non-finite input renders as a dash.
+ */
+export function formatMeanCount(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 /**

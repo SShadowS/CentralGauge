@@ -25,18 +25,24 @@ export interface AucMatrixOptions {
 }
 
 /**
- * Per-(model, task) AUC scores over the task set, "best across runs per task":
- *   1.0  any run passed on attempt 1
- *   0.5  no attempt-1 pass, but some run passed on attempt 2
- *   0.0  never passed within 2 attempts (unattempted → row absent → 0)
+ * Per-(model, task) AUC scores over the task set, the MEAN across the model's
+ * in-scope runs of that run's score:
+ *   1.0  that run passed on attempt 1
+ *   0.5  that run failed attempt 1 and passed attempt 2
+ *   0.0  that run never passed within 2 attempts, or has no row for the task
+ *
+ * Values are therefore continuous in [0, 1], not just {0, 0.5, 1}. The paired
+ * bootstrap in tiers.ts operates on numeric vectors and needs no change.
  *
  * Task ordering fixed (task_id ASC); unattempted tasks score 0 so all
  * score vectors share length and alignment.
  *
- * "Best across runs" is achieved via MAX(CASE ...) GROUP BY model_id, task_id
- * which mirrors the P1_EXPR / P2_ONLY_EXPR semantics in leaderboard.ts: a
- * task scores 1.0 if ANY run for the model passed it on attempt 1, else 0.5
- * if ANY run passed it on attempt 2, else 0.
+ * The mean is computed per (run, task) cell first, then summed per task and
+ * divided by the model's in-scope run count, NOT by the number of rows found,
+ * so a run that never touched a task contributes a 0 to that task's mean.
+ * That mirrors the pass-metric rule in leaderboard.ts (cohort metrics,
+ * 2026-09). The old rule scored a task 1.0 if ANY run passed it first try,
+ * which made a three-run cohort's tier position grow with its run count.
  */
 export async function buildAucMatrix(
   db: D1Database,
@@ -68,47 +74,61 @@ export async function buildAucMatrix(
 
   const taskIndex = new Map(taskIds.map((id, i) => [id, i]));
 
-  // 2) Per (model, task): best attempt-1 pass + best attempt-2 pass across all runs.
-  //    MAX(CASE ...) GROUP BY model_id, task_id implements "best across runs"
-  //    (mirrors leaderboard.ts P1_EXPR / P2_ONLY_EXPR correlated subquery semantics).
+  // 2) Per (model, task): the MEAN per-run score across the model's in-scope runs
+  //    (mirrors leaderboard.ts's per-run-mean pass metrics).
   //    Schema: results.run_id → runs.id → runs.model_id → models.slug
   //            results.task_id, results.attempt (1|2), results.passed (0|1)
   //            runs.task_set_hash for scope restriction
   //    When category is set, join tasks+task_categories to restrict results to
   //    the category (join on BOTH task_id and task_set_hash to avoid fan-out
   //    when a task_id exists in multiple sets).
+  //    `cell` scores each (model, run, task) triple on its own; `runs_per_model`
+  //    counts the runs those cells came from. Dividing the per-task sum by that
+  //    count gives the mean, with an absent (run, task) row worth 0. The run
+  //    count is derived from the same CTE so the category-scoped variant stays
+  //    in step: a run with no in-category results is not in either side.
+  const cellCte = (categoryJoin: string, categoryWhere: string) => `
+      WITH cell AS (
+        SELECT ru.model_id AS model_id,
+               r.run_id    AS run_id,
+               r.task_id   AS task_id,
+               MAX(CASE WHEN r.attempt = 1 AND r.passed = 1 THEN 1 ELSE 0 END) AS p1,
+               MAX(CASE WHEN r.attempt = 2 AND r.passed = 1 THEN 1 ELSE 0 END) AS p2
+          FROM results r
+          JOIN runs ru ON ru.id = r.run_id
+          ${categoryJoin}
+         WHERE ru.task_set_hash = ?
+           ${categoryWhere}
+           AND ru.invocation_mode = ?
+         GROUP BY r.run_id, r.task_id
+      ),
+      runs_per_model AS (
+        SELECT model_id, COUNT(DISTINCT run_id) AS n FROM cell GROUP BY model_id
+      )
+      SELECT m.slug AS slug,
+             cell.task_id AS task_id,
+             SUM(CASE WHEN cell.p1 = 1 THEN 1.0 WHEN cell.p2 = 1 THEN 0.5 ELSE 0.0 END)
+               / rpm.n AS score
+        FROM cell
+        JOIN models m ON m.id = cell.model_id
+        JOIN runs_per_model rpm ON rpm.model_id = cell.model_id
+       GROUP BY cell.model_id, cell.task_id`;
+
   const rows = cat
     ? await db
         .prepare(
-          `SELECT m.slug AS slug, r.task_id AS task_id,
-                  MAX(CASE WHEN r.attempt = 1 AND r.passed = 1 THEN 1 ELSE 0 END) AS p1,
-                  MAX(CASE WHEN r.attempt = 2 AND r.passed = 1 THEN 1 ELSE 0 END) AS p2
-             FROM results r
-             JOIN runs ru  ON ru.id = r.run_id
-             JOIN models m ON m.id = ru.model_id
-             JOIN tasks t  ON t.task_id = r.task_id AND t.task_set_hash = ru.task_set_hash
-             JOIN task_categories tc ON tc.id = t.category_id
-            WHERE ru.task_set_hash = ? AND tc.slug = ?
-              AND ru.invocation_mode = ?
-            GROUP BY ru.model_id, r.task_id`,
+          cellCte(
+            `JOIN tasks t  ON t.task_id = r.task_id AND t.task_set_hash = ru.task_set_hash
+          JOIN task_categories tc ON tc.id = t.category_id`,
+            `AND tc.slug = ?`,
+          ),
         )
         .bind(opts.taskSetHash, cat, opts.mode)
-        .all<{ slug: string; task_id: string; p1: number; p2: number }>()
+        .all<{ slug: string; task_id: string; score: number }>()
     : await db
-        .prepare(
-          `SELECT m.slug AS slug,
-                  r.task_id AS task_id,
-                  MAX(CASE WHEN r.attempt = 1 AND r.passed = 1 THEN 1 ELSE 0 END) AS p1,
-                  MAX(CASE WHEN r.attempt = 2 AND r.passed = 1 THEN 1 ELSE 0 END) AS p2
-             FROM results r
-             JOIN runs ru  ON ru.id = r.run_id
-             JOIN models m ON m.id = ru.model_id
-            WHERE ru.task_set_hash = ?
-              AND ru.invocation_mode = ?
-            GROUP BY ru.model_id, r.task_id`,
-        )
+        .prepare(cellCte("", ""))
         .bind(opts.taskSetHash, opts.mode)
-        .all<{ slug: string; task_id: string; p1: number; p2: number }>();
+        .all<{ slug: string; task_id: string; score: number }>();
 
   const bySlug = new Map<string, number[]>();
   for (const r of rows.results ?? []) {
@@ -117,7 +137,7 @@ export async function buildAucMatrix(
     }
     const idx = taskIndex.get(r.task_id);
     if (idx === undefined) continue;
-    bySlug.get(r.slug)![idx] = r.p1 === 1 ? 1 : r.p2 === 1 ? 0.5 : 0;
+    bySlug.get(r.slug)![idx] = Number(r.score ?? 0);
   }
 
   return Array.from(bySlug.entries()).map(([slug, scores]) => ({

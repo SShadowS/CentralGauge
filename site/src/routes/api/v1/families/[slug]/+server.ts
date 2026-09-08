@@ -171,7 +171,11 @@ export const GET: RequestHandler = async ({
                     THEN ${rowCostUsd("r", "cs", "runs")}
                END
              )
-               / NULLIF(COUNT(DISTINCT CASE WHEN runs.task_set_hash = ds.dominant_hash THEN r.task_id END), 0)
+               -- Per run-task CELL, not per distinct task: dividing by the
+               -- distinct task count multiplied the figure by the number of
+               -- runs in a cohort (cohort metrics, 2026-09).
+               / NULLIF(COUNT(DISTINCT CASE WHEN runs.task_set_hash = ds.dominant_hash
+                                            THEN r.run_id || ':' || r.task_id END), 0)
                AS avg_cost_usd,
              p1.tasks_passed_attempt_1,
              p2.tasks_passed_attempt_2_only,

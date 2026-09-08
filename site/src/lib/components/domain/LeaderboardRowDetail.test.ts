@@ -12,7 +12,7 @@ function row(p: Partial<LeaderboardRow> = {}): LeaderboardRow {
     cost_per_pass_usd: 0.27, avg_score: 70, avg_cost_usd: 0.21, verified_runs: 2,
     pass_rate_ci: { lower: 0.64, upper: 0.70 }, latency_p95_ms: 8400,
     last_run_at: '2026-05-30T00:00:00Z', open_weight: false, pass_hat_at_n: 0.79,
-    fallback_count: 0,
+    fallback_count: 0, refusal_count: 0, provisional: false,
     ...p,
   } as LeaderboardRow;
 }
@@ -53,5 +53,34 @@ describe('LeaderboardRowDetail fallback line', () => {
   it('omits the line entirely when nothing was fallback-served', () => {
     const { container } = render(LeaderboardRowDetail, { props: { row: row({ fallback_count: 0 }) } });
     expect(container.textContent ?? '').not.toMatch(/Fallback-served/);
+  });
+});
+
+describe('LeaderboardRowDetail refusal line', () => {
+  it('lists unrecovered refusals when there are some', () => {
+    const { container } = render(LeaderboardRowDetail, { props: { row: row({ refusal_count: 7 }) } });
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/Refusals/);
+    expect(text).toMatch(/7/);
+  });
+
+  it('omits the line entirely when the model never refused', () => {
+    const { container } = render(LeaderboardRowDetail, { props: { row: row({ refusal_count: 0 }) } });
+    expect(container.textContent ?? '').not.toMatch(/Refusals/);
+  });
+});
+
+describe('LeaderboardRowDetail runs line', () => {
+  it('notes the provisional cohort next to the run count', () => {
+    const { container } = render(LeaderboardRowDetail, { props: { row: row({ run_count: 2, provisional: true }) } });
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/Runs/);
+    expect(text).toMatch(/2/);
+    expect(text).toMatch(/provisional/i);
+  });
+
+  it('says nothing about provisional for a full cohort', () => {
+    const { container } = render(LeaderboardRowDetail, { props: { row: row({ run_count: 3, provisional: false }) } });
+    expect(container.textContent ?? '').not.toMatch(/provisional/i);
   });
 });

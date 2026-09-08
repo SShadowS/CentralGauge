@@ -102,6 +102,14 @@ export interface LeaderboardRow {
   open_weight?: boolean | null;
   run_count: number;
   /**
+   * True when the model has been benched fewer times than the standard cohort
+   * (`COHORT_RUNS` in `$lib/shared/cohort.ts`, currently 3). The row still
+   * ranks: every metric on it is a mean across the runs that exist, so it is
+   * comparable with a full cohort's. The flag says the mean rests on fewer
+   * samples, and the table renders it as an `n=<run_count>` marker.
+   */
+  provisional: boolean;
+  /**
    * @deprecated Per-attempt count (COUNT(*) over results). Preserved for
    * back-compat; use `tasks_attempted_distinct` for per-task semantics.
    * Removal targeted P9+.
@@ -120,15 +128,23 @@ export interface LeaderboardRow {
    */
   tasks_attempted_distinct: number;
   /**
-   * P7 Mini-phase A. Distinct tasks where SOME run for this model had
-   * attempt=1 passed=1 ("best across runs per task" semantics).
+   * MEAN number of tasks this model passed at attempt 1 per in-scope run:
+   * (run, task) cells passed first try, divided by `run_count`. FRACTIONAL
+   * whenever the runs disagree, so renderers must round rather than print it
+   * raw.
+   *
+   * Cohort metrics (2026-09) replaced the old "best across runs" count of
+   * distinct tasks SOME run passed first try. That number grew with run count
+   * (the first Opus 5 three-run cohort read 0.733 where its runs individually
+   * scored 0.677, 0.659 and 0.672), so models benched a different number of
+   * times were not comparable.
    */
   tasks_passed_attempt_1: number;
   /**
-   * P7 Mini-phase A. Distinct tasks where SOME run had attempt=2 passed=1
-   * AND NO run had attempt=1 passed=1. Mutually exclusive with
-   * tasks_passed_attempt_1 by construction; their sum equals the overall
-   * pass count.
+   * MEAN number of tasks per in-scope run passed at attempt 2 having failed
+   * attempt 1 IN THAT SAME RUN. Also fractional. Mutually exclusive with
+   * `tasks_passed_attempt_1` within a run, so the sum of the two is the mean
+   * number of tasks a run solved.
    */
   tasks_passed_attempt_2_only: number;
   /** Strict-per-set pass rate: (p1 + p2_only) / denominator. 0..1. */
@@ -176,6 +192,19 @@ export interface LeaderboardRow {
    * the model, not a filtered metric, and renderers must say as much.
    */
   fallback_count: number;
+  /**
+   * Count of result rows the provider REFUSED and nothing rescued
+   * (`results.provider_finish_reason = 'refusal'` with a NULL `served_model`).
+   * A rescued refusal is reported by `fallback_count` instead, never here, so
+   * the two never double-count the same row.
+   *
+   * Unrecovered refusals score as ordinary failures, which is why the count is
+   * surfaced at all: without it a policy refusal is indistinguishable from a
+   * capability gap. Same scope caveat as `fallback_count`: the task set and
+   * invocation mode only, NOT the row's other active filters, so a non-zero
+   * value does not imply any of those rows sit inside the filtered scope.
+   */
+  refusal_count: number;
   latency_p95_ms: number;
   pass_rate_ci: { lower: number; upper: number };
   pass_hat_at_n: number;
@@ -273,14 +302,15 @@ export interface ModelDetail {
      */
     tasks_attempted_distinct: number;
     /**
-     * P7 Mini-phase A. Distinct tasks where SOME run had attempt=1
-     * passed=1.
+     * MEAN number of tasks passed at attempt 1 per in-scope run. Fractional
+     * whenever the model's runs disagree; renderers round it. Same rule as the
+     * leaderboard row field of this name (cohort metrics, 2026-09).
      */
     tasks_passed_attempt_1: number;
     /**
-     * P7 Mini-phase A. Distinct tasks where SOME run had attempt=2
-     * passed=1 AND NO run had attempt=1 passed=1 (mutually exclusive
-     * with tasks_passed_attempt_1).
+     * MEAN number of tasks per in-scope run passed at attempt 2 having failed
+     * attempt 1 IN THAT SAME RUN. Mutually exclusive with
+     * `tasks_passed_attempt_1` within a run.
      */
     tasks_passed_attempt_2_only: number;
     /**
