@@ -28,6 +28,7 @@ import type { LLMRequest } from "../../../src/llm/types.ts";
 import type { ContainerRuntime } from "../../../src/parallel/container-runtime.ts";
 import type { ContainerEnvironmentSet } from "../../../src/batch/state.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+import { tryAcquireBenchLock } from "../../../src/utils/bench-lock.ts";
 
 const MODEL_SLUG = "claude-batch-submit-fake";
 const FULL_SLUG = `anthropic/${MODEL_SLUG}`;
@@ -264,4 +265,27 @@ Deno.test("submitRuns", async (t) => {
       }
     },
   );
+});
+Deno.test("submitRuns refuses while the bench lock is held, before any container work", async () => {
+  const output = await createTempDir("batch-submit-bench-lock");
+  const globs = await findTwoEasyTaskGlobs();
+  setFixturePreset(globs);
+  seedBatchPricing(true);
+
+  // A sync bench (or another batch submit) is live on the same output dir:
+  // starting a ContainerRuntime here would prenuke its published apps.
+  const held = tryAcquireBenchLock(output, { command: "sync bench" });
+  assert(held.acquired, "test setup must acquire the lock first");
+
+  try {
+    const deps = makeFakeDeps();
+    const result = await submitRuns(baseOptions(output, globs), deps);
+
+    assertEquals(result.exit, 4);
+    assertEquals(result.runIds, []);
+    assertEquals(deps.calls.includes("runtimeFactory"), false);
+  } finally {
+    await held.release();
+    await cleanupTempDir(output);
+  }
 });

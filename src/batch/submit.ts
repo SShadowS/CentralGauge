@@ -49,6 +49,7 @@ import { ConfigManager } from "../config/config.ts";
 import { ModelPresetRegistry } from "../llm/model-presets.ts";
 import { loadTaskManifestsWithHashes } from "../../cli/helpers/task-loader.ts";
 import { DEFAULT_CONTAINER_NAME } from "../constants.ts";
+import { tryAcquireBenchLock } from "../utils/bench-lock.ts";
 import { apiKeyForBatchProvider } from "./provider-wiring.ts";
 import { itemIdFor } from "./items.ts";
 import { chunkItems } from "./chunking.ts";
@@ -259,12 +260,38 @@ export async function submitRuns(
   const apiKey = apiKeyForBatchProvider(provider) ?? "";
   const batchProvider = deps.providerFor(provider, apiKey);
 
-  const runtime = await deps.runtimeFactory();
+  // Capturing the wave-1 container set starts a `ContainerRuntime`, which
+  // runs the prenuke, the compiler-folder warmup and the harness publish,
+  // and unpublishes every CentralGauge app again on `stop`. That is the
+  // exact work the exclusive bench lock (D14) exists to serialize: doing it
+  // while a sync bench is live corrupts that bench's in-flight task. The
+  // lock is held only around the capture, not for the whole submission.
+  const benchLock = tryAcquireBenchLock(opts.output, {
+    command: `bench batch submit ${variant.provider}/${variant.model}`,
+  });
+  if (!benchLock.acquired) {
+    const holder = benchLock.holder;
+    const who = holder
+      ? `pid ${holder.pid} since ${holder.startedAt} (${
+        holder.command || "unknown command"
+      })`
+      : "another process";
+    deps.log(
+      `${colors.red("[FAIL]")} batch submit: bench lock held by ${who}`,
+    );
+    return { runIds: [], exit: 4 };
+  }
+
   let environment;
   try {
-    environment = await runtime.environmentSet();
+    const runtime = await deps.runtimeFactory();
+    try {
+      environment = await runtime.environmentSet();
+    } finally {
+      await runtime.stop();
+    }
   } finally {
-    await runtime.stop();
+    await benchLock.release();
   }
 
   const templateDir = config.benchmark?.templateDir || "templates";
