@@ -22,7 +22,7 @@ describe("AttemptStackedBar", () => {
     });
     const bar = container.querySelector(".bar");
     expect(bar?.getAttribute("aria-label")).toBe(
-      "3 passed first try, 1 passed after retry, 6 failed of 10 attempted",
+      "3 passed first try, 1 passed after retry, 6 failed of 10 in scope",
     );
   });
 
@@ -76,5 +76,20 @@ describe("AttemptStackedBar", () => {
     const fail = container.querySelector(".seg-fail") as HTMLElement;
     expect(fail).not.toBeNull();
     expect(fail.style.width).toBe("100%");
+  });
+});
+
+describe("AttemptStackedBar with per-run means", () => {
+  it("rounds fractional counts to one decimal in the label", () => {
+    // Cohort metrics: the pass counts are means across a model's runs, so a
+    // model whose three runs disagree carries a fraction into the bar.
+    const { container } = render(AttemptStackedBar, {
+      attempt1: 55.333333,
+      attempt2Only: 24.5,
+      attempted: 100,
+    });
+    expect(container.querySelector(".bar")?.getAttribute("aria-label")).toBe(
+      "55.3 passed first try, 24.5 passed after retry, 20.2 failed of 100 in scope",
+    );
   });
 });

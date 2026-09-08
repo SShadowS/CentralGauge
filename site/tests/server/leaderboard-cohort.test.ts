@@ -298,7 +298,7 @@ describe("cohort metrics: refusal_count", () => {
     await seedScaffold();
   });
 
-  it("counts unrecovered provider refusals and ignores fallback-served ones", async () => {
+  it("counts unrecovered refusals from any provider and ignores fallback-served ones", async () => {
     await insertTasks(["t1", "t2", "t3"]);
     await insertRun("rA", "2026-04-01T00:00:00Z");
     await insertResult("rA", "t1", 1, 0);
@@ -306,17 +306,24 @@ describe("cohort metrics: refusal_count", () => {
     await insertResult("rA", "t3", 1, 1);
 
     await env.DB.batch([
-      // Unrecovered refusal: nothing served it. Counts.
+      // Unrecovered refusal from a NON-Anthropic provider: the raw finish
+      // reason is 'content_filter', which is why the predicate keys on the
+      // provider-neutral termination_kind instead. Counts.
       env.DB.prepare(
-        `UPDATE results SET provider_finish_reason = 'refusal' WHERE run_id = 'rA' AND task_id = 't1'`,
+        `UPDATE results SET provider_finish_reason = 'content_filter', termination_kind = 'refusal'
+          WHERE run_id = 'rA' AND task_id = 't1'`,
       ),
-      // Refusal rescued by a fallback model. Already reported as fallback_count.
+      // Refusal rescued by a fallback model. Reported as fallback_count, and
+      // never here, however it terminated.
       env.DB.prepare(
-        `UPDATE results SET provider_finish_reason = 'refusal', served_model = 'other-model' WHERE run_id = 'rA' AND task_id = 't2'`,
+        `UPDATE results SET provider_finish_reason = 'refusal', termination_kind = 'refusal',
+                            served_model = 'other-model'
+          WHERE run_id = 'rA' AND task_id = 't2'`,
       ),
       // Ordinary completion.
       env.DB.prepare(
-        `UPDATE results SET provider_finish_reason = 'end_turn' WHERE run_id = 'rA' AND task_id = 't3'`,
+        `UPDATE results SET provider_finish_reason = 'end_turn', termination_kind = 'response'
+          WHERE run_id = 'rA' AND task_id = 't3'`,
       ),
     ]);
 
@@ -325,10 +332,38 @@ describe("cohort metrics: refusal_count", () => {
     expect(row.fallback_count).toBe(1);
   });
 
+  it("counts an Anthropic-shaped refusal the same way", async () => {
+    await insertTasks(["t1"]);
+    await insertRun("rA", "2026-04-01T00:00:00Z");
+    await insertResult("rA", "t1", 1, 0);
+    await env.DB.prepare(
+      `UPDATE results SET provider_finish_reason = 'refusal', termination_kind = 'refusal'
+        WHERE run_id = 'rA' AND task_id = 't1'`,
+    ).run();
+
+    const [row] = await computeLeaderboard(env.DB, baseQuery);
+    expect(row.refusal_count).toBe(1);
+  });
+
   it("reports zero when the model never refused", async () => {
     await insertTasks(["t1"]);
     await insertRun("rA", "2026-04-01T00:00:00Z");
     await insertResult("rA", "t1", 1, 1);
+
+    const [row] = await computeLeaderboard(env.DB, baseQuery);
+    expect(row.refusal_count).toBe(0);
+  });
+
+  it("does not count a content-filtered attempt the classifier did not call a refusal", async () => {
+    // termination_kind is the authority. A row whose raw finish reason looks
+    // refusal-shaped but which the CLI classified otherwise stays out.
+    await insertTasks(["t1"]);
+    await insertRun("rA", "2026-04-01T00:00:00Z");
+    await insertResult("rA", "t1", 1, 0);
+    await env.DB.prepare(
+      `UPDATE results SET provider_finish_reason = 'refusal', termination_kind = 'provider_error'
+        WHERE run_id = 'rA' AND task_id = 't1'`,
+    ).run();
 
     const [row] = await computeLeaderboard(env.DB, baseQuery);
     expect(row.refusal_count).toBe(0);

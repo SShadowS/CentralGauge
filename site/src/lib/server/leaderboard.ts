@@ -505,10 +505,18 @@ export async function computeLeaderboard(
   // 0015).
   //
   // refusal_count rides along in the same query: result rows the provider
-  // refused and NOTHING rescued (`provider_finish_reason = 'refusal'` with a
-  // NULL `served_model`). Those score as ordinary failures, so the badge is
-  // the only place a reader can tell a capability gap from a policy refusal.
+  // refused and NOTHING rescued (`termination_kind = 'refusal'` with a NULL
+  // `served_model`). Those score as ordinary failures, so the badge is the
+  // only place a reader can tell a capability gap from a policy refusal.
   // Same scope, same grouping, one round trip.
+  //
+  // The predicate keys on `termination_kind` (migration 0018), the CLI's
+  // provider-NEUTRAL classifier, not on the raw `provider_finish_reason`.
+  // Only Anthropic reports the string 'refusal' there; OpenAI and OpenRouter
+  // report 'content_filter' for the same event, and `terminationKind` in
+  // src/ingest/capture.ts folds both (plus an unrecovered `refusal` object)
+  // into the one value. Keying on the raw reason would have counted zero
+  // refusals for every non-Anthropic model.
   //
   // Deliberately a SEPARATE query rather than another correlated subquery in
   // the ranked SQL above. That statement's SELECT/ORDER BY bind order is
@@ -529,7 +537,7 @@ export async function computeLeaderboard(
   if (modelIds.length > 0) {
     const fallbackWheres = [
       `(results.served_model IS NOT NULL
-        OR (results.provider_finish_reason = 'refusal' AND results.served_model IS NULL))`,
+        OR (results.termination_kind = 'refusal' AND results.served_model IS NULL))`,
       modePredicate("runs"),
     ];
     const fallbackParams: Array<string | number> = [q.mode];
@@ -545,7 +553,7 @@ export async function computeLeaderboard(
     const fallbackSql = `
       SELECT runs.model_id AS model_id,
              SUM(CASE WHEN results.served_model IS NOT NULL THEN 1 ELSE 0 END) AS n_fallback,
-             SUM(CASE WHEN results.provider_finish_reason = 'refusal'
+             SUM(CASE WHEN results.termination_kind = 'refusal'
                        AND results.served_model IS NULL THEN 1 ELSE 0 END) AS n_refusal
       FROM results
       JOIN runs ON runs.id = results.run_id

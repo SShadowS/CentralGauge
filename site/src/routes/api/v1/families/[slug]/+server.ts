@@ -77,8 +77,8 @@ export const GET: RequestHandler = async ({
           run_count: number | string;
           last_run_at: string | null;
           avg_cost_usd: number | null;
-          tasks_passed_attempt_1: number | string | null;
-          tasks_passed_attempt_2_only: number | string | null;
+          cells_passed_attempt_1: number | string | null;
+          cells_passed_attempt_2_only: number | string | null;
           tasks_attempted_distinct: number | string | null;
           // The task_set_hash whose task_count should be used as denominator.
           // We pick the current task set if the model has any runs there;
@@ -113,11 +113,13 @@ export const GET: RequestHandler = async ({
       ),
       -- CR-5: p1_by_model counts only tasks in the model's dominant hash.
       -- D4: also scoped to the resolved invocation mode, mirroring the hash
-      -- scoping — a pass in the other mode must not feed this family's
+      -- scoping: a pass in the other mode must not feed this family's
       -- pass_at_1/pass_at_n for the requested mode.
+      -- Cohort metrics (2026-09): counts (run, task) CELLS, divided by the
+      -- trajectory row's run_count below to give the per-run mean.
       p1_by_model AS (
         SELECT ru1.model_id,
-               COUNT(DISTINCT r1.task_id) AS tasks_passed_attempt_1
+               COUNT(DISTINCT r1.run_id || ':' || r1.task_id) AS cells_passed_attempt_1
         FROM results r1
         JOIN runs ru1 ON ru1.id = r1.run_id
         JOIN dominant_set ds1 ON ds1.model_id = ru1.model_id
@@ -127,13 +129,14 @@ export const GET: RequestHandler = async ({
         GROUP BY ru1.model_id
       ),
       -- CR-5: p2_only_by_model counts only tasks in the model's dominant hash.
-      -- D4: mode-scoped on both sides — the attempt-2 pass AND the attempt-1
-      -- NOT EXISTS check must agree on which mode they're looking at, or an
-      -- attempt-1 pass in the OTHER mode could wrongly suppress this mode's
-      -- attempt-2-only count.
+      -- Cohort metrics (2026-09): attempt-2-only is decided WITHIN a run, so
+      -- the NOT EXISTS correlates on run_id. That pins the run's dominant hash
+      -- and its invocation mode at the same time, which is why the inner query
+      -- no longer needs the hash and mode clauses it used to carry (and why it
+      -- no longer binds a mode param: see the bind list below).
       p2_only_by_model AS (
         SELECT ru2.model_id,
-               COUNT(DISTINCT r2.task_id) AS tasks_passed_attempt_2_only
+               COUNT(DISTINCT r2.run_id || ':' || r2.task_id) AS cells_passed_attempt_2_only
         FROM results r2
         JOIN runs ru2 ON ru2.id = r2.run_id
         JOIN dominant_set ds2 ON ds2.model_id = ru2.model_id
@@ -142,12 +145,9 @@ export const GET: RequestHandler = async ({
           AND ${modePredicate("ru2")}
           AND NOT EXISTS (
             SELECT 1 FROM results r1b
-            JOIN runs ru1b ON ru1b.id = r1b.run_id
-            WHERE ru1b.model_id = ru2.model_id
-              AND ru1b.task_set_hash = ds2.dominant_hash
+            WHERE r1b.run_id = r2.run_id
               AND r1b.task_id = r2.task_id
               AND r1b.attempt = 1 AND r1b.passed = 1
-              AND ${modePredicate("ru1b")}
           )
         GROUP BY ru2.model_id
       )
@@ -177,8 +177,8 @@ export const GET: RequestHandler = async ({
                / NULLIF(COUNT(DISTINCT CASE WHEN runs.task_set_hash = ds.dominant_hash
                                             THEN r.run_id || ':' || r.task_id END), 0)
                AS avg_cost_usd,
-             p1.tasks_passed_attempt_1,
-             p2.tasks_passed_attempt_2_only,
+             p1.cells_passed_attempt_1,
+             p2.cells_passed_attempt_2_only,
              -- CR-5: tasks_attempted_distinct scoped to dominant hash only.
              COUNT(DISTINCT CASE WHEN runs.task_set_hash = ds.dominant_hash THEN r.task_id END)
                AS tasks_attempted_distinct,
@@ -194,7 +194,10 @@ export const GET: RequestHandler = async ({
       GROUP BY m.id
       ORDER BY m.generation ASC, m.id ASC
       `,
-          [mode, mode, mode, mode, fam.id],
+          // Textual `?` order: p1_by_model's mode, p2_only_by_model's mode,
+          // the runs LEFT JOIN's mode, then the family id. The NOT EXISTS
+          // dropped its own mode param when it started correlating on run_id.
+          [mode, mode, mode, fam.id],
         );
 
         // Resolve per-(dominant_task_set_hash) denominators. We batch the unique
@@ -229,8 +232,15 @@ export const GET: RequestHandler = async ({
           trajectory: trajectory.map((t) => {
             const runCount = +(t.run_count ?? 0);
             const hasRuns = runCount > 0;
-            const p1 = Number(t.tasks_passed_attempt_1 ?? 0);
-            const p2Only = Number(t.tasks_passed_attempt_2_only ?? 0);
+            // Cohort metrics: per-run means, same rule as the leaderboard.
+            // run_count is the trajectory row's own dominant-hash run count,
+            // which is exactly the set of runs the cells were drawn from.
+            const p1 = hasRuns
+              ? Number(t.cells_passed_attempt_1 ?? 0) / runCount
+              : 0;
+            const p2Only = hasRuns
+              ? Number(t.cells_passed_attempt_2_only ?? 0) / runCount
+              : 0;
             const attempted = Number(t.tasks_attempted_distinct ?? 0);
             const denom =
               t.dominant_task_set_hash !== null

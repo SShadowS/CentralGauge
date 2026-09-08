@@ -557,6 +557,7 @@ describe("ModelDetail.aggregates — contract completeness", () => {
       "tasks_passed_attempt_1",
       "tasks_passed_attempt_2_only",
       "pass_at_n",
+      "pass_denominator",
       "avg_cost_usd",
       "latency_p50_ms",
       "latency_p95_ms",

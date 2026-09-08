@@ -92,6 +92,15 @@ export interface Aggregate {
    */
   pass_at_n: number;
   /**
+   * The denominator `pass_at_n` was actually divided by: the scoped task count
+   * when `taskSetHash` was given, else `tasks_attempted_distinct` (legacy
+   * path). Exposed so a renderer can show "solved out of" and derive failures
+   * as the complement without re-deriving the denominator from a ratio, which
+   * matters now that the passed counts are per-run means and no longer share a
+   * base with `tasks_attempted_distinct`.
+   */
+  pass_denominator: number;
+  /**
    * Concise settings string e.g. ` (50K, t0.1)` (P7 Mini-phase B). Empty
    * string when settings_hash differs across the row's runs (multi-settings
    * ambiguity → suffix omitted).
@@ -815,6 +824,7 @@ export async function computeModelAggregates(
       tasks_passed_attempt_1: Math.round(passedA1 * 1e6) / 1e6,
       tasks_passed_attempt_2_only: Math.round(passedA2Only * 1e6) / 1e6,
       pass_at_n: Math.round(passAtN * 1e6) / 1e6,
+      pass_denominator: passAtNDenominator,
       settings_suffix: settingsSuffix,
       temperature,
       thinking_budget: thinkingBudget,

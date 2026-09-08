@@ -32,10 +32,12 @@ export const GET: RequestHandler = async ({ request, platform }) => {
       latest_avg_score: number | null;
       latest_model_slug: string | null;
       // Strict pass numerators for the latest model in the family (scoped to
-      // the current task set). NULL when the model has no runs.
-      tasks_passed_attempt_1: number | null;
-      tasks_passed_attempt_2_only: number | null;
+      // the current task set), as (run, task) CELL counts. NULL when the model
+      // has no runs. Divided by run_count below to give the per-run mean.
+      cells_passed_attempt_1: number | null;
+      cells_passed_attempt_2_only: number | null;
       tasks_attempted_distinct: number | null;
+      run_count: number | null;
     }>(
       env.DB,
       `
@@ -54,27 +56,31 @@ export const GET: RequestHandler = async ({ request, platform }) => {
         JOIN current_set ON runs.task_set_hash = current_set.hash
         GROUP BY runs.model_id
       ),
+      -- Cohort metrics (2026-09): the numerators count (run, task) CELLS and
+      -- are divided by the model's in-scope run count, so a family whose
+      -- latest model was benched three times reports the mean of those runs
+      -- rather than the union of everything any of them solved.
       p1_by_model AS (
         SELECT ru1.model_id,
-               COUNT(DISTINCT r1.task_id) AS tasks_passed_attempt_1
+               COUNT(DISTINCT r1.run_id || ':' || r1.task_id) AS cells_passed_attempt_1
         FROM results r1
         JOIN runs ru1 ON ru1.id = r1.run_id
         JOIN current_set ON ru1.task_set_hash = current_set.hash
         WHERE r1.attempt = 1 AND r1.passed = 1
         GROUP BY ru1.model_id
       ),
+      -- Attempt-2-only is decided WITHIN a run. Correlating the NOT EXISTS on
+      -- run_id also pins the task set, so it needs no scope clause of its own.
       p2_only_by_model AS (
         SELECT ru2.model_id,
-               COUNT(DISTINCT r2.task_id) AS tasks_passed_attempt_2_only
+               COUNT(DISTINCT r2.run_id || ':' || r2.task_id) AS cells_passed_attempt_2_only
         FROM results r2
         JOIN runs ru2 ON ru2.id = r2.run_id
         JOIN current_set ON ru2.task_set_hash = current_set.hash
         WHERE r2.attempt = 2 AND r2.passed = 1
           AND NOT EXISTS (
             SELECT 1 FROM results r1b
-            JOIN runs ru1b ON ru1b.id = r1b.run_id
-            JOIN current_set cs1b ON ru1b.task_set_hash = cs1b.hash
-            WHERE ru1b.model_id = ru2.model_id
+            WHERE r1b.run_id = r2.run_id
               AND r1b.task_id = r2.task_id
               AND r1b.attempt = 1 AND r1b.passed = 1
           )
@@ -87,20 +93,28 @@ export const GET: RequestHandler = async ({ request, platform }) => {
         JOIN results r ON r.run_id = runs.id
         JOIN current_set ON runs.task_set_hash = current_set.hash
         GROUP BY runs.model_id
+      ),
+      runs_by_model AS (
+        SELECT runs.model_id, COUNT(DISTINCT runs.id) AS run_count
+        FROM runs
+        JOIN current_set ON runs.task_set_hash = current_set.hash
+        GROUP BY runs.model_id
       )
       SELECT mf.slug, mf.display_name, mf.vendor,
              (SELECT COUNT(*) FROM models m WHERE m.family_id = mf.id) AS model_count,
              abm.avg_score AS latest_avg_score,
              l.slug AS latest_model_slug,
-             p1.tasks_passed_attempt_1,
-             p2.tasks_passed_attempt_2_only,
-             att.tasks_attempted_distinct
+             p1.cells_passed_attempt_1,
+             p2.cells_passed_attempt_2_only,
+             att.tasks_attempted_distinct,
+             rbm.run_count
       FROM model_families mf
       LEFT JOIN latest l ON l.family_id = mf.id AND l.rn = 1
       LEFT JOIN avg_by_model abm ON abm.model_id = l.model_id
       LEFT JOIN p1_by_model p1 ON p1.model_id = l.model_id
       LEFT JOIN p2_only_by_model p2 ON p2.model_id = l.model_id
       LEFT JOIN attempted_by_model att ON att.model_id = l.model_id
+      LEFT JOIN runs_by_model rbm ON rbm.model_id = l.model_id
       ORDER BY mf.slug ASC
       `,
       [],
@@ -109,8 +123,14 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     return cachedJson(request, {
       data: rows.map((r) => {
         const hasRuns = r.latest_avg_score !== null;
-        const p1 = Number(r.tasks_passed_attempt_1 ?? 0);
-        const p2Only = Number(r.tasks_passed_attempt_2_only ?? 0);
+        // Cohort metrics: per-run means, same rule as the leaderboard.
+        const runCount = Number(r.run_count ?? 0);
+        const p1 =
+          runCount > 0 ? Number(r.cells_passed_attempt_1 ?? 0) / runCount : 0;
+        const p2Only =
+          runCount > 0
+            ? Number(r.cells_passed_attempt_2_only ?? 0) / runCount
+            : 0;
         const attempted = Number(r.tasks_attempted_distinct ?? 0);
         const passAtNStrict =
           hasRuns && denominator > 0 ? (p1 + p2Only) / denominator : null;

@@ -367,6 +367,7 @@ export const GET: RequestHandler = async ({
         tasks_passed_attempt_1: tasksPassedAttempt1,
         tasks_passed_attempt_2_only: tasksPassedAttempt2Only,
         pass_at_n: passAtN,
+        pass_denominator: agg?.pass_denominator ?? tasksAttemptedDistinct,
         avg_cost_usd: agg?.avg_cost_usd ?? 0,
         latency_p50_ms: agg?.latency_p50_ms ?? 0,
         latency_p95_ms: agg?.latency_p95_ms ?? 0,

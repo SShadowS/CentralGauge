@@ -194,9 +194,14 @@ export interface LeaderboardRow {
   fallback_count: number;
   /**
    * Count of result rows the provider REFUSED and nothing rescued
-   * (`results.provider_finish_reason = 'refusal'` with a NULL `served_model`).
+   * (`results.termination_kind = 'refusal'` with a NULL `served_model`).
    * A rescued refusal is reported by `fallback_count` instead, never here, so
    * the two never double-count the same row.
+   *
+   * `termination_kind` is the CLI's provider-neutral classifier (migration
+   * 0018), NOT the raw `provider_finish_reason`: only Anthropic reports the
+   * literal 'refusal' there, while OpenAI and OpenRouter report
+   * 'content_filter' for the same event.
    *
    * Unrecovered refusals score as ordinary failures, which is why the count is
    * surfaced at all: without it a policy refusal is indistinguishable from a
@@ -319,10 +324,18 @@ export interface ModelDetail {
      * where the denominator is the task_set's `task_count` (or the
      * category/difficulty-scoped subset count when those filters are active).
      * When `task_set_hash` is null (no current set), falls back to per-attempted
-     * for graceful degradation. The active denominator is also exposed via
-     * `tasks_attempted_distinct`.
+     * for graceful degradation. The denominator actually used is exposed as
+     * `pass_denominator`.
      */
     pass_at_n: number;
+    /**
+     * The denominator `pass_at_n` was divided by: the scoped task count, or
+     * `tasks_attempted_distinct` on the legacy no-current-set path. Renderers
+     * derive the failed count as this minus the two attempt means. Those means
+     * no longer share a base with `tasks_attempted_distinct` (a union across
+     * runs), so subtracting from that one would not be a complement.
+     */
+    pass_denominator: number;
     avg_cost_usd: number;
     latency_p50_ms: number;
     latency_p95_ms: number;

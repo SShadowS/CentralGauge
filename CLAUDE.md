@@ -392,8 +392,11 @@ would otherwise re-precheck).
   both pass rate and cost grow with run count. Cohort size is `COHORT_RUNS`
   (3) in `site/src/lib/shared/cohort.ts`; a row below it carries
   `provisional: true` and renders an `n=<runs>` marker. `refusal_count` counts
-  results the provider refused with no fallback (`provider_finish_reason =
-  'refusal'`, `served_model IS NULL`), scoped like `fallback_count`.
+  results the provider refused with no fallback (`termination_kind = 'refusal'`,
+  `served_model IS NULL`), scoped like `fallback_count`. It keys on
+  `termination_kind`, the CLI's provider-neutral classifier, NOT on
+  `provider_finish_reason`: only Anthropic reports the literal `refusal` there,
+  while OpenAI and OpenRouter report `content_filter` for the same event.
 - `set=all` is no longer accepted on `/api/v1/leaderboard` - strict
   pass rate has no well-defined denominator across multiple sets.
   Use `set=current` or a specific 64-char hash. Returns `400

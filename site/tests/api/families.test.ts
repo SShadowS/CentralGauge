@@ -55,6 +55,46 @@ async function seed(): Promise<void> {
   }
 }
 
+/**
+ * Turns the latest Claude model (sonnet-4.7, run r2) into the two-run cohort
+ * used by the leaderboard's cohort tests, so both family surfaces can be
+ * checked against the same arithmetic:
+ *
+ *   easy/a  solved first try in run A; failed both attempts in run B
+ *   easy/b  solved on attempt 2 only, in BOTH runs
+ *   easy/c  failed everywhere
+ *
+ * Per run, A scores p1 = 1 and p2_only = 1, B scores p1 = 0 and p2_only = 1.
+ * Over a 3-task set the means give pass_at_1 = 0.5/3 and pass_at_n = 1.5/3.
+ * The old union rule reported p1 = 1 and p2_only = 1, so pass_at_n = 2/3.
+ */
+async function seedTwoRunCohortForSonnet47(): Promise<void> {
+  await env.DB.prepare(`UPDATE task_sets SET task_count = 3 WHERE hash = 'ts'`)
+    .run();
+  // Run A is the seed's r2 (easy/a already passed on attempt 1).
+  await env.DB.prepare(
+    `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES
+       ('r2','easy/b',1,0,0.0,1),
+       ('r2','easy/b',2,1,1.0,1),
+       ('r2','easy/c',1,0,0.0,1)`,
+  ).run();
+  // Run B: same model, same task set, later.
+  await env.DB.prepare(
+    `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+     VALUES ('r2b','ts',2,'s','r','2026-04-05T00:00:00Z','2026-04-05T01:00:00Z','completed','claimed','v1','sig','2026-04-05T00:00:00Z',1,?)`,
+  )
+    .bind(new Uint8Array([0]))
+    .run();
+  await env.DB.prepare(
+    `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES
+       ('r2b','easy/a',1,0,0.0,1),
+       ('r2b','easy/a',2,0,0.0,1),
+       ('r2b','easy/b',1,0,0.0,1),
+       ('r2b','easy/b',2,1,1.0,1),
+       ('r2b','easy/c',1,0,0.0,1)`,
+  ).run();
+}
+
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
@@ -103,6 +143,25 @@ describe("GET /api/v1/families", () => {
     const gpt = body.data.find((f) => f.slug === "gpt")!;
     expect(gpt.denominator).toBe(1);
     expect(gpt.pass_at_n).toBeCloseTo(1.0, 5);
+  });
+
+  it("averages a cohort's runs rather than unioning them (index)", async () => {
+    await seedTwoRunCohortForSonnet47();
+
+    const res = await SELF.fetch("https://x/api/v1/families?_cb=cohort");
+    const body = await res.json() as {
+      data: Array<{
+        slug: string;
+        pass_at_n: number | null;
+        pass_at_1: number | null;
+        denominator: number | null;
+      }>;
+    };
+    const claude = body.data.find((f) => f.slug === "claude")!;
+    expect(claude.denominator).toBe(3);
+    // Union across runs would report 2/3 and 1/3.
+    expect(claude.pass_at_n).toBeCloseTo(0.5, 5);
+    expect(claude.pass_at_1).toBeCloseTo(1 / 6, 5);
   });
 
   it("emits null pass_at_n fields for families whose latest model has no runs", async () => {
@@ -181,6 +240,27 @@ describe("GET /api/v1/families/:slug", () => {
       // pass_at_n_per_attempted removed in PR2.1
       expect((item as any).pass_at_n_per_attempted).toBeUndefined();
     }
+  });
+
+  it("averages a cohort's runs rather than unioning them (trajectory)", async () => {
+    await seedTwoRunCohortForSonnet47();
+
+    const res = await SELF.fetch("https://x/api/v1/families/claude?_cb=cohort");
+    const body = await res.json() as {
+      trajectory: Array<{
+        model: { slug: string };
+        run_count: number;
+        pass_at_n: number | null;
+        pass_at_1: number | null;
+        denominator: number | null;
+      }>;
+    };
+    const latest = body.trajectory.find((t) => t.model.slug === "sonnet-4.7")!;
+    expect(latest.run_count).toBe(2);
+    expect(latest.denominator).toBe(3);
+    // Same numbers the leaderboard reports for the same two runs.
+    expect(latest.pass_at_n).toBeCloseTo(0.5, 5);
+    expect(latest.pass_at_1).toBeCloseTo(1 / 6, 5);
   });
 
   it("returns 404 for unknown family", async () => {
