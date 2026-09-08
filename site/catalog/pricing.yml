@@ -517,6 +517,10 @@
   # Batch mode (D5): Anthropic publishes batch at 50% of the sync rate.
   batch_input_per_mtoken: 0.5
   batch_output_per_mtoken: 2.5
+  # Batch cache rates are 50% of this row's sync cache rates, stated so
+  # priceUsage prices from the catalog instead of an assumed factor.
+  batch_cache_read_per_mtoken: 0
+  batch_cache_write_per_mtoken: 0
   source: litellm-api
   fetched_at: '2026-05-24T19:47:18.774Z'
 - pricing_version: '2026-05-24'
@@ -805,6 +809,10 @@
   # here so `bench batch submit` keeps finding batch pricing for this model.
   batch_input_per_mtoken: 0.5
   batch_output_per_mtoken: 2.5
+  # Batch cache rates are 50% of this row's sync cache rates, stated so
+  # priceUsage prices from the catalog instead of an assumed factor.
+  batch_cache_read_per_mtoken: 0
+  batch_cache_write_per_mtoken: 0
   source: litellm-api
   fetched_at: '2026-09-07T02:07:11.393Z'
 - pricing_version: '2026-09-07'
