@@ -316,7 +316,25 @@ export interface ScoreLineInput {
    */
   recoveryEvents?:
     import("../../../src/health/recovery-prober.ts").RecoveryEvent[];
+  /**
+   * Optional batch-mode run summary (spec section 10). When present, appends
+   * a `# Batch` block naming the provider, run id, per-wave batch counts and
+   * timing, and the total resubmitted-item count. Absent on every sync run.
+   */
+  batch?: BatchScoreBlock;
 }
+
+/**
+ * Batch-mode facts printed by the `# Batch` scores block. Shares its
+ * `waves` element shape with `InvocationRecord.batch` (see
+ * `src/ingest/capture.ts`) so the printed summary and the persisted
+ * ingest-meta invocation record never drift apart; `runId` is added here
+ * because the scores block prints it directly, whereas the invocation
+ * record's run id already lives one level up, in `IngestMeta.run_ids`.
+ */
+export type BatchScoreBlock =
+  & import("../../../src/ingest/capture.ts").BatchInvocationSummary
+  & { runId: string };
 
 /**
  * Aggregated infra-retry counters built from a result set. Returned by
@@ -653,6 +671,29 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     lines.push(`flap_capped_containers: [${[...flapped].join(",") || "none"}]`);
   }
 
+  // # Batch block: batch-mode run summary (spec section 10). Emitted only
+  // when the caller supplies one, which happens only for a batch-mode run's
+  // finalize (`src/batch/results.ts`); a sync run's `ScoreLineInput` never
+  // sets `batch` at all.
+  if (input.batch) {
+    const b = input.batch;
+    lines.push(``);
+    lines.push(`# Batch`);
+    lines.push(`provider: ${b.provider}`);
+    lines.push(`run_id: ${b.runId}`);
+    lines.push(`waves: ${b.waves.length}`);
+    for (const w of b.waves) {
+      const cost = w.providerReportedCostUsd === null
+        ? "(none)"
+        : w.providerReportedCostUsd.toFixed(4);
+      const ended = w.endedAt ?? "(none)";
+      lines.push(
+        `wave_${w.wave}: batches=${w.batchIds.length} submitted=${w.submittedAt} ended=${ended} reported_cost_usd=${cost}`,
+      );
+    }
+    lines.push(`resubmitted_items: ${b.resubmittedItems}`);
+  }
+
   return lines;
 }
 
@@ -676,6 +717,7 @@ export async function saveScoresFile(
     import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[],
   recoveryEvents?:
     import("../../../src/health/recovery-prober.ts").RecoveryEvent[],
+  batch?: BatchScoreBlock,
 ): Promise<void> {
   const scoreLines = buildScoreLines({
     stats,
@@ -691,6 +733,7 @@ export async function saveScoresFile(
     ...(recoveryEvents !== undefined && recoveryEvents.length > 0
       ? { recoveryEvents }
       : {}),
+    ...(batch !== undefined ? { batch } : {}),
   });
   await Deno.writeTextFile(scoreFile, scoreLines.join("\n"));
 }

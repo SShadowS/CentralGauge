@@ -7,6 +7,7 @@
 import { parse as parseYaml, stringify } from "@std/yaml";
 import type { FamilyRow, ModelRow, PricingRow } from "./types.ts";
 import { CatalogSeedError } from "../../errors.ts";
+import { withBatchRatesCarriedForward } from "../batch-rates.ts";
 
 export interface AppendResult {
   added: boolean;
@@ -166,10 +167,11 @@ export async function appendPricingIfChanged(
   const parsed = existing.trim().length === 0
     ? []
     : ((parseYaml(existing) as PricingRow[] | null) ?? []);
+  const rowToWrite = withBatchRatesCarriedForward(parsed, row);
   const matches = parsed.filter(
     (r) =>
-      r.model_slug === row.model_slug &&
-      r.pricing_version === row.pricing_version,
+      r.model_slug === rowToWrite.model_slug &&
+      r.pricing_version === rowToWrite.pricing_version,
   );
 
   if (matches.length === 0) {
@@ -178,7 +180,7 @@ export async function appendPricingIfChanged(
     const trailingNewline = existing.endsWith("\n") || existing.length === 0
       ? ""
       : "\n";
-    const next = existing + trailingNewline + pricingRowToYaml(row);
+    const next = existing + trailingNewline + pricingRowToYaml(rowToWrite);
     await writeAtomic(path, next);
     return { added: true };
   }
@@ -189,11 +191,13 @@ export async function appendPricingIfChanged(
   // not accumulate.
   const withoutSameVersion = parsed.filter(
     (r) =>
-      !(r.model_slug === row.model_slug &&
-        r.pricing_version === row.pricing_version),
+      !(r.model_slug === rowToWrite.model_slug &&
+        r.pricing_version === rowToWrite.pricing_version),
   );
   const header = extractLeadingComments(existing);
-  const body = stringify([...withoutSameVersion, row], { lineWidth: -1 });
+  const body = stringify([...withoutSameVersion, rowToWrite], {
+    lineWidth: -1,
+  });
   await writeAtomic(path, header + body);
   return { added: true };
 }

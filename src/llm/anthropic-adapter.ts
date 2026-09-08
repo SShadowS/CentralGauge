@@ -5,7 +5,6 @@ import type {
   StreamChunk,
   StreamOptions,
   StreamResult,
-  TokenUsage,
 } from "./types.ts";
 import type {
   DiscoverableAdapter,
@@ -15,7 +14,17 @@ import type {
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
 import { PricingService } from "./pricing-service.ts";
-import { pricingSlugForAttempt } from "../parallel/shared/price-usage.ts";
+import {
+  priceUsage,
+  pricingSlugForAttempt,
+} from "../parallel/shared/price-usage.ts";
+import {
+  assembleResponse,
+  extractFallback,
+  type FallbackSourceMessage,
+  mapFinishReason,
+  mapUsage,
+} from "./mappers/anthropic.ts";
 
 const log = Logger.create("llm:anthropic");
 import {
@@ -119,81 +128,12 @@ export function shouldRequestServerFallback(
   return modelSupportsServerFallback(model) && envValue !== "0";
 }
 
-/**
- * Minimal structural view of the fields {@link extractFallbackInfo} reads.
- * Deliberately a supertype of both `Anthropic.Message` and the beta
- * `BetaMessage`: only the beta response actually carries the `fallback`
- * content block and the `usage.iterations` entries, but reading them
- * structurally means the non-beta path needs no separate mapping.
- */
-interface FallbackSourceMessage {
-  model: string;
-  stop_reason?: string | null;
-  stop_details?:
-    | { type?: string; category?: string | null; explanation?: string | null }
-    | null;
-  content?: ReadonlyArray<
-    {
-      type?: string;
-      text?: string;
-      from?: { model?: string };
-      to?: { model?: string };
-    }
-  >;
-  // `input_tokens` is not read here; it is named so this shape shares a
-  // property with the SDK's `Usage` and TypeScript's weak-type check accepts
-  // an `Anthropic.Message` (whose `Usage` has no `iterations`) as a source.
-  usage?: {
-    input_tokens?: number;
-    iterations?: ReadonlyArray<{ type?: string }>;
-  };
-}
-
-/** Pure extraction of served-model + refusal info from an API response. */
-export function extractFallbackInfo(
-  msg: FallbackSourceMessage,
-  requestedModel: string,
-): {
-  servedModel?: string;
-  refusal?: { category: string | null; recovered: boolean };
-} {
-  const hasFallbackBlock = (msg.content ?? []).some((b) =>
-    b.type === "fallback"
-  );
-  const hasFallbackIteration = (msg.usage?.iterations ?? []).some(
-    (it) => it.type === "fallback_message",
-  );
-  const served = msg.model !== requestedModel ? msg.model : undefined;
-
-  if (msg.stop_reason === "refusal") {
-    // Final answer is a refusal: whole chain declined (or fallback not requested).
-    return {
-      refusal: {
-        category: msg.stop_details?.category ?? null,
-        recovered: false,
-      },
-    };
-  }
-  // A recovered fallback REQUIRES a positive signal from the API -- either the
-  // `fallback` content block or a `fallback_message` usage iteration. A bare
-  // `msg.model !== requestedModel` is NOT enough: if the API ever echoes a
-  // dated snapshot id (request `claude-opus-5`, response
-  // `claude-opus-5-20260601`, or a `-latest` alias resolving to a concrete id)
-  // every single response would be stamped `recovered: true` -- fabricated
-  // refusal data on a request that was never refused.
-  if (hasFallbackBlock || hasFallbackIteration) {
-    // Deliberate asymmetry: on a recovered fallback the category is `null` --
-    // the category of the refusal that TRIGGERED it is not carried on the
-    // success response. `recovered: true` is the signal that matters.
-    return {
-      // Only when it actually differs, per the plan's invariant: absent
-      // `servedModel` means "the requested model answered".
-      ...(served !== undefined ? { servedModel: served } : {}),
-      refusal: { category: null, recovered: true },
-    };
-  }
-  return {};
-}
+// Moved to src/llm/mappers/anthropic.ts so both the sync adapter and the
+// future batch runner's per-item result mapper share one definition;
+// re-exported here (old name) so existing importers of this module keep
+// working unchanged.
+export { extractFallback as extractFallbackInfo };
+export type { FallbackSourceMessage };
 
 // Moved to src/parallel/shared/price-usage.ts so both the sync orchestrator
 // and the future batch runner share one definition; re-exported here so
@@ -271,6 +211,31 @@ export class AnthropicAdapter extends BaseLLMAdapter
   };
 
   private client: Anthropic | null = null;
+
+  /**
+   * When true, {@link buildRequestParams} never adds the `fallbacks` param
+   * (and, transitively, {@link createMessage}/{@link createStream} never
+   * route through the beta client or send the fallback beta header). Set
+   * only via {@link forBatch}: batch bodies are submitted through the
+   * `/v1/messages/batches` endpoint, which does not support the interactive
+   * server-side refusal fallback.
+   */
+  private batchMode = false;
+
+  constructor(config?: LLMConfig) {
+    super();
+    if (config) this.configure(config);
+  }
+
+  /**
+   * Builds an adapter for the batch runner: identical request bodies to the
+   * sync path, minus the server-side refusal fallback (D7).
+   */
+  static forBatch(config: LLMConfig): AnthropicAdapter {
+    const adapter = new AnthropicAdapter(config);
+    adapter.batchMode = true;
+    return adapter;
+  }
 
   configure(config: LLMConfig): void {
     this.config = { ...this.config, ...config };
@@ -401,55 +366,28 @@ export class AnthropicAdapter extends BaseLLMAdapter
       .map((block) => block.text)
       .join("");
 
-    // deno-lint-ignore no-explicit-any
-    const usageAny = message.usage as any;
-    const cacheCreationTokens = usageAny?.cache_creation_input_tokens as
-      | number
-      | undefined;
-    const cacheReadTokens = usageAny?.cache_read_input_tokens as
-      | number
-      | undefined;
-
     // Extracted before pricing so a fallback-served attempt bills at the
     // SERVED model's rates, not the requested model's (see
     // pricingSlugForAttempt).
-    const fb = extractFallbackInfo(message, params.model);
-    const pricingModel = pricingSlugForAttempt(
-      `${this.name}/${this.config.model}`,
-      fb.servedModel,
-    ).slice(this.name.length + 1);
-
-    const usage: TokenUsage = {
-      promptTokens: message.usage.input_tokens,
-      completionTokens: message.usage.output_tokens,
-      totalTokens: message.usage.input_tokens + message.usage.output_tokens,
-      ...(cacheCreationTokens ? { cacheCreationTokens } : {}),
-      ...(cacheReadTokens ? { cacheReadTokens } : {}),
-      estimatedCost: PricingService.estimateCostWithCacheSync(
-        this.name,
-        pricingModel,
-        message.usage.input_tokens,
-        message.usage.output_tokens,
-        cacheCreationTokens,
-        cacheReadTokens,
-      ),
-    };
+    const fb = extractFallback(message, params.model);
+    const usage = priceUsage({
+      usage: mapUsage(message.usage),
+      provider: this.name,
+      requestedModel: this.config.model,
+      servedModel: fb.servedModel,
+      mode: "sync",
+    });
 
     return {
-      response: {
+      response: assembleResponse({
         content: contentText,
         model: this.config.model,
         usage,
         duration,
-        finishReason: this.mapFinishReason(message.stop_reason),
-        ...(message.stop_reason
-          ? { providerFinishReason: message.stop_reason }
-          : {}),
-        ...(fb.servedModel !== undefined
-          ? { servedModel: fb.servedModel }
-          : {}),
-        ...(fb.refusal !== undefined ? { refusal: fb.refusal } : {}),
-      },
+        finish: mapFinishReason(message.stop_reason),
+        servedModel: fb.servedModel,
+        refusal: fb.refusal,
+      }),
       rawResponse: includeRaw ? message : undefined,
     };
   }
@@ -476,14 +414,21 @@ export class AnthropicAdapter extends BaseLLMAdapter
       // fields are attached below instead. The object is the same reference
       // `onComplete` received, so a listener that holds it sees these; one
       // that copied the response eagerly does not.
-      const fb = extractFallbackInfo(finalMessage, params.model);
-      const usage = this.buildUsageFromMessage(finalMessage, fb.servedModel);
+      const fb = extractFallback(finalMessage, params.model);
+      const finish = mapFinishReason(finalMessage.stop_reason);
+      const usage = priceUsage({
+        usage: mapUsage(finalMessage.usage),
+        provider: this.name,
+        requestedModel: this.config.model,
+        servedModel: fb.servedModel,
+        mode: "sync",
+      });
 
       const { finalChunk, result } = finalizeStream({
         state,
         model: this.config.model,
         usage,
-        finishReason: this.mapFinishReason(finalMessage.stop_reason),
+        finishReason: finish.finishReason,
         options,
         // `finalMessage()` IS the full Anthropic.Message, so the streaming
         // path logs the same payload the non-streaming path did.
@@ -494,8 +439,8 @@ export class AnthropicAdapter extends BaseLLMAdapter
         result.response.servedModel = fb.servedModel;
       }
       if (fb.refusal !== undefined) result.response.refusal = fb.refusal;
-      if (finalMessage.stop_reason) {
-        result.response.providerFinishReason = finalMessage.stop_reason;
+      if (finish.providerFinishReason !== undefined) {
+        result.response.providerFinishReason = finish.providerFinishReason;
       }
 
       yield finalChunk;
@@ -513,33 +458,45 @@ export class AnthropicAdapter extends BaseLLMAdapter
    * Whether to ask the API for a server-side refusal fallback on this request.
    * Thin wrapper over the pure {@link shouldRequestServerFallback}; the env var
    * is read per request so the kill switch takes effect without a restart.
-   * Off-switch: CENTRALGAUGE_REFUSAL_FALLBACK=0.
+   * Off-switch: CENTRALGAUGE_REFUSAL_FALLBACK=0. Gated on `!this.batchMode`:
+   * batch bodies (see {@link forBatch}) never request the fallback, since the
+   * `/v1/messages/batches` endpoint does not support it.
    */
   private fallbackActive(model: string): boolean {
-    return shouldRequestServerFallback(
+    return !this.batchMode && shouldRequestServerFallback(
       model,
       Deno.env.get("CENTRALGAUGE_REFUSAL_FALLBACK"),
     );
   }
 
   /**
-   * Non-streaming request. When the fallback is active the call routes through
-   * the beta namespace so `betas` + `fallbacks` are accepted; the response is
-   * a `BetaMessage`, which is structurally the `Anthropic.Message` this
-   * adapter reads (plus the fallback-only fields
-   * {@link extractFallbackInfo} picks up).
+   * Whether `params` (as built by {@link buildRequestParams}) carries the
+   * `fallbacks` param -- the single decision point for whether a call routes
+   * through the beta namespace at all.
+   */
+  private hasFallback(
+    params: Anthropic.MessageCreateParamsNonStreaming,
+  ): boolean {
+    return "fallbacks" in (params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Non-streaming request. When {@link buildRequestParams} embedded the
+   * `fallbacks` param, the call routes through the beta namespace so `betas`
+   * + `fallbacks` are accepted; the response is a `BetaMessage`, which is
+   * structurally the `Anthropic.Message` this adapter reads (plus the
+   * fallback-only fields {@link extractFallback} picks up).
    */
   private async createMessage(
     client: Anthropic,
     params: Anthropic.MessageCreateParamsNonStreaming,
   ): Promise<Anthropic.Message> {
-    if (!this.fallbackActive(params.model)) {
+    if (!this.hasFallback(params)) {
       return await client.messages.create(params);
     }
     const beta = await client.beta.messages.create({
       ...params,
       betas: [SERVER_FALLBACK_BETA],
-      fallbacks: "default",
     });
     return beta as unknown as Anthropic.Message;
   }
@@ -549,38 +506,14 @@ export class AnthropicAdapter extends BaseLLMAdapter
     client: Anthropic,
     params: Anthropic.MessageCreateParamsNonStreaming,
   ): ReturnType<Anthropic["messages"]["stream"]> {
-    if (!this.fallbackActive(params.model)) {
+    if (!this.hasFallback(params)) {
       return client.messages.stream(params);
     }
     const beta = client.beta.messages.stream({
       ...params,
       betas: [SERVER_FALLBACK_BETA],
-      fallbacks: "default",
     });
     return beta as unknown as ReturnType<Anthropic["messages"]["stream"]>;
-  }
-
-  private mapFinishReason(
-    reason: string | null,
-  ): "stop" | "length" | "content_filter" | "error" {
-    switch (reason) {
-      case "end_turn":
-      case "stop_sequence":
-        return "stop";
-      case "max_tokens":
-        return "length";
-      // Fable-5+ safety classifiers decline some requests with HTTP 200 +
-      // stop_reason "refusal" (empty content, ~3 output tokens). Observed
-      // live: benchmark code-gen prompts misclassified as category "cyber"
-      // (X050/X051/X052 attempt-1, X041 both attempts). Deterministic per
-      // prompt — retrying the same model re-refuses. Map to content_filter
-      // so the work pool reports "API safety refusal" instead of the
-      // misleading "Model returned empty response".
-      case "refusal":
-        return "content_filter";
-      default:
-        return "error";
-    }
   }
 
   /**
@@ -612,8 +545,11 @@ export class AnthropicAdapter extends BaseLLMAdapter
   /**
    * Builds request parameters for Anthropic API calls.
    * Handles extended thinking configuration and temperature settings.
+   * Public so the batch runner can build request bodies from an adapter
+   * constructed via {@link forBatch}, and so `batch-body-equivalence.test.ts`
+   * can assert the batch body equals the sync body minus `fallbacks`.
    */
-  private buildRequestParams(
+  buildRequestParams(
     request: LLMRequest,
   ): Anthropic.MessageCreateParamsNonStreaming {
     const thinkingBudget = typeof this.config.thinkingBudget === "number"
@@ -674,6 +610,18 @@ export class AnthropicAdapter extends BaseLLMAdapter
       params.temperature = temperature;
     }
 
+    // Opt into the server-side refusal fallback (beta, not part of the
+    // stable `MessageCreateParamsNonStreaming` type -- hence the cast).
+    // `fallbackActive` is gated on `!this.batchMode`, so a `forBatch()`
+    // adapter never adds this field; `createMessage`/`createStream` key
+    // their beta-namespace routing (and the `anthropic-beta` header that
+    // implies) off its presence here, not off a second decision.
+    if (this.fallbackActive(this.config.model)) {
+      (params as Anthropic.MessageCreateParamsNonStreaming & {
+        fallbacks?: string;
+      }).fallbacks = "default";
+    }
+
     return params;
   }
 
@@ -705,43 +653,5 @@ export class AnthropicAdapter extends BaseLLMAdapter
         yield createChunk(event.delta.text, state, options);
       }
     }
-  }
-
-  /**
-   * Builds token usage from final message. `servedModel` (when the call was
-   * server-side fallback-served, see `extractFallbackInfo`) bills the
-   * attempt at the served model's rates rather than the requested model's.
-   */
-  private buildUsageFromMessage(
-    message: Anthropic.Message,
-    servedModel?: string,
-  ): TokenUsage {
-    // deno-lint-ignore no-explicit-any
-    const usageAny = message.usage as any;
-    const cacheCreationTokens = usageAny?.cache_creation_input_tokens as
-      | number
-      | undefined;
-    const cacheReadTokens = usageAny?.cache_read_input_tokens as
-      | number
-      | undefined;
-    const pricingModel = pricingSlugForAttempt(
-      `${this.name}/${this.config.model}`,
-      servedModel,
-    ).slice(this.name.length + 1);
-    return {
-      promptTokens: message.usage.input_tokens,
-      completionTokens: message.usage.output_tokens,
-      totalTokens: message.usage.input_tokens + message.usage.output_tokens,
-      ...(cacheCreationTokens ? { cacheCreationTokens } : {}),
-      ...(cacheReadTokens ? { cacheReadTokens } : {}),
-      estimatedCost: PricingService.estimateCostWithCacheSync(
-        this.name,
-        pricingModel,
-        message.usage.input_tokens,
-        message.usage.output_tokens,
-        cacheCreationTokens,
-        cacheReadTokens,
-      ),
-    };
   }
 }

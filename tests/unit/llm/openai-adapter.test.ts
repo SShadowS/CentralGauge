@@ -578,3 +578,50 @@ Deno.test("OpenAIAdapter - isHealthy", async (t) => {
     assertEquals(healthy, false);
   });
 });
+
+// =============================================================================
+// Temperature-Locked Model Tests
+// =============================================================================
+
+Deno.test("OpenAIAdapter - temperature-locked models omit temperature", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
+
+  await t.step(
+    "gpt-5-mini omits temperature from buildRequestParams",
+    () => {
+      const adapter = new OpenAIAdapter();
+      adapter.configure({
+        provider: "openai",
+        model: "gpt-5-mini",
+        apiKey: "test-key",
+      });
+
+      const params = adapter.buildRequestParams({
+        prompt: "hello",
+        maxTokens: 100,
+      });
+
+      assertEquals("temperature" in params, false);
+    },
+  );
+
+  await t.step(
+    "gpt-5.1 (not temperature-locked) still sends temperature",
+    () => {
+      const adapter = new OpenAIAdapter();
+      adapter.configure({
+        provider: "openai",
+        model: "gpt-5.1",
+        apiKey: "test-key",
+      });
+
+      const params = adapter.buildRequestParams({
+        prompt: "hello",
+        maxTokens: 100,
+      });
+
+      assertEquals("temperature" in params, true);
+    },
+  );
+});

@@ -200,11 +200,14 @@ export async function ensurePricing(
     effective_from: new Date().toISOString(),
     ...rates,
   };
-  await appendPricing(`${deps.catalogDir}/pricing.yml`, entry);
-  await postAdmin(deps, "/api/v1/admin/catalog/pricing", { ...entry });
+  // The written row may carry batch rates inherited from an older row for
+  // the same model; D1 and the in-memory catalog must see the same thing
+  // the YAML now says, or the site prices a batch run NULL.
+  const written = await appendPricing(`${deps.catalogDir}/pricing.yml`, entry);
+  await postAdmin(deps, "/api/v1/admin/catalog/pricing", { ...written });
   postedPricingKeys.add(pricingKey(pricingVersion, modelSlug));
-  cat.pricing.push(entry);
-  return entry;
+  cat.pricing.push(written);
+  return written;
 }
 
 // Process-local cache of task-set hashes already POSTed in this run. Skips
