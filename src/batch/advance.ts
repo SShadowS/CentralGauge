@@ -25,6 +25,7 @@ import { appendEvent, loadJsonl } from "./journal.ts";
 import type { ItemLine } from "./journal.ts";
 import { readIntent } from "./intent.ts";
 import { withMutateLock } from "./mutate-lock.ts";
+import { reconcileSubmitUnknown } from "./reconcile.ts";
 import { attemptPath, requestPath, RUN_FILES } from "./paths.ts";
 import type { RenderedItem } from "./render.ts";
 import { renderWave } from "./render.ts";
@@ -548,11 +549,39 @@ export async function advanceRun(
     const step = nextStep(state, hasIntent, attempts, deps.attemptLimit);
 
     switch (step.kind) {
-      case "reconcile":
+      case "reconcile": {
+        // Spec 4.5: "advance: reconcile per 4.3, exit 4 unless adopted".
+        // Identification is exact or nothing (`reconcileSubmitUnknown`
+        // adopts only on OpenAI's nonce or an exact item-id set match), so
+        // running it unattended is safe: nothing is ever resubmitted here.
+        const report = await reconcileSubmitUnknown(
+          dir,
+          state,
+          deps.provider,
+          intent!,
+        );
+        if (report.adopted) {
+          deps.log(
+            `[batch] adopted candidate ${report.adopted.handle.batchId}`,
+          );
+          // The run is `attempt-<wave>-submitted` again; carry on with the
+          // step that phase deserves rather than costing a whole tick.
+          return await runPoll(dir, state, deps, { kind: "poll" });
+        }
+        const ids = report.candidates.map((c) => c.batchId).join(", ") ||
+          "(none)";
+        return {
+          exit: 4,
+          step: {
+            kind: "blocked",
+            reason: `${report.reason}; candidates: ${ids}`,
+          },
+          state,
+        };
+      }
+
       case "blocked":
-        // Task 9 owns the real `submit-unknown` reconciliation; here (and
-        // for an operator-action `blocked`) `advance` has nothing more to
-        // do this call.
+        // An operator-action `blocked`: `advance` has nothing more to do.
         return { exit: 4, step, state };
 
       case "poll":

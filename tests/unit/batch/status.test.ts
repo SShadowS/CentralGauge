@@ -1,9 +1,9 @@
 // tests/unit/batch/status.test.ts
 //
 // `runStatus`/`formatStatus` (spec section 8): a read-mostly summary of a
-// run directory. No network unless the run is `submit-unknown`, in which
-// case `provider.listCandidates` is consulted (spec 4.3's reconciliation
-// window). `nextAction` is derived from `src/batch/transitions.ts`'s
+// run directory. No network unless a live `intent.json` is on disk (the
+// real submit-unknown condition), in which case `provider.listCandidates`
+// is consulted (spec 4.3's reconciliation window). `nextAction` is derived from `src/batch/transitions.ts`'s
 // `nextStep`, the same pure decision table `advance` runs on.
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
@@ -167,16 +167,19 @@ Deno.test("runStatus", async (t) => {
   );
 
   await t.step(
-    "a submit-unknown run: lists candidates and asks for retry --adopt | --confirm-not-submitted",
+    "a run with a live intent: lists candidates and asks for retry --adopt | --confirm-not-submitted",
     async () => {
       const output = await createTempDir("batch-status-submit-unknown");
       try {
         const dir = runDir(output, "run-unknown");
         await ensureDir(dir);
 
+        // Nothing ever persists `phase: "submit-unknown"` - the live
+        // `intent.json` below is the whole condition, so `status` must key
+        // the candidate lookup off that and not off the phase.
         const state = minimalState({
           runId: "run-unknown",
-          phase: "submit-unknown",
+          phase: "attempt-1-submitted",
           wave: 1,
           batches: [],
           activeBatchIds: [],
@@ -209,7 +212,7 @@ Deno.test("runStatus", async (t) => {
 
         const status = await runStatus(dir, provider);
 
-        assertEquals(status.phase, "submit-unknown");
+        assertEquals(status.phase, "attempt-1-submitted");
         assertEquals(status.candidates?.length, 1);
         assertEquals(status.candidates?.[0]?.batchId, "candidate-1");
         assertEquals(

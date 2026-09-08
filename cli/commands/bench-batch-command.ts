@@ -73,6 +73,7 @@ import {
 import { parseTasksGlobs, submitRuns } from "../../src/batch/submit.ts";
 import { formatStatus, runStatus } from "../../src/batch/status.ts";
 import { advanceRun } from "../../src/batch/advance.ts";
+import { readIntent } from "../../src/batch/intent.ts";
 import { retryRun } from "../../src/batch/retry.ts";
 import { abandonRun } from "../../src/batch/abandon.ts";
 import { finalizeRun } from "../../src/batch/results.ts";
@@ -325,11 +326,9 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
 /**
  * The message to print for a failed (`exit === 4`) `advanceRun` result, or
  * `undefined` when the result carries none. `step.kind === "blocked"` is
- * the only `Step` with a reason (a non-retryable `lastError`, a size-blocked
- * item, drift, or the bench lock); `step.kind === "reconcile"` also exits 4
- * (an intent.json means `retry` owns this run now, spec 4.3) but has
- * nothing to say - `advance` prints nothing for it, same as before this
- * helper existed.
+ * the only `Step` with a reason (a non-retryable `lastError`, a
+ * size-blocked item, drift, the bench lock, or a reconciliation that
+ * adopted nothing, which reports its candidate ids there).
  */
 export function advanceFailureMessage(
   result: AdvanceResult,
@@ -488,8 +487,11 @@ export function buildBatchCommand(): Command {
       for (const id of runIds) {
         const dir = runDir(opts.output, id);
         const state = await loadState(dir);
+        // A live `intent.json` is the submit-unknown condition (no phase
+        // is ever persisted for it), and it is the only case that needs a
+        // provider: `runStatus` lists the reconciliation candidates.
         let provider;
-        if (state.phase === "submit-unknown") {
+        if ((await readIntent(dir)) !== null) {
           const apiKey = apiKeyForBatchProvider(state.model.provider) ?? "";
           provider = createBatchProvider(state.model.provider, { apiKey });
         }

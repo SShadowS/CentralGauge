@@ -1,9 +1,10 @@
 /**
  * `status`: a read-mostly summary of one batch run directory (spec section
- * 8). No network call unless the run is `submit-unknown`, in which case a
- * supplied `provider.listCandidates` is consulted (spec 4.3's
- * skew-tolerant reconciliation window) so the operator sees the same
- * candidates `retry` would.
+ * 8). No network call unless the run has a live `intent.json` (the actual
+ * submit-unknown condition), in which case a supplied
+ * `provider.listCandidates` is consulted (spec 4.3's skew-tolerant
+ * reconciliation window) so the operator sees the same candidates `retry`
+ * would.
  *
  * `nextAction` is derived from `src/batch/transitions.ts`'s `nextStep` -
  * the SAME pure decision table `advance` runs on - collapsed to the five
@@ -136,8 +137,8 @@ async function attemptLimitFor(dir: string): Promise<1 | 2> {
 
 /**
  * Builds a `RunStatus` for the run at `dir`. `provider` is only consulted
- * (via `listCandidates`) when the run is `submit-unknown`; every other
- * phase never touches the network.
+ * (via `listCandidates`) when a live `intent.json` is on disk; a run
+ * without one never touches the network.
  */
 export async function runStatus(
   dir: string,
@@ -161,8 +162,12 @@ export async function runStatus(
   const intent = await readIntent(dir);
   const hasIntent = intent !== null;
 
+  // A live `intent.json`, not the phase, is what marks a run as
+  // submit-unknown: nothing ever persists that phase (`nextStep` derives
+  // it from the intent alone), so keying the candidate lookup off the
+  // phase meant spec 8's "status shows the candidates" never happened.
   let candidates: BatchCandidate[] | undefined;
-  if (state.phase === "submit-unknown" && provider && intent) {
+  if (provider && intent) {
     const since = new Date(Date.parse(intent.writtenAt) - WINDOW_SKEW_MS);
     candidates = await provider.listCandidates(since);
   }

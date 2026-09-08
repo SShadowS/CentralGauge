@@ -1437,3 +1437,116 @@ Deno.test("a round-1 resubmission killed after the provider call is adopted and 
 
   await Deno.remove(run.output, { recursive: true });
 });
+Deno.test("advanceRun reconciles a live intent by itself and carries on", async () => {
+  const { manifests, contexts } = taskFixtures();
+  const run = await seedCollectedWaveOne(
+    "failed",
+    "cg-batch-auto-reconcile-",
+    manifests,
+    contexts,
+  );
+
+  const crashing = new CrashingSubmitProvider("after", {
+    submit: [{ handleId: "batch-w2-orphan" }],
+    candidates: [{
+      batchId: "batch-w2-orphan",
+      createdAt: new Date(Date.now() - 1000),
+      total: 2,
+      ended: true,
+    }],
+  });
+  const logged: string[] = [];
+  const deps = baseDeps(
+    {
+      provider: crashing,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(
+        new MultiContainerMockCompileQueue(["Cronus28"]),
+        { count: 0 },
+      ),
+      finalize: () => {
+        throw new Error("must not finalize");
+      },
+      log: (line: string) => logged.push(line),
+    },
+    manifests,
+    contexts,
+  );
+
+  await assertRejects(
+    () => advanceRun(run.dir, deps),
+    Error,
+    "connection reset",
+  );
+
+  // No operator command: the next scheduled tick adopts the batch itself
+  // (spec 4.5 "advance: reconcile per 4.3") and keeps going in the same
+  // call, straight through poll, collect and evaluate.
+  const reconciled = await advanceRun(run.dir, deps);
+  assertEquals(reconciled.exit, 0);
+  assert(
+    logged.some((l) => l.includes("batch-w2-orphan")),
+    logged.join("\n"),
+  );
+  assertEquals((await loadState(run.dir)).phase, "attempt-2-collected");
+  assertEquals(await readIntent(run.dir), null);
+  assert(await exists(attemptPath(run.dir, "A", 2)));
+
+  await Deno.remove(run.output, { recursive: true });
+});
+
+Deno.test("advanceRun exits 4 naming the candidates when nothing matches the intent", async () => {
+  const { manifests, contexts } = taskFixtures();
+  const run = await seedCollectedWaveOne(
+    "failed",
+    "cg-batch-no-adoption-",
+    manifests,
+    contexts,
+  );
+
+  const crashing = new CrashingSubmitProvider("after", {
+    submit: [{ handleId: "batch-w2-orphan" }],
+    // Item count disagrees with the intent, so identification fails and
+    // nothing is ever adopted on a guess.
+    candidates: [{
+      batchId: "batch-w2-orphan",
+      createdAt: new Date(Date.now() - 1000),
+      total: 5,
+      ended: true,
+    }],
+  });
+  const deps = baseDeps(
+    {
+      provider: crashing,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(
+        new MultiContainerMockCompileQueue(["Cronus28"]),
+        { count: 0 },
+      ),
+      finalize: () => {
+        throw new Error("must not finalize");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  await assertRejects(
+    () => advanceRun(run.dir, deps),
+    Error,
+    "connection reset",
+  );
+
+  const refused = await advanceRun(run.dir, deps);
+  assertEquals(refused.exit, 4);
+  assertEquals(refused.step.kind, "blocked");
+  if (refused.step.kind === "blocked") {
+    assert(
+      refused.step.reason.includes("batch-w2-orphan"),
+      refused.step.reason,
+    );
+  }
+  assertExists(await readIntent(run.dir));
+
+  await Deno.remove(run.output, { recursive: true });
+});
