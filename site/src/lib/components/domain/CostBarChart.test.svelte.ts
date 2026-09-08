@@ -15,6 +15,8 @@ const points: ModelHistoryPoint[] = [
     tasks_attempted: 0,
     tasks_passed: 0,
     duration_ms: 0,
+    excluded_at: null,
+    excluded_reason: null,
   },
   {
     run_id: "b",
@@ -27,6 +29,8 @@ const points: ModelHistoryPoint[] = [
     tasks_attempted: 0,
     tasks_passed: 0,
     duration_ms: 0,
+    excluded_at: null,
+    excluded_reason: null,
   },
 ];
 

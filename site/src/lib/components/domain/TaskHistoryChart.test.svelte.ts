@@ -14,6 +14,8 @@ const passPoint: ModelHistoryPoint = {
   tasks_attempted: 0,
   tasks_passed: 0,
   duration_ms: 0,
+  excluded_at: null,
+  excluded_reason: null,
 };
 
 const failPoint: ModelHistoryPoint = {
@@ -27,6 +29,8 @@ const failPoint: ModelHistoryPoint = {
   tasks_attempted: 0,
   tasks_passed: 0,
   duration_ms: 0,
+  excluded_at: null,
+  excluded_reason: null,
 };
 
 describe("TaskHistoryChart", () => {

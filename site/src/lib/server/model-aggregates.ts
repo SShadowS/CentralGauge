@@ -6,6 +6,7 @@ import type { ServerTimer } from "./server-timing";
 import { computeDenominator } from "./denominator";
 import { rowCostUsd } from "./cost-sql";
 import { modePredicate, type InvocationMode } from "./invocation-mode";
+import { excludedAndClause, excludedPredicate } from "./run-exclusion";
 
 /**
  * Single source of truth for per-model aggregates (run_count, verified_runs,
@@ -258,6 +259,8 @@ export async function computeModelAggregatesLite(
   }
   where.push(modePredicate("runs"));
   params.push(opts.mode);
+  // Soft run exclusion (0022). Binds nothing, so bind order is unaffected.
+  where.push(excludedPredicate("runs"));
   const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
   const sql = `
@@ -344,6 +347,10 @@ export async function computeModelAggregates(
   // D4: every ranking aggregate selects exactly one invocation mode.
   where.push(modePredicate("runs"));
   params.push(opts.mode);
+  // Soft run exclusion (0022). Pushed onto the SAME `where` array the
+  // secondary helpers below (tokens, consistency, latency percentiles,
+  // pass-hat) reuse, so they inherit it without a second edit site.
+  where.push(excludedPredicate("runs"));
 
   /**
    * Run-level filters mirrored into the correlated A1/A2 subqueries, in the
@@ -379,6 +386,9 @@ export async function computeModelAggregates(
     }
     parts.push(`AND ${modePredicate(ruAlias)}`);
     bind.push(opts.mode);
+    // Same mirroring reason as tier/since/mode: this subquery joins its own
+    // `runs` alias. Contributes no bind param.
+    parts.push(excludedAndClause(ruAlias));
     return { clause: parts.join(" "), params: bind };
   }
   const runScopeA1 = buildRunScopeClause("ru1");
@@ -649,6 +659,9 @@ export async function computeModelAggregates(
   // added here too rather than inherited.
   whereForSettings.push(modePredicate("runs"));
   paramsForSettings.push(opts.mode);
+  // This helper builds its WHERE from scratch, so the exclusion predicate
+  // must be added here too rather than inherited from `where`.
+  whereForSettings.push(excludedPredicate("runs"));
 
   const modelIdsInResult = (rs.results ?? []).map((r) => r.model_id);
   const { timer } = opts;

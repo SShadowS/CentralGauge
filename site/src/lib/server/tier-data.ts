@@ -100,6 +100,9 @@ export async function buildAucMatrix(
          WHERE ru.task_set_hash = ?
            ${categoryWhere}
            AND ru.invocation_mode = ?
+           -- Soft run exclusion (0022): an excluded run contributes no cell,
+           -- so it moves neither a model's per-task mean nor its tier band.
+           AND ru.excluded_at IS NULL
          GROUP BY r.run_id, r.task_id
       ),
       runs_per_model AS (

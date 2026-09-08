@@ -59,14 +59,19 @@ export async function resolveInvocationMode(
     scope.kind === "current"
       ? db.prepare(
           `SELECT DISTINCT invocation_mode AS mode FROM runs
-       WHERE task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
+       WHERE task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)
+         AND excluded_at IS NULL`,
         )
       : db
           .prepare(
-            `SELECT DISTINCT invocation_mode AS mode FROM runs WHERE task_set_hash = ?`,
+            `SELECT DISTINCT invocation_mode AS mode FROM runs
+              WHERE task_set_hash = ? AND excluded_at IS NULL`,
           )
           .bind(scope.hash);
 
+  // Soft run exclusion (0022): modes are derived from the runs that COUNT.
+  // Otherwise a set whose only batch run is excluded would keep refusing with
+  // `mode_required` forever, for a mode with nothing left to rank.
   const rs = await stmt.all<{ mode: string }>();
   const modes = (rs.results ?? [])
     .map((r) => r.mode)

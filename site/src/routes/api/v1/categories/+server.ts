@@ -100,6 +100,9 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           SELECT model_id, COUNT(DISTINCT id) AS run_count
           FROM runs
           WHERE task_set_hash = (SELECT hash FROM cur)
+            -- Soft run exclusion (0022): the divisor for the per-run means
+            -- below, and the set of models the CROSS JOIN averages over.
+            AND excluded_at IS NULL
           GROUP BY model_id
         ),
         -- p1: (model, run, task) cells passed at attempt 1
@@ -109,6 +112,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           JOIN runs ru ON ru.id = r.run_id
           WHERE ru.task_set_hash = (SELECT hash FROM cur)
             AND r.attempt = 1 AND r.passed = 1
+            AND ru.excluded_at IS NULL
           GROUP BY r.run_id, r.task_id
         ),
         -- p2_only: attempt=2 passed and attempt=1 did NOT pass IN THE SAME RUN.
@@ -120,6 +124,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           JOIN runs ru ON ru.id = r.run_id
           WHERE ru.task_set_hash = (SELECT hash FROM cur)
             AND r.attempt = 2 AND r.passed = 1
+            AND ru.excluded_at IS NULL
             AND NOT EXISTS (
               SELECT 1 FROM results r1b
               WHERE r1b.run_id = r.run_id

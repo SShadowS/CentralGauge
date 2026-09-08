@@ -93,6 +93,8 @@
       cost_usd: r.cost_usd,
       duration_ms: r.duration_ms,
       started_at: r.ts,
+      excluded_at: r.excluded_at,
+      excluded_reason: r.excluded_reason,
       ...(r.completed_at ? { completed_at: r.completed_at } : {}),
     })),
   );

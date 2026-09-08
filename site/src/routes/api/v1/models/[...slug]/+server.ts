@@ -49,6 +49,8 @@ function parseCapabilities(raw: string | null): string[] | null {
 
 interface RunRow {
   run_id: string;
+  excluded_at: string | null;
+  excluded_reason: string | null;
   ts: string;
   score: number | string | null;
   cost_usd: number | string | null;
@@ -202,6 +204,8 @@ export const GET: RequestHandler = async ({
              runs.tier AS tier,
              runs.status AS status,
              runs.completed_at AS completed_at,
+             runs.excluded_at AS excluded_at,
+             runs.excluded_reason AS excluded_reason,
              COUNT(DISTINCT v.task_id) AS tasks_attempted,
              COUNT(DISTINCT CASE WHEN v.passed = 1 THEN v.task_id END) AS tasks_passed,
              SUM(COALESCE(v.llm_duration_ms, 0)
@@ -230,6 +234,10 @@ export const GET: RequestHandler = async ({
            LIMIT ?`,
           [model.id, HISTORY_LIMIT],
         );
+    // Soft run exclusion (0022) is deliberately NOT applied to the history /
+    // recent_runs queries above: they are a RECORD of the model's runs, not a
+    // statistic, and an excluded run must stay reachable from the model page.
+    // The aggregates block is where exclusion bites (computeModelAggregates).
     const history: ModelHistoryPoint[] = historyRows.map(toHistoryPoint);
 
     // 4. Recent runs — same shape as history, but capped at RECENT_RUNS_LIMIT.
@@ -252,6 +260,7 @@ export const GET: RequestHandler = async ({
            FROM runs JOIN results r ON r.run_id = runs.id
            WHERE runs.model_id = ?
              AND runs.task_set_hash = ?
+             AND runs.excluded_at IS NULL
              AND r.compile_errors_json IS NOT NULL
              AND r.compile_errors_json != '[]'
              AND r.compile_errors_json != ''`,
@@ -262,6 +271,7 @@ export const GET: RequestHandler = async ({
           `SELECT r.compile_errors_json
            FROM runs JOIN results r ON r.run_id = runs.id
            WHERE runs.model_id = ?
+             AND runs.excluded_at IS NULL
              AND r.compile_errors_json IS NOT NULL
              AND r.compile_errors_json != '[]'
              AND r.compile_errors_json != ''`,
@@ -440,6 +450,8 @@ function toHistoryPoint(row: RunRow): ModelHistoryPoint {
     tier,
     status,
     completed_at: row.completed_at,
+    excluded_at: row.excluded_at ?? null,
+    excluded_reason: row.excluded_reason ?? null,
     tasks_attempted: row.tasks_attempted ?? 0,
     tasks_passed: row.tasks_passed ?? 0,
     duration_ms: row.duration_ms ?? 0,

@@ -127,6 +127,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           WHERE r1.attempt = 1 AND r1.passed = 1
             AND ru1.model_id IN (${modelIdPlaceholders})
             AND ru1.invocation_mode = ?
+            AND ru1.excluded_at IS NULL
           GROUP BY ru1.model_id
         ),
         p2_only AS (
@@ -138,6 +139,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           WHERE r2.attempt = 2 AND r2.passed = 1
             AND ru2.model_id IN (${modelIdPlaceholders})
             AND ru2.invocation_mode = ?
+            AND ru2.excluded_at IS NULL
             AND NOT EXISTS (
               SELECT 1 FROM results r1b
               WHERE r1b.run_id = r2.run_id
@@ -155,6 +157,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           JOIN current_hash ON runs.task_set_hash = current_hash.hash
           WHERE runs.model_id IN (${modelIdPlaceholders})
             AND runs.invocation_mode = ?
+            -- Soft run exclusion (0022). run_count is the divisor for the
+            -- per-run means above, so it must count exactly the runs those
+            -- numerators were drawn from.
+            AND runs.excluded_at IS NULL
           GROUP BY runs.model_id
         )
         SELECT m.id AS model_id,
@@ -206,6 +212,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
            WHERE m.slug IN (${placeholders})
              AND runs.task_set_hash = ?
              AND runs.invocation_mode = ?
+             AND runs.excluded_at IS NULL
            GROUP BY r.task_id, m.id
            ORDER BY r.task_id, m.id`
         : `SELECT r.task_id, m.slug AS model_slug, AVG(r.score) AS avg_score, COUNT(DISTINCT runs.id) AS runs
@@ -214,6 +221,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
            JOIN models m ON m.id = runs.model_id
            WHERE m.slug IN (${placeholders})
              AND runs.invocation_mode = ?
+             AND runs.excluded_at IS NULL
            GROUP BY r.task_id, m.id
            ORDER BY r.task_id, m.id`,
       taskSetHash ? [...raw, taskSetHash, mode] : [...raw, mode],

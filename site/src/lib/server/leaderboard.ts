@@ -16,6 +16,7 @@ import { ApiError } from "./errors";
 import { isValidTaskSetHash } from "../shared/task-set-hash";
 import { COHORT_RUNS } from "../shared/cohort";
 import { modePredicate } from "./invocation-mode";
+import { excludedAndClause, excludedPredicate } from "./run-exclusion";
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
@@ -156,6 +157,11 @@ export async function computeLeaderboard(
   wheres.push(modePredicate("runs"));
   params.push(q.mode);
 
+  // Soft run exclusion (migration 0022): an excluded run leaves every number.
+  // Binds nothing, so it does not disturb the positional bind order documented
+  // at `allParams` below.
+  wheres.push(excludedPredicate("runs"));
+
   // A.5: Scope-aware IN-clause for numerator correlated subqueries.
   // When category or difficulty filters are active, p1 / p2_only must count
   // only tasks that belong to the active scope — otherwise a model that passed
@@ -225,6 +231,11 @@ export async function computeLeaderboard(
     // mode-filtered leaderboard's numerator.
     parts.push(`AND ${modePredicate(ruAlias)}`);
     bind.push(q.mode);
+    // Mirrored for the same reason as tier/since/mode above: the subquery
+    // joins its OWN `runs` alias, so without this an excluded run's pass would
+    // leak into the numerator even though the outer WHERE dropped that run.
+    // Contributes no bind param.
+    parts.push(excludedAndClause(ruAlias));
     return { clause: parts.join(" "), params: bind };
   }
   const runScopeA1 = buildRunScopeClause("ru1");
@@ -539,6 +550,9 @@ export async function computeLeaderboard(
       `(results.served_model IS NOT NULL
         OR (results.termination_kind = 'refusal' AND results.served_model IS NULL))`,
       modePredicate("runs"),
+      // An excluded run's refusals and fallbacks are not this model's caveat
+      // count either. The badge must agree with the row it annotates.
+      excludedPredicate("runs"),
     ];
     const fallbackParams: Array<string | number> = [q.mode];
     if (taskSetWhere) {

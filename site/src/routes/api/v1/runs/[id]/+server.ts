@@ -5,6 +5,8 @@ import { getAll, getFirst } from "$lib/server/db";
 
 interface RunRow {
   id: string;
+  excluded_at: string | null;
+  excluded_reason: string | null;
   task_set_hash: string;
   settings_hash: string;
   machine_id: string;
@@ -53,15 +55,13 @@ interface AttemptOut {
   passed: boolean;
   score: number;
   compile_success: boolean;
-  compile_errors: Array<
-    {
-      code: string;
-      message: string;
-      file?: string;
-      line?: number;
-      column?: number;
-    }
-  >;
+  compile_errors: Array<{
+    code: string;
+    message: string;
+    file?: string;
+    line?: number;
+    column?: number;
+  }>;
   tests_total: number;
   tests_passed: number;
   duration_ms: number;
@@ -105,6 +105,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       db,
       `SELECT runs.id, runs.task_set_hash, runs.settings_hash, runs.machine_id,
               runs.started_at, runs.completed_at, runs.status, runs.tier,
+              runs.excluded_at, runs.excluded_reason,
               runs.centralgauge_sha, runs.pricing_version, runs.reproduction_bundle_r2_key,
               runs.ingest_public_key_id,
               m.slug AS model_slug, m.display_name AS model_display, m.api_model_id AS model_api_id,
@@ -167,7 +168,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
           );
         }
       }
-      const durationMs = (r.llm_duration_ms ?? 0) +
+      const durationMs =
+        (r.llm_duration_ms ?? 0) +
         (r.compile_duration_ms ?? 0) +
         (r.test_duration_ms ?? 0);
       totalDurationMs += durationMs;
@@ -266,6 +268,12 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       },
       tier: run.tier,
       status: run.status,
+      // Soft run exclusion (0022). An excluded run keeps its detail page and
+      // every per-task number ON that page: those describe what really
+      // happened on this run, which is the whole reason it was kept rather
+      // than deleted. Only the cross-run statistics drop it.
+      excluded_at: run.excluded_at ?? null,
+      excluded_reason: run.excluded_reason ?? null,
       machine_id: run.machine_id,
       task_set_hash: run.task_set_hash,
       pricing_version: run.pricing_version,

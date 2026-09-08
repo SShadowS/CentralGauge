@@ -169,6 +169,7 @@ export async function computeMatrix(
         WHERE r.task_id IN (${taskIdSubquery})
           ${taskSetRunsFilter}
           AND runs.invocation_mode = ?
+          AND runs.excluded_at IS NULL
       )
       ORDER BY m.id ASC
     `,
@@ -208,6 +209,7 @@ export async function computeMatrix(
       WHERE model_id IN (${modelIdsPh})
         ${taskSetSubFilter}
         AND invocation_mode = ?
+        AND excluded_at IS NULL
       GROUP BY model_id
     `,
     [...modelIds, opts.mode],
@@ -282,6 +284,10 @@ export async function computeMatrix(
       WHERE r.task_id IN (${taskIdSubquery})
         ${taskSetRunsFilter}
         AND runs.invocation_mode = ?
+        -- Soft run exclusion (0022): an excluded run's cells are not counted
+        -- as attempts or passes. A model with ONLY excluded runs also drops
+        -- out of the models query above, so it gets no column at all.
+        AND runs.excluded_at IS NULL
       GROUP BY r.task_id, runs.model_id
     `,
     [...taskParams, opts.mode],

@@ -20,6 +20,8 @@ const rows: RunsListItem[] = [
     duration_ms: 252_000,
     started_at: "2026-04-27T10:00:00Z",
     completed_at: "2026-04-27T10:04:12Z",
+    excluded_at: null,
+    excluded_reason: null,
   },
 ];
 
@@ -38,6 +40,28 @@ describe("RunsTable", () => {
     expect(link!.getAttribute('href')).toBe('/runs/r1');
     expect(link!.textContent).toContain('r1');
     expect(link!.getAttribute('title')).toBe('r1');
+  });
+
+  it("marks an excluded run with a badge carrying the reason", () => {
+    const excludedRows: RunsListItem[] = [
+      {
+        ...rows[0]!,
+        excluded_at: "2026-09-08T00:00:00.000Z",
+        excluded_reason: "host OOM during evaluation",
+      },
+    ];
+    const { container } = render(RunsTable, { rows: excludedRows });
+    const badge = container.querySelector(".excluded") as HTMLElement | null;
+    expect(badge).not.toBeNull();
+    expect(badge!.textContent).toContain("Excluded");
+    expect(badge!.getAttribute("title")).toContain(
+      "host OOM during evaluation",
+    );
+  });
+
+  it("shows no exclusion badge on a run that counts", () => {
+    const { container } = render(RunsTable, { rows });
+    expect(container.querySelector(".excluded")).toBeNull();
   });
 
   it("truncates long run ids to a 12-char prefix and URL-encodes the href", () => {

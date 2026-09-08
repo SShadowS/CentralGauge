@@ -121,6 +121,9 @@
   <div class="title-row">
     <h1>Run <code class="text-mono">{r.id.slice(0, 12)}…</code></h1>
     <RunStatusBadge status={r.status} />
+    {#if r.excluded_at}
+      <span class="excluded-badge" title="Excluded from all statistics">Excluded</span>
+    {/if}
     {#if isLive && sse}
       <LiveStatus {sse} onReconnect={reconnect} label="watching for completion…" />
     {/if}
@@ -131,6 +134,17 @@
     · {new Date(r.started_at).toISOString()}
     · machine: <code class="text-mono">{r.machine_id}</code>
   </p>
+  {#if r.excluded_at}
+    <!-- Soft run exclusion (migration 0022). The tiles and per-task table
+         below still show what this run actually did; this line is the only
+         thing that tells a reader those numbers reach no site total. -->
+    <p class="excluded-note">
+      This run is excluded from every site statistic since
+      {new Date(r.excluded_at).toISOString()}.
+      {#if r.excluded_reason}Reason: {r.excluded_reason}{/if}
+      Its own results below are unchanged.
+    </p>
+  {/if}
 </header>
 
 <section class="stats">
@@ -170,6 +184,29 @@
   .title-row { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
   .title-row h1 { font-size: var(--text-2xl); margin: 0; }
   .meta { font-size: var(--text-sm); margin-top: var(--space-3); display: inline-flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+  .excluded-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+    height: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semi);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+  }
+  .excluded-note {
+    margin-top: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
 
   .stats {
     display: grid;

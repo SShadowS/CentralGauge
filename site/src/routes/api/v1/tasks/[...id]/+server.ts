@@ -50,6 +50,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
        JOIN models m ON m.id = runs.model_id
        WHERE r.task_id = ?
          AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)
+         -- Soft run exclusion (0022): the per-model attempt outcomes shown on
+         -- a task page are a statistic like any other.
+         AND runs.excluded_at IS NULL
        GROUP BY m.id
        ORDER BY avg_score DESC, m.slug ASC`,
       [params.id!],
@@ -80,14 +83,12 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         return {
           model_slug: r.model_slug,
           model_display: r.model_display,
-          attempt_1_passed: r.attempt_1_passed === null
-            ? null
-            : +(r.attempt_1_passed),
-          attempt_2_passed: r.attempt_2_passed === null
-            ? null
-            : +(r.attempt_2_passed),
+          attempt_1_passed:
+            r.attempt_1_passed === null ? null : +r.attempt_1_passed,
+          attempt_2_passed:
+            r.attempt_2_passed === null ? null : +r.attempt_2_passed,
           runs_total: runsTotal,
-          avg_score: r.avg_score === null ? null : +(r.avg_score),
+          avg_score: r.avg_score === null ? null : +r.avg_score,
         };
       }),
     });
