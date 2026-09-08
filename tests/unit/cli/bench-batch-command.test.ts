@@ -273,3 +273,49 @@ Deno.test("buildAdvanceDeps initializes the pricing catalog before advance's pri
     await cleanupTempDir(output);
   }
 });
+Deno.test("advanceAllRuns isolates a broken run and still advances the others", async () => {
+  const output = await createTempDir("bench-batch-advance-all-broken");
+  try {
+    for (const name of ["run-a", "run-b", "run-c"]) {
+      await ensureDir(join(output, "batch", name));
+    }
+    // run-b's state.json no longer parses (a hand edit during a live run).
+    await Deno.writeTextFile(
+      join(output, "batch", "run-b", RUN_FILES.state),
+      "{ not json",
+    );
+
+    const advanced: string[] = [];
+    const lines: string[] = [];
+    const exit = await advanceAllRuns(
+      output,
+      (dir) => {
+        if (dir.endsWith("run-b")) {
+          return Promise.reject(new Error("state.json is not valid JSON"));
+        }
+        // deno-lint-ignore no-explicit-any
+        return Promise.resolve({} as any as AdvanceDeps);
+      },
+      (dir: string) => {
+        advanced.push(dir);
+        return Promise.resolve({
+          exit: 0,
+          step: { kind: "done" },
+          // deno-lint-ignore no-explicit-any
+          state: {} as any,
+        } as AdvanceResult);
+      },
+      (line: string) => lines.push(line),
+    );
+
+    assertEquals(exit, 4);
+    assertEquals(advanced.length, 2);
+    assertEquals(advanced[0]!.endsWith("run-a"), true);
+    assertEquals(advanced[1]!.endsWith("run-c"), true);
+    assertEquals(lines.length, 1);
+    assertEquals(lines[0]!.includes("run-b"), true);
+    assertEquals(lines[0]!.includes("state.json is not valid JSON"), true);
+  } finally {
+    await cleanupTempDir(output);
+  }
+});

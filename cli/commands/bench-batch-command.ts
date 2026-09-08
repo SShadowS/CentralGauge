@@ -341,11 +341,18 @@ export function advanceFailureMessage(
  * directory under `<output>/batch/`, in name order, advanced ONE step each
  * (serially), returning the highest exit code seen. `0` when there are no
  * run directories at all.
+ *
+ * Each run is isolated: one that throws (a `state.json` that no longer
+ * parses, a directory half-created by `submit`, a live `mutate.lock`, a
+ * provider that exhausted its backoff) is reported and skipped, and every
+ * other run still advances on this tick. Without that, a single bad
+ * directory starved every run sorted after it on every scheduled tick.
  */
 export async function advanceAllRuns(
   outputDir: string,
   buildDeps: (dir: string) => Promise<AdvanceDeps>,
   advanceRunFn: typeof advanceRun = advanceRun,
+  log: (line: string) => void = (line) => console.error(line),
 ): Promise<number> {
   const batchDir = join(outputDir, "batch");
   const names: string[] = [];
@@ -362,9 +369,18 @@ export async function advanceAllRuns(
   let maxExit = 0;
   for (const name of names) {
     const dir = join(batchDir, name);
-    const deps = await buildDeps(dir);
-    const result: AdvanceResult = await advanceRunFn(dir, deps);
-    if (result.exit > maxExit) maxExit = result.exit;
+    try {
+      const deps = await buildDeps(dir);
+      const result: AdvanceResult = await advanceRunFn(dir, deps);
+      if (result.exit > maxExit) maxExit = result.exit;
+    } catch (err) {
+      log(
+        `${colors.red("[FAIL]")} ${name}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      maxExit = 4;
+    }
   }
   return maxExit;
 }
