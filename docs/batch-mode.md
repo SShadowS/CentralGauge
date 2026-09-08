@@ -329,10 +329,15 @@ call available on demand, not just silence until it ends.
 ### Daily freshness refresh during a live run
 
 The submit precheck's daily freshness refresh appended a new 2026-09-08 pricing row for
-this model (sync rates from OpenRouter, `effective_from` timestamped mid-run) while the
-batch was in flight - after the run's frozen `state.json` block had already captured
-`gitClean: false` at submit time, so this did not trip a D13 drift refusal on any later
-`advance` call. The carry-forward fix from Task 13b (`appendPricingIfChanged` copying
+this model (sync rates from OpenRouter, `effective_from` timestamped
+`05:41:09.511Z`) as part of the same `submit` invocation, about 43 seconds BEFORE
+`state.json`'s own `submittedAt` (`05:41:53.460Z`) - the precheck writes the row first,
+then submit freezes the (now dirty) tree's `gitSha`/`gitClean` snapshot afterward. That
+ordering is exactly why the frozen block correctly recorded `gitClean: false` from the
+start and why no D13 drift refusal ever tripped on a later `advance` call: the invariant
+D13 enforces is that the tree's dirty state must not CHANGE after the freeze, not that
+the tree must be clean at freeze time. The carry-forward fix from Task 13b
+(`appendPricingIfChanged` copying
 `batch_*` fields from the latest prior row when a freshly fetched row has none) worked
 correctly in production: the new row's four `batch_*_per_mtoken` fields exactly match the
 2026-09-07 row. One new gap the fresh row exposes: its own sync-side
@@ -346,7 +351,7 @@ finalize per D13.
 ### Timing
 
 Single wave, 2 items. Submitted `2026-09-08T05:41:53.460Z`, batch ended
-`2026-09-08T05:46:19.359Z` - about 4.5 minutes, matching the spike findings' "OpenRouter
+`2026-09-08T05:46:19.359Z` - about 4.4 minutes, well within the spike findings' "OpenRouter
 completed Gemini batches within about ten minutes" estimate and well inside the 2-hour
 per-wave budget this task allowed. Both tasks solved on attempt 1, so no wave 2 was
 needed.
