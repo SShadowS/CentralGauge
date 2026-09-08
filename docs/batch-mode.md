@@ -266,11 +266,23 @@ content (no source edit survives in this checkout).
 ### Timing
 
 Wave 1 (2 items) was submitted 2026-09-07T08:01:50Z and took about 8h33m to complete on
-OpenAI's side. Wave 2 (1 item, CG-AL-E006's retry) was submitted
-2026-09-07T16:45:10Z and took about 12h12m, ending 2026-09-08T04:57:00Z. **OpenAI batches
-for gpt-5-mini routinely sit `in_progress` for many hours** - a scheduled `advance` (cron,
-Task 18) is the only practical way to drive these to completion; a human sitting on a poll
-loop for half a day is not.
+OpenAI's side, ending near 2026-09-07T16:35Z. Wave 2 (1 item, CG-AL-E006's retry) was
+submitted 2026-09-07T16:45:10Z and took about 12h12m, ending 2026-09-08T04:57:00Z.
+**OpenAI batches for gpt-5-mini routinely sit `in_progress` for many hours** - a scheduled
+`advance` (cron, Task 18) is the only practical way to drive these to completion; a human
+sitting on a poll loop for half a day is not.
+
+**Recorded end-time caveat.** The persisted wave-1 `endedAt` (results JSON
+`batch.waves[0].endedAt` and the scores file's `# Batch` block) reads
+`2026-09-08T04:57:00Z` - wave 2's real end time, not wave 1's own - although wave 1
+actually ended near `2026-09-07T16:35Z`. At the time this run went through recovery,
+`endedAt` was derived from the timestamp of the last poll rather than the first poll that
+observed the batch as ended, and the recovery re-polled the already-ended wave-1 batch
+hours later (after wave 2 had also finished) - so the recorded value reflects when it was
+noticed, not when it finished. The runner now records a batch's first observed end time
+(commit "record a batch's first observed end time"), so later runs are not affected by
+this gap. The wave timings quoted above use the real end times, not the one persisted in
+this run's own `endedAt` field.
 
 ### Verification
 
@@ -394,6 +406,48 @@ with no incident to drill into. The Anthropic drill's Incident C bug and the Ope
 drill's three retry defects, empty-collect bug, and stuck-collect hole are all fixed and
 reviewed (commits `ac1d2e0a`, `74c1ee7d`, `41f97b5b`, `e8951d5b`, `71f5a98e`). The
 OpenRouter run additionally confirmed the Task 13b pricing carry-forward fix works in
-production against a live daily freshness refresh. **Scheduled `advance --all` is still
-not yet recommended** - that is Task 18's remaining call to make, independent of these
-bugs.
+production against a live daily freshness refresh.
+
+## Scheduled `advance --all`
+
+The recommended shape is a cron job (or, on Windows, a Task Scheduler task) that runs
+
+```
+deno task start bench batch advance --all --output results
+```
+
+every 30 minutes. Exit 3 is normal - it just means some run under `<output>/batch/` is
+still processing on the provider side. Exit 0 means at least one run took a real step
+(submitted a wave, collected, evaluated, or finalized) or every run is already done;
+either way the next scheduled tick will pick up whatever is left. Exit 4 must page an
+operator - it means a run hit drift, a `submit-unknown` state awaiting `retry`, or some
+other condition `advance` cannot resolve on its own; the reason is printed to `state.json`
+and surfaced by `status --json`, so read that before deciding the next move. `.centralgauge.yml`
+has a commented `batch.advanceIntervalMinutes` example (see the Provider notes section
+and `.claude/rules/batch-mode.md`) documenting the same 30-minute default for whatever
+scheduler config reads it.
+
+An unattended loop on this shape is safe because of four runner fixes proven by the hand
+runs above: `retry` now resubmits correctly after a crash is confirmed not submitted
+(commit `74c1ee7d`) instead of refusing with "nothing to retry"; OpenAI's `collect` step
+retrieves the batch itself to get its output/error file ids instead of trusting a stale
+cached copy (commit `e8951d5b`); an uncollected batch is routed back to `collect` from
+any non-terminal phase instead of getting stuck (commit `71f5a98e`); and an `evaluate`
+step with nothing left to evaluate now exits 4 with a blocked reason instead of silently
+exiting 0 and spinning forever (commit `71f5a98e`). Before these fixes, a scheduled loop
+could sit at exit 0 indefinitely making zero real progress with nobody there to notice -
+see Incident C and the OpenAI empty-collect incident above for exactly how that happened
+on hand-driven runs.
+
+## Cost table (three providers, `batch-smoke*` presets, `--no-ingest`, tasks CG-AL-E001 + CG-AL-E006, 2 attempts)
+
+| run | model | run id | outcome | batch cost | provider-reported | sync comparison |
+| --- | --- | --- | --- | --- | --- | --- |
+| Task 13 run 1 | anthropic/claude-haiku-4-5 | 09b9a437-e1f5-4c3e-86f3-4c1d62d73c10 | E001 solved attempt 2, E006 failed | $0.004293 | none (Anthropic reports no batch cost) | $0.007069 sync (2026-05-29), 39% cheaper |
+| Task 13 run 2 | anthropic/claude-haiku-4-5 | a616b047-fb79-43ac-8c65-9d1826068341 | E001 solved attempt 1, E006 failed | $0.003195 | none | same sync run, 55% cheaper |
+| Task 15 | openai/gpt-5-mini | 28755d71-6d6a-46c8-baae-f13456d0b405 | E001 solved attempt 1, E006 failed | $0.005798 | none (OpenAI reports no batch cost) | no sync run exists |
+| Task 17 | openrouter/google/gemini-3.8-flash | bf175561-5cc2-40f9-a343-3e2b1240c8f3 | both solved attempt 1 | $0.00388575 | $0.00388575 (usage.cost), 0% gap | no sync run exists |
+
+Wave timings: Anthropic waves ended within 20 to 80 minutes; OpenAI gpt-5-mini wave 1 took
+8h33m (two items) and wave 2 12h12m (one item); OpenRouter Gemini completed in about 4
+minutes.
