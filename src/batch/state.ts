@@ -9,7 +9,7 @@
  * small enough to read and rewrite atomically on every mutation.
  *
  * `FrozenPromptInputs` (the shape of `prompt-inputs.json`) is Plan A's, not
- * redeclared here — see `src/parallel/shared/prompt-inputs.ts`.
+ * redeclared here - see `src/parallel/shared/prompt-inputs.ts`.
  *
  * @module src/batch/state
  */

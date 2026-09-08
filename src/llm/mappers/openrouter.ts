@@ -6,7 +6,7 @@
  * than importing openai.ts) so each provider mapper module is self-contained
  * per the D7 convention.
  *
- * `mapUsage` deliberately never prices — {@link
+ * `mapUsage` deliberately never prices - {@link
  * "../../parallel/shared/price-usage.ts".priceUsage} is the only place an
  * attempt's cost is computed.
  *
@@ -58,7 +58,7 @@ export function mapFinishReason(
 }
 
 /**
- * Builds token usage from a Chat Completions usage fragment. NEVER prices —
+ * Builds token usage from a Chat Completions usage fragment. NEVER prices  -
  * see `priceUsage` in `src/parallel/shared/price-usage.ts`.
  */
 export function mapUsage(fragment: ChatUsageFragment): TokenUsage {

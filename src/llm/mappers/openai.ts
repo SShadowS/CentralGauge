@@ -7,7 +7,7 @@
  * fragment so the two paths read a finish reason or a token count the same
  * way.
  *
- * `mapUsage` deliberately never prices — {@link
+ * `mapUsage` deliberately never prices - {@link
  * "../../parallel/shared/price-usage.ts".priceUsage} is the only place an
  * attempt's cost is computed.
  *
@@ -59,7 +59,7 @@ export function mapFinishReason(
 }
 
 /**
- * Builds token usage from a Chat Completions usage fragment. NEVER prices —
+ * Builds token usage from a Chat Completions usage fragment. NEVER prices  -
  * see `priceUsage` in `src/parallel/shared/price-usage.ts`.
  */
 export function mapUsage(fragment: ChatUsageFragment): TokenUsage {

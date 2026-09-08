@@ -8,7 +8,7 @@
  * functions over a batch response fragment, so the two paths can never
  * silently diverge in how a finish reason or a token count is read.
  *
- * `mapUsage` deliberately never prices — {@link
+ * `mapUsage` deliberately never prices - {@link
  * "../../parallel/shared/price-usage.ts".priceUsage} is the only place an
  * attempt's cost is computed (spec section 6), for both sync and batch
  * pricing modes.
@@ -88,7 +88,7 @@ export function mapFinishReason(
       // stop_reason "refusal" (empty content, ~3 output tokens). Observed
       // live: benchmark code-gen prompts misclassified as category "cyber"
       // (X050/X051/X052 attempt-1, X041 both attempts). Deterministic per
-      // prompt — retrying the same model re-refuses. Map to content_filter
+      // prompt - retrying the same model re-refuses. Map to content_filter
       // so the work pool reports "API safety refusal" instead of the
       // misleading "Model returned empty response".
       case "refusal":
@@ -103,7 +103,7 @@ export function mapFinishReason(
 }
 
 /**
- * Builds token usage from an Anthropic usage fragment. NEVER prices — see
+ * Builds token usage from an Anthropic usage fragment. NEVER prices - see
  * `priceUsage` in `src/parallel/shared/price-usage.ts`.
  */
 export function mapUsage(fragment: AnthropicUsageFragment): TokenUsage {
