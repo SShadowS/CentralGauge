@@ -7,8 +7,13 @@
 // task suite has been renumbered before) so the render path is exercised
 // for real; only the provider, the ingest precheck, and the container
 // runtime are faked.
-import { assert, assertEquals, assertNotEquals } from "@std/assert";
-import { expandGlob } from "@std/fs";
+import {
+  assert,
+  assertEquals,
+  assertNotEquals,
+  assertRejects,
+} from "@std/assert";
+import { ensureDir, expandGlob } from "@std/fs";
 import { join } from "@std/path";
 import { submitRuns } from "../../../src/batch/submit.ts";
 import type { SubmitDeps, SubmitOptions } from "../../../src/batch/submit.ts";
@@ -20,15 +25,21 @@ import { ConfigManager } from "../../../src/config/config.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 import { FakeBatchProvider } from "../../utils/fake-batch-provider.ts";
 import type {
+  BatchHandle,
   BatchItem,
   BatchProvider,
   BatchProviderName,
+  SubmitHooks,
 } from "../../../src/llm/batch/types.ts";
 import type { LLMRequest } from "../../../src/llm/types.ts";
 import type { ContainerRuntime } from "../../../src/parallel/container-runtime.ts";
 import type { ContainerEnvironmentSet } from "../../../src/batch/state.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 import { tryAcquireBenchLock } from "../../../src/utils/bench-lock.ts";
+import {
+  MutateLockHeldError,
+  withMutateLock,
+} from "../../../src/batch/mutate-lock.ts";
 
 const MODEL_SLUG = "claude-batch-submit-fake";
 const FULL_SLUG = `anthropic/${MODEL_SLUG}`;
@@ -286,6 +297,137 @@ Deno.test("submitRuns refuses while the bench lock is held, before any container
     assertEquals(deps.calls.includes("runtimeFactory"), false);
   } finally {
     await held.release();
+    await cleanupTempDir(output);
+  }
+});
+
+/**
+ * Pins `crypto.randomUUID` to `runId` for the duration of `fn`, so a test
+ * can compute the exact run directory (`runDir`) `submitRuns` will mint
+ * BEFORE calling it - `submitRuns` itself has no way to report the id it
+ * chose. Restored in `finally`, including when `fn` throws.
+ */
+async function withFixedRunId<T>(
+  runId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const original = crypto.randomUUID.bind(crypto);
+  Object.defineProperty(crypto, "randomUUID", {
+    value: () => runId,
+    configurable: true,
+  });
+  try {
+    return await fn();
+  } finally {
+    Object.defineProperty(crypto, "randomUUID", {
+      value: original,
+      configurable: true,
+    });
+  }
+}
+
+/**
+ * A `FakeBatchProvider` that, on its first `submit` call, tries to acquire
+ * `dir`'s mutate lock itself and records whether that was refused. Used to
+ * prove the lock is actively held by `submitRuns` at the exact moment it is
+ * talking to the provider - well inside the wrapped per-run block.
+ */
+class LockProbeProvider extends FakeBatchProvider {
+  probed: "held" | "not-held" | null = null;
+
+  constructor(private readonly dir: string) {
+    super("anthropic", {});
+  }
+
+  override async submit(
+    model: string,
+    items: BatchItem[],
+    nonce: string,
+    _hooks?: SubmitHooks,
+  ): Promise<BatchHandle> {
+    if (this.probed === null) {
+      try {
+        await withMutateLock(this.dir, () => Promise.resolve());
+        this.probed = "not-held";
+      } catch (err) {
+        this.probed = err instanceof MutateLockHeldError ? "held" : "not-held";
+      }
+    }
+    return await super.submit(model, items, nonce);
+  }
+}
+
+Deno.test("submitRuns refuses when the run's mutate lock is already held (a concurrent advance is mid-tick)", async () => {
+  const output = await createTempDir("batch-submit-mutate-lock-held");
+  const globs = await findTwoEasyTaskGlobs();
+  setFixturePreset(globs);
+  seedBatchPricing(true);
+
+  const fixedRunId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const dir = runDir(output, fixedRunId);
+  await ensureDir(dir);
+  // Simulate a concurrent `advance --all` tick already holding this run's
+  // lock: a live (non-stale) `mutate.lock` file.
+  await Deno.writeTextFile(
+    join(dir, RUN_FILES.mutateLock),
+    new Date().toISOString(),
+  );
+
+  try {
+    await withFixedRunId(fixedRunId, async () => {
+      const deps = makeFakeDeps();
+      await assertRejects(
+        () => submitRuns(baseOptions(output, globs), deps),
+        MutateLockHeldError,
+      );
+    });
+
+    // No state.json was written while the lock was held: a concurrent
+    // `advance` never observes a half-written run.
+    const stateExists = await Deno.stat(join(dir, RUN_FILES.state))
+      .then(() => true)
+      .catch((err) => {
+        if (err instanceof Deno.errors.NotFound) return false;
+        throw err;
+      });
+    assertEquals(stateExists, false);
+  } finally {
+    await cleanupTempDir(output);
+  }
+});
+
+Deno.test("submitRuns acquires and releases the run's mutate lock during a normal submission", async () => {
+  const output = await createTempDir("batch-submit-mutate-lock-acquire");
+  const globs = await findTwoEasyTaskGlobs();
+  setFixturePreset(globs);
+  seedBatchPricing(true);
+
+  const fixedRunId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  const dir = runDir(output, fixedRunId);
+  const provider = new LockProbeProvider(dir);
+
+  try {
+    await withFixedRunId(fixedRunId, async () => {
+      const deps = makeFakeDeps(provider);
+      const result = await submitRuns(baseOptions(output, globs), deps);
+      assertEquals(result.exit, 0);
+    });
+
+    // A concurrent lock attempt made from inside the provider's own
+    // `submit` call - reached only while submitRuns' per-run block is
+    // running - was refused: the lock was actively held during submission.
+    assertEquals(provider.probed, "held");
+
+    // The lock is released once submitRuns finishes: no mutate.lock left
+    // behind for a later `advance` to trip over.
+    const lockExists = await Deno.stat(join(dir, RUN_FILES.mutateLock))
+      .then(() => true)
+      .catch((err) => {
+        if (err instanceof Deno.errors.NotFound) return false;
+        throw err;
+      });
+    assertEquals(lockExists, false);
+  } finally {
     await cleanupTempDir(output);
   }
 });

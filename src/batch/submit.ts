@@ -51,6 +51,7 @@ import { loadTaskManifestsWithHashes } from "../../cli/helpers/task-loader.ts";
 import { todayPricingVersion } from "../../cli/commands/bench/ingest-meta.ts";
 import { DEFAULT_CONTAINER_NAME } from "../constants.ts";
 import { tryAcquireBenchLock } from "../utils/bench-lock.ts";
+import { withMutateLock } from "./mutate-lock.ts";
 import { apiKeyForBatchProvider } from "./provider-wiring.ts";
 import { itemIdFor } from "./items.ts";
 import { chunkItems } from "./chunking.ts";
@@ -365,100 +366,113 @@ export async function submitRuns(
     const dir = runDir(opts.output, runId);
     await ensureDir(dir);
 
-    const promptInputsPath = join(dir, RUN_FILES.promptInputs);
-    await writeJsonAtomic(promptInputsPath, inputs);
+    // Every mutation of this fresh run - the initial `state.json`, wave-1
+    // journaling and submission, and the final phase flip - happens under
+    // the run's own `mutate.lock` (spec section 4), the same lock `advance`
+    // takes. Without it a scheduled `advance --all` tick can poll this run
+    // mid-submission and overwrite `state.json` with a stale in-memory copy,
+    // losing the records of chunks still being submitted (GH final-rereview
+    // N1). A held lock here would mean two processes picked the same fresh
+    // run id, which cannot happen; `withMutateLock` is not expected to
+    // throw in normal operation.
+    await withMutateLock(dir, async () => {
+      const promptInputsPath = join(dir, RUN_FILES.promptInputs);
+      await writeJsonAtomic(promptInputsPath, inputs);
 
-    const frozenBase = await freezeInputs(
-      opts.cwd,
-      templateDir,
-      taskIds,
-      manifestsMap,
-      promptInputsPath,
-      environment,
-    );
-    const frozen = { ...frozenBase, tasksGlob: encodeTasksGlob(patterns) };
-
-    const tasks: Record<string, TaskSummary> = {};
-    for (const taskId of taskIds) {
-      tasks[taskId] = {
-        attempt1: {
-          itemId: await itemIdFor(runId, taskId, 1, 0),
-          round: 0,
-          ownerRound: 0,
-          state: "pending",
-        },
-      };
-    }
-
-    const state: BatchRunState = {
-      schemaVersion: STATE_SCHEMA_VERSION,
-      runId,
-      createdAt: new Date().toISOString(),
-      model: {
-        slug: `${provider}/${variant.model}`,
-        provider,
-        apiModelId: variant.model,
-      },
-      frozen,
-      phase: "prepared",
-      wave: 1,
-      batches: [],
-      activeBatchIds: [],
-      tasks,
-      ingest: opts.ingest,
-      // The version the pricing gate above resolved against; `finalizeRun`
-      // stamps it into the ingest payload however much later it runs.
-      pricingVersion,
-    };
-    await writeState(dir, state);
-
-    const rendered = await renderWave(state, 1, 0, taskIds, {
-      buildBody: deps.buildBody,
-      inputs,
-      manifests: manifestsMap,
-      contexts,
-    });
-
-    const chunks = chunkItems(
-      rendered.map((r) => ({ itemId: r.itemId, body: r.body })),
-      batchProvider.limits,
-      deps.wrap,
-    );
-
-    // Journal every item before the first provider call: `state.json`
-    // already carries them as `"pending"`, and a rejection or a crash then
-    // leaves them resubmittable from disk (`retry`, `submit-pending`).
-    await journalItems(dir, chunks, rendered, 1, 0);
-
-    const outcome = await submitChunks(dir, state, chunks, rendered, 1, 0, {
-      provider: batchProvider,
-      model: variant.model,
-      wrap: deps.wrap,
-    });
-
-    if (outcome.kind === "submitted") {
-      state.phase = "attempt-1-submitted";
-      await writeState(dir, state);
-      const batchIds = outcome.records.map((r) => r.handle.batchId).join(",");
-      deps.log(
-        `[batch] submitted ${runId} items=${rendered.length} chunks=${chunks.length} batches=${batchIds}`,
+      const frozenBase = await freezeInputs(
+        opts.cwd,
+        templateDir,
+        taskIds,
+        manifestsMap,
+        promptInputsPath,
+        environment,
       );
-    } else {
-      const reason = outcome.kind === "rejected"
-        ? (outcome.lastError?.message ?? "rejected")
-        : outcome.reason;
-      state.lastError = outcome.kind === "rejected" && outcome.lastError
-        ? outcome.lastError
-        : {
-          at: new Date().toISOString(),
-          step: "submit",
-          message: reason,
-          retryable: false,
+      const frozen = { ...frozenBase, tasksGlob: encodeTasksGlob(patterns) };
+
+      const tasks: Record<string, TaskSummary> = {};
+      for (const taskId of taskIds) {
+        tasks[taskId] = {
+          attempt1: {
+            itemId: await itemIdFor(runId, taskId, 1, 0),
+            round: 0,
+            ownerRound: 0,
+            state: "pending",
+          },
         };
+      }
+
+      const state: BatchRunState = {
+        schemaVersion: STATE_SCHEMA_VERSION,
+        runId,
+        createdAt: new Date().toISOString(),
+        model: {
+          slug: `${provider}/${variant.model}`,
+          provider,
+          apiModelId: variant.model,
+        },
+        frozen,
+        phase: "prepared",
+        wave: 1,
+        batches: [],
+        activeBatchIds: [],
+        tasks,
+        ingest: opts.ingest,
+        // The version the pricing gate above resolved against; `finalizeRun`
+        // stamps it into the ingest payload however much later it runs.
+        pricingVersion,
+      };
       await writeState(dir, state);
-      deps.log(`${colors.red("[FAIL]")} batch submit: ${runId}: ${reason}`);
-      overallExit = 4;
-    }
+
+      const rendered = await renderWave(state, 1, 0, taskIds, {
+        buildBody: deps.buildBody,
+        inputs,
+        manifests: manifestsMap,
+        contexts,
+      });
+
+      const chunks = chunkItems(
+        rendered.map((r) => ({ itemId: r.itemId, body: r.body })),
+        batchProvider.limits,
+        deps.wrap,
+      );
+
+      // Journal every item before the first provider call: `state.json`
+      // already carries them as `"pending"`, and a rejection or a crash then
+      // leaves them resubmittable from disk (`retry`, `submit-pending`).
+      await journalItems(dir, chunks, rendered, 1, 0);
+
+      const outcome = await submitChunks(dir, state, chunks, rendered, 1, 0, {
+        provider: batchProvider,
+        model: variant.model,
+        wrap: deps.wrap,
+      });
+
+      if (outcome.kind === "submitted") {
+        state.phase = "attempt-1-submitted";
+        await writeState(dir, state);
+        const batchIds = outcome.records.map((r) => r.handle.batchId).join(
+          ",",
+        );
+        deps.log(
+          `[batch] submitted ${runId} items=${rendered.length} chunks=${chunks.length} batches=${batchIds}`,
+        );
+      } else {
+        const reason = outcome.kind === "rejected"
+          ? (outcome.lastError?.message ?? "rejected")
+          : outcome.reason;
+        state.lastError = outcome.kind === "rejected" && outcome.lastError
+          ? outcome.lastError
+          : {
+            at: new Date().toISOString(),
+            step: "submit",
+            message: reason,
+            retryable: false,
+          };
+        await writeState(dir, state);
+        deps.log(`${colors.red("[FAIL]")} batch submit: ${runId}: ${reason}`);
+        overallExit = 4;
+      }
+    });
 
     runIds.push(runId);
   }
