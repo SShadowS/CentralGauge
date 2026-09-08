@@ -107,6 +107,9 @@ guide's own history.
 | `advance` returned exit=0 forever with no compile/test output and the phase never changed (historical, observed live, see Incident C below) | **Fixed.** `evaluateCollected` (`src/batch/evaluate.ts`) used to silently treat a task as done, without repairing `state.json`, whenever its attempt file already existed on disk but `state.json` never recorded that task as `"evaluated"` (a crash between finishing that task and the wave's single end-of-loop `writeState` left exactly this gap) - every future `advance` call re-derived the identical stuck decision, so a scheduled `advance --all` loop would have spun on it silently forever. `evaluateCollected`'s exists-early-return path now repairs `ItemSummary.state` to `"evaluated"` and sets `attemptFile` to the existing file's path in place, before the wave's end-of-loop `writeState` persists it - mirroring how `collect.ts`'s `repairFromExistingFile` already repaired state on its own idempotent path. Covered by a regression test in `tests/unit/batch/evaluate.test.ts`. | Nothing manual - resuming `advance` repairs the stuck task's state on its own. If you hit this on a checkout older than the fix, hand-repair `state.json` the same way: set the stuck task's `ItemSummary.state` to `"evaluated"` and `attemptFile` to the existing attempt file's path (back up `state.json` first, validate the edited JSON with `jq empty` before overwriting), or update the checkout. |
 | Crash mid-evaluate, otherwise clean | `attempts/` files for finished tasks | The next `advance` picks up only the remaining tasks - each task's `attempts/<taskId>-a<N>.json` existing is itself the "already done" marker, and `state.json` is repaired to match on that same call (see Incident C above) |
 | Crash mid-collect | `responses/<itemId>.json` files for finished items | The next `advance`'s `collectEnded` skips any item whose response file already exists and repairs its state from that file - verified by reading `collect.ts`, not empirically triggered in this guide's own drill (see Crash drill below) |
+| `retry`/`retry --confirm-not-submitted` refused with "nothing to retry: no lastError and run is not submit-unknown" right after a crash on a run's very first submission (observed live, see the OpenAI hand-driven run below) | **Fixed.** `state.phase` was never actually persisted as the literal `"submit-unknown"` value anywhere in the codebase; `retryRun` gated the submit-unknown branch on that value while `advance`'s `nextStep` derived "submit-unknown"-ness from a live `intent.json` alone. A crash before any batch handle exists left `state.phase` at whatever it was before the submit (often `prepared`), so `retry --confirm-not-submitted` was unreachable, and after confirming, `retry` was equally unreachable with no `lastError` set. Fixed by `retry` now detecting submit-unknown directly from a live intent (commit `74c1ee7d`) and setting the submitted phase after a successful resubmit (commit `41f97b5b`). | Update, then run the normal `status` / `retry --confirm-not-submitted` / `retry` sequence |
+| A batch the provider reports as ended collects zero response files, yet `state.json` still marks it `collected: true` (observed live, see the OpenAI hand-driven run below) | **Fixed** (commit `e8951d5b`). `OpenAIBatchProvider.collect` read `outputFileId`/`errorFileId` off `handle.extra`, but `pollActive` never merged the poll's own extras onto the batch record, so `extra` stayed empty at collect time and nothing downloaded. `collect` now retrieves the batch itself instead of trusting stale `extra`, and `pollActive` merges `poll.extra` onto the record. | Update, then re-run `advance`. A run already stuck this way needs the hand repair described in the OpenAI section below. |
+| `advance` returns exit 0 with no progress from an `attempt-N-collected` phase whose batch never actually collected anything, or from an `evaluate` step with nothing left to evaluate (observed live, see the OpenAI hand-driven run below) | **Fixed** (commit `71f5a98e`). The state machine now routes an uncollected batch back to `collect` from any non-terminal phase, and an `evaluate` step with nothing evaluable exits 4 with a blocked reason instead of silently exiting 0. | Update; no further repair needed once the fix is in place |
 
 ## Crash drill observations (this run's own drill)
 
@@ -138,6 +141,150 @@ specifically to interrupt `advance` mid-flight and confirm clean resumption.
   `advance --all` running unattended could have hit this same gap with nobody there to
   notice the silent stall, before the resume path was made to repair `state.json` itself.
 
+## OpenAI hand-driven run (gpt-5-mini)
+
+The first hand-driven run on the OpenAI provider, against the `batch-smoke-openai` preset
+(same shape as `batch-smoke`: `tasks/easy/CG-AL-E00*.yml`, containers Cronus28 +
+Cronus282, 2 attempts, 16000 maxTokens), run id `28755d71-6d6a-46c8-baae-f13456d0b405`,
+model `openai/gpt-5-mini`.
+
+### Setup
+
+`openai/gpt-5-mini` had no catalog row at all before this run. `bench batch submit`'s
+precheck auto-seeded the model and sync pricing rows from LiteLLM (input $0.25/Mtok,
+output $2/Mtok); the four `batch_*_per_mtoken` fields were added by hand at 50% of those
+sync rates, matching every other OpenAI row in the catalog, then pushed with
+`sync-catalog --apply`.
+
+Separately, `models openai/gpt-5-mini --check` returned a 400: "temperature does not
+support 0 with this model. Only the default (1) value is supported" - the same class of
+error GPT-5.5+ triggers, but gpt-5-mini predates that numbering and was missing from
+`TEMPERATURE_LOCKED_MODELS` in `src/llm/openai-adapter.ts`. Without this fix every batch
+item for gpt-5-mini would have come back as a provider-side 400, so it had to be fixed
+before the drill could even run. Fixed (commit `dde0e213`, with a regression test).
+
+### The upload-crash drill
+
+A temporary hook was added to `src/llm/batch/openai-batch.ts`, right after
+`hooks?.onInputFile` and before `batches.create`: `if
+(Deno.env.get("CENTRALGAUGE_BATCH_CRASH_AFTER_UPLOAD") === "1") Deno.exit(1);`. This
+simulates a hard process kill between the file upload and the batch actually being
+created, the crash `submit-unknown` reconciliation is meant to recover from. Left
+uncommitted and in place for the whole drill (D13 freezes `gitClean` at submit, so
+removing it mid-run would have flipped `gitClean` and refused every later `advance`).
+
+Exact sequence, with exit codes as guaranteed by each command's own return type
+(`RetryOutcome.exit: 0 | 4` for `retry`, `AdvanceResult.exit` for `advance`) and, where
+captured directly, by `PIPESTATUS`:
+
+1. `CENTRALGAUGE_BATCH_CRASH_AFTER_UPLOAD=1 deno task start bench batch submit --preset batch-smoke-openai --llms openai/gpt-5-mini --no-ingest --output results`
+   exit=1 (`Deno.exit(1)` fired after the upload; no batch id was ever printed).
+   `intent.json` held the uploaded `inputFileId`; `state.json` was at `phase: "prepared"`
+   with both tasks' items `"pending"` and `batches: []`.
+2. `bench batch status --output results` showed the run with
+   `next=retry --adopt <id> | --confirm-not-submitted` and no batch id line (the orphan
+   candidate case: none, since `batches.create` was never reached).
+3. `bench batch retry <runId> --confirm-not-submitted --output results`
+   `[FAIL] nothing to retry: no lastError and run is not submit-unknown`, exit=4. This was
+   the first of the three retry defects fixed in Task 15b (see the Recovery table above):
+   `state.phase` never actually becomes `"submit-unknown"` anywhere in the codebase, so
+   the command's own submit-unknown branch was unreachable for a crash on a run's very
+   first submission.
+4. `bench batch retry <runId> --output results` (no flag, to test the resubmit path
+   directly): same `[FAIL]`, exit=4. Same root cause: no `lastError` was ever set (the
+   crash was a hard `Deno.exit`, never a caught-and-recorded provider error), so
+   `resubmitPending` was equally unreachable.
+5. `bench batch advance <runId> --output results` against the still-`prepared`,
+   still-orphaned run: exit=4 (silent; `advance`'s CLI prints nothing on its own, unlike
+   `retry` - only `status` surfaces the reason). `status` read
+   `next=blocked: advance has no automatic action for phase "prepared"`.
+
+### Three hand edits used to complete the drill on the unfixed checkout
+
+Before Task 15b's fix landed, the drill could only be driven forward by hand-editing the
+run's own `state.json` (an untracked run artifact, backed up before each edit, never a
+tracked source file) to force the code down the path it should have reached on its own:
+
+1. `state.json.bak-before-manual-repair`: `phase: "prepared"` -> `"submit-unknown"`, so
+   `retryRun` would route into `retrySubmitUnknown`. Re-running
+   `retry --confirm-not-submitted` then succeeded (`confirmed not submitted; run returned
+   to prepared`, exit=0) and genuinely deleted the orphan input file (independently
+   confirmed: a throwaway script calling the OpenAI SDK's `files.retrieve` on the orphan
+   id returned "404 No such File object") and cleared `intent.json`. **No longer needed**
+   once `retry` detects submit-unknown from a live intent directly (commit `74c1ee7d`).
+2. `state.json.bak-before-lasterror-repair`: `lastError` set by hand to
+   `{at, step: "submit", message: "...", retryable: true}` (matching the zod shape in
+   `state.ts`), so `retryRun` would fall through to `resubmitPending`. Re-running `retry`
+   then succeeded (`resubmitted 2 item(s)`, exit=0) and genuinely resubmitted through the
+   real `files.create` + `batches.create` calls - the resulting `batches`/`activeBatchIds`
+   entries were written entirely by that real code, not by hand. **No longer needed** for
+   the same reason as above: a correctly detected submit-unknown run no longer needs a
+   synthetic `lastError` to reach resubmission.
+3. `state.json.bak-before-phase-repair`: `phase: "prepared"` -> `"attempt-1-submitted"` by
+   hand, mirroring exactly what `submit.ts` does after a normal, uninterrupted wave-1
+   submission. `resubmitPending` populates a real batch record but (by design, for the
+   later-resubmission case its own docstring describes) never moves `phase` off
+   `"prepared"`, so `advance` had no automatic action for the run despite a live, submitted
+   batch. **No longer needed**: commit `41f97b5b` sets the submitted phase after a
+   successful resubmit.
+
+### The empty-collect incident
+
+Both wave-1 items completed on OpenAI (`request_counts: {total: 2, completed: 2, failed:
+0}`), but the scheduled `advance` polling collected nothing: `OpenAIBatchProvider.collect`
+read `outputFileId`/`errorFileId` off `handle.extra`, but `pollActive` had never merged the
+poll's own extras onto the batch record, so `extra` was still just `{inputFileId, nonce}`
+at collect time. `collect` downloaded zero response files and the record was still marked
+`collected: true`, leaving the run silently stuck at `attempt-1-collected` with nothing to
+evaluate. Root-caused and fixed as Task 14b (commit `e8951d5b`, reviewed and approved):
+`collect` now retrieves the batch itself instead of trusting stale `extra`, and
+`pollActive` merges `poll.extra` onto the record.
+
+A second, related gap: from `attempt-1-collected`, the state machine never routed an
+uncollected batch back to `collect`, and `evaluate` exited 0 with no progress when the only
+non-evaluated items were still pending - the same "looks like success, makes zero
+progress" shape as the Anthropic drill's Incident C, but in the collect step instead of
+evaluate. Fixed as Task 14c (commit `71f5a98e`, reviewed and approved): a collect check now
+runs in every non-terminal phase, and an `evaluate` with nothing evaluable exits 4 with a
+blocked reason instead of silently exiting 0.
+
+### Recovering run 28755d71 after the empty-collect bug
+
+Two more hand repairs to `results/batch/28755d71-6d6a-46c8-baae-f13456d0b405/state.json`
+(backups `state.json.bak-before-recollect-repair` and
+`state.json.bak-before-phase-recollect-repair`, both still in the run directory), applied
+once the 14b fix existed as an uncommitted copy of `src/batch/collect.ts` and
+`src/llm/batch/openai-batch.ts` so D13 stayed satisfied (the tree was already dirty from
+the crash hook, and the git SHA this run was frozen against never changed): reset the
+wave-1 batch record's `collected` flag to `false` and the run's `phase` back to
+`"attempt-1-submitted"`. The next `advance` then ran for real: polled, collected both
+wave-1 responses, evaluated (CG-AL-E001 solved, CG-AL-E006 failed), submitted wave 2 at
+16:45:10Z, and eventually finalized once wave 2 ended. After the run finalized, both
+`src/batch/collect.ts` and `src/llm/batch/openai-batch.ts` were restored to their committed
+content (no source edit survives in this checkout).
+
+### Timing
+
+Wave 1 (2 items) was submitted 2026-09-07T08:01:50Z and took about 8h33m to complete on
+OpenAI's side. Wave 2 (1 item, CG-AL-E006's retry) was submitted
+2026-09-07T16:45:10Z and took about 12h12m, ending 2026-09-08T04:57:00Z. **OpenAI batches
+for gpt-5-mini routinely sit `in_progress` for many hours** - a scheduled `advance` (cron,
+Task 18) is the only practical way to drive these to completion; a human sitting on a poll
+loop for half a day is not.
+
+### Verification
+
+`results/benchmark-results-28755d71-6d6a-46c8-baae-f13456d0b405.json`: `ingest.schema` 4,
+`ingest.invocations["openai/gpt-5-mini"].mode` `"batch"`. CG-AL-E001 solved on attempt 1
+(cost $0.00137725); CG-AL-E006 failed both attempts (attempt 1 $0.002115125, attempt 2
+$0.002305875). Every attempt has a non-empty prompt and cost > 0. Total cost **$0.005798**.
+`responses/` holds exactly 3 files (one per item across both waves) and `attempts/` holds
+exactly 3 files (E001-a1, E006-a1, E006-a2). The scores file's `# Batch` block reads
+`waves: 2`, `resubmitted_items: 0`, `reported_cost_usd: (none)` for both waves (OpenAI
+does not report a batch-level cost the way Anthropic does). No prior sync run of
+gpt-5-mini on CG-AL-E001/CG-AL-E006 exists under `results/`, so no before/after cost
+comparison is available for this model.
+
 ## Cost comparison
 
 Two real Anthropic Haiku 4.5 batch runs against the `batch-smoke` preset
@@ -156,9 +303,14 @@ This is not a controlled A/B (the sync run is ~14 weeks older, and per-attempt t
 counts vary with what the model actually generated), but it is consistent with the
 expected discount rather than contradicting it.
 
+The OpenAI gpt-5-mini run's cost ($0.005798 total) is in the OpenAI section above; no
+prior sync run of that model on the same two tasks exists to compare against.
+
 ## Status
 
-Two Anthropic runs on Haiku 4.5 have now been driven by hand end to end, including a
-deliberate crash drill. The Incident C bug above is fixed and covered by a regression
-test. **Scheduled `advance --all` is still not yet recommended** - that is Task 18's
-remaining call to make, independent of this one bug.
+Two Anthropic runs on Haiku 4.5 and one OpenAI run on gpt-5-mini have now been driven by
+hand end to end, each including a deliberate crash drill. The Anthropic drill's Incident C
+bug and the OpenAI drill's three retry defects, empty-collect bug, and stuck-collect hole
+are all fixed and reviewed (commits `ac1d2e0a`, `74c1ee7d`, `41f97b5b`, `e8951d5b`,
+`71f5a98e`). **Scheduled `advance --all` is still not yet recommended** - that is Task 18's
+remaining call to make, independent of these bugs.
