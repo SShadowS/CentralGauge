@@ -245,4 +245,50 @@ describe("JsonImporter (V5/V10)", () => {
       await Deno.remove(resultsDir, { recursive: true });
     }
   });
+
+  // Soft run exclusion (site migration 0022): an excluded run must leave the
+  // LOCAL score tables too, or a `report`/`stats` rebuild from disk re-admits
+  // exactly the numbers the exclusion removed from the scoreboard.
+  it("skips a results file stamped with a top-level excluded object", async () => {
+    const projectRoot = await makeProjectRoot();
+    const resultsDir = await Deno.makeTempDir();
+    try {
+      const excludedPath = join(
+        resultsDir,
+        "benchmark-results-1700000000007.json",
+      );
+      await Deno.writeTextFile(
+        excludedPath,
+        JSON.stringify({
+          ...JSON.parse(minimalResultFile()),
+          excluded: {
+            at: "2026-09-08T00:00:00.000Z",
+            reason: "host OOM during evaluation",
+            run_ids: ["20a0f409-7e1a-4ea8-a060-b3a8429bcf31"],
+          },
+        }),
+      );
+      const keptPath = join(resultsDir, "benchmark-results-1700000000008.json");
+      await Deno.writeTextFile(keptPath, minimalResultFile());
+
+      const importer = new JsonImporter(projectRoot);
+      const storage = new InMemoryStorage();
+      await storage.open();
+
+      assertEquals(await importer.importFile(excludedPath, storage), false);
+      assertEquals(await storage.getRun("1700000000007"), null);
+
+      // The unmarked sibling still imports, so the skip is targeted rather
+      // than a directory-wide bail-out.
+      const result = await importer.importDirectory(resultsDir, storage);
+      assertEquals(result.imported, 1);
+      assertEquals(result.skipped, 1);
+      assertEquals(result.errors.length, 0);
+      assertEquals(await storage.getRun("1700000000007"), null);
+      assertNotEquals(await storage.getRun("1700000000008"), null);
+    } finally {
+      await Deno.remove(projectRoot, { recursive: true });
+      await Deno.remove(resultsDir, { recursive: true });
+    }
+  });
 });
