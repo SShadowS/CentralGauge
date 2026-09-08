@@ -107,9 +107,9 @@ guide's own history.
 | `advance` returned exit=0 forever with no compile/test output and the phase never changed (historical, observed live, see Incident C below) | **Fixed.** `evaluateCollected` (`src/batch/evaluate.ts`) used to silently treat a task as done, without repairing `state.json`, whenever its attempt file already existed on disk but `state.json` never recorded that task as `"evaluated"` (a crash between finishing that task and the wave's single end-of-loop `writeState` left exactly this gap) - every future `advance` call re-derived the identical stuck decision, so a scheduled `advance --all` loop would have spun on it silently forever. `evaluateCollected`'s exists-early-return path now repairs `ItemSummary.state` to `"evaluated"` and sets `attemptFile` to the existing file's path in place, before the wave's end-of-loop `writeState` persists it - mirroring how `collect.ts`'s `repairFromExistingFile` already repaired state on its own idempotent path. Covered by a regression test in `tests/unit/batch/evaluate.test.ts`. | Nothing manual - resuming `advance` repairs the stuck task's state on its own. If you hit this on a checkout older than the fix, hand-repair `state.json` the same way: set the stuck task's `ItemSummary.state` to `"evaluated"` and `attemptFile` to the existing attempt file's path (back up `state.json` first, validate the edited JSON with `jq empty` before overwriting), or update the checkout. |
 | Crash mid-evaluate, otherwise clean | `attempts/` files for finished tasks | The next `advance` picks up only the remaining tasks - each task's `attempts/<taskId>-a<N>.json` existing is itself the "already done" marker, and `state.json` is repaired to match on that same call (see Incident C above) |
 | Crash mid-collect | `responses/<itemId>.json` files for finished items | The next `advance`'s `collectEnded` skips any item whose response file already exists and repairs its state from that file - verified by reading `collect.ts`, not empirically triggered in this guide's own drill (see Crash drill below) |
-| `retry`/`retry --confirm-not-submitted` refused with "nothing to retry: no lastError and run is not submit-unknown" right after a crash on a run's very first submission (observed live, see the OpenAI hand-driven run below) | **Fixed.** `state.phase` was never actually persisted as the literal `"submit-unknown"` value anywhere in the codebase; `retryRun` gated the submit-unknown branch on that value while `advance`'s `nextStep` derived "submit-unknown"-ness from a live `intent.json` alone. A crash before any batch handle exists left `state.phase` at whatever it was before the submit (often `prepared`), so `retry --confirm-not-submitted` was unreachable, and after confirming, `retry` was equally unreachable with no `lastError` set. Fixed by `retry` now detecting submit-unknown directly from a live intent (commit `74c1ee7d`) and setting the submitted phase after a successful resubmit (commit `41f97b5b`). | Update, then run the normal `status` / `retry --confirm-not-submitted` / `retry` sequence |
-| A batch the provider reports as ended collects zero response files, yet `state.json` still marks it `collected: true` (observed live, see the OpenAI hand-driven run below) | **Fixed** (commit `e8951d5b`). `OpenAIBatchProvider.collect` read `outputFileId`/`errorFileId` off `handle.extra`, but `pollActive` never merged the poll's own extras onto the batch record, so `extra` stayed empty at collect time and nothing downloaded. `collect` now retrieves the batch itself instead of trusting stale `extra`, and `pollActive` merges `poll.extra` onto the record. | Update, then re-run `advance`. A run already stuck this way needs the hand repair described in the OpenAI section below. |
-| `advance` returns exit 0 with no progress from an `attempt-N-collected` phase whose batch never actually collected anything, or from an `evaluate` step with nothing left to evaluate (observed live, see the OpenAI hand-driven run below) | **Fixed** (commit `71f5a98e`). The state machine now routes an uncollected batch back to `collect` from any non-terminal phase, and an `evaluate` step with nothing evaluable exits 4 with a blocked reason instead of silently exiting 0. | Update; no further repair needed once the fix is in place |
+| `retry`/`retry --confirm-not-submitted` refused with "nothing to retry: no lastError and run is not submit-unknown" right after a crash on a run's very first submission (observed live, see the OpenAI hand-driven run below) | **Fixed.** `state.phase` was never actually persisted as the literal `"submit-unknown"` value anywhere in the codebase; `retryRun` gated the submit-unknown branch on that value while `advance`'s `nextStep` derived "submit-unknown"-ness from a live `intent.json` alone. A crash before any batch handle exists left `state.phase` at whatever it was before the submit (often `prepared`), so `retry --confirm-not-submitted` was unreachable, and after confirming, `retry` was equally unreachable with no `lastError` set. Fixed by `retry` now detecting submit-unknown directly from a live intent ("retry detects submit-unknown from a live intent; advance prints its refusal") and, on a separate commit, resubmitting a prepared run after confirm-not-submitted and setting the submitted phase ("retry resubmits a prepared run after confirm-not-submitted and sets the submitted phase"). | Update, then run the normal `status` / `retry --confirm-not-submitted` / `retry` sequence |
+| A batch the provider reports as ended collects zero response files, yet `state.json` still marks it `collected: true` (observed live, see the OpenAI hand-driven run below) | **Fixed** ("OpenAI collect retrieves its output and error file ids; poll extras are persisted on the record"). `OpenAIBatchProvider.collect` read `outputFileId`/`errorFileId` off `handle.extra`, but `pollActive` never merged the poll's own extras onto the batch record, so `extra` stayed empty at collect time and nothing downloaded. `collect` now retrieves the batch itself instead of relying on ids that the poll step had never persisted onto the handle, and `pollActive` merges `poll.extra` onto the record. | Update, then re-run `advance`. A run already stuck this way needs the hand repair described in the OpenAI section below. |
+| `advance` returns exit 0 with no progress from an `attempt-N-collected` phase whose batch never actually collected anything, or from an `evaluate` step with nothing left to evaluate (observed live, see the OpenAI hand-driven run below) | **Fixed** ("route uncollected batches to collect from any phase; an evaluate step with nothing evaluable exits 4 instead of 0"). The state machine now routes an uncollected batch back to `collect` from any non-terminal phase, and an `evaluate` step with nothing evaluable exits 4 with a blocked reason instead of silently exiting 0. | Update; no further repair needed once the fix is in place |
 
 ## Crash drill observations (this run's own drill)
 
@@ -211,7 +211,8 @@ tracked source file) to force the code down the path it should have reached on i
    to prepared`, exit=0) and genuinely deleted the orphan input file (independently
    confirmed: a throwaway script calling the OpenAI SDK's `files.retrieve` on the orphan
    id returned "404 No such File object") and cleared `intent.json`. **No longer needed**
-   once `retry` detects submit-unknown from a live intent directly (commit `74c1ee7d`).
+   once `retry` detects submit-unknown from a live intent directly ("retry detects
+   submit-unknown from a live intent; advance prints its refusal").
 2. `state.json.bak-before-lasterror-repair`: `lastError` set by hand to
    `{at, step: "submit", message: "...", retryable: true}` (matching the zod shape in
    `state.ts`), so `retryRun` would fall through to `resubmitPending`. Re-running `retry`
@@ -225,8 +226,8 @@ tracked source file) to force the code down the path it should have reached on i
    submission. `resubmitPending` populates a real batch record but (by design, for the
    later-resubmission case its own docstring describes) never moves `phase` off
    `"prepared"`, so `advance` had no automatic action for the run despite a live, submitted
-   batch. **No longer needed**: commit `41f97b5b` sets the submitted phase after a
-   successful resubmit.
+   batch. **No longer needed**: "retry resubmits a prepared run after confirm-not-submitted
+   and sets the submitted phase" sets the submitted phase after a successful resubmit.
 
 ### The empty-collect incident
 
@@ -236,17 +237,19 @@ read `outputFileId`/`errorFileId` off `handle.extra`, but `pollActive` had never
 poll's own extras onto the batch record, so `extra` was still just `{inputFileId, nonce}`
 at collect time. `collect` downloaded zero response files and the record was still marked
 `collected: true`, leaving the run silently stuck at `attempt-1-collected` with nothing to
-evaluate. Root-caused and fixed as Task 14b (commit `e8951d5b`, reviewed and approved):
-`collect` now retrieves the batch itself instead of trusting stale `extra`, and
-`pollActive` merges `poll.extra` onto the record.
+evaluate. Root-caused and fixed as Task 14b ("OpenAI collect retrieves its output and
+error file ids; poll extras are persisted on the record", reviewed and approved):
+`collect` now retrieves the batch itself instead of relying on ids that the poll step had
+never persisted onto the handle, and `pollActive` merges `poll.extra` onto the record.
 
 A second, related gap: from `attempt-1-collected`, the state machine never routed an
 uncollected batch back to `collect`, and `evaluate` exited 0 with no progress when the only
 non-evaluated items were still pending - the same "looks like success, makes zero
 progress" shape as the Anthropic drill's Incident C, but in the collect step instead of
-evaluate. Fixed as Task 14c (commit `71f5a98e`, reviewed and approved): a collect check now
-runs in every non-terminal phase, and an `evaluate` with nothing evaluable exits 4 with a
-blocked reason instead of silently exiting 0.
+evaluate. Fixed as Task 14c ("route uncollected batches to collect from any phase; an
+evaluate step with nothing evaluable exits 4 instead of 0", reviewed and approved): a
+collect check now runs in every non-terminal phase, and an `evaluate` with nothing
+evaluable exits 4 with a blocked reason instead of silently exiting 0.
 
 ### Recovering run 28755d71 after the empty-collect bug
 
@@ -404,9 +407,13 @@ Gemini 3.8 Flash have now been driven by hand end to end. The Anthropic and Open
 each included a deliberate crash drill; the OpenRouter run completed in a single wave
 with no incident to drill into. The Anthropic drill's Incident C bug and the OpenAI
 drill's three retry defects, empty-collect bug, and stuck-collect hole are all fixed and
-reviewed (commits `ac1d2e0a`, `74c1ee7d`, `41f97b5b`, `e8951d5b`, `71f5a98e`). The
-OpenRouter run additionally confirmed the Task 13b pricing carry-forward fix works in
-production against a live daily freshness refresh.
+reviewed (commit `ac1d2e0a` plus "retry detects submit-unknown from a live intent;
+advance prints its refusal", "retry resubmits a prepared run after confirm-not-submitted
+and sets the submitted phase", "OpenAI collect retrieves its output and error file ids;
+poll extras are persisted on the record", and "route uncollected batches to collect from
+any phase; an evaluate step with nothing evaluable exits 4 instead of 0"). The OpenRouter
+run additionally confirmed the Task 13b pricing carry-forward fix works in production
+against a live daily freshness refresh.
 
 ## Scheduled `advance --all`
 
@@ -421,23 +428,30 @@ still processing on the provider side. Exit 0 means at least one run took a real
 (submitted a wave, collected, evaluated, or finalized) or every run is already done;
 either way the next scheduled tick will pick up whatever is left. Exit 4 must page an
 operator - it means a run hit drift, a `submit-unknown` state awaiting `retry`, or some
-other condition `advance` cannot resolve on its own; the reason is printed to `state.json`
-and surfaced by `status --json`, so read that before deciding the next move. `.centralgauge.yml`
-has a commented `batch.advanceIntervalMinutes` example (see the Provider notes section
-and `.claude/rules/batch-mode.md`) documenting the same 30-minute default for whatever
+other condition `advance` cannot resolve on its own; `advance` itself prints
+`[FAIL] <reason>` to the console on that exit (the action's own failure message), and a
+`bench batch status` call recomputes and shows the same next action, so either one tells
+you the reason before you decide the next move (`state.json` only stores `lastError` for
+submission failures, not for every exit-4 cause). `.centralgauge.yml` has a commented
+`batch.advanceIntervalMinutes` example (see the Provider notes section and
+`.claude/rules/batch-mode.md`) documenting the same 30-minute default for whatever
 scheduler config reads it.
 
 An unattended loop on this shape is safe because of four runner fixes proven by the hand
 runs above: `retry` now resubmits correctly after a crash is confirmed not submitted
-(commit `74c1ee7d`) instead of refusing with "nothing to retry"; OpenAI's `collect` step
-retrieves the batch itself to get its output/error file ids instead of trusting a stale
-cached copy (commit `e8951d5b`); an uncollected batch is routed back to `collect` from
-any non-terminal phase instead of getting stuck (commit `71f5a98e`); and an `evaluate`
-step with nothing left to evaluate now exits 4 with a blocked reason instead of silently
-exiting 0 and spinning forever (commit `71f5a98e`). Before these fixes, a scheduled loop
-could sit at exit 0 indefinitely making zero real progress with nobody there to notice -
-see Incident C and the OpenAI empty-collect incident above for exactly how that happened
-on hand-driven runs.
+("retry detects submit-unknown from a live intent; advance prints its refusal", together
+with "retry resubmits a prepared run after confirm-not-submitted and sets the submitted
+phase") instead of refusing with "nothing to retry"; OpenAI's `collect` step retrieves
+the batch itself to get its output/error file ids instead of relying on ids that the poll
+step had never persisted onto the handle ("OpenAI collect retrieves its output and error
+file ids; poll extras are persisted on the record"); an uncollected batch is routed back
+to `collect` from any non-terminal phase instead of getting stuck, and an `evaluate` step
+with nothing left to evaluate now exits 4 with a blocked reason instead of silently
+exiting 0 and spinning forever (both from "route uncollected batches to collect from any
+phase; an evaluate step with nothing evaluable exits 4 instead of 0"). Before these
+fixes, a scheduled loop could sit at exit 0 indefinitely making zero real progress with
+nobody there to notice - see Incident C and the OpenAI empty-collect incident above for
+exactly how that happened on hand-driven runs.
 
 ## Cost table (three providers, `batch-smoke*` presets, `--no-ingest`, tasks CG-AL-E001 + CG-AL-E006, 2 attempts)
 
