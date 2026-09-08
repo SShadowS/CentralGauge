@@ -32,7 +32,7 @@ above.
 | --- | --- |
 | 0 | The command's requested step completed. For `advance` this is ONE state-machine step, not "the run is done" - keep calling `advance` until `status --json`'s `phase` is `finalized`. |
 | 3 | `advance` polled the provider and the batch is still processing. Wait and call again - this is the only code that means "nothing to do yet". |
-| 4 | Operator action required: a non-retryable `lastError`, a D13 drift refusal, a held bench lock, or `submit-unknown` awaiting `retry --adopt`/`retry --confirm-not-submitted`. Read `status --json` before deciding the next move. |
+| 4 | Operator action required: a non-retryable `lastError`, a D13 drift refusal, a held bench lock, or a `submit-unknown` run whose batch `advance` could not identify (it reconciles on every tick and adopts only on an exact match; the refusal names the candidates it saw). Read `status --json` before deciding the next move. |
 | 1 (uncaught) | Not a designed exit code - treat as a bug, capture the stack trace and `state.json`, do not blindly retry. |
 
 A scheduler must call `advance` again immediately after exit 0 (there may be more steps
@@ -87,9 +87,10 @@ whichever checkout the live run's own tooling reads from.
   carried on the request the way OpenAI's `metadata.nonce` is - item identity is
   recovered from response ordering/custom_id instead.
 - **OpenAI.** One model per batch. The uploaded input file is named
-  `batch-<nonce>.jsonl` and lives under the run directory during upload, so a crash
-  between upload and batch creation leaves a local artifact beside the intent, not just
-  a bare `intent.json`. Batches for small models (observed: `gpt-5-mini`) can sit
+  `batch-<nonce>.jsonl` but never touches local disk: the provider uploads an in-memory
+  `File`, so a crash between upload and batch creation leaves only `intent.json`, which
+  is why the intent records `inputFileId` before the batch is created. Batches for small
+  models (observed: `gpt-5-mini`) can sit
   `in_progress` for 8 to 12 hours per wave - do not expect a human poll loop to reach
   finalize; scheduled `advance` is the only practical way to drive these runs.
 - **OpenRouter.** The `:batch` endpoint exists only for some models - a model without

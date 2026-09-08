@@ -128,6 +128,22 @@ export function encodeTasksGlob(patterns: string[]): string {
 export { parseTasksGlobs };
 
 /**
+ * The containers a preset names, in the order the runtime should use them:
+ * `containers`, else the singular `container`, else the default. Exported
+ * so the CLI's `submit` action builds its `ContainerRuntime` from exactly
+ * the set `submitRuns` will freeze into the run's environment.
+ */
+export function presetContainers(
+  preset: { containers?: string[]; container?: string } | undefined,
+): string[] {
+  if (preset?.containers && preset.containers.length > 0) {
+    return preset.containers;
+  }
+  if (preset?.container) return [preset.container];
+  return [DEFAULT_CONTAINER_NAME];
+}
+
+/**
  * Resolves `submitRuns`' one model spec: split by comma into a variant per
  * entry, refusing when the count is not exactly 1 or the provider is not
  * one batch mode supports.
@@ -239,8 +255,7 @@ export async function submitRuns(
   );
   const taskIds = [...manifestsMap.keys()].sort();
 
-  const containers = opts.containers ?? preset.containers ??
-    (preset.container ? [preset.container] : [DEFAULT_CONTAINER_NAME]);
+  const containers = opts.containers ?? presetContainers(preset);
   const parallelOptions: ParallelBenchmarkOptions = {
     containerName: containers[0] ?? DEFAULT_CONTAINER_NAME,
     containerProvider: config.container?.provider ?? "auto",

@@ -1687,3 +1687,73 @@ Deno.test("a rejected re-chunk resubmission leaves the halves resubmittable", as
 
   await Deno.remove(output, { recursive: true });
 });
+
+Deno.test("an evaluate tick that only repairs an existing attempt file does not flip the phase", async () => {
+  // Minor 8: the wave still has an item that was journaled and never
+  // submitted, so `submit-pending` owns the next step. Flipping the phase
+  // here is what let a stale wave look finished.
+  const { manifests, contexts } = taskFixtures();
+  const run = await seedCollectedWaveOne(
+    "failed",
+    "cg-batch-repair-only-",
+    manifests,
+    contexts,
+  );
+
+  const provider = new FakeBatchProvider("anthropic", {
+    submit: [
+      { handleId: "batch-w2a" },
+      { throws: new BatchSubmitRejected("overloaded", 529, true, false) },
+    ],
+  }, { maxItems: 1, maxBytes: 1_000_000 });
+  const deps = baseDeps(
+    {
+      provider,
+      mapRaw: () => mockResponse(),
+      runtimeFactory: makeRuntimeFactory(
+        new MultiContainerMockCompileQueue(["Cronus28"]),
+        { count: 0 },
+      ),
+      finalize: () => {
+        throw new Error("must not finalize");
+      },
+    },
+    manifests,
+    contexts,
+  );
+
+  // Wave 2: chunk 0 accepted, chunk 1 rejected.
+  assertEquals((await advanceRun(run.dir, deps)).exit, 4);
+  // Collect + evaluate the accepted chunk, writing its attempt file.
+  assertEquals((await advanceRun(run.dir, deps)).exit, 0);
+  assert(await exists(attemptPath(run.dir, "A", 2)));
+
+  // Reset the accepted chunk to uncollected and its item to "responded":
+  // the next tick then re-collects (every response file already exists, so
+  // it is a pure repair) and evaluates (the attempt file already exists,
+  // so that is a pure repair too). No new work at all.
+  const repaired = await loadState(run.dir);
+  const accepted = repaired.batches.find((b) =>
+    b.handle.batchId === "batch-w2a"
+  )!;
+  accepted.collected = false;
+  repaired.activeBatchIds = [accepted.handle.batchId];
+  repaired.tasks["A"]!.attempt2!.state = "responded";
+  delete repaired.tasks["A"]!.attempt2!.attemptFile;
+  await writeState(run.dir, repaired);
+
+  const tick = await advanceRun(run.dir, deps);
+  assertEquals(tick.exit, 0);
+  assertEquals(tick.step.kind, "evaluate");
+  assertEquals(
+    (await loadState(run.dir)).tasks["A"]!.attempt2!.state,
+    "evaluated",
+  );
+  assertEquals((await loadState(run.dir)).phase, "attempt-1-collected");
+
+  // And the step after it is the submission that is actually outstanding.
+  const next = await advanceRun(run.dir, deps);
+  assertEquals(next.step, { kind: "submit-pending", wave: 2 });
+
+  await Deno.remove(run.output, { recursive: true });
+});

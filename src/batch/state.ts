@@ -57,6 +57,14 @@ export const ItemSummarySchema = z.object({
     "evaluated",
   ]),
   attemptFile: z.string().optional(),
+  /**
+   * The provider's own `retryable` flag for the error that produced
+   * `state === "errored"` / `"expired"`. `nextStep` needs it to keep a
+   * non-retryable failure (an `invalid_request`, say) out of the single
+   * resubmission round without reading any file. Absent for an item that
+   * never errored, and for state files written before this field existed.
+   */
+  retryable: z.boolean().optional(),
 });
 export type ItemSummary = z.infer<typeof ItemSummarySchema>;
 

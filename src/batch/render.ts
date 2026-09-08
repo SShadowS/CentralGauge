@@ -5,15 +5,15 @@
  *
  * @module src/batch/render
  */
+import type { LLMRequest } from "../llm/types.ts";
 import type { FrozenPromptInputs } from "../parallel/shared/prompt-inputs.ts";
 import type {
   ExecutionAttempt,
   TaskExecutionContext,
   TaskManifest,
 } from "../tasks/interfaces.ts";
-import type { LLMRequest } from "../llm/types.ts";
-import { renderLLMRequest } from "../parallel/shared/render-request.ts";
 import type { BatchRunState, TaskSummary } from "./state.ts";
+import { renderLLMRequest } from "../parallel/shared/render-request.ts";
 import { bodyDigest, itemIdFor } from "./items.ts";
 
 export interface RenderedItem {

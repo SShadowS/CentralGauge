@@ -141,12 +141,16 @@ export interface OpenRouterBatchDeps {
 /**
  * Whether `message` names a size/byte/token-count/item-count limit
  * (spec 5.3's submission-rejection and async `sizeRejected` mapping).
- * Deliberately does NOT match on the bare word "limit" alone - a 429
- * "Rate limit exceeded" must never classify as a size rejection.
+ * Deliberately does NOT match on the bare word "limit" alone, nor on a
+ * bare "too many": a 429 ("Rate limit exceeded", "Too many requests")
+ * read as a size rejection would halve the chunk and create MORE batches
+ * under the very limit being hit. "Too many" counts only when what there
+ * are too many of is part of the payload.
  */
 function mentionsSizeLimit(message: string): boolean {
   const m = message.toLowerCase();
-  if (/too many/.test(m)) return true;
+  if (/too many (items|lines)\b/.test(m)) return true;
+  if (/too many requests in\b.*\bbatch/.test(m)) return true;
   return /\b(size|byte|token|item|count)/.test(m) &&
     /(limit|maximum|max\b|exceed)/.test(m);
 }

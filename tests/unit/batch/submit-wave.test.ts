@@ -306,3 +306,55 @@ Deno.test("a transport failure from a real provider leaves the intent behind", a
     });
   }
 });
+
+Deno.test("submitChunks refuses a chunk item that was never rendered", async () => {
+  const dir = await createTempDir("submit-unrendered");
+  try {
+    const fake = new FakeBatchProvider("anthropic", {});
+    const items = await renderedItems(2);
+    const chunks = chunkItems(
+      items.map((i) => ({ itemId: i.itemId, body: i.body })),
+      fake.limits,
+      wrap,
+    );
+
+    // A chunk naming an item the caller did not render would previously be
+    // skipped in silence: nothing journaled it, nothing could resubmit it.
+    await assertRejects(
+      () =>
+        submitChunks(
+          dir,
+          minimalState({ runId: "r" }),
+          chunks,
+          items.slice(0, 1),
+          1,
+          0,
+          { provider: fake, model: "m", wrap },
+        ),
+      Error,
+      "not among the rendered items",
+    );
+    assertEquals(fake.calls.filter((c) => c.op === "submit").length, 0);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("journalItems refuses a chunk item that was never rendered", async () => {
+  const dir = await createTempDir("journal-unrendered");
+  try {
+    const items = await renderedItems(2);
+    const chunks = chunkItems(
+      items.map((i) => ({ itemId: i.itemId, body: i.body })),
+      { maxItems: 10, maxBytes: 1_000_000 },
+      wrap,
+    );
+    await assertRejects(
+      () => journalItems(dir, chunks, items.slice(0, 1), 1, 0),
+      Error,
+      "not among the rendered items",
+    );
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});

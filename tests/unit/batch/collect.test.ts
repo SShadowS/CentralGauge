@@ -369,8 +369,11 @@ Deno.test("collectEnded logs and skips an unknown item id and a stale-round id",
 
     const collected = await collectEnded(dir, state, fake, mapRaw);
     assertEquals(collected, []);
+    // An id this record never submitted is not ours to write at all.
     assertEquals(await exists(responsePath(dir, "item-unknown")), false);
-    assertEquals(await exists(responsePath(dir, "item-a")), false);
+    // A stale-round id IS written (it was paid for) but never applied to
+    // the summary, which belongs to a later round now.
+    assertEquals(await exists(responsePath(dir, "item-a")), true);
 
     const events = await loadJsonl<EventLine>(
       join(dir, RUN_FILES.events),
@@ -586,6 +589,94 @@ Deno.test("collectEnded does not call provider.cleanup for a record repaired pur
 
     assertEquals(cleanupCalls, []);
     assertEquals(state.batches[0]?.collected, true);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("collectEnded writes a late round-0 result and logs it, never applying it", async () => {
+  const dir = await createTempDir("collect-stale-round");
+  try {
+    // The task has moved on to round 1; this record is round 0 and its
+    // result arrives late (spec 4.4).
+    const state = minimalState({
+      batches: [makeRecord({ state: "ended", itemIds: ["item-a"] })],
+      activeBatchIds: ["batch-1"],
+      tasks: {
+        T1: {
+          attempt1: itemSummary("item-a", {
+            round: 1,
+            ownerRound: 1,
+            state: "pending",
+          }),
+        },
+      },
+    });
+
+    const fake = new FakeBatchProvider("anthropic", {
+      collect: {
+        "batch-1": [{
+          itemId: "item-a",
+          ok: true,
+          raw: { text: "late answer" },
+          httpStatus: 200,
+        }],
+      },
+    });
+
+    const collected = await collectEnded(dir, state, fake, mapRaw);
+
+    // Not applied: the summary still belongs to round 1.
+    assertEquals(collected.length, 0);
+    assertEquals(state.tasks["T1"]!.attempt1.state, "pending");
+
+    // But written, because it was paid for, and logged as an integrity event.
+    assert(await exists(responsePath(dir, "item-a")));
+    const stored = JSON.parse(
+      await Deno.readTextFile(responsePath(dir, "item-a")),
+    );
+    assertEquals(stored.response.content, "late answer");
+    const events = await loadJsonl<EventLine>(
+      join(dir, RUN_FILES.events),
+      (e) => e.eventId,
+    );
+    assert(events.some((e) => e.kind === "integrity_stale_round"));
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("collectEnded drops a collected batch from activeBatchIds", async () => {
+  const dir = await createTempDir("collect-prune-active");
+  try {
+    const state = minimalState({
+      batches: [makeRecord({ state: "ended", itemIds: ["item-a"] })],
+      activeBatchIds: ["batch-1"],
+      tasks: { T1: { attempt1: itemSummary("item-a") } },
+    });
+
+    const fake = new FakeBatchProvider("anthropic", {
+      collect: {
+        "batch-1": [{
+          itemId: "item-a",
+          ok: true,
+          raw: { text: "done" },
+          httpStatus: 200,
+        }],
+      },
+    });
+
+    await collectEnded(dir, state, fake, mapRaw);
+
+    // The record stays for the results block; the id does not stay pollable.
+    assertEquals(state.activeBatchIds, []);
+    assertEquals(state.batches.length, 1);
+    assertEquals(state.batches[0]!.collected, true);
+
+    // A later poll therefore has nothing to ask the provider about.
+    const poll = await pollActive(dir, state, fake);
+    assertEquals(poll.records.length, 0);
+    assertEquals(fake.calls.filter((c) => c.op === "poll").length, 0);
   } finally {
     await cleanupTempDir(dir);
   }

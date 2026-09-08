@@ -363,6 +363,14 @@ export function mergeBenchDefaults(
  * only rejects an explicitly-set bad value, never fills one in.
  */
 export interface BatchConfig {
+  /**
+   * How often an EXTERNAL scheduler should call `bench batch advance
+   * --all`, in minutes. Nothing in this codebase reads it at runtime (the
+   * scheduler lives outside the CLI); it is validated here so a typo in
+   * `.centralgauge.yml` fails loudly at load instead of being silently
+   * ignored.
+   */
+  advanceIntervalMinutes?: number;
   openrouter?: {
     /**
      * Overrides the provider's own conservative defaults (half the
@@ -379,14 +387,29 @@ export interface BatchConfig {
 }
 
 /**
- * Validates `batch.openrouter.limits` when present: each of `maxItems`/
- * `maxBytes` must be a finite, positive number. Returns `config`
- * unchanged (no defaults filled - see {@link BatchConfig}'s doc comment).
- * Throws `ConfigurationError` on an invalid explicit value.
+ * Validates the `batch` section when present: `advanceIntervalMinutes` and
+ * each of `openrouter.limits.maxItems`/`maxBytes` must be a finite,
+ * positive number. Returns `config` unchanged (no defaults filled - see
+ * {@link BatchConfig}'s doc comment). Throws `ConfigurationError` on an
+ * invalid explicit value.
  */
 export function validateBatchConfig(
   config: BatchConfig | undefined,
 ): BatchConfig | undefined {
+  const interval = config?.advanceIntervalMinutes;
+  if (interval !== undefined) {
+    if (
+      typeof interval !== "number" || !Number.isFinite(interval) ||
+      interval <= 0
+    ) {
+      throw new ConfigurationError(
+        `batch.advanceIntervalMinutes must be a finite, positive number, got ${
+          JSON.stringify(interval)
+        }`,
+      );
+    }
+  }
+
   const limits = config?.openrouter?.limits;
   if (!limits) return config;
   for (const [field, value] of Object.entries(limits)) {

@@ -10,11 +10,18 @@
  */
 
 import { assertEquals, assertThrows } from "@std/assert";
+import { join } from "@std/path";
 import {
   type BatchConfig,
+  ConfigManager,
   validateBatchConfig,
 } from "../../../src/config/config.ts";
 import { ConfigurationError } from "../../../src/errors.ts";
+import {
+  cleanupTempDir,
+  createTempDir,
+  MockEnv,
+} from "../../utils/test-helpers.ts";
 
 Deno.test("validateBatchConfig returns undefined unchanged", () => {
   assertEquals(validateBatchConfig(undefined), undefined);
@@ -91,4 +98,66 @@ Deno.test("validateBatchConfig rejects a non-number value (e.g. a quoted YAML st
     ConfigurationError,
     "maxItems",
   );
+});
+
+Deno.test("validateBatchConfig passes through a valid advanceIntervalMinutes", () => {
+  const cfg: BatchConfig = { advanceIntervalMinutes: 30 };
+  assertEquals(validateBatchConfig(cfg), cfg);
+});
+
+Deno.test("validateBatchConfig rejects a zero advanceIntervalMinutes", () => {
+  assertThrows(
+    () => validateBatchConfig({ advanceIntervalMinutes: 0 }),
+    ConfigurationError,
+    "advanceIntervalMinutes",
+  );
+});
+
+Deno.test("validateBatchConfig rejects a non-numeric advanceIntervalMinutes", () => {
+  assertThrows(
+    () =>
+      validateBatchConfig(
+        { advanceIntervalMinutes: "30" } as unknown as BatchConfig,
+      ),
+    ConfigurationError,
+    "advanceIntervalMinutes",
+  );
+});
+/**
+ * The home and cwd configs are merged one key at a time, so a section only
+ * one of them sets must survive: an operator who sets `maxBytes` once in
+ * their home config and overrides `maxItems` per project must end up with
+ * both, not with the project's half alone.
+ */
+Deno.test("ConfigManager deep-merges batch.openrouter.limits across config files", async () => {
+  const mockEnv = new MockEnv();
+  const homeDir = await createTempDir("batch-merge-home");
+  const projectDir = await createTempDir("batch-merge-project");
+  const originalCwd = Deno.cwd();
+
+  try {
+    mockEnv.set("HOME", homeDir);
+    mockEnv.set("USERPROFILE", homeDir);
+    await Deno.writeTextFile(
+      join(homeDir, ".centralgauge.yml"),
+      "batch:\n  openrouter:\n    limits:\n      maxBytes: 524288\n",
+    );
+    await Deno.writeTextFile(
+      join(projectDir, ".centralgauge.yml"),
+      "batch:\n  openrouter:\n    limits:\n      maxItems: 4096\n",
+    );
+    Deno.chdir(projectDir);
+    ConfigManager.reset();
+
+    const config = await ConfigManager.loadConfig();
+
+    assertEquals(config.batch?.openrouter?.limits?.maxItems, 4096);
+    assertEquals(config.batch?.openrouter?.limits?.maxBytes, 524288);
+  } finally {
+    Deno.chdir(originalCwd);
+    mockEnv.restore();
+    ConfigManager.reset();
+    await cleanupTempDir(projectDir);
+    await cleanupTempDir(homeDir);
+  }
 });

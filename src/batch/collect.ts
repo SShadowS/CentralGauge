@@ -136,6 +136,19 @@ interface StoredResponse {
   response?: LLMResponse;
 }
 
+/**
+ * Drops a collected batch from `activeBatchIds`. `pollActive` iterates that
+ * list, so leaving a collected id there means re-polling an ended batch on
+ * every tick for the rest of the run - and on OpenRouter a poll of a
+ * completed batch re-downloads its whole inline `results[]`. The record
+ * itself stays in `state.batches` for the results block and the audit
+ * trail.
+ */
+function dropActiveBatchId(state: BatchRunState, batchId: string): void {
+  const idx = state.activeBatchIds.indexOf(batchId);
+  if (idx !== -1) state.activeBatchIds.splice(idx, 1);
+}
+
 /** Finds the `ItemSummary` (attempt 1 or 2) for `itemId` across every task. */
 function findItemSummary(
   state: BatchRunState,
@@ -152,6 +165,20 @@ function findItemSummary(
 function deriveItemState(result: BatchItemResult): ItemSummary["state"] {
   if (result.ok) return "responded";
   return result.error.kind === "expired" ? "expired" : "errored";
+}
+
+/**
+ * Moves `item` to the state `result` implies and records the provider's
+ * `retryable` flag with it, so `nextStep` can keep a terminal error out of
+ * the resubmission round without reading the response file back.
+ */
+function applyResultToItem(item: ItemSummary, result: BatchItemResult): void {
+  item.state = deriveItemState(result);
+  if (result.ok) {
+    delete item.retryable;
+  } else {
+    item.retryable = result.error.retryable;
+  }
 }
 
 /** Maps a record's terminal `providerStatus` to the synthesized error kind. */
@@ -201,7 +228,7 @@ async function synthesizeUnresolvedItems(
       },
     };
     const item = findItemSummary(state, itemId)!;
-    item.state = deriveItemState(result);
+    applyResultToItem(item, result);
     await writeJsonAtomic(responsePath(dir, itemId), { result });
   }
 
@@ -233,7 +260,7 @@ async function repairFromExistingFile(
   const item = findItemSummary(state, itemId);
   if (!item) return;
   const stored = await readStoredResponse(path);
-  item.state = deriveItemState(stored.result);
+  applyResultToItem(item, stored.result);
 }
 
 /**
@@ -292,6 +319,7 @@ export async function collectEnded(
         await repairFromExistingFile(state, itemId, responsePath(dir, itemId));
       }
       record.collected = true;
+      dropActiveBatchId(state, record.handle.batchId);
       await writeState(dir, state);
       continue;
     }
@@ -319,6 +347,17 @@ export async function collectEnded(
       if (!item) continue;
 
       if (item.ownerRound !== record.round) {
+        // Spec 4.4: the item has moved on to a later round, so this result
+        // must not touch its summary - but it was paid for and is evidence
+        // of what the provider did, so it is written (never overwriting an
+        // existing file) and logged rather than dropped.
+        const response = result.ok
+          ? mapRaw(result.raw, result.itemId)
+          : undefined;
+        await writeJsonAtomic(
+          path,
+          response !== undefined ? { result, response } : { result },
+        );
         await appendEvent(dir, "integrity_stale_round", {
           batchId: record.handle.batchId,
           itemId: result.itemId,
@@ -331,7 +370,7 @@ export async function collectEnded(
       const response = result.ok
         ? mapRaw(result.raw, result.itemId)
         : undefined;
-      item.state = deriveItemState(result);
+      applyResultToItem(item, result);
 
       await writeJsonAtomic(
         path,
@@ -347,6 +386,7 @@ export async function collectEnded(
     await synthesizeUnresolvedItems(dir, state, record);
 
     record.collected = true;
+    dropActiveBatchId(state, record.handle.batchId);
     await writeState(dir, state);
 
     if (provider.cleanup) {

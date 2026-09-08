@@ -288,3 +288,38 @@ Deno.test("nextStep routes a journaled-but-unsubmitted item to submit-pending", 
     assert(step.reason.includes("A"), step.reason);
   }
 });
+
+Deno.test("nextStep never resubmits an item the provider called terminal", () => {
+  // A retryable round-0 error is the resubmission round's whole purpose.
+  const retryable = task("errored", 0);
+  retryable.attempt1.retryable = true;
+  assertEquals(
+    nextStep(
+      minimalState({
+        phase: "attempt-1-collected",
+        tasks: { A: retryable },
+      }),
+      false,
+      new Map(),
+      2,
+    ).kind,
+    "resubmit",
+  );
+
+  // A non-retryable one (an invalid_request would be refused identically
+  // the second time) becomes a terminal failed attempt instead.
+  const terminal = task("errored", 0);
+  terminal.attempt1.retryable = false;
+  assertEquals(
+    nextStep(
+      minimalState({
+        phase: "attempt-1-collected",
+        tasks: { A: terminal },
+      }),
+      false,
+      new Map(),
+      2,
+    ),
+    { kind: "evaluate", wave: 1 },
+  );
+});

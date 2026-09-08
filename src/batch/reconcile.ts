@@ -24,11 +24,11 @@ import type {
   BatchProvider,
   BatchProviderName,
 } from "../llm/batch/types.ts";
-import type { BatchRecord, BatchRunState } from "./state.ts";
-import { writeState } from "./state.ts";
 import type { SubmissionIntent } from "./intent.ts";
-import { clearIntent } from "./intent.ts";
+import type { BatchRecord, BatchRunState } from "./state.ts";
 import { withTransportBackoff } from "./backoff.ts";
+import { clearIntent } from "./intent.ts";
+import { writeState } from "./state.ts";
 
 export interface ReconcileReport {
   candidates: BatchCandidate[];

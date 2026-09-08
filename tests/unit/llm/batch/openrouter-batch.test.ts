@@ -493,3 +493,56 @@ Deno.test("OpenRouterBatchProvider.submit rethrows a status-less transport failu
   );
   assert(!(err instanceof BatchSubmitRejected));
 });
+
+Deno.test("OpenRouter rate-limit text is never read as a size rejection", async () => {
+  // OpenRouter's real 429 body, and the phrasing a rate limiter is most
+  // likely to use. Halving the chunk here would create MORE batches under
+  // the very limit being hit.
+  for (
+    const message of [
+      "Rate limit exceeded: entity-ratelimit",
+      "Too many requests, please slow down",
+    ]
+  ) {
+    const provider = new OpenRouterBatchProvider({
+      fetch: () =>
+        Promise.resolve(
+          jsonResponse({ error: { message } }, 429),
+        ),
+      apiKey: "test-key",
+    });
+    const err = await assertRejects(
+      () =>
+        provider.submit("google/gemini-3.8-flash", [{
+          itemId: "a",
+          body: {},
+        }], "nonce-1"),
+      BatchSubmitRejected,
+    );
+    assertEquals(err.sizeLimit, false);
+    assertEquals(err.retryable, true);
+  }
+});
+
+Deno.test("OpenRouter still classifies a real payload-size rejection", async () => {
+  const provider = new OpenRouterBatchProvider({
+    fetch: () =>
+      Promise.resolve(
+        jsonResponse(
+          { error: { message: "Too many items in batch (max 2048)" } },
+          400,
+        ),
+      ),
+    apiKey: "test-key",
+  });
+  const err = await assertRejects(
+    () =>
+      provider.submit(
+        "google/gemini-3.8-flash",
+        [{ itemId: "a", body: {} }],
+        "n",
+      ),
+    BatchSubmitRejected,
+  );
+  assertEquals(err.sizeLimit, true);
+});

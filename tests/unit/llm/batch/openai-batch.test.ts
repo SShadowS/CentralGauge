@@ -475,8 +475,12 @@ Deno.test("OpenAIBatchProvider.collect is self-sufficient: it retrieves the batc
   assertEquals(bad.error.kind, "invalid_request");
 });
 
-Deno.test("OpenAIBatchProvider.cleanup deletes the input file and any listed file named with the nonce", async () => {
+Deno.test("OpenAIBatchProvider.cleanup deletes the known input file and lists nothing", async () => {
+  // Listing every file in the organization after each collected batch cost
+  // one full listing per batch and found only the file already deleted by
+  // id. The sweep is the orphan fallback below, not this path.
   const deleted: string[] = [];
+  let listed = 0;
   const files: OpenAIBatchFile[] = [
     { id: "file-input", filename: "batch-nonce-1.jsonl" },
     { id: "file-orphan", filename: "batch-nonce-1.jsonl" },
@@ -487,7 +491,10 @@ Deno.test("OpenAIBatchProvider.cleanup deletes the input file and any listed fil
       deleted.push(id);
       return Promise.resolve({ id, deleted: true, object: "file" });
     },
-    filesList: () => files,
+    filesList: () => {
+      listed++;
+      return files;
+    },
   });
   const provider = new OpenAIBatchProvider(client);
 
@@ -497,7 +504,8 @@ Deno.test("OpenAIBatchProvider.cleanup deletes the input file and any listed fil
     extra: { inputFileId: "file-input", nonce: "nonce-1" },
   });
 
-  assertEquals(deleted.sort(), ["file-input", "file-orphan"]);
+  assertEquals(deleted, ["file-input"]);
+  assertEquals(listed, 0);
 });
 
 Deno.test("OpenAIBatchProvider.cleanup sweeps only by nonce when the handle carries no inputFileId (an adopted handle)", async () => {
@@ -700,4 +708,71 @@ Deno.test("OpenAIBatchProvider.submit still deletes the input file on an HTTP re
   assertEquals(err.status, 400);
   assertEquals(err.retryable, false);
   assertEquals(deleted, 1);
+});
+
+Deno.test("OpenAI cleanup deletes the known input file without listing the organization", async () => {
+  let listed = 0;
+  const deleted: string[] = [];
+  const provider = new OpenAIBatchProvider(makeClient({
+    filesDelete: (id: string) => {
+      deleted.push(id);
+      return Promise.resolve({ id, deleted: true });
+    },
+    filesList: () => {
+      listed++;
+      return [];
+    },
+  }));
+
+  await provider.cleanup({
+    provider: "openai",
+    batchId: "batch_1",
+    extra: { inputFileId: "file-abc", nonce: "nonce-1" },
+  });
+
+  assertEquals(deleted, ["file-abc"]);
+  assertEquals(listed, 0);
+});
+
+Deno.test("OpenAI cleanup falls back to the nonce sweep only for an orphan handle", async () => {
+  let listed = 0;
+  const deleted: string[] = [];
+  const provider = new OpenAIBatchProvider(makeClient({
+    filesDelete: (id: string) => {
+      deleted.push(id);
+      return Promise.resolve({ id, deleted: true });
+    },
+    filesList: () => {
+      listed++;
+      return [
+        { id: "file-other", filename: "batch-someone-else.jsonl" },
+        { id: "file-orphan", filename: "batch-nonce-1.jsonl" },
+      ];
+    },
+  }));
+
+  await provider.cleanup({
+    provider: "openai",
+    batchId: "batch_1",
+    extra: { nonce: "nonce-1" },
+  });
+
+  assertEquals(listed, 1);
+  assertEquals(deleted, ["file-orphan"]);
+});
+
+Deno.test("OpenAI classifies its real file_size_limit_exceeded code as a size rejection", async () => {
+  const provider = new OpenAIBatchProvider(makeClient({
+    filesCreate: () =>
+      Promise.reject({
+        status: 400,
+        message: "file_size_limit_exceeded: Uploaded file is too large",
+      }),
+  }));
+
+  const err = await assertRejects(
+    () => provider.submit("gpt-6", [{ itemId: "a", body: {} }], "nonce-1"),
+    BatchSubmitRejected,
+  );
+  assertEquals(err.sizeLimit, true);
 });

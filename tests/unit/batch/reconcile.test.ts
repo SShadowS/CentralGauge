@@ -336,3 +336,38 @@ Deno.test("confirmNotSubmitted: returns the run to prepared, clears the intent, 
     await cleanupTempDir(dir);
   }
 });
+
+Deno.test("reconcileSubmitUnknown refuses a candidate that returns duplicate item ids", async () => {
+  const dir = await createTempDir("reconcile-duplicate-ids");
+  try {
+    const state = minimalState({ phase: "submit-unknown" });
+    const intent = makeIntent();
+    await writeIntent(dir, intent);
+
+    const fake = new FakeBatchProvider("anthropic", {
+      candidates: [{
+        batchId: "cand-dupes",
+        createdAt: new Date(intent.writtenAt),
+        total: 2,
+        ended: true,
+      }],
+      collectByCandidate: {
+        // Two results for the same item: the id set can look complete
+        // while the batch is not this submission's.
+        "cand-dupes": [
+          { itemId: "item-a", ok: true, raw: {}, httpStatus: 200 },
+          { itemId: "item-a", ok: true, raw: {}, httpStatus: 200 },
+        ],
+      },
+    });
+
+    const report = await reconcileSubmitUnknown(dir, state, fake, intent);
+
+    assertEquals(report.adopted, undefined);
+    assert(report.reason.includes("duplicate"), report.reason);
+    assertEquals(state.batches.length, 0);
+    assert((await readIntent(dir)) !== null);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});

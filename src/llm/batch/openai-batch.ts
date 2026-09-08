@@ -171,8 +171,7 @@ function isRetryableSubmitStatus(status: number | undefined): boolean {
 function mentionsSizeLimit(text: string): boolean {
   const normalized = text.replace(/[_-]/g, " ");
   return /\blimit\b/i.test(normalized) &&
-    (/\bsize\b/i.test(normalized) || /\bbyte/i.test(normalized) ||
-      /file size/i.test(normalized));
+    (/\bsize\b/i.test(normalized) || /\bbyte/i.test(normalized));
 }
 
 /**
@@ -196,6 +195,14 @@ function throwSubmitFailure(err: unknown): never {
     mentionsSizeLimit(message),
   );
 }
+
+/**
+ * How many files `cleanup`'s orphan sweep will look at before giving up.
+ * The sweep only runs for a handle that never recorded its own upload, and
+ * an unbounded listing of an organization's files is not worth a
+ * best-effort deletion.
+ */
+const ORPHAN_SWEEP_LIMIT = 1000;
 
 /** Whether a failed batch's `errors.data[]` names a size/byte limit (spec 5.3's async rejection). */
 function batchErrorsMentionSizeLimit(
@@ -451,11 +458,17 @@ export class OpenAIBatchProvider implements BatchProvider {
   }
 
   /**
-   * Deletes the input file this handle uploaded, then best-effort sweeps
-   * any other file whose filename carries this run's nonce (an orphan left
-   * behind by a re-chunked or abandoned submission). `extra.inputFileId` is
-   * absent on a handle adopted through reconciliation, which has no direct
-   * record of its own upload; the nonce sweep alone still finds it.
+   * Deletes the input file this handle uploaded. When the handle does not
+   * name one - a handle adopted through reconciliation has no record of
+   * its own upload - falls back to sweeping files whose name carries this
+   * run's nonce.
+   *
+   * The sweep is the fallback ONLY: it lists the organization's files, so
+   * running it after every collected batch cost one full listing per
+   * batch, growing with the org's file count for nothing (the file it
+   * would find is the one already deleted by id). It is also bounded to
+   * {@link ORPHAN_SWEEP_LIMIT} entries, since a listing that pages through
+   * an entire organization is not worth a best-effort cleanup.
    */
   async cleanup(handle: BatchHandle): Promise<void> {
     const inputFileId = handle.extra?.["inputFileId"];
@@ -467,12 +480,14 @@ export class OpenAIBatchProvider implements BatchProvider {
       } catch {
         // best effort
       }
+      return;
     }
 
     if (!nonce) return;
     try {
+      let scanned = 0;
       for await (const file of this.client.files.list()) {
-        if (file.id === inputFileId) continue;
+        if (++scanned > ORPHAN_SWEEP_LIMIT) break;
         if (file.filename?.includes(nonce)) {
           try {
             await this.client.files.delete(file.id);

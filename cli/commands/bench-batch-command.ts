@@ -61,6 +61,7 @@ import {
 import { todayPricingVersion } from "./bench/ingest-meta.ts";
 import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import { ModelPresetRegistry } from "../../src/llm/model-presets.ts";
+import { generateVariantId } from "../../src/llm/variant-types.ts";
 import { PricingService } from "../../src/llm/pricing-service.ts";
 import { createBatchProvider } from "../../src/llm/batch/mod.ts";
 import { buildAttemptContext } from "../../src/parallel/shared/mod.ts";
@@ -70,7 +71,11 @@ import {
   apiKeyForBatchProvider,
   wireProvider,
 } from "../../src/batch/provider-wiring.ts";
-import { parseTasksGlobs, submitRuns } from "../../src/batch/submit.ts";
+import {
+  parseTasksGlobs,
+  presetContainers,
+  submitRuns,
+} from "../../src/batch/submit.ts";
 import { formatStatus, runStatus } from "../../src/batch/status.ts";
 import { advanceRun } from "../../src/batch/advance.ts";
 import { readIntent } from "../../src/batch/intent.ts";
@@ -133,20 +138,30 @@ async function runIngestPrecheck(variant: ModelVariant): Promise<void> {
   throw new Error(formatReportToTerminal(report));
 }
 
-/** Reconstructs a `ModelVariant` from a run's own frozen state, never re-resolved from a preset. */
-function reconstructVariant(
+/**
+ * Reconstructs a `ModelVariant` from a run's own frozen state, never
+ * re-resolved from a preset. `variantId` comes from the same generator the
+ * sync path uses, so a variant's results file and `ingest.invocations` key
+ * match between a batch run and a sync run of the same variant; the bare
+ * slug used to be stamped here, dropping any variant suffix.
+ */
+export function reconstructVariant(
   state: BatchRunState,
   inputs: FrozenPromptInputs,
 ): ModelVariant {
   const slug = `${state.model.provider}/${state.model.apiModelId}`;
+  const config = inputs.variantConfig ?? {};
+  const hasVariant = inputs.variantConfig !== null;
   return {
     originalSpec: slug,
     baseModel: slug,
     provider: state.model.provider,
     model: state.model.apiModelId,
-    config: inputs.variantConfig ?? {},
-    variantId: slug,
-    hasVariant: inputs.variantConfig !== null,
+    config,
+    variantId: hasVariant
+      ? generateVariantId(state.model.provider, state.model.apiModelId, config)
+      : slug,
+    hasVariant,
   };
 }
 
@@ -431,8 +446,7 @@ export function buildBatchCommand(): Command {
         apiModelId: variant?.model ?? "",
         variantConfig: variant?.hasVariant ? variant.config : null,
       };
-      const containers = preset?.containers ??
-        (preset?.container ? [preset.container] : [DEFAULT_CONTAINER_NAME]);
+      const containers = presetContainers(preset);
 
       const deps: SubmitDeps = {
         providerFor: (name, key) =>

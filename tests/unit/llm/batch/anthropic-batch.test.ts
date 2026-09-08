@@ -208,7 +208,6 @@ Deno.test("AnthropicBatchProvider.listCandidates stops paging at the window edge
       created_at: createdAt,
     };
   }
-  // deno-lint-ignore require-yield
   async function* pages() {
     yield status("newest", "2026-09-06T00:00:00Z");
     yield status("middle", "2026-09-05T12:00:00Z");

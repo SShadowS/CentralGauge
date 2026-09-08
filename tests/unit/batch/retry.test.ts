@@ -6,6 +6,7 @@ import { assert, assertEquals } from "@std/assert";
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import { retryRun } from "../../../src/batch/retry.ts";
+import { freezeInputs } from "../../../src/batch/drift.ts";
 import type { RetryDeps } from "../../../src/batch/retry.ts";
 import type { AdvanceDeps } from "../../../src/batch/advance.ts";
 import { appendJsonl } from "../../../src/batch/journal.ts";
@@ -21,7 +22,7 @@ import {
 } from "../../../src/batch/state.ts";
 import type { BatchRunState } from "../../../src/batch/state.ts";
 import { FakeBatchProvider } from "../../utils/fake-batch-provider.ts";
-import { minimalState } from "../../utils/batch-fixtures.ts";
+import { frozenInputs, minimalState } from "../../utils/batch-fixtures.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 /** Journals an unsubmitted pending item's body/request to disk. */
@@ -57,6 +58,31 @@ async function seedPendingItem(
   await ensureDir(join(dir, "requests"));
   await writeJsonAtomic(requestPath(dir, itemId), { prompt: taskId });
   return body;
+}
+
+/**
+ * A drift-clean `frozen` block for a run directory. `retryRun` refuses on
+ * D13 drift before it resubmits anything, so every test here needs a state
+ * whose digests match the real checkout. The block is computed once and
+ * reused: each run dir gets the SAME `prompt-inputs.json` bytes, so its
+ * digest matches too, and `computeTaskSetHash`/`harnessFingerprint` run
+ * once for the whole file instead of once per test.
+ */
+let sharedFrozen: BatchRunState["frozen"] | undefined;
+async function frozenFor(dir: string): Promise<BatchRunState["frozen"]> {
+  const promptInputsPath = join(dir, RUN_FILES.promptInputs);
+  await writeJsonAtomic(promptInputsPath, frozenInputs());
+  if (!sharedFrozen) {
+    sharedFrozen = await freezeInputs(
+      Deno.cwd(),
+      "templates",
+      [],
+      new Map(),
+      promptInputsPath,
+      { testRunner: "soap", containers: [] },
+    );
+  }
+  return sharedFrozen;
 }
 
 function makeDeps(
@@ -97,6 +123,7 @@ Deno.test("retryRun: prepared with a retryable lastError resubmits identical bod
     const body = await seedPendingItem(dir, itemId, { taskId: "T1" });
 
     const state: BatchRunState = minimalState({
+      frozen: await frozenFor(dir),
       phase: "prepared",
       tasks: {
         T1: { attempt1: { itemId, round: 0, ownerRound: 0, state: "pending" } },
@@ -142,6 +169,7 @@ Deno.test("retryRun: a prepared run with pending items and no lastError resubmit
     await seedPendingItem(dir, itemId2, { taskId: "T2" });
 
     const state: BatchRunState = minimalState({
+      frozen: await frozenFor(dir),
       phase: "prepared",
       tasks: {
         T1: {
@@ -190,7 +218,10 @@ Deno.test("retryRun: a prepared run with pending items and no lastError resubmit
 Deno.test("retryRun: a prepared run with nothing pending and no lastError still exits 4", async () => {
   const dir = await createTempDir("retry-prepared-nothing-pending");
   try {
-    const state: BatchRunState = minimalState({ phase: "prepared" });
+    const state: BatchRunState = minimalState({
+      frozen: await frozenFor(dir),
+      phase: "prepared",
+    });
     await writeState(dir, state);
 
     const fake = new FakeBatchProvider("anthropic", {});
@@ -216,6 +247,7 @@ Deno.test("retryRun: a non-retryable lastError without --force exits 4 and submi
     await seedPendingItem(dir, itemId, { taskId: "T1" });
 
     const state: BatchRunState = minimalState({
+      frozen: await frozenFor(dir),
       phase: "prepared",
       tasks: {
         T1: { attempt1: { itemId, round: 0, ownerRound: 0, state: "pending" } },
@@ -249,6 +281,7 @@ Deno.test("retryRun: --force resubmits a non-retryable lastError", async () => {
     await seedPendingItem(dir, itemId, { taskId: "T1" });
 
     const state: BatchRunState = minimalState({
+      frozen: await frozenFor(dir),
       phase: "prepared",
       tasks: {
         T1: { attempt1: { itemId, round: 0, ownerRound: 0, state: "pending" } },
@@ -376,6 +409,7 @@ Deno.test("retryRun: --confirm-not-submitted returns the run to prepared and cle
     };
     await writeIntent(dir, intent);
     const state = minimalState({
+      frozen: await frozenFor(dir),
       model: { slug: "openai/gpt-6", provider: "openai", apiModelId: "gpt-6" },
       phase: "submit-unknown",
     });
@@ -425,6 +459,7 @@ Deno.test("retryRun: end to end after --confirm-not-submitted", async () => {
     // submission, so `state.phase` never left `"prepared"` - nothing ever
     // persists `"submit-unknown"` (see `retryRun`'s doc comment).
     const state = minimalState({
+      frozen: await frozenFor(dir),
       model: { slug: "openai/gpt-6", provider: "openai", apiModelId: "gpt-6" },
       phase: "prepared",
       tasks: {
@@ -480,6 +515,7 @@ Deno.test("retryRun: a pending item still named by an active batch is never resu
     await seedPendingItem(dir, orphanId, { taskId: "T2" });
 
     const state: BatchRunState = minimalState({
+      frozen: await frozenFor(dir),
       phase: "prepared",
       tasks: {
         T1: {
@@ -529,6 +565,41 @@ Deno.test("retryRun: a pending item still named by an active batch is never resu
     assertEquals(submitCalls.length, 1);
     const submittedItems = submitCalls[0]!.args[1] as Array<{ itemId: string }>;
     assertEquals(submittedItems.map((i) => i.itemId), [orphanId]);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("retryRun refuses on D13 drift before it resubmits anything", async () => {
+  const dir = await createTempDir("retry-drift");
+  try {
+    const itemId = "item-drift";
+    await seedPendingItem(dir, itemId, { taskId: "T1" });
+
+    const frozen = await frozenFor(dir);
+    const state: BatchRunState = minimalState({
+      // The tree moved since submit: the task set no longer hashes to what
+      // this run was frozen against.
+      frozen: { ...frozen, taskSetHash: "0".repeat(64) },
+      phase: "prepared",
+      tasks: {
+        T1: { attempt1: { itemId, round: 0, ownerRound: 0, state: "pending" } },
+      },
+      lastError: {
+        at: "2026-09-06T00:00:00.000Z",
+        step: "submit",
+        message: "rate limited",
+        retryable: true,
+      },
+    });
+    await writeState(dir, state);
+
+    const fake = new FakeBatchProvider("anthropic", {});
+    const result = await retryRun(dir, makeDeps(fake));
+
+    assertEquals(result.exit, 4);
+    assert(result.message.includes("taskSetHash"), result.message);
+    assertEquals(fake.calls.filter((c) => c.op === "submit").length, 0);
   } finally {
     await cleanupTempDir(dir);
   }

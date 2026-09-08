@@ -45,13 +45,15 @@ function itemFor(summary: TaskSummary, wave: 1 | 2): ItemSummary | undefined {
 
 /**
  * D10 (and the "never a third round" rule): an item is eligible for the
- * SINGLE resubmission round exactly when it is still errored/expired AND
- * still at round 0. A round-1 error is terminal and must be evaluated
- * into a failed attempt instead, never resubmitted again.
+ * SINGLE resubmission round exactly when it is still errored/expired, is
+ * still at round 0, and the provider did not call the error terminal. A
+ * round-1 error is terminal and must be evaluated into a failed attempt
+ * instead, never resubmitted again, and so is a non-retryable round-0 one
+ * (an `invalid_request` would be refused identically the second time).
  */
 function isResubmitEligible(item: ItemSummary): boolean {
   return (item.state === "errored" || item.state === "expired") &&
-    item.round === 0;
+    item.round === 0 && item.retryable !== false;
 }
 
 /**

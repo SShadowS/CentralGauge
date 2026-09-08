@@ -15,6 +15,7 @@ import {
   buildAdvanceDeps,
   buildBatchCommand,
   buildFinalizeDeps,
+  reconstructVariant,
 } from "../../../cli/commands/bench-batch-command.ts";
 import type { AdvanceDeps, AdvanceResult } from "../../../src/batch/advance.ts";
 import { finalizeRun } from "../../../src/batch/results.ts";
@@ -26,6 +27,7 @@ import {
   minimalState,
   task,
 } from "../../utils/batch-fixtures.ts";
+import { generateVariantId } from "../../../src/llm/variant-types.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import type { BenchResults } from "../../../src/ingest/mod.ts";
 import type { IngestOutcome } from "../../../src/ingest/types.ts";
@@ -318,4 +320,33 @@ Deno.test("advanceAllRuns isolates a broken run and still advances the others", 
   } finally {
     await cleanupTempDir(output);
   }
+});
+
+Deno.test("reconstructVariant keeps a variant's suffix in the results key", async () => {
+  const state = minimalState({
+    model: {
+      slug: "anthropic/claude-haiku-4-5",
+      provider: "anthropic",
+      apiModelId: "claude-haiku-4-5",
+    },
+  });
+
+  // A plain model: the bare slug is the variant id, as the sync path mints it.
+  assertEquals(
+    reconstructVariant(state, frozenInputs()).variantId,
+    "anthropic/claude-haiku-4-5",
+  );
+
+  // A variant: the id must carry the suffix, or this run's results file and
+  // `ingest.invocations` key differ from a sync run of the same variant.
+  const varied = reconstructVariant(
+    state,
+    frozenInputs({ variantConfig: { temperature: 0.7 } }),
+  );
+  assertEquals(
+    varied.variantId,
+    generateVariantId("anthropic", "claude-haiku-4-5", { temperature: 0.7 }),
+  );
+  assertEquals(varied.variantId.includes("temp=0.7"), true);
+  await Promise.resolve();
 });

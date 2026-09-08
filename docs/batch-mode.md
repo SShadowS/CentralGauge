@@ -30,9 +30,10 @@ deno task start bench batch abandon <runId>
   `batch_*` fields forward from the most recent prior row for the same model whenever a
   freshly fetched row has none, so a freshness refresh can no longer shadow an existing
   batch rate.
-- `status` never contacts the provider. It only reads `state.json` and prints the
-  provider status/counts recorded by the LAST `advance` call. Waiting for a batch to
-  finish means calling `advance`, not `status`, on a loop.
+- `status` contacts the provider only when the run has a live `intent.json`, in which
+  case it lists the reconciliation candidates. Otherwise it reads `state.json` alone and
+  prints the provider status/counts recorded by the LAST `advance` call. Waiting for a
+  batch to finish means calling `advance`, not `status`, on a loop.
 - `advance <runId>` performs exactly ONE step of the run's state machine per call (spec
   section 4.5): poll, collect, evaluate, resubmit, submit wave 2, or finalize. `--all`
   advances every run under `<output>/batch/` one step each, serially, and returns the
@@ -40,6 +41,9 @@ deno task start bench batch abandon <runId>
 - `retry` resubmits a run stuck with a retryable `lastError`, or reconciles a
   `submit-unknown` run (a crash between submitting a batch and persisting its handle) by
   exact identification only - it never resubmits blind on a provider list going stale.
+  `advance` runs that same reconciliation itself on every tick, so a batch it can
+  identify exactly is adopted with no operator command; `retry --adopt` /
+  `--confirm-not-submitted` are for the cases identification cannot decide.
 - `abandon` cancels with the provider where possible and marks the run terminal.
 
 ## Run directory layout
@@ -98,7 +102,7 @@ guide's own history.
 | --- | --- | --- |
 | Submit rejected, retryable | Provider returned a transient error before a batch handle existed | `retry <runId>` resubmits the identical bodies |
 | Submit rejected, non-retryable | Provider refused outright | `retry --force` only if the retryable/non-retryable classification looks wrong; otherwise `abandon` and start a new run - request bodies are never edited under a run id |
-| `submit-unknown` (crash between submitting and persisting the handle) | `intent.json` is present | `retry --adopt <batchId>` if you can find the batch on the provider's dashboard/list and confirm it's this run's; `retry --confirm-not-submitted` if you've confirmed the provider never received it. Never guess - a wrong adopt corrupts the run. |
+| `submit-unknown` (crash between submitting and persisting the handle) | `intent.json` is present | `advance` already tried to reconcile and adopts automatically on an exact match; `status` lists the candidates it saw. If it did not adopt: `retry --adopt <batchId>` when you can find the batch on the provider's dashboard/list and confirm it is this run's; `retry --confirm-not-submitted` when you have confirmed the provider never received it. Never guess - a wrong adopt corrupts the run. |
 | A wave ended with unresolved items (retryable provider error, expired, or cancelled) | `advance` detects this automatically | One automatic resubmission round happens on the next `advance`, then any still-unresolved item becomes a terminal failed attempt (`termination_kind: provider_error`) |
 | D13 drift refusal (exit 4) | The git SHA moved, or a task/template/harness file changed, since this run's `submit` | Never edit tracked files while a run is between submit and finalize. If drift already happened, the run cannot proceed automatically - abandon it and resubmit from clean state once the tree is settled again. |
 | Bench lock held (exit 4) | Another bench or batch process (sync or batch) is running | Wait for it to finish, or investigate if it looks crashed (`src/utils/bench-lock.ts`'s 120s heartbeat staleness) |

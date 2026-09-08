@@ -20,11 +20,12 @@
  * @module src/batch/retry
  */
 import type { AdvanceDeps } from "./advance.ts";
+import type { BatchRunState } from "./state.ts";
+import { checkDrift } from "./drift.ts";
 import { readIntent } from "./intent.ts";
 import { withMutateLock } from "./mutate-lock.ts";
 import { confirmNotSubmitted, reconcileSubmitUnknown } from "./reconcile.ts";
 import { findUnsubmittedItems, resubmitPending } from "./resubmit.ts";
-import type { BatchRunState } from "./state.ts";
 import { loadState } from "./state.ts";
 
 export type RetryDeps = AdvanceDeps & {
@@ -132,6 +133,21 @@ export async function retryRun(
 
     if (state.phase === "submit-unknown" || (await readIntent(dir)) !== null) {
       return await retrySubmitUnknown(dir, state, deps);
+    }
+
+    // D13 (spec 4.6): a resubmission puts paid work back on the provider,
+    // so it must refuse on a changed tree exactly as `advance` does. The
+    // bodies themselves are re-read from the journal and cannot drift, but
+    // the harness that will evaluate the results can.
+    const drift = await checkDrift(dir, state, {
+      cwd: deps.cwd,
+      templateDir: deps.templateDir,
+    });
+    if (!drift.ok) {
+      return {
+        exit: 4,
+        message: "drift: " + drift.changed.map((c) => c.input).join(", "),
+      };
     }
 
     if (!state.lastError) {

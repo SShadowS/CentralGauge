@@ -80,7 +80,9 @@ logging:
 # Batch mode settings (docs/batch-mode.md, rule .claude/rules/batch-mode.md).
 # Documentation only below - commented out, no behaviour change until uncommented.
 # batch:
-#   # How often a scheduler should call `bench batch advance --all`, in minutes.
+#   # How often an EXTERNAL scheduler should call `bench batch advance --all`, in
+#   # minutes. Nothing in the CLI reads this value at runtime - the scheduler lives
+#   # outside it - but the value is validated at config load, so a typo fails loudly.
 #   # Exit 3 (still processing) is normal and just means "call again later"; exit 4
 #   # means an operator has to look at `status --json` before the next call.
 #   advanceIntervalMinutes: 30
