@@ -528,7 +528,21 @@ export function buildBatchCommand(): Command {
       }
       const dir = runDir(opts.output, runId);
       const deps = await buildAdvanceDeps(dir);
-      const result = await advanceRun(dir, deps);
+      let result: AdvanceResult;
+      try {
+        result = await advanceRun(dir, deps);
+      } catch (err) {
+        // A step that throws (a finalize whose ingest was rejected, a
+        // transport failure that left an intent behind) is an operator
+        // condition, not a crash: exit 4 with the reason, leave the phase
+        // where it is, and let the next tick or `retry` pick it up.
+        console.error(
+          `${colors.red("[FAIL]")} ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        Deno.exit(4);
+      }
       if (result.exit === 4) {
         const message = advanceFailureMessage(result);
         if (message) {

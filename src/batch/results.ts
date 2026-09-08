@@ -56,8 +56,9 @@ import {
   saveResultsJson,
   saveScoresFile,
 } from "../../cli/commands/bench/results-writer.ts";
-import { writeState } from "./state.ts";
+import { writeJsonAtomic, writeState } from "./state.ts";
 import { attemptPath, RUN_FILES } from "./paths.ts";
+import { sha256Hex } from "../../shared/settings-hash.ts";
 
 /** Dependencies `finalizeRun` needs beyond the run directory and its state. */
 export interface FinalizeDeps {
@@ -313,13 +314,16 @@ function buildBatchInvocationSummary(
 }
 
 /**
- * Finalize a batch run: write the sync-shaped results/scores files (once)
- * and, when `deps.ingest`, send the run to the scoreboard (once). Both
- * halves are idempotent against the persisted `state.resultsFile` /
- * `state.ingestedRunId` markers, so a resumed `advance` after a crash never
- * rewrites the results file or double-ingests, and a run finalized with
- * `--no-ingest` can still be ingested later via a separate replay without
- * this function re-deriving anything.
+ * Finalize a batch run: write the sync-shaped results/scores files and,
+ * when `deps.ingest`, send the run to the scoreboard exactly once.
+ *
+ * Re-entrant by design, because `finalizing` is a phase `advance` resumes
+ * from (a crash mid-write, or an ingest that threw): the results/scores
+ * files are rebuilt whenever the deterministic path is not on disk, and
+ * the ingest is skipped whenever the run's `ingested.json` marker exists.
+ * The marker is written the moment the server accepts the payload, before
+ * the state write that could still be interrupted, so a crash in that
+ * window cannot produce a second server-side run.
  */
 export async function finalizeRun(
   dir: string,
@@ -336,7 +340,11 @@ export async function finalizeRun(
   const resultsFile = next.resultsFile ??
     join(dir, "..", "..", `benchmark-results-${next.runId}.json`);
 
-  if (next.resultsFile === undefined) {
+  // Rebuild whenever the file this run is supposed to have is not on disk:
+  // `state.resultsFile` alone is not proof (a crash between the two writes,
+  // or a file deleted since). The path is deterministic, so rewriting it is
+  // always safe.
+  if (next.resultsFile === undefined || !(await exists(resultsFile))) {
     const taskIds = Object.keys(next.tasks).sort();
     const results: TaskExecutionResult[] = [];
     for (const taskId of taskIds) {
@@ -471,9 +479,10 @@ export async function finalizeRun(
     await writeState(dir, next);
   }
 
-  if (deps.ingest && next.ingestedRunId === undefined) {
+  if (deps.ingest && !(await exists(join(dir, RUN_FILES.ingested)))) {
     const variantId = deps.variant.variantId;
-    const parsed = JSON.parse(await Deno.readTextFile(resultsFile));
+    const resultsText = await Deno.readTextFile(resultsFile);
+    const parsed = JSON.parse(resultsText);
     const ingestMeta = parseIngestMeta(parsed);
     const pricingVersion = ingestMeta?.pricing_version ??
       new Date().toISOString().slice(0, 10);
@@ -504,6 +513,15 @@ export async function finalizeRun(
         flags: deps.ingestFlags,
       });
       if (outcome.kind === "success") {
+        // The marker, not `state.ingestedRunId`, is what blocks a replay:
+        // it is written the moment the server accepted the payload, before
+        // the state write that could still be interrupted.
+        await writeJsonAtomic(join(dir, RUN_FILES.ingested), {
+          runId: next.runId,
+          ingestedRunId: outcome.runId,
+          at: new Date().toISOString(),
+          payloadDigest: await sha256Hex(resultsText),
+        });
         next = { ...next, ingestedRunId: outcome.runId };
         await writeState(dir, next);
       } else if (outcome.kind === "fatal-failure") {

@@ -20,6 +20,7 @@ import type {
   TaskSummary,
 } from "../../../src/batch/state.ts";
 import { attemptPath, RUN_FILES, runDir } from "../../../src/batch/paths.ts";
+import { loadState } from "../../../src/batch/state.ts";
 import {
   createMockExecutionAttempt,
   createMockTaskExecutionContext,
@@ -523,4 +524,86 @@ Deno.test("summarizeWaves falls back to lastPolledAt for a record with no endedA
   const waves = summarizeWaves([record]);
   assertEquals(waves.length, 1);
   assertEquals(waves[0]?.endedAt, "2026-09-07T16:40:00.000Z");
+});
+Deno.test("finalizeRun resumes a run left in the finalizing phase", async () => {
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    // The phase a crash mid-finalize leaves behind (`advance` routes it
+    // straight back to the finalize step).
+    const interrupted: BatchRunState = { ...state, phase: "finalizing" };
+    const next = await finalizeRun(dir, interrupted, {
+      manifests,
+      contexts,
+      variant: mockVariant(),
+      environment: mockEnvironment(),
+      taskSetHash: state.frozen.taskSetHash,
+      ingest: false,
+      cwd: Deno.cwd(),
+      ingestFlags: {},
+    });
+
+    assertEquals(next.phase, "finalized");
+    assertExists(next.resultsFile);
+    assertExists(await Deno.stat(next.resultsFile!));
+  } finally {
+    await Deno.remove(output, { recursive: true });
+  }
+});
+
+Deno.test("a finalize whose ingest throws stays finalizing, and the retry ingests exactly once", async () => {
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    let ingestCalls = 0;
+    const flakyIngestRun = (_br: BenchResults): Promise<IngestOutcome> => {
+      ingestCalls++;
+      if (ingestCalls === 1) {
+        return Promise.reject(new Error("ingest transport exploded"));
+      }
+      return Promise.resolve({
+        kind: "success",
+        runId: RUN_ID,
+        bytesUploaded: 0,
+        referencedBytes: 0,
+      });
+    };
+
+    const deps = {
+      manifests,
+      contexts,
+      variant: mockVariant(),
+      environment: mockEnvironment(),
+      taskSetHash: state.frozen.taskSetHash,
+      ingest: true,
+      cwd: Deno.cwd(),
+      ingestFlags: {},
+      ingestRun: flakyIngestRun,
+    };
+
+    await assertRejects(
+      () => finalizeRun(dir, state, deps),
+      Error,
+      "ingest transport exploded",
+    );
+
+    const afterThrow = await loadState(dir);
+    assertEquals(afterThrow.phase, "finalizing");
+    assertEquals(afterThrow.ingestedRunId, undefined);
+
+    const recovered = await finalizeRun(dir, afterThrow, deps);
+    assertEquals(ingestCalls, 2);
+    assertEquals(recovered.phase, "finalized");
+    assertEquals(recovered.ingestedRunId, RUN_ID);
+    assertExists(await Deno.stat(join(dir, RUN_FILES.ingested)));
+
+    // The marker, not the state field, is what blocks the replay.
+    const third = await finalizeRun(
+      dir,
+      { ...recovered, ingestedRunId: undefined },
+      deps,
+    );
+    assertEquals(ingestCalls, 2);
+    assertEquals(third.phase, "finalized");
+  } finally {
+    await Deno.remove(output, { recursive: true });
+  }
 });

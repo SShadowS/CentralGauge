@@ -126,6 +126,14 @@ Deno.test("nextStep walks the spec 4.5 table", () => {
     "finalize",
   );
 
+  // `finalizing` is resumable, not a dead end: a crash mid-finalize (or an
+  // ingest that threw) leaves the phase there, and the next tick finalizes
+  // again -- `finalizeRun` re-uses the results file and the ingest marker.
+  assertEquals(
+    nextStep(minimalState({ phase: "finalizing" }), false, new Map(), 2).kind,
+    "finalize",
+  );
+
   // Terminal phases -> done.
   assertEquals(
     nextStep(minimalState({ phase: "finalized" }), false, new Map(), 2).kind,

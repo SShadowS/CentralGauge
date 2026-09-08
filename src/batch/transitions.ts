@@ -240,16 +240,22 @@ export function nextStep(
     case "attempt-2-collected":
       return stepForCollected(state, attempts, attemptLimit);
 
+    // A run that reached `finalizing` and stopped there (a crash mid-write,
+    // or an ingest that threw) resumes by finalizing again: `finalizeRun`
+    // re-uses the deterministic results path and skips an ingest that
+    // already succeeded, so re-entry is safe and is the only way out of
+    // this phase.
+    case "finalizing":
+      return { kind: "finalize" };
+
     // `prepared`/`submitting` are `submit`'s territory, not `advance`'s;
     // `submit-unknown` without a live intent is an inconsistent state (it
-    // only ever arises FROM a live intent); `finalizing` mid-flight with no
-    // more automatic action to take. None of these has a step for `advance`
-    // to take on its own; an operator command (`submit`, `retry`,
-    // `abandon`) is required.
+    // only ever arises FROM a live intent). Neither has a step for
+    // `advance` to take on its own; an operator command (`submit`,
+    // `retry`, `abandon`) is required.
     case "prepared":
     case "submitting":
     case "submit-unknown":
-    case "finalizing":
     default:
       return {
         kind: "blocked",

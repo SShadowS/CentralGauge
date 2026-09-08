@@ -22,6 +22,8 @@ export const RUN_FILES = {
   items: "items.jsonl",
   events: "events.jsonl",
   mutateLock: "mutate.lock",
+  /** Written only after an ingest the server accepted; its presence blocks a replay. */
+  ingested: "ingested.json",
 } as const;
 
 /** Immutable raw provider result for one submitted item. */
