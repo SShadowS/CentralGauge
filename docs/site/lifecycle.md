@@ -336,6 +336,61 @@ families) are not page loaders and are untouched by this fix - they still
 show `mode_required` on a mixed-mode set with no `mode` parameter, so a
 direct caller (including a social-preview crawler) must pass it explicitly.
 
+## Excluding a run (migration 0022)
+
+Sometimes the harness scores a model failure that the model did not cause. The
+case this was built for: three Haiku 4.5 runs whose 28 attempts were recorded
+as failures because the HOST ran out of memory during evaluation, after the
+inline infra retry had already given up. Deleting those runs would destroy the
+evidence of what went wrong. Leaving them in the rankings blames the model for
+the rig.
+
+So a run can be soft-excluded instead. It stays in D1, keeps its detail page
+with every per-task number it actually produced, stays in `/api/v1/runs` and
+in the model's own run history, and renders an "Excluded" badge carrying the
+reason. What it loses is every statistic: pass metrics, tier bands, the
+matrix, compare, family and category aggregates, and the site summary all skip
+it.
+
+```bash
+# Take a run out of the numbers. --reason is mandatory.
+centralgauge runs exclude 20a0f409-7e1a-4ea8-a060-b3a8429bcf31   --reason "host OOM during evaluation"
+
+# Put it back.
+centralgauge runs include 20a0f409-7e1a-4ea8-a060-b3a8429bcf31
+```
+
+Both post the signed `POST /api/v1/admin/runs/exclude` using the same admin
+key as `sync-catalog`, so the same `admin_key_path` / `admin_key_id` config
+applies. Each call writes a `run.excluded` or `run.included` row to
+`admin_audit` and bumps the data epoch, which retires every cached ranking
+immediately. The operation is idempotent in both directions: re-excluding an
+already-excluded run updates its reason, which is how you correct one.
+
+Three things worth knowing before you use it.
+
+**The reason is not optional and not private.** It is stored on the run, shown
+on the run's page, and recorded in the audit log against your key. That is
+deliberate. An exclusion with no stated cause is indistinguishable, months
+later, from someone quietly deleting a result they did not like.
+
+**It also stamps your local artifacts.** After the server accepts the change,
+the CLI marks the local results file that produced the run so a later
+`report` or stats import does not re-admit the same numbers from disk. The
+file is found by matching the run id inside `ingest.run_ids`, not by filename,
+because the bench names results files by timestamp. When one file carries
+several benched variants the command says so: the local stats importer treats
+a file as one run, so marking it removes every variant in that file from the
+LOCAL score tables. The scoreboard is unaffected, since exclusion there is
+per-run. A run already imported into the local stats DB before it was excluded
+is not retro-purged; rebuild the DB if that matters.
+
+**What is deliberately still counted.** `/api/v1/task-sets` reports a per-set
+`run_count` that includes excluded runs, because that number is an inventory
+of what is stored rather than a statistic. The same goes for search results
+and a model's run history. If you want to know how many runs actually feed the
+rankings, read the site summary, which does drop them.
+
 ## Recipes
 
 ### Onboarding a new model
