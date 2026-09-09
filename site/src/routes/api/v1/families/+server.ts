@@ -54,6 +54,7 @@ export const GET: RequestHandler = async ({ request, platform }) => {
         FROM runs
         JOIN results r ON r.run_id = runs.id
         JOIN current_set ON runs.task_set_hash = current_set.hash
+        WHERE runs.excluded_at IS NULL
         GROUP BY runs.model_id
       ),
       -- Cohort metrics (2026-09): the numerators count (run, task) CELLS and
@@ -67,6 +68,7 @@ export const GET: RequestHandler = async ({ request, platform }) => {
         JOIN runs ru1 ON ru1.id = r1.run_id
         JOIN current_set ON ru1.task_set_hash = current_set.hash
         WHERE r1.attempt = 1 AND r1.passed = 1
+          AND ru1.excluded_at IS NULL
         GROUP BY ru1.model_id
       ),
       -- Attempt-2-only is decided WITHIN a run. Correlating the NOT EXISTS on
@@ -78,6 +80,7 @@ export const GET: RequestHandler = async ({ request, platform }) => {
         JOIN runs ru2 ON ru2.id = r2.run_id
         JOIN current_set ON ru2.task_set_hash = current_set.hash
         WHERE r2.attempt = 2 AND r2.passed = 1
+          AND ru2.excluded_at IS NULL
           AND NOT EXISTS (
             SELECT 1 FROM results r1b
             WHERE r1b.run_id = r2.run_id
@@ -92,12 +95,15 @@ export const GET: RequestHandler = async ({ request, platform }) => {
         FROM runs
         JOIN results r ON r.run_id = runs.id
         JOIN current_set ON runs.task_set_hash = current_set.hash
+        WHERE runs.excluded_at IS NULL
         GROUP BY runs.model_id
       ),
       runs_by_model AS (
         SELECT runs.model_id, COUNT(DISTINCT runs.id) AS run_count
         FROM runs
         JOIN current_set ON runs.task_set_hash = current_set.hash
+        -- Soft run exclusion (0022): the divisor for the per-run means above.
+        WHERE runs.excluded_at IS NULL
         GROUP BY runs.model_id
       )
       SELECT mf.slug, mf.display_name, mf.vendor,
@@ -143,7 +149,7 @@ export const GET: RequestHandler = async ({ request, platform }) => {
           vendor: r.vendor,
           model_count: +(r.model_count ?? 0),
           latest_avg_score:
-            r.latest_avg_score === null ? null : +(r.latest_avg_score),
+            r.latest_avg_score === null ? null : +r.latest_avg_score,
           latest_model_slug: r.latest_model_slug,
           pass_at_n:
             passAtNStrict === null

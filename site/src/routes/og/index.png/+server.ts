@@ -112,8 +112,10 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     const counts = await env.DB.prepare(
       `SELECT
          (SELECT COUNT(*) FROM models)                                         AS model_count,
-         (SELECT COUNT(*) FROM runs)                                           AS run_count,
-         (SELECT MAX(started_at) FROM runs)                                    AS last_run_at`,
+         -- Soft run exclusion (0022): the social card mirrors /api/v1/summary,
+         -- so it counts the same runs that endpoint does.
+         (SELECT COUNT(*) FROM runs WHERE excluded_at IS NULL)                 AS run_count,
+         (SELECT MAX(started_at) FROM runs WHERE excluded_at IS NULL)          AS last_run_at`,
     ).first<{
       model_count: number;
       run_count: number;

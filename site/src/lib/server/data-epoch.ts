@@ -127,7 +127,10 @@ export async function readDataEpoch(db: D1Database): Promise<EpochToken> {
     }
     return `e${row.epoch + 1}`;
   } catch (err) {
-    console.error("[data-epoch] read failed, falling back to time bucket:", err);
+    console.error(
+      "[data-epoch] read failed, falling back to time bucket:",
+      err,
+    );
   }
   return fallbackToken();
 }
@@ -165,8 +168,7 @@ export function isFallbackEpoch(token: EpochToken): boolean {
  * the batch a committed write can pair with a failed mark, leaving every colo
  * serving stale data until something else writes.
  */
-export const BUMP_DATA_EPOCH_SQL =
-  `UPDATE cache_epoch
+export const BUMP_DATA_EPOCH_SQL = `UPDATE cache_epoch
       SET pending_since = CASE WHEN pending_since = 0
                                THEN CAST(strftime('%s','now') AS INTEGER) * 1000
                                ELSE pending_since END
@@ -218,13 +220,25 @@ export function buildCacheKey(
  * rather than "data changed". Ordinary write paths should use
  * `bumpDataEpochStmt` so bench batches stay coalesced.
  */
+export const FORCE_BUMP_DATA_EPOCH_SQL = `UPDATE cache_epoch
+      SET epoch = epoch + 1, pending_since = 0, last_bump_at = ?
+    WHERE id = 1`;
+
+/**
+ * Statement form of the forced bump, for a write path that already uses
+ * `db.batch()` and wants the change visible NOW rather than within
+ * DEBOUNCE_MS. Same in-batch contract as `bumpDataEpochStmt`: a committed
+ * write must never pair with a failed bump.
+ *
+ * Use this only for a deliberate operator action on a small number of rows
+ * (run exclusion is the case it was added for). A high-frequency path such
+ * as bench ingest must keep using `bumpDataEpochStmt` so its writes stay
+ * coalesced into one invalidation.
+ */
+export function forceBumpDataEpochStmt(db: D1Database): D1PreparedStatement {
+  return db.prepare(FORCE_BUMP_DATA_EPOCH_SQL).bind(Date.now());
+}
+
 export async function forceBumpDataEpoch(db: D1Database): Promise<void> {
-  await db
-    .prepare(
-      `UPDATE cache_epoch
-          SET epoch = epoch + 1, pending_since = 0, last_bump_at = ?
-        WHERE id = 1`,
-    )
-    .bind(Date.now())
-    .run();
+  await forceBumpDataEpochStmt(db).run();
 }

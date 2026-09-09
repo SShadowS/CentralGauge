@@ -37,6 +37,9 @@
           </th>
           <td class="text-mono">
             <a class="run-link" href={runHref(row.id)} title={row.id} aria-label="Run {row.id}">{shortRunId(row.id)}</a>
+            {#if row.excluded_at}
+              <span class="excluded" title="Excluded from all statistics: {row.excluded_reason ?? 'no reason recorded'}">Excluded</span>
+            {/if}
           </td>
           <td>
             <ModelLink
@@ -81,4 +84,20 @@
     text-decoration: none;
   }
   .run-link:hover { text-decoration: underline; }
+  /* Soft run exclusion (migration 0022). The row stays in the list. The
+     badge is what tells a reader its numbers are not in any total. */
+  .excluded {
+    display: inline-block;
+    margin-left: var(--space-2);
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semi);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    cursor: help;
+  }
 </style>

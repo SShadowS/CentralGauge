@@ -5,10 +5,7 @@ import { verifySignedRequest } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { cachedJson } from "$lib/server/cache";
 import { getAll } from "$lib/server/db";
-import type {
-  TaskSetSummary,
-  TaskSetsResponse,
-} from "$lib/shared/api-types";
+import type { TaskSetSummary, TaskSetsResponse } from "$lib/shared/api-types";
 
 import {
   buildCacheKey,
@@ -49,15 +46,19 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const shared = await sharedCacheGet(platform.env.DB, cacheKey.url, epoch);
       if (shared) {
         payload = JSON.parse(shared) as TaskSetsResponse;
-        await cache.put(
-          cacheKey,
-          new Response(shared, {
-            headers: {
-              "content-type": "application/json; charset=utf-8",
-              "cache-control": `public, s-maxage=${ttl}`,
-            },
-          }),
-        ).catch((err) => console.error("[task-sets] L1 backfill failed:", err));
+        await cache
+          .put(
+            cacheKey,
+            new Response(shared, {
+              headers: {
+                "content-type": "application/json; charset=utf-8",
+                "cache-control": `public, s-maxage=${ttl}`,
+              },
+            }),
+          )
+          .catch((err) =>
+            console.error("[task-sets] L1 backfill failed:", err),
+          );
       }
     }
 
@@ -67,6 +68,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         display_name: string | null;
         task_count: number;
         run_count: number;
+        excluded_run_count: number;
         is_current: number;
         created_at: string;
       }>(
@@ -77,7 +79,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
            ts.task_count,
            ts.is_current,
            ts.created_at,
-           (SELECT COUNT(*) FROM runs WHERE task_set_hash = ts.hash) AS run_count
+           -- run_count is the INVENTORY of what is stored, so it counts
+           -- soft-excluded runs too (0022). excluded_run_count is how many of
+           -- them leave every statistic, so a reader can see both numbers
+           -- rather than wonder why this disagrees with the site summary.
+           (SELECT COUNT(*) FROM runs WHERE task_set_hash = ts.hash) AS run_count,
+           (SELECT COUNT(*) FROM runs
+             WHERE task_set_hash = ts.hash AND excluded_at IS NOT NULL)
+             AS excluded_run_count
          FROM task_sets ts
          ORDER BY ts.is_current DESC, ts.created_at DESC`,
         [],
@@ -89,6 +98,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         display_name: r.display_name,
         task_count: +(r.task_count ?? 0),
         run_count: +(r.run_count ?? 0),
+        excluded_run_count: +(r.excluded_run_count ?? 0),
         is_current: r.is_current === 1,
         created_at: r.created_at,
       }));
@@ -98,11 +108,15 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
           "content-type": "application/json; charset=utf-8",
-          "cache-control":
-            `public, s-maxage=${ttl}`,
+          "cache-control": `public, s-maxage=${ttl}`,
         },
       });
-      await sharedCacheSet(platform.env.DB, cacheKey.url, epoch, JSON.stringify(payload));
+      await sharedCacheSet(
+        platform.env.DB,
+        cacheKey.url,
+        epoch,
+        JSON.stringify(payload),
+      );
       await cache.put(cacheKey, storeRes);
     }
 

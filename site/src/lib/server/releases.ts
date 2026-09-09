@@ -21,6 +21,13 @@ import type { ReleaseV2Summary } from "../shared/api-types";
  * settings_hash, most recent `cohort.size` runs per model by `started_at`
  * desc then `id` (tie-break). `policy === null` takes EVERY run of the set
  * for each model (no eligibility filter, no cap).
+ *
+ * Soft run exclusion (migration 0022) applies here in BOTH branches. This is
+ * a ranking selection, not an inventory: the cohort is the set of runs a
+ * release's numbers are computed from. It matters most under a small
+ * `cohort.size`, where an excluded run is not merely added to the pool but
+ * displaces an includable one, because the order is most-recent-first and an
+ * infra-tainted run is usually the newest.
  */
 export async function cohortDigest(
   db: D1Database,
@@ -31,7 +38,7 @@ export async function cohortDigest(
     await db
       .prepare(
         `SELECT r.id, m.slug FROM runs r JOIN models m ON m.id = r.model_id
-      WHERE r.task_set_hash = ? ${
+      WHERE r.task_set_hash = ? AND r.excluded_at IS NULL ${
         policy
           ? "AND r.status IN (" +
             policy.eligible.statuses.map(() => "?").join(",") +
@@ -303,9 +310,14 @@ export async function writeExportBundle(
       (
         await db
           .prepare(
+            // The export bundle is a reproducibility ARCHIVE, so it still
+            // lists an excluded run. It carries the mark (0022) so a reader
+            // of the archive can tell which runs the release's numbers were
+            // actually computed from, matching `cohort.json`.
             `SELECT r.id, m.slug AS model, r.status, r.source, r.settings_hash, r.started_at, r.completed_at,
                     r.harness_fingerprint, r.retry_path_version, r.environment_digest, r.bc_artifact,
-                    r.container_image_digest, r.bcch_version, r.test_runner, r.prompt_template_digest, r.invocation_json
+                    r.container_image_digest, r.bcch_version, r.test_runner, r.prompt_template_digest, r.invocation_json,
+                    r.excluded_at, r.excluded_reason
              FROM runs r JOIN models m ON m.id = r.model_id
              WHERE r.task_set_hash = ? ORDER BY r.started_at, r.id`,
           )

@@ -10,6 +10,7 @@ import {
   parseModeParam,
   resolveInvocationMode,
 } from "$lib/server/invocation-mode";
+import { excludedPredicate } from "$lib/server/run-exclusion";
 
 export const GET: RequestHandler = async ({
   request,
@@ -105,10 +106,15 @@ export const GET: RequestHandler = async ({
             (SELECT r2.task_set_hash
              FROM runs r2
              WHERE r2.model_id = runs.model_id
+               AND r2.excluded_at IS NULL
              ORDER BY r2.started_at DESC
              LIMIT 1)
           ) AS dominant_hash
         FROM runs
+        -- Soft run exclusion (0022): the dominant hash is picked from the runs
+        -- that COUNT, so a model whose only newer run is excluded still
+        -- resolves to the set its surviving runs belong to.
+        WHERE runs.excluded_at IS NULL
         GROUP BY runs.model_id
       ),
       -- CR-5: p1_by_model counts only tasks in the model's dominant hash.
@@ -126,6 +132,7 @@ export const GET: RequestHandler = async ({
         WHERE ru1.task_set_hash = ds1.dominant_hash
           AND r1.attempt = 1 AND r1.passed = 1
           AND ${modePredicate("ru1")}
+          AND ${excludedPredicate("ru1")}
         GROUP BY ru1.model_id
       ),
       -- CR-5: p2_only_by_model counts only tasks in the model's dominant hash.
@@ -143,6 +150,7 @@ export const GET: RequestHandler = async ({
         WHERE ru2.task_set_hash = ds2.dominant_hash
           AND r2.attempt = 2 AND r2.passed = 1
           AND ${modePredicate("ru2")}
+          AND ${excludedPredicate("ru2")}
           AND NOT EXISTS (
             SELECT 1 FROM results r1b
             WHERE r1b.run_id = r2.run_id
@@ -159,6 +167,9 @@ export const GET: RequestHandler = async ({
       -- folded into each CASE WHEN) — that is LEFT-JOIN-safe, so a family
       -- member with zero runs in the requested mode still gets a row here
       -- (with null aggregates), exactly like a member with zero runs at all.
+      -- Soft run exclusion (0022) rides on the same JOIN condition for the
+      -- same reason: a member whose every run is excluded stays on the
+      -- trajectory with null aggregates instead of disappearing from it.
       SELECT m.slug, m.display_name, m.api_model_id, m.generation,
              AVG(CASE WHEN runs.task_set_hash = ds.dominant_hash THEN r.score END)
                AS avg_score,
@@ -185,6 +196,7 @@ export const GET: RequestHandler = async ({
              ds.dominant_hash AS dominant_task_set_hash
       FROM models m
       LEFT JOIN runs ON runs.model_id = m.id AND ${modePredicate("runs")}
+        AND ${excludedPredicate("runs")}
       LEFT JOIN results r ON r.run_id = runs.id
       LEFT JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version
       LEFT JOIN p1_by_model p1 ON p1.model_id = m.id

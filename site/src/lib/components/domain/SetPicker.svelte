@@ -16,6 +16,22 @@
   function labelFor(s: TaskSetSummary): string {
     return s.display_name ?? `Set ${s.short_hash}`;
   }
+
+  /**
+   * "12 runs" normally, "12 runs (3 excluded)" when the set holds
+   * soft-excluded runs (migration 0022). `run_count` stays the inventory of
+   * what is stored; the parenthetical is the part that reaches no statistic,
+   * and is the only place the two numbers are shown side by side.
+   *
+   * Read defensively: a response cached before `excluded_run_count` existed
+   * has no such field, and must render as a plain count rather than
+   * "(undefined excluded)".
+   */
+  function runsLabel(s: TaskSetSummary): string {
+    const runs = `${s.run_count} run${s.run_count === 1 ? "" : "s"}`;
+    const excluded = Number(s.excluded_run_count ?? 0);
+    return excluded > 0 ? `${runs} (${excluded} excluded)` : runs;
+  }
 </script>
 
 <fieldset class="group">
@@ -54,8 +70,7 @@
           {/if}
         </span>
         <span class="secondary">
-          <code>{s.short_hash}</code> · {s.run_count}
-          run{s.run_count === 1 ? "" : "s"}
+          <code>{s.short_hash}</code> · {runsLabel(s)}
         </span>
       </label>
     {/each}

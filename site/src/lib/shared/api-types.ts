@@ -245,6 +245,15 @@ export interface ModelHistoryPoint {
   tasks_passed: number;
   /** Per-run total: sum of llm + compile + test durations (ms). */
   duration_ms: number;
+  /**
+   * ISO timestamp at which an operator soft-excluded this run, or `null`
+   * (migration 0022). History and recent_runs deliberately still LIST
+   * excluded runs, since they are the model's record, so the mark travels with
+   * each point and the UI renders the same "Excluded" badge as /runs.
+   */
+  excluded_at: string | null;
+  /** Operator-supplied reason for the exclusion; `null` when not excluded. */
+  excluded_reason: string | null;
 }
 
 export interface FailureMode {
@@ -395,6 +404,16 @@ export interface RunsListItem {
   duration_ms: number;
   started_at: string;
   completed_at?: string;
+  /**
+   * ISO timestamp at which an operator soft-excluded this run, or `null` for
+   * a run that counts (migration 0022). An excluded run is still stored,
+   * still listed here and still has a detail page, but contributes to NO
+   * statistic anywhere on the site. Set through
+   * `POST /api/v1/admin/runs/exclude` (CLI: `centralgauge runs exclude`).
+   */
+  excluded_at: string | null;
+  /** Operator-supplied reason for the exclusion; `null` when not excluded. */
+  excluded_reason: string | null;
 }
 
 export interface RunsListResponse {
@@ -412,7 +431,18 @@ export interface TaskSetSummary {
   short_hash: string;
   display_name: string | null;
   task_count: number;
+  /**
+   * Every run stored against this set, INCLUDING soft-excluded ones
+   * (migration 0022). This is an inventory of what is stored, not a count of
+   * what is ranked, which is why exclusion does not narrow it.
+   */
   run_count: number;
+  /**
+   * How many of `run_count` are soft-excluded and therefore contribute to no
+   * statistic. `0` for a set with nothing excluded. Absent on a response
+   * cached before this field existed, so read it defensively.
+   */
+  excluded_run_count: number;
   is_current: boolean;
   created_at: string;
 }
@@ -460,6 +490,15 @@ export interface RunDetail {
   };
   tier: "verified" | "claimed";
   status: "pending" | "running" | "completed" | "failed";
+  /**
+   * ISO timestamp at which an operator soft-excluded this run, or `null`
+   * (migration 0022). The `totals` and `results` below are unaffected: they
+   * describe this run alone, and remain exactly what the run produced. It is
+   * the cross-run statistics elsewhere on the site that drop it.
+   */
+  excluded_at: string | null;
+  /** Operator-supplied reason for the exclusion; `null` when not excluded. */
+  excluded_reason: string | null;
   machine_id: string;
   task_set_hash: string;
   pricing_version: string;
@@ -1117,6 +1156,14 @@ export interface RunV2Summary {
   environment_digest: string | null;
   test_runner: "soap" | "legacy" | null;
   capture: "full" | "pre_capture";
+  /**
+   * ISO timestamp at which an operator soft-excluded this run, or `null`
+   * (migration 0022). Mirrors the v1 run shapes: an excluded run is still
+   * served here, it simply reaches no statistic.
+   */
+  excluded_at: string | null;
+  /** Operator-supplied reason for the exclusion; `null` when not excluded. */
+  excluded_reason: string | null;
 }
 
 /** `GET /api/v2/runs/[id]` body (merged with `V2Envelope`). */

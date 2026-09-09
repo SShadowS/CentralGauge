@@ -62,15 +62,17 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
       if (shared) {
         payload = JSON.parse(shared) as SummaryStats;
-        await cache.put(
-          cacheKey,
-          new Response(shared, {
-            headers: {
-              "content-type": "application/json; charset=utf-8",
-              "cache-control": `public, s-maxage=${ttl}`,
-            },
-          }),
-        ).catch((err) => console.error("[summary] L1 backfill failed:", err));
+        await cache
+          .put(
+            cacheKey,
+            new Response(shared, {
+              headers: {
+                "content-type": "application/json; charset=utf-8",
+                "cache-control": `public, s-maxage=${ttl}`,
+              },
+            }),
+          )
+          .catch((err) => console.error("[summary] L1 backfill failed:", err));
       }
     }
 
@@ -86,12 +88,17 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         env.DB,
         `
         SELECT
-          (SELECT COUNT(*) FROM runs) AS runs,
+          -- Soft run exclusion (0022): the site headline counts and totals
+          -- describe the benchmark's evidence base, so they drop excluded
+          -- runs like every other number. The per-set run_count on
+          -- /api/v1/task-sets deliberately does NOT: that one is an
+          -- inventory of what is stored, and an excluded run is still stored.
+          (SELECT COUNT(*) FROM runs WHERE excluded_at IS NULL) AS runs,
           (SELECT COUNT(*) FROM models) AS models,
           (SELECT COUNT(*) FROM tasks
             WHERE task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)
           ) AS tasks,
-          (SELECT MAX(started_at) FROM runs) AS last_run_at
+          (SELECT MAX(started_at) FROM runs WHERE excluded_at IS NULL) AS last_run_at
         `,
         [],
       );
@@ -115,6 +122,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         JOIN runs ON runs.id = r.run_id
         JOIN cost_snapshots cs ON cs.model_id = runs.model_id
           AND cs.pricing_version = runs.pricing_version
+        WHERE runs.excluded_at IS NULL
         `,
         [],
       );
@@ -123,7 +131,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         runs: +(counts?.runs ?? 0),
         models: +(counts?.models ?? 0),
         tasks: +(counts?.tasks ?? 0),
-        total_cost_usd: Math.round((+(cost?.total_cost_usd ?? 0)) * 1e6) / 1e6,
+        total_cost_usd: Math.round(+(cost?.total_cost_usd ?? 0) * 1e6) / 1e6,
         total_tokens: +(cost?.total_tokens ?? 0),
         last_run_at: counts?.last_run_at ?? null,
         // Build-time markdown parse of docs/site/changelog.md (Phase H).
@@ -139,7 +147,12 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           "cache-control": `public, s-maxage=${ttl}`,
         },
       });
-      await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(payload));
+      await sharedCacheSet(
+        env.DB,
+        cacheKey.url,
+        epoch,
+        JSON.stringify(payload),
+      );
       await cache.put(cacheKey, storeRes);
     }
 

@@ -14,6 +14,14 @@ interface BenchmarkResultFile {
   results: TaskExecutionResult[];
   stats: AggregateStats;
   comparisons?: unknown[];
+  /**
+   * Present when an operator soft-excluded a run this file produced
+   * (`centralgauge runs exclude`, site migration 0022). The file is then
+   * skipped by the importer, so its numbers reach no local score table.
+   * See `src/ingest/run-exclusion.ts` for the stamp's shape and for why the
+   * whole file is skipped rather than one variant.
+   */
+  excluded?: { at: string; reason: string; run_ids?: string[] };
 }
 
 /**
@@ -106,6 +114,15 @@ export class JsonImporter implements StatsImporter {
     // Read and parse file
     const content = await Deno.readTextFile(filePath);
     const data = JSON.parse(content) as BenchmarkResultFile;
+
+    // Soft run exclusion (site migration 0022). An excluded run must leave
+    // the local score tables too, not just the scoreboard. Otherwise a
+    // `report`/`stats` run rebuilt from disk re-admits exactly the numbers
+    // the exclusion was meant to remove. Skipped like an already-imported
+    // file (returns false), so `importDirectory` counts it under `skipped`.
+    if (data.excluded && typeof data.excluded === "object") {
+      return false;
+    }
 
     // Build run record
     const run = await this.buildRunRecord(runId, data);

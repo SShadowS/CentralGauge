@@ -28,6 +28,8 @@ const TERMINATION_KINDS = new Set([
 
 interface RunRow {
   id: string;
+  excluded_at: string | null;
+  excluded_reason: string | null;
   task_set_hash: string;
   settings_hash: string;
   machine_id: string;
@@ -120,6 +122,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const sql = `
       SELECT runs.id, runs.task_set_hash, runs.settings_hash, runs.machine_id,
              runs.started_at, runs.completed_at, runs.status, runs.tier,
+             -- Soft run exclusion (0022): excluded runs are NOT filtered out
+             -- here. This is the record, not a statistic. The list carries
+             -- the marks so a reader can see which runs left the numbers.
+             runs.excluded_at, runs.excluded_reason,
              m.slug AS model_slug, m.display_name AS model_display,
              mf.slug AS family_slug,
              COALESCE(agg.tasks_attempted, 0) AS tasks_attempted,
@@ -173,6 +179,8 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         cost_usd: r.cost_usd === null ? 0 : +r.cost_usd,
         duration_ms: r.duration_ms ?? 0,
         started_at: r.started_at,
+        excluded_at: r.excluded_at ?? null,
+        excluded_reason: r.excluded_reason ?? null,
         ...(r.completed_at ? { completed_at: r.completed_at } : {}),
       })),
       next_cursor,

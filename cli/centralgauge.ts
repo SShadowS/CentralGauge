@@ -36,6 +36,7 @@ import {
   registerReportCommand,
   registerReportDbCommand,
   registerRulesCommand,
+  registerRunsCommand,
   registerStatsCommands,
   registerStatusCommand,
   registerSyncCatalogCommand,
@@ -130,6 +131,7 @@ registerWorkbenchCommand(cliAny);
 registerPopulateShortcomingsCommand(cliAny);
 registerPopulateTaskSetCommand(cliAny);
 registerRulesCommand(cliAny);
+registerRunsCommand(cliAny);
 cliAny.command("analyze", analyzeCommand);
 
 // `lifecycle` parent — hosts the operator triage subcommands. Wave 4

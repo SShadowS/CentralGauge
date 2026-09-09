@@ -313,3 +313,76 @@ describe("migration 0019 batch mode", () => {
     ).toBeCloseTo(30, 6);
   });
 });
+
+describe("migration 0022 run exclusion", () => {
+  it("adds nullable runs.excluded_at / runs.excluded_reason and an index", async () => {
+    const runCols = (await env.DB.prepare(`PRAGMA table_info(runs)`).all())
+      .results as {
+      name: string;
+      notnull: number;
+      dflt_value: string | null;
+    }[];
+    for (const name of ["excluded_at", "excluded_reason"]) {
+      const col = runCols.find((c) => c.name === name);
+      expect(col, `runs.${name} must exist`).toBeDefined();
+      // Nullable with no default: an un-excluded run reads NULL, which is what
+      // every ranking predicate (`excluded_at IS NULL`) keys on.
+      expect(col?.notnull).toBe(0);
+      expect(col?.dflt_value).toBe(null);
+    }
+    const indexes = (await env.DB.prepare(`PRAGMA index_list(runs)`).all())
+      .results as { name: string }[];
+    expect(indexes.map((i) => i.name)).toContain("idx_runs_excluded_at");
+  });
+
+  it("stores an exclusion timestamp and reason, and clears both", async () => {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (922,'f922','v','F')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (922,922,'m922','m922','M')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('ts922','2026-01-01T00:00:00Z',1,0)`,
+      ),
+      env.DB.prepare(`INSERT INTO settings_profiles(hash) VALUES ('s922')`),
+      // machine_keys is UNIQUE(machine_id, public_key) and the 0019/0021
+      // fixture above already claimed ('rig', [0]), so use distinct bytes.
+      env.DB.prepare(
+        `INSERT INTO machine_keys(id,machine_id,public_key,scope,created_at) VALUES (922,'rig',?,'ingest','2026-01-01T00:00:00Z')`,
+      ).bind(new Uint8Array([9, 2, 2])),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('pv922',922,10,20,'2026-01-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload) VALUES ('r922','ts922',922,'s922','rig','2026-01-01T00:00:00Z','completed','claimed','pv922','sig','2026-01-01T00:00:00Z',922,'{}')`,
+      ),
+    ]);
+    const fresh = await env.DB.prepare(
+      `SELECT excluded_at, excluded_reason FROM runs WHERE id = 'r922'`,
+    ).first<{ excluded_at: string | null; excluded_reason: string | null }>();
+    expect(fresh?.excluded_at).toBe(null);
+    expect(fresh?.excluded_reason).toBe(null);
+
+    await env.DB.prepare(
+      `UPDATE runs SET excluded_at = ?, excluded_reason = ? WHERE id = 'r922'`,
+    )
+      .bind("2026-09-08T00:00:00.000Z", "host OOM during evaluation")
+      .run();
+    const excluded = await env.DB.prepare(
+      `SELECT excluded_at, excluded_reason FROM runs WHERE id = 'r922'`,
+    ).first<{ excluded_at: string | null; excluded_reason: string | null }>();
+    expect(excluded?.excluded_at).toBe("2026-09-08T00:00:00.000Z");
+    expect(excluded?.excluded_reason).toBe("host OOM during evaluation");
+
+    await env.DB.prepare(
+      `UPDATE runs SET excluded_at = NULL, excluded_reason = NULL WHERE id = 'r922'`,
+    ).run();
+    const cleared = await env.DB.prepare(
+      `SELECT excluded_at, excluded_reason FROM runs WHERE id = 'r922'`,
+    ).first<{ excluded_at: string | null; excluded_reason: string | null }>();
+    expect(cleared?.excluded_at).toBe(null);
+    expect(cleared?.excluded_reason).toBe(null);
+  });
+});

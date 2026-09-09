@@ -15,6 +15,8 @@ interface RunV2DetailRow {
   retry_path_version: string | null;
   environment_digest: string | null;
   test_runner: "soap" | "legacy" | null;
+  excluded_at: string | null;
+  excluded_reason: string | null;
   settings_hash: string;
   invocation_json: string | null;
   bc_artifact: string | null;
@@ -70,7 +72,8 @@ export const GET: RequestHandler = async ({
       db,
       `SELECT runs.id, runs.task_set_hash, runs.started_at, runs.completed_at, runs.status,
               runs.harness_fingerprint, runs.retry_path_version, runs.environment_digest,
-              runs.test_runner, runs.settings_hash, runs.invocation_json,
+              runs.test_runner, runs.excluded_at, runs.excluded_reason,
+              runs.settings_hash, runs.invocation_json,
               runs.bc_artifact, runs.container_image_digest, runs.bcch_version,
               runs.prompt_template_digest,
               m.slug AS model_slug, m.display_name AS model_display,

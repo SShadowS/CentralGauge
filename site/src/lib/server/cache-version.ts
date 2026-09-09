@@ -39,9 +39,14 @@
  *   runs, cost divides by run-task cells rather than distinct tasks, and rows
  *   gain `refusal_count` + `provisional`. Every cached value and every cached
  *   shape changes for a multi-run model, so no v12 entry may be served on.
+ * v14: soft run exclusion (migration 0022). Every ranking query gained an
+ *   `excluded_at IS NULL` predicate, so a cached v13 entry can hold numbers
+ *   computed from a run that has since been excluded. The response SHAPE is
+ *   unchanged, which is exactly why the bump is needed: nothing else would
+ *   tell those entries apart from correct ones.
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = "v13";
+export const CACHE_VERSION = "v14";
