@@ -881,3 +881,31 @@
   batch_output_per_mtoken: 12.5
   batch_cache_read_per_mtoken: 0.25
   batch_cache_write_per_mtoken: 3.125
+- pricing_version: '2026-09-08'
+  model_slug: anthropic/claude-sonnet-5
+  effective_from: '2026-09-08T13:54:17.327Z'
+  effective_until: null
+  input_per_mtoken: 2
+  output_per_mtoken: 10
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-09-08T13:54:17.327Z'
+  batch_input_per_mtoken: 1
+  batch_output_per_mtoken: 5
+  batch_cache_read_per_mtoken: 0.1
+  batch_cache_write_per_mtoken: 1.25
+- pricing_version: '2026-09-08'
+  model_slug: anthropic/claude-haiku-4-5
+  effective_from: '2026-09-08T13:55:42.561Z'
+  effective_until: null
+  input_per_mtoken: 1
+  output_per_mtoken: 5
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-09-08T13:55:42.561Z'
+  batch_input_per_mtoken: 0.5
+  batch_output_per_mtoken: 2.5
+  batch_cache_read_per_mtoken: 0
+  batch_cache_write_per_mtoken: 0
