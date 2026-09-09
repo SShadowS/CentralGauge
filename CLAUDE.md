@@ -117,6 +117,22 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   (use `--containers Cronus28,Cronus281` for parallel compile/test)
 - Credentials: `sshadows` / `1234`
 - Health check URL: `http://Cronus28/BC/?tenant=default` (check if login page loads to verify container is up)
+- **Docker context is pinned, not inherited** (`src/container/docker-context.ts`).
+  BC containers exist only under Docker Desktop's `desktop-windows` context, and
+  that context is global machine state that flips (a Desktop restart, an update,
+  someone switching to Linux containers). A flipped context makes `docker inspect
+  Cronus28` and BCH's `Test-BcContainer` both report a healthy container as
+  absent, and the bench then fails with the misleading `Container "Cronus28" is
+  not running`. So every Windows-container subprocess we spawn sets
+  `DOCKER_CONTEXT` explicitly: our own `docker inspect`, the one-shot `pwsh`, the
+  warm pwsh session slot (BCH shells out to `docker`, so the pin has to reach the
+  pwsh process), and the agent sandbox provider. The context is resolved once per
+  process and only pinned when `docker context ls` shows it exists, so a Windows
+  host running plain Docker without Desktop is unaffected. Escape hatches:
+  `CENTRALGAUGE_DOCKER_CONTEXT=<name>` pins a different context,
+  `CENTRALGAUGE_DOCKER_CONTEXT=` (set and empty) pins nothing and inherits the
+  machine's. Ad-hoc operator commands are NOT covered - keep prefixing those with
+  `DOCKER_CONTEXT=desktop-windows`.
 
 ## bccontainerhelper config quirks
 

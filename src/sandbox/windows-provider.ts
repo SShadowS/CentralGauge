@@ -13,6 +13,7 @@ import type {
   SandboxStatus,
 } from "./types.ts";
 import { ContainerError } from "../errors.ts";
+import { dockerContextEnv } from "../container/docker-context.ts";
 
 const DEFAULT_IMAGE = "centralgauge/agent-sandbox:windows-latest";
 const CONTAINER_PREFIX = "cg-sandbox-";
@@ -59,6 +60,7 @@ async function runDocker(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const command = new Deno.Command("docker", {
     args,
+    env: dockerContextEnv(),
     stdout: "piped",
     stderr: "piped",
   });
@@ -143,6 +145,7 @@ class WindowsSandbox implements Sandbox {
 
     const dockerCommand = new Deno.Command("docker", {
       args: ["exec", this.name, ...command],
+      env: dockerContextEnv(),
       stdout: "piped",
       stderr: "piped",
     });

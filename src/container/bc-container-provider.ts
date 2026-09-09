@@ -65,6 +65,7 @@ import {
 } from "./bc-script-builders.ts";
 import { resolveSoapTimeoutMs, runTestsViaSoap } from "./soap-test-client.ts";
 import { compilerCacheKey } from "./compiler-cache-key.ts";
+import { dockerContextEnv } from "./docker-context.ts";
 import { inspectContainer } from "./docker-inspect.ts";
 import {
   LAYOUT_VERSION,
@@ -851,6 +852,9 @@ ${script}
         "-Command",
         script,
       ],
+      // BCH shells out to `docker`, so the pinned context has to reach the
+      // pwsh process, not just our own `docker inspect` calls.
+      env: dockerContextEnv(),
       stdout: "piped",
       stderr: "piped",
     });

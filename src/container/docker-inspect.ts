@@ -1,4 +1,5 @@
 import { Logger } from "../logger/mod.ts";
+import { dockerContextEnv } from "./docker-context.ts";
 
 const log = Logger.create("container:docker-inspect");
 
@@ -74,6 +75,7 @@ export async function inspectContainer(
   try {
     const cmd = new Deno.Command("docker", {
       args: ["inspect", containerName],
+      env: dockerContextEnv(),
       stdout: "piped",
       stderr: "null",
     });

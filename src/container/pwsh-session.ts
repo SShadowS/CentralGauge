@@ -6,6 +6,7 @@
 
 import { PwshSessionError } from "../errors.ts";
 import { bcchConfigInit, bcchImport } from "./bcch-config.ts";
+import { dockerContextEnv } from "./docker-context.ts";
 
 export interface PwshSessionOptions {
   /** Recycle after this many execute() calls. Default 100. */
@@ -433,6 +434,9 @@ function defaultSpawnFactory(): SpawnedProcess {
   // SpawnedProcess (real pwsh + test mocks).
   return new Deno.Command("pwsh", {
     args: ["-NoLogo", "-NoProfile", "-NoExit", "-Command", "-"],
+    // The warm slot outlives any single script, so it must carry the pinned
+    // Docker context for every BCH call it will ever run.
+    env: dockerContextEnv(),
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
