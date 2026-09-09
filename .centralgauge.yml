@@ -144,8 +144,6 @@ benchmarkPresets:
       - Cronus28
       - Cronus282
       - Cronus283
-      - Cronus284
-      - Cronus285
     runs: 3
     attempts: 2
     stream: true
