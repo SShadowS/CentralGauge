@@ -798,6 +798,14 @@ Continuous task validation: Terminal-Bench 2.1; ours is gold-ci.
 
 ## 12. Review record
 
+> **Superseded 2026-09-08.** The rounds below record "best-across-runs kept"
+> and flag the change as an owner decision. That decision has since been made
+> and shipped: cohort metrics are the mean of the per-run strict metrics, cost
+> divides by run-task cells, and the tier matrix takes the per-task mean across
+> a model's in-scope runs. Read every best-across-runs statement below as a
+> record of what was decided at the time, not as the rule Plan B should build
+> on.
+
 Revision 2 (from round one): multiplicity-average bootstrap withdrawn;
 best-across-runs kept; coverage gate; bands limited to solve metrics;
 revisioned storage; v2 API; families and invariants; locking added;

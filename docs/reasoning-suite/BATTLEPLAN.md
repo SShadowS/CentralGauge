@@ -129,6 +129,12 @@ other number on the page would then aggregate in the opposite direction from
 the headline. That is defensible but must be deliberate and documented on
 `/about`, or the page quietly contradicts itself.
 
+> **Superseded 2026-09-08.** The stack no longer aggregates best-across-runs.
+> Cohort metrics are the mean of the per-run strict metrics, and the tier
+> matrix takes the mean per (model, task) across a model's in-scope runs. The
+> warning above stands only as a record of the design in effect when it was
+> written, and the line numbers it cites are stale.
+
 ---
 
 ## Phase 4 — graphics and copy
