@@ -945,12 +945,17 @@
   output_per_mtoken: 20
   cache_read_per_mtoken: 0.4
   cache_write_per_mtoken: 5
-  # Batch mode (D5): OpenAI publishes batch at 50% of the sync rate.
-  # NOTE: OpenRouter lists this model at half these sync rates ($2/$10). We run
-  # it on the OpenAI provider directly, and the seeder's own precedence
-  # (inference.ts: prefer LiteLLM for direct provider slugs) picks LiteLLM,
-  # whose numbers the Azure and Bedrock variants corroborate. Revise with a new
-  # dated row if the OpenAI invoice disagrees.
+  # Confirmed against OpenAI's own pricing page (Standard and Batch tabs) on
+  # 2026-09-10: standard 4 / 0.4 / 5 / 20, batch 2 / 0.2 / 2.5 / 10. LiteLLM
+  # agrees; OpenRouter lists this model at 2 / 10, which equals OpenAI's BATCH
+  # rate, so do not seed a direct-provider row from OpenRouter for Sol.
+  # Two things this row cannot express, both harmless today:
+  #   - The 4 / 20 standard rate is PROMOTIONAL, guaranteed only through
+  #     2026-11-21. Add a new dated row when it changes; runs already recorded
+  #     keep costing what they cost.
+  #   - There is a long-context tier (8 / 30 standard, 4 / 15 batch) above the
+  #     272K threshold. Our prompts run about 3.5K tokens per request, so every
+  #     run so far bills at the short-context rate above.
   batch_input_per_mtoken: 2
   batch_output_per_mtoken: 10
   batch_cache_read_per_mtoken: 0.2
