@@ -909,3 +909,51 @@
   batch_output_per_mtoken: 2.5
   batch_cache_read_per_mtoken: 0
   batch_cache_write_per_mtoken: 0
+- pricing_version: '2026-09-09'
+  model_slug: anthropic/claude-sonnet-5
+  effective_from: '2026-09-09T06:35:27.355Z'
+  effective_until: null
+  input_per_mtoken: 2
+  output_per_mtoken: 10
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-09-09T06:35:27.355Z'
+  batch_input_per_mtoken: 1
+  batch_output_per_mtoken: 5
+  batch_cache_read_per_mtoken: 0.1
+  batch_cache_write_per_mtoken: 1.25
+- pricing_version: '2026-09-09'
+  model_slug: anthropic/claude-haiku-4-5
+  effective_from: '2026-09-09T06:36:26.058Z'
+  effective_until: null
+  input_per_mtoken: 1
+  output_per_mtoken: 5
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-09-09T06:36:26.058Z'
+  batch_input_per_mtoken: 0.5
+  batch_output_per_mtoken: 2.5
+  batch_cache_read_per_mtoken: 0
+  batch_cache_write_per_mtoken: 0
+- pricing_version: "2026-09-10"
+  model_slug: openai/gpt-5.6-sol
+  effective_from: "2026-09-10T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 4
+  output_per_mtoken: 20
+  cache_read_per_mtoken: 0.4
+  cache_write_per_mtoken: 5
+  # Batch mode (D5): OpenAI publishes batch at 50% of the sync rate.
+  # NOTE: OpenRouter lists this model at half these sync rates ($2/$10). We run
+  # it on the OpenAI provider directly, and the seeder's own precedence
+  # (inference.ts: prefer LiteLLM for direct provider slugs) picks LiteLLM,
+  # whose numbers the Azure and Bedrock variants corroborate. Revise with a new
+  # dated row if the OpenAI invoice disagrees.
+  batch_input_per_mtoken: 2
+  batch_output_per_mtoken: 10
+  batch_cache_read_per_mtoken: 0.2
+  batch_cache_write_per_mtoken: 2.5
+  source: litellm-api
+  fetched_at: "2026-09-10T20:44:55.000Z"
