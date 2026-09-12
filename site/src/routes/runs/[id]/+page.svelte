@@ -133,7 +133,7 @@
     · {r.totals.tasks_attempted} tasks
     · {new Date(r.started_at).toISOString()}
     · machine: <code class="text-mono">{r.machine_id}</code>
-    {#if r.upstream && (r.upstream.pin !== null || r.upstream.served.length > 0)}· served by: <code class="text-mono">{r.upstream.served.join(', ') || 'unrecorded'}</code>{#if r.upstream.pin}(pinned {r.upstream.pin}){/if}{/if}
+    {#if r.upstream && (r.upstream.pin !== null || r.upstream.served.length > 0)}· served by: <code class="text-mono">{r.upstream.served.join(', ') || 'unrecorded'}</code>{#if r.upstream.pin} (pinned {r.upstream.pin}){/if}{/if}
   </p>
   {#if r.excluded_at}
     <!-- Soft run exclusion (migration 0022). The tiles and per-task table
