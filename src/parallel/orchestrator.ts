@@ -713,6 +713,15 @@ export class ParallelBenchmarkOrchestrator {
               error: err,
               classification: cls,
               startTime: partial?.attemptStart ?? new Date(),
+              provider: context.llmProvider,
+              ...(context.upstreamPin !== undefined
+                ? {
+                  requestedUpstream: context.upstreamPin,
+                  ...(context.upstreamProviderName !== undefined
+                    ? { upstreamProviderName: context.upstreamProviderName }
+                    : {}),
+                }
+                : {}),
               ...(trailingRetries.length > 0
                 ? { infraRetries: trailingRetries }
                 : {}),

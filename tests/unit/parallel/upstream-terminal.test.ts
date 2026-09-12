@@ -11,6 +11,7 @@
 
 import { assert, assertEquals } from "@std/assert";
 import { ParallelBenchmarkOrchestrator } from "../../../src/parallel/orchestrator.ts";
+import { ContainerError } from "../../../src/errors.ts";
 import type { LLMWorkPool } from "../../../src/parallel/llm-work-pool.ts";
 import type { UpstreamVerification } from "../../../src/llm/upstream-verification.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
@@ -244,4 +245,49 @@ Deno.test("a verified attempt that failed still gets its second attempt", async 
   assertEquals(task.attempts[0]!.upstreamVerification, "verified");
   assertEquals(task.attempts[0]!.terminal, undefined);
   assertEquals(task.attempts[1]!.terminal, undefined);
+});
+
+Deno.test("an infra failure on a pinned run still carries the upstream verdict", async () => {
+  // The orchestrator reads the pin off the execution context it resolves and
+  // forwards provider, pin and expected display name to
+  // `synthesizeInfraFailureResult`. This assertion distinguishes all three:
+  // with none forwarded the verdict is `not_applicable`; with only the
+  // provider it is `unpinned`; with the pin but not its display name the
+  // served "Novita" compares against null and reads `mismatch`. Only the
+  // full forwarding yields `verified`.
+  const queue = new MultiContainerMockCompileQueue([CONTAINER]);
+  queue.setConfigFor(CONTAINER, {
+    compileThrowError: new ContainerError(
+      "SQL service is down",
+      CONTAINER,
+      "compile",
+    ),
+  });
+
+  const { results } = await run("CG-PIN-INFRA", "Novita", queue);
+
+  const task = results[0]!;
+  const attempt = task.attempts[task.attempts.length - 1]!;
+  assertEquals(attempt.infraSynthesized, true);
+  assertEquals(attempt.requestedUpstream, PIN);
+  assertEquals(attempt.servedUpstream, "Novita");
+  assertEquals(attempt.upstreamVerification, "verified");
+});
+
+Deno.test("an infra failure on a pinned run served by the wrong upstream is a mismatch", async () => {
+  const queue = new MultiContainerMockCompileQueue([CONTAINER]);
+  queue.setConfigFor(CONTAINER, {
+    compileThrowError: new ContainerError(
+      "SQL service is down",
+      CONTAINER,
+      "compile",
+    ),
+  });
+
+  const { results } = await run("CG-PIN-INFRA-BAD", "Together", queue);
+
+  const attempt = results[0]!.attempts.at(-1)!;
+  assertEquals(attempt.infraSynthesized, true);
+  assertEquals(attempt.requestedUpstream, PIN);
+  assertEquals(attempt.upstreamVerification, "mismatch");
 });
