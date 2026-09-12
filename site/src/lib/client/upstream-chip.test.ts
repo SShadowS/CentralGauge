@@ -54,6 +54,29 @@ describe("upstreamChip", () => {
     }
   });
 
+  it("amber, not green, for a pin whose cohort mixes in unpinned rows", () => {
+    const c = upstreamChip({
+      pin: "novita/fp8",
+      served: ["Novita"],
+      verification: { verified: 300, unpinned: 296 },
+    })!;
+    expect(c.tone).toBe("warn");
+    expect(c.label).toBe("novita/fp8");
+    expect(c.title).toContain("300 of 596");
+    expect(c.title).toContain("unpinned or unrecorded");
+  });
+
+  it("names no pin in the warn title when the cohort has none", () => {
+    const c = upstreamChip({
+      pin: null,
+      served: ["Novita"],
+      verification: { unverified: 4, unpinned: 10 },
+    })!;
+    expect(c.tone).toBe("warn");
+    expect(c.title).not.toContain("the pin");
+    expect(c.title).toContain("4 of 14");
+  });
+
   it("grey unrecorded when every row predates capture", () => {
     const c = upstreamChip({
       pin: null,

@@ -5,6 +5,11 @@
  * behind the row's score match it.
  *
  * Pure and display-only: it decides tone and text, never fetches or ranks.
+ *
+ * `not_served` counts as a warning here even though the design calls it a
+ * routing outcome rather than a compromised one (D3): the pinned upstream
+ * never answered, and an operator should see that, so the chip stays amber
+ * for it.
  */
 import type { LeaderboardUpstream } from "$lib/shared/api-types";
 
@@ -51,11 +56,25 @@ export function upstreamChip(u: LeaderboardUpstream): UpstreamChip | null {
     return {
       tone: "warn",
       label: u.pin ?? u.served[0] ?? "upstream",
-      title:
-        `${warn} of ${total} result rows could not be verified against the pin (unverified, not served, or mismatched).`,
+      title: u.pin === null
+        ? `${warn} of ${total} result rows were not served by a verified upstream (unverified, not served, or mismatched).`
+        : `${warn} of ${total} result rows could not be verified against the pin ${u.pin} (unverified, not served, or mismatched).`,
     };
   }
   if (u.pin !== null) {
+    // Green claims the whole cohort, so every row that could carry a verdict
+    // has to be `verified`. A cohort mixing one pinned run with older
+    // unpinned or unrecorded rows is not that, and saying every result came
+    // from the pinned upstream would be false of it.
+    const verified = v.verified ?? 0;
+    if (verified !== total - na) {
+      return {
+        tone: "warn",
+        label: u.pin,
+        title:
+          `${verified} of ${total} result rows are verified against the pinned upstream ${u.pin}; the rest are unpinned or unrecorded.`,
+      };
+    }
     return {
       tone: "verified",
       label: u.pin,
