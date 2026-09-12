@@ -280,7 +280,17 @@ async function attemptToItem(
     tests_passed: a.testResult?.passedTests ?? 0,
     tokens_in: a.llmResponse.usage.promptTokens,
     tokens_out: a.llmResponse.usage.completionTokens,
-    tokens_reasoning: a.llmResponse.usage.reasoningTokens ?? 0,
+    // Ingest enforces tokens_reasoning <= tokens_out. A provider can report
+    // more reasoning than completion tokens when an attempt hits the output
+    // cap: GLM 5.3 returned reasoning_tokens 64001 against completion_tokens
+    // 64000 on a capped attempt, and that one row rejected a whole 332-attempt
+    // run at finalize. Reasoning tokens are a reported detail that feeds no
+    // score, so clamp the artifact here rather than relaxing an invariant that
+    // is worth keeping strict server-side.
+    tokens_reasoning: Math.min(
+      a.llmResponse.usage.reasoningTokens ?? 0,
+      a.llmResponse.usage.completionTokens,
+    ),
     tokens_cache_read: a.llmResponse.usage.cacheReadTokens ?? 0,
     tokens_cache_write: a.llmResponse.usage.cacheCreationTokens ?? 0,
     served_model: a.llmResponse.servedModel ?? null,
