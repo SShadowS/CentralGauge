@@ -24,6 +24,7 @@ import type { ItemLine } from "../../../src/batch/journal.ts";
 import { ConfigManager } from "../../../src/config/config.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 import { UpstreamPinError } from "../../../src/llm/upstream-pin.ts";
+import { submitWiring } from "../../../cli/commands/bench-batch-command.ts";
 import { FakeBatchProvider } from "../../utils/fake-batch-provider.ts";
 import type {
   BatchHandle,
@@ -566,4 +567,72 @@ Deno.test("submit refuses with exit 4 when the pin cannot be resolved, before an
   } finally {
     await cleanupTempDir(output);
   }
+});
+
+Deno.test("the CLI's submit wiring pins wave-1 request bodies with the routing it resolved", async () => {
+  const output = await createTempDir("batch-submit-wave1-pin");
+  const globs = await findTwoEasyTaskGlobs();
+  setFixturePreset(globs, {
+    upstream: { [OPENROUTER_MODEL]: RESOLVED_ROUTING.upstreamPin },
+  });
+  seedBatchPricing(true, OPENROUTER_SLUG);
+
+  const provider = new FakeBatchProvider("openrouter", {});
+  try {
+    // Exactly the shape the CLI's submit action builds, with only the
+    // network-touching resolver faked: the routing resolved mid-submission
+    // has to reach the bodies rendered for wave 1 (spec D2).
+    const wiring = submitWiring(
+      "openrouter",
+      { apiModelId: OPENROUTER_MODEL, variantConfig: null },
+      "k",
+      () => Promise.resolve(RESOLVED_ROUTING),
+    );
+    const deps: SubmitDeps = {
+      providerFor: () => provider,
+      buildBody: wiring.buildBody,
+      wrap: wiring.wrap,
+      resolveUpstream: wiring.resolveUpstream,
+      skipUpstreamPreflight: false,
+      precheck: () => Promise.resolve(),
+      runtimeFactory: () =>
+        Promise.resolve({
+          environmentSet: () => Promise.resolve(ENVIRONMENT),
+          stop: () => Promise.resolve(),
+        } as unknown as ContainerRuntime),
+      log: () => {},
+    };
+
+    const result = await submitRuns(
+      baseOptions(output, globs, { llms: OPENROUTER_SLUG }),
+      deps,
+    );
+    assertEquals(result.exit, 0);
+
+    const submitted = provider.calls.filter((c) => c.op === "submit");
+    assert(submitted.length > 0, "the fake provider was never submitted to");
+    const items = submitted[0]!.args[1] as BatchItem[];
+    assertEquals(items.length, 2);
+    for (const item of items) {
+      assertEquals(
+        (item.body as Record<string, unknown>)["provider"],
+        { order: [RESOLVED_ROUTING.upstreamPin], allow_fallbacks: false },
+      );
+    }
+  } finally {
+    await cleanupTempDir(output);
+  }
+});
+
+Deno.test("the CLI's submit wiring leaves bodies unpinned when nothing was resolved", () => {
+  const wiring = submitWiring(
+    "openrouter",
+    { apiModelId: OPENROUTER_MODEL, variantConfig: null },
+    "k",
+    () => Promise.reject(new Error("must not be called for an unpinned model")),
+  );
+  const body = wiring.buildBody(
+    { prompt: "hi", taskId: "t", attempt: 1 } as never,
+  ) as Record<string, unknown>;
+  assertEquals("provider" in body, false);
 });

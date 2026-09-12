@@ -39,7 +39,11 @@ import type {
 } from "../../src/llm/batch/types.ts";
 import type { LLMRequest, LLMResponse } from "../../src/llm/types.ts";
 import type { ParallelBenchmarkOptions } from "../../src/parallel/orchestrator.ts";
-import type { FrozenPromptInputs } from "../../src/parallel/shared/prompt-inputs.ts";
+import type {
+  FrozenPromptInputs,
+  FrozenRouting,
+} from "../../src/parallel/shared/prompt-inputs.ts";
+import type { VariantConfig } from "../../src/llm/variant-types.ts";
 import type {
   TaskExecutionContext,
   TaskManifest,
@@ -63,7 +67,10 @@ import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import { ModelPresetRegistry } from "../../src/llm/model-presets.ts";
 import { generateVariantId } from "../../src/llm/variant-types.ts";
 import { PricingService } from "../../src/llm/pricing-service.ts";
-import { resolveUpstreamPin } from "../../src/llm/upstream-pin.ts";
+import {
+  type ResolvedUpstreamPin,
+  resolveUpstreamPin,
+} from "../../src/llm/upstream-pin.ts";
 import { createBatchProvider } from "../../src/llm/batch/mod.ts";
 import { buildAttemptContext } from "../../src/parallel/shared/mod.ts";
 import { ContainerRuntime } from "../../src/parallel/container-runtime.ts";
@@ -244,6 +251,55 @@ export async function buildFinalizeDeps(
     ingest: state.ingest,
     cwd: Deno.cwd(),
     ingestFlags: {},
+  };
+}
+
+/**
+ * The submit-side `resolveUpstream` / `buildBody` / `wrap` closures, wired so
+ * the routing resolved DURING a submission reaches the bodies rendered for
+ * wave 1. Spec 2026-09-11 D2 requires every request body of a pinned run to
+ * carry `provider.order` with `allow_fallbacks: false`, wave 1 included.
+ *
+ * The capture is what makes that possible: `submitRuns` resolves the pin
+ * before it renders anything, but `SubmitDeps.buildBody` is a plain
+ * `(request) => unknown` built before the resolution happens, so the resolved
+ * value has to travel through a closure variable rather than an argument.
+ * Wave 2 reads the same value back from the frozen `prompt-inputs.json` in
+ * `buildAdvanceDeps`, so both waves route identically.
+ *
+ * `resolve` is the underlying pin resolver, injected so the CLI passes the
+ * real network one and tests pass a fake. Task 15 replaces it with the shared
+ * `submitResolver` helper and MUST keep this capture: without it wave 1 goes
+ * out unpinned while wave 2 is pinned.
+ */
+export function submitWiring(
+  providerName: BatchProviderName,
+  wiringModel: { apiModelId: string; variantConfig: VariantConfig | null },
+  apiKey: string,
+  resolve: (
+    apiModelId: string,
+    pin: string,
+    maxTokens: number,
+  ) => Promise<ResolvedUpstreamPin>,
+): Pick<SubmitDeps, "resolveUpstream" | "buildBody" | "wrap"> {
+  let resolvedRouting: FrozenRouting | undefined;
+  return {
+    resolveUpstream: async (apiModelId, pin, maxTokens) => {
+      const resolved = await resolve(apiModelId, pin, maxTokens);
+      resolvedRouting = {
+        upstreamPin: resolved.upstreamPin,
+        providerName: resolved.providerName,
+        quantization: resolved.quantization,
+        preflight: resolved.preflight,
+      };
+      return resolved;
+    },
+    buildBody: (r: LLMRequest) =>
+      wireProvider(providerName, wiringModel, apiKey, resolvedRouting)
+        .buildBody(r),
+    wrap: (items: BatchItem[]) =>
+      wireProvider(providerName, wiringModel, apiKey, resolvedRouting)
+        .wrap(items),
   };
 }
 
@@ -462,23 +518,13 @@ export function buildBatchCommand(): Command {
       };
       const containers = presetContainers(preset);
 
-      const deps: SubmitDeps = {
-        providerFor: (name, key) =>
-          createBatchProvider(name, {
-            apiKey: key,
-            ...(name === "openrouter" &&
-                config.batch?.openrouter?.limits !== undefined
-              ? { limits: config.batch.openrouter.limits }
-              : {}),
-          }),
-        buildBody: (r) =>
-          wireProvider(providerName, wiringModel, apiKey).buildBody(r),
-        wrap: (items) =>
-          wireProvider(providerName, wiringModel, apiKey).wrap(items),
-        precheck: async () => {
-          if (variant) await runIngestPrecheck(variant);
-        },
-        resolveUpstream: (apiModelId, pin, maxTokens) =>
+      // `resolveUpstream`, `buildBody` and `wrap` come as one unit so the
+      // routing resolved mid-submission pins wave 1's bodies too (spec D2).
+      const wiring = submitWiring(
+        providerName,
+        wiringModel,
+        apiKey,
+        (apiModelId, pin, maxTokens) =>
           resolveUpstreamPin(
             // 16_000 is a conservative bound on the longest rendered prompt in
             // the suite; Task 15 moves it to a shared PROMPT_TOKENS_BOUND.
@@ -491,6 +537,23 @@ export function buildBatchCommand(): Command {
             },
             { apiKey: apiKeyForBatchProvider("openrouter") ?? "" },
           ),
+      );
+
+      const deps: SubmitDeps = {
+        providerFor: (name, key) =>
+          createBatchProvider(name, {
+            apiKey: key,
+            ...(name === "openrouter" &&
+                config.batch?.openrouter?.limits !== undefined
+              ? { limits: config.batch.openrouter.limits }
+              : {}),
+          }),
+        buildBody: wiring.buildBody,
+        wrap: wiring.wrap,
+        precheck: async () => {
+          if (variant) await runIngestPrecheck(variant);
+        },
+        resolveUpstream: wiring.resolveUpstream,
         skipUpstreamPreflight: opts.skipUpstreamPreflight === true,
         runtimeFactory: () =>
           ContainerRuntime.start({
