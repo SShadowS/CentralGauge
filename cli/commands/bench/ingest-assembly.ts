@@ -14,6 +14,7 @@ import { isInfraInvalidatedAttempt } from "../../../src/health/infra-invalidatio
 import { ValidationError } from "../../../src/errors.ts";
 import * as colors from "@std/fmt/colors";
 import {
+  invocationSchemaOf,
   isInvocationRecord,
   optionalSha,
   sha256Hex,
@@ -23,6 +24,7 @@ import {
 import type { EnvironmentManifest } from "../../../src/ingest/capture.ts";
 import {
   buildCanonicalSettings,
+  buildLegacyCanonicalSettings,
   type InvocationMode,
 } from "../../../shared/settings-hash.ts";
 
@@ -182,28 +184,37 @@ export async function assembleBenchResultsForVariant(
   if (opts.invocation && isInvocationRecord(opts.invocation)) {
     const inv = opts.invocation;
     invocationMode = inv.mode;
-    settings = {
-      ...buildCanonicalSettings(
-        {
-          temperature: variant.config.temperature ?? null,
-          max_attempts: inv.max_attempts,
-          max_tokens: variant.config.maxTokens ?? null,
-          prompt_version: null,
-          bc_version: null,
-        },
-        {
-          invocation_mode: inv.mode,
-          continuation: inv.continuation,
-          empty_retry: inv.empty_retry,
-          fallback_policy: inv.fallback_policy,
-          provider_route: inv.provider_route,
-          endpoint: inv.endpoint,
-          thinking_budget: variant.config.thinkingBudget ?? null,
-          prompt_profile_digest: inv.prompt_profile_digest,
-          infra_retries_per_attempt: inv.infra_retries_per_attempt,
-        },
-      ),
+    const base = {
+      temperature: variant.config.temperature ?? null,
+      max_attempts: inv.max_attempts,
+      max_tokens: variant.config.maxTokens ?? null,
+      prompt_version: null,
+      bc_version: null,
     };
+    const nine = {
+      invocation_mode: inv.mode,
+      continuation: inv.continuation,
+      empty_retry: inv.empty_retry,
+      fallback_policy: inv.fallback_policy,
+      provider_route: inv.provider_route,
+      endpoint: inv.endpoint,
+      thinking_budget: variant.config.thinkingBudget ?? null,
+      prompt_profile_digest: inv.prompt_profile_digest,
+      infra_retries_per_attempt: inv.infra_retries_per_attempt,
+    };
+    // A record written before the upstream lock carries no
+    // `invocation_schema`, so it is rebuilt through the legacy builder and
+    // reproduces the settings hash it was ingested under. A schema-2 record
+    // hashes on the schema-2 extras, pinned or not.
+    settings = invocationSchemaOf(inv) === 1
+      ? { ...buildLegacyCanonicalSettings(base, nine) }
+      : {
+        ...buildCanonicalSettings(base, {
+          ...nine,
+          settings_extras_schema: 2,
+          upstream_pin: inv.upstream_pin ?? null,
+        }),
+      };
   } else {
     settings = {};
     if (variant.config.temperature !== undefined) {

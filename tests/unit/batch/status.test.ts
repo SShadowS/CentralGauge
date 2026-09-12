@@ -114,6 +114,8 @@ Deno.test("runStatus", async (t) => {
               bc_version: null,
             },
             {
+              settings_extras_schema: 2,
+              upstream_pin: null,
               invocation_mode: "batch",
               continuation: { enabled: false, max: 0 },
               empty_retry: { enabled: false, max: 0 },

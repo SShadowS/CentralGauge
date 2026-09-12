@@ -370,6 +370,8 @@ export async function submitRuns(
   });
 
   const extras: CanonicalSettingsExtras = {
+    settings_extras_schema: 2,
+    upstream_pin: routing?.upstreamPin ?? null,
     invocation_mode: "batch",
     continuation: { enabled: false, max: 0 },
     empty_retry: { enabled: false, max: 0 },

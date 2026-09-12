@@ -39,6 +39,8 @@ export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   noReuseCompilerFolders?: boolean;
   /** Cliffy `--no-dashboard` inverse: true (default) starts dashboard, false skips it for scripted use */
   dashboard?: boolean;
+  /** OpenRouter upstream pins resolved at precheck, keyed by variantId (spec 2026-09-11 D2). */
+  upstreamPins?: Map<string, { upstreamPin: string; providerName: string }>;
 }
 
 /**

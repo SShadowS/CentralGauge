@@ -37,7 +37,10 @@ import type {
 import type { IngestOptions } from "../ingest/mod.ts";
 import type { AssembleOptions } from "../../cli/commands/bench/ingest-assembly.ts";
 import type { HashResult } from "../../cli/commands/bench/results-writer.ts";
-import type { CanonicalSettingsExtras } from "../../shared/settings-hash.ts";
+import type {
+  CanonicalSettingsExtras,
+  LegacyCanonicalSettingsExtras,
+} from "../../shared/settings-hash.ts";
 import type { FrozenPromptInputs } from "../parallel/shared/prompt-inputs.ts";
 import type { BatchRecord, BatchRunState, TaskSummary } from "./state.ts";
 import {
@@ -58,7 +61,7 @@ import {
 } from "../../cli/commands/bench/results-writer.ts";
 import { writeJsonAtomic, writeState } from "./state.ts";
 import { attemptPath, RUN_FILES } from "./paths.ts";
-import { sha256Hex } from "../../shared/settings-hash.ts";
+import { isLegacyExtras, sha256Hex } from "../../shared/settings-hash.ts";
 
 /** Dependencies `finalizeRun` needs beyond the run directory and its state. */
 export interface FinalizeDeps {
@@ -274,16 +277,20 @@ function countResubmittedItems(tasks: BatchRunState["tasks"]): number {
 
 /**
  * Read the run's frozen `prompt-inputs.json` and parse its settings extras
- * (the same `CanonicalSettingsExtras` the executor builds via
- * `buildCanonicalSettings`, spec section 10 / D4). `finalizeRun` sources the
- * whole invocation record from these frozen values instead of recomputing
- * or hardcoding them: they are what waves 1 and 2 actually ran under, not
- * whatever is configured in the process that happens to call `finalizeRun`
- * (which may run hours or days later).
+ * (the same extras the executor builds via `buildCanonicalSettings`, spec
+ * section 10 / D4, or the nine-key schema-1 shape for a run submitted before
+ * the upstream lock). `finalizeRun` sources the whole invocation record from
+ * these frozen values instead of recomputing or hardcoding them: they are
+ * what waves 1 and 2 actually ran under, not whatever is configured in the
+ * process that happens to call `finalizeRun` (which may run hours or days
+ * later).
  */
 async function readFrozenExtras(
   dir: string,
-): Promise<{ inputs: FrozenPromptInputs; extras: CanonicalSettingsExtras }> {
+): Promise<{
+  inputs: FrozenPromptInputs;
+  extras: CanonicalSettingsExtras | LegacyCanonicalSettingsExtras;
+}> {
   const inputs = await readJson<FrozenPromptInputs>(
     join(dir, RUN_FILES.promptInputs),
   );
@@ -292,9 +299,12 @@ async function readFrozenExtras(
       `finalizeRun: frozen prompt-inputs.json carries no extra_json settings; the run directory may be corrupted`,
     );
   }
+  // A run frozen before the upstream lock has no `settings_extras_schema`;
+  // the caller branches on `isLegacyExtras` so it is never rebuilt or
+  // persisted as if it were schema 2.
   const extras = JSON.parse(
     inputs.settings.extra_json,
-  ) as CanonicalSettingsExtras;
+  ) as CanonicalSettingsExtras | LegacyCanonicalSettingsExtras;
   return { inputs, extras };
 }
 
@@ -374,8 +384,21 @@ export async function finalizeRun(
     const maxAttempts = promptInputs.settings.max_attempts ??
       (anyContext?.attemptLimit ?? 2);
 
+    const pin = isLegacyExtras(extras)
+      ? undefined
+      : (extras.upstream_pin ?? undefined);
     const invocationRecord: InvocationRecord = {
       ...invocationSnapshot({
+        ...(pin !== undefined ? { upstreamPin: pin } : {}),
+        ...(promptInputs.routing
+          ? {
+            upstreamResolved: {
+              provider_name: promptInputs.routing.providerName,
+              quantization: promptInputs.routing.quantization,
+              preflight: promptInputs.routing.preflight,
+            },
+          }
+          : {}),
         provider: deps.variant.provider,
         model: deps.variant.baseModel,
         apiModelId: deps.variant.model,
@@ -406,6 +429,16 @@ export async function finalizeRun(
       }),
       batch: buildBatchInvocationSummary(next),
     };
+
+    // A run frozen before the upstream lock is schema 1: strip the three
+    // schema-2 keys so the persisted record does not claim a pin decision
+    // that this run never made.
+    if (isLegacyExtras(extras)) {
+      const r = invocationRecord as unknown as Record<string, unknown>;
+      delete r["invocation_schema"];
+      delete r["upstream_pin"];
+      delete r["upstream_resolved"];
+    }
 
     // `endpoint`/`provider_route` are pure functions of `(provider,
     // apiModelId)` inside `invocationSnapshot`, so they are re-derived

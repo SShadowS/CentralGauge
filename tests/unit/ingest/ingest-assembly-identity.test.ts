@@ -378,3 +378,73 @@ Deno.test("Task 11: assembly builds canonical settings from a typed invocation a
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+Deno.test("Task 10: assembly rebuilds a schema-1 invocation on the legacy extras and a schema-2 one on the pinned extras", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-t10-legacy-settings-" });
+  try {
+    const path = await writeResultsFile(dir, [
+      makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
+    ]);
+    const invocation = invocationSnapshot({
+      provider: "anthropic",
+      model: "claude-opus-5",
+      apiModelId: "claude-opus-5",
+      mode: "batch",
+      fallbackPolicy: "unavailable",
+      continuation: { enabled: false, maxContinuations: 0 },
+      emptyRetry: {
+        enabled: false,
+        maxRetries: 0,
+        baseDelayMs: 0,
+        jitterMs: 0,
+      },
+      infraRetriesPerAttempt: 1,
+      maxAttempts: 2,
+      promptProfileDigest: "d".repeat(64),
+      upstreamPin: "novita/fp8",
+    });
+
+    // A record written before the upstream lock carries none of the three
+    // schema-2 keys and must hash on exactly the nine legacy keys.
+    const schema1 = { ...invocation } as Record<string, unknown>;
+    delete schema1["invocation_schema"];
+    delete schema1["upstream_pin"];
+    delete schema1["upstream_resolved"];
+    const legacy = await assembleBenchResultsForVariant(path, VARIANT, {
+      pricingVersion: "2026-09-06",
+      invocation: schema1,
+    });
+    assert(legacy.kind === "assembled");
+    const legacyExtras = JSON.parse(
+      legacy.benchResults.settings["extra_json"] as string,
+    );
+    assertEquals(Object.keys(legacyExtras).sort(), [
+      "continuation",
+      "empty_retry",
+      "endpoint",
+      "fallback_policy",
+      "infra_retries_per_attempt",
+      "invocation_mode",
+      "prompt_profile_digest",
+      "provider_route",
+      "thinking_budget",
+    ]);
+
+    const pinned = await assembleBenchResultsForVariant(path, VARIANT, {
+      pricingVersion: "2026-09-06",
+      invocation: { ...invocation },
+    });
+    assert(pinned.kind === "assembled");
+    const pinnedExtras = JSON.parse(
+      pinned.benchResults.settings["extra_json"] as string,
+    );
+    assertEquals(pinnedExtras.settings_extras_schema, 2);
+    assertEquals(pinnedExtras.upstream_pin, "novita/fp8");
+    assertNotEquals(
+      pinned.benchResults.settings["extra_json"],
+      legacy.benchResults.settings["extra_json"],
+    );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
