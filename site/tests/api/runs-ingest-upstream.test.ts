@@ -122,6 +122,12 @@ describe("POST /api/v1/runs upstream lock", () => {
       `SELECT COUNT(*) AS n FROM results WHERE run_id = ?`,
     ).bind("r-b").first<{ n: number }>();
     expect(Number(orphans?.n)).toBe(0);
+    // Nor an ingest event: the losing claimant writes nothing that names a
+    // run id it never stored.
+    const events = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM ingest_events WHERE run_id = ?`,
+    ).bind("r-b").first<{ n: number }>();
+    expect(Number(events?.n)).toBe(0);
   });
 
   it("answers a replayed run id before any profile logic", async () => {
@@ -254,5 +260,15 @@ describe("POST /api/v1/runs upstream lock", () => {
     const runs = await env.DB.prepare(`SELECT COUNT(*) AS n FROM runs`)
       .first<{ n: number }>();
     expect(Number(runs?.n)).toBe(1);
+    // The loser left no trace at all, ingest event included.
+    const loserId = a.status === 409 ? "r-race-a" : "r-race-b";
+    const loserEvents = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM ingest_events WHERE run_id = ?`,
+    ).bind(loserId).first<{ n: number }>();
+    expect(Number(loserEvents?.n)).toBe(0);
+    const allEvents = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM ingest_events`,
+    ).first<{ n: number }>();
+    expect(Number(allEvents?.n)).toBe(1);
   });
 });

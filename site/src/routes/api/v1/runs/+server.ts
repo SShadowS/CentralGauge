@@ -900,10 +900,15 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
     statements.push(...resultStatements);
 
+    // Guarded like the result inserts: a claimant that lost the profile race
+    // writes no run row, so it must not leave a signature_verified event
+    // pointing at a run id that does not exist. `ingest_events.run_id` carries
+    // no foreign key, so nothing else would catch that orphan.
     statements.push(
       db
         .prepare(
-          `INSERT INTO ingest_events(run_id, event, machine_id, ts, details_json) VALUES (?,?,?,?,?)`,
+          `INSERT INTO ingest_events(run_id, event, machine_id, ts, details_json)
+             SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM runs WHERE id = ?)`,
         )
         .bind(
           signed.run_id,
@@ -911,6 +916,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           payload.machine_id,
           new Date().toISOString(),
           JSON.stringify({ missing_blob_count: missingBlobs.length }),
+          signed.run_id,
         ),
     );
 
