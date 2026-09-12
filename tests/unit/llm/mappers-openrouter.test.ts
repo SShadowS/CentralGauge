@@ -147,3 +147,31 @@ Deno.test("assembleResponse carries identity onto the response, and marks a conf
   assertEquals(none.servedUpstream, undefined);
   assertEquals("upstreamIdentitySource" in none, false);
 });
+
+import { reduceStreamUpstream } from "../../../src/llm/mappers/openrouter.ts";
+
+Deno.test("reduceStreamUpstream keeps the first identity and flags a later different one", () => {
+  const a = reduceStreamUpstream(undefined, {
+    provider: "Novita",
+    choices: [],
+  });
+  assertEquals(a, {
+    servedUpstream: "Novita",
+    servedUpstreamModel: undefined,
+    source: "provider_field",
+  });
+  const same = reduceStreamUpstream(a, { provider: "Novita", choices: [] });
+  assertEquals(same, a);
+  const noId = reduceStreamUpstream(a, {
+    choices: [{ delta: { content: "x" } }],
+  });
+  assertEquals(noId, a);
+  const diff = reduceStreamUpstream(a, { provider: "Together", choices: [] });
+  assertEquals(diff, {
+    conflict: true,
+    providerField: "Novita",
+    metadata: "Together",
+  });
+  const stays = reduceStreamUpstream(diff, { provider: "Novita", choices: [] });
+  assertEquals(stays, diff);
+});

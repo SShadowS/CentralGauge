@@ -12,6 +12,13 @@ export interface LLMConfig {
   // OpenRouter specific
   siteUrl?: string | undefined;
   siteName?: string | undefined;
+  /**
+   * OpenRouter only: the upstream slug to pin (`novita/fp8`,
+   * `google-vertex/global`), sent as `provider.order` with
+   * `allow_fallbacks: false`. Resolved by `src/llm/upstream-pin.ts` from
+   * `openrouter.upstream` config; never set by hand at a call site.
+   */
+  upstreamPin?: string | undefined;
   // Extended thinking / reasoning effort
   // Claude 4.5+: token budget (number)
   // OpenAI o1/o3/GPT-5: reasoning effort ("low" | "medium" | "high")

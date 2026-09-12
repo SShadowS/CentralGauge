@@ -98,10 +98,13 @@ import {
 import { priceUsage } from "../parallel/shared/price-usage.ts";
 import {
   assembleResponse,
+  extractUpstreamIdentity,
   mapContent,
   mapFinishReason,
   mapUsage,
+  reduceStreamUpstream,
 } from "./mappers/openrouter.ts";
+import type { UpstreamExtraction } from "./mappers/openrouter.ts";
 
 /**
  * OpenRouter adapter using the OpenAI SDK with custom base URL.
@@ -136,6 +139,11 @@ export class OpenRouterAdapter extends BaseLLMAdapter
         defaultHeaders: {
           "HTTP-Referer": config.siteUrl ?? "https://github.com/centralgauge",
           "X-Title": config.siteName ?? "CentralGauge",
+          // Ask OpenRouter to name the upstream it routed to (spec section 2).
+          // Cheap, and the only documented way to get the upstream's dated
+          // model variant. The legacy top-level `provider` field arrives with
+          // or without it.
+          "X-OpenRouter-Metadata": "enabled",
         },
       });
     }
@@ -274,6 +282,7 @@ export class OpenRouterAdapter extends BaseLLMAdapter
         usage,
         duration,
         finish: mapFinishReason(choice?.finish_reason),
+        upstream: extractUpstreamIdentity(completion),
       }),
       rawResponse: includeRaw ? completion : undefined,
     };
@@ -288,6 +297,7 @@ export class OpenRouterAdapter extends BaseLLMAdapter
     const params = this.buildRequestParams(request, true);
 
     let finalUsage: TokenUsage | undefined;
+    let upstream: UpstreamExtraction | undefined;
 
     try {
       const stream = await client.chat.completions.create(
@@ -299,6 +309,7 @@ export class OpenRouterAdapter extends BaseLLMAdapter
 
       let streamFinishReason: string | undefined;
       for await (const chunk of stream) {
+        upstream = reduceStreamUpstream(upstream, chunk);
         const content = chunk.choices[0]?.delta?.content || "";
 
         if (content) {
@@ -342,6 +353,19 @@ export class OpenRouterAdapter extends BaseLLMAdapter
       if (finish.providerFinishReason !== undefined) {
         result.response.providerFinishReason = finish.providerFinishReason;
       }
+      if (upstream !== undefined) {
+        if ("conflict" in upstream) {
+          result.response.servedUpstream = upstream.providerField;
+          result.response.upstreamIdentitySource = "both";
+          result.response.upstreamIdentityConflict = true;
+        } else {
+          result.response.servedUpstream = upstream.servedUpstream;
+          if (upstream.servedUpstreamModel !== undefined) {
+            result.response.servedUpstreamModel = upstream.servedUpstreamModel;
+          }
+          result.response.upstreamIdentitySource = upstream.source;
+        }
+      }
 
       yield finalChunk;
       return result;
@@ -375,6 +399,7 @@ export class OpenRouterAdapter extends BaseLLMAdapter
         "HTTP-Referer": this.config.siteUrl ??
           "https://github.com/centralgauge",
         "X-Title": this.config.siteName ?? "CentralGauge",
+        "X-OpenRouter-Metadata": "enabled",
       },
     });
 
@@ -415,6 +440,16 @@ export class OpenRouterAdapter extends BaseLLMAdapter
       temperature: request.temperature ?? this.config.temperature ?? 0.1,
       max_tokens: this.resolveMaxTokens(request, 4000),
       ...(request.stop ? { stop: request.stop } : {}),
+      // Upstream lock (spec D2): a one-element order with fallbacks off
+      // provably confines routing to that slug, precision variant included.
+      ...(this.config.upstreamPin
+        ? {
+          provider: {
+            order: [this.config.upstreamPin],
+            allow_fallbacks: false,
+          },
+        }
+        : {}),
     };
 
     if (stream) {

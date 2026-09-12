@@ -145,6 +145,41 @@ export function extractUpstreamIdentity(
 }
 
 /**
+ * Fold the upstream identity across streamed chunks. The first identity seen
+ * wins; a later chunk naming a different upstream turns the accumulator into
+ * a conflict, and a conflict is sticky. Chunks without identity leave it
+ * unchanged.
+ */
+export function reduceStreamUpstream(
+  acc: UpstreamExtraction | undefined,
+  chunk: unknown,
+): UpstreamExtraction | undefined {
+  if (acc !== undefined && "conflict" in acc) return acc;
+  const next = extractUpstreamIdentity(chunk);
+  if (next === undefined) return acc;
+  if (acc === undefined) return next;
+  if ("conflict" in next) return next;
+  if (next.servedUpstream !== acc.servedUpstream) {
+    return {
+      conflict: true,
+      providerField: acc.servedUpstream,
+      metadata: next.servedUpstream,
+    };
+  }
+  if (
+    acc.servedUpstreamModel === undefined &&
+    next.servedUpstreamModel !== undefined
+  ) {
+    return {
+      ...acc,
+      servedUpstreamModel: next.servedUpstreamModel,
+      source: "both",
+    };
+  }
+  return acc;
+}
+
+/**
  * Assembles the `LLMResponse` shape shared by the sync call sites and the
  * batch runner's per-item result mapper.
  */

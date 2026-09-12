@@ -66,3 +66,31 @@ Deno.test("mapOpenRouterModelEntry - adopts API metadata", async (t) => {
     assertEquals(m.pricing, undefined);
   });
 });
+
+import { OpenRouterAdapter } from "../../../src/llm/openrouter-adapter.ts";
+
+Deno.test("buildRequestParams adds the routing block only when a pin is configured", () => {
+  const unpinned = new OpenRouterAdapter({
+    provider: "openrouter",
+    model: "z-ai/glm-5.3",
+    apiKey: "k",
+  });
+  const p1 = unpinned.buildRequestParams(
+    { prompt: "hi", taskId: "t", attempt: 1 } as never,
+  ) as unknown as Record<string, unknown>;
+  assertEquals("provider" in p1, false);
+
+  const pinned = new OpenRouterAdapter({
+    provider: "openrouter",
+    model: "z-ai/glm-5.3",
+    apiKey: "k",
+    upstreamPin: "novita/fp8",
+  });
+  const p2 = pinned.buildRequestParams(
+    { prompt: "hi", taskId: "t", attempt: 1 } as never,
+  ) as unknown as Record<string, unknown>;
+  assertEquals(p2["provider"], {
+    order: ["novita/fp8"],
+    allow_fallbacks: false,
+  });
+});
