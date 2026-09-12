@@ -9,6 +9,7 @@ import { getAll, getFirst } from "$lib/server/db";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { computeModelAggregates } from "$lib/server/model-aggregates";
 import { ServerTimer } from "$lib/server/server-timing";
+import { rowCostUsd } from "$lib/server/cost-sql";
 import {
   parseModeParam,
   resolveInvocationMode,
@@ -196,23 +197,53 @@ export const GET: RequestHandler = async ({
     // because the 2-attempt protocol guarantees attempt 2 is emitted iff
     // attempt 1 failed; if that protocol ever expands, both queries must be
     // updated together to use last-attempt-per-task semantics.
+    // Joined to the base tables rather than through `v_results_with_cost`.
+    //
+    // The view is `results JOIN runs JOIN cost_snapshots`, and SQLite will not
+    // flatten a subquery containing joins when it is the right operand of a
+    // LEFT JOIN — views expand as subqueries. So `LEFT JOIN v_results_with_cost`
+    // materialized the view across the WHOLE database and only then narrowed it
+    // by run_id. Measured against production: 62,953 rows read to chart one
+    // model with 12 runs, and 38.7% of the daily read budget. Reaching
+    // `results` directly lets `WHERE runs.model_id = ?` restrict the scan
+    // first: same 12 rows out, 2,809 read.
+    //
+    // Two properties of the view have to be reproduced by hand, and losing
+    // either publishes wrong numbers rather than failing:
+    //
+    //   1. The view rounds EACH result to 6dp before anything sums it.
+    //      SUM(ROUND(x,6)) is not ROUND(SUM(x),6).
+    //   2. The view joins cost_snapshots with an INNER join, so a result whose
+    //      (model_id, pricing_version) has no snapshot vanishes entirely —
+    //      score and task counts included. Two plain LEFT JOINs would silently
+    //      start counting runs the site does not publish, so `cs.id IS NOT NULL`
+    //      restores the inner-join semantics while the LEFT JOIN on runs still
+    //      keeps runs that have no results.
+    //
+    // `rowCostUsd` emits the same expression the view uses (list/sync rates
+    // since migration 0021).
     const HISTORY_SELECT = `
       SELECT runs.id AS run_id,
              runs.started_at AS ts,
-             AVG(v.score) AS score,
-             SUM(v.cost_usd) AS cost_usd,
+             AVG(r.score) AS score,
+             SUM(ROUND(${rowCostUsd("r", "cs", "runs")}, 6)) AS cost_usd,
              runs.tier AS tier,
              runs.status AS status,
              runs.completed_at AS completed_at,
              runs.excluded_at AS excluded_at,
              runs.excluded_reason AS excluded_reason,
-             COUNT(DISTINCT v.task_id) AS tasks_attempted,
-             COUNT(DISTINCT CASE WHEN v.passed = 1 THEN v.task_id END) AS tasks_passed,
-             SUM(COALESCE(v.llm_duration_ms, 0)
-               + COALESCE(v.compile_duration_ms, 0)
-               + COALESCE(v.test_duration_ms, 0)) AS duration_ms
+             COUNT(DISTINCT r.task_id) AS tasks_attempted,
+             COUNT(DISTINCT CASE WHEN r.passed = 1 THEN r.task_id END) AS tasks_passed,
+             SUM(COALESCE(r.llm_duration_ms, 0)
+               + COALESCE(r.compile_duration_ms, 0)
+               + COALESCE(r.test_duration_ms, 0)) AS duration_ms
       FROM runs
-      LEFT JOIN v_results_with_cost v ON v.run_id = runs.id
+      LEFT JOIN cost_snapshots cs
+        ON cs.model_id = runs.model_id
+       AND cs.pricing_version = runs.pricing_version
+      LEFT JOIN results r
+        ON r.run_id = runs.id
+       AND cs.id IS NOT NULL
     `;
 
     const historyRows = taskSetHash
