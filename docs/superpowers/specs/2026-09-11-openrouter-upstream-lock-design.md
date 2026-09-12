@@ -187,6 +187,10 @@ wire, and in D1 (migration `0023`):
   adds `provider: { order: [pin], allow_fallbacks: false }` when set. A pin
   configured for a model whose provider is not OpenRouter is a startup
   error.
+  - **Deviation as built:** `resolveUpstreamPins` silently skips a
+    non-OpenRouter variant instead of failing at startup, because the
+    config map is keyed under the `openrouter:` namespace, which makes a
+    stray key inert rather than misrouting a request.
 - Resolution and preflight, at bench start and at batch submit:
   1. Fetch the endpoints listing once; resolve the slug to
      `{ provider_name, quantization, context_length, max_completion_tokens }`;
