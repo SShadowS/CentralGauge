@@ -26,6 +26,7 @@ function makeRow(overrides: Partial<LeaderboardRow> & { slug: string }): Leaderb
     ...overrides,
     fallback_count: overrides.fallback_count ?? 0,
     refusal_count: overrides.refusal_count ?? 0,
+    upstream: overrides.upstream ?? { pin: null, served: [], verification: {} },
     provisional: overrides.provisional ?? false,
     model: {
       slug: overrides.slug,
@@ -66,6 +67,7 @@ const sampleRows: LeaderboardRow[] = [
     denominator: 24,
     fallback_count: 0,
     refusal_count: 0,
+    upstream: { pin: null, served: [], verification: {} },
     provisional: false,
   },
   {
@@ -97,6 +99,7 @@ const sampleRows: LeaderboardRow[] = [
     denominator: 24,
     fallback_count: 0,
     refusal_count: 0,
+    upstream: { pin: null, served: [], verification: {} },
     provisional: false,
   },
 ];

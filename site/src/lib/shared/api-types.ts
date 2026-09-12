@@ -210,6 +210,15 @@ export interface LeaderboardRow {
    * value does not imply any of those rows sit inside the filtered scope.
    */
   refusal_count: number;
+  /**
+   * OpenRouter upstream lock (migration 0023). `pin` is the profile every
+   * in-scope run of this model was ingested under (`null` when the cohort is
+   * unpinned); `served` is every distinct upstream that actually answered;
+   * `verification` counts result rows per state, with `unrecorded` for rows
+   * that predate capture. Same scope as `fallback_count`: the task set and
+   * mode, not the row's other filters.
+   */
+  upstream: LeaderboardUpstream;
   latency_p95_ms: number;
   pass_rate_ci: { lower: number; upper: number };
   pass_hat_at_n: number;
@@ -456,6 +465,55 @@ export interface TaskSetsResponse {
 // Run detail — GET /api/v1/runs/:id
 // =============================================================================
 
+/**
+ * Verification state of one result row against the upstream OpenRouter routes
+ * to (migration 0023). `not_applicable` for a provider that has no upstream at
+ * all; `unpinned` when the cohort pinned nothing and any upstream was allowed;
+ * `verified` when the served upstream matched the pin; `mismatch` when it did
+ * not; `unverified` when the provider told us nothing to check against;
+ * `not_served` when no upstream answered. A NULL column reads as `null` here
+ * and means the row predates capture, which is never one of these states.
+ */
+export type UpstreamVerification =
+  | "not_applicable"
+  | "unpinned"
+  | "verified"
+  | "mismatch"
+  | "unverified"
+  | "not_served";
+
+/** The upstream identity captured on one attempt. */
+export interface AttemptUpstream {
+  requested: string | null;
+  served: string | null;
+  served_model: string | null;
+  identity_source: "provider_field" | "router_metadata" | "both" | null;
+  verification: UpstreamVerification | null; // null = row predates capture
+}
+
+/**
+ * Run-level roll-up of the per-attempt upstream fields. `pin` is the run's own
+ * `upstream_pin` from its invocation record. `verification` counts result rows
+ * per state, with `unrecorded` standing for a NULL `upstream_verification`.
+ */
+export interface RunUpstreamSummary {
+  pin: string | null;
+  /** Distinct non-null served upstreams, sorted. */
+  served: string[];
+  /** Distinct non-null served upstream models, sorted. */
+  served_model: string[];
+  verification: Partial<Record<UpstreamVerification | "unrecorded", number>>;
+  excluded_code: string | null;
+}
+
+/** The per-model upstream block carried by one leaderboard row. */
+export interface LeaderboardUpstream {
+  /** The registry profile key, `null` for an `<unpinned>` cohort. */
+  pin: string | null;
+  served: string[];
+  verification: Partial<Record<UpstreamVerification | "unrecorded", number>>;
+}
+
 export interface PerTaskResult {
   task_id: string;
   difficulty: "easy" | "medium" | "hard";
@@ -477,6 +535,7 @@ export interface PerTaskResult {
     transcript_key: string;
     code_key?: string;
     failure_reasons: string[];
+    upstream: AttemptUpstream;
   }>;
 }
 
@@ -499,6 +558,13 @@ export interface RunDetail {
   excluded_at: string | null;
   /** Operator-supplied reason for the exclusion; `null` when not excluded. */
   excluded_reason: string | null;
+  /**
+   * Machine-readable exclusion code beside the free-text reason (migration
+   * 0023). `null` for a manual operator exclusion and for a run that is not
+   * excluded at all; `upstream_mismatch` / `upstream_unverified` when ingest
+   * excluded the run itself.
+   */
+  excluded_code: string | null;
   machine_id: string;
   task_set_hash: string;
   pricing_version: string;
@@ -525,6 +591,8 @@ export interface RunDetail {
     tasks_passed: number;
   };
   results: PerTaskResult[];
+  /** Roll-up of the per-attempt upstream fields across this run. */
+  upstream: RunUpstreamSummary;
   reproduction_bundle?: { sha256: string; size_bytes: number };
 }
 
@@ -1188,7 +1256,10 @@ export interface RunV2Detail extends RunV2Summary {
     prompt_digest: string | null;
     candidate_digest: string | null;
     test_vector: { id: string; name: string; passed: boolean }[] | null;
+    upstream: AttemptUpstream;
   }[];
+  /** Roll-up of the per-attempt upstream fields across this run. */
+  upstream: RunUpstreamSummary;
 }
 
 /**

@@ -8,6 +8,7 @@
   import { ChevronDown, ChevronUp } from '$lib/components/ui/icons';
   import { auc2Display, outcomeMix } from '$lib/shared/leaderboard-derive';
   import { isCostProvisional } from '$lib/shared/cost-provisional';
+  import { upstreamChip } from '$lib/client/upstream-chip';
   import { COHORT_RUNS } from '$lib/shared/cohort';
   import LeaderboardRowDetail from './LeaderboardRowDetail.svelte';
   import { SvelteSet } from 'svelte/reactivity';
@@ -120,6 +121,7 @@
     <tbody aria-live="polite" aria-atomic="false">
       {#each rows as row, i (row.model.slug)}
         {@const mix = outcomeMix(row)}
+        {@const chip = row.upstream ? upstreamChip(row.upstream) : null}
         {#if showTierUi && dividerAt[i]}
           <tr class="tier-divider" data-test="tier-divider">
             <td colspan="100" title="Ranks within a tier are not statistically distinguishable at this sample size.">
@@ -187,6 +189,20 @@
                   aria-label="{row.refusal_count} result{row.refusal_count === 1 ? '' : 's'} across the full task set refused by the model with no fallback"
                   title="{row.refusal_count} result{row.refusal_count === 1 ? '' : 's'} across the full task set {row.refusal_count === 1 ? 'was' : 'were'} refused by the provider with no fallback, and {row.refusal_count === 1 ? 'is' : 'are'} scored as a failure. Not narrowed by the active filters."
                 >⊘{row.refusal_count}</span>
+              {/if}
+              {#if chip}
+                <!--
+                  Which OpenRouter upstream actually served this cohort. Tone
+                  carries the verdict: green when every row matched the pin,
+                  amber when some could not be checked, red when more than one
+                  upstream answered, grey when the rows predate capture.
+                -->
+                <span
+                  class="upstream-chip upstream-{chip.tone}"
+                  data-test="upstream-chip"
+                  title={chip.title}
+                  aria-label={chip.title}
+                >{chip.label}</span>
               {/if}
             </span>
             <OutcomeMixBar firstTryPct={mix.firstTryPct} retryPct={mix.retryPct} failedPct={mix.failedPct} />
@@ -277,6 +293,13 @@
    * competing signal. */
   .fallback-badge { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .refusal-badge { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Upstream chip. One class per tone, all on the existing semantic tokens. */
+  .upstream-chip { margin-left: 0.35rem; padding: 0 var(--space-2); border-radius: 999px; font-size: 0.7rem; white-space: nowrap; border: 1px solid currentColor; }
+  .upstream-verified { color: var(--success); }
+  .upstream-unpinned { color: var(--text-muted); }
+  .upstream-warn { color: var(--warning); }
+  .upstream-mixed { color: var(--danger); }
+  .upstream-unrecorded { color: var(--text-faint); }
   .provisional-marker { margin-left: var(--space-2); color: var(--text-faint); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .legend { display: flex; gap: var(--space-4); padding: var(--space-3); font-size: var(--text-xs); color: var(--text-muted); border-top: 1px solid var(--border); }
   .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: var(--space-2); }

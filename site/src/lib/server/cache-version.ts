@@ -44,9 +44,12 @@
  *   computed from a run that has since been excluded. The response SHAPE is
  *   unchanged, which is exactly why the bump is needed: nothing else would
  *   tell those entries apart from correct ones.
+ * v15: OpenRouter upstream lock (migration 0023). Leaderboard rows gained
+ *   `upstream`; run detail gained per-attempt `upstream`, a run summary and
+ *   `excluded_code`. Shape change, so no v14 entry may be served on.
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = "v14";
+export const CACHE_VERSION = "v15";

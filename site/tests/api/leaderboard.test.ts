@@ -191,6 +191,8 @@ describe("LeaderboardRow — contract completeness", () => {
     // (tier is intrinsic to the AUC matrix); this contract test uses the default.
     // Refusal-fallback Task 7: added fallback_count (merge query, always emitted).
     // Cohort metrics: added refusal_count (same merge query) and provisional.
+    // OpenRouter upstream lock: added upstream (second merge query, always
+    // emitted, default object when the model has no registry row).
     const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
       "rank",
       "model",
@@ -211,6 +213,7 @@ describe("LeaderboardRow — contract completeness", () => {
       "denominator",
       "fallback_count",
       "refusal_count",
+      "upstream",
       "latency_p95_ms",
       "pass_rate_ci",
       "pass_hat_at_n",
@@ -1023,5 +1026,36 @@ describe("GET /api/v1/leaderboard", () => {
         (r) => typeof r.tier === "number" && (r.tier as number) >= 1,
       ),
     ).toBe(true);
+  });
+
+  it("reports the model's upstream profile and served set per row", async () => {
+    // The seed's model 1 is the only one stamped here, so model 2's row keeps
+    // the default object. `set=current` resolves to 'ts-current', which is the
+    // hash the registry row below is keyed on.
+    await env.DB.prepare(
+      `UPDATE runs SET invocation_json = '{"upstream_pin":"novita/fp8"}' WHERE model_id = 1`,
+    ).run();
+    await env.DB.prepare(
+      `UPDATE results SET requested_upstream='novita/fp8', served_upstream='Novita', served_upstream_model='v1', upstream_identity_source='both', upstream_verification='verified' WHERE run_id IN (SELECT id FROM runs WHERE model_id = 1)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO upstream_profiles(model_id,task_set_hash,invocation_mode,profile_key,claimed_at) VALUES (1,'ts-current','sync','novita/fp8','2026-09-10T00:00:00Z')`,
+    ).run();
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?set=current&mode=sync",
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json<{ data: LeaderboardRow[] }>();
+    const row = body.data.find((r) => r.model.slug === "sonnet-4.7")!;
+    expect(row.upstream.pin).toBe("novita/fp8");
+    expect(row.upstream.served).toEqual(["Novita"]);
+    expect(row.upstream.verification.verified).toBeGreaterThan(0);
+    expect(row.upstream.verification.unrecorded).toBeUndefined();
+    // A model with no registry row and no captured upstream still gets the
+    // default object, with `unrecorded` counting its pre-capture rows.
+    const other = body.data.find((r) => r.model.slug === "opus-4.7")!;
+    expect(other.upstream.pin).toBeNull();
+    expect(other.upstream.served).toEqual([]);
+    expect(other.upstream.verification.unrecorded).toBeGreaterThan(0);
   });
 });

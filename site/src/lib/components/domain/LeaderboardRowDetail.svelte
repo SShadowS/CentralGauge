@@ -33,6 +33,9 @@
       {#if row.refusal_count > 0}
         <div><dt>Refusals (no fallback)</dt><dd>{row.refusal_count}</dd></div>
       {/if}
+      {#if row.upstream && (row.upstream.pin !== null || row.upstream.served.length > 0)}
+        <div><dt>Upstream</dt><dd>{row.upstream.pin ?? 'unpinned'}{#if row.upstream.served.length > 0} · served by {row.upstream.served.join(', ')}{/if}</dd></div>
+      {/if}
     </dl>
   </div>
   <div class="grp">
