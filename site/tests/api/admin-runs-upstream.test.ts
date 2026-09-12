@@ -130,9 +130,30 @@ describe("admin runs upstream backfill endpoint", () => {
     expect(conflict.status).toBe(409);
     expect((await conflict.json<{ code: string; error: string }>()).error)
       .toContain("Fireworks");
+    // Zero changes: the conflicting request must not have touched the row.
+    const row = await env.DB.prepare(
+      `SELECT served_upstream FROM results WHERE run_id='r1' AND task_id='t1' AND attempt=1`,
+    ).first<{ served_upstream: string }>();
+    expect(row?.served_upstream).toBe("Fireworks");
   });
 
   it("404s an unknown run", async () => {
     expect((await post({ run_id: "nope", results: [] })).status).toBe(404);
+  });
+
+  it("400s an entry naming a (task, attempt) with no result row, and touches nothing", async () => {
+    const res = await post({
+      run_id: "r1",
+      results: [{ task_id: "no-such-task", attempt: 1, served_upstream: "Google" }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json<{ code: string }>()).code).toBe("unknown_attempt");
+    const rows = (await env.DB.prepare(
+      `SELECT served_upstream FROM results WHERE run_id='r1' ORDER BY attempt`,
+    ).all()).results;
+    expect(rows).toEqual([
+      { served_upstream: null },
+      { served_upstream: null },
+    ]);
   });
 });
