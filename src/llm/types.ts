@@ -89,6 +89,25 @@ export interface LLMRequest {
   stop?: string[] | undefined;
 }
 
+/** Where an OpenRouter response's upstream identity was read from. */
+export type UpstreamIdentitySource =
+  | "provider_field"
+  | "router_metadata"
+  | "both";
+
+/**
+ * The upstream OpenRouter routed a request to, as observed on the response.
+ * `servedUpstream` is the upstream's DISPLAY NAME ("Novita"), never its slug;
+ * OpenRouter returns no slug or quantization on any response (spec section
+ * 2). `servedUpstreamModel` is the upstream's dated model variant from
+ * router metadata when the metadata header was honoured.
+ */
+export interface UpstreamIdentity {
+  servedUpstream: string;
+  servedUpstreamModel?: string | undefined;
+  source: UpstreamIdentitySource;
+}
+
 export interface LLMResponse {
   content: string;
   model: string;
@@ -109,6 +128,18 @@ export interface LLMResponse {
    * recovered=false: the whole chain refused (finishReason="content_filter").
    */
   refusal?: { category: string | null; recovered: boolean } | undefined;
+  /** OpenRouter only: display name of the upstream that served this response. See {@link UpstreamIdentity}. */
+  servedUpstream?: string | undefined;
+  /** OpenRouter only: the upstream's dated model variant from router metadata, when present. Diagnostic, not identity. */
+  servedUpstreamModel?: string | undefined;
+  /** OpenRouter only: which response field(s) `servedUpstream` came from. */
+  upstreamIdentitySource?: UpstreamIdentitySource | undefined;
+  /**
+   * OpenRouter only: true when the legacy `provider` field and router
+   * metadata named DIFFERENT upstreams. The verification unit treats this as
+   * a mismatch regardless of the pin.
+   */
+  upstreamIdentityConflict?: boolean | undefined;
 }
 
 export interface TokenUsage {

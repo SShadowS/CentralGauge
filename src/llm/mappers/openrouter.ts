@@ -13,7 +13,7 @@
  * @module src/llm/mappers/openrouter
  */
 
-import type { LLMResponse, TokenUsage } from "../types.ts";
+import type { LLMResponse, TokenUsage, UpstreamIdentity } from "../types.ts";
 
 /** Chat Completions usage fragment (fields this mapper reads). */
 export interface ChatUsageFragment {
@@ -73,6 +73,77 @@ export function mapUsage(fragment: ChatUsageFragment): TokenUsage {
   };
 }
 
+export type UpstreamExtraction =
+  | UpstreamIdentity
+  | { conflict: true; providerField: string; metadata: string };
+
+/**
+ * Read the serving upstream off an OpenRouter chat-completion body.
+ *
+ * Two sources exist (spec section 2): the legacy top-level `provider`
+ * display name, present on every successful response we have observed, and
+ * `openrouter_metadata.endpoints.available[]` when the request carried
+ * `X-OpenRouter-Metadata: enabled`, which also names the upstream's dated
+ * model variant. Exactly one `selected: true` entry is trusted; zero or
+ * several are ignored in favour of the provider field. When both sources
+ * are present and disagree the result is a conflict, which the caller
+ * records as a mismatch.
+ */
+export function extractUpstreamIdentity(
+  body: unknown,
+): UpstreamExtraction | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const b = body as {
+    provider?: unknown;
+    openrouter_metadata?: {
+      endpoints?: {
+        available?: Array<
+          { provider?: unknown; model?: unknown; selected?: unknown }
+        >;
+      };
+    };
+  };
+  const providerField = typeof b.provider === "string" && b.provider.length > 0
+    ? b.provider
+    : undefined;
+  const selected = (b.openrouter_metadata?.endpoints?.available ?? []).filter(
+    (e) =>
+      e && e.selected === true && typeof e.provider === "string" &&
+      (e.provider as string).length > 0,
+  );
+  const meta = selected.length === 1 ? selected[0]! : undefined;
+  const metaName = meta ? (meta.provider as string) : undefined;
+  const metaModel = meta && typeof meta.model === "string"
+    ? meta.model
+    : undefined;
+
+  if (providerField !== undefined && metaName !== undefined) {
+    if (providerField !== metaName) {
+      return { conflict: true, providerField, metadata: metaName };
+    }
+    return {
+      servedUpstream: providerField,
+      servedUpstreamModel: metaModel,
+      source: "both",
+    };
+  }
+  if (providerField !== undefined) {
+    return {
+      servedUpstream: providerField,
+      servedUpstreamModel: undefined,
+      source: "provider_field",
+    };
+  }
+  if (metaName !== undefined) {
+    return {
+      servedUpstream: metaName,
+      servedUpstreamModel: metaModel,
+      source: "router_metadata",
+    };
+  }
+  return undefined;
+}
+
 /**
  * Assembles the `LLMResponse` shape shared by the sync call sites and the
  * batch runner's per-item result mapper.
@@ -85,9 +156,32 @@ export function assembleResponse(parts: {
   finish: ReturnType<typeof mapFinishReason>;
   servedModel?: string | undefined;
   refusal?: LLMResponse["refusal"];
+  upstream?: UpstreamExtraction | undefined;
 }): LLMResponse {
-  const { content, model, usage, duration, finish, servedModel, refusal } =
-    parts;
+  const {
+    content,
+    model,
+    usage,
+    duration,
+    finish,
+    servedModel,
+    refusal,
+    upstream,
+  } = parts;
+  const upstreamFields: Partial<LLMResponse> = {};
+  if (upstream !== undefined) {
+    if ("conflict" in upstream) {
+      upstreamFields.servedUpstream = upstream.providerField;
+      upstreamFields.upstreamIdentitySource = "both";
+      upstreamFields.upstreamIdentityConflict = true;
+    } else {
+      upstreamFields.servedUpstream = upstream.servedUpstream;
+      if (upstream.servedUpstreamModel !== undefined) {
+        upstreamFields.servedUpstreamModel = upstream.servedUpstreamModel;
+      }
+      upstreamFields.upstreamIdentitySource = upstream.source;
+    }
+  }
   return {
     content,
     model,
@@ -99,5 +193,6 @@ export function assembleResponse(parts: {
       : {}),
     ...(servedModel !== undefined ? { servedModel } : {}),
     ...(refusal ? { refusal } : {}),
+    ...upstreamFields,
   };
 }
