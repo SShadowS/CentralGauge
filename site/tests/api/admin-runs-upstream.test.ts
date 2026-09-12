@@ -138,6 +138,46 @@ describe("admin runs upstream backfill endpoint", () => {
     expect(row?.served_upstream).toBe("Fireworks");
   });
 
+  it("refuses a pinned run with 409 pinned_run and changes nothing", async () => {
+    await env.DB.prepare(
+      `UPDATE runs SET invocation_json = ? WHERE id = 'r1'`,
+    ).bind(JSON.stringify({ upstream_pin: "novita/fp8" })).run();
+    const res = await post({
+      run_id: "r1",
+      results: [{ task_id: "t1", attempt: 1, served_upstream: "Google" }],
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json<{ code: string; error: string }>();
+    expect(body.code).toBe("pinned_run");
+    expect(body.error).toContain("novita/fp8");
+    const rows = (await env.DB.prepare(
+      `SELECT served_upstream FROM results WHERE run_id='r1' ORDER BY attempt`,
+    ).all()).results;
+    expect(rows).toEqual([
+      { served_upstream: null },
+      { served_upstream: null },
+    ]);
+  });
+
+  it("refuses a row that already holds a real verdict with 409 already_set", async () => {
+    await env.DB.prepare(
+      `UPDATE results SET upstream_verification='verified' WHERE run_id='r1' AND task_id='t1' AND attempt=1`,
+    ).run();
+    const res = await post({
+      run_id: "r1",
+      results: [{ task_id: "t1", attempt: 1, served_upstream: "Google" }],
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json<{ code: string; error: string }>();
+    expect(body.code).toBe("already_set");
+    expect(body.error).toContain("verified");
+    const row = await env.DB.prepare(
+      `SELECT served_upstream, upstream_verification FROM results WHERE run_id='r1' AND task_id='t1' AND attempt=1`,
+    ).first<{ served_upstream: string | null; upstream_verification: string }>();
+    expect(row?.served_upstream).toBeNull();
+    expect(row?.upstream_verification).toBe("verified");
+  });
+
   it("404s an unknown run", async () => {
     expect((await post({ run_id: "nope", results: [] })).status).toBe(404);
   });

@@ -14,12 +14,31 @@
  * `requested_upstream = NULL`, since a backfilled row was never pinned in the
  * first place, only its provider-reported upstream is now known. Only the
  * named rows change; the rest of the run is left untouched.
+ *
+ * That rewrite is exactly why the endpoint refuses a run that WAS pinned
+ * (`409 pinned_run`) and a row that already carries a real verdict
+ * (`409 already_set`): either one would erase a recorded pin decision and
+ * leave the row claiming it was never pinned, while the profile registry
+ * still holds the pin.
  */
 import type { RequestHandler } from "./$types";
 import { forceBumpDataEpochStmt } from "$lib/server/data-epoch";
 import { type SignedAdminRequest, verifySignedRequest } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { appendAuditStmt } from "$lib/server/audit";
+import { pinFromInvocationJson } from "$lib/server/upstream-summary";
+
+/**
+ * Verification states that record a real upstream check. A row holding one of
+ * these is never rewritten to `unpinned` by a backfill; only a row that was
+ * never checked (NULL) or was explicitly unpinned can take one.
+ */
+const SETTLED_VERIFICATIONS = new Set([
+  "verified",
+  "mismatch",
+  "unverified",
+  "not_served",
+]);
 
 interface Entry {
   task_id: string;
@@ -121,9 +140,26 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       seen.add(k);
     }
 
-    const run = await db.prepare(`SELECT id FROM runs WHERE id = ?`).bind(p.run_id).first();
+    const run = await db
+      .prepare(`SELECT id, invocation_json FROM runs WHERE id = ?`)
+      .bind(p.run_id)
+      .first<{ id: string; invocation_json: string | null }>();
     if (!run) {
       throw new ApiError(404, "run_not_found", `run ${p.run_id} not found`);
+    }
+
+    // A pinned run already knows which upstream it asked for, and its rows
+    // were verified against that pin at ingest. Backfilling it would set
+    // `requested_upstream = NULL` and `upstream_verification = 'unpinned'`
+    // on every named row while the profile registry still holds the pin,
+    // which is a contradiction, not a repair.
+    const runPin = pinFromInvocationJson(run.invocation_json);
+    if (runPin !== null) {
+      throw new ApiError(
+        409,
+        "pinned_run",
+        `run ${p.run_id} pinned upstream ${runPin}; a pinned run's rows are not backfillable`,
+      );
     }
 
     // Friendly, pre-write checks: a missing (task, attempt) is a caller
@@ -135,10 +171,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     for (const e of p.results) {
       const row = await db
         .prepare(
-          `SELECT served_upstream FROM results WHERE run_id = ? AND task_id = ? AND attempt = ?`,
+          `SELECT served_upstream, upstream_verification FROM results WHERE run_id = ? AND task_id = ? AND attempt = ?`,
         )
         .bind(p.run_id, e.task_id, e.attempt)
-        .first<{ served_upstream: string | null }>();
+        .first<{
+          served_upstream: string | null;
+          upstream_verification: string | null;
+        }>();
       if (!row) {
         throw new ApiError(
           400,
@@ -151,6 +190,16 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           409,
           "already_set",
           `(${e.task_id}, ${e.attempt}) already holds served_upstream ${row.served_upstream}`,
+        );
+      }
+      if (
+        row.upstream_verification !== null &&
+        SETTLED_VERIFICATIONS.has(row.upstream_verification)
+      ) {
+        throw new ApiError(
+          409,
+          "already_set",
+          `(${e.task_id}, ${e.attempt}) already holds upstream_verification ${row.upstream_verification}`,
         );
       }
     }
