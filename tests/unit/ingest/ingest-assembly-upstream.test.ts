@@ -394,3 +394,43 @@ Deno.test("assembly rebuilds a schema-4 file through the legacy builder", async 
     await f.cleanup();
   }
 });
+
+Deno.test("the exclusion reason stays within 500 characters, with the full list still on attempts", async () => {
+  const dir = await createTempDir("asm-up5");
+  try {
+    const results = Array.from(
+      { length: 60 },
+      (_, i) =>
+        makeResult(`CG-AL-X${String(i).padStart(3, "0")}`, [
+          createMockExecutionAttempt({
+            success: false,
+            score: 0,
+            attemptNumber: 1,
+            requestedUpstream: "novita/fp8",
+            servedUpstream: "Together",
+            upstreamVerification: "mismatch",
+            upstreamIdentitySource: "provider_field",
+          }),
+        ]),
+    );
+    const path = await writeResultsFile(dir, results);
+    const out = await assembleBenchResultsForVariant(
+      path,
+      VARIANT,
+      ASSEMBLE_OPTS,
+    );
+    assert(out.kind === "assembled");
+    const excluded = out.benchResults.excluded!;
+    assert(
+      excluded.reason.length <= 500,
+      `reason was ${excluded.reason.length} chars: ${excluded.reason}`,
+    );
+    assert(excluded.reason.endsWith(", ...)"), excluded.reason);
+    assert(excluded.reason.startsWith("upstream mismatch on 60 attempts:"));
+    // Truncating the prose never loses an attempt: the structured list is
+    // what a reviewer actually reads back.
+    assertEquals(excluded.attempts.length, 60);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
