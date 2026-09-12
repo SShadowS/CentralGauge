@@ -32,6 +32,40 @@ interface Payload {
   results: Entry[];
 }
 
+interface BackfillOutcome {
+  updated: number;
+  unchanged: Array<{ task_id: string; attempt: 1 | 2 }>;
+}
+
+/**
+ * Pure: derives which requested entries the guarded UPDATE batch actually
+ * changed, from the `RETURNING` rows in each statement's `D1Result`. An
+ * entry with a nonempty `results` array was matched and written; an empty
+ * one lost a race to a concurrent write between this endpoint's own
+ * pre-check and this batch.
+ *
+ * Exported (and structured to accept a fabricated batch result) so this
+ * computation is unit-testable directly: two requests racing on the exact
+ * same (task, attempt) cannot be made to interleave from outside this
+ * endpoint in a synchronous test.
+ */
+export function _computeBackfillOutcome(
+  entries: Entry[],
+  batchResults: Array<{ results?: unknown[] }>,
+): BackfillOutcome {
+  const unchanged: Array<{ task_id: string; attempt: 1 | 2 }> = [];
+  let updated = 0;
+  entries.forEach((e, i) => {
+    const rows = batchResults[i]?.results ?? [];
+    if (rows.length > 0) {
+      updated++;
+    } else {
+      unchanged.push({ task_id: e.task_id, attempt: e.attempt });
+    }
+  });
+  return { updated, unchanged };
+}
+
 export const POST: RequestHandler = async ({ request, platform }) => {
   if (!platform) {
     return errorResponse(new ApiError(500, "no_platform", "platform env missing"));
@@ -96,7 +130,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // mistake (400), and a row already holding a DIFFERENT value is a
     // conflict (409). Neither check is sufficient on its own against a
     // concurrent second backfill request racing this one - the guarded
-    // UPDATE below, and the post-batch changes count, are the real guard.
+    // UPDATE below, and the RETURNING-derived outcome computed from it, are
+    // the real guard.
     for (const e of p.results) {
       const row = await db
         .prepare(
@@ -134,6 +169,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // it returned 5/9/4 for single-row UPDATEs, nonzero even for a guard
     // miss that touched nothing). `RETURNING` reports exactly the rows this
     // statement wrote, unaffected by trigger side effects.
+    //
+    // This batch carries ONLY the guarded UPDATEs - the audit and the epoch
+    // bump are NOT in it. A multi-entry request can partially succeed (one
+    // entry's guard holds, another's loses a race), and the record must stay
+    // honest about that: an audit written unconditionally in the same batch
+    // would claim the full requested count even when only some rows changed,
+    // while the caller was simultaneously told 409 as if nothing happened.
     const updateStmts = p.results.map((e) =>
       db
         .prepare(
@@ -143,26 +185,41 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         )
         .bind(e.served_upstream, p.run_id, e.task_id, e.attempt, e.served_upstream)
     );
-    const auditStmt = appendAuditStmt(db, {
-      event: "run.upstream_backfilled",
-      actor: verified,
-      details: { run_id: p.run_id, count: p.results.length },
-    });
-    const bumpStmt = forceBumpDataEpochStmt(db);
-    const results = await db.batch([...updateStmts, auditStmt, bumpStmt]);
+    const batchResults = await db.batch(updateStmts);
+    const { updated, unchanged } = _computeBackfillOutcome(p.results, batchResults);
 
-    const updated = updateStmts.reduce(
-      (sum, _stmt, i) => sum + (results[i]?.results?.length ?? 0),
-      0,
-    );
-    if (updated < p.results.length) {
-      // Lost the race: at least one guarded UPDATE matched zero rows
-      // because a concurrent request set a different value in between the
-      // pre-check and this batch.
+    // Audit and bump run AFTER the update batch, as their own statements,
+    // and only when something actually changed - so the audit record
+    // reflects the real (possibly partial) outcome rather than the
+    // requested one, and a fully-lost race never bumps the epoch for a
+    // no-op write.
+    if (updated > 0) {
+      await db.batch([
+        appendAuditStmt(db, {
+          event: "run.upstream_backfilled",
+          actor: verified,
+          details: {
+            run_id: p.run_id,
+            requested: p.results.length,
+            updated,
+            unchanged,
+          },
+        }),
+        forceBumpDataEpochStmt(db),
+      ]);
+    }
+
+    if (unchanged.length > 0) {
+      // Lost the race on at least one entry: a concurrent request set a
+      // different value in between the pre-check and this batch. Any rows
+      // that DID change are already committed and already audited above;
+      // this only tells the caller the request as a whole did not fully
+      // succeed.
+      const names = unchanged.map((u) => `(${u.task_id}, ${u.attempt})`).join(", ");
       throw new ApiError(
         409,
         "already_set",
-        `a concurrent backfill changed at least one of the requested (task, attempt) rows on run ${p.run_id}`,
+        `a concurrent backfill changed the requested value for ${names} on run ${p.run_id}`,
       );
     }
 

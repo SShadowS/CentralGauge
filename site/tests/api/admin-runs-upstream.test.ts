@@ -3,6 +3,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createSignedPayload } from "../fixtures/keys";
 import { registerMachineKey } from "../fixtures/ingest-helpers";
 import { resetDb } from "../utils/reset-db";
+import { _computeBackfillOutcome } from "../../src/routes/api/v1/admin/runs/upstream/+server";
 
 /**
  * POST /api/v1/admin/runs/upstream: per-(task, attempt) backfill of
@@ -155,5 +156,72 @@ describe("admin runs upstream backfill endpoint", () => {
       { served_upstream: null },
       { served_upstream: null },
     ]);
+  });
+
+  it("a multi-entry request refuses at the pre-check when one entry already conflicts, writing nothing", async () => {
+    // Seed attempt 2's conflicting value BEFORE the call. True interleaving
+    // (a concurrent write landing strictly between this endpoint's own
+    // pre-check and its guarded UPDATE batch) cannot be triggered from
+    // outside a synchronous test - this exercises the pre-check's own
+    // all-or-nothing refusal instead: it validates every entry before
+    // writing any of them, so one conflicting entry blocks the whole
+    // request, including the otherwise-valid first entry.
+    await env.DB.prepare(
+      `UPDATE results SET served_upstream='Fireworks' WHERE run_id='r1' AND task_id='t1' AND attempt=2`,
+    ).run();
+    const res = await post({
+      run_id: "r1",
+      results: [
+        { task_id: "t1", attempt: 1, served_upstream: "Google" },
+        { task_id: "t1", attempt: 2, served_upstream: "Google" },
+      ],
+    });
+    expect(res.status).toBe(409);
+    expect((await res.json<{ code: string }>()).code).toBe("already_set");
+    const rows = (await env.DB.prepare(
+      `SELECT attempt, served_upstream FROM results WHERE run_id='r1' ORDER BY attempt`,
+    ).all()).results;
+    expect(rows).toEqual([
+      { attempt: 1, served_upstream: null },
+      { attempt: 2, served_upstream: "Fireworks" },
+    ]);
+    const audit = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM admin_audit WHERE event='run.upstream_backfilled'`,
+    ).first<{ n: number }>();
+    expect(Number(audit?.n)).toBe(0);
+  });
+});
+
+describe("_computeBackfillOutcome (unit)", () => {
+  it("reports a mix of updated and unchanged entries from a fake batch result", () => {
+    const entries = [
+      { task_id: "t1", attempt: 1 as const, served_upstream: "Google" },
+      { task_id: "t1", attempt: 2 as const, served_upstream: "Google" },
+    ];
+    // Statement 0 matched a row (RETURNING returned one row); statement 1
+    // lost the race and RETURNING returned none - exactly the shape a real
+    // batch takes when a concurrent request set attempt 2 to a different
+    // value between this endpoint's own pre-check and its guarded UPDATE
+    // batch, an interleaving that cannot be triggered synchronously from
+    // outside the endpoint.
+    const fakeBatchResults = [
+      { results: [{ task_id: "t1", attempt: 1 }] },
+      { results: [] },
+    ];
+    expect(_computeBackfillOutcome(entries, fakeBatchResults)).toEqual({
+      updated: 1,
+      unchanged: [{ task_id: "t1", attempt: 2 }],
+    });
+  });
+
+  it("reports zero unchanged when every statement's RETURNING matched", () => {
+    const entries = [
+      { task_id: "t1", attempt: 1 as const, served_upstream: "Google" },
+    ];
+    const fakeBatchResults = [{ results: [{ task_id: "t1", attempt: 1 }] }];
+    expect(_computeBackfillOutcome(entries, fakeBatchResults)).toEqual({
+      updated: 1,
+      unchanged: [],
+    });
   });
 });
