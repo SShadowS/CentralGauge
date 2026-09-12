@@ -60,6 +60,17 @@ interface SynthInput {
   llmResponse?: LLMResponse;
   /** Reuse an existing execution id (e.g. the loop's) instead of minting one. */
   executionId?: string;
+  /**
+   * The variant's LLM provider, so a pinned OpenRouter run's infra attempt
+   * records the upstream verdict instead of defaulting to `not_applicable`.
+   * Typed rather than read off `SynthContext`'s index signature: an untyped
+   * lookup is exactly how this bridge went dead the first time.
+   */
+  provider?: string;
+  /** The upstream pin the request was sent with (OpenRouter only). */
+  requestedUpstream?: string;
+  /** The display name the pin resolves to, for verification. */
+  upstreamProviderName?: string;
 }
 
 /**
@@ -95,6 +106,16 @@ export function synthesizeInfraFailureResult(
       : {}),
     ...(input.request ? { request: input.request } : {}),
     ...(input.llmResponse ? { llmResponse: input.llmResponse } : {}),
+    // Upstream lock (spec 2026-09-11 D1): without these the attempt would
+    // classify as `not_applicable` even on a pinned OpenRouter run, hiding
+    // a pinned attempt that was never served behind a non-OpenRouter verdict.
+    ...(input.provider !== undefined ? { provider: input.provider } : {}),
+    ...(input.requestedUpstream !== undefined
+      ? { requestedUpstream: input.requestedUpstream }
+      : {}),
+    ...(input.upstreamProviderName !== undefined
+      ? { upstreamProviderName: input.upstreamProviderName }
+      : {}),
     // NOT input.context.containerName: pre-branch, only a ContainerError
     // named the failing container. In a multi-container pool,
     // context.containerName is the primary/original container for the task,

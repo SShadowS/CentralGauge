@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import {
+  invocationSchemaOf,
   invocationSnapshot,
   isInvocationRecord,
   terminationKind,
@@ -97,4 +98,73 @@ Deno.test("invocationSnapshot carries the executor-resolved profile fields", () 
   assertEquals(rec.max_tokens, 64000);
   assertEquals(isInvocationRecord(rec), true);
   assertEquals(isInvocationRecord({ provider: "anthropic" }), false);
+});
+
+/**
+ * Minimal cfg every `invocationSnapshot` call in this file shares. Provider
+ * and model are overridden per case; the profile fields are required by the
+ * signature and carry no meaning for the upstream-lock assertions.
+ */
+const baseCfg = {
+  provider: "anthropic",
+  model: "claude-opus-5",
+  apiModelId: "claude-opus-5",
+  mode: "sync" as const,
+  fallbackPolicy: "unavailable" as const,
+  continuation: { enabled: false, maxContinuations: 0 },
+  emptyRetry: {
+    enabled: false,
+    maxRetries: 0,
+    baseDelayMs: 0,
+    jitterMs: 0,
+  },
+  infraRetriesPerAttempt: 1,
+  maxAttempts: 2,
+  promptProfileDigest: "d".repeat(64),
+};
+
+Deno.test("invocationSnapshot emits invocation_schema 2 with the pin and resolution", () => {
+  const rec = invocationSnapshot({
+    ...baseCfg,
+    provider: "openrouter",
+    apiModelId: "z-ai/glm-5.3",
+    upstreamPin: "novita/fp8",
+    upstreamResolved: {
+      provider_name: "Novita",
+      quantization: "fp8",
+      preflight: "passed",
+    },
+  });
+  assertEquals(rec.invocation_schema, 2);
+  assertEquals(rec.upstream_pin, "novita/fp8");
+  assertEquals(rec.upstream_resolved, {
+    provider_name: "Novita",
+    quantization: "fp8",
+    preflight: "passed",
+  });
+  assertEquals(invocationSchemaOf(rec), 2);
+
+  const bare = invocationSnapshot({
+    ...baseCfg,
+    provider: "anthropic",
+    apiModelId: "claude-opus-5",
+  });
+  assertEquals(bare.invocation_schema, 2);
+  assertEquals(bare.upstream_pin, null);
+  assertEquals(bare.upstream_resolved, null);
+});
+
+Deno.test("isInvocationRecord accepts a schema-1 record and invocationSchemaOf reports 1", () => {
+  const legacy = {
+    ...invocationSnapshot({
+      ...baseCfg,
+      provider: "anthropic",
+      apiModelId: "m",
+    }),
+  } as Record<string, unknown>;
+  delete legacy["invocation_schema"];
+  delete legacy["upstream_pin"];
+  delete legacy["upstream_resolved"];
+  assertEquals(isInvocationRecord(legacy), true);
+  assertEquals(invocationSchemaOf(legacy), 1);
 });

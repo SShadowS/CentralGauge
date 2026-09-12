@@ -4,6 +4,7 @@ import { computeTaskSetHash } from "./catalog/task-set-hash.ts";
 import { loadIngestConfig, readPrivateKey } from "./config.ts";
 import { ensureModel, ensurePricing, ensureTaskSet } from "./register.ts";
 import { buildPayload } from "./envelope.ts";
+import type { BuildPayloadInput } from "./envelope.ts";
 import { signEnvelopeV2, signHeaderRequest } from "./sign.ts";
 import { uploadMissing } from "./blobs.ts";
 import { postWithRetry } from "./client.ts";
@@ -60,6 +61,36 @@ export interface BenchResultItem {
    * only, never re-scored.
    */
   refusal_category: string | null;
+  /**
+   * OpenRouter upstream lock (spec 2026-09-11 D1). `requested_upstream` is
+   * the slug the request pinned, `served_upstream` the display name the
+   * response reported, `served_upstream_model` the upstream's own model
+   * version string, `upstream_identity_source` where that identity was
+   * read from. All four are null on an attempt that predates the capture
+   * or ran against a provider the lock does not cover.
+   */
+  requested_upstream: string | null;
+  served_upstream: string | null;
+  served_upstream_model: string | null;
+  upstream_identity_source:
+    | "provider_field"
+    | "router_metadata"
+    | "both"
+    | null;
+  /**
+   * The per-attempt verdict. `not_applicable` covers both a non-OpenRouter
+   * attempt and an attempt from a CLI predating the lock; `mismatch` and
+   * `unverified` are the two compromises that exclude the whole run (see
+   * {@link BenchResults.excluded}), while `not_served` is a routing
+   * outcome, not a compromise.
+   */
+  upstream_verification:
+    | "not_applicable"
+    | "unpinned"
+    | "verified"
+    | "mismatch"
+    | "unverified"
+    | "not_served";
   durations_ms: { llm?: number; compile?: number; test?: number };
   failure_reasons: string[];
   transcript_bytes?: Uint8Array;
@@ -122,6 +153,19 @@ export interface BenchResults {
   invocationMode: InvocationMode;
   harnessFingerprint?: string;
   retryPathVersion?: string;
+  /**
+   * Set when the run must be excluded from every scoreboard statistic while
+   * still being stored and browsable (spec 2026-09-11 D1). Built by
+   * `assembleBenchResultsForVariant` when at least one attempt's
+   * `upstream_verification` is `mismatch` or `unverified`; `attempts` names
+   * exactly those attempts. Absent on a clean run, and never set for
+   * `not_served`.
+   */
+  excluded?: {
+    code: "upstream_mismatch" | "upstream_unverified";
+    reason: string;
+    attempts: Array<{ task_id: string; attempt: 1 | 2 }>;
+  };
 }
 
 /**
@@ -185,6 +229,11 @@ export async function mapResultItemToInput(
     tokens_cache_write: r.tokens_cache_write,
     served_model: r.served_model,
     refusal_category: r.refusal_category,
+    requested_upstream: r.requested_upstream,
+    served_upstream: r.served_upstream,
+    served_upstream_model: r.served_upstream_model,
+    upstream_identity_source: r.upstream_identity_source,
+    upstream_verification: r.upstream_verification,
     durations_ms: r.durations_ms,
     failure_reasons: r.failure_reasons,
   };
@@ -211,6 +260,67 @@ export async function mapResultItemToInput(
     out.candidate_sha256 = r.candidate_sha256;
   }
   return out;
+}
+
+/**
+ * Assemble the {@link BuildPayloadInput} for one run: the pure half of
+ * `ingestRun`'s payload step, extracted and exported for the same reason
+ * {@link mapResultItemToInput} was. Every optional field is copied ONLY when
+ * present on `br`, so a run that never set one produces an input with no
+ * such key at all and `buildPayload` omits it from the wire.
+ *
+ * `resolved` carries what `ingestRun` computes rather than reads off `br`:
+ * the machine id from config, the task-set hash after
+ * {@link resolveIngestTaskSetHash}, the mapped result rows, and the two blob
+ * digests.
+ */
+export function buildRunPayloadInput(
+  br: BenchResults,
+  resolved: {
+    machineId: string;
+    taskSetHash: string;
+    results: ResultInput[];
+    reproductionBundleSha?: string;
+    environmentSha256?: string;
+  },
+): BuildPayloadInput {
+  const input: BuildPayloadInput = {
+    runId: br.runId,
+    taskSetHash: resolved.taskSetHash,
+    model: br.model,
+    settings: br.settings,
+    machineId: resolved.machineId,
+    startedAt: br.startedAt,
+    completedAt: br.completedAt,
+    pricingVersion: br.pricingVersion,
+    results: resolved.results,
+    invocationMode: br.invocationMode,
+  };
+  if (br.excluded) input.excluded = br.excluded;
+  if (br.centralgaugeSha) input.centralgaugeSha = br.centralgaugeSha;
+  if (resolved.reproductionBundleSha) {
+    input.reproductionBundleSha256 = resolved.reproductionBundleSha;
+  }
+  if (br.harnessFingerprint) {
+    input.harnessFingerprint = br.harnessFingerprint;
+  }
+  if (br.retryPathVersion) input.retryPathVersion = br.retryPathVersion;
+  if (br.invocation) input.invocation = br.invocation;
+  if (resolved.environmentSha256 && br.environment) {
+    input.environmentSha256 = resolved.environmentSha256;
+    input.environment = {
+      bc_artifact: br.environment.bc_artifact,
+      container_image_digest: br.environment.container_image_digest,
+      bcch_version: br.environment.bcch_version,
+      test_runner: br.environment.test_runner,
+      prompt_template_digest: br.environment.prompt_template_digest,
+      tenant: br.environment.tenant,
+      company: br.environment.company,
+      bcch_use_pssession_bc28: br.environment.bcch_use_pssession_bc28,
+      bcch_use_pwsh_bc24: br.environment.bcch_use_pwsh_bc24,
+    };
+  }
+  return input;
 }
 
 export async function ingestRun(
@@ -283,42 +393,13 @@ export async function ingestRun(
     );
     await ensureTaskSet(cat, taskSetHash, countTasksSync(opts.tasksDir), deps);
   }
-  const payloadInput: Parameters<typeof buildPayload>[0] = {
-    runId: br.runId,
-    taskSetHash,
-    model: br.model,
-    settings: br.settings,
+  const payload = buildPayload(buildRunPayloadInput(br, {
     machineId: config.machineId,
-    startedAt: br.startedAt,
-    completedAt: br.completedAt,
-    pricingVersion: br.pricingVersion,
+    taskSetHash,
     results,
-    invocationMode: br.invocationMode,
-  };
-  if (br.centralgaugeSha) payloadInput.centralgaugeSha = br.centralgaugeSha;
-  if (reproductionBundleSha) {
-    payloadInput.reproductionBundleSha256 = reproductionBundleSha;
-  }
-  if (br.harnessFingerprint) {
-    payloadInput.harnessFingerprint = br.harnessFingerprint;
-  }
-  if (br.retryPathVersion) payloadInput.retryPathVersion = br.retryPathVersion;
-  if (br.invocation) payloadInput.invocation = br.invocation;
-  if (environmentSha256 && br.environment) {
-    payloadInput.environmentSha256 = environmentSha256;
-    payloadInput.environment = {
-      bc_artifact: br.environment.bc_artifact,
-      container_image_digest: br.environment.container_image_digest,
-      bcch_version: br.environment.bcch_version,
-      test_runner: br.environment.test_runner,
-      prompt_template_digest: br.environment.prompt_template_digest,
-      tenant: br.environment.tenant,
-      company: br.environment.company,
-      bcch_use_pssession_bc28: br.environment.bcch_use_pssession_bc28,
-      bcch_use_pwsh_bc24: br.environment.bcch_use_pwsh_bc24,
-    };
-  }
-  const payload = buildPayload(payloadInput);
+    ...(reproductionBundleSha !== undefined ? { reproductionBundleSha } : {}),
+    ...(environmentSha256 !== undefined ? { environmentSha256 } : {}),
+  }));
 
   const precheckBody = await buildSignedEnvelope(
     br.runId,

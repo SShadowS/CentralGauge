@@ -37,6 +37,7 @@ import {
   validateAttemptsForIngest,
 } from "./bench/ingest-meta.ts";
 import { ingestRun } from "../../src/ingest/mod.ts";
+import { stampAutoExcludedRun } from "../../src/ingest/run-exclusion.ts";
 import {
   formatReportToTerminal,
   ingestSection,
@@ -59,6 +60,10 @@ import {
 import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import type { EnvironmentManifest } from "../../src/ingest/capture.ts";
 import { buildBatchCommand } from "./bench-batch-command.ts";
+import { resolveUpstreamPins } from "./bench/upstream-precheck.ts";
+import { UpstreamPinError } from "../../src/llm/upstream-pin.ts";
+import { getApiKeyForProvider } from "../helpers/api-keys.ts";
+import { DEFAULT_MAX_TOKENS } from "../../src/constants.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -214,6 +219,10 @@ export function registerBenchCommand(cli: Command): void {
     .option(
       "--no-ingest",
       "Skip ingestion to the scoreboard API after the run completes",
+    )
+    .option(
+      "--skip-upstream-preflight",
+      "Skip the 32-token OpenRouter upstream preflight (the pin is still enforced per request)",
     )
     .option(
       "--no-dashboard",
@@ -652,6 +661,40 @@ export function registerBenchCommand(cli: Command): void {
         }
       }
 
+      // Upstream pins are resolved whether or not ingest is on: they decide
+      // where every request goes, so a bench that skips ingest still pins.
+      // This runs BEFORE any LLM call, so an unknown tag or an endpoint too
+      // small for the run costs nothing but the endpoints listing.
+      {
+        const appConfig = await ConfigManager.loadConfig();
+        const variants: ModelVariant[] = ModelPresetRegistry
+          .resolveWithVariants(benchOptions.llms, appConfig);
+        try {
+          const pins = await resolveUpstreamPins({
+            variants,
+            config: appConfig,
+            maxTokens: benchOptions.maxTokens || DEFAULT_MAX_TOKENS,
+            skipPreflight: options.skipUpstreamPreflight === true,
+            apiKey: getApiKeyForProvider("openrouter") ?? "",
+            log: (line) => console.log(line),
+          });
+          if (pins.size > 0) benchOptions.upstreamPins = pins;
+        } catch (err) {
+          if (err instanceof UpstreamPinError) {
+            console.error(
+              colors.red("[FAIL]") + ` upstream pin: ${err.message}`,
+            );
+            console.error(
+              colors.gray(
+                "       Run `centralgauge models <slug> --upstreams` to list the valid tags.",
+              ),
+            );
+            Deno.exit(1);
+          }
+          throw err;
+        }
+      }
+
       // Execute parallel benchmark
       const outputFormat = (options.format || "verbose") as OutputFormat;
       let result: Awaited<ReturnType<typeof executeParallelBenchmark>>;
@@ -922,16 +965,32 @@ export function mergePresetWithOptions(
 }
 
 /**
+ * Collaborators `ingestBenchResults` reaches outside itself for. Injectable
+ * so a test can drive the whole ingest loop without a network call or a
+ * `docker inspect`; production passes nothing and gets the real ones.
+ */
+export interface BenchIngestDeps {
+  ingestRun?: typeof ingestRun;
+  buildEnvironmentManifest?: typeof buildEnvironmentManifest;
+}
+
+/**
  * Ingest bench results to the scoreboard API. One ingestRun call per
  * (results file × variant). Transient failures print a replay hint but
  * do not fail the bench run; fatal failures abort.
+ *
+ * Exported for tests only; the bench command is the only production caller.
  */
-async function ingestBenchResults(
+export async function ingestBenchResults(
   resultFilePaths: string[],
   variants: ModelVariant[],
   yes: boolean,
   containerName: string,
+  deps: BenchIngestDeps = {},
 ): Promise<void> {
+  const ingestFn = deps.ingestRun ?? ingestRun;
+  const buildEnvironment = deps.buildEnvironmentManifest ??
+    buildEnvironmentManifest;
   const cwd = Deno.cwd();
   const centralgaugeSha = await readGitSha(cwd);
   // Run-level capture (taxonomy v2): built ONCE per run (not per variant/file,
@@ -945,7 +1004,7 @@ async function ingestBenchResults(
   // environment/invocation capture rather than lose the run.
   let environment: EnvironmentManifest | undefined;
   try {
-    environment = await buildEnvironmentManifest({ containerName, cwd });
+    environment = await buildEnvironment({ containerName, cwd });
   } catch (err) {
     console.warn(
       colors.yellow(
@@ -1010,6 +1069,17 @@ async function ingestBenchResults(
       if (ingestMeta?.task_set_hash) {
         assembleOpts.taskSetHash = ingestMeta.task_set_hash;
       }
+      // Schema 5: the settings this variant was ingested under, frozen in
+      // the file moments ago. Sent verbatim so no later rebuild can move
+      // the run onto a different settings profile.
+      const persistedSettings = ingestMeta?.canonical_settings
+        ?.[variant.variantId];
+      if (persistedSettings) assembleOpts.canonicalSettings = persistedSettings;
+      const persistedSettingsHash = ingestMeta?.settings_hashes
+        ?.[variant.variantId];
+      if (persistedSettingsHash) {
+        assembleOpts.settingsHash = persistedSettingsHash;
+      }
       const assembled = await assembleBenchResultsForVariant(
         filePath,
         variant,
@@ -1048,7 +1118,7 @@ async function ingestBenchResults(
       const br = assembled.benchResults;
 
       attempted++;
-      const outcome = await ingestRun(br, {
+      const outcome = await ingestFn(br, {
         cwd,
         catalogDir: `${cwd}/site/catalog`,
         tasksDir: `${cwd}/tasks`,
@@ -1096,6 +1166,15 @@ async function ingestBenchResults(
             `[OK] Ingested run ${outcome.runId} (${variant.variantId}, ${blobsNote})`,
           ),
         );
+        // A run the assembly marked compromised was accepted already
+        // excluded, so the scoreboard drops it. Mark the LOCAL file too, or
+        // `src/stats/importer.ts` would still admit those same numbers to
+        // the local score tables.
+        await stampAutoExcludedRun({
+          resultsFilePath: filePath,
+          runId: outcome.runId,
+          ...(br.excluded ? { excluded: br.excluded } : {}),
+        });
       }
     }
   }

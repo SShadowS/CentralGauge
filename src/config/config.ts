@@ -115,6 +115,15 @@ export interface CentralGaugeConfig {
    */
   batch?: BatchConfig;
 
+  /**
+   * OpenRouter routing settings shared by sync and batch runs (spec
+   * 2026-09-11 upstream lock, D2). `upstream` maps an OpenRouter
+   * api_model_id (the part after `openrouter/` in a slug) to the upstream
+   * slug to pin, as listed by `centralgauge models <slug> --upstreams`.
+   * Top level, not under `batch`, because a pin applies to both modes.
+   */
+  openrouter?: OpenRouterConfig;
+
   // Container settings
   container?: {
     provider?: string;
@@ -425,6 +434,65 @@ export function validateBatchConfig(
   return config;
 }
 
+export interface OpenRouterConfig {
+  /** api_model_id -> upstream slug, e.g. { "z-ai/glm-5.3": "fireworks" }. */
+  upstream?: Record<string, string>;
+}
+
+/** The slug grammar OpenRouter's endpoints listing uses for `tag`. */
+export const UPSTREAM_SLUG_RE = /^[a-z0-9-]+(\/[a-z0-9.-]+)*$/;
+
+/**
+ * Validates the `openrouter` section when present: `upstream` must be an
+ * object of api_model_id to non-empty slug, slugs must match
+ * {@link UPSTREAM_SLUG_RE}, and no other key is allowed under `openrouter`.
+ * Returns `config` unchanged. Throws `ConfigurationError` on a bad value.
+ */
+export function validateOpenRouterConfig(
+  config: OpenRouterConfig | undefined,
+): OpenRouterConfig | undefined {
+  if (config === undefined) return undefined;
+  for (const key of Object.keys(config)) {
+    if (key !== "upstream") {
+      throw new ConfigurationError(
+        `openrouter: unknown key "${key}" (only "upstream" is allowed)`,
+      );
+    }
+  }
+  const up = config.upstream;
+  if (up === undefined) return config;
+  if (!up || typeof up !== "object" || Array.isArray(up)) {
+    throw new ConfigurationError(
+      `openrouter.upstream must be an object of api_model_id to upstream slug`,
+    );
+  }
+  for (const [model, slug] of Object.entries(up)) {
+    if (typeof slug !== "string" || slug.trim() === "") {
+      throw new ConfigurationError(
+        `openrouter.upstream["${model}"] must be a non-empty upstream slug`,
+      );
+    }
+    if (!UPSTREAM_SLUG_RE.test(slug)) {
+      throw new ConfigurationError(
+        `openrouter.upstream["${model}"] is not an upstream slug: got ${
+          JSON.stringify(slug)
+        }, expected e.g. "fireworks" or "novita/fp8"`,
+      );
+    }
+  }
+  return config;
+}
+
+/** The configured upstream pin for an OpenRouter model, or undefined. Never answers for another provider. */
+export function upstreamPinFor(
+  config: Pick<CentralGaugeConfig, "openrouter">,
+  provider: string,
+  apiModelId: string,
+): string | undefined {
+  if (provider !== "openrouter") return undefined;
+  return config.openrouter?.upstream?.[apiModelId];
+}
+
 /**
  * Lifecycle configuration (Plan F-owned). All fields optional; `loadConfig`
  * fills defaults via `validateLifecycleConfig` when the section is present.
@@ -602,6 +670,10 @@ export class ConfigManager {
     const validatedBatch = validateBatchConfig(config.batch);
     if (validatedBatch !== undefined) {
       config.batch = validatedBatch;
+    }
+    const validatedOpenRouter = validateOpenRouterConfig(config.openrouter);
+    if (validatedOpenRouter !== undefined) {
+      config.openrouter = validatedOpenRouter;
     }
 
     this.config = config;
@@ -1012,6 +1084,19 @@ export class ConfigManager {
           },
         };
       }
+    }
+    if (override.openrouter) {
+      // Per-key replacement, the same shallow semantics the rest of the
+      // config uses: a project pin for one model replaces the home pin for
+      // that model and leaves every other model's pin alone.
+      result.openrouter = {
+        ...result.openrouter,
+        ...override.openrouter,
+        upstream: {
+          ...result.openrouter?.upstream,
+          ...override.openrouter.upstream,
+        },
+      };
     }
     if (override.container) {
       // Save base credentials before shallow spread overwrites them

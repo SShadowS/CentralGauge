@@ -24,6 +24,7 @@
  */
 
 import type { EnvironmentManifest } from "../../../src/ingest/capture.ts";
+import type { CanonicalSettings } from "../../../shared/settings-hash.ts";
 
 export interface IngestMeta {
   /**
@@ -36,8 +37,15 @@ export interface IngestMeta {
    * whenever the run-level capture succeeded. The parser below reads every
    * field independently of the declared number, same as it already does
    * for `task_set_hash` on a schema-1 file.
+   * `5` = also carries canonical_settings/settings_hashes per variant, the
+   * exact six hashed keys the run was ingested or frozen with (spec
+   * 2026-09-11 D4); assembly sends them verbatim.
+   *
+   * Named distinctly from `settings_extras_schema` (the extras shape inside
+   * `extra_json`) and `invocation_schema` (the invocation record's own
+   * version). The three move independently.
    */
-  schema: 1 | 2 | 3 | 4;
+  schema: 1 | 2 | 3 | 4 | 5;
   /** UTC YYYY-MM-DD, minted at save time. */
   pricing_version: string;
   /** variantId -> run UUID, minted ONCE per bench run. */
@@ -65,6 +73,23 @@ export interface IngestMeta {
    * (schema 3+). Same absence semantics as `environment` above.
    */
   invocations?: Record<string, Record<string, unknown>>;
+  /**
+   * The EXACT six hashed keys each variant was ingested or frozen under
+   * (schema 5+), keyed by `variantId`. Persisted so assembly sends them
+   * verbatim rather than rebuilding them from an invocation record days
+   * later: a rebuild that disagreed by one key would silently move the run
+   * onto a different settings profile on the leaderboard. Absent on files
+   * saved before schema 5, where assembly still rebuilds (the legacy
+   * builder for a schema-1 invocation, so the old hash is reproduced).
+   */
+  canonical_settings?: Record<string, CanonicalSettings>;
+  /**
+   * The settings hash each variant's `canonical_settings` entry produces
+   * (schema 5+), keyed by `variantId`. Recorded for auditing and for the
+   * batch path, where the run's frozen `state.json` hash must survive
+   * finalize untouched. Same absence semantics as the map above.
+   */
+  settings_hashes?: Record<string, string>;
 }
 
 /** Today's pricing version stamp (UTC date). */
@@ -91,6 +116,12 @@ export function todayPricingVersion(): string {
  * failed, or the caller predates this capture) to leave both absent — a
  * replay of this file will omit the environment/invocation facts from its
  * ingest payload rather than rebuild them from the replaying machine.
+ *
+ * Pass `settings` (the exact canonical settings + hash each variant ran
+ * under) to stamp schema 5 and persist both maps, so assembly sends the
+ * settings verbatim instead of rebuilding them. Omit it to leave both
+ * absent. Assembly then rebuilds from the invocation record, which
+ * reproduces the recorded hash for a schema-1 record via the legacy builder.
  */
 export function buildIngestMeta(
   variants: ReadonlyArray<{ variantId: string }>,
@@ -99,9 +130,10 @@ export function buildIngestMeta(
     environment: EnvironmentManifest;
     invocations: Record<string, Record<string, unknown>>;
   },
+  settings?: Record<string, { canonical: CanonicalSettings; hash: string }>,
 ): IngestMeta {
   const meta: IngestMeta = {
-    schema: capture ? 4 : (taskSetHash ? 2 : 1),
+    schema: settings ? 5 : (capture ? 4 : (taskSetHash ? 2 : 1)),
     pricing_version: todayPricingVersion(),
     run_ids: Object.fromEntries(
       variants.map((v) => [v.variantId, crypto.randomUUID()]),
@@ -112,7 +144,38 @@ export function buildIngestMeta(
     meta.environment = capture.environment;
     meta.invocations = capture.invocations;
   }
+  if (settings) {
+    meta.canonical_settings = Object.fromEntries(
+      Object.entries(settings).map(([id, s]) => [id, s.canonical]),
+    );
+    meta.settings_hashes = Object.fromEntries(
+      Object.entries(settings).map(([id, s]) => [id, s.hash]),
+    );
+  }
   return meta;
+}
+
+/** The six keys `CanonicalSettings` hashes over. */
+const CANONICAL_SETTINGS_KEYS = [
+  "temperature",
+  "max_attempts",
+  "max_tokens",
+  "prompt_version",
+  "bc_version",
+  "extra_json",
+] as const;
+
+/**
+ * Shallow shape check for one persisted `canonical_settings` entry: an
+ * object carrying all six hashed keys. Deliberately does not validate the
+ * value types beyond presence: this is a locally-produced file, and a
+ * partial object is the failure mode worth catching (it would hash to
+ * something the run never used).
+ */
+function isCanonicalSettings(v: unknown): v is CanonicalSettings {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return CANONICAL_SETTINGS_KEYS.every((k) => k in o);
 }
 
 /**
@@ -126,7 +189,10 @@ export function parseIngestMeta(parsed: unknown): IngestMeta | undefined {
   if (!ingest || typeof ingest !== "object") return undefined;
   const m = ingest as Record<string, unknown>;
   const schema = m["schema"];
-  if (schema !== 1 && schema !== 2 && schema !== 3 && schema !== 4) {
+  if (
+    schema !== 1 && schema !== 2 && schema !== 3 && schema !== 4 &&
+    schema !== 5
+  ) {
     return undefined;
   }
   if (typeof m["pricing_version"] !== "string") return undefined;
@@ -173,6 +239,37 @@ export function parseIngestMeta(parsed: unknown): IngestMeta | undefined {
     ) {
       meta.invocations = Object.fromEntries(
         entries as [string, Record<string, unknown>][],
+      );
+    }
+  }
+  // canonical_settings/settings_hashes (schema 5+): same forgiving policy,
+  // read whenever present and well-formed, whatever number the file
+  // declares. A malformed map is dropped rather than thrown on: the run
+  // identity is still valid, and assembly falls back to rebuilding the
+  // settings, which is exactly what a pre-schema-5 file does.
+  const canonicalSettings = m["canonical_settings"];
+  if (
+    canonicalSettings && typeof canonicalSettings === "object" &&
+    !Array.isArray(canonicalSettings)
+  ) {
+    const entries = Object.entries(
+      canonicalSettings as Record<string, unknown>,
+    );
+    if (entries.every(([, v]) => isCanonicalSettings(v))) {
+      meta.canonical_settings = Object.fromEntries(
+        entries as [string, CanonicalSettings][],
+      );
+    }
+  }
+  const settingsHashes = m["settings_hashes"];
+  if (
+    settingsHashes && typeof settingsHashes === "object" &&
+    !Array.isArray(settingsHashes)
+  ) {
+    const entries = Object.entries(settingsHashes as Record<string, unknown>);
+    if (entries.every(([, v]) => typeof v === "string")) {
+      meta.settings_hashes = Object.fromEntries(
+        entries as [string, string][],
       );
     }
   }

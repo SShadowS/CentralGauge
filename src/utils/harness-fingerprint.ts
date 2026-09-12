@@ -34,6 +34,17 @@ export const HARNESS_INPUTS = [
   "src/tasks/object-overlay.ts",
   "src/llm/candidate-resolution.ts",
   "src/parallel/llm-work-pool.ts",
+  // These decide which OpenRouter upstream a request reaches (spec
+  // 2026-09-11 D2): the adapter's routing block, the batch wiring that
+  // hands it the frozen pin, and the config reader that supplies the pin.
+  // A change to any of them must show as drift on an in-flight run.
+  "src/llm/openrouter-adapter.ts",
+  "src/batch/provider-wiring.ts",
+  "src/config/config.ts",
+  // The per-attempt upstream classifier. It decides `upstream_verification`
+  // for every attempt, so changing it re-scores the attempts of a run still
+  // in flight - exactly the class of change drift detection exists for.
+  "src/llm/upstream-verification.ts",
 ] as const;
 
 /**

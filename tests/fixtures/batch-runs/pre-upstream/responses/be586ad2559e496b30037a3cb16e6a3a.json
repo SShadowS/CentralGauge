@@ -1,0 +1,67 @@
+{
+  "result": {
+    "itemId": "be586ad2559e496b30037a3cb16e6a3a",
+    "ok": true,
+    "raw": {
+      "model": "google/gemini-3.8-flash",
+      "id": "gen-batch-1789104873-2dd2a48ea950cc5eab15",
+      "created": 1789105015,
+      "system_fingerprint": null,
+      "object": "chat.completion",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "BEGIN-CODE\ntableextension 70000 \"Customer Extension\" extends Customer\n{\n    fields\n    {\n        field(70000; \"Preferred Contact Method\"; Option)\n        {\n            Caption = 'Preferred Contact Method';\n            DataClassification = CustomerContent;\n            OptionMembers = Email, Phone, Mail, SMS;\n            OptionCaption = 'Email,Phone,Mail,SMS';\n        }\n        field(70001; \"Customer Notes\"; Text[250])\n        {\n            Caption = 'Customer Notes';\n            DataClassification = CustomerContent;\n        }\n        field(70002; \"VIP Customer\"; Boolean)\n        {\n            Caption = 'VIP Customer';\n            DataClassification = CustomerContent;\n        }\n    }\n}\n\npageextension 70000 \"Customer Card Extension\" extends \"Customer Card\"\n{\n    layout\n    {\n        addlast(General)\n        {\n            field(\"Preferred Contact Method\"; Rec.\"Preferred Contact Method\")\n            {\n                ApplicationArea = All;\n                ToolTip = 'Specifies the preferred contact method for the customer.';\n            }\n            field(\"Customer Notes\"; Rec.\"Customer Notes\")\n            {\n                ApplicationArea = All;\n                ToolTip = 'Specifies internal notes for the customer.';\n            }\n            field(\"VIP Customer\"; Rec.\"VIP Customer\")\n            {\n                ApplicationArea = All;\n                ToolTip = 'Specifies whether the customer is marked as a VIP customer.';\n            }\n        }\n    }\n}\nEND-CODE",
+            "refusal": null,
+            "reasoning": null,
+            "reasoning_details": [
+              {
+                "type": "reasoning.encrypted",
+                "data": "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",
+                "format": "google-gemini-v1",
+                "index": 0
+              }
+            ]
+          },
+          "finish_reason": "stop",
+          "native_finish_reason": "STOP",
+          "logprobs": null
+        }
+      ],
+      "service_tier": null,
+      "usage": {
+        "prompt_tokens": 309,
+        "completion_tokens": 1473,
+        "total_tokens": 1782,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1124,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "provider": "Google"
+    },
+    "httpStatus": 200
+  },
+  "response": {
+    "content": "BEGIN-CODE\ntableextension 70000 \"Customer Extension\" extends Customer\n{\n    fields\n    {\n        field(70000; \"Preferred Contact Method\"; Option)\n        {\n            Caption = 'Preferred Contact Method';\n            DataClassification = CustomerContent;\n            OptionMembers = Email, Phone, Mail, SMS;\n            OptionCaption = 'Email,Phone,Mail,SMS';\n        }\n        field(70001; \"Customer Notes\"; Text[250])\n        {\n            Caption = 'Customer Notes';\n            DataClassification = CustomerContent;\n        }\n        field(70002; \"VIP Customer\"; Boolean)\n        {\n            Caption = 'VIP Customer';\n            DataClassification = CustomerContent;\n        }\n    }\n}\n\npageextension 70000 \"Customer Card Extension\" extends \"Customer Card\"\n{\n    layout\n    {\n        addlast(General)\n        {\n            field(\"Preferred Contact Method\"; Rec.\"Preferred Contact Method\")\n            {\n                ApplicationArea = All;\n                ToolTip = 'Specifies the preferred contact method for the customer.';\n            }\n            field(\"Customer Notes\"; Rec.\"Customer Notes\")\n            {\n                ApplicationArea = All;\n                ToolTip = 'Specifies internal notes for the customer.';\n            }\n            field(\"VIP Customer\"; Rec.\"VIP Customer\")\n            {\n                ApplicationArea = All;\n                ToolTip = 'Specifies whether the customer is marked as a VIP customer.';\n            }\n        }\n    }\n}\nEND-CODE",
+    "model": "google/gemini-3.8-flash",
+    "usage": {
+      "promptTokens": 309,
+      "completionTokens": 1473,
+      "totalTokens": 1782,
+      "reasoningTokens": 1124
+    },
+    "duration": 0,
+    "finishReason": "stop",
+    "providerFinishReason": "stop"
+  }
+}

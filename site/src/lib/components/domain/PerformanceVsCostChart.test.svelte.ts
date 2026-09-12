@@ -20,6 +20,7 @@ function row(
     family_slug: "fam",
     fallback_count: 0,
     refusal_count: 0,
+    upstream: { pin: null, served: [], verification: {} },
     provisional: false,
     run_count: 1,
     tasks_attempted: 0,

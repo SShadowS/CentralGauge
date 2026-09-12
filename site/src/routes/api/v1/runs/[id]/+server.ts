@@ -2,11 +2,20 @@ import type { RequestHandler } from "./$types";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { cachedJson } from "$lib/server/cache";
 import { getAll, getFirst } from "$lib/server/db";
+import {
+  attemptUpstream,
+  pinFromInvocationJson,
+  summariseUpstream,
+  type UpstreamRow,
+} from "$lib/server/upstream-summary";
+import type { AttemptUpstream } from "$lib/shared/api-types";
 
 interface RunRow {
   id: string;
   excluded_at: string | null;
   excluded_reason: string | null;
+  excluded_code: string | null;
+  invocation_json: string | null;
   task_set_hash: string;
   settings_hash: string;
   machine_id: string;
@@ -30,7 +39,7 @@ interface RunRow {
   bc_version: string | null;
 }
 
-interface ResultRow {
+interface ResultRow extends UpstreamRow {
   id: number;
   task_id: string;
   attempt: number;
@@ -68,6 +77,7 @@ interface AttemptOut {
   transcript_key: string;
   code_key?: string;
   failure_reasons: string[];
+  upstream: AttemptUpstream;
 }
 
 interface PerTaskOut {
@@ -105,7 +115,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       db,
       `SELECT runs.id, runs.task_set_hash, runs.settings_hash, runs.machine_id,
               runs.started_at, runs.completed_at, runs.status, runs.tier,
-              runs.excluded_at, runs.excluded_reason,
+              runs.excluded_at, runs.excluded_reason, runs.excluded_code,
+              runs.invocation_json,
               runs.centralgauge_sha, runs.pricing_version, runs.reproduction_bundle_r2_key,
               runs.ingest_public_key_id,
               m.slug AS model_slug, m.display_name AS model_display, m.api_model_id AS model_api_id,
@@ -130,6 +141,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
               v.llm_duration_ms, v.compile_duration_ms, v.test_duration_ms,
               v.failure_reasons_json, v.transcript_r2_key, v.code_r2_key,
               v.cost_usd,
+              v.requested_upstream, v.served_upstream, v.served_upstream_model,
+              v.upstream_identity_source, v.upstream_verification,
               t.difficulty
        FROM v_results_with_cost v
        LEFT JOIN tasks t ON t.task_set_hash = ? AND t.task_id = v.task_id
@@ -197,6 +210,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         duration_ms: durationMs,
         transcript_key: r.transcript_r2_key ?? "",
         failure_reasons: failureReasons,
+        upstream: attemptUpstream(r),
       };
       if (r.code_r2_key) attempt.code_key = r.code_r2_key;
 
@@ -274,6 +288,10 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       // than deleted. Only the cross-run statistics drop it.
       excluded_at: run.excluded_at ?? null,
       excluded_reason: run.excluded_reason ?? null,
+      // Machine-readable counterpart to the reason (0023). Set only when
+      // ingest excluded the run itself over an upstream verdict; a manual
+      // operator exclusion leaves it null.
+      excluded_code: run.excluded_code ?? null,
       machine_id: run.machine_id,
       task_set_hash: run.task_set_hash,
       pricing_version: run.pricing_version,
@@ -298,6 +316,14 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         tasks_passed: tasksPassed,
       },
       results: groupedResults,
+      // OpenRouter upstream lock (0023). Summarised from the SAME result rows
+      // the page shows, so the roll-up and the per-attempt fields can never
+      // disagree.
+      upstream: summariseUpstream(
+        results,
+        pinFromInvocationJson(run.invocation_json),
+        run.excluded_code ?? null,
+      ),
       ...(reproductionBundle
         ? { reproduction_bundle: reproductionBundle }
         : {}),

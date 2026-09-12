@@ -200,7 +200,32 @@ function classifyStatusCode(
   return { kind: "unknown", retryable: false };
 }
 
-/** Maps one inline result entry to a `BatchItemResult` (spikes findings, section 3). */
+/**
+ * Maps one inline result entry to a `BatchItemResult` (spikes findings,
+ * section 3).
+ *
+ * Classification order: an entry carrying `response.status_code` classifies
+ * by that HTTP status (`classifyStatusCode`); an entry with no status but
+ * with a THREE-DIGIT NUMERIC `error.code` classifies by that code instead,
+ * whether it arrives as a number or as a string of three digits (OpenRouter
+ * emits both shapes). Everything else falls to `unknown`, non-retryable -
+ * including a non-numeric string code such as `rate_limit_exceeded`, which
+ * this function does not map even though the failure it names is retryable.
+ *
+ * The live spike behind this classifier (Task 1, design doc section 4, D3)
+ * pinned a one-item batch to a dead upstream via `allow_fallbacks: false`.
+ * It did NOT fail fast: both spike batches sat `status: "in_progress"` with
+ * `request_counts {"total":1,"completed":0,"failed":0}` for the full 50
+ * minutes observed and never produced a result entry, so the outage case
+ * never surfaced a `status_code` or `error.code` to classify. Of the D3
+ * candidate rows only "prolonged in_progress" is confirmed for a dead pin;
+ * the 429/500, 404, error-only, and batch-level failed/expired rows below
+ * remain unconfirmed against a real dead-upstream pin and are exercised
+ * here only via constructed fixtures. A pinned outage is therefore this
+ * function's business only once the provider eventually produces a result
+ * line - detecting a batch that never finishes at all is the poll/deadline
+ * layer's job, not this classifier's.
+ */
 function mapResultLine(entry: OpenRouterBatchResultEntry): BatchItemResult {
   const itemId = entry.custom_id;
   const status = entry.response?.status_code;
@@ -223,6 +248,28 @@ function mapResultLine(entry: OpenRouterBatchResultEntry): BatchItemResult {
     };
   }
 
+  // Error-only entry: no HTTP status on the entry, but OpenRouter still
+  // names the failure in `error.code`, numeric or string (spec D3 table).
+  // Collapsing these to `unknown` used to make a rate-limited pinned
+  // upstream non-retryable.
+  const rawCode = entry.error?.code;
+  const numericCode = typeof rawCode === "number"
+    ? rawCode
+    : typeof rawCode === "string" && /^\d{3}$/.test(rawCode)
+    ? Number(rawCode)
+    : undefined;
+  if (numericCode !== undefined) {
+    const { kind, retryable } = classifyStatusCode(numericCode);
+    return {
+      itemId,
+      ok: false,
+      error: {
+        kind,
+        message: entry.error?.message ?? `error ${numericCode}`,
+        retryable,
+      },
+    };
+  }
   return {
     itemId,
     ok: false,

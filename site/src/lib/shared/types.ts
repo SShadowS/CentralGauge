@@ -75,6 +75,34 @@ export interface ResultInput {
   prompt_sha256?: string;
   /** sha256 hex digest of the compiled candidate source, when one exists. */
   candidate_sha256?: string;
+  /**
+   * OpenRouter upstream lock (spec 2026-09-11). The slug the request pinned.
+   * Optional/absent on CLIs predating the lock; null when the attempt was
+   * unpinned or ran against a provider the lock does not cover.
+   */
+  requested_upstream?: string | null;
+  /** Display name of the upstream that actually served the attempt. */
+  served_upstream?: string | null;
+  /** Model version string the serving upstream reported, when it reported one. */
+  served_upstream_model?: string | null;
+  /** Where the served identity was read from. */
+  upstream_identity_source?:
+    | "provider_field"
+    | "router_metadata"
+    | "both"
+    | null;
+  /**
+   * Per-attempt lock verdict. Absent on CLIs predating the lock, which is
+   * equivalent to `not_applicable`. `mismatch`/`unverified` are the two
+   * compromises that exclude the run; `not_served` is a routing outcome.
+   */
+  upstream_verification?:
+    | "not_applicable"
+    | "unpinned"
+    | "verified"
+    | "mismatch"
+    | "unverified"
+    | "not_served";
 }
 
 export interface ModelRef {
@@ -134,6 +162,18 @@ export interface SignedRunPayload {
     invocation?: Record<string, unknown>;
     /** The invocation profile a run executed under (D4). Absent on payloads predating this field. */
     invocation_mode?: "sync" | "batch";
+    /**
+     * Present when the CLI determined the run must be excluded from every
+     * scoreboard statistic while still being stored (spec 2026-09-11 D1):
+     * an OpenRouter upstream that did not match the pin, or an identity
+     * that could not be read at all. Absent on a clean run and on every
+     * CLI predating the upstream lock.
+     */
+    excluded?: {
+      code: "upstream_mismatch" | "upstream_unverified";
+      reason: string;
+      attempts: Array<{ task_id: string; attempt: 1 | 2 }>;
+    };
     results: ResultInput[];
   };
 }

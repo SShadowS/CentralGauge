@@ -19,6 +19,7 @@ These options are available for all commands:
 | ---------------- | -------------------------------------------------------- |
 | `bench`          | Run benchmark evaluation                                 |
 | `ingest`         | Replay a saved results file to the scoreboard API        |
+| `runs`           | Operate on ingested runs (soft exclusion, upstream backfill) |
 | `sync-catalog`   | Reconcile `site/catalog/*.yml` with production D1 tables |
 | `report`         | Generate reports from results                            |
 | `report-from-db` | Generate reports from stats database                     |
@@ -165,6 +166,57 @@ centralgauge ingest results/run.json --dry-run
 
 # Non-interactive (auto-accept OpenRouter pricing)
 centralgauge ingest results/run.json --yes
+```
+
+## runs
+
+Operate on ingested runs (soft exclusion, upstream backfill). This section
+documents the `backfill-upstream` subcommand; `runs exclude`/`runs include`
+are separate subcommands under the same `runs` parent.
+
+### runs backfill-upstream
+
+Record which OpenRouter upstream served each attempt of a finished batch run.
+Batch runs only; sync runs keep no raw response and cannot be backfilled.
+
+### Usage
+
+```bash
+centralgauge runs backfill-upstream <runId> [options]
+```
+
+### Arguments
+
+| Argument | Description             |
+| -------- | ----------------------- |
+| `runId`  | The ingested run's id   |
+
+### Options
+
+| Option             | Type    | Default   | Description                                                             |
+| ------------------ | ------- | --------- | ------------------------------------------------------------------------ |
+| `--dry-run`        | boolean | false     | Print what would be posted without posting                              |
+| `--results-dir`    | string  | `results` | Directory holding local benchmark results (the batch run dir lives under it) |
+| `--url`            | string  | -         | Override ingest URL                                                     |
+| `--key-path`       | string  | -         | Override ingest private key path                                        |
+| `--key-id`         | number  | -         | Override ingest key id                                                  |
+| `--machine-id`     | string  | -         | Override machine id                                                     |
+| `--admin-key-path` | string  | -         | Admin key path                                                          |
+| `--admin-key-id`   | number  | -         | Admin key id                                                            |
+
+It reads `result.raw.provider` from each stored `responses/<itemId>.json` in
+the batch run directory and posts one entry per (task, attempt); rows become
+`unpinned` with `served_upstream` set. An attempt with no stored provider is
+skipped and listed, and it never writes one value across a run.
+
+### Examples
+
+```bash
+# See what a finished batch run would record, without posting
+centralgauge runs backfill-upstream 4b623ade-... --dry-run
+
+# Record it
+centralgauge runs backfill-upstream 4b623ade-...
 ```
 
 ## sync-catalog
@@ -394,6 +446,17 @@ centralgauge models [spec]
 | -------- | ----------------------------------------- |
 | `spec`   | Model specification to resolve (optional) |
 
+### Options
+
+| Option              | Type   | Description                                                                                                          |
+| ------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `--upstreams`        | flag   | List OpenRouter upstream endpoints (tag, provider, quantization, context, output price, status) for `openrouter/*` slugs |
+| `--pin <tag:string>` | string | With `--upstreams`: resolve and preflight this tag against the first slug, one 32-token request                        |
+
+A tag from `--upstreams` is exactly what `openrouter.upstream.<author>/<slug>`
+in `.centralgauge.yml` accepts, so this listing is how an operator picks a
+pin.
+
 ### Examples
 
 ```bash
@@ -408,6 +471,12 @@ centralgauge models flagship
 
 # Test variant
 centralgauge models "opus@temp=0.5"
+
+# List an OpenRouter model's upstream endpoints
+centralgauge models openrouter/z-ai/glm-5.3 --upstreams
+
+# Resolve and preflight one upstream tag (one 32-token request)
+centralgauge models openrouter/z-ai/glm-5.3 --upstreams --pin novita/fp8
 ```
 
 ## config

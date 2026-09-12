@@ -11,6 +11,9 @@
  *  2. `stampResultsFile` / `stampBatchRunDir`: mark the LOCAL artifacts so a
  *     later `centralgauge report` / stats import does not re-admit the run's
  *     numbers to the local score tables from a file on disk.
+ *  3. `stampAutoExcludedRun`: the same local marking for a run the INGEST
+ *     itself excluded (a compromised upstream), which no operator ever runs
+ *     `runs exclude` for.
  *
  * @module ingest/run-exclusion
  */
@@ -229,6 +232,59 @@ async function atomicWriteJson(
   } catch (err) {
     await Deno.remove(tmp).catch(() => {});
     throw err;
+  }
+}
+
+/**
+ * Mark the local artifacts of a run that was ingested already excluded.
+ *
+ * A compromised upstream makes the bench and the batch finalizer send
+ * `BenchResults.excluded`, so the scoreboard drops the run on arrival. Nothing
+ * told the LOCAL artifacts, so `src/stats/importer.ts` still imported the same
+ * numbers into the local score tables. This writes the same `{ at, reason }`
+ * stamp `runs exclude` writes, so the importer skips the file the same way.
+ *
+ * Never throws: an unwritable artifact is worth a warning, not a failed bench
+ * whose run the server already accepted. A clean run (no `excluded`) writes
+ * nothing at all.
+ */
+export async function stampAutoExcludedRun(opts: {
+  /** The local results file the run was ingested from. */
+  resultsFilePath: string;
+  /** The ingested run id; also names the batch run directory, when there is one. */
+  runId: string;
+  /** `BenchResults.excluded`, absent on a clean run. */
+  excluded?: { reason: string };
+  /** Results directory. Given only for a batch run, whose run dir is stamped too. */
+  resultsDir?: string;
+  now?: () => Date;
+}): Promise<void> {
+  if (!opts.excluded) return;
+  const mark: ExclusionMark = {
+    at: (opts.now?.() ?? new Date()).toISOString(),
+    reason: opts.excluded.reason,
+  };
+  try {
+    await stampResultsFile(opts.resultsFilePath, opts.runId, mark);
+    console.log(
+      `[INFO] run ${opts.runId} was ingested excluded; stamped ${opts.resultsFilePath} so the local stats import skips it`,
+    );
+  } catch (err) {
+    console.warn(
+      `[WARN] could not stamp ${opts.resultsFilePath} for excluded run ${opts.runId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  if (opts.resultsDir === undefined) return;
+  try {
+    await stampBatchRunDir(opts.resultsDir, opts.runId, mark);
+  } catch (err) {
+    console.warn(
+      `[WARN] could not stamp the batch run directory for excluded run ${opts.runId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
   }
 }
 

@@ -182,6 +182,15 @@ export interface LLMWorkResult {
   providerErrorCode?: string;
 
   /**
+   * The upstream pin the request was sent with (OpenRouter only). Present on
+   * success AND failure so a 429 or 404 still records what was asked for.
+   */
+  requestedUpstream?: string;
+
+  /** The display name the pin resolves to, for verification. */
+  upstreamProviderName?: string;
+
+  /**
    * Structured classification of why extraction failed (set alongside
    * `error` for the same three branches). Absent when `success` is true.
    * `empty_response` carries zero trap signal and must not be read as a

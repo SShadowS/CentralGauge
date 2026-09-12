@@ -32,7 +32,12 @@ import {
   mapFinishReason as mapOpenAIFinishReason,
   mapUsage as mapOpenAIUsage,
 } from "../llm/mappers/openai.ts";
+import {
+  assembleResponse as assembleOpenRouterResponse,
+  extractUpstreamIdentity,
+} from "../llm/mappers/openrouter.ts";
 import { OpenRouterAdapter } from "../llm/openrouter-adapter.ts";
+import type { FrozenRouting } from "../parallel/shared/prompt-inputs.ts";
 import type { LLMRequest, LLMResponse } from "../llm/types.ts";
 import type { VariantConfig } from "../llm/variant-types.ts";
 
@@ -96,11 +101,17 @@ export interface ProviderWiring {
  * resolved API model id and effective variant config (never a preset
  * name) so a real implementation can configure an adapter; `apiKey` is the
  * caller's already-resolved credential, never read from `Deno.env` here.
+ *
+ * `routing` is the run's FROZEN OpenRouter upstream lock, read from
+ * `prompt-inputs.json` and never from live config (spec 2026-09-11 D2):
+ * a pin edited mid-run must not change where wave 2 goes. Only the
+ * openrouter case reads it; anthropic and openai ignore it.
  */
 export function wireProvider(
   name: BatchProviderName,
   model: { apiModelId: string; variantConfig: VariantConfig | null },
   apiKey: string,
+  routing?: FrozenRouting,
 ): ProviderWiring {
   switch (name) {
     case "anthropic": {
@@ -193,6 +204,9 @@ export function wireProvider(
         ...(model.variantConfig?.timeout !== undefined
           ? { timeout: model.variantConfig.timeout }
           : {}),
+        // The adapter turns this into `provider.order` + `allow_fallbacks:
+        // false` on every body it builds (spec D2).
+        ...(routing ? { upstreamPin: routing.upstreamPin } : {}),
       });
       return {
         provider: "openrouter",
@@ -209,17 +223,23 @@ export function wireProvider(
           };
         },
         // OpenRouter's inline batch results carry a normal OpenAI-shaped
-        // chat-completion body (spec 5.3), so the mapping is identical to
-        // the "openai" case above.
+        // chat-completion body (spec 5.3), so content/usage/finish mapping
+        // is identical to the "openai" case above. Identity is
+        // OpenRouter-specific: `assembleOpenRouterResponse` sets the same
+        // `servedUpstream`/`upstreamIdentitySource`/`upstreamIdentityConflict`
+        // fields the sync adapter sets.
         mapRaw: (raw, _itemId) => {
           const body = raw as OpenAIBatchChatCompletionBody;
           const choice = body.choices?.[0];
-          return assembleOpenAIResponse({
+          return assembleOpenRouterResponse({
             content: mapOpenAIContent(choice?.message?.content),
             model: model.apiModelId,
             usage: mapOpenAIUsage(body.usage ?? {}),
             duration: 0,
             finish: mapOpenAIFinishReason(choice?.finish_reason),
+            // The inline batch body carries the same identity fields as a
+            // sync response (spec D1, observed compatibility path).
+            upstream: extractUpstreamIdentity(raw),
           });
         },
       };

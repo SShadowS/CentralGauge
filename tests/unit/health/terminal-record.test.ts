@@ -295,3 +295,63 @@ Deno.test("synthesized result appends to prior attempts and numbers the infra at
   assertEquals(r.totalCost, 0.5);
   assertEquals(r.totalTokensUsed, 2);
 });
+
+Deno.test("a pinned OpenRouter infra failure records the pin as not_served", () => {
+  const r = synthesizeInfraFailureResult({
+    manifestId: "CG-AL-X001",
+    context: { variantId: "openrouter/deepseek/deepseek-v4-pro" },
+    error: new ContainerError("publish exploded", "Cronus284", "publish"),
+    classification: { fingerprint: "test:xyz" },
+    startTime: new Date(),
+    provider: "openrouter",
+    requestedUpstream: "novita/fp8",
+    upstreamProviderName: "Novita",
+  });
+  const a = r.attempts[0];
+  assertExists(a);
+  // The LLM may well have answered before the container blew up, but no
+  // response reached this record, so the pin cannot be shown to have held.
+  assertEquals(a.requestedUpstream, "novita/fp8");
+  assertEquals(a.servedUpstream, null);
+  assertEquals(a.upstreamVerification, "not_served");
+});
+
+Deno.test("a non-OpenRouter infra failure is still not_applicable", () => {
+  const r = synthesizeInfraFailureResult({
+    manifestId: "CG-AL-H024",
+    context: { variantId: "anthropic/claude-opus-4-6" },
+    error: new ContainerError("boom", "Cronus281", "test"),
+    classification: { fingerprint: "test:abc" },
+    startTime: new Date(),
+    provider: "anthropic",
+  });
+  const a = r.attempts[0];
+  assertExists(a);
+  assertEquals(a.upstreamVerification, "not_applicable");
+  assertEquals(a.requestedUpstream, null);
+});
+
+Deno.test("an unpinned OpenRouter infra failure whose response named the upstream verifies nothing", () => {
+  const r = synthesizeInfraFailureResult({
+    manifestId: "CG-AL-X002",
+    context: { variantId: "openrouter/deepseek/deepseek-v4-pro" },
+    error: new ContainerError("boom", "Cronus281", "test"),
+    classification: { fingerprint: "test:abc" },
+    startTime: new Date(),
+    provider: "openrouter",
+    llmResponse: {
+      content: "code",
+      model: "m",
+      duration: 1,
+      finishReason: "stop",
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      servedUpstream: "Novita",
+      upstreamIdentitySource: "provider_field",
+    },
+  });
+  const a = r.attempts[0];
+  assertExists(a);
+  assertEquals(a.upstreamVerification, "unpinned");
+  assertEquals(a.servedUpstream, "Novita");
+  assertEquals(a.requestedUpstream, null);
+});

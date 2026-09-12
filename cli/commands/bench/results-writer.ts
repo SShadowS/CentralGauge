@@ -128,6 +128,64 @@ export function renderFallbackBlock(events: FallbackEvent[]): string[] {
 }
 
 /**
+ * `# Upstream` scores-file block (spec 2026-09-11 D1).
+ *
+ * Empty unless the provider is openrouter: the upstream lock exists only
+ * there, so printing a block of `none`s for an Anthropic run would be noise.
+ * An attempt with no recorded verdict counts as `unpinned`, which is what a
+ * run from before the lock, or an unpinned run today, actually was.
+ *
+ * The `pin:` line is printed ONLY when the caller supplies a pin. A
+ * multi-variant run supplies none, because its variants can be pinned
+ * differently and no single line describes them; printing `pin: none` there
+ * would assert nothing was pinned directly above a verification histogram
+ * proving otherwise. The per-attempt truth is in the results JSON either way.
+ */
+export function renderUpstreamBlock(
+  results: TaskExecutionResult[],
+  provider: string,
+  pin?: {
+    upstreamPin: string;
+    providerName: string;
+    quantization?: string | null;
+  },
+): string[] {
+  if (provider !== "openrouter") return [];
+  const served = new Map<string, number>();
+  const versions = new Map<string, number>();
+  const verification = new Map<string, number>();
+  for (const r of results) {
+    for (const a of r.attempts ?? []) {
+      if (a.servedUpstream) {
+        served.set(a.servedUpstream, (served.get(a.servedUpstream) ?? 0) + 1);
+      }
+      if (a.servedUpstreamModel) {
+        versions.set(
+          a.servedUpstreamModel,
+          (versions.get(a.servedUpstreamModel) ?? 0) + 1,
+        );
+      }
+      const v = a.upstreamVerification ?? "unpinned";
+      verification.set(v, (verification.get(v) ?? 0) + 1);
+    }
+  }
+  const fmt = (m: Map<string, number>) =>
+    [...m.entries()].sort().map(([k, n]) => `${k}=${n}`).join(" ");
+  const lines = [`# Upstream`];
+  if (pin) {
+    lines.push(
+      `pin: ${pin.upstreamPin} (${pin.providerName}, ${
+        pin.quantization ?? "quantization undeclared"
+      })`,
+    );
+  }
+  lines.push(`served: ${fmt(served) || "none"}`);
+  lines.push(`served_model: ${fmt(versions) || "none"}`);
+  lines.push(`verification: ${fmt(verification)}`);
+  return lines;
+}
+
+/**
  * Group a flat `TaskExecutionResult[]` by model into the shape
  * `collectFallbackEvents` expects. Shared by `saveResultsJson` (JSON
  * persistence) and `buildScoreLines` (`# Fallbacks` block) so there is one
@@ -322,6 +380,23 @@ export interface ScoreLineInput {
    * timing, and the total resubmitted-item count. Absent on every sync run.
    */
   batch?: BatchScoreBlock;
+  /**
+   * The provider the run's models were called through. Gates the
+   * `# Upstream` block, which is meaningful only for openrouter. Absent on
+   * a multi-provider run, where no single pin describes the run.
+   */
+  provider?: string;
+  /**
+   * The upstream this run pinned, when it pinned one (spec 2026-09-11 D2).
+   * `quantization` is absent on the sync path, where the pin map records
+   * only the slug and provider name; the block then says the quantization
+   * was undeclared rather than inventing one.
+   */
+  upstreamPin?: {
+    upstreamPin: string;
+    providerName: string;
+    quantization?: string | null;
+  };
 }
 
 /**
@@ -608,6 +683,21 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     }
   }
 
+  // # Upstream block: OpenRouter upstream lock (spec 2026-09-11 D1). Only
+  // emitted when the caller names the provider, and only for openrouter:
+  // no other provider exposes an upstream to pin or verify.
+  if (input.results && input.results.length > 0 && input.provider) {
+    const upstreamLines = renderUpstreamBlock(
+      input.results,
+      input.provider,
+      input.upstreamPin,
+    );
+    if (upstreamLines.length > 0) {
+      lines.push(``);
+      lines.push(...upstreamLines);
+    }
+  }
+
   // # Omission block — attempts that dropped an AL object or field while
   // re-emitting the whole application under `diagnose.md` rule 2. Reported
   // rather than forgiven: on the seven-model panel of 2026-08-30 this was 37%
@@ -718,13 +808,25 @@ export async function saveScoresFile(
   recoveryEvents?:
     import("../../../src/health/recovery-prober.ts").RecoveryEvent[],
   batch?: BatchScoreBlock,
+  upstreamPin?: {
+    upstreamPin: string;
+    providerName: string;
+    quantization?: string | null;
+  },
 ): Promise<void> {
+  // The `# Upstream` block describes ONE provider's routing, so it is
+  // emitted only when every variant in the run shares a provider. A mixed
+  // run has no single answer and gets no block rather than a misleading one.
+  const providers = new Set(variants.map((v) => v.provider));
+  const provider = providers.size === 1 ? [...providers][0] : undefined;
   const scoreLines = buildScoreLines({
     stats,
     taskCount: taskManifests.length,
     modelNames: variants.map((v) => v.model),
     attempts,
     resultCount,
+    ...(provider !== undefined ? { provider } : {}),
+    ...(upstreamPin !== undefined ? { upstreamPin } : {}),
     ...(containerHealth !== undefined ? { containerHealth } : {}),
     ...(results !== undefined ? { results } : {}),
     ...(drainEvents !== undefined && drainEvents.length > 0

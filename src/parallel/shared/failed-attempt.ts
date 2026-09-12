@@ -2,6 +2,7 @@
 
 import type { ExecutionAttempt } from "../../tasks/interfaces.ts";
 import type { LLMWorkResult } from "../types.ts";
+import { upstreamFieldsFor } from "./evaluate-attempt.ts";
 
 /**
  * Create a failed attempt record (LLM call failed).
@@ -18,6 +19,7 @@ export function createFailedAttempt(
   attemptNumber: number,
   llmResult: LLMWorkResult | undefined,
   now?: Date,
+  provider = "unknown",
 ): ExecutionAttempt {
   const nowVal = now ?? new Date();
   const attempt: ExecutionAttempt = {
@@ -34,6 +36,7 @@ export function createFailedAttempt(
     },
     extractedCode: "",
     codeLanguage: "al",
+    ...upstreamFieldsFor(provider, llmResult),
     success: false,
     score: 0,
     failureReasons: [llmResult?.error ?? "LLM call failed"],

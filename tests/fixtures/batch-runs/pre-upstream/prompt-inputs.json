@@ -1,0 +1,18 @@
+{
+  "provider": "openrouter",
+  "apiModelId": "google/gemini-3.8-flash",
+  "variantConfig": null,
+  "variantSystemPrompt": null,
+  "promptOverrides": null,
+  "knowledge": null,
+  "templateDir": "templates",
+  "starterRoot": "U:\\Git\\CentralGauge",
+  "settings": {
+    "temperature": 0.1,
+    "max_attempts": 2,
+    "max_tokens": 64000,
+    "prompt_version": null,
+    "bc_version": null,
+    "extra_json": "{\"continuation\":{\"enabled\":false,\"max\":0},\"empty_retry\":{\"enabled\":false,\"max\":0},\"endpoint\":\"/v1/chat/completions\",\"fallback_policy\":\"unavailable\",\"infra_retries_per_attempt\":1,\"invocation_mode\":\"batch\",\"prompt_profile_digest\":\"402fe4d96291b158e92b8188cf794129c4c2ebc8ee267afafbab4188c770e76b\",\"provider_route\":\"openrouter:google/gemini-3.8-flash\",\"thinking_budget\":null}"
+  }
+}

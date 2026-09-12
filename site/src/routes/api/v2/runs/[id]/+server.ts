@@ -3,6 +3,12 @@ import { ApiError, errorResponse } from "$lib/server/errors";
 import { resolveV2Context, v2Json } from "$lib/server/v2-context";
 import { getAll, getFirst } from "$lib/server/db";
 import { toRunV2Summary } from "$lib/server/runs-v2";
+import {
+  attemptUpstream,
+  pinFromInvocationJson,
+  summariseUpstream,
+  type UpstreamRow,
+} from "$lib/server/upstream-summary";
 import type { RunV2Detail } from "$lib/shared/api-types";
 
 interface RunV2DetailRow {
@@ -17,6 +23,7 @@ interface RunV2DetailRow {
   test_runner: "soap" | "legacy" | null;
   excluded_at: string | null;
   excluded_reason: string | null;
+  excluded_code: string | null;
   settings_hash: string;
   invocation_json: string | null;
   bc_artifact: string | null;
@@ -28,7 +35,7 @@ interface RunV2DetailRow {
   family_slug: string;
 }
 
-interface ResultV2Row {
+interface ResultV2Row extends UpstreamRow {
   task_id: string;
   attempt: number;
   passed: number;
@@ -73,6 +80,7 @@ export const GET: RequestHandler = async ({
       `SELECT runs.id, runs.task_set_hash, runs.started_at, runs.completed_at, runs.status,
               runs.harness_fingerprint, runs.retry_path_version, runs.environment_digest,
               runs.test_runner, runs.excluded_at, runs.excluded_reason,
+              runs.excluded_code,
               runs.settings_hash, runs.invocation_json,
               runs.bc_artifact, runs.container_image_digest, runs.bcch_version,
               runs.prompt_template_digest,
@@ -96,7 +104,9 @@ export const GET: RequestHandler = async ({
       db,
       `SELECT task_id, attempt, passed, score, termination_kind, cap_reached,
               infra_retries, fallback_chain_json, prompt_digest, candidate_digest,
-              test_vector_json
+              test_vector_json,
+              requested_upstream, served_upstream, served_upstream_model,
+              upstream_identity_source, upstream_verification
        FROM results
        WHERE run_id = ?
        ORDER BY task_id, attempt`,
@@ -130,7 +140,14 @@ export const GET: RequestHandler = async ({
         prompt_digest: r.prompt_digest ?? null,
         candidate_digest: r.candidate_digest ?? null,
         test_vector: r.test_vector_json ? JSON.parse(r.test_vector_json) : null,
+        upstream: attemptUpstream(r),
       })),
+      // OpenRouter upstream lock (0023), summarised from the same rows above.
+      upstream: summariseUpstream(
+        resultRows,
+        pinFromInvocationJson(run.invocation_json),
+        run.excluded_code ?? null,
+      ),
     };
 
     return v2Json(request, ctx, body as unknown as Record<string, unknown>);

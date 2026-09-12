@@ -281,8 +281,23 @@ export interface InvocationRecord {
   infra_retries_per_attempt: number;
   max_attempts: number;
   prompt_profile_digest: string;
+  /** 2 = carries upstream_pin/upstream_resolved. A record without this key is schema 1. */
+  invocation_schema: 2;
+  upstream_pin: string | null;
+  upstream_resolved: {
+    provider_name: string;
+    quantization: string | null;
+    preflight: "passed" | "skipped";
+  } | null;
   /** Batch-mode facts (schema 4, section 10). Absent on a sync invocation. */
   batch?: BatchInvocationSummary;
+}
+
+/** 1 for a record written before the upstream lock, 2 after. Never normalise a missing pin to null on a schema-1 record. */
+export function invocationSchemaOf(
+  v: InvocationRecord | Record<string, unknown>,
+): 1 | 2 {
+  return (v as Record<string, unknown>)["invocation_schema"] === 2 ? 2 : 1;
 }
 
 /**
@@ -311,6 +326,14 @@ export function invocationSnapshot(cfg: {
   infraRetriesPerAttempt: number;
   maxAttempts: number;
   promptProfileDigest: string;
+  /** Resolved OpenRouter upstream slug (spec 2026-09-11 D2). Absent when unpinned. */
+  upstreamPin?: string;
+  /** What the pin resolved to at preflight. Absent when unpinned or unrecorded. */
+  upstreamResolved?: {
+    provider_name: string;
+    quantization: string | null;
+    preflight: "passed" | "skipped";
+  };
 }): InvocationRecord {
   let host: string | null = null;
   try {
@@ -343,6 +366,9 @@ export function invocationSnapshot(cfg: {
     infra_retries_per_attempt: cfg.infraRetriesPerAttempt,
     max_attempts: cfg.maxAttempts,
     prompt_profile_digest: cfg.promptProfileDigest,
+    invocation_schema: 2,
+    upstream_pin: cfg.upstreamPin ?? null,
+    upstream_resolved: cfg.upstreamResolved ?? null,
   };
 }
 

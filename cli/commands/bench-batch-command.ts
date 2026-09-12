@@ -39,7 +39,12 @@ import type {
 } from "../../src/llm/batch/types.ts";
 import type { LLMRequest, LLMResponse } from "../../src/llm/types.ts";
 import type { ParallelBenchmarkOptions } from "../../src/parallel/orchestrator.ts";
-import type { FrozenPromptInputs } from "../../src/parallel/shared/prompt-inputs.ts";
+import type {
+  FrozenPromptInputs,
+  FrozenRouting,
+} from "../../src/parallel/shared/prompt-inputs.ts";
+import { frozenRoutingFrom } from "../../src/parallel/shared/prompt-inputs.ts";
+import type { VariantConfig } from "../../src/llm/variant-types.ts";
 import type {
   TaskExecutionContext,
   TaskManifest,
@@ -63,6 +68,8 @@ import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import { ModelPresetRegistry } from "../../src/llm/model-presets.ts";
 import { generateVariantId } from "../../src/llm/variant-types.ts";
 import { PricingService } from "../../src/llm/pricing-service.ts";
+import type { ResolvedUpstreamPin } from "../../src/llm/upstream-pin.ts";
+import { submitResolver } from "./bench/upstream-precheck.ts";
 import { createBatchProvider } from "../../src/llm/batch/mod.ts";
 import { buildAttemptContext } from "../../src/parallel/shared/mod.ts";
 import { ContainerRuntime } from "../../src/parallel/container-runtime.ts";
@@ -247,6 +254,50 @@ export async function buildFinalizeDeps(
 }
 
 /**
+ * The submit-side `resolveUpstream` / `buildBody` / `wrap` closures, wired so
+ * the routing resolved DURING a submission reaches the bodies rendered for
+ * wave 1. Spec 2026-09-11 D2 requires every request body of a pinned run to
+ * carry `provider.order` with `allow_fallbacks: false`, wave 1 included.
+ *
+ * The capture is what makes that possible: `submitRuns` resolves the pin
+ * before it renders anything, but `SubmitDeps.buildBody` is a plain
+ * `(request) => unknown` built before the resolution happens, so the resolved
+ * value has to travel through a closure variable rather than an argument.
+ * Wave 2 reads the same value back from the frozen `prompt-inputs.json` in
+ * `buildAdvanceDeps`, so both waves route identically.
+ *
+ * `resolve` is the underlying pin resolver, injected so the CLI passes the
+ * real network one (`submitResolver`, the same helper the sync bench uses)
+ * and tests pass a fake. The capture MUST survive any rewiring of that
+ * argument: without it wave 1 goes out unpinned while wave 2 is pinned.
+ */
+export function submitWiring(
+  providerName: BatchProviderName,
+  wiringModel: { apiModelId: string; variantConfig: VariantConfig | null },
+  apiKey: string,
+  resolve: (
+    apiModelId: string,
+    pin: string,
+    maxTokens: number,
+  ) => Promise<ResolvedUpstreamPin>,
+): Pick<SubmitDeps, "resolveUpstream" | "buildBody" | "wrap"> {
+  let resolvedRouting: FrozenRouting | undefined;
+  return {
+    resolveUpstream: async (apiModelId, pin, maxTokens) => {
+      const resolved = await resolve(apiModelId, pin, maxTokens);
+      resolvedRouting = frozenRoutingFrom(resolved);
+      return resolved;
+    },
+    buildBody: (r: LLMRequest) =>
+      wireProvider(providerName, wiringModel, apiKey, resolvedRouting)
+        .buildBody(r),
+    wrap: (items: BatchItem[]) =>
+      wireProvider(providerName, wiringModel, apiKey, resolvedRouting)
+        .wrap(items),
+  };
+}
+
+/**
  * Builds `AdvanceDeps` (also used by `retry`, which extends it) for the run
  * at `dir` from that run's own frozen state alone.
  */
@@ -296,6 +347,11 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
     apiModelId: variant.model,
     variantConfig: inputs.variantConfig,
   };
+  // The OpenRouter upstream lock comes from the run's OWN frozen inputs, not
+  // from `config.openrouter` (spec 2026-09-11 D2): live config can be edited
+  // between waves, and wave 2 must route exactly where wave 1 did. Nothing in
+  // this function may read `config.openrouter`.
+  const routing = inputs.routing;
   const containerNames = state.frozen.environment.containers.map((c) => c.name);
 
   // Built lazily, only on the `finalize` step itself: every other step
@@ -316,11 +372,14 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
   return {
     provider: batchProvider,
     buildBody: (r: LLMRequest) =>
-      wireProvider(providerName, wiringModel, apiKey).buildBody(r),
+      wireProvider(providerName, wiringModel, apiKey, routing).buildBody(r),
     wrap: (items: BatchItem[]) =>
-      wireProvider(providerName, wiringModel, apiKey).wrap(items),
+      wireProvider(providerName, wiringModel, apiKey, routing).wrap(items),
     mapRaw: (raw: unknown, itemId: string): LLMResponse =>
-      wireProvider(providerName, wiringModel, apiKey).mapRaw(raw, itemId),
+      wireProvider(providerName, wiringModel, apiKey, routing).mapRaw(
+        raw,
+        itemId,
+      ),
     runtimeFactory: () =>
       ContainerRuntime.start({
         containers: containerNames,
@@ -336,6 +395,7 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
     log: (line: string) => console.log(line),
     manifests,
     contexts,
+    ...(routing ? { routing } : {}),
   };
 }
 
@@ -425,6 +485,10 @@ export function buildBatchCommand(): Command {
       default: "results/",
     })
     .option("--no-ingest", "Skip ingest at finalize time")
+    .option(
+      "--skip-upstream-preflight",
+      "Skip the one-request upstream pin probe; for a known transient outage only. Recorded on the run.",
+    )
     .action(async (opts) => {
       await EnvLoader.loadEnvironment();
       const config = await ConfigManager.loadConfig();
@@ -448,6 +512,23 @@ export function buildBatchCommand(): Command {
       };
       const containers = presetContainers(preset);
 
+      // `resolveUpstream`, `buildBody` and `wrap` come as one unit so the
+      // routing resolved mid-submission pins wave 1's bodies too (spec D2).
+      const wiring = submitWiring(
+        providerName,
+        wiringModel,
+        apiKey,
+        // The same resolver the sync bench uses, so both modes apply one
+        // prompt bound and one skip flag. The OpenRouter key is resolved
+        // separately from `apiKey` above, which is the BATCH provider's key
+        // and is a different key whenever the batch provider is not
+        // OpenRouter (in which case the resolver is never called).
+        submitResolver({
+          skipPreflight: opts.skipUpstreamPreflight === true,
+          apiKey: apiKeyForBatchProvider("openrouter") ?? "",
+        }),
+      );
+
       const deps: SubmitDeps = {
         providerFor: (name, key) =>
           createBatchProvider(name, {
@@ -457,13 +538,13 @@ export function buildBatchCommand(): Command {
               ? { limits: config.batch.openrouter.limits }
               : {}),
           }),
-        buildBody: (r) =>
-          wireProvider(providerName, wiringModel, apiKey).buildBody(r),
-        wrap: (items) =>
-          wireProvider(providerName, wiringModel, apiKey).wrap(items),
+        buildBody: wiring.buildBody,
+        wrap: wiring.wrap,
         precheck: async () => {
           if (variant) await runIngestPrecheck(variant);
         },
+        resolveUpstream: wiring.resolveUpstream,
+        skipUpstreamPreflight: opts.skipUpstreamPreflight === true,
         runtimeFactory: () =>
           ContainerRuntime.start({
             containers,

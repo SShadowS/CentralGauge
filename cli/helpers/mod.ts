@@ -9,6 +9,9 @@ export { getModelColor, log, resetModelColors, statusText } from "./logging.ts";
 // Formatting helpers
 export { formatDurationMs } from "./formatters.ts";
 
+// API key resolution
+export { getApiKeyForProvider } from "./api-keys.ts";
+
 // Model utilities
 export {
   extractModelName,

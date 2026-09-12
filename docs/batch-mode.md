@@ -384,6 +384,88 @@ No prior sync run of `openrouter/google/gemini-3.8-flash` on CG-AL-E001/CG-AL-E0
 under `results/`, so no before/after batch-vs-sync cost comparison is available for this
 model (unlike the Anthropic Haiku 4.5 and OpenAI gpt-5-mini sections above).
 
+## Upstream pinning
+
+OpenRouter routes each request to one of several upstream providers, and they
+do not all serve the same weights at the same precision. A cohort whose runs
+were served by different upstreams is not one model. The lock has three parts:
+a pin in config, a per-request routing block plus identity capture, and a
+verification state on every result row (design:
+`docs/superpowers/specs/2026-09-11-openrouter-upstream-lock-design.md`).
+
+### Configure a pin
+
+```yaml
+openrouter:
+  upstream:
+    z-ai/glm-5.3: novita/fp8        # an endpoints `tag`, see below
+    google/gemini-3.8-flash: google-vertex
+```
+
+List a model's tags with `centralgauge models openrouter/<author>/<slug>
+--upstreams`; add `--pin <tag>` to resolve and preflight one (a single
+32-token request). A pin is a tag from that listing, nothing else.
+
+### What submit does
+
+`bench batch submit` (and the sync `bench`) resolves every configured pin
+before the first provider call, even under `--no-ingest`: the tag must exist
+for that model, the endpoint must accept the run's `max_tokens` and context,
+and a 32-token preflight must come back from that upstream.
+`--skip-upstream-preflight` skips only the probe, not the tag lookup. A
+failure prints `[FAIL] upstream pin: ...` with the tag, the model and the
+reason; the sync bench exits 1 and `batch submit` exits 4. The resolved pin
+is frozen into `prompt-inputs.json` under `routing` (`upstreamPin`,
+`providerName`, `quantization`, `preflight`), and every request of a pinned
+run, wave 1 and wave 2 alike, carries `provider.order: [<tag>]` with
+`allow_fallbacks: false`, so OpenRouter answers 429 rather than routing
+elsewhere.
+
+### Verification and what a compromised run looks like
+
+Every attempt records `requestedUpstream`, `servedUpstream`,
+`servedUpstreamModel`, `upstreamIdentitySource` and `upstreamVerification`:
+
+| state | meaning |
+| --- | --- |
+| `not_applicable` | not an OpenRouter run |
+| `unpinned` | OpenRouter, no pin; served upstream recorded when present |
+| `verified` | served upstream matches the pin |
+| `mismatch` | served upstream differs from the pin |
+| `unverified` | pinned, response carried no identity |
+| `not_served` | pinned, the provider returned an error (no identity possible) |
+
+A run with any `mismatch` or `unverified` attempt is compromised: batch
+submits no wave 2, the sync bench stops that variant after the compromised
+attempt, and at finalize the run is ingested already excluded
+(`excluded_code = upstream_mismatch` or `upstream_unverified`, reason and
+attempt list in a `run.auto_excluded` audit row). A compromised attempt that
+passed still credits the task locally - it is the run, not the attempt, that
+gets excluded. The scores file gets an `# Upstream` block when every variant
+in the run shares one provider, with a pin line only for a single-variant
+run. Abandon it and submit again once the pin is right.
+
+### One profile per model, set and mode
+
+The site keeps one upstream profile per (model, task set, mode), claimed in
+the ingest batch. The first ingest after this shipped establishes each
+triple's profile - historical cohorts are not seeded - and `<unpinned>`
+counts as a profile like any other. A later run with a different pin is
+refused with `409 upstream_profile_conflict` naming the runs that hold the
+profile. Exclude those runs first, or re-run under the same pin. Excluding
+the last non-excluded run of a profile releases it; including a run re-claims
+it and is refused with the same 409 if that would conflict.
+
+### Backfilling finished runs
+
+For a finished batch run from before pinning existed,
+`centralgauge runs backfill-upstream <runId> [--dry-run]` reads
+`result.raw.provider` from each stored `responses/<itemId>.json` and posts
+one entry per (task, attempt); rows become `unpinned` with `served_upstream`
+set. It never writes one value across a run: an attempt with no stored
+provider is skipped and listed. Sync runs keep no raw response and cannot be
+backfilled.
+
 ## Cost comparison
 
 Two real Anthropic Haiku 4.5 batch runs against the `batch-smoke` preset

@@ -125,6 +125,50 @@ describe('LeaderboardTable refusal badge', () => {
   });
 });
 
+describe('LeaderboardTable upstream chip', () => {
+  it('renders the pin with a verified tone and an explanatory title', () => {
+    const { container } = render(LeaderboardTable, {
+      props: {
+        rows: [row({ upstream: { pin: 'novita/fp8', served: ['Novita'], verification: { verified: 400 } } })],
+        sort: 'auc_2:desc',
+      },
+    });
+    const chip = container.querySelector('[data-test="upstream-chip"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent).toContain('novita/fp8');
+    expect(chip?.className).toContain('upstream-verified');
+    expect(chip?.getAttribute('title')).toMatch(/pinned upstream novita\/fp8/);
+  });
+
+  it('renders no chip for a non-OpenRouter cohort, or when the field is absent', () => {
+    const na = render(LeaderboardTable, {
+      props: {
+        rows: [row({ upstream: { pin: null, served: [], verification: { not_applicable: 400 } } })],
+        sort: 'auc_2:desc',
+      },
+    });
+    expect(na.container.querySelector('[data-test="upstream-chip"]')).toBeNull();
+
+    // A response cached before the field existed. The row must still render.
+    const absent = render(LeaderboardTable, {
+      props: { rows: [row({})], sort: 'auc_2:desc' },
+    });
+    expect(absent.container.querySelector('[data-test="upstream-chip"]')).toBeNull();
+  });
+
+  it('flags a cohort served by more than one upstream', () => {
+    const { container } = render(LeaderboardTable, {
+      props: {
+        rows: [row({ upstream: { pin: null, served: ['Google', 'Vertex'], verification: { unpinned: 400 } } })],
+        sort: 'auc_2:desc',
+      },
+    });
+    const chip = container.querySelector('[data-test="upstream-chip"]');
+    expect(chip?.className).toContain('upstream-mixed');
+    expect(chip?.textContent).toContain('Google, Vertex');
+  });
+});
+
 describe('LeaderboardTable provisional marker', () => {
   it('marks a row with fewer runs than the cohort and names the run count', () => {
     const { container } = render(LeaderboardTable, {

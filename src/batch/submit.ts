@@ -33,7 +33,12 @@ import type {
 import type { ContainerRuntime } from "../parallel/container-runtime.ts";
 import type { ParallelBenchmarkOptions } from "../parallel/orchestrator.ts";
 import { buildAttemptContext } from "../parallel/shared/mod.ts";
-import type { FrozenPromptInputs } from "../parallel/shared/prompt-inputs.ts";
+import type {
+  FrozenPromptInputs,
+  FrozenRouting,
+} from "../parallel/shared/prompt-inputs.ts";
+import { frozenRoutingFrom } from "../parallel/shared/prompt-inputs.ts";
+import type { ResolvedUpstreamPin } from "../llm/upstream-pin.ts";
 import { endpointFor, providerRouteFor } from "../llm/endpoint.ts";
 import {
   buildCanonicalSettings,
@@ -45,7 +50,7 @@ import {
   BatchPricingUnavailableError,
   priceUsage,
 } from "../parallel/shared/price-usage.ts";
-import { ConfigManager } from "../config/config.ts";
+import { ConfigManager, upstreamPinFor } from "../config/config.ts";
 import { ModelPresetRegistry } from "../llm/model-presets.ts";
 import { loadTaskManifestsWithHashes } from "../../cli/helpers/task-loader.ts";
 import { todayPricingVersion } from "../../cli/commands/bench/ingest-meta.ts";
@@ -101,6 +106,19 @@ export interface SubmitDeps {
   wrap: (items: BatchItem[]) => unknown;
   precheck: () => Promise<void>;
   runtimeFactory: () => Promise<ContainerRuntime>;
+  /**
+   * Resolves (and, unless skipped, preflights) the configured OpenRouter
+   * upstream pin. Called once per submission, before any provider or
+   * container work, and only when the model actually has a pin; a failure
+   * refuses the whole submission with exit 4 (spec 2026-09-11 D2).
+   */
+  resolveUpstream: (
+    apiModelId: string,
+    pin: string,
+    maxTokens: number,
+  ) => Promise<ResolvedUpstreamPin>;
+  /** Whether the 32-token preflight probe was skipped; recorded on the run. */
+  skipUpstreamPreflight: boolean;
   log: (line: string) => void;
 }
 
@@ -267,6 +285,31 @@ export async function submitRuns(
     debugMode: false,
   };
 
+  // The upstream lock (spec 2026-09-11 D2) is resolved here: after the
+  // precheck and the pricing gate, but BEFORE `providerFor`, the bench lock
+  // and the container runtime, so an unresolvable pin costs nothing and
+  // leaves no run directory behind. The resolved value is frozen into
+  // `prompt-inputs.json` below and is the only routing any later step reads.
+  const configuredPin = upstreamPinFor(config, provider, variant.model);
+  let routing: FrozenRouting | undefined;
+  if (configuredPin !== undefined) {
+    try {
+      const resolved = await deps.resolveUpstream(
+        variant.model,
+        configuredPin,
+        parallelOptions.maxTokens,
+      );
+      routing = frozenRoutingFrom(resolved);
+    } catch (err) {
+      deps.log(
+        `${colors.red("[FAIL]")} batch submit: upstream pin: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return { runIds: [], exit: 4 };
+    }
+  }
+
   const contexts = new Map<string, TaskExecutionContext>();
   for (const taskId of taskIds) {
     const manifest = manifestsMap.get(taskId)!;
@@ -323,6 +366,8 @@ export async function submitRuns(
   });
 
   const extras: CanonicalSettingsExtras = {
+    settings_extras_schema: 2,
+    upstream_pin: routing?.upstreamPin ?? null,
     invocation_mode: "batch",
     continuation: { enabled: false, max: 0 },
     empty_retry: { enabled: false, max: 0 },
@@ -355,6 +400,7 @@ export async function submitRuns(
     templateDir,
     starterRoot: opts.cwd,
     settings,
+    ...(routing ? { routing } : {}),
   };
 
   const pricingVersion = todayPricingVersion();

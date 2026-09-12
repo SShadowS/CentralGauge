@@ -213,6 +213,17 @@ async function handleIngest(
       if (ingestMeta?.task_set_hash) {
         assembleOpts.taskSetHash = ingestMeta.task_set_hash;
       }
+      // Schema 5: replay sends the settings the run was ingested under,
+      // verbatim. A schema-4 file carries none and is rebuilt instead,
+      // through the legacy builder, so its hash does not move either.
+      const persistedSettings = ingestMeta?.canonical_settings
+        ?.[variant.variantId];
+      if (persistedSettings) assembleOpts.canonicalSettings = persistedSettings;
+      const persistedSettingsHash = ingestMeta?.settings_hashes
+        ?.[variant.variantId];
+      if (persistedSettingsHash) {
+        assembleOpts.settingsHash = persistedSettingsHash;
+      }
       const assembled = await assembleBenchResultsForVariant(
         path,
         variant,

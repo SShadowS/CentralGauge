@@ -12,7 +12,7 @@ import {
   assertRejects,
 } from "@std/assert";
 import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { ensureDir, exists } from "@std/fs";
 import type {
   BatchRecord,
   BatchRunState,
@@ -28,11 +28,18 @@ import type {
   TaskExecutionContext,
   TaskManifest,
 } from "../../../src/tasks/interfaces.ts";
-import type { CanonicalSettingsExtras } from "../../../shared/settings-hash.ts";
+import type {
+  CanonicalSettingsExtras,
+  LegacyCanonicalSettingsExtras,
+} from "../../../shared/settings-hash.ts";
 import { attemptPath, RUN_FILES, runDir } from "../../../src/batch/paths.ts";
 import { finalizeRun, summarizeWaves } from "../../../src/batch/results.ts";
 import { loadState } from "../../../src/batch/state.ts";
-import { extrasJson } from "../../../shared/settings-hash.ts";
+import {
+  buildLegacyCanonicalSettings,
+  extrasJson,
+  isLegacyExtras,
+} from "../../../shared/settings-hash.ts";
 import {
   createMockExecutionAttempt,
   createMockTaskExecutionContext,
@@ -81,9 +88,9 @@ function mockEnvironment(): EnvironmentManifest {
  * `mockVariant()`'s identity, so `endpointFor`/`providerRouteFor` derive the
  * same `endpoint`/`provider_route` `finalizeRun` verifies against).
  */
-function baseExtras(
-  overrides?: Partial<CanonicalSettingsExtras>,
-): CanonicalSettingsExtras {
+function legacyBaseExtras(
+  overrides?: Partial<LegacyCanonicalSettingsExtras>,
+): LegacyCanonicalSettingsExtras {
   return {
     invocation_mode: "batch",
     continuation: { enabled: false, max: 0 },
@@ -98,16 +105,32 @@ function baseExtras(
   };
 }
 
+/** The same profile as a schema-2 (post-upstream-lock) extras object. */
+function baseExtras(
+  overrides?: Partial<CanonicalSettingsExtras>,
+): CanonicalSettingsExtras {
+  return {
+    ...legacyBaseExtras(),
+    settings_extras_schema: 2,
+    upstream_pin: null,
+    ...overrides,
+  };
+}
+
 /** Writes the run's frozen `prompt-inputs.json` (spec D13) with the given settings extras. */
 async function writePromptInputs(
   dir: string,
-  extras: CanonicalSettingsExtras,
+  extras: CanonicalSettingsExtras | LegacyCanonicalSettingsExtras,
   settingsOverrides?: {
     maxAttempts?: number | null;
     maxTokens?: number | null;
     temperature?: number | null;
+    routing?: FrozenPromptInputs["routing"];
   },
 ): Promise<void> {
+  const extraJson = isLegacyExtras(extras)
+    ? buildLegacyCanonicalSettings({}, extras).extra_json
+    : extrasJson(extras);
   const inputs: FrozenPromptInputs = {
     provider: "anthropic",
     apiModelId: "claude-haiku-4-5",
@@ -123,8 +146,11 @@ async function writePromptInputs(
       max_tokens: settingsOverrides?.maxTokens ?? null,
       prompt_version: null,
       bc_version: null,
-      extra_json: extrasJson(extras),
+      extra_json: extraJson,
     },
+    ...(settingsOverrides?.routing
+      ? { routing: settingsOverrides.routing }
+      : {}),
   };
   await Deno.writeTextFile(
     join(dir, RUN_FILES.promptInputs),
@@ -308,7 +334,7 @@ async function setupRun(): Promise<{
   return { output, dir, manifests, contexts, state };
 }
 
-Deno.test("finalizeRun writes the results file with schema-4 ingest meta and per-task totalDuration", async () => {
+Deno.test("finalizeRun writes the results file with schema-5 ingest meta and per-task totalDuration", async () => {
   const { output, dir, manifests, contexts, state } = await setupRun();
   try {
     const next = await finalizeRun(dir, state, {
@@ -328,7 +354,20 @@ Deno.test("finalizeRun writes the results file with schema-4 ingest meta and per
     assertEquals(next.ingestedRunId, undefined);
 
     const parsed = JSON.parse(await Deno.readTextFile(next.resultsFile!));
-    assertEquals(parsed.ingest.schema, 4);
+    // Schema 5: finalize also persists the settings + hash the run was
+    // submitted under, straight from its frozen prompt-inputs.json.
+    assertEquals(parsed.ingest.schema, 5);
+    assertEquals(
+      parsed.ingest.settings_hashes[VARIANT_ID],
+      state.frozen.settingsHash,
+    );
+    const frozenInputs = JSON.parse(
+      await Deno.readTextFile(join(dir, RUN_FILES.promptInputs)),
+    ) as { settings: Record<string, unknown> };
+    assertEquals(
+      parsed.ingest.canonical_settings[VARIANT_ID],
+      frozenInputs.settings,
+    );
     assertEquals(parsed.ingest.run_ids[VARIANT_ID], RUN_ID);
     assertEquals(parsed.ingest.invocations[VARIANT_ID].mode, "batch");
     assertEquals(
@@ -424,6 +463,90 @@ Deno.test("finalizeRun ingests when requested and does not replay on a second ca
     assertEquals(second.ingestedRunId, RUN_ID);
   } finally {
     await Deno.remove(output, { recursive: true });
+  }
+});
+
+Deno.test("finalizeRun stamps the local artifacts of a run ingested already excluded", async () => {
+  const stubIngestRun = (_br: BenchResults): Promise<IngestOutcome> =>
+    Promise.resolve({
+      kind: "success",
+      runId: RUN_ID,
+      bytesUploaded: 0,
+      referencedBytes: 0,
+    });
+  const depsFor = (
+    manifests: Map<string, TaskManifest>,
+    contexts: Map<string, TaskExecutionContext>,
+    state: BatchRunState,
+  ) => ({
+    manifests,
+    contexts,
+    variant: mockVariant(),
+    environment: mockEnvironment(),
+    taskSetHash: state.frozen.taskSetHash,
+    ingest: true,
+    cwd: Deno.cwd(),
+    ingestFlags: {},
+    ingestRun: stubIngestRun,
+  });
+
+  // Compromised: one attempt was served by an upstream other than the pin,
+  // so the assembly marks the whole run excluded and ingest accepts it that
+  // way. The local file must carry the same mark or `src/stats/importer.ts`
+  // would still admit these numbers to the local score tables.
+  const bad = await setupRun();
+  try {
+    await writeAttempt(bad.dir, "CG-AL-E001", 2, {
+      success: true,
+      score: 100,
+      failureReasons: [],
+      duration: 2000,
+      candidateCode: "codeunit 70000 Foo { }",
+      requestedUpstream: "novita/fp8",
+      servedUpstream: "Together",
+      servedUpstreamModel: "v1",
+      upstreamIdentitySource: "both",
+      upstreamVerification: "mismatch",
+    });
+    const next = await finalizeRun(
+      bad.dir,
+      bad.state,
+      depsFor(bad.manifests, bad.contexts, bad.state),
+    );
+    assertEquals(next.ingestedRunId, RUN_ID);
+    const doc = JSON.parse(await Deno.readTextFile(next.resultsFile!)) as {
+      excluded?: { at: string; reason: string; run_ids: string[] };
+    };
+    assertExists(doc.excluded);
+    assertEquals(doc.excluded!.run_ids, [RUN_ID]);
+    assertEquals(doc.excluded!.reason.includes("mismatch"), true);
+    assertNotEquals(doc.excluded!.at, "");
+    const marker = JSON.parse(
+      await Deno.readTextFile(join(bad.dir, "excluded.json")),
+    ) as { run_id: string; reason: string };
+    assertEquals(marker.run_id, RUN_ID);
+  } finally {
+    await Deno.remove(bad.output, { recursive: true });
+  }
+
+  // Clean run: nothing is stamped, in the file or in the run directory.
+  const good = await setupRun();
+  try {
+    const next = await finalizeRun(
+      good.dir,
+      good.state,
+      depsFor(good.manifests, good.contexts, good.state),
+    );
+    const doc = JSON.parse(await Deno.readTextFile(next.resultsFile!)) as {
+      excluded?: unknown;
+    };
+    assertEquals(doc.excluded, undefined);
+    assertEquals(
+      await exists(join(good.dir, "excluded.json")),
+      false,
+    );
+  } finally {
+    await Deno.remove(good.output, { recursive: true });
   }
 });
 
@@ -635,6 +758,74 @@ Deno.test("finalizeRun stamps the pricing version frozen at submit, not the fina
       parsed.ingest.pricing_version,
       new Date().toISOString().slice(0, 10),
     );
+  } finally {
+    await Deno.remove(output, { recursive: true });
+  }
+});
+
+Deno.test("finalizeRun carries the frozen upstream pin and resolution into the invocation record", async () => {
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    await writePromptInputs(
+      dir,
+      baseExtras({ upstream_pin: "novita/fp8" }),
+      {
+        routing: {
+          upstreamPin: "novita/fp8",
+          providerName: "Novita",
+          quantization: "fp8",
+          preflight: "passed",
+        },
+      },
+    );
+
+    const next = await finalizeRun(dir, state, {
+      manifests,
+      contexts,
+      variant: mockVariant(),
+      environment: mockEnvironment(),
+      taskSetHash: state.frozen.taskSetHash,
+      ingest: false,
+      cwd: Deno.cwd(),
+      ingestFlags: {},
+    });
+
+    const parsed = JSON.parse(await Deno.readTextFile(next.resultsFile!));
+    const invocation = parsed.ingest.invocations[VARIANT_ID];
+    assertEquals(invocation.invocation_schema, 2);
+    assertEquals(invocation.upstream_pin, "novita/fp8");
+    assertEquals(invocation.upstream_resolved, {
+      provider_name: "Novita",
+      quantization: "fp8",
+      preflight: "passed",
+    });
+  } finally {
+    await Deno.remove(output, { recursive: true });
+  }
+});
+
+Deno.test("finalizeRun on schema-1 frozen extras emits a schema-1 invocation record", async () => {
+  const { output, dir, manifests, contexts, state } = await setupRun();
+  try {
+    await writePromptInputs(dir, legacyBaseExtras());
+
+    const next = await finalizeRun(dir, state, {
+      manifests,
+      contexts,
+      variant: mockVariant(),
+      environment: mockEnvironment(),
+      taskSetHash: state.frozen.taskSetHash,
+      ingest: false,
+      cwd: Deno.cwd(),
+      ingestFlags: {},
+    });
+
+    const parsed = JSON.parse(await Deno.readTextFile(next.resultsFile!));
+    const invocation = parsed.ingest.invocations[VARIANT_ID];
+    assertEquals("invocation_schema" in invocation, false);
+    assertEquals("upstream_pin" in invocation, false);
+    assertEquals("upstream_resolved" in invocation, false);
+    assertEquals(invocation.mode, "batch");
   } finally {
     await Deno.remove(output, { recursive: true });
   }

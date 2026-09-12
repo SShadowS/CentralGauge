@@ -37,7 +37,10 @@ import type {
 import type { IngestOptions } from "../ingest/mod.ts";
 import type { AssembleOptions } from "../../cli/commands/bench/ingest-assembly.ts";
 import type { HashResult } from "../../cli/commands/bench/results-writer.ts";
-import type { CanonicalSettingsExtras } from "../../shared/settings-hash.ts";
+import type {
+  CanonicalSettingsExtras,
+  LegacyCanonicalSettingsExtras,
+} from "../../shared/settings-hash.ts";
 import type { FrozenPromptInputs } from "../parallel/shared/prompt-inputs.ts";
 import type { BatchRecord, BatchRunState, TaskSummary } from "./state.ts";
 import {
@@ -47,6 +50,7 @@ import {
 import { finalizeTaskResult } from "../parallel/shared/mod.ts";
 import { invocationSnapshot } from "../ingest/capture.ts";
 import { ingestRun } from "../ingest/mod.ts";
+import { stampAutoExcludedRun } from "../ingest/run-exclusion.ts";
 import { assembleBenchResultsForVariant } from "../../cli/commands/bench/ingest-assembly.ts";
 import {
   buildIngestMeta,
@@ -58,7 +62,7 @@ import {
 } from "../../cli/commands/bench/results-writer.ts";
 import { writeJsonAtomic, writeState } from "./state.ts";
 import { attemptPath, RUN_FILES } from "./paths.ts";
-import { sha256Hex } from "../../shared/settings-hash.ts";
+import { isLegacyExtras, sha256Hex } from "../../shared/settings-hash.ts";
 
 /** Dependencies `finalizeRun` needs beyond the run directory and its state. */
 export interface FinalizeDeps {
@@ -274,16 +278,20 @@ function countResubmittedItems(tasks: BatchRunState["tasks"]): number {
 
 /**
  * Read the run's frozen `prompt-inputs.json` and parse its settings extras
- * (the same `CanonicalSettingsExtras` the executor builds via
- * `buildCanonicalSettings`, spec section 10 / D4). `finalizeRun` sources the
- * whole invocation record from these frozen values instead of recomputing
- * or hardcoding them: they are what waves 1 and 2 actually ran under, not
- * whatever is configured in the process that happens to call `finalizeRun`
- * (which may run hours or days later).
+ * (the same extras the executor builds via `buildCanonicalSettings`, spec
+ * section 10 / D4, or the nine-key schema-1 shape for a run submitted before
+ * the upstream lock). `finalizeRun` sources the whole invocation record from
+ * these frozen values instead of recomputing or hardcoding them: they are
+ * what waves 1 and 2 actually ran under, not whatever is configured in the
+ * process that happens to call `finalizeRun` (which may run hours or days
+ * later).
  */
 async function readFrozenExtras(
   dir: string,
-): Promise<{ inputs: FrozenPromptInputs; extras: CanonicalSettingsExtras }> {
+): Promise<{
+  inputs: FrozenPromptInputs;
+  extras: CanonicalSettingsExtras | LegacyCanonicalSettingsExtras;
+}> {
   const inputs = await readJson<FrozenPromptInputs>(
     join(dir, RUN_FILES.promptInputs),
   );
@@ -292,9 +300,12 @@ async function readFrozenExtras(
       `finalizeRun: frozen prompt-inputs.json carries no extra_json settings; the run directory may be corrupted`,
     );
   }
+  // A run frozen before the upstream lock has no `settings_extras_schema`;
+  // the caller branches on `isLegacyExtras` so it is never rebuilt or
+  // persisted as if it were schema 2.
   const extras = JSON.parse(
     inputs.settings.extra_json,
-  ) as CanonicalSettingsExtras;
+  ) as CanonicalSettingsExtras | LegacyCanonicalSettingsExtras;
   return { inputs, extras };
 }
 
@@ -374,8 +385,21 @@ export async function finalizeRun(
     const maxAttempts = promptInputs.settings.max_attempts ??
       (anyContext?.attemptLimit ?? 2);
 
+    const pin = isLegacyExtras(extras)
+      ? undefined
+      : (extras.upstream_pin ?? undefined);
     const invocationRecord: InvocationRecord = {
       ...invocationSnapshot({
+        ...(pin !== undefined ? { upstreamPin: pin } : {}),
+        ...(promptInputs.routing
+          ? {
+            upstreamResolved: {
+              provider_name: promptInputs.routing.providerName,
+              quantization: promptInputs.routing.quantization,
+              preflight: promptInputs.routing.preflight,
+            },
+          }
+          : {}),
         provider: deps.variant.provider,
         model: deps.variant.baseModel,
         apiModelId: deps.variant.model,
@@ -407,6 +431,16 @@ export async function finalizeRun(
       batch: buildBatchInvocationSummary(next),
     };
 
+    // A run frozen before the upstream lock is schema 1: strip the three
+    // schema-2 keys so the persisted record does not claim a pin decision
+    // that this run never made.
+    if (isLegacyExtras(extras)) {
+      const r = invocationRecord as unknown as Record<string, unknown>;
+      delete r["invocation_schema"];
+      delete r["upstream_pin"];
+      delete r["upstream_resolved"];
+    }
+
     // `endpoint`/`provider_route` are pure functions of `(provider,
     // apiModelId)` inside `invocationSnapshot`, so they are re-derived
     // rather than copied from the frozen extras. A disagreement here means
@@ -431,6 +465,17 @@ export async function finalizeRun(
         environment: deps.environment,
         invocations: {
           [variantId]: invocationRecord as unknown as Record<string, unknown>,
+        },
+      },
+      // Schema 5: the settings this run was SUBMITTED under, straight from
+      // its own frozen `prompt-inputs.json`, plus the hash `state.json`
+      // froze at the same moment. Ingest sends them verbatim, so a run that
+      // finalizes days later cannot land on a settings profile that did not
+      // exist when it was submitted.
+      {
+        [variantId]: {
+          canonical: promptInputs.settings,
+          hash: next.frozen.settingsHash,
         },
       },
     );
@@ -480,6 +525,15 @@ export async function finalizeRun(
       undefined,
       undefined,
       batchScoreBlock,
+      // The routing this run froze at submit, not live config: the `#
+      // Upstream` block must describe what the waves actually ran against.
+      promptInputs.routing
+        ? {
+          upstreamPin: promptInputs.routing.upstreamPin,
+          providerName: promptInputs.routing.providerName,
+          quantization: promptInputs.routing.quantization,
+        }
+        : undefined,
     );
 
     next = { ...next, resultsFile };
@@ -503,6 +557,15 @@ export async function finalizeRun(
     }
     assembleOpts.runId = ingestMeta?.run_ids[variantId] ?? next.runId;
     assembleOpts.taskSetHash = ingestMeta?.task_set_hash ?? deps.taskSetHash;
+    // Schema 5: the settings frozen at submit, written into this same file
+    // by the finalize block above. Absent on a run finalized by an older
+    // CLI, which then rebuilds from the invocation record instead.
+    const persistedSettings = ingestMeta?.canonical_settings?.[variantId];
+    if (persistedSettings) assembleOpts.canonicalSettings = persistedSettings;
+    const persistedSettingsHash = ingestMeta?.settings_hashes?.[variantId];
+    if (persistedSettingsHash) {
+      assembleOpts.settingsHash = persistedSettingsHash;
+    }
 
     const assembled = await assembleBenchResultsForVariant(
       resultsFile,
@@ -531,6 +594,17 @@ export async function finalizeRun(
         });
         next = { ...next, ingestedRunId: outcome.runId };
         await writeState(dir, next);
+        // Accepted already excluded (a compromised upstream): stamp the
+        // local results file and this run's own directory so the local
+        // stats import skips what the scoreboard has already dropped.
+        await stampAutoExcludedRun({
+          resultsFilePath: resultsFile,
+          runId: outcome.runId,
+          ...(assembled.benchResults.excluded
+            ? { excluded: assembled.benchResults.excluded }
+            : {}),
+          resultsDir: join(dir, "..", ".."),
+        });
       } else if (outcome.kind === "fatal-failure") {
         throw new Error(
           `batch finalize: ingest rejected for ${variantId}: ${outcome.code} ${outcome.message}`,

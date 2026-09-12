@@ -26,6 +26,11 @@ export async function resetDb(): Promise<void> {
     env.DB.prepare(`DELETE FROM results`),
     env.DB.prepare(`DELETE FROM ingest_events`),
     env.DB.prepare(`DELETE FROM runs`),
+    // 0023_results_upstream.sql, the per-(model, set, mode) upstream profile
+    // registry. Must clear before models/task_sets (it FKs into both), and
+    // must clear at all: a profile left behind would make the next `it`
+    // block's first ingest look like a second claimant and answer 409.
+    env.DB.prepare(`DELETE FROM upstream_profiles`),
     env.DB.prepare(`DELETE FROM task_tags`),
     env.DB.prepare(`DELETE FROM tasks`),
     env.DB.prepare(`DELETE FROM tags`),

@@ -754,8 +754,27 @@ export async function executeParallelBenchmark(
             const invocations: Record<string, Record<string, unknown>> = {};
             const policies = orchestrator.getResolvedRetryPolicies();
             for (const v of variants) {
+              // The pin the requests actually carried (spec 2026-09-11 D2),
+              // read from the same map `buildParallelOptions` handed the
+              // orchestrator. `upstream_resolved` comes from the precheck's
+              // own resolution rather than being inferred here, so it
+              // reports what the preflight actually found; it stays null for
+              // a map entry written before those fields existed.
+              const resolved = options.upstreamPins?.get(v.variantId);
+              const pin = resolved?.upstreamPin;
+              const upstreamResolved = resolved?.preflight === undefined
+                ? undefined
+                : {
+                  provider_name: resolved.providerName,
+                  quantization: resolved.quantization ?? null,
+                  preflight: resolved.preflight,
+                };
               invocations[v.variantId] = {
                 ...invocationSnapshot({
+                  ...(pin !== undefined ? { upstreamPin: pin } : {}),
+                  ...(upstreamResolved !== undefined
+                    ? { upstreamResolved }
+                    : {}),
                   provider: v.provider,
                   model: v.baseModel,
                   apiModelId: v.model,
@@ -836,6 +855,13 @@ export async function executeParallelBenchmark(
           finalResults,
           drainEvents,
           recoveryEvents,
+          undefined,
+          // One pin describes the run only when the run has one variant;
+          // a multi-variant run can carry a different pin per variant, and
+          // naming just the first would misreport the others.
+          variants.length === 1
+            ? options.upstreamPins?.get(variants[0]!.variantId)
+            : undefined,
         );
 
         // Print summary
@@ -1329,6 +1355,13 @@ export function buildParallelOptions(
     };
   if (options.promptOverrides) {
     parallelOptions.promptOverrides = options.promptOverrides;
+  }
+  // The pins the precheck resolved decide `provider.order` on every request.
+  // They must reach the orchestrator from the SAME map the ingest capture
+  // reads below, or the recorded pin and the pin the requests carried could
+  // disagree.
+  if (options.upstreamPins) {
+    parallelOptions.upstreamPins = options.upstreamPins;
   }
   return parallelOptions;
 }

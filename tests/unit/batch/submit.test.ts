@@ -23,6 +23,8 @@ import { loadJsonl } from "../../../src/batch/journal.ts";
 import type { ItemLine } from "../../../src/batch/journal.ts";
 import { ConfigManager } from "../../../src/config/config.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
+import { UpstreamPinError } from "../../../src/llm/upstream-pin.ts";
+import { submitWiring } from "../../../cli/commands/bench-batch-command.ts";
 import { FakeBatchProvider } from "../../utils/fake-batch-provider.ts";
 import type {
   BatchHandle,
@@ -43,7 +45,17 @@ import {
 
 const MODEL_SLUG = "claude-batch-submit-fake";
 const FULL_SLUG = `anthropic/${MODEL_SLUG}`;
+const OPENROUTER_MODEL = "z-ai/glm-5.3-batch-submit-fake";
+const OPENROUTER_SLUG = `openrouter/${OPENROUTER_MODEL}`;
 const REPO_ROOT = Deno.cwd();
+
+/** What the fake `resolveUpstream` resolves a configured pin to. */
+const RESOLVED_ROUTING = {
+  upstreamPin: "novita/fp8",
+  providerName: "Novita",
+  quantization: "fp8",
+  preflight: "passed" as const,
+};
 
 const ENVIRONMENT: ContainerEnvironmentSet = {
   testRunner: "soap",
@@ -63,11 +75,14 @@ async function findTwoEasyTaskGlobs(): Promise<[string, string]> {
   return [found[0]!, found[1]!];
 }
 
-function seedBatchPricing(withBatchRates: boolean): void {
+function seedBatchPricing(
+  withBatchRates: boolean,
+  slug: string = FULL_SLUG,
+): void {
   PricingService.clearCatalogPricing();
   PricingService.loadCatalogPricing([
     {
-      model_slug: FULL_SLUG,
+      model_slug: slug,
       effective_from: "2026-01-01",
       input_per_mtoken: 1,
       output_per_mtoken: 5,
@@ -85,10 +100,18 @@ interface FakeDeps extends SubmitDeps {
 
 function makeFakeDeps(
   provider: BatchProvider = new FakeBatchProvider("anthropic", {}),
+  resolveUpstream?: SubmitDeps["resolveUpstream"],
 ): FakeDeps {
   const calls: string[] = [];
   return {
     calls,
+    resolveUpstream: (apiModelId, pin, maxTokens) => {
+      calls.push(`resolveUpstream:${apiModelId}:${pin}:${maxTokens}`);
+      return resolveUpstream
+        ? resolveUpstream(apiModelId, pin, maxTokens)
+        : Promise.resolve(RESOLVED_ROUTING);
+    },
+    skipUpstreamPreflight: false,
     providerFor: (name: BatchProviderName, _apiKey: string) => {
       calls.push(`providerFor:${name}`);
       return provider;
@@ -127,7 +150,10 @@ function baseOptions(
   };
 }
 
-function setFixturePreset(taskGlobs: string[]): void {
+function setFixturePreset(
+  taskGlobs: string[],
+  openrouter?: { upstream: Record<string, string> },
+): void {
   ConfigManager.reset();
   ConfigManager.setConfig({
     benchmarkPresets: {
@@ -136,6 +162,7 @@ function setFixturePreset(taskGlobs: string[]): void {
         containers: ["FakeContainer"],
       },
     },
+    ...(openrouter ? { openrouter } : {}),
   });
 }
 
@@ -430,4 +457,182 @@ Deno.test("submitRuns acquires and releases the run's mutate lock during a norma
   } finally {
     await cleanupTempDir(output);
   }
+});
+
+Deno.test("submit freezes the resolved routing into prompt-inputs.json when the model is pinned", async () => {
+  const output = await createTempDir("batch-submit-routing");
+  const globs = await findTwoEasyTaskGlobs();
+  setFixturePreset(globs, {
+    upstream: { [OPENROUTER_MODEL]: RESOLVED_ROUTING.upstreamPin },
+  });
+  seedBatchPricing(true, OPENROUTER_SLUG);
+
+  try {
+    const deps = makeFakeDeps(new FakeBatchProvider("openrouter", {}));
+    const result = await submitRuns(
+      baseOptions(output, globs, { llms: OPENROUTER_SLUG }),
+      deps,
+    );
+
+    assertEquals(result.exit, 0);
+    assertEquals(result.runIds.length, 1);
+    assert(
+      deps.calls.includes(
+        `resolveUpstream:${OPENROUTER_MODEL}:${RESOLVED_ROUTING.upstreamPin}:4000`,
+      ),
+      `resolveUpstream was not called: ${deps.calls.join(", ")}`,
+    );
+
+    const dir = runDir(output, result.runIds[0]!);
+    const inputs = JSON.parse(
+      await Deno.readTextFile(join(dir, RUN_FILES.promptInputs)),
+    ) as Record<string, unknown>;
+    assertEquals(inputs["routing"], RESOLVED_ROUTING);
+  } finally {
+    await cleanupTempDir(output);
+  }
+});
+
+Deno.test("submit writes no routing for an unpinned model", async () => {
+  const output = await createTempDir("batch-submit-unpinned");
+  const globs = await findTwoEasyTaskGlobs();
+  // An openrouter model with no `openrouter.upstream` entry: nothing to
+  // resolve, so nothing is frozen and the resolver is never called.
+  setFixturePreset(globs);
+  seedBatchPricing(true, OPENROUTER_SLUG);
+
+  try {
+    const deps = makeFakeDeps(new FakeBatchProvider("openrouter", {}));
+    const result = await submitRuns(
+      baseOptions(output, globs, { llms: OPENROUTER_SLUG }),
+      deps,
+    );
+
+    assertEquals(result.exit, 0);
+    assertEquals(
+      deps.calls.some((c) => c.startsWith("resolveUpstream:")),
+      false,
+    );
+    const dir = runDir(output, result.runIds[0]!);
+    const inputs = JSON.parse(
+      await Deno.readTextFile(join(dir, RUN_FILES.promptInputs)),
+    ) as Record<string, unknown>;
+    assertEquals("routing" in inputs, false);
+  } finally {
+    await cleanupTempDir(output);
+  }
+});
+
+Deno.test("submit refuses with exit 4 when the pin cannot be resolved, before any provider call", async () => {
+  const output = await createTempDir("batch-submit-pin-unresolvable");
+  const globs = await findTwoEasyTaskGlobs();
+  setFixturePreset(globs, {
+    upstream: { [OPENROUTER_MODEL]: "nope/fp8" },
+  });
+  seedBatchPricing(true, OPENROUTER_SLUG);
+
+  const provider = new FakeBatchProvider("openrouter", {});
+  try {
+    const deps = makeFakeDeps(provider, () =>
+      Promise.reject(
+        new UpstreamPinError(
+          'upstream pin "nope/fp8" is not an endpoint',
+          "UPSTREAM_PIN_UNKNOWN",
+        ),
+      ));
+    const result = await submitRuns(
+      baseOptions(output, globs, { llms: OPENROUTER_SLUG }),
+      deps,
+    );
+
+    assertEquals(result.exit, 4);
+    assertEquals(result.runIds, []);
+    // No provider was ever constructed or talked to, and no container
+    // runtime was started.
+    assertEquals(provider.calls.length, 0);
+    assertEquals(deps.calls.includes("runtimeFactory"), false);
+    assertEquals(
+      deps.calls.some((c) => c.startsWith("providerFor:")),
+      false,
+    );
+
+    // No run directory was minted at all.
+    const batchRootExists = await Deno.stat(join(output, "batch"))
+      .then(() => true)
+      .catch((err) => {
+        if (err instanceof Deno.errors.NotFound) return false;
+        throw err;
+      });
+    assertEquals(batchRootExists, false);
+  } finally {
+    await cleanupTempDir(output);
+  }
+});
+
+Deno.test("the CLI's submit wiring pins wave-1 request bodies with the routing it resolved", async () => {
+  const output = await createTempDir("batch-submit-wave1-pin");
+  const globs = await findTwoEasyTaskGlobs();
+  setFixturePreset(globs, {
+    upstream: { [OPENROUTER_MODEL]: RESOLVED_ROUTING.upstreamPin },
+  });
+  seedBatchPricing(true, OPENROUTER_SLUG);
+
+  const provider = new FakeBatchProvider("openrouter", {});
+  try {
+    // Exactly the shape the CLI's submit action builds, with only the
+    // network-touching resolver faked: the routing resolved mid-submission
+    // has to reach the bodies rendered for wave 1 (spec D2).
+    const wiring = submitWiring(
+      "openrouter",
+      { apiModelId: OPENROUTER_MODEL, variantConfig: null },
+      "k",
+      () => Promise.resolve(RESOLVED_ROUTING),
+    );
+    const deps: SubmitDeps = {
+      providerFor: () => provider,
+      buildBody: wiring.buildBody,
+      wrap: wiring.wrap,
+      resolveUpstream: wiring.resolveUpstream,
+      skipUpstreamPreflight: false,
+      precheck: () => Promise.resolve(),
+      runtimeFactory: () =>
+        Promise.resolve({
+          environmentSet: () => Promise.resolve(ENVIRONMENT),
+          stop: () => Promise.resolve(),
+        } as unknown as ContainerRuntime),
+      log: () => {},
+    };
+
+    const result = await submitRuns(
+      baseOptions(output, globs, { llms: OPENROUTER_SLUG }),
+      deps,
+    );
+    assertEquals(result.exit, 0);
+
+    const submitted = provider.calls.filter((c) => c.op === "submit");
+    assert(submitted.length > 0, "the fake provider was never submitted to");
+    const items = submitted[0]!.args[1] as BatchItem[];
+    assertEquals(items.length, 2);
+    for (const item of items) {
+      assertEquals(
+        (item.body as Record<string, unknown>)["provider"],
+        { order: [RESOLVED_ROUTING.upstreamPin], allow_fallbacks: false },
+      );
+    }
+  } finally {
+    await cleanupTempDir(output);
+  }
+});
+
+Deno.test("the CLI's submit wiring leaves bodies unpinned when nothing was resolved", () => {
+  const wiring = submitWiring(
+    "openrouter",
+    { apiModelId: OPENROUTER_MODEL, variantConfig: null },
+    "k",
+    () => Promise.reject(new Error("must not be called for an unpinned model")),
+  );
+  const body = wiring.buildBody(
+    { prompt: "hi", taskId: "t", attempt: 1 } as never,
+  ) as Record<string, unknown>;
+  assertEquals("provider" in body, false);
 });

@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "attempt": {
+    "attemptNumber": 1,
+    "containerName": "Cronus283",
+    "startTime": "2026-09-11T06:39:48.002Z",
+    "endTime": "2026-09-11T06:40:06.842Z",
+    "prompt": "You are a Business Central AL expert developer.\n\n## Task\n\nCreate a simple AL table called \"Product Category\" with ID 70000. The table should have the following fields: - Code (Code[20], primary key) - Description (Text[100]) - Active (Boolean, default true) - Created Date (Date)\nInclude proper captions and data classification. Set appropriate primary key and ensure the table follows Business Central conventions.\n\n## Rules\n\n1. Output code only inside BEGIN-CODE/END-CODE fences\n2. Use proper AL syntax and Business Central conventions\n3. Include all necessary object declarations and dependencies\n4. Follow Microsoft naming conventions for AL objects\n5. Ensure code compiles without errors\n6. Do NOT reference objects that don't exist (pages, codeunits, reports, etc.) unless explicitly required by the task\n7. Only create the objects specifically requested - do not add extra objects \"for completeness\"\n8. Output ONLY AL code - no explanations, no markdown formatting, no commentary\n\n## Context\n\n- Target Business Central version: 24.0 or later\n- Use modern AL syntax and features\n- Include proper error handling where applicable\n\nBEGIN-CODE\n// Your AL code here\nEND-CODE\n",
+    "llmResponse": {
+      "content": "BEGIN-CODE\ntable 70000 \"Product Category\"\n{\n    Caption = 'Product Category';\n    DataClassification = CustomerContent;\n\n    fields\n    {\n        field(1; \"Code\"; Code[20])\n        {\n            Caption = 'Code';\n            DataClassification = CustomerContent;\n            NotBlank = true;\n        }\n        field(2; Description; Text[100])\n        {\n            Caption = 'Description';\n            DataClassification = CustomerContent;\n        }\n        field(3; Active; Boolean)\n        {\n            Caption = 'Active';\n            DataClassification = CustomerContent;\n            InitValue = true;\n        }\n        field(4; \"Created Date\"; Date)\n        {\n            Caption = 'Created Date';\n            DataClassification = CustomerContent;\n        }\n    }\n\n    keys\n    {\n        key(PK; \"Code\")\n        {\n            Clustered = true;\n        }\n    }\n}\nEND-CODE",
+      "model": "google/gemini-3.8-flash",
+      "usage": {
+        "promptTokens": 263,
+        "completionTokens": 811,
+        "totalTokens": 1074,
+        "reasoningTokens": 583,
+        "estimatedCost": 0.00161925
+      },
+      "duration": 0,
+      "finishReason": "stop",
+      "providerFinishReason": "stop"
+    },
+    "extractedCode": "table 70000 \"Product Category\"\n{\n    Caption = 'Product Category';\n    DataClassification = CustomerContent;\n\n    fields\n    {\n        field(1; \"Code\"; Code[20])\n        {\n            Caption = 'Code';\n            DataClassification = CustomerContent;\n            NotBlank = true;\n        }\n        field(2; Description; Text[100])\n        {\n            Caption = 'Description';\n            DataClassification = CustomerContent;\n        }\n        field(3; Active; Boolean)\n        {\n            Caption = 'Active';\n            DataClassification = CustomerContent;\n            InitValue = true;\n        }\n        field(4; \"Created Date\"; Date)\n        {\n            Caption = 'Created Date';\n            DataClassification = CustomerContent;\n        }\n    }\n\n    keys\n    {\n        key(PK; \"Code\")\n        {\n            Clustered = true;\n        }\n    }\n}",
+    "candidateCode": "table 70000 \"Product Category\"\n{\n    Caption = 'Product Category';\n    DataClassification = CustomerContent;\n\n    fields\n    {\n        field(1; \"Code\"; Code[20])\n        {\n            Caption = 'Code';\n            DataClassification = CustomerContent;\n            NotBlank = true;\n        }\n        field(2; Description; Text[100])\n        {\n            Caption = 'Description';\n            DataClassification = CustomerContent;\n        }\n        field(3; Active; Boolean)\n        {\n            Caption = 'Active';\n            DataClassification = CustomerContent;\n            InitValue = true;\n        }\n        field(4; \"Created Date\"; Date)\n        {\n            Caption = 'Created Date';\n            DataClassification = CustomerContent;\n        }\n    }\n\n    keys\n    {\n        key(PK; \"Code\")\n        {\n            Clustered = true;\n        }\n    }\n}",
+    "codeLanguage": "al",
+    "providerFinishReason": "stop",
+    "compilationResult": {
+      "success": true,
+      "errors": [],
+      "warnings": [],
+      "output": "\r\n[CG-PIN] buildCompileScript bccontainerhelper@6.1.14 sentinel=2026-04-25-B\r\n[CG-PIN] shell=Core/7.6.6 host=SSHADOWS-PC user=SShadowS pid=54860\r\n[CG-PIN] modulepath=C:\\Users\\SShadowS\\Documents\\PowerShell\\Modules|C:\\Program Files\\PowerShell\\Modules|c:\\program files\\powershell\\7\\Modules\r\nUsing Symbols Folder: C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nEnumerating Apps in CompilerFolder C:\\\\ProgramData\\\\BcContainerHelper\\\\compiler\\\\CentralGauge-Cronus283\\symbols\r\nGetting .app info C:\\\\ProgramData\\\\BcContainerHelper\\\\compiler\\\\CentralGauge-Cronus283\\symbols\\cache_AppInfo.json\r\nUse C:\\\\ProgramData\\\\BcContainerHelper\\\\compiler\\\\CentralGauge-Cronus283\\compiler\\extension\\bin\\win32\\altool.exe as altool executable (Exists = True).\r\nEnumerating Apps in Symbols Folder C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nGetting .app info C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\\cache_AppInfo.json\r\nUse C:\\\\ProgramData\\\\BcContainerHelper\\\\compiler\\\\CentralGauge-Cronus283\\compiler\\extension\\bin\\win32\\altool.exe as altool executable (Exists = True).\r\nProcessing dependency Microsoft_Application_28.0.0.0 (c1335042-3002-4257-bf8a-75c898ccb1b8)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Application_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nAdding dependency to System Application from Microsoft\r\nAdding dependency to Business Foundation from Microsoft\r\nAdding dependency to Base Application from Microsoft\r\nProcessing dependency Microsoft_System_28.0.0.0 (8874ed3a-0643-4247-9ced-7a7002f7135d)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\System.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nProcessing dependency Microsoft_Library Assert_28.0.0.0 (dd0be2ea-f733-4d65-bb34-a28f4624fb14)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Library Assert_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nProcessing dependency Microsoft_Any_28.0.0.0 (e7320ebb-08b3-4406-b1ec-b4927d3e280b)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Any_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nProcessing dependency Microsoft_Tests-TestLibraries_28.0.0.0 (5d86850b-0d76-4eca-bd7b-951ad998e997)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Tests-TestLibraries_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nAdding dependency to System Application Test Library from Microsoft\r\nAdding dependency to Permissions Mock from Microsoft\r\nAdding dependency to Application Test Library from Microsoft\r\nProcessing dependency Microsoft_System Application_28.4.53241.53758 (63ca2fa4-4f03-4f2b-a480-172fef340d3f)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_System Application_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nProcessing dependency Microsoft_Business Foundation_28.4.53241.53758 (f3552374-a1f2-4356-848e-196002525837)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Business Foundation_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nProcessing dependency Microsoft_Base Application_28.4.53241.53758 (437dbf0e-84ff-417a-965d-ed2bb9650972)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Base Application_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nProcessing dependency Microsoft_System Application Test Library_28.4.53241.53758 (9856ae4f-d1a7-46ef-89bb-6ef056398228)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_System Application Test Library_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nProcessing dependency Microsoft_Permissions Mock_28.4.53241.53758 (40860557-a18d-42ad-aecb-22b7dd80dc80)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Permissions Mock_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nProcessing dependency Microsoft_Application Test Library_28.4.53241.53758 (d852d5d2-a39d-4179-baeb-f99a19e32510)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Application Test Library_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nAdding dependency to Library Variable Storage from Microsoft\r\nAdding dependency to Business Foundation Test Libraries from Microsoft\r\nProcessing dependency Microsoft_Library Variable Storage_28.4.53241.53758 (5095f467-0a01-4b99-99d1-9ff1237d286f)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Library Variable Storage_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nProcessing dependency Microsoft_Business Foundation Test Libraries_28.4.53241.53758 (bee8cf2f-494a-42f4-aabd-650e87934d39)\r\nDependency App not found\r\nCopying C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\symbols\\Microsoft_Business Foundation Test Libraries_28.4.53241.53758.app to C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\r\nPlatform version: 28.0.53667.0\r\nUsing .NET 8.0.31 for assembly probing (artifact requires .NET 8)\r\nCompiling...\r\n.\\alc.exe /project:\"C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\" /packagecachepath:\"C:\\\\Users\\\\SShadowS\\\\AppData\\\\Local\\\\Temp\\\\cg_compile_8c6127a327749ab3\\.alpackages\" /out:\"C:\\\\ProgramData\\\\BcContainerHelper\\\\compiler\\\\CentralGauge-Cronus283\\\\output\\\\CentralGauge_CG-AL-E001_1_38679057\\CentralGauge_CentralGauge_CG-AL-E001_1_1.0.0.0.app\" /BuildBy:BcContainerHelper,6.1.14 /assemblyprobingpaths:C:\\\\ProgramData\\\\BcContainerHelper\\\\compiler\\\\CentralGauge-Cronus283\\dlls\\OpenXML,C:\\Program Files\\dotnet\\shared\\Microsoft.NETCore.App\\8.0.31,C:\\Program Files\\dotnet\\shared\\Microsoft.AspNetCore.App\\8.0.31,C:\\\\ProgramData\\\\BcContainerHelper\\\\compiler\\\\CentralGauge-Cronus283\\dlls\\Service,C:\\\\ProgramData\\\\BcContainerHelper\\\\compiler\\\\CentralGauge-Cronus283\\dlls\\Mock Assemblies\r\nMicrosoft (R) AL Compiler version 17.0.40.3339\r\nCopyright (C) Microsoft Corporation. All rights reserved\r\n\r\nCompilation started for project 'CentralGauge_CG-AL-E001_1' containing '2' files at '08:39:53.607'.\r\n\r\n\r\nCompilation ended at '08:39:56.698'.\r\n\r\nC:\\\\ProgramData\\\\BcContainerHelper\\\\compiler\\\\CentralGauge-Cronus283\\\\output\\\\CentralGauge_CG-AL-E001_1_38679057\\CentralGauge_CentralGauge_CG-AL-E001_1_1.0.0.0.app successfully created in 4 seconds\r\nCOMPILE_SUCCESS\r\nAPP_FILE:C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\output\\CentralGauge_CG-AL-E001_1_38679057\\CentralGauge_CentralGauge_CG-AL-E001_1_1.0.0.0.app\r",
+      "duration": 9128,
+      "artifactPath": "C:\\ProgramData\\BcContainerHelper\\compiler\\CentralGauge-Cronus283\\output\\CentralGauge_CG-AL-E001_1_38679057\\CentralGauge_CentralGauge_CG-AL-E001_1_1.0.0.0.app"
+    },
+    "success": true,
+    "score": 100,
+    "failureReasons": [],
+    "tokensUsed": 1074,
+    "cost": 0.00161925,
+    "duration": 18840,
+    "llmDuration": 0,
+    "compileDuration": 9130,
+    "testResult": {
+      "success": true,
+      "totalTests": 7,
+      "passedTests": 7,
+      "failedTests": 0,
+      "duration": 105,
+      "results": [
+        {
+          "name": "TestTableExists",
+          "passed": true,
+          "duration": 3
+        },
+        {
+          "name": "TestPrimaryKeyField",
+          "passed": true,
+          "duration": 3
+        },
+        {
+          "name": "TestDescriptionField",
+          "passed": true,
+          "duration": 0
+        },
+        {
+          "name": "TestActiveField",
+          "passed": true,
+          "duration": 0
+        },
+        {
+          "name": "TestCreatedDateField",
+          "passed": true,
+          "duration": 3
+        },
+        {
+          "name": "TestInsertAndGet",
+          "passed": true,
+          "duration": 6
+        },
+        {
+          "name": "TestActiveDefaultValue",
+          "passed": true,
+          "duration": 3
+        }
+      ],
+      "output": "{\"passed\":7,\"failed\":0,\"skipped\":0,\"notExecuted\":0,\"durationMs\":105,\"codeunits\":[{\"name\":\"CG-AL-E001 Test\",\"codeUnit\":80001,\"codeunitName\":\"CG-AL-E001 Test\",\"applicationID\":\"{00000000-CAFE-0000-0000-BE4C00DECADE}\",\"applicationName\":\"CentralGauge_CG-AL-E001_1\",\"startTime\":\"2026-09-11T06:40:06.7700000Z\",\"finishTime\":\"2026-09-11T06:40:06.8100000Z\",\"result\":2,\"testResults\":[{\"method\":\"TestTableExists\",\"startTime\":\"2026-09-11T06:40:06.7700000Z\",\"finishTime\":\"2026-09-11T06:40:06.7730000Z\",\"result\":2},{\"method\":\"TestPrimaryKeyField\",\"startTime\":\"2026-09-11T06:40:06.7770000Z\",\"finishTime\":\"2026-09-11T06:40:06.7800000Z\",\"result\":2},{\"method\":\"TestDescriptionField\",\"startTime\":\"2026-09-11T06:40:06.7830000Z\",\"finishTime\":\"2026-09-11T06:40:06.7830000Z\",\"result\":2},{\"method\":\"TestActiveField\",\"startTime\":\"2026-09-11T06:40:06.7870000Z\",\"finishTime\":\"2026-09-11T06:40:06.7870000Z\",\"result\":2},{\"method\":\"TestCreatedDateField\",\"startTime\":\"2026-09-11T06:40:06.7900000Z\",\"finishTime\":\"2026-09-11T06:40:06.7930000Z\",\"result\":2},{\"method\":\"TestInsertAndGet\",\"startTime\":\"2026-09-11T06:40:06.7970000Z\",\"finishTime\":\"2026-09-11T06:40:06.8030000Z\",\"result\":2},{\"method\":\"TestActiveDefaultValue\",\"startTime\":\"2026-09-11T06:40:06.8070000Z\",\"finishTime\":\"2026-09-11T06:40:06.8100000Z\",\"result\":2}]}]}"
+    },
+    "testDuration": 7860
+  }
+}

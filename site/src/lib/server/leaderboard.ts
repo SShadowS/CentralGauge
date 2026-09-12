@@ -2,6 +2,7 @@ import type {
   LeaderboardQuery,
   LeaderboardResponse,
   LeaderboardRow,
+  LeaderboardUpstream,
 } from "$shared/api-types";
 import { getAll } from "./db";
 import { rowCostUsd } from "./cost-sql";
@@ -17,6 +18,7 @@ import { isValidTaskSetHash } from "../shared/task-set-hash";
 import { COHORT_RUNS } from "../shared/cohort";
 import { modePredicate } from "./invocation-mode";
 import { excludedAndClause, excludedPredicate } from "./run-exclusion";
+import { UNPINNED_PROFILE } from "./upstream-profile";
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
@@ -590,6 +592,72 @@ export async function computeLeaderboard(
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // upstream (spec 2026-09-11 D5): the profile every in-scope run of the model
+  // was ingested under, the distinct upstreams that actually served, and the
+  // verification-state histogram. Same scope caveat as fallback_count.
+  const upstreamByModel = new Map<number, LeaderboardUpstream>();
+  if (modelIds.length > 0) {
+    const upWheres = [modePredicate("runs"), excludedPredicate("runs")];
+    const upParams: Array<string | number> = [q.mode];
+    if (taskSetWhere) {
+      upWheres.push(taskSetWhere);
+      upParams.push(...taskSetWhereParams);
+    }
+    upWheres.push(`runs.model_id IN (${modelIds.map(() => "?").join(",")})`);
+    upParams.push(...modelIds);
+    const upSql = `
+      SELECT runs.model_id AS model_id,
+             results.served_upstream AS served,
+             COALESCE(results.upstream_verification, 'unrecorded') AS state,
+             COUNT(*) AS n
+      FROM results
+      JOIN runs ON runs.id = results.run_id
+      WHERE ${upWheres.join(" AND ")}
+      GROUP BY runs.model_id, results.served_upstream, COALESCE(results.upstream_verification, 'unrecorded')
+    `;
+    type UpRow = {
+      model_id: number;
+      served: string | null;
+      state: string;
+      n: number;
+    };
+    const upRows = await (timer
+      ? timer.measure("leaderboard_upstream", () =>
+        getAll<UpRow>(db, upSql, upParams)
+      )
+      : getAll<UpRow>(db, upSql, upParams));
+    for (const r of upRows) {
+      const id = Number(r.model_id);
+      const cur = upstreamByModel.get(id) ??
+        { pin: null, served: [], verification: {} };
+      if (r.served && !cur.served.includes(r.served)) cur.served.push(r.served);
+      const k = r.state as keyof LeaderboardUpstream["verification"];
+      cur.verification[k] = (cur.verification[k] ?? 0) + Number(r.n);
+      upstreamByModel.set(id, cur);
+    }
+    for (const u of upstreamByModel.values()) u.served.sort();
+    // The pin comes from the registry, keyed on the concrete set + mode. Under
+    // `set=current` the hash was resolved above; use that resolved value. A
+    // cohort ingested before 0023 has no registry row at all, and correctly
+    // keeps `pin: null` beside whatever its results carry.
+    if (resolvedHash) {
+      const pinRows = await getAll<{ model_id: number; profile_key: string }>(
+        db,
+        `SELECT model_id, profile_key FROM upstream_profiles WHERE task_set_hash = ? AND invocation_mode = ? AND model_id IN (${
+          modelIds.map(() => "?").join(",")
+        })`,
+        [resolvedHash, q.mode, ...modelIds],
+      );
+      for (const p of pinRows) {
+        const cur = upstreamByModel.get(Number(p.model_id)) ??
+          { pin: null, served: [], verification: {} };
+        cur.pin = p.profile_key === UNPINNED_PROFILE ? null : p.profile_key;
+        upstreamByModel.set(Number(p.model_id), cur);
+      }
+    }
+  }
+
   const mapped: LeaderboardRow[] = rows.map((r, idx) => {
     // Cell counts summed over the model's in-scope runs, divided by that run
     // count: the per-run mean. Fractional by construction (a task solved first
@@ -653,6 +721,8 @@ export async function computeLeaderboard(
       denominator,
       fallback_count: fallbackByModel.get(r.model_id) ?? 0,
       refusal_count: refusalByModel.get(r.model_id) ?? 0,
+      upstream: upstreamByModel.get(r.model_id) ??
+        { pin: null, served: [], verification: {} },
       avg_score: Math.round(+(r.avg_score ?? 0) * 1e6) / 1e6,
       avg_cost_usd: Math.round(+(r.avg_cost_usd ?? 0) * 1e6) / 1e6,
       verified_runs: aggMap.get(r.model_id)?.verified_runs ?? 0,

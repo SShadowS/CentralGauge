@@ -386,3 +386,43 @@ describe("migration 0022 run exclusion", () => {
     expect(cleared?.excluded_reason).toBe(null);
   });
 });
+
+describe("migration 0023 upstream lock", () => {
+  it("adds five nullable no-default result columns, runs.excluded_code, and the profile registry", async () => {
+    const cols = (await env.DB.prepare(`PRAGMA table_info(results)`).all())
+      .results as {
+        name: string;
+        notnull: number;
+        dflt_value: string | null;
+      }[];
+    for (
+      const name of [
+        "requested_upstream",
+        "served_upstream",
+        "served_upstream_model",
+        "upstream_identity_source",
+        "upstream_verification",
+      ]
+    ) {
+      const c = cols.find((x) => x.name === name);
+      expect(c, `results.${name}`).toBeDefined();
+      expect(c?.notnull).toBe(0);
+      expect(c?.dflt_value).toBe(null);
+    }
+    const runCols = (await env.DB.prepare(`PRAGMA table_info(runs)`).all())
+      .results as { name: string }[];
+    expect(runCols.some((c) => c.name === "excluded_code")).toBe(true);
+    const reg =
+      (await env.DB.prepare(`PRAGMA table_info(upstream_profiles)`).all())
+        .results as { name: string; pk: number }[];
+    expect(reg.filter((c) => c.pk > 0).map((c) => c.name).sort()).toEqual([
+      "invocation_mode",
+      "model_id",
+      "task_set_hash",
+    ]);
+    const viewCols =
+      (await env.DB.prepare(`PRAGMA table_info(v_results_with_cost)`).all())
+        .results as { name: string }[];
+    expect(viewCols.some((c) => c.name === "served_upstream")).toBe(true);
+  });
+});

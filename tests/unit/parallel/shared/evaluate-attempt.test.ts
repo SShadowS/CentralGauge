@@ -144,3 +144,78 @@ Deno.test("evaluateAttempt: compile errors are listed file:line: message", () =>
   assertEquals(a.failureReasons[1], "  X.al:3: AL0118 nope");
   assertEquals(a.score, 0);
 });
+
+Deno.test("evaluateAttempt stamps the upstream fields from the work result", () => {
+  const context = createMockTaskExecutionContext({
+    manifest: createMockTaskManifest({ expected: { compile: true } }),
+    llmProvider: "openrouter",
+  });
+  const pinned = {
+    ...llmResult(),
+    requestedUpstream: "novita/fp8",
+    upstreamProviderName: "Novita",
+    llmResponse: createMockLLMResponse({
+      servedUpstream: "Novita",
+      upstreamIdentitySource: "provider_field",
+    }),
+  };
+  const compileResult = {
+    workItemId: "w",
+    containerName: "Cronus28",
+    compilationResult: createMockCompilationResult({ success: true }),
+    duration: 10,
+    compileDuration: 10,
+  };
+  const a = evaluateAttempt({
+    attemptNumber: 1,
+    llmResult: pinned,
+    compileResult,
+    context,
+  });
+  assertEquals(a.requestedUpstream, "novita/fp8");
+  assertEquals(a.servedUpstream, "Novita");
+  assertEquals(a.upstreamIdentitySource, "provider_field");
+  assertEquals(a.upstreamVerification, "verified");
+
+  const nonOr = evaluateAttempt({
+    attemptNumber: 1,
+    llmResult: pinned,
+    compileResult,
+    context: createMockTaskExecutionContext({
+      manifest: createMockTaskManifest({ expected: { compile: true } }),
+      llmProvider: "anthropic",
+    }),
+  });
+  assertEquals(nonOr.upstreamVerification, "not_applicable");
+  assertEquals(nonOr.requestedUpstream, null);
+  assertEquals(nonOr.servedUpstream, null);
+});
+
+Deno.test("evaluateAttempt records a mismatch when the served upstream is not the pinned one", () => {
+  const context = createMockTaskExecutionContext({
+    manifest: createMockTaskManifest({ expected: { compile: true } }),
+    llmProvider: "openrouter",
+  });
+  const a = evaluateAttempt({
+    attemptNumber: 1,
+    llmResult: {
+      ...llmResult(),
+      requestedUpstream: "novita/fp8",
+      upstreamProviderName: "Novita",
+      llmResponse: createMockLLMResponse({
+        servedUpstream: "Together",
+        upstreamIdentitySource: "router_metadata",
+      }),
+    },
+    compileResult: {
+      workItemId: "w",
+      containerName: "Cronus28",
+      compilationResult: createMockCompilationResult({ success: true }),
+      duration: 10,
+      compileDuration: 10,
+    },
+    context,
+  });
+  assertEquals(a.upstreamVerification, "mismatch");
+  assertEquals(a.servedUpstream, "Together");
+});

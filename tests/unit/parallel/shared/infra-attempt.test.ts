@@ -57,3 +57,52 @@ Deno.test("synthesizeInfraAttempt without an LLM response zeroes usage and promp
   assertEquals(a.containerName, undefined);
   assert(a.failureReasons.some((r) => r === "Signature: (unclassified)"));
 });
+
+Deno.test("synthesizeInfraAttempt records the requested pin with not_served when no response exists", () => {
+  const a = synthesizeInfraAttempt({
+    attemptNumber: 1,
+    startTime: new Date(),
+    error: new Error("plain"),
+    classification: { fingerprint: "x" },
+    provider: "openrouter",
+    requestedUpstream: "novita/fp8",
+    upstreamProviderName: "Novita",
+  });
+  assertEquals(a.requestedUpstream, "novita/fp8");
+  assertEquals(a.servedUpstream, null);
+  assertEquals(a.upstreamVerification, "not_served");
+});
+
+Deno.test("synthesizeInfraAttempt verifies the pin when the response carries the upstream", () => {
+  const a = synthesizeInfraAttempt({
+    attemptNumber: 2,
+    startTime: new Date(),
+    error: new ContainerError("Boom", "Cronus281", "test"),
+    classification: { fingerprint: "test:abc" },
+    provider: "openrouter",
+    requestedUpstream: "novita/fp8",
+    upstreamProviderName: "Novita",
+    llmResponse: {
+      content: "code",
+      model: "m",
+      duration: 1,
+      finishReason: "stop",
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      servedUpstream: "Novita",
+      upstreamIdentitySource: "provider_field",
+    },
+  });
+  assertEquals(a.upstreamVerification, "verified");
+  assertEquals(a.servedUpstream, "Novita");
+});
+
+Deno.test("synthesizeInfraAttempt without a provider classifies as not_applicable", () => {
+  const a = synthesizeInfraAttempt({
+    attemptNumber: 1,
+    startTime: new Date(),
+    error: new Error("plain"),
+    classification: { fingerprint: "x" },
+  });
+  assertEquals(a.upstreamVerification, "not_applicable");
+  assertEquals(a.requestedUpstream, null);
+});
