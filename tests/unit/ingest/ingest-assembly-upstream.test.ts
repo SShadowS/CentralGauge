@@ -434,3 +434,42 @@ Deno.test("the exclusion reason stays within 500 characters, with the full list 
     await cleanupTempDir(dir);
   }
 });
+
+Deno.test("the reason is clamped even when a provider-supplied upstream name overflows it", async () => {
+  const dir = await createTempDir("asm-up6");
+  try {
+    // The served name is interpolated into the HEAD of the reason, ahead of
+    // the locator budget, so the budget arithmetic alone cannot bound it:
+    // before the clamp this produced a reason far past the server's
+    // 500-character limit, and the compromised run would have been rejected
+    // with a 400 instead of being recorded as excluded.
+    const served = "Together".repeat(80);
+    assert(served.length > 500, "the fixture must actually overflow");
+    const path = await writeResultsFile(dir, [
+      makeResult("t1", [
+        createMockExecutionAttempt({
+          success: false,
+          score: 0,
+          attemptNumber: 1,
+          requestedUpstream: "novita/fp8",
+          servedUpstream: served,
+          upstreamVerification: "mismatch",
+          upstreamIdentitySource: "provider_field",
+        }),
+      ]),
+    ]);
+    const out = await assembleBenchResultsForVariant(
+      path,
+      VARIANT,
+      ASSEMBLE_OPTS,
+    );
+    assert(out.kind === "assembled");
+    const excluded = out.benchResults.excluded!;
+    assertEquals(excluded.reason.length, 500);
+    assert(excluded.reason.startsWith("upstream mismatch on 1 attempt:"));
+    // Clamping the prose never loses the attempt itself.
+    assertEquals(excluded.attempts, [{ task_id: "t1", attempt: 1 }]);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});

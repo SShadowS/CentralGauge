@@ -159,3 +159,34 @@ Deno.test("buildPayload omits the run-level capture keys when absent", () => {
     assertEquals(key in p, false);
   }
 });
+
+/**
+ * Fix round 1: `excluded` reaching the wire was untested. It is emitted by a
+ * single unguarded line in `buildPayload`, so deleting that line type-checks
+ * and silently drops the run-level exclusion the Task 12 server acts on.
+ */
+Deno.test("buildPayload emits excluded verbatim and omits the key entirely when absent", () => {
+  const base = {
+    runId: "run-1",
+    taskSetHash: "abc123",
+    model: { slug: "s", api_model_id: "m", family_slug: "f" },
+    settings: {},
+    machineId: "mach-1",
+    startedAt: "2026-09-12T00:00:00.000Z",
+    completedAt: "2026-09-12T00:01:00.000Z",
+    pricingVersion: "2026-09-12",
+    results: [],
+  };
+
+  const excluded = {
+    code: "upstream_mismatch" as const,
+    reason:
+      "upstream mismatch on 1 attempt: pinned novita/fp8, served Together (t2 a1)",
+    attempts: [{ task_id: "t2", attempt: 1 as const }],
+  };
+  const withExcluded = buildPayload({ ...base, excluded });
+  assertEquals(withExcluded["excluded"], excluded);
+
+  const clean = buildPayload(base);
+  assertEquals("excluded" in clean, false);
+});

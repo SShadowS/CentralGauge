@@ -11,6 +11,7 @@ import type {
 } from "../../../src/tasks/interfaces.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import { isInfraInvalidatedAttempt } from "../../../src/health/infra-invalidation.ts";
+import { isUpstreamCompromised } from "../../../src/llm/upstream-verification.ts";
 import { ValidationError } from "../../../src/errors.ts";
 import * as colors from "@std/fmt/colors";
 import {
@@ -290,8 +291,7 @@ export async function assembleBenchResultsForVariant(
   // pinned upstream simply never answered, which is a routing outcome, not
   // a wrong-model one.
   const compromised = items.filter((i) =>
-    i.upstream_verification === "mismatch" ||
-    i.upstream_verification === "unverified"
+    isUpstreamCompromised(i.upstream_verification)
   );
   if (compromised.length > 0) {
     const anyMismatch = compromised.some((i) =>
@@ -312,7 +312,12 @@ export async function assembleBenchResultsForVariant(
     const where = compromised.map((i) => `${i.task_id} a${i.attempt}`);
     br.excluded = {
       code: anyMismatch ? "upstream_mismatch" : "upstream_unverified",
-      reason: `${head}(${truncateWhere(where, REASON_MAX - head.length - 2)})`,
+      // Clamped unconditionally: `head` interpolates a provider-supplied
+      // upstream name, so a hostile or merely verbose one could otherwise
+      // push the reason past the server's 500-character limit and turn a
+      // compromised run into a 400 that never ingests at all.
+      reason: `${head}(${truncateWhere(where, REASON_MAX - head.length - 2)})`
+        .slice(0, REASON_MAX),
       attempts: compromised.map((i) => ({
         task_id: i.task_id,
         attempt: i.attempt,
@@ -322,13 +327,21 @@ export async function assembleBenchResultsForVariant(
   return { kind: "assembled", benchResults: br, infraExcludedAttempts };
 }
 
-/** Hard ceiling on `BenchResults.excluded.reason`. */
+/**
+ * Hard ceiling on `BenchResults.excluded.reason`, matching the limit the
+ * server enforces. A longer reason is rejected with 400, which would stop a
+ * compromised run from ingesting at all, so the caller clamps to this after
+ * assembling the string rather than trusting the budget arithmetic below.
+ */
 const REASON_MAX = 500;
 
 /**
  * Join the `task a1` locators, dropping the tail with an ellipsis once the
- * list would push `reason` past its ceiling. The full list always survives
- * on `excluded.attempts`, so nothing is lost by truncating the prose.
+ * list would push `reason` past its budget. This is the GRACEFUL bound, not
+ * the guarantee: it returns the list untruncated when the budget is already
+ * exhausted by the head, and the caller's clamp is what actually holds the
+ * ceiling. The full list always survives on `excluded.attempts`, so nothing
+ * is lost by truncating the prose either way.
  */
 function truncateWhere(where: string[], budget: number): string {
   const full = where.join(", ");

@@ -3,7 +3,12 @@
  * @module tests/unit/cli/commands/bench/results-writer.test
  */
 
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertFalse,
+  assertStringIncludes,
+} from "@std/assert";
 import {
   buildScoreLines,
   renderUpstreamBlock,
@@ -1045,6 +1050,44 @@ Deno.test("renderUpstreamBlock summarises pin, served names, model versions and 
   );
 });
 
+Deno.test("renderUpstreamBlock omits the pin line on a multi-variant pinned run", () => {
+  // The multi-variant shape: a real pinned run, but the caller supplies no
+  // pin because no single line describes every variant. The verification
+  // histogram must not sit under a line claiming nothing was pinned.
+  const results: TaskExecutionResult[] = [
+    {
+      taskId: "t1",
+      executionId: "t1-exec",
+      context: {} as TaskExecutionResult["context"],
+      attempts: [
+        createMockExecutionAttempt({
+          requestedUpstream: "novita/fp8",
+          servedUpstream: "Novita",
+          servedUpstreamModel: "gemini-3.8-flash-001",
+          upstreamIdentitySource: "both",
+          upstreamVerification: "verified",
+        }),
+      ],
+      success: true,
+      finalScore: 100,
+      totalTokensUsed: 0,
+      totalCost: 0,
+      totalDuration: 0,
+      passedAttemptNumber: 1,
+      successRate: 1,
+      executedAt: new Date(),
+      executedBy: "centralgauge",
+      environment: {},
+    },
+  ];
+
+  const lines = renderUpstreamBlock(results, "openrouter");
+  assertEquals(lines[0], "# Upstream");
+  assertFalse(lines.some((l: string) => l.startsWith("pin:")));
+  assert(lines.includes("verification: verified=1"));
+  assert(lines.includes("served: Novita=1"));
+});
+
 Deno.test("renderUpstreamBlock reports an unpinned openrouter run and an undeclared quantization", () => {
   const results: TaskExecutionResult[] = [
     {
@@ -1067,8 +1110,11 @@ Deno.test("renderUpstreamBlock reports an unpinned openrouter run and an undecla
 
   const unpinned = renderUpstreamBlock(results, "openrouter");
   assertEquals(unpinned[0], "# Upstream");
-  assert(unpinned.includes("pin: none"));
-  assert(unpinned.includes("served: none"));
+  // No pin line at all when the caller supplies no pin: a multi-variant run
+  // can pin its variants differently, and "pin: none" would assert nothing
+  // was pinned directly above a histogram that may prove otherwise.
+  assertFalse(unpinned.some((l: string) => l.startsWith("pin:")));
+  assertEquals(unpinned[1], "served: none");
   assert(unpinned.includes("served_model: none"));
   // An attempt with no recorded verdict counts as unpinned, not as missing.
   assert(unpinned.includes("verification: unpinned=1"));

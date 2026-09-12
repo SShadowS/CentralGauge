@@ -4,6 +4,7 @@ import { computeTaskSetHash } from "./catalog/task-set-hash.ts";
 import { loadIngestConfig, readPrivateKey } from "./config.ts";
 import { ensureModel, ensurePricing, ensureTaskSet } from "./register.ts";
 import { buildPayload } from "./envelope.ts";
+import type { BuildPayloadInput } from "./envelope.ts";
 import { signEnvelopeV2, signHeaderRequest } from "./sign.ts";
 import { uploadMissing } from "./blobs.ts";
 import { postWithRetry } from "./client.ts";
@@ -261,6 +262,67 @@ export async function mapResultItemToInput(
   return out;
 }
 
+/**
+ * Assemble the {@link BuildPayloadInput} for one run: the pure half of
+ * `ingestRun`'s payload step, extracted and exported for the same reason
+ * {@link mapResultItemToInput} was. Every optional field is copied ONLY when
+ * present on `br`, so a run that never set one produces an input with no
+ * such key at all and `buildPayload` omits it from the wire.
+ *
+ * `resolved` carries what `ingestRun` computes rather than reads off `br`:
+ * the machine id from config, the task-set hash after
+ * {@link resolveIngestTaskSetHash}, the mapped result rows, and the two blob
+ * digests.
+ */
+export function buildRunPayloadInput(
+  br: BenchResults,
+  resolved: {
+    machineId: string;
+    taskSetHash: string;
+    results: ResultInput[];
+    reproductionBundleSha?: string;
+    environmentSha256?: string;
+  },
+): BuildPayloadInput {
+  const input: BuildPayloadInput = {
+    runId: br.runId,
+    taskSetHash: resolved.taskSetHash,
+    model: br.model,
+    settings: br.settings,
+    machineId: resolved.machineId,
+    startedAt: br.startedAt,
+    completedAt: br.completedAt,
+    pricingVersion: br.pricingVersion,
+    results: resolved.results,
+    invocationMode: br.invocationMode,
+  };
+  if (br.excluded) input.excluded = br.excluded;
+  if (br.centralgaugeSha) input.centralgaugeSha = br.centralgaugeSha;
+  if (resolved.reproductionBundleSha) {
+    input.reproductionBundleSha256 = resolved.reproductionBundleSha;
+  }
+  if (br.harnessFingerprint) {
+    input.harnessFingerprint = br.harnessFingerprint;
+  }
+  if (br.retryPathVersion) input.retryPathVersion = br.retryPathVersion;
+  if (br.invocation) input.invocation = br.invocation;
+  if (resolved.environmentSha256 && br.environment) {
+    input.environmentSha256 = resolved.environmentSha256;
+    input.environment = {
+      bc_artifact: br.environment.bc_artifact,
+      container_image_digest: br.environment.container_image_digest,
+      bcch_version: br.environment.bcch_version,
+      test_runner: br.environment.test_runner,
+      prompt_template_digest: br.environment.prompt_template_digest,
+      tenant: br.environment.tenant,
+      company: br.environment.company,
+      bcch_use_pssession_bc28: br.environment.bcch_use_pssession_bc28,
+      bcch_use_pwsh_bc24: br.environment.bcch_use_pwsh_bc24,
+    };
+  }
+  return input;
+}
+
 export async function ingestRun(
   br: BenchResults,
   opts: IngestOptions,
@@ -331,43 +393,13 @@ export async function ingestRun(
     );
     await ensureTaskSet(cat, taskSetHash, countTasksSync(opts.tasksDir), deps);
   }
-  const payloadInput: Parameters<typeof buildPayload>[0] = {
-    runId: br.runId,
-    taskSetHash,
-    model: br.model,
-    settings: br.settings,
+  const payload = buildPayload(buildRunPayloadInput(br, {
     machineId: config.machineId,
-    startedAt: br.startedAt,
-    completedAt: br.completedAt,
-    pricingVersion: br.pricingVersion,
+    taskSetHash,
     results,
-    invocationMode: br.invocationMode,
-  };
-  if (br.excluded) payloadInput.excluded = br.excluded;
-  if (br.centralgaugeSha) payloadInput.centralgaugeSha = br.centralgaugeSha;
-  if (reproductionBundleSha) {
-    payloadInput.reproductionBundleSha256 = reproductionBundleSha;
-  }
-  if (br.harnessFingerprint) {
-    payloadInput.harnessFingerprint = br.harnessFingerprint;
-  }
-  if (br.retryPathVersion) payloadInput.retryPathVersion = br.retryPathVersion;
-  if (br.invocation) payloadInput.invocation = br.invocation;
-  if (environmentSha256 && br.environment) {
-    payloadInput.environmentSha256 = environmentSha256;
-    payloadInput.environment = {
-      bc_artifact: br.environment.bc_artifact,
-      container_image_digest: br.environment.container_image_digest,
-      bcch_version: br.environment.bcch_version,
-      test_runner: br.environment.test_runner,
-      prompt_template_digest: br.environment.prompt_template_digest,
-      tenant: br.environment.tenant,
-      company: br.environment.company,
-      bcch_use_pssession_bc28: br.environment.bcch_use_pssession_bc28,
-      bcch_use_pwsh_bc24: br.environment.bcch_use_pwsh_bc24,
-    };
-  }
-  const payload = buildPayload(payloadInput);
+    ...(reproductionBundleSha !== undefined ? { reproductionBundleSha } : {}),
+    ...(environmentSha256 !== undefined ? { environmentSha256 } : {}),
+  }));
 
   const precheckBody = await buildSignedEnvelope(
     br.runId,

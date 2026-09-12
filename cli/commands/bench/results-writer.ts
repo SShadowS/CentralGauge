@@ -134,6 +134,12 @@ export function renderFallbackBlock(events: FallbackEvent[]): string[] {
  * there, so printing a block of `none`s for an Anthropic run would be noise.
  * An attempt with no recorded verdict counts as `unpinned`, which is what a
  * run from before the lock, or an unpinned run today, actually was.
+ *
+ * The `pin:` line is printed ONLY when the caller supplies a pin. A
+ * multi-variant run supplies none, because its variants can be pinned
+ * differently and no single line describes them; printing `pin: none` there
+ * would assert nothing was pinned directly above a verification histogram
+ * proving otherwise. The per-attempt truth is in the results JSON either way.
  */
 export function renderUpstreamBlock(
   results: TaskExecutionResult[],
@@ -166,13 +172,13 @@ export function renderUpstreamBlock(
   const fmt = (m: Map<string, number>) =>
     [...m.entries()].sort().map(([k, n]) => `${k}=${n}`).join(" ");
   const lines = [`# Upstream`];
-  lines.push(
-    pin
-      ? `pin: ${pin.upstreamPin} (${pin.providerName}, ${
+  if (pin) {
+    lines.push(
+      `pin: ${pin.upstreamPin} (${pin.providerName}, ${
         pin.quantization ?? "quantization undeclared"
-      })`
-      : `pin: none`,
-  );
+      })`,
+    );
+  }
   lines.push(`served: ${fmt(served) || "none"}`);
   lines.push(`served_model: ${fmt(versions) || "none"}`);
   lines.push(`verification: ${fmt(verification)}`);

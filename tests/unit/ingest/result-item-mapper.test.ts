@@ -9,8 +9,12 @@
  */
 
 import { assertEquals, assertFalse } from "@std/assert";
-import type { BenchResultItem } from "../../../src/ingest/mod.ts";
-import { mapResultItemToInput } from "../../../src/ingest/mod.ts";
+import type { BenchResultItem, BenchResults } from "../../../src/ingest/mod.ts";
+import {
+  buildRunPayloadInput,
+  mapResultItemToInput,
+} from "../../../src/ingest/mod.ts";
+import { buildPayload } from "../../../src/ingest/envelope.ts";
 
 function baseItem(overrides?: Partial<BenchResultItem>): BenchResultItem {
   return {
@@ -136,4 +140,58 @@ Deno.test("mapResultItemToInput hashes transcript/code bytes and omits their key
   const out2 = await mapResultItemToInput(withoutBytes);
   assertFalse(Object.prototype.hasOwnProperty.call(out2, "transcript_sha256"));
   assertFalse(Object.prototype.hasOwnProperty.call(out2, "code_sha256"));
+});
+
+/**
+ * Fix round 1: `buildRunPayloadInput` is the extracted pure half of
+ * `ingestRun`'s payload step, for the same reason `mapResultItemToInput`
+ * above was extracted. It covers the one line that forwards `br.excluded`
+ * onto the payload input, which nothing else reaches without a network call.
+ */
+function baseBenchResults(
+  overrides?: Partial<BenchResults>,
+): BenchResults {
+  return {
+    runId: "run-1",
+    model: { slug: "s", api_model_id: "m", family_slug: "f" },
+    settings: {},
+    startedAt: "2026-09-12T00:00:00.000Z",
+    completedAt: "2026-09-12T00:01:00.000Z",
+    pricingVersion: "2026-09-12",
+    results: [],
+    invocationMode: "sync",
+    ...overrides,
+  };
+}
+
+const RESOLVED = {
+  machineId: "mach-1",
+  taskSetHash: "a".repeat(64),
+  results: [],
+};
+
+Deno.test("buildRunPayloadInput forwards excluded onto the payload input", () => {
+  const excluded = {
+    code: "upstream_unverified" as const,
+    reason:
+      "upstream unverified on 1 attempt: pinned novita/fp8, no identity in the response (t1 a1)",
+    attempts: [{ task_id: "t1", attempt: 1 as const }],
+  };
+
+  const input = buildRunPayloadInput(baseBenchResults({ excluded }), RESOLVED);
+  assertEquals(input.excluded, excluded);
+  // And it survives the trip onto the wire payload.
+  assertEquals(buildPayload(input)["excluded"], excluded);
+});
+
+Deno.test("buildRunPayloadInput omits excluded entirely on a clean run", () => {
+  const input = buildRunPayloadInput(baseBenchResults(), RESOLVED);
+  assertFalse(Object.prototype.hasOwnProperty.call(input, "excluded"));
+  assertFalse(
+    Object.prototype.hasOwnProperty.call(buildPayload(input), "excluded"),
+  );
+  // The resolved values the caller computes still map through.
+  assertEquals(input.machineId, "mach-1");
+  assertEquals(input.taskSetHash, "a".repeat(64));
+  assertEquals(input.invocationMode, "sync");
 });
