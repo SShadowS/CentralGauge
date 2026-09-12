@@ -35,7 +35,10 @@ import type { Step } from "./transitions.ts";
 import type { BatchRunState } from "./state.ts";
 import { isTerminal, loadState, writeState } from "./state.ts";
 import { journalItems, submitChunks } from "./submit-wave.ts";
-import type { FrozenPromptInputs } from "../parallel/shared/prompt-inputs.ts";
+import type {
+  FrozenPromptInputs,
+  FrozenRouting,
+} from "../parallel/shared/prompt-inputs.ts";
 
 export interface AdvanceDeps {
   provider: BatchProvider;
@@ -67,6 +70,13 @@ export interface AdvanceDeps {
    */
   manifests: Map<string, TaskManifest>;
   contexts: Map<string, TaskExecutionContext>;
+  /**
+   * The run's FROZEN OpenRouter routing, read from `prompt-inputs.json` by
+   * the CLI command layer and never from live config (spec 2026-09-11 D2).
+   * Threaded to `evaluateCollected` so every work result records the pin the
+   * request was sent with; absent on an unpinned run.
+   */
+  routing?: FrozenRouting;
 }
 
 export type AdvanceExit = 0 | 3 | 4;
@@ -366,6 +376,7 @@ async function runEvaluate(
       contexts: deps.contexts,
       provider: state.model.provider,
       requestedModel: state.model.apiModelId,
+      ...(deps.routing ? { routing: deps.routing } : {}),
     });
   } finally {
     try {

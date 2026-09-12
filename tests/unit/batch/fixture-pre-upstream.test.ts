@@ -1,6 +1,7 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { join } from "@std/path";
 import { loadState } from "../../../src/batch/state.ts";
+import { buildAdvanceDeps } from "../../../cli/commands/bench-batch-command.ts";
 import { copyPreUpstreamFixture } from "../../utils/batch-fixture.ts";
 
 Deno.test("pre-upstream fixture parses as a finalized schema-4 run with no routing", async () => {
@@ -18,6 +19,19 @@ Deno.test("pre-upstream fixture parses as a finalized schema-4 run with no routi
     };
     assertEquals(results.ingest.schema, 4);
     assertExists(inputs["settings"]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+Deno.test("buildAdvanceDeps on a pre-upstream run wires no routing", async () => {
+  const f = await copyPreUpstreamFixture();
+  try {
+    const deps = await buildAdvanceDeps(f.dir);
+    const body = deps.buildBody(
+      { prompt: "hi", taskId: "t", attempt: 1 } as never,
+    ) as Record<string, unknown>;
+    assertEquals("provider" in body, false);
   } finally {
     await f.cleanup();
   }

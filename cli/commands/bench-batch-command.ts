@@ -63,6 +63,7 @@ import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import { ModelPresetRegistry } from "../../src/llm/model-presets.ts";
 import { generateVariantId } from "../../src/llm/variant-types.ts";
 import { PricingService } from "../../src/llm/pricing-service.ts";
+import { resolveUpstreamPin } from "../../src/llm/upstream-pin.ts";
 import { createBatchProvider } from "../../src/llm/batch/mod.ts";
 import { buildAttemptContext } from "../../src/parallel/shared/mod.ts";
 import { ContainerRuntime } from "../../src/parallel/container-runtime.ts";
@@ -296,6 +297,11 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
     apiModelId: variant.model,
     variantConfig: inputs.variantConfig,
   };
+  // The OpenRouter upstream lock comes from the run's OWN frozen inputs, not
+  // from `config.openrouter` (spec 2026-09-11 D2): live config can be edited
+  // between waves, and wave 2 must route exactly where wave 1 did. Nothing in
+  // this function may read `config.openrouter`.
+  const routing = inputs.routing;
   const containerNames = state.frozen.environment.containers.map((c) => c.name);
 
   // Built lazily, only on the `finalize` step itself: every other step
@@ -316,11 +322,14 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
   return {
     provider: batchProvider,
     buildBody: (r: LLMRequest) =>
-      wireProvider(providerName, wiringModel, apiKey).buildBody(r),
+      wireProvider(providerName, wiringModel, apiKey, routing).buildBody(r),
     wrap: (items: BatchItem[]) =>
-      wireProvider(providerName, wiringModel, apiKey).wrap(items),
+      wireProvider(providerName, wiringModel, apiKey, routing).wrap(items),
     mapRaw: (raw: unknown, itemId: string): LLMResponse =>
-      wireProvider(providerName, wiringModel, apiKey).mapRaw(raw, itemId),
+      wireProvider(providerName, wiringModel, apiKey, routing).mapRaw(
+        raw,
+        itemId,
+      ),
     runtimeFactory: () =>
       ContainerRuntime.start({
         containers: containerNames,
@@ -336,6 +345,7 @@ export async function buildAdvanceDeps(dir: string): Promise<AdvanceDeps> {
     log: (line: string) => console.log(line),
     manifests,
     contexts,
+    ...(routing ? { routing } : {}),
   };
 }
 
@@ -425,6 +435,10 @@ export function buildBatchCommand(): Command {
       default: "results/",
     })
     .option("--no-ingest", "Skip ingest at finalize time")
+    .option(
+      "--skip-upstream-preflight",
+      "Skip the one-request upstream pin probe; for a known transient outage only. Recorded on the run.",
+    )
     .action(async (opts) => {
       await EnvLoader.loadEnvironment();
       const config = await ConfigManager.loadConfig();
@@ -464,6 +478,20 @@ export function buildBatchCommand(): Command {
         precheck: async () => {
           if (variant) await runIngestPrecheck(variant);
         },
+        resolveUpstream: (apiModelId, pin, maxTokens) =>
+          resolveUpstreamPin(
+            // 16_000 is a conservative bound on the longest rendered prompt in
+            // the suite; Task 15 moves it to a shared PROMPT_TOKENS_BOUND.
+            {
+              apiModelId,
+              pin,
+              maxTokens,
+              longestPromptTokens: 16_000,
+              skipPreflight: opts.skipUpstreamPreflight === true,
+            },
+            { apiKey: apiKeyForBatchProvider("openrouter") ?? "" },
+          ),
+        skipUpstreamPreflight: opts.skipUpstreamPreflight === true,
         runtimeFactory: () =>
           ContainerRuntime.start({
             containers,

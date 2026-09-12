@@ -34,3 +34,58 @@ Deno.test("openrouter mapRaw carries the upstream identity from the inline resul
   const none = wiring.mapRaw({ ...body, provider: undefined }, "item-3");
   assertEquals(none.servedUpstream, undefined);
 });
+
+Deno.test("wireProvider threads a frozen routing pin into the openrouter request body", () => {
+  const routing = {
+    upstreamPin: "novita/fp8",
+    providerName: "Novita",
+    quantization: "fp8",
+    preflight: "passed" as const,
+  };
+  const wiring = wireProvider(
+    "openrouter",
+    { apiModelId: "z-ai/glm-5.3", variantConfig: null },
+    "k",
+    routing,
+  );
+  const body = wiring.buildBody(
+    { prompt: "hi", taskId: "t", attempt: 1 } as never,
+  ) as Record<string, unknown>;
+  assertEquals(body["provider"], {
+    order: ["novita/fp8"],
+    allow_fallbacks: false,
+  });
+
+  const unpinned = wireProvider("openrouter", {
+    apiModelId: "z-ai/glm-5.3",
+    variantConfig: null,
+  }, "k");
+  assertEquals(
+    "provider" in
+      (unpinned.buildBody(
+        { prompt: "hi", taskId: "t", attempt: 1 } as never,
+      ) as Record<string, unknown>),
+    false,
+  );
+});
+
+Deno.test("wireProvider ignores routing for anthropic and openai", () => {
+  const routing = {
+    upstreamPin: "novita/fp8",
+    providerName: "Novita",
+    quantization: "fp8",
+    preflight: "passed" as const,
+  };
+  for (const name of ["anthropic", "openai"] as const) {
+    const wiring = wireProvider(
+      name,
+      { apiModelId: "m", variantConfig: null },
+      "k",
+      routing,
+    );
+    const body = wiring.buildBody(
+      { prompt: "hi", taskId: "t", attempt: 1 } as never,
+    ) as Record<string, unknown>;
+    assertEquals("provider" in body, false);
+  }
+});

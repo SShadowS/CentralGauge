@@ -102,3 +102,18 @@ Deno.test("HARNESS_INPUTS names the shared units and every legacy entry", () => 
   assert(HARNESS_INPUTS.includes("src/parallel/shared"));
   assert(HARNESS_INPUTS.includes("src/parallel/llm-work-pool.ts"));
 });
+
+Deno.test("HARNESS_INPUTS covers the OpenRouter routing implementation", () => {
+  for (
+    const p of [
+      "src/llm/openrouter-adapter.ts",
+      "src/batch/provider-wiring.ts",
+      "src/config/config.ts",
+    ]
+  ) {
+    assert(
+      HARNESS_INPUTS.includes(p as never),
+      `${p} must be a harness input`,
+    );
+  }
+});

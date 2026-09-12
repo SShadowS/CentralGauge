@@ -323,3 +323,51 @@ Deno.test("nextStep never resubmits an item the provider called terminal", () =>
     { kind: "evaluate", wave: 1 },
   );
 });
+
+Deno.test("nextStep does not mint wave 2 for a compromised attempt", () => {
+  // A `mismatch`/`unverified` attempt is excluded at ingest (spec D3), so a
+  // second attempt for it would be paid for and never counted.
+  const compromised = {
+    ...attempt(false),
+    upstreamVerification: "mismatch" as const,
+    terminal: "upstream_compromised" as const,
+  };
+  const state = minimalState({
+    phase: "attempt-1-collected",
+    tasks: { A: task("evaluated"), B: task("evaluated") },
+  });
+  const step = nextStep(
+    state,
+    false,
+    new Map<string, ExecutionAttempt>([["A", compromised], [
+      "B",
+      attempt(
+        false,
+      ),
+    ]]),
+    2,
+  );
+  assertEquals(step, { kind: "submit-wave-2", taskIds: ["B"] });
+});
+
+Deno.test("nextStep still mints wave 2 for a not_served attempt", () => {
+  // `not_served` is a provider error, not a broken pin: the attempt is a
+  // normal failure and keeps its fix attempt.
+  const notServed = {
+    ...attempt(false),
+    upstreamVerification: "not_served" as const,
+  };
+  const state = minimalState({
+    phase: "attempt-1-collected",
+    tasks: { A: task("evaluated") },
+  });
+  assertEquals(
+    nextStep(
+      state,
+      false,
+      new Map<string, ExecutionAttempt>([["A", notServed]]),
+      2,
+    ),
+    { kind: "submit-wave-2", taskIds: ["A"] },
+  );
+});

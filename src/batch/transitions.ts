@@ -182,7 +182,11 @@ function stepForCollected(
   const eligible = taskIds.filter((id) => {
     if (state.tasks[id]!.attempt2 !== undefined) return false;
     const a = attempts.get(id);
-    return a !== undefined && !a.success && !a.infraSynthesized;
+    // A compromised attempt (the pinned upstream could not be shown to have
+    // served it, spec D3) is excluded at ingest, so a second attempt for it
+    // would be paid for and never counted.
+    return a !== undefined && !a.success && !a.infraSynthesized &&
+      a.terminal !== "upstream_compromised";
   });
   if (eligible.length === 0) {
     if (minted.length > 0) {

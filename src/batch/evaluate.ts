@@ -26,7 +26,9 @@ import {
   runCompileWorkItem,
   synthesizeInfraAttempt,
 } from "../parallel/shared/mod.ts";
+import type { FrozenRouting } from "../parallel/shared/prompt-inputs.ts";
 import type { LLMWorkResult } from "../parallel/types.ts";
+import { isUpstreamCompromised } from "../llm/upstream-verification.ts";
 import { classifyInfraError } from "../health/classify.ts";
 import { isInfraError } from "../health/is-infra-error.ts";
 import { resolveCandidate } from "../llm/candidate-resolution.ts";
@@ -49,6 +51,43 @@ export interface EvaluateDeps {
   contexts: Map<string, TaskExecutionContext>;
   provider: string;
   requestedModel: string;
+  /**
+   * The run's frozen OpenRouter routing (`prompt-inputs.json`'s `routing`),
+   * absent on an unpinned run. Every work result built here carries its pin
+   * so the attempt records what was asked for even when the provider
+   * errored and no identity came back (spec 2026-09-11 D1).
+   */
+  routing?: FrozenRouting;
+}
+
+/**
+ * The requested-pin fields every batch `LLMWorkResult` carries, taken from
+ * the run's frozen routing. Empty on an unpinned run, which then classifies
+ * as `unpinned` rather than as a broken pin.
+ */
+function requestedUpstreamFields(
+  routing: FrozenRouting | undefined,
+): { requestedUpstream?: string; upstreamProviderName?: string } {
+  return routing
+    ? {
+      requestedUpstream: routing.upstreamPin,
+      upstreamProviderName: routing.providerName,
+    }
+    : {};
+}
+
+/**
+ * A pinned attempt that cannot be shown to have been served by its pin is
+ * terminal: it is excluded at ingest (spec D3), so the task must not get a
+ * wave-2 attempt that would be paid for and never counted.
+ */
+function markTerminalIfCompromised(attempt: ExecutionAttempt): void {
+  if (
+    attempt.upstreamVerification !== undefined &&
+    isUpstreamCompromised(attempt.upstreamVerification)
+  ) {
+    attempt.terminal = "upstream_compromised";
+  }
 }
 
 /** On-disk shape of `responses/<itemId>.json` (written by `src/batch/collect.ts`). */
@@ -143,16 +182,16 @@ async function evaluateResponded(
       request,
       duration: 0,
       readyForCompile: false,
+      ...requestedUpstreamFields(deps.routing),
     };
-    return {
-      kind: "attempt",
-      attempt: createFailedAttempt(
-        attemptNumber,
-        llmResult,
-        undefined,
-        deps.provider,
-      ),
-    };
+    const failed = createFailedAttempt(
+      attemptNumber,
+      llmResult,
+      undefined,
+      deps.provider,
+    );
+    markTerminalIfCompromised(failed);
+    return { kind: "attempt", attempt: failed };
   }
 
   const context = deps.contexts.get(taskId);
@@ -203,6 +242,7 @@ async function evaluateResponded(
       request,
       duration: pricedResponse.duration,
       readyForCompile: true,
+      ...requestedUpstreamFields(deps.routing),
     };
     const attempt = evaluateAttempt({
       attemptNumber,
@@ -213,6 +253,7 @@ async function evaluateResponded(
     if (infraRetries.length > 0) {
       attempt.infraRetries = infraRetries;
     }
+    markTerminalIfCompromised(attempt);
     return { kind: "attempt", attempt };
   } catch (err) {
     let cause = err instanceof Error ? err : new Error(String(err));
@@ -247,6 +288,7 @@ async function evaluateResponded(
       request,
       llmResponse: pricedResponse,
       provider: deps.provider,
+      ...requestedUpstreamFields(deps.routing),
     });
     return { kind: "attempt", attempt };
   }
@@ -261,6 +303,7 @@ async function evaluateErrored(
   stored: StoredResponse,
   requestPathForItem: string,
   provider: string,
+  routing: FrozenRouting | undefined,
 ): Promise<ItemOutcome> {
   if (stored.result.ok) {
     throw new Error(
@@ -284,6 +327,7 @@ async function evaluateErrored(
     duration: 0,
     readyForCompile: false,
     ...(request ? { request } : {}),
+    ...requestedUpstreamFields(routing),
   };
   const attempt = createFailedAttempt(
     attemptNumber,
@@ -371,6 +415,7 @@ export async function evaluateCollected(
           stored,
           requestPath(dir, itemSummary.itemId),
           deps.provider,
+          deps.routing,
         );
 
       if (outcome.kind === "unresolved") {

@@ -13,7 +13,11 @@ export type {
 } from "./infra-attempt.ts";
 export type { RunCompileDeps } from "./run-compile.ts";
 export type { PriceMode, PriceUsageInput } from "./price-usage.ts";
-export type { FrozenPromptInputs, RenderInputs } from "./prompt-inputs.ts";
+export type {
+  FrozenPromptInputs,
+  FrozenRouting,
+  RenderInputs,
+} from "./prompt-inputs.ts";
 
 export { calculateAttemptScore, evaluateAttempt } from "./evaluate-attempt.ts";
 export { createFailedAttempt } from "./failed-attempt.ts";

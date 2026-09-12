@@ -32,12 +32,32 @@ export interface RenderInputs {
 }
 
 /**
+ * The OpenRouter upstream a run is locked to, as resolved (and preflighted)
+ * once at submit time (spec 2026-09-11 D2). `upstreamPin` is the endpoints
+ * listing's `tag`, which `provider.order` accepts; `providerName` is the
+ * display name a response echoes, which verification compares against.
+ */
+export interface FrozenRouting {
+  upstreamPin: string;
+  providerName: string;
+  quantization: string | null;
+  preflight: "passed" | "skipped";
+}
+
+/**
  * `RenderInputs` plus the settings snapshot Plan B freezes to
  * `prompt-inputs.json` so attempt 2 can be rendered days later from exactly
  * what attempt 1 saw.
  */
 export interface FrozenPromptInputs extends RenderInputs {
   settings: CanonicalSettings;
+  /**
+   * OpenRouter upstream lock (spec 2026-09-11 D2), frozen at submit. Every
+   * later step reads routing from HERE, never from live config, so wave 2
+   * cannot route differently from wave 1. Absent on unpinned runs and on
+   * every run from before this field existed.
+   */
+  routing?: FrozenRouting;
 }
 
 /**
