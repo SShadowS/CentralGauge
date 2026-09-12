@@ -975,14 +975,22 @@ export class ParallelBenchmarkOrchestrator {
         attempt.infraRetries = infraRetries;
       }
       attempts.push(attempt);
-      if (this.markTerminalIfCompromised(attempt)) break;
 
       if (attempt.success) {
         success = true;
         finalCode = llmResult.code;
         passedAttemptNumber = attemptNumber;
-        break;
       }
+
+      // Upstream lock (spec D3): a pinned attempt whose upstream cannot be
+      // shown to have held ends the task here, so no second attempt is spent
+      // on an upstream we cannot name. Scoring is deliberately NOT touched -
+      // a compromised attempt that passed still credits the task exactly as
+      // an ordinary pass would, because the whole run is excluded atomically
+      // at ingest rather than scored down here. The stamp runs even on a
+      // successful attempt, so the terminal reason is recorded either way.
+      const compromised = this.markTerminalIfCompromised(attempt);
+      if (attempt.success || compromised) break;
     }
 
     return finalizeTaskResult({
