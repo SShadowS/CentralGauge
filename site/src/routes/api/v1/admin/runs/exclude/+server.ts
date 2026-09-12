@@ -35,6 +35,7 @@ import {
   releaseProfileIfEmptyStmt,
   STORED_KEY_SUBQUERY,
 } from "$lib/server/upstream-profile";
+import { pinFromInvocationJson } from "$lib/server/upstream-summary";
 
 interface RunExcludePayload {
   run_id: string;
@@ -116,9 +117,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       taskSetHash: existing.task_set_hash,
       mode: existing.invocation_mode,
     };
-    const key = profileKeyOf(
-      JSON.parse(existing.invocation_json ?? "{}").upstream_pin ?? null,
-    );
+    const key = profileKeyOf(pinFromInvocationJson(existing.invocation_json));
 
     const wasExcluded = existing.excluded_at !== null;
     const now = new Date().toISOString();

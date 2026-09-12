@@ -18,6 +18,7 @@ import { isValidTaskSetHash } from "../shared/task-set-hash";
 import { COHORT_RUNS } from "../shared/cohort";
 import { modePredicate } from "./invocation-mode";
 import { excludedAndClause, excludedPredicate } from "./run-exclusion";
+import { UNPINNED_PROFILE } from "./upstream-profile";
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
@@ -651,7 +652,7 @@ export async function computeLeaderboard(
       for (const p of pinRows) {
         const cur = upstreamByModel.get(Number(p.model_id)) ??
           { pin: null, served: [], verification: {} };
-        cur.pin = p.profile_key === "<unpinned>" ? null : p.profile_key;
+        cur.pin = p.profile_key === UNPINNED_PROFILE ? null : p.profile_key;
         upstreamByModel.set(Number(p.model_id), cur);
       }
     }

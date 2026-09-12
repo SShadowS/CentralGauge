@@ -188,6 +188,37 @@ describe("POST /api/v1/runs upstream lock", () => {
     expect(prof).toBeNull();
   });
 
+  it("stamps the ingest event with the request's own clock, not a second one", async () => {
+    const res = await post(
+      orPayload({
+        results: [
+          orResult(),
+          orResult({
+            task_id: "easy/task-2",
+            served_upstream: "Together",
+            upstream_verification: "mismatch",
+            passed: false,
+            score: 0,
+          }),
+        ],
+        excluded: {
+          code: "upstream_mismatch",
+          reason: "upstream mismatch on 1 attempt",
+          attempts: [{ task_id: "easy/task-2", attempt: 1 }],
+        },
+      }),
+      "r-clock",
+    );
+    expect(res.status).toBe(202);
+    const run = await env.DB.prepare(
+      `SELECT excluded_at FROM runs WHERE id = ?`,
+    ).bind("r-clock").first<{ excluded_at: string }>();
+    const event = await env.DB.prepare(
+      `SELECT ts FROM ingest_events WHERE run_id = ? AND event = 'signature_verified'`,
+    ).bind("r-clock").first<{ ts: string }>();
+    expect(event?.ts).toBe(run?.excluded_at);
+  });
+
   it("rejects an exclusion whose named attempt is not compromised in the payload", async () => {
     const res = await post(
       orPayload({

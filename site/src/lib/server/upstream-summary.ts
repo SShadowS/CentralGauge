@@ -31,17 +31,31 @@ export function attemptUpstream(r: UpstreamRow): AttemptUpstream {
 }
 
 /**
+ * The pin carried by an already-parsed invocation record. Anything that is not
+ * a nonempty string means no pin, which is what `null` says.
+ *
+ * The ingest route holds the record as an object and the admin routes hold it
+ * as stored JSON, so both forms live here rather than drifting apart in two
+ * call sites.
+ */
+export function pinFromInvocation(record: unknown): string | null {
+  if (!record || typeof record !== "object") return null;
+  const v = (record as { upstream_pin?: unknown }).upstream_pin;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+/**
  * The run's own pin, read out of `runs.invocation_json`. A malformed or absent
  * record is not an error here: it simply means the run was ingested without a
- * pin, which is exactly what `null` says.
+ * pin, which is exactly what `null` says. A stored literal `"null"` parses to
+ * `null` and takes that same path, rather than throwing on a property read.
  */
 export function pinFromInvocationJson(
   json: string | null | undefined,
 ): string | null {
   if (!json) return null;
   try {
-    const v = (JSON.parse(json) as { upstream_pin?: unknown }).upstream_pin;
-    return typeof v === "string" && v.length > 0 ? v : null;
+    return pinFromInvocation(JSON.parse(json));
   } catch {
     return null;
   }

@@ -24,6 +24,7 @@ import {
   profileKeyOf,
   readProfile,
 } from "$lib/server/upstream-profile";
+import { pinFromInvocation } from "$lib/server/upstream-summary";
 
 const TERMINATION_KINDS = new Set([
   "response",
@@ -446,13 +447,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // profile it claims for its (model, task set, mode) triple. A run with no
     // pin claims `<unpinned>`, which conflicts with a pinned cohort exactly
     // the way two different pins conflict with each other.
-    const runPin =
-      typeof (payload.invocation as Record<string, unknown> | undefined)
-          ?.["upstream_pin"] === "string"
-        ? ((payload.invocation as Record<string, unknown>)[
-          "upstream_pin"
-        ] as string)
-        : null;
+    const runPin = pinFromInvocation(payload.invocation);
     const profileKey = profileKeyOf(runPin);
     const triple = {
       modelId: model.id,
@@ -925,7 +920,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           signed.run_id,
           "signature_verified",
           payload.machine_id,
-          new Date().toISOString(),
+          now,
           JSON.stringify({ missing_blob_count: missingBlobs.length }),
           signed.run_id,
         ),
