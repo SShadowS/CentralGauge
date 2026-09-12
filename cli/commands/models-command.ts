@@ -665,50 +665,48 @@ export function registerModelsCommand(cli: Command): void {
 
       // Handle --upstreams mode. The tags this prints are exactly what
       // `openrouter.upstream` in .centralgauge.yml accepts (spec 2026-09-11
-      // D2), so this is how an operator picks a pin. An UpstreamPinError from
-      // --pin propagates to the CLI's top-level printer, which already prints
-      // [FAIL] plus the message (including the available tags) and exits 1.
+      // D2), so this is how an operator picks a pin.
       if (options.upstreams) {
         await EnvLoader.loadEnvironment();
         const apiKey = getApiKeyForProvider("openrouter") ?? "";
-        for (const spec of specs) {
-          if (!spec.startsWith("openrouter/")) {
+        try {
+          for (const spec of specs) {
+            if (!spec.startsWith("openrouter/")) {
+              console.log(
+                `${
+                  colors.yellow("[SKIP]")
+                } ${spec}: --upstreams applies to openrouter/* slugs only`,
+              );
+              continue;
+            }
+            const apiModelId = spec.slice("openrouter/".length);
+            const endpoints = await fetchUpstreams(apiModelId, { apiKey });
             console.log(
               `${
-                colors.yellow("[SKIP]")
-              } ${spec}: --upstreams applies to openrouter/* slugs only`,
+                colors.cyan("[Upstreams]")
+              } ${spec}: ${endpoints.length} endpoint${
+                endpoints.length === 1 ? "" : "s"
+              }`,
             );
-            continue;
-          }
-          const apiModelId = spec.slice("openrouter/".length);
-          const endpoints = await fetchUpstreams(apiModelId, { apiKey });
-          console.log(
-            `${
-              colors.cyan("[Upstreams]")
-            } ${spec}: ${endpoints.length} endpoint${
-              endpoints.length === 1 ? "" : "s"
-            }`,
-          );
-          console.log(
-            "  tag                            provider           quant   ctx        max_out   $/M out   status",
-          );
-          for (const e of endpoints) {
             console.log(
-              `  ${e.slug.padEnd(30)} ${e.providerName.padEnd(18)} ${
-                (e.quantization ?? "-").padEnd(7)
-              } ` +
-                `${String(e.contextLength ?? "-").padEnd(10)} ${
-                  String(e.maxCompletionTokens ?? "-").padEnd(9)
-                } ` +
-                `${
-                  e.outputPerMtoken === null
-                    ? "-".padEnd(9)
-                    : e.outputPerMtoken.toFixed(2).padEnd(9)
-                } ${e.status ?? "-"}`,
+              "  tag                            provider           quant   ctx        max_out   $/M out   status",
             );
-          }
-          if (options.pin) {
-            try {
+            for (const e of endpoints) {
+              console.log(
+                `  ${e.slug.padEnd(30)} ${e.providerName.padEnd(18)} ${
+                  (e.quantization ?? "-").padEnd(7)
+                } ` +
+                  `${String(e.contextLength ?? "-").padEnd(10)} ${
+                    String(e.maxCompletionTokens ?? "-").padEnd(9)
+                  } ` +
+                  `${
+                    e.outputPerMtoken === null
+                      ? "-".padEnd(9)
+                      : e.outputPerMtoken.toFixed(2).padEnd(9)
+                  } ${e.status ?? "-"}`,
+              );
+            }
+            if (options.pin) {
               const r = await resolveUpstreamPin(
                 {
                   apiModelId,
@@ -726,23 +724,24 @@ export function registerModelsCommand(cli: Command): void {
                   r.quantization ? ` (${r.quantization})` : ""
                 }, preflight ${r.preflight}`,
               );
-            } catch (err) {
-              // `cli/centralgauge.ts` has no top-level error printer, so an
-              // escaping UpstreamPinError reaches the operator as an uncaught
-              // promise plus a stack trace. Its message already names every
-              // valid tag, which is the whole reason to ask, so print it as a
-              // [FAIL] line rather than bury it.
-              if (err instanceof UpstreamPinError) {
-                console.error(
-                  `${colors.red("[FAIL]")} upstream pin: ${err.message}`,
-                );
-                Deno.exit(1);
-              }
-              throw err;
+              // --pin costs a real request, so it runs against ONE slug only.
+              break;
             }
-            // --pin costs a real request, so it runs against ONE slug only.
-            break;
           }
+        } catch (err) {
+          // `cli/centralgauge.ts` has no top-level error printer, so an
+          // escaping UpstreamPinError reaches the operator as an uncaught
+          // promise plus a stack trace. Its message already names the model
+          // or every valid tag, which is the whole reason to ask, so print it
+          // as a [FAIL] line rather than bury it. Covers the endpoints
+          // listing (a bad slug, a missing key) as well as --pin.
+          if (err instanceof UpstreamPinError) {
+            console.error(
+              `${colors.red("[FAIL]")} upstream pin: ${err.message}`,
+            );
+            Deno.exit(1);
+          }
+          throw err;
         }
         return;
       }
