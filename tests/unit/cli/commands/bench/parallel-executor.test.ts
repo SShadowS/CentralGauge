@@ -204,6 +204,50 @@ Deno.test("buildParallelOptions", async (t) => {
     assertEquals(result.promptOverrides?.prefix, "Custom prefix");
   });
 
+  await t.step("should forward upstreamPins to the orchestrator", () => {
+    // The orchestrator puts `provider.order` on every request from this map,
+    // and the ingest capture records `upstream_resolved` from the SAME map.
+    // Forwarding has to be verbatim or the recorded pin and the pin the
+    // requests carried could disagree (spec 2026-09-11 D2).
+    const pins = new Map([[
+      "openrouter/z-ai/glm-5.3",
+      {
+        upstreamPin: "novita/fp8",
+        providerName: "Novita",
+        quantization: "fp8",
+        preflight: "passed" as const,
+      },
+    ]]);
+    const options: ExtendedBenchmarkOptions = {
+      tasks: ["tasks/easy/*.yml"],
+      llms: ["openrouter/z-ai/glm-5.3"],
+      attempts: 2,
+      outputDir: "./results",
+      upstreamPins: pins,
+    };
+
+    const result = buildParallelOptions(options, "Container", "bccontainer");
+
+    assertEquals(result.upstreamPins, pins);
+    assertEquals(
+      result.upstreamPins?.get("openrouter/z-ai/glm-5.3")?.upstreamPin,
+      "novita/fp8",
+    );
+  });
+
+  await t.step("should omit upstreamPins for an unpinned run", () => {
+    const options: ExtendedBenchmarkOptions = {
+      tasks: ["tasks/easy/*.yml"],
+      llms: ["sonnet"],
+      attempts: 2,
+      outputDir: "./results",
+    };
+
+    const result = buildParallelOptions(options, "Container", "bccontainer");
+
+    assertEquals(result.upstreamPins, undefined);
+  });
+
   await t.step("should not include promptOverrides when not provided", () => {
     const options: ExtendedBenchmarkOptions = {
       tasks: ["tasks/easy/*.yml"],

@@ -41,6 +41,10 @@ export const HARNESS_INPUTS = [
   "src/llm/openrouter-adapter.ts",
   "src/batch/provider-wiring.ts",
   "src/config/config.ts",
+  // The per-attempt upstream classifier. It decides `upstream_verification`
+  // for every attempt, so changing it re-scores the attempts of a run still
+  // in flight - exactly the class of change drift detection exists for.
+  "src/llm/upstream-verification.ts",
 ] as const;
 
 /**

@@ -109,6 +109,9 @@ Deno.test("HARNESS_INPUTS covers the OpenRouter routing implementation", () => {
       "src/llm/openrouter-adapter.ts",
       "src/batch/provider-wiring.ts",
       "src/config/config.ts",
+      // The per-attempt classifier: a change to it re-scores the attempts of
+      // a run still in flight, so it must show as drift.
+      "src/llm/upstream-verification.ts",
     ]
   ) {
     assert(

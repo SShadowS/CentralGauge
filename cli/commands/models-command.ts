@@ -22,6 +22,13 @@ import type {
 import type { LLMRequest } from "../../src/llm/types.ts";
 import { EnvLoader } from "../../src/utils/env-loader.ts";
 import { parseProviderAndModel } from "../helpers/mod.ts";
+import { DEFAULT_MAX_TOKENS } from "../../src/constants.ts";
+import {
+  fetchUpstreams,
+  resolveUpstreamPin,
+  UpstreamPinError,
+} from "../../src/llm/upstream-pin.ts";
+import { PROMPT_TOKENS_BOUND } from "./bench/upstream-precheck.ts";
 
 /** Result of checking model accessibility */
 interface ModelCheckResult {
@@ -506,9 +513,12 @@ async function checkModelAccess(
 }
 
 /**
- * Resolve API key for a provider from environment
+ * Resolve API key for a provider from environment.
+ *
+ * Exported so the bench's upstream precheck resolves the OpenRouter key from
+ * this one env map rather than growing a second copy of it.
  */
-function getApiKeyForProvider(provider: string): string | undefined {
+export function getApiKeyForProvider(provider: string): string | undefined {
   const apiKeyEnvMap: Record<string, string> = {
     openai: "OPENAI_API_KEY",
     anthropic: "ANTHROPIC_API_KEY",
@@ -637,11 +647,103 @@ export function registerModelsCommand(cli: Command): void {
       "--check",
       "Check if models are actually callable (makes a tiny API request per model)",
     )
+    .option(
+      "--upstreams",
+      "List OpenRouter upstream endpoints (tag, provider, quantization, context, output price, status) for openrouter/* slugs",
+    )
+    .option(
+      "--pin <tag:string>",
+      "With --upstreams: resolve and preflight this tag against the first slug, one 32-token request",
+    )
     .action(async (options, ...specs: string[]) => {
       // Handle cache stats
       if (options.cacheStats) {
         const stats = LLMAdapterRegistry.getModelCacheStats();
         displayCacheStats(stats);
+        return;
+      }
+
+      // Handle --upstreams mode. The tags this prints are exactly what
+      // `openrouter.upstream` in .centralgauge.yml accepts (spec 2026-09-11
+      // D2), so this is how an operator picks a pin. An UpstreamPinError from
+      // --pin propagates to the CLI's top-level printer, which already prints
+      // [FAIL] plus the message (including the available tags) and exits 1.
+      if (options.upstreams) {
+        await EnvLoader.loadEnvironment();
+        const apiKey = getApiKeyForProvider("openrouter") ?? "";
+        for (const spec of specs) {
+          if (!spec.startsWith("openrouter/")) {
+            console.log(
+              `${
+                colors.yellow("[SKIP]")
+              } ${spec}: --upstreams applies to openrouter/* slugs only`,
+            );
+            continue;
+          }
+          const apiModelId = spec.slice("openrouter/".length);
+          const endpoints = await fetchUpstreams(apiModelId, { apiKey });
+          console.log(
+            `${
+              colors.cyan("[Upstreams]")
+            } ${spec}: ${endpoints.length} endpoint${
+              endpoints.length === 1 ? "" : "s"
+            }`,
+          );
+          console.log(
+            "  tag                            provider           quant   ctx        max_out   $/M out   status",
+          );
+          for (const e of endpoints) {
+            console.log(
+              `  ${e.slug.padEnd(30)} ${e.providerName.padEnd(18)} ${
+                (e.quantization ?? "-").padEnd(7)
+              } ` +
+                `${String(e.contextLength ?? "-").padEnd(10)} ${
+                  String(e.maxCompletionTokens ?? "-").padEnd(9)
+                } ` +
+                `${
+                  e.outputPerMtoken === null
+                    ? "-".padEnd(9)
+                    : e.outputPerMtoken.toFixed(2).padEnd(9)
+                } ${e.status ?? "-"}`,
+            );
+          }
+          if (options.pin) {
+            try {
+              const r = await resolveUpstreamPin(
+                {
+                  apiModelId,
+                  pin: options.pin,
+                  maxTokens: DEFAULT_MAX_TOKENS,
+                  longestPromptTokens: PROMPT_TOKENS_BOUND,
+                  skipPreflight: false,
+                },
+                { apiKey },
+              );
+              console.log(
+                `${
+                  colors.green("[OK]")
+                } ${options.pin} resolved to ${r.providerName}${
+                  r.quantization ? ` (${r.quantization})` : ""
+                }, preflight ${r.preflight}`,
+              );
+            } catch (err) {
+              // `cli/centralgauge.ts` has no top-level error printer, so an
+              // escaping UpstreamPinError reaches the operator as an uncaught
+              // promise plus a stack trace. Its message already names every
+              // valid tag, which is the whole reason to ask, so print it as a
+              // [FAIL] line rather than bury it.
+              if (err instanceof UpstreamPinError) {
+                console.error(
+                  `${colors.red("[FAIL]")} upstream pin: ${err.message}`,
+                );
+                Deno.exit(1);
+              }
+              throw err;
+            }
+            // --pin costs a real request, so it runs against ONE slug only.
+            break;
+          }
+        }
         return;
       }
 

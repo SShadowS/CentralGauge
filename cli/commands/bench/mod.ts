@@ -77,3 +77,11 @@ export {
   decideIngestRunFailure,
   readGitSha,
 } from "./ingest-assembly.ts";
+
+// OpenRouter upstream pin precheck (spec 2026-09-11 D2)
+export type { UpstreamPinMap } from "./upstream-precheck.ts";
+export {
+  PROMPT_TOKENS_BOUND,
+  resolveUpstreamPins,
+  submitResolver,
+} from "./upstream-precheck.ts";

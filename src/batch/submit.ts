@@ -37,6 +37,7 @@ import type {
   FrozenPromptInputs,
   FrozenRouting,
 } from "../parallel/shared/prompt-inputs.ts";
+import { frozenRoutingFrom } from "../parallel/shared/prompt-inputs.ts";
 import type { ResolvedUpstreamPin } from "../llm/upstream-pin.ts";
 import { endpointFor, providerRouteFor } from "../llm/endpoint.ts";
 import {
@@ -298,12 +299,7 @@ export async function submitRuns(
         configuredPin,
         parallelOptions.maxTokens,
       );
-      routing = {
-        upstreamPin: resolved.upstreamPin,
-        providerName: resolved.providerName,
-        quantization: resolved.quantization,
-        preflight: resolved.preflight,
-      };
+      routing = frozenRoutingFrom(resolved);
     } catch (err) {
       deps.log(
         `${colors.red("[FAIL]")} batch submit: upstream pin: ${

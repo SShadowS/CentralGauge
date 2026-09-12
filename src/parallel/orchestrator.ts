@@ -101,7 +101,13 @@ export interface ParallelBenchmarkOptions {
    */
   upstreamPins?: ReadonlyMap<
     string,
-    { upstreamPin: string; providerName: string }
+    {
+      upstreamPin: string;
+      providerName: string;
+      /** What the preflight found. Optional: only the routing fields are read here. */
+      quantization?: string | null;
+      preflight?: "passed" | "skipped";
+    }
   >;
 
   /**

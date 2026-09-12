@@ -59,6 +59,10 @@ import {
 import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import type { EnvironmentManifest } from "../../src/ingest/capture.ts";
 import { buildBatchCommand } from "./bench-batch-command.ts";
+import { resolveUpstreamPins } from "./bench/upstream-precheck.ts";
+import { UpstreamPinError } from "../../src/llm/upstream-pin.ts";
+import { getApiKeyForProvider } from "./models-command.ts";
+import { DEFAULT_MAX_TOKENS } from "../../src/constants.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -214,6 +218,10 @@ export function registerBenchCommand(cli: Command): void {
     .option(
       "--no-ingest",
       "Skip ingestion to the scoreboard API after the run completes",
+    )
+    .option(
+      "--skip-upstream-preflight",
+      "Skip the 32-token OpenRouter upstream preflight (the pin is still enforced per request)",
     )
     .option(
       "--no-dashboard",
@@ -649,6 +657,40 @@ export function registerBenchCommand(cli: Command): void {
               Deno.exit(1);
             }
           }
+        }
+      }
+
+      // Upstream pins are resolved whether or not ingest is on: they decide
+      // where every request goes, so a bench that skips ingest still pins.
+      // This runs BEFORE any LLM call, so an unknown tag or an endpoint too
+      // small for the run costs nothing but the endpoints listing.
+      {
+        const appConfig = await ConfigManager.loadConfig();
+        const variants: ModelVariant[] = ModelPresetRegistry
+          .resolveWithVariants(benchOptions.llms, appConfig);
+        try {
+          const pins = await resolveUpstreamPins({
+            variants,
+            config: appConfig,
+            maxTokens: benchOptions.maxTokens || DEFAULT_MAX_TOKENS,
+            skipPreflight: options.skipUpstreamPreflight === true,
+            apiKey: getApiKeyForProvider("openrouter") ?? "",
+            log: (line) => console.log(line),
+          });
+          if (pins.size > 0) benchOptions.upstreamPins = pins;
+        } catch (err) {
+          if (err instanceof UpstreamPinError) {
+            console.error(
+              colors.red("[FAIL]") + ` upstream pin: ${err.message}`,
+            );
+            console.error(
+              colors.gray(
+                "       Run `centralgauge models <slug> --upstreams` to list the valid tags.",
+              ),
+            );
+            Deno.exit(1);
+          }
+          throw err;
         }
       }
 

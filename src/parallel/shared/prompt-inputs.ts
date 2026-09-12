@@ -5,6 +5,7 @@
 // days later without re-reading `Deno.cwd()` or any other ambient state.
 
 import type { CLIPromptOverrides } from "../../prompts/types.ts";
+import type { ResolvedUpstreamPin } from "../../llm/upstream-pin.ts";
 import type { VariantConfig } from "../../llm/variant-types.ts";
 import type { CanonicalSettings } from "../../../shared/settings-hash.ts";
 import type { LLMWorkItem } from "../types.ts";
@@ -42,6 +43,26 @@ export interface FrozenRouting {
   providerName: string;
   quantization: string | null;
   preflight: "passed" | "skipped";
+}
+
+/**
+ * Narrow a `ResolvedUpstreamPin` to the routing frozen on a run.
+ *
+ * The two places that do this - `submitRuns`, which writes
+ * `prompt-inputs.json`, and `submitWiring`, which pins wave 1's request
+ * bodies - must agree field for field, or a run's frozen record and the
+ * requests it actually sent would describe different routing. Keeping the
+ * mapping here is what makes that impossible rather than merely unlikely.
+ */
+export function frozenRoutingFrom(
+  resolved: ResolvedUpstreamPin,
+): FrozenRouting {
+  return {
+    upstreamPin: resolved.upstreamPin,
+    providerName: resolved.providerName,
+    quantization: resolved.quantization,
+    preflight: resolved.preflight,
+  };
 }
 
 /**

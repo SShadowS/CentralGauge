@@ -43,6 +43,7 @@ import type {
   FrozenPromptInputs,
   FrozenRouting,
 } from "../../src/parallel/shared/prompt-inputs.ts";
+import { frozenRoutingFrom } from "../../src/parallel/shared/prompt-inputs.ts";
 import type { VariantConfig } from "../../src/llm/variant-types.ts";
 import type {
   TaskExecutionContext,
@@ -67,10 +68,8 @@ import { buildEnvironmentManifest } from "../../src/ingest/capture.ts";
 import { ModelPresetRegistry } from "../../src/llm/model-presets.ts";
 import { generateVariantId } from "../../src/llm/variant-types.ts";
 import { PricingService } from "../../src/llm/pricing-service.ts";
-import {
-  type ResolvedUpstreamPin,
-  resolveUpstreamPin,
-} from "../../src/llm/upstream-pin.ts";
+import type { ResolvedUpstreamPin } from "../../src/llm/upstream-pin.ts";
+import { submitResolver } from "./bench/upstream-precheck.ts";
 import { createBatchProvider } from "../../src/llm/batch/mod.ts";
 import { buildAttemptContext } from "../../src/parallel/shared/mod.ts";
 import { ContainerRuntime } from "../../src/parallel/container-runtime.ts";
@@ -268,9 +267,9 @@ export async function buildFinalizeDeps(
  * `buildAdvanceDeps`, so both waves route identically.
  *
  * `resolve` is the underlying pin resolver, injected so the CLI passes the
- * real network one and tests pass a fake. Task 15 replaces it with the shared
- * `submitResolver` helper and MUST keep this capture: without it wave 1 goes
- * out unpinned while wave 2 is pinned.
+ * real network one (`submitResolver`, the same helper the sync bench uses)
+ * and tests pass a fake. The capture MUST survive any rewiring of that
+ * argument: without it wave 1 goes out unpinned while wave 2 is pinned.
  */
 export function submitWiring(
   providerName: BatchProviderName,
@@ -286,12 +285,7 @@ export function submitWiring(
   return {
     resolveUpstream: async (apiModelId, pin, maxTokens) => {
       const resolved = await resolve(apiModelId, pin, maxTokens);
-      resolvedRouting = {
-        upstreamPin: resolved.upstreamPin,
-        providerName: resolved.providerName,
-        quantization: resolved.quantization,
-        preflight: resolved.preflight,
-      };
+      resolvedRouting = frozenRoutingFrom(resolved);
       return resolved;
     },
     buildBody: (r: LLMRequest) =>
@@ -524,19 +518,15 @@ export function buildBatchCommand(): Command {
         providerName,
         wiringModel,
         apiKey,
-        (apiModelId, pin, maxTokens) =>
-          resolveUpstreamPin(
-            // 16_000 is a conservative bound on the longest rendered prompt in
-            // the suite; Task 15 moves it to a shared PROMPT_TOKENS_BOUND.
-            {
-              apiModelId,
-              pin,
-              maxTokens,
-              longestPromptTokens: 16_000,
-              skipPreflight: opts.skipUpstreamPreflight === true,
-            },
-            { apiKey: apiKeyForBatchProvider("openrouter") ?? "" },
-          ),
+        // The same resolver the sync bench uses, so both modes apply one
+        // prompt bound and one skip flag. The OpenRouter key is resolved
+        // separately from `apiKey` above, which is the BATCH provider's key
+        // and is a different key whenever the batch provider is not
+        // OpenRouter (in which case the resolver is never called).
+        submitResolver({
+          skipPreflight: opts.skipUpstreamPreflight === true,
+          apiKey: apiKeyForBatchProvider("openrouter") ?? "",
+        }),
       );
 
       const deps: SubmitDeps = {

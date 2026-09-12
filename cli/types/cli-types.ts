@@ -39,8 +39,19 @@ export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   noReuseCompilerFolders?: boolean;
   /** Cliffy `--no-dashboard` inverse: true (default) starts dashboard, false skips it for scripted use */
   dashboard?: boolean;
-  /** OpenRouter upstream pins resolved at precheck, keyed by variantId (spec 2026-09-11 D2). */
-  upstreamPins?: Map<string, { upstreamPin: string; providerName: string }>;
+  /**
+   * OpenRouter upstream pins resolved at precheck, keyed by variantId (spec
+   * 2026-09-11 D2). Carries the whole resolution, not just the slug, so the
+   * ingest capture can record `upstream_resolved` and the scores file can
+   * name the quantization without either of them inventing a value. See
+   * `UpstreamPinMap` in `cli/commands/bench/upstream-precheck.ts`.
+   */
+  upstreamPins?: Map<string, {
+    upstreamPin: string;
+    providerName: string;
+    quantization?: string | null;
+    preflight?: "passed" | "skipped";
+  }>;
 }
 
 /**
