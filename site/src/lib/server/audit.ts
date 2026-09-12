@@ -1,23 +1,26 @@
 import type { VerifiedKey } from "./signature";
 
+export interface AuditEvent {
+  event: string;
+  actor?: VerifiedKey;
+  requestId?: string;
+  taskSetHash?: string;
+  before?: string | null;
+  after?: string | null;
+  details?: unknown;
+}
+
 /**
- * Append one row to `admin_audit` (migration 0018_taxonomy_v2.sql). Every
- * admin mutation that touches the v2 taxonomy tables writes one of these —
- * the table is append-only, there is no update/delete path.
+ * The `admin_audit` row as a prepared statement, so a caller that is already
+ * building a `db.batch` can commit the audit row in the same transaction as
+ * the write it records. Ingest's auto-exclusion does exactly that: the run and
+ * its `run.auto_excluded` event land together or not at all.
  */
-export async function appendAudit(
+export function appendAuditStmt(
   db: D1Database,
-  e: {
-    event: string;
-    actor?: VerifiedKey;
-    requestId?: string;
-    taskSetHash?: string;
-    before?: string | null;
-    after?: string | null;
-    details?: unknown;
-  },
-): Promise<void> {
-  await db
+  e: AuditEvent,
+): D1PreparedStatement {
+  return db
     .prepare(
       `INSERT INTO admin_audit(event, actor_key_id, actor_machine, request_id, task_set_hash, before_digest, after_digest, details_json, ts)
      VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -32,6 +35,17 @@ export async function appendAudit(
       e.after ?? null,
       e.details === undefined ? null : JSON.stringify(e.details),
       new Date().toISOString(),
-    )
-    .run();
+    );
+}
+
+/**
+ * Append one row to `admin_audit` (migration 0018_taxonomy_v2.sql). Every
+ * admin mutation that touches the v2 taxonomy tables writes one of these.
+ * The table is append-only, there is no update/delete path.
+ */
+export async function appendAudit(
+  db: D1Database,
+  e: AuditEvent,
+): Promise<void> {
+  await appendAuditStmt(db, e).run();
 }

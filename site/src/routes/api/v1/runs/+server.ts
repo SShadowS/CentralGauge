@@ -16,6 +16,14 @@ import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import type { IngestResponse, SignedRunPayload } from "$lib/shared/types";
 import { cachedJson, decodeCursor, encodeCursor } from "$lib/server/cache";
 import { getAll } from "$lib/server/db";
+import { appendAuditStmt } from "$lib/server/audit";
+import {
+  claimProfileStmt,
+  conflictingRunIds,
+  guardedRunInsertSql,
+  profileKeyOf,
+  readProfile,
+} from "$lib/server/upstream-profile";
 
 const TERMINATION_KINDS = new Set([
   "response",
@@ -25,6 +33,120 @@ const TERMINATION_KINDS = new Set([
   "infra_exhausted",
   "cancelled",
 ]);
+
+// OpenRouter upstream lock (spec 2026-09-11). `not_applicable` is what a
+// non-OpenRouter provider stamps explicitly; a NULL column means the row
+// predates capture entirely and is honestly unknown.
+const UPSTREAM_VERIFICATIONS = new Set([
+  "not_applicable",
+  "unpinned",
+  "verified",
+  "mismatch",
+  "unverified",
+  "not_served",
+]);
+const UPSTREAM_SOURCES = new Set([
+  "provider_field",
+  "router_metadata",
+  "both",
+]);
+const EXCLUSION_CODES = new Set(["upstream_mismatch", "upstream_unverified"]);
+
+/** The four verdicts that only make sense when the request carried a pin. */
+const PINNED_VERIFICATIONS = new Set([
+  "verified",
+  "mismatch",
+  "unverified",
+  "not_served",
+]);
+
+interface ValidatedExclusion {
+  code: string;
+  reason: string;
+  attempts: Array<{ task_id: string; attempt: 1 | 2 }>;
+}
+
+/**
+ * Validate the CLI's own verdict that a run is compromised. Returns null when
+ * the payload carries no `excluded` block at all (the normal case, and every
+ * CLI predating the lock). Every named attempt must be present in the payload
+ * AND carry a compromised verdict, so an exclusion can never be asserted
+ * without the evidence that justifies it travelling alongside it.
+ */
+function validateExclusion(
+  payload: SignedRunPayload["payload"],
+): ValidatedExclusion | null {
+  const raw = payload.excluded as unknown;
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new ApiError(
+      400,
+      "invalid_exclusion",
+      "excluded must be a plain object or absent",
+    );
+  }
+  const e = raw as { code?: unknown; reason?: unknown; attempts?: unknown };
+  if (typeof e.code !== "string" || !EXCLUSION_CODES.has(e.code)) {
+    throw new ApiError(
+      400,
+      "invalid_exclusion",
+      `excluded.code must be one of ${[...EXCLUSION_CODES].join(", ")}`,
+    );
+  }
+  if (
+    typeof e.reason !== "string" ||
+    e.reason.length === 0 ||
+    e.reason.length > 500
+  ) {
+    throw new ApiError(
+      400,
+      "invalid_exclusion",
+      "excluded.reason must be a non-empty string of at most 500 characters",
+    );
+  }
+  if (!Array.isArray(e.attempts) || e.attempts.length === 0) {
+    throw new ApiError(
+      400,
+      "invalid_exclusion",
+      "excluded.attempts must be a non-empty array of { task_id, attempt }",
+    );
+  }
+  const attempts: Array<{ task_id: string; attempt: 1 | 2 }> = [];
+  for (const a of e.attempts) {
+    const entry = a as { task_id?: unknown; attempt?: unknown };
+    if (
+      a === null ||
+      typeof a !== "object" ||
+      Array.isArray(a) ||
+      typeof entry.task_id !== "string" ||
+      (entry.attempt !== 1 && entry.attempt !== 2)
+    ) {
+      throw new ApiError(
+        400,
+        "invalid_exclusion",
+        "excluded.attempts entries must be { task_id: string, attempt: 1 | 2 }",
+      );
+    }
+    const taskId = entry.task_id;
+    const attempt = entry.attempt as 1 | 2;
+    const match = payload.results.find(
+      (r) => r.task_id === taskId && r.attempt === attempt,
+    );
+    if (
+      !match ||
+      (match.upstream_verification !== "mismatch" &&
+        match.upstream_verification !== "unverified")
+    ) {
+      throw new ApiError(
+        400,
+        "invalid_exclusion",
+        `excluded names task ${taskId} attempt ${attempt}, which is not compromised in this payload: its upstream_verification must be mismatch or unverified`,
+      );
+    }
+    attempts.push({ task_id: taskId, attempt });
+  }
+  return { code: e.code, reason: e.reason, attempts };
+}
 
 interface RunRow {
   id: string;
@@ -320,6 +442,24 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       );
     }
 
+    // Upstream lock (spec 2026-09-11): the run's pin decides which upstream
+    // profile it claims for its (model, task set, mode) triple. A run with no
+    // pin claims `<unpinned>`, which conflicts with a pinned cohort exactly
+    // the way two different pins conflict with each other.
+    const runPin =
+      typeof (payload.invocation as Record<string, unknown> | undefined)
+          ?.["upstream_pin"] === "string"
+        ? ((payload.invocation as Record<string, unknown>)[
+          "upstream_pin"
+        ] as string)
+        : null;
+    const profileKey = profileKeyOf(runPin);
+    const triple = {
+      modelId: model.id,
+      taskSetHash: payload.task_set_hash,
+      mode: invocationMode,
+    };
+
     // Idempotency: check if run_id already exists
     const existing = await db
       .prepare(`SELECT id, status FROM runs WHERE id = ?`)
@@ -348,6 +488,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     );
     const signedPayloadBytes = new TextEncoder().encode(canonical);
 
+    const now = new Date().toISOString();
+
     const statements: D1PreparedStatement[] = [
       db
         .prepare(
@@ -365,54 +507,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           payload.settings.bc_version ?? null,
           payload.settings.extra_json ?? null,
         ),
-      db
-        .prepare(
-          `
-        INSERT INTO runs(
-          id, task_set_hash, model_id, settings_hash, machine_id,
-          started_at, completed_at, status, tier, source,
-          centralgauge_sha, pricing_version, reproduction_bundle_r2_key,
-          ingest_signature, ingest_signed_at, ingest_public_key_id, ingest_signed_payload,
-          harness_fingerprint, retry_path_version, environment_digest, bc_artifact,
-          container_image_digest, bcch_version, test_runner, prompt_template_digest, invocation_json,
-          invocation_mode
-        ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?)
-      `,
-        )
-        .bind(
-          signed.run_id,
-          payload.task_set_hash,
-          model.id,
-          setHash,
-          payload.machine_id,
-          payload.started_at,
-          null,
-          "running",
-          "claimed",
-          "bench",
-          payload.centralgauge_sha ?? null,
-          payload.pricing_version,
-          payload.reproduction_bundle_sha256
-            ? `blobs/${payload.reproduction_bundle_sha256}`
-            : null,
-          signed.signature.value,
-          signed.signature.signed_at,
-          verified.key_id,
-          signedPayloadBytes,
-          payload.harness_fingerprint ?? null,
-          payload.retry_path_version ?? null,
-          payload.environment_sha256
-            ? `blobs/${payload.environment_sha256}`
-            : null,
-          payload.bc_artifact ?? null,
-          payload.container_image_digest ?? null,
-          payload.bcch_version ?? null,
-          payload.test_runner ?? null,
-          payload.prompt_template_digest ?? null,
-          payload.invocation ? JSON.stringify(payload.invocation) : null,
-          invocationMode,
-        ),
     ];
+
+    // Result inserts are built here but pushed after the run insert, because
+    // each one is guarded on the run row having actually landed. A run whose
+    // profile claim lost the race inserts nothing at all.
+    const resultStatements: D1PreparedStatement[] = [];
 
     for (const r of payload.results) {
       // Boundary validation: score is contractually 0-100. Reject invalid
@@ -548,7 +648,93 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           `provider_error_code must be a string or null (task ${r.task_id} attempt ${r.attempt})`,
         );
       }
-      statements.push(
+      // Upstream lock (spec 2026-09-11 D1). Every field is optional on the
+      // wire: a CLI predating the lock sends none of them and the columns
+      // stay NULL.
+      const str = (v: unknown, name: string): string | null => {
+        if (v === undefined || v === null) return null;
+        if (typeof v !== "string" || v.length === 0 || v.length > 128) {
+          throw new ApiError(
+            400,
+            "invalid_upstream",
+            `${name} must be a non-empty string of at most 128 characters or null (task ${r.task_id} attempt ${r.attempt})`,
+          );
+        }
+        return v;
+      };
+      const requestedUpstream = str(r.requested_upstream, "requested_upstream");
+      const servedUpstream = str(r.served_upstream, "served_upstream");
+      const servedUpstreamModel = str(
+        r.served_upstream_model,
+        "served_upstream_model",
+      );
+      const identitySource = str(
+        r.upstream_identity_source,
+        "upstream_identity_source",
+      );
+      if (identitySource !== null && !UPSTREAM_SOURCES.has(identitySource)) {
+        throw new ApiError(
+          400,
+          "invalid_upstream",
+          `upstream_identity_source must be one of ${
+            [...UPSTREAM_SOURCES].join(", ")
+          } (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      const verification = r.upstream_verification === undefined
+        ? null
+        : r.upstream_verification;
+      if (verification !== null && !UPSTREAM_VERIFICATIONS.has(verification)) {
+        throw new ApiError(
+          400,
+          "invalid_upstream",
+          `upstream_verification must be one of ${
+            [...UPSTREAM_VERIFICATIONS].join(", ")
+          } (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      // Relational rules (spec D1).
+      if (
+        verification !== null &&
+        PINNED_VERIFICATIONS.has(verification) &&
+        requestedUpstream === null
+      ) {
+        throw new ApiError(
+          400,
+          "invalid_upstream",
+          `${verification} requires a requested_upstream (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      if (
+        (verification === "unpinned" || verification === "not_applicable") &&
+        requestedUpstream !== null
+      ) {
+        throw new ApiError(
+          400,
+          "invalid_upstream",
+          `${verification} requires a null requested_upstream (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      if (
+        (verification === "verified" || verification === "mismatch") &&
+        (servedUpstream === null || identitySource === null)
+      ) {
+        throw new ApiError(
+          400,
+          "invalid_upstream",
+          `${verification} requires a served_upstream and an identity source (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      if (requestedUpstream !== null && requestedUpstream !== runPin) {
+        throw new ApiError(
+          400,
+          "invalid_upstream",
+          `requested_upstream ${requestedUpstream} must equal the run's upstream_pin ${
+            runPin ?? "(none)"
+          } (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      resultStatements.push(
         db
           .prepare(
             `
@@ -561,8 +747,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
             served_model, refusal_category,
             test_vector_json, termination_kind, provider_finish_reason, provider_error_code,
             cap_reached, infra_retries, infra_exhaustion_reason, fallback_chain_json,
-            prompt_digest, candidate_digest, overlay_base_digest, failure_class, failure_class_version
-          ) VALUES (?,?,?,?,?,?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?)
+            prompt_digest, candidate_digest,
+            requested_upstream, served_upstream, served_upstream_model, upstream_identity_source, upstream_verification,
+            overlay_base_digest, failure_class, failure_class_version
+          ) SELECT ?,?,?,?,?,?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?, ?,?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?, ?,?,?
+            WHERE EXISTS (SELECT 1 FROM runs WHERE id = ?)
         `,
           )
           .bind(
@@ -598,12 +787,118 @@ export const POST: RequestHandler = async ({ request, platform }) => {
             r.fallback_chain ? JSON.stringify(r.fallback_chain) : null,
             r.prompt_sha256 ?? null,
             r.candidate_sha256 ?? null,
+            requestedUpstream,
+            servedUpstream,
+            servedUpstreamModel,
+            identitySource,
+            verification,
             null, // overlay_base_digest: not yet produced by any client
             null, // failure_class: not yet produced by any client
             null, // failure_class_version: not yet produced by any client
+            signed.run_id, // guard: only insert when the run row landed
           ),
       );
     }
+
+    // The CLI's own verdict that this run is compromised (spec D1). Validated
+    // after the results so a malformed upstream field is reported as such
+    // rather than as a phantom exclusion error.
+    const excluded = validateExclusion(payload);
+
+    // Run insert. Columns and placeholders are derived from one list so the
+    // two can never drift, and the exclusion columns are appended only when
+    // the CLI actually declared the run compromised.
+    const runColumns = [
+      "id",
+      "task_set_hash",
+      "model_id",
+      "settings_hash",
+      "machine_id",
+      "started_at",
+      "completed_at",
+      "status",
+      "tier",
+      "source",
+      "centralgauge_sha",
+      "pricing_version",
+      "reproduction_bundle_r2_key",
+      "ingest_signature",
+      "ingest_signed_at",
+      "ingest_public_key_id",
+      "ingest_signed_payload",
+      "harness_fingerprint",
+      "retry_path_version",
+      "environment_digest",
+      "bc_artifact",
+      "container_image_digest",
+      "bcch_version",
+      "test_runner",
+      "prompt_template_digest",
+      "invocation_json",
+      "invocation_mode",
+    ];
+    const runValues: unknown[] = [
+      signed.run_id,
+      payload.task_set_hash,
+      model.id,
+      setHash,
+      payload.machine_id,
+      payload.started_at,
+      null,
+      "running",
+      "claimed",
+      "bench",
+      payload.centralgauge_sha ?? null,
+      payload.pricing_version,
+      payload.reproduction_bundle_sha256
+        ? `blobs/${payload.reproduction_bundle_sha256}`
+        : null,
+      signed.signature.value,
+      signed.signature.signed_at,
+      verified.key_id,
+      signedPayloadBytes,
+      payload.harness_fingerprint ?? null,
+      payload.retry_path_version ?? null,
+      payload.environment_sha256 ? `blobs/${payload.environment_sha256}` : null,
+      payload.bc_artifact ?? null,
+      payload.container_image_digest ?? null,
+      payload.bcch_version ?? null,
+      payload.test_runner ?? null,
+      payload.prompt_template_digest ?? null,
+      payload.invocation ? JSON.stringify(payload.invocation) : null,
+      invocationMode,
+    ];
+    if (excluded) {
+      runColumns.push("excluded_at", "excluded_code", "excluded_reason");
+      runValues.push(now, excluded.code, excluded.reason);
+    }
+    const baseRunSql = `INSERT INTO runs(${runColumns.join(", ")}) VALUES (${
+      runColumns.map(() => "?").join(",")
+    })`;
+
+    if (excluded) {
+      // A compromised run never holds the profile: it is stored for the
+      // record, counts towards nothing, and must not block a clean re-run of
+      // the same cohort. So no claim, and no claim guard on the insert.
+      statements.push(
+        db.prepare(guardedRunInsertSql(baseRunSql, "1 = 1")).bind(...runValues),
+      );
+    } else {
+      statements.push(
+        claimProfileStmt(db, { ...triple, key: profileKey, now }),
+        db
+          .prepare(guardedRunInsertSql(baseRunSql))
+          .bind(
+            ...runValues,
+            triple.modelId,
+            triple.taskSetHash,
+            triple.mode,
+            profileKey,
+          ),
+      );
+    }
+
+    statements.push(...resultStatements);
 
     statements.push(
       db
@@ -619,12 +914,49 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         ),
     );
 
+    if (excluded) {
+      statements.push(
+        appendAuditStmt(db, {
+          event: "run.auto_excluded",
+          actor: verified,
+          taskSetHash: payload.task_set_hash,
+          details: {
+            run_id: signed.run_id,
+            code: excluded.code,
+            reason: excluded.reason,
+            attempts: excluded.attempts,
+          },
+        }),
+      );
+    }
+
     // Ingest changes leaderboard-visible data, so retire every cached
     // aggregate. In-batch (not after) so a committed ingest can never be
     // paired with a failed bump. See src/lib/server/data-epoch.ts.
     statements.push(bumpDataEpochStmt(db));
 
     await db.batch(statements);
+
+    // The run insert is guarded on the stored profile key being ours, so an
+    // absent run row means a concurrent first ingest claimed the triple with
+    // a different upstream. Nothing of this run was written.
+    const landed = await db
+      .prepare(`SELECT id FROM runs WHERE id = ?`)
+      .bind(signed.run_id)
+      .first();
+    if (!landed) {
+      const stored = await readProfile(db, triple);
+      const holders = await conflictingRunIds(db, triple, signed.run_id);
+      throw new ApiError(
+        409,
+        "upstream_profile_conflict",
+        `model ${payload.model.slug} on this task set and mode already has upstream profile ${
+          stored?.key ?? "?"
+        } (runs: ${
+          holders.join(", ") || "none"
+        }); this run carries ${profileKey}. Exclude the stored cohort first, or re-ingest with the same pin.`,
+      );
+    }
 
     const resp: IngestResponse = {
       run_id: signed.run_id,
