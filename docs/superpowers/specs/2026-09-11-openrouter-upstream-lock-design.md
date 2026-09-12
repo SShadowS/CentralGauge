@@ -129,7 +129,11 @@ wire, and in D1 (migration `0023`):
   path**, present in every blob we have, not a documented contract;
   `raw.openrouter_metadata` is read when present. Whether the metadata header
   can be set per batch item is unknown; the plan carries a spike. If both are
-  absent on a pinned item the attempt is `unverified`, and D3 applies.
+  absent on a pinned item the attempt is `unverified`, and D3 applies. The
+  spike's live-pin batch (`batch-1789167741-wPqWvi1QgWaUhhD1uX2c`, header
+  set) never reached a terminal state in 50 minutes of observation, so
+  whether `openrouter_metadata` is present per batch item is unconfirmed
+  pending a later poll.
 - `ExecutionAttempt` carries all five; `evaluate-attempt.ts`,
   `failed-attempt.ts` and `infra-attempt.ts` populate them, taking
   `requested_upstream` from the work item so a failed provider call still
@@ -245,10 +249,20 @@ wire, and in D1 (migration `0023`):
   | 200 with a different identity, or two sources disagreeing | n/a | `mismatch` |
   | 200 with no identity | n/a | `unverified` |
 
-  The plan includes a one-item **Batch API spike** with a pinned upstream
-  that is rate-limited or disabled, to record which of the first four rows
-  actually occurs; the table is amended with the observation before the
-  classifier work starts.
+  A one-item **Batch API spike** against `z-ai/glm-5.3-flash` pinned a dead
+  upstream (`allow_fallbacks: false`, no metadata header) in one batch and a
+  live upstream with `X-OpenRouter-Metadata: enabled` in a second batch, and
+  observed that a pinned dead upstream does not fail fast on the Batch API:
+  both batches (`batch-1789167739-GXNiy6zu8WT6fzL0zauu` for the dead pin,
+  `batch-1789167741-wPqWvi1QgWaUhhD1uX2c` for the live pin) stayed at
+  `status=in_progress` with `request_counts: {"total":1,"completed":0,
+  "failed":0}` for the full 50 minutes observed (10 minutes at creation, 40
+  more minutes on a later poll), never reaching a terminal state and never
+  producing a result entry, so no `status_code` or `error.code` was
+  observed. Of the table's rows, "prolonged `in_progress`" is what occurred
+  for the dead pin; the classifier must therefore key on a per-item
+  `error.code` generically whenever the batch eventually completes, rather
+  than assuming a specific fast-fail code.
 - **A pinned run is compromised when any attempt is `mismatch` or
   `unverified`.** Both mean the pin cannot be shown to have held; the spike
   shows successful pinned requests do carry an identity, so absence is an
