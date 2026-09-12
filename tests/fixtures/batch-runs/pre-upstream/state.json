@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "runId": "1f99aac6-4b2f-4bc4-a04a-c1dd521d6fb6",
+  "createdAt": "2026-09-11T05:34:30.762Z",
+  "model": {
+    "slug": "openrouter/google/gemini-3.8-flash",
+    "provider": "openrouter",
+    "apiModelId": "google/gemini-3.8-flash"
+  },
+  "frozen": {
+    "settingsHash": "6f9ce3942bac1a6cddbaa5f7e079b1b37c0bdb0be4913dc304d994707abb998a",
+    "taskSetHash": "664f8c7733fef6efa55c8c122d46434498b4d0ebd22aea2102c81dc5f4b2b4cf",
+    "harnessFingerprint": "3632b16b6e3cdf233d05e5fada14834af5816f034344dc4e20da6ae6c3244058",
+    "templateDigests": {
+      "code-gen.md": "bdc2dc7e81e9d74b77a16d7d5ac04c57b6ad7911fd6896f5bc501a5ffd6a9d5c",
+      "diagnose-objects.md": "e31513fd84017f274de6bdf828bfc06749ac2ea8f40c7625531107ad06a78288",
+      "diagnose.md": "fc4779981a3d86fb2c59b3c2b371b0820a65d8853326095db93009f368154efd"
+    },
+    "promptInputsDigest": "4dfcdfe1c8636e8088bfda222ddb99737687b395efc90accf0d55c2f0f7fb1f7",
+    "gitSha": "47d1c4dfec2370109808829117f8d3351a0d5a0e",
+    "gitClean": false,
+    "environment": {
+      "testRunner": "soap",
+      "containers": [
+        {
+          "name": "Cronus28",
+          "bcArtifact": "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/sandbox/28.4.53241.53758/dk",
+          "imageDigest": "sha256:d875697c3e6a8aa6b85bc1724e2ba0dc1d8099f520a67e93678d886ce4d82dab"
+        },
+        {
+          "name": "Cronus282",
+          "bcArtifact": "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/sandbox/28.4.53241.53758/dk",
+          "imageDigest": "sha256:d875697c3e6a8aa6b85bc1724e2ba0dc1d8099f520a67e93678d886ce4d82dab"
+        },
+        {
+          "name": "Cronus283",
+          "bcArtifact": "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/sandbox/28.4.53241.53758/dk",
+          "imageDigest": "sha256:d875697c3e6a8aa6b85bc1724e2ba0dc1d8099f520a67e93678d886ce4d82dab"
+        }
+      ]
+    },
+    "tasksGlob": "[\"tasks/**/*.yml\"]",
+    "taskIds": [
+      "CG-AL-E001",
+      "CG-AL-E006"
+    ]
+  },
+  "phase": "finalized",
+  "wave": 2,
+  "batches": [
+    {
+      "wave": 1,
+      "round": 0,
+      "chunk": 0,
+      "handle": {
+        "provider": "openrouter",
+        "batchId": "batch-1789104873-tzJmL6gApg15sI3tot5e"
+      },
+      "submittedAt": "2026-09-11T05:34:34.659Z",
+      "lastPolledAt": "2026-09-11T06:39:13.833Z",
+      "endedAt": "2026-09-11T05:50:55.832Z",
+      "providerStatus": "completed",
+      "rawCounts": {
+        "total": 210,
+        "completed": 210,
+        "failed": 0
+      },
+      "state": "ended",
+      "itemIds": [
+        "b68267c1447a32ec2d0bc7e330af250a",
+        "be586ad2559e496b30037a3cb16e6a3a"
+      ],
+      "providerReportedCostUsd": 3.267589125,
+      "collected": true
+    },
+    {
+      "wave": 1,
+      "round": 0,
+      "chunk": 1,
+      "handle": {
+        "provider": "openrouter",
+        "batchId": "batch-1789104874-mj8LO4AboDFcsW18jB9d"
+      },
+      "submittedAt": "2026-09-11T05:34:35.732Z",
+      "lastPolledAt": "2026-09-11T06:39:15.223Z",
+      "endedAt": "2026-09-11T06:39:15.223Z",
+      "providerStatus": "completed",
+      "rawCounts": {
+        "total": 22,
+        "completed": 22,
+        "failed": 0
+      },
+      "state": "ended",
+      "itemIds": [],
+      "providerReportedCostUsd": 1.6128796875,
+      "collected": true
+    },
+    {
+      "wave": 2,
+      "round": 0,
+      "chunk": 0,
+      "handle": {
+        "provider": "openrouter",
+        "batchId": "batch-1789126675-7MqW2X8IUMdxgZ147B40"
+      },
+      "submittedAt": "2026-09-11T11:37:56.538Z",
+      "lastPolledAt": "2026-09-11T12:41:40.312Z",
+      "endedAt": "2026-09-11T12:41:40.312Z",
+      "providerStatus": "completed",
+      "rawCounts": {
+        "total": 64,
+        "completed": 64,
+        "failed": 0
+      },
+      "state": "ended",
+      "itemIds": [
+        "b34e65edf5cb8c2442efb1beb4a53b93"
+      ],
+      "providerReportedCostUsd": 1.7641692375,
+      "collected": true
+    }
+  ],
+  "activeBatchIds": [],
+  "tasks": {
+    "CG-AL-E006": {
+      "attempt1": {
+        "itemId": "be586ad2559e496b30037a3cb16e6a3a",
+        "round": 0,
+        "ownerRound": 0,
+        "state": "evaluated",
+        "attemptFile": "results\\batch\\1f99aac6-4b2f-4bc4-a04a-c1dd521d6fb6\\attempts\\CG-AL-E006-a1.json"
+      },
+      "attempt2": {
+        "itemId": "b34e65edf5cb8c2442efb1beb4a53b93",
+        "round": 0,
+        "ownerRound": 0,
+        "state": "evaluated",
+        "attemptFile": "results\\batch\\1f99aac6-4b2f-4bc4-a04a-c1dd521d6fb6\\attempts\\CG-AL-E006-a2.json"
+      }
+    },
+    "CG-AL-E001": {
+      "attempt1": {
+        "itemId": "b68267c1447a32ec2d0bc7e330af250a",
+        "round": 0,
+        "ownerRound": 0,
+        "state": "evaluated",
+        "attemptFile": "results\\batch\\1f99aac6-4b2f-4bc4-a04a-c1dd521d6fb6\\attempts\\CG-AL-E001-a1.json"
+      }
+    }
+  },
+  "ingest": true,
+  "pricingVersion": "2026-09-11",
+  "resultsFile": "results\\benchmark-results-1f99aac6-4b2f-4bc4-a04a-c1dd521d6fb6.json",
+  "ingestedRunId": "1f99aac6-4b2f-4bc4-a04a-c1dd521d6fb6",
+  "finalizedAt": "2026-09-11T13:08:01.002Z"
+}

@@ -1,0 +1,67 @@
+{
+  "result": {
+    "itemId": "b68267c1447a32ec2d0bc7e330af250a",
+    "ok": true,
+    "raw": {
+      "model": "google/gemini-3.8-flash",
+      "id": "gen-batch-1789104873-398b16ce706c00d3fe12",
+      "created": 1789105015,
+      "system_fingerprint": null,
+      "object": "chat.completion",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "BEGIN-CODE\ntable 70000 \"Product Category\"\n{\n    Caption = 'Product Category';\n    DataClassification = CustomerContent;\n\n    fields\n    {\n        field(1; \"Code\"; Code[20])\n        {\n            Caption = 'Code';\n            DataClassification = CustomerContent;\n            NotBlank = true;\n        }\n        field(2; Description; Text[100])\n        {\n            Caption = 'Description';\n            DataClassification = CustomerContent;\n        }\n        field(3; Active; Boolean)\n        {\n            Caption = 'Active';\n            DataClassification = CustomerContent;\n            InitValue = true;\n        }\n        field(4; \"Created Date\"; Date)\n        {\n            Caption = 'Created Date';\n            DataClassification = CustomerContent;\n        }\n    }\n\n    keys\n    {\n        key(PK; \"Code\")\n        {\n            Clustered = true;\n        }\n    }\n}\nEND-CODE",
+            "refusal": null,
+            "reasoning": null,
+            "reasoning_details": [
+              {
+                "type": "reasoning.encrypted",
+                "data": "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",
+                "format": "google-gemini-v1",
+                "index": 0
+              }
+            ]
+          },
+          "finish_reason": "stop",
+          "native_finish_reason": "STOP",
+          "logprobs": null
+        }
+      ],
+      "service_tier": null,
+      "usage": {
+        "prompt_tokens": 263,
+        "completion_tokens": 811,
+        "total_tokens": 1074,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 583,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "provider": "Google"
+    },
+    "httpStatus": 200
+  },
+  "response": {
+    "content": "BEGIN-CODE\ntable 70000 \"Product Category\"\n{\n    Caption = 'Product Category';\n    DataClassification = CustomerContent;\n\n    fields\n    {\n        field(1; \"Code\"; Code[20])\n        {\n            Caption = 'Code';\n            DataClassification = CustomerContent;\n            NotBlank = true;\n        }\n        field(2; Description; Text[100])\n        {\n            Caption = 'Description';\n            DataClassification = CustomerContent;\n        }\n        field(3; Active; Boolean)\n        {\n            Caption = 'Active';\n            DataClassification = CustomerContent;\n            InitValue = true;\n        }\n        field(4; \"Created Date\"; Date)\n        {\n            Caption = 'Created Date';\n            DataClassification = CustomerContent;\n        }\n    }\n\n    keys\n    {\n        key(PK; \"Code\")\n        {\n            Clustered = true;\n        }\n    }\n}\nEND-CODE",
+    "model": "google/gemini-3.8-flash",
+    "usage": {
+      "promptTokens": 263,
+      "completionTokens": 811,
+      "totalTokens": 1074,
+      "reasoningTokens": 583
+    },
+    "duration": 0,
+    "finishReason": "stop",
+    "providerFinishReason": "stop"
+  }
+}
