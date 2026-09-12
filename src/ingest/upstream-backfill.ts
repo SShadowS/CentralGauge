@@ -117,7 +117,16 @@ export async function collectBatchServedUpstreams(
       [2, t?.attempt2],
     ];
     for (const [attempt, summary] of attempts) {
-      if (!summary || typeof summary.itemId !== "string") continue;
+      // No summary at all means the attempt never happened (a task solved on
+      // attempt 1 has no attempt 2), which is not a skip. A summary whose
+      // `itemId` is not a string IS one: the attempt exists but names no
+      // response file, and dropping it silently would contradict this
+      // module's promise that every (task, attempt) is accounted for.
+      if (!summary) continue;
+      if (typeof summary.itemId !== "string") {
+        skipped.push({ task_id: taskId, attempt, why: "no item id" });
+        continue;
+      }
       const r = await providerFromResponse(
         join(runDir, "responses", `${summary.itemId}.json`),
       );

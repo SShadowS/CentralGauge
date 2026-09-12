@@ -206,9 +206,11 @@ function classifyStatusCode(
  *
  * Classification order: an entry carrying `response.status_code` classifies
  * by that HTTP status (`classifyStatusCode`); an entry with no status but
- * with `error.code` classifies by that code instead, numeric or string
- * (OpenRouter emits both shapes); an entry with neither falls to `unknown`,
- * non-retryable.
+ * with a THREE-DIGIT NUMERIC `error.code` classifies by that code instead,
+ * whether it arrives as a number or as a string of three digits (OpenRouter
+ * emits both shapes). Everything else falls to `unknown`, non-retryable -
+ * including a non-numeric string code such as `rate_limit_exceeded`, which
+ * this function does not map even though the failure it names is retryable.
  *
  * The live spike behind this classifier (Task 1, design doc section 4, D3)
  * pinned a one-item batch to a dead upstream via `allow_fallbacks: false`.

@@ -44,7 +44,12 @@ Deno.test("collectBatchServedUpstreams reads result.raw.provider per attempt and
     await Deno.writeTextFile(
       join(dir, "responses", "i2.json"),
       JSON.stringify({
-        result: { itemId: "i2", ok: true, raw: { choices: [] }, httpStatus: 200 },
+        result: {
+          itemId: "i2",
+          ok: true,
+          raw: { choices: [] },
+          httpStatus: 200,
+        },
       }),
     );
     const out = await collectBatchServedUpstreams(dir);
@@ -91,6 +96,46 @@ Deno.test("collectBatchServedUpstreams reports an unreadable response instead of
     ]);
     assertEquals(out.skipped, [
       { task_id: "easy/t1", attempt: 1, why: "unreadable response file" },
+    ]);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("collectBatchServedUpstreams reports an attempt whose itemId is not a string", async () => {
+  const dir = await createTempDir("backfill-noid");
+  try {
+    await Deno.mkdir(join(dir, "responses"));
+    await Deno.writeTextFile(
+      join(dir, "state.json"),
+      JSON.stringify({
+        tasks: {
+          // attempt 1 exists but names no response file; attempt 2 never
+          // happened at all and is correctly not a skip.
+          "easy/t1": { attempt1: { itemId: null, state: "errored" } },
+          "easy/t2": { attempt1: { state: "errored" } },
+          "easy/t3": { attempt1: { itemId: "i3", state: "evaluated" } },
+        },
+      }),
+    );
+    await Deno.writeTextFile(
+      join(dir, "responses", "i3.json"),
+      JSON.stringify({
+        result: {
+          itemId: "i3",
+          ok: true,
+          raw: { provider: "Novita" },
+          httpStatus: 200,
+        },
+      }),
+    );
+    const out = await collectBatchServedUpstreams(dir);
+    assertEquals(out.entries, [
+      { task_id: "easy/t3", attempt: 1, served_upstream: "Novita" },
+    ]);
+    assertEquals(out.skipped, [
+      { task_id: "easy/t1", attempt: 1, why: "no item id" },
+      { task_id: "easy/t2", attempt: 1, why: "no item id" },
     ]);
   } finally {
     await cleanupTempDir(dir);

@@ -22,6 +22,7 @@ import type {
 import type { LLMRequest } from "../../src/llm/types.ts";
 import { EnvLoader } from "../../src/utils/env-loader.ts";
 import { parseProviderAndModel } from "../helpers/mod.ts";
+import { getApiKeyForProvider } from "../helpers/api-keys.ts";
 import { DEFAULT_MAX_TOKENS } from "../../src/constants.ts";
 import {
   fetchUpstreams,
@@ -510,24 +511,6 @@ async function checkModelAccess(
       error: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-/**
- * Resolve API key for a provider from environment.
- *
- * Exported so the bench's upstream precheck resolves the OpenRouter key from
- * this one env map rather than growing a second copy of it.
- */
-export function getApiKeyForProvider(provider: string): string | undefined {
-  const apiKeyEnvMap: Record<string, string> = {
-    openai: "OPENAI_API_KEY",
-    anthropic: "ANTHROPIC_API_KEY",
-    gemini: "GOOGLE_API_KEY",
-    "azure-openai": "AZURE_OPENAI_API_KEY",
-    openrouter: "OPENROUTER_API_KEY",
-  };
-  const envKey = apiKeyEnvMap[provider];
-  return envKey ? Deno.env.get(envKey) : undefined;
 }
 
 /**
