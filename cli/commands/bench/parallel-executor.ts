@@ -843,6 +843,13 @@ export async function executeParallelBenchmark(
           finalResults,
           drainEvents,
           recoveryEvents,
+          undefined,
+          // One pin describes the run only when the run has one variant;
+          // a multi-variant run can carry a different pin per variant, and
+          // naming just the first would misreport the others.
+          variants.length === 1
+            ? options.upstreamPins?.get(variants[0]!.variantId)
+            : undefined,
         );
 
         // Print summary

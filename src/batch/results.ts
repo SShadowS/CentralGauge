@@ -466,6 +466,17 @@ export async function finalizeRun(
           [variantId]: invocationRecord as unknown as Record<string, unknown>,
         },
       },
+      // Schema 5: the settings this run was SUBMITTED under, straight from
+      // its own frozen `prompt-inputs.json`, plus the hash `state.json`
+      // froze at the same moment. Ingest sends them verbatim, so a run that
+      // finalizes days later cannot land on a settings profile that did not
+      // exist when it was submitted.
+      {
+        [variantId]: {
+          canonical: promptInputs.settings,
+          hash: next.frozen.settingsHash,
+        },
+      },
     );
     // Replay idempotency (spec 4.5): the run's OWN id, never a fresh mint.
     // `buildIngestMeta` mints one fresh UUID per call, which would make a
@@ -513,6 +524,15 @@ export async function finalizeRun(
       undefined,
       undefined,
       batchScoreBlock,
+      // The routing this run froze at submit, not live config: the `#
+      // Upstream` block must describe what the waves actually ran against.
+      promptInputs.routing
+        ? {
+          upstreamPin: promptInputs.routing.upstreamPin,
+          providerName: promptInputs.routing.providerName,
+          quantization: promptInputs.routing.quantization,
+        }
+        : undefined,
     );
 
     next = { ...next, resultsFile };
@@ -536,6 +556,15 @@ export async function finalizeRun(
     }
     assembleOpts.runId = ingestMeta?.run_ids[variantId] ?? next.runId;
     assembleOpts.taskSetHash = ingestMeta?.task_set_hash ?? deps.taskSetHash;
+    // Schema 5: the settings frozen at submit, written into this same file
+    // by the finalize block above. Absent on a run finalized by an older
+    // CLI, which then rebuilds from the invocation record instead.
+    const persistedSettings = ingestMeta?.canonical_settings?.[variantId];
+    if (persistedSettings) assembleOpts.canonicalSettings = persistedSettings;
+    const persistedSettingsHash = ingestMeta?.settings_hashes?.[variantId];
+    if (persistedSettingsHash) {
+      assembleOpts.settingsHash = persistedSettingsHash;
+    }
 
     const assembled = await assembleBenchResultsForVariant(
       resultsFile,

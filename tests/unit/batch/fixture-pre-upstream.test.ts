@@ -160,8 +160,11 @@ Deno.test("finalizeRun on a pre-upstream run keeps the frozen settings hash and 
     assertEquals("invocation_schema" in inv, false);
     assertEquals("upstream_pin" in inv, false);
     assertEquals("upstream_resolved" in inv, false);
-    // Schema 5 lands in Task 11; today's finalize still stamps schema 4.
-    assertEquals(results.ingest.schema, 4);
+    // Finalize now persists the settings the run was submitted under, so a
+    // re-finalized file is schema 5 even for a run frozen before the
+    // upstream lock. The persisted settings are still the schema-1 ones the
+    // run actually froze, which is exactly why they are sent verbatim.
+    assertEquals(results.ingest.schema, 5);
   } finally {
     await f.cleanup();
   }

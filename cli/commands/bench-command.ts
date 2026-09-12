@@ -1010,6 +1010,17 @@ async function ingestBenchResults(
       if (ingestMeta?.task_set_hash) {
         assembleOpts.taskSetHash = ingestMeta.task_set_hash;
       }
+      // Schema 5: the settings this variant was ingested under, frozen in
+      // the file moments ago. Sent verbatim so no later rebuild can move
+      // the run onto a different settings profile.
+      const persistedSettings = ingestMeta?.canonical_settings
+        ?.[variant.variantId];
+      if (persistedSettings) assembleOpts.canonicalSettings = persistedSettings;
+      const persistedSettingsHash = ingestMeta?.settings_hashes
+        ?.[variant.variantId];
+      if (persistedSettingsHash) {
+        assembleOpts.settingsHash = persistedSettingsHash;
+      }
       const assembled = await assembleBenchResultsForVariant(
         filePath,
         variant,

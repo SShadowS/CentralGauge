@@ -60,6 +60,36 @@ export interface BenchResultItem {
    * only, never re-scored.
    */
   refusal_category: string | null;
+  /**
+   * OpenRouter upstream lock (spec 2026-09-11 D1). `requested_upstream` is
+   * the slug the request pinned, `served_upstream` the display name the
+   * response reported, `served_upstream_model` the upstream's own model
+   * version string, `upstream_identity_source` where that identity was
+   * read from. All four are null on an attempt that predates the capture
+   * or ran against a provider the lock does not cover.
+   */
+  requested_upstream: string | null;
+  served_upstream: string | null;
+  served_upstream_model: string | null;
+  upstream_identity_source:
+    | "provider_field"
+    | "router_metadata"
+    | "both"
+    | null;
+  /**
+   * The per-attempt verdict. `not_applicable` covers both a non-OpenRouter
+   * attempt and an attempt from a CLI predating the lock; `mismatch` and
+   * `unverified` are the two compromises that exclude the whole run (see
+   * {@link BenchResults.excluded}), while `not_served` is a routing
+   * outcome, not a compromise.
+   */
+  upstream_verification:
+    | "not_applicable"
+    | "unpinned"
+    | "verified"
+    | "mismatch"
+    | "unverified"
+    | "not_served";
   durations_ms: { llm?: number; compile?: number; test?: number };
   failure_reasons: string[];
   transcript_bytes?: Uint8Array;
@@ -122,6 +152,19 @@ export interface BenchResults {
   invocationMode: InvocationMode;
   harnessFingerprint?: string;
   retryPathVersion?: string;
+  /**
+   * Set when the run must be excluded from every scoreboard statistic while
+   * still being stored and browsable (spec 2026-09-11 D1). Built by
+   * `assembleBenchResultsForVariant` when at least one attempt's
+   * `upstream_verification` is `mismatch` or `unverified`; `attempts` names
+   * exactly those attempts. Absent on a clean run, and never set for
+   * `not_served`.
+   */
+  excluded?: {
+    code: "upstream_mismatch" | "upstream_unverified";
+    reason: string;
+    attempts: Array<{ task_id: string; attempt: 1 | 2 }>;
+  };
 }
 
 /**
@@ -185,6 +228,11 @@ export async function mapResultItemToInput(
     tokens_cache_write: r.tokens_cache_write,
     served_model: r.served_model,
     refusal_category: r.refusal_category,
+    requested_upstream: r.requested_upstream,
+    served_upstream: r.served_upstream,
+    served_upstream_model: r.served_upstream_model,
+    upstream_identity_source: r.upstream_identity_source,
+    upstream_verification: r.upstream_verification,
     durations_ms: r.durations_ms,
     failure_reasons: r.failure_reasons,
   };
@@ -295,6 +343,7 @@ export async function ingestRun(
     results,
     invocationMode: br.invocationMode,
   };
+  if (br.excluded) payloadInput.excluded = br.excluded;
   if (br.centralgaugeSha) payloadInput.centralgaugeSha = br.centralgaugeSha;
   if (reproductionBundleSha) {
     payloadInput.reproductionBundleSha256 = reproductionBundleSha;

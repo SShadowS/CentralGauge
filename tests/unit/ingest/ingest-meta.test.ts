@@ -16,6 +16,7 @@ import {
   validateAttemptsForIngest,
 } from "../../../cli/commands/bench/ingest-meta.ts";
 import type { EnvironmentManifest } from "../../../src/ingest/capture.ts";
+import type { CanonicalSettings } from "../../../shared/settings-hash.ts";
 
 function fakeEnvironment(): EnvironmentManifest {
   return {
@@ -227,4 +228,106 @@ Deno.test("validateAttemptsForIngest (T5): >2 attempts refused when ingest enabl
   assertEquals(validateAttemptsForIngest(3, false), undefined);
   assertEquals(validateAttemptsForIngest(2, true), undefined);
   assertEquals(validateAttemptsForIngest(1, true), undefined);
+});
+
+/**
+ * Schema 5 (spec 2026-09-11 D4): the results file also persists the exact
+ * canonical settings and hash each variant was ingested or frozen under, so
+ * assembly can send them verbatim instead of rebuilding them.
+ */
+function fakeCanonicalSettings(): CanonicalSettings {
+  return {
+    temperature: 0.1,
+    max_attempts: 2,
+    max_tokens: 8192,
+    prompt_version: null,
+    bc_version: null,
+    extra_json: '{"settings_extras_schema":2,"upstream_pin":"novita/fp8"}',
+  };
+}
+
+Deno.test("buildIngestMeta stamps schema 5 with canonical_settings + settings_hashes", () => {
+  const canonical = fakeCanonicalSettings();
+  const meta = buildIngestMeta(
+    [{ variantId: "openrouter/google/gemini-3.8-flash" }],
+    "a".repeat(64),
+    { environment: fakeEnvironment(), invocations: {} },
+    {
+      "openrouter/google/gemini-3.8-flash": {
+        canonical,
+        hash: "f".repeat(64),
+      },
+    },
+  );
+  assertEquals(meta.schema, 5);
+  assertEquals(
+    meta.canonical_settings?.["openrouter/google/gemini-3.8-flash"],
+    canonical,
+  );
+  assertEquals(
+    meta.settings_hashes?.["openrouter/google/gemini-3.8-flash"],
+    "f".repeat(64),
+  );
+});
+
+Deno.test("buildIngestMeta stays schema 4 when no settings are supplied", () => {
+  const meta = buildIngestMeta(
+    [{ variantId: "mock/mock-gpt-4" }],
+    "a".repeat(64),
+    { environment: fakeEnvironment(), invocations: {} },
+  );
+  assertEquals(meta.schema, 4);
+  assertEquals("canonical_settings" in meta, false);
+  assertEquals("settings_hashes" in meta, false);
+});
+
+Deno.test("parseIngestMeta round-trips a schema-5 file carrying both maps", () => {
+  const canonical = fakeCanonicalSettings();
+  const meta = buildIngestMeta(
+    [{ variantId: "v" }],
+    "b".repeat(64),
+    { environment: fakeEnvironment(), invocations: { v: { mode: "batch" } } },
+    { v: { canonical, hash: "deadbeef" } },
+  );
+  const saved = JSON.parse(JSON.stringify({ results: [], ingest: meta }));
+  const parsed = parseIngestMeta(saved);
+  assert(parsed !== undefined, "schema-5 meta must parse");
+  assertEquals(parsed!.schema, 5);
+  assertEquals(parsed!.canonical_settings?.["v"], canonical);
+  assertEquals(parsed!.settings_hashes?.["v"], "deadbeef");
+  assertEquals(parsed, meta);
+});
+
+Deno.test("parseIngestMeta ignores malformed schema-5 maps rather than throwing", () => {
+  const parsed = parseIngestMeta({
+    ingest: {
+      schema: 5,
+      pricing_version: "2026-09-12",
+      run_ids: { v: "11111111-2222-3333-4444-555555555555" },
+      // Missing the six hashed keys, and a non-string hash.
+      canonical_settings: { v: { temperature: 0.1 } },
+      settings_hashes: { v: 42 },
+    },
+  });
+  assert(parsed !== undefined, "meta must still parse despite malformed maps");
+  assertEquals("canonical_settings" in parsed!, false);
+  assertEquals("settings_hashes" in parsed!, false);
+});
+
+Deno.test("parseIngestMeta reads schema-5 maps off a file that declares a lower schema", () => {
+  // Same forgiving-by-field-presence policy as task_set_hash/environment:
+  // the maps are read whenever present and well-formed.
+  const canonical = fakeCanonicalSettings();
+  const parsed = parseIngestMeta({
+    ingest: {
+      schema: 4,
+      pricing_version: "2026-09-12",
+      run_ids: { v: "11111111-2222-3333-4444-555555555555" },
+      canonical_settings: { v: canonical },
+      settings_hashes: { v: "deadbeef" },
+    },
+  });
+  assert(parsed !== undefined);
+  assertEquals(parsed!.canonical_settings?.["v"], canonical);
+  assertEquals(parsed!.settings_hashes?.["v"], "deadbeef");
 });

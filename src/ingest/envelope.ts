@@ -39,6 +39,16 @@ export interface BuildPayloadInput {
   invocation?: Record<string, unknown>;
   /** The invocation profile a run executed under (D4). Defaults to `"sync"` on the payload when absent. */
   invocationMode?: InvocationMode;
+  /**
+   * Marks the run as excluded from every scoreboard statistic while still
+   * being stored (spec 2026-09-11 D1). Emitted verbatim as `excluded`;
+   * absent on a clean run and on every CLI predating the upstream lock.
+   */
+  excluded?: {
+    code: "upstream_mismatch" | "upstream_unverified";
+    reason: string;
+    attempts: Array<{ task_id: string; attempt: 1 | 2 }>;
+  };
 }
 
 export function buildPayload(
@@ -77,6 +87,7 @@ export function buildPayload(
     p["bcch_use_pwsh_bc24"] = input.environment.bcch_use_pwsh_bc24;
   }
   if (input.invocation) p["invocation"] = input.invocation;
+  if (input.excluded) p["excluded"] = input.excluded;
   p["invocation_mode"] = input.invocationMode ?? "sync";
   return p;
 }

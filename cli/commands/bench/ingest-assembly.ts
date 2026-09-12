@@ -25,6 +25,7 @@ import type { EnvironmentManifest } from "../../../src/ingest/capture.ts";
 import {
   buildCanonicalSettings,
   buildLegacyCanonicalSettings,
+  type CanonicalSettings,
   type InvocationMode,
 } from "../../../shared/settings-hash.ts";
 
@@ -58,6 +59,20 @@ export interface AssembleOptions {
   environment?: EnvironmentManifest;
   /** Redacted LLM invocation snapshot for this variant. See `invocationSnapshot`. */
   invocation?: Record<string, unknown>;
+  /**
+   * The EXACT canonical settings this variant was ingested or frozen under,
+   * read from the results file's schema-5 `ingest.canonical_settings` (spec
+   * 2026-09-11 D4). When supplied they are sent verbatim and NEVER rebuilt:
+   * a rebuild disagreeing by one key would silently file the run under a
+   * different settings profile. Absent on files predating schema 5.
+   */
+  canonicalSettings?: CanonicalSettings;
+  /**
+   * The hash `canonicalSettings` produces, read from the same schema-5 meta.
+   * Carried for auditing: the server recomputes the hash from the settings
+   * it receives, so this is never sent, only recorded alongside the run.
+   */
+  settingsHash?: string;
 }
 
 /**
@@ -181,7 +196,13 @@ export async function assembleBenchResultsForVariant(
   // move every model onto a new profile for no batch-mode reason.
   let settings: Record<string, unknown>;
   let invocationMode: InvocationMode = "sync";
-  if (opts.invocation && isInvocationRecord(opts.invocation)) {
+  if (opts.canonicalSettings) {
+    // Schema-5 file: the exact object the run hashed under. Never rebuilt.
+    settings = { ...opts.canonicalSettings };
+    if (opts.invocation && isInvocationRecord(opts.invocation)) {
+      invocationMode = opts.invocation.mode;
+    }
+  } else if (opts.invocation && isInvocationRecord(opts.invocation)) {
     const inv = opts.invocation;
     invocationMode = inv.mode;
     const base = {
@@ -259,7 +280,66 @@ export async function assembleBenchResultsForVariant(
     br.retryPathVersion = opts.environment.retry_path_version;
   }
   if (opts.invocation) br.invocation = opts.invocation;
+
+  // Run-level upstream exclusion (spec 2026-09-11 D1). A pinned OpenRouter
+  // run whose responses came from somewhere else, or whose identity could
+  // not be read at all, is not comparable with the rest of the cohort: the
+  // attempts stay in the payload with their real outcomes, and the run
+  // carries a code plus the attempts that caused it so the server can
+  // exclude it from every statistic. `not_served` is NOT a compromise: the
+  // pinned upstream simply never answered, which is a routing outcome, not
+  // a wrong-model one.
+  const compromised = items.filter((i) =>
+    i.upstream_verification === "mismatch" ||
+    i.upstream_verification === "unverified"
+  );
+  if (compromised.length > 0) {
+    const anyMismatch = compromised.some((i) =>
+      i.upstream_verification === "mismatch"
+    );
+    const first = compromised[0]!;
+    const detail = anyMismatch
+      ? `pinned ${first.requested_upstream}, served ${
+        compromised.find((i) => i.upstream_verification === "mismatch")!
+          .served_upstream
+      }`
+      : `pinned ${first.requested_upstream}, no identity in the response`;
+    const head = `upstream ${
+      anyMismatch ? "mismatch" : "unverified"
+    } on ${compromised.length} attempt${
+      compromised.length === 1 ? "" : "s"
+    }: ${detail} `;
+    const where = compromised.map((i) => `${i.task_id} a${i.attempt}`);
+    br.excluded = {
+      code: anyMismatch ? "upstream_mismatch" : "upstream_unverified",
+      reason: `${head}(${truncateWhere(where, REASON_MAX - head.length - 2)})`,
+      attempts: compromised.map((i) => ({
+        task_id: i.task_id,
+        attempt: i.attempt,
+      })),
+    };
+  }
   return { kind: "assembled", benchResults: br, infraExcludedAttempts };
+}
+
+/** Hard ceiling on `BenchResults.excluded.reason`. */
+const REASON_MAX = 500;
+
+/**
+ * Join the `task a1` locators, dropping the tail with an ellipsis once the
+ * list would push `reason` past its ceiling. The full list always survives
+ * on `excluded.attempts`, so nothing is lost by truncating the prose.
+ */
+function truncateWhere(where: string[], budget: number): string {
+  const full = where.join(", ");
+  if (full.length <= budget || budget <= 3) return full;
+  let out = "";
+  for (const w of where) {
+    const next = out.length === 0 ? w : `${out}, ${w}`;
+    if (next.length + 5 > budget) break;
+    out = next;
+  }
+  return out.length === 0 ? "..." : `${out}, ...`;
 }
 
 async function attemptToItem(
@@ -296,6 +376,16 @@ async function attemptToItem(
     tokens_cache_write: a.llmResponse.usage.cacheCreationTokens ?? 0,
     served_model: a.llmResponse.servedModel ?? null,
     refusal_category: a.llmResponse.refusal?.category ?? null,
+    // OpenRouter upstream lock (spec 2026-09-11 D1). Null on every attempt
+    // that predates the capture; `not_applicable` is the verdict for a
+    // provider the lock does not cover, which is also what an old file's
+    // missing field degrades to. Both mean "this attempt was never in
+    // scope", and neither is ever treated as a compromise.
+    requested_upstream: a.requestedUpstream ?? null,
+    served_upstream: a.servedUpstream ?? null,
+    served_upstream_model: a.servedUpstreamModel ?? null,
+    upstream_identity_source: a.upstreamIdentitySource ?? null,
+    upstream_verification: a.upstreamVerification ?? "not_applicable",
     durations_ms,
     failure_reasons: a.failureReasons,
     transcript_bytes: encoder.encode(transcriptText),

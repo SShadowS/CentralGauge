@@ -334,7 +334,7 @@ async function setupRun(): Promise<{
   return { output, dir, manifests, contexts, state };
 }
 
-Deno.test("finalizeRun writes the results file with schema-4 ingest meta and per-task totalDuration", async () => {
+Deno.test("finalizeRun writes the results file with schema-5 ingest meta and per-task totalDuration", async () => {
   const { output, dir, manifests, contexts, state } = await setupRun();
   try {
     const next = await finalizeRun(dir, state, {
@@ -354,7 +354,20 @@ Deno.test("finalizeRun writes the results file with schema-4 ingest meta and per
     assertEquals(next.ingestedRunId, undefined);
 
     const parsed = JSON.parse(await Deno.readTextFile(next.resultsFile!));
-    assertEquals(parsed.ingest.schema, 4);
+    // Schema 5: finalize also persists the settings + hash the run was
+    // submitted under, straight from its frozen prompt-inputs.json.
+    assertEquals(parsed.ingest.schema, 5);
+    assertEquals(
+      parsed.ingest.settings_hashes[VARIANT_ID],
+      state.frozen.settingsHash,
+    );
+    const frozenInputs = JSON.parse(
+      await Deno.readTextFile(join(dir, RUN_FILES.promptInputs)),
+    ) as { settings: Record<string, unknown> };
+    assertEquals(
+      parsed.ingest.canonical_settings[VARIANT_ID],
+      frozenInputs.settings,
+    );
     assertEquals(parsed.ingest.run_ids[VARIANT_ID], RUN_ID);
     assertEquals(parsed.ingest.invocations[VARIANT_ID].mode, "batch");
     assertEquals(

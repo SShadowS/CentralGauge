@@ -29,6 +29,14 @@ function baseItem(overrides?: Partial<BenchResultItem>): BenchResultItem {
     tokens_cache_write: 0,
     served_model: null,
     refusal_category: null,
+    // The five upstream-lock fields are non-optional on a BenchResultItem:
+    // assembly always sets them, nulling them out (and reporting
+    // `not_applicable`) for an attempt the lock never covered.
+    requested_upstream: null,
+    served_upstream: null,
+    served_upstream_model: null,
+    upstream_identity_source: null,
+    upstream_verification: "not_applicable",
     durations_ms: {},
     failure_reasons: [],
     ...overrides,
@@ -106,6 +114,13 @@ Deno.test("mapResultItemToInput omits all nine capture keys entirely when absent
   assertEquals(out.passed, true);
   assertEquals(out.served_model, null);
   assertEquals(out.refusal_category, null);
+  // The five upstream fields are always present, like served_model above:
+  // they are non-optional on the item, so the row always carries them.
+  assertEquals(out.requested_upstream, null);
+  assertEquals(out.served_upstream, null);
+  assertEquals(out.served_upstream_model, null);
+  assertEquals(out.upstream_identity_source, null);
+  assertEquals(out.upstream_verification, "not_applicable");
 });
 
 Deno.test("mapResultItemToInput hashes transcript/code bytes and omits their keys when absent", async () => {

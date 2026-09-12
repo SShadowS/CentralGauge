@@ -25,6 +25,7 @@ export {
   displayBenchmarkSummary,
   displayFormattedOutput,
   displayMultiRunSummary,
+  renderUpstreamBlock,
   saveResultsJson,
   saveScoresFile,
 } from "./results-writer.ts";

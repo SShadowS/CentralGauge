@@ -6,6 +6,7 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import {
   buildScoreLines,
+  renderUpstreamBlock,
   type ScoreLineInput,
 } from "../../../../../cli/commands/bench/mod.ts";
 import type {
@@ -941,4 +942,141 @@ Deno.test("buildScoreLines", async (t) => {
       assert(!content.includes("# Publish Defects"));
     },
   );
+});
+
+/**
+ * `# Upstream` block (spec 2026-09-11 D1). The OpenRouter upstream lock's
+ * scores-file summary: what the run pinned, which upstreams actually served,
+ * which model versions they reported, and the verification histogram.
+ */
+Deno.test("renderUpstreamBlock summarises pin, served names, model versions and verification counts", () => {
+  const attempt = (
+    overrides: Partial<ExecutionAttempt>,
+  ): ExecutionAttempt => createMockExecutionAttempt(overrides);
+
+  const results: TaskExecutionResult[] = [
+    {
+      taskId: "t1",
+      executionId: "t1-exec",
+      context: {} as TaskExecutionResult["context"],
+      attempts: [
+        attempt({
+          requestedUpstream: "novita/fp8",
+          servedUpstream: "Novita",
+          servedUpstreamModel: "gemini-3.8-flash-001",
+          upstreamIdentitySource: "both",
+          upstreamVerification: "verified",
+        }),
+        attempt({
+          attemptNumber: 2,
+          requestedUpstream: "novita/fp8",
+          servedUpstream: "Novita",
+          servedUpstreamModel: "gemini-3.8-flash-001",
+          upstreamIdentitySource: "provider_field",
+          upstreamVerification: "verified",
+        }),
+      ],
+      success: true,
+      finalScore: 100,
+      totalTokensUsed: 0,
+      totalCost: 0,
+      totalDuration: 0,
+      passedAttemptNumber: 1,
+      successRate: 1,
+      executedAt: new Date(),
+      executedBy: "centralgauge",
+      environment: {},
+    },
+  ];
+
+  // A second upstream answered one attempt despite the pin.
+  const strayResult: TaskExecutionResult = {
+    taskId: "t2",
+    executionId: "t2-exec",
+    context: {} as TaskExecutionResult["context"],
+    attempts: [
+      attempt({
+        success: false,
+        score: 0,
+        requestedUpstream: "novita/fp8",
+        servedUpstream: "Together",
+        servedUpstreamModel: "gemini-3.8-flash-002",
+        upstreamIdentitySource: "router_metadata",
+        upstreamVerification: "mismatch",
+      }),
+    ],
+    success: false,
+    finalScore: 0,
+    totalTokensUsed: 0,
+    totalCost: 0,
+    totalDuration: 0,
+    passedAttemptNumber: 0,
+    successRate: 0,
+    executedAt: new Date(),
+    executedBy: "centralgauge",
+    environment: {},
+  };
+
+  const lines = renderUpstreamBlock(results, "openrouter", {
+    upstreamPin: "novita/fp8",
+    providerName: "Novita",
+    quantization: "fp8",
+  });
+  assertEquals(lines[0], "# Upstream");
+  assert(lines.includes("pin: novita/fp8 (Novita, fp8)"));
+  assert(lines.some((l: string) => /^served: Novita=\d+/.test(l)));
+  assert(lines.some((l: string) => /^verification: verified=\d+/.test(l)));
+  assert(lines.some((l: string) => /^served_model: /.test(l)));
+  assertEquals(renderUpstreamBlock(results, "anthropic"), []);
+
+  // A run that also drew a different upstream counts both, sorted by name,
+  // so the histogram reads as one line whatever order the attempts ran in.
+  const mixed = renderUpstreamBlock([...results, strayResult], "openrouter", {
+    upstreamPin: "novita/fp8",
+    providerName: "Novita",
+    quantization: "fp8",
+  });
+  assert(mixed.includes("served: Novita=2 Together=1"));
+  assert(mixed.includes("verification: mismatch=1 verified=2"));
+  assert(
+    mixed.includes(
+      "served_model: gemini-3.8-flash-001=2 gemini-3.8-flash-002=1",
+    ),
+  );
+});
+
+Deno.test("renderUpstreamBlock reports an unpinned openrouter run and an undeclared quantization", () => {
+  const results: TaskExecutionResult[] = [
+    {
+      taskId: "t1",
+      executionId: "t1-exec",
+      context: {} as TaskExecutionResult["context"],
+      attempts: [createMockExecutionAttempt({})],
+      success: true,
+      finalScore: 100,
+      totalTokensUsed: 0,
+      totalCost: 0,
+      totalDuration: 0,
+      passedAttemptNumber: 1,
+      successRate: 1,
+      executedAt: new Date(),
+      executedBy: "centralgauge",
+      environment: {},
+    },
+  ];
+
+  const unpinned = renderUpstreamBlock(results, "openrouter");
+  assertEquals(unpinned[0], "# Upstream");
+  assert(unpinned.includes("pin: none"));
+  assert(unpinned.includes("served: none"));
+  assert(unpinned.includes("served_model: none"));
+  // An attempt with no recorded verdict counts as unpinned, not as missing.
+  assert(unpinned.includes("verification: unpinned=1"));
+
+  const noQuant = renderUpstreamBlock(results, "openrouter", {
+    upstreamPin: "novita/fp8",
+    providerName: "Novita",
+    quantization: null,
+  });
+  assert(noQuant.includes("pin: novita/fp8 (Novita, quantization undeclared)"));
 });
