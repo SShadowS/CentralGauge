@@ -236,6 +236,21 @@ describe("POST /api/v1/runs upstream lock", () => {
     }
   });
 
+  it("rejects a pinned run whose result omits requested_upstream", async () => {
+    // The five upstream fields absent entirely, as a CLI predating the lock
+    // would send them, but on a payload that does declare a pin.
+    const bare = makeRunPayload().results[0]!;
+    const res = await post(orPayload({ results: [bare] }), "r-pin-bare");
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string; error: string }>();
+    expect(body.code).toBe("invalid_upstream");
+    expect(body.error).toContain("novita/fp8");
+    expect(body.error).toContain("easy/task-1");
+    const gone = await env.DB.prepare(`SELECT id FROM runs WHERE id = ?`)
+      .bind("r-pin-bare").first();
+    expect(gone).toBeNull();
+  });
+
   it("two concurrent first ingests with different pins leave exactly one profile and one run", async () => {
     const [a, b] = await Promise.all([
       post(orPayload(), "r-race-a"),

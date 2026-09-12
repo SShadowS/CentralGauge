@@ -734,6 +734,17 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           } (task ${r.task_id} attempt ${r.attempt})`,
         );
       }
+      // The converse of the rule above, which only fires on a non-null
+      // requested_upstream. Without this, a pinned run whose results simply
+      // omit the field would validate and claim the pin's profile while
+      // recording no evidence that anything was ever pinned.
+      if (runPin !== null && requestedUpstream === null) {
+        throw new ApiError(
+          400,
+          "invalid_upstream",
+          `the run pins upstream ${runPin}, so every result must carry a requested_upstream (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
       resultStatements.push(
         db
           .prepare(
