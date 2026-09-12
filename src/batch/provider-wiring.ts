@@ -32,6 +32,10 @@ import {
   mapFinishReason as mapOpenAIFinishReason,
   mapUsage as mapOpenAIUsage,
 } from "../llm/mappers/openai.ts";
+import {
+  assembleResponse as assembleOpenRouterResponse,
+  extractUpstreamIdentity,
+} from "../llm/mappers/openrouter.ts";
 import { OpenRouterAdapter } from "../llm/openrouter-adapter.ts";
 import type { LLMRequest, LLMResponse } from "../llm/types.ts";
 import type { VariantConfig } from "../llm/variant-types.ts";
@@ -209,17 +213,23 @@ export function wireProvider(
           };
         },
         // OpenRouter's inline batch results carry a normal OpenAI-shaped
-        // chat-completion body (spec 5.3), so the mapping is identical to
-        // the "openai" case above.
+        // chat-completion body (spec 5.3), so content/usage/finish mapping
+        // is identical to the "openai" case above. Identity is
+        // OpenRouter-specific: `assembleOpenRouterResponse` sets the same
+        // `servedUpstream`/`upstreamIdentitySource`/`upstreamIdentityConflict`
+        // fields the sync adapter sets.
         mapRaw: (raw, _itemId) => {
           const body = raw as OpenAIBatchChatCompletionBody;
           const choice = body.choices?.[0];
-          return assembleOpenAIResponse({
+          return assembleOpenRouterResponse({
             content: mapOpenAIContent(choice?.message?.content),
             model: model.apiModelId,
             usage: mapOpenAIUsage(body.usage ?? {}),
             duration: 0,
             finish: mapOpenAIFinishReason(choice?.finish_reason),
+            // The inline batch body carries the same identity fields as a
+            // sync response (spec D1, observed compatibility path).
+            upstream: extractUpstreamIdentity(raw),
           });
         },
       };

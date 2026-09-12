@@ -546,3 +546,52 @@ Deno.test("OpenRouter still classifies a real payload-size rejection", async () 
   );
   assertEquals(err.sizeLimit, true);
 });
+
+Deno.test("OpenRouterBatchProvider.collect classifies an error-only entry by error.code, numeric or string", async () => {
+  const batch = {
+    id: "b2",
+    model: "m",
+    status: "completed",
+    created_at: 0,
+    results: [
+      {
+        custom_id: "num",
+        response: null,
+        error: { message: "upstream rate-limited", code: 429 },
+      },
+      {
+        custom_id: "str",
+        response: null,
+        error: { message: "upstream rate-limited", code: "429" },
+      },
+      {
+        custom_id: "four",
+        response: null,
+        error: { message: "No endpoints found", code: 404 },
+      },
+      { custom_id: "none", response: null, error: { message: "something" } },
+    ],
+  };
+  const { fetch } = makeFetch(() => jsonResponse(batch));
+  const provider = new OpenRouterBatchProvider({ fetch, apiKey: "k" });
+  const byId = new Map(
+    (await provider.collect({ provider: "openrouter", batchId: "b2" })).map((
+      r,
+    ) => [r.itemId, r]),
+  );
+
+  for (const id of ["num", "str"]) {
+    const r = byId.get(id);
+    if (!r || r.ok) throw new Error(`${id}: expected an error`);
+    assertEquals(r.error.kind, "rate_limited");
+    assertEquals(r.error.retryable, true);
+  }
+  const four = byId.get("four");
+  if (!four || four.ok) throw new Error("expected an error");
+  assertEquals(four.error.kind, "invalid_request");
+  assertEquals(four.error.retryable, false);
+  const none = byId.get("none");
+  if (!none || none.ok) throw new Error("expected an error");
+  assertEquals(none.error.kind, "unknown");
+  assertEquals(none.error.retryable, false);
+});
