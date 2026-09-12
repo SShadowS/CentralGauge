@@ -1,0 +1,3185 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/reasoning-suite/sweeps/sweep-a2-algorithm/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Sweep A2 — algorithm-* volotests - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#sweep-a2-algorithm-volotests" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Sweep A2 — algorithm-* volotests
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary table
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amount-in-words" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        amount-in-words
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bank-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        bank-reconciliation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#batch-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        batch-validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#change-dispenser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        change-dispenser
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checkout-pricing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        checkout-pricing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chunk-partitioner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        chunk-partitioner
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compound-interest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compound-interest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-parser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        config-parser
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#csv-parser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        csv-parser
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dateformula-due-dates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        dateformula-due-dates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dedup-recipients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        dedup-recipients
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#duplicate-customers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        duplicate-customers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ean-check-digit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ean-check-digit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fifo-costing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fifo-costing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter-expression-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        filter-expression-check
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fiscal-periods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fiscal-periods
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gilded-rose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        gilded-rose
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#iban-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iban-verify
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#luhn-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        luhn-check
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nth-weekday" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nth-weekday
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#penny-allocation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        penny-allocation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recurrence-schedule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        recurrence-schedule
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#royalty-statement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        royalty-statement
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-balance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        running-balance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validity-overlaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        validity-overlaps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#working-days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        working-days
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#surprises-cross-cutting-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Surprises / cross-cutting notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/reasoning-suite/sweeps/sweep-a2-algorithm.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="sweep-a2-algorithm-volotests">Sweep A2 — algorithm-* volotests<a class="headerlink" href="#sweep-a2-algorithm-volotests" title="Permanent link">&para;</a></h1>
+<p>Slice: 26 dirs in <code>docs/volotests/</code> whose name starts with <code>algorithm-</code>. Judged as raw
+material for Reasoning-100: DIAGNOSE (plant a defect in the working <code>solution/</code>),
+SPEC-FROM-TESTS (category 8, redact prose, show a subset of <code>tests/</code>), and
+ALLOCATION-INVARIANT (category 9). Read-only sweep; nothing outside this report was
+touched.</p>
+<p>Context read first: <code>docs/reasoning-suite/categories.md</code>, <code>decisions.md</code> entries 1-3,
+<code>tasks/starter/CG-AL-X065</code> + <code>tests/al/hard/CG-AL-X065.Test.al</code> (the shipped diagnose
+exemplar: two codeunits + one table, a helper's <code>var Line: Record</code> cursor wiping the
+caller's own <code>FindSet(true)</code>/<code>Next()</code> loop — category 1, "borrowed-cursor" tag).</p>
+<h2 id="summary-table">Summary table<a class="headerlink" href="#summary-table" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Dir</th>
+<th>Convert</th>
+<th>Category</th>
+<th>Reasoning/syntax</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>amount-in-words</td>
+<td>YES</td>
+<td>1</td>
+<td>4</td>
+<td>boundary defect in group-to-words</td>
+</tr>
+<tr>
+<td>bank-reconciliation</td>
+<td>YES</td>
+<td>1</td>
+<td>4</td>
+<td>boundary defect in tolerance compare</td>
+</tr>
+<tr>
+<td>batch-validation</td>
+<td>YES</td>
+<td>1</td>
+<td>4</td>
+<td>CREDIT 500/20000 boundary flip</td>
+</tr>
+<tr>
+<td>change-dispenser</td>
+<td>MAYBE</td>
+<td>1</td>
+<td>3 (discounted)</td>
+<td>coin-change DP; fame/memorization risk</td>
+</tr>
+<tr>
+<td>checkout-pricing</td>
+<td>YES</td>
+<td>1</td>
+<td>4</td>
+<td>bulk-break <code>&gt;=</code>→<code>&gt;</code> boundary</td>
+</tr>
+<tr>
+<td>chunk-partitioner</td>
+<td>YES</td>
+<td>1 (+9 adjacent)</td>
+<td>5</td>
+<td>List reference-aliasing gotcha</td>
+</tr>
+<tr>
+<td>compound-interest</td>
+<td>MAYBE</td>
+<td>1</td>
+<td>3</td>
+<td>thin, low object-interaction</td>
+</tr>
+<tr>
+<td>config-parser</td>
+<td>YES</td>
+<td>1</td>
+<td>4</td>
+<td><code>Dictionary.Add</code> vs <code>.Set</code> API-semantics trap</td>
+</tr>
+<tr>
+<td>csv-parser</td>
+<td>YES</td>
+<td>1</td>
+<td>5</td>
+<td>quote-escape state-machine off-by-one</td>
+</tr>
+<tr>
+<td>dateformula-due-dates</td>
+<td>YES</td>
+<td>1 (+8)</td>
+<td>3</td>
+<td>thin wrapper, good spec-from-tests fit</td>
+</tr>
+<tr>
+<td>dedup-recipients</td>
+<td>MAYBE</td>
+<td>1</td>
+<td>2-3</td>
+<td>shallow, single dictionary-key swap</td>
+</tr>
+<tr>
+<td>duplicate-customers</td>
+<td>YES</td>
+<td>1 (+8)</td>
+<td>4</td>
+<td>real Customer table; blank-VAT guard removal</td>
+</tr>
+<tr>
+<td>ean-check-digit</td>
+<td>MAYBE</td>
+<td>1</td>
+<td>4 (discounted)</td>
+<td>mod-10 boundary defect is great; fame risk</td>
+</tr>
+<tr>
+<td>fifo-costing</td>
+<td>YES</td>
+<td><strong>9</strong> (+1)</td>
+<td>5</td>
+<td>rounding-once-per-shipment invariant; flagship</td>
+</tr>
+<tr>
+<td>filter-expression-check</td>
+<td>YES</td>
+<td>1</td>
+<td>5</td>
+<td>recursive-descent parser; trailing-garbage defect</td>
+</tr>
+<tr>
+<td>fiscal-periods</td>
+<td>YES</td>
+<td>1</td>
+<td>4</td>
+<td>fiscal-year-start month boundary <code>&lt;</code>→<code>&lt;=</code></td>
+</tr>
+<tr>
+<td>gilded-rose</td>
+<td>MAYBE</td>
+<td>1</td>
+<td>5 (discounted)</td>
+<td>rich multi-object; famous kata, heavy fame risk</td>
+</tr>
+<tr>
+<td>iban-verify</td>
+<td>MAYBE</td>
+<td>1</td>
+<td>4</td>
+<td>structure-gate-vs-arithmetic defect; fame risk</td>
+</tr>
+<tr>
+<td>luhn-check</td>
+<td>NO</td>
+<td>—</td>
+<td>—</td>
+<td>too famous + too thin; skip for diagnose</td>
+</tr>
+<tr>
+<td>nth-weekday</td>
+<td>YES</td>
+<td>1</td>
+<td>4</td>
+<td><code>FirstWorkdayOnOrAfter</code> Friday boundary</td>
+</tr>
+<tr>
+<td>penny-allocation</td>
+<td>YES</td>
+<td><strong>9</strong></td>
+<td>5</td>
+<td>largest-remainder/running-total; flagship</td>
+</tr>
+<tr>
+<td>recurrence-schedule</td>
+<td>YES</td>
+<td>1</td>
+<td>5</td>
+<td>richest state machine; strict <code>&gt;</code> vs <code>&gt;=</code></td>
+</tr>
+<tr>
+<td>royalty-statement</td>
+<td>YES</td>
+<td>1</td>
+<td>5</td>
+<td>best structural match to X065; accumulator reset</td>
+</tr>
+<tr>
+<td>running-balance</td>
+<td>YES</td>
+<td>1</td>
+<td>5</td>
+<td>missing <code>SetCurrentKey</code> correctness bug</td>
+</tr>
+<tr>
+<td>validity-overlaps</td>
+<td>YES</td>
+<td>1</td>
+<td>5</td>
+<td>richest/most complex; <code>or</code>→<code>and</code> sentinel flip</td>
+</tr>
+<tr>
+<td>working-days</td>
+<td>YES</td>
+<td>1</td>
+<td>4</td>
+<td><code>OrderDate</code>-counts-itself off-by-one</td>
+</tr>
+</tbody>
+</table>
+<p>Counts: <strong>YES 19, MAYBE 6, NO 1</strong>.</p>
+<hr />
+<h2 id="amount-in-words">amount-in-words<a class="headerlink" href="#amount-in-words" title="Permanent link">&para;</a></h2>
+<p>Converts a Decimal check amount to English words + cents fraction
+(<code>ToWords</code>). Object shape: single codeunit, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose.</li>
+<li><strong>Category</strong>: 1 (Logic diagnosis).</li>
+<li><strong>Defect proposal</strong>: in <code>GroupToWords</code>, change <code>if Value &lt; 20 then Result += UnitWord(Value)</code>
+  to <code>if Value &lt;= 20</code>. <code>UnitWord</code>'s case statement has no branch for 20, so any whole-part
+  group ending in exactly 20 (20, 120, 1020, 220, …) silently produces a blank unit word
+  instead of falling into <code>TensWord</code>. Compiles clean, one-character boundary flip, not a
+  syntax tell. Secondary defect: drop the <code>mod 1000000</code> in the thousands-group extraction
+  <code>(Value mod 1000000) div 1000 &gt; 0</code>, letting the millions digits leak into the thousands
+  group for compound amounts like 2,015,000.</li>
+<li><strong>Oracle sketch</strong>: any whole dollar amount that is a multiple of 20 with no other
+  remainder (20.00, 120.00, 1,020.00), contrasted with 19.00/21.00 neighbors; the existing
+  test suite already grades randomized digit amounts so the hidden superset catches this
+  for free.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4.</li>
+<li><strong>Composite potential</strong>: good — small, deterministic, no DB, safe distractor or defect
+  site.</li>
+<li><strong>Dedup</strong>: none vs X013/X014/X026.</li>
+</ul>
+<h2 id="bank-reconciliation">bank-reconciliation<a class="headerlink" href="#bank-reconciliation" title="Permanent link">&para;</a></h2>
+<p>Greedy one-to-one statement-line-to-ledger-entry matcher with amount-exact +
+date-tolerance candidacy and a three-level tie-break (distance, then earliest date, then
+lowest entry number). Object shape: single codeunit, <code>List of [...]</code> only, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: in <code>IsCandidate</code>, change <code>Abs(EntryDate - LineDate) &lt;= ToleranceDays</code>
+  to strict <code>&lt;</code>. Breaks the explicitly-stated inclusive boundary ("boundary is inclusive")
+  with a single-character swap; every non-boundary test still passes.</li>
+<li><strong>Oracle sketch</strong>: an entry dated exactly <code>ToleranceDays</code> away on both the early and late
+  side (already an explicit graded case per <code>task.md</code>); the tie-break ladder (distance tie →
+  earliest date → lowest entry number) is a second good defect site if the first is judged
+  too easy.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4.</li>
+<li><strong>Composite potential</strong>: good — self-contained, deterministic.</li>
+<li><strong>Dedup</strong>: none.</li>
+</ul>
+<h2 id="batch-validation">batch-validation<a class="headerlink" href="#batch-validation" title="Permanent link">&para;</a></h2>
+<p>Pipe/semicolon delimited "vendor application" batch parser with four mandatory-field
+validation rules (VAT format, POSTCODE digits, CREDIT range via <code>Evaluate</code> overflow guard,
+CURRENCY enum). Object shape: single codeunit, <code>Dictionary of [Text, Text]</code>, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: in <code>IsValidCredit</code>, flip <code>(Amount &gt;= 500) and (Amount &lt;= 20000)</code> to
+  strict <code>&gt;</code>/<code>&lt;</code>. The task's own test list explicitly grades "the CREDIT boundaries
+  499/500/20000/20001", so this is a clean, well-covered boundary defect that reads as an
+  innocuous inclusivity choice.</li>
+<li><strong>Oracle sketch</strong>: CREDIT = 500 and CREDIT = 20000 must validate; 499 and 20001 must not;
+  the 30-digit <code>CREDIT</code> overflow-into-<code>Evaluate</code>-false case is a good adjacent adversarial
+  input already in the suite.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4.</li>
+<li><strong>Composite potential</strong>: fair — part of a dense "parse delimited text" cluster (see
+  Surprises); don't pick every member of that cluster.</li>
+<li><strong>Dedup</strong>: none vs X013/X014/X026.</li>
+</ul>
+<h2 id="change-dispenser">change-dispenser<a class="headerlink" href="#change-dispenser" title="Permanent link">&para;</a></h2>
+<p>Bottom-up dynamic-programming fewest-coins maker (<code>FewestFor</code>/<code>CoinTaken</code> dictionaries),
+returned ascending. Object shape: single codeunit, <code>List</code>/<code>Dictionary</code>, no tables.
+<strong>Notable</strong>: the volotest's own <code>starter/</code> is not a blank stub — it ships a fully working
+but deliberately wrong <strong>greedy</strong> "always take the largest coin that fits" implementation,
+with the exact adversarial counterexamples (<code>63</code> from <code>{1,5,10,21,25}</code>, <code>27</code> from <code>{4,5}</code>)
+already spelled out in both the starter's own comment and <code>task.md</code>.</p>
+<ul>
+<li><strong>Convert</strong>: MAYBE — diagnose, angle = the greedy-vs-DP algorithm choice itself
+  (essentially pre-packaged by the volotest author).</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: show the greedy starter (or the DP solution with <code>&lt;</code> swapped for
+  <code>&lt;=</code> somewhere in the reachability check) and ask why some amounts either take more
+  coins than necessary or are wrongly declared impossible.</li>
+<li><strong>Oracle sketch</strong>: <code>63</code> with <code>{1,5,10,21,25}</code> (greedy takes 6 coins, optimal takes 3);
+  <code>27</code> with <code>{4,5}</code> (greedy dead-ends on a stranded remainder of 2, optimal exists).</li>
+<li><strong>Reasoning-vs-syntax</strong>: 3, discounted from 5 — coin-change DP is a textbook CS exercise
+  (LeetCode 322-class fame). A model that recognizes the shape can emit a fresh, correct,
+  memorized DP implementation without ever engaging with the specific defect in the shown
+  AL code, which is exactly what "grade the fix, not the explanation" (decisions.md #1)
+  cannot detect. Safer as spec-from-tests / plain generation material than as diagnose.</li>
+<li><strong>Dedup</strong>: none vs X-series.</li>
+</ul>
+<h2 id="checkout-pricing">checkout-pricing<a class="headerlink" href="#checkout-pricing" title="Permanent link">&para;</a></h2>
+<p>Dictionary-keyed POS pricing engine: unit price, multibuy N-for-P, bulk-break threshold
+reprice, lazy pricing computed at <code>Total()</code> time. Object shape: single codeunit,
+<code>Dictionary</code>, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: in <code>LineAmount</code>, change the bulk-break gate <code>if Quantity &gt;=
+  BulkMinimums.Get(ItemCode)</code> to strict <code>&gt;</code>. At exactly the minimum quantity the line
+  silently reverts to full unit price, contradicting the explicit spec language ("once the
+  scanned quantity reaches M or more") and the graded test "a bulk break one unit below its
+  minimum and exactly at it."</li>
+<li><strong>Oracle sketch</strong>: <code>SUGAR</code> scanned exactly <code>MinimumQuantity</code> times must total at the
+  discounted rate (worked example in <code>task.md</code>: 5×1.70 = 8.50, not 9.70 and not the
+  undiscounted 10.00).</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4.</li>
+<li><strong>Composite potential</strong>: good, self-contained stateful codeunit.</li>
+<li><strong>Dedup</strong>: none.</li>
+</ul>
+<h2 id="chunk-partitioner">chunk-partitioner<a class="headerlink" href="#chunk-partitioner" title="Permanent link">&para;</a></h2>
+<p>Splits a <code>List of [Text]</code> into N balanced, order-preserving, front-loaded-remainder
+chunks. Object shape: single codeunit, <code>List of [List of [Text]]</code>, no tables. Easy
+difficulty but the author's own hint flags an AL-specific reference-semantics trap: "Lists
+are reference types — every chunk needs its own fresh list instance, or all chunks end up
+sharing contents."</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose, and MAYBE for category 9 (integer-count allocation
+  invariant, not decimal rounding, but same "remainder distribution" shape).</li>
+<li><strong>Category</strong>: 1 primary (AL reference-semantics gotcha), category 9 adjacent.</li>
+<li><strong>Defect proposal</strong>: promote the <code>Chunk: List of [Text]</code> local in <code>TakeChunk</code> to a
+  codeunit-level <code>var</code> (or otherwise have all calls alias one shared list instance), so
+  every returned chunk ends up pointing at the same underlying list and the final result
+  reflects only the last chunk's contents repeated N times. Compiles fine, passes the
+  single-chunk (<code>ChunkCount = 1</code>) test trivially, fails everything with 2+ chunks. This is
+  the <code>List of [T]</code> sibling of the <code>var Record</code> cursor-wipe pattern the corpus already
+  favors (X065), applied to a different collection type.</li>
+<li><strong>Oracle sketch</strong>: <code>ChunkCount &gt;= 2</code> with distinct, order-verifiable item content per
+  chunk (7 items into 3 chunks, already a fixed test case).</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5.</li>
+<li><strong>Composite potential</strong>: good.</li>
+<li><strong>Dedup</strong>: none in X-series; complementary to X065's Record-var pattern (same family,
+  different collection type — not a duplicate).</li>
+</ul>
+<h2 id="compound-interest">compound-interest<a class="headerlink" href="#compound-interest" title="Permanent link">&para;</a></h2>
+<p>Three finance formulas (annuity payment, effective annual rate, CAGR) built on
+<code>Math.Pow</code>, since AL has no <code>^</code> operator. Object shape: single codeunit, pure arithmetic,
+no tables.</p>
+<ul>
+<li><strong>Convert</strong>: MAYBE — diagnose, but thin.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: remove the zero-rate special case <code>if MonthlyRate = 0 then exit
+  (Principal / Months);</code> in <code>MonthlyPayment</code>. With the guard gone, a 0% loan divides by
+  <code>GrowthFactor - 1 = 0</code>, producing an undefined/overflow result instead of the required
+  even split — a genuine "special case silently dropped" reasoning defect, not just an
+  algebra typo.</li>
+<li><strong>Oracle sketch</strong>: <code>AnnualRatePct = 0</code> (interest-free loan), contrasted with a nonzero
+  rate case.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 3 — low object-interaction (three independent formula
+  procedures, no shared state), so most candidate defects read closer to "spot the
+  formula typo" than genuine systemic reasoning.</li>
+<li><strong>Composite potential</strong>: weak alone (no BC-specific mechanic); fine as a small
+  fixed-companion in a category-4 minimal-change task.</li>
+<li><strong>Dedup</strong>: none.</li>
+</ul>
+<h2 id="config-parser">config-parser<a class="headerlink" href="#config-parser" title="Permanent link">&para;</a></h2>
+<p><code>key=value;...</code> string to <code>Dictionary of [Text, Text]</code> parser: first-<code>=</code>-cut, trim,
+last-key-wins, skip blank segments. Object shape: single codeunit, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose, well-calibrated defect.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: swap <code>Settings.Set(KeyText, ValueText.Trim())</code> for
+  <code>Settings.Add(...)</code>. The metadata's own author hint calls this out explicitly:
+  "<code>Dictionary.Add</code> errors on a duplicate key — the opposite of the required policy." Both
+  methods are valid AL Dictionary API, only their duplicate-key behavior differs, so this
+  reads as a plausible mistake rather than a syntax error, and it breaks rule 5
+  ("last occurrence wins") by raising instead.</li>
+<li><strong>Oracle sketch</strong>: any config string with a repeated key (<code>mode=a;mode=b</code>); the fixed
+  duplicate-key test already exists.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4.</li>
+<li><strong>Composite potential</strong>: good, self-contained.</li>
+<li><strong>Dedup</strong>: none.</li>
+</ul>
+<h2 id="csv-parser">csv-parser<a class="headerlink" href="#csv-parser" title="Permanent link">&para;</a></h2>
+<p>RFC4180-style CSV line splitter with a quote-state character walk (comma-in-quotes,
+doubled-quote escape, unterminated-quote error). Object shape: single codeunit,
+<code>TextBuilder</code>, no tables. <strong>Notable</strong>: the volotest's own <code>starter/</code> is the literal bug
+from the incident narrative — <code>exit(Line.Split(','))</code>, no quote awareness at all — so the
+volotest author independently used "naive fixture = starter verbatim" for a write-from-spec
+task, same pattern decisions.md #3 codifies for diagnose.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose (plant a NEW, subtler defect into <code>solution/</code>, since the
+  starter's own defect is too coarse/obvious to serve as a "subtle" catch).</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: in the doubled-quote escape branch, drop the extra <code>i += 1</code> that
+  skips past the second quote of an escaped pair. The second quote then gets
+  re-processed as its own toggle on the next loop iteration, corrupting the parse of any
+  field containing an escaped quote followed by more characters. A pure finite-state-machine
+  off-by-one — compiles clean, passes plain fields and simple quoted fields, fails only on
+  the doubled-quote cases.</li>
+<li><strong>Oracle sketch</strong>: a field containing <code>""</code> followed by more text, e.g. <code>"He said ""hi"" today"</code> —
+  already a graded case per <code>task.md</code> ("doubled quotes (including a field whose entire
+  value is one <code>"</code> character)").</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5.</li>
+<li><strong>Composite potential</strong>: good; low fame risk (unlike Luhn/EAN/IBAN, there's no single
+  canonical "the" CSV-with-quotes snippet a model would blindly recall verbatim in AL).</li>
+<li><strong>Dedup</strong>: none.</li>
+</ul>
+<h2 id="dateformula-due-dates">dateformula-due-dates<a class="headerlink" href="#dateformula-due-dates" title="Permanent link">&para;</a></h2>
+<p>Thin wrapper around AL's own <code>DateFormula</code>/<code>Evaluate</code>/<code>CalcDate</code> for payment-term due
+dates and discount-date qualification. Object shape: single codeunit, two ~10-line
+procedures, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES, but thin — diagnose is small; strong secondary fit for category 8
+  (spec-from-tests: the term-order distinction <code>&lt;CM+1M&gt;</code> vs <code>&lt;1M+CM&gt;</code> is exactly the kind
+  of rule best induced from a couple of worked examples rather than stated in prose).</li>
+<li><strong>Category</strong>: 1 primary, 8 secondary.</li>
+<li><strong>Defect proposal</strong>: change <code>QualifiesForDiscount</code>'s <code>PaymentDate &lt;= CalcDueDate(...)</code> to
+  strict <code>&lt;</code>. Breaks the explicit rule "paying on the discount date itself still earns the
+  discount" — one-character boundary flip.</li>
+<li><strong>Oracle sketch</strong>: <code>PaymentDate</code> exactly equal to the computed discount date (already
+  implied as a graded case — "<code>QualifiesForDiscount</code> is graded on, before, and after the
+  discount date").</li>
+<li><strong>Reasoning-vs-syntax</strong>: 3.</li>
+<li><strong>Composite potential</strong>: good as a small fixed-companion for category 4
+  (minimal-change constraint) — most of the real reasoning load lives in correctly
+  tracing <code>DateFormula</code> term order, not in this wrapper's own logic.</li>
+<li><strong>Dedup</strong>: none checked exhaustively against X-series date-formula tasks, but no direct
+  hit found.</li>
+</ul>
+<h2 id="dedup-recipients">dedup-recipients<a class="headerlink" href="#dedup-recipients" title="Permanent link">&para;</a></h2>
+<p>Trivial case-insensitive, order-preserving email-list dedup with first-casing-wins.
+Object shape: single codeunit, ~15 lines, <code>Dictionary of [Text, Boolean]</code>.</p>
+<ul>
+<li><strong>Convert</strong>: MAYBE — shallow.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: change the dedup key from <code>Trimmed.ToLower()</code> to bare <code>Trimmed</code>,
+  breaking case-insensitive comparison (rule 2). Single-token change, but spotting it is
+  close to "did you read the rule" rather than genuine multi-step reasoning.</li>
+<li><strong>Oracle sketch</strong>: <code>Sales@Contoso.com</code> immediately followed by <code>sales@contoso.com</code>
+  (already a graded fixed case).</li>
+<li><strong>Reasoning-vs-syntax</strong>: 2-3.</li>
+<li><strong>Composite potential</strong>: best used as a <em>distractor</em> in a composite task — simple,
+  self-contained, unlikely to be the graded defect site, which is exactly what a healthy
+  distractor needs.</li>
+<li><strong>Dedup</strong>: none.</li>
+</ul>
+<h2 id="duplicate-customers">duplicate-customers<a class="headerlink" href="#duplicate-customers" title="Permanent link">&para;</a></h2>
+<p><code>Normalize</code> (strip to alphanumerics, uppercase) plus <code>FindDuplicatesOf</code> which scans the
+real <code>Customer</code> table via <code>SetFilter("No.", '&lt;&gt;%1', CustomerNo)</code> and matches on normalized
+Name or VAT, guarding against blank-normalizes-to-empty false matches. Object shape: single
+codeunit operating on the real <code>Customer</code> table (no custom table).</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose, strong.</li>
+<li><strong>Category</strong>: 1 primary; decent secondary fit for category 8 (the character-class
+  normalization rule is cleanly inducible from a handful of examples).</li>
+<li><strong>Defect proposal</strong>: drop the <code>(VatKey &lt;&gt; '')</code> guard from the VAT half of the match
+  condition (<code>((NameKey &lt;&gt; '') and ...) or ((VatKey &lt;&gt; '') and ...)</code> → the VAT side loses
+  its guard). Two unrelated customers with blank or punctuation-only VAT numbers now
+  falsely register as duplicates — a real, business-relevant, silent-data defect that
+  compiles clean and only surfaces on blank/punctuation VAT input, exactly matching the
+  explicit rule "an empty normalized value never makes a match, on either field."</li>
+<li><strong>Oracle sketch</strong>: two seeded customers both with blank (or <code>---</code>) <code>"VAT Registration No."</code>
+  and otherwise-distinct names — must NOT appear in each other's duplicate list; already a
+  graded case ("blank and punctuation-only values that must not match").</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4.</li>
+<li><strong>Composite potential</strong>: excellent — the only dir in the sweep touching the real
+  <code>Customer</code> table, good anchor for a composite mixing custom logic with familiar BC
+  master data.</li>
+<li><strong>Dedup</strong>: adjacent-but-distinct from X014. <code>SetFilter("No.", '&lt;&gt;%1', CustomerNo)</code> uses
+  the SAFE <code>%1</code>-parameterized form (the opposite side of X014's raw-value-into-SetFilter
+  trap), so this is not a duplicate — worth noting only because it's the closest
+  near-miss found in the whole sweep.</li>
+</ul>
+<h2 id="ean-check-digit">ean-check-digit<a class="headerlink" href="#ean-check-digit" title="Permanent link">&para;</a></h2>
+<p>Standard EAN-13 weighted (1,3,1,3,…) mod-10 check digit, <code>CalculateCheckDigit</code> +
+<code>IsValid</code>. Object shape: single codeunit, ~45 lines, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: MAYBE — the mod-10-boundary defect is genuinely excellent, but EAN-13 is a
+  published external standard, moderate memorization risk.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: drop the outer <code>mod 10</code> in <code>exit((10 - WeightedSum mod 10) mod 10)</code>.
+  When the weighted sum already ends in 0, the check digit computes to 10 instead of the
+  required 0 — the exact classic checksum-boundary gotcha, and the volotest author's own
+  hint names it verbatim ("Subtracting the weighted sum's last digit from 10 gives 10 — not
+  0 — when the sum already ends in 0").</li>
+<li><strong>Oracle sketch</strong>: any 12-digit prefix whose weighted sum is an exact multiple of 10 —
+  already a graded fixed case.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4 nominally, discounted for fame — a model that recognizes
+  "EAN-13 checksum" from the arithmetic shape alone (weights 1/3 alternating, mod 10) can
+  reproduce a textbook-correct implementation without tracing the shown code's specific
+  defect.</li>
+<li><strong>Composite potential</strong>: fine as a distractor; weaker as the graded defect site given
+  the recognition risk.</li>
+<li><strong>Dedup</strong>: none in X-series.</li>
+</ul>
+<h2 id="fifo-costing">fifo-costing<a class="headerlink" href="#fifo-costing" title="Permanent link">&para;</a></h2>
+<p>FIFO cost-layer bookkeeping: receipts push <code>(qty, unitCost)</code> layers, shipments consume
+oldest-first across layer boundaries, cost rounds to the cent exactly once per shipment on
+the accumulated total (never per-layer). Object shape: single codeunit, parallel <code>List of
+[Decimal]</code> layers, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES — best category-9 fit alongside penny-allocation, plus a strong
+  category-1 reading.</li>
+<li><strong>Category</strong>: <strong>9</strong> (rounding/allocation invariant) primary, 1 secondary.</li>
+<li><strong>Defect proposal</strong>: move the <code>Round(ShipmentCost, 0.01)</code> call inside the inner
+  <code>while Needed &gt; 0</code> loop (rounding each layer's <code>Take * LayerUnitCost</code> piece separately)
+  instead of applying it once to the accumulated <code>ShipmentCost</code> after the loop. This is the
+  exact trap the volotest author flags directly: "Rounding each layer's pieces separately
+  produces a different (wrong) answer on some ledgers" — a real inventory-costing rounding
+  bug, near-zero syntax content, silently wrong only on shipments spanning 2+ layers with
+  fractional per-layer costs.</li>
+<li><strong>Oracle sketch</strong>: a shipment spanning two layers with fractional quantities whose
+  per-layer costs each round differently than the combined total (already a graded fixed
+  case per <code>task.md</code>); a cost landing exactly on a half-cent boundary (ties-away-from-zero
+  test).</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5.</li>
+<li><strong>Composite potential</strong>: excellent — self-contained, deterministic, genuinely novel BC
+  domain (inventory costing) not touched by the X-series.</li>
+<li><strong>Dedup</strong>: none.</li>
+</ul>
+<h2 id="filter-expression-check">filter-expression-check<a class="headerlink" href="#filter-expression-check" title="Permanent link">&para;</a></h2>
+<p>Hand-rolled recursive-descent validator for a mini BC-filter-like grammar
+(<code>1000..2000|3000</code>, quoted values, nested groups) — pure text validation, never calls the
+real <code>SetFilter</code>. Object shape: single codeunit, position/length state, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose, rich.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: remove the trailing-position check in <code>IsValid</code> — change
+  <code>exit(Pos &gt; Len)</code> to <code>exit(true)</code> once <code>ParseExpression</code> succeeds. Leftover characters
+  after a syntactically-valid prefix (a stray <code>)</code>, a second <code>..</code>, text glued after a closing
+  quote) are then silently accepted instead of rejected. The author's own hint names this
+  exact class of miss ("leftover text like a stray ')' or a second '..' is the easiest
+  miss"). Single-line removal, no syntax tell, requires full grammar tracing to catch.</li>
+<li><strong>Oracle sketch</strong>: <code>1000)</code> (valid range prefix + stray paren), <code>1..2..3</code> (valid prefix
+  <code>1..2</code> + illegal second <code>..</code>) — both already graded fixed cases.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5.</li>
+<li><strong>Composite potential</strong>: excellent — self-contained, deterministic.</li>
+<li><strong>Dedup</strong>: NOT a duplicate of X014/X026 — those exercise real <code>SetFilter</code>/<code>SetRange</code>
+  runtime semantics against a live table; this is a standalone grammar validator with no
+  <code>Record</code> or filter call at all. Thematically adjacent (filter syntax) but a genuinely
+  different trap surface — worth knowing so a composite task doesn't accidentally pair this
+  with an X014/X026-flavored task and double up on "filter" flavor without realizing it.</li>
+</ul>
+<h2 id="fiscal-periods">fiscal-periods<a class="headerlink" href="#fiscal-periods" title="Permanent link">&para;</a></h2>
+<p>Fiscal-year period/boundary mapper (<code>GetPeriodNo</code>, <code>GetFiscalYearStartDate</code>,
+<code>GetFiscalYearEndDate</code>) built on <code>Date2DMY</code>/<code>DMY2Date</code>/<code>CalcDate</code>, including the century
+leap-year exception. Object shape: single codeunit, no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: in <code>GetFiscalYearStartDate</code>, change <code>Date2DMY(TheDate, 2) &lt;
+  FiscalYearStartMonth</code> to <code>&lt;=</code>. A date falling exactly in the start month now gets pushed
+  back into the PRIOR fiscal year — breaks the explicit rule "if TheDate's month is ON OR
+  AFTER the start month, the fiscal year began that same calendar year," a single-character
+  boundary flip.</li>
+<li><strong>Oracle sketch</strong>: a date on the 1st (or any day) of the start month itself — already a
+  graded fixed case ("an April start on the first day of the fiscal year").</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4.</li>
+<li><strong>Composite potential</strong>: good.</li>
+<li><strong>Dedup</strong>: none; the century-leap-year exception (2100 not leap) is delegated entirely
+  to the platform's own <code>CalcDate</code>, so it's a safe distractor fact rather than a plantable
+  defect site.</li>
+</ul>
+<h2 id="gilded-rose">gilded-rose<a class="headerlink" href="#gilded-rose" title="Permanent link">&para;</a></h2>
+<p>The famous "Gilded Rose" refactoring kata, faithfully ported to AL: enum <code>"Gilded Item
+topic"</code> + table <code>"Gilded Item"</code> + codeunit with per-topic nightly quality/sell-in rules
+(Normal, Aged Brie, Sulfuras, Backstage Pass, Conjured), all standard thresholds (cap 50,
+backstage windows 11/10-6/5-1, Conjured double-degrade). Object shape: enum + table +
+codeunit — the richest multi-object shape in the sweep.</p>
+<ul>
+<li><strong>Convert</strong>: MAYBE — structurally excellent, but flagged hard for fame/contamination.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong> (if used): swap the Backstage Pass window boundaries, e.g. change
+  <code>GildedItem."Sell In" &lt;= 10</code> to <code>&lt; 10</code> (10-days-out silently drops from the +2 window
+  into the +1 window) — a clean, single-character boundary flip on a topic-specific rule.</li>
+<li><strong>Oracle sketch</strong>: a Backstage Pass item at exactly <code>"Sell In" = 10</code> (already a graded
+  fixed case).</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5 nominally, heavily discounted for fame — Gilded Rose is one
+  of the single most-published kata solutions in existence (essentially every language has
+  dozens of public reference implementations with these exact standard numbers). Under
+  "grade the fix, not the explanation" (decisions.md #1), a model that recognizes the enum
+  values and thresholds can reproduce the textbook-correct table verbatim without reading
+  the shown AL code's actual defect at all — the failure mode this whole sweep should be
+  watching for. If used, change the constants (cap, thresholds) away from the canonical
+  kata numbers first, or restrict grading to a minimal-change-constraint format that forces
+  engagement with the specific given code shape.</li>
+<li><strong>Composite potential</strong>: good as a <em>distractor</em> (rich, multi-object, "leave this alone"
+  code) precisely because its familiarity makes correct behavior easy to verify without it
+  being the graded defect site.</li>
+<li><strong>Dedup</strong>: none in X-series; flagged as a public-corpus contamination risk, not an
+  internal dedup issue.</li>
+</ul>
+<h2 id="iban-verify">iban-verify<a class="headerlink" href="#iban-verify" title="Permanent link">&para;</a></h2>
+<p>ISO 13616 IBAN verifier: normalize, structure gate (length + country-code letters +
+check-digit-position digits + alnum tail), then a running-remainder mod-97 check that never
+materializes the full expanded number (avoids <code>BigInteger</code> overflow). Object shape: single
+codeunit, no tables. The test suite is explicitly adversarial: several structurally-invalid
+inputs are engineered so their mod-97 remainder is 1 anyway, to catch a skipped structure
+gate.</p>
+<ul>
+<li><strong>Convert</strong>: MAYBE — the structure-gate-vs-arithmetic-order defect is genuinely good and
+  less blindly-recallable than a bare "recite the mod-97 algorithm" defect, but IBAN
+  mod-97 is still a published external standard.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: weaken <code>HasValidStructure</code>'s country-code check — e.g., let
+  <code>IsUppercaseLetter</code> also accept digits for positions 1-2 — so a malformed IBAN with a
+  digit country code slips past the gate whenever its mod-97 arithmetic happens to equal 1.
+  This is a validation-gate weakening, not a pure recall-the-algorithm defect: correctly
+  fixing it requires noticing the gate is too permissive, not just knowing the mod-97 rule.</li>
+<li><strong>Oracle sketch</strong>: the task's own adversarial fixture — a structurally-broken input whose
+  rearranged mod-97 remainder is 1 by construction (already a graded case: "several
+  structurally broken inputs are crafted so their mod-97 remainder is 1 anyway").</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4, moderately discounted for fame.</li>
+<li><strong>Composite potential</strong>: good.</li>
+<li><strong>Dedup</strong>: none.</li>
+</ul>
+<h2 id="luhn-check">luhn-check<a class="headerlink" href="#luhn-check" title="Permanent link">&para;</a></h2>
+<p>Textbook Luhn checksum (double every second digit from the right, subtract 9 over 9,
+sum mod 10). Object shape: single codeunit, ~20 lines, no tables — the thinnest dir in the
+sweep.</p>
+<ul>
+<li><strong>Convert</strong>: NO for diagnose. The algorithm is extremely famous, the implementation is
+  trivial (one loop, one guard), and the volotest author's own hint names the one real trap
+  outright ("walking from the left doubles the wrong digits... the odd-length examples will
+  pass and the even-length ones will fail"). A model with Luhn memorized can emit a
+  textbook-correct implementation regardless of what the shown code does, which "grade the
+  fix" cannot distinguish from genuine diagnosis. Too little independent reasoning surface
+  to be worth the contamination risk when 19 stronger candidates exist in this same slice.</li>
+<li><strong>Category</strong>: n/a.</li>
+<li><strong>Defect proposal</strong> (for completeness, not recommended): iterate left-to-right instead
+  of <code>downto</code> — a genuinely subtle parity bug (only wrong on even-length inputs), but still
+  bypassable by memorized recall.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 2.</li>
+<li><strong>Composite potential</strong>: fine only as a throwaway distractor.</li>
+<li><strong>Dedup</strong>: none in X-series; well known externally.</li>
+</ul>
+<h2 id="nth-weekday">nth-weekday<a class="headerlink" href="#nth-weekday" title="Permanent link">&para;</a></h2>
+<p>Four-procedure calendar scheduler: nth/last weekday-of-month, first-workday-on-or-after,
+and a multi-month payment-run sequence that wraps year boundaries. Object shape: single
+codeunit, no tables. Bespoke business logic, not a named external algorithm — low
+memorization risk.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: in <code>FirstWorkdayOnOrAfter</code>, change `while Date2DWY(StartingDate, 1)<blockquote>
+<p>5 do<code>to</code>&gt;= 5`. Friday (weekday 5) now incorrectly rolls forward to Monday, breaking
+  the explicit graded rule "Friday is a workday" — single-character boundary flip.</p>
+</blockquote>
+</li>
+<li><strong>Oracle sketch</strong>: a Friday <code>StartingDate</code> (already a graded fixed case: "a Friday that
+  stays put — Friday is a workday").</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4.</li>
+<li><strong>Composite potential</strong>: good — four procedures sharing weekday-arithmetic idioms is
+  decent material for category 4 (minimal-change: which of the four is actually broken)
+  or category 3 (large-context, several helper procedures to trace).</li>
+<li><strong>Dedup</strong>: none in X-series; thematically overlaps <code>working-days</code> and
+  <code>recurrence-schedule</code> (all calendar/weekday arithmetic) — don't pick all three for the
+  same suite without distinct symptom framing.</li>
+</ul>
+<h2 id="penny-allocation">penny-allocation<a class="headerlink" href="#penny-allocation" title="Permanent link">&para;</a></h2>
+<p>Splits a total amount across weighted lines so the rounded line amounts sum exactly to
+the total with each line within one cent of its exact share — implements BC's own
+"running total" VAT-rounding technique. Object shape: single codeunit, <code>List of [Decimal]</code>,
+no tables.</p>
+<ul>
+<li><strong>Convert</strong>: YES — the single best category-9 fit in the sweep.</li>
+<li><strong>Category</strong>: <strong>9</strong> (rounding/allocation invariant).</li>
+<li><strong>Defect proposal</strong>: replace the running-cumulative-share technique with independent
+  per-line rounding — <code>Amounts.Add(Round(TotalAmount * Weight / WeightSum, 0.01))</code> for each
+  line, no <code>RunningExact</code>/<code>HandedOut</code> tracking. This is precisely the naive-but-plausible
+  mistake the metadata's own hints name as the failure mode ("three equal lines of 100.00
+  hand out 99.99, and six lines whose shares all end in half a cent hand out 1.02 for a 0.99
+  invoice"), and it's a defect every finance-adjacent engineer has shipped at least once —
+  maximally business-relevant, near-zero syntax content, matches categories.md's own
+  description of category 9 verbatim.</li>
+<li><strong>Oracle sketch</strong>: 0.99 split across six equal-weight lines, all exact shares ending in
+  half a cent (already the flagship graded fixed case); the classic three-way split of
+  100.00; a zero-weight line (must get exactly 0.00); a negative credit-memo total.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5.</li>
+<li><strong>Composite potential</strong>: good.</li>
+<li><strong>Dedup</strong>: none; genuinely novel, no X-series overlap.</li>
+</ul>
+<h2 id="recurrence-schedule">recurrence-schedule<a class="headerlink" href="#recurrence-schedule" title="Permanent link">&para;</a></h2>
+<p>Stateful recurrence planner (weekly-by-weekday-set, monthly-by-ordinal-weekday) with
+single-instance codeunit state (<code>Create*</code> sets the active schedule, replacing whatever the
+same instance held), <code>CalculateNextOccurrence</code>'s strict-after DateTime comparison, and
+<code>Last</code> vs <code>Fourth</code> ordinal distinction. Object shape: single codeunit + one enum
+(<code>"Recurrence Ordinal"</code>), no tables — the richest single state machine in the sweep.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose, strong.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: in <code>CalculateNextOccurrence</code>, change the strict comparison
+  <code>CreateDateTime(CandidateDate, ScheduleStartTime) &gt; LastOccurrence</code> to <code>&gt;=</code>. Breaks the
+  explicit rule "passing an occurrence's own DateTime returns the one after it" — the same
+  occurrence is returned again instead of advancing (and a caller looping on the result
+  could hang). One-token boundary flip, easy to miss while tracing the surrounding
+  same-day-vs-later-day logic, explicitly graded ("the strictly-after rule from an
+  occurrence's own DateTime and from an earlier moment on the same day").</li>
+<li><strong>Oracle sketch</strong>: call <code>CalculateNextOccurrence</code> with a DateTime exactly equal to a
+  real occurrence — must return the NEXT occurrence, not the same one back.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5.</li>
+<li><strong>Composite potential</strong>: excellent — the largest/most complex candidate in the sweep,
+  best fit for category 3 (large-context composite) precisely because of its size and
+  multi-procedure interaction (four public procedures, shared codeunit-global state).</li>
+<li><strong>Dedup</strong>: none found in X-series (no scheduler/recurrence trap task currently exists).</li>
+</ul>
+<h2 id="royalty-statement">royalty-statement<a class="headerlink" href="#royalty-statement" title="Permanent link">&para;</a></h2>
+<p>Real multi-object shape closest to the shipped X065 exemplar: table <code>"Royalty
+Performance"</code> (source register) + table <code>"Royalty Statement Line"</code> (temporary buffer) +
+codeunit with per-line formula helpers (<code>LineAmount</code>, <code>LineCredits</code>) called from a caller
+loop (<code>BuildStatement</code>) that also resets/accumulates totals.</p>
+<ul>
+<li><strong>Convert</strong>: YES — the best structural match to the target diagnose format in the
+  whole sweep.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: drop <code>TotalAmount := 0; TotalCredits := 0;</code> from the top of
+  <code>BuildStatement</code>. A caller that pre-sets its totals (or reuses the same <code>var</code> across two
+  builds) gets a statement whose totals silently include stale values from before the
+  call — an accumulator-reuse defect, the exact category-1 archetype categories.md names
+  ("a failed consumed Evaluate reusing iteration i-1's value" is the closest named sibling;
+  this is the "forgot to reset the accumulator" cousin). Explicitly graded: "clearing a
+  pre-filled buffer and pre-set totals."</li>
+<li><strong>Oracle sketch</strong>: call <code>BuildStatement</code> with <code>TotalAmount</code>/<code>TotalCredits</code> pre-set to
+  garbage values (already a graded fixed case) — the correct result must show the clean
+  recomputed totals, not garbage-plus-real.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5.</li>
+<li><strong>Composite potential</strong>: excellent — real <code>Record</code>/temporary-table caller-loop-plus-helper
+  shape, structurally the closest analog to X065 in the sweep.</li>
+<li><strong>Dedup</strong>: none; real Record/temp-table dynamics distinct from X013/X014/X026.</li>
+</ul>
+<h2 id="running-balance">running-balance<a class="headerlink" href="#running-balance" title="Permanent link">&para;</a></h2>
+<p>Real multi-object shape: table <code>"Wallet Transaction"</code> (ledger, secondary key on Account
+No./Posting Date/Entry No.) + table <code>"Wallet Statement Line"</code> (temporary buffer) +
+codeunit with a ledger-wide sequence assignment (<code>RecordTransaction</code>) and a
+newest-first statement builder that accumulates a running balance oldest-first while
+numbering lines newest-first (<code>BuildStatement</code>).</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose, strong.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: drop <code>WalletTransaction.SetCurrentKey("Account No.", "Posting
+  Date", "Entry No.")</code>, leaving the scan on the table's default primary key (Entry No.
+  only). The running-balance accumulation order and the "Posting Date descending,
+  same-day-tie by higher Entry No." statement order both silently break whenever
+  transactions across accounts interleave by entry number in a different order than by
+  posting date — a genuinely subtle "missing key" correctness bug (not a performance one),
+  compiles clean, passes single-account/naturally-ordered fixtures, fails the explicit
+  same-day-tie and out-of-order-posting-date graded cases.</li>
+<li><strong>Oracle sketch</strong>: two same-account transactions posted on the same date but inserted
+  with entry numbers out of posting order relative to a third account's transactions
+  (already implied by the graded "same-day tie" and "account filtering" cases).</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5.</li>
+<li><strong>Composite potential</strong>: excellent — real Record/temp-table caller-loop shape, familiar
+  BC statement-building domain.</li>
+<li><strong>Dedup</strong>: none.</li>
+</ul>
+<h2 id="validity-overlaps">validity-overlaps<a class="headerlink" href="#validity-overlaps" title="Permanent link">&para;</a></h2>
+<p>Interval-merge (<code>MergeValidityPeriods</code>) + pairwise-overlap counter
+(<code>CountConflictingPairs</code>) over a temporary <code>"Price List Line"</code> buffer, with <code>0D</code> used as a
+double-duty sentinel (blank start = no lower bound, blank end = no upper bound) and
+explicit adjacent-vs-overlapping semantics. Object shape: single codeunit over a real
+temp-table type (<code>Record "Price List Line" temporary</code>) — the richest/most complex
+candidate in the sweep.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose, the strongest single candidate for reasoning depth.</li>
+<li><strong>Category</strong>: 1 (with a category-9-adjacent flavor: exact day-coverage invariants,
+  though integer/date rather than decimal).</li>
+<li><strong>Defect proposal</strong>: in <code>PeriodsOverlap</code>, flip <code>((EndA = 0D) or (StartB &lt;= EndA)) and
+  ((EndB = 0D) or (StartA &lt;= EndB))</code>'s first <code>or</code> to <code>and</code>. Open-ended periods (blank
+  <code>"Ending Date"</code>) then almost never register as overlapping with anything, since <code>StartB
+  &lt;= EndA</code> is being required even when <code>EndA</code> is the "no upper bound" sentinel. A single
+  boolean-operator swap, silently wrong only for open-ended lines — precisely "defect lives
+  in the interaction" between the sentinel encoding and the boundary comparison.
+  Secondary/alternate defect: drop the <code>+ 1</code> from the merge-adjacency test
+  <code>PriceListLine."Starting Date" &lt;= CurrEnd + 1</code> in <code>MergeValidityPeriods</code>, breaking the
+  explicit adjacent-periods-merge rule.</li>
+<li><strong>Oracle sketch</strong>: an open-ended line (blank <code>"Ending Date"</code>) tested against a
+  much-later-dated line — already a graded fixed case ("an open-ended line against a much
+  later line"); a one-day gap that must stay separate vs. an adjacent pair that must merge.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5.</li>
+<li><strong>Composite potential</strong>: excellent — arguably the best large-context host given its
+  complexity and full self-containment (temp tables only, no real BC master data
+  dependency).</li>
+<li><strong>Dedup</strong>: none; genuinely novel interval-merge material, no X-series overlap.</li>
+</ul>
+<h2 id="working-days">working-days<a class="headerlink" href="#working-days" title="Permanent link">&para;</a></h2>
+<p>Weekday/holiday-list working-day counter and lead-time-based ship-date promiser, both
+built on a caller-supplied <code>WeekendDays</code>/<code>Holidays</code> list rather than the platform base
+calendar. Object shape: single codeunit, no tables. Bespoke business logic — low
+memorization risk.</p>
+<ul>
+<li><strong>Convert</strong>: YES — diagnose.</li>
+<li><strong>Category</strong>: 1.</li>
+<li><strong>Defect proposal</strong>: in <code>PromiseShipmentDate</code>, restructure the loop so <code>IsWorkingDay</code> is
+  checked on the CURRENT <code>PromiseDate</code> before advancing it, rather than after — i.e. move
+  the <code>PromiseDate += 1</code> to the end of the loop body instead of the start. <code>OrderDate</code>
+  itself can then count toward the lead time when it happens to be a working day, breaking
+  the explicit rule "<code>OrderDate</code> itself never counts, even when it is a working day." A
+  plausible-looking loop reorder, silently wrong only when <code>OrderDate</code> is itself a working
+  day (the common case, so heavily exercised by the test suite).</li>
+<li><strong>Oracle sketch</strong>: <code>OrderDate</code> on an ordinary Tuesday with <code>LeadTimeWorkingDays = 1</code> —
+  must return Wednesday, not Tuesday.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4.</li>
+<li><strong>Composite potential</strong>: good.</li>
+<li><strong>Dedup</strong>: none in X-series; thematically overlaps <code>nth-weekday</code> (both weekday/calendar
+  arithmetic, fully disjoint procedure sets) — not a duplicate, but avoid picking every
+  member of the calendar cluster for one suite.</li>
+</ul>
+<hr />
+<h2 id="surprises-cross-cutting-notes">Surprises / cross-cutting notes<a class="headerlink" href="#surprises-cross-cutting-notes" title="Permanent link">&para;</a></h2>
+<ol>
+<li>
+<p><strong>Famous-kata contamination risk is real and specific to the diagnose angle.</strong>
+   Luhn, EAN-13, IBAN mod-97, Gilded Rose, and coin-change/fewest-coins are all published,
+   widely-solved external algorithms. Under "grade the fix, not the explanation"
+   (decisions.md #1), a model that pattern-matches the algorithm's shape from the shown AL
+   code can emit a fresh, textbook-correct implementation without ever engaging with the
+   specific planted defect — passing the oracle for the wrong reason. This doesn't apply to
+   bespoke BC business logic (royalty statements, wallet statements, price-list overlaps,
+   payment-run scheduling), which has no external "correct answer" to recall. Recommend:
+   skip Luhn entirely; use the other four only with altered constants/thresholds, as
+   composite distractors, or for spec-from-tests/generation forms where recall is a
+   feature, not a bug.</p>
+</li>
+<li>
+<p><strong>Some volotest <code>starter/</code> files are not blank stubs — they're pre-built naive
+   fixtures.</strong> <code>change-dispenser</code> ships a fully working greedy coin-picker as its starter
+   (with the exact adversarial counterexamples already documented in its own comment);
+   <code>gilded-rose</code> ships a Normal-only degrade rule applied to every topic; <code>csv-parser</code> ships
+   the literal "split on every comma" bug from the incident narrative. The volotest authors
+   independently converged on decisions.md #3's "naive fixture = starter verbatim" pattern,
+   just for a different purpose (write-from-spec pedagogy, not diagnose-format grading).</p>
+</li>
+<li>
+<p><strong><code>penny-allocation</code> and <code>fifo-costing</code> are essentially pre-packaged category-9
+   tasks.</strong> Both ship metadata hints that name the exact rounding failure mode as the
+   thing being tested, and both test suites already grade exact-sum + adversarial-partition
+   invariants (half-cent splits, fractional-quantity layers). Minimal authoring work needed
+   beyond redacting prose.</p>
+</li>
+<li>
+<p><strong><code>royalty-statement</code>, <code>running-balance</code>, and <code>validity-overlaps</code> are the three dirs
+   using real/temporary <code>Record</code> types</strong> (not pure <code>List</code>/<code>Dictionary</code>), making them the
+   closest structural matches to the shipped X065 exemplar (helper-or-caller-loop over a
+   <code>Record</code>). These three plus <code>duplicate-customers</code> (real <code>Customer</code> table) are the
+   strongest composite/large-context hosts.</p>
+</li>
+<li>
+<p><strong>Heavy domain clustering — don't pick every member.</strong> Text/dictionary parsing:
+   <code>batch-validation</code>, <code>config-parser</code>, <code>csv-parser</code>, <code>dedup-recipients</code>,
+   <code>duplicate-customers</code>, <code>filter-expression-check</code> (6 dirs). Calendar/weekday arithmetic:
+   <code>dateformula-due-dates</code>, <code>fiscal-periods</code>, <code>nth-weekday</code>, <code>recurrence-schedule</code>,
+   <code>working-days</code>, <code>bank-reconciliation</code> (6 dirs). A curator assembling the suite should
+   spread picks across clusters rather than taking all of one flavor.</p>
+</li>
+<li>
+<p><strong>No direct dedup collision with X013/X014/X026.</strong> Nothing in this slice reproduces
+   X013's Code-truncation-on-concat pattern (all string-building here uses unbounded <code>Text</code>
+   or <code>TextBuilder</code>, not short <code>Code[n]</code> concatenation). Nothing calls real <code>SetFilter</code>
+   with an untrusted raw value the way X014 does. The two near-misses: <code>duplicate-customers</code>
+   uses the SAFE <code>%1</code>-parameterized <code>SetFilter</code> form (opposite side of the X014 trap), and
+   <code>filter-expression-check</code> implements its own grammar validator with no real <code>SetFilter</code>
+   call at all (thematically adjacent, mechanically distinct). No dir exercises a
+   blank-<code>SetRange</code>-clears-filter footgun in the X026 shape.</p>
+</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

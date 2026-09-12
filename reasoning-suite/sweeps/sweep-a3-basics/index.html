@@ -1,0 +1,2863 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/reasoning-suite/sweeps/sweep-a3-basics/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Sweep A3 — basics-* volotests triage - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#sweep-a3-basics-volotests-triage" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Sweep A3 — basics-* volotests triage
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary table
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-dir-verdicts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-dir verdicts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-dir verdicts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basics-add-page-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-add-page-field
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-add-table-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-add-table-field
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-archive-copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-archive-copy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-block-negative-credit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-block-negative-credit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-collection-deep-copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-collection-deep-copy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-confirm-when-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-confirm-when-needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-datetime-sql-tolerance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-datetime-sql-tolerance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-enum-wire-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-enum-wire-mapping
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-field-translations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-field-translations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-hello-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-hello-world
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-image-thumbnail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-image-thumbnail
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-insert-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-insert-defaults
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-item-priority-enum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-item-priority-enum
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-line-default-from-item" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-line-default-from-item
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-number-series" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-number-series
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-record-copy-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-record-copy-semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-record-link-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-record-link-notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-runtrigger-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-runtrigger-contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-safe-code-copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-safe-code-copy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-stream-line-reader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-stream-line-reader
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-systemid-crossref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-systemid-crossref
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-timezone-unix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-timezone-unix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-uri-builder-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-uri-builder-endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-validate-recalc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-validate-recalc
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#basics-variant-dispatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        basics-variant-dispatch
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/reasoning-suite/sweeps/sweep-a3-basics.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="sweep-a3-basics-volotests-triage">Sweep A3 — basics-* volotests triage<a class="headerlink" href="#sweep-a3-basics-volotests-triage" title="Permanent link">&para;</a></h1>
+<p>Slice: all 25 <code>docs/volotests/basics-*</code> dirs. Read metadata.yaml + task.md for
+every dir, skimmed every solution/ file, checked starter/ where it changed the
+verdict, and grepped <code>tasks/</code> + <code>tests/al/</code> for keyword overlap against the
+X-series to flag dedup risk. No container work performed; nothing outside this
+report was modified.</p>
+<p><strong>Structural note (applies to every dir in this slice, not repeated per-row):</strong>
+<code>starter/</code> in these volotests is a TODO-stub or partial-fixture, never a
+"plausible-wrong" naive implementation (the one partial exception is
+<code>basics-enum-wire-mapping</code>, called out below). None of these convert into a
+reasoning-suite diagnose task by reusing <code>starter/</code> as the naive fixture —
+every "convert" verdict below assumes hand-authoring a fresh naive fixture
+from the domain, using <code>solution/</code> as reference-correct and the prose gotchas
+already spelled out in <code>task.md</code>/<code>metadata.yaml</code> hints as the defect menu.</p>
+<h2 id="summary-table">Summary table<a class="headerlink" href="#summary-table" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Dir</th>
+<th>Convert</th>
+<th>Category angle</th>
+<th>Reasoning 1-5</th>
+<th>Distractor</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basics-add-page-field</td>
+<td>NO</td>
+<td>—</td>
+<td>1</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-add-table-field</td>
+<td>NO</td>
+<td>—</td>
+<td>1</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-archive-copy</td>
+<td>MAYBE</td>
+<td>1 (TransferFields/FlowField gap)</td>
+<td>4</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-block-negative-credit</td>
+<td>NO</td>
+<td>—</td>
+<td>1</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-collection-deep-copy</td>
+<td>MAYBE</td>
+<td>1/8 (reference-type shallow copy)</td>
+<td>3</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-confirm-when-needed</td>
+<td>MAYBE</td>
+<td>8 (3-branch spec inference)</td>
+<td>3</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-datetime-sql-tolerance</td>
+<td>YES</td>
+<td>8/9 (boundary + 0DT induction)</td>
+<td>4</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-enum-wire-mapping</td>
+<td>YES</td>
+<td>1 (starter's case-stmt is a ready-made naive)</td>
+<td>4</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-field-translations</td>
+<td>YES</td>
+<td>1 (wrong Delete overload, Get-before-Set)</td>
+<td>4</td>
+<td>OK</td>
+</tr>
+<tr>
+<td>basics-hello-world</td>
+<td>NO</td>
+<td>—</td>
+<td>1</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-image-thumbnail</td>
+<td>MAYBE</td>
+<td>8/9 (rounding direction, clamp)</td>
+<td>4</td>
+<td>OK</td>
+</tr>
+<tr>
+<td>basics-insert-defaults</td>
+<td>NO</td>
+<td>—</td>
+<td>1</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-item-priority-enum</td>
+<td>NO</td>
+<td>—</td>
+<td>1</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-line-default-from-item</td>
+<td>YES</td>
+<td>1+6 (event subscriber choreography)</td>
+<td>4</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-number-series</td>
+<td>YES</td>
+<td>1 (GetNextNo/PeekNextNo confusion)</td>
+<td>4</td>
+<td>OK</td>
+</tr>
+<tr>
+<td>basics-record-copy-semantics</td>
+<td>YES</td>
+<td>1 (Copy ShareTable semantics)</td>
+<td>4</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-record-link-notes</td>
+<td>YES</td>
+<td>1 (CalcFields/Type-filter/Company-scope gotchas)</td>
+<td>4</td>
+<td>OK</td>
+</tr>
+<tr>
+<td>basics-runtrigger-contract</td>
+<td>MAYBE</td>
+<td>1 (RunTrigger dual-path)</td>
+<td>4</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-safe-code-copy</td>
+<td>NO</td>
+<td>—</td>
+<td>1</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-stream-line-reader</td>
+<td>YES</td>
+<td>1/8 (byte-level CRLF/LF parsing)</td>
+<td>4</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-systemid-crossref</td>
+<td>MAYBE</td>
+<td>1 (idempotent migration + rename-survival)</td>
+<td>4</td>
+<td>OK</td>
+</tr>
+<tr>
+<td>basics-timezone-unix</td>
+<td>NO</td>
+<td>—</td>
+<td>2</td>
+<td>OK</td>
+</tr>
+<tr>
+<td>basics-uri-builder-endpoints</td>
+<td>MAYBE</td>
+<td>1 (SetPath vs AddQueryParameter escaping)</td>
+<td>3</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-validate-recalc</td>
+<td>NO</td>
+<td>—</td>
+<td>1</td>
+<td>GOOD</td>
+</tr>
+<tr>
+<td>basics-variant-dispatch</td>
+<td>YES</td>
+<td>1 (probe-ordering hazard)</td>
+<td>4</td>
+<td>GOOD</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Totals: YES 9 / MAYBE 7 / NO 9. Distractor: GOOD 19 / OK 6 / POOR 0.</strong></p>
+<hr />
+<h2 id="per-dir-verdicts">Per-dir verdicts<a class="headerlink" href="#per-dir-verdicts" title="Permanent link">&para;</a></h2>
+<h3 id="basics-add-page-field">basics-add-page-field<a class="headerlink" href="#basics-add-page-field" title="Permanent link">&para;</a></h3>
+<p>Page ext + table ext binding a <code>"Custom Field"</code> control to the Customer Card.
+Object shape: 2 objects (page ext, table ext), trivial 1:1 binding.
+- convert: <strong>NO</strong> — no interaction beyond declarative binding; nothing to plant a defect in.
+- reasoning-vs-syntax: 1/5
+- composite/distractor potential: <strong>GOOD</strong> — clean, self-contained, standard CRUD-binding pattern.
+- dedup notes: shares its table-ext piece verbatim with <code>basics-add-table-field</code>; don't use both in the same composite prompt (near-identical filler).</p>
+<h3 id="basics-add-table-field">basics-add-table-field<a class="headerlink" href="#basics-add-table-field" title="Permanent link">&para;</a></h3>
+<p>Table ext adding one <code>Text[50]</code> field to Customer.
+- convert: <strong>NO</strong> — single field declaration, zero interaction.
+- reasoning-vs-syntax: 1/5
+- composite/distractor potential: <strong>GOOD</strong> — about as minimal as filler gets.
+- dedup notes: see above (add-page-field).</p>
+<h3 id="basics-archive-copy">basics-archive-copy<a class="headerlink" href="#basics-archive-copy" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"Contract Archiver"</code> + 3 tables (<code>Rental Contract</code>, <code>Rental Charge</code>,
+<code>Rental Contract Archive</code>). <code>Archive()</code> does <code>CalcFields</code> → <code>TransferFields</code>
+→ manual <code>"Total Charges"</code>/<code>"Archived On"</code> stamp → <code>Delete</code>. Real 4-object
+choreography with two documented TransferFields gotchas (never calculates a
+FlowField, never runs OnValidate) plus a negative-legacy-fee edge case.
+- convert: <strong>MAYBE</strong>, category 1. Angle: plant the defect in the
+  FlowField-not-recalculated or OnValidate-skip corner specifically (e.g.
+  archiver reads <code>"Total Charges"</code> before <code>CalcFields</code>, or omits the manual
+  reassignment so the archive silently keeps 0).
+  Oracle sketch: seed a contract with charge lines + a negative legacy fee,
+  call <code>Archive</code>, add another charge line after, assert archive <code>"Total
+  Charges"</code> didn't move and negative fee round-tripped raw.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>GOOD</strong> — realistic, self-contained archive pattern.
+- dedup notes: <strong>real overlap</strong> with <code>tasks/hard/CG-AL-X033-transferfields-bynumber.yml</code>
+  (TransferFields-by-field-number, already shipped) and
+  <code>tasks/hard/CG-AL-X046-borrowed-identity.yml</code> (TransferFields + SystemId
+  preservation). Neither X033 nor X046 touches the FlowField-not-calculated
+  or OnValidate-skipped angles this app's task.md documents — if converting,
+  restrict the defect to those two specifically or the task duplicates
+  existing suite content.</p>
+<h3 id="basics-block-negative-credit">basics-block-negative-credit<a class="headerlink" href="#basics-block-negative-credit" title="Permanent link">&para;</a></h3>
+<p>Table ext + single <code>OnValidate</code> trigger rejecting negative decimals.
+- convert: <strong>NO</strong> — one field, one trigger, no interaction to corrupt.
+- reasoning-vs-syntax: 1/5
+- composite/distractor potential: <strong>GOOD</strong>.</p>
+<h3 id="basics-collection-deep-copy">basics-collection-deep-copy<a class="headerlink" href="#basics-collection-deep-copy" title="Permanent link">&para;</a></h3>
+<p>Codeunit with <code>CopyMatrix</code>/<code>CopyGroups</code> over <code>List of [List of [...]]]</code> /
+<code>Dictionary of [Code, List of [Text]]</code>. Point: <code>List</code>/<code>Dictionary</code> are
+reference types, so <code>:=</code> or <code>GetRange</code> produce a shallow copy that leaks
+mutations back to the source.
+- convert: <strong>MAYBE</strong>, category 1/8. Angle: naive fixture uses <code>Result :=
+  Source</code> or <code>Result := Source.GetRange(1, Source.Count())</code> for the outer
+  copy — passes a same-shape-count assertion but fails the
+  mutate-one-side-check-the-other assertion (a strong hidden-superset
+  design: shown examples don't reveal the sharing bug, mutation tests do).
+- reasoning-vs-syntax: 3/5 (single codeunit, but genuine AL reference-semantics reasoning, not syntax recall).
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: none found (<code>List of</code>/<code>Dictionary of</code> hits in tasks/ are all unrelated JSON/RecordRef/fluent-API tasks).</p>
+<h3 id="basics-confirm-when-needed">basics-confirm-when-needed<a class="headerlink" href="#basics-confirm-when-needed" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"Order Release Manager"</code>, one procedure, three branches (blank ext.
+doc no. + Yes/No, filled ext. doc no. = no dialog) via <code>Confirm Management</code>.
+- convert: <strong>MAYBE</strong>, category 8. The three-branch policy is exactly the
+  "shown a subset, oracle runs the superset" shape, and the clean-path test
+  (no ConfirmHandler declared) is already a strict "did you ask when you
+  shouldn't" trap. Thin as a single-procedure task, though.
+- reasoning-vs-syntax: 3/5
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: none found for <code>Confirm Management</code>.</p>
+<h3 id="basics-datetime-sql-tolerance">basics-datetime-sql-tolerance<a class="headerlink" href="#basics-datetime-sql-tolerance" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"DateTime Change Detector"</code>: <code>IsSameMoment</code> (10ms SQL-rounding
+tolerance, 0DT edge cases) + <code>ShouldResync</code> built on it.
+- convert: <strong>YES</strong>, category 8/9. Very clean boundary-induction material:
+  prompt could show 0/3/9ms-same, 10/20ms-different, plus the 0DT rule, and
+  let the oracle probe undisclosed boundary values (exactly-10ms, both
+  argument orders, both-0DT). Naive fixture = strict <code>=</code>/<code>&lt;&gt;</code> (which is
+  literally the starter).
+  Oracle sketch: table of (drift ms, expect same-moment) pairs including the
+  boundary, both 0DT combinations, and a <code>ShouldResync</code> sweep with a
+  never-synced record.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: none found.</p>
+<h3 id="basics-enum-wire-mapping">basics-enum-wire-mapping<a class="headerlink" href="#basics-enum-wire-mapping" title="Permanent link">&para;</a></h3>
+<p>Enum <code>"Carrier Status"</code> (<code>Extensible = true</code>) + codeunit <code>"Carrier Status
+Mapper"</code> with 4 procedures built on <code>Ordinals()</code>/<code>Names()</code>/<code>FromInteger()</code>
+reflection instead of hardcoding.
+- convert: <strong>YES</strong>, category 1. This is the strongest single candidate in
+  the slice: <strong>the shipped starter's <code>FromWire</code> already contains a real
+  naive-but-plausible bug</strong> — a hardcoded <code>case</code> statement that works for
+  every value declared today and silently returns <code>Unknown</code> for a value an
+  <code>enumextension</code> adds later. That is close to a ready-made diagnose fixture:
+  symptom "a carrier status the API added last month always logs as
+  Unknown," naive = case-statement lookup, correct = <code>Ordinals()</code>-based
+  discovery. <code>ToWireName</code> also has a real caption-vs-name trap
+  (<code>Format(Status)</code> would return the translated caption, not the wire name).
+  Oracle sketch: compile a test-app-local <code>enumextension</code> adding a new
+  value with its own ordinal + a caption that differs from its name, assert
+  all four procedures handle it with zero code awareness of it.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: none found (<code>enumextension</code>/<code>Ordinals()</code> hits elsewhere are unrelated ErrorInfo/E003 material).</p>
+<h3 id="basics-field-translations">basics-field-translations<a class="headerlink" href="#basics-field-translations" title="Permanent link">&para;</a></h3>
+<p>Table <code>"Localized Product"</code> + codeunit <code>"Product Translations"</code> wired to the
+System App <code>Translation</code> module (per-record/field/language store keyed by
+SystemId). Multiple documented gotchas: must <code>Insert</code> before attaching
+translations, 3-arg <code>Get</code>/<code>Set</code> (language-specific) vs 2-arg (session
+language) overload confusion, and — the sharpest one — <code>Translation.Delete</code>
+has an overload that takes a table ID and wipes <strong>every</strong> record's
+translations, vs the record overload that scopes to one row.
+- convert: <strong>YES</strong>, category 1. Angle: plant the wrong-overload bug in
+  <code>OnDelete</code> (<code>Translation.Delete(Database::"Localized Product")</code> instead of
+  <code>Translation.Delete(Rec)</code>) — symptom "deleting one product wiped every
+  other product's translations too." Alternative angle: <code>GetDescription</code>
+  using the 2-arg session-language overload instead of the 3-arg one, so a
+  German lookup silently returns the session-language translation instead.
+  Oracle sketch: insert 2 products each with 2 languages, delete one,
+  assert the other product's translations (queried via the module's own
+  <code>GetTranslations</code>) are untouched while the deleted one's are gone.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>OK</strong> — self-contained but pulls in the System Application <code>Translation</code> module, a heavier dependency footprint than most of this slice.
+- dedup notes: none found (<code>Codeunit Translation</code> unused elsewhere in tasks/tests).</p>
+<h3 id="basics-hello-world">basics-hello-world<a class="headerlink" href="#basics-hello-world" title="Permanent link">&para;</a></h3>
+<p>Single-procedure greeter codeunit.
+- convert: <strong>NO</strong> — as syntax-trivial as the suite gets.
+- reasoning-vs-syntax: 1/5
+- composite/distractor potential: <strong>GOOD</strong> — maximally safe, recognizable filler.</p>
+<h3 id="basics-image-thumbnail">basics-image-thumbnail<a class="headerlink" href="#basics-image-thumbnail" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"Thumbnail Generator"</code> over the System App <code>Image</code> codeunit:
+proportional resize, half-up rounding, 1-pixel floor clamp, no-upscale rule,
+error on non-image input.
+- convert: <strong>MAYBE</strong>, category 8/9. Rich boundary-condition menu already
+  spelled out with worked numeric examples (64→26, 15→8, 41→16 — a fraction
+  just under one half must round down). Good hidden-superset material: show
+  2-3 worked cases, let the oracle probe a random <code>MaxDimension</code> plus the
+  1-pixel-floor and exact-square edge cases.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>OK</strong> — needs the System App <code>Image</code> codeunit + real PNG fixture bytes for its own tests, more setup than most filler.
+- dedup notes: none found.</p>
+<h3 id="basics-insert-defaults">basics-insert-defaults<a class="headerlink" href="#basics-insert-defaults" title="Permanent link">&para;</a></h3>
+<p>Table ext + <code>OnBeforeInsert</code> stamping two blank-only defaults.
+- convert: <strong>NO</strong> — one trigger, two independent <code>if</code>s, no interaction.
+- reasoning-vs-syntax: 1/5
+- composite/distractor potential: <strong>GOOD</strong>.</p>
+<h3 id="basics-item-priority-enum">basics-item-priority-enum<a class="headerlink" href="#basics-item-priority-enum" title="Permanent link">&para;</a></h3>
+<p>Enum + table ext field with <code>InitValue</code>.
+- convert: <strong>NO</strong> — pure declarative wiring.
+- reasoning-vs-syntax: 1/5
+- composite/distractor potential: <strong>GOOD</strong>.</p>
+<h3 id="basics-line-default-from-item">basics-line-default-from-item<a class="headerlink" href="#basics-line-default-from-item" title="Permanent link">&para;</a></h3>
+<p>Two table exts (Item, Sales Line both add <code>"Quality Grade"</code>) + a codeunit
+subscribing to <code>"Sales Line".OnAfterAssignItemValues</code> to copy the grade
+<strong>unconditionally</strong> — including clearing it when the new item has none.
+- convert: <strong>YES</strong>, category 1 and 6 (event-driven wiring). 3-object
+  choreography via an integration event, and the task.md explicitly
+  telegraphs the naive mistake: a subscriber that only copies when the
+  item's grade is non-blank (a very plausible "why would I copy nothing"
+  instinct) fails the "re-validating to a grade-less item must clear the
+  line" case while passing everything else.
+  Oracle sketch: create item A (grade "PREMIUM") and item B (no grade),
+  validate a sales line "No." to A then to B, assert the line's grade
+  follows exactly (set, then cleared) — plus a third re-validation back to
+  A to catch a subscriber that only fires once.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: none found (<code>OnAfterAssignItemValues</code> not used elsewhere in tasks/tests).</p>
+<h3 id="basics-number-series">basics-number-series<a class="headerlink" href="#basics-number-series" title="Permanent link">&para;</a></h3>
+<p>Table <code>"Workshop Order"</code> + Business Foundation <code>"No. Series"</code> module.
+<code>OnInsert</code> draws a number only when <code>"No."</code> is blank; <code>PeekNextOrderNo</code> must
+use <code>PeekNextNo</code>, not <code>GetNextNo</code> — the hint literally says "if you reach for
+GetNextNo there instead, every peek consumes a number... the tests catch
+exactly that."
+- convert: <strong>YES</strong>, category 1. About as crisp a single-defect diagnosis
+  task as this slice offers: naive = <code>PeekNextOrderNo</code> implemented with
+  <code>GetNextNo</code>, correct = <code>PeekNextNo</code>. Symptom: "an order inserted right
+  after a UI preview call gets a later number than the preview showed."
+  Oracle sketch: create the WORKSHOP series with a random starting number,
+  call <code>PeekNextOrderNo()</code> twice (must return the same value both times),
+  then insert a blank-numbered order and assert it got exactly that peeked
+  number.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>OK</strong> — needs Business Foundation dependency + a <code>"No. Series"</code>/<code>"No. Series Line"</code> seed in every test, heavier setup than most filler.
+- dedup notes: none found (no other task touches <code>"No. Series"</code>).</p>
+<h3 id="basics-record-copy-semantics">basics-record-copy-semantics<a class="headerlink" href="#basics-record-copy-semantics" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"Buffer Copy Service"</code> over temporary <code>"Name/Value Buffer"</code>:
+<code>TakeSnapshot</code> (must deep-copy row by row) vs <code>AttachSharedView</code> (must use
+<code>Copy(..., true)</code>). The task.md itself names the exact bug: "a teammate
+implemented both with the same one-liner."
+- convert: <strong>YES</strong>, category 1. Naive fixture = both procedures call
+  <code>Copy(Source, true)</code> — passes a same-content-right-now check, fails the
+  "mutate source after snapshot, snapshot must not move" check. Strong
+  hidden-superset shape (surface behavior identical until the follow-up mutation).
+  Oracle sketch: seed rows into <code>Source</code>, call <code>TakeSnapshot</code>, insert/modify/delete in
+  <code>Source</code> afterward, assert <code>Snapshot</code> unchanged; call <code>AttachSharedView</code>,
+  write through <code>SharedView</code>, assert <code>Source</code> shows it.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: none found (<code>ShareTable</code> unused elsewhere in tasks/tests).</p>
+<h3 id="basics-record-link-notes">basics-record-link-notes<a class="headerlink" href="#basics-record-link-notes" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"Record Note Manager"</code>, 5 procedures over the system <code>"Record
+Link"</code> table + base <code>"Record Link Management"</code> codeunit: BLOB note
+encoding, <code>CalcFields(Note)</code> required before read, <code>Type</code>-filtering for
+counts, <code>Company</code>-scoped dangling-link sweep via <code>RecordRef.Get</code>.
+- convert: <strong>YES</strong>, category 1. Richest single-object candidate in the
+  slice — at least three independently plantable defects: (a) <code>ReadNote</code>
+  omits <code>CalcFields(Note)</code> before handing the record to the module reader
+  (returns empty for a real note), (b) <code>CountNotes</code> forgets the <code>Type =
+  Note</code> filter (counts web links too), (c) <code>DeleteDanglingLinks</code> sweeps
+  without the <code>Company</code> filter (deletes another company's live links) or
+  checks only <code>Customer</code> records instead of any table via <code>RecordRef</code>.
+  Oracle sketch: write a note, read it back via the <em>module's own</em> <code>ReadNote</code>
+  as an independent oracle (task.md already does this — good practice to
+  keep); seed a foreign-company dangling link and a same-company live link,
+  sweep, assert exactly the right one is gone.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>OK</strong> — touches the system <code>"Record Link"</code> table directly, a more exotic/global object than most filler; fine standalone but avoid stacking two dirs that both poke system tables in one composite.
+- dedup notes: none found.</p>
+<h3 id="basics-runtrigger-contract">basics-runtrigger-contract<a class="headerlink" href="#basics-runtrigger-contract" title="Permanent link">&para;</a></h3>
+<p>Table <code>"Loyalty Member"</code> (unconditional <code>OnInsert</code>/<code>OnModify</code> stamps) +
+codeunit <code>"Member Registration"</code> with 4 procedures, each choosing <code>RunTrigger
+= true</code> or <code>false</code> on <code>Insert</code>/<code>Modify</code>.
+- convert: <strong>MAYBE</strong>, category 1. Natural fit on its face — swap one call's
+  boolean (e.g. <code>MigrateMember</code> calls <code>Insert(true)</code> instead of <code>false</code>, so
+  imported audit dates get silently overwritten) — but real dedup risk (see
+  below). If converted, the differentiator should be the <strong>4-method dual
+  contract in one codeunit</strong> (register/migrate/update/patch all coexisting,
+  with the table's triggers doing unconditional stamping either way), not
+  the single "did you pass RunTrigger at all" question X009 already tests.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: <strong>real overlap</strong> with <code>tasks/medium/CG-AL-X009-insert-runtrigger.yml</code>
+  (RunTrigger boolean deciding whether <code>OnInsert</code> computes a field). X009
+  tests one insert path; this app's unique value is the 4-call dual-path
+  matrix across both Insert and Modify — narrow to that if authored.</p>
+<h3 id="basics-safe-code-copy">basics-safe-code-copy<a class="headerlink" href="#basics-safe-code-copy" title="Permanent link">&para;</a></h3>
+<p>Codeunit, one procedure, <code>CopyStr(Input.Trim(), 1, 20)</code>.
+- convert: <strong>NO</strong> — a single expression, no interaction, no branch.
+- reasoning-vs-syntax: 1/5
+- composite/distractor potential: <strong>GOOD</strong>.</p>
+<h3 id="basics-stream-line-reader">basics-stream-line-reader<a class="headerlink" href="#basics-stream-line-reader" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"Stream Line Reader"</code>: byte-level <code>InStream</code> walk distinguishing
+LF/CRLF, blank lines, and a present-vs-absent trailing terminator. Task.md
+explicitly documents the naive bug: <code>while not EOS do ReadText(Line)</code> can't
+tell a blank line from end-of-stream.
+- convert: <strong>YES</strong>, category 1/8. Naive fixture = the <code>ReadText</code>/<code>EOS</code> loop
+  named in the prose — passes simple LF-only, single-line cases, fails
+  blank-line and no-trailing-terminator cases. Strong hidden-superset shape.
+  Oracle sketch: payloads for CRLF-only, LF-only, mixed, single blank line,
+  consecutive blanks, trailing-terminator-present vs absent, empty stream,
+  bare-LF (one empty line) — exactly what the shipped tests already cover,
+  reusable near-verbatim as the oracle superset.
+- reasoning-vs-syntax: 4/5 (stream-API knowledge is syntax-adjacent, but the edge-case enumeration is genuine reasoning).
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: none found.</p>
+<h3 id="basics-systemid-crossref">basics-systemid-crossref<a class="headerlink" href="#basics-systemid-crossref" title="Permanent link">&para;</a></h3>
+<p>Table <code>"Customer Bookmark"</code> + codeunit <code>"Customer Bookmarks"</code>, 4 procedures:
+<code>AddBookmark</code>/<code>ResolveCustomer</code> (SystemId survives rename),
+<code>ImportBookmark</code> (caller-supplied SystemId via 2-bool <code>Insert</code> overload),
+<code>MigrateLegacyBookmarks</code> (idempotent: <code>IsNullGuid</code> guard so already-migrated
+or already-stale-but-migrated rows are never re-touched).
+- convert: <strong>MAYBE</strong>, category 1. Rich 4-procedure table+codeunit
+  choreography with a genuinely subtle idempotency invariant ("a migrated
+  row whose stale number now belongs to a different customer must NOT be
+  repointed"), but real dedup risk (below). If converted, anchor the defect
+  in the migration-idempotency or rename-survival angle specifically —
+  neither is covered by the existing overlapping task.
+  Oracle sketch: seed one legacy row resolvable to a customer, one pointing
+  at a vanished customer, one already-migrated row whose stored number was
+  since taken by a different customer; migrate; assert exactly the first is
+  counted+filled, the vanished one stays empty and uncounted, the
+  already-migrated one is untouched even though its stale number now
+  resolves to someone else.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>OK</strong> — medium complexity, more elaborate than typical filler but still self-contained.
+- dedup notes: <strong>real overlap</strong> with <code>tasks/hard/CG-AL-X046-borrowed-identity.yml</code>,
+  which already tests "copy a row's SystemId onto a new row via the 2-bool
+  <code>Insert</code> overload." This app's <code>ImportBookmark</code> is the same mechanic.
+  The non-overlapping angles are <code>ResolveCustomer</code>'s rename-survival lookup
+  and <code>MigrateLegacyBookmarks</code>'s idempotency guard — narrow to those.</p>
+<h3 id="basics-timezone-unix">basics-timezone-unix<a class="headerlink" href="#basics-timezone-unix" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"Time Zone Toolkit"</code>, 5 procedures, each a near-1-line wrapper
+around System App <code>"Time Zone"</code> / <code>"Unix Timestamp"</code> codeunits.
+- convert: <strong>NO</strong> — every procedure is "call the one right SDK method";
+  correctness is almost entirely "did you know the API exists" rather than
+  multi-step reasoning. A sign-flip defect (<code>ToLocalTime</code> subtracting the
+  offset instead of adding) is plausible but thin as a standalone task.
+- reasoning-vs-syntax: 2/5
+- composite/distractor potential: <strong>OK</strong> — clean but pulls in two System App codeunits; fine as filler, not spectacular.</p>
+<h3 id="basics-uri-builder-endpoints">basics-uri-builder-endpoints<a class="headerlink" href="#basics-uri-builder-endpoints" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"Endpoint Url Builder"</code>, 3 procedures over System App <code>"Uri
+Builder"</code>/<code>Uri</code>. Core trap: <code>AddQueryParameter</code>/<code>AddQueryFlag</code>
+percent-encode automatically, but <code>SetPath</code> treats its argument as raw path
+syntax — a value spliced into a path segment needs <code>EscapeDataString</code> by
+hand.
+- convert: <strong>MAYBE</strong>, category 1. Naive fixture = <code>ItemCardUrl</code> passing
+  <code>ItemNo</code> straight to <code>SetPath</code> without escaping (every other call site in
+  the same codeunit is auto-encoded, so this omission is easy to miss and
+  matches difficulty lever #2 — a red herring that "reads suspicious but is
+  correct" elsewhere in the same file makes the real gap easy to skip).
+  Oracle sketch: <code>ItemCardUrl</code> with an item number containing <code>&amp;</code>, <code>=</code>, <code>+</code>,
+  and a non-ASCII letter; assert the returned URL matches the exact
+  percent-encoded path segment.
+- reasoning-vs-syntax: 3/5
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: none found.</p>
+<h3 id="basics-validate-recalc">basics-validate-recalc<a class="headerlink" href="#basics-validate-recalc" title="Permanent link">&para;</a></h3>
+<p>Table ext, one <code>OnValidate</code> trigger recalculating <code>"Suggested Price"</code> with
+half-up rounding to 0.01.
+- convert: <strong>NO</strong> as a standalone task — single trigger, single formula, too
+  small to host a planted interaction defect. The two worked rounding
+  examples (36.663→36.66, 39.996→40.00) are decent raw ingredient for a
+  category-9 (rounding/allocation invariants) task if combined with other
+  material, but not on their own.
+- reasoning-vs-syntax: 1/5
+- composite/distractor potential: <strong>GOOD</strong>.</p>
+<h3 id="basics-variant-dispatch">basics-variant-dispatch<a class="headerlink" href="#basics-variant-dispatch" title="Permanent link">&para;</a></h3>
+<p>Codeunit <code>"Variant Formatter"</code>: <code>FormatValue</code>/<code>TryFormatValue</code> dispatch a
+<code>Variant</code> via <code>Is&lt;Type&gt;()</code> probes to a canonical <code>"&lt;Type&gt;: &lt;payload&gt;"</code>
+string. Task.md flags the exact hazard: probes are not mutually exclusive
+(<code>IsCode</code> also answers <code>IsText</code> true; <code>IsOption</code> also answers <code>IsInteger</code>
+true), so probe order determines correctness.
+- convert: <strong>YES</strong>, category 1. Textbook match for difficulty lever #2
+  ("two candidate causes where only one is real"): naive fixture checks
+  <code>IsInteger</code> before <code>IsOption</code>, or <code>IsText</code> before <code>IsCode</code> — passes every
+  case except a Code or Option payload, which get mistagged. Also a
+  <code>Format(Value)</code> (1-arg, locale-sensitive) vs <code>Format(Value, 0, 9)</code>
+  (invariant) trap for Decimal/Date.
+  Oracle sketch: format an Option value from a 2-member and a 5-member
+  option list at different positions, a Code value assigned from lowercase
+  text, and a Decimal — assert exact tagged strings; separately assert
+  <code>TryFormatValue</code> on an unsupported type clears stale <code>FormattedValue</code> to
+  empty rather than leaving it untouched.
+- reasoning-vs-syntax: 4/5
+- composite/distractor potential: <strong>GOOD</strong>.
+- dedup notes: <code>tasks/easy/CG-AL-E056-totext-simple-types.yml</code> also formats
+  simple types via <code>Format(..., 0, 9)</code> for invariant text, but its
+  parameters are statically typed (no <code>Variant</code>, no probe-ordering
+  ambiguity) — different mechanism, no real overlap.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

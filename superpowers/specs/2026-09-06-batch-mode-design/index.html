@@ -1,0 +1,3049 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/specs/2026-09-06-batch-mode-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Batch mode for the bench - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#batch-mode-for-the-bench" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Batch mode for the bench
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Purpose
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Non-goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-run-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Run state
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Run state">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-item-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Item ids
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-frozen-inputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Frozen inputs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-submission-and-reconciliation-d1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Submission and reconciliation (D1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-round-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Round ownership
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-transitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 Transitions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46-suspended-run-integrity-d13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 Suspended-run integrity (D13)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-batchprovider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. BatchProvider
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. BatchProvider">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-anthropic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Anthropic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-openai" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 OpenAI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-openrouter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 OpenRouter
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-shared-execution-units-d6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Shared execution units (D6)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-compiletest-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Compile/test phase
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-failure-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Failure handling
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-results-capture-settings-site" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Results, capture, settings, site
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-spikes-run-as-the-plans-first-task" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Spikes, run as the plan's first task
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Testing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-file-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. File map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-rollout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Rollout
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/specs/2026-09-06-batch-mode-design.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="batch-mode-for-the-bench">Batch mode for the bench<a class="headerlink" href="#batch-mode-for-the-bench" title="Permanent link">&para;</a></h1>
+<p><strong>Date:</strong> 2026-09-06
+<strong>Status:</strong> revision 4, APPROVED by the owner 2026-09-06 after three
+review rounds by GPT-5.6 Sol and Gemini 3.6 Flash (<code>.panel/batch-spec-*.md</code>,
+<code>-r2-*</code>, <code>-r3-*</code>). Gemini approved revision 3; Sol's revision-3 minimum
+edits are folded in here. Implementation plan follows.
+<strong>Owner rulings:</strong> build it before the fall campaign; Gemini rides
+OpenRouter's batch API; Anthropic, OpenAI and OpenRouter are all in scope.</p>
+<h2 id="1-purpose">1. Purpose<a class="headerlink" href="#1-purpose" title="Permanent link">&para;</a></h2>
+<p>The bench pays synchronous token rates for work that has no need to be
+synchronous. Anthropic, OpenAI and OpenRouter each sell a batch tier at
+roughly half the per-token price with a 24-hour completion window. A
+campaign run is "every task once, then the failures once more": two waves
+of independent requests per model, with a compile/test phase between them.
+That shape maps onto batch APIs directly.</p>
+<p>Batch mode submits one wave, exits, and is resumed by an <code>advance</code> command
+until the run is finalized. The output is a results file in the synchronous
+path's schema, priced at the batch rate, ingested by the same pipeline, and
+published as its own invocation profile.</p>
+<p>Measured on the fall-2026 panel (four models, three runs each, 232 tasks):
+roughly $360-$630 synchronous, roughly half of that in batch. Compile/test
+work is unchanged in volume - up to 464 container jobs per run - and is
+concentrated after each wave rather than spread across it.</p>
+<h2 id="2-non-goals">2. Non-goals<a class="headerlink" href="#2-non-goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Continuation, the immediate empty-response retry, and streaming. Each
+  needs a second round trip inside an attempt. At the campaign's 64,000
+  token cap, <code>finishReason: length</code> occurred 3 times in 6,928 stored
+  attempts; the exclusion is for cleanliness and is one reason batch is a
+  distinct invocation profile (D4).</li>
+<li>Server-side refusal fallback. Anthropic's Message Batches API does not
+  support <code>fallbacks</code> (an item carrying it returns an errored result;
+  refusals return as succeeded items with <code>stop_reason: refusal</code>). Batch
+  runs are a fallback-less profile (D12).</li>
+<li>Direct Gemini batch. Gemini rides OpenRouter's batch API (owner ruling),
+  published as <code>openrouter/google/gemini-3.8-flash</code>, distinct from
+  <code>gemini/...</code>.</li>
+<li>Agent benchmarks. Batch mode is the LLM path only.</li>
+<li>Leaderboard UI beyond a per-run invocation-mode marker and a mode filter.</li>
+<li>Mixing modes inside one run.</li>
+<li>A provider request id column on the site.</li>
+</ul>
+<h2 id="3-decisions">3. Decisions<a class="headerlink" href="#3-decisions" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Decision</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D1</td>
+<td>Submit-and-exit, resumable, with a write-ahead submission intent and provider-specific reconciliation. <strong>No provider ever resubmits from <code>submit-unknown</code> on list absence alone</strong>; only an exact identification adopts a batch, and only an operator confirmation abandons the intent.</td>
+<td>A remote submit and a local write cannot be atomic. OpenAI's <code>metadata.nonce</code> identifies a batch exactly; Anthropic and OpenRouter expose neither item ids nor metadata while processing, and no provider promises list consistency on a timer.</td>
+</tr>
+<tr>
+<td>D2</td>
+<td>Three batch adapters: Anthropic, OpenAI, OpenRouter, landed in that order, each usable alone.</td>
+<td>Anthropic and OpenAI carry ~95% of the campaign bill; OpenRouter carries Gemini under an OpenRouter identity.</td>
+</tr>
+<tr>
+<td>D3</td>
+<td>One run id per model x task-set x cycle, minted and fsynced before the first network call. <code>submit</code> takes one model; <code>--runs N</code> creates N run directories up front.</td>
+<td>The run id is embedded in every item; multi-model expansion is a wrapper.</td>
+</tr>
+<tr>
+<td>D4</td>
+<td>Batch is a <strong>distinct invocation profile</strong>: <code>invocation_mode</code> is inside the canonical settings profile (a different <code>settings_hash</code>) and a run column; <strong>every ranking query, in every scope and cache key, selects one mode</strong>; ranked endpoints refuse <code>mode=all</code>; the default mode is derived from the <em>selected</em> task set, never from the globally most recent run.</td>
+<td>Batch drops continuation, empty retries and fallback and has a different retry ladder. Today aggregates pool runs across settings and only flag it (<code>model-aggregates.ts:381-384</code>); tiers do not scope (<code>tier-data.ts:63-97</code>); tier and matrix caches are keyed without mode (<code>tier-data.ts:126-168</code>, <code>matrix/+server.ts:41-60</code>).</td>
+</tr>
+<tr>
+<td>D5</td>
+<td>Cost from explicit batch columns on <code>cost_snapshots</code>, never an assumed factor. OpenRouter's batch-level <code>usage.cost</code> is recorded on the batch record.</td>
+<td>The site bills from snapshots; OpenRouter reports cost per batch, not per item.</td>
+</tr>
+<tr>
+<td>D6</td>
+<td>The shared execution units in section 6 are the only place scoring, gating, pricing and finalization happen; the batch runner owns none of it.</td>
+<td>Anything not shared drifts.</td>
+</tr>
+<tr>
+<td>D7</td>
+<td>Semantic equivalence: identical rendered prompts, model parameters, candidate resolution and response-field mapping where the provider returns the data. Transport fields, duration, price mode and retry metadata are exempt.</td>
+<td>Byte identity is impossible by construction.</td>
+</tr>
+<tr>
+<td>D8</td>
+<td>One immutable result record per submitted item plus an append-only event log; task state is derived.</td>
+<td>The owner wants to see and retry what the provider did.</td>
+</tr>
+<tr>
+<td>D9</td>
+<td>Transport errors get bounded backoff inside <code>advance</code> and never create a round; a retryable item failure gets one explicit resubmission; invalid requests are terminal at once; size limits re-chunk without consuming the resubmission. Exactly one attempt file per logical attempt.</td>
+<td>Coverage needs an attempt for every task.</td>
+</tr>
+<tr>
+<td>D10</td>
+<td>Attempt 2 runs for every task without a passing attempt 1 <strong>except</strong> a task whose attempt 1 ended in compile/test infra exhaustion, which terminates the task in both modes. Provider failures and empty/refused responses do get attempt 2, with the fix prompt built from that record.</td>
+<td>Matches the synchronous loop for LLM failures (<code>orchestrator.ts:895-919</code>); the sync path already terminates the task on infra exhaustion outside the attempt loop (<code>orchestrator.ts:503-602</code>, synthesizer at <code>:670</code>), and revision 4 makes that record attempt-level in both modes (section 6).</td>
+</tr>
+<tr>
+<td>D11</td>
+<td>The rendered <code>LLMRequest</code> is carried through success and failure and captured on the attempt in both modes.</td>
+<td>The sync path stores <code>context.instructions</code> as the prompt and ingest hashes it as the prompt sent (<code>orchestrator.ts:1168</code>, <code>ingest-assembly.ts:255</code>); failed attempts store <code>""</code>.</td>
+</tr>
+<tr>
+<td>D12</td>
+<td><code>fallbackPolicy</code> is frozen <code>"unavailable"</code> for every batch run before the run id and settings hash exist.</td>
+<td>Provider documentation.</td>
+</tr>
+<tr>
+<td>D13</td>
+<td>A run refuses to advance if any input that shaped attempt 1 has changed, and it persists the actual inputs needed to render attempt 2, not only their digests.</td>
+<td>A fix prompt rendered days later must come from the same harness, and <code>advance</code> is a fresh process that does not receive the original submit options.</td>
+</tr>
+<tr>
+<td>D14</td>
+<td>The global bench lock becomes a real exclusive lock before batch mode lands: atomic creation, owner token, heartbeat, race-safe stale reclamation, owner-checked release.</td>
+<td>Today <code>acquireBenchLock</code> overwrites the marker unconditionally and <code>isBenchRunning</code> only reads an mtime (<code>bench-lock.ts</code>); two processes can both "hold" it. The sync bench gets the fix too.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="4-run-state">4. Run state<a class="headerlink" href="#4-run-state" title="Permanent link">&para;</a></h2>
+<p>A run lives at <code>&lt;output&gt;/batch/&lt;runId&gt;/</code>. Every command loads it, acts,
+writes state atomically (temp file + rename, fsync before any network
+call), and exits.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>state.json                 phase, frozen digests, batch records, per-item summaries (no payloads)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>prompt-inputs.json         everything renderLLMRequest needs, resolved at submit (4.2)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>intent.json                write-ahead record of a submission about to be made
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>items.jsonl                one line per submitted request: itemId, task, attempt, round, chunk, digest, body
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>events.jsonl               append-only, each line carries an eventId
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>responses/&lt;itemId&gt;.json    immutable raw provider result per item
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>requests/&lt;itemId&gt;.json     the rendered LLMRequest for the item (D11)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>attempts/&lt;taskId&gt;-a&lt;N&gt;.json  immutable ExecutionAttempt once evaluated
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>mutate.lock                short-lived lock around a state mutation
+</code></pre></div>
+<p>JSONL loaders ignore a torn final line and de-duplicate by <code>itemId</code> /
+<code>eventId</code>. Attempt files carry <code>schemaVersion</code>; <code>Date</code> fields are ISO
+strings and rehydrated by the matching parser.</p>
+<h3 id="41-item-ids">4.1 Item ids<a class="headerlink" href="#41-item-ids" title="Permanent link">&para;</a></h3>
+<p><code>"b" + first 31 hex chars of sha256(</code>${runId}|${taskId}|${attempt}|${round}<code>)</code>
+(32 chars, within Anthropic's <code>[A-Za-z0-9_-]{1,64}</code> and a legal Windows
+filename). The mapping lives in <code>items.jsonl</code>; nothing parses the id.</p>
+<h3 id="42-frozen-inputs">4.2 Frozen inputs<a class="headerlink" href="#42-frozen-inputs" title="Permanent link">&para;</a></h3>
+<p><code>prompt-inputs.json</code> (written once at submit, immutable):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">FrozenPromptInputs</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nx">provider</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">apiModelId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nx">variantConfig</span><span class="o">:</span><span class="w"> </span><span class="kt">VariantConfig</span><span class="p">;</span><span class="w">                 </span><span class="c1">// effective, after preset and CLI merge</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nx">variantSystemPrompt</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w">           </span><span class="c1">// resolved text</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nx">promptOverrides</span><span class="o">:</span><span class="w"> </span><span class="kt">CLIPromptOverrides</span><span class="p">;</span><span class="w">          </span><span class="c1">// resolved values, not names</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nx">knowledge</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">content</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">ref</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">sha256</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">};</span><span class="w">   </span><span class="c1">// inline or an immutable file under the run dir</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nx">templateDir</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">starterRoot</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nx">settings</span><span class="o">:</span><span class="w"> </span><span class="kt">CanonicalSettings</span><span class="p">;</span><span class="w">                  </span><span class="c1">// section 10</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">}</span>
+</code></pre></div>
+<p><code>state.json</code> holds the digests used for drift checks plus the structural
+state:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">BatchRunState</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nx">schemaVersion</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="p">;</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nx">runId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">createdAt</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nx">model</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">slug</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">provider</span><span class="o">:</span><span class="w"> </span><span class="s2">"anthropic"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"openai"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"openrouter"</span><span class="p">;</span><span class="w"> </span><span class="nx">apiModelId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nx">frozen</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nx">settingsHash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nx">taskSetHash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nx">harnessFingerprint</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">                 </span><span class="c1">// expanded list, section 10</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nx">templateDigests</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;</span><span class="p">;</span><span class="w">    </span><span class="c1">// every template referenced by any task in the run</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nx">promptInputsDigest</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">                 </span><span class="c1">// sha256 of prompt-inputs.json</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="nx">gitSha</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">gitClean</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="nx">environment</span><span class="o">:</span><span class="w"> </span><span class="kt">ContainerEnvironmentSet</span><span class="p">;</span><span class="w">       </span><span class="c1">// wave-1 containers (4.6)</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="nx">tasksGlob</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">taskIds</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="p">};</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nx">phase</span><span class="o">:</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="s2">"prepared"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"submitting"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"submit-unknown"</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="s2">"attempt-1-submitted"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"attempt-1-collected"</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="s2">"attempt-2-submitted"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"attempt-2-collected"</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="s2">"finalizing"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"finalized"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"abandoned"</span><span class="p">;</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">  </span><span class="nx">wave</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mf">2</span><span class="p">;</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">  </span><span class="nx">batches</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchRecord</span><span class="p">[];</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="w">  </span><span class="nx">activeBatchIds</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="w">  </span><span class="nx">tasks</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">TaskSummary</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="w">  </span><span class="nx">lastError</span><span class="o">?:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">at</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">step</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">message</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">retryable</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="w">  </span><span class="nx">resultsFile?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">ingestedRunId?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">finalizedAt?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a><span class="p">}</span>
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">BatchRecord</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="w">  </span><span class="nx">wave</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mf">2</span><span class="p">;</span><span class="w"> </span><span class="nx">round</span><span class="o">:</span><span class="w"> </span><span class="kt">0</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mf">1</span><span class="p">;</span><span class="w"> </span><span class="nx">chunk</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">parentBatchId?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a><span class="w">  </span><span class="nx">handle</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchHandle</span><span class="p">;</span>
+<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a><span class="w">  </span><span class="nx">submittedAt</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">lastPolledAt?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a><span class="w">  </span><span class="nx">providerStatus</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">rawCounts</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">number</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a><span class="w">  </span><span class="nx">state</span><span class="o">:</span><span class="w"> </span><span class="s2">"processing"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"ended"</span><span class="p">;</span>
+<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a><span class="w">  </span><span class="nx">itemIds</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span>
+<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a><span class="w">  </span><span class="nx">providerReportedCostUsd?</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a><span class="w">  </span><span class="nx">collected</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a><span class="p">}</span>
+<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a>
+<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">TaskSummary</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">attempt1</span><span class="o">:</span><span class="w"> </span><span class="kt">ItemSummary</span><span class="p">;</span><span class="w"> </span><span class="nx">attempt2?</span><span class="o">:</span><span class="w"> </span><span class="kt">ItemSummary</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">ItemSummary</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a><span class="w">  </span><span class="nx">itemId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">round</span><span class="o">:</span><span class="w"> </span><span class="kt">0</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mf">1</span><span class="p">;</span><span class="w"> </span><span class="nx">ownerRound</span><span class="o">:</span><span class="w"> </span><span class="kt">0</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mf">1</span><span class="p">;</span>
+<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a><span class="w">  </span><span class="nx">state</span><span class="o">:</span><span class="w"> </span><span class="s2">"pending"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"submitted"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"responded"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"errored"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"expired"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"evaluated"</span><span class="p">;</span>
+<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a><span class="w">  </span><span class="nx">attemptFile?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a><span class="p">}</span>
+<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a>
+<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">ContainerEnvironmentSet</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a><span class="w">  </span><span class="nx">testRunner</span><span class="o">:</span><span class="w"> </span><span class="s2">"soap"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"legacy"</span><span class="p">;</span><span class="w">               </span><span class="c1">// a mode, not a version (EnvironmentManifest.test_runner)</span>
+<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a><span class="w">  </span><span class="nx">containers</span><span class="o">:</span><span class="w"> </span><span class="kt">Array</span><span class="o">&lt;</span><span class="p">{</span><span class="w"> </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">bcArtifact</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">imageDigest</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="p">}</span><span class="o">&gt;</span><span class="p">;</span><span class="w">  </span><span class="c1">// sorted by name</span>
+<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a><span class="p">}</span>
+</code></pre></div>
+<p><code>intent.json</code> holds <code>{ runId, wave, round, chunk, itemIds, bodyDigests, nonce, writtenAt, inputFileId? }</code>
+and is deleted only after the handle is in <code>state.json</code>.</p>
+<h3 id="43-submission-and-reconciliation-d1">4.3 Submission and reconciliation (D1)<a class="headerlink" href="#43-submission-and-reconciliation-d1" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Write and fsync <code>intent.json</code>; phase <code>submitting</code>.</li>
+<li>Submit. OpenAI receives the nonce in <code>metadata</code> and its uploaded input
+   file is named after the nonce; the <code>inputFileId</code> is persisted into
+   <code>intent.json</code> before batch creation.</li>
+<li>Persist the handle; delete <code>intent.json</code>; phase <code>&lt;wave&gt;-submitted</code>.</li>
+</ol>
+<p>When <code>advance</code> finds <code>intent.json</code> without a handle, the phase becomes
+<code>submit-unknown</code>. Candidate discovery uses a skew-tolerant window,
+<code>created_at &gt;= intent.writtenAt - 10 min</code>, because provider timestamps are
+whole seconds and clocks differ. Identification is exact or nothing:</p>
+<ul>
+<li><strong>OpenAI:</strong> a listed batch whose <code>metadata.nonce</code> equals the intent's is
+  adopted automatically.</li>
+<li><strong>Anthropic:</strong> candidates are batches in the window whose
+  <code>request_counts</code> total equals the intent's item count. A candidate is
+  adopted only after it has <strong>ended</strong> and its results' <code>custom_id</code> set
+  equals the intent's item-id set exactly (same count, no duplicates).</li>
+<li><strong>OpenRouter:</strong> candidates are batches in the window with the intent's
+  <code>model</code> and <code>request_counts.total</code>; adoption by exact <code>custom_id</code> set
+  equality once <code>completed</code>.</li>
+<li><strong>Any provider:</strong> absence from the list is never evidence. <code>status</code>
+  shows the candidates; <code>retry --adopt &lt;batchId&gt;</code> adopts one after the
+  same validation (provider, window, model/endpoint, total; exact id set
+  once ended); <code>retry --confirm-not-submitted</code> is the operator's explicit
+  statement that the batch does not exist, and is the only way back to
+  <code>prepared</code>. For OpenAI, a leftover input file named by the nonce is
+  deleted on that path.</li>
+</ul>
+<h3 id="44-round-ownership">4.4 Round ownership<a class="headerlink" href="#44-round-ownership" title="Permanent link">&para;</a></h3>
+<p>An item is eligible for round 1 only after every chunk of its wave's round
+0 has ended and every item of those chunks is accounted for (<code>collected</code>
+on each record). At round-1 submission <code>ownerRound</code> becomes 1 for the
+resubmitted items and never changes; a round-0 record surfacing later is
+written and logged as an integrity event, never adopted. An interrupted
+collection is resumed, not treated as unresolved.</p>
+<h3 id="45-transitions">4.5 Transitions<a class="headerlink" href="#45-transitions" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>submit            prepared -&gt; submitting -&gt; attempt-1-submitted
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>advance           *-submitted, any active batch processing         -&gt; refresh; exit 3
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>advance           *-submitted, all active batches ended            -&gt; collect all -&gt; evaluate -&gt; *-collected
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>advance           attempt-1-collected, unresolved items remain     -&gt; single resubmission round -&gt; attempt-1-submitted
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>advance           attempt-1-collected, every task has attempt 1    -&gt; render fix prompts per D10 -&gt; attempt-2-submitted
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>                                                                      (or finalizing when attempts == 1 or nothing to fix)
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>advance           attempt-2-collected                              -&gt; finalizing -&gt; finalized
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>advance           submit-unknown                                   -&gt; reconcile per 4.3; exit 4 unless adopted
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>advance           any phase, D13 drift                             -&gt; refuse; exit 4
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>retry             prepared with retryable lastError                -&gt; submit identical bodies
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>retry --force     prepared with non-retryable lastError            -&gt; submit identical bodies (classification was wrong)
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>retry --adopt     submit-unknown                                   -&gt; adopt after validation
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>retry --confirm-not-submitted   submit-unknown                     -&gt; prepared (operator statement)
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>abandon           any non-finalized                                -&gt; provider cancel where one exists; cleanup; abandoned; never finalized or ingested
+</code></pre></div>
+<p>Idempotency against the files: collect skips ids present in <code>responses/</code>;
+evaluate skips tasks with an <code>attempts/</code> file; finalize re-uses
+<code>resultsFile</code> and <code>ingestedRunId</code>; the results path is deterministic
+(<code>benchmark-results-&lt;runId&gt;.json</code>); a crash between server-accepted ingest
+and the local <code>ingestedRunId</code> write is recovered by re-sending with the
+same run id, which the server treats as a replay.</p>
+<h3 id="46-suspended-run-integrity-d13">4.6 Suspended-run integrity (D13)<a class="headerlink" href="#46-suspended-run-integrity-d13" title="Permanent link">&para;</a></h3>
+<p>At every <code>advance</code>, each frozen digest is recomputed and compared: task-set
+hash; the digest of every template referenced by any task in the run (the
+current <code>promptTemplateDigest</code> hashes a fixed five, <code>capture.ts:129-153</code>);
+the harness fingerprint over the expanded list (section 10);
+<code>prompt-inputs.json</code>'s digest; git SHA and clean-tree state; and, before
+any compile wave, the <code>ContainerEnvironmentSet</code> of the containers about to
+be used, which must equal wave 1's exactly (sorted names, artifact,
+image). Any difference refuses to proceed (exit 4) naming the input; the
+operator restores the tree or abandons the run.</p>
+<h2 id="5-batchprovider">5. <code>BatchProvider</code><a class="headerlink" href="#5-batchprovider" title="Permanent link">&para;</a></h2>
+<p><code>src/llm/batch/types.ts</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">BatchItem</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">itemId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">body</span><span class="o">:</span><span class="w"> </span><span class="kt">unknown</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">BatchHandle</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">provider</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchProviderName</span><span class="p">;</span><span class="w"> </span><span class="nx">batchId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">extra?</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">BatchPoll</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nx">processing</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w"> </span><span class="nx">providerStatus</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">rawCounts</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">number</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nx">extra?</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;</span><span class="p">;</span><span class="w"> </span><span class="nx">providerReportedCostUsd?</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nx">sizeRejected?</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w">              </span><span class="c1">// asynchronous validation failed on size (5.3)</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">}</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">BatchItemResult</span><span class="w"> </span><span class="o">=</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">itemId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">ok</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">;</span><span class="w"> </span><span class="nx">raw</span><span class="o">:</span><span class="w"> </span><span class="kt">unknown</span><span class="p">;</span><span class="w"> </span><span class="nx">httpStatus</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">itemId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">ok</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="p">;</span><span class="w"> </span><span class="nx">raw?</span><span class="o">:</span><span class="w"> </span><span class="kt">unknown</span><span class="p">;</span><span class="w"> </span><span class="nx">error</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchErrorKind</span><span class="p">;</span><span class="w"> </span><span class="nx">code?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">message</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">retryable</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">BatchErrorKind</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"expired"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"cancelled"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"overloaded"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"rate_limited"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"server"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"invalid_request"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"integrity"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"unknown"</span><span class="p">;</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">BatchProvider</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">  </span><span class="k">readonly</span><span class="w"> </span><span class="nx">provider</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchProviderName</span><span class="p">;</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">  </span><span class="nx">submit</span><span class="p">(</span><span class="nx">model</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">items</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchItem</span><span class="p">[],</span><span class="w"> </span><span class="nx">nonce</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">BatchHandle</span><span class="o">&gt;</span><span class="p">;</span><span class="w">  </span><span class="c1">// throws BatchSubmitRejected { status, retryable, sizeLimit }</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">  </span><span class="nx">poll</span><span class="p">(</span><span class="nx">handle</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchHandle</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">BatchPoll</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">  </span><span class="nx">collect</span><span class="p">(</span><span class="nx">handle</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchHandle</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">BatchItemResult</span><span class="p">[]</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">  </span><span class="nx">listCandidates</span><span class="p">(</span><span class="nx">since</span><span class="o">:</span><span class="w"> </span><span class="kt">Date</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nb">Array</span><span class="o">&lt;</span><span class="p">{</span><span class="w"> </span><span class="nx">batchId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">createdAt</span><span class="o">:</span><span class="w"> </span><span class="kt">Date</span><span class="p">;</span><span class="w"> </span><span class="nx">total?</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">nonce?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">model?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">ended</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="p">}</span><span class="o">&gt;&gt;</span><span class="p">;</span>
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">  </span><span class="nx">cancel</span><span class="o">?</span><span class="p">(</span><span class="nx">handle</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchHandle</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="ow">void</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">  </span><span class="nx">cleanup</span><span class="o">?</span><span class="p">(</span><span class="nx">handle</span><span class="o">:</span><span class="w"> </span><span class="kt">BatchHandle</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="ow">void</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">  </span><span class="k">readonly</span><span class="w"> </span><span class="nx">limits</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">maxItems</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">maxBytes</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">};</span><span class="w">   </span><span class="c1">// conservative, configurable</span>
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="p">}</span>
+</code></pre></div>
+<p>Raw items become <code>LLMResponse</code> through the shared response mappers, then
+<code>resolveCandidate</code>; an HTTP-200 empty answer or refusal is a response the
+shared evaluation turns into a failed attempt, never a <code>BatchItemResult</code>
+error. Transport failures on any operation get bounded exponential backoff
+inside <code>advance</code> (5 tries, 2 s base, 60 s cap).</p>
+<p><strong>Size handling.</strong> Byte size is the UTF-8 length of the complete serialized
+envelope for the chunk, wrapper included. A synchronous 413 / size
+validation error, or an asynchronous validation failure that names a size
+limit (<code>sizeRejected</code>), halves <strong>that chunk only</strong>, keeps the same round and
+item ids, and resubmits within the same <code>advance</code>. A chunk that cannot be
+halved further (one item over the limit) marks the run operator-blocked
+(exit 4) with the item named. Size handling never consumes the item
+resubmission round.</p>
+<h3 id="51-anthropic">5.1 Anthropic<a class="headerlink" href="#51-anthropic" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Op</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>body</td>
+<td>Messages params from a configured <code>AnthropicAdapter</code>'s <code>buildRequestParams(request)</code>; no <code>fallbacks</code>, no fallback beta (D12)</td>
+</tr>
+<tr>
+<td>submit</td>
+<td><code>messages.batches.create({ requests: [{ custom_id, params }] })</code></td>
+</tr>
+<tr>
+<td>poll</td>
+<td><code>processing = processing_status !== "ended"</code>; <code>canceling</code> is processing; <code>rawCounts = request_counts</code></td>
+</tr>
+<tr>
+<td>collect</td>
+<td>stream <code>results_url</code> JSONL; always on <code>ended</code>; <code>succeeded</code> → ok (a refusal is <code>succeeded</code> with <code>stop_reason: refusal</code>); <code>errored</code> → kind from <code>error.type</code>; <code>expired</code> / <code>canceled</code> → those kinds</td>
+</tr>
+<tr>
+<td>listCandidates</td>
+<td><code>messages.batches.list()</code> → id, createdAt, total, ended</td>
+</tr>
+<tr>
+<td>limits</td>
+<td>100,000 items / 256 MB</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52-openai">5.2 OpenAI<a class="headerlink" href="#52-openai" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Op</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>body</td>
+<td>non-streaming chat-completions params <code>buildRequestParams(request, false)</code>, wrapped per line <code>{ custom_id, method: "POST", url: ENDPOINT, body }</code>; <code>ENDPOINT</code> per spike 2</td>
+</tr>
+<tr>
+<td>submit</td>
+<td>JSONL to a temp file named by the nonce → <code>files.create({ purpose: "batch" })</code> → persist <code>inputFileId</code> into <code>intent.json</code> → <code>batches.create({ input_file_id, endpoint, completion_window: "24h", metadata: { nonce, runId } })</code> → delete the local temp file. Batch creation failure after upload deletes the remote file, then throws.</td>
+</tr>
+<tr>
+<td>poll</td>
+<td>processing unless status in <code>completed \| failed \| expired \| cancelled</code>; <code>cancelling</code> is processing; <code>extra</code> gains <code>outputFileId</code> / <code>errorFileId</code></td>
+</tr>
+<tr>
+<td>collect</td>
+<td>download output and error files (both may exist on <code>expired</code>; completed items there are billed and kept). Merge by <code>custom_id</code>; an id in <strong>both</strong> files is an integrity error: the item gets <code>error.kind: "integrity"</code>, is not resubmitted, and becomes a failed attempt through <code>createFailedAttempt</code>.</td>
+</tr>
+<tr>
+<td>cleanup</td>
+<td>delete the remote input file after a successful collect and on every terminal or abandon path; best-effort deletion of any input file whose name carries this run's nonce (orphan from a crash between upload and <code>intent.json</code>)</td>
+</tr>
+<tr>
+<td>listCandidates</td>
+<td><code>batches.list()</code> → id, createdAt, nonce, ended</td>
+</tr>
+<tr>
+<td>limits</td>
+<td>50,000 items / 200 MB</td>
+</tr>
+</tbody>
+</table>
+<h3 id="53-openrouter">5.3 OpenRouter<a class="headerlink" href="#53-openrouter" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Op</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>body</td>
+<td>non-streaming chat-completions params from <code>OpenRouterAdapter.buildRequestParams(request, false)</code>; Google models share <code>response_format</code> per batch, asserted at chunking</td>
+</tr>
+<tr>
+<td>submit</td>
+<td><code>POST /api/beta/batches</code>, body <code>{ endpoint: "/v1/chat/completions", model, requests }</code> in that key order; plain slug</td>
+</tr>
+<tr>
+<td>poll</td>
+<td>processing unless status in <code>completed \| failed \| expired \| cancelled</code>; <code>providerReportedCostUsd</code> from the batch-level <code>usage.cost</code> when completed; a <code>failed</code> batch whose error names a size limit sets <code>sizeRejected</code></td>
+</tr>
+<tr>
+<td>collect</td>
+<td><code>results[]</code> inline on <code>completed</code>; on <code>failed</code> / <code>expired</code> / <code>cancelled</code> <code>results</code> is null: every item unresolved, eligible for the single resubmission, and the duplicate provider work reported in the scores file</td>
+</tr>
+<tr>
+<td>listCandidates</td>
+<td><code>GET /api/beta/batches?created_after=</code> → id, createdAt, model, total, ended</td>
+</tr>
+<tr>
+<td>cancel</td>
+<td>none documented; <code>abandon</code> marks locally and says so</td>
+</tr>
+<tr>
+<td>limits</td>
+<td>undocumented; initial ceiling = half of spike 3's measurement, configurable</td>
+</tr>
+</tbody>
+</table>
+<h2 id="6-shared-execution-units-d6">6. Shared execution units (D6)<a class="headerlink" href="#6-shared-execution-units-d6" title="Permanent link">&para;</a></h2>
+<p>All in <code>src/parallel/shared/</code>, extracted with the sync path re-pointed in
+the same commit and its suites green. Most are pure; <code>runCompileWorkItem</code>
+is the side-effecting exception.</p>
+<table>
+<thead>
+<tr>
+<th>Unit</th>
+<th>From</th>
+<th>Contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>buildAttemptContext</code></td>
+<td>orchestrator</td>
+<td><code>(manifest, variantConfig, runSettings, attempt, prior?) =&gt; TaskExecutionContext</code></td>
+</tr>
+<tr>
+<td><code>renderLLMRequest</code></td>
+<td><code>LLMWorkPool.executeWork</code> / <code>prompt-building.ts</code></td>
+<td><code>(context, attempt, prior?, inputs: FrozenPromptInputs) =&gt; LLMRequest</code>. Attempt 2 from <code>prior.candidateCode ?? prior.extractedCode</code>, ordered <code>failureReasons</code>, first-20-errors rule, 400,000-char cap, <code>retrySourceFor</code>. No implicit reads from <code>Deno.cwd()</code>.</td>
+</tr>
+<tr>
+<td><code>buildRequestParams</code></td>
+<td>adapters</td>
+<td><code>(request, stream)</code> on OpenAI and OpenRouter; <code>(request)</code> on Anthropic</td>
+</tr>
+<tr>
+<td>response mappers</td>
+<td>adapters</td>
+<td>pure functions over <strong>typed fragments</strong>, not a raw object: <code>mapContent(text)</code>, <code>mapUsage(usageFragment)</code>, <code>mapFinishReason(rawReason) → { finishReason, providerFinishReason }</code>, <code>extractFallback(fragment, requestedModel)</code>, <code>assembleResponse(parts)</code>. Streaming finalization feeds accumulated fragments; batch feeds the fields of the raw body. OpenAI's streaming path has no raw final object (<code>openai-adapter.ts:292-302</code>), which is why the boundary is fragments. Usage is returned without price.</td>
+</tr>
+<tr>
+<td><code>priceUsage</code></td>
+<td>new, over <code>PricingService</code></td>
+<td><code>({ usage, provider, requestedModel, servedModel?, mode }) =&gt; usage with estimatedCost</code>; served model wins when present (today's sync Anthropic behaviour via <code>pricingSlugForAttempt</code>). The only place cost is computed; empty-retry merging in the sync pool merges token counts and prices once afterwards.</td>
+</tr>
+<tr>
+<td><code>resolveCandidate</code></td>
+<td><code>candidate-resolution.ts</code></td>
+<td>already shared</td>
+</tr>
+<tr>
+<td><code>buildCompileWorkItem</code></td>
+<td>orchestrator</td>
+<td><code>(context, attempt, llmResponse, candidateCode, overlayBase) =&gt; CompileWorkItem</code></td>
+</tr>
+<tr>
+<td><code>runCompileWorkItem</code></td>
+<td>orchestrator</td>
+<td><code>(item, deps: { queue: CompileWorkQueue; containers; healthMonitor?; events; infraRetry }) =&gt; { compileResult; infraRetries }</code></td>
+</tr>
+<tr>
+<td><code>evaluateAttempt</code></td>
+<td>orchestrator <code>createAttempt</code></td>
+<td>pattern gates, score, failure reasons, timings, usage, priced cost, <code>prompt</code> from the rendered request, <code>providerFinishReason</code>, <code>providerErrorCode</code></td>
+</tr>
+<tr>
+<td><code>createFailedAttempt</code></td>
+<td>orchestrator</td>
+<td><code>(attempt, failure, request: LLMRequest, providerError?) =&gt; ExecutionAttempt</code></td>
+</tr>
+<tr>
+<td><code>synthesizeInfraAttempt</code></td>
+<td>new; replaces the whole-result synthesizer <strong>in both modes</strong></td>
+<td>an attempt-level infra record that preserves prior attempts and the attempt number; the task then terminates (D10). The sync orchestrator's outside-the-loop catch appends it instead of replacing the task result.</td>
+</tr>
+<tr>
+<td><code>finalizeTaskResult</code></td>
+<td>orchestrator</td>
+<td>final code, success, metrics; batch <code>totalDuration</code> = sum of attempt durations; queue time is on the run</td>
+</tr>
+</tbody>
+</table>
+<p><code>LLMWorkResult</code> gains <code>request?: LLMRequest</code> (D11).</p>
+<h2 id="7-compiletest-phase">7. Compile/test phase<a class="headerlink" href="#7-compiletest-phase" title="Permanent link">&para;</a></h2>
+<p><code>advance</code> bootstraps containers through a <code>ContainerRuntime</code> extracted from
+<code>parallel-executor.ts</code> (setup, health monitor, recovery prober, outcome
+recorder, end-of-run nuke) and feeds the queue with a bounded feeder at the
+preset's <code>taskConcurrency</code>. It holds the <strong>exclusive</strong> global bench lock
+(D14) for the whole phase. Before each wave it captures the
+<code>ContainerEnvironmentSet</code> and enforces 4.6.</p>
+<h2 id="8-commands">8. Commands<a class="headerlink" href="#8-commands" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Does</th>
+<th>Exit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>submit --preset P --llms &lt;one slug&gt; [--runs N] [--output DIR] [--no-ingest]</code></td>
+<td>precheck; freeze inputs (<code>prompt-inputs.json</code>, digests); mint N run ids and directories; render and submit wave 1 per run</td>
+<td>0 / 4</td>
+</tr>
+<tr>
+<td><code>status [runId] [--json]</code></td>
+<td>per run: phase, wave, batches (id, provider status, raw counts, age, reported cost), unresolved items, reconciliation candidates, last error, next action</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>advance &lt;runId&gt; \| --all</code></td>
+<td>one step per 4.5; <code>--all</code> serial</td>
+<td>0 / 3 / 4</td>
+</tr>
+<tr>
+<td><code>retry &lt;runId&gt; [--force] [--adopt &lt;batchId&gt;] [--confirm-not-submitted]</code></td>
+<td>per 4.5</td>
+<td>0 / 4</td>
+</tr>
+<tr>
+<td><code>abandon &lt;runId&gt;</code></td>
+<td>provider cancel and cleanup where they exist; <code>abandoned</code></td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p><code>submit</code> refuses a model whose snapshot lacks batch pricing. No balance
+estimator. Scheduled <code>advance --all</code> is documented only after a run has
+been driven by hand end to end.</p>
+<h2 id="9-failure-handling">9. Failure handling<a class="headerlink" href="#9-failure-handling" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>Recorded</th>
+<th>Outcome</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Submit rejected, retryable</td>
+<td><code>lastError</code>, <code>prepared</code></td>
+<td><code>retry</code> resubmits identical bodies</td>
+</tr>
+<tr>
+<td>Submit rejected, non-retryable</td>
+<td><code>lastError</code>, <code>prepared</code></td>
+<td><code>retry --force</code> if the classification was wrong; otherwise <code>abandon</code> and create a new run - bodies are never edited under a run id</td>
+</tr>
+<tr>
+<td>Submit rejected or later invalidated for size</td>
+<td>event</td>
+<td>re-chunk per section 5</td>
+</tr>
+<tr>
+<td>Crash after submit, before handle persisted</td>
+<td><code>submit-unknown</code></td>
+<td>4.3</td>
+</tr>
+<tr>
+<td>Batch ended with unresolved items (retryable error, expired, cancelled; OpenRouter results null)</td>
+<td>per-item records</td>
+<td>one resubmission round, then terminal</td>
+</tr>
+<tr>
+<td>Item error, non-retryable or integrity</td>
+<td>record</td>
+<td><code>createFailedAttempt</code>, <code>termination_kind: provider_error</code>, <code>providerErrorCode</code> set, tokens 0</td>
+</tr>
+<tr>
+<td>Unresolved after the resubmission round</td>
+<td>records for both rounds</td>
+<td>failed attempt, <code>termination_kind: provider_error</code>, <code>providerFinishReason: "batch_expired"</code> or the provider's error type</td>
+</tr>
+<tr>
+<td>Ok response: empty or refusal</td>
+<td>record; shared mappers + <code>resolveCandidate</code></td>
+<td>failed attempt as sync scores it; not resubmitted; gets attempt 2 (D10)</td>
+</tr>
+<tr>
+<td>Compile/test infra exhaustion</td>
+<td><code>synthesizeInfraAttempt</code> (both modes)</td>
+<td>task terminates; no attempt 2 (D10). Ingest excludes infra-invalidated attempts in both modes (<code>ingest-assembly.ts:126-155</code>, <code>infra-invalidation.ts:12-32</code>): the infra-synthesized attempt itself is excluded from the payload, but any real prior attempt of the task stays in it (D10 as implemented) - so the task is absent from the payload only when every attempt was infra; an all-infra run is refused by assembly, and the strict denominator treats missing coverage as unsolved. Parity with today, not an improvement.</td>
+</tr>
+<tr>
+<td>Crash mid-evaluate</td>
+<td><code>attempts/</code> files for finished tasks</td>
+<td>remaining tasks redone whole</td>
+</tr>
+<tr>
+<td>D13 drift</td>
+<td>4.6</td>
+<td>refuse</td>
+</tr>
+</tbody>
+</table>
+<h2 id="10-results-capture-settings-site">10. Results, capture, settings, site<a class="headerlink" href="#10-results-capture-settings-site" title="Permanent link">&para;</a></h2>
+<p><strong>Canonical settings (D4).</strong> Two types, one helper at <code>shared/settings-hash.ts</code>
+(next to <code>shared/canonical.ts</code>, which both runtimes already import), with a
+fixture the client and server tests both assert:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">CanonicalSettingsExtras</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nx">invocation_mode</span><span class="o">:</span><span class="w"> </span><span class="s2">"sync"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"batch"</span><span class="p">;</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nx">continuation</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">enabled</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w"> </span><span class="nx">max</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nx">empty_retry</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">enabled</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w"> </span><span class="nx">max</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nx">fallback_policy</span><span class="o">:</span><span class="w"> </span><span class="s2">"requested"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"unavailable"</span><span class="p">;</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nx">provider_route</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">                 </span><span class="c1">// "anthropic", "openrouter:google/gemini-3.8-flash"</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nx">endpoint</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">                       </span><span class="c1">// "/v1/messages", "/v1/chat/completions", "/v1/responses"</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nx">thinking_budget</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nx">prompt_profile_digest</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">          </span><span class="c1">// sha256 over resolved overrides + knowledge + variant system prompt</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nx">infra_retries_per_attempt</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="p">}</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">CanonicalSettings</span><span class="w"> </span><span class="p">{</span><span class="w">             </span><span class="c1">// the six keys the server hashes today, unchanged</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="nx">temperature</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">  </span><span class="nx">max_attempts</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="nx">max_tokens</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="nx">prompt_version</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">  </span><span class="nx">bc_version</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">  </span><span class="nx">extra_json</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w">              </span><span class="c1">// canonicalJSON(CanonicalSettingsExtras); stored verbatim in settings_profiles.extra_json</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="p">}</span>
+</code></pre></div>
+<p>The server's six-key hash function is unchanged and the D1 <code>extra_json</code>
+TEXT column receives the same canonical string. Legacy <code>null</code> and legacy
+string values hash exactly as before; historical rows are never recomputed.
+Sources of the effective values: <code>temperature</code>, <code>max_tokens</code>, <code>max_attempts</code>
+from <code>TaskExecutionResult.context</code>; <code>continuation</code>, <code>empty_retry</code>,
+<code>fallback_policy</code>, <code>infra_retries_per_attempt</code> from the executor's resolved
+configuration, which is now written into <code>IngestMeta</code> (schema 4) at save
+time so <code>assembleBenchResultsForVariant</code> reads them from the file, not from
+live config. Future sync runs get a new hash; that is correct.</p>
+<p><strong>Query enforcement (D4).</strong> <code>runs.invocation_mode</code> is a required predicate
+in every scope of the aggregate, tier, leaderboard, matrix and compare
+queries - outer <code>runs</code>, the attempt subqueries, and every secondary
+aggregate (tokens, consistency, latency, pass-hat, fallback count). <code>mode</code>
+is a parsed field of <code>LeaderboardQuery</code>, <code>AucMatrixOptions</code> and the matrix
+query so it enters every cache key. Ranked endpoints refuse <code>mode=all</code>
+(<code>400 invalid_mode_for_metric</code>). Default: if the selected task set has runs
+in one mode only, that mode; if both, <code>mode</code> is required. Never derived
+from another task set or from the globally most recent run.</p>
+<p><strong>Harness fingerprint.</strong> <code>harnessFingerprint()</code> learns to expand a
+directory entry recursively in sorted path order; <code>HARNESS_INPUTS</code> gains
+<code>src/parallel/shared/</code> (directory), <code>src/parallel/infra-retry.ts</code>,
+<code>src/llm/prompt-building.ts</code>, <code>src/tasks/object-overlay.ts</code>,
+<code>src/llm/candidate-resolution.ts</code>, <code>src/parallel/llm-work-pool.ts</code>. The
+claim it supports is "the code that decides a verdict or a prompt", not
+"every file". gold-ci re-baselines once.</p>
+<p><strong>Attempt record.</strong> <code>ExecutionAttempt</code> gains the rendered <code>prompt</code> (both
+modes, failures included), <code>providerFinishReason?</code>, <code>providerErrorCode?</code>,
+<code>providerRequestId?</code>. Ingest maps <code>provider_finish_reason</code> and
+<code>provider_error_code</code> through <code>BenchResultItem</code>, <code>ResultInput</code> and the
+server insert (<code>runs/+server.ts:420-475</code> hardcodes null today);
+<code>provider_request_id</code> stays local.</p>
+<p><strong>Results file.</strong> <code>IngestMeta</code> schema 4: <code>invocations[variant]</code> gains typed
+<code>mode</code>, <code>endpoint</code>, <code>provider_route</code>, <code>fallback_policy</code>, the executor's
+resolved retry policies, and
+<code>batch?: { provider; waves: [...]; resubmittedItems; environmentByWave: Record&lt;1|2, ContainerEnvironmentSet&gt; }</code>.
+<code>parseIngestMeta</code> accepts schema 4; <code>src/ingest/mod.ts</code> and
+<code>src/ingest/envelope.ts</code> send <code>invocation_mode</code>; the run's environment
+column carries wave 1's representative container as today. <code>saveScoresFile</code>
+takes a typed optional batch block and prints <code># Batch</code>.</p>
+<p><strong>Site.</strong> Migration <code>0019_batch_mode.sql</code>: <code>runs.invocation_mode TEXT NOT NULL DEFAULT 'sync'</code>;
+four nullable batch rate columns on <code>cost_snapshots</code>; <code>v_results_with_cost</code>
+recreated to pick them when the joined run is <code>batch</code>; <code>rowCostUsd()</code> the
+same branch; <code>results.provider_finish_reason</code> and <code>results.provider_error_code</code>
+populated. <code>sync-catalog</code> learns the four fields; <code>_cv</code> bump; migration →
+sync-catalog → deploy.</p>
+<h2 id="11-spikes-run-as-the-plans-first-task">11. Spikes, run as the plan's first task<a class="headerlink" href="#11-spikes-run-as-the-plans-first-task" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Anthropic refusal in batch</strong> (Haiku 4.5, three items, one designed to
+   refuse): refusals return as <code>succeeded</code> items with <code>stop_reason: refusal</code>
+   and the shared mappers score them as sync scores an unrescued refusal.</li>
+<li><strong>GPT-6 Astra endpoint</strong> (gpt-5-mini then Astra, one item each on
+   chat-completions and responses): fixes <code>ENDPOINT</code> and whether a
+   Responses builder/mapper is needed.</li>
+<li><strong>OpenRouter shape and limits</strong> (small model): key order, inline results,
+   reasoning params for Gemini 3.8 Flash, batch-level <code>usage.cost</code>, and a
+   measured item/byte ceiling.</li>
+</ol>
+<h2 id="12-testing">12. Testing<a class="headerlink" href="#12-testing" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>State machine</strong> with a scripted fake provider: every transition in 4.5;
+  reconciliation per provider (OpenAI exact nonce adopt; Anthropic and
+  OpenRouter candidate inspection, exact-set equality, superset rejected,
+  <code>--adopt</code> validation, <code>--confirm-not-submitted</code>); size re-chunking down to
+  the single-item stop; the single resubmission round; ownership freezing;
+  D13 refusal per frozen input; deterministic finalize and ingest replay.</li>
+<li><strong>Persistence:</strong> crash injection between every pair of writes in 4.3 and
+  4.5; torn JSONL; duplicate appends; OpenAI upload-then-crash and orphan
+  cleanup.</li>
+<li><strong>Exclusive lock (D14):</strong> two processes race <code>acquireBenchLock</code>; exactly
+  one wins; stale reclamation; owner-checked release.</li>
+<li><strong>Equivalence (D7):</strong> batch body vs <code>buildRequestParams(…, false)</code>; the
+  same fragments through the mappers in both paths; OpenRouter key order;
+  OpenAI JSONL framing, output/error merge and the both-files integrity
+  case; Anthropic JSONL with every <code>result.type</code> including refusal.</li>
+<li><strong>Shared units:</strong> sync suites green; normalized golden of batch vs sync
+  <code>TaskExecutionResult[]</code>; failed attempts carry the rendered prompt;
+  attempt-level infra record in both modes.</li>
+<li><strong>Settings hash:</strong> client and server agree on the fixture; legacy <code>null</code>
+  and string <code>extra_json</code> unchanged; <code>mode=all</code> refused; default-mode rule.</li>
+<li><strong>Pricing:</strong> <code>priceUsage</code> both modes, served-model precedence; refusal
+  without batch columns; empty-retry merge priced once.</li>
+<li><strong>Site:</strong> migration, view, <code>rowCostUsd</code>, mode predicates and cache keys,
+  <code>parseIngestMeta</code> schema 4, under the built-bundle vitest.</li>
+</ul>
+<h2 id="13-file-map">13. File map<a class="headerlink" href="#13-file-map" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>shared/settings-hash.ts
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>src/llm/batch/{types,anthropic-batch,openai-batch,openrouter-batch,registry}.ts
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>src/llm/{anthropic,openai,openrouter}-adapter.ts        buildRequestParams public/extracted; fragment mappers
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>src/llm/pricing-service.ts + src/parallel/shared/price-usage.ts
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>src/parallel/shared/{attempt-context,render-request,compile-work-item,run-compile,evaluate-attempt,failed-attempt,infra-attempt,finalize-task}.ts
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>src/parallel/{llm-work-pool,orchestrator}.ts            re-pointed; LLMWorkResult.request; attempt-level infra record
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>src/parallel/container-runtime.ts                        extracted from cli/commands/bench/parallel-executor.ts
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>src/utils/bench-lock.ts                                  exclusive lock (D14)
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>src/utils/harness-fingerprint.ts                         directory expansion + new entries
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>src/ingest/{mod,envelope,capture}.ts; cli/commands/bench/{ingest-meta,ingest-assembly,results-writer}.ts
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>src/tasks/interfaces.ts (ExecutionAttempt fields)
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>src/batch/{state,intent,journal,reconcile,run,advance,retry,results}.ts
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>cli/commands/bench-batch-command.ts
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>site/migrations/0019_batch_mode.sql
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>site/src/lib/server/{cost-sql,ingest,model-aggregates,tier-data,leaderboard}.ts; site/src/routes/api/v1/{leaderboard,matrix,compare,runs}/…; site/src/lib/shared/types.ts
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>site/catalog/pricing.yml
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>FallRelease.md, CLAUDE.md
+</code></pre></div>
+<h2 id="14-rollout">14. Rollout<a class="headerlink" href="#14-rollout" title="Permanent link">&para;</a></h2>
+<ol>
+<li>D14 exclusive lock; shared-unit extraction; <code>LLMWorkResult.request</code>; the
+   prompt-capture fix; attempt-level infra record in sync;
+   <code>providerFinishReason</code>/<code>providerErrorCode</code>; sync suites green.</li>
+<li>Canonical settings on client and server; <code>invocation_mode</code> end to end
+   with mode predicates and cache keys; migration; pricing columns; deploy
+   in the standard order; gold-ci re-baseline for the expanded fingerprint.</li>
+<li>Spikes.</li>
+<li>Anthropic batch end to end on Haiku 4.5, one run, driven by hand; verify
+   capture on its results file as Phase 3 of the runbook requires.</li>
+<li>OpenAI, then OpenRouter, each with its own hand-driven run.</li>
+<li>Campaign scout: Opus 5 through <code>bench batch</code>.</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

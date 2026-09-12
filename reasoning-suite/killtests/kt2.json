@@ -1,0 +1,129 @@
+{
+  "_note": "Lane 2. Full AL setup bodies are in the kt2 subagent transcript.",
+  "CG-AL-M006": {
+    "killTests": [
+      {
+        "name": "TestPaymentHistoryRatingReflectsOwnPaymentPattern",
+        "closes": ["M0011", "M0012", "M0020"],
+        "setup": "New helpers InsertClosedInvoice(CustomerNo; DueDate; ClosedAtDate) writing a Cust. Ledger Entry directly, and DeleteLedgerEntries(CustomerNo). Create two customers: one settles its only invoice BEFORE the due date (Today due, closed Today-5), the other AFTER (Today-20 due, closed Today). Read CalculatePaymentHistoryRating() on each.",
+        "assertion": "Assert.IsTrue(OnTimeRating > LateRating, 'A customer that settled its invoice before the due date should rate higher than one that settled after the due date');",
+        "referenceValue": "100 vs 0.",
+        "mutantValue": "M0012 (Customer No. SetRange removed): both calls read the identical unscoped set, so the two ratings are equal. M0011 (body emptied) and M0020 (exit(Rating) -> exit(0.0)): both return 0.",
+        "whyRobust": "Purely relative: pins no formula, no scale, no neutral default, so any implementation grading payment behaviour at all passes, and it does not care whether the procedure writes the stored field. The M0012 kill is immune to demo data: 'No.' is used by the reference ONLY in the removed SetRange, so with the filter gone both customers compute over byte-identical input and can never differ however many demo entries exist. Dates are strictly before/after the due date, so it does not depend on how the paid-exactly-on-due-date boundary is read."
+      },
+      {
+        "name": "TestTriggerRiskAssessmentRecomputesRiskLevel",
+        "closes": ["M0034"],
+        "setup": "Customer with \"Credit Score\" := 800 but a stale stored \"Risk Level\" := Critical, assigned directly rather than through Validate so the test isolates TriggerRiskAssessment and does not double as a test of the Credit Score OnValidate path. Call TriggerRiskAssessment() then Get() back.",
+        "assertion": "Assert.AreEqual(Customer.\"Risk Level\"::Low, Customer.\"Risk Level\", 'A risk assessment should leave the stored risk level matching the credit score');",
+        "referenceValue": "Low - 800 falls in the spec's 670-850 band.",
+        "mutantValue": "M0034 (UpdateRiskLevel() removed from TriggerRiskAssessment): stays Critical.",
+        "whyRobust": "The score-to-band mapping is spelled out in the spec. Deliberately did NOT add a stored-vs-returned rating agreement assert: that would additionally assume the assessment refreshes the stored rating, and M0011/M0020 are already closed without that assumption."
+      },
+      {
+        "name": "TestCreditLimitFallsAsRiskRises",
+        "closes": ["M0023", "M0024"],
+        "setup": "Helper LimitForScore(var Customer; CreditScore) that sets the score, calls UpdateRiskLevel(), and returns GetCreditLimit(). Re-score ONE customer into each band: 800 / 620 / 540 / 320.",
+        "assertion": "Assert.IsTrue(LowLimit > 0, ...); Assert.IsTrue(LowLimit >= MediumLimit, 'A medium-risk customer should not be granted a larger credit limit than a low-risk one'); Assert.IsTrue(MediumLimit >= HighLimit, ...); Assert.IsTrue(HighLimit >= CriticalLimit, ...);",
+        "referenceValue": "100000 / 50000 / 10000 / 1000.",
+        "mutantValue": "M0023 (Medium arm -> 0): MediumLimit 0 < HighLimit 10000, third assert fails. M0024 (High arm -> 0): HighLimit 0 < CriticalLimit 1000, fourth assert fails.",
+        "whyRobust": "Monotonicity is the only thing 'determine credit limit based on risk' actually asserts; no amount is pinned, and non-strict >= tolerates two adjacent bands sharing a limit or a critical-risk customer getting zero. Any 'based on risk' scheme is monotone."
+      },
+      {
+        "name": "TestValidateNewOrderAtExactCreditLimit",
+        "closes": ["M0031"],
+        "setup": "Fresh low-risk customer (score 800, UpdateRiskLevel, Modify) so Balance (LCY) is 0 without asserting anything about balance handling. Read CreditLimit := GetCreditLimit() back rather than hardcoding, then ValidateNewOrder(CreditLimit).",
+        "assertion": "Assert.IsTrue(IsValid, 'An order equal to the credit limit should be approved');",
+        "referenceValue": "0 + 100000 <= 100000 -> true.",
+        "mutantValue": "M0031 (<= -> <): 100000 < 100000 is false -> returns false.",
+        "whyRobust": "Straight from the spec: 'return true if order is within credit limit, false if it exceeds the limit' - an order equal to the limit does not exceed it. Reading the amount back from GetCreditLimit means it holds for any tier amounts an implementation chooses."
+      },
+      {
+        "name": "TestPreferredPaymentMethodCanBeCleared",
+        "closes": ["M0009"],
+        "setup": "Set a preferred payment method via Validate, Modify, then Validate('') and Modify again; Get() back.",
+        "assertion": "Assert.AreEqual('', Customer.\"Preferred Payment Method\", 'Clearing the preferred payment method should be accepted and stored');",
+        "referenceValue": "the blank guard short-circuits, Validate returns normally, stored value is ''.",
+        "mutantValue": "M0009 (\"Preferred Payment Method\" <> '' -> = ''): validating a blank now runs PaymentMethod.Get(''), which fails, so the trigger raises and the test aborts on an unexpected error.",
+        "whyRobust": "The field is an optional Code[10] with a TableRelation and no NotBlank, so blank is legal by construction and nothing in the spec asks for a mandatory payment method. Asserting stored state rather than the absence of a particular error means an implementation guarding blanks differently (Get vs IsEmpty vs the TableRelation alone) still passes, and it leaves the existing invalid-code test untouched."
+      }
+    ]
+  },
+  "CG-AL-M007": {
+    "killTests": [],
+    "specGaps": [
+      {
+        "code": "M0006",
+        "why": "The mutated block is the Customer dataitem's OnAfterGetRecord, which only assigns report column variables from side-effect-free getters. Nothing outside the report observes it: the report holds its own non-SingleInstance Mock Calculator, so the test's instance cannot see it, and the reads mutate nothing. The single observable is a dataset column value, and every Library - Report Dataset assertion is keyed by dataset COLUMN NAME. The spec names the calculations but never fixes a single column name - 'RunningTotalByCust', 'AvgOrderValue' are the reference's own invention - so any assertion closing this fails every correct implementation naming its columns differently. Value-only searching of the dataset XML is no way out: with OnPreDataItem intact the mutant still emits TotalSales/CustomerCount plus the raw line columns, so the surviving values collide with the ones being probed."
+      },
+      {
+        "code": "M0007",
+        "why": "Same channel as M0006, one step narrower: CalculateCustYoY is a local report procedure writing only locals, so removing the call is observable ONLY as a changed YoYComparison column, which requires naming it. The two spy-based alternatives are worse than the hole: recording the arguments handed to CalculateYoYComparison is a call-protocol assertion, and it would additionally pin the year split to Date2DMY(WorkDate(), 3), which the spec never states (an implementation keyed on Today's year is equally correct, and WorkDate is routinely not Today in a BC test session)."
+      },
+      {
+        "code": "M0002",
+        "why": "The mutated block is the SalesHeader OnPreDataItem body, dead unless the report's DateFilter request-page variable is non-blank, and the ONLY channel that sets it is a [RequestPageHandler] addressing the control by its AL name. The spec asks for 'Request page with date filters and options' and names no control; there is no by-caption access in TestRequestPage, and SetTableView filters the dataitem's table view without touching the report's DateFilter variable. SECOND, CONCRETE COST: adding a TestRequestPage parameter flips this whole oracle from the SOAP runner to the legacy client-session path - projectUsesTestPage (src/container/test-routing.ts:55-56) matches TestRequestPage as well as TestPage - so it would slow and destabilise every other test in the file."
+      },
+      {
+        "code": "M0003",
+        "why": "Same block as M0002, negated guard rather than emptied body, so the mutant calls SetFilter(\"Posting Date\", '') when blank (a no-op) and skips the filter when one was supplied. Identical reachability wall: needs a non-blank DateFilter via an implementation-chosen control name, plus a named dataset column to observe the difference."
+      },
+      {
+        "code": "M0045",
+        "why": "TryGetDateRange's body emptied leaves MinDate/MaxDate at 0D, so GetDaysInPeriod falls through to its 365 default and the only symptom is a changed OrderFrequency. GetDaysInPeriod returns 365 immediately when DateFilter is blank, so the mutated code is unreachable without the request-page control of M0002, and the 365 fallback itself is nowhere in the spec."
+      },
+      {
+        "code": "M0047",
+        "why": "Removing SetFilter inside TryGetDateRange makes GetRangeMin run unfiltered, the TryFunction fails, and GetDaysInPeriod again returns 365 - same symptom behind the same two unfixed names. Note the whole TryGetDateRange/GetDaysInPeriod pair is an implementation invention: the spec asks only for 'frequency metrics', never a period length derived from the filter range, so even with both names available an assertion here would enshrine one implementation's period arithmetic."
+      }
+    ]
+  },
+  "CG-AL-X002": {
+    "killTests": [
+      {
+        "name": "ZeroValueIsNotPoison",
+        "closes": ["M0010"],
+        "setup": "Reset(); AddInput(1, 10); AddInput(2, 0); AddInput(3, 30); Commit(); then Migration.RunOnce().",
+        "assertion": "Assert.IsTrue(Migration.RunOnce(), 'A run whose inputs include a zero value should succeed'); Assert.AreEqual(3, Result.Count(), 'A zero value produces a result row like any other input'); Assert.IsTrue(Result.Get(2), 'The zero-valued input should have a result row'); Assert.AreEqual(0, Result.Value, 'The result row should carry the input value');",
+        "referenceValue": "0 < 0 is false -> no error -> RunOnce true, 3 result rows, row 2 carries Value 0.",
+        "mutantValue": "M0010 (Value < 0 -> Value <= 0): entry 2 raises Error('poison'), Codeunit.Run returns false -> RunOnce false and 0 result rows.",
+        "whyRobust": "The spec says only a NEGATIVE value is poison, so zero must be copied like any other value. Assertions are on the committed result set, not on how the check is written, so any correct guard (< 0, not (>= 0), a sign test) passes."
+      },
+      {
+        "name": "ExistingGuardRowIsMarkedDone",
+        "closes": ["M0014", "M0015"],
+        "setup": "Insert a State guard row with blank primary key and Done := false BEFORE the run (every current test starts from Reset(), which deletes all State rows, so only the INSERT branch was ever exercised). Add two inputs, Commit, then RunOnce.",
+        "assertion": "Assert.IsTrue(Migration.RunOnce(), ...); Assert.AreEqual(2, Result.Count(), ...); Assert.IsTrue(State.Get('') and State.Done, 'Guard Done must be true after a clean run, including when the guard row already existed');",
+        "referenceValue": "the existing row is found, Done := true, Modify() persists it.",
+        "mutantValue": "M0014 (the 'Done := true; Modify()' block emptied): the row keeps Done = false. M0015 (Modify() removed): Done is set in memory only, the committed row still reads false.",
+        "whyRobust": "The spec clause verbatim, asserted from a RE-READ of the database rather than the in-memory record. Says nothing about HOW the row is reached, so FindFirst+Modify, Get-else-Insert and DeleteAll+Insert all pass."
+      }
+    ]
+  },
+  "CG-AL-H031": {
+    "killTests": [
+      {
+        "name": "TestCalcIfFlowField_True_OnGroup",
+        "closes": ["M0016"],
+        "setup": "SeedLedger(); ResetGroup(); insert and Get a 'CG H031 Group' row, RecRef.GetTable(Group), then CalcIfFlowField(RecRef, 10). Uses the same helpers and field number as the existing TestCalcIfFlowField_OnGroup_TotalAmount.",
+        "assertion": "Assert.IsTrue(Calc.CalcIfFlowField(RecRef, 10), 'CalcIfFlowField returns true for FlowField');",
+        "referenceValue": "field 10 exists on CG H031 Group and its class is FlowField, so CalcField runs and it returns true.",
+        "mutantValue": "M0016 (exit(true) -> exit(not (true))): returns false.",
+        "whyRobust": "Same property the spec states for procedure 3, but asserted against a prereq table the test SEEDS ITSELF - unlike the existing TestCalcIfFlowField_True, which is fronted by 'if not Customer.FindFirst() then exit;' and silently no-ops in a company with no Customer rows. It asserts only the return value, which that neighbouring test discards."
+      }
+    ]
+  },
+  "CG-AL-H038": {
+    "killTests": [
+      {
+        "name": "TestProcessJob_Success_PassesThroughProcessingStatus",
+        "closes": ["M0002"],
+        "setup": "NEW companion tests/al/hard/CG-AL-H038.StatusObserver.al, codeunit 80097 (free in the 80000-89999 test band), EventSubscriberInstance = Manual, subscribing to Database::\"CG H038 Job\" OnAfterModifyEvent and recording each distinct Rec.Status into a List of [Text], exposing HasObserved(Status). Mirrors the committed CG-AL-X095.ModifyObserver.Codeunit.al pattern. Test is [TransactionModel(TransactionModel::AutoCommit)]: reset and insert job 'OK2' as NEW/GOOD, Commit, BindSubscription(Observer), ProcessJob('OK2'), UnbindSubscription.",
+        "assertion": "Assert.IsTrue(Result, 'ProcessJob must return true on worker success.'); Assert.IsTrue(Observer.HasObserved('PROCESSING'), 'The job must be written as PROCESSING before it is written as DONE.'); Assert.AreEqual('DONE', Job.Status, 'Worker''s final Status:=DONE Modify must persist after Codeunit.Run completes.');",
+        "referenceValue": "two writes reach the job, so the observer holds ['PROCESSING','DONE'].",
+        "mutantValue": "M0002 (the first Rec.Modify(true) removed): 'PROCESSING' is only ever an in-memory assignment, so the observer holds ['DONE'] alone. The stored Status is still DONE, which is why all three existing tests pass.",
+        "whyRobust": "Deliberately on the SUCCESS path, so the kill does not depend on whether in-memory observer state survives a rolled-back sub-transaction - nothing is rolled back here. The intermediate write is prescribed by the spec statement-for-statement, so no correct implementation can skip it, and the observer keys on the status VALUE rather than a write count or ordering, so extra writes still pass. Manual binding keeps it from seeing the other three tests' writes. The companion carries the required CG-AL-H038. prefix so the bench copies it alongside the oracle."
+      }
+    ]
+  }
+}

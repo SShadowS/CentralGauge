@@ -1,0 +1,3086 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/batch-mode/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Batch mode operator guide - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#batch-mode-operator-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Batch mode operator guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run-directory-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run directory layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit codes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Exit codes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#driving-advance-to-completion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Driving advance to completion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recovery-spec-section-9-in-operator-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recovery (spec section 9, in operator language)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#crash-drill-observations-this-runs-own-drill" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Crash drill observations (this run's own drill)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#openai-hand-driven-run-gpt-5-mini" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI hand-driven run (gpt-5-mini)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OpenAI hand-driven run (gpt-5-mini)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-upload-crash-drill" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The upload-crash drill
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#three-hand-edits-used-to-complete-the-drill-on-the-unfixed-checkout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Three hand edits used to complete the drill on the unfixed checkout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-empty-collect-incident" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The empty-collect incident
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recovering-run-28755d71-after-the-empty-collect-bug" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recovering run 28755d71 after the empty-collect bug
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#openrouter-hand-driven-run-gemini-38-flash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenRouter hand-driven run (Gemini 3.8 Flash)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OpenRouter hand-driven run (Gemini 3.8 Flash)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preflight-timing-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preflight-timing note
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#daily-freshness-refresh-during-a-live-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daily freshness refresh during a live run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timing_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verification_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#upstream-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upstream pinning
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upstream pinning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configure-a-pin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure a pin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-submit-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What submit does
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verification-and-what-a-compromised-run-looks-like" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification and what a compromised run looks like
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-profile-per-model-set-and-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One profile per model, set and mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backfilling-finished-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backfilling finished runs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cost-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost comparison
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduled-advance-all" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled advance --all
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cost-table-three-providers-batch-smoke-presets-no-ingest-tasks-cg-al-e001-cg-al-e006-2-attempts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost table (three providers, batch-smoke* presets, --no-ingest, tasks CG-AL-E001 + CG-AL-E006, 2 attempts)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#site-cost-is-list-price" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Site cost is list price
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/batch-mode.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="batch-mode-operator-guide">Batch mode operator guide<a class="headerlink" href="#batch-mode-operator-guide" title="Permanent link">&para;</a></h1>
+<p>First draft, written from the first hand-driven Anthropic runs (Plan B Task 13,
+spec section 14 step 4): <code>docs/superpowers/specs/2026-09-06-batch-mode-design.md</code>.</p>
+<p>Batch mode submits a wave of requests to a provider's batch API, exits, and is resumed by
+repeated <code>advance</code> calls until the run is finalized. It produces the same results/scores
+file shapes the synchronous bench does, priced at the batch rate, and ingests through the
+same pipeline under a distinct <code>batch</code> invocation mode.</p>
+<h2 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>deno task start bench batch submit --preset &lt;name&gt; --llms &lt;one-slug&gt; [--runs N] [--output DIR] [--no-ingest]
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>deno task start bench batch status [&lt;runId&gt;] [--json]
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>deno task start bench batch advance &lt;runId&gt; | --all
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>deno task start bench batch retry &lt;runId&gt; [--force] [--adopt &lt;batchId&gt;] [--confirm-not-submitted]
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>deno task start bench batch abandon &lt;runId&gt;
+</code></pre></div>
+<ul>
+<li><code>submit</code> takes exactly ONE model slug (comma-separated multiple slugs are refused) and a
+  preset that supplies <code>tasks</code>, <code>containers</code>, <code>attempts</code>, <code>maxTokens</code>. It refuses up front
+  if the catalog has no <code>batch_input_per_mtoken</code>/<code>batch_output_per_mtoken</code> for the model -
+  there is no assumed batch discount factor. The catalog's daily freshness refresh once
+  appended a new dated pricing row for anthropic/claude-haiku-4-5 that lacked the four
+  <code>batch_*</code> fields, silently shadowing the batch-priced row under the "latest version
+  wins" pricing lookup and making <code>submit</code> refuse with no batch pricing (found and
+  restored by hand on 2026-09-07, commit <code>bcccdccb</code>). The seed writer
+  (<code>appendPricingIfChanged</code> in <code>src/catalog/seed/writer.ts</code>) now carries the four
+  <code>batch_*</code> fields forward from the most recent prior row for the same model whenever a
+  freshly fetched row has none, so a freshness refresh can no longer shadow an existing
+  batch rate.</li>
+<li><code>status</code> contacts the provider only when the run has a live <code>intent.json</code>, in which
+  case it lists the reconciliation candidates. Otherwise it reads <code>state.json</code> alone and
+  prints the provider status/counts recorded by the LAST <code>advance</code> call. Waiting for a
+  batch to finish means calling <code>advance</code>, not <code>status</code>, on a loop.</li>
+<li><code>advance &lt;runId&gt;</code> performs exactly ONE step of the run's state machine per call (spec
+  section 4.5): poll, collect, evaluate, resubmit, submit wave 2, or finalize. <code>--all</code>
+  advances every run under <code>&lt;output&gt;/batch/</code> one step each, serially, and returns the
+  highest exit code seen.</li>
+<li><code>retry</code> resubmits a run stuck with a retryable <code>lastError</code>, or reconciles a
+  <code>submit-unknown</code> run (a crash between submitting a batch and persisting its handle) by
+  exact identification only - it never resubmits blind on a provider list going stale.
+  <code>advance</code> runs that same reconciliation itself on every tick, so a batch it can
+  identify exactly is adopted with no operator command; <code>retry --adopt</code> /
+  <code>--confirm-not-submitted</code> are for the cases identification cannot decide.</li>
+<li><code>abandon</code> cancels with the provider where possible and marks the run terminal.</li>
+</ul>
+<h2 id="run-directory-layout">Run directory layout<a class="headerlink" href="#run-directory-layout" title="Permanent link">&para;</a></h2>
+<p>A run lives at <code>&lt;output&gt;/batch/&lt;runId&gt;/</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>state.json</code></td>
+<td>The run's full state: phase, wave, batches, per-task item summaries. Reload from this on every <code>advance</code> call - never cached in memory across calls.</td>
+</tr>
+<tr>
+<td><code>prompt-inputs.json</code></td>
+<td>Frozen inputs captured at submit time (provider, model, variant config, settings hash extras). Read-only after submit.</td>
+</tr>
+<tr>
+<td><code>intent.json</code></td>
+<td>Write-ahead marker for a submission in flight; present only between "about to call the provider" and "handle persisted". Its presence forces the <code>reconcile</code> step regardless of <code>state.phase</code>.</td>
+</tr>
+<tr>
+<td><code>items.jsonl</code></td>
+<td>Append-only journal, one line per rendered item (itemId, taskId, attempt, round, chunk, wave).</td>
+</tr>
+<tr>
+<td><code>events.jsonl</code></td>
+<td>Append-only journal for EXCEPTIONAL conditions only: async size rejections/rechunks, integrity conflicts (<code>integrity_unknown_item</code>, <code>integrity_stale_round</code>), abandon. A clean run that never hit one of these never gets this file at all - its absence is a good sign, not a missing feature.</td>
+</tr>
+<tr>
+<td><code>mutate.lock</code></td>
+<td>Exclusive lock held for the duration of one <code>advance</code>/<code>retry</code>/<code>submit</code> call. Always removed in <code>finally</code>; a hard kill (crash, <code>Ctrl-C</code>, <code>taskkill</code>) can leave it behind - see Recovery.</td>
+</tr>
+<tr>
+<td><code>requests/&lt;itemId&gt;.json</code></td>
+<td>The rendered request actually sent, <code>{ prompt, maxTokens, temperature }</code> at the top level.</td>
+</tr>
+<tr>
+<td><code>responses/&lt;itemId&gt;.json</code></td>
+<td>The immutable raw provider result for one item, written once.</td>
+</tr>
+<tr>
+<td><code>attempts/&lt;taskId&gt;-a&lt;N&gt;.json</code></td>
+<td>The evaluated <code>{ schemaVersion, attempt }</code> record for task <code>&lt;taskId&gt;</code>, attempt <code>&lt;N&gt;</code> (1 or 2).</td>
+</tr>
+</tbody>
+</table>
+<p>The bench's usual <code>results/benchmark-results-&lt;runId&gt;.json</code> and
+<code>results/benchmark-scores-&lt;runId&gt;.txt</code> are written at <code>finalize</code>, alongside everything
+above.</p>
+<h2 id="exit-codes">Exit codes<a class="headerlink" href="#exit-codes" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>The command's requested step completed. For <code>submit</code>/<code>retry</code>, this is the whole command. <strong>For <code>advance</code>, this means ONE step finished, not that the run is done</strong> - a fresh call can return 0 for submitting wave 2, evaluating, or finalizing, each a separate call. Keep calling <code>advance</code> until <code>status --json</code>'s <code>phase</code> reads <code>finalized</code>, or until the phase stops changing between calls (which means something is wrong - see Recovery).</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>advance</code> polled the provider and the batch is still processing. Wait and call again; this is the only exit code that means "nothing to do yet, just wait".</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Operator action required: a non-retryable <code>lastError</code>, a D13 drift refusal (git SHA, task set, templates, harness files, or <code>prompt-inputs.json</code> changed since submit), a held bench lock, or <code>submit-unknown</code> awaiting <code>retry --adopt</code>/<code>--confirm-not-submitted</code>. Read <code>status --json</code> and the run's <code>state.json</code>/<code>events.jsonl</code> before deciding the next move.</td>
+</tr>
+<tr>
+<td>1 (uncaught)</td>
+<td>Not a designed exit code - an uncaught exception escaped the process. Treat as a bug: capture the full stack trace and <code>state.json</code>, do not blindly retry. See the incidents below for two real examples caught this way.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="driving-advance-to-completion">Driving <code>advance</code> to completion<a class="headerlink" href="#driving-advance-to-completion" title="Permanent link">&para;</a></h3>
+<p>A correct poll loop keeps calling <code>advance</code> immediately after any exit 0 (there may be
+more steps left), sleeps only after exit 3 (waiting on the provider), and stops on exit 4
+or once the phase is <code>finalized</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">while</span><span class="w"> </span>true<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>bench<span class="w"> </span>batch<span class="w"> </span>advance<span class="w"> </span><span class="s2">"</span><span class="nv">$RUNID</span><span class="s2">"</span><span class="w"> </span>--output<span class="w"> </span>results
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nv">code</span><span class="o">=</span><span class="nv">$?</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="o">[</span><span class="w"> </span><span class="s2">"</span><span class="nv">$code</span><span class="s2">"</span><span class="w"> </span>-eq<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="k">break</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nv">phase</span><span class="o">=</span><span class="k">$(</span>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>bench<span class="w"> </span>batch<span class="w"> </span>status<span class="w"> </span><span class="s2">"</span><span class="nv">$RUNID</span><span class="s2">"</span><span class="w"> </span>--output<span class="w"> </span>results<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">'.[0].phase'</span><span class="k">)</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="o">[</span><span class="w"> </span><span class="s2">"</span><span class="nv">$phase</span><span class="s2">"</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"finalized"</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="k">break</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="o">[</span><span class="w"> </span><span class="s2">"</span><span class="nv">$code</span><span class="s2">"</span><span class="w"> </span>-eq<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sleep<span class="w"> </span><span class="m">60</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="k">done</span>
+</code></pre></div>
+<p>A loop that stops on the first non-3 exit code stalls after one step (submitting wave 2,
+say) and never reaches finalize. This tripped up the very first hand-driven run in this
+guide's own history.</p>
+<h2 id="recovery-spec-section-9-in-operator-language">Recovery (spec section 9, in operator language)<a class="headerlink" href="#recovery-spec-section-9-in-operator-language" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>What happened</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Submit rejected, retryable</td>
+<td>Provider returned a transient error before a batch handle existed</td>
+<td><code>retry &lt;runId&gt;</code> resubmits the identical bodies</td>
+</tr>
+<tr>
+<td>Submit rejected, non-retryable</td>
+<td>Provider refused outright</td>
+<td><code>retry --force</code> only if the retryable/non-retryable classification looks wrong; otherwise <code>abandon</code> and start a new run - request bodies are never edited under a run id</td>
+</tr>
+<tr>
+<td><code>submit-unknown</code> (crash between submitting and persisting the handle)</td>
+<td><code>intent.json</code> is present</td>
+<td><code>advance</code> already tried to reconcile and adopts automatically on an exact match; <code>status</code> lists the candidates it saw. If it did not adopt: <code>retry --adopt &lt;batchId&gt;</code> when you can find the batch on the provider's dashboard/list and confirm it is this run's; <code>retry --confirm-not-submitted</code> when you have confirmed the provider never received it. Never guess - a wrong adopt corrupts the run.</td>
+</tr>
+<tr>
+<td>A wave ended with unresolved items (retryable provider error, expired, or cancelled)</td>
+<td><code>advance</code> detects this automatically</td>
+<td>One automatic resubmission round happens on the next <code>advance</code>, then any still-unresolved item becomes a terminal failed attempt (<code>termination_kind: provider_error</code>)</td>
+</tr>
+<tr>
+<td>D13 drift refusal (exit 4)</td>
+<td>The git SHA moved, or a task/template/harness file changed, since this run's <code>submit</code></td>
+<td>Never edit tracked files while a run is between submit and finalize. If drift already happened, the run cannot proceed automatically - abandon it and resubmit from clean state once the tree is settled again.</td>
+</tr>
+<tr>
+<td>Bench lock held (exit 4)</td>
+<td>Another bench or batch process (sync or batch) is running</td>
+<td>Wait for it to finish, or investigate if it looks crashed (<code>src/utils/bench-lock.ts</code>'s 120s heartbeat staleness)</td>
+</tr>
+<tr>
+<td><code>mutate.lock</code> stuck after a hard kill (observed live, see Incident A below)</td>
+<td><code>advance</code>/<code>retry</code>/<code>submit</code> was killed (crash, <code>Ctrl-C</code>, <code>taskkill</code>) mid-step, before its <code>finally</code> block removed the lock</td>
+<td><strong>Self-heals with no operator action.</strong> The lock reclaims itself once it is older than 10 minutes (<code>DEFAULT_STALE_AFTER_MS</code> in <code>src/batch/mutate-lock.ts</code>). Just retry <code>advance</code> after the window passes - do not delete the lock file by hand unless you need to unblock something faster than 10 minutes, and even then prefer waiting.</td>
+</tr>
+<tr>
+<td><code>advance</code> throws <code>BatchPricingUnavailableError</code> uncaught (observed live, see Incident B below)</td>
+<td>Fixed in this repo as of commit <code>ac1d2e0a</code> (<code>buildAdvanceDeps</code> now calls <code>PricingService.initialize()</code>). If you see this on an older checkout, <code>git pull</code>/rebuild before retrying - it is a code bug, not a data problem.</td>
+<td>Update, then <code>advance</code> again</td>
+</tr>
+<tr>
+<td><code>advance</code> returned exit=0 forever with no compile/test output and the phase never changed (historical, observed live, see Incident C below)</td>
+<td><strong>Fixed.</strong> <code>evaluateCollected</code> (<code>src/batch/evaluate.ts</code>) used to silently treat a task as done, without repairing <code>state.json</code>, whenever its attempt file already existed on disk but <code>state.json</code> never recorded that task as <code>"evaluated"</code> (a crash between finishing that task and the wave's single end-of-loop <code>writeState</code> left exactly this gap) - every future <code>advance</code> call re-derived the identical stuck decision, so a scheduled <code>advance --all</code> loop would have spun on it silently forever. <code>evaluateCollected</code>'s exists-early-return path now repairs <code>ItemSummary.state</code> to <code>"evaluated"</code> and sets <code>attemptFile</code> to the existing file's path in place, before the wave's end-of-loop <code>writeState</code> persists it - mirroring how <code>collect.ts</code>'s <code>repairFromExistingFile</code> already repaired state on its own idempotent path. Covered by a regression test in <code>tests/unit/batch/evaluate.test.ts</code>.</td>
+<td>Nothing manual - resuming <code>advance</code> repairs the stuck task's state on its own. If you hit this on a checkout older than the fix, hand-repair <code>state.json</code> the same way: set the stuck task's <code>ItemSummary.state</code> to <code>"evaluated"</code> and <code>attemptFile</code> to the existing attempt file's path (back up <code>state.json</code> first, validate the edited JSON with <code>jq empty</code> before overwriting), or update the checkout.</td>
+</tr>
+<tr>
+<td>Crash mid-evaluate, otherwise clean</td>
+<td><code>attempts/</code> files for finished tasks</td>
+<td>The next <code>advance</code> picks up only the remaining tasks - each task's <code>attempts/&lt;taskId&gt;-a&lt;N&gt;.json</code> existing is itself the "already done" marker, and <code>state.json</code> is repaired to match on that same call (see Incident C above)</td>
+</tr>
+<tr>
+<td>Crash mid-collect</td>
+<td><code>responses/&lt;itemId&gt;.json</code> files for finished items</td>
+<td>The next <code>advance</code>'s <code>collectEnded</code> skips any item whose response file already exists and repairs its state from that file - verified by reading <code>collect.ts</code>, not empirically triggered in this guide's own drill (see Crash drill below)</td>
+</tr>
+<tr>
+<td><code>retry</code>/<code>retry --confirm-not-submitted</code> refused with "nothing to retry: no lastError and run is not submit-unknown" right after a crash on a run's very first submission (observed live, see the OpenAI hand-driven run below)</td>
+<td><strong>Fixed.</strong> <code>state.phase</code> was never actually persisted as the literal <code>"submit-unknown"</code> value anywhere in the codebase; <code>retryRun</code> gated the submit-unknown branch on that value while <code>advance</code>'s <code>nextStep</code> derived "submit-unknown"-ness from a live <code>intent.json</code> alone. A crash before any batch handle exists left <code>state.phase</code> at whatever it was before the submit (often <code>prepared</code>), so <code>retry --confirm-not-submitted</code> was unreachable, and after confirming, <code>retry</code> was equally unreachable with no <code>lastError</code> set. Fixed by <code>retry</code> now detecting submit-unknown directly from a live intent ("retry detects submit-unknown from a live intent; advance prints its refusal") and, on a separate commit, resubmitting a prepared run after confirm-not-submitted and setting the submitted phase ("retry resubmits a prepared run after confirm-not-submitted and sets the submitted phase").</td>
+<td>Update, then run the normal <code>status</code> / <code>retry --confirm-not-submitted</code> / <code>retry</code> sequence</td>
+</tr>
+<tr>
+<td>A batch the provider reports as ended collects zero response files, yet <code>state.json</code> still marks it <code>collected: true</code> (observed live, see the OpenAI hand-driven run below)</td>
+<td><strong>Fixed</strong> ("OpenAI collect retrieves its output and error file ids; poll extras are persisted on the record"). <code>OpenAIBatchProvider.collect</code> read <code>outputFileId</code>/<code>errorFileId</code> off <code>handle.extra</code>, but <code>pollActive</code> never merged the poll's own extras onto the batch record, so <code>extra</code> stayed empty at collect time and nothing downloaded. <code>collect</code> now retrieves the batch itself instead of relying on ids that the poll step had never persisted onto the handle, and <code>pollActive</code> merges <code>poll.extra</code> onto the record.</td>
+<td>Update, then re-run <code>advance</code>. A run already stuck this way needs the hand repair described in the OpenAI section below.</td>
+</tr>
+<tr>
+<td><code>advance</code> returns exit 0 with no progress from an <code>attempt-N-collected</code> phase whose batch never actually collected anything, or from an <code>evaluate</code> step with nothing left to evaluate (observed live, see the OpenAI hand-driven run below)</td>
+<td><strong>Fixed</strong> ("route uncollected batches to collect from any phase; an evaluate step with nothing evaluable exits 4 instead of 0"). The state machine now routes an uncollected batch back to <code>collect</code> from any non-terminal phase, and an <code>evaluate</code> step with nothing evaluable exits 4 with a blocked reason instead of silently exiting 0.</td>
+<td>Update; no further repair needed once the fix is in place</td>
+</tr>
+</tbody>
+</table>
+<h2 id="crash-drill-observations-this-runs-own-drill">Crash drill observations (this run's own drill)<a class="headerlink" href="#crash-drill-observations-this-runs-own-drill" title="Permanent link">&para;</a></h2>
+<p>Ran a second submit (<code>a616b047-fb79-43ac-8c65-9d1826068341</code>, same preset, <code>--no-ingest</code>)
+specifically to interrupt <code>advance</code> mid-flight and confirm clean resumption.</p>
+<ul>
+<li><strong>Incident A - accidental hard kill via <code>TaskStop</code>.</strong> Stopping a background poll loop
+  landed mid-<code>evaluateCollected</code>: one of two tasks had already been evaluated (its
+  attempt file written) when the kill landed; the other was still in flight.
+  <code>evaluateCollected</code> only calls <code>writeState</code> once, at the end of its loop over all
+  tasks - so the kill left <code>mutate.lock</code> on disk, and (as Incident C above describes)
+  left the finished task's <code>state.json</code> entry stuck at <code>"responded"</code> instead of
+  <code>"evaluated"</code> even though its attempt file was already complete and valid.
+  <code>mutate.lock</code> self-healed after its 10-minute staleness window with no operator
+  action; the stuck-state consequence needed the manual repair described in Incident C.</li>
+<li><strong>Incident B - two genuine mid-flight kills via a wrapped <code>timeout 4</code>.</strong> Once the lock
+  cleared, both forced kills landed inside <code>runEvaluate</code>'s <code>ContainerRuntime.start()</code>,
+  where a transient "Container 'Cronus28' is not running" detection failure hung the
+  process past the 4-second window (a real infra flake, not an artifact of the kill
+  timing) - <code>timeout</code> had to <code>SIGTERM</code>/<code>SIGKILL</code> it both times. After both kills and the
+  Incident C repair, a clean <code>advance</code> call completed the wave with no duplicate files:
+  <code>responses/</code> held exactly one file per item and <code>attempts/</code> held exactly one file per
+  task throughout. <strong>Caveat:</strong> neither kill landed inside <code>collectEnded</code> itself - collect
+  for two tiny items completed in well under the shortest timeout tried. Collect's
+  crash-safety (skip-and-repair from an existing response file) is verified by reading
+  <code>collect.ts</code>, not by an empirical kill, in this guide's own drill.</li>
+<li><strong>Incident C - a real bug, since fixed</strong>, described in the Recovery table above.
+  Found because of Incident A's timing, not by design - a valuable reminder that
+  <code>advance --all</code> running unattended could have hit this same gap with nobody there to
+  notice the silent stall, before the resume path was made to repair <code>state.json</code> itself.</li>
+</ul>
+<h2 id="openai-hand-driven-run-gpt-5-mini">OpenAI hand-driven run (gpt-5-mini)<a class="headerlink" href="#openai-hand-driven-run-gpt-5-mini" title="Permanent link">&para;</a></h2>
+<p>The first hand-driven run on the OpenAI provider, against the <code>batch-smoke-openai</code> preset
+(same shape as <code>batch-smoke</code>: <code>tasks/easy/CG-AL-E00*.yml</code>, containers Cronus28 +
+Cronus282, 2 attempts, 16000 maxTokens), run id <code>28755d71-6d6a-46c8-baae-f13456d0b405</code>,
+model <code>openai/gpt-5-mini</code>.</p>
+<h3 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h3>
+<p><code>openai/gpt-5-mini</code> had no catalog row at all before this run. <code>bench batch submit</code>'s
+precheck auto-seeded the model and sync pricing rows from LiteLLM (input $0.25/Mtok,
+output $2/Mtok); the four <code>batch_*_per_mtoken</code> fields were added by hand at 50% of those
+sync rates, matching every other OpenAI row in the catalog, then pushed with
+<code>sync-catalog --apply</code>.</p>
+<p>Separately, <code>models openai/gpt-5-mini --check</code> returned a 400: "temperature does not
+support 0 with this model. Only the default (1) value is supported" - the same class of
+error GPT-5.5+ triggers, but gpt-5-mini predates that numbering and was missing from
+<code>TEMPERATURE_LOCKED_MODELS</code> in <code>src/llm/openai-adapter.ts</code>. Without this fix every batch
+item for gpt-5-mini would have come back as a provider-side 400, so it had to be fixed
+before the drill could even run. Fixed (commit <code>dde0e213</code>, with a regression test).</p>
+<h3 id="the-upload-crash-drill">The upload-crash drill<a class="headerlink" href="#the-upload-crash-drill" title="Permanent link">&para;</a></h3>
+<p>A temporary hook was added to <code>src/llm/batch/openai-batch.ts</code>, right after
+<code>hooks?.onInputFile</code> and before <code>batches.create</code>: <code>if
+(Deno.env.get("CENTRALGAUGE_BATCH_CRASH_AFTER_UPLOAD") === "1") Deno.exit(1);</code>. This
+simulates a hard process kill between the file upload and the batch actually being
+created, the crash <code>submit-unknown</code> reconciliation is meant to recover from. Left
+uncommitted and in place for the whole drill (D13 freezes <code>gitClean</code> at submit, so
+removing it mid-run would have flipped <code>gitClean</code> and refused every later <code>advance</code>).</p>
+<p>Exact sequence, with exit codes as guaranteed by each command's own return type
+(<code>RetryOutcome.exit: 0 | 4</code> for <code>retry</code>, <code>AdvanceResult.exit</code> for <code>advance</code>) and, where
+captured directly, by <code>PIPESTATUS</code>:</p>
+<ol>
+<li><code>CENTRALGAUGE_BATCH_CRASH_AFTER_UPLOAD=1 deno task start bench batch submit --preset batch-smoke-openai --llms openai/gpt-5-mini --no-ingest --output results</code>
+   exit=1 (<code>Deno.exit(1)</code> fired after the upload; no batch id was ever printed).
+   <code>intent.json</code> held the uploaded <code>inputFileId</code>; <code>state.json</code> was at <code>phase: "prepared"</code>
+   with both tasks' items <code>"pending"</code> and <code>batches: []</code>.</li>
+<li><code>bench batch status --output results</code> showed the run with
+   <code>next=retry --adopt &lt;id&gt; | --confirm-not-submitted</code> and no batch id line (the orphan
+   candidate case: none, since <code>batches.create</code> was never reached).</li>
+<li><code>bench batch retry &lt;runId&gt; --confirm-not-submitted --output results</code>
+   <code>[FAIL] nothing to retry: no lastError and run is not submit-unknown</code>, exit=4. This was
+   the first of the three retry defects fixed in Task 15b (see the Recovery table above):
+   <code>state.phase</code> never actually becomes <code>"submit-unknown"</code> anywhere in the codebase, so
+   the command's own submit-unknown branch was unreachable for a crash on a run's very
+   first submission.</li>
+<li><code>bench batch retry &lt;runId&gt; --output results</code> (no flag, to test the resubmit path
+   directly): same <code>[FAIL]</code>, exit=4. Same root cause: no <code>lastError</code> was ever set (the
+   crash was a hard <code>Deno.exit</code>, never a caught-and-recorded provider error), so
+   <code>resubmitPending</code> was equally unreachable.</li>
+<li><code>bench batch advance &lt;runId&gt; --output results</code> against the still-<code>prepared</code>,
+   still-orphaned run: exit=4 (silent; <code>advance</code>'s CLI prints nothing on its own, unlike
+   <code>retry</code> - only <code>status</code> surfaces the reason). <code>status</code> read
+   <code>next=blocked: advance has no automatic action for phase "prepared"</code>.</li>
+</ol>
+<h3 id="three-hand-edits-used-to-complete-the-drill-on-the-unfixed-checkout">Three hand edits used to complete the drill on the unfixed checkout<a class="headerlink" href="#three-hand-edits-used-to-complete-the-drill-on-the-unfixed-checkout" title="Permanent link">&para;</a></h3>
+<p>Before Task 15b's fix landed, the drill could only be driven forward by hand-editing the
+run's own <code>state.json</code> (an untracked run artifact, backed up before each edit, never a
+tracked source file) to force the code down the path it should have reached on its own:</p>
+<ol>
+<li><code>state.json.bak-before-manual-repair</code>: <code>phase: "prepared"</code> -&gt; <code>"submit-unknown"</code>, so
+   <code>retryRun</code> would route into <code>retrySubmitUnknown</code>. Re-running
+   <code>retry --confirm-not-submitted</code> then succeeded (<code>confirmed not submitted; run returned
+   to prepared</code>, exit=0) and genuinely deleted the orphan input file (independently
+   confirmed: a throwaway script calling the OpenAI SDK's <code>files.retrieve</code> on the orphan
+   id returned "404 No such File object") and cleared <code>intent.json</code>. <strong>No longer needed</strong>
+   once <code>retry</code> detects submit-unknown from a live intent directly ("retry detects
+   submit-unknown from a live intent; advance prints its refusal").</li>
+<li><code>state.json.bak-before-lasterror-repair</code>: <code>lastError</code> set by hand to
+   <code>{at, step: "submit", message: "...", retryable: true}</code> (matching the zod shape in
+   <code>state.ts</code>), so <code>retryRun</code> would fall through to <code>resubmitPending</code>. Re-running <code>retry</code>
+   then succeeded (<code>resubmitted 2 item(s)</code>, exit=0) and genuinely resubmitted through the
+   real <code>files.create</code> + <code>batches.create</code> calls - the resulting <code>batches</code>/<code>activeBatchIds</code>
+   entries were written entirely by that real code, not by hand. <strong>No longer needed</strong> for
+   the same reason as above: a correctly detected submit-unknown run no longer needs a
+   synthetic <code>lastError</code> to reach resubmission.</li>
+<li><code>state.json.bak-before-phase-repair</code>: <code>phase: "prepared"</code> -&gt; <code>"attempt-1-submitted"</code> by
+   hand, mirroring exactly what <code>submit.ts</code> does after a normal, uninterrupted wave-1
+   submission. <code>resubmitPending</code> populates a real batch record but (by design, for the
+   later-resubmission case its own docstring describes) never moves <code>phase</code> off
+   <code>"prepared"</code>, so <code>advance</code> had no automatic action for the run despite a live, submitted
+   batch. <strong>No longer needed</strong>: "retry resubmits a prepared run after confirm-not-submitted
+   and sets the submitted phase" sets the submitted phase after a successful resubmit.</li>
+</ol>
+<h3 id="the-empty-collect-incident">The empty-collect incident<a class="headerlink" href="#the-empty-collect-incident" title="Permanent link">&para;</a></h3>
+<p>Both wave-1 items completed on OpenAI (<code>request_counts: {total: 2, completed: 2, failed:
+0}</code>), but the scheduled <code>advance</code> polling collected nothing: <code>OpenAIBatchProvider.collect</code>
+read <code>outputFileId</code>/<code>errorFileId</code> off <code>handle.extra</code>, but <code>pollActive</code> had never merged the
+poll's own extras onto the batch record, so <code>extra</code> was still just <code>{inputFileId, nonce}</code>
+at collect time. <code>collect</code> downloaded zero response files and the record was still marked
+<code>collected: true</code>, leaving the run silently stuck at <code>attempt-1-collected</code> with nothing to
+evaluate. Root-caused and fixed as Task 14b ("OpenAI collect retrieves its output and
+error file ids; poll extras are persisted on the record", reviewed and approved):
+<code>collect</code> now retrieves the batch itself instead of relying on ids that the poll step had
+never persisted onto the handle, and <code>pollActive</code> merges <code>poll.extra</code> onto the record.</p>
+<p>A second, related gap: from <code>attempt-1-collected</code>, the state machine never routed an
+uncollected batch back to <code>collect</code>, and <code>evaluate</code> exited 0 with no progress when the only
+non-evaluated items were still pending - the same "looks like success, makes zero
+progress" shape as the Anthropic drill's Incident C, but in the collect step instead of
+evaluate. Fixed as Task 14c ("route uncollected batches to collect from any phase; an
+evaluate step with nothing evaluable exits 4 instead of 0", reviewed and approved): a
+collect check now runs in every non-terminal phase, and an <code>evaluate</code> with nothing
+evaluable exits 4 with a blocked reason instead of silently exiting 0.</p>
+<h3 id="recovering-run-28755d71-after-the-empty-collect-bug">Recovering run 28755d71 after the empty-collect bug<a class="headerlink" href="#recovering-run-28755d71-after-the-empty-collect-bug" title="Permanent link">&para;</a></h3>
+<p>Two more hand repairs to <code>results/batch/28755d71-6d6a-46c8-baae-f13456d0b405/state.json</code>
+(backups <code>state.json.bak-before-recollect-repair</code> and
+<code>state.json.bak-before-phase-recollect-repair</code>, both still in the run directory), applied
+once the 14b fix existed as an uncommitted copy of <code>src/batch/collect.ts</code> and
+<code>src/llm/batch/openai-batch.ts</code> so D13 stayed satisfied (the tree was already dirty from
+the crash hook, and the git SHA this run was frozen against never changed): reset the
+wave-1 batch record's <code>collected</code> flag to <code>false</code> and the run's <code>phase</code> back to
+<code>"attempt-1-submitted"</code>. The next <code>advance</code> then ran for real: polled, collected both
+wave-1 responses, evaluated (CG-AL-E001 solved, CG-AL-E006 failed), submitted wave 2 at
+16:45:10Z, and eventually finalized once wave 2 ended. After the run finalized, both
+<code>src/batch/collect.ts</code> and <code>src/llm/batch/openai-batch.ts</code> were restored to their committed
+content (no source edit survives in this checkout).</p>
+<h3 id="timing">Timing<a class="headerlink" href="#timing" title="Permanent link">&para;</a></h3>
+<p>Wave 1 (2 items) was submitted 2026-09-07T08:01:50Z and took about 8h33m to complete on
+OpenAI's side, ending near 2026-09-07T16:35Z. Wave 2 (1 item, CG-AL-E006's retry) was
+submitted 2026-09-07T16:45:10Z and took about 12h12m, ending 2026-09-08T04:57:00Z.
+<strong>OpenAI batches for gpt-5-mini routinely sit <code>in_progress</code> for many hours</strong> - a scheduled
+<code>advance</code> (cron, Task 18) is the only practical way to drive these to completion; a human
+sitting on a poll loop for half a day is not.</p>
+<p><strong>Recorded end-time caveat.</strong> The persisted wave-1 <code>endedAt</code> (results JSON
+<code>batch.waves[0].endedAt</code> and the scores file's <code># Batch</code> block) reads
+<code>2026-09-08T04:57:00Z</code> - wave 2's real end time, not wave 1's own - although wave 1
+actually ended near <code>2026-09-07T16:35Z</code>. At the time this run went through recovery,
+<code>endedAt</code> was derived from the timestamp of the last poll rather than the first poll that
+observed the batch as ended, and the recovery re-polled the already-ended wave-1 batch
+hours later (after wave 2 had also finished) - so the recorded value reflects when it was
+noticed, not when it finished. The runner now records a batch's first observed end time
+(commit "record a batch's first observed end time"), so later runs are not affected by
+this gap. The wave timings quoted above use the real end times, not the one persisted in
+this run's own <code>endedAt</code> field.</p>
+<h3 id="verification">Verification<a class="headerlink" href="#verification" title="Permanent link">&para;</a></h3>
+<p><code>results/benchmark-results-28755d71-6d6a-46c8-baae-f13456d0b405.json</code>: <code>ingest.schema</code> 4,
+<code>ingest.invocations["openai/gpt-5-mini"].mode</code> <code>"batch"</code>. CG-AL-E001 solved on attempt 1
+(cost $0.00137725); CG-AL-E006 failed both attempts (attempt 1 $0.002115125, attempt 2
+$0.002305875). Every attempt has a non-empty prompt and cost &gt; 0. Total cost <strong>$0.005798</strong>.
+<code>responses/</code> holds exactly 3 files (one per item across both waves) and <code>attempts/</code> holds
+exactly 3 files (E001-a1, E006-a1, E006-a2). The scores file's <code># Batch</code> block reads
+<code>waves: 2</code>, <code>resubmitted_items: 0</code>, <code>reported_cost_usd: (none)</code> for both waves (OpenAI
+does not report a batch-level cost the way Anthropic does). No prior sync run of
+gpt-5-mini on CG-AL-E001/CG-AL-E006 exists under <code>results/</code>, so no before/after cost
+comparison is available for this model.</p>
+<h2 id="openrouter-hand-driven-run-gemini-38-flash">OpenRouter hand-driven run (Gemini 3.8 Flash)<a class="headerlink" href="#openrouter-hand-driven-run-gemini-38-flash" title="Permanent link">&para;</a></h2>
+<p>The first hand-driven run on the OpenRouter provider, against the <code>batch-smoke-openrouter</code>
+preset (same shape as <code>batch-smoke</code>: <code>tasks/easy/CG-AL-E00*.yml</code>, containers Cronus28 +
+Cronus282, 2 attempts, 16000 maxTokens), run id
+<code>bf175561-5cc2-40f9-a343-3e2b1240c8f3</code>, model <code>openrouter/google/gemini-3.8-flash</code>.</p>
+<h3 id="setup_1">Setup<a class="headerlink" href="#setup_1" title="Permanent link">&para;</a></h3>
+<p><code>openrouter/google/gemini-3.8-flash</code> had a catalog row prepared ahead of this run (not
+auto-seeded): OpenRouter lists a separate model id <code>google/gemini-3.8-flash:batch</code> with
+explicit per-token batch pricing, exactly 50% of the sync input/output/cache-read rates
+(cache write unchanged) - a real vendor-published batch rate, not an assumed discount
+factor. <code>sync-catalog --apply</code> ran clean before submit: exit=0, no 429, no drift the tool
+wanted to write back to the YAML.</p>
+<h3 id="preflight-timing-note">Preflight-timing note<a class="headerlink" href="#preflight-timing-note" title="Permanent link">&para;</a></h3>
+<p>The team lead flagged a real gap in how this run's own status got reported: the
+background poll loop (bounded ~10-minute background call, <code>advance</code> every 60s on exit 3)
+produces no interim output by design, so a plain "has anything happened yet" check from
+outside the loop saw nothing for a stretch even though submit had already succeeded and
+polling was actively progressing. Worth remembering for Task 18's scheduled loop design:
+a bounded background poll needs either an early heartbeat line or a companion <code>status</code>
+call available on demand, not just silence until it ends.</p>
+<h3 id="daily-freshness-refresh-during-a-live-run">Daily freshness refresh during a live run<a class="headerlink" href="#daily-freshness-refresh-during-a-live-run" title="Permanent link">&para;</a></h3>
+<p>The submit precheck's daily freshness refresh appended a new 2026-09-08 pricing row for
+this model (sync rates from OpenRouter, <code>effective_from</code> timestamped
+<code>05:41:09.511Z</code>) as part of the same <code>submit</code> invocation, about 43 seconds BEFORE
+<code>state.json</code>'s own <code>submittedAt</code> (<code>05:41:53.460Z</code>) - the precheck writes the row first,
+then submit freezes the (now dirty) tree's <code>gitSha</code>/<code>gitClean</code> snapshot afterward. That
+ordering is exactly why the frozen block correctly recorded <code>gitClean: false</code> from the
+start and why no D13 drift refusal ever tripped on a later <code>advance</code> call: the invariant
+D13 enforces is that the tree's dirty state must not CHANGE after the freeze, not that
+the tree must be clean at freeze time. The carry-forward fix from Task 13b
+(<code>appendPricingIfChanged</code> copying
+<code>batch_*</code> fields from the latest prior row when a freshly fetched row has none) worked
+correctly in production: the new row's four <code>batch_*_per_mtoken</code> fields exactly match the
+2026-09-07 row. One new gap the fresh row exposes: its own sync-side
+<code>cache_read_per_mtoken</code> and <code>cache_write_per_mtoken</code> are both <code>0</code>, because OpenRouter's
+freshness source does not supply per-token cache pricing for this model at all (unlike
+<code>batch_*</code>, there is no carry-forward for the plain sync cache fields). Committed
+separately, after finalize, as <code>fix(catalog): daily refresh row for Gemini 3.8 Flash on
+OpenRouter with carried batch rates</code> - the tree was left untouched between submit and
+finalize per D13.</p>
+<h3 id="timing_1">Timing<a class="headerlink" href="#timing_1" title="Permanent link">&para;</a></h3>
+<p>Single wave, 2 items. Submitted <code>2026-09-08T05:41:53.460Z</code>, batch ended
+<code>2026-09-08T05:46:19.359Z</code> - about 4.4 minutes, well within the spike findings' "OpenRouter
+completed Gemini batches within about ten minutes" estimate and well inside the 2-hour
+per-wave budget this task allowed. Both tasks solved on attempt 1, so no wave 2 was
+needed.</p>
+<h3 id="verification_1">Verification<a class="headerlink" href="#verification_1" title="Permanent link">&para;</a></h3>
+<p><code>results/benchmark-results-bf175561-5cc2-40f9-a343-3e2b1240c8f3.json</code>: <code>ingest.schema</code> 4,
+<code>ingest.run_ids</code> matches, <code>ingest.invocations["openrouter/google/gemini-3.8-flash"].mode</code>
+<code>"batch"</code>. CG-AL-E001 solved on attempt 1 (cost $0.001523625, promptLen 1176); CG-AL-E006
+solved on attempt 1 (cost $0.002362125, promptLen 1439). Both attempts have non-empty
+prompts and <code>cost &gt; 0</code>. <code>responses/</code> and <code>attempts/</code> each hold exactly 2 files (one per
+item/task). No <code>events.jsonl</code> file exists for this run (no async rejections, no
+integrity conflicts, no abandon) - a clean run.</p>
+<p>Scores file <code># Batch</code> block: <code>provider: openrouter</code>, <code>run_id</code> matches, <code>waves: 1</code>,
+<code>wave_1: ... reported_cost_usd=0.0039</code>, <code>resubmitted_items: 0</code>.</p>
+<p><strong>Provider-cost comparison (brief's required check):</strong> <code>state.json</code>'s
+<code>batches[0].providerReportedCostUsd</code> is <code>0.00388575</code>. The sum of per-attempt <code>cost</code> in the
+results JSON is <code>0.001523625 + 0.002362125 = 0.00388575</code>. <strong>These are exactly equal</strong> - a
+0% gap, well inside the brief's 10% tolerance. No discrepancy to record; the site still
+bills from the catalog pricing snapshot, and this run happens to show that snapshot
+tracking OpenRouter's own reported cost precisely for this model.</p>
+<p>No prior sync run of <code>openrouter/google/gemini-3.8-flash</code> on CG-AL-E001/CG-AL-E006 exists
+under <code>results/</code>, so no before/after batch-vs-sync cost comparison is available for this
+model (unlike the Anthropic Haiku 4.5 and OpenAI gpt-5-mini sections above).</p>
+<h2 id="upstream-pinning">Upstream pinning<a class="headerlink" href="#upstream-pinning" title="Permanent link">&para;</a></h2>
+<p>OpenRouter routes each request to one of several upstream providers, and they
+do not all serve the same weights at the same precision. A cohort whose runs
+were served by different upstreams is not one model. The lock has three parts:
+a pin in config, a per-request routing block plus identity capture, and a
+verification state on every result row (design:
+<code>docs/superpowers/specs/2026-09-11-openrouter-upstream-lock-design.md</code>).</p>
+<h3 id="configure-a-pin">Configure a pin<a class="headerlink" href="#configure-a-pin" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">openrouter</span><span class="p">:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">upstream</span><span class="p">:</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">z-ai/glm-5.3</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">novita/fp8</span><span class="w">        </span><span class="c1"># an endpoints `tag`, see below</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">google/gemini-3.8-flash</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">google-vertex</span>
+</code></pre></div>
+<p>List a model's tags with <code>centralgauge models openrouter/&lt;author&gt;/&lt;slug&gt;
+--upstreams</code>; add <code>--pin &lt;tag&gt;</code> to resolve and preflight one (a single
+32-token request). A pin is a tag from that listing, nothing else.</p>
+<h3 id="what-submit-does">What submit does<a class="headerlink" href="#what-submit-does" title="Permanent link">&para;</a></h3>
+<p><code>bench batch submit</code> (and the sync <code>bench</code>) resolves every configured pin
+before the first provider call, even under <code>--no-ingest</code>: the tag must exist
+for that model, the endpoint must accept the run's <code>max_tokens</code> and context,
+and a 32-token preflight must come back from that upstream.
+<code>--skip-upstream-preflight</code> skips only the probe, not the tag lookup. A
+failure prints <code>[FAIL] upstream pin: ...</code> with the tag, the model and the
+reason; the sync bench exits 1 and <code>batch submit</code> exits 4. The resolved pin
+is frozen into <code>prompt-inputs.json</code> under <code>routing</code> (<code>upstreamPin</code>,
+<code>providerName</code>, <code>quantization</code>, <code>preflight</code>), and every request of a pinned
+run, wave 1 and wave 2 alike, carries <code>provider.order: [&lt;tag&gt;]</code> with
+<code>allow_fallbacks: false</code>, so OpenRouter answers 429 rather than routing
+elsewhere.</p>
+<h3 id="verification-and-what-a-compromised-run-looks-like">Verification and what a compromised run looks like<a class="headerlink" href="#verification-and-what-a-compromised-run-looks-like" title="Permanent link">&para;</a></h3>
+<p>Every attempt records <code>requestedUpstream</code>, <code>servedUpstream</code>,
+<code>servedUpstreamModel</code>, <code>upstreamIdentitySource</code> and <code>upstreamVerification</code>:</p>
+<table>
+<thead>
+<tr>
+<th>state</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>not_applicable</code></td>
+<td>not an OpenRouter run</td>
+</tr>
+<tr>
+<td><code>unpinned</code></td>
+<td>OpenRouter, no pin; served upstream recorded when present</td>
+</tr>
+<tr>
+<td><code>verified</code></td>
+<td>served upstream matches the pin</td>
+</tr>
+<tr>
+<td><code>mismatch</code></td>
+<td>served upstream differs from the pin</td>
+</tr>
+<tr>
+<td><code>unverified</code></td>
+<td>pinned, response carried no identity</td>
+</tr>
+<tr>
+<td><code>not_served</code></td>
+<td>pinned, the provider returned an error (no identity possible)</td>
+</tr>
+</tbody>
+</table>
+<p>A run with any <code>mismatch</code> or <code>unverified</code> attempt is compromised: batch
+submits no wave 2, the sync bench stops that variant after the compromised
+attempt, and at finalize the run is ingested already excluded
+(<code>excluded_code = upstream_mismatch</code> or <code>upstream_unverified</code>, reason and
+attempt list in a <code>run.auto_excluded</code> audit row). A compromised attempt that
+passed still credits the task locally - it is the run, not the attempt, that
+gets excluded. The scores file gets an <code># Upstream</code> block when every variant
+in the run shares one provider, with a pin line only for a single-variant
+run. Abandon it and submit again once the pin is right.</p>
+<h3 id="one-profile-per-model-set-and-mode">One profile per model, set and mode<a class="headerlink" href="#one-profile-per-model-set-and-mode" title="Permanent link">&para;</a></h3>
+<p>The site keeps one upstream profile per (model, task set, mode), claimed in
+the ingest batch. The first ingest after this shipped establishes each
+triple's profile - historical cohorts are not seeded - and <code>&lt;unpinned&gt;</code>
+counts as a profile like any other. A later run with a different pin is
+refused with <code>409 upstream_profile_conflict</code> naming the runs that hold the
+profile. Exclude those runs first, or re-run under the same pin. Excluding
+the last non-excluded run of a profile releases it; including a run re-claims
+it and is refused with the same 409 if that would conflict.</p>
+<h3 id="backfilling-finished-runs">Backfilling finished runs<a class="headerlink" href="#backfilling-finished-runs" title="Permanent link">&para;</a></h3>
+<p>For a finished batch run from before pinning existed,
+<code>centralgauge runs backfill-upstream &lt;runId&gt; [--dry-run]</code> reads
+<code>result.raw.provider</code> from each stored <code>responses/&lt;itemId&gt;.json</code> and posts
+one entry per (task, attempt); rows become <code>unpinned</code> with <code>served_upstream</code>
+set. It never writes one value across a run: an attempt with no stored
+provider is skipped and listed. Sync runs keep no raw response and cannot be
+backfilled.</p>
+<h2 id="cost-comparison">Cost comparison<a class="headerlink" href="#cost-comparison" title="Permanent link">&para;</a></h2>
+<p>Two real Anthropic Haiku 4.5 batch runs against the <code>batch-smoke</code> preset
+(<code>tasks/easy/CG-AL-E001-basic-table.yml</code>, <code>tasks/easy/CG-AL-E006-page-extension.yml</code>,
+containers Cronus28 + Cronus282, 2 attempts):</p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>CG-AL-E001</th>
+<th>CG-AL-E006</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Batch, <code>09b9a437</code></td>
+<td>$0.001885 (2 attempts, passed on 2nd)</td>
+<td>$0.002408 (2 attempts, failed both)</td>
+<td>$0.004293</td>
+</tr>
+<tr>
+<td>Batch, <code>a616b047</code></td>
+<td>$0.0007335 (1 attempt, passed 1st)</td>
+<td>$0.0024615 (2 attempts, failed both)</td>
+<td>$0.003195</td>
+</tr>
+<tr>
+<td>Sync, latest matching pair found (<code>benchmark-results-1780028631181.json</code>, 2026-05-29)</td>
+<td>$0.001467</td>
+<td>$0.005602</td>
+<td>$0.007069</td>
+</tr>
+</tbody>
+</table>
+<p>Batch came in roughly 39-55% cheaper than the latest comparable sync run for the same two
+tasks and model, in the direction the documented 50% Anthropic batch discount predicts.
+This is not a controlled A/B (the sync run is ~14 weeks older, and per-attempt token
+counts vary with what the model actually generated), but it is consistent with the
+expected discount rather than contradicting it.</p>
+<p>The OpenAI gpt-5-mini run's cost ($0.005798 total) is in the OpenAI section above; no
+prior sync run of that model on the same two tasks exists to compare against.</p>
+<p>The OpenRouter Gemini 3.8 Flash run's cost ($0.00388575 total, exactly matching
+OpenRouter's own <code>providerReportedCostUsd</code>) is in the OpenRouter section above; no prior
+sync run of that model on the same two tasks exists to compare against either.</p>
+<h2 id="status">Status<a class="headerlink" href="#status" title="Permanent link">&para;</a></h2>
+<p>Two Anthropic runs on Haiku 4.5, one OpenAI run on gpt-5-mini, and one OpenRouter run on
+Gemini 3.8 Flash have now been driven by hand end to end. The Anthropic and OpenAI runs
+each included a deliberate crash drill; the OpenRouter run completed in a single wave
+with no incident to drill into. The Anthropic drill's Incident C bug and the OpenAI
+drill's three retry defects, empty-collect bug, and stuck-collect hole are all fixed and
+reviewed (commit <code>ac1d2e0a</code> plus "retry detects submit-unknown from a live intent;
+advance prints its refusal", "retry resubmits a prepared run after confirm-not-submitted
+and sets the submitted phase", "OpenAI collect retrieves its output and error file ids;
+poll extras are persisted on the record", and "route uncollected batches to collect from
+any phase; an evaluate step with nothing evaluable exits 4 instead of 0"). The OpenRouter
+run additionally confirmed the Task 13b pricing carry-forward fix works in production
+against a live daily freshness refresh.</p>
+<h2 id="scheduled-advance-all">Scheduled <code>advance --all</code><a class="headerlink" href="#scheduled-advance-all" title="Permanent link">&para;</a></h2>
+<p>The recommended shape is a cron job (or, on Windows, a Task Scheduler task) that runs</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>deno task start bench batch advance --all --output results
+</code></pre></div>
+<p>every 30 minutes. Exit 3 is normal - it just means some run under <code>&lt;output&gt;/batch/</code> is
+still processing on the provider side. Exit 0 means at least one run took a real step
+(submitted a wave, collected, evaluated, or finalized) or every run is already done;
+either way the next scheduled tick will pick up whatever is left. Exit 4 must page an
+operator - it means a run hit drift, a <code>submit-unknown</code> state awaiting <code>retry</code>, or some
+other condition <code>advance</code> cannot resolve on its own; <code>advance</code> itself prints
+<code>[FAIL] &lt;reason&gt;</code> to the console on that exit (the action's own failure message), and a
+<code>bench batch status</code> call recomputes and shows the same next action, so either one tells
+you the reason before you decide the next move (<code>state.json</code> only stores <code>lastError</code> for
+submission failures, not for every exit-4 cause). <code>.centralgauge.yml</code> has a commented
+<code>batch.advanceIntervalMinutes</code> example (see the Provider notes section and
+<code>.claude/rules/batch-mode.md</code>) documenting the same 30-minute default for whatever
+scheduler config reads it.</p>
+<p>An unattended loop on this shape is safe because of four runner fixes proven by the hand
+runs above: <code>retry</code> now resubmits correctly after a crash is confirmed not submitted
+("retry detects submit-unknown from a live intent; advance prints its refusal", together
+with "retry resubmits a prepared run after confirm-not-submitted and sets the submitted
+phase") instead of refusing with "nothing to retry"; OpenAI's <code>collect</code> step retrieves
+the batch itself to get its output/error file ids instead of relying on ids that the poll
+step had never persisted onto the handle ("OpenAI collect retrieves its output and error
+file ids; poll extras are persisted on the record"); an uncollected batch is routed back
+to <code>collect</code> from any non-terminal phase instead of getting stuck, and an <code>evaluate</code> step
+with nothing left to evaluate now exits 4 with a blocked reason instead of silently
+exiting 0 and spinning forever (both from "route uncollected batches to collect from any
+phase; an evaluate step with nothing evaluable exits 4 instead of 0"). Before these
+fixes, a scheduled loop could sit at exit 0 indefinitely making zero real progress with
+nobody there to notice - see Incident C and the OpenAI empty-collect incident above for
+exactly how that happened on hand-driven runs.</p>
+<h2 id="cost-table-three-providers-batch-smoke-presets-no-ingest-tasks-cg-al-e001-cg-al-e006-2-attempts">Cost table (three providers, <code>batch-smoke*</code> presets, <code>--no-ingest</code>, tasks CG-AL-E001 + CG-AL-E006, 2 attempts)<a class="headerlink" href="#cost-table-three-providers-batch-smoke-presets-no-ingest-tasks-cg-al-e001-cg-al-e006-2-attempts" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>run</th>
+<th>model</th>
+<th>run id</th>
+<th>outcome</th>
+<th>batch cost</th>
+<th>provider-reported</th>
+<th>sync comparison</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Task 13 run 1</td>
+<td>anthropic/claude-haiku-4-5</td>
+<td>09b9a437-e1f5-4c3e-86f3-4c1d62d73c10</td>
+<td>E001 solved attempt 2, E006 failed</td>
+<td>$0.004293</td>
+<td>none (Anthropic reports no batch cost)</td>
+<td>$0.007069 sync (2026-05-29), 39% cheaper</td>
+</tr>
+<tr>
+<td>Task 13 run 2</td>
+<td>anthropic/claude-haiku-4-5</td>
+<td>a616b047-fb79-43ac-8c65-9d1826068341</td>
+<td>E001 solved attempt 1, E006 failed</td>
+<td>$0.003195</td>
+<td>none</td>
+<td>same sync run, 55% cheaper</td>
+</tr>
+<tr>
+<td>Task 15</td>
+<td>openai/gpt-5-mini</td>
+<td>28755d71-6d6a-46c8-baae-f13456d0b405</td>
+<td>E001 solved attempt 1, E006 failed</td>
+<td>$0.005798</td>
+<td>none (OpenAI reports no batch cost)</td>
+<td>no sync run exists</td>
+</tr>
+<tr>
+<td>Task 17</td>
+<td>openrouter/google/gemini-3.8-flash</td>
+<td>bf175561-5cc2-40f9-a343-3e2b1240c8f3</td>
+<td>both solved attempt 1</td>
+<td>$0.00388575</td>
+<td>$0.00388575 (usage.cost), 0% gap</td>
+<td>no sync run exists</td>
+</tr>
+</tbody>
+</table>
+<p>Wave timings: Anthropic waves ended within 20 to 80 minutes; OpenAI gpt-5-mini wave 1 took
+8h33m (two items) and wave 2 12h12m (one item); OpenRouter Gemini completed in about 4
+minutes.</p>
+<h2 id="site-cost-is-list-price">Site cost is list price<a class="headerlink" href="#site-cost-is-list-price" title="Permanent link">&para;</a></h2>
+<p>The scoreboard prices every run at the model's published sync rates, whatever
+its invocation mode (migration <code>0021</code>, <code>rowCostUsd()</code> in the worker). A batch
+run therefore shows the same per-task cost a sync run of the same model would;
+the batch discount is real money saved by the operator, not a property of the
+model, and it would make models without a batch tier look more expensive than
+they are. The batch-priced figure stays in the local results file and the
+<code># Batch</code> block. The Opus 5 scout, for example, cost $20.86 at batch rates and
+appears on the site at about $41.7 (list price) for its 232 tasks.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

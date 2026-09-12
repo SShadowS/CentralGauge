@@ -1,0 +1,3497 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/task-authoring-guide/">
+      
+      
+        <link rel="prev" href="../tasks/task-creation-prompt/">
+      
+      
+        <link rel="next" href="../architecture/overview/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Trap Task Authoring Guide - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#authoring-a-benchmark-trap-task" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Trap Task Authoring Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-are-building-and-the-one-property-that-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What you are building, and the one property that matters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#before-you-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-scaffold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Scaffold
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-open-the-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Open the workspace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-write-the-four-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Write the four pieces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Probe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4b-see-what-models-actually-do-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4b. See what models actually do (optional)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4c-compile-and-test-a-response-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4c. Compile and test a response (optional)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-promote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Promote
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rules-that-will-bite-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rules that will bite you
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rules that will bite you">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#do-not-write-guiding-notes-in-the-description" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do not write guiding notes in the description
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-not-write-placeholder-assertions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do not write placeholder assertions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-everything-the-task-specifies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test everything the task specifies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-id-filename-prefix-inside-correct-is-reserved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The &lt;id&gt;. filename prefix inside correct/ is reserved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#object-id-ranges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Object ID ranges
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-not-hand-edit-generated-appjson-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do not hand-edit generated app.json files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reading-probe-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading probe output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#after-promote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After promote
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#taskyml-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        task.yml reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prereq-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prereq apps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#diagnose-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnose tasks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Diagnose tasks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scaffold-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scaffold one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-convention-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The convention paths
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-naive-is-starter-gate-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The naive-is-starter gate rule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-model-is-asked-to-return" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the model is asked to return
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-task-set-hash-consequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The task-set hash consequence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-caveat-while-editing-the-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A caveat while editing the template
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#known-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-things-live" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where things live
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-are-building-and-the-one-property-that-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What you are building, and the one property that matters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#before-you-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-scaffold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Scaffold
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-open-the-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Open the workspace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-write-the-four-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Write the four pieces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Probe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4b-see-what-models-actually-do-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4b. See what models actually do (optional)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4c-compile-and-test-a-response-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4c. Compile and test a response (optional)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-promote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Promote
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rules-that-will-bite-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rules that will bite you
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rules that will bite you">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#do-not-write-guiding-notes-in-the-description" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do not write guiding notes in the description
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-not-write-placeholder-assertions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do not write placeholder assertions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-everything-the-task-specifies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test everything the task specifies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-id-filename-prefix-inside-correct-is-reserved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The &lt;id&gt;. filename prefix inside correct/ is reserved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#object-id-ranges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Object ID ranges
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-not-hand-edit-generated-appjson-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do not hand-edit generated app.json files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reading-probe-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading probe output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#after-promote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After promote
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#taskyml-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        task.yml reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prereq-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prereq apps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#diagnose-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnose tasks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Diagnose tasks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scaffold-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scaffold one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-convention-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The convention paths
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-naive-is-starter-gate-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The naive-is-starter gate rule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-model-is-asked-to-return" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the model is asked to return
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-task-set-hash-consequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The task-set hash consequence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-caveat-while-editing-the-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A caveat while editing the template
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#known-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-things-live" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where things live
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/task-authoring-guide.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="authoring-a-benchmark-trap-task">Authoring a Benchmark Trap Task<a class="headerlink" href="#authoring-a-benchmark-trap-task" title="Permanent link">&para;</a></h1>
+<p>A practical guide to writing a new CentralGauge task, start to finish. Follow
+it in order the first few times; after that you will only need the reference
+sections at the end.</p>
+<h2 id="what-you-are-building-and-the-one-property-that-matters">What you are building, and the one property that matters<a class="headerlink" href="#what-you-are-building-and-the-one-property-that-matters" title="Permanent link">&para;</a></h2>
+<p>A CentralGauge task asks a model to write some AL, then scores it by compiling
+the result and running an oracle test against it. A <strong>trap task</strong> targets a
+specific piece of Business Central behaviour that a competent model plausibly
+gets wrong.</p>
+<p>Every task ships with two reference solutions:</p>
+<ul>
+<li><strong><code>correct/</code></strong> — a working solution that <strong>must pass</strong> the oracle.</li>
+<li><strong><code>naive/</code></strong> — a plausible-but-wrong solution that <strong>must fail</strong> it.</li>
+</ul>
+<p>That pair is the whole point. A task whose naive solution <em>also</em> passes tests
+nothing: every model scores 100% and the task contributes no signal. The
+workbench calls this property <strong>discrimination</strong>, and it refuses to promote a
+task that has not demonstrated it.</p>
+<p>So the question to hold in your head while authoring is not "is my task hard?"
+It is: <strong>what would a reasonable-but-wrong implementation look like, and does
+my oracle actually catch it?</strong></p>
+<h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
+<ul>
+<li>A BC container must be running for symbol resolution and probing.
+  <code>Cronus28</code> is the default and the only one with credentials wired for the
+  probe. Check with <code>docker ps</code>.</li>
+<li><strong>Docker must be on the <code>desktop-windows</code> context.</strong> Under <code>desktop-linux</code>
+  the Cronus containers do not appear at all — not "stopped", absent — which
+  looks exactly like they were deleted. <code>docker context use desktop-windows</code>.</li>
+<li>VS Code with the AL Language extension.</li>
+</ul>
+<h2 id="the-loop">The loop<a class="headerlink" href="#the-loop" title="Permanent link">&para;</a></h2>
+<h3 id="1-scaffold">1. Scaffold<a class="headerlink" href="#1-scaffold" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>task<span class="w"> </span>new<span class="w"> </span>--slug<span class="w"> </span>day-close
+</code></pre></div>
+<p>Options:</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--slug &lt;kebab-case&gt;</code></td>
+<td>Required. Becomes part of the promoted filename.</td>
+</tr>
+<tr>
+<td><code>--id CG-AL-X###</code></td>
+<td>Pick a specific id. Refused if taken. Omit to get the next free one.</td>
+</tr>
+<tr>
+<td><code>--with-prereq</code></td>
+<td>Also scaffold a <code>prereq/</code> app — for objects the model should <em>not</em> have to write.</td>
+</tr>
+<tr>
+<td><code>--container &lt;name&gt;</code></td>
+<td>Which container the workspace targets. Defaults to <code>Cronus28</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>You get:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>scratch/CG-AL-X054/
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  task.yml                  the spec the model sees
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  CG-AL-X054.code-workspace open this
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  CHECKLIST.md              every file this task spans
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  NOTES.md                  why the trap works — for reviewers
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  correct/
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    app.json                generated, do not hand-edit
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    CG-AL-X054.Test.al      the oracle
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>  naive/
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    app.json                generated, do not hand-edit
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>  prereq/                   only with --with-prereq
+</code></pre></div>
+<h3 id="2-open-the-workspace">2. Open the workspace<a class="headerlink" href="#2-open-the-workspace" title="Permanent link">&para;</a></h3>
+<p>Open <code>CG-AL-X054.code-workspace</code>. Not the folder — the workspace file. It wires
+up <code>correct/</code>, <code>naive/</code> and <code>prereq/</code> as separate AL projects with symbol paths
+pointing at the container's compiler cache, so <code>Assert</code>, the <code>Library - *</code>
+codeunits and the BC platform types all resolve.</p>
+<p>If the container was down when you scaffolded, symbols will be missing. Run one
+probe and the workspace refreshes them.</p>
+<h3 id="3-write-the-four-pieces">3. Write the four pieces<a class="headerlink" href="#3-write-the-four-pieces" title="Permanent link">&para;</a></h3>
+<p>Order matters less than you would think, but this order tends to flow:</p>
+<p><strong><code>NOTES.md</code> first.</strong> Three questions: what is the trap, why would a competent
+model miss it, and what does the naive solution get wrong? If you cannot answer
+the middle one convincingly, the task is probably testing a typo rather than a
+knowledge gap. Stop and pick a different trap.</p>
+<p><strong><code>naive/</code> second.</strong> Write the wrong-but-plausible solution <em>before</em> the correct
+one. It keeps you honest: if you write <code>correct/</code> first, you will unconsciously
+design the oracle around it and may never check that a realistic mistake fails.</p>
+<p><strong><code>correct/</code> third.</strong></p>
+<p><strong>The oracle last</strong>, once you know exactly what distinguishes the two.</p>
+<h3 id="4-probe">4. Probe<a class="headerlink" href="#4-probe" title="Permanent link">&para;</a></h3>
+<p>Ctrl+Shift+B in the workspace, or:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>task<span class="w"> </span>probe<span class="w"> </span>CG-AL-X054
+</code></pre></div>
+<p>Two more workspace tasks run one side only — useful while iterating, since each
+is one container round-trip instead of two.</p>
+<h3 id="4b-see-what-models-actually-do-optional">4b. See what models actually do (optional)<a class="headerlink" href="#4b-see-what-models-actually-do-optional" title="Permanent link">&para;</a></h3>
+<p>The probe tells you the trap discriminates between <em>your two</em> solutions. It does
+not tell you whether real models fall for it. To check that before committing a
+bench run:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>workbench<span class="w"> </span>serve<span class="w"> </span>--preset<span class="w"> </span>quick-test
+</code></pre></div>
+<p>Open the printed <code>127.0.0.1</code> URL, pick the draft, and ask. You get one row per
+AL object and one column per model, each cell saying <strong>Made the mistake</strong>,
+<strong>Avoided the mistake</strong>, <strong>Different approach</strong> or <strong>Couldn't compare yet</strong>.
+Click a cell to read that object's source.</p>
+<p><code>quick-test</code> uses the <code>mock</code> provider and costs nothing — use it to confirm the
+dashboard works. Naming a real preset spends real money, so decide deliberately.</p>
+<p>A trap every model avoids is too easy; one every model falls for may be testing
+knowledge nobody has rather than a genuine discriminator. Both are worth knowing
+before promotion.</p>
+<p>Quick runs are <strong>calibration, never benchmark results</strong>: nothing here reaches the
+scoreboard, and each run is saved beside the draft at <code>scratch/&lt;id&gt;/.runs/</code>.</p>
+<p><strong>When the draft has a <code>prereq/</code></strong>, the "Files" rail also shows what each
+response actually referenced from it, so you can tell a hallucinated field
+apart from a model that genuinely fell for the trap. Those are two different
+failures, and telling them apart is what makes the run's calibration
+judgeable. The rail heading names whose response it is showing
+(<code>Already exists (prereq) — as referenced by &lt;model&gt;</code>), and clicking any cell
+in a model's column (the same click that opens the detail panel) moves the
+rail onto that model. Before you click anything it shows the first response,
+labelled; on a multi-model run an unlabelled rail would read as describing
+the whole run, and you need to know which model invented the field.</p>
+<p>Findings are grouped by table, then by procedure, and tiered:</p>
+<ul>
+<li><strong>Made up this field</strong> — the referenced name exists in no prereq table.
+  This is a hallucination, not a trap-avoidance signal.</li>
+<li><strong>Unknown member</strong> — the reference couldn't be resolved with enough
+  confidence to call it either invented or genuine; a soft flag, not an
+  accusation.</li>
+<li>A reference that resolves cleanly to a real prereq field or procedure gets
+  no label at all — showing one would read as doubt about something that is
+  actually correct.</li>
+</ul>
+<p>Two more states are not findings, and mean opposite things:</p>
+<ul>
+<li><strong>Nothing from prereq/ referenced</strong> — the analysis ran and found nothing to
+  flag among the prereq references it could resolve. It is not a statement
+  that the response is correct, and references it cannot resolve are never
+  shown at all. By design it stays silent about: a variable it could not bind
+  to a table, anything bound to a table outside the prereq (a base-app record,
+  a <code>RecordRef</code>), <code>Record &lt;id&gt;</code> and <code>array[N] of Record</code> variables, chained
+  receivers like <code>Rec.SubRec.Modify()</code>, and prereq objects that are not tables
+  or table extensions — a model calling a prereq codeunit's procedure gets no
+  analysis. An empty rail is not coverage; read the response.</li>
+<li><strong>Couldn't check the prereq</strong> — the analysis could not run at all (a parse
+  failure on the response or the prereq itself). Go look at your draft; this
+  tells you nothing about the response.</li>
+</ul>
+<p><strong>Use as wrong answer.</strong> Open a response's detail panel and click
+"Use as wrong answer (naive/)" to promote it into the draft's <code>naive/</code>
+directory. A model's genuine mistake is a more authentic wrong answer than
+one you invent by hand. Promotion <strong>replaces</strong> <code>naive/</code>'s AL files rather
+than merging with them, one file per top-level AL object in the response,
+and it refuses (leaving <code>naive/</code> untouched) rather than overwriting when
+two objects would collide on the same filename, or when an object's name
+would land on the reserved <code>&lt;taskId&gt;.</code> prefix (see "The <code>&lt;id&gt;.</code> filename
+prefix inside <code>correct/</code> is reserved" below; the same prefix rule applies
+to <code>naive/</code>).</p>
+<h3 id="4c-compile-and-test-a-response-optional">4c. Compile and test a response (optional)<a class="headerlink" href="#4c-compile-and-test-a-response-optional" title="Permanent link">&para;</a></h3>
+<p>4b tells you whether a response fell for the trap, cheaply, because it never
+touches a container. It does not tell you whether the response actually
+compiles or passes the oracle. For that, click <strong>Compile &amp; test</strong> next to a
+response, or <strong>Compile &amp; test all</strong> to run every response in the run that
+produced usable AL.</p>
+<p>This is a different order of cost. It publishes the response to a real
+Business Central container and runs the oracle's tests, escalating to the
+bench's own fix attempt (the same <code>buildFixPrompt</code> the bench uses) when the
+first attempt fails to compile or fails a test. Expect minutes, not seconds,
+and expect a second model call when a fix attempt runs.</p>
+<p>It is also serial and single-container: candidates share publish state on one
+container, so only one compile-and-test job runs at a time. Clicking a second
+response while one is running queues it rather than racing it. And it is
+refused entirely while a bench is live, because publishing to the same
+container as a running bench would corrupt that bench's BC NST PSSession.
+The page checks for that in the background every few
+seconds, so both buttons grey out with the reason shortly after a bench
+starts rather than waiting for you to click and be refused. That check
+never touches the container, so it reports only what is free to know: that
+a bench is running, or that this server has no escalation configured. A
+container that is unreachable, or missing the test harness, is found by the
+preflight when you do click, and reported with the container's own output.
+"Ask N models" keeps working the whole time.</p>
+<p>Editing <code>prereq/</code> between two clicks is safe: the compiled and published
+prereq caches are cleared before every job, so each run compiles and
+publishes whatever is on disk at the moment you click. The cost is one prereq
+recompile per job.</p>
+<p>Each response's column then shows one of:</p>
+<table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Passed first try</strong></td>
+<td>The oracle's tests passed, first attempt.</td>
+</tr>
+<tr>
+<td><strong>Passed on 2nd try</strong></td>
+<td>The first attempt failed; the bench's own fix attempt then passed.</td>
+</tr>
+<tr>
+<td><strong>Failed both tries (n of m tests)</strong></td>
+<td>Both attempts failed the oracle.</td>
+</tr>
+<tr>
+<td><strong>Didn't compile</strong></td>
+<td>The first attempt's code did not compile.</td>
+</tr>
+</tbody>
+</table>
+<p>Read these exactly as narrowly as 4b's labels. <strong>Passed first try</strong> means the
+oracle's tests passed on this container, at this moment. It does not mean the
+response is good, and it says nothing about anything the oracle does not
+check.</p>
+<p>Two more labels can appear, and both describe the container rather than the
+model:</p>
+<ul>
+<li><strong>Didn't publish: \&lt;reason&gt;</strong>: the candidate published or installed badly
+  and ran zero tests. Its pass/fail counts would be a scoring convention, not
+  a measurement, so none are shown.</li>
+<li><strong>Verification error: \&lt;reason&gt;</strong>: a genuine infrastructure failure, a
+  dead container or a thrown call.</li>
+</ul>
+<p>Neither means the model failed. Treat both as "this response has not actually
+been checked yet," and re-run once the container is healthy.</p>
+<p><strong>The mismatch badge.</strong> When a response writes the right kind of object but
+under the wrong id, or under a name that is not just a different spelling, the
+cell shows "Asked for: ..." against "Wrote: ...". Two spellings that differ
+only by case or whitespace do not trigger it: AL identifiers are
+case-insensitive, so that difference is not a defect.</p>
+<p><strong>Deep links.</strong> Every entry in the Files rail opens in VS Code: <code>task.yml</code>,
+the oracle test, and every file under <code>prereq/</code> link to that exact file;
+<code>correct/</code> and <code>naive/</code> link to the directories themselves. Whether VS Code's
+URI handler opens a bare directory link as a folder has not been verified
+against a live install. If clicking "Right answer (correct/)" or
+"Wrong answer (naive/)" does nothing, that is a known gap, not a sign the
+link is broken.</p>
+<p>Full reference: <a href="../cli/commands/#workbench">workbench command</a>.</p>
+<h3 id="5-promote">5. Promote<a class="headerlink" href="#5-promote" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>task<span class="w"> </span>promote<span class="w"> </span>CG-AL-X054<span class="w"> </span>--difficulty<span class="w"> </span>hard
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--difficulty easy\|medium\|hard</code></td>
+<td>Required. Determines the destination directory.</td>
+</tr>
+<tr>
+<td><code>--slug &lt;slug&gt;</code></td>
+<td>Override the slug recorded at scaffold time.</td>
+</tr>
+<tr>
+<td><code>--force</code></td>
+<td>Skip the probe gate. Cannot skip the destination-exists check.</td>
+</tr>
+</tbody>
+</table>
+<p>This moves <code>task.yml</code>, the oracle, any companion mocks, and <code>prereq/</code> into the
+committed tree, and rewrites the workspace to point at their new homes.</p>
+<h2 id="rules-that-will-bite-you">Rules that will bite you<a class="headerlink" href="#rules-that-will-bite-you" title="Permanent link">&para;</a></h2>
+<h3 id="do-not-write-guiding-notes-in-the-description">Do not write guiding notes in the description<a class="headerlink" href="#do-not-write-guiding-notes-in-the-description" title="Permanent link">&para;</a></h3>
+<p>The benchmark tests whether a model knows AL. Never warn it about the mistake
+the task exists to catch.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># BAD — hands the model the answer</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="no">Create an interface called "Payment Processor" (note: interfaces in AL do</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="no">not use numeric IDs)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># GOOD</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="no">Create an interface called "Payment Processor"</span>
+</code></pre></div>
+<p>If a model wrongly gives the interface an ID, that is a valid failure — it shows
+the model does not understand AL interfaces. Describe <strong>what</strong> to build, never
+<strong>how</strong>, and never flag the trap.</p>
+<h3 id="do-not-write-placeholder-assertions">Do not write placeholder assertions<a class="headerlink" href="#do-not-write-placeholder-assertions" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>// NEVER — always passes, tests nothing
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>Assert.IsTrue(true, 'This always passes');
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>// Verify an actual computed value
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>Result := Calculator.Add(2, 3);
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>Assert.AreEqual(5, Result, 'Addition should return correct sum');
+</code></pre></div>
+<p>The scaffolded oracle ships with <code>Assert.IsTrue(false, 'TODO: ...')</code> precisely
+so an unfinished draft cannot pass a probe by accident. Replace it; do not
+delete it and leave nothing.</p>
+<h3 id="test-everything-the-task-specifies">Test everything the task specifies<a class="headerlink" href="#test-everything-the-task-specifies" title="Permanent link">&para;</a></h3>
+<p>If <code>task.yml</code> names fields, options, defaults or behaviours, the oracle must
+verify all of them: each option value, <code>InitValue</code> defaults via <code>Insert()</code> then
+<code>Get()</code>, <code>CalcFormula</code> fields against real related records, table relations
+rejecting invalid values, and boundaries at <em>and around</em> any threshold the
+description mentions.</p>
+<h3 id="the-id-filename-prefix-inside-correct-is-reserved">The <code>&lt;id&gt;.</code> filename prefix inside <code>correct/</code> is reserved<a class="headerlink" href="#the-id-filename-prefix-inside-correct-is-reserved" title="Permanent link">&para;</a></h3>
+<p>This one is enforced, and the reason is not obvious.</p>
+<p>At verify time, every <code>&lt;id&gt;.*.al</code> file in the oracle's directory is copied into
+<strong>both</strong> the correct and the naive run. That is correct for a mock the oracle
+needs — the naive side needs the same mock. It is contamination for a <em>solution</em>
+file: it gets injected into the naive run, collides there, and makes a task that
+discriminates on nothing look like it discriminates.</p>
+<p>So:</p>
+<ul>
+<li>Oracle-side files — mocks, spies, subscribers, helper enums the test
+  references — <strong>use</strong> the <code>CG-AL-X054.</code> prefix. They travel to
+  <code>tests/al/&lt;difficulty&gt;/</code> at promote.</li>
+<li>Your solution files <strong>must not</strong>. Name them anything else:
+  <code>DayClose.Codeunit.al</code>, <code>TariffAgent.Codeunit.al</code>.</li>
+<li>A file named exactly <code>CG-AL-X054.al</code> is refused outright. The bench writes the
+  model's generated code to that exact filename and then copies
+  <code>CG-AL-X054.</code>-prefixed files over it, so such a file would silently replace
+  <strong>every model's submission</strong>.</li>
+<li>No <code>&lt;id&gt;.*.al</code> may live in <code>naive/</code> at all.</li>
+</ul>
+<p>The probe checks all of this before it touches a container, so you find out in
+seconds rather than minutes.</p>
+<h3 id="object-id-ranges">Object ID ranges<a class="headerlink" href="#object-id-ranges" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Range</th>
+<th>For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>69000-69999</td>
+<td>Prereq app objects</td>
+</tr>
+<tr>
+<td>70000-79999</td>
+<td>Generated code — what the model writes</td>
+</tr>
+<tr>
+<td>80000-89999</td>
+<td>Test codeunits and oracle-side helpers</td>
+</tr>
+</tbody>
+</table>
+<p>The scaffold allocates your test codeunit id for you. Do not renumber a
+committed test codeunit — it changes <code>tests/al/**</code> content and moves the
+task-set hash.</p>
+<h3 id="do-not-hand-edit-generated-appjson-files">Do not hand-edit generated <code>app.json</code> files<a class="headerlink" href="#do-not-hand-edit-generated-appjson-files" title="Permanent link">&para;</a></h3>
+<p><code>correct/app.json</code> and <code>naive/app.json</code> are generated with the right
+dependencies, id ranges and GUIDs. <code>naive/app.json</code> in particular is
+load-bearing: without it the naive side cannot compile, and the probe's own
+guard for that case is weaker than you would like (see Known limitations).</p>
+<h2 id="reading-probe-output">Reading probe output<a class="headerlink" href="#reading-probe-output" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Exit</th>
+<th>Verdict</th>
+<th>What it means</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>Discriminates</td>
+<td><code>correct/</code> passed, <code>naive/</code> failed its assertions.</td>
+<td>Promote.</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>Does not discriminate</td>
+<td>Usually <code>naive/</code> passed.</td>
+<td>Your naive solution is not actually wrong, or the oracle does not check the thing that differs. Strengthen the oracle or pick a naive solution that genuinely diverges.</td>
+</tr>
+<tr>
+<td><code>3</code></td>
+<td>Inconclusive</td>
+<td>Infra trouble — container down, publish timeout, SQL hiccup.</td>
+<td><strong>Re-run. Do not edit the task.</strong> This is not a result.</td>
+</tr>
+<tr>
+<td><code>5</code></td>
+<td>Compile-earned failure</td>
+<td><code>naive/</code> failed to <em>compile</em> rather than failing assertions.</td>
+<td>Almost always a layout problem, not a real trap. See below.</td>
+</tr>
+</tbody>
+</table>
+<p>Exit 5 is the one worth understanding. A plausible-but-wrong solution should
+compile and then fail its assertions. If it fails to compile, the usual causes
+are:</p>
+<ul>
+<li>a solution file in <code>correct/</code> carrying the reserved <code>&lt;id&gt;.</code> prefix, injected
+  into the naive run where it collides;</li>
+<li>an oracle-referenced helper that only <code>correct/</code> has, so the naive side dies
+  on unresolved symbols;</li>
+<li>a missing or broken <code>naive/app.json</code>.</li>
+</ul>
+<p>If your trap genuinely <em>is</em> about a compile error — the naive mistake is a type
+or syntax violation rather than a runtime one — pass <code>--allow-compile-fail</code> to
+accept it. Read the caveat under Known limitations before you do.</p>
+<h2 id="after-promote">After promote<a class="headerlink" href="#after-promote" title="Permanent link">&para;</a></h2>
+<p>Two follow-ups, both easy to forget.</p>
+<p><strong>1. Add the task to the taxonomy.</strong> <code>site/catalog/task-categories.yml</code> drives
+the site's group and tag filters. A promoted task with no entry is invisible to
+those filters. Add a line, then:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>sync-taxonomy<span class="w"> </span>--apply
+</code></pre></div>
+<p>This is decoupled from the task-set hash, so it never forces a re-bench and is
+safe any time.</p>
+<p><strong>2. Re-bench.</strong> Promoting changes <code>task_sets.hash</code>, which means every model
+benched under the previous hash is no longer comparable. The <code>promote</code> command
+says so when it runs. See the <code>/rebench-after-task-change</code> skill, then flip
+leaderboard visibility with
+<code>POST /api/v1/admin/catalog/task-sets {set_current: true}</code> once enough models
+have been re-run.</p>
+<p>Batch your promotions if you are authoring several tasks — one re-bench for five
+tasks beats five re-benches.</p>
+<h2 id="taskyml-reference"><code>task.yml</code> reference<a class="headerlink" href="#taskyml-reference" title="Permanent link">&para;</a></h2>
+<p>A real committed example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CG-AL-X052</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">prompt_template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code-gen.md</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nt">fix_template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bugfix.md</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nt">max_attempts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="no">Create codeunit "CG X052 Agent" (ID 71410) with Access = Internal and:</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">      </span><span class="no">procedure SetTerms(No: Code[20]; OfferedRate: Integer; NewQty: Integer)</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">  </span><span class="no">The existing "CG X052 Quote" table (ID 69100) has fields "No." (Code[20],</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">  </span><span class="no">primary key), Qty, Rate, Fee, and Total, all Integer except "No.".</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">  </span><span class="no">...</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="nt">domains</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">codeunits</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">tables</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="nt">metadata</span><span class="p">:</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">  </span><span class="nt">category</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">business-logic</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">  </span><span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">onvalidate</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">validate-order</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cascade</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">  </span><span class="nt">difficulty</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hard</span>
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="w">  </span><span class="nt">cohort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ado-trap-2026</span>
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="w">  </span><span class="nt">origin</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fable-designed</span>
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="nt">expected</span><span class="p">:</span>
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="w">  </span><span class="nt">compile</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a><span class="w">  </span><span class="nt">testApp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tests/al/hard/CG-AL-X052.Test.al</span>
+<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a><span class="w">  </span><span class="nt">testCodeunitId</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80342</span>
+<a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a><span class="nt">metrics</span><span class="p">:</span>
+<a id="__codelineno-8-25" name="__codelineno-8-25" href="#__codelineno-8-25"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">compile_pass</span>
+<a id="__codelineno-8-26" name="__codelineno-8-26" href="#__codelineno-8-26"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tests_pass</span>
+<a id="__codelineno-8-27" name="__codelineno-8-27" href="#__codelineno-8-27"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pass_attempt</span>
+</code></pre></div>
+<p>The schema is strict — an unknown key fails to load as loudly as a missing one.
+<code>expected.testApp</code> and <code>metadata.difficulty</code> are rewritten by <code>promote</code> to match
+<code>--difficulty</code>, so you do not need to keep them in sync by hand.</p>
+<h2 id="prereq-apps">Prereq apps<a class="headerlink" href="#prereq-apps" title="Permanent link">&para;</a></h2>
+<p>Use <code>--with-prereq</code> when the task needs objects the model should <em>not</em> have to
+write — a table a page is built on, an interface to implement, a publisher to
+subscribe to.</p>
+<p>The scaffold generates <code>prereq/app.json</code> with the right GUID for your id.
+X-series prereqs use the segment <code>0a&lt;NN&gt;</code>, so <code>CG-AL-X054</code> gets
+<code>a1b2c3d4-0a54-0000-0000-000000000001</code>. Do not hand-derive this; the convention
+caps at <code>X099</code> and the scaffold refuses beyond it rather than emitting a
+malformed GUID.</p>
+<p>Prereq symbols do not resolve in the editor until the first probe run — the
+probe compiles the prereq and stages the <code>.app</code> into <code>scratch/&lt;id&gt;/.symbols/</code>.
+Run one probe, pass or fail, and IntelliSense lights up.</p>
+<p>When the task description references a prereq object, say it already exists:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Ambiguous — model may try to create the table</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Create a page based on a table called "Product Category"...</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Clear</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Create a page based on the existing "Product Category" table (ID 69001)...</span>
+</code></pre></div>
+<p>Full details, including chained prereqs: <code>.claude/rules/prereq-apps.md</code>.</p>
+<h2 id="diagnose-tasks">Diagnose tasks<a class="headerlink" href="#diagnose-tasks" title="Permanent link">&para;</a></h2>
+<p>Everything above describes the trap-task shape: a <code>correct/</code>/<code>naive/</code> pair
+judged by discrimination. A second shape exists alongside it: <strong>diagnose
+tasks</strong>, where the model is handed a complete, already-broken application and
+a symptom, and must return the complete corrected application. There is no
+<code>task.yml</code> schema change for this - <code>prompt_template: diagnose.md</code> is what
+selects it, and the starter application is auto-detected from the task id by
+convention, the same way a prereq app is (<code>.claude/rules/prereq-apps.md</code>
+documents both conventions side by side).</p>
+<h3 id="scaffold-one">Scaffold one<a class="headerlink" href="#scaffold-one" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>task<span class="w"> </span>new<span class="w"> </span>--slug<span class="w"> </span>day-close-fix<span class="w"> </span>--diagnose
+</code></pre></div>
+<p><code>--diagnose</code> creates <code>scratch/&lt;id&gt;/starter/</code> instead of <code>naive/</code> and writes
+<code>prompt_template: diagnose.md</code> into <code>task.yml</code>. <code>fix_template</code> stays
+<code>bugfix.md</code>, unchanged - only the first generation prompt is diagnose-specific.
+<code>starter/</code> scaffolds <strong>empty</strong>, with no <code>app.json</code>: write both it and the
+buggy AL objects yourself, the same way you would author a real standalone
+application. <code>al_verify</code> requires an <code>app.json</code> in every solution directory it
+compiles, <code>starter/</code> included, so a <code>starter/</code> with <code>.al</code> files but no
+<code>app.json</code> will not probe. <code>--diagnose</code> and <code>--with-prereq</code> combine freely: a
+diagnose task's starter application can still reference an existing prereq
+object it should not itself define.</p>
+<p>Starter application object ids follow the same authoring convention as any
+other authored solution: keep them inside the 70000-74999 band. <code>id-audit</code>
+does not currently check this for <code>starter/</code>, in either state - <code>scratch/</code>
+is in its skip list, so a draft is never scanned, and a promoted
+<code>tasks/starter/&lt;id&gt;/</code> falls into an unclassified compilation unit, so only
+the 75000-79999 reserved-buffer check still applies there. Verify starter
+ids by hand. <code>starter/app.json</code>'s <code>idRanges</code> must cover every id <code>starter/</code>
+actually uses regardless: get that wrong and the probe can still pass - it
+compiles <code>starter/</code> against its own manifest - while the bench candidate
+manifest, which spans 70000-89999, fails every model on the out-of-band id.
+That failure looks like a model problem; it is a task-authoring one.</p>
+<h3 id="the-convention-paths">The convention paths<a class="headerlink" href="#the-convention-paths" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Draft</td>
+<td><code>scratch/&lt;id&gt;/starter/</code></td>
+</tr>
+<tr>
+<td>Promoted</td>
+<td><code>tasks/starter/&lt;id&gt;/</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>task promote</code> moves the whole <code>starter/</code> directory across in one piece -
+unlike <code>naive/</code>, which never moves at all; only the oracle test file leaves
+<code>correct/</code>. Promote refuses if <code>tasks/starter/&lt;id&gt;/</code> already exists, the same
+unconditional rule as every other destination, and lists the starter
+destination in its summary.</p>
+<h3 id="the-naive-is-starter-gate-rule">The naive-is-starter gate rule<a class="headerlink" href="#the-naive-is-starter-gate-rule" title="Permanent link">&para;</a></h3>
+<p><code>task probe</code> tells a diagnose draft from a trap-task one structurally:
+whichever of <code>naive/</code> or <code>starter/</code> actually holds <code>.al</code> files decides the
+shape - never a <code>.meta.json</code> flag, since none is written. A draft with <code>.al</code>
+files under both is refused outright, naming both directories, before any
+container work starts. For a diagnose draft, <code>starter/</code> IS the naive side: it
+is probed with <code>--expect fail</code> and <code>--strict-fail-mode</code>, exactly like a trap
+task's <code>naive/</code> - it must compile and then fail the oracle's assertions. The
+reserved <code>&lt;id&gt;.</code> filename prefix rule ("The <code>&lt;id&gt;.</code> filename prefix inside
+<code>correct/</code> is reserved" above) applies to <code>starter/</code> exactly as it does to
+<code>naive/</code>.</p>
+<h3 id="what-the-model-is-asked-to-return">What the model is asked to return<a class="headerlink" href="#what-the-model-is-asked-to-return" title="Permanent link">&para;</a></h3>
+<p><code>templates/diagnose.md</code> renders every <code>.al</code> file under the starter directory,
+sorted and concatenated with <code>// FILE: &lt;name&gt;</code> headers, between
+<code>BEGIN-APP</code>/<code>END-APP</code>, followed by the task's <code>description</code> as the symptom.
+The model must return the <strong>complete corrected application</strong> - every object,
+including the ones it did not change - not a diff and not a single file. A
+diagnose-template task with no starter code at all fails loudly the moment its
+prompt is built (<code>prompt template requires starter code but none was found
+for &lt;id&gt;</code>), rather than silently sending an empty app section to the model.</p>
+<p>Only the attempt-1 generation prompt renders starter code; the attempt-2 fix
+path is unchanged - it works from the model's own attempt-1 output plus the
+compiler/test failure, same as a trap task's fix attempt.</p>
+<h3 id="the-task-set-hash-consequence">The task-set hash consequence<a class="headerlink" href="#the-task-set-hash-consequence" title="Permanent link">&para;</a></h3>
+<p><code>tasks/starter/&lt;id&gt;/**</code> is inside the task-set hash, the same as
+<code>tests/al/**</code>: every file there matching a recognized text extension (<code>.yml</code>,
+<code>.yaml</code>, <code>.al</code>, <code>.json</code>, <code>.xml</code>, <code>.rdlc</code>, <code>.md</code>, <code>.txt</code>), matched
+case-insensitively, is hashed. Editing a starter file after promotion moves <code>task_sets.hash</code> just
+like editing the oracle would. Prompt construction itself is also folded in
+as a versioned policy string (<code>PROMPT_POLICY_VERSION</code> in
+<code>src/ingest/catalog/task-set-hash.ts</code>) - bumping that string moves the hash
+even when no starter file on disk changed, which is what protects against a
+changed prompt silently mixing with scores produced under the old one.</p>
+<h3 id="a-caveat-while-editing-the-template">A caveat while editing the template<a class="headerlink" href="#a-caveat-while-editing-the-template" title="Permanent link">&para;</a></h3>
+<p><code>templates/diagnose.md</code> is deliberately never run through <code>deno fmt</code> - it is
+prompt content the model reads verbatim, not documentation, and reformatting
+it changes every diagnose prompt built from it. If you touch it, review the
+diff by eye instead of letting a formatter near it.</p>
+<h3 id="known-gaps">Known gaps<a class="headerlink" href="#known-gaps" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>task import</code> does not reconstruct <code>starter/</code>.</strong> Pulling an
+  already-promoted diagnose task back into the workbench (see
+  <a href="../workbench/">Workbench: Import, Model Selector, VS Code, LLM Exchange</a>)
+  copies the oracle, its companions, and <code>prereq/</code> when present, but not
+  <code>tasks/starter/&lt;id&gt;/</code>. Copy it into <code>scratch/&lt;id&gt;/starter/</code> by hand before
+  probing; a follow-up will close this.</li>
+<li><strong>The generated <code>CHECKLIST.md</code> is still <code>naive/</code>-oriented.</strong> A diagnose
+  draft's checklist still describes <code>naive/*.al</code> and <code>naive/app.json</code>, which
+  the draft has neither of. Read "naive" as "the naive-side directory" -
+  <code>starter/</code> for this draft shape - until this is fixed.</li>
+</ul>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<p><strong><code>No app.json found in .../correct</code></strong> — you are on a pre-workbench draft, or an
+<code>app.json</code> was deleted. Re-scaffold, or copy the generated manifest shape from a
+fresh draft.</p>
+<p><strong>No IntelliSense.</strong> The container was probably down when you scaffolded.
+Confirm <code>docker context ls</code> shows <code>desktop-windows</code> starred, start the
+container, run one probe.</p>
+<p><strong>Probe says <code>inconclusive</code> repeatedly.</strong> Container trouble, not task trouble.
+The Cronus containers accumulate published apps from other work; a stale
+candidate can block a publish. The bench's own prenuke normally clears this.</p>
+<p><strong><code>Draft already exists ... refusing to overwrite in-progress work</code></strong> — the
+scaffold will not overwrite. Rename the old draft aside rather than deleting it;
+<code>scratch/</code> is gitignored, so a delete is unrecoverable.</p>
+<p><strong>Promote refuses with a stale-verdict message.</strong> You edited the draft after the
+last probe. Re-probe; the gate compares file mtimes against the cached verdict
+so it cannot promote something the probe never saw.</p>
+<h2 id="known-limitations">Known limitations<a class="headerlink" href="#known-limitations" title="Permanent link">&para;</a></h2>
+<p>Worth knowing before they surprise you.</p>
+<ul>
+<li><strong><code>tests/al/&lt;difficulty&gt;</code> shows errors by design.</strong> Every oracle references
+  the solution object the model is supposed to write, which exists nowhere in
+  the repo. Opening that project buys you symbol resolution for <code>Assert</code> and the
+  <code>Library - *</code> codeunits — not a clean Problems panel. <code>tests/al/hard/</code> also
+  carries two pre-existing duplicate test codeunit ids (80015, 80021) that show
+  as <code>AL0264</code>, deliberately not renumbered because that would move the hash.</li>
+<li><strong><code>--allow-compile-fail</code> accepts more than its name suggests.</strong> Exit 5 now
+  covers a missing manifest, a missing oracle, a publish defect and a zero-test
+  run as well as genuine compile errors. So <code>probe --allow-compile-fail</code> on a
+  draft with no <code>naive/app.json</code> will report success. Use the flag only when you
+  know the trap really is a compile error.</li>
+<li><strong>The VS Code task buttons are unverified.</strong> Every probe command was tested by
+  running it directly from the repo root; nobody has clicked Ctrl+Shift+B in a
+  real GUI. If it misbehaves, run the command from a terminal and file it.</li>
+<li><strong>Opening the repo root in VS Code is untested.</strong> The AL extension may
+  discover both the root <code>tests/al</code> project and the per-difficulty ones and
+  report duplicate diagnostics. Generated workspaces never open that folder.</li>
+<li><strong>The <code>correct/</code> and <code>naive/</code> deep links point at directories, not files.</strong>
+  Every other row in the Files rail links to one file, but those two link to
+  the directories themselves, and whether VS Code's URI handler opens a bare
+  directory as a folder has not been verified against a live install. If
+  clicking either does nothing, that is why.</li>
+</ul>
+<h2 id="where-things-live">Where things live<a class="headerlink" href="#where-things-live" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scratch/&lt;id&gt;/</code></td>
+<td>Your draft. Gitignored.</td>
+</tr>
+<tr>
+<td><code>scratch/&lt;id&gt;/.runs/</code></td>
+<td>Quick-run artifacts from <code>workbench serve</code>. Gitignored, never ingested.</td>
+</tr>
+<tr>
+<td><code>scratch/&lt;id&gt;/starter/</code></td>
+<td>Diagnose-task draft: the buggy starter application.</td>
+</tr>
+<tr>
+<td><code>tasks/&lt;difficulty&gt;/&lt;id&gt;-&lt;slug&gt;.yml</code></td>
+<td>Promoted task manifest.</td>
+</tr>
+<tr>
+<td><code>tasks/starter/&lt;id&gt;/</code></td>
+<td>Promoted starter application. Inside the task-set hash.</td>
+</tr>
+<tr>
+<td><code>tests/al/&lt;difficulty&gt;/&lt;id&gt;.Test.al</code></td>
+<td>Promoted oracle and companions.</td>
+</tr>
+<tr>
+<td><code>tests/al/dependencies/&lt;id&gt;/</code></td>
+<td>Promoted prereq app.</td>
+</tr>
+<tr>
+<td><code>site/catalog/task-categories.yml</code></td>
+<td>Group and tag metadata. Not hashed.</td>
+</tr>
+<tr>
+<td><code>.claude/rules/prereq-apps.md</code></td>
+<td>Prereq conventions and the reserved-prefix rule in depth.</td>
+</tr>
+<tr>
+<td><code>CLAUDE.md</code></td>
+<td>Task-set hash scope, container quirks, repo conventions.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

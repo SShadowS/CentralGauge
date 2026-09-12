@@ -1,0 +1,2641 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/reasoning-suite/sweeps/sweep-c-ado-workitems/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Sweep C — Azure DevOps work items (bugs) - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#sweep-c-azure-devops-work-items-bugs" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Sweep C — Azure DevOps work items (bugs)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Access
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Method
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#top-18-candidates-ranked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top 18 candidates (ranked)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Top 18 candidates (ranked)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-wi-80835-copy-document-fails-changes-cannot-be-saved-because-some-information-on-the-page-is-not-up-to-date" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. WI 80835 — "Copy Document fails: changes cannot be saved because some information on the page is not up-to-date"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-wi-81246-search-rules-incomplete-notification-shown-on-every-page-open-even-when-all-rules-are-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. WI 81246 — "Search rules incomplete" notification shown on every page open, even when all rules are complete
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-wi-79857-expense-report-comment-subform-hangs-the-client-for-minutes-on-a-brand-new-unsaved-report" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. WI 79857 — Expense Report comment subform hangs the client for minutes on a brand-new, unsaved report
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-wi-80720-posting-a-split-line-payment-against-a-whole-unit-currency-jpy-throws-a-gl-inconsistency-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. WI 80720 — Posting a split-line payment against a whole-unit currency (JPY) throws a G/L inconsistency error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-wi-80316-last-posting-at-update-throws-a-database-version-conflict-error-intermittently" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. WI 80316 — "Last Posting at" update throws a database version-conflict error, intermittently
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-wi-80604-entering-a-purchase-order-feels-like-it-takes-forever" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. WI 80604 — Entering a purchase order "feels like it takes forever"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-wi-80798-aml-export-reports-a-rejected-approver-as-the-payments-approver-or-the-same-person-twice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. WI 80798 — AML export reports a rejected approver as the payment's approver, or the same person twice
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-wi-80217-approval-portal-times-out-and-crashes-for-a-user-with-a-large-approval-entry-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. WI 80217 — Approval portal times out and crashes for a user with a large approval-entry history
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-wi-80645-posting-fails-gen-journal-line-was-not-found-in-filter-posting-datedocument-noconnection-line-no" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. WI 80645 — Posting fails: "Gen. Journal Line was not found in filter (Posting Date/Document No./Connection Line No.)"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#10-wi-80748-account-type-default-dimensions-are-ignored-after-a-refactor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. WI 80748 — "Account type default dimensions are ignored" after a refactor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#11-wi-79732-pre-post-validation-checks-the-wrong-field-entirely" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. WI 79732 — Pre-post validation checks the wrong field entirely
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-wi-80637-per-user-access-view-shows-access-to-everything-for-a-user-whose-only-grant-is-via-group-membership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. WI 80637 — Per-user access view shows "access to everything" for a user whose only grant is via group membership
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-wi-63591-applying-ledger-entries-makes-a-linked-customervendor-disappear-from-the-journal-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. WI 63591 — Applying ledger entries makes a linked customer/vendor disappear from the journal line
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-wi-80056-approvers-with-a-deliberately-restricted-permission-set-get-a-permission-error-opening-an-expense" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. WI 80056 — Approvers with a deliberately restricted permission set get a permission error opening an expense
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15-wi-80619-editing-a-record-in-company-a-fails-with-an-access-denied-error-naming-company-b" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. WI 80619 — Editing a record in company A fails with an access-denied error naming company B
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#16-wi-78116-restoring-a-value-to-its-already-approved-original-leaves-a-stale-needs-verification-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. WI 78116 — Restoring a value to its already-approved original leaves a stale "needs verification" line
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#17-wi-80026-a-per-diem-rate-configured-for-6-hours-both-over-pays-exactly-6h-and-under-pays-6h30m" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17. WI 80026 — A per-diem rate configured for "6 hours" both over-pays exactly-6h and under-pays 6h30m
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#18-wi-79450-cost-type-lines-silently-export-with-a-blank-name-and-no-unit-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18. WI 79450 — Cost-type lines silently export with a blank name and no unit code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#also-read-strong-but-not-in-the-top-18-kept-for-completeness-phrase-book" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Also read, strong but not in the top 18 (kept for completeness / phrase-book)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#symptom-phrase-book-merged-deduplicated-anonymized" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symptom phrase-book (merged, deduplicated, anonymized)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes-for-the-next-sweep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes for the next sweep
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/reasoning-suite/sweeps/sweep-c-ado-workitems.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="sweep-c-azure-devops-work-items-bugs">Sweep C — Azure DevOps work items (bugs)<a class="headerlink" href="#sweep-c-azure-devops-work-items-bugs" title="Permanent link">&para;</a></h1>
+<p>Mining pass for Reasoning-100. Source: Azure DevOps <strong>work items</strong> (type
+<code>Bug</code>, states Closed/Resolved), org <code>continia-software</code>, project
+<code>Continia Software</code> (the only project with a meaningful bug backlog; the
+sibling <code>BC Releasenotes Tool</code> project was not sampled — it is tooling, not
+a BC/AL product). Bug reports are symptom-first prose exactly matching the
+diagnose-task phrasing style in <code>docs/reasoning-suite/categories.md</code>.</p>
+<p>Context read first: <code>docs/reasoning-suite/categories.md</code> (12 categories,
+symptom-first rules, oracle rules).</p>
+<h2 id="access">Access<a class="headerlink" href="#access" title="Permanent link">&para;</a></h2>
+<p><code>mcp__azureDevOps__list_organizations</code> failed (auth error), but
+project-scoped calls worked fine throughout (<code>list_projects</code>,
+<code>list_work_items</code> via WIQL, <code>get_work_item</code>, <code>get_work_item_comments</code>).
+No blocking access problems — the org-level listing tool being broken
+didn't matter once the org/project were known from <code>list_projects</code>.</p>
+<h2 id="method">Method<a class="headerlink" href="#method" title="Permanent link">&para;</a></h2>
+<ol>
+<li>WIQL query for <code>WorkItemType = Bug AND State IN (Closed, Resolved, Done)</code>,
+   ordered by <code>ChangedDate DESC</code>, paged 60 at a time (id + title only —
+   fuller field sets blew the tool's output-size cap even at top=60).
+   Triaged <strong>~340 titles</strong> across 6 pages (some page-boundary overlap from
+   non-deterministic tie-ordering on <code>ChangedDate</code>) to build a candidate
+   pool by title alone, discarding at a glance: pure payment-file-format
+   bugs (SEPA/CAMT/ISO20022 field-mapping to a specific bank), pure
+   translation/caption/UI-cosmetic bugs, and pure external-API bugs (a C#
+   microservice, a mobile app).</li>
+<li>Selected <strong>57 candidate ids</strong> spanning the surviving thematic clusters
+   (eInvoicing/eDocs, Finance/GL matching, item-tracking/approvals/expense,
+   permissions/loops/banking) and fanned them out to 4 parallel fork agents,
+   each calling <code>get_work_item</code> (description + repro + resolution/release
+   notes) and, where the description was thin, <code>get_work_item_comments</code>.</li>
+<li>Forks independently rejected anything with no stated root cause (marked
+   <code>UNKNOWN</code> rather than fabricated) or with a non-AL mechanic (e.g. a C#
+   microservice bug), and returned distilled candidates + a phrase-book.</li>
+</ol>
+<p><strong>Work items actually read (title+description, most also
+resolution/comments): 57.</strong> Titles triaged before selection: ~340.
+Surviving candidates after the deep read: <strong>34</strong>. Selected below: <strong>top 18
+ranked</strong>, plus a short "also read, kept for phrase-book only" list, plus
+the merged phrase-book.</p>
+<p>All customer names, personal names, internal ticket-system URLs, and
+tenant/company identifiers from the raw ADO data have been stripped from
+every quote below; only work item ids, symptom prose, and stated
+technical root causes are retained.</p>
+<hr />
+<h2 id="top-18-candidates-ranked">Top 18 candidates (ranked)<a class="headerlink" href="#top-18-candidates-ranked" title="Permanent link">&para;</a></h2>
+<h3 id="1-wi-80835-copy-document-fails-changes-cannot-be-saved-because-some-information-on-the-page-is-not-up-to-date">1. WI 80835 — "Copy Document fails: changes cannot be saved because some information on the page is not up-to-date"<a class="headerlink" href="#1-wi-80835-copy-document-fails-changes-cannot-be-saved-because-some-information-on-the-page-is-not-up-to-date" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong> (BC's own platform error text, worth reusing verbatim): <em>"Running the standard Copy Document action on a Purchase Order fails with... 'cannot be saved because some information on the page is not up-to-date. Close the page, reopen it, and try again.'"</em></li>
+<li><strong>Root cause (AL/BC terms, stated)</strong>: an event subscriber fires as the last statement of the base-app copy routine, after every other subscriber has already run, and calls <code>.Modify(false)</code> on the <code>Record</code> variable it was handed at subscription time. If any <em>other</em> extension already wrote that same row through a different record instance earlier in the same operation, the subscriber's copy is now on a stale row version — <code>Modify(false)</code> suppresses the OnModify trigger but does <strong>not</strong> bypass BC's optimistic-concurrency version check, so the modify throws. Compounded by a missing activation/license guard so the code runs even when the feature is installed but not activated.</li>
+<li><strong>Category</strong>: 6 (Event-driven wiring) — execution-order + stale-record-across-subscribers, the exact shape categories.md's #6 calls out (X062 bind/unbind reasoning). Secondarily 7 (transaction/error-flow).</li>
+<li><strong>Task sketch</strong>: a table with two subscribers on the same <code>OnAfterCopyDocument</code>-style event; subscriber A (fires first) modifies a status field and calls <code>Modify()</code>; subscriber B (fires last) was handed the record at binding time and calls <code>.Modify(false)</code> on its own now-stale copy to set a different field. Symptom: "Copying a document sometimes fails with 'record is not up-to-date', sometimes doesn't." Oracle: run the copy with both subscribers registered, assert it succeeds and both fields end up correctly set — requires the model to add a <code>Get()</code>/re-read before the second <code>Modify</code>, not just swap <code>Modify(false)</code> for <code>Modify(true)</code>.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5 — genuinely the strongest single mechanic in the sweep: record staleness + optimistic concurrency + subscriber execution order + <code>Modify(false)</code> semantics, reasoned about together.</li>
+<li><strong>Phrase-book value</strong>: yes, strongly — the BC platform error text itself is excellent symptom bait.</li>
+</ul>
+<h3 id="2-wi-81246-search-rules-incomplete-notification-shown-on-every-page-open-even-when-all-rules-are-complete">2. WI 81246 — "Search rules incomplete" notification shown on every page open, even when all rules are complete<a class="headerlink" href="#2-wi-81246-search-rules-incomplete-notification-shown-on-every-page-open-even-when-all-rules-are-complete" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong> (verbatim): <em>"the notification 'Some search rules are incomplete...' is shown on every page open... even when all rules are complete."</em></li>
+<li><strong>Root cause (stated, precisely)</strong>: three filter-building procedures are feature-flag-gated and, when the flag is disabled, <code>exit</code> <strong>without applying any filter at all</strong> (instead of filtering to zero rows). The caller then checks <code>not Rec.IsEmpty()</code> on that now-completely-unfiltered record variable — true whenever <em>any</em> row exists anywhere in the table — so the notification fires unconditionally instead of never.</li>
+<li><strong>Category</strong>: 1 (Logic diagnosis) — textbook "guard clause exits before doing its job, and the caller can't tell 'skipped' from 'found nothing'" — exactly the strongest-recurring corpus pattern already flagged in categories.md §1 (helper's early exit wiping the caller's intended filter state).</li>
+<li><strong>Task sketch</strong>: <code>FilterIncompleteRules(var Rec: Record X)</code> that, when a feature flag is off, does an early <code>exit</code> leaving <code>Rec</code> completely unfiltered instead of e.g. <code>Rec.SetRange("Entry No.", 0)</code>; caller does <code>if not Rec.IsEmpty() then &lt;notify&gt;</code>. Oracle: with the flag off and only complete rows present, assert the notification does <strong>not</strong> fire.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5 — pure control-flow semantics, no syntax trick.</li>
+<li><strong>Phrase-book value</strong>: yes — "shown on every page open, even when everything is actually complete" is a reusable false-positive-notification template.</li>
+</ul>
+<h3 id="3-wi-79857-expense-report-comment-subform-hangs-the-client-for-minutes-on-a-brand-new-unsaved-report">3. WI 79857 — Expense Report comment subform hangs the client for minutes on a brand-new, unsaved report<a class="headerlink" href="#3-wi-79857-expense-report-comment-subform-hangs-the-client-for-minutes-on-a-brand-new-unsaved-report" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: opening a brand-new (unsaved, blank-key) document and touching its comment subform hangs the client for minutes; the eventual summary count equals the count across <em>every</em> unattached document company-wide, not the (empty) new one.</li>
+<li><strong>Root cause (stated)</strong>: <code>OnFindRecord</code> derives the document key via <code>Evaluate(..., Rec.GetFilter("Doc. Ref. No. (Code)"))</code>. On a blank field, <code>GetFilter()</code> returns BC's two-character blank-filter sentinel token, not an empty string — so a <code>DocumentNo = ''</code> guard downstream never matches, and a loop meant to run over "this document's comments" fans out over every document with a blank settlement number.</li>
+<li><strong>Category</strong>: 2 (Performance diagnosis), with a strong side of 1 (a <code>GetFilter()</code>-vs-actual-field-value semantic trap).</li>
+<li><strong>Task sketch</strong>: a comment-count helper keyed off <code>GetFilter()</code> on a page filter instead of the underlying field value; oracle seeds N unrelated "unattached" rows plus one target row, opens a fresh/blank-key context, and asserts the SQL/row-touch count stays ~0 for the blank case instead of scanning all N.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5 — the single best pure-AL-semantics trap in the sweep (few models know <code>GetFilter()</code> returns a sentinel, not <code>''</code>, on an unset filter).</li>
+<li><strong>Phrase-book value</strong>: yes — "the summary count equals the count across everything, not the target" is a good scope-widening-proof template.</li>
+</ul>
+<h3 id="4-wi-80720-posting-a-split-line-payment-against-a-whole-unit-currency-jpy-throws-a-gl-inconsistency-error">4. WI 80720 — Posting a split-line payment against a whole-unit currency (JPY) throws a G/L inconsistency error<a class="headerlink" href="#4-wi-80720-posting-a-split-line-payment-against-a-whole-unit-currency-jpy-throws-a-gl-inconsistency-error" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: posting with split lines applied to a whole-unit currency (JPY, 0 decimal places) throws a G/L inconsistency error; a non-JPY foreign currency case with the same split never shows it.</li>
+<li><strong>Root cause (stated)</strong>: validating the account field temporarily sets the journal line's Currency Code to the <em>counter-account's</em> currency; the balancing amount is rounded to <strong>that</strong> currency's precision (0 decimals for JPY) before the field is reset back to the original currency — silently dropping a fractional remainder that never reappears, so the two legs of the posting no longer balance.</li>
+<li><strong>Category</strong>: 9 (Rounding/allocation invariants) — a field temporarily holding the wrong context mid-<code>Validate</code>-chain, with the bug only surfacing when that context's rounding precision differs from the real one.</li>
+<li><strong>Task sketch</strong>: a two-account posting helper that stashes-then-restores a currency-like context field around a rounding call; oracle asserts postings balance exactly across many split ratios, including one where the temporarily-active context's rounding precision differs from the real target's.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5.</li>
+<li><strong>Phrase-book value</strong>: yes — "works for every currency except the one with zero decimal places" is a strong, non-obvious rounding template.</li>
+</ul>
+<h3 id="5-wi-80316-last-posting-at-update-throws-a-database-version-conflict-error-intermittently">5. WI 80316 — "Last Posting at" update throws a database version-conflict error, intermittently<a class="headerlink" href="#5-wi-80316-last-posting-at-update-throws-a-database-version-conflict-error-intermittently" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: <em>"the 'Last Posting at' field... has changed in the database between the initial load and the JIT load. The fields causing the JIT load are: 'VAT Registration No.'"</em> — error is intermittent, tied to concurrent edits.</li>
+<li><strong>Root cause (stated, precisely)</strong>: the update logic reads and writes a JIT (lazily-loaded, <code>SetLoadFields</code>-excluded) field on the <strong>same</strong> record instance being used for filtering/iteration. Reading the excluded field silently triggers a reload of just that field underneath the existing variable; writing it back via <code>Modify()</code> then collides with BC's optimistic-concurrency check against the (already-advanced) row version. Fix: use a separate, fully-loaded record instance for the read/write, not the iteration variable.</li>
+<li><strong>Category</strong>: 1 (Logic diagnosis) with a strong 2 (Performance/partial-load) crossover — an excellent bridge task between the two categories.</li>
+<li><strong>Task sketch</strong>: a table with a <code>SetLoadFields</code>-restricted record used to filter/iterate; inline in the loop, code reads a field NOT in the load list (triggering silent JIT reload) then writes it back via <code>Modify()</code> on that same partially-loaded variable. Oracle: assert the write succeeds and doesn't corrupt the loop's filter state, contrasting a second full-record instance (correct) against the reused iteration variable (naive).</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5 — pure BC runtime semantics, zero syntax trick.</li>
+</ul>
+<h3 id="6-wi-80604-entering-a-purchase-order-feels-like-it-takes-forever">6. WI 80604 — Entering a purchase order "feels like it takes forever"<a class="headerlink" href="#6-wi-80604-entering-a-purchase-order-feels-like-it-takes-forever" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: <em>"the IsAppActivated/IsAppDisabled function is called multiple times... entering a purchase order feels like it takes forever."</em></li>
+<li><strong>Root cause (stated)</strong>: a license/activation check is cached in a single-instance codeunit via a <code>Cached</code>/<code>LicenseRead</code> boolean — but that flag is set <strong>only on the success path</strong>. A failed or slow first check leaves it <code>false</code> forever, so the expensive full check re-runs on every single subsequent call in the session instead of once.</li>
+<li><strong>Category</strong>: 2 (Performance diagnosis).</li>
+<li><strong>Task sketch</strong>: single-instance codeunit with a <code>Cached</code> boolean guarding an expensive lookup; the lookup sets <code>Cached := true</code> only after a conditional success branch, so a caller that hits the failure branch first causes every later call in the session to redo the expensive work. Oracle: seed a failing first call, then assert the SQL-statement delta of N subsequent calls stays near the "cached" budget, not N× the "uncached" cost.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5.</li>
+<li><strong>Phrase-book value</strong>: yes — "the user should not be aware of the license check" / "feels like it takes forever" is good user-facing perf phrasing.</li>
+</ul>
+<h3 id="7-wi-80798-aml-export-reports-a-rejected-approver-as-the-payments-approver-or-the-same-person-twice">7. WI 80798 — AML export reports a <em>rejected</em> approver as the payment's approver, or the same person twice<a class="headerlink" href="#7-wi-80798-aml-export-reports-a-rejected-approver-as-the-payments-approver-or-the-same-person-twice" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: an export "can report a rejected approver as the payment's approver, or the same person twice."</li>
+<li><strong>Root cause (stated)</strong>: the approver-lookup filters an Approval Entry table whose key orders <code>Status = Rejected</code> before <code>Status = Approved</code>; <code>FindSet</code> returns the wrong (rejected) row first with no <code>Status = Approved</code> filter applied. A second lookup for the "secondary" approver has no identity-dedup check against the first, so the same person can fill both slots.</li>
+<li><strong>Category</strong>: 1 (Logic diagnosis).</li>
+<li><strong>Task sketch</strong>: an approval-round table with Status as part of the key ordering; a "who approved this" helper iterates without filtering Status, and a second slot-fill has no equality check against the first result. Oracle: simulate a reject-then-approve round (assert the <em>approved</em> entry is reported) and a duplicate-approver round (assert the second slot never equals the first).</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5 — a genuinely subtle "key order determines FindSet's first row, and nobody filtered Status" trap.</li>
+<li><strong>Phrase-book value</strong>: yes — "reports the same person in both slots" / "reports a rejected entry as the approver" is a strong duplicate/wrong-selection template.</li>
+</ul>
+<h3 id="8-wi-80217-approval-portal-times-out-and-crashes-for-a-user-with-a-large-approval-entry-history">8. WI 80217 — Approval portal times out and crashes for a user with a large approval-entry history<a class="headerlink" href="#8-wi-80217-approval-portal-times-out-and-crashes-for-a-user-with-a-large-approval-entry-history" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: an approver "with a very large number of approval entries... times out and crashes the approval portal."</li>
+<li><strong>Root cause (stated)</strong>: a <code>SourceTableTemporary = true</code> page defeats SQL-side paging; <code>OnOpenPage</code> eagerly materializes the full result set with a per-row <code>Get</code> + <code>CalcFields</code> (roughly 7 queries per row across tens of thousands of rows), none of it delegable to SQL because the source is a temporary table.</li>
+<li><strong>Category</strong>: 2 (Performance diagnosis).</li>
+<li><strong>Task sketch</strong>: a temp-table list page over N seeded rows, each row's caption computed by a per-row lookup method. Oracle: assert the SQL-statement delta stays near-constant after adding <code>SetLoadFields</code>/a pre-loaded dictionary vs. exploding with the naive per-row <code>Get</code>.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5.</li>
+</ul>
+<h3 id="9-wi-80645-posting-fails-gen-journal-line-was-not-found-in-filter-posting-datedocument-noconnection-line-no">9. WI 80645 — Posting fails: "Gen. Journal Line was not found in filter (Posting Date/Document No./Connection Line No.)"<a class="headerlink" href="#9-wi-80645-posting-fails-gen-journal-line-was-not-found-in-filter-posting-datedocument-noconnection-line-no" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: posting/preview fails looking up a journal line "not found in filter," after a difference/companion line was deleted upstream.</li>
+<li><strong>Root cause (stated)</strong>: deleting a difference line (via apply/unapply) leaves a sibling line's linking field (a "connection line no." grouping key) unreset; the sum-posting loop then searches the buffer using the previous group's now-stale filter values.</li>
+<li><strong>Category</strong>: 1 (Logic diagnosis) / 7 (Transaction/error-flow).</li>
+<li><strong>Task sketch</strong>: a header/line pair where a "delete companion line" procedure forgets to clear a grouping-key field on the surviving sibling. Oracle: post a journal after deleting one grouped line, assert posting succeeds instead of erroring "not found in filter."</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5.</li>
+<li><strong>Phrase-book value</strong>: yes — "X was not found in filter (field list)" is BC's real runtime error shape and is worth using verbatim.</li>
+</ul>
+<h3 id="10-wi-80748-account-type-default-dimensions-are-ignored-after-a-refactor">10. WI 80748 — "Account type default dimensions are ignored" after a refactor<a class="headerlink" href="#10-wi-80748-account-type-default-dimensions-are-ignored-after-a-refactor" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: a rule "that used to satisfy itself now blocks posting or silently drops dimension values" — account-type-level default dimensions stopped applying.</li>
+<li><strong>Root cause (stated)</strong>: the dimension resolver filters <code>SetRange("No.", AccountNo)</code> on the default-dimension table but never reads the blank-"No." rows that represent the <em>account-type-level</em> default (as opposed to an account-specific override). The correct pattern runs two passes — specific-No. first, then blank-No. as fallback/union — and the refactor dropped the second pass entirely.</li>
+<li><strong>Category</strong>: 1 (Logic diagnosis), touches 4 (minimal-change: the fix is precedence-safe, doesn't restructure the table).</li>
+<li><strong>Task sketch</strong>: a two-tier default-dimension table (blank "No." = type-level default, specific "No." = override) feeding a posting routine. Oracle: seed both a type-level and a category-specific default dim; assert the final dimension set picks specific-over-type, but still includes type-level dims for records with no direct override.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5.</li>
+<li><strong>Phrase-book value</strong>: yes — "a rule that used to satisfy itself now blocks posting or silently drops values" is excellent symptom prose.</li>
+</ul>
+<h3 id="11-wi-79732-pre-post-validation-checks-the-wrong-field-entirely">11. WI 79732 — Pre-post validation checks the wrong field entirely<a class="headerlink" href="#11-wi-79732-pre-post-validation-checks-the-wrong-field-entirely" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: a pre-post check <code>TestField</code>s one header field for blank, but the actual downstream serializer never reads that field — it derives its value from a <em>different</em> field via a multi-step fallback chain.</li>
+<li><strong>Root cause (stated)</strong>: guard checks field A; consumer resolves from field B → related-record field → another fallback. The guard is both wrong (blocks otherwise-valid documents) and incomplete (doesn't guard the real failure mode — a case where the whole fallback chain resolves to blank).</li>
+<li><strong>Category</strong>: 1 (Logic diagnosis) / 7 (transaction-flow-adjacent).</li>
+<li><strong>Task sketch</strong>: an order codeunit with <code>CheckReadyToExport</code> doing <code>TestField("Ship Contact")</code> while the export procedure actually resolves a display name from <code>"Ship Contact No."</code> → Customer's <code>"Primary Contact No."</code> → Salesperson fallback. Oracle: seed cases exercising each fallback tier; the guard shouldn't fire when the chain resolves a name, and should fire when nothing in the chain resolves.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4/5.</li>
+</ul>
+<h3 id="12-wi-80637-per-user-access-view-shows-access-to-everything-for-a-user-whose-only-grant-is-via-group-membership">12. WI 80637 — Per-user access view shows "access to everything" for a user whose only grant is via group membership<a class="headerlink" href="#12-wi-80637-per-user-access-view-shows-access-to-everything-for-a-user-whose-only-grant-is-via-group-membership" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong> (paraphrased): a user with no <em>direct</em> access grants, only a grant inherited via group membership, shows as having unrestricted access when the UI switches to the per-user view.</li>
+<li><strong>Root cause (stated)</strong>: the per-user view only reads the direct-grant table; it never unions in access reachable via group membership, so a user with zero direct rows reads as "no restrictions" instead of "restricted via group."</li>
+<li><strong>Category</strong>: 1 (Logic diagnosis) / 12 (Permissions-adjacent).</li>
+<li><strong>Task sketch</strong>: <code>UserAccessGrant</code> (direct) + <code>GroupAccessGrant</code> (via group membership) tables; an "effective access for user" procedure that only reads the direct table. Oracle: seed a user with only a group-derived grant, assert the effective-access procedure returns the group's restricted set, not "all."</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4/5.</li>
+</ul>
+<h3 id="13-wi-63591-applying-ledger-entries-makes-a-linked-customervendor-disappear-from-the-journal-line">13. WI 63591 — Applying ledger entries makes a linked customer/vendor disappear from the journal line<a class="headerlink" href="#13-wi-63591-applying-ledger-entries-makes-a-linked-customervendor-disappear-from-the-journal-line" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: after entries are applied, the linked vendor/customer is no longer shown on that journal line; a related real-world trace shows the base app's own "record not up-to-date" error thrown from inside a subscriber to the apply-entry Modify event.</li>
+<li><strong>Root cause (stated)</strong>: an event subscriber attached to the base app's ledger-entry-apply <code>Modify</code> event performs its own record splits/writes on related entries mid-transaction; the caller's already-loaded page record goes stale relative to those subscriber-side writes — a "subscriber mutates data the caller still holds an old copy of" collision (a milder sibling of #1/WI 80835 above).</li>
+<li><strong>Category</strong>: 6 (Event-driven wiring).</li>
+<li><strong>Task sketch</strong>: an "ApplyEntries" codeunit modifies a ledger-style record; a subscriber to its <code>OnBeforeModify</code>/<code>OnAfterModify</code> event splits the record into two child rows and re-modifies the original. Oracle: assert the caller's second call/save can still succeed without a stale-record error.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4/5.</li>
+</ul>
+<h3 id="14-wi-80056-approvers-with-a-deliberately-restricted-permission-set-get-a-permission-error-opening-an-expense">14. WI 80056 — Approvers with a deliberately restricted permission set get a permission error opening an expense<a class="headerlink" href="#14-wi-80056-approvers-with-a-deliberately-restricted-permission-set-get-a-permission-error-opening-an-expense" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong> (redacted): approvers with only <em>indirect</em> read access on G/L Account (a deliberate restriction so they can't browse the chart of accounts) get a permission error opening an expense that recalculates allocation amounts.</li>
+<li><strong>Root cause (stated)</strong>: a table procedure does <code>GLAccount.Get(...)</code> to derive a VAT %; BC's indirect-permission activation only kicks in if the accessing <em>object itself</em> carries the tabledata permission — nothing in the call chain did, so the read failed even though the user's permission set legitimately grants indirect access via other paths. Fix: add an inherent <code>Permissions = tabledata "G/L Account" = r;</code> to the table doing the read.</li>
+<li><strong>Category</strong>: 12 (Permissions).</li>
+<li><strong>Task sketch</strong>: a "Timesheet Line" table whose <code>RecalculateAmounts</code> does <code>Resource.Get(...)</code> to pull a billing rate; an "Approver" permission set grants only indirect read on Resource. Oracle: run under a <code>TestPermissions</code>-simulated restricted user, assert the read succeeds only when the codeunit/table carries the inherent tabledata permission, fails otherwise.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4/5 — requires BC's indirect-vs-direct permission activation model, not just AL syntax.</li>
+<li><strong>Phrase-book value</strong>: yes — "gets a permission error even though their permission set is supposed to grant indirect access" is a reusable template for the whole permissions category.</li>
+</ul>
+<h3 id="15-wi-80619-editing-a-record-in-company-a-fails-with-an-access-denied-error-naming-company-b">15. WI 80619 — Editing a record in company A fails with an access-denied error naming company B<a class="headerlink" href="#15-wi-80619-editing-a-record-in-company-a-fails-with-an-access-denied-error-naming-company-b" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong> (redacted): a user without a permission set granted in <strong>every</strong> company (only in the ones relevant to them) gets an access-denied error creating/editing a record — in a company where they <em>do</em> have access.</li>
+<li><strong>Root cause (stated)</strong>: an event subscriber on a field's <code>OnValidate</code> loops across <strong>every company</strong> in the environment checking a permission set, rather than just the current company; a user lacking that permission set in an unrelated, unused company gets "access is denied to company X" while editing a record in a company they legitimately use.</li>
+<li><strong>Category</strong>: 10 (Multi-company semantics) / 12 (Permissions).</li>
+<li><strong>Task sketch</strong>: a subscriber on <code>OnValidate</code> of a "Contact Email" field that iterates <code>Company.FindSet()</code> and calls a permission check per company to keep a cache in sync. Oracle: multi-company harness, user has permission only in company A; assert validating the field in company A succeeds even though company B lacks the grant.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4/5.</li>
+<li><strong>Phrase-book value</strong>: yes — "fails with an access-denied error naming a company the user never opens" is an excellent multi-company/permissions symptom template.</li>
+</ul>
+<h3 id="16-wi-78116-restoring-a-value-to-its-already-approved-original-leaves-a-stale-needs-verification-line">16. WI 78116 — Restoring a value to its already-approved original leaves a stale "needs verification" line<a class="headerlink" href="#16-wi-78116-restoring-a-value-to-its-already-approved-original-leaves-a-stale-needs-verification-line" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong> (verbatim steps): "Change value in Creditor No.; Change the value back to the value just verified; Go to Unverified Accounts — we now see a line pointing at the Creditor No. we just changed and rolled back."</li>
+<li><strong>Root cause (stated)</strong>: change-tracking logic compares a dictionary of <em>changed</em> fields against pending verification entries, but has no path detecting "current value == originally-approved value" and clearing the now-stale pending entry — it only clears entries explicitly re-matched via the changed-fields dictionary, not ones whose net effect is zero.</li>
+<li><strong>Category</strong>: 8 (Spec-from-tests) — the ticket itself enumerates roughly 11 input/output scenarios (single-field restore, multi-field partial restore, all-fields restore, auto-approve + mixed restore, force-modify, etc.) that read exactly like a hidden-superset test spec.</li>
+<li><strong>Task sketch</strong>: a "Field Approval Tracker" storing approved values + a pending-change dictionary; show the model 3-4 of the ~11 scenarios as examples, run the rest (including multi-field partial-restore and auto-approve-mixed) as hidden oracle cases.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4/5.</li>
+<li><strong>Phrase-book value</strong>: yes — "leaves a line to be verified that's not needed" / "restoring a value doesn't clear the pending flag" is a strong stale-state template.</li>
+</ul>
+<h3 id="17-wi-80026-a-per-diem-rate-configured-for-6-hours-both-over-pays-exactly-6h-and-under-pays-6h30m">17. WI 80026 — A per-diem rate configured for "6 hours" both over-pays exactly-6h and under-pays 6h30m<a class="headerlink" href="#17-wi-80026-a-per-diem-rate-configured-for-6-hours-both-over-pays-exactly-6h-and-under-pays-6h30m" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: a rate tier boundary behaves inconsistently at the exact threshold vs. just past it.</li>
+<li><strong>Root cause (stated)</strong>: comparison against the threshold is <code>&gt;=</code> on an integer-hours field, but the statutory rule needs strict <code>&gt;</code> — so a trip of exactly 6h0m gets the higher tier it shouldn't, while nothing distinguishes 6h0m from 6h30m under the (already wrong) inclusive check in the way the spec intends.</li>
+<li><strong>Category</strong>: 8 (Spec-from-tests) / 9 (Rounding/allocation, boundary flavor).</li>
+<li><strong>Task sketch</strong>: a rate-tier lookup evaluated at exact-boundary durations shown as examples (6h→tier0, 6h1m→tier1, 10h→tier1, 10h1m→tier2); model must infer strict-vs-inclusive comparison from the shown cases; hidden superset tests other exact boundaries not shown in the prompt.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 5/5 — near-zero syntax, pure boundary-inference reasoning.</li>
+</ul>
+<h3 id="18-wi-79450-cost-type-lines-silently-export-with-a-blank-name-and-no-unit-code">18. WI 79450 — Cost-type lines silently export with a blank name and no unit code<a class="headerlink" href="#18-wi-79450-cost-type-lines-silently-export-with-a-blank-name-and-no-unit-code" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Symptom</strong>: one particular line type on service invoices "not handled correctly" — exports with no name, no seller identifier, no unit of measure.</li>
+<li><strong>Root cause (stated)</strong>: a per-line-type dispatch (Item / G/L Account / ... ) has no branch for one line type; those lines silently fall through with blank fields instead of erroring. The fix adds the missing case with its own fallback chain (description field A → description field B for the name; line number for the identifier; a unit-of-measure code with a hardcoded fallback).</li>
+<li><strong>Category</strong>: 5 (Fill-the-hole) / 1 (Logic diagnosis).</li>
+<li><strong>Task sketch</strong>: a document-line table with a <code>Type</code> enum and an XML/export-line-builder codeunit whose <code>case Type of</code> handles all-but-one value. Oracle: seed one line of each type including the unhandled one; assert every exported line has a non-blank name/UOM, specifically checking the missing type's fallback chain.</li>
+<li><strong>Reasoning-vs-syntax</strong>: 4/5.</li>
+</ul>
+<hr />
+<h2 id="also-read-strong-but-not-in-the-top-18-kept-for-completeness-phrase-book">Also read, strong but not in the top 18 (kept for completeness / phrase-book)<a class="headerlink" href="#also-read-strong-but-not-in-the-top-18-kept-for-completeness-phrase-book" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>WI</th>
+<th>One-line mechanic</th>
+<th>Category</th>
+<th>Reasoning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>71682</td>
+<td>status stamped "closed" without verifying the paired offset entry still exists</td>
+<td>1/7</td>
+<td>4</td>
+</tr>
+<tr>
+<td>76692</td>
+<td>matching code checks "is field non-blank" instead of the user's boolean setting, so the setting is only honored when the field happens to be blank</td>
+<td>1/4</td>
+<td>4</td>
+</tr>
+<tr>
+<td>80687</td>
+<td>display field sourced from the wrong of two related records; a quantity shown in one UOM basis is validated against a different UOM's quantity</td>
+<td>1/9</td>
+<td>4</td>
+</tr>
+<tr>
+<td>79926</td>
+<td>inherent <code>Permissions</code> property left on a Page after the modify loop was refactored into a helper codeunit called via <code>Codeunit.Run</code></td>
+<td>12/4</td>
+<td>4</td>
+</tr>
+<tr>
+<td>75717</td>
+<td>a bank-system lookup is called with a hardcoded transaction-type enum literal instead of the record's actual type; the visible error is an unrelated-looking VAT message two calls downstream (red herring)</td>
+<td>1</td>
+<td>4</td>
+</tr>
+<tr>
+<td>80484</td>
+<td>a missing record filter in a job-queue dispatch loop causes it to never self-terminate, re-sending the same notifications indefinitely</td>
+<td>1/7</td>
+<td>4</td>
+</tr>
+<tr>
+<td>79715</td>
+<td>one field's <code>OnValidate</code> sets a "dirty, recreate lines" flag; a sibling field's <code>OnValidate</code> doesn't, so only some header edits propagate to detail lines</td>
+<td>6</td>
+<td>4</td>
+</tr>
+<tr>
+<td>77668</td>
+<td>a distribution/allocation procedure copies most fields parent→child but omits one a later lookup depends on, causing silent fallback to a generic default</td>
+<td>1/6</td>
+<td>4</td>
+</tr>
+<tr>
+<td>79332</td>
+<td>an unbounded number of names concatenated into a fixed <code>Text[250]</code> overflows once enough approvers are involved</td>
+<td>1</td>
+<td>3</td>
+</tr>
+<tr>
+<td>77467</td>
+<td>an out-parameter declared by value instead of <code>var</code>; the caller's "did we find a duplicate" flag is silently always false</td>
+<td>1/5</td>
+<td>3</td>
+</tr>
+<tr>
+<td>80647</td>
+<td>an auto-created rounding/G/L line during posting doesn't inherit dimensions from its source line, failing a mandatory-dimension check on a line the user never sees</td>
+<td>1</td>
+<td>4</td>
+</tr>
+<tr>
+<td>80446</td>
+<td>a company name captured at import time becomes permanently stale (and un-clearable) after the company is renamed, blocking deletion forever</td>
+<td>10</td>
+<td>3</td>
+</tr>
+<tr>
+<td>81498</td>
+<td>a translation table's key field is declared shorter than the base table's key it mirrors, so long keys silently truncate and collide</td>
+<td>1</td>
+<td>4</td>
+</tr>
+<tr>
+<td>75902</td>
+<td>two code paths post the same kind of transaction; only one rewrites a field the shared posting routine depends on, so the other silently re-applies stale data</td>
+<td>1/9</td>
+<td>4</td>
+</tr>
+</tbody>
+</table>
+<p>Rejected as candidates (thin/UNKNOWN root cause, or wrong-language mechanic — noted so the pool isn't re-mined blind next sweep): 71242, 79714, 79722, 80297, 81039, 81513, 60950, 80301 (marginal — real mechanic exists but heavily entangled in French e-invoicing legal/XML specifics), 74789, 76358, 80380, 80661, 81421, 80837, 80950 (AL-analyzer/syntax fix, not a runtime symptom), 79500, 80627 (decent symptom, no stated resolution mechanic), 69030 (root cause lives in a C# microservice, wrong language), 65960, 71039, 75520 (good perf symptom prose, but the resolution never states a mechanism — flagged for phrase-book only, not for an oracle).</p>
+<hr />
+<h2 id="symptom-phrase-book-merged-deduplicated-anonymized">Symptom phrase-book (merged, deduplicated, anonymized)<a class="headerlink" href="#symptom-phrase-book-merged-deduplicated-anonymized" title="Permanent link">&para;</a></h2>
+<p>Reusable symptom formulations for diagnose-task prompts, independent of
+whether each source ticket's mechanic became a full candidate above:</p>
+<ol>
+<li>"gets a permission error even though their permission set is supposed to grant indirect access to [table]"</li>
+<li>"fails with an access-denied error naming a company the user never opens"</li>
+<li>"enters a hard infinite loop... does not self-terminate" (job queue / batch dispatch)</li>
+<li>"the changes cannot be saved because some information on the page is not up-to-date. Close the page, reopen it, and try again." (BC's real stale-record platform error — verbatim bait)</li>
+<li>"cannot be deleted anymore... has already been processed by another company"</li>
+<li>"leaves a line to be verified that's not needed" (stale pending-change entry)</li>
+<li>"results in a remaining amount (overpaid)" (silently wrong posted total)</li>
+<li>"the system executes the standard rule instead of the [X]-specific one" (wrong branch silently taken)</li>
+<li>"is indirectly created by the posting routine, so the user has no chance to fix it" (invisible auto-generated line failing a downstream check)</li>
+<li>"the record was fine at [step], but is wrong by the time [later step] reads it" (staleness-across-time template)</li>
+<li>"runs even though the feature is installed but not activated" (missing activation/license guard)</li>
+<li>"affects every configured [system/company], not just the one reported" (scope-widening confirmation)</li>
+<li>"the error text points at [subsystem A], but the real cause is in [subsystem B] two calls upstream" (red-herring error template)</li>
+<li>"a rule that used to satisfy itself now blocks posting or silently drops values" (silent-regression-in-a-fallback template)</li>
+<li>"[X] was not found in filter ([field list])" (BC's real runtime lookup-failure error shape)</li>
+<li>"works for every [currency/case] except the one with zero decimal places / the one edge value" (rounding-precision-mismatch template)</li>
+<li>"the user should not be aware of [the expensive check]; it feels like it takes forever" (perf, user-facing framing)</li>
+<li>"reports the same [entity] in both slots" / "reports a rejected [X] as if it were the approved one" (duplicate/wrong-selection template)</li>
+<li>"shown on every [page open/action], even when everything is actually complete" (false-positive-notification template)</li>
+<li>"the summary count equals the count across everything, not just the target" (scope-widening proof template)</li>
+<li>"matching seems to not work... could be something related to the filtering" (authentic reporter hedge register)</li>
+<li>"was supposed to work with the initial changes" (developer-side resolution-comment register)</li>
+</ol>
+<hr />
+<h2 id="notes-for-the-next-sweep">Notes for the next sweep<a class="headerlink" href="#notes-for-the-next-sweep" title="Permanent link">&para;</a></h2>
+<ul>
+<li>The <strong>Finance/GL matching</strong> and <strong>item-tracking/approvals/expense</strong>
+  clusters (batches 2-4 of the title triage) were far denser in genuine
+  AL/BC interaction bugs than the <strong>banking-format</strong> clusters (batches
+  5-6, almost entirely SEPA/CAMT/ISO20022 field-mapping to specific banks
+  — good phrase-book fodder, essentially zero AL-mechanic fodder). A
+  follow-up sweep mining the same project should skip straight to
+  Finance/GL/expense/approval area paths rather than re-triaging banking
+  titles.</li>
+<li>Category coverage from this sweep: strong on 1 (Logic diagnosis), 2
+  (Performance), 6 (Event-driven wiring), 8 (Spec-from-tests), 9
+  (Rounding), 10 (Multi-company), 12 (Permissions). Nothing found for 11
+  (Culture/format round-trips) — expected, since that's ADO's own bugs
+  about <em>sending</em> documents to Danish/French formats, which sweep A4 already
+  covers structurally. Nothing standalone for 3 (Composite) or 4
+  (Minimal-change) — several candidates above (79732, 80637, 79926, 80748)
+  are minimal-change-shaped and could be repackaged for #4 if that
+  category needs volume.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

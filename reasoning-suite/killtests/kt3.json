@@ -1,0 +1,110 @@
+{
+  "_note": "Lane 3. Full AL setup bodies are in the kt3 subagent transcript.",
+  "CG-AL-M005": {
+    "sharedFixtures": "Two new globals (CapturedRequestBody: Text; OutboundCallCount: Integer) plus two new [HttpClientHandler] handlers, leaving the existing MockPaymentServiceHandler untouched so no existing test changes behaviour. CapturingApprovedPaymentHandler increments the counter, does Request.Content.ReadAs(CapturedRequestBody), and answers 200 with an approved body. UnavailablePaymentHandler increments the counter and answers 503 with '{\"error\":\"service unavailable\"}' - that body MUST be valid JSON, which is what makes M0062 land in the observable cell. The codeunit already declares TestHttpRequestPolicy = AllowOutboundFromHandler.",
+    "BLOCKED_ON": "Request.Content.ReadAs(var Text) on the REQUEST side has no precedent in this repo (Response.Content.WriteFrom is proven, and Request.Content is the same TestHttpContent type). If ReadAs is unavailable there, every body assertion must move to another capture channel and M0003/M0004/M0005/M0007/M0050/M0051/M0052/M0056 cannot be closed as written.",
+    "killTests": [
+      {
+        "name": "TestSendPaymentRequestSerialisesOrderAmountAndCurrency",
+        "closes": ["M0003", "M0004", "M0005", "M0007", "M0011", "M0050", "M0051", "M0052", "M0056"],
+        "setup": "[HandlerFunctions('CapturingApprovedPaymentHandler')]; clear the capture buffer and counter, then SendPaymentRequest('ORD-BODY-001', 123.45, 'EUR', ResponseJson).",
+        "assertion": "Assert.IsTrue(Result, 'A payment the service approved should be reported as successful'); Assert.AreEqual(1, OutboundCallCount, 'An approved payment should be sent to the service exactly once'); Assert.IsTrue(BodyJson.ReadFrom(CapturedRequestBody), 'The outbound payment request should carry a JSON body'); Assert.IsTrue(CapturedRequestBody.Contains('ORD-BODY-001'), '... the supplied order identifier'); Assert.IsTrue(CapturedRequestBody.Contains('123.45'), '... the supplied amount'); Assert.IsTrue(CapturedRequestBody.Contains('EUR'), '... the supplied currency code');",
+        "referenceValue": "Result true, one outbound call, and a body parsing as JSON that contains all three supplied values.",
+        "mutantValue": "M0003/M0004/M0005: the respective value is missing from the body. M0007 (WriteTo removed), M0050 (RequestBody <> '' -> = ''), M0051 (content block emptied), M0052 (Content.WriteFrom removed), M0056 (RequestMessage.Content removed): CapturedRequestBody = '' so BodyJson.ReadFrom('') is false. M0011 (exit(true) -> exit(false)): Result false. All nine still get HTTP 200, so the call count stays 1 and never masks the failing assert.",
+        "whyRobust": "Deliberately asserts the VALUES in the body, never the JSON key names - the spec never fixes the field names, so asserting 'orderId'/'amount'/'currency' would over-constrain an implementation using order_id / currencyCode. Value-based Contains is also immune to the amount being serialised as a JSON number or a string. The separate ReadFrom assert is what pins 'JSON serialization' and what catches the five body-suppressing mutants."
+      },
+      {
+        "name": "TestSendPaymentRequestDoesNotContactServiceForZeroAmount",
+        "closes": ["M0002"],
+        "setup": "Send ONE valid payment first as a warm-up (this is not decoration: it guarantees the registered handler executes at least once so the test cannot trip the framework's unexecuted-handler bookkeeping, and it makes the count assertion a delta rather than an absolute). Then TrySendPaymentRequest('ORD-ZERO', 0.00, 'USD', ...).",
+        "assertion": "Assert.AreEqual(CallsAfterValidPayment, OutboundCallCount, 'A zero amount should never be sent to the payment service'); then if CallSucceeded then Assert.IsFalse(Result, 'Zero amount must not be reported as a successful payment') else Assert.ExpectedError('Payment amount must be greater than zero');",
+        "referenceValue": "the count is 1 before and after (the guard errors before the send); CallSucceeded false, so the ExpectedError branch matches InvalidAmountErr.",
+        "mutantValue": "M0002 (Amount <= 0 -> Amount < 0): 0.00 passes the guard, the POST goes out, the handler answers 200 -> count 2, AreEqual fails. This is also WHY the mutant survives today: with no handler registered the blocked send exhausts retries and SendPaymentRequest returns false, which the current oracle accepts.",
+        "whyRobust": "The assertion is the ABSENCE of a second outbound call, exactly the spec's wording ('either return false without making the HTTP call, OR raise the error'), so it holds for both permitted rejection forms and does not force the error variant."
+      },
+      {
+        "name": "TestSendPaymentRequestRetriesAndReportsOutageAsFailure",
+        "closes": ["M0009", "M0062", "M0066", "M0067"],
+        "setup": "[HandlerFunctions('UnavailablePaymentHandler')] - every attempt gets HTTP 503 with a JSON error body. TrySendPaymentRequest('ORD-OUTAGE', 100.00, 'USD', ...). Costs ~3 s because the reference sleeps 1000+2000 ms between its three attempts.",
+        "assertion": "Assert.IsTrue(OutboundCallCount >= 2, 'A transient service failure should be attempted more than once'); then if CallSucceeded then Assert.IsFalse(Result, 'A payment the service never accepted must not be reported as successful') else Assert.AreNotEqual('', GetLastErrorText(), 'A payment the service never accepted must report why it failed');",
+        "referenceValue": "3 attempts; the post-loop 'if not Success' raises inside the TryFunction so SendPaymentRequest returns false.",
+        "mutantValue": "M0009 (exit(false) -> exit(true)): Result true. M0062 ('if not Success' block emptied): no error raised, ReadAs pulls the last 503 body, ReadFrom succeeds, exit(true). M0066 (IsRetryableStatusCode body emptied) and M0067 (return negated): 503 becomes fatal, so the loop errors on attempt 1 and the >= 2 assert fails.",
+        "whyRobust": "The retry assertion is >= 2, not == 3, so it does not pin MaxRetries - the spec demands 'retry logic for failed requests' without naming a count. The success assertion is one-sided rather than demanding a specific error text. The handler's JSON body is load-bearing for M0062: with a non-JSON 503 body the mutant would instead hit InvalidJsonResponseErr and escape into the else branch."
+      },
+      {
+        "name": "TestValidatePaymentResponseStatusNotAScalarValue",
+        "closes": ["M0016"],
+        "setup": "ResponseJson.ReadFrom('{\"status\":{\"code\":\"approved\"},\"transactionId\":\"TXN123456\",\"amount\":100.00}') - all three required fields present but status nested as an object. Uses ReadFrom on a literal, the pattern already proven in TestJsonDeserializationWithNestedObjects, rather than JsonObject.Add overloads.",
+        "assertion": "if CallSucceeded then Assert.IsFalse(IsValid, 'Response whose status is not a scalar value should be invalid') else Assert.AreNotEqual('', GetLastErrorText(), 'A rejected response must report why it was rejected');",
+        "referenceValue": "all three Get() calls succeed, StatusToken.IsValue() is false, line 55 returns false.",
+        "mutantValue": "M0016 (exit(false) -> exit(not (false))): the non-value status branch returns true.",
+        "whyRobust": "This is the only one of the four exit(false) sites in ValidatePaymentResponse that no existing test reaches; the other three are covered by the missing-field tests. The spec says the procedure returns true only when all required fields are present AND status is 'approved', 'false otherwise' - a nested status is not 'approved' under any reading. NOTE this replaces the oracle's existing Assert.IsTrue(true, ...) house pattern, which is a placeholder."
+      }
+    ],
+    "specGaps": [
+      "The spec requires 'retry logic for failed requests' but never says WHICH failures are retryable or how many attempts. The retry test therefore assumes HTTP 503 is retryable (the standard reading, and what the reference does). An implementation retrying only transport-level exceptions and treating every HTTP status as final would fail the >= 2 assert. Closing M0066/M0067 at all requires some such assumption, since retry behaviour is otherwise unobservable. If the suite wants zero status-code assumption, the spec should name the retryable set.",
+      "The spec never fixes the outbound JSON field names, which is why all body assertions are value-based. If 'orderId'/'amount'/'currency' are meant to be contractual, the spec should say so and the assertions can tighten to BodyJson.Get(<key>, Token)."
+    ]
+  },
+  "CG-AL-H022": {
+    "killTests": [
+      {
+        "name": "TestApplyFilterString_AppliedFilterRestrictsRecordSet",
+        "closes": ["M0029", "M0030"],
+        "setup": "Insert two 'CG Test Record' rows with distinctive codes TEST900 and OTHER900, RecRef.Open(69225), then ApplyFilterString(RecRef, 'WHERE(Code=FILTER(TEST900))'). Clean up both rows.",
+        "assertion": "Assert.IsTrue(Success, 'Should return true for valid filter'); Assert.AreEqual(1, RecRef.Count(), 'An applied filter should restrict the record reference to the matching record');",
+        "referenceValue": "SetView succeeds -> Success true and Count 1.",
+        "mutantValue": "M0029 (TrySetView body emptied) and M0030 (RecRef.SetView removed) both leave the TryFunction succeeding with NO filter applied: Success is still true but Count is 2 or more.",
+        "whyRobust": "Asserts the OBSERVABLE effect of the filter rather than the text GetFilters() happens to render, so it is independent of caption/locale formatting and of whether the implementation uses SetView, SetFilter or a filter group. The distinctive codes mean leftover rows from other tests cannot make the mutant accidentally report 1."
+      },
+      {
+        "name": "TestApplyFilterString_InvalidFilter",
+        "closes": ["M0029", "M0030"],
+        "setup": "RecRef.Open(69225) then ApplyFilterString(RecRef, 'WHERE(NoSuchField=FILTER(X))').",
+        "assertion": "Assert.IsFalse(Success, 'Should return false when the filter cannot be applied');",
+        "referenceValue": "SetView must resolve the field name against table 69225's metadata; NoSuchField does not exist, so it raises and the TryFunction returns false.",
+        "mutantValue": "M0029/M0030: the emptied TryFunction cannot fail, so it returns true for an unappliable view.",
+        "whyRobust": "The spec clause stated verbatim ('Return true if successful, false if an error occurs'). CAVEAT: assumes RecRef.SetView RAISES on an unknown field name rather than silently ignoring it - expected BC behaviour but not proven by any committed test here. The first test closes both mutants WITHOUT that assumption, so treat this as the complementary spec-anchored kill and drop it if the reference run shows Success = true."
+      }
+    ]
+  },
+  "CG-AL-H013": {
+    "killTests": [
+      {
+        "name": "TestFilterAndProcess_SeparatorPlacement",
+        "closes": ["M0010"],
+        "setup": "Values 5, 15, 8, 25, 40 - three above the threshold interleaved with two below - then FilterAndProcess(Values, 10).",
+        "assertion": "Assert.IsFalse(Result.StartsWith(','), 'The result should not begin with a value separator'); Assert.AreEqual('15,25,40', Result, 'Result should list the qualifying values in order separated by single commas');",
+        "referenceValue": "'15,25,40'.",
+        "mutantValue": "M0010 (Result <> '' -> Result = ''): i=2 sees an empty Result so emits the separator FIRST, and i=4/i=5 then see a non-empty Result and emit none at all -> ',152540'. Note ',152540' still satisfies EVERY Contains/StartsWith/EndsWith assertion in the two existing FilterAndProcess tests, which is precisely why the mutant survived: ',1525' contains both '15' and '25'.",
+        "whyRobust": "Two assertions at deliberately different strictness. The first is separator-agnostic (a list may not START with a separator) and kills M0010 on its own, so it survives an implementation joining with ', ' or ';'. The second is the canonical bare-comma form the spec's 'comma-separated values' implies. To permit ', ', drop the AreEqual and keep the StartsWith - M0010 still dies."
+      }
+    ]
+  },
+  "CG-AL-M026": {
+    "killTests": [
+      {
+        "name": "TestGetCallstackLineCount_MatchesCallstackLines",
+        "closes": ["M0005"],
+        "setup": "Capture GetCurrentCallstack() from the SAME test procedure at the same call depth, count LF (Char 10) occurrences yourself as ExpectedLines, then call GetCallstackLineCount().",
+        "assertion": "Assert.IsTrue((LineCount >= ExpectedLines - 1) and (LineCount <= ExpectedLines + 1), 'Reported callstack line count should match the number of lines in the captured callstack');",
+        "referenceValue": "both procedures are invoked directly from this test so the two callstacks have the same frame count and only the innermost frame name differs: LineCount = ExpectedLines exactly.",
+        "mutantValue": "M0005 (Callstack[i] = LF -> <> LF): counts every NON-newline character, so LineCount is hundreds. The current oracle only asserts LineCount >= 1 and > 0, which the inflated value satisfies.",
+        "whyRobust": "The plus/minus 1 band absorbs the two legitimate ambiguities in the spec's wording: an implementation may return the LF count itself rather than LF count + 1, and the two capture points could differ by one frame. The band is still ~2 orders of magnitude tighter than the mutant. A depth-assumption-free alternative is Assert.IsTrue(LineCount * 2 <= StrLen(Callstack), ...) - every callstack line is at least two characters long - which also kills M0005."
+      }
+    ]
+  },
+  "CG-AL-X027": {
+    "killTests": [
+      {
+        "name": "NonLeadingZeroDigitsAreExtracted",
+        "closes": ["M0004"],
+        "setup": "Zeros that are not LEADING zeros carry place value, so dropping them changes the number instead of leaving it unchanged - the existing '0' case in this oracle sits in front of the significant digits, where a dropped zero is invisible.",
+        "assertion": "Assert.AreEqual(1020, Extractor.ExtractDigits('A10B20'), 'Zero digits inside and at the end of the string should be collected like any other digit'); Assert.AreEqual(900, Extractor.ExtractDigits('X9Y0Z0'), 'Trailing zero digits should be collected like any other digit');",
+        "referenceValue": "1020 and 900.",
+        "mutantValue": "M0004 (CurrentChar >= '0' -> > '0'): every '0' is skipped -> 12 and 9. The mutant survives today because the only zero in the oracle is in 'INV0042X', where the dropped zeros are LEADING and both forms evaluate to 42.",
+        "whyRobust": "Both inputs keep the task's actual trap intact (digit groups separated by interior letters, so a peel-the-ends TrimStart/TrimEnd implementation still cannot pass) while adding the one property the boundary mutant violates. Any correct implementation - full character scan or DelChr keep-digits - produces the same two values."
+      }
+    ]
+  }
+}

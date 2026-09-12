@@ -1,0 +1,2925 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/reasoning-suite/sweeps/sweep-b2-postgres-logic/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Sweep B2 — multi-object logic bugs (Postgres mining, 2026-08-23) - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#sweep-b2-multi-object-logic-bugs-postgres-mining-2026-08-23" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Sweep B2 — multi-object logic bugs (Postgres mining, 2026-08-23)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#headline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#method-note-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Method note (schema)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ranked-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ranked candidates
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ranked candidates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-shared-var-subscriber-out-parameter-unenforced-monotonic-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Shared var subscriber out-parameter, unenforced monotonic contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-rename-doesnt-cascade-to-a-sibling-tables-plain-copied-key-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Rename doesn't cascade to a sibling table's plain-copied key field
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-commit-locks-in-step-1-before-step-2-can-fail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Commit() locks in step 1 before step 2 can fail
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-helper-receiving-var-record-calls-resetsetfilter-wipes-callers-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Helper receiving var Record calls Reset/SetFilter, wipes caller's loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-collision-silently-skips-the-rename-but-the-caller-modifys-anyway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Collision silently skips the rename but the caller Modify()s anyway
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-singleinstance-cache-never-invalidated-on-the-nothing-changed-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. SingleInstance cache never invalidated on the "nothing changed" path
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/reasoning-suite/sweeps/sweep-b2-postgres-logic.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="sweep-b2-multi-object-logic-bugs-postgres-mining-2026-08-23">Sweep B2 — multi-object logic bugs (Postgres mining, 2026-08-23)<a class="headerlink" href="#sweep-b2-multi-object-logic-bugs-postgres-mining-2026-08-23" title="Permanent link">&para;</a></h1>
+<p>Source: DevOpsWorker pipeline Postgres (<code>postgres://pipeline:pipeline@localhost:5432/pipeline</code>).
+Lens: defects that emerge from the INTERACTION between two or more AL objects — helper
+side effects, event-subscriber interplay, state reuse across procedures, transaction
+visibility, validation ordering — suitable for symptom-first diagnose tasks
+(<code>docs/reasoning-suite/categories.md</code>, categories 1/4/5/6/7). Companion read:
+<code>docs/trap-mining-2026-08-20.md</code>, "What the strongest signals actually are" + "Tier 2".</p>
+<p><strong>The var-record filter-wipe family's flagship instance is already shipped as
+<code>CG-AL-X065</code>.</strong> Per instructions it is not re-flagged here. Its siblings (found below,
+distinct concrete shapes) and every other Tier 2 item from the 2026-08-20 doc are fair
+game and several are used below.</p>
+<h2 id="headline">Headline<a class="headerlink" href="#headline" title="Permanent link">&para;</a></h2>
+<p>The corpus grew from the 2026-08-20 run: 450 PRs / 2,687 findings now (was ~2,178
+unclassified + 393 classified then; today 1,896 PRs total table rows include non-finding
+rows, 393 <code>finding_outcomes</code> rows carry a human verdict, 156 carry <code>said_quote</code> text).
+Re-sweeping with a strict multi-object lens (rather than the prior run's single-API-trap
+lens) surfaces a different top slice: the highest-value material is not single-method
+semantics anymore, it is <strong>shared mutable state crossing an object boundary</strong> — a <code>var
+Record</code> handed to a helper, a <code>var</code> out-parameter shared by multiple event subscribers, a
+<code>SingleInstance</code> codeunit's cached field, a primary key renamed in one table while a
+sibling table's copy of it sits outside any <code>TableRelation</code>. Five distinct families recur
+across 3+ independent PRs, three of them across 3 distinct repos — as strong a
+non-obviousness signal as anything in the 2026-08-20 run.</p>
+<p><strong>15 candidates, ranked.</strong> Two are enrichments of items the 2026-08-20 doc already named
+(OnPreReport ordering, the Evaluate-consumed-return-value family) — kept because this
+sweep found a cleaner, more citable instance or a materially different concrete shape, not
+because the underlying fact is new.</p>
+<h2 id="method-note-schema">Method note (schema)<a class="headerlink" href="#method-note-schema" title="Permanent link">&para;</a></h2>
+<p><code>pr_reviews.findings_list</code> is a JSONB array of <code>{title, body, file, line, location,
+severity}</code> per PR — 2,687 elements across 450 PR rows (confirms the prior run's headline
+figure, grown by ~90 PRs since 2026-08-20). <code>finding_outcomes</code> is a separate table keyed by
+<code>(pr_id, finding_key)</code> with <code>said</code> (human verdict enum), <code>said_quote</code> (the actual reply
+text — 156 of 393 rows non-empty), <code>did</code>/<code>did_confidence</code> (what the pipeline's own
+follow-up model believes happened). There is no explicit FK from a <code>findings_list</code> array
+element to a <code>finding_outcomes</code> row other than the opaque <code>finding_key</code> hash, so this sweep
+joins by <code>(pr_id, title)</code> — reliable in every case checked, since severity+title pairs were
+unique within each PR's finding list. No schema surprises beyond what 2026-08-20 already
+documented (<code>inline_threads</code> is a posting-stats counter, not thread content); this run did
+not need <code>reflection_proposals</code> or <code>pr_reviews.tool_calls</code>.</p>
+<p>Swept via targeted ILIKE passes over <code>findings_list</code> body/title text
+(<code>TryFunction</code>, <code>re-read</code>/<code>stale</code>, <code>duplicate</code>+<code>insert</code>/<code>bulk</code>, <code>subscriber</code>+<code>order</code>,
+<code>OnDelete</code>+<code>cascade</code>, <code>recursive</code>) plus full-body pulls for every PR named in the
+2026-08-20 doc's Tier 2 table (52841, 52724, 52196, 52675, 52677, 52798, 52225, 53398) and
+the two largest un-mined PRs by finding count (52747: 32 findings, 51887: 19 findings).
+Roughly 300 distinct findings read at title/preview granularity, ~35 read in full, cross-
+checked against all 393 <code>finding_outcomes</code> rows for the PRs in scope. Not an exhaustive
+re-read of all 2,687 — the 2026-08-20 doc already did that for the single-object lens: this
+run targets the multi-object slice specifically.</p>
+<hr />
+<h2 id="ranked-candidates">Ranked candidates<a class="headerlink" href="#ranked-candidates" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Family</th>
+<th>Recurrence</th>
+<th>Category</th>
+<th>Reasoning 1-5</th>
+<th>Attempt-2 resistance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Shared <code>var</code> subscriber out-parameter, unenforced monotonic contract</td>
+<td>4 PRs / 3 repos</td>
+<td>6</td>
+<td>4</td>
+<td>high</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Rename doesn't cascade to a sibling table's plain-copied key field</td>
+<td>3 PRs / 1 repo</td>
+<td>1/4</td>
+<td>3</td>
+<td>high</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>Commit()</code> locks in step 1 before step 2 can fail</td>
+<td>3 PRs / 3 repos</td>
+<td>7</td>
+<td>4</td>
+<td>high</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Helper receiving <code>var Record</code> calls <code>Reset</code>/<code>SetFilter</code>, wipes caller's loop</td>
+<td>3 PRs / 2 repos</td>
+<td>1</td>
+<td>3</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Collision silently skips the rename but the caller <code>Modify()</code>s anyway</td>
+<td>3 PRs / 1 repo</td>
+<td>1/7</td>
+<td>4</td>
+<td>high</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>SingleInstance</code> cache never invalidated on the "nothing changed" path</td>
+<td>3 PRs / 2 repos</td>
+<td>1</td>
+<td>3</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Same cross-object value resolved independently N times, can disagree with itself</td>
+<td>3 PRs / 2 repos</td>
+<td>1</td>
+<td>4</td>
+<td>high</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Misleadingly-named predicate + <code>SetRecFilter</code> narrows a shared batch to one record</td>
+<td>1 PR</td>
+<td>1</td>
+<td>4</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>IsHandled := true</code> skips a base-app side effect the subscriber doesn't replicate</td>
+<td>1 PR</td>
+<td>6</td>
+<td>3</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>BindSubscription</code> activates every procedure in the codeunit, not just the intended one</td>
+<td>1 PR</td>
+<td>6</td>
+<td>3</td>
+<td>low-medium</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>Get()</code> re-read on a shared <code>var Record</code> subscriber parameter clobbers an earlier writer</td>
+<td>1 PR (3 rounds)</td>
+<td>6</td>
+<td>4</td>
+<td>high</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>OnPreReport</code> runs after the request page; seeded defaults overwrite user input</td>
+<td>1 PR</td>
+<td>6/7</td>
+<td>2</td>
+<td>low</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Destructive multi-table <code>DeleteAll()</code> runs before the payload that justifies it is validated</td>
+<td>1 PR</td>
+<td>1/7</td>
+<td>3</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Helper repositions the <em>caller's</em> record as an undocumented side effect of computing a value</td>
+<td>1 PR (latent)</td>
+<td>4</td>
+<td>3</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Consumed <code>Evaluate</code> silently blanks malformed fields instead of failing the row</td>
+<td>1 PR (reinforces existing Tier 1 #4)</td>
+<td>1</td>
+<td>2</td>
+<td>low</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="1-shared-var-subscriber-out-parameter-unenforced-monotonic-contract">1. Shared <code>var</code> subscriber out-parameter, unenforced monotonic contract<a class="headerlink" href="#1-shared-var-subscriber-out-parameter-unenforced-monotonic-contract" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quotes:</strong>
+- PR 52809 (<code>continia-base</code>), <em>"One subscriber can veto every other product's opt-in"</em>:
+  "The contract documented at lines 364-372 says subscribers may only set
+  <code>IsCompanyEnabled</code> to true, never false, so several products combine with OR. Nothing
+  enforces it: all subscribers share one <code>var</code> parameter and BC does not guarantee their
+  order, so a future subscriber writing <code>IsCompanyEnabled := SomeCondition</code> instead of <code>if
+  SomeCondition then IsCompanyEnabled := true</code> silently overrides a correct subscriber that
+  already said yes."
+- PR 53623 (<code>delivery-network</code>), <em>"No way for a subscriber to signal it acted, and two
+  subscribers silently overwrite each other"</em>: "if two extensions bind to the same event,
+  whichever runs last wins; BC does not guarantee subscriber order across installs, so
+  which redirect takes effect is not predictable, and neither extension can detect the
+  other."
+- PR 53254 (<code>delivery-network</code>), <em>"Test-mode delivery subscriber overwrites an earlier
+  subscriber's decision"</em>: "The subscriber sets <code>Handled := true; Result := true</code> without
+  first checking whether <code>Handled</code> arrived true from an earlier subscriber."
+- PR 52953 (<code>document-output</code>), <em>"The example subscriber replaces the recipient-field list
+  instead of adding to it"</em>: "does <code>Clear(RecipientFieldNos)</code> before adding its own, while
+  the event's documentation tells subscribers to <em>add</em> the fields."</p>
+<p><strong>Mechanic (AL terms).</strong> An <code>IntegrationEvent</code> publisher declares a <code>var</code> out-parameter
+(Boolean, list, or record) and documents an additive contract ("subscribers may only turn
+this on / append to this / never clear it"). AL enforces none of it: every bound subscriber
+runs regardless of what an earlier one wrote, in an order BC does not guarantee across
+extensions, and a subscriber that does a plain assignment (<code>X := Cond</code>) instead of the
+monotonic form (<code>if Cond then X := true</code>) silently erases a correct answer from a subscriber
+that ran first. Two objects interact minimum: the publisher codeunit and 2+ subscriber
+codeunits (or, in the diagnose-task shape, one publisher + two subscriber codeunits shipped
+as starter code).</p>
+<p><strong>Recurrence.</strong> 4 independent PRs, 3 distinct repos (<code>continia-base</code>, <code>delivery-network</code>
+×2, <code>document-output</code>). This is the strongest cross-repo signal in this sweep.</p>
+<p><strong>Diagnose-task sketch.</strong> Table <code>Feature Setup</code> (or similar) + codeunit <code>Feature
+Gatekeeper</code> publishing <code>OnCheckFeatureEligible(var Eligible: Boolean)</code>. Two starter
+subscriber codeunits, <code>Eligibility Rule A</code> (correctly additive: <code>if
+MeetsCriteriaA(Rec) then Eligible := true;</code>) and <code>Eligibility Rule B</code> (buggy: unconditional
+<code>Eligible := MeetsCriteriaB(Rec);</code>, which is <code>false</code> for most rows). Symptom: "A record
+that Rule A says is eligible is sometimes reported ineligible." Oracle drives multiple
+rows through the publisher and asserts eligibility per-row against a hand-computed table,
+independent of which subscriber binds first (a hidden-superset case flips the two
+subscribers' bind order across test runs, or seeds rows where only Rule A's criterion
+holds).</p>
+<p><strong>Reasoning 4/5</strong> — the platform fact (no subscriber ordering guarantee, no enforcement of
+a documented contract) has to be inferred from behavior; nothing in the description states
+it. <strong>Difficulty:</strong> medium-high — the naive read ("later subscriber must be an override,
+that's fine") looks intentional. <strong>Attempt-2 resistance: high</strong> — the assert message states
+expected-vs-actual eligibility per row; it gives no hint that the mechanism is
+subscriber-overwrite rather than, say, a criteria bug in Rule B itself. A model would need
+to independently notice the unconditional assignment.</p>
+<hr />
+<h3 id="2-rename-doesnt-cascade-to-a-sibling-tables-plain-copied-key-field">2. Rename doesn't cascade to a sibling table's plain-copied key field<a class="headerlink" href="#2-rename-doesnt-cascade-to-a-sibling-tables-plain-copied-key-field" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quotes:</strong>
+- PR 52675 (<code>delivery-network</code>), <em>"A third child table is left pointing at the old
+  identifier"</em>: "The new <code>Cloud/.dependencies/CDN/CLAUDE.md</code> added in this PR names
+  <strong>three</strong> tables that copy the participation key without a <code>TableRelation</code>... [only two
+  are cascaded]."
+- PR 52677, <em>"A third child table, Profile Sel. Parameter, is never updated by the
+  rename"</em>: same underlying gap, independent PR.
+- PR 52841, <em>"Profile selection parameters are not cascaded"</em>: third recurrence of the same
+  named gap.</p>
+<p><strong>Mechanic (AL terms).</strong> A parent table's primary/natural key value can change
+(<code>Rename()</code>). One or more sibling tables hold a <strong>plain field copy</strong> of that key — not a
+<code>TableRelation</code>-backed foreign key, just a <code>Code</code>/<code>Text</code> field populated at insert time.
+<code>Rename()</code> on the parent only ever touches the parent's own row (plus whatever the author
+explicitly re-writes); nothing at the platform level walks tables that merely copied the
+old value. The task's own repo has a <code>CLAUDE.md</code> written specifically to warn about this
+and still, per the mining doc's prior note, under-implements it — three of three attempts
+to fix the rename path missed one of the three copying tables each time. Minimum object
+count: 1 parent table + 2 child tables that copy its key by value (one gets cascaded
+correctly in the starter/naive code, one doesn't).</p>
+<p><strong>Recurrence.</strong> 3 independent PRs, same repo (<code>delivery-network</code>) — same-repo recurrence is
+a weaker signal than cross-repo per the 2026-08-20 doc's own calibration note, but 3
+separate PRs by presumably different authors missing the <em>same</em> third table each time is
+still a strong non-obviousness signal, not noise (these are days-to-weeks apart, not
+same-round restatements).</p>
+<p><strong>Diagnose-task sketch.</strong> Table <code>Product Category</code> (renameable Code PK) + table <code>Product</code>
+(has a <code>TableRelation</code>-backed <code>Category Code</code> field, correctly cascades) + table <code>Category
+Report Filter</code> (copies <code>Category Code</code> as a plain <code>Code[20]</code> with no relation, does NOT
+cascade). Starter codeunit <code>Category Rename Mgt.</code> renames the category and updates
+<code>Product</code> but not <code>Category Report Filter</code>. Symptom: "After renaming a category, a
+previously-working report filter silently stops matching any products." Oracle: create a
+category, a product under it, and a filter row referencing it; rename the category; assert
+the filter row's copied code now equals the NEW code (fails on naive/starter code, which
+leaves it at the old value).</p>
+<p><strong>Reasoning 3/5</strong> — once a model is told to "make renaming X keep everything consistent",
+finding the third table is a straightforward code-reading task; the trap is that <code>Rename()</code>
+looks complete after fixing the first sibling. <strong>Difficulty:</strong> medium — depends on how many
+sibling tables the starter code ships (2 is the minimum for the interaction; 3 mirrors the
+source). <strong>Attempt-2 resistance: high</strong> — an assert failure ("expected new code, got old
+code") on the SECOND sibling doesn't tell the model there's a THIRD; increasing the sibling
+count is a clean, mechanical difficulty lever (categories.md lever #1).</p>
+<hr />
+<h3 id="3-commit-locks-in-step-1-before-step-2-can-fail">3. <code>Commit()</code> locks in step 1 before step 2 can fail<a class="headerlink" href="#3-commit-locks-in-step-1-before-step-2-can-fail" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quotes:</strong>
+- PR 49388 (<code>continia-banking</code>), <em>"A failed blob archive after a saved import causes the
+  same payment file to be imported twice"</em>: "the file-archive record is saved permanently
+  before the blob is archived... <code>ImportStream</code> ends up in <code>FileArchive.Insert(InStream,
+  …)</code>, which calls <code>Commit()</code> on the spot... [if the later archive/delete step fails] the
+  procedure r[eturns success, and the next run re-imports the same file]."
+- PR 52798 (<code>continia-finance</code>), <em>"Deleting the old proposal is committed before the new
+  one is built"</em>: "<code>CheckAndClearExistingProposal</code> does <code>DeleteAll(true)</code> then <code>Commit()</code>,
+  and only after that does the report try to create the replacement. The commit makes the
+  deletion permanent, so any failure later in the run leaves the factor with no proposal at
+  all and nothing to roll back to."
+- PR 52663 (<code>delivery-network</code>), <em>"A send that succeeded is reported to the user as a
+  failure"</em>: "<code>DispatchApproved</code> transmits the file, <code>Commit()</code>s so the <code>Sent</code> status can't
+  roll back, then calls <code>StartNextReportingPeriods()</code> — which can throw."</p>
+<p><strong>Mechanic (AL terms).</strong> A procedure performs two logically-linked writes across what are
+effectively two objects/phases (delete-old-record vs. build-new-record; import-file vs.
+archive-blob; send-document vs. advance-period-table) and calls <code>Commit()</code> between them so
+the first write survives even if the transaction as a whole later fails. If step 2 then
+throws, the caller sees a runtime error (or a caught failure) and assumes nothing
+persisted — but step 1 is durably committed. A retry re-does step 1's work (double-import,
+double-send) or leaves the system in a state with neither the old nor the new record (the
+factoring-proposal case: <code>DeleteAll</code> committed, replacement never built). This is the
+"Commit family" the 2026-08-20 doc calls out as the one <em>proven</em> attempt-2-resistant class
+(<code>X037</code>/<code>X040</code>/<code>X041</code>) — this sweep found three fresh instances of the SAME shape (commit
+before a fallible second phase) that are simpler to isolate than those three tasks'
+mechanics and recur across three unrelated repos.</p>
+<p><strong>Recurrence.</strong> 3 independent PRs, 3 distinct repos (<code>continia-banking</code>, <code>continia-finance</code>,
+<code>delivery-network</code>). PR 52798's instance is human-confirmed fixed
+(<code>finding_outcomes.said_quote</code>: <em>"Now the Factoring proposal is build for the Factor
+choosen in request page."</em> — note this quote is actually for the sibling OnPreReport
+finding on the same PR; the Commit finding itself has <code>said=ignored</code>, i.e. acknowledged as
+real but not actioned in this PR).</p>
+<p><strong>Diagnose-task sketch.</strong> Codeunit <code>Batch Reissue Mgt.</code> + table <code>Batch Header</code>: procedure
+<code>Reissue(BatchNo)</code> does <code>BatchHeader.DeleteAll(true); Commit();</code> then calls
+<code>BuildReplacementBatch(BatchNo)</code>, which can raise (e.g. a <code>TestField</code> on missing setup).
+Symptom: "Running Reissue on a batch with incomplete setup leaves NO batch at all, where
+before there was at least the old one." Oracle: seed a batch, corrupt the setup so the
+rebuild step throws, call <code>Reissue</code> inside <code>asserterror</code>, then assert the batch table is
+NOT empty (fails on naive/starter code, which committed the delete before the throw).</p>
+<p><strong>Reasoning 4/5</strong> — requires understanding that <code>Commit()</code> is irreversible mid-procedure
+regardless of what happens after, which is a transaction-visibility fact rather than
+syntax. <strong>Difficulty:</strong> medium-high. <strong>Attempt-2 resistance: high</strong> — "expected 1 row,
+found 0" doesn't reveal that a misplaced <code>Commit()</code> is the cause; a model could equally
+suspect the rebuild logic itself.</p>
+<hr />
+<h3 id="4-helper-receiving-var-record-calls-resetsetfilter-wipes-callers-loop">4. Helper receiving <code>var Record</code> calls <code>Reset</code>/<code>SetFilter</code>, wipes caller's loop<a class="headerlink" href="#4-helper-receiving-var-record-calls-resetsetfilter-wipes-callers-loop" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quotes:</strong>
+- PR 52841 (<code>delivery-network</code>), <em>"Bulk 'create pre-existing participations' now creates
+  only the first one"</em>: "<code>GETSpecificParticipation</code> receives the participation record <strong>by
+  <code>var</code></strong>, so the new <code>Reset()</code> wipes filters that belong to the <em>caller</em>... After the first
+  call the record is filtered down to a single CDN GUID, so <code>Next()</code> returns 0 and the loop
+  ends. A user who selects ten participations gets one."
+- PR 52724 (<code>continia-finance</code>), <em>"Excel export can produce wrong amounts when the date
+  filter is not a single range"</em>: "<code>ExtFinReportsSetup.CalcHeadline</code> takes the schedule
+  line by <code>var</code>, and its only subscriber... does <code>AccScheduleLine.SetFilter(\"Date
+  Filter\", '&lt;min&gt;..&lt;max&gt;')</code> — calling it rewrites the caller's own date filter, collapsing
+  it to one continuous span... a multi-part filter... silently sums the entire span between
+  the two periods."
+- PR 52377 (<code>delivery-network</code>), <em>"GetNextLineNo still filters the caller's record"</em>
+  (latent — see candidate 14 for the minimal-change-constraint angle on this same finding).</p>
+<p><strong>Mechanic (AL terms).</strong> Identical shape to the shipped <code>CG-AL-X065</code>, different concrete
+carriers: a procedure takes <code>var Record</code> (not <code>var Record temporary</code>, and not a copy), and
+internally calls <code>Reset()</code> or <code>SetFilter()</code>/<code>SetRange()</code> to do its OWN lookup. Because the
+parameter is passed by reference, this mutates the SAME record instance the caller is
+mid-iteration on (<code>repeat...until Rec.Next() = 0</code>) or relying on for a later read (a report
+column loop that reads amounts after computing headers on the same <code>var</code> line). The helper
+"finishes" successfully; the caller's own filter/position is now wrong for the rest of its
+run.</p>
+<p><strong>Recurrence.</strong> 3 PRs, 2 distinct repos (<code>delivery-network</code>, <code>continia-finance</code>); the
+<code>delivery-network</code> instances (52841, 52377) are independent PRs by presumably different
+authors months apart.</p>
+<p><strong>Diagnose-task sketch (distinct from X065's shape — X065 is a caller/loop-then-helper
+wipe; this one adds a SECOND consumer reading the SAME var Record after the wipe, matching
+52724's shape more closely).</strong> Table <code>Report Line</code> (has a <code>Date Filter</code>-bearing field) +
+codeunit <code>Report Mgt.</code> with <code>BuildReport(var Line: Record "Report Line")</code>: first computes
+column headers by calling <code>HeaderMgt.ResolveHeader(Line)</code>, which does <code>Line.SetFilter("Date
+Filter", MinDate, MaxDate)</code> to resolve a single label — collapsing whatever multi-range
+filter the caller set — and only THEN does <code>BuildReport</code> iterate amounts using the same
+(now-collapsed) <code>Line</code>. Symptom: "A report run with two separate date ranges shows the
+correct headers but sums across the whole span between them, not just the two ranges."
+Oracle: seed ledger entries inside AND between two disjoint date ranges; assert the report
+total excludes the gap (fails on naive/starter code).</p>
+<p><strong>Reasoning 3/5, difficulty medium, attempt-2 resistance medium</strong> — an assert on "wrong
+total" is closer to revealing the mechanism than family #1/#3 above (a model debugging a
+wrong sum will likely inspect the filter state and may spot the collapse), so rate this
+lower on resistance than the flagship X065 shape.</p>
+<hr />
+<h3 id="5-collision-silently-skips-the-rename-but-the-caller-modifys-anyway">5. Collision silently skips the rename but the caller <code>Modify()</code>s anyway<a class="headerlink" href="#5-collision-silently-skips-the-rename-but-the-caller-modifys-anyway" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quotes:</strong>
+- PR 52841, <em>"Rename is silently abandoned on an identifier collision, and the record is
+  then updated anyway"</em>: "<code>if TargetParticipation.Get(...) then exit;</code>... The procedure
+  returns with no error, no telemetry, and no return value, so <code>CreateUpdateParticipation</code>
+  cannot tell it apart from success: it continues on to overwrite company name, VAT number,
+  address, status and timestamp and calls <code>Modify(true)</code> on the record that still carries
+  the <strong>old</strong> identifier."
+- PR 52675, <em>"When the new identifier is already taken, the rename is skipped but the other
+  company's details are still written"</em> — same shape, confirmed <code>said=fixed</code> /
+  <code>said_quote="solved"</code> in <code>finding_outcomes</code>.
+- PR 52677, <em>"When the new identifier is already taken, the record is silently left
+  wrong"</em> — third independent occurrence, also confirmed fixed (<code>said_quote="solved"</code>).</p>
+<p><strong>Mechanic (AL terms).</strong> A <code>Rename</code>-wrapping helper procedure has an early <code>exit</code> on a
+detected collision (<code>if Target.Get(...) then exit;</code>) with NO return value and no error —
+by AL convention this reads as "nothing to do, handled." The caller has no way to
+distinguish "renamed successfully" from "skipped because the new key was taken" and
+proceeds to run its normal post-rename update path (<code>Modify(true)</code> with refreshed fields
+from an external source) against the record that is STILL keyed under the OLD identifier.
+Every subsequent field on the row gets refreshed from the external source forever, while
+the identity field alone silently and permanently disagrees with that source. Two
+procedures / one table interact: the collision-checking rename helper and its caller's
+unconditional post-update.</p>
+<p><strong>Recurrence.</strong> 3 independent PRs, same repo, ALL THREE confirmed by a human reviewer as
+real (<code>said=fixed</code>, quote <code>"solved"</code> on two of three; the third is unclassified but
+identical in shape and severity to the confirmed two).</p>
+<p><strong>Diagnose-task sketch.</strong> Table <code>External Contact</code> (keyed on <code>Contact Id</code>) + codeunit
+<code>Contact Sync</code>: <code>TryRenameContact(var Contact; NewId)</code> does <code>if
+OtherContact.Get(NewId) then exit;</code> on collision, else renames. Caller <code>SyncContact</code> always
+calls <code>TryRenameContact</code> then unconditionally refreshes and <code>Modify()</code>s every other field.
+Symptom: "After two external contacts are merged into the same target id, the losing
+contact's other fields keep updating from the feed forever, but its id in our system never
+changes to match." Oracle: seed two contacts, sync a feed where contact A's id changes to
+collide with existing contact B; assert contact A's <code>Contact Id</code> field is UNCHANGED (a
+correct implementation would report the collision as a failure and NOT modify other
+fields) versus asserting the naive code silently updated A's other fields anyway.</p>
+<p><strong>Reasoning 4/5</strong> — requires noticing that <code>exit</code> inside a Boolean-returning-nothing helper
+is not equivalent to "operation failed, stop"; <strong>difficulty high</strong> (the naive/starter shape
+looks completely ordinary — early-exit guards are idiomatic AL); <strong>attempt-2 resistance:
+high</strong> — the assert failure ("expected id unchanged, got id changed" or vice versa
+depending on framing) gives no hint that a swallowed collision, not a modify-ordering bug,
+is the cause.</p>
+<hr />
+<h3 id="6-singleinstance-cache-never-invalidated-on-the-nothing-changed-path">6. <code>SingleInstance</code> cache never invalidated on the "nothing changed" path<a class="headerlink" href="#6-singleinstance-cache-never-invalidated-on-the-nothing-changed-path" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quotes:</strong>
+- PR 52724, <em>"Column headers keep showing the old period after the date filter is
+  cleared"</em>: "<code>UpdateDateFilter</code> only writes to it when the filter is non-empty (<code>if
+  Filter &lt;&gt; '' then AccSchedMgt.SetGlobalFilter(Filter);</code>), so clearing the Date Filter
+  leaves the old value behind with nothing to reset it... The same mechanism bleeds between
+  two overview windows or across a company switch in one session."
+- PR 52196, <em>"Setup changes don't reach sessions that are already open"</em>: "<code>GetUseNewAccSchedCalc()</code>
+  reads through the <code>SetupRead</code> flag on the <code>SingleInstance</code> setup-info codeunit, and that
+  flag is reset only by the insert/modify/delete subscribers... [so a session that never
+  triggers those subscribers keeps stale cached setup]."
+- PR 45792 (<code>document-output</code>, 30+ restated findings across review rounds — treated as ONE
+  instance for recurrence purposes per the 2026-08-20 doc's own "same-day reruns are noise"
+  caution, but the underlying fact is real and human-actioned): a <code>SingleInstance</code>-adjacent
+  cached-auth flag (<code>SetupAzureBlobMgtIsDone</code>) is shared across five sibling procedures on
+  one codeunit instance; only one procedure (<code>SaveFile</code>) gained a reset path, the other four
+  (<code>LoadFile</code>/<code>DeleteFile</code>/<code>FileExists</code>/<code>TryConnect</code>) still trust the stale cache forever.</p>
+<p><strong>Mechanic (AL terms).</strong> A <code>SingleInstance</code> codeunit (or a table-level global codeunit
+instance reused across calls) caches a value or a "have I loaded this yet" flag on first
+use. The invalidation path is conditional or partial: it only fires on a non-empty new
+value (52724), only on writes that go through specific subscribers (52196), or was patched
+into only one of several sibling call sites that all read the same flag (45792). The result
+is state that outlives the call that set it and leaks into a LATER, logically unrelated
+call within the same session — a classic multi-procedure state-reuse bug, except here the
+second "procedure" is often a second high-level user action (open a different record, clear
+a filter, switch company) rather than a second line in the same loop.</p>
+<p><strong>Recurrence.</strong> 3 PRs, 2 distinct repos (<code>continia-finance</code> ×2 same repo, <code>document-output</code>
+once, but the <code>document-output</code> instance is corroborated across ~15+ independently-worded
+findings in one PR's review history, i.e. multiple reviewers/rounds converged on it, which
+the 2026-08-20 doc treats as a meaningfully different strength-of-evidence bucket than
+single-mention findings).</p>
+<p><strong>Diagnose-task sketch.</strong> <code>SingleInstance</code> codeunit <code>Session Cache</code> with <code>GetActiveRegion():
+Code[10]</code> that returns a cached value, refreshed by <code>SetActiveRegion(NewRegion)</code> — but only
+when <code>NewRegion &lt;&gt; ''</code>. Codeunit <code>Region Report</code> calls <code>SetActiveRegion(UserInput)</code> then
+<code>GetActiveRegion()</code> to filter a table. Symptom: "Clearing the region filter and re-running
+the report still shows only the previously-selected region's data." Oracle: call
+<code>SetActiveRegion('EAST')</code>, run the report, assert EAST-only; call
+<code>SetActiveRegion('')</code> (clear), run the report again, assert ALL regions now included
+(fails on naive/starter code, which still filters to EAST).</p>
+<p><strong>Reasoning 3/5, difficulty medium</strong> (a model has to notice the ASYMMETRY — the setter
+handles the "set a value" path but not the "clear" path — categories.md difficulty lever</p>
+<h1 id="2-a-plausible-looking-but-incomplete-guard-attempt-2-resistance-medium-expected">2, a plausible-looking but incomplete guard). <strong>Attempt-2 resistance: medium</strong> — "expected<a class="headerlink" href="#2-a-plausible-looking-but-incomplete-guard-attempt-2-resistance-medium-expected" title="Permanent link">&para;</a></h1>
+<p>all regions, got EAST only" is closer to hinting at stale-filter state than family #1/#3/#5
+above, but still doesn't say WHERE the staleness lives.</p>
+<hr />
+<h3 id="7-same-cross-object-value-resolved-independently-n-times-can-disagree-with-itself">7. Same cross-object value resolved independently N times, can disagree with itself<a class="headerlink" href="#7-same-cross-object-value-resolved-independently-n-times-can-disagree-with-itself" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quotes:</strong>
+- PR 52747, <em>"The same KYC lookup is performed two or three times per operation"</em>:
+  "<code>GetCompanyDetails</code> already returns all three values in one call, but callers request
+  them one at a time. <code>ParticipationMapper.Codeunit.al</code> lines 28–29 call <code>GetCountryCode()</code>
+  then <code>GetCompanyName()</code>[[, each a fresh lookup]]."
+- PR 51887, <em>"The wizard resolves the same KYC data three times to display one company"</em>:
+  "<code>SetEditParticipation</code> calls <code>Strategy.Preload(...)</code>, which already resolves all three
+  values and caches them into <code>TempState</code>, then discards that and c[alls again three
+  times]."
+- PR 53623, <em>"The eOrder Response flow asks the subscriber twice, and correctness depends
+  on it answering the same way"</em>: "<code>OnAfterResolveCustomerReceiverId</code> now fires twice for
+  one order response... correctness depends on it answering the same way [both times]."</p>
+<p><strong>Mechanic (AL terms).</strong> A value that should be resolved ONCE per logical operation (a
+lookup across a table, an event that asks a subscriber to compute something) is instead
+re-resolved independently at each of several call sites or event-raise points. As long as
+the underlying data is static and the subscriber is deterministic, nothing visibly breaks —
+but the design has no mechanism forcing agreement, so a subscriber whose answer depends on
+ANYTHING mutable between the two resolutions (a record the subscriber itself touched, a
+counter, a random tiebreak) can legitimately answer differently the second time, and the
+two call sites silently diverge (one field gets value A, a sibling field on the same
+logical record gets value B). This is a multi-object state-CONSISTENCY bug rather than a
+state-staleness bug (#6) — the defect is the absence of a single source of truth across
+calls, not a cache that failed to invalidate.</p>
+<p><strong>Recurrence.</strong> 3 PRs, 2 distinct repos (<code>delivery-network</code> ×2, <code>document-output</code>... note:
+52747 and 51887 and 53623 are all <code>delivery-network</code>/<code>document-output</code> family repos —
+re-checked: 52747 and 51887 and 53623 are all <code>delivery-network</code>; downgrade to same-repo
+recurrence, still 3 independent PRs).</p>
+<p><strong>Diagnose-task sketch.</strong> Codeunit <code>Pricing Resolver</code> publishing <code>OnResolveDiscount(Item:
+Record Item; var Rate: Decimal)</code>. Codeunit <code>Order Builder</code> calls this event separately for
+<code>UnitPrice</code> calculation AND for <code>LineDiscount</code> display, trusting both calls to agree. A
+starter subscriber <code>Seasonal Discount Sub</code> legitimately depends on a <code>var</code> accumulator it
+also mutates (e.g. "first item of a season gets a bonus, subsequent items don't" — a
+stateful subscriber, which the event's contract never rules out). Symptom: "An order's
+displayed line discount sometimes does not match the discount actually applied to the
+price." Oracle: build an order with 2+ lines against the stateful subscriber; assert
+displayed discount equals applied discount per line (fails on naive/starter code, which
+calls the event twice per line).</p>
+<p><strong>Reasoning 4/5</strong> — the bug requires recognizing that "call the event twice, expect the
+same answer" is an UNSTATED and unenforced assumption. <strong>Difficulty:</strong> medium-high.
+<strong>Attempt-2 resistance: high</strong> — a mismatch between two DISPLAYED numbers gives no signal
+about which of the two resolution call sites is "correct" or that there even should be only
+one call.</p>
+<hr />
+<h3 id="8-misleadingly-named-predicate-setrecfilter-narrows-a-shared-batch-to-one-record">8. Misleadingly-named predicate + <code>SetRecFilter</code> narrows a shared batch to one record<a class="headerlink" href="#8-misleadingly-named-predicate-setrecfilter-narrows-a-shared-batch-to-one-record" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quote:</strong> PR 52225 (<code>document-output</code>), <em>"Selecting several invoices for the
+</em>same<em> customer still sends only one of them"</em>, critical: "<code>IsSingleRecordSelected</code>,
+despite its name, returns true when <em>all</em> selected records share one customer — not only
+when a single record is selected. In that case Base App calls <code>Send()</code> <strong>once</strong>, handing
+over the whole selection... The subscriber then runs <code>DocumentRecordRef.SetRecFilter()</code>...
+which narrows the set to the one record the selection is sitting on, and passes that
+narrowed view downstream... <code>IsHandled := true</code> then tells Base App not to do anything
+further for the batch."</p>
+<p><strong>Mechanic (AL terms).</strong> Two independent bugs compose. (1) A predicate's name promises
+"exactly one record" but its actual implementation checks a weaker, plausible-sounding
+condition ("all records share one grouping key"), so a caller branches on it expecting
+single-record semantics while the actual input can be a multi-record selection. (2) Given
+that mis-routed multi-record selection, a subscriber calls <code>RecordRef.SetRecFilter()</code> —
+which by design narrows to the CURRENT single record the ref happens to be positioned on —
+silently dropping every other record in the batch, then claims <code>IsHandled := true</code> so the
+caller believes the whole batch was processed. Objects: the branching codeunit (owns the
+predicate), the subscriber codeunit (owns the narrowing), and the shared <code>RecordRef</code>/
+selection between them.</p>
+<p><strong>Recurrence:</strong> 1 PR, but a rich, well-documented single instance with two independently
+plantable bugs — a strong candidate for categories.md's difficulty lever #2 (two candidate
+causes, only one is the actual mechanism at the point the oracle probes).</p>
+<p><strong>Diagnose-task sketch.</strong> Codeunit <code>Batch Approver</code> with <code>IsUniformBatch(Selection: Record
+"Doc Line")</code> — named to suggest "exactly one record" but actually implemented as "all
+records share one <code>Approver Code</code>" — branches to <code>ApproveOne()</code> when true. Subscriber
+<code>Approval Log Sub</code> on <code>OnBeforeApproveOne</code> does <code>Selection.SetRecFilter();</code> to grab "the"
+record for logging, inadvertently narrowing what the base procedure then processes to one
+row. Symptom: "Approving several lines that all have the same approver only approves one of
+them." Oracle: seed 3 lines with the same approver code; call the batch entry point; assert
+ALL THREE end up approved (fails on naive/starter code, which approves exactly one).</p>
+<p><strong>Reasoning 4/5, difficulty high</strong> (requires reading two objects and noticing the
+composition, not just one bug). <strong>Attempt-2 resistance: medium</strong> — "expected 3 approved,
+got 1" strongly suggests SOME kind of narrowing, but not which of the two plausible causes
+(bad predicate vs. bad subscriber) is load-bearing, or that it's actually both in series.</p>
+<hr />
+<h3 id="9-ishandled-true-skips-a-base-app-side-effect-the-subscriber-doesnt-replicate">9. <code>IsHandled := true</code> skips a base-app side effect the subscriber doesn't replicate<a class="headerlink" href="#9-ishandled-true-skips-a-base-app-side-effect-the-subscriber-doesnt-replicate" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quote:</strong> PR 52196 (<code>continia-finance</code>), <em>"Columns still lose the standard date
+suffix from their caption"</em>, major: "When the subscriber sets <code>IsHandled := true</code>, the base
+app returns immediately and never runs its own <strong>Include Date In Header</strong> logic — the part
+that turns <code>Actual</code> into <code>Actual January 2026</code>... A header that uses a <code>%n</code> code <strong>and</strong>
+has <code>Include Date In Header</code> set. Previously CFI substituted the code and the base app
+still appended the date; now the date is gone."</p>
+<p><strong>Mechanic (AL terms).</strong> A base-app procedure has TWO logical steps: (1) resolve a
+templated value, (2) unconditionally append a derived suffix. A subscriber intercepts step
+(1) via <code>IsHandled</code>, correctly replacing the templating logic — but claiming <code>IsHandled :=
+true</code> also skips step (2), which the base app would otherwise have run regardless of who
+resolved the template. The subscriber's author reasoned about "did I replace the thing I
+came here to replace" and missed that <code>IsHandled</code> is an ALL-OR-NOTHING gate over the WHOLE
+remaining procedure body, not just the specific step being overridden. Two objects: the
+base-app publisher procedure (with its own un-exposed step 2) and the subscriber.</p>
+<p><strong>Recurrence:</strong> 1 clear instance, but the general shape ("<code>IsHandled</code> silently swallows
+more of the procedure than the subscriber author accounted for") is a well-known BC
+extension-point trap and matches categories.md category 6's explicit brief ("IsHandled
+patterns").</p>
+<p><strong>Diagnose-task sketch.</strong> Codeunit <code>Label Builder</code> with <code>ResolveLabel(var Text; Context)</code>:
+resolves a template, THEN unconditionally does <code>if AppendTimestamp then Text += '
+(' + Format(Today) + ')';</code> — both inside one procedure, with an <code>OnBeforeResolveLabel(var
+Text; var IsHandled)</code> event fired before either step. Starter subscriber
+<code>Custom Template Sub</code> replaces the template resolution and sets <code>IsHandled := true</code>.
+Symptom: "Labels built through the custom template lose their date suffix; labels built
+through the standard template keep it." Oracle: enable the custom template for one record,
+leave the standard template for another; assert BOTH end up with a date suffix (fails on
+naive/starter code — the custom-template one is missing it).</p>
+<p><strong>Reasoning 3/5, difficulty medium</strong> (identifying that <code>IsHandled</code> gates unrelated code
+later in the SAME procedure requires reading past the point most models would stop).
+<strong>Attempt-2 resistance: medium</strong> — "expected date suffix present, got absent" plausibly
+points a capable model at the <code>IsHandled</code> branch directly.</p>
+<hr />
+<h3 id="10-bindsubscription-activates-every-procedure-in-the-codeunit-not-just-the-intended-one">10. <code>BindSubscription</code> activates every procedure in the codeunit, not just the intended one<a class="headerlink" href="#10-bindsubscription-activates-every-procedure-in-the-codeunit-not-just-the-intended-one" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quote:</strong> PR 52225, <em>"New PDF-merge test double turns itself on in three
+unrelated tests, and can reach the live merge service"</em>, major: "<code>CDOSendOnPostingTests.al</code>
+adds a second event subscriber to a codeunit that has <code>EventSubscriberInstance = Manual</code>...
+With that setting, [binding the instance for one purpose activates every subscriber
+procedure declared in that same codeunit, including ones unrelated to the test at hand]."</p>
+<p><strong>Mechanic (AL terms).</strong> <code>EventSubscriberInstance = Manual</code> scopes subscription to a
+specific bound INSTANCE of a codeunit, not to a specific PROCEDURE within it. A codeunit
+that accumulates multiple <code>[EventSubscriber]</code> procedures for different purposes (a test
+helper mock, a diagnostic hook, a feature toggle) goes live on ALL of them the moment
+ANYONE calls <code>BindSubscription</code> on that instance for ANY one purpose. A test (or production
+code) that binds the codeunit to intercept event A also, invisibly, starts intercepting
+event B — and if nothing unbinds it deterministically (see the companion nitpick in the
+same PR: "Test teardown is skipped whenever the test fails"), the contamination outlives
+the single call site that intended it.</p>
+<p><strong>Recurrence:</strong> 1 PR, but this is a distinct, more general concrete shape than the
+2026-08-20 doc's existing Tier 2 entry for the same PR ("BindSubscription binds the whole
+codeunit instance; every subscriber in it goes live at once... Clean oracle (two
+subscribers, assert both fire)") — that entry's oracle asserts BOTH subscribers fire
+together as INTENDED; this candidate's oracle instead asserts an UNRELATED subscriber's
+side effect leaks where it was NOT intended, which is the actually-reported defect.</p>
+<p><strong>Diagnose-task sketch.</strong> Codeunit <code>Test Hooks</code> with two <code>[EventSubscriber]</code> procedures on
+unrelated events: <code>LogEveryPost</code> (a diagnostic no-op meant to be always-on once bound) and
+<code>OverrideShippingCost</code> (meant to be opt-in per test, sets <code>Cost := 0</code> via <code>IsHandled</code>).
+Starter test codeunit binds <code>Test Hooks</code> to exercise <code>LogEveryPost</code>, in a test that also
+happens to post a document that would trigger <code>OverrideShippingCost</code>. Symptom: "A test that
+only wanted to check logging output ends up posting a $0-shipping document instead of the
+real cost." Oracle: run the logging-only test scenario and assert the posted shipping cost
+equals the REAL configured cost, not zero (fails when <code>Test Hooks</code> is bound as a single
+instance with both subscribers live).</p>
+<p><strong>Reasoning 3/5, difficulty medium.</strong> <strong>Attempt-2 resistance: low-medium</strong> — "expected real
+cost, got 0" is a fairly direct pointer toward "something is overriding the cost", though
+not toward WHY an unrelated bind caused it.</p>
+<hr />
+<h3 id="11-get-re-read-on-a-shared-var-record-subscriber-parameter-clobbers-an-earlier-writer">11. <code>Get()</code> re-read on a shared <code>var Record</code> subscriber parameter clobbers an earlier writer<a class="headerlink" href="#11-get-re-read-on-a-shared-var-record-subscriber-parameter-clobbers-an-earlier-writer" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quote:</strong> PR 52382/52384/52375 (<code>document-output</code>, same fix evolving across
+rounds), <em>"Re-reading the caller's record can discard another extension's unsaved
+changes"</em>: "<code>ToSalesHeader.Get(...)</code> replaces the <em>entire</em> in-memory record, not just the
+four CDO fields. That record is a <code>var</code> parameter shared by every subscriber on this event,
+and BC does not guarantee subscriber order across extensions. A subscriber that runs before
+CDO's and sets a field in memory expecting it to be persisted later would have that value
+silently thrown away."</p>
+<p><strong>Mechanic (AL terms).</strong> An event publisher hands a <code>var Record</code> to N subscribers so each
+can inspect/modify it before it is eventually saved. One subscriber, defending against a
+DIFFERENT bug (a stale record instance), does a full <code>Get()</code> re-read from the database
+INTO that same shared <code>var</code> parameter — which is the right fix for staleness but has an
+unintended side effect: it also wipes any IN-MEMORY, NOT-YET-PERSISTED field that an
+earlier subscriber (or the publisher itself) had already set on that exact instance. Two-
+or-more-subscriber interaction on one shared mutable parameter, order-dependent, and BC
+gives no ordering guarantee to reason about which subscriber "wins."</p>
+<p><strong>Recurrence:</strong> 1 PR lineage across 3 review rounds (same underlying finding, evolving fix
+— counted as ONE instance per the 2026-08-20 doc's "same-day/close-round restatement is not
+independent recurrence" caution, but it IS three separate human/reviewer engagements over
+what was, per the PR history, a genuinely revised fix each time, not a same-round
+restatement).</p>
+<p><strong>Diagnose-task sketch.</strong> Publisher event <code>OnBeforeReleaseOrder(var Order: Record "Sales
+Order"; var Handled: Boolean)</code>. Subscriber A (<code>Discount Applier</code>, binds first in the
+starter code's declaration order — though the task should not rely on declaration order
+being meaningful, per the platform fact) sets <code>Order."Custom Discount" := 10</code> in memory,
+intending the publisher to persist it after the event. Subscriber B (<code>Freshness Guard</code>)
+defensively does <code>Order.Get(Order."No.")</code> to avoid acting on a stale instance, which wipes
+Subscriber A's in-memory discount back to its DB value (0) before the publisher ever saves.
+Symptom: "A discount set by one extension is sometimes silently lost before the order
+saves." Oracle: enable both subscribers, release an order, assert the persisted discount
+equals 10 (fails when B's re-read runs after A's write — the task can make this
+deterministic by having the oracle publish the event and check the field with both
+subscribers bound, independent of bind order, since B's Get() always wins whenever it runs
+at all).</p>
+<p><strong>Reasoning 4/5, difficulty high</strong> — this is the subtlest entry in the set; the "fix" for
+one bug (staleness) is the direct cause of a different bug (lost writes), and recognizing
+both requires modeling what OTHER subscribers might have already done to the same
+parameter. <strong>Attempt-2 resistance: high</strong> — "expected discount 10, got 0" gives zero hint
+that a DIFFERENT subscriber's defensive re-read is responsible.</p>
+<hr />
+<h3 id="12-onprereport-runs-after-the-request-page-seeded-defaults-overwrite-user-input">12. <code>OnPreReport</code> runs after the request page; seeded defaults overwrite user input<a class="headerlink" href="#12-onprereport-runs-after-the-request-page-seeded-defaults-overwrite-user-input" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quote:</strong> PR 52798 (<code>continia-finance</code>), <em>"New path discards the dates the user
+just entered"</em>, critical: "AL runs the request page first, then <code>OnPreReport</code>. On the new
+path..., the user fills in Minimum Due Date, Maximum Due Date and Due Date Formula, clicks
+OK — and then <code>OnPreReport</code> calls <code>InitFactorer</code>, which throws all three away... Those
+three lines exist to seed defaults before the request page opens (correct when called from
+<code>SetFactorer</code>); they must not run after it." <strong>Human-confirmed fixed</strong>
+(<code>finding_outcomes.said_quote</code>: <em>"Now the Factoring proposal is build for the Factor
+choosen in request page."</em>).</p>
+<p><strong>Mechanic (AL terms).</strong> Already documented in the 2026-08-20 doc's Tier 2 table
+("<code>OnPreReport</code> runs <em>after</em> the request page, so seeding defaults there discards user
+input | 52798, human fixed | Needs a report object"). Included here with the full quote and
+the confirmed-fix status because this sweep independently re-surfaced it as the single
+clearest instance of category 7's stated brief ("posting is half-applied on error" sibling:
+here it's "input is silently discarded on success", the same request-page/report-trigger
+ordering fact). Two "objects" interact: the report object's own two entry points
+(<code>RequestPage</code> and <code>OnPreReport</code>) and the shared codeunit procedure both call into.</p>
+<p><strong>Diagnose-task sketch.</strong> Report <code>Proposal Builder</code> with request page fields <code>MinDate</code>,
+<code>MaxDate</code>; <code>OnPreReport</code> trigger unconditionally calls <code>SeedDateRangeDefaults()</code> (correct
+ONLY when the report is invoked from a code path that skips the request page). Symptom:
+"Running the report interactively with a custom date range silently produces a proposal
+covering ALL dates instead of the range just entered." Oracle drives the report both ways
+(interactively with explicit dates vs. programmatically with defaults) and asserts the
+interactive run's output respects the entered range.</p>
+<p><strong>Reasoning 2/5</strong> — this is close to a pure platform-ordering fact (<code>OnPreReport</code> fires
+after the request page) rather than a multi-object interaction in the strict sense; kept at
+lower rank for that reason. <strong>Difficulty:</strong> low-medium. <strong>Attempt-2 resistance: low</strong> — an
+assert on "range ignored" plus a report object is a fairly well-trodden shape; a model that
+knows <code>OnPreReport</code>'s firing order at all will likely get this on attempt 2.</p>
+<hr />
+<h3 id="13-destructive-multi-table-deleteall-runs-before-the-payload-that-justifies-it-is-validated">13. Destructive multi-table <code>DeleteAll()</code> runs before the payload that justifies it is validated<a class="headerlink" href="#13-destructive-multi-table-deleteall-runs-before-the-payload-that-justifies-it-is-validated" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quote:</strong> PR 51887 (<code>delivery-network</code>), <em>"A thin metadata response wipes the
+profile-group tables"</em>, critical: "<code>ParseProfileGroupsResponse</code> calls <code>DeleteAll()</code> on all
+three profile-group tables as soon as a <code>data</code> object is present, before checking that the
+arrays inside it exist. A perfectly valid <code>200 {\"data\": {}}</code> response... [wipes
+everything, refills nothing]."</p>
+<p><strong>Mechanic (AL terms).</strong> A sync/import procedure treats "the response has the expected
+top-level shape" as sufficient proof that a full replacement is safe, and sequences the
+destructive step (<code>DeleteAll()</code> across multiple related tables) BEFORE parsing and
+validating that the nested arrays it's about to rebuild FROM actually contain data. A
+technically-valid-but-degenerate response (present-but-empty) passes the shallow check,
+triggers the wipe, and then has nothing to refill with — silent, total data loss rather
+than a caught validation error. Multiple tables interact (the three profile-group tables
+all get wiped together), and the defect is purely about ORDERING two phases of one
+procedure relative to each other.</p>
+<p><strong>Recurrence:</strong> 1 strong instance; the general "validate then act" ordering lesson is
+common across the corpus's <code>TryFunction</code>/<code>Modify</code>-ordering findings but this is the
+cleanest single case of "destructive op sequenced before validation" specifically (as
+opposed to the <code>Commit</code>-then-fail family in candidate 3, which is about IRREVERSIBILITY,
+not ordering per se).</p>
+<p><strong>Diagnose-task sketch.</strong> Tables <code>Sync Line</code>, <code>Sync Detail</code> (child of <code>Sync Line</code>) +
+codeunit <code>Sync Importer</code> with <code>ApplyResponse(Payload: JsonObject)</code>: checks <code>Payload.Get('data',
+DataToken)</code>, and on success immediately does <code>SyncLine.DeleteAll(true);
+SyncDetail.DeleteAll(true);</code> BEFORE reading <code>DataToken.AsObject().Get('items', ItemsToken)</code>
+and looping it. Symptom: "An empty sync response wipes out everything that was previously
+synced, instead of leaving it untouched." Oracle: seed rows in both tables; call
+<code>ApplyResponse</code> with a <code>data</code> object containing NO <code>items</code> array; assert both tables are
+UNCHANGED (fails on naive/starter code, which wipes first and finds nothing to refill).</p>
+<p><strong>Reasoning 3/5, difficulty medium</strong> (recognizing "presence of the wrapper object" is not
+"presence of usable data" is the crux). <strong>Attempt-2 resistance: medium</strong> — "expected rows
+still present, got 0 rows" strongly implicates the delete, but the fix (reorder validate-
+before-delete, vs. wrap in a transaction, vs. only delete rows actually being replaced) is
+not obvious from the assert alone.</p>
+<hr />
+<h3 id="14-helper-repositions-the-callers-record-as-an-undocumented-side-effect-of-computing-a-value">14. Helper repositions the <em>caller's</em> record as an undocumented side effect of computing a value<a class="headerlink" href="#14-helper-repositions-the-callers-record-as-an-undocumented-side-effect-of-computing-a-value" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quote:</strong> PR 52377 (<code>delivery-network</code>), <em>"GetNextLineNo still filters the
+caller's record; one call site missed"</em>: "<code>GetNextLineNo</code> sets a filter on, and repositions,
+whatever record variable the caller hands it. The PR compensates with <code>Clear()</code> at two call
+sites but the identical loop in <code>TestLibrary/src/LibraryXmlStruct.Codeunit.al:226</code> was left
+alone... every comparable helper in this repo... uses its own local record instead of the
+caller's."</p>
+<p><strong>Mechanic (AL terms).</strong> Same root mechanic as candidate 4 (<code>var Record</code> mutation leaking
+to the caller), but framed here for its CATEGORY 4 (minimal-change constraint) angle: the
+PR's own fix strategy was to <code>Clear()</code> the filter at every CALL SITE after invoking the
+helper — which is fragile (it worked, per the finding, at exactly the two sites the author
+remembered, and missed a third) rather than fixing the shared root cause (make the helper
+use its own local record). This is a clean minimal-change-constraint task: the symptom
+traces to the helper (object A), but per-call-site patches at the call sites (object B, C,
+D...) are what a naive fix reaches for, and they don't scale to every caller.</p>
+<p><strong>Recurrence:</strong> 1 latent instance (not live in production per the finding — "no current
+caller re-reads the variable after the call, so nothing misbehaves today") — this is
+explicitly a LATENT trap, which is fine for a minimal-change-constraint task since the
+symptom can be manufactured by the starter code adding a caller that DOES read the
+variable afterward (which is exactly what the task needs to plant).</p>
+<p><strong>Diagnose-task sketch (category 4, per categories.md: "symptom's root cause sits in object
+A, but the model may only submit object Z; A/B ship as fixed oracle-side companion
+files").</strong> Ship codeunit <code>Line No. Mgt.</code> (contains the buggy <code>GetNextLineNo(var Rec: Record
+"Detail Line"): Integer</code>, which does <code>Rec.SetRange(...)</code> internally) and TWO caller
+codeunits, <code>Import Handler</code> (correctly <code>Clear()</code>s the filter after calling, per the
+existing PR's patch) and <code>Recalc Handler</code> (a NEW caller the task adds, which does NOT
+<code>Clear()</code> and is broken by the leaked filter) — both shipped as fixed companions. The model
+may only submit <code>Line No. Mgt.</code> itself. Symptom: "Recalc Handler processes far fewer lines
+than it should after computing a next line number partway through." Oracle asserts
+<code>Recalc Handler</code>'s full-table behavior is correct, which is only achievable by fixing the
+shared helper (use a local record), since per-call-site patching is unavailable when the
+model can't touch the callers.</p>
+<p><strong>Reasoning 3/5, difficulty medium-high</strong> (the constraint — only object A is submittable —
+forces the model past the tempting "just clear the filter after the call" non-fix).
+<strong>Attempt-2 resistance: medium</strong> — a wrong-row-count assert plus the minimal-change
+constraint together push toward the root cause faster than an open-ended task would, but
+the fix itself (own local record inside the helper) is not obvious from the assert alone.</p>
+<hr />
+<h3 id="15-consumed-evaluate-silently-blanks-malformed-fields-instead-of-failing-the-row">15. Consumed <code>Evaluate</code> silently blanks malformed fields instead of failing the row<a class="headerlink" href="#15-consumed-evaluate-silently-blanks-malformed-fields-instead-of-failing-the-row" title="Permanent link">&para;</a></h3>
+<p><strong>Source / quote:</strong> PR 51887, <em>"Malformed values from the API are silently accepted as
+blanks"</em>, major: "<code>ReadSingleParticipationFromJson</code> ignores the return value of <code>Evaluate</code>
+at lines 174, 177, 188, 213 and 220 (participation Id, identifier-type GUID, KYC GUID,
+Created/Updated timestamps). A value the[re fails to parse leaves the target field at its
+default, and the row is inserted anyway]."</p>
+<p><strong>Mechanic (AL terms).</strong> This reinforces the 2026-08-20 doc's existing **Tier 1 candidate</p>
+<h1 id="4-companion-fact-a-failed-evaluate-leaves-the-target-holding-its-previous-value">4<em><em> companion fact ("a failed <code>Evaluate</code> leaves the target holding its </em>previous</em> value...<a class="headerlink" href="#4-companion-fact-a-failed-evaluate-leaves-the-target-holding-its-previous-value" title="Permanent link">&para;</a></h1>
+<p>PR 52747") with a materially different concrete shape: instead of one <code>Evaluate</code> inside a
+loop silently reusing the PREVIOUS iteration's value (52747's shape, already documented),
+this is FIVE independent <code>Evaluate</code> calls in ONE record-parsing procedure, each with its
+consumed-Boolean-return ignored, so a single malformed field from an external payload is
+silently coerced to its TYPE DEFAULT (blank GUID, 0 date) rather than failing the whole
+row. The multi-object angle: the parsing codeunit and the table it inserts into now
+disagree about what "valid" means — the table accepts a row the external contract would
+have rejected.</p>
+<p><strong>Recurrence:</strong> Reinforces an existing documented finding rather than introducing a new
+family; ranked last because building a task here duplicates most of the value already
+captured by Tier 1 candidate #4 (which explicitly recommends building on the general
+Evaluate-consumed-return convention). Worth recording as a variant shape (multi-field
+single-procedure blanking vs. single-field cross-iteration reuse) if candidate #4 is ever
+built as a composite/large-context task (category 3) needing a second scene.</p>
+<p><strong>Reasoning 2/5, difficulty low-medium, attempt-2 resistance low</strong> — the underlying platform
+fact (consumed <code>Evaluate</code> swallows the error) is already flagged in the existing Tier 1
+doc as having LOW-to-moderate attempt-2 resistance for the reused-value shape; the
+blanked-field shape is if anything easier to spot once a model inspects the parse
+procedure, since nothing downstream depends on iteration order.</p>
+<hr />
+<h2 id="what-did-not-make-the-list-and-why">What did NOT make the list, and why<a class="headerlink" href="#what-did-not-make-the-list-and-why" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Concurrency/locking findings</strong> (52109 "two concurrent invoices both pass the cap",
+  53254 "report sent to authority twice", 52927 "run-long snapshots go stale") — real bugs,
+  but require actual concurrent sessions to manifest; the SOAP test harness is
+  single-session, so no deterministic oracle exists (same rejection reasoning the
+  2026-08-20 doc applied to page background tasks and company-switch state).</li>
+<li><strong>Upgrade-codeunit findings</strong> (53809 eReport status enum remap, 52358 dimension-precedence
+  inversion, 49388's own upgrade-insert-unguarded findings) — categories.md lists "Upgrade
+  codeunits" as a stretch category with "needs v1→v2 bench flow, machinery missing."
+  Genuine multi-object bugs, shelved until that machinery exists.</li>
+<li><strong>The 45792 mega-PR's individual restated findings</strong> — used only in aggregate (candidate
+  6) per the 2026-08-20 doc's explicit caution that same-PR, close-round restatements are
+  reviewer variance, not independent recurrence; the underlying fact (shared cached-auth
+  flag, one of five sibling procedures fixed) is real and is folded into candidate 6 rather
+  than counted as 30 separate data points.</li>
+<li><strong>Base-app-domain-specific findings</strong> (53146 dimension duplicate-key, PR findings turning
+  on Job Task/Dimension semantics) — same self-containment rejection as the 2026-08-20 doc's
+  Job Task Dimension writeup: measures base-app recall, not a language/runtime semantic, and
+  <code>CG-AL-X047</code> already occupies dimension ground.</li>
+</ul>
+<h2 id="suggested-build-order">Suggested build order<a class="headerlink" href="#suggested-build-order" title="Permanent link">&para;</a></h2>
+<p>Candidates 1, 2, 3, and 5 have the strongest recurrence + attempt-2 resistance combination
+and should go first. Candidate 11 is the single subtlest finding in the set (a correct fix
+for one bug causing a different bug) and is worth the extra authoring care despite thinner
+recurrence. Candidate 14 is the cleanest fit for category 4 (minimal-change constraint) if
+that allocation still needs filling. Candidates 12 and 15 are low-cost adds that round out
+categories 6/7 and 1 respectively but duplicate most of their value with material the
+2026-08-20 doc already scoped — build them only if the higher-ranked candidates don't fill
+the category quota alone.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
