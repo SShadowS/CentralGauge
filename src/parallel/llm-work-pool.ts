@@ -42,9 +42,28 @@ import {
   type StreamingContinuationResult,
 } from "../llm/continuation.ts";
 import type { TokenUsage } from "../llm/types.ts";
+import type { TaskExecutionContext } from "../tasks/interfaces.ts";
 import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("llm-pool");
+
+/**
+ * The upstream pin fields a work result carries (spec 2026-09-11 D2). Stamped
+ * on success AND failure so a 429 or 404 still records what was asked for,
+ * which is what turns an unanswered pinned attempt into `not_served` rather
+ * than an unpinned one.
+ */
+function upstreamPinFields(
+  context: TaskExecutionContext,
+): Pick<LLMWorkResult, "requestedUpstream" | "upstreamProviderName"> {
+  if (context.upstreamPin === undefined) return {};
+  return {
+    requestedUpstream: context.upstreamPin,
+    ...(context.upstreamProviderName !== undefined
+      ? { upstreamProviderName: context.upstreamProviderName }
+      : {}),
+  };
+}
 
 /** Ordinary transient errors (connection resets, rate limits) retry this many times. */
 export const MAX_IMMEDIATE_RETRIES = 7;
@@ -249,6 +268,7 @@ export class LLMWorkPool {
           error: error instanceof Error ? error.message : String(error),
           duration: 0,
           readyForCompile: false,
+          ...upstreamPinFields(item.context),
         });
       }
     });
@@ -351,6 +371,7 @@ export class LLMWorkPool {
         continuationCount: continuationResult.continuationCount,
         emptyRetryCount,
         ...(abandoned.count > 0 ? { abandonedGenerations: abandoned } : {}),
+        ...upstreamPinFields(item.context),
       };
 
       // Set error message for extraction failures (categorizes as model failure, not transient)
@@ -410,6 +431,7 @@ export class LLMWorkPool {
         ...(abandoned.count > 0 ? { abandonedGenerations: abandoned } : {}),
         ...(prepared ? { request: prepared.request } : {}),
         ...(errorCode !== undefined ? { providerErrorCode: errorCode } : {}),
+        ...upstreamPinFields(item.context),
       };
     }
   }
@@ -431,6 +453,8 @@ export class LLMWorkPool {
       ...(vc?.thinkingBudget !== undefined &&
         { thinkingBudget: vc.thinkingBudget }),
       ...(vc?.timeout !== undefined && { timeout: vc.timeout }),
+      ...(item.context.upstreamPin !== undefined &&
+        { upstreamPin: item.context.upstreamPin }),
     });
   }
 

@@ -54,6 +54,7 @@ import type { CompileWorkResult } from "./types.ts";
 import { buildCompileWorkItem } from "./shared/compile-work-item.ts";
 import { evaluateAttempt } from "./shared/evaluate-attempt.ts";
 import { createFailedAttempt as createFailedAttemptShared } from "./shared/failed-attempt.ts";
+import { isUpstreamCompromised } from "../llm/upstream-verification.ts";
 import { finalizeTaskResult } from "./shared/finalize-task.ts";
 import { runCompileWorkItem } from "./shared/run-compile.ts";
 import { buildAttemptContext } from "./shared/attempt-context.ts";
@@ -93,6 +94,15 @@ export interface ParallelBenchmarkOptions {
 
   /** Enable streaming mode for real-time progress */
   stream?: boolean;
+
+  /**
+   * Resolved OpenRouter upstream pins per variantId (spec 2026-09-11 D2).
+   * Absent when no model is pinned.
+   */
+  upstreamPins?: ReadonlyMap<
+    string,
+    { upstreamPin: string; providerName: string }
+  >;
 
   /**
    * Maximum number of inline infra retries per model attempt. When a compile
@@ -895,7 +905,13 @@ export class ParallelBenchmarkOrchestrator {
       );
 
       if (!llmResult?.success || !llmResult.code) {
-        attempts.push(this.createFailedAttempt(attemptNumber, llmResult));
+        const failedAttempt = this.createFailedAttempt(
+          attemptNumber,
+          llmResult,
+          context.llmProvider,
+        );
+        attempts.push(failedAttempt);
+        if (this.markTerminalIfCompromised(failedAttempt)) break;
         continue;
       }
 
@@ -959,6 +975,7 @@ export class ParallelBenchmarkOrchestrator {
         attempt.infraRetries = infraRetries;
       }
       attempts.push(attempt);
+      if (this.markTerminalIfCompromised(attempt)) break;
 
       if (attempt.success) {
         success = true;
@@ -1023,8 +1040,36 @@ export class ParallelBenchmarkOrchestrator {
   createFailedAttempt(
     attemptNumber: number,
     llmResult: LLMWorkResult | undefined,
+    provider?: string,
   ): ExecutionAttempt {
-    return createFailedAttemptShared(attemptNumber, llmResult);
+    return createFailedAttemptShared(
+      attemptNumber,
+      llmResult,
+      undefined,
+      provider,
+    );
+  }
+
+  /**
+   * Upstream lock (spec D3): a pinned attempt whose upstream cannot be shown
+   * to have held ends the task here. No second attempt is spent; the run is
+   * ingested already excluded by ingest-assembly. Returns true when the
+   * caller must stop the attempt loop.
+   *
+   * Not private, for the same reason `createFailedAttempt` is not: both
+   * `break` sites in `processTaskForVariant` read only this return value, so
+   * a test that drives the real method is what keeps the stop condition and
+   * the `terminal` stamp from silently diverging from the classifier.
+   */
+  markTerminalIfCompromised(attempt: ExecutionAttempt): boolean {
+    if (
+      attempt.upstreamVerification === undefined ||
+      !isUpstreamCompromised(attempt.upstreamVerification)
+    ) {
+      return false;
+    }
+    attempt.terminal = "upstream_compromised";
+    return true;
   }
 
   /**

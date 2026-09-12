@@ -6,6 +6,38 @@ import type {
   TaskExecutionContext,
 } from "../../tasks/interfaces.ts";
 import type { CompileWorkResult, LLMWorkResult } from "../types.ts";
+import { classifyUpstream } from "../../llm/upstream-verification.ts";
+
+/**
+ * The five upstream fields for an attempt built from `llmResult` (spec D1).
+ * Shared by every attempt unit so a failed or infra attempt records the
+ * same verdict shape a compiled one does.
+ */
+export function upstreamFieldsFor(
+  provider: string,
+  llmResult: LLMWorkResult | undefined,
+): Pick<
+  ExecutionAttempt,
+  | "requestedUpstream"
+  | "servedUpstream"
+  | "servedUpstreamModel"
+  | "upstreamIdentitySource"
+  | "upstreamVerification"
+> {
+  const f = classifyUpstream({
+    provider,
+    requestedUpstream: llmResult?.requestedUpstream ?? null,
+    expectedProviderName: llmResult?.upstreamProviderName ?? null,
+    response: llmResult?.llmResponse,
+  });
+  return {
+    requestedUpstream: f.requestedUpstream,
+    servedUpstream: f.servedUpstream,
+    servedUpstreamModel: f.servedUpstreamModel,
+    upstreamIdentitySource: f.upstreamIdentitySource,
+    upstreamVerification: f.upstreamVerification,
+  };
+}
 
 /**
  * Input to `evaluateAttempt` — everything needed to build the
@@ -169,6 +201,7 @@ export function evaluateAttempt(input: EvaluateAttemptInput): ExecutionAttempt {
     ...(llmResult.llmResponse?.providerFinishReason !== undefined
       ? { providerFinishReason: llmResult.llmResponse.providerFinishReason }
       : {}),
+    ...upstreamFieldsFor(context.llmProvider, llmResult),
     compilationResult: compileResult.compilationResult,
     success,
     score,

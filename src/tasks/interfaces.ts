@@ -207,6 +207,10 @@ export interface TaskExecutionContext {
   variantId: string;
   /** Variant configuration overrides applied to this execution */
   variantConfig?: VariantConfig | undefined;
+  /** OpenRouter upstream pin resolved for this variant, or undefined. Spec 2026-09-11 D2. */
+  upstreamPin?: string | undefined;
+  /** The display name the pinned upstream echoes; what verification compares against. */
+  upstreamProviderName?: string | undefined;
   containerProvider: string;
   /**
    * @deprecated for outcome attribution. This is a routing hint / default
@@ -368,6 +372,35 @@ export interface ExecutionAttempt {
   providerErrorCode?: string | undefined;
   /** Provider request id when the SDK exposes one. Local only; never ingested. */
   providerRequestId?: string | undefined;
+  /**
+   * OpenRouter upstream lock (spec 2026-09-11). `requestedUpstream` is the
+   * pinned slug sent in `provider.order` (null when unpinned or not
+   * OpenRouter); `servedUpstream` the display name observed on the response;
+   * `upstreamVerification` the per-attempt verdict. See
+   * `src/llm/upstream-verification.ts` for the values and their meaning.
+   */
+  requestedUpstream?: string | null | undefined;
+  servedUpstream?: string | null | undefined;
+  servedUpstreamModel?: string | null | undefined;
+  upstreamIdentitySource?:
+    | "provider_field"
+    | "router_metadata"
+    | "both"
+    | null
+    | undefined;
+  upstreamVerification?:
+    | "not_applicable"
+    | "unpinned"
+    | "verified"
+    | "mismatch"
+    | "unverified"
+    | "not_served"
+    | undefined;
+  /**
+   * Set when this attempt ends the task early for a non-model reason. The
+   * sync executor and the batch wave-2 predicate both stop at it.
+   */
+  terminal?: "upstream_compromised" | undefined;
 
   // Compilation/test results
   compilationResult?: CompilationResult | undefined;
@@ -533,6 +566,10 @@ export interface TaskExecutionRequest {
   variantId?: string | undefined;
   /** Variant configuration overrides */
   variantConfig?: VariantConfig | undefined;
+  /** OpenRouter upstream pin resolved for this variant, or undefined. Spec 2026-09-11 D2. */
+  upstreamPin?: string | undefined;
+  /** The display name the pinned upstream echoes; what verification compares against. */
+  upstreamProviderName?: string | undefined;
   containerProvider?: string | undefined;
   containerName?: string | undefined;
 

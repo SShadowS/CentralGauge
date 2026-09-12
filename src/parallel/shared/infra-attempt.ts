@@ -8,6 +8,7 @@ import type {
   TaskExecutionContext,
 } from "../../tasks/interfaces.ts";
 import { ContainerError } from "../../errors.ts";
+import { upstreamFieldsFor } from "./evaluate-attempt.ts";
 
 export interface SynthesizeInfraAttemptInput {
   attemptNumber: number;
@@ -23,6 +24,16 @@ export interface SynthesizeInfraAttemptInput {
   request?: LLMRequest;
   llmResponse?: LLMResponse;
   containerName?: string;
+  /**
+   * The variant's LLM provider, so the attempt records the same upstream
+   * verdict a compiled attempt would. Defaults to `"unknown"`, which
+   * classifies as `not_applicable`.
+   */
+  provider?: string;
+  /** The upstream pin the request was sent with (OpenRouter only). */
+  requestedUpstream?: string;
+  /** The display name the pin resolves to, for verification. */
+  upstreamProviderName?: string;
 }
 
 const EMPTY_RESPONSE: LLMResponse = {
@@ -60,6 +71,19 @@ export function synthesizeInfraAttempt(
     llmResponse: response,
     extractedCode: "",
     codeLanguage: "al",
+    ...upstreamFieldsFor(input.provider ?? "unknown", {
+      workItemId: "",
+      success: false,
+      duration: 0,
+      readyForCompile: false,
+      ...(input.llmResponse ? { llmResponse: input.llmResponse } : {}),
+      ...(input.requestedUpstream !== undefined
+        ? { requestedUpstream: input.requestedUpstream }
+        : {}),
+      ...(input.upstreamProviderName !== undefined
+        ? { upstreamProviderName: input.upstreamProviderName }
+        : {}),
+    }),
     success: false,
     score: 0,
     failureReasons: [

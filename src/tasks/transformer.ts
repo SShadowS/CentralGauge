@@ -62,6 +62,8 @@ export class TaskTransformer {
         request.variantConfig || {},
       ),
       variantConfig: request.variantConfig,
+      upstreamPin: request.upstreamPin,
+      upstreamProviderName: request.upstreamProviderName,
       containerProvider: request.containerProvider ||
         config.container?.provider || "mock",
       containerName: request.containerName || `centralgauge-${manifest.id}`,

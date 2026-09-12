@@ -146,7 +146,12 @@ async function evaluateResponded(
     };
     return {
       kind: "attempt",
-      attempt: createFailedAttempt(attemptNumber, llmResult),
+      attempt: createFailedAttempt(
+        attemptNumber,
+        llmResult,
+        undefined,
+        deps.provider,
+      ),
     };
   }
 
@@ -241,6 +246,7 @@ async function evaluateResponded(
         : {}),
       request,
       llmResponse: pricedResponse,
+      provider: deps.provider,
     });
     return { kind: "attempt", attempt };
   }
@@ -254,6 +260,7 @@ async function evaluateErrored(
   round: 0 | 1,
   stored: StoredResponse,
   requestPathForItem: string,
+  provider: string,
 ): Promise<ItemOutcome> {
   if (stored.result.ok) {
     throw new Error(
@@ -278,7 +285,12 @@ async function evaluateErrored(
     readyForCompile: false,
     ...(request ? { request } : {}),
   };
-  const attempt = createFailedAttempt(attemptNumber, llmResult);
+  const attempt = createFailedAttempt(
+    attemptNumber,
+    llmResult,
+    undefined,
+    provider,
+  );
   attempt.providerFinishReason = providerFinishReasonFor(error);
   return { kind: "attempt", attempt };
 }
@@ -358,6 +370,7 @@ export async function evaluateCollected(
           itemSummary.round,
           stored,
           requestPath(dir, itemSummary.itemId),
+          deps.provider,
         );
 
       if (outcome.kind === "unresolved") {

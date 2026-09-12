@@ -20,6 +20,8 @@ export async function buildAttemptContext(
   variant: ModelVariant,
   options: ParallelBenchmarkOptions,
 ): Promise<TaskExecutionContext> {
+  const pin = options.upstreamPins?.get(variant.variantId);
+
   // Apply variant config overrides to temperature and maxTokens
   const temperature = variant.config.temperature ?? options.temperature;
   const maxTokens = variant.config.maxTokens ?? options.maxTokens;
@@ -36,6 +38,12 @@ export async function buildAttemptContext(
     llmModel: variant.model,
     variantId,
     variantConfig: variant.hasVariant ? variant.config : undefined,
+    ...(pin
+      ? {
+        upstreamPin: pin.upstreamPin,
+        upstreamProviderName: pin.providerName,
+      }
+      : {}),
     containerProvider: options.containerProvider,
     containerName: options.containerName,
     attemptLimit: options.attemptLimit,
