@@ -185,6 +185,39 @@ Deno.test("resolveUpstreamPin fails as mismatch when the probe is served by a di
   assertEquals(err.code, "UPSTREAM_PIN_MISMATCH");
 });
 
+Deno.test("resolveUpstreamPin fails as mismatch on a provider/metadata identity conflict, even when the provider field matches the pin", async () => {
+  const { fetchFn, calls } = fakeFetch([
+    { status: 200, body: LISTING },
+    {
+      status: 200,
+      body: {
+        provider: "Novita",
+        choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+        openrouter_metadata: {
+          endpoints: {
+            available: [
+              { provider: "Together", model: "z-ai/glm-5.3", selected: true },
+            ],
+          },
+        },
+      },
+    },
+  ]);
+  const err = await assertRejects(
+    () =>
+      resolveUpstreamPin({
+        apiModelId: "z-ai/glm-5.3",
+        pin: "novita/fp8",
+        maxTokens: 64000,
+        longestPromptTokens: 4000,
+        skipPreflight: false,
+      }, { fetchFn, apiKey: "k" }),
+    UpstreamPinError,
+  );
+  assertEquals(err.code, "UPSTREAM_PIN_MISMATCH");
+  assertEquals(calls.length, 2); // listing + one preflight, no retries
+});
+
 Deno.test("resolveUpstreamPin records a skipped preflight", async () => {
   const { fetchFn, calls } = fakeFetch([{ status: 200, body: LISTING }]);
   const r = await resolveUpstreamPin({

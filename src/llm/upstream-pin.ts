@@ -188,11 +188,18 @@ export async function resolveUpstreamPin(
     };
     if (r.status === 200) {
       const id = extractUpstreamIdentity(body);
-      const served = id === undefined
-        ? undefined
-        : "conflict" in id
-        ? id.providerField
-        : id.servedUpstream;
+      if (id !== undefined && "conflict" in id) {
+        throw new UpstreamPinError(
+          `preflight for ${ep.slug} returned conflicting upstream identity: the provider field says ${id.providerField}, router metadata says ${id.metadata}`,
+          "UPSTREAM_PIN_MISMATCH",
+          {
+            pin: ep.slug,
+            providerField: id.providerField,
+            metadata: id.metadata,
+          },
+        );
+      }
+      const served = id?.servedUpstream;
       if (served !== ep.providerName) {
         throw new UpstreamPinError(
           `preflight for ${ep.slug} was served by ${
