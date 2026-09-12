@@ -37,6 +37,7 @@ import {
   validateAttemptsForIngest,
 } from "./bench/ingest-meta.ts";
 import { ingestRun } from "../../src/ingest/mod.ts";
+import { stampAutoExcludedRun } from "../../src/ingest/run-exclusion.ts";
 import {
   formatReportToTerminal,
   ingestSection,
@@ -61,7 +62,7 @@ import type { EnvironmentManifest } from "../../src/ingest/capture.ts";
 import { buildBatchCommand } from "./bench-batch-command.ts";
 import { resolveUpstreamPins } from "./bench/upstream-precheck.ts";
 import { UpstreamPinError } from "../../src/llm/upstream-pin.ts";
-import { getApiKeyForProvider } from "./models-command.ts";
+import { getApiKeyForProvider } from "../helpers/api-keys.ts";
 import { DEFAULT_MAX_TOKENS } from "../../src/constants.ts";
 
 /**
@@ -964,16 +965,32 @@ export function mergePresetWithOptions(
 }
 
 /**
+ * Collaborators `ingestBenchResults` reaches outside itself for. Injectable
+ * so a test can drive the whole ingest loop without a network call or a
+ * `docker inspect`; production passes nothing and gets the real ones.
+ */
+export interface BenchIngestDeps {
+  ingestRun?: typeof ingestRun;
+  buildEnvironmentManifest?: typeof buildEnvironmentManifest;
+}
+
+/**
  * Ingest bench results to the scoreboard API. One ingestRun call per
  * (results file × variant). Transient failures print a replay hint but
  * do not fail the bench run; fatal failures abort.
+ *
+ * Exported for tests only; the bench command is the only production caller.
  */
-async function ingestBenchResults(
+export async function ingestBenchResults(
   resultFilePaths: string[],
   variants: ModelVariant[],
   yes: boolean,
   containerName: string,
+  deps: BenchIngestDeps = {},
 ): Promise<void> {
+  const ingestFn = deps.ingestRun ?? ingestRun;
+  const buildEnvironment = deps.buildEnvironmentManifest ??
+    buildEnvironmentManifest;
   const cwd = Deno.cwd();
   const centralgaugeSha = await readGitSha(cwd);
   // Run-level capture (taxonomy v2): built ONCE per run (not per variant/file,
@@ -987,7 +1004,7 @@ async function ingestBenchResults(
   // environment/invocation capture rather than lose the run.
   let environment: EnvironmentManifest | undefined;
   try {
-    environment = await buildEnvironmentManifest({ containerName, cwd });
+    environment = await buildEnvironment({ containerName, cwd });
   } catch (err) {
     console.warn(
       colors.yellow(
@@ -1101,7 +1118,7 @@ async function ingestBenchResults(
       const br = assembled.benchResults;
 
       attempted++;
-      const outcome = await ingestRun(br, {
+      const outcome = await ingestFn(br, {
         cwd,
         catalogDir: `${cwd}/site/catalog`,
         tasksDir: `${cwd}/tasks`,
@@ -1149,6 +1166,15 @@ async function ingestBenchResults(
             `[OK] Ingested run ${outcome.runId} (${variant.variantId}, ${blobsNote})`,
           ),
         );
+        // A run the assembly marked compromised was accepted already
+        // excluded, so the scoreboard drops it. Mark the LOCAL file too, or
+        // `src/stats/importer.ts` would still admit those same numbers to
+        // the local score tables.
+        await stampAutoExcludedRun({
+          resultsFilePath: filePath,
+          runId: outcome.runId,
+          ...(br.excluded ? { excluded: br.excluded } : {}),
+        });
       }
     }
   }

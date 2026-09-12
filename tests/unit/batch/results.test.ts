@@ -12,7 +12,7 @@ import {
   assertRejects,
 } from "@std/assert";
 import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { ensureDir, exists } from "@std/fs";
 import type {
   BatchRecord,
   BatchRunState,
@@ -463,6 +463,90 @@ Deno.test("finalizeRun ingests when requested and does not replay on a second ca
     assertEquals(second.ingestedRunId, RUN_ID);
   } finally {
     await Deno.remove(output, { recursive: true });
+  }
+});
+
+Deno.test("finalizeRun stamps the local artifacts of a run ingested already excluded", async () => {
+  const stubIngestRun = (_br: BenchResults): Promise<IngestOutcome> =>
+    Promise.resolve({
+      kind: "success",
+      runId: RUN_ID,
+      bytesUploaded: 0,
+      referencedBytes: 0,
+    });
+  const depsFor = (
+    manifests: Map<string, TaskManifest>,
+    contexts: Map<string, TaskExecutionContext>,
+    state: BatchRunState,
+  ) => ({
+    manifests,
+    contexts,
+    variant: mockVariant(),
+    environment: mockEnvironment(),
+    taskSetHash: state.frozen.taskSetHash,
+    ingest: true,
+    cwd: Deno.cwd(),
+    ingestFlags: {},
+    ingestRun: stubIngestRun,
+  });
+
+  // Compromised: one attempt was served by an upstream other than the pin,
+  // so the assembly marks the whole run excluded and ingest accepts it that
+  // way. The local file must carry the same mark or `src/stats/importer.ts`
+  // would still admit these numbers to the local score tables.
+  const bad = await setupRun();
+  try {
+    await writeAttempt(bad.dir, "CG-AL-E001", 2, {
+      success: true,
+      score: 100,
+      failureReasons: [],
+      duration: 2000,
+      candidateCode: "codeunit 70000 Foo { }",
+      requestedUpstream: "novita/fp8",
+      servedUpstream: "Together",
+      servedUpstreamModel: "v1",
+      upstreamIdentitySource: "both",
+      upstreamVerification: "mismatch",
+    });
+    const next = await finalizeRun(
+      bad.dir,
+      bad.state,
+      depsFor(bad.manifests, bad.contexts, bad.state),
+    );
+    assertEquals(next.ingestedRunId, RUN_ID);
+    const doc = JSON.parse(await Deno.readTextFile(next.resultsFile!)) as {
+      excluded?: { at: string; reason: string; run_ids: string[] };
+    };
+    assertExists(doc.excluded);
+    assertEquals(doc.excluded!.run_ids, [RUN_ID]);
+    assertEquals(doc.excluded!.reason.includes("mismatch"), true);
+    assertNotEquals(doc.excluded!.at, "");
+    const marker = JSON.parse(
+      await Deno.readTextFile(join(bad.dir, "excluded.json")),
+    ) as { run_id: string; reason: string };
+    assertEquals(marker.run_id, RUN_ID);
+  } finally {
+    await Deno.remove(bad.output, { recursive: true });
+  }
+
+  // Clean run: nothing is stamped, in the file or in the run directory.
+  const good = await setupRun();
+  try {
+    const next = await finalizeRun(
+      good.dir,
+      good.state,
+      depsFor(good.manifests, good.contexts, good.state),
+    );
+    const doc = JSON.parse(await Deno.readTextFile(next.resultsFile!)) as {
+      excluded?: unknown;
+    };
+    assertEquals(doc.excluded, undefined);
+    assertEquals(
+      await exists(join(good.dir, "excluded.json")),
+      false,
+    );
+  } finally {
+    await Deno.remove(good.output, { recursive: true });
   }
 });
 

@@ -50,6 +50,7 @@ import {
 import { finalizeTaskResult } from "../parallel/shared/mod.ts";
 import { invocationSnapshot } from "../ingest/capture.ts";
 import { ingestRun } from "../ingest/mod.ts";
+import { stampAutoExcludedRun } from "../ingest/run-exclusion.ts";
 import { assembleBenchResultsForVariant } from "../../cli/commands/bench/ingest-assembly.ts";
 import {
   buildIngestMeta,
@@ -593,6 +594,17 @@ export async function finalizeRun(
         });
         next = { ...next, ingestedRunId: outcome.runId };
         await writeState(dir, next);
+        // Accepted already excluded (a compromised upstream): stamp the
+        // local results file and this run's own directory so the local
+        // stats import skips what the scoreboard has already dropped.
+        await stampAutoExcludedRun({
+          resultsFilePath: resultsFile,
+          runId: outcome.runId,
+          ...(assembled.benchResults.excluded
+            ? { excluded: assembled.benchResults.excluded }
+            : {}),
+          resultsDir: join(dir, "..", ".."),
+        });
       } else if (outcome.kind === "fatal-failure") {
         throw new Error(
           `batch finalize: ingest rejected for ${variantId}: ${outcome.code} ${outcome.message}`,
