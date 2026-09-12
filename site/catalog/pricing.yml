@@ -998,3 +998,75 @@
   batch_cache_write_per_mtoken: 0.125
   source: litellm-api
   fetched_at: "2026-09-10T23:14:34.000Z"
+- pricing_version: "2026-09-11"
+  model_slug: openrouter/z-ai/glm-5.3
+  effective_from: "2026-09-11T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 1.4
+  output_per_mtoken: 4.4
+  cache_read_per_mtoken: 0.26
+  cache_write_per_mtoken: 0
+  # Read from the OpenRouter models API, which is the only pricing source for
+  # an openrouter/* slug (the seeder is OR-only for these by design). The
+  # `z-ai/glm-5.3:batch` variant exists and is listed separately, so the batch
+  # rates below are its published numbers rather than an assumed 50% discount:
+  # they are NOT half of sync (0.7/2.2 against 1.4/4.4 is half on input but
+  # exactly half on output too, while cache read is 0.13 against 0.26).
+  batch_input_per_mtoken: 0.7
+  batch_output_per_mtoken: 2.2
+  batch_cache_read_per_mtoken: 0.13
+  batch_cache_write_per_mtoken: 0
+  source: openrouter
+  fetched_at: "2026-09-11T05:26:04.000Z"
+- pricing_version: '2026-09-11'
+  model_slug: openrouter/google/gemini-3.8-flash
+  effective_from: '2026-09-11T05:26:58.695Z'
+  effective_until: null
+  input_per_mtoken: 0.75
+  output_per_mtoken: 3.75
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: openrouter
+  fetched_at: '2026-09-11T05:26:58.695Z'
+  batch_input_per_mtoken: 0.375
+  batch_output_per_mtoken: 1.875
+  batch_cache_read_per_mtoken: 0.0375
+  batch_cache_write_per_mtoken: 0.0417
+- pricing_version: "2026-09-11"
+  model_slug: openrouter/qwen/qwen3.8-2.4t-a95b
+  effective_from: "2026-09-11T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 2
+  output_per_mtoken: 6
+  cache_read_per_mtoken: 0.25
+  cache_write_per_mtoken: 0
+  # From the OpenRouter models API (the only pricing source for an openrouter/*
+  # slug). NOTE: the `:batch` variant is priced IDENTICALLY to sync here, so
+  # these batch_* values are not a discount, they are the same published rates.
+  # Batch pricing is not automatically cheaper per provider or per model: Kimi
+  # K3's batch variant is 28% MORE expensive than its sync rate. Always read the
+  # `:batch` entry rather than halving the sync rate.
+  batch_input_per_mtoken: 2
+  batch_output_per_mtoken: 6
+  batch_cache_read_per_mtoken: 0.25
+  batch_cache_write_per_mtoken: 0
+  source: openrouter
+  fetched_at: "2026-09-11T18:11:55.000Z"
+- pricing_version: "2026-09-11"
+  model_slug: openrouter/minimax/minimax-m3
+  effective_from: "2026-09-11T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 0.3
+  output_per_mtoken: 1.2
+  cache_read_per_mtoken: 0.06
+  cache_write_per_mtoken: 0
+  # From the OpenRouter models API. The `:batch` variant is priced identically
+  # to sync, so these batch_* values are the same published rates, not a
+  # discount. Read the `:batch` entry per model rather than assuming 50% off:
+  # Kimi K3's batch variant is 28% MORE expensive than its sync rate.
+  batch_input_per_mtoken: 0.3
+  batch_output_per_mtoken: 1.2
+  batch_cache_read_per_mtoken: 0.06
+  batch_cache_write_per_mtoken: 0
+  source: openrouter
+  fetched_at: "2026-09-11T18:24:31.000Z"

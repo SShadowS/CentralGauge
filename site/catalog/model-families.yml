@@ -29,3 +29,15 @@
   vendor: Qwen
   display_name: Qwen3.5
   open_weight: true
+- slug: glm
+  vendor: Z.ai
+  display_name: GLM
+  open_weight: true
+- slug: qwen3.8
+  vendor: Qwen
+  display_name: Qwen3.8
+  open_weight: true
+- slug: minimax
+  vendor: MiniMax
+  display_name: MiniMax
+  open_weight: true
