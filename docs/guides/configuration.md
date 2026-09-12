@@ -100,6 +100,11 @@ variantProfiles:
       temperature: 0.2
       thinkingBudget: 50000
 
+# OpenRouter upstream pins (tags from `models <slug> --upstreams`).
+openrouter:
+  upstream:
+    z-ai/glm-5.3: novita/fp8
+
 # Prompt injection configuration (advanced)
 prompts:
   enabled: true

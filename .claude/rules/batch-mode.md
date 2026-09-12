@@ -106,6 +106,22 @@ whichever checkout the live run's own tooling reads from.
   is sourced independently, and `submit` refuses the model without real
   `batch_*_per_mtoken` catalog rates regardless.
 
+## Upstream pinning (OpenRouter)
+
+- Pins live under `openrouter.upstream.<author>/<slug>: <tag>`; a tag comes
+  from `models openrouter/<author>/<slug> --upstreams`, never from a response's
+  `provider` display name.
+- `submit` resolves and preflights every pin before any provider call and
+  exits 4 on failure; `--skip-upstream-preflight` skips only the 32-token
+  probe. The resolved routing is frozen in `prompt-inputs.json.routing`.
+- A `mismatch` or `unverified` attempt makes the run compromised: no wave 2,
+  ingested already excluded with `excluded_code`. Never repair `state.json` to
+  un-compromise a run; abandon and resubmit.
+- One profile per (model, task set, mode) on the site; a different pin is a
+  409 until the holding runs are excluded.
+- `runs backfill-upstream <runId>` is per-attempt from stored responses only;
+  it never writes one value across a run.
+
 ## Deploy order is unchanged
 
 Batch mode's D1 support (`runs.invocation_mode`, `cost_snapshots.batch_*_per_mtoken`)
