@@ -28,13 +28,19 @@ export interface UpstreamChip {
 const WARN_STATES = ["unverified", "not_served", "mismatch"] as const;
 
 /** Null when the model never went through OpenRouter (nothing to say). */
-export function upstreamChip(u: LeaderboardUpstream): UpstreamChip | null {
+export function upstreamChip(
+  u: LeaderboardUpstream,
+  opts: { openrouter?: boolean } = {},
+): UpstreamChip | null {
   const v = u.verification;
   const total = Object.values(v).reduce((a, b) => a + (b ?? 0), 0);
   const na = v.not_applicable ?? 0;
   if (u.pin === null && total - na === 0) return null;
   const unrecorded = v.unrecorded ?? 0;
   if (u.pin === null && unrecorded === total - na) {
+    // A non-OpenRouter model's pre-capture rows are not_applicable in all but
+    // name: there was never an upstream to record. Say nothing for them.
+    if (opts.openrouter === false) return null;
     return {
       tone: "unrecorded",
       label: "upstream unrecorded",

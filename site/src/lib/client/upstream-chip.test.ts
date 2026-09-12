@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { upstreamChip } from "./upstream-chip";
 
 describe("upstreamChip", () => {
+  it("hides the unrecorded chip for a non-OpenRouter model", () => {
+    const u = { pin: null, served: [], verification: { unrecorded: 926 } };
+    expect(upstreamChip(u, { openrouter: false })).toBeNull();
+    expect(upstreamChip(u, { openrouter: true })?.tone).toBe("unrecorded");
+    expect(upstreamChip(u)?.tone).toBe("unrecorded");
+  });
   it("hides the chip when nothing was ever recorded and there is no pin", () => {
     expect(upstreamChip({ pin: null, served: [], verification: {} })).toBeNull();
     expect(

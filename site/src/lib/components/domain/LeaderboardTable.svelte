@@ -122,7 +122,7 @@
     <tbody aria-live="polite" aria-atomic="false">
       {#each rows as row, i (row.model.slug)}
         {@const mix = outcomeMix(row)}
-        {@const chip = row.upstream ? upstreamChip(row.upstream) : null}
+        {@const chip = row.upstream ? upstreamChip(row.upstream, { openrouter: row.model.slug.startsWith('openrouter/') }) : null}
         {#if showTierUi && dividerAt[i]}
           <tr class="tier-divider" data-test="tier-divider">
             <td colspan="100" title="Ranks within a tier are not statistically distinguishable at this sample size.">
