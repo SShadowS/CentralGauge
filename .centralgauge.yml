@@ -93,6 +93,13 @@ logging:
 #       maxItems: 2048
 #       maxBytes: 1048576
 
+# OpenRouter upstream pins (sync and batch). Keyed by the api_model_id after
+# "openrouter/"; the value is a slug from `centralgauge models <slug> --upstreams`.
+# openrouter:
+#   upstream:
+#     "z-ai/glm-5.3": fireworks
+#     "google/gemini-3.8-flash": google-vertex/global
+
 # Benchmark presets - save complex benchmark configurations as reusable presets
 # Run with: deno task start bench --preset <name>
 # List presets: deno task start bench --list-presets
