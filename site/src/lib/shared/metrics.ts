@@ -164,7 +164,7 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'Latency p50',
     short: 'Median per-task wall time (LLM call + compile + test), in milliseconds.',
     formula: '50th percentile of per-task duration_ms: LLM latency + compile time + test time.',
-    when: 'Use p50 for a typical-case latency expectation. Unaffected by outlier slow tasks.',
+    when: 'Use p50 for a typical-case latency expectation. Unaffected by outlier slow tasks. Shown as N/A for batch runs: a batch request waits in the provider queue, so no per-request model timing is recorded and the only duration left would be our own compile-and-test time, which describes the harness rather than the model.',
     unit: 'duration_ms',
   },
 
@@ -173,7 +173,7 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'Latency p95',
     short: '95th-percentile per-task wall time. Captures tail latency.',
     formula: '95th percentile of per-task duration_ms across all tasks in all runs.',
-    when: 'Use p95 to understand worst-case latency. A low p95 means the model rarely stalls, relevant for automated pipelines with timeouts.',
+    when: 'Use p95 to understand worst-case latency. A low p95 means the model rarely stalls, relevant for automated pipelines with timeouts. Shown as N/A for batch runs: a batch request waits in the provider queue, so no per-request model timing is recorded and the only duration left would be our own compile-and-test time, which describes the harness rather than the model.',
     unit: 'duration_ms',
   },
 

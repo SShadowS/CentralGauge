@@ -1,7 +1,7 @@
 <!-- site/src/lib/components/domain/LeaderboardRowDetail.svelte -->
 <script lang="ts">
   import type { LeaderboardRow } from '$shared/api-types';
-  import { formatCost, formatMeanCount, formatRelativeTime } from '$lib/client/format';
+  import { NO_LATENCY_NOTE, formatCost, formatLatency, formatMeanCount, formatRelativeTime } from '$lib/client/format';
   import MetricInfo from './MetricInfo.svelte';
   import { COHORT_RUNS } from '$lib/shared/cohort';
 
@@ -45,7 +45,12 @@
   <div class="grp">
     <h3 class="h">Latency &amp; coverage</h3>
     <dl>
-      <div><dt>p95 <MetricInfo id="latency_p95_ms" /></dt><dd>{secs(row.latency_p95_ms)}</dd></div>
+      <div>
+        <dt>p95 <MetricInfo id="latency_p95_ms" /></dt>
+        <dd title={row.latency_p95_ms === null ? NO_LATENCY_NOTE : undefined}>
+          {formatLatency(row.latency_p95_ms)}
+        </dd>
+      </div>
       <div>
         <dt>Runs</dt>
         <dd>

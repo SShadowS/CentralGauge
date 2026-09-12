@@ -1,5 +1,6 @@
 <!-- site/src/lib/components/domain/RecommendationTiles.svelte -->
 <script lang="ts">
+  import { formatLatency } from '$lib/client/format';
   import type { LeaderboardRow } from '$lib/shared/api-types';
   import { pickRecommendations, SKILL_THRESHOLD } from '$lib/shared/recommendation-tiles';
   import { auc2Display } from '$lib/shared/leaderboard-derive';
@@ -42,7 +43,7 @@
     <p class="k"><span aria-hidden="true">⚡</span> Fastest ≥ {threshPct} AUC</p>
     {#if rec.fastest}
       <div class="v"><ModelLink slug={rec.fastest.model.slug} display_name={rec.fastest.model.display_name} api_model_id={rec.fastest.model.api_model_id} family_slug={rec.fastest.row.family_slug} /><SettingsBadge suffix={rec.fastest.model.settings_suffix} /></div>
-      <p class="sub">p95 {(rec.fastest.row.latency_p95_ms / 1000).toFixed(1)}s · {auc2Display(rec.fastest.row).toFixed(1)} AUC</p>
+      <p class="sub">p95 {formatLatency(rec.fastest.row.latency_p95_ms)} · {auc2Display(rec.fastest.row).toFixed(1)} AUC</p>
     {:else}
       <div class="v">—</div>
     {/if}

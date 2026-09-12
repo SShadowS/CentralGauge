@@ -210,7 +210,16 @@ export interface LeaderboardRow {
    * value does not imply any of those rows sit inside the filtered scope.
    */
   refusal_count: number;
-  latency_p95_ms: number;
+  /**
+   * 95th percentile of per-result total duration (llm + compile + test), in ms.
+   *
+   * `null` means no per-request model timing was recorded for any of this
+   * model's in-scope results, which is the case for every batch run: a batch
+   * item waits in the provider's queue and no per-request duration exists.
+   * Clients render this as "N/A" rather than a number, because the remaining
+   * compile-and-test time is a property of the harness, not the model.
+   */
+  latency_p95_ms: number | null;
   pass_rate_ci: { lower: number; upper: number };
   pass_hat_at_n: number;
   cost_per_pass_usd: number | null;
@@ -346,8 +355,10 @@ export interface ModelDetail {
      */
     pass_denominator: number;
     avg_cost_usd: number;
-    latency_p50_ms: number;
-    latency_p95_ms: number;
+    /** null when no per-request model timing exists (batch runs). */
+    latency_p50_ms: number | null;
+    /** null when no per-request model timing exists (batch runs). */
+    latency_p95_ms: number | null;
     pass_rate_ci: { lower: number; upper: number };
     pass_hat_at_n: number;
     cost_per_pass_usd: number | null;

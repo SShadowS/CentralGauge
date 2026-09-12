@@ -1069,7 +1069,10 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
     });
     // Every model with latency data should appear, ordered ascending.
     // Filter to rows with nonzero latency (models that have duration data).
-    const withLatency = rows.filter((r) => r.latency_p95_ms > 0);
+    const withLatency = rows.filter(
+      (r): r is typeof r & { latency_p95_ms: number } =>
+        r.latency_p95_ms !== null && r.latency_p95_ms > 0,
+    );
     for (let i = 1; i < withLatency.length; i++) {
       expect(withLatency[i].latency_p95_ms).toBeGreaterThanOrEqual(
         withLatency[i - 1].latency_p95_ms,
@@ -1084,7 +1087,10 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
       direction: "desc",
       limit: 5,
     });
-    const withLatency = rows.filter((r) => r.latency_p95_ms > 0);
+    const withLatency = rows.filter(
+      (r): r is typeof r & { latency_p95_ms: number } =>
+        r.latency_p95_ms !== null && r.latency_p95_ms > 0,
+    );
     for (let i = 1; i < withLatency.length; i++) {
       expect(withLatency[i].latency_p95_ms).toBeLessThanOrEqual(
         withLatency[i - 1].latency_p95_ms,
@@ -1278,7 +1284,10 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
 
     expect(rows).toHaveLength(3);
     // Trim must return top-3 by descending p95. All have nonzero latency.
-    const withLatency = rows.filter((r) => r.latency_p95_ms > 0);
+    const withLatency = rows.filter(
+      (r): r is typeof r & { latency_p95_ms: number } =>
+        r.latency_p95_ms !== null && r.latency_p95_ms > 0,
+    );
     expect(withLatency).toHaveLength(3);
     for (let i = 1; i < withLatency.length; i++) {
       expect(withLatency[i].latency_p95_ms).toBeLessThanOrEqual(

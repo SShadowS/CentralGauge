@@ -44,9 +44,12 @@
  *   computed from a run that has since been excluded. The response SHAPE is
  *   unchanged, which is exactly why the bump is needed: nothing else would
  *   tell those entries apart from correct ones.
+ * v15: `latency_p95_ms` is now `null` (was `0`) for a model with no recorded
+ *   per-request LLM timing, which is every batch run. A cached v14 entry would
+ *   serve `0` and the client would render "0.0s" instead of "N/A".
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = "v14";
+export const CACHE_VERSION = "v15";

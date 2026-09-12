@@ -26,6 +26,23 @@ export function formatCost(usd: number): string {
   return "$" + usd.toFixed(2);
 }
 
+/**
+ * Why a latency figure can be missing. Batch runs queue at the provider, so no
+ * per-request duration is ever recorded; the only timing left would be our own
+ * compile-and-test time, which describes the harness rather than the model.
+ */
+export const NO_LATENCY_NOTE =
+  'No latency recorded: these runs were batch processed, so the request waits in the provider queue and no per-request model timing exists.';
+
+/**
+ * Render a latency in seconds, or 'N/A' when none was recorded. Pair it with
+ * `NO_LATENCY_NOTE` as the title so the reader learns why rather than seeing a
+ * bare dash.
+ */
+export function formatLatency(ms: number | null | undefined): string {
+  return ms === null || ms === undefined ? 'N/A' : `${(ms / 1000).toFixed(1)}s`;
+}
+
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;

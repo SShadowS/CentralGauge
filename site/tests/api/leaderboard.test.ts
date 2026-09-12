@@ -143,10 +143,10 @@ async function seed(): Promise<void> {
     tout,
   ] of results) {
     await env.DB.prepare(
-      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms,compile_duration_ms)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-      .bind(run, task, attempt, passed, score, cs, tt, tp, tin, tout)
+      .bind(run, task, attempt, passed, score, cs, tt, tp, tin, tout, 1200, 300)
       .run();
   }
 }
@@ -765,7 +765,7 @@ describe("GET /api/v1/leaderboard", () => {
     // Assert ascending latency order: each row's latency_p95_ms ≤ next.
     // Rows with 0 (no latency data) sort last.
     const latencies = body.data.map((r) =>
-      (r.latency_p95_ms as number) === 0
+      r.latency_p95_ms === null || r.latency_p95_ms === 0
         ? Infinity
         : (r.latency_p95_ms as number),
     );

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { NO_LATENCY_NOTE, formatLatency } from '$lib/client/format';
   import type { LeaderboardRow } from '$shared/api-types';
   import ModelLink from './ModelLink.svelte';
   import CostCell from './CostCell.svelte';
@@ -193,7 +194,11 @@
           </td>
           <td class="ci text-mono" title="95% CI: {(row.pass_rate_ci.lower * 100).toFixed(1)}–{(row.pass_rate_ci.upper * 100).toFixed(1)}%">±{(((row.pass_rate_ci.upper - row.pass_rate_ci.lower) / 2) * 100).toFixed(1)}</td>
           <td><CostCell usd={row.avg_cost_usd} provisional={isCostProvisional(row.model.slug)} /></td>
-          <td class="text-mono">{(row.latency_p95_ms / 1000).toFixed(1)}s</td>
+          <td
+            class="text-mono"
+            title={row.latency_p95_ms === null ? NO_LATENCY_NOTE : undefined}
+            >{formatLatency(row.latency_p95_ms)}</td
+          >
           <td class="chev">
             <button
               class="disclose"

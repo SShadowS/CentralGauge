@@ -234,6 +234,31 @@ describe('computeLatencyPercentilesByModel', () => {
     expect(result.get(2)!.p95).toBeCloseTo(29, 9);
   });
 
+  it('omits a model whose results record no per-request LLM timing (batch runs)', async () => {
+    // A batch item waits in the provider queue, so llm_duration_ms is 0 on
+    // every result and the surviving compile-and-test time describes the
+    // harness, not the model. Reporting it as latency invited a comparison it
+    // cannot support, so such a model is dropped and the caller renders N/A.
+    await insertRun('r1', 1);
+    await insertResult({
+      run_id: 'r1', task_id: 't0', attempt: 1, passed: 1,
+      llm_duration_ms: 0, compile_duration_ms: 4200, test_duration_ms: 9800,
+    });
+    // A second model on the same query DID record LLM timing and must survive,
+    // proving the gate is per-model and keyed on the data.
+    await insertRun('r2', 2);
+    await insertResult({
+      run_id: 'r2', task_id: 't0', attempt: 1, passed: 1,
+      llm_duration_ms: 1200, compile_duration_ms: 300,
+    });
+
+    const result = await computeLatencyPercentilesByModel(env.DB, [], []);
+
+    expect(result.get(1)).toBeUndefined();
+    expect(result.get(2)).toBeDefined();
+    expect(result.get(2)!.p95).toBeCloseTo(1500, 9);
+  });
+
   it('combines llm + compile + test duration columns into total', async () => {
     // A single result with llm=100, compile=200, test=300 → total=600
     await insertRun('r1', 1);

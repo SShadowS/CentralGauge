@@ -657,7 +657,8 @@ export async function computeLeaderboard(
       avg_cost_usd: Math.round(+(r.avg_cost_usd ?? 0) * 1e6) / 1e6,
       verified_runs: aggMap.get(r.model_id)?.verified_runs ?? 0,
       last_run_at: r.last_run_at,
-      latency_p95_ms: aggMap.get(r.model_id)?.latency_p95_ms ?? 0,
+      // null (not 0) when no per-request model timing exists, e.g. batch runs.
+      latency_p95_ms: aggMap.get(r.model_id)?.latency_p95_ms ?? null,
       pass_rate_ci: aggMap.get(r.model_id)?.pass_rate_ci ?? {
         lower: 0,
         upper: 1,

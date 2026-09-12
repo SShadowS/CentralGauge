@@ -54,8 +54,16 @@ export function pickRecommendations(rows: LeaderboardRow[]): Recommendations {
   )[0];
   const value: TilePick | null = valueRow ? { model: valueRow.model, row: valueRow } : null;
 
-  const speedEligible = rows.filter((r) => auc(r) >= SKILL_THRESHOLD);
-  const fastRow = speedEligible.sort((a, b) => a.latency_p95_ms - b.latency_p95_ms)[0];
+  // A row with no recorded per-request LLM timing (every batch run) has no
+  // latency to rank on: its only duration is our own compile-and-test time, so
+  // including it would let the harness pick the "fastest model". Excluded
+  // outright rather than sorted last, so the tile is either right or absent.
+  const speedEligible = rows.filter(
+    (r) => auc(r) >= SKILL_THRESHOLD && r.latency_p95_ms !== null,
+  );
+  const fastRow = speedEligible.sort(
+    (a, b) => (a.latency_p95_ms as number) - (b.latency_p95_ms as number),
+  )[0];
   const fastest: TilePick | null = fastRow ? { model: fastRow.model, row: fastRow } : null;
 
   const openEligible = rows.filter((r) => r.open_weight === true);

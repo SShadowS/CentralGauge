@@ -1093,7 +1093,8 @@ export async function computeLatencyPercentilesByModel(
   const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
   const sql = `
     SELECT runs.model_id AS model_id,
-           (COALESCE(r.llm_duration_ms,0) + COALESCE(r.compile_duration_ms,0) + COALESCE(r.test_duration_ms,0)) AS dur_ms
+           (COALESCE(r.llm_duration_ms,0) + COALESCE(r.compile_duration_ms,0) + COALESCE(r.test_duration_ms,0)) AS dur_ms,
+           COALESCE(r.llm_duration_ms,0) AS llm_ms
     FROM runs
     JOIN results r ON r.run_id = runs.id
     ${extraJoins}
@@ -1106,11 +1107,25 @@ export async function computeLatencyPercentilesByModel(
     .all<{
       model_id: number;
       dur_ms: number | string | null;
+      llm_ms: number | string | null;
     }>();
 
   // Bucket durations by model_id, ignoring zero-only rows (no signal).
+  //
+  // `hasLlmTiming` gates the whole model out when NOTHING it ran recorded a
+  // per-request LLM duration. That is exactly the batch case: a batch item
+  // waits in the provider's queue for minutes to hours and no per-request
+  // timing exists, so `llm_duration_ms` is 0 for every result and the sum
+  // above degenerates to our own compile-plus-test time. Reporting that as
+  // "latency" invites a model comparison it cannot support (four batch models
+  // spanning a 3.5x range in output tokens landed within 2.5 s of each other,
+  // ordered by how fast their code compiled). Gating on the DATA rather than
+  // on `invocation_mode` means any future mode without per-request timing gets
+  // the same treatment for free, and sync runs are untouched.
   const byModel = new Map<number, number[]>();
+  const hasLlmTiming = new Set<number>();
   for (const row of rs.results ?? []) {
+    if (Number(row.llm_ms ?? 0) > 0) hasLlmTiming.add(row.model_id);
     const ms = Number(row.dur_ms ?? 0);
     if (ms <= 0) continue;
     const arr = byModel.get(row.model_id);
@@ -1121,6 +1136,7 @@ export async function computeLatencyPercentilesByModel(
   const out = new Map<number, { p50: number; p95: number }>();
   for (const [modelId, arr] of byModel.entries()) {
     if (arr.length === 0) continue;
+    if (!hasLlmTiming.has(modelId)) continue;
     arr.sort((a, b) => a - b);
     out.set(modelId, {
       p50: percentileLinear(arr, 0.5),

@@ -15,12 +15,7 @@
   import RunsTable from '$lib/components/domain/RunsTable.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import Tag from '$lib/components/ui/Tag.svelte';
-  import {
-    formatScore,
-    formatCost,
-    formatDuration,
-    formatTokens as formatTokensCompact,
-  } from '$lib/client/format';
+  import { formatCost, formatDuration, formatLatency, formatScore, formatTokens as formatTokensCompact } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   // CHEAT overlay temporarily hidden. Re-enable by reverting this commit.
   // import CheatButton from '$lib/cheat/CheatButton.svelte';
@@ -181,7 +176,7 @@
             ? { value: ((m.predecessor.avg_cost_usd - m.aggregates.avg_cost_usd) / m.predecessor.avg_cost_usd * 100).toFixed(0) + '%', positive: m.aggregates.avg_cost_usd <= m.predecessor.avg_cost_usd }
             : undefined} />
       </div>
-      <StatTile label="Latency p50" value={formatDuration(m.aggregates.latency_p50_ms)} infoId="latency_p50_ms" />
+      <StatTile label="Latency p50" value={formatLatency(m.aggregates.latency_p50_ms)} infoId="latency_p50_ms" />
       <div data-cheat="avg-tile">
         <StatTile
           label="Avg score"
@@ -207,7 +202,7 @@
       />
       <StatTile
         label="Latency p95"
-        value={formatDuration(m.aggregates.latency_p95_ms)}
+        value={formatLatency(m.aggregates.latency_p95_ms)}
         infoId="latency_p95_ms"
       />
     </section>
