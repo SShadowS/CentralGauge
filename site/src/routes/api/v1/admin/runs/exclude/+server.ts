@@ -27,6 +27,13 @@ import {
 } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { appendAudit } from "$lib/server/audit";
+import {
+  claimProfileStmt,
+  conflictingRunIds,
+  profileKeyOf,
+  readProfile,
+  releaseProfileIfEmptyStmt,
+} from "$lib/server/upstream-profile";
 
 interface RunExcludePayload {
   run_id: string;
@@ -86,16 +93,31 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     }
 
     const existing = await db
-      .prepare(`SELECT id, excluded_at, excluded_reason FROM runs WHERE id = ?`)
+      .prepare(
+        `SELECT id, excluded_at, excluded_reason, model_id, task_set_hash, invocation_mode, invocation_json FROM runs WHERE id = ?`,
+      )
       .bind(p.run_id)
       .first<{
         id: string;
         excluded_at: string | null;
         excluded_reason: string | null;
+        model_id: number;
+        task_set_hash: string;
+        invocation_mode: "sync" | "batch";
+        invocation_json: string | null;
       }>();
     if (!existing) {
       throw new ApiError(404, "run_not_found", `run ${p.run_id} not found`);
     }
+
+    const triple = {
+      modelId: existing.model_id,
+      taskSetHash: existing.task_set_hash,
+      mode: existing.invocation_mode,
+    };
+    const key = profileKeyOf(
+      JSON.parse(existing.invocation_json ?? "{}").upstream_pin ?? null,
+    );
 
     const wasExcluded = existing.excluded_at !== null;
     const now = new Date().toISOString();
@@ -127,6 +149,32 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           )
           .bind(p.run_id);
 
+    // Registry maintenance rides in the SAME batch as the exclude/include
+    // write, same contract as every other admin mutation: a committed
+    // change can never be paired with a failed registry update.
+    //
+    // Exclude: releasing the row (only when no non-excluded run of the
+    // triple remains) is what lets a replacement cohort claim it later,
+    // matching the 409 advice on the ingest side. Include: re-claim the triple,
+    // but refuse first if a DIFFERENT key already holds it, so re-including
+    // a stale run can never silently reintroduce a mismatched cohort.
+    let registryStmt;
+    if (p.exclude) {
+      registryStmt = releaseProfileIfEmptyStmt(db, triple);
+    } else {
+      const stored = await readProfile(db, triple);
+      if (stored && stored.key !== key) {
+        const conflicts = await conflictingRunIds(db, triple, p.run_id);
+        throw new ApiError(
+          409,
+          "upstream_profile_conflict",
+          `including run ${p.run_id} would reintroduce profile key "${key}" alongside the stored "${stored.key}"; exclude the stored cohort first`,
+          { stored_key: stored.key, key, conflicting_run_ids: conflicts },
+        );
+      }
+      registryStmt = claimProfileStmt(db, { ...triple, key, now });
+    }
+
     // In-batch with the write, same contract as every other admin mutation:
     // a committed change can never be paired with a failed epoch bump, so a
     // cached leaderboard cannot survive a change to what it ranks.
@@ -137,7 +185,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // minutes. This is a deliberate operator action on one row: someone who
     // just ran `centralgauge runs exclude` should not stare at the old
     // numbers for up to a minute wondering whether it worked.
-    await db.batch([update, forceBumpDataEpochStmt(db)]);
+    await db.batch([update, registryStmt, forceBumpDataEpochStmt(db)]);
 
     await appendAudit(db, {
       event: p.exclude ? "run.excluded" : "run.included",

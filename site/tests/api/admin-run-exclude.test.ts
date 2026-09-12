@@ -265,4 +265,45 @@ describe("admin run exclude endpoint", () => {
       code: "bad_version",
     });
   });
+
+  it("excluding the last run of a profile releases the registry row; including re-claims it", async () => {
+    await env.DB.prepare(
+      `INSERT INTO upstream_profiles(model_id,task_set_hash,invocation_mode,profile_key,claimed_at) VALUES (1,'ts','sync','<unpinned>','2026-01-01T00:00:00Z')`,
+    ).run();
+    expect((await post({ run_id: "r1", reason: REASON, exclude: true })).status)
+      .toBe(200);
+    expect(
+      await env.DB.prepare(`SELECT COUNT(*) AS n FROM upstream_profiles`)
+        .first<{ n: number }>()
+        .then((r) => Number(r?.n)),
+    ).toBe(0);
+    expect((await post({ run_id: "r1", reason: "", exclude: false })).status)
+      .toBe(200);
+    const prof = await env.DB.prepare(
+      `SELECT profile_key FROM upstream_profiles`,
+    ).first<{ profile_key: string }>();
+    expect(prof?.profile_key).toBe("<unpinned>");
+  });
+
+  it("including a run that would reintroduce a conflicting profile is refused with 409", async () => {
+    // r1 is unpinned. Seed a pinned run r2 on the same triple that currently holds the profile.
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE runs SET excluded_at='2026-01-02T00:00:00Z', excluded_reason='old' WHERE id='r1'`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload,invocation_json) VALUES ('r2','ts',1,'s','rig','2026-01-03T00:00:00Z','completed','claimed','v1','sig','2026-01-03T00:00:00Z',?, '{}', '{"upstream_pin":"novita/fp8"}')`,
+      ).bind(keyId),
+      env.DB.prepare(
+        `INSERT INTO upstream_profiles(model_id,task_set_hash,invocation_mode,profile_key,claimed_at) VALUES (1,'ts','sync','novita/fp8','2026-01-03T00:00:00Z')`,
+      ),
+    ]);
+    const res = await post({ run_id: "r1", reason: "", exclude: false });
+    expect(res.status).toBe(409);
+    expect((await res.json<{ code: string }>()).code).toBe(
+      "upstream_profile_conflict",
+    );
+    const still = await runRow("r1");
+    expect(still?.excluded_at).toBeTruthy();
+  });
 });
