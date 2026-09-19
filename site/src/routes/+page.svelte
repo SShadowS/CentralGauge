@@ -119,6 +119,7 @@
     <SetPicker
       sets={data.taskSets}
       selected={setVal}
+      allowAll={false}
       onchange={(next) => pushFilter({ set: next === 'current' ? null : next })}
     />
     <OpennessFilter value={data.filters.openness ?? null} onselect={(v) => pushFilter({ openness: v })} />

@@ -9,9 +9,11 @@
     selected: string;
     /** Fired when the user picks a different option. */
     onchange: (next: string) => void;
+    /** False on the leaderboard: its metrics have no denominator across sets. */
+    allowAll?: boolean;
   }
 
-  let { sets, selected, onchange }: Props = $props();
+  let { sets, selected, onchange, allowAll = true }: Props = $props();
 
   function labelFor(s: TaskSetSummary): string {
     return s.display_name ?? `Set ${s.short_hash}`;
@@ -44,6 +46,7 @@
     group={selected}
     onchange={() => onchange("current")}
   />
+  {#if allowAll}
   <Radio
     label="All"
     name="set"
@@ -51,6 +54,7 @@
     group={selected}
     onchange={() => onchange("all")}
   />
+  {/if}
 
   {#if sets.length > 1}
     <hr class="divider" />

@@ -89,3 +89,13 @@ describe("SetPicker", () => {
     expect(screen.getByText("current")).toBeDefined();
   });
 });
+
+describe("SetPicker allowAll", () => {
+  it("offers All by default and hides it when allowAll is false", () => {
+    const a = render(SetPicker, { sets: [base], selected: "current", onchange: () => {} });
+    expect(screen.queryByLabelText("All")).not.toBeNull();
+    a.unmount();
+    render(SetPicker, { sets: [base], selected: "current", onchange: () => {}, allowAll: false });
+    expect(screen.queryByLabelText("All")).toBeNull();
+  });
+});
