@@ -1070,3 +1070,17 @@
   batch_cache_write_per_mtoken: 0
   source: openrouter
   fetched_at: "2026-09-11T18:24:31.000Z"
+- pricing_version: '2026-09-22'
+  model_slug: anthropic/claude-opus-5-5
+  effective_from: '2026-09-22T18:05:33.000Z'
+  effective_until: null
+  input_per_mtoken: 4
+  output_per_mtoken: 20
+  cache_read_per_mtoken: 0.2
+  cache_write_per_mtoken: 5
+  source: openrouter-api
+  fetched_at: '2026-09-22T18:05:33.000Z'
+  batch_input_per_mtoken: 2
+  batch_output_per_mtoken: 10
+  batch_cache_read_per_mtoken: 0.1
+  batch_cache_write_per_mtoken: 2.5
