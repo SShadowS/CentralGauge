@@ -3,7 +3,6 @@
   import type { LeaderboardRow } from '$shared/api-types';
   import ModelLink from './ModelLink.svelte';
   import CostCell from './CostCell.svelte';
-  import SettingsBadge from './SettingsBadge.svelte';
   import MetricInfo from './MetricInfo.svelte';
   import OutcomeMixBar from './OutcomeMixBar.svelte';
   import { ChevronDown, ChevronUp } from '$lib/components/ui/icons';
@@ -138,7 +137,7 @@
               display_name={row.model.display_name}
               api_model_id={row.model.api_model_id}
               family_slug={row.family_slug}
-            /><SettingsBadge suffix={row.model.settings_suffix} />
+            />
             {#if row.provisional}
               <!--
                 Fewer runs than the standard cohort. The row still ranks: its
@@ -294,7 +293,7 @@
   .score { display: flex; flex-direction: column; gap: var(--space-2); min-width: 130px; }
   .headline { display: inline-flex; align-items: baseline; gap: var(--space-2); }
   .auc { font-weight: var(--weight-semi); }
-  /* Same muted register as SettingsBadge — a qualifier on the value, not a
+  /* Muted register — a qualifier on the value, not a
    * competing signal. */
   .fallback-badge { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .refusal-badge { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }

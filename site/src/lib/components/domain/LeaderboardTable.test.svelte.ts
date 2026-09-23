@@ -174,12 +174,12 @@ describe('LeaderboardTable', () => {
     expect(container.textContent).toContain('18.2s');
   });
 
-  it('renders SettingsBadge only when suffix is non-empty', () => {
+  it('does not render a settings suffix, even when the row carries one', () => {
+    // The suffix reflected recorded config, not what was sent: batch runs
+    // record the preset's temperature even for models that never receive one.
     const { container } = render(LeaderboardTable, { rows, sort: 'auc_2:desc' });
-    const badges = container.querySelectorAll('.settings-badge');
-    // Sonnet (suffix ' (50K, t0)') → 1 badge; Opus ('') → 0
-    expect(badges.length).toBe(1);
-    expect(badges[0]?.textContent).toBe(' (50K, t0)');
+    expect(container.querySelector('.settings-badge')).toBeNull();
+    expect(container.textContent).not.toContain('(50K, t0)');
   });
 
   it('defaults to auc_2:desc: auc-2-header has aria-sort descending', () => {

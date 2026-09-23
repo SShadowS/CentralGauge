@@ -25,7 +25,7 @@
       <tr>
         <th class="corner">Task</th>
         {#each matrix.models as model (model.slug)}
-          <th class="model-col" title={model.display_name + model.settings_suffix}>
+          <th class="model-col" title={model.display_name}>
             <div class="model-name">{model.slug}</div>
           </th>
         {/each}
