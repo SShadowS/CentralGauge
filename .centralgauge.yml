@@ -147,6 +147,9 @@ benchmarkPresets:
       - "anthropic/claude-fable-5-1" # pricing row is ASSUMED - confirm the list price before sync-catalog --apply
       - "openai/gpt-6-astra"
       - "gemini/gemini-3.8-flash"
+      - "anthropic/claude-opus-5-5"
+      - "openai/gpt-6-sol"
+      - "openai/gpt-6-luna"
     containers:
       - Cronus28
       - Cronus282
