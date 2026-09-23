@@ -52,6 +52,10 @@ const TEMPERATURE_LOCKED_MODELS: readonly string[] = [
   "gpt-5.5",
   "gpt-5.6",
   "gpt-5-mini",
+  // GPT-6 Astra/Sol/Luna: same 400 on `models --check` (2026-09-23).
+  "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
 ];
 
 function modelRejectsTemperature(model: string): boolean {
@@ -133,11 +137,12 @@ export class OpenAIAdapter extends BaseLLMAdapter
 
   /**
    * Check if the model uses max_completion_tokens instead of max_tokens
-   * GPT-5 series and reasoning models (o1, o3) use the new parameter
+   * GPT-5/GPT-6 series and reasoning models (o1, o3) use the new parameter
    */
   private usesMaxCompletionTokens(model: string): boolean {
     return (
       model.startsWith("gpt-5") ||
+      model.startsWith("gpt-6") ||
       model.startsWith("o1") ||
       model.startsWith("o3")
     );

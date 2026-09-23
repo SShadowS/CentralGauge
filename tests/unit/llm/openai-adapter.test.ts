@@ -607,6 +607,23 @@ Deno.test("OpenAIAdapter - temperature-locked models omit temperature", async (t
   );
 
   await t.step(
+    "gpt-6 models omit temperature and use max_completion_tokens",
+    () => {
+      for (const model of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]) {
+        const adapter = new OpenAIAdapter();
+        adapter.configure({ provider: "openai", model, apiKey: "test-key" });
+        const params = adapter.buildRequestParams({
+          prompt: "hello",
+          maxTokens: 100,
+        });
+        assertEquals("temperature" in params, false, model);
+        assertEquals("max_tokens" in params, false, model);
+        assertEquals("max_completion_tokens" in params, true, model);
+      }
+    },
+  );
+
+  await t.step(
     "gpt-5.1 (not temperature-locked) still sends temperature",
     () => {
       const adapter = new OpenAIAdapter();
