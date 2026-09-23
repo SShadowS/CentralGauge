@@ -267,6 +267,8 @@ describe("GET /api/v1/runs/:id", () => {
         duration_ms: number;
         tasks_attempted: number;
         tasks_passed: number;
+        tokens_in: number;
+        tokens_out: number;
       };
       results: Array<{
         task_id: string;
@@ -283,6 +285,13 @@ describe("GET /api/v1/runs/:id", () => {
           transcript_key: string;
           code_key?: string;
           failure_reasons: string[];
+          tokens: {
+            input: number;
+            output: number;
+            cache_read: number;
+            cache_write: number;
+            reasoning: number;
+          };
         }>;
       }>;
       reproduction_bundle?: { sha256: string; size_bytes: number };
@@ -319,6 +328,8 @@ describe("GET /api/v1/runs/:id", () => {
     expect(body.totals.cost_usd).toBeCloseTo((1000 * 3 + 500 * 15) / 1e6, 6);
     // duration sum = 100 + 200 + 300
     expect(body.totals.duration_ms).toBe(600);
+    expect(body.totals.tokens_in).toBe(1000);
+    expect(body.totals.tokens_out).toBe(500);
     // results grouped by task with attempts[]
     expect(body.results).toHaveLength(1);
     const t = body.results[0];
@@ -337,6 +348,13 @@ describe("GET /api/v1/runs/:id", () => {
       "blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     );
     expect(a.failure_reasons).toEqual([]);
+    expect(a.tokens).toEqual({
+      input: 1000,
+      output: 500,
+      cache_read: 0,
+      cache_write: 0,
+      reasoning: 0,
+    });
     // reproduction_bundle is derived from R2 head() — seeded blob has 4 bytes,
     // key is 'reproductions/r1.tar.zst' (no sha prefix) so sha = 'r1' (path stem).
     expect(body.reproduction_bundle).toBeDefined();
@@ -371,7 +389,11 @@ describe("GET /api/v1/runs/:id", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      totals: { avg_score: number; tasks_passed: number; tasks_attempted: number };
+      totals: {
+        avg_score: number;
+        tasks_passed: number;
+        tasks_attempted: number;
+      };
     };
     // Per-attempt mean: (0.5 + 1.0) / 2 = 0.75. NOT last-attempt 1.0.
     expect(body.totals.avg_score).toBeCloseTo(0.75, 6);

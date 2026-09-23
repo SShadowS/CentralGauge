@@ -5,7 +5,7 @@
   import AttemptCell from '$lib/components/ui/AttemptCell.svelte';
   import MarkdownRenderer from '$lib/components/domain/MarkdownRenderer.svelte';
   import { reflowDescription } from '$shared/reflow-description';
-  import { formatScore } from '$lib/client/format';
+  import { formatScore, formatTokens } from '$lib/client/format';
 
   interface Props { task: TaskDetail; }
   let { task }: Props = $props();
@@ -44,14 +44,14 @@
 {#if manifest.description}
   <section class="desc">
     <h2>Description</h2>
-    <MarkdownRenderer source={reflowDescription(manifest.description)} />
+    <div class="body"><MarkdownRenderer source={reflowDescription(manifest.description)} /></div>
   </section>
 {/if}
 
 {#if manifest.objective}
   <section class="obj">
     <h2>Objective</h2>
-    <MarkdownRenderer source={reflowDescription(manifest.objective)} />
+    <div class="body"><MarkdownRenderer source={reflowDescription(manifest.objective)} /></div>
   </section>
 {/if}
 
@@ -76,6 +76,7 @@
         <th scope="col">Attempt 1</th>
         <th scope="col">Attempt 2</th>
         <th scope="col">Avg score</th>
+        <th scope="col" title="Mean input / output tokens per attempt">Tokens / attempt</th>
         <th scope="col">Runs</th>
       </tr>
     </thead>
@@ -89,6 +90,11 @@
           <td><AttemptCell passed={r.attempt_2_passed} /></td>
           <td class="text-mono">
             {#if r.avg_score !== null}{formatScore(r.avg_score)}{:else}<span class="text-faint">—</span>{/if}
+          </td>
+          <td class="text-mono tokens">
+            {#if r.avg_tokens_in != null && r.avg_tokens_out != null}
+              {formatTokens(Math.round(r.avg_tokens_in))} <span class="text-faint">/</span> {formatTokens(Math.round(r.avg_tokens_out))}
+            {:else}<span class="text-faint">—</span>{/if}
           </td>
           <td class="text-mono">{r.runs_total}</td>
         </tr>
@@ -104,7 +110,26 @@
   .cat { color: var(--accent); font-size: var(--text-sm); }
   .hash { font-size: var(--text-xs); }
 
-  .desc p, .obj p { color: var(--text-muted); line-height: var(--leading-base); }
+  /* Task prose: a readable measure, a quiet card, and list spacing that keeps
+     nested field lists visibly grouped under their numbered item. */
+  .desc .body, .obj .body {
+    max-width: 78ch;
+    padding: var(--space-5) var(--space-6);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    line-height: var(--leading-base);
+  }
+  .body :global(.md > :first-child) { margin-top: 0; }
+  .body :global(.md > :last-child) { margin-bottom: 0; }
+  .body :global(p) { margin: 0 0 var(--space-3) 0; }
+  .body :global(ul), .body :global(ol) { margin: 0 0 var(--space-4) 0; padding-left: var(--space-6); }
+  .body :global(li) { margin: var(--space-1) 0; }
+  .body :global(li > p) { margin: 0 0 var(--space-2) 0; }
+  .body :global(li > ul), .body :global(li > ol) { margin: var(--space-1) 0 var(--space-2) 0; }
+  .body :global(ol > li::marker) { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .body :global(ul > li::marker) { color: var(--text-faint); }
+  .body :global(pre) { margin: 0 0 var(--space-4) 0; font-size: var(--text-sm); border: 1px solid var(--border); }
 
   .files ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 
@@ -122,6 +147,7 @@
     font-size: var(--text-sm);
   }
   th[scope='row'] { font-weight: var(--weight-regular); }
+  .tokens { white-space: nowrap; }
   tbody tr:last-child td,
   tbody tr:last-child th { border-bottom: 0; }
 </style>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PerTaskResult } from '$shared/api-types';
   import Badge from '$lib/components/ui/Badge.svelte';
-  import { formatScore, formatDuration } from '$lib/client/format';
+  import { formatScore, formatDuration, formatTokens } from '$lib/client/format';
   import { ChevronRight, ChevronDown } from '$lib/components/ui/icons';
 
   type Filter = 'all' | 'passed' | 'failed' | 'compile_errors';
@@ -24,6 +24,16 @@
       return true;
     });
   });
+
+  // Task-level usage sums every attempt: attempt 2 is paid for too.
+  function taskTokens(r: PerTaskResult) {
+    let input = 0, output = 0;
+    for (const a of r.attempts) {
+      input += a.tokens?.input ?? 0;
+      output += a.tokens?.output ?? 0;
+    }
+    return { input, output, known: r.attempts.some((a) => a.tokens) };
+  }
 
   function toggle(taskId: string) {
     if (expanded.has(taskId)) expanded.delete(taskId);
@@ -55,11 +65,13 @@
       <th scope="col">Tests</th>
       <th scope="col">Compile</th>
       <th scope="col">Duration</th>
+      <th scope="col" title="Input / output tokens, summed over all attempts">Tokens</th>
     </tr>
   </thead>
   <tbody>
     {#each filtered as r (r.task_id)}
       {@const attempt = r.attempts.at(-1)}
+      {@const tt = taskTokens(r)}
       {#if attempt}
         <tr>
           <td>
@@ -78,10 +90,17 @@
             </Badge>
           </td>
           <td class="text-mono">{formatDuration(attempt.duration_ms)}</td>
+          <td class="text-mono tokens">
+            {#if tt.known}
+              {formatTokens(tt.input)} <span class="text-faint">/</span> {formatTokens(tt.output)}
+            {:else}
+              <span class="text-faint">—</span>
+            {/if}
+          </td>
         </tr>
         {#if expanded.has(r.task_id)}
           <tr class="detail">
-            <td colspan="8">
+            <td colspan="9">
               <div class="grid">
                 <div>
                   <h4>Failure reasons</h4>
@@ -105,6 +124,35 @@
                     </ul>
                   {/if}
                 </div>
+                {#if r.attempts.some((a) => a.tokens)}
+                  <div class="usage">
+                    <h4>Token usage</h4>
+                    <table class="usage-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Attempt</th>
+                          <th scope="col">Input</th>
+                          <th scope="col">Output</th>
+                          <th scope="col" title="Included in output">Reasoning</th>
+                          <th scope="col">Cache read</th>
+                          <th scope="col">Cache write</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {#each r.attempts as a (a.attempt)}
+                          <tr>
+                            <td class="text-mono">{a.attempt}</td>
+                            <td class="text-mono">{a.tokens?.input.toLocaleString() ?? '—'}</td>
+                            <td class="text-mono">{a.tokens?.output.toLocaleString() ?? '—'}</td>
+                            <td class="text-mono">{a.tokens?.reasoning.toLocaleString() ?? '—'}</td>
+                            <td class="text-mono">{a.tokens?.cache_read.toLocaleString() ?? '—'}</td>
+                            <td class="text-mono">{a.tokens?.cache_write.toLocaleString() ?? '—'}</td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
+                {/if}
                 {#if attempt.transcript_key}
                   <div class="links">
                     <a href="/runs/{runId}/transcripts/{r.task_id}/{attempt.attempt}">View transcript →</a>
@@ -152,5 +200,10 @@
   .grid h4 { font-size: var(--text-sm); margin: 0 0 var(--space-2) 0; }
   .reasons, .errors { padding-left: var(--space-5); font-size: var(--text-sm); margin: 0; }
   .errors li code { background: var(--code-bg); padding: 0 var(--space-2); border-radius: var(--radius-1); font-family: var(--font-mono); }
+  .tokens { white-space: nowrap; }
+  .usage { grid-column: 1 / -1; }
+  .usage-table { border: 1px solid var(--border); border-radius: var(--radius-2); }
+  .usage-table th, .usage-table td { padding: var(--space-2) var(--space-4); font-size: var(--text-xs); }
+  .usage-table th:not(:first-child), .usage-table td:not(:first-child) { text-align: right; }
   .links { grid-column: 1 / -1; padding-top: var(--space-3); border-top: 1px solid var(--border); }
 </style>

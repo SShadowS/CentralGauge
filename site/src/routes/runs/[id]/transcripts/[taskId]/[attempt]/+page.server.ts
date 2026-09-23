@@ -74,6 +74,7 @@ export const load: PageServerLoad = async ({
     attempt: attemptNum,
     passed: attempt.passed,
     score: attempt.score,
+    tokens: attempt.tokens ?? null,
     model: run.model,
     transcript,
   };

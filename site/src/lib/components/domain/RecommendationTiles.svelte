@@ -5,7 +5,6 @@
   import { pickRecommendations, SKILL_THRESHOLD } from '$lib/shared/recommendation-tiles';
   import { auc2Display } from '$lib/shared/leaderboard-derive';
   import ModelLink from './ModelLink.svelte';
-  import SettingsBadge from './SettingsBadge.svelte';
 
   interface Props { rows: LeaderboardRow[]; }
   let { rows }: Props = $props();
@@ -18,7 +17,7 @@
   <div class="tile">
     <p class="k"><span aria-hidden="true">🏆</span> Best overall</p>
     {#if rec.overall}
-      <div class="v"><ModelLink slug={rec.overall.model.slug} display_name={rec.overall.model.display_name} api_model_id={rec.overall.model.api_model_id} family_slug={rec.overall.row.family_slug} /><SettingsBadge suffix={rec.overall.model.settings_suffix} /> · {auc2Display(rec.overall.row).toFixed(1)}</div>
+      <div class="v"><ModelLink slug={rec.overall.model.slug} display_name={rec.overall.model.display_name} api_model_id={rec.overall.model.api_model_id} family_slug={rec.overall.row.family_slug} /> · {auc2Display(rec.overall.row).toFixed(1)}</div>
       {#if rec.overall.tiedWith}
         <p class="sub">Tier {rec.overall.row.tier} · tied with {rec.overall.tiedWith}</p>
       {:else if rec.overall.row.tier}
@@ -32,7 +31,7 @@
   <div class="tile">
     <p class="k"><span aria-hidden="true">💸</span> Best value · AUC ≥ {threshPct}</p>
     {#if rec.value}
-      <div class="v"><ModelLink slug={rec.value.model.slug} display_name={rec.value.model.display_name} api_model_id={rec.value.model.api_model_id} family_slug={rec.value.row.family_slug} /><SettingsBadge suffix={rec.value.model.settings_suffix} /></div>
+      <div class="v"><ModelLink slug={rec.value.model.slug} display_name={rec.value.model.display_name} api_model_id={rec.value.model.api_model_id} family_slug={rec.value.row.family_slug} /></div>
       <p class="sub">{auc2Display(rec.value.row).toFixed(1)} AUC · ${rec.value.row.cost_per_pass_usd?.toFixed(2)}/solved</p>
     {:else}
       <div class="v">—</div>
@@ -42,7 +41,7 @@
   <div class="tile">
     <p class="k"><span aria-hidden="true">⚡</span> Fastest ≥ {threshPct} AUC</p>
     {#if rec.fastest}
-      <div class="v"><ModelLink slug={rec.fastest.model.slug} display_name={rec.fastest.model.display_name} api_model_id={rec.fastest.model.api_model_id} family_slug={rec.fastest.row.family_slug} /><SettingsBadge suffix={rec.fastest.model.settings_suffix} /></div>
+      <div class="v"><ModelLink slug={rec.fastest.model.slug} display_name={rec.fastest.model.display_name} api_model_id={rec.fastest.model.api_model_id} family_slug={rec.fastest.row.family_slug} /></div>
       <p class="sub">p95 {formatLatency(rec.fastest.row.latency_p95_ms)} · {auc2Display(rec.fastest.row).toFixed(1)} AUC</p>
     {:else}
       <div class="v">—</div>
@@ -52,7 +51,7 @@
   <div class="tile">
     <p class="k"><span aria-hidden="true">🔓</span> Best open-weight</p>
     {#if rec.open}
-      <div class="v"><ModelLink slug={rec.open.model.slug} display_name={rec.open.model.display_name} api_model_id={rec.open.model.api_model_id} family_slug={rec.open.row.family_slug} /><SettingsBadge suffix={rec.open.model.settings_suffix} /></div>
+      <div class="v"><ModelLink slug={rec.open.model.slug} display_name={rec.open.model.display_name} api_model_id={rec.open.model.api_model_id} family_slug={rec.open.row.family_slug} /></div>
       <p class="sub">{auc2Display(rec.open.row).toFixed(1)} AUC{#if rec.open.row.tier} · Tier {rec.open.row.tier}{/if}</p>
     {:else}
       <div class="v">—</div>
