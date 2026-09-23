@@ -1084,3 +1084,37 @@
   batch_output_per_mtoken: 10
   batch_cache_read_per_mtoken: 0.1
   batch_cache_write_per_mtoken: 2.5
+- pricing_version: '2026-09-23'
+  model_slug: openai/gpt-6-sol
+  effective_from: '2026-09-23T00:00:00.000Z'
+  effective_until: null
+  input_per_mtoken: 2
+  output_per_mtoken: 10
+  cache_read_per_mtoken: 0.2
+  cache_write_per_mtoken: 2.5
+  # LiteLLM (sourced from OpenAI's pricing page) and OpenRouter agree:
+  # standard 2 / 0.2 / 2.5 / 10, batch 1 / 0.1 / 1.25 / 5. Long-context tier
+  # above 272K (4 / 15) is never reached by our prompts.
+  batch_input_per_mtoken: 1
+  batch_output_per_mtoken: 5
+  batch_cache_read_per_mtoken: 0.1
+  batch_cache_write_per_mtoken: 1.25
+  source: litellm-api
+  fetched_at: '2026-09-23T00:00:00.000Z'
+- pricing_version: '2026-09-23'
+  model_slug: openai/gpt-6-luna
+  effective_from: '2026-09-23T00:00:00.000Z'
+  effective_until: null
+  input_per_mtoken: 0.1
+  output_per_mtoken: 0.5
+  cache_read_per_mtoken: 0.01
+  cache_write_per_mtoken: 0.125
+  # LiteLLM (sourced from OpenAI's pricing page) and OpenRouter agree:
+  # standard 0.1 / 0.01 / 0.125 / 0.5, batch 0.05 / 0.005 / 0.0625 / 0.25.
+  # Long-context tier above 272K (0.2 / 0.75) is never reached by our prompts.
+  batch_input_per_mtoken: 0.05
+  batch_output_per_mtoken: 0.25
+  batch_cache_read_per_mtoken: 0.005
+  batch_cache_write_per_mtoken: 0.0625
+  source: litellm-api
+  fetched_at: '2026-09-23T00:00:00.000Z'

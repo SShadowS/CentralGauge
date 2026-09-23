@@ -8,6 +8,26 @@
   max_output_tokens: 128000
   capabilities: ["thinking", "image", "pdf", "structured", "batch"]
 
+- slug: openai/gpt-6-sol
+  api_model_id: gpt-6-sol
+  family: gpt
+  display_name: GPT-6 Sol
+  generation: 6
+  released_at: "2026-09-22"
+  max_input_tokens: 922000
+  max_output_tokens: 128000
+  capabilities: ["thinking", "image", "pdf", "structured", "batch"]
+
+- slug: openai/gpt-6-luna
+  api_model_id: gpt-6-luna
+  family: gpt
+  display_name: GPT-6 Luna
+  generation: 6
+  released_at: "2026-09-22"
+  max_input_tokens: 922000
+  max_output_tokens: 128000
+  capabilities: ["thinking", "image", "pdf", "structured", "batch"]
+
 - slug: gemini/gemini-3.8-flash
   api_model_id: gemini-3.8-flash
   family: gemini
