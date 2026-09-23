@@ -391,7 +391,13 @@ export async function ingestRun(
       br.model.family_slug,
       deps,
     );
-    await ensureTaskSet(cat, taskSetHash, countTasksSync(opts.tasksDir), deps);
+    await ensureTaskSet(
+      cat,
+      taskSetHash,
+      countTasksSync(opts.tasksDir),
+      deps,
+      opts.cwd,
+    );
   }
   const payload = buildPayload(buildRunPayloadInput(br, {
     machineId: config.machineId,

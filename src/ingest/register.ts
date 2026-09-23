@@ -16,6 +16,8 @@ import {
 } from "./pricing-sources/index.ts";
 import { signPayload } from "./sign.ts";
 import { postWithRetry } from "./client.ts";
+import { computeTaskSetHash } from "./catalog/task-set-hash.ts";
+import { readTasksFromDir } from "./catalog/task-rows.ts";
 
 export interface RegisterDeps {
   catalogDir: string;
@@ -220,6 +222,7 @@ export async function ensureTaskSet(
   hash: string,
   taskCount: number,
   deps: RegisterDeps,
+  projectRoot: string,
 ): Promise<void> {
   if (postedTaskSetHashes.has(hash)) return;
   await postAdmin(deps, "/api/v1/admin/catalog/task-sets", {
@@ -227,7 +230,65 @@ export async function ensureTaskSet(
     created_at: new Date().toISOString(),
     task_count: taskCount,
   });
+  await postTaskRows(hash, deps, projectRoot);
   postedTaskSetHashes.add(hash);
+}
+
+/**
+ * Upload the per-task rows (`tasks` table) for `hash`. The admin endpoint
+ * above writes only the `task_sets` row; without this, every task page and
+ * task-scoped surface of a new set stays empty until someone runs
+ * `populate-task-set`. The server skips the write when the rows are already
+ * complete. Only uploads when the working tree hashes to `hash` - a replayed
+ * results file from an older tree must not publish today's manifests under
+ * yesterday's hash. Never fails the ingest: the run data matters more, and
+ * `populate-task-set` is the manual recovery.
+ */
+async function postTaskRows(
+  hash: string,
+  deps: RegisterDeps,
+  projectRoot: string,
+): Promise<void> {
+  try {
+    const localHash = await computeTaskSetHash(projectRoot);
+    if (localHash !== hash) {
+      console.warn(
+        `[WARN] task rows not uploaded: working tree task_set hash ` +
+          `${localHash.slice(0, 12)} != run hash ${hash.slice(0, 12)}. ` +
+          `Run \`populate-task-set --hash ${hash} --force\` if needed.`,
+      );
+      return;
+    }
+    const tasks = await readTasksFromDir(`${projectRoot}/tasks`);
+    const payload = {
+      hash,
+      created_at: new Date().toISOString(),
+      task_count: tasks.length,
+      tasks,
+    };
+    const signature = await signPayload(
+      payload,
+      deps.adminPrivateKey,
+      deps.config.adminKeyId!,
+    );
+    const resp = await postWithRetry(
+      `${deps.config.url}/api/v1/task-sets`,
+      { version: 1, payload, signature },
+      { maxAttempts: 3 },
+    );
+    if (!resp.ok) {
+      throw new Error(
+        `POST /api/v1/task-sets ${resp.status}: ${await resp.text()}`,
+      );
+    }
+    await resp.body?.cancel();
+  } catch (err) {
+    console.warn(
+      `[WARN] task rows not uploaded for ${hash.slice(0, 12)}: ${
+        err instanceof Error ? err.message : String(err)
+      }. Run \`populate-task-set\` to recover.`,
+    );
+  }
 }
 
 /** Test hook — resets all in-process upsert dedup caches. */
