@@ -8,7 +8,7 @@ import {
   summariseUpstream,
   type UpstreamRow,
 } from "$lib/server/upstream-summary";
-import type { AttemptUpstream } from "$lib/shared/api-types";
+import type { AttemptTokens, AttemptUpstream } from "$lib/shared/api-types";
 
 interface RunRow {
   id: string;
@@ -56,6 +56,11 @@ interface ResultRow extends UpstreamRow {
   transcript_r2_key: string | null;
   code_r2_key: string | null;
   cost_usd: number | string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  tokens_cache_read: number | null;
+  tokens_cache_write: number | null;
+  tokens_reasoning: number | null;
   difficulty: "easy" | "medium" | "hard";
 }
 
@@ -78,6 +83,7 @@ interface AttemptOut {
   code_key?: string;
   failure_reasons: string[];
   upstream: AttemptUpstream;
+  tokens: AttemptTokens;
 }
 
 interface PerTaskOut {
@@ -141,6 +147,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
               v.llm_duration_ms, v.compile_duration_ms, v.test_duration_ms,
               v.failure_reasons_json, v.transcript_r2_key, v.code_r2_key,
               v.cost_usd,
+              v.tokens_in, v.tokens_out, v.tokens_cache_read, v.tokens_cache_write,
+              v.tokens_reasoning,
               v.requested_upstream, v.served_upstream, v.served_upstream_model,
               v.upstream_identity_source, v.upstream_verification,
               t.difficulty
@@ -211,6 +219,14 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         transcript_key: r.transcript_r2_key ?? "",
         failure_reasons: failureReasons,
         upstream: attemptUpstream(r),
+        // D1 returns INTEGER columns as numbers; `+` guards a string driver.
+        tokens: {
+          input: +(r.tokens_in ?? 0),
+          output: +(r.tokens_out ?? 0),
+          cache_read: +(r.tokens_cache_read ?? 0),
+          cache_write: +(r.tokens_cache_write ?? 0),
+          reasoning: +(r.tokens_reasoning ?? 0),
+        },
       };
       if (r.code_r2_key) attempt.code_key = r.code_r2_key;
 

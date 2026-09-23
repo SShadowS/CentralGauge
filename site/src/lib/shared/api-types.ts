@@ -547,7 +547,21 @@ export interface PerTaskResult {
     code_key?: string;
     failure_reasons: string[];
     upstream: AttemptUpstream;
+    /** Absent on responses cached before the field shipped. */
+    tokens?: AttemptTokens;
   }>;
+}
+
+/**
+ * Token usage for one attempt, straight from the `results` row. `output`
+ * already includes `reasoning` (migration 0012), so never add the two.
+ */
+export interface AttemptTokens {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  reasoning: number;
 }
 
 export interface RunDetail {
