@@ -44,14 +44,14 @@
 {#if manifest.description}
   <section class="desc">
     <h2>Description</h2>
-    <MarkdownRenderer source={reflowDescription(manifest.description)} />
+    <div class="body"><MarkdownRenderer source={reflowDescription(manifest.description)} /></div>
   </section>
 {/if}
 
 {#if manifest.objective}
   <section class="obj">
     <h2>Objective</h2>
-    <MarkdownRenderer source={reflowDescription(manifest.objective)} />
+    <div class="body"><MarkdownRenderer source={reflowDescription(manifest.objective)} /></div>
   </section>
 {/if}
 
@@ -104,7 +104,26 @@
   .cat { color: var(--accent); font-size: var(--text-sm); }
   .hash { font-size: var(--text-xs); }
 
-  .desc p, .obj p { color: var(--text-muted); line-height: var(--leading-base); }
+  /* Task prose: a readable measure, a quiet card, and list spacing that keeps
+     nested field lists visibly grouped under their numbered item. */
+  .desc .body, .obj .body {
+    max-width: 78ch;
+    padding: var(--space-5) var(--space-6);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    line-height: var(--leading-base);
+  }
+  .body :global(.md > :first-child) { margin-top: 0; }
+  .body :global(.md > :last-child) { margin-bottom: 0; }
+  .body :global(p) { margin: 0 0 var(--space-3) 0; }
+  .body :global(ul), .body :global(ol) { margin: 0 0 var(--space-4) 0; padding-left: var(--space-6); }
+  .body :global(li) { margin: var(--space-1) 0; }
+  .body :global(li > p) { margin: 0 0 var(--space-2) 0; }
+  .body :global(li > ul), .body :global(li > ol) { margin: var(--space-1) 0 var(--space-2) 0; }
+  .body :global(ol > li::marker) { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .body :global(ul > li::marker) { color: var(--text-faint); }
+  .body :global(pre) { margin: 0 0 var(--space-4) 0; font-size: var(--text-sm); border: 1px solid var(--border); }
 
   .files ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 
