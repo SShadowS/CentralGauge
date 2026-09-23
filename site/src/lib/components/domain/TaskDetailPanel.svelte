@@ -5,7 +5,7 @@
   import AttemptCell from '$lib/components/ui/AttemptCell.svelte';
   import MarkdownRenderer from '$lib/components/domain/MarkdownRenderer.svelte';
   import { reflowDescription } from '$shared/reflow-description';
-  import { formatScore } from '$lib/client/format';
+  import { formatScore, formatTokens } from '$lib/client/format';
 
   interface Props { task: TaskDetail; }
   let { task }: Props = $props();
@@ -76,6 +76,7 @@
         <th scope="col">Attempt 1</th>
         <th scope="col">Attempt 2</th>
         <th scope="col">Avg score</th>
+        <th scope="col" title="Mean input / output tokens per attempt">Tokens / attempt</th>
         <th scope="col">Runs</th>
       </tr>
     </thead>
@@ -89,6 +90,11 @@
           <td><AttemptCell passed={r.attempt_2_passed} /></td>
           <td class="text-mono">
             {#if r.avg_score !== null}{formatScore(r.avg_score)}{:else}<span class="text-faint">—</span>{/if}
+          </td>
+          <td class="text-mono tokens">
+            {#if r.avg_tokens_in != null && r.avg_tokens_out != null}
+              {formatTokens(Math.round(r.avg_tokens_in))} <span class="text-faint">/</span> {formatTokens(Math.round(r.avg_tokens_out))}
+            {:else}<span class="text-faint">—</span>{/if}
           </td>
           <td class="text-mono">{r.runs_total}</td>
         </tr>
@@ -141,6 +147,7 @@
     font-size: var(--text-sm);
   }
   th[scope='row'] { font-weight: var(--weight-regular); }
+  .tokens { white-space: nowrap; }
   tbody tr:last-child td,
   tbody tr:last-child th { border-bottom: 0; }
 </style>

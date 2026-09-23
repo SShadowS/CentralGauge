@@ -38,13 +38,17 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       attempt_2_passed: number | string | null;
       runs_total: number | string;
       avg_score: number | string | null;
+      avg_tokens_in: number | string | null;
+      avg_tokens_out: number | string | null;
     }>(
       env.DB,
       `SELECT m.slug AS model_slug, m.display_name AS model_display,
               MAX(CASE WHEN r.attempt = 1 THEN r.passed END) AS attempt_1_passed,
               MAX(CASE WHEN r.attempt = 2 THEN r.passed END) AS attempt_2_passed,
               COUNT(DISTINCT runs.id) AS runs_total,
-              AVG(r.score) AS avg_score
+              AVG(r.score) AS avg_score,
+              AVG(r.tokens_in) AS avg_tokens_in,
+              AVG(r.tokens_out) AS avg_tokens_out
        FROM results r
        JOIN runs ON runs.id = r.run_id
        JOIN models m ON m.id = runs.model_id
@@ -89,6 +93,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
             r.attempt_2_passed === null ? null : +r.attempt_2_passed,
           runs_total: runsTotal,
           avg_score: r.avg_score === null ? null : +r.avg_score,
+          // Per attempt, across every run and attempt this model made on the task.
+          avg_tokens_in: r.avg_tokens_in === null ? null : +r.avg_tokens_in,
+          avg_tokens_out: r.avg_tokens_out === null ? null : +r.avg_tokens_out,
         };
       }),
     });

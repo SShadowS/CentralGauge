@@ -267,6 +267,8 @@ describe("GET /api/v1/runs/:id", () => {
         duration_ms: number;
         tasks_attempted: number;
         tasks_passed: number;
+        tokens_in: number;
+        tokens_out: number;
       };
       results: Array<{
         task_id: string;
@@ -326,6 +328,8 @@ describe("GET /api/v1/runs/:id", () => {
     expect(body.totals.cost_usd).toBeCloseTo((1000 * 3 + 500 * 15) / 1e6, 6);
     // duration sum = 100 + 200 + 300
     expect(body.totals.duration_ms).toBe(600);
+    expect(body.totals.tokens_in).toBe(1000);
+    expect(body.totals.tokens_out).toBe(500);
     // results grouped by task with attempts[]
     expect(body.results).toHaveLength(1);
     const t = body.results[0];

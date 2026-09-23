@@ -33,6 +33,15 @@
     Model: {data.model.display_name} · Score: <span class="text-mono">{formatScore(data.score)}</span>
     · <a href="/api/v1/transcripts/{data.transcript.key}">Download raw</a>
   </p>
+  {#if data.tokens}
+    <dl class="tokens text-mono">
+      <div><dt>Input</dt><dd>{data.tokens.input.toLocaleString()}</dd></div>
+      <div><dt>Output</dt><dd>{data.tokens.output.toLocaleString()}</dd></div>
+      <div><dt title="Included in output">Reasoning</dt><dd>{data.tokens.reasoning.toLocaleString()}</dd></div>
+      <div><dt>Cache read</dt><dd>{data.tokens.cache_read.toLocaleString()}</dd></div>
+      <div><dt>Cache write</dt><dd>{data.tokens.cache_write.toLocaleString()}</dd></div>
+    </dl>
+  {/if}
 </header>
 
 <TranscriptViewer text={data.transcript.text} />
@@ -42,4 +51,8 @@
   .title-row { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
   .title-row h1 { font-size: var(--text-2xl); margin: 0; }
   .meta { font-size: var(--text-sm); margin-top: var(--space-3); }
+  .tokens { display: flex; flex-wrap: wrap; gap: var(--space-5); margin: var(--space-4) 0 0 0; font-size: var(--text-sm); }
+  .tokens div { display: flex; flex-direction: column; }
+  .tokens dt { color: var(--text-muted); font-family: var(--font-sans); font-size: var(--text-xs); }
+  .tokens dd { margin: 0; }
 </style>

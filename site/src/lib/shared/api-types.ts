@@ -614,6 +614,9 @@ export interface RunDetail {
     duration_ms: number;
     tasks_attempted: number;
     tasks_passed: number;
+    /** Summed over every attempt; absent on responses cached before it shipped. */
+    tokens_in?: number;
+    tokens_out?: number;
   };
   results: PerTaskResult[];
   /** Roll-up of the per-attempt upstream fields across this run. */
@@ -868,6 +871,9 @@ export interface TaskDetailSolvedBy {
   attempt_2_passed: 0 | 1 | null;
   runs_total: number;
   avg_score: number | null;
+  /** Mean per attempt over every run; absent on responses cached before it shipped. */
+  avg_tokens_in?: number | null;
+  avg_tokens_out?: number | null;
 }
 
 export interface TaskDetail {

@@ -11,7 +11,7 @@
   import SettingsPanel from '$lib/components/domain/SettingsPanel.svelte';
   import SignaturePanel from '$lib/components/domain/SignaturePanel.svelte';
   import ReproductionBlock from '$lib/components/domain/ReproductionBlock.svelte';
-  import { formatScore, formatCost, formatDuration, formatTaskRatio } from '$lib/client/format';
+  import { formatScore, formatCost, formatDuration, formatTaskRatio, formatTokens } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   import type { RunSignature } from '$shared/api-types';
 
@@ -157,6 +157,13 @@
   />
   <StatTile label="Avg score" value={formatScore(r.totals.avg_score)} infoId="avg_score" />
   <StatTile label="Cost" value={formatCost(r.totals.cost_usd)} />
+  {#if r.totals.tokens_in !== undefined && r.totals.tokens_out !== undefined}
+    <StatTile
+      label="Tokens"
+      value="{formatTokens(r.totals.tokens_in)} / {formatTokens(r.totals.tokens_out)}"
+      note="input / output, all attempts"
+    />
+  {/if}
   <StatTile label="Duration" value={formatDuration(r.totals.duration_ms)} />
 </section>
 
@@ -211,7 +218,7 @@
 
   .stats {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: var(--space-4);
     margin-bottom: var(--space-6);
   }

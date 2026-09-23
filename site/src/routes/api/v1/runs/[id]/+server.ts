@@ -163,6 +163,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     const byTask = new Map<string, PerTaskOut>();
     let totalDurationMs = 0;
     let totalCostUsd = 0;
+    let totalTokensIn = 0;
+    let totalTokensOut = 0;
 
     for (const r of results) {
       let compileErrors: AttemptOut["compile_errors"];
@@ -195,6 +197,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         (r.test_duration_ms ?? 0);
       totalDurationMs += durationMs;
       if (r.cost_usd !== null) totalCostUsd += +r.cost_usd;
+      totalTokensIn += +(r.tokens_in ?? 0);
+      totalTokensOut += +(r.tokens_out ?? 0);
 
       // Defensive: D1 returns numeric columns as numbers in practice, but other
       // files in this repo type score aggregates as `number | string | null`
@@ -330,6 +334,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         duration_ms: totalDurationMs,
         tasks_attempted: tasksAttempted,
         tasks_passed: tasksPassed,
+        tokens_in: totalTokensIn,
+        tokens_out: totalTokensOut,
       },
       results: groupedResults,
       // OpenRouter upstream lock (0023). Summarised from the SAME result rows

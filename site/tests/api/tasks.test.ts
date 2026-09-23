@@ -55,8 +55,8 @@ async function seed(): Promise<void> {
     .run();
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed)
-       VALUES ('r1','easy/a',1,1,1.0,1,3,3),('r1','hard/b',1,0,0.0,1,3,0)`,
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+       VALUES ('r1','easy/a',1,1,1.0,1,3,3,1200,300),('r1','hard/b',1,0,0.0,1,3,0,0,0)`,
     ),
   ]);
 }
@@ -73,14 +73,12 @@ describe("GET /api/v1/tasks", () => {
     const res = await SELF.fetch("https://x/api/v1/tasks");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      data: Array<
-        {
-          id: string;
-          difficulty: string;
-          content_hash: string;
-          category: { slug: string; name: string };
-        }
-      >;
+      data: Array<{
+        id: string;
+        difficulty: string;
+        content_hash: string;
+        category: { slug: string; name: string };
+      }>;
       next_cursor: string | null;
     };
     expect(body.data).toHaveLength(2);
@@ -102,9 +100,9 @@ describe("GET /api/v1/tasks", () => {
     expect(body1.next_cursor).not.toBeNull();
 
     const res2 = await SELF.fetch(
-      `https://x/api/v1/tasks?limit=1&cursor=${
-        encodeURIComponent(body1.next_cursor!)
-      }`,
+      `https://x/api/v1/tasks?limit=1&cursor=${encodeURIComponent(
+        body1.next_cursor!,
+      )}`,
     );
     expect(res2.status).toBe(200);
     const body2 = (await res2.json()) as {
@@ -129,7 +127,7 @@ describe("GET /api/v1/tasks — filters", () => {
   it("?difficulty=hard returns only hard tasks", async () => {
     const res = await SELF.fetch("https://x/api/v1/tasks?difficulty=hard");
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<{ difficulty: string }> };
+    const body = (await res.json()) as { data: Array<{ difficulty: string }> };
     for (const row of body.data) expect(row.difficulty).toBe("hard");
   });
 
@@ -138,7 +136,7 @@ describe("GET /api/v1/tasks — filters", () => {
       "https://x/api/v1/tasks?category=schema-design",
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       data: Array<{ category: { slug: string } | null }>;
     };
     for (const row of body.data) {
@@ -152,7 +150,7 @@ describe("GET /api/v1/tasks — filters", () => {
       "https://x/api/v1/tasks?difficulty=easy&category=schema-design",
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       data: Array<{ difficulty: string; category: { slug: string } | null }>;
     };
     for (const row of body.data) {
@@ -164,7 +162,7 @@ describe("GET /api/v1/tasks — filters", () => {
   it("rejects invalid difficulty with 400", async () => {
     const res = await SELF.fetch("https://x/api/v1/tasks?difficulty=trivial");
     expect(res.status).toBe(400);
-    const body = await res.json() as { error?: string };
+    const body = (await res.json()) as { error?: string };
     expect(body.error).toMatch(/invalid_difficulty/);
   });
 });
@@ -173,7 +171,9 @@ describe("GET /api/v1/tasks — tags", () => {
   it("returns facet tags per task", async () => {
     // Seed tags and task_tags for the task 'easy/a' (already in current set via seed())
     await env.DB.batch([
-      env.DB.prepare(`INSERT INTO tags(id,slug,name) VALUES (1,'keys','Keys'),(2,'table','Table')`),
+      env.DB.prepare(
+        `INSERT INTO tags(id,slug,name) VALUES (1,'keys','Keys'),(2,'table','Table')`,
+      ),
       env.DB.prepare(
         `INSERT INTO task_tags(task_set_hash,task_id,tag_id) VALUES ('ts','easy/a',1),('ts','easy/a',2)`,
       ),
@@ -271,6 +271,8 @@ describe("GET /api/v1/tasks/:id", () => {
         attempt_1_passed: number;
         runs_total: number;
         avg_score: number;
+        avg_tokens_in: number;
+        avg_tokens_out: number;
       }>;
     };
     expect(body.id).toBe("easy/a");
@@ -282,6 +284,8 @@ describe("GET /api/v1/tasks/:id", () => {
     expect(body.solved_by[0].attempt_1_passed).toBe(1);
     expect(body.solved_by[0].runs_total).toBe(1);
     expect(body.solved_by[0].avg_score).toBeCloseTo(1.0, 5);
+    expect(body.solved_by[0].avg_tokens_in).toBe(1200);
+    expect(body.solved_by[0].avg_tokens_out).toBe(300);
   });
 
   it("returns 404 for unknown task", async () => {
