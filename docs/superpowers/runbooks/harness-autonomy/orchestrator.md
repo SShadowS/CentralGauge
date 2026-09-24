@@ -21,8 +21,9 @@ Run as `/loop` without an interval (self-paced). Each sweep:
 
 0. `coord pause-state`. Paused: if lanes have not been told yet, message each
    `pause: stop at your next safe point`; do nothing else this sweep; next sweep in 30
-   minutes. Just resumed (paused last sweep, not now): message each lane
-   `resume: continue from your handoff`, then sweep normally.
+   minutes. Not paused, but `pause-state` lists a `doing` run with `wait: paused`: message
+   that lane `resume: continue from your handoff`, then sweep normally. (This works after
+   your own restart too; it reads state, not memory.)
 
 1. Handle doorbell messages first: submitted tasks go to review (below).
 2. For each lane with no `doing` task and a non-empty `coord next <lane>`, send the lane:
