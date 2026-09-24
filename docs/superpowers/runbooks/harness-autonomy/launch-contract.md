@@ -28,6 +28,9 @@ Needs the owner: dropping pi, fewer than 6 tasks, changing the primary metric.
 
 ## Approvals
 
+- Reviews run through `pi_ask` on the owner's OpenAI (ChatGPT) subscription
+  (`PI_MCP_PROVIDER=openai-codex`). If `pi_models` shows only `github-copilot` rows, the
+  registration is wrong: `coord ask`, do not review on Copilot silently.
 - Plans, designs and decisions: orchestrator plus GPT-5.6 Sol via `pi_ask` (model id
   `gpt-5.6-sol`), up to 2 review rounds. GPT-6 Astra (`gpt-6-astra`) only for milestone
   plans (M1 to M4).
