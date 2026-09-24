@@ -1,0 +1,6 @@
+# Gitignored files Claude Code copies into worktrees it creates (claude --worktree,
+# subagent isolation worktrees). Plain `git worktree add` does not read this file.
+.claude/settings.json
+.claude/settings.local.json
+.claude/hooks/**
+.claude/agents/**

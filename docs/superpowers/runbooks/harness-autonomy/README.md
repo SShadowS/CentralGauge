@@ -22,7 +22,8 @@ permissions and approval rules.
 `.claude/settings.json`, `.claude/settings.local.json`, `.claude/hooks/` and
 `.claude/agents/` are gitignored, so each lane worktree holds a local copy (made
 2026-09-24). After a hook changes in the main checkout, copy it into the three worktrees
-again.
+again. Worktrees that Claude Code creates itself (`claude --worktree`, subagents with
+`isolation: worktree`) get these files automatically through `.worktreeinclude`.
 
 lane-ops is the only session that runs anything touching a BC container, including unit
 tests under `tests/unit/container/`, `bench`, `trap-probe`, and spike scripts. The global
