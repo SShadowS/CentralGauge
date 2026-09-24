@@ -54,7 +54,7 @@ sets are out of scope for 1a.
 | D2 | Tasks are repo-scale work items against a multi-app reference app (spec 1b). Process tasks (review, PR text, rubric scoring) are a later layer. |
 | D3 | The workspace ships visible tests. A separate hidden oracle decides the verdict. |
 | D4 | Every harness runs inside a Windows sandbox container. No host writes. Windows because BC containers pin Docker to the Windows context. |
-| D5 | Baseline toolkit `cg-al` (compile, test) is in every sandbox. Both operations go through the host backend; there is no compiler inside the sandbox. Our al-tools MCP is an optional, named config component on the same backend. |
+| D5 | Baseline toolkit `cg-al` (compile, test) is in every sandbox and goes through the host backend. An in-container compiler (AL Tools NuGet) is an optional, pinned `toolchain` component, so backend vs in-container compile is itself a comparable arm. Our al-tools MCP is an optional, named component on the backend. The verdict always rebuilds host-side regardless. |
 | D6 | Records are split into execution, artifact and judgment (section 6). An experiment is a campaign over a set of configs and tasks. |
 | D7 | Default 3 repeats per (config, task). |
 | D8 | Cost, tokens, turns are harness self-reported. A field the harness cannot supply is null, never 0. No metering proxy. |
@@ -63,7 +63,7 @@ sets are out of scope for 1a.
 | D11 | Verdict fails on any build failure, any visible-test regression, or a failed hidden scorer. |
 | D12 | Agent `cg-al` calls and verdict runs share `CompileQueuePool` plus the health/drain machinery, at fixed concurrency. Agent credentials expose only agent operations. |
 | D13 | Harness task set is separate from `tasks/`, with its own task-set identity. Never mixed into the LLM leaderboard. |
-| D14 | Every tool call is recorded as a normalized, versioned trace event with correlation ids. Backend calls are also recorded host-side, independent of the harness. |
+| D14 | Every tool call is recorded as a normalized, versioned trace event with correlation ids, shell commands in full (secrets redacted). Backend calls are also recorded host-side, independent of the harness. Calls are categorized after the run: deterministic rules first, a local decision model (Laya) for the rest, hosted Jev opt-in. |
 | D15 | An experiment declares which config components it varies. The runner compares the resolved execution manifests and refuses when arms differ in anything else. |
 | D16 | Task sources are pluggable at the staging step: `refapp` (snapshot + overlay) now, `git` (repo + base commit, BC-Bench style) later. Only the interface ships in 1a. |
 | D17 | Arms are interleaved in randomized order within (task, repeat) blocks. Historical executions are reused only on explicit request. |
@@ -76,6 +76,7 @@ sets are out of scope for 1a.
 harness/
   images/<harness>/        Dockerfile.windows, run.ps1 (per harness)
   images/base/             base sandbox: Node, Git, cg-al client
+  toolchains/<name>/       optional in-container toolchains (AL Tools NuGet)
   configs/<id>.yml         harness configs
   bundles/<name>/          skills, rules, prompts copied into C:\config
   experiments/<id>.yml     experiment definitions
@@ -103,6 +104,7 @@ components:                   # each recorded and hashed separately
   plugins: []                 # local only in 1a
   mcp: [al-tools]             # named MCP components; empty = CLI toolkit only
   lsp: [al-lsp]               # named LSP components
+  toolchain: []               # e.g. [al-tools-nuget@17.0.1]; empty = backend only
 limits: { timeout_min: 30, max_budget_usd: 5 }
 ```
 
@@ -162,7 +164,11 @@ Per execution (config x task x repeat):
    apps to a BC container and runs tests via the SOAP harness. The al-tools
    MCP component calls the same backend. The token allows only compile, test
    and symbol lookup on its own workspace. There is no endpoint that lists
-   installed apps, reads other workspaces, or runs the oracle.
+   installed apps, reads other workspaces, or runs the oracle. When the
+   config has a `toolchain` component, that toolchain is installed in the
+   image at a pinned version and the agent may compile locally against
+   `.alpackages`; those compiles are not seen by the backend and are counted
+   from the classified trace (see Call categorization).
 5. On `timeout_min` the process tree and container are stopped; the
    workspace is still judged.
 6. Host revokes the token, freezes the workspace (copy, then hash: the
@@ -204,8 +210,9 @@ keeps the raw values.
 - `error_class`: `tool_protocol`, `compile_diagnostics`,
   `test_assertion`, `infra`, `denied`, `cancelled`.
 - `cg-al` calls carry the structured operation name (`compile`, `test`,
-  `symbols`), not a parsed shell string. Other shell commands are recorded
-  by first token only.
+  `symbols`). Other shell commands are recorded in full, with secrets
+  redacted before storage (known key values from `C:\cg-secrets`, token
+  patterns).
 - `result_bytes` and `truncated` show how much context a tool result
   consumed, which is where verbose MCPs cost money.
 
@@ -217,6 +224,27 @@ logical build request and N per-app compiler executions are different
 numbers. Backend counts need not equal harness tool counts (one MCP call can
 compile seven apps), so a mismatch is only flagged when the correlation ids
 do not line up.
+
+**Call categorization.** After a run, every trace event gets a
+`category`: `compile`, `test`, `publish`, `symbols`, `read`, `search`,
+`edit`, `vcs`, `other`, or `unclassified`. It runs over stored traces and can
+be re-run with a newer classifier without re-running agents.
+
+1. Deterministic rules first: `cg-al` operations, known MCP tool names,
+   harness builtin tools (Read, Edit, Grep...), and command patterns
+   (`alc.exe`, `altool compile`, the AL Tools NuGet entry points, `git`).
+   Rules are versioned and cover most calls with certainty.
+2. Events no rule matches go to a typed decision model: Laya running
+   locally by default. Hosted Jev is opt-in per run
+   (`--classifier jev`), because it sends commands, paths and code snippets
+   off the machine.
+3. Each event stores `category`, `classifier` (rule id, or model + version)
+   and `confidence`. Below a threshold the category is `unclassified`, never
+   a guess.
+
+The report shows how many events were rule-classified, model-classified and
+unclassified per arm. Compile counts from the backend and from classified
+traces are shown separately and labelled by source.
 
 **Metrics contract.** Each adapter declares which fields its harness can
 supply. A declared field that is missing marks the execution's measurement
@@ -397,6 +425,8 @@ Sections in this order:
    - tool errors total and by `error_class`
    - backend: logical build requests, per-app compiles, test runs,
      diagnostics per build, queue wait, time to first green build
+   - calls by `category`, with in-container compiles (classified trace)
+     and backend compiles (host log) as separate columns
    - turns, compactions, tokens (uncached in, cache read, cache write, out,
      reasoning), result bytes per tool, cost, wall time split into agent
      time and backend wait
@@ -434,6 +464,9 @@ Cliffy, following the existing `--no-X` rule.
   always pass, ship a hand-made `.app`, add a junction to a host path,
   change an app id, try to reach the oracle or another workspace through the
   backend, leave state behind for the next execution. Each must be caught.
+- Categorization: rule fixtures per category and per toolchain command
+  shape; redaction of known secrets; model fallback stubbed in unit tests;
+  a small labelled sample of real calls to measure classifier accuracy once.
 - Trace parser fixtures per harness: recorded raw logs covering tool call,
   tool error, skill invocation, MCP call, sub-agent, retry, compaction and a
   hard kill, with expected `trace.jsonl` and `telemetry.json`.
@@ -450,7 +483,8 @@ In spec 1a, in this order:
 2. `claude-code` harness (primary)
 3. `pi` harness, after the spike has proven its telemetry (needed for the
    Directions talk head-to-head)
-4. al-tools MCP component
+4. al-tools MCP component, AL Tools NuGet toolchain component, call
+   categorization (rules + local Laya)
 5. runner with campaigns and blocks, staging, verdict workspace, records,
    report (console + JSON)
 6. a minimal refapp slice (Core, Rental, Test) and 2 tasks, enough to prove
@@ -479,6 +513,10 @@ Before planning 1a in detail, prove on real containers:
   fields each actually reports; whether pi loads project resources in
   non-interactive mode without an interactive trust prompt
 - a `cg-al` round trip through the backend with a scoped token
+- AL Tools NuGet compiling inside the Windows sandbox against pre-seeded
+  `.alpackages` with no BC access
+- Laya running locally on a sample of real tool calls: accuracy on the
+  residue the rules miss, and latency
 
 ## 14. Open decision
 
