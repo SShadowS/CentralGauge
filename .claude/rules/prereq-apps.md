@@ -1,3 +1,15 @@
+---
+paths:
+  - "tests/al/**"
+  - "tasks/**"
+  - "scratch/**"
+  - "src/workbench/**"
+  - "mcp/al-tools-server.ts"
+  - "src/tasks/**"
+  - "scripts/trap-probe.ts"
+  - "scripts/id-audit.ts"
+  - "harness-tasks/**"
+---
 # Prereq Apps for Task Dependencies
 
 ## Overview

@@ -1,3 +1,13 @@
+---
+paths:
+  - "src/health/**"
+  - "src/parallel/**"
+  - "src/container/bc-container-provider.ts"
+  - "cli/dashboard/**"
+  - "cli/commands/bench/**"
+  - "tests/unit/health/**"
+  - "tests/unit/parallel/**"
+---
 # Alert-Driven Drain + Rebalance
 
 When a BC container enters a health-alert state mid-bench, CentralGauge now:

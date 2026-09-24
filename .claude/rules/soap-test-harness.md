@@ -1,3 +1,9 @@
+---
+paths:
+  - "src/container/**"
+  - "infra/cg-test-harness/**"
+  - "tests/unit/container/**"
+---
 # SOAP Test Harness (hybrid test execution)
 
 Non-TestPage AL test codeunits run through a headless SOAP web service

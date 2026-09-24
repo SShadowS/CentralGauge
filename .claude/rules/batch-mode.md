@@ -1,3 +1,11 @@
+---
+paths:
+  - "src/batch/**"
+  - "src/llm/batch/**"
+  - "cli/commands/bench/**"
+  - "docs/batch-mode.md"
+  - "results/batch/**"
+---
 # Batch Mode (operator rule)
 
 Batch mode runs a model against its provider's batch API instead of the synchronous

@@ -1,3 +1,13 @@
+---
+paths:
+  - "src/sandbox/**"
+  - "src/agents/**"
+  - "docker/**"
+  - "mcp/**"
+  - "agents/**"
+  - "harness/**"
+  - "scripts/spikes/harness/**"
+---
 # Docker Sandbox for Agent Execution
 
 ## Overview

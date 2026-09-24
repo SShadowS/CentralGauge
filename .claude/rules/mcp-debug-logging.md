@@ -1,3 +1,9 @@
+---
+paths:
+  - "mcp/**"
+  - "src/agents/**"
+  - "sandbox-debug.log"
+---
 # MCP Debug Logging
 
 ## Overview
