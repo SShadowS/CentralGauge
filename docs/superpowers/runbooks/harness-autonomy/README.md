@@ -19,6 +19,11 @@ permissions and approval rules.
 | `lane-content` | `U:\Git\CentralGauge-wt\lane-content` | `harness/lane-content` | refapp and task authoring (M0-01, M4) | touches containers directly (asks lane-ops), edits specs or plans |
 | `lane-ops` | `U:\Git\CentralGauge-wt\lane-ops` | `harness/lane-ops` | every container operation: spike measurements, gate runs for other lanes, campaigns | edits product code beyond spike scripts, starts or restarts BC containers |
 
+`.claude/settings.json`, `.claude/settings.local.json`, `.claude/hooks/` and
+`.claude/agents/` are gitignored, so each lane worktree holds a local copy (made
+2026-09-24). After a hook changes in the main checkout, copy it into the three worktrees
+again.
+
 lane-ops is the only session that runs anything touching a BC container, including unit
 tests under `tests/unit/container/`, `bench`, `trap-probe`, and spike scripts. The global
 bench lock and its hook only see each checkout's own `results/`, so they do not protect

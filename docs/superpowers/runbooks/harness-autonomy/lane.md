@@ -10,8 +10,11 @@ name (`infra`, `content`, `ops`).
 2. Confirm you are in your worktree and branch (README "Sessions" table):
    `git rev-parse --show-toplevel` and `git branch --show-current`. Wrong place: stop and
    `coord ask`.
-3. `coord doctor`, then read `H:\cg-coord\handoff\lane-<lane>.md` if it exists.
-4. `coord status --lane <lane>`. A `doing` run of yours: continue it with the token from your
+3. Check the local (gitignored) Claude config was copied into your worktree:
+   `.claude/settings.json` and `.claude/hooks/deno-fmt-check.sh` must exist. Missing: stop and
+   `coord ask`; without them the safety hooks do not run in your session.
+4. `coord doctor`, then read `H:\cg-coord\handoff\lane-<lane>.md` if it exists.
+5. `coord status --lane <lane>`. A `doing` run of yours: continue it with the token from your
    handoff file. Otherwise wait for a `next: <id>` message, or take the first of
    `coord next <lane>`.
 
