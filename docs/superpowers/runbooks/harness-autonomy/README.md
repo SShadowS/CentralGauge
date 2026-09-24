@@ -77,6 +77,8 @@ todo --claim--> doing --submit--> review --accept--> accepted
 
 - `coord lease <container> ops` returns `{attempt, token}`. `coord heartbeat <container> <token>`
   every 5 minutes while held. `coord release <container> <token>` when done.
+- Container overview (read-only, allowed for agents): `pwsh -File U:\Git\CentralGauge\scripts\coord\containers.ps1 status`.
+  Its `start` and `stop` actions are for the owner only.
 - Before leasing, check the container is up: `DOCKER_CONTEXT=desktop-windows docker inspect -f "{{.State.Running}}" <container>`.
   Not `true`: do not start it. `coord ask "<container> is stopped" --task <id> --from lane-ops`,
   checkpoint with `--wait owner`, move to other work.

@@ -32,8 +32,10 @@ Everything below is for the owner. About 15 minutes.
    ```
    Test it once: `schtasks /Run /TN "HarnessBenchWatchdog"`. You should get a message
    listing the open question.
-6. **Containers**: check the ones you want in play are running
-   (`DOCKER_CONTEXT=desktop-windows docker ps --filter name=Cronus`). Agents never start them.
+6. **Containers**: `pwsh -File U:\Git\CentralGauge\scripts\coord\containers.ps1 status -Web`
+   shows state, lease holder and web login per container. Start the ones you want in play with
+   `... containers.ps1 start` (all six) or `start -Names Cronus281,Cronus282`; `stop` refuses a
+   container a lane is leasing unless `-Force`. Agents never start or stop them.
 
 ## 2. Start the four sessions (Max account, one terminal each)
 
