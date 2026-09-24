@@ -20,7 +20,7 @@ rated on how well they navigate each style.
 ```
 C:\workspace\
   Core\          setup, master data, number series, dimensions, events
-  Rental\        depends Core: rental contracts, check-out/in, pricing, posting
+  Rental\        depends Core, Fleet: rental contracts, check-out/in, pricing, posting
   Leasing\       depends Core: lease contracts, schedules, invoicing, residual value
   Fleet\         depends Core: vehicles, maintenance, damage, availability
   Reporting\     depends Rental, Leasing, Fleet
@@ -42,7 +42,14 @@ harness-neutral; configs bring their own rules through bundles.
 | Fleet -> Core | interface plus extensible enum implementing it (strategy) |
 | Reporting -> Rental/Leasing/Fleet | queries, table extensions, cross-app FlowFields |
 | Integration -> Core | facade codeunit, API pages, JSON, HTTP mock |
-| Rental <-> Fleet | business events with the `IsHandled` pattern, plus one legacy direct call left in on purpose |
+| Rental -> Fleet | Rental subscribes to Fleet business events with the `IsHandled` pattern, plus one legacy direct call left in on purpose |
+| Fleet reacting to Rental | Fleet cannot depend on Rental (no cycles), so Rental raises through a Core publisher facade that Fleet subscribes to |
+
+The app dependency graph is acyclic and fixed: Core; Fleet -> Core; Rental
+-> Core, Fleet; Leasing -> Core; Integration -> Core; Reporting -> Rental,
+Leasing, Fleet; Test -> all. Business interactions that would need a cycle
+go through Core events. The 1a spike compiles and publishes this graph
+before content work starts.
 
 In-app styles to cover as well: posting codeunit chains, single-instance
 state, temporary tables, `CommitBehavior`, event subscriber instance modes.
@@ -64,7 +71,8 @@ hex GUIDs, one per module.
 ```
 harness-tasks/
   refapp/                  reference app source; versions are git-tagged
-                           (refapp-v1, refapp-v2 ...)
+                           (refapp-v1, refapp-v2 ...) and resolved to an
+                           immutable commit at staging
   tasks/HX-001/
     task.yml
     prompt.md              work-item style, written like a real ticket
@@ -72,8 +80,10 @@ harness-tasks/
                            (injected bug, stub, removed feature)
     oracle/                hidden test app
     mutants/               test-authoring only: hidden buggy variants
-    correct/               reference solution (authoring gate)
-    naive/                 plausible wrong solution (authoring gate)
+    correct/               reference solution (authoring gate; runtime
+                           input for mutant_kill)
+    naive/                 plausible wrong solutions, one subfolder each
+                           (authoring gate)
 ```
 
 ## 6. task.yml
@@ -108,21 +118,33 @@ harness adapter records whether it passed images to the model; a task with
 image attachments run on a harness without image support is flagged in the
 report.
 
-## 7. Task-set hash
+## 7. Task identity
 
-Covers `refapp/` at every pinned version used by a task, plus all of
-`harness-tasks/tasks/**` except `correct/` and `naive/` (authoring aids, not
-run inputs). Build artifacts are excluded (`.alpackages`, `output`, `*.app`).
-`touches` and `coupling` are metadata; changing them does not force a
-re-bench.
+Per task, two hashes (see 1a section 6):
+
+- **visible-input hash**: `prompt.md`, attachments, the resolved refapp
+  commit's source, `overlay/`, shipped `Test\` sources, the `.alpackages`
+  manifest, agent-visible `task.yml` fields, `limits`.
+- **oracle hash**: `oracle/`, `mutants/`, `correct/` (a runtime input for
+  `mutant_kill`), scorer fields of `task.yml`.
+
+`naive/` is an authoring aid only and is in neither hash. Build artifacts
+are excluded (`.alpackages` content is covered by its manifest, `output`,
+`*.app`). `touches` and `coupling` are metadata; changing them does not
+force a re-bench. The task-set identity is the sorted manifest of per-task
+hashes.
 
 ## 8. Authoring gate
 
 A task is promoted only when:
 
 - `correct/` passes every scorer,
-- `naive/` fails the oracle by reaching assertions and losing them (not by a
-  compile failure), same rule as workbench `--strict-fail-mode`,
+- every `naive/` variant (at least two plausible wrong solutions) fails the
+  oracle by reaching assertions and losing them (not by a compile failure),
+  same rule as workbench `--strict-fail-mode`,
+- the untouched staged workspace (refapp + overlay, no solution) passes
+  `build` and `pass_to_pass` and fails `fail_to_pass`, so the task starts
+  from a green baseline and the oracle really needs the change,
 - for test-authoring: the reference test solution kills every mutant and
   passes on correct code,
 - the `al-test-auditor` agent has reviewed the oracle.
@@ -137,8 +159,8 @@ two tasks. Prompts describe what to build or what users observe, never how
 (same no-guiding-notes rule as `tasks/`). Target difficulty: frontier
 harness configs should not saturate the set on day one.
 
-10 tasks x 3 repeats is enough to prove the pipeline and to compare
-efficiency on both-pass pairs, but BC-Bench found harness-level effects
+10 tasks x 3 repeats is a pilot: enough to prove the pipeline and estimate
+variance, but BC-Bench found harness-level effects
 small, so pass-rate deltas between configs will often be "not
 distinguishable" at this size. Plan to grow the set toward 30+ after v1.
 
