@@ -50,6 +50,9 @@ name (`infra`, `content`, `ops`).
 
 - Before any container work: check the container is running (README "Container leases").
   Not running: `coord ask`, do not start it.
+- Before any sandbox run: every secrets file the run needs in `H:\Temp3\harness-spike\secrets\`
+  must exist and must not start with `REPLACE_ME`. Placeholder or missing: `coord ask`
+  naming the file, checkpoint `--wait owner`. Never print or log a secret value.
 - Lease before use, heartbeat every 5 minutes, release right after. Record the job you are
   about to start in your checkpoint note before starting it.
 - Container jobs for other lanes run in a clean checkout of the commit they name

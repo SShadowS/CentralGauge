@@ -585,7 +585,9 @@ COPY run-pi.ps1 C:/run-pi.ps1
 # SPIKE (throwaway): harness bench M0
 param([Parameter(Mandatory)][string]$Model, [string]$McpConfig = "")
 $ErrorActionPreference = 'Stop'
-$env:ANTHROPIC_API_KEY = (Get-Content 'C:\cg-secrets\anthropic-api-key' -Raw).Trim()
+$token = (Get-Content 'C:\cg-secrets\claude-oauth-token' -Raw).Trim()
+if (-not $token -or $token -like 'REPLACE_ME*') { throw 'claude-oauth-token is missing or a placeholder' }
+$env:CLAUDE_CODE_OAUTH_TOKEN = $token
 $env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Git\bin\bash.exe'
 $prompt = Get-Content 'C:\task\prompt.md' -Raw
 $claudeArgs = @('-p', $prompt, '--output-format', 'stream-json', '--verbose', '--model', $Model, '--dangerously-skip-permissions')
@@ -598,9 +600,10 @@ exit $LASTEXITCODE
 `run-pi.ps1`:
 ```powershell
 # SPIKE (throwaway): harness bench M0
-param([Parameter(Mandatory)][string]$Provider, [Parameter(Mandatory)][string]$Model, [string]$KeyFile = 'anthropic-api-key')
+param([Parameter(Mandatory)][string]$Provider, [Parameter(Mandatory)][string]$Model, [string]$KeyFile = 'openrouter-api-key')
 $ErrorActionPreference = 'Stop'
 $key = (Get-Content "C:\cg-secrets\$KeyFile" -Raw).Trim()
+if (-not $key -or $key -like 'REPLACE_ME*') { throw "$KeyFile is missing or a placeholder" }
 $prompt = Get-Content 'C:\task\prompt.md' -Raw
 Set-Location C:\workspace
 & pi --mode json --no-session -a --provider $Provider --model $Model --api-key $key $prompt
@@ -635,7 +638,7 @@ await Deno.copyFile(promptFile, join(taskDir, "prompt.md"));
 
 const entry = harness === "claude"
   ? ["C:\\run-claude.ps1", "-Model", model, ...(a["mcp-config"] ? ["-McpConfig", a["mcp-config"]] : [])]
-  : ["C:\\run-pi.ps1", "-Provider", a.provider ?? "anthropic", "-Model", model, "-KeyFile", a["key-file"] ?? "anthropic-api-key"];
+  : ["C:\\run-pi.ps1", "-Provider", a.provider ?? "openrouter", "-Model", model, "-KeyFile", a["key-file"] ?? "openrouter-api-key"];
 
 const args = [
   "run", "--name", name,
@@ -666,7 +669,7 @@ try {
 }
 ```
 
-Secrets directory setup (operator, once): create `H:\Temp3\harness-spike\secrets\` holding `anthropic-api-key` and, for the pi non-Anthropic run, `openrouter-api-key`, each a single-line file with the key.
+Secrets directory: `H:\Temp3\harness-spike\secrets\`. Placeholders and a README exist; the owner fills them. A value starting with `REPLACE_ME` is refused.
 
 - [ ] **Step 5: Smoke both harnesses**
 
