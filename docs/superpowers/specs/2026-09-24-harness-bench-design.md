@@ -518,9 +518,17 @@ Before planning 1a in detail, prove on real containers:
 - Laya running locally on a sample of real tool calls: accuracy on the
   residue the rules miss, and latency
 
-## 14. Open decision
+## 14. Task source for the Directions talk (resolved 2026-09-24)
 
-The Directions submission says "the same tasks now also run through coding
-harnesses" and promises "hold the task fixed, vary only your prompts and MCP
-tools". D13 and spec 1b say the harness set is separate. See the brainstorm
-thread for the options; resolve before planning.
+The talk runs on the refapp task set only. The existing CentralGauge tasks
+are too easy to separate harness configs, so no `centralgauge` task source is
+added. Consequences:
+
+- Spec 1b content is on the critical path for 2026-10-27, not after it. The
+  1a refapp slice (Core, Rental, Test, 2 tasks) grows into the full refapp
+  and a first batch of tasks in parallel with the 1a infra work.
+- Target: refapp v1 plus at least 6 gated tasks ready for campaign runs by
+  2026-10-16, leaving time for the Claude Code and pi campaigns and slides.
+- The submission line "the same tasks now also run through coding harnesses"
+  no longer matches. Reword it in the slides (or the abstract, if still
+  editable) to "the same compiler, containers and scoring".
