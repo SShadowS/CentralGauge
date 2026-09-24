@@ -85,14 +85,28 @@ kind: feature | bugfix | refactor | test-authoring
 prompt: prompt.md
 touches: [Rental, Fleet]        # analysis only; not shown to the agent
 coupling: [events, interface]   # analysis only; not hashed as scoring input
-scorers: [build, regression, oracle]   # or mutant_kill for test-authoring
-oracle:
+source: refapp                 # later: git (BC-Bench style)
+attachments: []                # files under the task dir copied to C:\task
+scorers: [build, pass_to_pass, fail_to_pass]   # or mutant_kill for test-authoring
+pass_to_pass:                  # visible tests that must stay green
+  - { codeunit: 80010, procedures: [RentalCheckoutPostsLedger, RentalPriceUsesSeason] }
+fail_to_pass:                  # hidden oracle
   depends_on: [Rental, Fleet]
-  codeunits: [85001]
+  tests:
+    - { codeunit: 85001, procedures: [DamageBlocksCheckout, RepairReleasesVehicle] }
+mutants: []                    # test-authoring only; mutant 0 = original buggy state, implicit
+contamination: null            # reserved for a later probe result
 limits: { timeout_min: 30 }
 ```
 
-Validated with Zod on load. Unknown keys are an error.
+Validated with Zod on load. Unknown keys are an error. Test lists name
+procedures, not just codeunits, so results and flakiness are tracked per
+procedure.
+
+Attachments (screenshots, sample import files) mirror real tickets. Each
+harness adapter records whether it passed images to the model; a task with
+image attachments run on a harness without image support is flagged in the
+report.
 
 ## 7. Task-set hash
 
@@ -116,12 +130,22 @@ A task is promoted only when:
 The `mock` harness image from 1a runs both solutions through the real
 pipeline.
 
-## 9. v1 task mix (~10 tasks)
+## 9. v1 task mix (~10 tasks, growing)
 
 At least one task per kind, and every coupling style exercised by at least
 two tasks. Prompts describe what to build or what users observe, never how
 (same no-guiding-notes rule as `tasks/`). Target difficulty: frontier
 harness configs should not saturate the set on day one.
+
+10 tasks x 3 repeats is enough to prove the pipeline and to compare
+efficiency on both-pass pairs, but BC-Bench found harness-level effects
+small, so pass-rate deltas between configs will often be "not
+distinguishable" at this size. Plan to grow the set toward 30+ after v1.
+
+Tasks should give MCPs and skills room to matter: navigation across apps,
+finding the right event to subscribe to, symbol lookup in `.alpackages`,
+object ID allocation, and build/test iteration. A task solvable in one edit
+with no lookup cannot show an efficiency difference.
 
 ## 10. Open for 1b planning
 
