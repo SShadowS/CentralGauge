@@ -26,6 +26,14 @@ and the same framing as the existing LLM leaderboard. Tool calls, tool
 errors, build/test iterations, tokens and time are secondary and explain the
 cost.
 
+**Cost basis (decided 2026-09-24).** Sandbox Claude Code runs authenticate
+with a subscription OAuth token (the Team account), so their self-reported
+cost is not money spent. For every harness, the primary metric therefore
+uses **list-price cost computed from reported tokens** with the catalog
+pricing snapshot recorded on the execution (`cost_source: estimated`). A
+harness's own reported cost is kept next to it for cross-checking. This
+keeps Claude Code and pi comparable whatever the auth method.
+
 Prior art: BC-Bench (`microsoft/BC-Bench`, SWE-Bench style, real BCApps
 tasks, Copilot CLI and Claude Code). Its paper found between-model
 differences larger than between-harness differences, so harness-config
@@ -375,13 +383,18 @@ Each execution carries three independent fields:
 
 | Field | Values |
 | --- | --- |
-| `termination` | `completed`, `timeout`, `budget_exhausted`, `refusal`, `harness_crash`, `setup_failed` |
+| `termination` | `completed`, `timeout`, `budget_exhausted`, `refusal`, `usage_limited`, `harness_crash`, `setup_failed` |
 | `verdict` | `pass`, `fail`, `unscored` |
 | `validity` | `complete`, `incomplete_telemetry`, `infra_exposed` |
 
 - A `timeout` or `budget_exhausted` execution is judged normally; it can
   pass.
 - `refusal` is judged normally too (usually a fail) and counted.
+- `usage_limited`: the harness stopped because the subscription or provider
+  usage window ran out (detected from the harness's own limit message or
+  exit reason). `unscored`, the attempt is kept with its cost, and the
+  campaign pauses new executions until the window resets, then retries the
+  cell. A usage limit is never scored as a model failure.
 - `harness_crash` after the agent did work is judged. `harness_crash`
   before any work and `setup_failed` give `unscored`, get one automatic
   retry, and the failed attempt is kept with its cost.
