@@ -139,6 +139,8 @@ scripts/*
 !scripts/stamp-provenance.ts
 !scripts/spikes/
 !scripts/spikes/**
+!scripts/coord/
+!scripts/coord/**
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
