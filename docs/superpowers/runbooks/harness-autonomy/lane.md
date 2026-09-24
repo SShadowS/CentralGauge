@@ -44,6 +44,9 @@ name (`infra`, `content`, `ops`).
   pause" at once (finish the running container job, release leases, commit, checkpoint
   `--wait paused`, idle). On `resume:`, re-run your start procedure and continue.
 
+- Every `coord ask` carries `--from <your session name>` and `--task <id>`, and is followed by
+  a checkpoint `--wait owner --note "<one line: what you need>"`. That is how the owner's
+  status screen shows who is waiting for what.
 - Never edit specs, plans, `task.md` files, decisions, the launch contract, CLAUDE.md, hooks
   or settings. A design question or a plan that looks wrong: `coord ask --task <id>` and
   message the orchestrator.

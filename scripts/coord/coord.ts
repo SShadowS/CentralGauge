@@ -617,7 +617,15 @@ export async function answer(
 
 export async function openQuestions(
   root: string,
-): Promise<{ id: string; task: string | null; text: string }[]> {
+): Promise<
+  {
+    id: string;
+    task: string | null;
+    from: string | null;
+    at: string | null;
+    text: string;
+  }[]
+> {
   await openRoot(root);
   const names = await listDir(join(root, "questions"));
   const out = [];
@@ -631,11 +639,17 @@ export async function openQuestions(
     const raw = await Deno.readTextFile(join(root, "questions", n));
     const hm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n\r?\n?([\s\S]*)$/);
     const h = hm?.[1]
-      ? parseYaml(hm[1]) as { task: string | null }
+      ? parseYaml(hm[1]) as {
+        task: string | null;
+        from?: string | null;
+        at?: string | null;
+      }
       : { task: null };
     out.push({
       id: group(m, 1, n),
       task: h.task,
+      from: h.from ?? null,
+      at: h.at ?? null,
       text: (hm?.[2] ?? raw).trim(),
     });
   }
@@ -975,16 +989,39 @@ export async function overview(
   }
 
   const qs = await openQuestions(root);
-  h(
-    qs.length
-      ? colors.yellow(`Open questions for you (${qs.length})`)
-      : "Open questions for you (0)",
-  );
+  // Everything blocked on the owner: open questions plus runs checkpointed
+  // `--wait owner`, each with the agent that is waiting.
+  const waiting: string[] = [];
+  const askedTasks = new Set(qs.map((q) => q.task).filter(Boolean));
   for (const q of qs) {
-    lines.push(
-      `  ${q.id}${q.task ? ` [${q.task}]` : ""}: ${q.text.split("\n")[0]}`,
+    const who = q.from ?? "unknown agent";
+    const age = q.at ? ` ${ago(Date.parse(q.at), now)} ago` : "";
+    waiting.push(
+      `  ${who.padEnd(16)} ${q.task ? `[${q.task}] ` : ""}${
+        q.text.split("\n")[0]
+      }` +
+        colors.dim(`  (${q.id}${age}; answer: coord answer ${q.id} "...")`),
     );
   }
+  for (const t of doing) {
+    if (t.checkpoint?.wait !== "owner" || askedTasks.has(t.id)) continue;
+    waiting.push(
+      `  ${(t.runLane ?? t.lane).padEnd(16)} [${t.id}] ${
+        t.checkpoint.note ?? "waiting for owner (no note)"
+      }` +
+        colors.dim(
+          `  (since ${
+            ago(t.checkpoint.at, now)
+          } ago; tell the orchestrator or that session)`,
+        ),
+    );
+  }
+  h(
+    waiting.length
+      ? colors.bold(colors.yellow(`Waiting for you (${waiting.length})`))
+      : "Waiting for you (0)",
+  );
+  lines.push(...waiting);
 
   h(`Container leases (${ps.leases.length})`);
   for (const c of await listDir(join(root, "leases"))) {

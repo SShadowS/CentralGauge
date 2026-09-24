@@ -379,3 +379,20 @@ Deno.test("coord: overview summarizes milestones, active work, questions and pau
   assertStringIncludes(text, "wait=container");
   assertStringIncludes(text, "Cronus281 is stopped");
 });
+
+Deno.test("coord: overview names the agent waiting for the owner", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const run = await claim(root, "M0-01", "content");
+  await checkpoint(root, "M0-01", run.runId, run.token, "blocked", {
+    wait: "owner",
+    note: "needs Cronus281 started",
+  });
+  await ask(root, "Secrets missing", { task: "M0-03", from: "lane-ops" });
+  const text = await overview(root);
+  assertStringIncludes(text, "Waiting for you (2)");
+  assertStringIncludes(text, "lane-ops");
+  assertStringIncludes(text, "Secrets missing");
+  assertStringIncludes(text, "content");
+  assertStringIncludes(text, "needs Cronus281 started");
+});
