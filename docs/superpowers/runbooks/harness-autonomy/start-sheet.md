@@ -39,7 +39,9 @@ Everything below is for the owner. About 15 minutes.
 | 3 | `U:\Git\CentralGauge-wt\lane-content` | `claude -n lane-content` |
 | 4 | `U:\Git\CentralGauge-wt\lane-ops` | `claude -n lane-ops` |
 
-First message in terminals 2 to 4 (replace `<lane>`):
+Shortcut: in any of the four directories, start `claude` and type `/harness-join`. It works out the role from the directory, checks nobody holds it, and tells you the `/rename` to run.
+
+Or by hand. First message in terminals 2 to 4 (replace `<lane>`):
 
 ```
 You are lane-<lane>. Read docs/superpowers/runbooks/harness-autonomy/lane.md and follow it, starting with its "On every start" section.
