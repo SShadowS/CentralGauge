@@ -69,8 +69,12 @@ Then terminal 1:
   and send `Resume. Follow the "On every start" section of your role file.`
   (`orchestrator.md` for cg-orchestrator, `lane.md` for lanes). The orchestrator re-sends the
   protocol to the lanes itself.
-- Status at any time: `coord status`, `coord why <id>`, `coord questions`, where `coord` is
-  `deno run --allow-all U:\Git\CentralGauge\scripts\coord\coord.ts`.
+- Status at any time, no LLM needed:
+  `pwsh -File U:\Git\CentralGauge\scripts\coord\status.ps1` (one snapshot) or `... status.ps1 -Watch 30`
+  (live, refreshes every 30 s). It shows milestones with progress and due dates, what is
+  running, waiting for review, ready, blocked and why, open questions, leases, the pause
+  state and anything stale. Details: `coord why <id>`, `coord status --lane <lane>`, where
+  `coord` is `deno run --allow-all U:\Git\CentralGauge\scripts\coord\coord.ts`.
 - Pause everything (you need the machine):
   `pwsh -File U:\Git\CentralGauge\scripts\coord\containers.ps1 pause -Reason "<why>"`.
   It sets the pause, waits until running container jobs finish and every lease is released

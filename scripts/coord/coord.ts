@@ -17,6 +17,7 @@
  * Runbook: docs/superpowers/runbooks/harness-autonomy/README.md
  */
 import { parseArgs } from "@std/cli/parse-args";
+import * as colors from "@std/fmt/colors";
 import { join } from "@std/path";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 
@@ -851,6 +852,174 @@ export async function doctor(root: string): Promise<string[]> {
   return issues;
 }
 
+// ---------- overview ----------
+
+function ago(ms: number, now: number): string {
+  const min = Math.max(0, Math.floor((now - ms) / 60000));
+  return min < 120
+    ? `${min}m`
+    : `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
+}
+
+/** One-screen project status for the owner. Reads only headers and records. */
+export async function overview(
+  root: string,
+  opts: { now?: number } = {},
+): Promise<string> {
+  await openRoot(root);
+  const now = opts.now ?? Date.now();
+  const meta = await readJson<{ campaign: string }>(join(root, "coord.json"));
+  const milestones =
+    (await readJson<Record<string, { title?: string; due?: string }>>(
+      join(root, "milestones.json"),
+    )) ?? {};
+  const tasks = await status(root);
+  const ps = await pauseState(root);
+  const lines: string[] = [];
+  const h = (t: string) => lines.push("", colors.bold(t));
+
+  lines.push(
+    colors.bold(`Harness Bench: ${meta?.campaign ?? "?"}`) +
+      `   ${new Date(now).toISOString().slice(0, 16)}Z`,
+  );
+  if (ps.paused) {
+    const held = ps.leases.map((l) => `${l.container} (${l.lane})`).join(", ");
+    lines.push(
+      colors.bgRed(colors.white(` PAUSED since ${ps.since}: ${ps.reason} `)) +
+        (ps.drained
+          ? colors.green("  drained, safe to stop containers")
+          : colors.yellow(`  draining, still leased: ${held}`)),
+    );
+  }
+
+  h("Milestones");
+  const byMs = new Map<string, TaskState[]>();
+  for (const t of tasks) {
+    const ms = t.id.split("-")[0] ?? t.id;
+    byMs.set(ms, [...(byMs.get(ms) ?? []), t]);
+  }
+  for (const [ms, ts] of [...byMs.entries()].sort()) {
+    const n = (k: TaskStateName) => ts.filter((t) => t.state === k).length;
+    const acc = n("accepted");
+    const bar = "#".repeat(Math.round((acc / ts.length) * 20)).padEnd(20, ".");
+    const m = milestones[ms];
+    let due = "";
+    if (m?.due) {
+      const days = Math.ceil((Date.parse(m.due) - now) / 86400000);
+      const txt = `due ${m.due} (${days}d)`;
+      due = acc === ts.length
+        ? colors.green(txt)
+        : days < 0
+        ? colors.red(txt)
+        : days <= 1
+        ? colors.yellow(txt)
+        : txt;
+    }
+    lines.push(
+      `  ${ms.padEnd(4)} ${
+        (m?.title ?? "").padEnd(22)
+      } [${bar}] ${acc}/${ts.length} accepted` +
+        `  doing ${n("doing")} review ${n("review")} todo ${n("todo")}${
+          n("unknown") ? colors.red(` unknown ${n("unknown")}`) : ""
+        }  ${due}`,
+    );
+  }
+
+  const doing = tasks.filter((t) => t.state === "doing");
+  h(`Doing (${doing.length})`);
+  for (const t of doing) {
+    const cp = t.checkpoint;
+    const age = ago(cp?.at ?? t.claimedAt ?? now, now);
+    const wait = cp?.wait ? colors.yellow(` wait=${cp.wait}`) : "";
+    lines.push(
+      `  ${t.id.padEnd(7)} ${
+        (t.runLane ?? t.lane).padEnd(8)
+      } run ${t.runId}  phase=${
+        cp?.phase ?? "claimed"
+      }${wait}  last checkpoint ${age} ago`,
+    );
+  }
+
+  const review = tasks.filter((t) => t.state === "review");
+  h(`Waiting for review (${review.length})`);
+  for (const t of review) {
+    lines.push(
+      `  ${t.id.padEnd(7)} ${(t.runLane ?? t.lane).padEnd(8)} commit ${
+        t.terminal?.commit?.slice(0, 10) ?? "?"
+      }`,
+    );
+  }
+
+  h("Ready to start");
+  for (const lane of [...new Set(tasks.map((t) => t.lane))].sort()) {
+    const ready = (await next(root, lane)).map((t) => t.id);
+    if (ready.length) lines.push(`  ${lane.padEnd(8)} ${ready.join(", ")}`);
+  }
+
+  const blocked: string[] = [];
+  for (const t of tasks.filter((x) => x.state === "todo")) {
+    const unmet = await depsAccepted(root, await readHeader(root, t.id));
+    if (unmet.length) {
+      blocked.push(
+        `  ${t.id.padEnd(7)} ${t.lane.padEnd(8)} needs ${unmet.join(", ")}`,
+      );
+    }
+  }
+  h(`Blocked by dependencies (${blocked.length})`);
+  lines.push(...blocked);
+
+  const unknown = tasks.filter((t) => t.state === "unknown");
+  if (unknown.length) {
+    h(colors.red(`Unknown state (${unknown.length}): run coord doctor`));
+    for (const t of unknown) lines.push(`  ${t.id} run ${t.runId ?? "?"}`);
+  }
+
+  const qs = await openQuestions(root);
+  h(
+    qs.length
+      ? colors.yellow(`Open questions for you (${qs.length})`)
+      : "Open questions for you (0)",
+  );
+  for (const q of qs) {
+    lines.push(
+      `  ${q.id}${q.task ? ` [${q.task}]` : ""}: ${q.text.split("\n")[0]}`,
+    );
+  }
+
+  h(`Container leases (${ps.leases.length})`);
+  for (const c of await listDir(join(root, "leases"))) {
+    const l = await leaseHolder(root, c);
+    if (l) {
+      lines.push(
+        `  ${c.padEnd(10)} ${l.lane.padEnd(8)} since ${
+          ago(l.at, now)
+        }  heartbeat ${l.hb ? ago(l.hb, now) + " ago" : "none"}`,
+      );
+    }
+  }
+
+  const st = await stale(root, { now });
+  if (st.length) {
+    h(colors.red(`Stale (${st.length})`));
+    for (const x of st) lines.push(`  ${x}`);
+  }
+
+  const accepted: { id: string; at: number }[] = [];
+  for (const t of tasks.filter((x) => x.state === "accepted")) {
+    const a = await readJson<{ at: number }>(
+      join(taskDir(root, t.id), "accepted.json"),
+    );
+    if (a) accepted.push({ id: t.id, at: a.at });
+  }
+  accepted.sort((a, b) => b.at - a.at);
+  h("Recently accepted");
+  for (const a of accepted.slice(0, 5)) {
+    lines.push(`  ${a.id.padEnd(7)} ${ago(a.at, now)} ago`);
+  }
+
+  return lines.join("\n");
+}
+
 // ---------- CLI ----------
 
 function rootFromEnv(): string {
@@ -886,7 +1055,7 @@ function arg(rest: string[], i: number): string {
 
 async function main(args: string[]): Promise<number> {
   const a = parseArgs(args, {
-    string: ["lane", "wait", "note", "task", "from", "campaign"],
+    string: ["lane", "wait", "note", "task", "from", "campaign", "watch"],
     boolean: ["json"],
   });
   const [cmd, ...rest] = a._.map(String);
@@ -1004,6 +1173,19 @@ async function main(args: string[]): Promise<number> {
     case "pause-state":
       out(await pauseState(root));
       return 0;
+    case "overview": {
+      const watch = Number(a.watch ?? 0);
+      if (!watch) {
+        console.log(await overview(root));
+        return 0;
+      }
+      while (true) {
+        const text = await overview(root);
+        console.clear();
+        console.log(text + `\n\n(refresh every ${watch}s, Ctrl+C to quit)`);
+        await new Promise((r) => setTimeout(r, watch * 1000));
+      }
+    }
     case "stale":
       console.log((await stale(root)).join("\n") || "(nothing stale)");
       return 0;
@@ -1014,7 +1196,7 @@ async function main(args: string[]): Promise<number> {
     }
     default:
       console.error(
-        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|doctor|pause|resume|pause-state> ...",
+        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|doctor|pause|resume|pause-state|overview [--watch N]> ...",
       );
       return 2;
   }

@@ -1,4 +1,9 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import { join } from "@std/path";
 import {
   abandon,
@@ -16,6 +21,7 @@ import {
   leaseHolder,
   next,
   openQuestions,
+  overview,
   pause,
   pauseState,
   reject,
@@ -344,4 +350,32 @@ Deno.test("coord: claim is refused while paused", async () => {
   const hist = [];
   for await (const e of Deno.readDir(join(root, "pauses"))) hist.push(e.name);
   assertEquals(hist.length, 2);
+});
+
+Deno.test("coord: overview summarizes milestones, active work, questions and pause", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  await Deno.writeTextFile(
+    join(root, "milestones.json"),
+    JSON.stringify({ M0: { title: "Spike", due: "2026-09-29" } }),
+  );
+  const run = await claim(root, "M0-01", "content");
+  await checkpoint(root, "M0-01", run.runId, run.token, "red", {
+    wait: "container",
+  });
+  await ask(root, "Cronus281 is stopped", {
+    task: "M0-01",
+    from: "lane-content",
+  });
+  await pause(root, "owner lunch");
+  const text = await overview(root);
+  assertStringIncludes(text, "PAUSED");
+  assertStringIncludes(text, "owner lunch");
+  assertStringIncludes(text, "M0");
+  assertStringIncludes(text, "Spike");
+  assertStringIncludes(text, "2026-09-29");
+  assertStringIncludes(text, "0/3 accepted");
+  assertStringIncludes(text, "M0-01");
+  assertStringIncludes(text, "wait=container");
+  assertStringIncludes(text, "Cronus281 is stopped");
 });

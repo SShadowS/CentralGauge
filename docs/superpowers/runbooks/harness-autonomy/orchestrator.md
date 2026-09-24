@@ -49,7 +49,8 @@ Run as `/loop` without an interval (self-paced). Each sweep:
 - Review each plan with `gpt-6-astra` (milestone) per README "Reviews". Apply findings you
   agree with; record the rest with reasons in `decisions/`.
 - Load each plan's tasks: one `task.md` per plan task, written to a scratch file and added
-  with `coord add <file>`. Header: `id`, `lane`, `deps`, `resources`. Body: the plan task's
+  with `coord add <file>`. Keep `H:\cg-coord\milestones.json` in line with the plan
+  (`{"M1": {"title": "...", "due": "YYYY-MM-DD"}}`): the owner's status screen reads it. Header: `id`, `lane`, `deps`, `resources`. Body: the plan task's
   absolute path and section, the acceptance checks you will run at integration, the files it
   may touch. Task ids: `M1-01`, `M1-02`, ...
 - Use subagents for reading and drafting. Keep raw reviews and logs out of your context:
