@@ -40,6 +40,10 @@ name (`infra`, `content`, `ops`).
 
 ## Rules
 
+- A checkpoint answering `"paused": true`, or a `pause:` message: follow README "Global
+  pause" at once (finish the running container job, release leases, commit, checkpoint
+  `--wait paused`, idle). On `resume:`, re-run your start procedure and continue.
+
 - Never edit specs, plans, `task.md` files, decisions, the launch contract, CLAUDE.md, hooks
   or settings. A design question or a plan that looks wrong: `coord ask --task <id>` and
   message the orchestrator.

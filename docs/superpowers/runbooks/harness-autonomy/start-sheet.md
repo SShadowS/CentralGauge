@@ -71,8 +71,16 @@ Then terminal 1:
   protocol to the lanes itself.
 - Status at any time: `coord status`, `coord why <id>`, `coord questions`, where `coord` is
   `deno run --allow-all U:\Git\CentralGauge\scripts\coord\coord.ts`.
-- Stop everything: tell the orchestrator `pause: finish current reviews, give lanes no new
-  tasks`. Lanes finish their current task and wait.
+- Pause everything (you need the machine):
+  `pwsh -File U:\Git\CentralGauge\scripts\coord\containers.ps1 pause -Reason "<why>"`.
+  It sets the pause, waits until running container jobs finish and every lease is released
+  (up to 90 minutes, `-TimeoutMin` changes it), then stops the containers that were running
+  and remembers them. Lanes notice within about 15 minutes; tell the orchestrator "pause"
+  to make it immediate. `-NoStop` pauses the work but leaves the containers running.
+- Resume: `pwsh -File U:\Git\CentralGauge\scripts\coord\containers.ps1 resume`. It starts
+  the remembered containers, waits for the BC login page, clears the pause. The
+  orchestrator wakes the lanes on its next sweep (at most 30 minutes); tell it "resume" to
+  do it now.
 
 ## 4. Not done by agents (yours)
 

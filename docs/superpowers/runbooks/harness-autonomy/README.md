@@ -92,6 +92,22 @@ todo --claim--> doing --submit--> review --accept--> accepted
   orchestrator relaying the owner's words).
 - Only the orchestrator writes `H:\cg-coord\decisions\`.
 
+## Global pause
+
+The owner pauses everything with `containers.ps1 pause` and resumes with
+`containers.ps1 resume` (start sheet). While `H:\cg-coord\pause.json` exists:
+
+- `coord claim` and `coord lease` refuse, and `coord next` returns nothing.
+- `coord checkpoint` answers `{"paused": true}`. Every checkpoint is also the pause poll.
+- A lane that sees paused stops at its next safe point: let a running container job or
+  test run finish (never kill one), release every lease, commit work in progress on its
+  branch, checkpoint with `--wait paused`, and go idle. No new subagents, builds or tests,
+  not even container-free ones: the owner needs the machine.
+- `coord stale` ignores paused runs; only held leases block the drain.
+- The orchestrator, on seeing the pause (or the owner saying "pause"), messages every lane
+  `pause: stop at your next safe point`, then sweeps only every 30 minutes and dispatches
+  nothing. After `resume` it messages every lane `resume: continue from your handoff`.
+
 ## Messages
 
 SendMessage is a doorbell only. State lives in `coord` and in git. Messages that exist:

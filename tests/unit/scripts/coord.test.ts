@@ -16,8 +16,11 @@ import {
   leaseHolder,
   next,
   openQuestions,
+  pause,
+  pauseState,
   reject,
   release,
+  resume,
   stale,
   status,
   submit,
@@ -278,4 +281,67 @@ Deno.test("coord: claim race across separate processes has one winner", async ()
   const codes = (await Promise.all(procs)).map((o) => o.code);
   assertEquals(codes.filter((c) => c === 0).length, 1, `exit codes: ${codes}`);
   assertEquals((await taskState(root, "M0-01")).state, "doing");
+});
+
+Deno.test("coord: pause blocks new claims and leases, drains, and resumes", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const run = await claim(root, "M0-01", "content");
+  const l = await lease(root, "Cronus28", "ops");
+
+  await pause(root, "owner needs the machine");
+  await assertRejects(() => pause(root, "again"), CoordError, "already paused");
+  await assertRejects(
+    () => lease(root, "Cronus281", "ops"),
+    CoordError,
+    "paused",
+  );
+  assertEquals(await next(root, "ops"), []);
+
+  const cp = await checkpoint(root, "M0-01", run.runId, run.token, "red", {
+    wait: "paused",
+  });
+  assertEquals(cp.paused, true);
+
+  let st = await pauseState(root);
+  assertEquals(st.paused, true);
+  assertEquals(st.drained, false, "a held lease means not drained");
+  assertEquals(st.leases.map((x) => x.container), ["Cronus28"]);
+
+  await release(root, "Cronus28", l.token);
+  st = await pauseState(root);
+  assertEquals(st.drained, true);
+
+  const later = Date.now() + 60 * 60 * 1000;
+  assertEquals(
+    await stale(root, { now: later }),
+    [],
+    "runs are not stale while paused",
+  );
+
+  await resume(root);
+  await assertRejects(() => resume(root), CoordError, "not paused");
+  assertEquals((await pauseState(root)).paused, false);
+  assertEquals(
+    (await checkpoint(root, "M0-01", run.runId, run.token, "green")).paused,
+    false,
+  );
+  await lease(root, "Cronus281", "ops");
+});
+
+Deno.test("coord: claim is refused while paused", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  await pause(root, "x");
+  await assertRejects(
+    () => claim(root, "M0-01", "content"),
+    CoordError,
+    "paused",
+  );
+  await resume(root);
+  await pause(root, "second pause keeps history");
+  await resume(root);
+  const hist = [];
+  for await (const e of Deno.readDir(join(root, "pauses"))) hist.push(e.name);
+  assertEquals(hist.length, 2);
 });

@@ -200,6 +200,83 @@ async function openRoot(root: string): Promise<void> {
   }
 }
 
+// ---------- pause ----------
+
+/** The owner's global pause: blocks new claims and leases until resume. */
+export async function pause(root: string, reason: string): Promise<void> {
+  await openRoot(root);
+  try {
+    await writeExclusive(join(root, "pause.json"), { reason, at: Date.now() });
+  } catch (e) {
+    if (e instanceof CoordError) throw new CoordError("already paused");
+    throw e;
+  }
+}
+
+export async function resume(root: string): Promise<void> {
+  await openRoot(root);
+  if (!(await isPaused(root))) throw new CoordError("not paused");
+  await Deno.mkdir(join(root, "pauses"), { recursive: true });
+  // Keep the pause as history; a missing pause.json means running.
+  await withRetry(() =>
+    Deno.rename(
+      join(root, "pause.json"),
+      join(
+        root,
+        "pauses",
+        `${stamp()}-${crypto.randomUUID().slice(0, 8)}.json`,
+      ),
+    )
+  );
+}
+
+async function isPaused(root: string): Promise<boolean> {
+  return await exists(join(root, "pause.json"));
+}
+
+async function refuseIfPaused(root: string, what: string): Promise<void> {
+  if (await isPaused(root)) {
+    throw new CoordError(`paused by the owner: no new ${what} until resume`);
+  }
+}
+
+export interface PauseState {
+  paused: boolean;
+  reason?: string | undefined;
+  since?: string | undefined;
+  /** Paused and no container lease is held: safe to stop containers. */
+  drained: boolean;
+  leases: { container: string; lane: string }[];
+  doing: { id: string; lane: string; wait?: string | undefined }[];
+}
+
+export async function pauseState(root: string): Promise<PauseState> {
+  await openRoot(root);
+  const rec = await readJson<{ reason: string; at: number }>(
+    join(root, "pause.json"),
+  );
+  const leases: PauseState["leases"] = [];
+  for (const c of await listDir(join(root, "leases"))) {
+    const h = await leaseHolder(root, c);
+    if (h) leases.push({ container: c, lane: h.lane });
+  }
+  const doing = (await status(root))
+    .filter((t) => t.state === "doing")
+    .map((t) => ({
+      id: t.id,
+      lane: t.runLane ?? t.lane,
+      wait: t.checkpoint?.wait,
+    }));
+  return {
+    paused: rec !== null,
+    reason: rec?.reason,
+    since: rec ? new Date(rec.at).toISOString() : undefined,
+    drained: rec !== null && leases.length === 0,
+    leases,
+    doing,
+  };
+}
+
 // ---------- tasks ----------
 
 function taskDir(root: string, id: string): string {
@@ -314,6 +391,7 @@ async function depsAccepted(root: string, h: TaskHeader): Promise<string[]> {
 }
 
 export async function next(root: string, lane: string): Promise<TaskState[]> {
+  if (await isPaused(root)) return [];
   const out: TaskState[] = [];
   for (const st of await status(root, lane)) {
     if (st.state !== "todo") continue;
@@ -329,6 +407,7 @@ export async function claim(
   lane: string,
 ): Promise<{ runId: string; token: string }> {
   await openRoot(root);
+  await refuseIfPaused(root, "claims");
   const h = await readHeader(root, id);
   if (h.lane !== lane) {
     throw new CoordError(`task ${id} belongs to lane ${h.lane}, not ${lane}`);
@@ -386,13 +465,16 @@ export async function checkpoint(
   token: string,
   phase: string,
   opts: { wait?: string | undefined; note?: string | undefined } = {},
-): Promise<void> {
+): Promise<{ paused: boolean }> {
   const rd = await ownedRun(root, id, runId, token);
   await writeReplace(join(rd, "checkpoint.json"), {
     phase,
     ...opts,
     at: Date.now(),
   });
+  // Every checkpoint doubles as the pause poll: a lane that sees paused stops at
+  // its next safe point and releases its leases.
+  return { paused: await isPaused(root) };
 }
 
 export async function submit(
@@ -597,6 +679,7 @@ export async function lease(
   lane: string,
 ): Promise<{ attempt: string; token: string }> {
   await openRoot(root);
+  await refuseIfPaused(root, "container leases");
   if (!NAME_RE.test(lane)) throw new CoordError(`bad lane: ${lane}`);
   const lr = leaseRoot(root, container);
   await Deno.mkdir(lr, { recursive: true });
@@ -702,8 +785,10 @@ export async function stale(
   await openRoot(root);
   const now = opts.now ?? Date.now();
   const out: string[] = [];
+  const paused = await isPaused(root);
   for (const st of await status(root)) {
-    if (st.state !== "doing") continue;
+    // A paused lane is expected to be silent; only held leases matter then.
+    if (paused || st.state !== "doing") continue;
     const last = st.checkpoint?.at ?? st.claimedAt ?? 0;
     const min = Math.floor((now - last) / 60000);
     if (min >= RUN_STALE_MIN) {
@@ -841,18 +926,19 @@ async function main(args: string[]): Promise<number> {
       out(await claim(root, arg(rest, 0), arg(rest, 1)));
       return 0;
     case "checkpoint":
-      await checkpoint(
-        root,
-        arg(rest, 0),
-        arg(rest, 1),
-        arg(rest, 2),
-        arg(rest, 3),
-        {
-          wait: a.wait,
-          note: a.note,
-        },
+      out(
+        await checkpoint(
+          root,
+          arg(rest, 0),
+          arg(rest, 1),
+          arg(rest, 2),
+          arg(rest, 3),
+          {
+            wait: a.wait,
+            note: a.note,
+          },
+        ),
       );
-      out({ ok: true });
       return 0;
     case "submit":
       await submit(
@@ -907,6 +993,17 @@ async function main(args: string[]): Promise<number> {
     case "holder":
       out(await leaseHolder(root, arg(rest, 0)));
       return 0;
+    case "pause":
+      await pause(root, arg(rest, 0));
+      out(await pauseState(root));
+      return 0;
+    case "resume":
+      await resume(root);
+      out({ ok: true, paused: false });
+      return 0;
+    case "pause-state":
+      out(await pauseState(root));
+      return 0;
     case "stale":
       console.log((await stale(root)).join("\n") || "(nothing stale)");
       return 0;
@@ -917,7 +1014,7 @@ async function main(args: string[]): Promise<number> {
     }
     default:
       console.error(
-        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|doctor> ...",
+        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|doctor|pause|resume|pause-state> ...",
       );
       return 2;
   }
