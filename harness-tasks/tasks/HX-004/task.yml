@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental, Leasing, Reporting]
   tests:
-    - { codeunit: 85300, procedures: [RentalRevenueSumsPostedContracts, RentalRevenueDateFilterInclusive, RentalRevenueIgnoresUnposted, LeaseRevenueCountsInvoicedLinesOnly, LeaseRevenueDateFilterInclusive, UninvoicedLinesFollowVehicleChange, RepeatedVehicleChangeFollowsLastVehicle, RevenueSourcesStaySeparate] }
+    - { codeunit: 85300, procedures: [RentalRevenueSumsPostedContracts, RentalRevenueDateFilterInclusive, RentalRevenueIgnoresUnposted, LeaseRevenueCountsInvoicedLinesOnly, LeaseRevenueDateFilterInclusive, UninvoicedLinesFollowVehicleChange, RepeatedVehicleChangeFollowsLastVehicle, RevenueSourcesStaySeparate, LineVehicleMovesAtValidation] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
