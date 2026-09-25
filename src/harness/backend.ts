@@ -35,8 +35,10 @@ import {
 import {
   CopyLimitError,
   type CopyLimits,
+  DEFAULT_COPY_LIMITS,
   exists,
   safeCopyTree,
+  scanReparsePoints,
   validatedDir,
 } from "./fsutil.ts";
 import { bounded, type DockerCli, OP_TIMEOUT_MS } from "./sandbox.ts";
@@ -252,16 +254,55 @@ async function readLimited(
   return new TextDecoder().decode(all);
 }
 
-/** Drive-letter paths replaced before a message reaches the agent. */
-function scrubHostPaths(message: string): string {
-  return message.replace(/[A-Za-z]:[\\/][^\s"'`]*/g, "<host path>");
+/**
+ * Host paths removed before text reaches the agent: the backend's own roots
+ * (either separator, any case), UNC paths (\\server\share or //server/share)
+ * and drive-letter paths.
+ */
+function scrubHostPaths(
+  message: string,
+  roots: readonly string[] = [],
+): string {
+  let out = message;
+  for (const r of roots) {
+    for (const form of [r, r.replaceAll("\\", "/")]) {
+      const esc = form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      out = out.replace(new RegExp(`${esc}[^\\s"'\`]*`, "gi"), "<host path>");
+    }
+  }
+  return out
+    .replace(/\\\\[^\\\s"'`]+\\[^\s"'`]*/g, "<host path>")
+    .replace(/(?<![:\w/])\/\/[^/\s"'`]+\/[^\s"'`]*/g, "<host path>")
+    .replace(/[A-Za-z]:[\\/][^\s"'`]*/g, "<host path>");
+}
+
+/** scrubHostPaths applied to every string inside an agent-facing body. */
+function scrubDeep(v: unknown, roots: readonly string[]): unknown {
+  if (typeof v === "string") return scrubHostPaths(v, roots);
+  if (Array.isArray(v)) return v.map((x) => scrubDeep(x, roots));
+  if (v !== null && typeof v === "object") {
+    return Object.fromEntries(
+      Object.entries(v).map(([k, x]) => [k, scrubDeep(x, roots)]),
+    );
+  }
+  return v;
 }
 
 export class Backend {
   private readonly grants = new Map<string, GrantState>();
   /** Revoked executions whose request did not drain: their id cannot be granted again yet. */
   private readonly draining = new Set<string>();
+  /** Ids between grant's duplicate check and its insert. */
+  private readonly reserved = new Set<string>();
   private readonly now: () => number;
+
+  /** Every response body is scrubbed of host paths (agent-facing, spec 1a section 7). */
+  private reply(status: number, body: unknown): Response {
+    return json(
+      status,
+      scrubDeep(body, [this.o.workRoot, ...this.o.approvedRoots]),
+    );
+  }
 
   constructor(
     private readonly o: {
@@ -279,6 +320,8 @@ export class Backend {
       requestDeadlineMs?: number;
       /** Limits of the snapshot copy (agent-controlled size): exceeding them is a 422. */
       copyLimits?: CopyLimits;
+      /** Test seam: the reparse attribute scan (M1-12). */
+      scanReparsePoints?: typeof scanReparsePoints;
       now?: () => number;
     },
   ) {
@@ -286,63 +329,76 @@ export class Backend {
   }
 
   async grant(g: BackendGrant, ttlMs: number): Promise<string> {
-    const canonical = await validatedDir(g.workspace);
-    const roots = await Promise.all(
-      this.o.approvedRoots.map((r) => validatedDir(r)),
-    );
-    if (!roots.some((r) => canonical.startsWith(r + SEPARATOR))) {
+    const id = g.executionId;
+    // Check and reserve with no await in between: two concurrent grants of
+    // one id cannot both pass, and a draining id stays unusable.
+    if (this.grants.has(id) || this.reserved.has(id)) {
       throw new ValidationError(
-        `grant refused: ${canonical} is outside the approved roots`,
-        [canonical],
+        `grant refused: execution ${id} is already granted`,
+        [id],
       );
     }
-    if (this.grants.has(g.executionId)) {
+    if (this.draining.has(id)) {
       throw new ValidationError(
-        `grant refused: execution ${g.executionId} is already granted`,
-        [g.executionId],
+        `grant refused: execution ${id} is still draining a request`,
+        [id],
       );
     }
-    if (this.draining.has(g.executionId)) {
-      throw new ValidationError(
-        `grant refused: execution ${g.executionId} is still draining a request`,
-        [g.executionId],
+    this.reserved.add(id);
+    try {
+      const canonical = await validatedDir(g.workspace);
+      const roots = await Promise.all(
+        this.o.approvedRoots.map((r) => validatedDir(r)),
       );
+      if (!roots.some((r) => canonical.startsWith(r + SEPARATOR))) {
+        throw new ValidationError(
+          `grant refused: ${canonical} is outside the approved roots`,
+          [canonical],
+        );
+      }
+      const token = [...crypto.getRandomValues(new Uint8Array(32))]
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+      this.grants.set(id, {
+        g: { ...g, workspace: canonical },
+        digest: await sha256(token),
+        expiresAt: this.now() + ttlMs,
+        inflight: null,
+        seq: 0,
+        rejections: 0,
+        canonical,
+        closing: false,
+        abort: new AbortController(),
+      });
+      return token;
+    } finally {
+      this.reserved.delete(id);
     }
-    const token = [...crypto.getRandomValues(new Uint8Array(32))]
-      .map((b) => b.toString(16).padStart(2, "0")).join("");
-    this.grants.set(g.executionId, {
-      g: { ...g, workspace: canonical },
-      digest: await sha256(token),
-      expiresAt: this.now() + ttlMs,
-      inflight: null,
-      seq: 0,
-      rejections: 0,
-      canonical,
-      closing: false,
-      abort: new AbortController(),
-    });
-    return token;
   }
 
   /**
    * Stop accepting requests at once, wait for the one in flight up to the
-   * grace, then abort it and wait once more. Returns whether it drained.
+   * grace, then abort it and wait once more. Returns whether it drained. The
+   * id is marked draining before its grant is removed, and stays so until
+   * the in-flight request settles.
    */
   async revoke(executionId: string): Promise<boolean> {
     const st = this.grants.get(executionId);
-    this.grants.delete(executionId);
     if (!st) return true;
     st.closing = true;
-    if (!st.inflight) return true;
-    const grace = this.o.revokeGraceMs ?? 30_000;
-    if (await drainedWithin(st.inflight, grace)) return true;
-    st.abort.abort(new Error("grant revoked"));
     const inflight = st.inflight;
-    if (await drainedWithin(inflight, grace)) return true;
-    // Not drained: the id stays unusable until that request settles.
-    this.draining.add(executionId);
-    void inflight.finally(() => this.draining.delete(executionId));
-    return false;
+    if (inflight) {
+      this.draining.add(executionId);
+      void inflight.finally(() => this.draining.delete(executionId));
+    }
+    this.grants.delete(executionId);
+    if (!inflight) return true;
+    const grace = this.o.revokeGraceMs ?? 30_000;
+    if (!await drainedWithin(inflight, grace)) {
+      st.abort.abort(new Error("grant revoked"));
+      if (!await drainedWithin(inflight, grace)) return false;
+    }
+    this.draining.delete(executionId);
+    return true;
   }
 
   private async append(g: BackendGrant, line: HostLogLine) {
@@ -395,14 +451,16 @@ export class Backend {
         message,
       }),
     );
-    return json(status, { error: message });
+    return this.reply(status, { error: message });
   }
 
   async handle(req: Request): Promise<Response> {
     const t0 = performance.now();
     const op = /^\/v1\/(compile|test|symbols)$/.exec(new URL(req.url).pathname)
       ?.[1];
-    if (req.method !== "POST" || !op) return json(404, { error: "not found" });
+    if (req.method !== "POST" || !op) {
+      return this.reply(404, { error: "not found" });
+    }
     const st = this.grants.get(req.headers.get("x-cg-execution") ?? "");
     const auth = req.headers.get("authorization") ?? "";
     const presented = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
@@ -411,11 +469,11 @@ export class Backend {
       st?.digest ?? NO_DIGEST,
     );
     if (!st || presented === "" || !same || this.now() > st.expiresAt) {
-      return json(401, { error: "unauthorized" });
+      return this.reply(401, { error: "unauthorized" });
     }
     // Admission is synchronous from here: no await between this check and setting inflight.
     if (st.closing || this.grants.get(st.g.executionId) !== st) {
-      return json(401, { error: "unauthorized" });
+      return this.reply(401, { error: "unauthorized" });
     }
     if (st.inflight) {
       return await this.reject(
@@ -493,7 +551,7 @@ export class Backend {
         st.g,
         this.line(st, op, 200, "ok", t0, { request: requestId }),
       );
-      return json(200, {
+      return this.reply(200, {
         request: requestId,
         backend_version: BACKEND_VERSION,
         ok: true,
@@ -537,7 +595,7 @@ export class Backend {
             spans: { snapshot_ms },
           }),
         );
-        return json(200, {
+        return this.reply(200, {
           request: requestId,
           backend_version: BACKEND_VERSION,
           ok: false,
@@ -591,7 +649,7 @@ export class Backend {
         spans: { snapshot_ms, ...(r.log.spans ?? {}) },
       });
       await this.append(st.g, line);
-      return json(200, {
+      return this.reply(200, {
         request: requestId,
         backend_version: BACKEND_VERSION,
         ok: r.log.outcome === "ok",
@@ -610,7 +668,7 @@ export class Backend {
             message,
           }),
         );
-        return json(422, {
+        return this.reply(422, {
           request: requestId,
           error:
             "workspace exceeds the snapshot limits (files, bytes, directories, entries or depth)",
@@ -631,7 +689,7 @@ export class Backend {
         console.error(`[FAIL] cg-al backend ${requestId}: ${message}`);
       }
       // The agent never sees host paths or internal error text; the host log keeps them.
-      return json(
+      return this.reply(
         infra ? 503 : 500,
         infra ? { request: requestId, infra: scrubHostPaths(message) } : {
           request: requestId,
@@ -644,17 +702,41 @@ export class Backend {
     }
   }
 
+  /**
+   * The same containment as freezeWorkspace (M1-12): one reparse attribute
+   * scan (bounded by the entry cap) before the copy, its hits refused, a
+   * reparse point above the workspace refused outright.
+   */
+  private async scannedCopy(st: GrantState, snapshot: string) {
+    const limits = this.o.copyLimits ?? DEFAULT_COPY_LIMITS;
+    const scan = await (this.o.scanReparsePoints ?? scanReparsePoints)(
+      st.canonical,
+      limits.maxEntries,
+    );
+    if (scan.ancestors.length > 0) {
+      throw new ValidationError(
+        `reparse point at or above the workspace: ${scan.ancestors.join(", ")}`,
+        scan.ancestors,
+      );
+    }
+    if (scan.capped) {
+      throw new CopyLimitError(
+        `${st.canonical}: more than ${limits.maxEntries} entries`,
+      );
+    }
+    return await safeCopyTree(st.canonical, snapshot, {
+      skip: isTaskBuildArtifact,
+      limits,
+      refuse: new Set(scan.entries),
+    });
+  }
+
   /** Pause the sandbox, copy, unpause (all bounded). A failed pause is infra: nothing is copied. */
   private async quiescentCopy(st: GrantState, snapshot: string) {
     const d = this.o.docker;
     const name = st.g.sandbox;
     const ms = this.o.opTimeoutMs ?? OP_TIMEOUT_MS;
-    if (!d || !name) {
-      return await safeCopyTree(st.canonical, snapshot, {
-        skip: isTaskBuildArtifact,
-        ...(this.o.copyLimits ? { limits: this.o.copyLimits } : {}),
-      });
-    }
+    if (!d || !name) return await this.scannedCopy(st, snapshot);
     if (await bounded(d.pause(name), ms, `docker pause ${name}`) !== 0) {
       throw new ContainerError(
         `docker pause ${name} failed: snapshot refused`,
@@ -664,10 +746,7 @@ export class Backend {
     }
     let copy;
     try {
-      copy = await safeCopyTree(st.canonical, snapshot, {
-        skip: isTaskBuildArtifact,
-        ...(this.o.copyLimits ? { limits: this.o.copyLimits } : {}),
-      });
+      copy = await this.scannedCopy(st, snapshot);
     } finally {
       const code = await bounded(d.unpause(name), ms, `docker unpause ${name}`)
         .catch((e) => String(e));

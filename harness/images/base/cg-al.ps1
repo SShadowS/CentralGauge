@@ -2,7 +2,15 @@
 # Usage: cg-al compile [App ...] | cg-al test [codeunit ...] | cg-al symbols | cg-al --version
 # The token is read from a file (never argv, never env). CG_BACKEND_URL and
 # CG_EXECUTION_ID are non-secret env vars set by the runner.
-# Exit codes: 0 ok, 1 compile/test failed or refused, 2 backend or infra error, 3 unauthorized, 64 usage.
+# Exit codes (by backend status):
+#   0  200 and ok
+#   1  the agent's fault: 200 not ok (compile/test failed, violations), or a
+#      request the agent caused to be refused: 400 (bad JSON, unknown app,
+#      non-runnable codeunit), 404, 413 (body too large), 422 (workspace over
+#      the limits), 429 (a second concurrent request)
+#   2  environment/infra: no response, 408, 5xx, backend token unavailable
+#   3  401 unauthorized
+#   64 usage
 param(
   [Parameter(Position = 0)][string]$Op,
   [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
@@ -64,4 +72,5 @@ Write-Output (ConvertTo-Json -InputObject $out -Compress -Depth 12)
 if ($status -eq 200 -and $result.ok) { exit 0 }
 if ($status -eq 200) { exit 1 }
 if ($status -eq 401) { exit 3 }
+if ($status -in @(400, 404, 413, 422, 429)) { exit 1 }
 exit 2

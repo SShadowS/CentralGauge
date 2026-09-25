@@ -31,6 +31,9 @@ import { appJson, IDS, write } from "./refapp-fixture.ts";
 const EXEC_A = "00000000-0000-4000-8000-00000000e001";
 const EXEC_B = "00000000-0000-4000-8000-00000000e002";
 const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+/** The real reparse scan (pwsh, about a second) is covered in fsutil.test.ts; here it is a no-op seam. */
+const NO_SCAN = () =>
+  Promise.resolve({ ancestors: [], entries: [], seen: 0, capped: false });
 
 interface Setup {
   root: string;
@@ -134,6 +137,7 @@ async function setup(): Promise<Setup> {
   const hostLog = join(root, "host-log.jsonl");
   const docker = new FakeDocker();
   const backend = new Backend({
+    scanReparsePoints: NO_SCAN,
     approvedRoots: [join(root, "work")],
     workRoot: join(root, "backend"),
     ops,
@@ -366,6 +370,7 @@ Deno.test("backend: a failed unpause is a 503 infra fault and stops the executio
     test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
   };
   const b = new Backend({
+    scanReparsePoints: NO_SCAN,
     approvedRoots: [join(root, "work")],
     workRoot: join(root, "backend"),
     ops,
@@ -401,6 +406,7 @@ Deno.test("production ops: a revoke past the grace cancels before any further BC
   bc.onCompile = () => gate;
   const exec = "00000000-0000-4000-8000-00000000e004";
   const b = new Backend({
+    scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
     workRoot: join(s.root, "backend4"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
@@ -430,6 +436,7 @@ Deno.test("production ops: a request past its deadline is refused before any pub
   bc.onCompile = () => new Promise((r) => setTimeout(r, 80));
   const exec = "00000000-0000-4000-8000-00000000e005";
   const b = new Backend({
+    scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
     workRoot: join(s.root, "backend5"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
@@ -538,7 +545,7 @@ Deno.test("backend: grant refuses roots outside the approved roots, link roots a
   const s = await setup();
   const outside = await tmp();
   const g = (workspace: string): BackendGrant => ({
-    executionId: EXEC_A,
+    executionId: "00000000-0000-4000-8000-00000000e009", // a fresh id: this test is about roots
     sandbox: null,
     workspace,
     pristine: workspace,
@@ -579,6 +586,7 @@ Deno.test("defaultBackendOps: a fixture-band codeunit is refused before any BC c
     cu === 80010 ? result({ A: true }) : result({ X: true })
   );
   const b = new Backend({
+    scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
     workRoot: join(s.root, "backend2"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
@@ -704,6 +712,7 @@ Deno.test("defaultBackendOps: discovery skips test codeunits without [Test] proc
     cu === 80010 ? result({ A: true }) : result({})
   );
   const b = new Backend({
+    scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
     workRoot: join(s.root, "backend6"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
@@ -741,6 +750,7 @@ Deno.test("backend: errors returned to the agent carry no host paths; an oversiz
   );
   s.failWith.err = null;
   const b = new Backend({
+    scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
     workRoot: join(s.root, "backend7"),
     ops: {
@@ -774,6 +784,7 @@ Deno.test("backend: a live or still-draining execution id cannot be granted agai
   );
   s.gate.wait = new Promise<void>(() => {});
   const b = new Backend({
+    scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
     workRoot: join(s.root, "backend8"),
     ops: {
@@ -837,3 +848,179 @@ Deno.test({
     }
   },
 });
+
+Deno.test("backend: the snapshot runs the reparse attribute scan; a scanned reparse entry is refused, not copied", async () => {
+  const s = await setup();
+  const seen: string[] = [];
+  const b = new Backend({
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend9"),
+    ops: {
+      compile: async (ctx) => {
+        seen.push(ctx.snapshot);
+        return {
+          body: {
+            present: await exists(join(ctx.snapshot, "Core", "src", "C.al")),
+          },
+          log: { outcome: "ok" },
+        };
+      },
+      test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
+    },
+    allowedHosts: ["127.0.0.1"],
+    docker: new FakeDocker(),
+    scanReparsePoints: () =>
+      Promise.resolve({
+        ancestors: [],
+        entries: ["Core/src/C.al"],
+        seen: 5,
+        capped: false,
+      }),
+  });
+  const exec = "00000000-0000-4000-8000-00000000e00a";
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hl9.jsonl"));
+  const body =
+    await (await b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec)))
+      .json();
+  assertEquals(body.present, false);
+  assertEquals(body.ignored_links, ["Core/src/C.al"]);
+});
+
+Deno.test("backend: a grant during an in-flight drain is refused; concurrent grants of one id admit exactly one", async () => {
+  const s = await setup();
+  s.gate.wait = new Promise<void>(() => {});
+  const first = s.backend.handle(
+    req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
+  );
+  await new Promise((r) => setTimeout(r, 20));
+  const revoking = s.backend.revoke(EXEC_A);
+  await assertRejects(
+    () => grantFor(s.backend, s.root, EXEC_A, s.hostLog),
+    ValidationError,
+  );
+  await revoking;
+  await first;
+  const exec = "00000000-0000-4000-8000-00000000e00b";
+  const both = await Promise.allSettled([
+    grantFor(s.backend, s.root, exec, join(s.root, "hlb.jsonl")),
+    grantFor(s.backend, s.root, exec, join(s.root, "hlb.jsonl")),
+  ]);
+  assertEquals(both.filter((x) => x.status === "fulfilled").length, 1);
+});
+
+Deno.test("backend: UNC paths, backend roots and host paths in any agent-facing body are scrubbed", async () => {
+  const s = await setup();
+  const leak = [
+    join(s.root, "backend10", "x", "C.al"),
+    join(s.root, "backend10", "x").replaceAll("\\", "/"),
+    "\\\\fileserver\\share\\secret\\x.al",
+    "C:/Users/someone/AppData/x.al",
+  ];
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend10"),
+    ops: {
+      compile: () =>
+        Promise.resolve({
+          body: {
+            apps: [{
+              app: "Core",
+              ok: false,
+              diagnostics: leak.map((m) => ({ message: `error at ${m}` })),
+            }],
+          },
+          log: { outcome: "failed" },
+        }),
+      test: () =>
+        Promise.resolve({
+          body: { messages: leak.map((m) => ({ message: m })) },
+          log: { outcome: "failed" },
+        }),
+    },
+    allowedHosts: ["127.0.0.1"],
+  });
+  const exec = "00000000-0000-4000-8000-00000000e00c";
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hlc.jsonl"));
+  for (const path of ["/v1/compile", "/v1/test"]) {
+    const text = await (await b.handle(
+      req(
+        path,
+        tok,
+        path === "/v1/compile" ? '{"apps":["Core"]}' : "{}",
+        exec,
+      ),
+    )).text();
+    for (const l of leak) {
+      assert(
+        !text.includes(l) &&
+          !text.includes(JSON.stringify(l).slice(1, -1)),
+        `${path}: ${l}`,
+      );
+    }
+    assertStringIncludes(text, "<host path>");
+  }
+});
+
+Deno.test(
+  "cg-al.ps1: exit code per response status (agent-caused 4xx are 1, infra is 2, 401 is 3)",
+  {
+    ignore: Deno.build.os !== "windows",
+  },
+  async () => {
+    let status = 200;
+    let body = '{"ok":true}';
+    const server = Deno.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      onListen: () => {},
+    }, () =>
+      new Response(body, {
+        status,
+        headers: { "content-type": "application/json" },
+      }));
+    const secrets = await tmp();
+    await Deno.writeTextFile(join(secrets, "backend-token"), "t".repeat(32));
+    try {
+      const cases: [number, string, number][] = [
+        [200, '{"ok":true}', 0],
+        [200, '{"ok":false}', 1],
+        [400, '{"error":"x"}', 1],
+        [413, '{"error":"x"}', 1],
+        [422, '{"error":"x"}', 1],
+        [429, '{"error":"x"}', 1],
+        [401, '{"error":"x"}', 3],
+        [408, '{"error":"x"}', 2],
+        [500, '{"error":"x"}', 2],
+        [503, '{"infra":"x"}', 2],
+      ];
+      for (const [s, b, want] of cases) {
+        status = s;
+        body = b;
+        const out = await new Deno.Command("powershell", {
+          args: [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "harness/images/base/cg-al.ps1",
+            "compile",
+            "Core",
+          ],
+          env: {
+            CG_BACKEND_URL: `http://127.0.0.1:${
+              (server.addr as Deno.NetAddr).port
+            }`,
+            CG_EXECUTION_ID: EXEC_A,
+            CG_SECRETS_DIR: secrets,
+          },
+          stdout: "piped",
+          stderr: "piped",
+        }).output();
+        assertEquals(out.code, want, `status ${s}`);
+      }
+    } finally {
+      await server.shutdown();
+    }
+  },
+);
