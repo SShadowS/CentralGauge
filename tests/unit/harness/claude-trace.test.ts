@@ -354,6 +354,177 @@ Deno.test("readTrace: v2 round trip; v1 upgraded; mixed versions refused", async
   await assertRejects(
     () => readTrace(join(dir, "mix.jsonl")),
     ValidationError,
-    "mix.jsonl:2",
+    "mix.jsonl:2: version 2 after 1",
+  );
+  await Deno.writeTextFile(
+    join(dir, "seq.jsonl"),
+    [t.events[1], t.events[0]].map((e) => JSON.stringify(e)).join("\n"),
+  );
+  await assertRejects(
+    () => readTrace(join(dir, "seq.jsonl")),
+    ValidationError,
+    "seq.jsonl:2: seq 1 does not follow 2",
+  );
+  await Deno.writeTextFile(
+    join(dir, "bad.jsonl"),
+    JSON.stringify({ ...t.events[0], agent: 5 }) + "\n",
+  );
+  await assertRejects(
+    () => readTrace(join(dir, "bad.jsonl")),
+    ValidationError,
+    "bad.jsonl:1: agent:",
+  );
+});
+
+Deno.test("claudeTrace: only backend calls are read as backend replies; the last reply line wins; request ids have the backend shape", () => {
+  const key = `sk-ant-oat01-${"K".repeat(40)}`;
+  const echoed = JSON.stringify({
+    op: "deploy",
+    status: 503,
+    result: { request: key },
+  });
+  const real = JSON.stringify({
+    op: "test",
+    client: { script_ms: 5, status: 200 },
+    result: { request: "br_9", ok: false, tests: [{ failure: "assertion" }] },
+  });
+  const t = claudeTrace(
+    [
+      rec(
+        asst("1", [
+          use("a", "Bash", { command: "cat log.jsonl; false" }),
+          use("b", "Read", { file_path: "C:\\x.json" }),
+          use("c", "Bash", { command: "cg-al test 80000" }),
+          use("d", "Bash", { command: "cg-al compile" }),
+          use("e", "mcp__al-tools__al_compile", {}),
+          use("f", "mcp__other__al_compile", {}),
+        ]),
+        1,
+      ),
+      rec(res("a", `Exit code 1\n${echoed}`, true), 2),
+      rec(res("b", `     1\t${echoed}`), 3),
+      rec(res("c", `Exit code 1\n${echoed}\n${real}`, true), 4),
+      rec(
+        res(
+          "d",
+          `Exit code 1\n${
+            JSON.stringify({
+              op: "compile",
+              client: { status: 200 },
+              result: {
+                request: key,
+                ok: false,
+                apps: [{ ok: false, diagnostics: [1] }],
+              },
+            })
+          }`,
+          true,
+        ),
+        5,
+      ),
+      rec(
+        res("e", [{
+          type: "text",
+          text: JSON.stringify(
+            { op: "compile", status: 400, result: { request: "br_2" } },
+            null,
+            2,
+          ),
+        }], true),
+        6,
+      ),
+      rec(
+        res("f", [{
+          type: "text",
+          text: JSON.stringify({ op: "compile", status: 503, result: {} }),
+        }], true),
+        7,
+      ),
+    ],
+    "f",
+    new Set(),
+  );
+  const by = (id: string) =>
+    t.events.find((x) => x.call_id === id && x.type === "tool_call")!;
+  assertEquals(
+    ["a", "b", "c", "d", "e", "f"].map((
+      id,
+    ) => [by(id).backend_request, by(id).error_class]),
+    [
+      [null, null],
+      [null, null],
+      ["br_9", "test_assertion"],
+      [null, "compile_diagnostics"],
+      ["br_2", "tool_protocol"],
+      [null, null],
+    ],
+  );
+  assertEquals(JSON.stringify(t.events).includes(key), false);
+});
+
+Deno.test("claudeTrace: status 0 and 401 are infra", () => {
+  const line = (status: number) =>
+    `Exit code 2\n${
+      JSON.stringify({
+        op: "compile",
+        client: { script_ms: 1, status },
+        result: { error: "x" },
+      })
+    }`;
+  const t = claudeTrace(
+    [
+      rec(
+        asst("1", [
+          use("a", "Bash", { command: "cg-al compile" }),
+          use("b", "Bash", { command: "cg-al compile" }),
+        ]),
+        1,
+      ),
+      rec(res("a", line(0), true), 2),
+      rec(res("b", line(401), true), 3),
+    ],
+    "f",
+    new Set(),
+  );
+  assertEquals(
+    t.events.filter((e) => e.type === "tool_call").map((e) => e.error_class),
+    ["infra", "infra"],
+  );
+});
+
+Deno.test("claudeTrace: a denied call without a result is not a lost result", () => {
+  const t = claudeTrace(
+    [
+      rec(asst("1", [use("a", "Write", { file_path: "C:\\x" })]), 1),
+      rec({ type: "result", subtype: "success", is_error: false }, 2),
+    ],
+    "f",
+    new Set(["a"]),
+  );
+  assertEquals(t.structural, []);
+  assertEquals(t.events.find((e) => e.type === "tool_call")!.outcome, "denied");
+});
+
+Deno.test("claudeTrace: target and skill are pattern-redacted before storage", () => {
+  const key = `sk-ant-oat01-${"K".repeat(40)}`;
+  const t = claudeTrace(
+    [
+      rec(
+        asst("1", [
+          use("a", "Read", { file_path: `C:\\${key}.txt` }),
+          use("b", "Skill", { skill: key }),
+        ]),
+        1,
+      ),
+      rec(res("a", "ok"), 2),
+      rec(res("b", "ok"), 3),
+    ],
+    "f",
+    new Set(),
+  );
+  assertEquals(JSON.stringify(t.events).includes(key), false);
+  assertEquals(
+    t.events.find((e) => e.tool === "Read")!.target,
+    "C:\\[REDACTED:anthropic-key].txt",
   );
 });
