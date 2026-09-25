@@ -419,3 +419,109 @@ Deno.test("coord: overview names the agent waiting for the owner", async () => {
   assertStringIncludes(text, "content");
   assertStringIncludes(text, "needs Cronus281 started");
 });
+
+Deno.test("coord: two roots sharing a machine root share leases and pause", async () => {
+  const base = await Deno.makeTempDir({ prefix: "coord-machine-" });
+  const a = join(base, "a");
+  const b = join(base, "b");
+  await initRoot(a, "project-a");
+  await initRoot(b, "project-b", { machineRoot: a });
+  await addTask(b, { id: "L-01", lane: "code", deps: [] }, "x");
+
+  const la = await lease(a, "Cronus281", "ops");
+  await assertRejects(() => lease(b, "Cronus281", "code"), CoordError, "held");
+  assertEquals((await pauseState(b)).leases.map((l) => l.container), [
+    "Cronus281",
+  ]);
+  await release(a, "Cronus281", la.token);
+  const lb = await lease(b, "Cronus281", "code");
+  assertEquals(
+    (await leaseHolder(a, "Cronus281"))?.lane,
+    "code",
+    "project A sees project B's lease",
+  );
+  await release(b, "Cronus281", lb.token);
+
+  await pause(a, "owner needs the machine");
+  await assertRejects(() => claim(b, "L-01", "code"), CoordError, "paused");
+  assertEquals((await pauseState(b)).paused, true);
+  await resume(b);
+  assertEquals((await pauseState(a)).paused, false);
+});
+
+Deno.test("coord: init refuses a machine root that does not exist", async () => {
+  const base = await Deno.makeTempDir({ prefix: "coord-machine-" });
+  await assertRejects(
+    () =>
+      initRoot(join(base, "b"), "b", { machineRoot: join(base, "missing") }),
+    CoordError,
+    "machine root",
+  );
+});
+
+Deno.test("coord: lease race across separate processes has one holder", async () => {
+  const root = await freshRoot();
+  const script = new URL("../../../scripts/coord/coord.ts", import.meta.url).pathname.replace(
+    /^\/([A-Za-z]:)/,
+    "$1",
+  );
+  const procs = Array.from(
+    { length: 6 },
+    (_, i) =>
+      new Deno.Command(Deno.execPath(), {
+        args: ["run", "--allow-all", script, "lease", "Cronus283", `lane${i}`],
+        env: { CG_COORD_ROOT: root },
+        stdout: "null",
+        stderr: "null",
+      }).output(),
+  );
+  const codes = (await Promise.all(procs)).map((o) => o.code);
+  assertEquals(codes.filter((c) => c === 0).length, 1, `exit codes: ${codes}`);
+});
+
+Deno.test("coord: allocation.json in the machine root limits leases per project, live", async () => {
+  const base = await Deno.makeTempDir({ prefix: "coord-alloc-" });
+  const a = join(base, "a");
+  const b = join(base, "b");
+  await initRoot(a, "project-a");
+  await initRoot(b, "project-b", { machineRoot: a });
+  // No allocation file: anyone may lease (backward compatible).
+  const free = await lease(b, "Cronus284", "code");
+  await release(b, "Cronus284", free.token);
+
+  await Deno.writeTextFile(
+    join(a, "allocation.json"),
+    JSON.stringify({
+      "project-a": ["Cronus281", "Cronus282"],
+      "project-b": ["Cronus28"],
+    }),
+  );
+  await assertRejects(
+    () => lease(b, "Cronus281", "code"),
+    CoordError,
+    "allocated to project-a",
+  );
+  await assertRejects(
+    () => lease(a, "Cronus28", "ops"),
+    CoordError,
+    "allocated to project-b",
+  );
+  await assertRejects(
+    () => lease(a, "Cronus284", "ops"),
+    CoordError,
+    "not allocated",
+  );
+  const ok = await lease(b, "Cronus28", "code");
+  await release(b, "Cronus28", ok.token);
+
+  // Editing the file takes effect on the next lease.
+  await Deno.writeTextFile(
+    join(a, "allocation.json"),
+    JSON.stringify({
+      "project-a": ["Cronus281", "Cronus282", "Cronus284"],
+      "project-b": ["Cronus28"],
+    }),
+  );
+  const now = await lease(a, "Cronus284", "ops");
+  assertEquals(now.attempt, "002");
+});

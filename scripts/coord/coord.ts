@@ -174,9 +174,16 @@ function stamp(now = new Date()): string {
 
 // ---------- root ----------
 
-export async function initRoot(root: string, campaign: string): Promise<void> {
+export async function initRoot(
+  root: string,
+  campaign: string,
+  opts: { machineRoot?: string | undefined } = {},
+): Promise<void> {
   if (await exists(join(root, "coord.json"))) {
     throw new CoordError(`root already initialized: ${root}`);
+  }
+  if (opts.machineRoot && !(await exists(opts.machineRoot))) {
+    throw new CoordError(`machine root does not exist: ${opts.machineRoot}`);
   }
   await Deno.mkdir(root, { recursive: true });
   for (const d of ["tasks", "leases", "questions", "decisions"]) {
@@ -185,8 +192,27 @@ export async function initRoot(root: string, campaign: string): Promise<void> {
   await writeExclusive(join(root, "coord.json"), {
     protocol: PROTOCOL,
     campaign,
+    ...(opts.machineRoot ? { machineRoot: opts.machineRoot } : {}),
     createdAt: new Date().toISOString(),
   });
+}
+
+/**
+ * Where container leases and the owner's pause live. Projects that share
+ * containers point `machineRoot` in coord.json at one folder, so a lease or a
+ * pause in one project is seen by all. Defaults to the root itself.
+ */
+function machineRoot(root: string): string {
+  try {
+    const meta = JSON.parse(
+      Deno.readTextFileSync(join(root, "coord.json")),
+    ) as {
+      machineRoot?: string;
+    };
+    return meta.machineRoot ?? root;
+  } catch {
+    return root;
+  }
 }
 
 async function openRoot(root: string): Promise<void> {
@@ -207,7 +233,10 @@ async function openRoot(root: string): Promise<void> {
 export async function pause(root: string, reason: string): Promise<void> {
   await openRoot(root);
   try {
-    await writeExclusive(join(root, "pause.json"), { reason, at: Date.now() });
+    await writeExclusive(join(machineRoot(root), "pause.json"), {
+      reason,
+      at: Date.now(),
+    });
   } catch (e) {
     if (e instanceof CoordError) throw new CoordError("already paused");
     throw e;
@@ -217,13 +246,13 @@ export async function pause(root: string, reason: string): Promise<void> {
 export async function resume(root: string): Promise<void> {
   await openRoot(root);
   if (!(await isPaused(root))) throw new CoordError("not paused");
-  await Deno.mkdir(join(root, "pauses"), { recursive: true });
+  await Deno.mkdir(join(machineRoot(root), "pauses"), { recursive: true });
   // Keep the pause as history; a missing pause.json means running.
   await withRetry(() =>
     Deno.rename(
-      join(root, "pause.json"),
+      join(machineRoot(root), "pause.json"),
       join(
-        root,
+        machineRoot(root),
         "pauses",
         `${stamp()}-${crypto.randomUUID().slice(0, 8)}.json`,
       ),
@@ -232,13 +261,45 @@ export async function resume(root: string): Promise<void> {
 }
 
 async function isPaused(root: string): Promise<boolean> {
-  return await exists(join(root, "pause.json"));
+  return await exists(join(machineRoot(root), "pause.json"));
 }
 
 async function refuseIfPaused(root: string, what: string): Promise<void> {
   if (await isPaused(root)) {
     throw new CoordError(`paused by the owner: no new ${what} until resume`);
   }
+}
+
+/**
+ * The owner's container allocation: `<machineRoot>/allocation.json` maps each project
+ * (its coord.json `campaign`) to the containers it may lease. No file means no limit.
+ * Read on every lease, so an edit takes effect immediately. A container listed for no
+ * project is refused to everyone until the owner allocates it.
+ */
+async function refuseIfNotAllocated(
+  root: string,
+  container: string,
+): Promise<void> {
+  const alloc = await readJson<Record<string, string[]>>(
+    join(machineRoot(root), "allocation.json"),
+  );
+  if (!alloc) return;
+  const campaign =
+    (await readJson<{ campaign: string }>(join(root, "coord.json")))
+      ?.campaign ?? "";
+  const mine = alloc[campaign] ?? [];
+  if (mine.includes(container)) return;
+  const owner = Object.entries(alloc).find(([, cs]) => cs.includes(container))
+    ?.[0];
+  throw new CoordError(
+    owner
+      ? `${container} is allocated to ${owner}, not ${campaign}; yours: ${
+        mine.join(", ") || "none"
+      }`
+      : `${container} is not allocated to any project; ask the owner (yours: ${
+        mine.join(", ") || "none"
+      })`,
+  );
 }
 
 export interface PauseState {
@@ -254,10 +315,10 @@ export interface PauseState {
 export async function pauseState(root: string): Promise<PauseState> {
   await openRoot(root);
   const rec = await readJson<{ reason: string; at: number }>(
-    join(root, "pause.json"),
+    join(machineRoot(root), "pause.json"),
   );
   const leases: PauseState["leases"] = [];
-  for (const c of await listDir(join(root, "leases"))) {
+  for (const c of await listDir(join(machineRoot(root), "leases"))) {
     const h = await leaseHolder(root, c);
     if (h) leases.push({ container: c, lane: h.lane });
   }
@@ -662,7 +723,7 @@ function leaseRoot(root: string, container: string): string {
   if (!NAME_RE.test(container)) {
     throw new CoordError(`bad container name: ${container}`);
   }
-  return join(root, "leases", container);
+  return join(machineRoot(root), "leases", container);
 }
 
 export async function leaseHolder(
@@ -696,17 +757,31 @@ export async function lease(
   await openRoot(root);
   await refuseIfPaused(root, "container leases");
   if (!NAME_RE.test(lane)) throw new CoordError(`bad lane: ${lane}`);
+  await refuseIfNotAllocated(root, container);
   const lr = leaseRoot(root, container);
   await Deno.mkdir(lr, { recursive: true });
-  const holder = await leaseHolder(root, container);
-  if (holder) {
-    throw new CoordError(
-      `${container} held by ${holder.lane} since ${
-        new Date(holder.at).toISOString()
-      }`,
-    );
-  }
+  // Holder check and next attempt number come from ONE listing. Listing twice let
+  // a racer that saw "free" pick N+1 after another process had just taken N, so
+  // both held the container. With one listing, racers only contend on mkdir N+1.
   const attempts = (await listDir(lr)).filter((a) => RUN_RE.test(a));
+  const prev = attempts[attempts.length - 1];
+  if (prev !== undefined) {
+    const rec = await readJson<{ lane: string; at: number }>(
+      join(lr, prev, "lease.json"),
+    );
+    if (!rec) {
+      throw new CoordError(
+        `lease ${container}/${prev} has no lease.json: unknown holder`,
+      );
+    }
+    if (!(await exists(join(lr, prev, "release.json")))) {
+      throw new CoordError(
+        `${container} held by ${rec.lane} since ${
+          new Date(rec.at).toISOString()
+        }`,
+      );
+    }
+  }
   const attempt = String(attempts.length + 1).padStart(3, "0");
   if (!(await mkdirExclusive(join(lr, attempt)))) {
     throw new CoordError(`${container} held (lost lease race)`);
@@ -812,7 +887,7 @@ export async function stale(
       );
     }
   }
-  for (const c of await listDir(join(root, "leases"))) {
+  for (const c of await listDir(join(machineRoot(root), "leases"))) {
     const h = await leaseHolder(root, c);
     if (!h) continue;
     const min = Math.floor((now - (h.hb ?? h.at)) / 60000);
@@ -893,7 +968,7 @@ export async function overview(
   const h = (t: string) => lines.push("", colors.bold(t));
 
   lines.push(
-    colors.bold(`Harness Bench: ${meta?.campaign ?? "?"}`) +
+    colors.bold(`${meta?.campaign ?? "?"}`) +
       `   ${new Date(now).toISOString().slice(0, 16)}Z`,
   );
   if (ps.paused) {
@@ -1024,7 +1099,7 @@ export async function overview(
   lines.push(...waiting);
 
   h(`Container leases (${ps.leases.length})`);
-  for (const c of await listDir(join(root, "leases"))) {
+  for (const c of await listDir(join(machineRoot(root), "leases"))) {
     const l = await leaseHolder(root, c);
     if (l) {
       lines.push(
@@ -1093,7 +1168,17 @@ function arg(rest: string[], i: number): string {
 async function main(args: string[]): Promise<number> {
   const a = parseArgs(args, {
     // "_" keeps positionals as strings: run id "001" must not become 1
-    string: ["_", "lane", "wait", "note", "task", "from", "campaign", "watch"],
+    string: [
+      "_",
+      "lane",
+      "wait",
+      "note",
+      "task",
+      "from",
+      "campaign",
+      "watch",
+      "machine-root",
+    ],
     boolean: ["json"],
   });
   const [cmd, ...rest] = a._.map(String);
@@ -1102,7 +1187,9 @@ async function main(args: string[]): Promise<number> {
   const out = (v: unknown) => console.log(JSON.stringify(v, null, 2));
   switch (cmd) {
     case "init":
-      await initRoot(root, a.campaign ?? "harness-bench");
+      await initRoot(root, a.campaign ?? "campaign", {
+        machineRoot: a["machine-root"],
+      });
       out({ ok: true, root });
       return 0;
     case "add": {
@@ -1224,6 +1311,38 @@ async function main(args: string[]): Promise<number> {
         await new Promise((r) => setTimeout(r, watch * 1000));
       }
     }
+    case "import-gh": {
+      // Owner or orchestrator only: seeds task.md files from open GitHub issues.
+      const { planImport, fetchOpenIssues } = await import("./import-gh.ts");
+      const plan = planImport(
+        await fetchOpenIssues(arg(rest, 0)),
+        a.lane ?? "code",
+      );
+      const existing = new Set((await status(root)).map((t) => t.id));
+      const added: string[] = [];
+      const present: string[] = [];
+      for (const t of plan.tasks) {
+        if (existing.has(t.header.id)) {
+          present.push(t.header.id);
+          continue;
+        }
+        await addTask(root, t.header, t.body);
+        added.push(t.header.id);
+      }
+      const msPath = join(root, "milestones.json");
+      const ms = (await readJson<Record<string, unknown>>(msPath)) ?? {};
+      for (const [k, v] of Object.entries(plan.milestones)) {
+        ms[k] ??= { title: v.title, issue: v.issue };
+      }
+      await writeReplace(msPath, ms);
+      out({
+        added,
+        alreadyPresent: present,
+        skipped: plan.skipped,
+        milestones: Object.keys(plan.milestones),
+      });
+      return 0;
+    }
     case "stale":
       console.log((await stale(root)).join("\n") || "(nothing stale)");
       return 0;
@@ -1234,7 +1353,7 @@ async function main(args: string[]): Promise<number> {
     }
     default:
       console.error(
-        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|doctor|pause|resume|pause-state|overview [--watch N]> ...",
+        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|doctor|pause|resume|pause-state|overview [--watch N]|import-gh <owner/repo> [--lane L]> ...",
       );
       return 2;
   }

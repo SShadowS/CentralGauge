@@ -635,3 +635,195 @@ export function buildTestScript(
       ${buildRunTestsScript(containerName, extensionId, testCodeunitId)}
     `;
 }
+
+/** Harness Bench: every CentralGauge app with its installed state (verified in M1-27). */
+/** Container names as Docker allows them; anything else never reaches a script. */
+function harnessContainerName(name: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) {
+    throw new Error(
+      `refusing an unsafe container name: ${JSON.stringify(name)}`,
+    );
+  }
+  return name;
+}
+
+export function buildListHarnessAppsScript(containerName: string): string {
+  const cn = harnessContainerName(containerName);
+  return `
+      ${bcchImport()}
+      ${bcchConfigInit()}
+      try {
+        $cgRows = Invoke-ScriptInBcContainer -containerName '${cn}' -scriptblock {
+          Get-NAVAppInfo -ServerInstance BC -Tenant default -TenantSpecificProperties |
+            Where-Object { $_.Publisher -eq "CentralGauge" } |
+            ForEach-Object {
+              "CG_APP:" + (@{ id = "$($_.AppId)"; name = $_.Name; publisher = $_.Publisher; version = "$($_.Version)"; installed = [bool]$_.IsInstalled } | ConvertTo-Json -Compress)
+            }
+        }
+        $cgRows | ForEach-Object { Write-Output $_ }
+        Write-Output "CG_APPS_DONE"
+      } catch {
+        Write-Output "CG_APPS_FAILED:$($_.Exception.Message)"
+      }
+    `;
+}
+
+/**
+ * The in-container removal scriptblock body (param($ids, $allow)): fail
+ * closed. Per app, immediately before any mutation: publisher CentralGauge,
+ * id on the trusted allowlist, name matching its allowlist regex. Then
+ * uninstall (no saved data) if installed, verify it is no longer installed,
+ * clean its schema, unpublish (tenant scope, then global), verify it is
+ * gone. No step's error is suppressed: any failure prints
+ * SYNC_REMOVE_FAILED:<id> <step> <message> and stops the block. The one
+ * retry: an uninstall that fails in a pass is retried in the next pass (a
+ * dependent listed later goes first); a pass with no progress fails.
+ * Exported so unit tests run it in pwsh against stubbed cmdlets.
+ */
+export function buildHarnessRemoveBlock(): string {
+  return `
+            param([string[]]$ids, [hashtable]$allow)
+            function Remove-CgApp($id, $app) {
+              if ($app.Publisher -ne 'CentralGauge' -or -not $allow.ContainsKey($id) -or "$($app.Name)" -cnotmatch $allow[$id]) {
+                return "failed check publisher=$($app.Publisher) name=$($app.Name)"
+              }
+              $st = @(Get-NAVAppInfo -ServerInstance BC -Id $id -Version $app.Version -Tenant default -TenantSpecificProperties)
+              if (@($st | Where-Object { $_.IsInstalled }).Count -gt 0) {
+                try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -DoNotSaveData -ErrorAction Stop }
+                catch { return "retry uninstall $($_.Exception.Message)" }
+              }
+              $st = @(Get-NAVAppInfo -ServerInstance BC -Id $id -Version $app.Version -Tenant default -TenantSpecificProperties)
+              if (@($st | Where-Object { $_.IsInstalled }).Count -gt 0) { return "failed verify-uninstalled still installed" }
+              try { Sync-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Mode Clean -Force -ErrorAction Stop }
+              catch { return "failed clean $($_.Exception.Message)" }
+              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -ErrorAction Stop }
+              catch {
+                $tenantError = $_.Exception.Message
+                try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -ErrorAction Stop }
+                catch { return "failed unpublish tenant: $tenantError; global: $($_.Exception.Message)" }
+              }
+              if (@(Get-NAVAppInfo -ServerInstance BC -Id $id -Version $app.Version).Count -gt 0) { return "failed verify-gone still published" }
+              return "ok"
+            }
+            $pending = @($ids)
+            for ($cgPass = 1; $cgPass -le $ids.Count; $cgPass++) {
+              $next = @()
+              $why = @{}
+              foreach ($id in $pending) {
+                foreach ($app in @(Get-NAVAppInfo -ServerInstance BC -Id $id)) {
+                  $r = Remove-CgApp $id $app
+                  if ($r -eq 'ok') { Write-Output "SYNC_REMOVE:$id v$($app.Version)" }
+                  elseif ($r -like 'retry *') { $next += $id; $why[$id] = $r.Substring(6); break }
+                  else { Write-Output "SYNC_REMOVE_FAILED:$id $($r.Substring(7))"; return }
+                }
+              }
+              if ($next.Count -eq 0) { return }
+              if ($next.Count -eq $pending.Count) {
+                foreach ($id in $next) { Write-Output "SYNC_REMOVE_FAILED:$id $($why[$id])" }
+                return
+              }
+              $pending = $next
+            }
+            foreach ($id in $pending) { Write-Output "SYNC_REMOVE_FAILED:$id passes exhausted" }
+`;
+}
+
+/**
+ * Harness Bench app sync in ONE warm-slot script (bc-container-quirks.md):
+ * a read-only pre-check of every removal id (publisher, trusted allowlist,
+ * name), then the fail-closed removal block (buildHarnessRemoveBlock), then
+ * publish of the given files in order with ForceSync + install. Removal is
+ * scoped to trusted ids only, unlike buildPrepareCandidateScript, whose
+ * filter removes the refapp dependencies. Any removal failure exits 1 before
+ * a publish.
+ * ponytail: the dev-endpoint credential block duplicates
+ * buildPrepareCandidateScript; extract a shared helper when a third caller
+ * appears.
+ *
+ * Markers: SYNC_REMOVE:<id> v<ver>, SYNC_REMOVE_REFUSED:<id> <why>,
+ * SYNC_REMOVE_FAILED:<id> <step> <msg>, SYNC_PUBLISH_MS:<i>:<stopwatch ms>,
+ * SYNC_PUBLISH_FAILED:<i>:<msg>, SYNC_DONE.
+ */
+export function buildSyncHarnessAppsScript(
+  containerName: string,
+  removeIds: string[],
+  appFiles: string[],
+  credentials: ContainerCredentials = { username: "admin", password: "admin" },
+  /** Trusted allowlist: app id to the regex its name must match (trustedHarnessAppIds). */
+  allow: ReadonlyMap<string, string> = new Map(),
+): string {
+  const cn = harnessContainerName(containerName);
+  const useDevEndpoint =
+    Deno.env.get("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH") !== "0";
+  const credentialSetup = useDevEndpoint
+    ? `      $cgPubPassword = ConvertTo-SecureString '${
+      escapeForPS(credentials.password)
+    }' -AsPlainText -Force
+      $cgPubCredential = New-Object PSCredential('${
+      escapeForPS(credentials.username)
+    }', $cgPubPassword)
+`
+    : "";
+  const flag = useDevEndpoint
+    ? " -useDevEndpoint -credential $cgPubCredential"
+    : "";
+  const list = (xs: string[]) =>
+    xs.length === 0
+      ? "@()"
+      : `@(${xs.map((x) => `'${escapeForPS(x)}'`).join(", ")})`;
+  const table = `@{ ${
+    [...allow].map(([id, re]) => `'${escapeForPS(id)}' = '${escapeForPS(re)}'`)
+      .join("; ")
+  } }`;
+  return `
+      ${bcchImport()}
+      ${bcchConfigInit()}
+${credentialSetup}
+      $cgRemoveIds = ${list(removeIds)}
+      $cgAllow = ${table}
+      if ($cgRemoveIds.Count -gt 0) {
+        # Read-only pre-check, before anything is uninstalled: a foreign or
+        # unexpected app sharing an id refuses the whole sync, untouched.
+        try {
+          $cgCheck = Invoke-ScriptInBcContainer -containerName '${cn}' -scriptblock {
+            param([string[]]$ids, [hashtable]$allow)
+            foreach ($id in $ids) {
+              if (-not $allow.ContainsKey($id)) { Write-Output "SYNC_REMOVE_REFUSED:$id not on the removal allowlist"; continue }
+              foreach ($app in @(Get-NAVAppInfo -ServerInstance BC -Id $id)) {
+                if ($app.Publisher -ne 'CentralGauge' -or "$($app.Name)" -cnotmatch $allow[$id]) {
+                  Write-Output "SYNC_REMOVE_REFUSED:$id publisher=$($app.Publisher) name=$($app.Name)"
+                }
+              }
+            }
+          } -argumentList $cgRemoveIds, $cgAllow
+        } catch {
+          $cgCheck = @("SYNC_REMOVE_REFUSED:check $($_.Exception.Message)")
+        }
+        $cgCheck | ForEach-Object { Write-Output $_ }
+        if (@($cgCheck | Where-Object { "$_" -like 'SYNC_REMOVE_REFUSED:*' }).Count -gt 0) { exit 1 }
+        try {
+          $cgReport = Invoke-ScriptInBcContainer -containerName '${cn}' -scriptblock {
+${buildHarnessRemoveBlock()}
+          } -argumentList $cgRemoveIds, $cgAllow
+        } catch {
+          $cgReport = @("SYNC_REMOVE_FAILED:invoke $($_.Exception.Message)")
+        }
+        $cgReport | ForEach-Object { Write-Output $_ }
+        # A contaminated container is never published onto.
+        if (@($cgReport | Where-Object { "$_" -like 'SYNC_REMOVE_FAILED:*' }).Count -gt 0) { exit 1 }
+      }
+      $cgFiles = ${list(appFiles)}
+      for ($i = 0; $i -lt $cgFiles.Count; $i++) {
+        $cgSw = [Diagnostics.Stopwatch]::StartNew()
+        try {
+          Publish-BcContainerApp -containerName '${cn}' -appFile $cgFiles[$i] -skipVerification -sync -syncMode ForceSync -install${flag} -ErrorAction Stop
+          Write-Output "SYNC_PUBLISH_MS:$($i):$($cgSw.ElapsedMilliseconds)"
+        } catch {
+          Write-Output "SYNC_PUBLISH_MS:$($i):$($cgSw.ElapsedMilliseconds)"
+          Write-Output "SYNC_PUBLISH_FAILED:$($i):$(($_.Exception.Message) -replace '\\s+', ' ')"
+          exit 1
+        }
+      }
+      Write-Output "SYNC_DONE"
+    `;
+}
