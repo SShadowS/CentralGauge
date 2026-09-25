@@ -7,8 +7,8 @@
 import { parseArgs } from "@std/cli/parse-args";
 import {
   altoolReader,
-  buildSymbolsLock,
   defaultAltool,
+  lockMicrosoftSymbols,
   writeSymbolsLock,
 } from "../../src/harness/symbols.ts";
 
@@ -19,12 +19,20 @@ if (!a.from || !a.store) {
   );
   Deno.exit(64);
 }
-const lock = await buildSymbolsLock(
+const { lock, excluded } = await lockMicrosoftSymbols(
   a.from,
   a.store,
   altoolReader(a.altool ?? defaultAltool(a.from)),
 );
 await writeSymbolsLock(Deno.cwd(), lock);
 console.log(
-  `[OK] ${lock.packages.length} symbol packages locked; store ${a.store}`,
+  `[OK] ${lock.packages.length} Microsoft symbol packages locked; store ${a.store}`,
 );
+if (excluded.length > 0) {
+  console.log(
+    `[WARN] ${excluded.length} non-Microsoft apps excluded (not locked):`,
+  );
+  for (const e of excluded) {
+    console.log(`  ${e.publisher} / ${e.name}  (${e.file})`);
+  }
+}

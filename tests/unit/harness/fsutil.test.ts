@@ -671,3 +671,48 @@ Deno.test("freezeWorkspace: a workspace over maxEntries is refused", async () =>
   assertStringIncludes(f.violations.join(" | "), "size limit");
   assert(!await exists(join(results, f.stored_path, "f0.al")));
 });
+
+Deno.test("safeCopyTree: a swap is refused even when the filesystem reports the same ino", async () => {
+  // NTFS file ids above 2^53 lose their low bits as JS numbers, so two live
+  // files can report one ino (seen: a.al and other.txt both 0xfb0000002b5930).
+  const src = await tmp();
+  await writeTree(src, { "a.al": "original", "other.txt": "other" });
+  const same = Number(0xfb0000002b5930n);
+  const realLstat = Deno.lstat;
+  const realOpen = Deno.open;
+  const set = (name: string, value: unknown) =>
+    Object.defineProperty(Deno, name, {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  set(
+    "lstat",
+    async (p: string | URL) => ({ ...(await realLstat(p)), ino: same }),
+  );
+  set("open", async (p: string | URL, o?: Deno.OpenOptions) => {
+    const f = await realOpen(p, o);
+    const stat = f.stat.bind(f);
+    Object.defineProperty(f, "stat", {
+      value: async () => ({ ...(await stat()), ino: same }),
+    });
+    return f;
+  });
+  try {
+    await assertRejects(
+      async () =>
+        safeCopyTree(src, join(await tmp(), "out"), {
+          beforeOpen: async (rel) => {
+            if (rel !== "a.al") return;
+            await Deno.remove(join(src, "a.al"));
+            await Deno.rename(join(src, "other.txt"), join(src, "a.al"));
+          },
+        }),
+      ValidationError,
+      "changed identity",
+    );
+  } finally {
+    set("lstat", realLstat);
+    set("open", realOpen);
+  }
+});

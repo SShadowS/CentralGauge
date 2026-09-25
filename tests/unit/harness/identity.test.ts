@@ -6,6 +6,7 @@ import {
   agentVisibleMetadata,
   loadSymbolsLock,
   resolveRefapp,
+  SymbolsLockSchema,
   taskSetIdentity,
 } from "../../../src/harness/identity.ts";
 import { listTree } from "../../../src/harness/hash.ts";
@@ -361,5 +362,42 @@ Deno.test("resolveRefapp: a large tree does not deadlock on the cat-file pipes",
     assertEquals(ref.files.filter((f) => f.sha256 === one).length, n);
   } finally {
     clearTimeout(timer);
+  }
+});
+
+Deno.test("SymbolsLockSchema: app ids follow BC's GUID shape, not RFC 4122", () => {
+  // Real Microsoft apps whose ids fail z.uuid() (M1-26, 2026-09-25).
+  const ids = [
+    "5a0b41e9-7a42-4123-d521-2265186cfb31", // Contoso Coffee Demo Dataset
+    "a2cc2ef8-949f-43d4-45b8-10bd6f8bc62c", // API Reports - Finance
+    "a53a4bb0-aa53-8ff8-77d6-fe3388db0eb8", // Recommended Apps
+  ];
+  const pkg = (app_id: string, i: number) => ({
+    app_id,
+    name: `App ${i}`,
+    publisher: "Microsoft",
+    version: "28.0.0.0",
+    file: `App${i}.app`,
+    sha256: "0".repeat(64),
+  });
+  const ok = SymbolsLockSchema.safeParse({ v: 1, packages: ids.map(pkg) });
+  assertEquals(ok.success, true, JSON.stringify(ok.error?.issues));
+  const upper = SymbolsLockSchema.safeParse({
+    v: 1,
+    packages: [pkg(ids[0]!, 0), pkg(ids[0]!.toUpperCase(), 1)],
+  });
+  assertEquals(upper.success, false, "duplicates stay case-insensitive");
+  for (
+    const bad of [
+      "5a0b41e9-7a42-4123-d521-2265186cfb3",
+      "not-a-guid",
+      "5a0b41e97a424123d5212265186cfb31",
+    ]
+  ) {
+    assertEquals(
+      SymbolsLockSchema.safeParse({ v: 1, packages: [pkg(bad, 0)] }).success,
+      false,
+      bad,
+    );
   }
 });
