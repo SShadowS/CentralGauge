@@ -40,6 +40,17 @@ export const MISSING_FEATURE_CODES = new Set([
   "AL0504",
 ]);
 
+/**
+ * A baseline oracle compile that failed only because the task's feature is
+ * missing. The container compile appends the generic "AL0000 App generation
+ * failed" after the real errors: it is ignored next to other codes, never
+ * alone (ruling q-20260925T202113-dd17c1ea).
+ */
+export function missingFeatureOnly(codes: string[]): boolean {
+  const real = codes.filter((c) => c !== "AL0000");
+  return real.length > 0 && real.every((c) => MISSING_FEATURE_CODES.has(c));
+}
+
 export type Variant =
   | { kind: "baseline" }
   | { kind: "correct" }
@@ -458,8 +469,7 @@ export function decideGate(
       (s) =>
         built(s) && allPass(s.p2p) &&
         (s.oracle === "compile_fail"
-          ? s.oracleCodes.length > 0 &&
-            s.oracleCodes.every((c) => MISSING_FEATURE_CODES.has(c))
+          ? missingFeatureOnly(s.oracleCodes)
           : s.oracle === "ok" && s.f2p !== null && complete(s.f2p) &&
             !allPass(s.f2p)),
       "baseline must build, pass pass_to_pass and fail fail_to_pass",

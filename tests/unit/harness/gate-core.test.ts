@@ -206,6 +206,21 @@ const F2P_BAD: Array<[string, (r: GateRun[]) => void, string]> = [
   ["baseline oracle compile with an unexpected diagnostic is refused", (r) => {
     r[0]!.summary = S({ oracle: "compile_fail", oracleCodes: ["AL0001"] });
   }, "baseline#1"],
+  // Ruling q-20260925T202113-dd17c1ea: AL0000 is only ignored next to
+  // missing-feature codes; alone or with any other code it stays a failure.
+  ["baseline oracle compile with only AL0000 is refused", (r) => {
+    r[0]!.summary = S({ oracle: "compile_fail", oracleCodes: ["AL0000"] });
+  }, "baseline#1"],
+  [
+    "baseline oracle compile with AL0000 and an unexpected diagnostic is refused",
+    (r) => {
+      r[0]!.summary = S({
+        oracle: "compile_fail",
+        oracleCodes: ["AL0118", "AL0001", "AL0000"],
+      });
+    },
+    "baseline#1",
+  ],
   ["infra run is refused", (r) => {
     r[1]!.summary = S({ oracle: "publish_fail", infra: true });
   }, "infra"],
@@ -247,6 +262,21 @@ Deno.test("decideGate: baseline oracle failing on missing objects only is accept
     oracleCodes: ["AL0118", "AL0132"],
   });
   assertEquals(decideGate(F2P, planF2P, runs).promoted, true);
+});
+
+Deno.test("decideGate: the compiler's AL0000 trailer next to missing-feature codes is accepted", () => {
+  // The container compile appends "AL0000 App generation failed" after the
+  // real errors (HX-004 and HX-005 baselines, ruling q-20260925T202113-dd17c1ea).
+  for (
+    const codes of [
+      ["AL0132", "AL0132", "AL0118", "AL0118", "AL0000"],
+      ["AL0185", "AL0504", "AL0185", "AL0000"],
+    ]
+  ) {
+    const runs = f2pRuns();
+    runs[0]!.summary = S({ oracle: "compile_fail", oracleCodes: codes });
+    assertEquals(decideGate(F2P, planF2P, runs).promoted, true, codes.join());
+  }
 });
 
 Deno.test("decideGate: test-authoring", () => {
