@@ -132,10 +132,11 @@ export async function writeSymbolsLock(
   );
 }
 
-// ponytail: verified once per process; the store is operator-owned.
-const verified = new Set<string>();
-
-/** Copy locked packages from the store into dst, verifying each digest once. */
+/**
+ * Copy locked packages from the store into dst. The COPY is hashed and
+ * compared with the lock, every time: what the compiler sees is what was
+ * verified, whatever happens to the store between stagings.
+ */
 export async function restoreSymbols(
   store: string,
   packages: SymbolPackage[],
@@ -144,15 +145,20 @@ export async function restoreSymbols(
   await Deno.mkdir(dst, { recursive: true });
   for (const p of packages) {
     const src = join(store, `${p.sha256}.app`);
-    if (!verified.has(src)) {
-      if (!await exists(src) || await hashFile(store, src) !== p.sha256) {
-        throw new ValidationError(
-          `symbol store entry ${src} does not match the lock (${p.file})`,
-          [p.file],
-        );
-      }
-      verified.add(src);
+    const copy = join(dst, p.file);
+    if (!await exists(src)) {
+      throw new ValidationError(
+        `symbol store entry ${src} is missing (${p.file})`,
+        [p.file],
+      );
     }
-    await Deno.copyFile(src, join(dst, p.file));
+    await Deno.copyFile(src, copy);
+    if (await hashFile(dst, copy) !== p.sha256) {
+      await Deno.remove(copy).catch(() => {});
+      throw new ValidationError(
+        `symbol store entry ${src} does not match the lock (${p.file})`,
+        [p.file],
+      );
+    }
   }
 }

@@ -203,16 +203,40 @@ async function deleteTarget(
 export async function applyOverlay(
   overlayDir: string,
   target: string,
-  opts: { exclude?: (rel: string) => boolean } = {},
+  opts: {
+    exclude?: (rel: string) => boolean;
+    /** Paths the overlay may neither write nor delete (shipped tests). */
+    protect?: (rel: string) => boolean;
+  } = {},
 ): Promise<void> {
   if (!await exists(overlayDir)) return;
   const root = await validatedDir(target);
   // 1. Hostile copy into fresh private scratch (the strict new-or-empty API is unchanged).
   const tmp = await Deno.makeTempDir({ prefix: "cg-overlay-" });
   try {
+    const artifacts: string[] = [];
+    const guarded: string[] = [];
     const r = await safeCopyTree(overlayDir, join(tmp, "o"), {
-      skip: (rel) => rel === DELETE_LIST || (opts.exclude?.(rel) ?? false),
+      skip: (rel) => {
+        // The visible-input hash excludes build artifacts, so an overlay may
+        // not stage one (refused, not skipped); case-insensitive.
+        if (isTaskBuildArtifact(rel.toLowerCase())) artifacts.push(rel);
+        else if (opts.protect?.(rel)) guarded.push(rel);
+        return rel === DELETE_LIST || (opts.exclude?.(rel) ?? false);
+      },
     });
+    if (artifacts.length > 0) {
+      throw new ValidationError(
+        `build artifacts in ${overlayDir}: ${artifacts.join(", ")}`,
+        artifacts,
+      );
+    }
+    if (guarded.length > 0) {
+      throw new ValidationError(
+        `overlay writes a shipped test path: ${guarded.join(", ")}`,
+        guarded,
+      );
+    }
     if (r.refused.length + r.ambiguous.length > 0) {
       const bad = [...r.refused, ...r.ambiguous];
       throw new ValidationError(
@@ -270,6 +294,12 @@ export async function applyOverlay(
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;
     const segs = deleteSegments(list, line);
+    if (opts.protect?.(segs.join("/"))) {
+      throw new ValidationError(
+        `${list}: .delete entry removes a shipped test path: ${line}`,
+        [line],
+      );
+    }
     // A wrong-case spelling of an excluded path is not excluded here, and
     // deleteTarget then refuses it as a case alias.
     if (opts.exclude?.(segs.join("/"))) continue;
@@ -313,18 +343,54 @@ async function run(cmd: string, args: string[], cwd?: string): Promise<void> {
   }
 }
 
+/** Pinned absolute tar: bsdtar from System32 on Windows, never a PATH lookup. */
+export const TAR_BINARY = Deno.build.os === "windows"
+  ? "C:\\Windows\\System32\\tar.exe"
+  : "/usr/bin/tar";
+
+/** The shipped test app folder: an overlay may neither write nor delete in it. */
+const isShippedTestPath = (rel: string) => {
+  const l = rel.toLowerCase();
+  return l === "test" || l.startsWith("test/");
+};
+
+const STAGE_CHILDREN = [
+  "workspace",
+  "pristine",
+  "task",
+  "refapp-extract",
+  "refapp.tar",
+];
+
 export async function stageRefappTask(
   o: StageOptions,
 ): Promise<StagedWorkspace> {
   const out = await validatedDest(o.out);
-  const made = ["workspace", "pristine", "task", "refapp-extract", "refapp.tar"]
-    .map((n) => join(out, n));
+  // Refuse to start over existing content; remove only what this call created.
+  const created: string[] = [];
+  for (const name of STAGE_CHILDREN) {
+    const p = join(out, name);
+    const st = await Deno.lstat(p).catch(() => null);
+    if (!st) {
+      created.push(p);
+      continue;
+    }
+    let empty = st.isDirectory && !st.isSymlink;
+    if (empty) {
+      for await (const _ of Deno.readDir(p)) {
+        empty = false;
+        break;
+      }
+    }
+    if (!empty) {
+      throw new ValidationError(`staging output already exists: ${p}`, [p]);
+    }
+  }
   try {
     return await stageInto(o, out);
   } catch (err) {
-    // A failed staging leaves nothing behind, so a retry into `out` works.
-    for (const m of made) {
-      await Deno.remove(m, { recursive: true }).catch(() => {});
+    for (const p of created) {
+      await Deno.remove(p, { recursive: true }).catch(() => {});
     }
     throw err;
   }
@@ -353,9 +419,12 @@ async function stageInto(
     o.refapp.commit,
     REFAPP_PATH,
   ], o.repoRoot);
-  // Relative archive path from inside the extract dir: GNU tar (Git Bash's,
-  // often first on PATH) reads "C:\..." as a remote host:path.
-  await run("tar", ["-xf", "../refapp.tar", "--strip-components=2"], extract);
+  // Relative archive path from inside the extract dir: any tar reads it the same.
+  await run(
+    TAR_BINARY,
+    ["-xf", "../refapp.tar", "--strip-components=2"],
+    extract,
+  );
   await safeCopyTree(extract, workspace, { skip: isTaskBuildArtifact });
   await Deno.remove(extract, { recursive: true });
   await Deno.remove(tar);
@@ -366,8 +435,11 @@ async function stageInto(
       [o.refapp.commit],
     );
   }
-  // 2. Task overlay (injected bug, stub, removed feature).
-  await applyOverlay(join(o.task.dir, "overlay"), workspace);
+  // 2. Task overlay (injected bug, stub, removed feature); shipped tests are
+  //    out of its reach.
+  await applyOverlay(join(o.task.dir, "overlay"), workspace, {
+    protect: isShippedTestPath,
+  });
   // 3. Pre-seeded symbols, verified against the lock.
   await restoreSymbols(
     o.symbolStore,
@@ -388,7 +460,17 @@ async function stageInto(
     join(taskDir, "task.json"),
     JSON.stringify(agentVisibleMetadata(t), null, 2) + "\n",
   );
+  // 5. pristine = the staged workspace after the overlay; its shipped tests
+  //    must be byte-identical to the commit's.
   await safeCopyTree(workspace, pristine);
+  const shipped = (es: { path: string }[]) =>
+    JSON.stringify(es.filter((e) => isShippedTestPath(e.path)));
+  if (shipped(await listTree(pristine, "task")) !== shipped(o.refapp.files)) {
+    throw new ValidationError(
+      `staged shipped tests differ from ${o.refapp.version} (${o.refapp.commit})`,
+      [o.refapp.commit],
+    );
+  }
   return { workspace, pristine, taskDir, apps: await readAppGraph(workspace) };
 }
 

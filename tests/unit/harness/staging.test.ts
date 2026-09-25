@@ -4,7 +4,7 @@ import {
   assertRejects,
   assertStringIncludes,
 } from "@std/assert";
-import { join } from "@std/path";
+import { isAbsolute, join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
 import { exists } from "../../../src/harness/fsutil.ts";
 import { hashFile } from "../../../src/harness/hash.ts";
@@ -17,6 +17,7 @@ import {
   applyOverlay,
   readAppGraph,
   stageRefappTask,
+  TAR_BINARY,
   TASK_SOURCES,
 } from "../../../src/harness/staging.ts";
 import {
@@ -326,4 +327,85 @@ Deno.test("readAppGraph: two apps with the same id are refused", async () => {
     appJson(IDS.rental.toUpperCase(), "CGR Rental 2", [70300, 70399], []),
   );
   await assertRejects(() => readAppGraph(ws), ValidationError, "same app id");
+});
+
+Deno.test("stageRefappTask: overlay entries the visible hash excludes are refused", async () => {
+  for (
+    const rel of [".alpackages/extra.app", "Rental/Output/x.al", "Rental/x.APP"]
+  ) {
+    const repo = await makeRefappRepo();
+    await write(repo.tasksDir, `HX-001/overlay/${rel}`, "bin");
+    await assertRejects(
+      () => stage(repo),
+      ValidationError,
+      "build artifact",
+      rel,
+    );
+  }
+});
+
+Deno.test("stageRefappTask: an overlay may not write or delete anything under Test/", async () => {
+  const edits: [string, string][] = [
+    ["HX-001/overlay/Test/src/Shipped.Test.al", "codeunit 80010 X {}"],
+    ["HX-001/overlay/.delete", "Test/src/Shipped.Test.al\n"],
+    ["HX-001/overlay/test/src/New.Test.al", "codeunit 80011 Y {}"],
+  ];
+  for (const [rel, text] of edits) {
+    const repo = await makeRefappRepo();
+    await write(repo.tasksDir, rel, text);
+    await assertRejects(
+      () => stage(repo),
+      ValidationError,
+      "shipped test",
+      rel,
+    );
+  }
+  const repo = await makeRefappRepo();
+  const { staged } = await stage(repo);
+  assertStringIncludes(
+    await Deno.readTextFile(
+      join(staged.pristine, "Test", "src", "Shipped.Test.al"),
+    ),
+    "procedure ShippedPasses()",
+  );
+});
+
+Deno.test("stageRefappTask: symbols are verified on the copy, every staging", async () => {
+  const repo = await makeRefappRepo();
+  await stage(repo);
+  await Deno.writeTextFile(
+    join(repo.symbolStore, `${repo.symbols[0]!.sha256}.app`),
+    "swapped",
+  );
+  await assertRejects(() => stage(repo), ValidationError, "does not match");
+});
+
+Deno.test("stageRefappTask: pre-existing content in out is never deleted", async () => {
+  const repo = await makeRefappRepo();
+  const out = join(await Deno.realPath(await Deno.makeTempDir()), "stage");
+  await write(out, "workspace/keep.al", "mine");
+  await assertRejects(
+    async () =>
+      stageRefappTask({
+        repoRoot: repo.root,
+        task: await loadTask(join(repo.tasksDir, "HX-001")),
+        refapp: await resolveRefapp(repo.root, "refapp-v1"),
+        symbols: repo.symbols,
+        symbolStore: repo.symbolStore,
+        out,
+      }),
+    ValidationError,
+    "already exists",
+  );
+  assertEquals(
+    await Deno.readTextFile(join(out, "workspace", "keep.al")),
+    "mine",
+  );
+});
+
+Deno.test("TAR_BINARY is an absolute, pinned path", () => {
+  assert(isAbsolute(TAR_BINARY), TAR_BINARY);
+  if (Deno.build.os === "windows") {
+    assertEquals(TAR_BINARY.toLowerCase(), "c:\\windows\\system32\\tar.exe");
+  }
 });
