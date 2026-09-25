@@ -8,6 +8,7 @@ import {
 import { join } from "@std/path";
 import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
 import {
+  buildHarnessCleanBlock,
   buildHarnessRemoveBlock,
   buildListHarnessAppsScript,
   buildSyncHarnessAppsScript,
@@ -437,4 +438,164 @@ Deno.test("buildSyncHarnessAppsScript: owned apps to publish are cleaned by name
   assert(clean > 0 && clean < s.indexOf("Publish-BcContainerApp"));
   assertStringIncludes(s, "'CGR Core'");
   assertStringIncludes(s, "SYNC_CLEAN:");
+});
+
+// ---- The clean block (M1-15a), executed in local pwsh against stubbed BC cmdlets ----
+
+interface CleanApp {
+  AppId: string;
+  Name: string;
+  Publisher: string;
+  Version: string;
+}
+
+const CLEAN_STUBS = `
+function Get-NAVAppInfo { param($ServerInstance, $Id, $Name, $Publisher, $Tenant, [switch]$TenantSpecificProperties)
+  $src = if ($Tenant) { $global:tenantApps } else { $global:published }
+  @($src | Where-Object {
+    (-not $Id -or $_.AppId -eq $Id) -and (-not $Name -or $_.Name -eq $Name) -and (-not $Publisher -or $_.Publisher -eq $Publisher)
+  }) }
+function Sync-NAVApp { param($ServerInstance, $Tenant, $Name, $Publisher, $Version, $Mode, [switch]$Force)
+  $global:syncCalls += "$Name|$Mode"
+  if ($global:cleanThrows) { throw 'clean boom' } }
+`;
+
+async function runClean(
+  published: CleanApp[],
+  tenantApps: CleanApp[],
+  items: { id: string; name: string }[],
+  allow: Record<string, string>,
+  cleanThrows = false,
+): Promise<string> {
+  const dir = await Deno.makeTempDir();
+  const ps = (s: string) => `'${s.replaceAll("'", "''")}'`;
+  const apps = (xs: CleanApp[]) =>
+    `@(${
+      xs.map((a) =>
+        `[pscustomobject]@{ AppId = ${ps(a.AppId)}; Name = ${
+          ps(a.Name)
+        }; Publisher = ${ps(a.Publisher)}; Version = ${ps(a.Version)} }`
+      ).join(", ")
+    })`;
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$global:published = ${apps(published)}`,
+    `$global:tenantApps = ${apps(tenantApps)}`,
+    `$global:cleanThrows = $${cleanThrows}`,
+    "$global:syncCalls = @()",
+    CLEAN_STUBS,
+    `$sb = [scriptblock]::Create(${ps(buildHarnessCleanBlock())})`,
+    `& $sb @(${
+      items.map((i) => `@{ id = ${ps(i.id)}; name = ${ps(i.name)} }`).join(", ")
+    }) @{ ${
+      Object.entries(allow).map(([k, v]) => `${ps(k)} = ${ps(v)}`).join("; ")
+    } }`,
+    `Write-Output ("SYNC_CALLS:" + ($global:syncCalls -join ","))`,
+  ].join("\n");
+  await Deno.writeTextFile(join(dir, "t.ps1"), script);
+  const out = await new Deno.Command("pwsh", {
+    args: ["-NoProfile", "-NonInteractive", "-File", join(dir, "t.ps1")],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  return new TextDecoder().decode(out.stdout) +
+    new TextDecoder().decode(out.stderr);
+}
+
+const FOREIGN_ID = "00000000-0000-4000-8000-00000000f0f0";
+const CLEAN_ALLOW = { [IDS.core]: "^CGR Core$" };
+const CORE_ITEM = [{ id: IDS.core, name: "CGR Core" }];
+
+Deno.test({
+  name:
+    "clean block: an app with the same name and publisher but another id is refused; nothing is cleaned",
+  ignore: !isWindows,
+  async fn() {
+    const foreign = {
+      AppId: FOREIGN_ID,
+      Name: "CGR Core",
+      Publisher: "CentralGauge",
+      Version: "9.0.0.0",
+    };
+    for (const [pub, ten] of [[[], [foreign]], [[foreign], []]] as const) {
+      const out = await runClean([...pub], [...ten], CORE_ITEM, CLEAN_ALLOW);
+      assertStringIncludes(out, `SYNC_CLEAN_REFUSED:${IDS.core}`);
+      assert(!out.includes("|Clean"), "nothing is cleaned");
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "clean block: skipped while an app with that name and publisher is published; cleans otherwise",
+  ignore: !isWindows,
+  async fn() {
+    const ours = {
+      AppId: IDS.core,
+      Name: "CGR Core",
+      Publisher: "CentralGauge",
+      Version: "1.0.5.5",
+    };
+    const skipped = await runClean([ours], [ours], CORE_ITEM, CLEAN_ALLOW);
+    assert(
+      !skipped.includes("SYNC_CLEAN:") &&
+        !skipped.includes("SYNC_CLEAN_FAILED"),
+      skipped,
+    );
+    assert(!skipped.includes("|Clean"), "no clean while published");
+    const cleaned = await runClean([], [], CORE_ITEM, CLEAN_ALLOW);
+    assertStringIncludes(cleaned, `SYNC_CLEAN:${IDS.core}`);
+    assertStringIncludes(cleaned, "SYNC_CALLS:CGR Core|Clean");
+  },
+});
+
+Deno.test({
+  name:
+    "clean block: a clean error is SYNC_CLEAN_FAILED (fatal), never a warning",
+  ignore: !isWindows,
+  async fn() {
+    const out = await runClean([], [], CORE_ITEM, CLEAN_ALLOW, true);
+    assertStringIncludes(out, `SYNC_CLEAN_FAILED:${IDS.core}`);
+    assert(!out.includes("SYNC_CLEAN_WARN"));
+  },
+});
+
+Deno.test("buildSyncHarnessAppsScript: a failed or refused clean stops the script before any publish", () => {
+  const s = buildSyncHarnessAppsScript(
+    "Cronus281",
+    [],
+    ["C:/a.app"],
+    undefined,
+    new Map([[IDS.core, "^CGR Core$"]]),
+    [
+      { id: IDS.core, name: "CGR Core" },
+    ],
+  );
+  const guard = s.indexOf("'SYNC_CLEAN_FAILED:*'");
+  assert(
+    guard > 0 &&
+      s.indexOf("exit 1", guard) < s.indexOf("Publish-BcContainerApp"),
+  );
+});
+
+Deno.test({
+  name:
+    "syncHarnessApps: a failed clean is a thrown container failure, not a completed sync",
+  ignore: !isWindows,
+  async fn() {
+    const { provider } = await stubbed(
+      `SYNC_CLEAN_FAILED:${IDS.core} clean boom\n`,
+    );
+    await assertRejects(
+      () =>
+        provider.syncHarnessApps("Cronus281", {
+          removeIds: [],
+          publish: [],
+          allow: new Map([[IDS.core, "^CGR Core$"]]),
+          clean: [{ id: IDS.core, name: "CGR Core" }],
+        }),
+      ContainerError,
+      "incomplete",
+    );
+  },
 });

@@ -446,9 +446,13 @@ export function parseHarnessSyncOutput(
     let m: RegExpExecArray | null;
     if ((m = /^SYNC_REMOVE:(\S+)/.exec(line))) {
       r.removed.push(m[1]!.toLowerCase());
-    } else if ((m = /^SYNC_(?:REMOVE|CLEAN)_WARN:(.*)$/.exec(line))) {
+    } else if ((m = /^SYNC_REMOVE_WARN:(.*)$/.exec(line))) {
       r.warnings.push(m[1]!);
-    } else if ((m = /^SYNC_REMOVE_(?:INCOMPLETE|FAILED):(.*)$/.exec(line))) {
+    } else if (
+      (m = /^SYNC_(?:REMOVE_INCOMPLETE|REMOVE_FAILED|CLEAN_FAILED):(.*)$/.exec(
+        line,
+      ))
+    ) {
       r.removeIncomplete.push(m[1]!);
     } else if ((m = /^SYNC_PUBLISH_MS:(\d+):(\d+)$/.exec(line))) {
       r.published.push({ index: Number(m[1]), ms: Number(m[2]) });

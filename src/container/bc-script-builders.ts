@@ -669,6 +669,46 @@ export function buildListHarnessAppsScript(containerName: string): string {
 }
 
 /**
+ * The in-container clean scriptblock body (param($items, $allow)) for owned
+ * apps about to be published whose tenant data may be kept at a higher
+ * version (M1-15a). Sync-NAVApp -Name -Publisher selects by name and
+ * publisher, so the guard does too: every app with that name and publisher,
+ * published or known to the tenant, must carry the owned id (else
+ * SYNC_CLEAN_REFUSED); if one is published the clean is skipped (the removal
+ * path owns it). Any clean error is SYNC_CLEAN_FAILED: no "nothing to clean"
+ * form is allowed until one is observed on a real container.
+ * Exported so unit tests run it in pwsh against stubbed cmdlets.
+ */
+export function buildHarnessCleanBlock(): string {
+  return `
+            param($items, [hashtable]$allow)
+            foreach ($it in $items) {
+              $id = "$($it.id)"
+              $name = "$($it.name)"
+              if (-not $allow.ContainsKey($id) -or $name -cnotmatch $allow[$id]) {
+                Write-Output "SYNC_CLEAN_REFUSED:$id $name not on the removal allowlist"
+                return
+              }
+              $published = @(Get-NAVAppInfo -ServerInstance BC -Name $name -Publisher 'CentralGauge')
+              $known = @(Get-NAVAppInfo -ServerInstance BC -Tenant default -TenantSpecificProperties -Name $name -Publisher 'CentralGauge')
+              $foreign = @(@($published) + @($known) | Where-Object { "$($_.AppId)" -ne $id })
+              if ($foreign.Count -gt 0) {
+                Write-Output "SYNC_CLEAN_REFUSED:$id another app ($($foreign[0].AppId)) has the name $name"
+                return
+              }
+              if ($published.Count -gt 0) { continue }
+              try {
+                Sync-NAVApp -ServerInstance BC -Tenant default -Name $name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop
+                Write-Output "SYNC_CLEAN:$id"
+              } catch {
+                Write-Output "SYNC_CLEAN_FAILED:$id $($_.Exception.Message)"
+                return
+              }
+            }
+`;
+}
+
+/**
  * The in-container removal scriptblock body (param($ids, $allow)): fail
  * closed. Per app, immediately before any mutation: publisher CentralGauge,
  * id on the trusted allowlist, name matching its allowlist regex. Then
@@ -829,29 +869,14 @@ ${buildHarnessRemoveBlock()}
         # A published app is left to the removal path above.
         try {
           $cgCleanOut = Invoke-ScriptInBcContainer -containerName '${cn}' -scriptblock {
-            param($items, [hashtable]$allow)
-            foreach ($it in $items) {
-              $id = "$($it.id)"
-              $name = "$($it.name)"
-              if (-not $allow.ContainsKey($id) -or $name -cnotmatch $allow[$id]) {
-                Write-Output "SYNC_CLEAN_REFUSED:$id $name not on the removal allowlist"
-                continue
-              }
-              if (@(Get-NAVAppInfo -ServerInstance BC -Id $id).Count -gt 0) { continue }
-              try {
-                Sync-NAVApp -ServerInstance BC -Tenant default -Name $name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop
-                Write-Output "SYNC_CLEAN:$id"
-              } catch {
-                # Nothing to clean is not an error; a real problem surfaces at the publish below.
-                Write-Output "SYNC_CLEAN_WARN:$id $($_.Exception.Message)"
-              }
-            }
+${buildHarnessCleanBlock()}
           } -argumentList $cgClean, $cgAllow
         } catch {
-          $cgCleanOut = @("SYNC_CLEAN_WARN:invoke $($_.Exception.Message)")
+          $cgCleanOut = @("SYNC_CLEAN_FAILED:invoke $($_.Exception.Message)")
         }
         $cgCleanOut | ForEach-Object { Write-Output $_ }
-        if (@($cgCleanOut | Where-Object { "$_" -like 'SYNC_CLEAN_REFUSED:*' }).Count -gt 0) { exit 1 }
+        # A refused or failed clean is fatal: nothing is published.
+        if (@($cgCleanOut | Where-Object { "$_" -like 'SYNC_CLEAN_REFUSED:*' -or "$_" -like 'SYNC_CLEAN_FAILED:*' }).Count -gt 0) { exit 1 }
       }
       $cgFiles = ${list(appFiles)}
       for ($i = 0; $i -lt $cgFiles.Count; $i++) {
