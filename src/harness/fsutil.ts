@@ -184,7 +184,6 @@ export async function safeCopyTree(
   opts: CopyOptions = {},
 ): Promise<CopyReport & { src: string; dst: string }> {
   const limits = opts.limits ?? DEFAULT_COPY_LIMITS;
-  const list = opts.listDir ?? listNames;
   const root = await validatedDir(src);
   const out = await validatedDest(dst);
   for await (const _ of Deno.readDir(out)) {
@@ -216,12 +215,19 @@ export async function safeCopyTree(
     if (depth > limits.maxDepth) {
       throw new CopyLimitError(`${root}: deeper than ${limits.maxDepth}`);
     }
-    const names = await list(dirAbs);
-    entries += names.length;
-    if (entries > limits.maxEntries) {
-      throw new CopyLimitError(
-        `${root}: more than ${limits.maxEntries} entries`,
-      );
+    const tooMany = () =>
+      new CopyLimitError(`${root}: more than ${limits.maxEntries} entries`);
+    let names: string[] = [];
+    if (opts.listDir) {
+      names = await opts.listDir(dirAbs);
+      entries += names.length;
+      if (entries > limits.maxEntries) throw tooMany();
+    } else {
+      // Counted while reading: a huge directory is refused before it is buffered.
+      for await (const e of Deno.readDir(dirAbs)) {
+        if (++entries > limits.maxEntries) throw tooMany();
+        names.push(e.name);
+      }
     }
     await opts.afterList?.(rel);
     const colliding = collidingNames(names);
@@ -545,35 +551,52 @@ export interface ReparseScan {
   ancestors: string[];
   /** Reparse points inside the root, relative with "/". */
   entries: string[];
+  /** Entries enumerated; stops at maxEntries + 1. */
+  seen: number;
+  /** True when the scan stopped at the entry cap: the tree is refused. */
+  capped: boolean;
 }
 
+// One line per finding, emitted while enumerating; the enumeration stops the
+// moment the running count exceeds the cap, so work never grows past it.
 const REPARSE_SCAN_PS = `
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$max = [int64]$env:CG_SCAN_MAX
 $item = Get-Item -LiteralPath $env:CG_SCAN_ROOT -Force
-$anc = @()
+"R $($item.FullName)"
 $p = $item
 while ($p) {
-  if ($p.Attributes -band [IO.FileAttributes]::ReparsePoint) { $anc += $p.FullName }
+  if ($p.Attributes -band [IO.FileAttributes]::ReparsePoint) { "A $($p.FullName)" }
   $p = $p.Parent
 }
-$ents = @(Get-ChildItem -LiteralPath $item.FullName -Recurse -Force -Attributes ReparsePoint |
-  ForEach-Object { $_.FullName })
-@{ root = $item.FullName; ancestors = $anc; entries = $ents } | ConvertTo-Json -Compress
+$n = 0
+Get-ChildItem -LiteralPath $item.FullName -Recurse -Force | ForEach-Object {
+  $n++
+  if ($n -gt $max) { "CAP $n"; exit 0 }
+  if ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) { "E $($_.FullName)" }
+}
+"N $n"
 `;
 
 /**
  * One FILE_ATTRIBUTE_REPARSE_POINT scan of a tree and its ancestors (Windows).
  * The attribute, not the tag, decides: non-redirecting tags that realPath
  * resolves to themselves are caught here; isSymlink and realPath stay as the
- * second layer. Any scan failure is an error (fail closed). Elsewhere symlinks
- * are the only link kind and lstat catches them, so the scan is empty.
+ * second layer. The scan stops once more than maxEntries entries are seen.
+ * Any scan failure is an error (fail closed). Elsewhere symlinks are the only
+ * link kind and lstat catches them, so the scan is empty.
  */
-export async function scanReparsePoints(root: string): Promise<ReparseScan> {
-  if (Deno.build.os !== "windows") return { ancestors: [], entries: [] };
+export async function scanReparsePoints(
+  root: string,
+  maxEntries: number = DEFAULT_COPY_LIMITS.maxEntries,
+): Promise<ReparseScan> {
+  if (Deno.build.os !== "windows") {
+    return { ancestors: [], entries: [], seen: 0, capped: false };
+  }
   const out = await new Deno.Command("pwsh", {
     args: ["-NoProfile", "-NonInteractive", "-Command", REPARSE_SCAN_PS],
-    env: { CG_SCAN_ROOT: root },
+    env: { CG_SCAN_ROOT: root, CG_SCAN_MAX: String(maxEntries) },
     stdin: "null",
     stdout: "piped",
     stderr: "piped",
@@ -583,26 +606,39 @@ export async function scanReparsePoints(root: string): Promise<ReparseScan> {
       new TextDecoder().decode(out.stderr).trim(),
     ]);
   }
-  const j = JSON.parse(new TextDecoder().decode(out.stdout)) as {
-    root: string;
-    ancestors: string[] | string | null;
-    entries: string[] | string | null;
+  const s: ReparseScan = {
+    ancestors: [],
+    entries: [],
+    seen: -1,
+    capped: false,
   };
-  const list = (v: string[] | string | null) =>
-    ([] as string[]).concat(v ?? []);
-  const prefix = j.root.replace(/\\$/, "") + "\\";
-  return {
-    ancestors: list(j.ancestors),
-    entries: list(j.entries).map((e) => {
-      if (!e.startsWith(prefix)) {
+  let prefix = "";
+  for (const line of new TextDecoder().decode(out.stdout).split(/\r?\n/)) {
+    const [tag, rest] = [
+      line.slice(0, line.indexOf(" ")),
+      line.slice(line.indexOf(" ") + 1),
+    ];
+    if (tag === "R") prefix = rest.replace(/\\$/, "") + "\\";
+    else if (tag === "A") s.ancestors.push(rest);
+    else if (tag === "E") {
+      if (!prefix || !rest.startsWith(prefix)) {
         throw new ValidationError(
           `reparse scan returned a path outside ${root}`,
-          [e],
+          [rest],
         );
       }
-      return e.slice(prefix.length).replaceAll("\\", "/");
-    }),
-  };
+      s.entries.push(rest.slice(prefix.length).replaceAll("\\", "/"));
+    } else if (tag === "N" || tag === "CAP") {
+      s.seen = Number(rest);
+      s.capped = tag === "CAP";
+    }
+  }
+  if (!prefix || s.seen < 0) {
+    throw new ValidationError(`reparse point scan gave no result: ${root}`, [
+      root,
+    ]);
+  }
+  return s;
 }
 
 async function freezeInner(i: FreezeInput): Promise<Frozen> {
@@ -616,7 +652,7 @@ async function freezeInner(i: FreezeInput): Promise<Frozen> {
   try {
     const violations: string[] = [];
     const ws = await validatedDir(i.workspace);
-    const scan = await scanReparsePoints(ws);
+    const scan = await scanReparsePoints(ws, limits.maxEntries);
     if (scan.ancestors.length > 0) {
       throw new ValidationError(
         `reparse point at or above the workspace: ${scan.ancestors.join(", ")}`,
@@ -624,6 +660,11 @@ async function freezeInner(i: FreezeInput): Promise<Frozen> {
       );
     }
     try {
+      if (scan.capped) {
+        throw new CopyLimitError(
+          `${ws}: more than ${limits.maxEntries} entries`,
+        );
+      }
       const r = await safeCopyTree(ws, scratch, {
         skip: isTaskBuildArtifact,
         limits,

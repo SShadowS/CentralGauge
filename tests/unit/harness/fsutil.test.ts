@@ -9,6 +9,7 @@ import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
 import {
   CopyLimitError,
+  DEFAULT_COPY_LIMITS,
   exists,
   FREEZE_VIOLATIONS_FILE,
   freezeWorkspace,
@@ -598,4 +599,75 @@ Deno.test("safeCopyTree: entries in the refuse set are refused whatever lstat sa
   });
   assertEquals([r.refused, r.files], [["Core/plain.al"], 1]);
   assert(!await exists(join(dst, "Core", "plain.al")));
+});
+
+Deno.test("safeCopyTree: maxEntries is enforced while a directory is being read", async () => {
+  const src = await tmp();
+  await writeTree(
+    src,
+    Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`f${i}.al`, "x"])),
+  );
+  let listed = 0;
+  const realReadDir = Deno.readDir;
+  const setReadDir = (value: typeof Deno.readDir) =>
+    Object.defineProperty(Deno, "readDir", {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  setReadDir((path: string | URL) => {
+    const it = realReadDir(path);
+    return (async function* () {
+      for await (const e of it) {
+        listed++;
+        yield e;
+      }
+    })();
+  });
+  try {
+    await assertRejects(
+      async () =>
+        safeCopyTree(src, join(await tmp(), "out"), {
+          limits: { ...DEFAULT_COPY_LIMITS, maxEntries: 10 },
+        }),
+      CopyLimitError,
+      "entries",
+    );
+  } finally {
+    setReadDir(realReadDir);
+  }
+  // The destination emptiness check reads nothing; the source read stops at the cap.
+  assertEquals(listed, 11);
+});
+
+Deno.test({
+  name: "scanReparsePoints: the scan stops at the entry cap (Windows)",
+  ignore: !windows,
+  fn: async () => {
+    const root = await tmp();
+    await writeTree(
+      root,
+      Object.fromEntries(
+        Array.from({ length: 50 }, (_, i) => [`d/f${i}.al`, "x"]),
+      ),
+    );
+    const s = await scanReparsePoints(root, 10);
+    assertEquals([s.capped, s.seen], [true, 11]);
+    const all = await scanReparsePoints(root, 100);
+    assertEquals([all.capped, all.seen], [false, 51]);
+  },
+});
+
+Deno.test("freezeWorkspace: a workspace over maxEntries is refused", async () => {
+  const results = await tmp();
+  const ws = await tmp();
+  await writeTree(
+    ws,
+    Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`f${i}.al`, "x"])),
+  );
+  const f = await freeze(results, ws, {
+    limits: { ...DEFAULT_COPY_LIMITS, maxEntries: 10 },
+  });
+  assertStringIncludes(f.violations.join(" | "), "size limit");
+  assert(!await exists(join(results, f.stored_path, "f0.al")));
 });
