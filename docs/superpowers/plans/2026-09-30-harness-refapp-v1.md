@@ -2628,7 +2628,7 @@ Kill mapping (each naive loses at least one assertion; runtime errors elsewhere 
 
 These are predicted kills until M4-03 records them. `MultipleOpenDamagesOnReturn` also kills a symptom patch that sets `Blocked := true; "Open Damages" := 1` before the stale `Modify` (round-2 review section 2).
 
-The last oracle row is a hidden regression row: it passes on the baseline (Decisions: kept, baseline outcomes recorded).
+Five oracle rows pass on the baseline (DamagedReturnReleasesVehicle, DamagedReturnRecordsDamage, DamagedReturnCompletesContract, RepairAfterDamagedReturnReleasesVehicle, ReturnWithoutDamageReleasesVehicle, per lane-content trace 2026-09-25): they are hidden regression rows. The other four measure the fix. The baseline suite as a whole must fail; M4-03 records the per-procedure baseline outcome (Decisions: kept, baseline outcomes recorded).
 
 - [ ] **Step 6: Host compile every variant (M4-01c)**
 
