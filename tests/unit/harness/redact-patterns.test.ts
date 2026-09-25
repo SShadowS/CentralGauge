@@ -63,3 +63,32 @@ Deno.test("redactPatterns: the M0-04 probe fixture has no false positives", asyn
   const r = redactPatterns(data);
   assertEquals([r.count, r.out], [0, data]);
 });
+
+Deno.test("redactPatternText: Bearer does not reach across a line break", () => {
+  const prose = "the Bearer\nauthenticationhandlerxx class";
+  assertEquals(redactPatternText(prose), { text: prose, count: 0 });
+  assertEquals(
+    redactPatternText(`Bearer\t${A}`).text,
+    "Bearer\t[REDACTED:bearer]",
+  );
+});
+
+Deno.test("redactPatterns: odd-offset UTF-16LE, non-ASCII neighbours, bytes outside the match unchanged", () => {
+  const odd = new Uint8Array([0x41, ...u16(`k sk-ant-oat01-${A}`)]);
+  assertEquals(
+    new TextDecoder("utf-16le").decode(redactPatterns(odd).out.subarray(1)),
+    "k [REDACTED:anthropic-key]",
+  );
+  const mixed = u16(`é sk-ant-oat01-${A} æ`);
+  assertEquals(
+    new TextDecoder("utf-16le").decode(redactPatterns(mixed).out),
+    "é [REDACTED:anthropic-key] æ",
+  );
+  const bin = new Uint8Array(4096).map((_, i) => (i * 37) & 0xff);
+  const key = enc.encode(`sk-ant-oat01-${A}`);
+  const data = new Uint8Array([...bin, ...key, ...bin]);
+  const r = redactPatterns(data);
+  assertEquals(r.count, 1);
+  assertEquals(r.out.subarray(0, 4096), bin);
+  assertEquals(r.out.subarray(r.out.length - 4096), bin);
+});
