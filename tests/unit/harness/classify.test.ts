@@ -132,3 +132,46 @@ Deno.test("classify: builtins, pi tools, skill reads, classifier ids", () => {
   assertEquals(c("mcp__x__build").classifier, "mcp-token.build@1");
   assertEquals(CATEGORIES.length, 10);
 });
+
+Deno.test("classify: review findings, never a guess (substitution, bare &, escaped quotes, hidden actions)", () => {
+  for (
+    const cmd of [
+      "cat $(python evil.py)",
+      "ls `python evil.py`",
+      "ls & python x.py",
+      'cmd /c "cg-al test & rm a.al"',
+      'Write-Output "`"; rm a.al"',
+      'echo "\\"; rm a.al"',
+      "find . -name '*.al' -delete",
+      "find . -exec rm {} ;",
+      "env python x.py",
+    ]
+  ) {
+    assertEquals(c("Bash", cmd).category, "unclassified", cmd);
+  }
+  for (
+    const tool of [
+      "mcp__x__get_build_logs",
+      "mcp__x__list_tests",
+      "mcp__x__delete_test",
+      "mcp__playwright__browser_run_code_test",
+    ]
+  ) {
+    assertEquals(c(tool).category, "unclassified", tool);
+  }
+});
+
+Deno.test("classify: review findings, redirects and subshells", () => {
+  const cases: [string, string][] = [
+    ['cat a.al > "out file.al"', "edit"],
+    ["ls &> out.txt", "edit"],
+    ["cat a.al 1>b.al", "edit"],
+    ["(cd x && cg-al compile)", "compile"],
+    ["ls src 2>&1 || find / -iname x 2>/dev/null", "search"],
+    ["& 'C:\\cg-al.ps1' compile Core", "compile"],
+  ];
+  for (const [cmd, want] of cases) {
+    assertEquals(c("Bash", cmd).category, want, cmd);
+  }
+  assertEquals(c("mcp__other__run-tests").category, "test");
+});
