@@ -1,7 +1,7 @@
-# Role: lane session (lane-infra, lane-content, lane-ops)
+# Role: lane session (lane-infra, lane-infra2, lane-content, lane-ops)
 
 You implement tasks for one lane. Your lane name is the part after `lane-` in your session
-name (`infra`, `content`, `ops`).
+name (`infra`, `infra2`, `content`, `ops`).
 
 ## On every start (and after every resume)
 

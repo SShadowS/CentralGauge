@@ -675,3 +675,24 @@ Deno.test("schemas: incomplete_telemetry names known fields; null cost must be d
     validity: { incomplete_telemetry: ["cost_usd"], infra_exposed: false },
   });
 });
+
+Deno.test("RecordStore: lists order exactly below a millisecond", async () => {
+  const store = new RecordStore(await Deno.makeTempDir());
+  const c = await campaign();
+  // The later execution gets the smaller id, so an id tie-break would flip them.
+  const b = execution(c, { arm: "skills" }, {
+    started_at: "2026-10-01T09:00:00.0001Z",
+  });
+  const a = execution(c, {}, { started_at: "2026-10-01T09:00:00.0009Z" });
+  assert(a.id > b.id);
+  const [later, earlier] = [
+    { ...b, started_at: a.started_at },
+    { ...a, started_at: b.started_at },
+  ];
+  await store.writeExecution(later);
+  await store.writeExecution(earlier);
+  assertEquals(
+    (await store.executions(CAMPAIGN_ID)).map((x) => x.id),
+    [earlier.id, later.id],
+  );
+});
