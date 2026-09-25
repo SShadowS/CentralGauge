@@ -38,6 +38,67 @@ codeunit 50250 "M16P Probes"
     end;
 
     [Test]
+    procedure P1cControlNoDelete()
+    var
+        Row: Record "M16P Row";
+        Before: Integer;
+    begin
+        // Control (a): seed in the test transaction, asserterror with NO delete.
+        SeedRows();
+        Before := Row.Count();
+        asserterror Error('P1c raised, nothing deleted');
+        Error('RESULTS-P1c before=%1 after=%2', Before, Row.Count());
+    end;
+
+    [Test]
+    procedure P1dDeleteOneThenError()
+    var
+        Row: Record "M16P Row";
+        Before: Integer;
+    begin
+        // Control (b): 3 = delete restored, 2 = delete survives, 0 = seed rolled back.
+        SeedRows();
+        Before := Row.Count();
+        asserterror begin
+            Row.Get('ROW1');
+            Row.Delete();
+            Error('P1d raised after deleting one row');
+        end;
+        Error('RESULTS-P1d before=%1 after=%2 row1Exists=%3', Before, Row.Count(), Row.Get('ROW1'));
+    end;
+
+    [Test]
+    procedure P1eCommittedDeleteAllThenError()
+    var
+        Row: Record "M16P Committed Row";
+        Before: Integer;
+    begin
+        // Control (c): 3 rows committed by the install codeunit, before any test transaction.
+        Before := Row.Count();
+        asserterror begin
+            Row.DeleteAll();
+            Error('P1e raised after DeleteAll on committed rows');
+        end;
+        Error('RESULTS-P1e before=%1 after=%2', Before, Row.Count());
+    end;
+
+    [Test]
+    procedure P1fCommittedDeleteOneThenError()
+    var
+        Row: Record "M16P Committed Row";
+        Before: Integer;
+    begin
+        // Control (c'): committed rows, delete ONE inside asserterror (runs after P1e in the same codeunit).
+        Before := Row.Count();
+        asserterror begin
+            if Row.FindFirst() then
+                Row.Delete();
+            Error('P1f raised after deleting one committed row');
+        end;
+        Error('RESULTS-P1f before=%1 after=%2', Before, Row.Count());
+    end;
+
+    [Test]
     procedure P2CalcDate()
     begin
         Error('RESULTS-P2 plus0M=%1 plus1M_2027=%2 plus1M_2028=%3 dwy=%4',
@@ -53,29 +114,40 @@ codeunit 50250 "M16P Probes"
         Obj: JsonObject;
         Back: JsonObject;
         Tok: JsonToken;
+        IntTok: JsonToken;
+        BoolTok: JsonToken;
         IntVal: JsonValue;
         BoolVal: JsonValue;
         IntText: Text;
         BoolText: Text;
+        IntFromObjText: Text;
+        BoolFromObjText: Text;
         ObjText: Text;
         BackText: Text;
         Tricky: Text;
     begin
+        // JsonToken.WriteTo on scalar tokens: built from a JsonValue, and read back from an object.
         IntVal.SetValue(1450);
-        IntVal.WriteTo(IntText);
+        IntTok := IntVal.AsToken();
+        IntTok.WriteTo(IntText);
         BoolVal.SetValue(false);
-        BoolVal.WriteTo(BoolText);
+        BoolTok := BoolVal.AsToken();
+        BoolTok.WriteTo(BoolText);
         Tricky := 'say "hej" til å';
-        Obj.Add('zeta', 1);
+        Obj.Add('zeta', 1450);
         Obj.Add('alpha', 'two');
-        Obj.Add('mid', true);
+        Obj.Add('mid', false);
         Obj.Add('tricky', Tricky);
+        Obj.Get('zeta', Tok);
+        Tok.WriteTo(IntFromObjText);
+        Obj.Get('mid', Tok);
+        Tok.WriteTo(BoolFromObjText);
         Obj.WriteTo(ObjText);
         Back.ReadFrom(ObjText);
         Back.Get('tricky', Tok);
         Back.WriteTo(BackText);
-        Error('RESULTS-P3 int=[%1] bool=[%2] obj=[%3] roundtripEqual=%4 roundtripText=[%5] reWritten=[%6]',
-            IntText, BoolText, ObjText, Tok.AsValue().AsText() = Tricky, Tok.AsValue().AsText(), BackText);
+        Error('RESULTS-P3 tokInt=[%1] tokBool=[%2] objTokInt=[%3] objTokBool=[%4] obj=[%5] roundtripEqual=%6 roundtripText=[%7] reWritten=[%8]',
+            IntText, BoolText, IntFromObjText, BoolFromObjText, ObjText, Tok.AsValue().AsText() = Tricky, Tok.AsValue().AsText(), BackText);
     end;
 
     [Test]
