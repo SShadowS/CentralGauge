@@ -2125,6 +2125,8 @@ ${script}
        * mutation.
        */
       allow: ReadonlyMap<string, string>;
+      /** Owned apps to publish whose kept tenant data is purged if unpublished (M1-15a). */
+      clean?: { id: string; name: string }[];
     },
   ): Promise<HarnessSyncResult> {
     const guid =
@@ -2132,7 +2134,12 @@ ${script}
     const allow = new Map(
       [...plan.allow].map(([id, re]) => [id.toLowerCase(), re] as const),
     );
-    for (const id of plan.removeIds) {
+    for (
+      const id of [
+        ...plan.removeIds,
+        ...(plan.clean ?? []).map((c) => c.id),
+      ]
+    ) {
       if (!guid.test(id)) throw new Error(`not an app id: ${id}`);
       if (!allow.has(id.toLowerCase())) {
         throw new Error(`app id ${id} is not on the removal allowlist`);
@@ -2159,10 +2166,13 @@ ${script}
           staged,
           this.getCredentials(containerName),
           allow,
+          plan.clean ?? [],
         ),
         "harness-sync",
       );
-      const refused = /^SYNC_REMOVE_REFUSED:(.*)$/m.exec(result.output);
+      const refused = /^SYNC_(?:REMOVE|CLEAN)_REFUSED:(.*)$/m.exec(
+        result.output,
+      );
       if (refused) {
         throw this.buildPwshError({
           containerName,

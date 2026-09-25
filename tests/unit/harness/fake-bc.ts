@@ -73,6 +73,14 @@ export class FakeBc implements HarnessBc {
   publishFailure: (container: string, appName: string) => string | null = () =>
     null;
   private readonly deployed = new Map<string, Map<string, FakeApp>>();
+  /**
+   * Tenant data BC keeps after an app is gone (the bench prenuke keeps data):
+   * container -> app name -> data version. Publishing a lower version of that
+   * app is refused, as on Cronus281 (M1-27); a Sync -Mode Clean purges it.
+   */
+  keptData = new Map<string, Map<string, string>>();
+  /** App names purged by plan.clean, per sync. */
+  cleaned: string[][] = [];
 
   compilerId = "fake-artifact|bccontainerhelper 6.1.14";
   /** Containers whose cleanup (a sync with no publish) fails. */
@@ -190,6 +198,7 @@ export class FakeBc implements HarnessBc {
       removeIds: string[];
       publish: string[];
       allow: ReadonlyMap<string, string>;
+      clean?: { id: string; name: string }[];
     },
   ): Promise<HarnessSyncResult> {
     // As the real provider: a removal id outside the trusted allowlist is refused before anything runs.
@@ -213,11 +222,30 @@ export class FakeBc implements HarnessBc {
     }
     const st = this.state(container);
     for (const id of plan.removeIds) st.delete(id);
+    const kept = this.keptData.get(container) ?? new Map<string, string>();
+    const cleaned: string[] = [];
+    for (const c of plan.clean ?? []) {
+      if (!plan.allow.has(c.id.toLowerCase())) {
+        throw new Error(`app id ${c.id} is not on the removal allowlist`);
+      }
+      if (!st.has(c.id.toLowerCase()) && kept.delete(c.name)) {
+        cleaned.push(c.name);
+      }
+    }
+    this.cleaned.push(cleaned);
     const published: HarnessSyncResult["published"] = [];
     for (const [index, file] of plan.publish.entries()) {
       const app = JSON.parse(await Deno.readTextFile(file)) as FakeApp;
       published.push({ index, ms: 5 });
-      const fail = this.publishFailure(container, app.name);
+      const keptAt = kept.get(app.name);
+      const newer = (a: string, b: string) => {
+        const x = a.split(".").map(Number), y = b.split(".").map(Number);
+        for (let k = 0; k < 4; k++) if (x[k] !== y[k]) return x[k]! > y[k]!;
+        return false;
+      };
+      const fail = keptAt && newer(keptAt, app.version)
+        ? `Cannot install the extension ${app.name} by CentralGauge ${app.version} because a newer version ${keptAt} was already installed.`
+        : this.publishFailure(container, app.name);
       if (fail !== null) {
         return {
           removed: plan.removeIds,
