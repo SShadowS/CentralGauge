@@ -1007,3 +1007,88 @@ Deno.test({
   }
   await removeSecrets(s.dir);
 });
+
+Deno.test("publishRedacted redacts patterns in a serialized raw log, trace and UTF-16LE stderr (exact secrets first)", async () => {
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const key = `sk-ant-oat01-${"B".repeat(40)}`;
+  const tok = "s".repeat(20);
+  const raw = JSON.stringify({
+    type: "user",
+    message: {
+      content: [{
+        type: "tool_result",
+        tool_use_id: "t",
+        content: `found ${key} and Bearer ${tok}`,
+      }],
+    },
+  }) + "\n";
+  const trace = JSON.stringify({ v: 2, command: `echo ${key}` }) + "\n";
+  const stderr = new Uint8Array([
+    0xff,
+    0xfe,
+    ...[...`warn ${key}\r\n`].flatMap((ch) => [ch.charCodeAt(0), 0]),
+  ]);
+  await Deno.writeTextFile(join(dir, "raw.jsonl"), raw);
+  await Deno.writeTextFile(join(dir, "trace.jsonl"), trace);
+  await Deno.writeFile(join(dir, "stderr.txt"), stderr);
+  const n = await publishRedacted(
+    ["raw.jsonl", "trace.jsonl", "stderr.txt"].map((f) => ({
+      src: join(dir, f),
+      dest: join(dir, "out", f),
+    })),
+    [{ name: "backend-token", value: tok }],
+  );
+  const outRaw = await Deno.readTextFile(join(dir, "out", "raw.jsonl"));
+  assertStringIncludes(
+    outRaw,
+    "[REDACTED:anthropic-key] and Bearer [REDACTED:backend-token]",
+  );
+  assertEquals(outRaw.includes(key) || outRaw.includes(tok), false);
+  assertEquals(
+    (await Deno.readTextFile(join(dir, "out", "trace.jsonl"))).includes(key),
+    false,
+  );
+  assertEquals(
+    new TextDecoder("utf-16le").decode(
+      (await Deno.readFile(join(dir, "out", "stderr.txt"))).subarray(2),
+    ),
+    "warn [REDACTED:anthropic-key]\r\n",
+  );
+  assertEquals(n, 4);
+});
+
+Deno.test("publishRedacted: a capture cut inside a pattern token leaves no prefix of 20 chars or more", async () => {
+  // Accepted ceiling: a cut tail shorter than the pattern minimum is not a complete key and is left as is.
+  // The minimum counts every char after "sk-ant-", including "oat01-" (6 chars): 6 + 14 = 20 is redacted, 6 + 13 = 19 is not.
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.writeTextFile(
+    join(dir, "a.txt"),
+    `x sk-ant-oat01-${"D".repeat(14)}`,
+  );
+  await Deno.writeTextFile(
+    join(dir, "b.txt"),
+    `x sk-ant-oat01-${"D".repeat(13)}`,
+  );
+  await publishRedacted(
+    ["a.txt", "b.txt"].map((f) => ({
+      src: join(dir, f),
+      dest: join(dir, "out", f),
+    })),
+    [],
+  );
+  assertEquals(
+    await Deno.readTextFile(join(dir, "out", "a.txt")),
+    "x [REDACTED:anthropic-key]",
+  );
+  assertEquals(
+    await Deno.readTextFile(join(dir, "out", "b.txt")),
+    `x sk-ant-oat01-${"D".repeat(13)}`,
+  );
+});
+
+Deno.test("redactText redacts token patterns after exact secrets", () => {
+  assertEquals(
+    redactText(`e: Bearer ${"C".repeat(30)}`, []).text,
+    "e: Bearer [REDACTED:bearer]",
+  );
+});

@@ -15,6 +15,7 @@ import {
 } from "../errors.ts";
 import { buildBindMountArg } from "../sandbox/windows-provider.ts";
 import { redactBytes, type SecretValue, validatedDest } from "./fsutil.ts";
+import { redactPatterns, redactPatternText } from "./redact-patterns.ts";
 
 export type { SecretValue } from "./fsutil.ts";
 
@@ -833,7 +834,8 @@ export function redactText(
     count += next.split(s.value).length - 1;
     next = next.replaceAll(s.value, `[REDACTED:${s.name}]`);
   }
-  return { text: next, count };
+  const p = redactPatternText(next);
+  return { text: p.text, count: count + p.count };
 }
 
 const utf16le = (v: string) => {
@@ -902,9 +904,11 @@ export async function publishRedacted(
     }
     const r = redactBytes(data, secrets);
     const t = redactCutTail(r.out, secrets);
-    count += r.count + t.count;
+    // Token patterns after the exact custody secrets (M2-02).
+    const p = redactPatterns(t.out);
+    count += r.count + t.count + p.count;
     await Deno.mkdir(dirname(f.dest), { recursive: true });
-    await Deno.writeFile(f.dest, t.out, { createNew: true });
+    await Deno.writeFile(f.dest, p.out, { createNew: true });
   }
   return count;
 }
