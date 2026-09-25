@@ -561,6 +561,8 @@ Deno.test("claudeTrace: only a single cg-al command is a backend call; request i
           use("b", "PowerShell", { command: 'pwsh -c "cg-al compile Core"' }),
           use("c", "Bash", { command: "cg-al compile Core" }),
           use("d", "Bash", { command: 'cg-al compile "Fleet Mgt"' }),
+          use("e", "Bash", { command: "cg-al\ncat report.json" }),
+          use("g", "Bash", { command: "cg-al compile Core\r\ncat x.json" }),
         ]),
         1,
       ),
@@ -568,6 +570,8 @@ Deno.test("claudeTrace: only a single cg-al command is a backend call; request i
       rec(res("b", `Exit code 1\n${reply("br_2")}`, true), 3),
       rec(res("c", `Exit code 1\n${reply("br_abc")}`, true), 4),
       rec(res("d", `Exit code 1\n${reply("br_4")}`, true), 5),
+      rec(res("e", `Exit code 1\n${reply("br_5")}`, true), 6),
+      rec(res("g", `Exit code 1\n${reply("br_6")}`, true), 7),
     ],
     "f",
     new Set(),
@@ -575,12 +579,19 @@ Deno.test("claudeTrace: only a single cg-al command is a backend call; request i
   const by = (id: string) =>
     t.events.find((x) => x.call_id === id && x.type === "tool_call")!;
   assertEquals(
-    ["a", "b", "c", "d"].map((
+    ["a", "b", "c", "d", "e", "g"].map((
       id,
     ) => [by(id).backend_request, by(id).error_class]),
-    [[null, null], [null, null], [null, "compile_diagnostics"], [
-      "br_4",
-      "compile_diagnostics",
-    ]],
+    [
+      [null, null],
+      [null, null],
+      [null, "compile_diagnostics"],
+      [
+        "br_4",
+        "compile_diagnostics",
+      ],
+      [null, null],
+      [null, null],
+    ],
   );
 });
