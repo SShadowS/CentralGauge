@@ -2,8 +2,11 @@
 
 import type { HarnessAdapter } from "../adapter.ts";
 import { ConfigurationError } from "../../errors.ts";
+import { claudeCodeAdapter } from "./claude-code.ts";
 
-export const ADAPTERS: Record<string, HarnessAdapter> = {};
+export const ADAPTERS: Record<string, HarnessAdapter> = {
+  "claude-code": claudeCodeAdapter,
+};
 
 export function adapterFor(harness: string): HarnessAdapter {
   const a = Object.hasOwn(ADAPTERS, harness) ? ADAPTERS[harness] : undefined;

@@ -1,0 +1,10 @@
+# Claude Code harness image. Built by `harness images build claude-code --version 2.1.282`.
+# BASE has no default: `harness images build` passes the inspected immutable base image and then
+# verifies that the built image's layers start with the base's layers (M1-24).
+ARG BASE
+FROM ${BASE}
+RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
+    npm install -g @anthropic-ai/claude-code@2.1.282; \
+    [Environment]::SetEnvironmentVariable('PATH', (npm config get prefix) + ';' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
+COPY run.ps1 C:/run.ps1
+CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\run.ps1"]

@@ -1,0 +1,496 @@
+/**
+ * Claude Code adapter, minimal (pulled forward from M2 for the 10-05 gate).
+ * Parses stream-json (findings section 4): the run is judged from the final
+ * `result` record, never the exit code; cost from result.modelUsage per model
+ * (repeated assistant chunks are never summed); tool calls from assistant
+ * tool_use blocks, errors from tool_result.is_error. A malformed stream is
+ * refused with the file and line named; anything unexpected but harmless is
+ * listed in raw_usage.stream_problems.
+ */
+
+import type { HarnessAdapter, ParsedRun, ParseInput } from "../adapter.ts";
+import type { ModelTokens } from "../pricing.ts";
+import type { Telemetry, Termination } from "../records.ts";
+import type { TraceEvent } from "../trace.ts";
+import { ConfigurationError, ValidationError } from "../../errors.ts";
+import { requestedComponents } from "../adapter.ts";
+import { estimateCost } from "../pricing.ts";
+import { writeTrace } from "../trace.ts";
+
+/** Stream-json record: the keys this parser reads are declared (noPropertyAccessFromIndexSignature). */
+interface J {
+  [k: string]: unknown;
+  type?: unknown;
+  subtype?: unknown;
+  claude_code_version?: unknown;
+  message?: unknown;
+  content?: unknown;
+  tool_use_id?: unknown;
+  is_error?: unknown;
+  id?: unknown;
+  model?: unknown;
+  usage?: unknown;
+  name?: unknown;
+  session_id?: unknown;
+  parent_tool_use_id?: unknown;
+  cache_creation?: unknown;
+  ephemeral_5m_input_tokens?: unknown;
+  ephemeral_1h_input_tokens?: unknown;
+  tool_use_result?: unknown;
+  resolvedModel?: unknown;
+  modelUsage?: unknown;
+  thinkingTokens?: unknown;
+  input_tokens?: unknown;
+  cache_read_input_tokens?: unknown;
+  cache_creation_input_tokens?: unknown;
+  output_tokens?: unknown;
+  rate_limit_info?: unknown;
+  status?: unknown;
+  resetsAt?: unknown;
+  api_error_status?: unknown;
+  stop_reason?: unknown;
+  skills?: unknown;
+  mcp_servers?: unknown;
+  total_cost_usd?: unknown;
+  num_turns?: unknown;
+  duration_ms?: unknown;
+}
+interface Line {
+  rec: J;
+  line: number;
+}
+
+const KNOWN_TYPES = new Set([
+  "system",
+  "assistant",
+  "user",
+  "result",
+  "rate_limit_event",
+]);
+
+const isObj = (v: unknown): v is J =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
+const obj = (v: unknown): J => (isObj(v) ? v : {});
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const isCount = (v: unknown): v is number =>
+  typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+/** Lower bound only (raw_usage.partial): never feeds the cost. */
+const num = (v: unknown): number => (isCount(v) ? v : 0);
+/** A required usage field: missing or non-numeric is recorded, never treated as zero. */
+const req = (x: J, k: string, problems: string[]): number => {
+  const v = x[k];
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  problems.push(`${k} missing or not a number`);
+  return 0;
+};
+const utf8 = new TextEncoder();
+
+/** A JSON round trip: the value is JSON by construction, whatever the log held. */
+const toJson = (v: unknown): Telemetry["raw_usage"] =>
+  JSON.parse(JSON.stringify(v));
+
+function refuse(msg: string): never {
+  throw new ValidationError(msg, [msg]);
+}
+
+function transportOf(tool: string): string {
+  const m = /^mcp__([^_]+(?:_[^_]+)*?)__/.exec(tool);
+  if (m) return `mcp:${m[1]}`;
+  return tool === "Bash" || tool === "PowerShell" ? "shell" : "builtin";
+}
+
+/**
+ * One JSON object with a string `type` per line. A leading BOM, CRLF and
+ * blank lines are accepted; an unparseable last line is the tail of a hard
+ * kill and is reported; anything else malformed is refused.
+ */
+function readRecords(text: string, file: string, problems: string[]): Line[] {
+  const raw = (text.startsWith("﻿") ? text.slice(1) : text).split(
+    /\r?\n/,
+  );
+  let last = raw.length - 1;
+  while (last >= 0 && raw[last]!.trim() === "") last--;
+  const out: Line[] = [];
+  for (const [i, l] of raw.entries()) {
+    if (l.trim() === "") continue;
+    let v: unknown;
+    let syntax = false;
+    try {
+      v = JSON.parse(l);
+    } catch {
+      syntax = true;
+    }
+    if (isObj(v) && typeof v.type === "string") {
+      out.push({ rec: v, line: i + 1 });
+    } else if (syntax && i === last) {
+      problems.push(`line ${i + 1}: truncated last line`);
+    } else {
+      refuse(`${file}:${i + 1}: not a stream-json record (object with type)`);
+    }
+  }
+  return out;
+}
+
+function only(recs: Line[], what: string, file: string): Line | undefined {
+  if (recs.length > 1) {
+    refuse(
+      `${file}: ${recs.length} ${what} records (lines ${
+        recs.map((r) => r.line).join(", ")
+      })`,
+    );
+  }
+  return recs[0];
+}
+
+export function parseClaudeStream(
+  text: string,
+  input: Omit<ParseInput, "traceOut">,
+  /** Problems found before parsing (a missing log); reported first. */
+  streamProblems: string[] = [],
+): ParsedRun & { trace: TraceEvent[] } {
+  const file = input.rawLog;
+  const lines = readRecords(text, file, streamProblems);
+  const of = (t: string) => lines.filter((x) => x.rec.type === t);
+
+  const unknown = new Map<string, number>();
+  for (const { rec } of lines) {
+    const t = rec.type as string;
+    if (!KNOWN_TYPES.has(t)) unknown.set(t, (unknown.get(t) ?? 0) + 1);
+  }
+  for (const [t, n] of [...unknown].sort(([a], [b]) => a < b ? -1 : 1)) {
+    streamProblems.push(`unknown record type ${t} (${n})`);
+  }
+
+  const init = only(
+    of("system").filter((x) => x.rec.subtype === "init"),
+    "system/init",
+    file,
+  )?.rec;
+  const resultLine = only(of("result"), "result", file);
+  const result = resultLine?.rec;
+  if (
+    resultLine &&
+    (typeof result?.is_error !== "boolean" ||
+      typeof result?.subtype !== "string")
+  ) {
+    refuse(
+      `${file}:${resultLine.line}: result record needs a boolean is_error and a string subtype`,
+    );
+  }
+  const version = typeof init?.claude_code_version === "string"
+    ? init.claude_code_version
+    : null;
+
+  // Tool outcomes, one per tool_use id.
+  const outcomes = new Map<string, { error: boolean; bytes: number }>();
+  for (const { rec, line } of of("user")) {
+    for (const c of list(obj(rec.message).content).map(obj)) {
+      if (c.type !== "tool_result") continue;
+      const id = c.tool_use_id;
+      if (typeof id !== "string") {
+        refuse(`${file}:${line}: tool_result without a tool_use_id`);
+      }
+      if (outcomes.has(id)) refuse(`${file}:${line}: second result for ${id}`);
+      const body = typeof c.content === "string"
+        ? c.content
+        : JSON.stringify(c.content ?? "");
+      outcomes.set(id, {
+        error: c.is_error === true,
+        bytes: utf8.encode(body).length,
+      });
+    }
+  }
+
+  // Tool calls: one tool_use block per call (the stream repeats a message
+  // once per content block, each record carrying a different block).
+  const trace: TraceEvent[] = [];
+  const callLine = new Map<string, number>();
+  const perMessage = new Map<string, { model: string; usage: J }>();
+  let didWork = false;
+  for (const { rec, line } of of("assistant")) {
+    didWork = true;
+    const msg = obj(rec.message);
+    const model = typeof msg.model === "string" ? msg.model : "";
+    if (typeof msg.id === "string") {
+      perMessage.set(msg.id, { model, usage: obj(msg.usage) });
+    }
+    for (const c of list(msg.content).map(obj)) {
+      if (c.type !== "tool_use") continue;
+      if (typeof c.id !== "string" || typeof c.name !== "string") {
+        refuse(`${file}:${line}: tool_use without a string id and name`);
+      }
+      const id = c.id;
+      const seen = callLine.get(id);
+      if (seen !== undefined) {
+        refuse(`${file}:${line}: tool_use id ${id} repeats line ${seen}`);
+      }
+      callLine.set(id, line);
+      const out = outcomes.get(id);
+      const parent = typeof rec.parent_tool_use_id === "string"
+        ? rec.parent_tool_use_id
+        : null;
+      trace.push({
+        v: 1,
+        seq: trace.length + 1,
+        t_ms: null,
+        type: "tool_call",
+        session: typeof rec.session_id === "string" ? rec.session_id : null,
+        agent: parent ? "subagent" : "main",
+        parent,
+        call_id: id,
+        request_id: typeof msg.id === "string" ? msg.id : null,
+        tool: c.name,
+        transport: transportOf(c.name),
+        skill: null,
+        backend_request: null,
+        outcome: out ? (out.error ? "error" : "ok") : null,
+        error_class: null,
+        result_bytes: out?.bytes ?? null,
+        truncated: null,
+        duration_ms: null,
+        model: model || null,
+      });
+    }
+  }
+  for (const id of [...outcomes.keys()].sort()) {
+    if (!callLine.has(id)) streamProblems.push(`tool_result for unknown ${id}`);
+  }
+
+  // TTL splits: assistant messages (deduplicated by id) plus sub-agent
+  // tool_use_result usage, per model. A split that is absent leaves the sum
+  // short; one that is present but not a count spoils the model's split.
+  const models = Object.keys(obj(result?.modelUsage)).sort();
+  const split = new Map<string, { m5: number; h1: number; bad: boolean }>();
+  const addSplit = (model: string, u: J) => {
+    const cc = obj(u.cache_creation);
+    const a = cc.ephemeral_5m_input_tokens;
+    const b = cc.ephemeral_1h_input_tokens;
+    if (a === undefined && b === undefined) return;
+    const e = split.get(model) ?? { m5: 0, h1: 0, bad: false };
+    if (isCount(a) && isCount(b)) {
+      e.m5 += a;
+      e.h1 += b;
+    } else e.bad = true;
+    split.set(model, e);
+  };
+  for (const { model, usage: u } of perMessage.values()) addSplit(model, u);
+  for (const { rec, line } of of("user")) {
+    const tr = obj(rec.tool_use_result);
+    const tu = obj(tr.usage);
+    if (Object.keys(tu).length === 0) continue;
+    // The sub-agent's model is `resolvedModel` (M0-04 fixture; `model` is null there).
+    const model = typeof tr.resolvedModel === "string"
+      ? tr.resolvedModel
+      : models.length === 1
+      ? models[0]!
+      : null;
+    if (model !== null && models.includes(model)) addSplit(model, tu);
+    else {
+      streamProblems.push(
+        `line ${line}: sub-agent usage for ${
+          model ?? "no model"
+        } outside modelUsage`,
+      );
+      for (const m of models) {
+        split.set(m, { ...(split.get(m) ?? { m5: 0, h1: 0 }), bad: true });
+      }
+    }
+  }
+
+  // Usage: result.modelUsage is authoritative (includes sub-agents).
+  const usage: ModelTokens[] = models.map((model) => {
+    const x = obj(obj(result?.modelUsage)[model]);
+    const problems: string[] = [];
+    const writes = req(x, "cacheCreationInputTokens", problems);
+    const s = split.get(model);
+    const exact = s !== undefined && !s.bad && s.m5 + s.h1 === writes;
+    if (s !== undefined && !exact) {
+      problems.push(
+        s.bad
+          ? "cache write split mismatch (a TTL split is not a count)"
+          : `cache write split mismatch (${s.m5} + ${s.h1} != ${writes})`,
+      );
+    }
+    let reasoning: number | null = null;
+    if (typeof x.thinkingTokens === "number") reasoning = x.thinkingTokens;
+    else if (x.thinkingTokens !== undefined) {
+      problems.push("thinkingTokens not a number");
+    }
+    return {
+      model,
+      requests: null,
+      input: req(x, "inputTokens", problems),
+      cache_read: req(x, "cacheReadInputTokens", problems),
+      cache_write_5m: exact ? s.m5 : 0,
+      cache_write_1h: exact ? s.h1 : 0,
+      cache_write_unknown: exact ? 0 : writes,
+      output: req(x, "outputTokens", problems),
+      reasoning,
+      problems,
+    };
+  });
+  const est = result ? estimateCost(usage, input.pricing) : null;
+  const partial: Record<string, ModelTokens> = {};
+  for (const { model, usage: u } of perMessage.values()) {
+    const p = partial[model] ??= {
+      model,
+      requests: 0,
+      input: 0,
+      cache_read: 0,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output: 0,
+      reasoning: null,
+      problems: [],
+    };
+    p.requests = (p.requests ?? 0) + 1;
+    p.input += num(u.input_tokens);
+    p.cache_read += num(u.cache_read_input_tokens);
+    p.cache_write_unknown += num(u.cache_creation_input_tokens);
+    p.output += num(u.output_tokens);
+  }
+
+  // Usage limits: concurrent limits combine to the latest reset.
+  const rejected = of("rate_limit_event").filter((x) =>
+    obj(x.rec.rate_limit_info).status === "rejected"
+  );
+  let resetSec: number | null = null;
+  for (const { rec, line } of rejected) {
+    const at = obj(rec.rate_limit_info).resetsAt;
+    if (typeof at !== "number" || !Number.isFinite(at)) {
+      streamProblems.push(`line ${line}: rejected limit without resetsAt`);
+    } else resetSec = Math.max(resetSec ?? at, at);
+  }
+  const stop = typeof result?.stop_reason === "string"
+    ? result.stop_reason
+    : null;
+  const limited = rejected.length > 0 || result?.api_error_status === 429;
+  let termination: Termination | null;
+  if (!result) termination = limited ? "usage_limited" : null;
+  else if (result.is_error === true && limited) termination = "usage_limited";
+  else if (stop === "refusal") termination = "refusal";
+  else if (result.subtype === "error_max_budget_usd") {
+    termination = "budget_exhausted";
+  } else if (result.is_error === true) termination = "harness_crash";
+  else termination = "completed";
+
+  const slugOf = (api: string) =>
+    Object.hasOwn(input.pricing.models, api)
+      ? input.pricing.models[api]!.slug
+      : api;
+  const skillNames = new Set(list(init?.skills).map(String));
+  const wantSkills = [
+    ...new Set(
+      (input.manifest.skills?.files ?? []).map((f) => f.path.split("/")[0]!),
+    ),
+  ];
+  const connected = list(init?.mcp_servers).map(obj)
+    .filter((s) => s.status === "connected").map((s) => `mcp:${s.name}`);
+  const loaded = init
+    ? [
+      ...(input.manifest.skills && wantSkills.length > 0 &&
+          wantSkills.every((s) => skillNames.has(s))
+        ? ["skills"]
+        : []),
+      ...connected,
+    ]
+    : null;
+  const unobservable = requestedComponents(input.manifest).filter((c) =>
+    ["instructions", "agents", "hooks"].includes(c) ||
+    c.startsWith("plugin:") || c.startsWith("lsp:") ||
+    c.startsWith("toolchain:")
+  );
+  return {
+    telemetry: {
+      harness_version: version,
+      cost_usd: est?.cost_usd ?? null,
+      cost_source: est?.cost_usd != null ? "estimated" : null,
+      pricing_snapshot: est?.cost_usd != null ? est.pricing_snapshot : null,
+      reported_cost_usd: typeof result?.total_cost_usd === "number"
+        ? result.total_cost_usd
+        : null,
+      per_model: est?.per_model ?? [],
+      turns: typeof result?.num_turns === "number" ? result.num_turns : null,
+      compactions: null,
+      wall_ms: typeof result?.duration_ms === "number"
+        ? result.duration_ms
+        : null,
+      exit_code: input.exitCode,
+      stop_reason: stop,
+      refusal_detected: result ? stop === "refusal" : null,
+      raw_usage: toJson({
+        usage: result?.usage ?? null,
+        modelUsage: result?.modelUsage ?? null,
+        partial,
+        missing: est?.missing ?? [],
+        stream_problems: streamProblems,
+      }),
+    },
+    observed: {
+      harness_version: version,
+      models: result ? models.map(slugOf) : null,
+      loaded_components: loaded,
+    },
+    unobservable,
+    didWork,
+    termination,
+    usageResetAt: termination === "usage_limited" && resetSec !== null
+      ? new Date(resetSec * 1000).toISOString()
+      : null,
+    imageSupport: null,
+    traceEvents: trace.length,
+    trace,
+  };
+}
+
+export const claudeCodeAdapter: HarnessAdapter = {
+  harness: "claude-code",
+  declared: [
+    "harness_version",
+    "cost_usd",
+    "reported_cost_usd",
+    "per_model",
+    "turns",
+    "wall_ms",
+    "exit_code",
+    "stop_reason",
+  ],
+  secretFiles: ["claude-oauth-token"],
+  credentialBearing: true,
+  enforcesBudget: true,
+  nativeSettings(config, catalog) {
+    const api_models: Record<string, string> = {};
+    for (const [slot, slug] of Object.entries(config.models)) {
+      const m = catalog.models.find((x) => x.slug === slug);
+      if (!m) {
+        throw new ConfigurationError(
+          `model ${slug} (slot ${slot}) is not in the catalog`,
+        );
+      }
+      api_models[slot] = m.api_model_id;
+    }
+    return { ...config.settings, api_models };
+  },
+  providerRoutes(config) {
+    return Object.fromEntries(
+      Object.keys(config.models).map((
+        slot,
+      ) => [slot, "anthropic:first-party-oauth"]),
+    );
+  },
+  extraMounts: () => Promise.resolve([]),
+  async parse(input) {
+    let text = "";
+    const problems: string[] = [];
+    try {
+      text = await Deno.readTextFile(input.rawLog);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+      problems.push(`${input.rawLog}: raw log missing`);
+    }
+    const { trace, ...parsed } = parseClaudeStream(text, input, problems);
+    await writeTrace(input.traceOut, trace);
+    return parsed;
+  },
+};
