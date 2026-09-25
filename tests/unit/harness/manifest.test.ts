@@ -290,3 +290,12 @@ Deno.test("resolveManifest: a component path outside the harness root is refused
     "outside",
   );
 });
+
+Deno.test("ResolvedManifestSchema: route keys must equal model slots as a set", () => {
+  const r = ResolvedManifestSchema.safeParse({
+    ...ResolvedManifestSchema.parse(GOLDEN),
+    models: { "a,b": "anthropic/model-a" },
+    provider_routes: { a: "anthropic", b: "anthropic" },
+  });
+  assertEquals(r.success, false);
+});

@@ -65,9 +65,11 @@ export const ResolvedManifestSchema = z.strictObject({
   /** Provider route per model slot; every slot in `models` has one. */
   provider_routes: z.record(z.string(), z.string().min(1)),
 }).refine(
-  (m) =>
-    Object.keys(m.models).sort().join() ===
-      Object.keys(m.provider_routes).sort().join(),
+  (m) => {
+    const slots = Object.keys(m.models);
+    const routes = new Set(Object.keys(m.provider_routes));
+    return slots.length === routes.size && slots.every((s) => routes.has(s));
+  },
   { message: "provider_routes must cover exactly the model slots" },
 );
 export type ResolvedManifest = z.output<typeof ResolvedManifestSchema>;

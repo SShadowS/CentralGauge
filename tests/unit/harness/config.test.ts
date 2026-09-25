@@ -2,6 +2,7 @@ import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import {
   checkModelsInCatalog,
+  ComponentsSchema,
   effectiveLimits,
   loadConfig,
   loadExperiment,
@@ -193,4 +194,21 @@ Deno.test("loadExperiment: duplicate vary keys are refused", async () => {
   assertEquals((err as Error).name, "ValidationError");
   assertStringIncludes((err as Error).message, "vary: duplicate key skills");
   assertStringIncludes((err as Error).message, "skills-vs-plain.yml");
+});
+
+Deno.test("ComponentsSchema: duplicate list entries are refused", () => {
+  const cases: Record<string, string[]> = {
+    mcp: ["al-tools", "al-tools"],
+    lsp: ["al", "al"],
+    plugins: ["plugins/x", "plugins/x"],
+    toolchain: ["altool@1.0.0", "altool@1.0.0"],
+  };
+  for (const [key, list] of Object.entries(cases)) {
+    const r = ComponentsSchema.safeParse({ [key]: list });
+    assertEquals(r.success, false, `${key} accepted a duplicate`);
+    assertEquals(
+      ComponentsSchema.safeParse({ [key]: [list[0]] }).success,
+      true,
+    );
+  }
 });

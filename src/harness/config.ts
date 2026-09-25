@@ -18,16 +18,25 @@ const relPath = z.string().min(1).refine(
 );
 const bundlePath = relPath.nullable().default(null);
 
+/** A list whose entries must be unique (a repeat would change the hash, not the arm). */
+function uniqueList<T extends z.ZodType<string>>(item: T) {
+  return z.array(item).refine(
+    (xs) => new Set(xs).size === xs.length,
+    "duplicate entry",
+  );
+}
+
 export const ComponentsSchema = z.strictObject({
   instructions: bundlePath,
   skills: bundlePath,
   agents: bundlePath,
   hooks: bundlePath,
-  plugins: z.array(relPath).default([]),
-  mcp: z.array(slug).default([]),
-  lsp: z.array(slug).default([]),
-  toolchain: z.array(z.string().regex(/^[a-z0-9-]+@[\w.-]+$/, "name@version"))
-    .default([]),
+  plugins: uniqueList(relPath).default([]),
+  mcp: uniqueList(slug).default([]),
+  lsp: uniqueList(slug).default([]),
+  toolchain: uniqueList(
+    z.string().regex(/^[a-z0-9-]+@[\w.-]+$/, "name@version"),
+  ).default([]),
 });
 
 export const LimitsSchema = z.strictObject({
