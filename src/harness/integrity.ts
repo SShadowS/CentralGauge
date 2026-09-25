@@ -18,6 +18,7 @@ import {
   ArtifactRecordSchema,
   type CampaignRecord,
   CampaignRecordSchema,
+  compareInstant,
   type ExecutionRecord,
   ExecutionRecordSchema,
   experimentHash,
@@ -67,9 +68,9 @@ function duplicates(ids: string[]): string[] {
   return [...dup];
 }
 
-/** Parsed instants, not strings: fractional precision varies. */
+/** Exact instants, not strings or Date.parse: precision varies below 1 ms. */
 function timeProblem(r: { started_at: string; ended_at: string }) {
-  return Date.parse(r.started_at) <= Date.parse(r.ended_at)
+  return compareInstant(r.started_at, r.ended_at) <= 0
     ? null
     : `ended_at is before started_at`;
 }

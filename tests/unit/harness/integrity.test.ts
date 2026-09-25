@@ -292,6 +292,27 @@ Deno.test("validateCampaignRecords: time runs forward, compared as instants", as
   assertStringIncludes(text, `judgment ${j.id}: ended_at is before`);
 });
 
+Deno.test("validateCampaignRecords: time order is exact below a millisecond", async () => {
+  const r = await scenario();
+  const [first, retry, other] = r.executions as [
+    typeof r.executions[0],
+    typeof r.executions[0],
+    typeof r.executions[0],
+  ];
+  // Same millisecond: Date.parse would call these equal.
+  const backwards = {
+    ...other,
+    started_at: "2026-10-01T10:11:00.0009Z",
+    ended_at: "2026-10-01T10:11:00.0001Z",
+  };
+  assertStringIncludes(
+    (await problems({ ...r, executions: [first, retry, backwards] })).join(
+      "\n",
+    ),
+    `execution ${other.id}: ended_at is before`,
+  );
+});
+
 Deno.test("validateCampaignRecords: a retry is its parent's attempt + 1 in the same cell", async () => {
   const r = await scenario();
   const [first, retry, other] = r.executions as [

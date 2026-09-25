@@ -20,6 +20,7 @@
 import { ValidationError } from "../errors.ts";
 import {
   type CampaignRecord,
+  compareInstant,
   type ExecutionRecord,
   type JudgmentRecord,
   outcomePolicy,
@@ -53,28 +54,6 @@ export function checkJudging(c: CampaignRecord, ctx: JudgingContext): void {
       missing,
     );
   }
-}
-
-/**
- * Exact order of two UTC ISO datetimes (z.iso.datetime: "Z" only, seconds
- * optional, any number of fractional digits). Not a string compare, since
- * precision varies, and not Date.parse alone, which rounds to milliseconds.
- */
-function compareInstant(a: string, b: string): number {
-  const split = (s: string): [number, string] => {
-    const m = /^(.*?)(?:\.(\d+))?Z$/.exec(s);
-    const at = m ? Date.parse(`${m[1]}Z`) : NaN;
-    if (Number.isNaN(at)) {
-      throw new ValidationError(`not a UTC datetime: ${s}`, [s]);
-    }
-    return [at, m![2] ?? ""];
-  };
-  const [sa, fa] = split(a);
-  const [sb, fb] = split(b);
-  if (sa !== sb) return sa - sb;
-  const w = Math.max(fa.length, fb.length);
-  const [pa, pb] = [fa.padEnd(w, "0"), fb.padEnd(w, "0")];
-  return pa < pb ? -1 : pa > pb ? 1 : 0;
 }
 
 export function selectJudgment(
