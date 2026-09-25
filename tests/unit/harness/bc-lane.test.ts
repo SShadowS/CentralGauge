@@ -840,3 +840,67 @@ Deno.test("buildApps: BCH's cache_AppInfo.json index is not a symbol package; an
     "unlocked symbol package",
   );
 });
+
+Deno.test("runTests: result procedures that were not requested are surfaced as unexpected, never passed", async () => {
+  const bc = new FakeBc(() =>
+    result({ A: true, Extra: true, Other: "Assert.AreEqual failed." })
+  );
+  const r = await runTests(bc, "C1", [{
+    codeunit: 80010,
+    procedures: ["A"],
+    target: "candidate",
+  }]);
+  assertEquals(r.rows.map((x) => [x.procedure, x.outcome]), [["A", "pass"]]);
+  assertEquals(r.unexpected, [
+    { codeunit: 80010, procedure: "Extra", target: "candidate" },
+    { codeunit: 80010, procedure: "Other", target: "candidate" },
+  ]);
+  const all = await runTests(bc, "C1", [{
+    codeunit: 80010,
+    procedures: null,
+    target: "candidate",
+  }]);
+  assertEquals(all.unexpected, []);
+});
+
+Deno.test("BcLane.compileOn: an infra fault moves to another allocated container; other failures do not", async () => {
+  const lane = new BcLane(new FakeBc(), ["C1", "C2", "C3"]);
+  const tried: string[] = [];
+  const got = await lane.compileOn("C2", (c) => {
+    tried.push(c);
+    if (c === "C2") {
+      return Promise.reject(
+        new ContainerError("compiler folder gone", c, "compile"),
+      );
+    }
+    return Promise.resolve(c);
+  });
+  assertEquals([got, tried[0]], [tried[1], "C2"]);
+  assert(got !== "C2");
+  const notInfra: string[] = [];
+  await assertRejects(
+    () =>
+      lane.compileOn("C1", (c) => {
+        notInfra.push(c);
+        return Promise.reject(
+          new ValidationError("unlocked symbol package", []),
+        );
+      }),
+    ValidationError,
+  );
+  assertEquals(notInfra, ["C1"]);
+  const all: string[] = [];
+  await assertRejects(
+    () =>
+      lane.compileOn("C1", (c) => {
+        all.push(c);
+        return Promise.reject(new ContainerError("down", c, "compile"));
+      }),
+    ContainerError,
+  );
+  assertEquals(
+    all.sort(),
+    ["C1", "C2", "C3"],
+    "bounded: each allocated container once",
+  );
+});

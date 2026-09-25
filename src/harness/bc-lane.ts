@@ -148,8 +148,37 @@ export class BcLane {
     fn: (container: string) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
-    const slot = this.slots.get(container);
-    if (!slot) throw new Error(`unknown container ${container}`);
+    if (!this.slots.has(container)) {
+      throw new Error(`unknown container ${container}`);
+    }
+    // The named container first; on an infra fault the same reroute rule as
+    // compile(): each other allocated, eligible container at most once. A
+    // failed build (diagnostics), a non-infra error or a cancellation is not
+    // rerouted (M1-16b).
+    const order = [
+      container,
+      ...this.containers.filter((c) => c !== container),
+    ];
+    let last: unknown;
+    for (const [k, c] of order.entries()) {
+      if (k > 0 && !this.healthy().includes(c)) continue;
+      try {
+        return await this.compileOnce(c, fn, signal);
+      } catch (err) {
+        if (signal?.aborted) throw cancelled(signal);
+        if (!isInfraError(err)) throw err;
+        last = err;
+      }
+    }
+    throw last;
+  }
+
+  private async compileOnce<T>(
+    container: string,
+    fn: (container: string) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const slot = this.slots.get(container)!;
     this.admit(container, signal);
     const release = await slot.acquire();
     try {
@@ -570,6 +599,12 @@ export interface TestSpec {
   target: string;
 }
 
+export interface UnexpectedProcedure {
+  codeunit: number;
+  procedure: string;
+  target: string;
+}
+
 export interface TestMessage {
   codeunit: number;
   procedure: string;
@@ -604,7 +639,14 @@ export async function runTests(
   bc: HarnessBc,
   container: string,
   specs: TestSpec[],
-): Promise<{ rows: TestRow[]; messages: TestMessage[]; test_ms: number }> {
+): Promise<{
+  rows: TestRow[];
+  messages: TestMessage[];
+  test_ms: number;
+  /** Result procedures that were not requested: never scored as passed (M1-16b). */
+  unexpected: UnexpectedProcedure[];
+}> {
+  const unexpected: UnexpectedProcedure[] = [];
   const rows: TestRow[] = [];
   const messages: TestMessage[] = [];
   let test_ms = 0;
@@ -644,6 +686,18 @@ export async function runTests(
       );
     }
     const byName = new Map(r.results.map((x) => [x.name.toLowerCase(), x]));
+    if (s.procedures !== null) {
+      const asked = new Set(s.procedures.map((p) => p.toLowerCase()));
+      for (const x of r.results) {
+        if (!asked.has(x.name.toLowerCase())) {
+          unexpected.push({
+            codeunit: s.codeunit,
+            procedure: x.name,
+            target: s.target,
+          });
+        }
+      }
+    }
     for (const name of s.procedures ?? r.results.map((x) => x.name)) {
       const x = byName.get(name.toLowerCase());
       if (!x) rows.push(row(s, name, "not_run", "infra"));
@@ -661,7 +715,7 @@ export async function runTests(
       }
     }
   }
-  return { rows, messages, test_ms };
+  return { rows, messages, test_ms, unexpected };
 }
 
 /** Any infra row makes the scorer unscored, even next to an assertion (M4 parity). */
@@ -784,6 +838,8 @@ export interface DeployTestResult {
   rows: TestRow[];
   messages: TestMessage[];
   test_ms: number;
+  /** Result procedures that were not requested (runTests): for the verdict to treat. */
+  unexpected: UnexpectedProcedure[];
   /** Non-null when unpublishing the candidates failed: the caller quarantines the container. */
   cleanupError: string | null;
 }
@@ -855,6 +911,7 @@ export async function deployAndTest(
             `candidate publish/install failed: ${deployed.candidateFailure.message}`,
         }],
         test_ms: 0,
+        unexpected: [],
       }
       : { deployed, ...await runTests(bc, container, i.tests) };
   } catch (err) {
