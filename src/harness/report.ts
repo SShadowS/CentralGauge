@@ -40,6 +40,10 @@ export interface ArmCoverage {
   incomplete_telemetry: Record<string, number>;
 }
 
+/** Every reported metric is the declared primary one or exploratory. */
+export type MetricLabel = "primary" | "exploratory";
+export type ReportedMetric = PrimaryMetric | "pass_k";
+
 export interface HarnessReport {
   v: 1;
   experiment: {
@@ -62,6 +66,12 @@ export interface HarnessReport {
     tasks_with_other_oracle: string[];
   };
   provisional: boolean;
+  /**
+   * Label of every metric the report shows, from the experiment's declared
+   * primary metric; pass^k is never primary. Applies to `arms`, `flips`
+   * (per-task pass rate) and, per row, `comparisons[].label`.
+   */
+  metric_labels: Record<ReportedMetric, MetricLabel>;
   coverage: ArmCoverage[];
   diffs: Array<{ variant: string; differing: ManifestKey[] }>;
   arms: ArmSummary[];
@@ -70,7 +80,11 @@ export interface HarnessReport {
    * comparison names the one scorer fingerprint all its scored cells share.
    */
   comparisons: Array<
-    Comparison & { primary: boolean; scorer_fingerprint: string | null }
+    Comparison & {
+      primary: boolean;
+      label: MetricLabel;
+      scorer_fingerprint: string | null;
+    }
   >;
   flips: Array<{
     task: string;
@@ -147,6 +161,8 @@ export async function buildReport(
       ),
     });
   }
+  const labelOf = (m: ReportedMetric): MetricLabel =>
+    m === exp.primary_metric ? "primary" : "exploratory";
   const metrics: PrimaryMetric[] = exp.primary_metric === "pass_rate"
     ? ["pass_rate", "cost_per_solved_task"]
     : ["cost_per_solved_task", "pass_rate"];
@@ -159,6 +175,7 @@ export async function buildReport(
     return metrics.map((metric) => ({
       ...compareArms(cells, exp.baseline, variant, metric, bootstrap),
       primary: metric === exp.primary_metric,
+      label: labelOf(metric),
       scorer_fingerprint: fingerprint,
     }));
   });
@@ -201,6 +218,11 @@ export async function buildReport(
         .map((t) => t.id),
     },
     provisional: summaries.some((s) => s.provisional),
+    metric_labels: {
+      cost_per_solved_task: labelOf("cost_per_solved_task"),
+      pass_rate: labelOf("pass_rate"),
+      pass_k: labelOf("pass_k"),
+    },
     coverage: arms.map((arm) => {
       const es = executions.filter((e) => e.arm === arm);
       const fields: Record<string, number> = {};
@@ -256,6 +278,8 @@ function fmtDelta(c: Comparison): string {
 
 export function renderReport(r: HarnessReport): string {
   const out: string[] = [];
+  const tag = (m: ReportedMetric) =>
+    r.metric_labels[m] === "primary" ? "" : colors.dim(" [exploratory]");
   const h = (s: string) => out.push("", colors.bold(s));
   out.push(colors.bold(`Harness report: ${r.experiment.id}`));
   if (r.provisional) {
@@ -295,10 +319,16 @@ export function renderReport(r: HarnessReport): string {
   }
   h("Primary");
   for (const a of r.arms) {
+    const cost = `cost per solved task ${usd(a.cost_per_solved_task)}${
+      tag("cost_per_solved_task")
+    }`;
+    const rate = `pass rate ${pct(a.pass_rate)}${tag("pass_rate")}`;
+    // The declared primary metric leads.
+    const lead = r.experiment.primary_metric === "pass_rate"
+      ? `${rate}, ${cost}`
+      : `${cost}, ${rate}`;
     out.push(
-      `  ${a.arm}: cost per solved task ${
-        usd(a.cost_per_solved_task)
-      }, pass rate ${pct(a.pass_rate)}; spend ${
+      `  ${a.arm}: ${lead}; spend ${
         usd(a.total_spend_usd)
       } raw; headline over terminal cells, next to it: ${a.pending_cells} pending cells with ${
         usd(a.pending_spend_usd)
@@ -306,7 +336,7 @@ export function renderReport(r: HarnessReport): string {
     );
   }
   for (const c of r.comparisons) {
-    const label = c.primary ? "" : colors.dim(" [exploratory]");
+    const label = c.label === "primary" ? "" : colors.dim(" [exploratory]");
     out.push(
       `  ${c.variant} vs ${c.baseline}, ${c.metric}: ${fmtDelta(c)}${label}`,
     );
@@ -322,13 +352,13 @@ export function renderReport(r: HarnessReport): string {
   h("Outcome");
   for (const a of r.arms) {
     out.push(
-      `  ${a.arm}: pass rate ${pct(a.pass_rate)}, pass^k ${
+      `  ${a.arm}: pass rate ${pct(a.pass_rate)}${tag("pass_rate")}, pass^k ${
         pct(a.pass_k)
-      } over ${a.pass_k_tasks} tasks`,
+      }${tag("pass_k")} over ${a.pass_k_tasks} tasks`,
     );
   }
   if (r.flips.length > 0) {
-    out.push("  Flips (per-task pass rate):");
+    out.push(`  Flips (per-task pass rate)${tag("pass_rate")}:`);
     for (const f of r.flips) {
       out.push(
         `    ${f.task} (${f.kind}): ${

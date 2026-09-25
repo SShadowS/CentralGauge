@@ -412,3 +412,89 @@ Deno.test("buildReport: scorer fingerprints are checked across all arms, not per
     [SCORERS_V1_FP, SCORERS_V1_FP, SCORERS_V1_FP, SCORERS_V1_FP],
   );
 });
+
+/** The fixture records with the experiment's primary metric replaced. */
+async function withPrimary(
+  metric: "cost_per_solved_task" | "pass_rate",
+): Promise<CampaignRecords> {
+  const base = await records();
+  const experiment = ExperimentSchema.parse({
+    ...base.campaign.experiment,
+    primary_metric: metric,
+  });
+  return {
+    ...base,
+    campaign: {
+      ...base.campaign,
+      experiment,
+      experiment_hash: await experimentHash(experiment),
+    },
+  };
+}
+
+const rowOf = (text: string, section: string, arm: string) =>
+  text.split(`\n${section}\n`)[1]!.split("\n").find((l) =>
+    l.startsWith(`  ${arm}: `)
+  )!;
+
+Deno.test("report: cost-primary labels pass rate and pass^k exploratory everywhere", async () => {
+  const r = await buildReport(await withPrimary("cost_per_solved_task"), {
+    resamples: 50,
+  });
+  assertEquals(r.metric_labels, {
+    cost_per_solved_task: "primary",
+    pass_rate: "exploratory",
+    pass_k: "exploratory",
+  });
+  assertEquals(
+    r.comparisons.map((c) => [c.metric, c.label]),
+    [["cost_per_solved_task", "primary"], ["pass_rate", "exploratory"]],
+  );
+  const text = stripAnsiCode(renderReport(r));
+  const primaryRow = rowOf(text, "Primary", "plain");
+  assert(primaryRow.startsWith("  plain: cost per solved task $4.000,"));
+  assertStringIncludes(primaryRow, "pass rate 50.0% [exploratory]");
+  assert(!/cost per solved task \$4\.000 \[exploratory\]/.test(primaryRow));
+  const outcomeRow = rowOf(text, "Outcome", "plain");
+  assertStringIncludes(outcomeRow, "pass rate 50.0% [exploratory]");
+  assertStringIncludes(outcomeRow, "pass^k 50.0% [exploratory]");
+  assertStringIncludes(text, "Flips (per-task pass rate) [exploratory]");
+});
+
+Deno.test("report: pass-rate-primary leads with pass rate and labels cost and pass^k exploratory", async () => {
+  const r = await buildReport(await withPrimary("pass_rate"), {
+    resamples: 50,
+  });
+  assertEquals(r.metric_labels, {
+    cost_per_solved_task: "exploratory",
+    pass_rate: "primary",
+    pass_k: "exploratory",
+  });
+  assertEquals(
+    r.comparisons.map((c) => [c.metric, c.label, c.primary]),
+    [
+      ["pass_rate", "primary", true],
+      ["cost_per_solved_task", "exploratory", false],
+    ],
+  );
+  const text = stripAnsiCode(renderReport(r));
+  const primaryRow = rowOf(text, "Primary", "plain");
+  assert(primaryRow.startsWith("  plain: pass rate 50.0%,"));
+  assertStringIncludes(
+    primaryRow,
+    "cost per solved task $4.000 [exploratory]",
+  );
+  assert(!primaryRow.includes("pass rate 50.0% [exploratory]"));
+  const outcomeRow = rowOf(text, "Outcome", "plain");
+  assert(!outcomeRow.includes("pass rate 50.0% [exploratory]"));
+  assertStringIncludes(outcomeRow, "pass^k 50.0% [exploratory]");
+  assert(!text.includes("Flips (per-task pass rate) [exploratory]"));
+  const lines = text.split("\n");
+  const first = lines.findIndex((l) => l.includes("skills vs plain, "));
+  assertStringIncludes(lines[first]!, "skills vs plain, pass_rate: ");
+  assert(!lines[first]!.includes("[exploratory]"));
+  assertStringIncludes(
+    lines.find((l) => l.includes("skills vs plain, cost_per_solved_task"))!,
+    "[exploratory]",
+  );
+});
