@@ -51,6 +51,32 @@ export interface DockerCli {
   build(args: string[]): Promise<number>;
 }
 
+/** Inherited variables the docker CLI (and icacls) may see; nothing else is passed. */
+export const DOCKER_ENV_ALLOWLIST = [
+  "PATH",
+  "SystemRoot",
+  "windir",
+  "ComSpec",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramData",
+  "DOCKER_CONTEXT",
+  "DOCKER_CONFIG",
+] as const;
+
+/** A cleared-env replacement: the allowlist plus the pinned Docker context. */
+function dockerEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const k of DOCKER_ENV_ALLOWLIST) {
+    const v = Deno.env.get(k);
+    if (v !== undefined) env[k] = v;
+  }
+  return { ...env, ...dockerContextEnv() };
+}
+
 /** Resolve p or throw a ContainerError after ms. */
 export async function bounded<T>(
   p: Promise<T>,
@@ -87,7 +113,8 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
     try {
       const r = await new Deno.Command("docker", {
         args,
-        env: dockerContextEnv(),
+        clearEnv: true,
+        env: dockerEnv(),
         stdout: "piped",
         stderr: "piped",
         signal: AbortSignal.timeout(opTimeoutMs),
@@ -122,7 +149,8 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
       try {
         child = new Deno.Command("docker", {
           args,
-          env: dockerContextEnv(),
+          clearEnv: true,
+          env: dockerEnv(),
           stdin: "null",
           stdout: "piped",
           stderr: "piped",
@@ -258,7 +286,8 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
     build: async (args) =>
       (await new Deno.Command("docker", {
         args,
-        env: dockerContextEnv(),
+        clearEnv: true,
+        env: dockerEnv(),
         stdout: "inherit",
         stderr: "inherit",
       }).output())
@@ -498,7 +527,8 @@ export async function runSandbox(
     } catch (err) {
       problems.push(err instanceof Error ? err.message : String(err));
     }
-    r.confirmedGone = (settled || !r.started) && gone;
+    // A run that never settled (even one pending before its start) is never gone.
+    r.confirmedGone = (running === undefined || settled) && gone;
     if (problems.length > 0) r.cleanup = [...new Set(problems)].join("; ");
   }
   r.wall_ms = performance.now() - t0;
@@ -545,11 +575,111 @@ export async function sweepOwnedSandboxes(
 
 export const SECRETS_DIR_PREFIX = "cg-harness-secrets-";
 
+export type IcaclsRunner = (
+  args: string[],
+) => Promise<{ code: number; stdout: string; stderr: string }>;
+
 /** Where custody dirs live and whose they are (`<prefix><owner>.<uuid>`). */
 export interface SecretCustody {
   /** Harness-private root (M1-22 privateRoot), never under results/. */
   privateRoot: string;
   owner: string;
+  /** Windows: the icacls runner (tests inject one) and the account to grant. */
+  icacls?: IcaclsRunner;
+  user?: string;
+}
+
+const system32 = (exe: string) =>
+  `${Deno.env.get("SystemRoot") ?? "C:\\Windows"}\\System32\\${exe}`;
+
+async function runTool(exe: string, args: string[]) {
+  const r = await new Deno.Command(system32(exe), {
+    args,
+    clearEnv: true,
+    env: dockerEnv(),
+    stdout: "piped",
+    stderr: "piped",
+    signal: AbortSignal.timeout(OP_TIMEOUT_MS),
+  }).output();
+  const dec = new TextDecoder();
+  return {
+    code: r.code,
+    stdout: dec.decode(r.stdout),
+    stderr: dec.decode(r.stderr),
+  };
+}
+
+/** DOMAIN\\user of this process: USERDOMAIN and USERNAME, else whoami. */
+async function currentUser(): Promise<string> {
+  const d = Deno.env.get("USERDOMAIN");
+  const u = Deno.env.get("USERNAME");
+  if (d && u) return `${d}\\${u}`;
+  const r = await runTool("whoami.exe", []);
+  const who = r.stdout.trim();
+  if (r.code !== 0 || !/^[^\\\s]+\\[^\\\s]+$/.test(who)) {
+    throw new ConfigurationError(
+      `cannot resolve the current user: ${who || r.stderr.trim()}`,
+    );
+  }
+  return who;
+}
+
+/**
+ * Parse `icacls <dir>` strictly: the listing is for dir, the summary reports
+ * one file and no failure, and the entries are exactly SYSTEM and user with
+ * full control, object and container inherit, none inherited.
+ */
+export function aclIsPrivate(
+  listing: string,
+  dir: string,
+  user: string,
+): boolean {
+  const lines = listing.split(/\r?\n/);
+  const end = lines.indexOf("");
+  if (end < 1 || !lines[0]!.startsWith(`${dir} `)) return false;
+  const summary = lines.slice(end + 1).filter((l) => l.trim() !== "");
+  if (
+    summary.length !== 1 ||
+    summary[0]!.trim() !==
+      "Successfully processed 1 files; Failed processing 0 files"
+  ) return false;
+  const entries = [lines[0]!.slice(dir.length + 1), ...lines.slice(1, end)].map(
+    (l) => l.trim().toLowerCase(),
+  );
+  const want = [
+    `nt authority\\system:(oi)(ci)(f)`,
+    `${user.toLowerCase()}:(oi)(ci)(f)`,
+  ];
+  return entries.length === 2 && want.every((w) => entries.includes(w));
+}
+
+/** Restrict a new custody dir to this user (and SYSTEM), verified, before any secret is written. */
+async function restrictDir(dir: string, custody: SecretCustody): Promise<void> {
+  if (Deno.build.os !== "windows") {
+    await Deno.chmod(dir, 0o700);
+    return;
+  }
+  const icacls = custody.icacls ??
+    ((args: string[]) => runTool("icacls.exe", args));
+  const user = custody.user ?? await currentUser();
+  const grant = await icacls([
+    dir,
+    "/inheritance:r",
+    "/grant:r",
+    `${user}:(OI)(CI)F`,
+    "SYSTEM:(OI)(CI)F",
+  ]);
+  if (grant.code !== 0) {
+    throw new ConfigurationError(
+      `could not set the ACL of secrets dir ${dir}: icacls exited ${grant.code}: ${grant.stderr.trim()}`,
+    );
+  }
+  const listing = await icacls([dir]);
+  if (listing.code !== 0 || !aclIsPrivate(listing.stdout, dir, user)) {
+    throw new ConfigurationError(
+      `refusing secrets dir ${dir}: its ACL is not exactly ${user} and SYSTEM: ${listing.stdout.trim()}`,
+    );
+  }
 }
 
 const ownerPrefix = (owner: string) => {
@@ -567,8 +697,9 @@ export async function prepareSecrets(
 ): Promise<{ dir: string; values: SecretValue[] }> {
   const base = await validatedDest(join(custody.privateRoot, "secrets"));
   const dir = join(base, `${ownerPrefix(custody.owner)}${crypto.randomUUID()}`);
-  await Deno.mkdir(dir);
+  await Deno.mkdir(dir, { mode: 0o700 });
   try {
+    await restrictDir(dir, custody);
     const values: SecretValue[] = [];
     const add = async (name: string, value: string) => {
       if (value.length < MIN_SECRET_LENGTH) {
@@ -576,7 +707,10 @@ export async function prepareSecrets(
           `secret ${name} is shorter than ${MIN_SECRET_LENGTH} characters`,
         );
       }
-      await Deno.writeTextFile(join(dir, name), value, { createNew: true });
+      await Deno.writeTextFile(join(dir, name), value, {
+        createNew: true,
+        mode: 0o600,
+      });
       values.push({ name, value });
     };
     for (const f of files) {

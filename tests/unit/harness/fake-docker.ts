@@ -85,6 +85,8 @@ export class FakeDocker implements DockerCli {
   wedged = false;
   /** Fails before the spawn (capture file, spawn error). */
   runError: Error | null = null;
+  /** Holds run() before the spawn (slow capture open or spawn). */
+  startGate: Promise<void> | null = null;
   /** Fails after the spawn (capture broke mid-run). */
   failAfterStart: Error | null = null;
   behavior: RunBehavior = () => Promise.resolve(0);
@@ -110,6 +112,7 @@ export class FakeDocker implements DockerCli {
   }
 
   async run(args: string[], c: Capture): Promise<number> {
+    if (this.startGate) await this.startGate;
     if (this.runError) throw this.runError;
     const out = await Deno.open(c.stdoutPath, { write: true, createNew: true });
     await Deno.writeTextFile(c.stderrPath, "", { createNew: true });

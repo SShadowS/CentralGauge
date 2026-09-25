@@ -333,10 +333,12 @@ function installSpawnFake(
   stderr: ReadableStream<Uint8Array>,
   status: Promise<{ code: number }>,
   kills: string[] = [],
+  seen: Deno.CommandOptions[] = [],
 ): () => void {
   const original = Object.getOwnPropertyDescriptor(Deno, "Command")!;
   __setContextListerForTests(() => ["desktop-windows"]);
-  const Fake = function () {
+  const Fake = function (_cmd: string, opts: Deno.CommandOptions) {
+    seen.push(opts);
     return {
       spawn: () => ({
         stdout,
@@ -504,7 +506,11 @@ Deno.test("prepareSecrets: declared files plus the token; short or missing secre
   );
   await Deno.writeTextFile(join(src, "short"), "abc");
   const root = await tmp();
-  const custody = { privateRoot: root, owner: "HOST1" };
+  const custody = {
+    privateRoot: root,
+    owner: "HOST1",
+    ...fakeIcacls(USER),
+  };
   const s = await prepareSecrets(src, ["claude-oauth-token"], TOKEN, custody);
   assertEquals([...Deno.readDirSync(s.dir)].map((e) => e.name).sort(), [
     "backend-token",
@@ -718,6 +724,7 @@ Deno.test("removeSecrets: a failed removal is reported with the dir; prepareSecr
       prepareSecrets(src, ["short"], TOKEN, {
         privateRoot: root,
         owner: "HOST1",
+        ...fakeIcacls(USER),
       })
     );
     assertStringIncludes((err as Error).message, "16");
@@ -753,4 +760,249 @@ Deno.test("sweepStaleSecrets: removes only this owner's custody dirs", async () 
     "unrelated",
   ]);
   assertEquals(await sweepStaleSecrets(await tmp(), "HOST1"), []);
+});
+
+Deno.test({
+  name:
+    "runSandbox: a run still pending before its start is not confirmed gone until it settles",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  d.startGate = new Promise(() => {});
+  const t0 = performance.now();
+  const r = await runSandbox(
+    d,
+    await spec({ timeoutMs: 20, killGraceMs: 20, opTimeoutMs: 20 }),
+    [],
+  );
+  assert(performance.now() - t0 < 2_000);
+  assertEquals([r.started, r.confirmedGone], [false, false]);
+  assertStringIncludes(r.cleanup, "did not stop");
+  // Settling inside the bounded wait confirms it, and the late container is removed.
+  const l = new FakeDocker();
+  let open!: () => void;
+  l.startGate = new Promise((res) => (open = res));
+  const s = await spec({ timeoutMs: 20, killGraceMs: 50 });
+  setTimeout(() => open(), 40);
+  const rl = await runSandbox(l, s, []);
+  assertEquals([rl.started, rl.confirmedGone, l.removed], [true, true, [
+    s.name,
+  ]]);
+});
+
+const DOCKER_ENV_KEYS = [
+  "PATH",
+  "SystemRoot",
+  "windir",
+  "ComSpec",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramData",
+  "DOCKER_CONTEXT",
+  "DOCKER_CONFIG",
+];
+
+Deno.test("realDocker: the docker CLI gets a cleared env holding only the allowlist", async () => {
+  const leak = "leak-0123456789abcdef-secret";
+  Deno.env.set("CG_TEST_SANDBOX_LEAK", leak);
+  const check = (o: Deno.CommandOptions | undefined) => {
+    assertEquals(o?.clearEnv, true);
+    const env = o?.env ?? {};
+    assert(!Object.values(env).includes(leak));
+    assert(Object.keys(env).every((k) => DOCKER_ENV_KEYS.includes(k)));
+    assertEquals(env["PATH"], Deno.env.get("PATH"));
+    if (Deno.build.os === "windows") {
+      assertEquals(env["DOCKER_CONTEXT"], "desktop-windows");
+    }
+  };
+  __setContextListerForTests(() => ["desktop-windows"]);
+  const mock = createCommandMock();
+  mock.mockCommand({ command: "docker" }, { code: 0, stdout: "", stderr: "" });
+  mock.install();
+  try {
+    await realDocker().kill("x");
+    check(mock.getCallsFor("docker")[0]!.options);
+  } finally {
+    mock.restore();
+  }
+  const q = await tmp();
+  const done = () =>
+    new ReadableStream<Uint8Array>({
+      start(ctl) {
+        ctl.close();
+      },
+    });
+  const seen: Deno.CommandOptions[] = [];
+  const restore = installSpawnFake(
+    done(),
+    done(),
+    Promise.resolve({ code: 0 }),
+    [],
+    seen,
+  );
+  try {
+    await realDocker().run(["run"], {
+      stdoutPath: join(q, "raw.jsonl"),
+      stderrPath: join(q, "err.txt"),
+      maxBytes: 1024,
+      onStarted: () => {},
+      onOverflow: () => {},
+    });
+    check(seen[0]);
+  } finally {
+    restore();
+    Deno.env.delete("CG_TEST_SANDBOX_LEAK");
+  }
+});
+
+const USER = "HOST\\runner";
+const aclListing = (dir: string, entries: string[], failed = 0) =>
+  `${dir} ${entries[0]}\n` +
+  entries.slice(1).map((e) => `${" ".repeat(dir.length + 1)}${e}\n`).join("") +
+  `\nSuccessfully processed ${
+    1 - failed
+  } files; Failed processing ${failed} files\r\n`;
+const GOOD = ["NT AUTHORITY\\SYSTEM:(OI)(CI)(F)", `${USER}:(OI)(CI)(F)`];
+
+/** A recording icacls runner; `verify` shapes the listing (default: exactly the grant). */
+function fakeIcacls(
+  user: string,
+  verify: (dir: string) => string = (dir) => aclListing(dir, GOOD),
+  grantCode = 0,
+) {
+  const calls: string[][] = [];
+  const icacls = (args: string[]) => {
+    calls.push(args);
+    return Promise.resolve(
+      args.length === 1
+        ? { code: 0, stdout: verify(args[0]!), stderr: "" }
+        : { code: grantCode, stdout: "", stderr: grantCode ? "denied" : "" },
+    );
+  };
+  return { icacls, user, calls };
+}
+
+Deno.test({
+  name:
+    "prepareSecrets: the custody dir ACL is granted then verified before any secret is written",
+  ignore: Deno.build.os !== "windows",
+}, async () => {
+  const root = await tmp();
+  const src = await tmp();
+  await Deno.writeTextFile(join(src, "claude-oauth-token"), TOKEN + "x");
+  const acl = fakeIcacls(USER);
+  const s = await prepareSecrets(src, ["claude-oauth-token"], TOKEN, {
+    privateRoot: root,
+    owner: "HOST1",
+    ...acl,
+  });
+  assertEquals(acl.calls, [
+    [
+      s.dir,
+      "/inheritance:r",
+      "/grant:r",
+      `${USER}:(OI)(CI)F`,
+      "SYSTEM:(OI)(CI)F",
+    ],
+    [s.dir],
+  ]);
+  await removeSecrets(s.dir);
+});
+
+Deno.test({
+  name:
+    "prepareSecrets: a failed grant or any unexpected ACL entry refuses with no secret written",
+  ignore: Deno.build.os !== "windows",
+}, async () => {
+  const src = await tmp();
+  await Deno.writeTextFile(join(src, "claude-oauth-token"), TOKEN + "x");
+  const cases: [string, ReturnType<typeof fakeIcacls>][] = [
+    ["grant fails", fakeIcacls(USER, undefined, 5)],
+    [
+      "inherited entry",
+      fakeIcacls(
+        USER,
+        (d) =>
+          aclListing(d, [...GOOD, "BUILTIN\\Administrators:(I)(OI)(CI)(F)"]),
+      ),
+    ],
+    [
+      "extra principal",
+      fakeIcacls(
+        USER,
+        (d) => aclListing(d, [...GOOD, "Everyone:(OI)(CI)(R)"]),
+      ),
+    ],
+    [
+      "inherited grant",
+      fakeIcacls(USER, (d) =>
+        aclListing(d, [
+          "NT AUTHORITY\\SYSTEM:(I)(OI)(CI)(F)",
+          `${USER}:(OI)(CI)(F)`,
+        ])),
+    ],
+    [
+      "missing SYSTEM",
+      fakeIcacls(USER, (d) => aclListing(d, [`${USER}:(OI)(CI)(F)`])),
+    ],
+    [
+      "other user",
+      fakeIcacls(USER, (d) =>
+        aclListing(d, [
+          "NT AUTHORITY\\SYSTEM:(OI)(CI)(F)",
+          "HOST\\other:(OI)(CI)(F)",
+        ])),
+    ],
+    [
+      "weaker right",
+      fakeIcacls(USER, (d) =>
+        aclListing(d, [
+          "NT AUTHORITY\\SYSTEM:(OI)(CI)(F)",
+          `${USER}:(OI)(CI)(M)`,
+        ])),
+    ],
+    ["failed listing", fakeIcacls(USER, (d) => aclListing(d, GOOD, 1))],
+    ["other path", fakeIcacls(USER, () => aclListing("C:\\elsewhere", GOOD))],
+  ];
+  for (const [what, acl] of cases) {
+    const root = await tmp();
+    await assertRejects(
+      () =>
+        prepareSecrets(src, ["claude-oauth-token"], TOKEN, {
+          privateRoot: root,
+          owner: "HOST1",
+          ...acl,
+        }),
+      ConfigurationError,
+      "ACL",
+      what,
+    );
+    assertEquals(
+      [...Deno.readDirSync(join(root, "secrets"))].length,
+      0,
+      `${what}: nothing may stay behind`,
+    );
+    assertEquals(acl.calls.length, what === "grant fails" ? 1 : 2, what);
+  }
+});
+
+Deno.test({
+  name: "prepareSecrets: POSIX custody is 0700 with 0600 files",
+  ignore: Deno.build.os === "windows",
+}, async () => {
+  const root = await tmp();
+  const src = await tmp();
+  await Deno.writeTextFile(join(src, "claude-oauth-token"), TOKEN + "x");
+  const s = await prepareSecrets(src, ["claude-oauth-token"], TOKEN, {
+    privateRoot: root,
+    owner: "HOST1",
+  });
+  assertEquals((await Deno.stat(s.dir)).mode! & 0o777, 0o700);
+  for (const f of ["claude-oauth-token", "backend-token"]) {
+    assertEquals((await Deno.stat(join(s.dir, f))).mode! & 0o777, 0o600);
+  }
+  await removeSecrets(s.dir);
 });
