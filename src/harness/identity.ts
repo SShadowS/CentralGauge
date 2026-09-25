@@ -20,6 +20,12 @@ import {
 } from "./hash.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
 
+/** Every embedded SHA-256 (identities, component and file hashes): 64 lower-case hex. */
+export const Sha256Hex = z.string().regex(
+  /^[0-9a-f]{64}$/,
+  "lower-case hex sha256",
+);
+
 /** Path of the refapp inside the repo; tags and commits resolve against it. */
 export const REFAPP_PATH = "harness-tasks/refapp";
 
@@ -212,7 +218,7 @@ const SymbolPackageSchema = z.strictObject({
   version: z.string().regex(/^\d+\.\d+\.\d+\.\d+$/),
   /** File name under the restored `.alpackages`, to locate and verify it. */
   file: z.string().regex(/^[^\\/]+\.app$/),
-  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  sha256: Sha256Hex,
 });
 export const SymbolsLockSchema = z.strictObject({
   v: z.literal(1),
@@ -335,13 +341,13 @@ export const TaskIdentitySchema = z.strictObject({
   id: z.string(),
   /** Provenance only; not hashed into the task-set identity. */
   refapp_commit: z.string(),
-  visible: z.string().length(64),
-  oracle: z.string().length(64),
+  visible: Sha256Hex,
+  oracle: Sha256Hex,
 });
 export type TaskIdentity = z.output<typeof TaskIdentitySchema>;
 
 export const TaskSetIdentitySchema = z.strictObject({
-  identity: z.string().length(64),
+  identity: Sha256Hex,
   /** True while no symbols lock exists; campaigns refuse it (M1-07). */
   provisional: z.boolean(),
   tasks: z.array(TaskIdentitySchema),

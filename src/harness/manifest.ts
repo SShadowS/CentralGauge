@@ -18,14 +18,14 @@ import { ConfigurationError, ValidationError } from "../errors.ts";
 import type { HarnessConfig, VaryKey } from "./config.ts";
 import { effectiveLimits } from "./config.ts";
 import { HASH_RULES_VERSION, hashFile, hashJson, listTree } from "./hash.ts";
+import { Sha256Hex } from "./identity.ts";
 import type { HarnessTask } from "./task.ts";
 
-const Sha = z.string().length(64);
 const PathComponent = z.strictObject({
   path: z.string(),
-  hash: Sha,
+  hash: Sha256Hex,
   /** Per-file snapshot, so a diff can name the file (durable content ref). */
-  files: z.array(z.strictObject({ path: z.string(), sha256: Sha })),
+  files: z.array(z.strictObject({ path: z.string(), sha256: Sha256Hex })),
 });
 const Server = z.strictObject({
   name: z.string(),
