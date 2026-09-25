@@ -277,9 +277,24 @@ function mcpKeysDerived(m: ResolvedManifest): boolean {
     if (JSON.stringify(Object.keys(tools).sort()) !== JSON.stringify(names)) {
       return false;
     }
+    // Each value is a tool-name list (sorted, no duplicates), never a place
+    // for other settings to ride along.
+    for (const list of Object.values(tools)) {
+      if (
+        !Array.isArray(list) || !list.every((t) => typeof t === "string") ||
+        list.some((t, i) => i > 0 && t <= (list[i - 1] as string))
+      ) return false;
+    }
   }
   return true;
 }
+
+const toolsOf = (m: ResolvedManifest, server: string): string => {
+  const tools = m.settings.native["mcp_tools"] as
+    | Record<string, unknown>
+    | undefined;
+  return JSON.stringify(tools?.[server] ?? null);
+};
 
 /**
  * True when two manifests' settings differ only by MCP-derived native keys
@@ -292,6 +307,15 @@ export async function mcpDerivedSettingsOnly(
   b: ResolvedManifest,
 ): Promise<boolean> {
   if (!mcpKeysDerived(a) || !mcpKeysDerived(b)) return false;
+  // A server identical on both sides (name, version, schema hash) explains no
+  // difference in its tool list: that difference is not MCP-derived.
+  for (const s of a.mcp) {
+    const t = b.mcp.find((x) =>
+      x.name === s.name && x.version === s.version &&
+      x.tool_schema_hash === s.tool_schema_hash
+    );
+    if (t && toolsOf(a, s.name) !== toolsOf(b, s.name)) return false;
+  }
   const strip = (m: ResolvedManifest) => ({
     requested: m.settings.requested,
     native: Object.fromEntries(

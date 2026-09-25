@@ -399,3 +399,44 @@ Deno.test("vary [mcp]: a requested settings difference still fails", async () =>
     "settings",
   );
 });
+
+Deno.test("vary [mcp]: mcp_tools values must be tool-name lists; unchanged servers keep their tools", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), FACTS);
+  for (
+    const tools of [{ "al-tools": { thinking: "high" } }, { "al-tools": 42 }, {
+      "al-tools": ["b", "a"],
+    }, { "al-tools": ["a", "a"] }]
+  ) {
+    const v = await resolveManifest(
+      r,
+      config("mcp", { mcp: ["al-tools"] }),
+      withNative({ mcp: ["al-tools"], mcp_tools: tools }),
+    );
+    assertEquals(
+      await mcpDerivedSettingsOnly(base, v),
+      false,
+      JSON.stringify(tools),
+    );
+  }
+  const a = await resolveManifest(
+    r,
+    config("a", { mcp: ["al-tools"] }),
+    withNative({ mcp: ["al-tools"], mcp_tools: { "al-tools": ["a"] } }),
+  );
+  const b = await resolveManifest(
+    r,
+    config("b", { mcp: ["al-tools"] }),
+    withNative({ mcp: ["al-tools"], mcp_tools: { "al-tools": ["a", "b"] } }),
+  );
+  assertEquals(
+    await mcpDerivedSettingsOnly(a, b),
+    false,
+    "same server, same schema hash, different tools",
+  );
+  await assertRejects(
+    () => assertVaryHolds(a, b, ["mcp"]),
+    ConfigurationError,
+    "settings",
+  );
+});
