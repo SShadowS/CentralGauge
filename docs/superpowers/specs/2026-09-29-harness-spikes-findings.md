@@ -1,8 +1,12 @@
 # Harness Bench M0 spike findings (2026-09-29)
 
 Plan: `docs/superpowers/plans/2026-09-24-harness-bench-spike.md`. Spec: `2026-09-24-harness-bench-design.md` (1a).
-All runs 2026-09-25 on Cronus28 (BC 28.4.53241.53758). Logs and results under `H:\Temp3\harness-spike\`; orchestrator
-decisions under `H:\cg-coord\decisions\`; reviews under `H:\cg-coord\reviews\`.
+All runs 2026-09-25. BC container use per task: M0-02 compiled and published on Cronus28 (`M0-02-results.md`);
+M0-04's al-tools MCP server defaulted to Cronus28 (`H:\cg-coord\tasks\M0-04\runs\002\notes.md`); M0-05's backend compiled
+on Cronus28 (`M0-05-results.md`); M0-06 compiled offline in the sandbox against Cronus28's symbol set, BC
+28.4.53241.53758 (`M0-06-results.md`). M0-03 (sandbox capture) and M0-07 (log classification) used no BC container.
+Unqualified file names are under `H:\Temp3\harness-spike\`; orchestrator decisions under `H:\cg-coord\decisions\`;
+reviews under `H:\cg-coord\reviews\`.
 
 ## 1. Multi-app timing (Task 2, M0-02)
 
@@ -25,7 +29,8 @@ Median per app, 7-app set (ms):
 - 3-app total (compile + publish): 35.2 / 29.7 / 30.0 s, median 30.0 s.
 - 7-app total incl. test: 75.1 / 73.2 / 72.7 s, median 73.2 s.
 - Test execution (SOAP runner, 5 tests): 117 / 89 / 154 ms, 5/5 passed in every 7-app run.
-- Ratio 7-app / single-candidate `prepare-candidate` span (14.6 s): 73.2 / 14.6 = 5.0x.
+- Ratio 7-app / single-candidate `prepare-candidate` span (14.6 s, `.claude/rules/bc-container-quirks.md` line 88,
+  as referenced by the plan, Task 2 Step 4): 73.2 / 14.6 = 5.0x (`M0-02-results.md`).
 - Publish is ~60% of the 7-app time, compile ~40%. Each app compiles against the earlier apps' `.app` files copied
   into `.alpackages` (no symbol download).
 - First Core compile + publish of a session: 8.4 s + 15.1 s (`M0-02-run1.log`), warm-up.
@@ -34,13 +39,14 @@ Caveats (review `H:\cg-coord\reviews\M0-02-001\review-gpt56sol.md`, decision `20
 publish is `publishApp` (BCH wrapper, serial), not the dev-endpoint path of `prepareCandidateApp`; test time is direct
 `runTestsViaSoap`, not the full `runTests()` lifecycle; totals are operation sums, not wall time, and exclude prenuke,
 staging, dependency copying and cleanup. The 5.0x ratio is not a production scaling factor. The 14.6 s denominator is
-from CLAUDE.md, not this JSON.
+not in the raw JSON.
 
 ## 2. Dependency graph (Tasks 1-2, M0-01, M0-01a, M0-02)
 
-- Graph as committed (`harness-tasks/refapp/*/app.json`): Core; Fleet, Integration, Leasing -> Core;
+- Graph as committed in the repo (`harness-tasks/refapp/{Core,Fleet,Rental,Leasing,Integration,Reporting,Test}/app.json`,
+  `dependencies[].name`): Core; Fleet, Integration, Leasing -> Core;
   Rental -> Core, Fleet; Reporting -> Rental, Leasing, Fleet; Test -> all six + Library Assert. All 7 apps compile and
-  publish in dependency order (`M0-02-run1c.log`, raw JSON above).
+  publish in dependency order (`M0-02-results.md` run 1 and measurement sections, `M0-02-run1c.log`, raw JSON above).
 - Change 1, test codeunit: the skeleton test codeunit lacked `TestPermissions = Disabled`; 3 of 5 tests failed with
   "Sorry, the current permissions prevented the action. (TableData 70100 CGR Vehicle Insert: CGR Test)"
   (`M0-02-run1c.log`). Fixed by M0-01a (commit a9d17cba, integrated c00255d2, decision `2026-09-25-accept-M0-01a.md`),
@@ -105,7 +111,7 @@ pi `pi --mode json --no-session -a --provider openrouter --model google/gemini-3
 - Not established by the fixture: that the OAuth token belongs to the Team account (rests on the secrets file), and
   whether `total_cost_usd` is billed.
 - Team account reading at ~12:00Z: seven_day 0.79 (status `allowed_warning`, resets 2026-09-29 01:00Z), five_hour 0.08.
-  Same seven_day 0.79 at 12:20Z (`M0-07-job.log`).
+  Same seven_day 0.79 at 12:20Z (`H:\Temp3\harness-spike\M0-07-job.log`, both Claude lines).
 - The `system/task_progress` and `task_notification` `usage` (`total_tokens`, `tool_uses`, `duration_ms`) is sub-agent
   usage, not the run.
 
@@ -127,8 +133,9 @@ decision `2026-09-25-accept-M0-05.md`. Backend `scripts/spikes/harness/backend-s
   allowlist before path resolution, so the containment branch is not exercised); wrong bearer token 401. Malformed JSON
   was not tested.
 - The compiled `.app` is not written into the workspace; the sandbox sees only the JSON verdict.
-- Backend token was passed on the backend's argv; backend bound `0.0.0.0`; `Date.now()` timing (review
-  `H:\cg-coord\reviews\M0-05-001\review-gpt56sol.md`). Carryover in section 8.
+- Backend token was passed on the backend's argv (`M0-05-results.md`, Notes for M1). The backend binds `0.0.0.0`
+  and times with `Date.now()` (both per review `H:\cg-coord\reviews\M0-05-001\review-gpt56sol.md`, sections 2 and 3).
+  Carryover in section 8.
 
 ## 6. AL Tools NuGet (Task 6, M0-06)
 
@@ -152,8 +159,9 @@ decision `2026-09-25-accept-M0-06.md`. Result: positive.
 
 - Each run is a fresh container (includes .NET start and loading 400 MB of symbols). Backend path for comparison
   (section 5): 3.5-4.4 s warm, 8.3 s cold.
-- The Dockerfile has no default for `AL_TOOLS_ID`/`AL_TOOLS_VERSION`; base image not digest-pinned; `-Channel 8.0` is
-  not an exact version; no package hash recorded (review `H:\cg-coord\reviews\M0-06-001\review-gpt56sol.md`).
+- Per review `H:\cg-coord\reviews\M0-06-001\review-gpt56sol.md` section 2: the Dockerfile has no default for
+  `AL_TOOLS_ID`/`AL_TOOLS_VERSION`; the base image is not digest-pinned; `-Channel 8.0` is not an exact version; no
+  package hash is recorded.
 
 ## 7. Classification (Task 7, M0-07)
 
@@ -161,7 +169,8 @@ Run 001 (commit eb3e8598) was rejected for missing blind-label evidence (`H:\cg-
 Run 002 (commit 27454f69, integrated 207545f6) is accepted (`H:\cg-coord\decisions\2026-09-25-accept-M0-07.md`).
 Evidence `H:\Temp3\harness-spike\M0-07\`: `input-logs.txt` (10 raw logs), `calls.jsonl` (45 calls), `calls-blind.jsonl`
 (index, harness, tool, input only), `labels-blind.csv`, `score.txt`, `rules-coverage.txt`, `M0-07-results.md`, run 001
-evidence in `run001\` (incl. `laya.jsonl`).
+evidence in `H:\Temp3\harness-spike\M0-07\run001\` (`M0-07-results.md`, `calls.jsonl`, `labels.csv`, `laya.jsonl`,
+`rules-coverage.txt`). The Laya lines below cite that run 001 evidence.
 
 - Extraction: Claude = assistant `message.content[]` `tool_use`; pi = `tool_execution_start` only.
 - Labeling: a fresh subagent with no history read only `calls-blind.jsonl` (no rule category). The blind labels are
@@ -179,14 +188,17 @@ evidence in `run001\` (incl. `laya.jsonl`).
   Unclassified, pi (4): `cg-al --version` x3, `set | grep PI_` (label other).
 - Caveat: coverage differs by harness (13/27 vs 14/18), so M0 category totals must not be used to rank harness behavior.
   Skill use lands in different categories per harness (Claude `Skill` tool, pi `read` of a `SKILL.md` path).
-- Laya: PyPI `laya` 0.3.20 (github.com/NandhaKishorM/laya), Python 3.13.14 venv `H:\Temp3\harness-spike\laya-venv`,
+- Laya (all from `H:\Temp3\harness-spike\M0-07\run001\M0-07-results.md`, Laya section): PyPI `laya` 0.3.20
+  (github.com/NandhaKishorM/laya), Python 3.13.14 venv `H:\Temp3\harness-spike\laya-venv`,
   torch 2.14.0+cpu. Checkpoint `Router()` default -> HF `convaiinnovations/laya` (ModernBERT-large, 421M, 512 ctx).
   Invocation `router.predict(json.dumps({"tool","command"}), {"category": {"type":"choice", "instructions": ...,
   "criteria": {<9 categories>}}})`, probability = `answers.category.probabilities[choice]`.
 - Laya accuracy on the 18-call residue (run 001, labels identical to the blind labels): 11/18 overall; at p >= 0.8:
   3/10 correct; below 0.8 (would be `unclassified`): 8/18. `cg-al --version` -> compile at p 0.91-0.92 (all 6 wrong);
-  `set | grep PI_` -> search at p 0.86 (wrong). Only 7 distinct inputs, so anecdotal.
-- Laya latency (CPU, warm): median 159 ms, p95 185 ms.
+  `set | grep PI_` -> search at p 0.86 (wrong). The 18 residue calls are 7 distinct inputs (run 001 results, Rules
+  section), so this is anecdotal. Per-call answers: `run001\laya.jsonl`.
+- Laya latency (CPU, warm): median 159 ms, p95 185 ms (run 001 results). The 18 `ms` values in `run001\laya.jsonl`
+  range 148.0-184.5 ms, median 159.2 ms.
 - Decision: Laya cut (`H:\cg-coord\decisions\2026-09-25-cut-laya.md`, launch contract cut order item 1). Call
   categorization is rules only, post-hoc, secondary metric.
 - CARRYOVER to M2 rule categorization (`accept-M0-07.md`): Skill, Agent, ToolSearch handling; `cg-al` version and
@@ -223,8 +235,8 @@ Spec assumptions confirmed or broken:
 - Rules only (M0-07 run 002, blind labels): coverage 27/45, accuracy 27/27; Claude Code 13/27, pi 14/18.
   Coverage differs by harness, so M0 category totals must not rank harnesses.
 - Partly: skill invocation is a `Skill` tool_use in Claude; in pi only a `read` of a `SKILL.md` path.
-- Not observed: retry and compaction records for either harness; fixtures lack them (carry to M2/M3 parser plans, with
-  redactor coverage beyond exact secrets, `accept-M0-04.md`).
+- Not observed: retry and compaction records for either harness. Carry to the M2/M3 parser plans (`accept-M0-04.md`):
+  fixture coverage for retry, compaction and fatal run/API failure records; redactor coverage beyond exact secrets.
 - Parser rules: pi counts calls from `tool_execution_start`, usage from assistant `message_end`; Claude must not sum
   repeated assistant chunk usage.
 - Campaign sizing: Team account seven_day utilization 0.79 on 2026-09-25, resets 2026-09-29 01:00 UTC.
@@ -246,8 +258,10 @@ Spec assumptions confirmed or broken:
   firewall or local authenticated proxy; malformed JSON returns 400; latency on a monotonic clock, separating process
   startup, transport, queue and compile.
 - M1 metric rules (owner, `2026-09-25-m1-metric-rules.md`): cost per solved task = sum over tasks of per-task mean cost
-  (every attempt counted) / sum of per-task pass rates, equal task weight; matched-pair exclusions; automatic infra-retry
-  chain counts its final attempt, manual reruns never silently replace a scored result; CI suppressed when any bootstrap
-  resample is undefined.
+  (every attempt counted) / sum of per-task pass rates, equal task weight; pending spend is disclosed and the headline
+  is marked provisional while cells are pending; matched pairs (a comparison uses only (task, repeat) cells eligible in
+  both arms) with each arm's raw spend and exclusions reported separately; automatic infra-retry chain counts its final
+  attempt, manual reruns never silently replace a scored result and the report states which execution was used; CI and
+  distinguishable verdict suppressed when any bootstrap resample is undefined, with the undefined share reported.
 - id-audit has no band rule for `harness-tasks/` (M1 follow-up, `accept-M0-01.md`).
 - Paid API spend to date USD 0.034 of a 150 cap (`spend.md`).

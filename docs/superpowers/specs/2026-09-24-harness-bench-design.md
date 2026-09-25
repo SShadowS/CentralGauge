@@ -164,9 +164,14 @@ Per execution (config x task x repeat):
      files) and agent-visible task metadata
    - `C:\config` read-only: resolved native config, bundle, MCP definitions
    - `C:\cg-secrets` read-only: API keys, backend token (never `-e`, never
-     argv). This mount is agent-readable; the production plan must either
-     keep secrets out of it or state here why they must be there (spike
-     findings 2026-09-29 section 8, M0-03 carryover).
+     argv). Threat model (accepted risk, owner accepted 2026-09-25 (decisions/2026-09-25-secrets-accepted-risk.md)): the
+     harness process needs its provider credential inside the sandbox, so
+     it is readable by the agent. Accepted because it is a dedicated
+     benchmark credential (Team OAuth token, capped OpenRouter key), never
+     in argv or image layers, egress is limited to the provider and the
+     backend, and every captured log is scanned for the exact secret values
+     before it leaves the sandbox (spike findings 2026-09-29 section 8, M0-03
+     carryover).
 3. `run.ps1` translates `C:\config` into the harness's native format
    (`.claude\`, pi config, and so on) and runs the harness non-interactively
    on the prompt. The harness's structured output (Claude Code
@@ -273,9 +278,9 @@ concurrency is used in 1a (no priority scheduling). Queue wait is recorded
 per backend call because BC latency changes agent behavior (a slow test run
 makes an agent change strategy) and cannot simply be subtracted afterward.
 Spike result: 7-app compile + publish + test median 73.2 s (operation sum,
-spike findings 2026-09-29 section 1), under the 10 minute rule, so all apps
-are published per `cg-al test` call and the default is not forced to one
-execution per container.
+spike findings 2026-09-29 section 1). The 10 minute rule does not fire, so
+publishing only changed apps and one execution per container are not
+forced.
 
 ## 6. Experiment, campaign and records
 
@@ -353,6 +358,13 @@ The verdict never runs on the agent's workspace as-is. It builds a
    ranges and outside the reserved bands. A violation fails the build scorer.
 4. Copying refuses symlinks, junctions and other reparse points. No build
    script from the artifact is ever executed on the host.
+5. Container app cleanup is scoped to the candidate app ids of this
+   verdict. The refapp dependency apps have persistent prerequisite app ids
+   and stay installed; a stale prerequisite version is refreshed before the
+   verdict; provisioning latency is reported separately from verdict
+   latency. (The existing `prepareCandidateApp` cleanup removes every
+   non-`*Prereq*` CentralGauge app, including the refapp dependencies,
+   spike findings 2026-09-29 section 2.)
 
 Scorers are listed per task in `task.yml`. An execution passes only if every
 scorer passes.
@@ -415,8 +427,11 @@ Each execution carries three independent fields:
   counts; a manual rerun never silently replaces a scored result and the
   report states which execution was used
   (`H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md`).
-- Sandbox cleanup runs in `finally`. Orphans named `cg-harness-<id>-*` are
-  swept at start. `acquireBenchLock` is held for harness runs, since BC
+- Sandbox cleanup runs in `finally`. The runner creates the container and
+  opens the capture files inside the protected region, and checks the exit
+  status of `docker rm -f`. Sandbox containers are owned by name prefix
+  `cg-harness-<id>-*` plus a label; at startup the runner sweeps leftover
+  containers it owns (spike findings 2026-09-29 section 8, M0-03 carryover). `acquireBenchLock` is held for harness runs, since BC
   containers are shared.
 
 ## 9. Report
@@ -538,8 +553,10 @@ Before planning 1a in detail, prove on real containers:
 - the refapp's acyclic dependency graph, including the Rental/Fleet
   interaction, compiles and publishes
 - Claude Code and pi in the Windows sandbox, non-interactive, pinned
-  versions: structured output captured through a hard kill; retries,
-  compaction, sub-agent and MCP calls visible in the logs; which usage
+  versions: structured output captured through a hard kill; sub-agent and
+  MCP calls visible in the logs (retry and compaction records were not
+  observed in the spike; fixtures for them are M2 work, spike findings 2026-09-29
+  section 4); which usage
   fields each actually reports; whether pi loads project resources in
   non-interactive mode without an interactive trust prompt
 - a `cg-al` round trip through the backend with a scoped token
