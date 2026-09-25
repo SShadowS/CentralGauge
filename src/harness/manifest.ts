@@ -339,11 +339,16 @@ export async function assertVaryHolds(
     !allowed.has(k)
   );
   // Under vary [mcp], native.mcp and native.mcp_tools follow the mcp component.
-  if (
-    vary.includes("mcp") && bad.includes("settings") &&
-    await mcpDerivedSettingsOnly(baseline, variant)
-  ) {
-    bad = bad.filter((k) => k !== "settings");
+  if (vary.includes("mcp")) {
+    if (bad.includes("settings")) {
+      if (await mcpDerivedSettingsOnly(baseline, variant)) {
+        bad = bad.filter((k) => k !== "settings");
+      }
+    } else if (!mcpKeysDerived(baseline) || !mcpKeysDerived(variant)) {
+      // Equal settings still must have the MCP key shape on each side
+      // (a variant with servers and neither key equals a no-server baseline).
+      bad = [...bad, "settings"];
+    }
   }
   if (bad.length > 0) {
     throw new ConfigurationError(

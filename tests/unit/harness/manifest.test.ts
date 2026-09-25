@@ -145,15 +145,16 @@ Deno.test("assertVaryHolds: inside vary passes, outside is refused", async () =>
     FACTS,
   );
   await assertVaryHolds(base, skills, ["skills"]);
+  // An arm with MCP servers carries the MCP-derived native keys (M2-14).
   const both = await resolveManifest(
     r,
     config("both", { skills: "bundles/al/skills", mcp: ["al-tools"] }),
-    FACTS,
+    withNative(MCP_NATIVE),
   );
   await assertRejects(
     () => assertVaryHolds(base, both, ["skills"]),
     ConfigurationError,
-    "outside vary [skills]: mcp",
+    "outside vary [skills]: settings, mcp",
   );
   await assertVaryHolds(base, both, ["skills", "mcp"]);
 });
@@ -469,6 +470,26 @@ Deno.test("vary [mcp]: a side with servers must carry both native.mcp and native
   );
   await assertRejects(
     () => assertVaryHolds(base, v, ["mcp"]),
+    ConfigurationError,
+    "settings",
+  );
+});
+
+Deno.test("vary [mcp]: the MCP key shape is checked even when settings are equal", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), FACTS);
+  const v = await resolveManifest(
+    r,
+    config("mcp", { mcp: ["al-tools"] }),
+    FACTS,
+  );
+  await assertRejects(
+    () => assertVaryHolds(base, v, ["mcp"]),
+    ConfigurationError,
+    "settings",
+  );
+  await assertRejects(
+    () => assertVaryHolds(v, base, ["mcp"]),
     ConfigurationError,
     "settings",
   );
