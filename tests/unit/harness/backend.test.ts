@@ -47,6 +47,8 @@ interface Setup {
   gate: { wait: Promise<void> | null };
   failWith: { err: Error | null };
   docker: FakeDocker;
+  /** Resolves when the fake compile op starts (pins "revoke during the op"). */
+  entered: Promise<void>;
 }
 
 async function workspace(root: string, exec: string): Promise<string> {
@@ -106,9 +108,12 @@ async function setup(): Promise<Setup> {
   const seen: string[] = [];
   const gate: Setup["gate"] = { wait: null };
   const failWith: Setup["failWith"] = { err: null };
+  let enter!: () => void;
+  const entered = new Promise<void>((r) => (enter = r));
   const ops: BackendOps = {
     async compile(ctx, apps) {
       seen.push(ctx.snapshot);
+      enter();
       if (gate.wait) {
         await Promise.race([
           gate.wait,
@@ -168,6 +173,7 @@ async function setup(): Promise<Setup> {
     gate,
     failWith,
     docker,
+    entered,
   };
 }
 
@@ -323,7 +329,10 @@ Deno.test("backend: revoke aborts an operation that outlives the grace and still
   const first = s.backend.handle(
     req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
   );
-  await new Promise((r) => setTimeout(r, 20));
+  // Pinned ordering: the revoke lands while the op runs. A fixed sleep let a
+  // slow snapshot (full-suite load) outlast it, so the revoke cancelled
+  // before the op started: 503, the other legitimate ordering (M1-19a).
+  await s.entered;
   const t0 = performance.now();
   assertEquals(
     await s.backend.revoke(EXEC_A),
@@ -403,7 +412,12 @@ Deno.test("production ops: a revoke past the grace cancels before any further BC
   let releaseCompile!: () => void;
   const gate = new Promise<void>((r) => (releaseCompile = r));
   const bc = new FakeBc(() => result({ A: true }));
-  bc.onCompile = () => gate;
+  let compiling!: () => void;
+  const inCompile = new Promise<void>((r) => (compiling = r));
+  bc.onCompile = () => {
+    compiling();
+    return gate;
+  };
   const exec = "00000000-0000-4000-8000-00000000e004";
   const b = new Backend({
     scanReparsePoints: NO_SCAN,
@@ -416,7 +430,10 @@ Deno.test("production ops: a revoke past the grace cancels before any further BC
   });
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl4.jsonl"));
   const pending = b.handle(req("/v1/test", tok, "{}", exec));
-  await new Promise((r) => setTimeout(r, 30));
+  // Pinned ordering: the revoke lands during the first compile. A fixed sleep
+  // let a slow snapshot outlast sleep + grace, so the abort landed before any
+  // compile (M1-19a).
+  await inCompile;
   const revoking = b.revoke(exec);
   await new Promise((r) => setTimeout(r, 150)); // past the first grace: the signal is aborted
   releaseCompile();
@@ -1024,3 +1041,40 @@ Deno.test(
     }
   },
 );
+
+Deno.test("backend: a revoke that lands during the snapshot cancels before the operation starts (503, op never runs)", async () => {
+  const s = await setup();
+  let release!: () => void;
+  const scanning = new Promise<void>((r) => (release = r));
+  let scanned!: () => void;
+  const inScan = new Promise<void>((r) => (scanned = r));
+  let opRan = false;
+  const b = new Backend({
+    scanReparsePoints: async () => {
+      scanned();
+      await scanning; // the snapshot is still in progress when the revoke aborts
+      return { ancestors: [], entries: [], seen: 0, capped: false };
+    },
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend11"),
+    ops: {
+      compile: () => {
+        opRan = true;
+        return Promise.resolve({ body: {}, log: { outcome: "ok" } });
+      },
+      test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
+    },
+    allowedHosts: ["127.0.0.1"],
+    revokeGraceMs: 10,
+  });
+  const exec = "00000000-0000-4000-8000-00000000e00d";
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hld.jsonl"));
+  const pending = b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
+  await inScan;
+  const revoking = b.revoke(exec);
+  await new Promise((r) => setTimeout(r, 30)); // past the first grace: the signal is aborted
+  release();
+  await revoking; // whether it drained depends on the grace; the ordering is what is pinned
+  assertEquals((await pending).status, 503);
+  assertEquals(opRan, false);
+});
