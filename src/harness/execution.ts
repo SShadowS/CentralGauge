@@ -475,16 +475,21 @@ async function checkOperatorSecrets(
   }
 }
 
-/** The custody temp file, created empty and given the verified owner-only ACL before any content. */
-async function prepareCustodyFile(
-  env: HarnessEnv,
-  path: string,
-): Promise<string> {
-  await Deno.mkdir(dirname(path), { recursive: true });
+/**
+ * A private temp file for secret-bearing or secret-derived content: its
+ * directory is restricted and verified owner-only first (nothing else can
+ * be put in it by another account), then the temp file is created empty and
+ * restricted and verified, all before any content is written.
+ */
+async function restrictedTemp(env: HarnessEnv, path: string): Promise<string> {
+  const acl = env.secretAcl ?? {};
+  const dir = dirname(path);
+  await Deno.mkdir(dir, { recursive: true });
+  await restrictPath(dir, acl, "dir");
   const tmp = `${path}.tmp-${crypto.randomUUID()}`;
   (await Deno.open(tmp, { write: true, createNew: true, mode: 0o600 })).close();
   try {
-    await restrictPath(tmp, env.secretAcl ?? {}, "file");
+    await restrictPath(tmp, acl, "file");
   } catch (err) {
     await Deno.remove(tmp).catch(() => {});
     throw err;
@@ -492,12 +497,12 @@ async function prepareCustodyFile(
   return tmp;
 }
 
-/** Write the secrets into the restricted temp file, sync, rename (the ACL moves with the file). */
-async function writeCustody(tmp: string, path: string, values: SecretValue[]) {
+/** Write into a restricted temp file, sync, rename (the ACL moves with the file). */
+async function commitTemp(tmp: string, path: string, text: string) {
   try {
     const f = await Deno.open(tmp, { write: true, truncate: true });
     try {
-      const bytes = new TextEncoder().encode(JSON.stringify(values));
+      const bytes = new TextEncoder().encode(text);
       for (let off = 0; off < bytes.length;) {
         off += await f.write(bytes.subarray(off));
       }
@@ -1006,6 +1011,7 @@ async function finishCleanup(env: HarnessEnv, id: string) {
     });
   }
   await removeTemps(join(env.privateRoot, "custody"), `${id}.json`);
+  await removeTemps(join(env.privateRoot, "redaction"), `${id}.json`);
   for (const f of [p.custody, p.intent]) {
     await Deno.remove(f).catch((err) => {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
@@ -1022,6 +1028,7 @@ async function discardAttempt(env: HarnessEnv, id: string): Promise<void> {
     });
   }
   await removeTemps(join(env.privateRoot, "custody"), `${id}.json`);
+  await removeTemps(join(env.privateRoot, "redaction"), `${id}.json`);
   await Deno.remove(p.intent).catch((err) => {
     if (!(err instanceof Deno.errors.NotFound)) throw err;
   });
@@ -1134,7 +1141,9 @@ export async function runExecution(
       manifest.limits.timeout_min,
     );
     await checkOperatorSecrets(env.secretsSource, adapter.secretFiles);
-    const custodyTmp = await prepareCustodyFile(env, p.custody);
+    // Both restricted before the reservation: an ACL failure is predictable.
+    const custodyTmp = await restrictedTemp(env, p.custody);
+    const keysTmp = await restrictedTemp(env, p.keys);
     const token = await env.backend.grant({
       executionId: id,
       sandbox: name,
@@ -1185,8 +1194,12 @@ export async function runExecution(
       );
       secretsDir = s.dir;
       secrets = s.values;
-      await writeCustody(custodyTmp, p.custody, s.values);
-      await writeAtomic(p.keys, JSON.stringify(redactionKeys(s.values)));
+      await commitTemp(custodyTmp, p.custody, JSON.stringify(s.values));
+      await commitTemp(
+        keysTmp,
+        p.keys,
+        JSON.stringify(redactionKeys(s.values)),
+      );
       await writeAtomic(
         p.intent,
         JSON.stringify({ ...intent, phase: "released" }, null, 2),
@@ -1456,6 +1469,7 @@ export async function recoverInterrupted(
   // Temp files of an interrupted writeAtomic are never needed (the final
   // name is renamed into place), and a custody temp holds plaintext secrets.
   await removeTemps(join(env.privateRoot, "custody"));
+  await removeTemps(join(env.privateRoot, "redaction"));
   const dir = join(env.privateRoot, "intents");
   await removeTemps(dir);
   const recovered: ExecutionRecord[] = [];
@@ -1564,7 +1578,11 @@ export async function recoverInterrupted(
         secrets = c;
         // A crash between the custody and the key file: derive the keys again.
         if (!await exists(p.keys)) {
-          await writeAtomic(p.keys, JSON.stringify(redactionKeys(secrets)));
+          await commitTemp(
+            await restrictedTemp(own, p.keys),
+            p.keys,
+            JSON.stringify(redactionKeys(secrets)),
+          );
         }
       }
       const why = "interrupted before any secret was released";

@@ -1230,3 +1230,120 @@ Deno.test("preflight failures (missing image, missing operator secret) reserve n
   assert(!await exists(t2.env.credentialLedger!), "secret: no slot reserved");
   assertEquals(t2.docker.runs, []);
 });
+
+/** Records each icacls call with the target's state; `failVerify` makes the listing of matching paths wrong. */
+function aclSpy(
+  t: TestEnv,
+  failVerify: (path: string) => boolean = () => false,
+) {
+  const acl = t.env.secretAcl!;
+  const seen: {
+    path: string;
+    grant: boolean;
+    size: number | null;
+    entries: string[];
+  }[] = [];
+  t.env.secretAcl = {
+    user: acl.user,
+    icacls: async (args) => {
+      const path = args[0]!;
+      const st = await Deno.stat(path).catch(() => null);
+      seen.push({
+        path,
+        grant: args.length > 1,
+        size: st?.isFile ? st.size : null,
+        entries: st?.isDirectory
+          ? [...Deno.readDirSync(path)].map((e) => e.name)
+          : [],
+      });
+      if (args.length === 1 && failVerify(path)) {
+        return {
+          code: 0,
+          stdout:
+            `${path} Everyone:(F)\n\nSuccessfully processed 1 files; Failed processing 0 files\r\n`,
+          stderr: "",
+        };
+      }
+      return await acl.icacls(args);
+    },
+  };
+  return seen;
+}
+
+Deno.test({
+  name:
+    "custody and key files: their directories are restricted and verified before any temp file goes in; each temp file before its first write",
+  ignore: Deno.build.os !== "windows",
+}, async () => {
+  const t = await makeEnv();
+  const seen = aclSpy(t);
+  t.env.hooks = {
+    beforeDraft: () => Promise.reject(new Error("runner killed")),
+  };
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t)),
+    Error,
+    "runner killed",
+  );
+  for (const sub of ["custody", "redaction"]) {
+    const dir = join(t.env.privateRoot, sub);
+    const dirCalls = seen.filter((s) => s.path === dir);
+    assertEquals(dirCalls.map((s) => [s.grant, s.entries]), [[true, []], [
+      false,
+      [],
+    ]], `${sub} dir: grant, verify, still empty`);
+    const tmp = seen.filter((s) =>
+      s.path.startsWith(dir + "\\") && s.path.includes(".json.tmp-")
+    );
+    assertEquals(
+      tmp.map((s) => [s.grant, s.size]),
+      [[true, 0], [false, 0]],
+      `${sub} temp: grant, verify, before the first write`,
+    );
+    assert(
+      seen.indexOf(dirCalls[1]!) < seen.indexOf(tmp[0]!),
+      `${sub}: the directory is verified first`,
+    );
+  }
+  const [id] = intentIds(t);
+  assert(
+    (await Deno.readTextFile(privatePaths(t.env, id!).keys)).includes("sha256"),
+  );
+});
+
+Deno.test({
+  name:
+    "a key file whose ACL does not verify is never written (and nothing is reserved or run)",
+  ignore: Deno.build.os !== "windows",
+}, async () => {
+  const t = await makeEnv();
+  aclSpy(t, (p) => p.includes(".json.tmp-") && p.includes("\\redaction\\"));
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertEquals([...Deno.readDirSync(join(t.env.privateRoot, "redaction"))], []);
+  assert(!await exists(t.env.credentialLedger!), "no slot reserved");
+  assertEquals(t.docker.runs, []);
+});
+
+Deno.test({
+  name: "an unverified custody directory refuses before any secret is written",
+  ignore: Deno.build.os !== "windows",
+}, async () => {
+  const t = await makeEnv();
+  const custodyDir = join(t.env.privateRoot, "custody");
+  aclSpy(t, (p) => p === custodyDir);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertEquals(
+    [...Deno.readDirSync(custodyDir)],
+    [],
+    "no custody temp or file",
+  );
+  assert(
+    !await exists(join(t.env.privateRoot, "secrets")) ||
+      [...Deno.readDirSync(join(t.env.privateRoot, "secrets"))].length === 0,
+    "no secrets released",
+  );
+  assert(!await exists(t.env.credentialLedger!), "no slot reserved");
+  assertEquals(t.docker.runs, []);
+});
