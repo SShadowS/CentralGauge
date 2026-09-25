@@ -650,3 +650,79 @@ Deno.test("pi parse: pi's reported cost is null whenever the estimate has a gap"
     ], what);
   }
 });
+
+Deno.test("pi parse: an assistant request without message_end nulls the cost, at agent_settled and at the end of the stream", () => {
+  const open = JSON.stringify({
+    type: "message_start",
+    message: { role: "assistant" },
+  });
+  const done = open + "\n" + assistant({ stopReason: "stop" }) + "\n";
+  const atSettled = run(HEAD + done + open + "\n" + END);
+  assertEquals([
+    atSettled.termination,
+    atSettled.telemetry.cost_usd,
+    atSettled.telemetry.reported_cost_usd,
+  ], ["completed", null, null]);
+  assertStringIncludes(
+    raw(atSettled).stream_problems.join("\n"),
+    "line 5: assistant message without message_end",
+  );
+  assertStringIncludes(
+    raw(atSettled).missing.join("\n"),
+    "line 5: assistant message without message_end",
+  );
+  const atEof = run(HEAD + done + open + "\n", {}, null);
+  assertEquals([atEof.termination, atEof.telemetry.cost_usd], [null, null]);
+  assertStringIncludes(
+    raw(atEof).stream_problems.join("\n"),
+    "line 5: assistant message without message_end",
+  );
+  assertEquals(
+    run(HEAD + done + END).telemetry.cost_usd !== null,
+    true,
+    "a closed request is priced",
+  );
+});
+
+Deno.test("pi parse: pi's reported cost is null whenever the estimate is null or incomplete", () => {
+  const usage = (o: Record<string, unknown>) => ({
+    input: 1,
+    output: 1,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 2,
+    cost: { total: 0.5 },
+    ...o,
+  });
+  for (
+    const [what, msg, over] of [
+      ["inconsistent totalTokens", {
+        stopReason: "stop",
+        usage: usage({ totalTokens: 5 }),
+      }, {}],
+      ["model not in the pricing book", {
+        stopReason: "stop",
+        model: "other/model",
+      }, {}],
+      ["reasoning above output", {
+        stopReason: "stop",
+        usage: usage({ reasoning: 2 }),
+      }, {}],
+      ["provider not openrouter", {
+        stopReason: "stop",
+        provider: "anthropic",
+        usage: usage({}),
+      }, {}],
+    ] as const
+  ) {
+    const r = run(HEAD + assistant(msg) + "\n" + END, over);
+    assertEquals([r.telemetry.cost_usd, r.telemetry.reported_cost_usd], [
+      null,
+      null,
+    ], what);
+  }
+  const ok = run(
+    HEAD + assistant({ stopReason: "stop", usage: usage({}) }) + "\n" + END,
+  );
+  assertEquals(ok.telemetry.reported_cost_usd, 0.5);
+});
