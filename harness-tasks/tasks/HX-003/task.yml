@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 85200, procedures: [DefaultVehicleDueIsRefused, DefaultVehicleBelowIntervalRents, HeavyDutyDueAtFiveThousand, HeavyDutyBelowIntervalRents, ExtensionStrategyDueIsRefused, ExtensionStrategyBelowIntervalRents, SwapToDueVehicleIsRefused, AvailabilityReportsDueVehicle, OverrideCannotReleaseDueVehicle, SwapUnderOverrideRefused, OverrideStillAppliesToVehiclesNotDue] }
+    - { codeunit: 85200, procedures: [DefaultVehicleDueIsRefused, DefaultVehicleBelowIntervalRents, HeavyDutyDueAtFiveThousand, HeavyDutyBelowIntervalRents, ExtensionStrategyDueIsRefused, ExtensionStrategyBelowIntervalRents, SwapToDueVehicleIsRefused, AvailabilityReportsDueVehicle, OverrideCannotReleaseDueVehicle, SwapUnderOverrideRefused, OverrideStillAppliesToVehiclesNotDue, SwapToDueHeavyDutyIsRefused, AvailabilityFollowsStrategyBoundary] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

@@ -176,6 +176,33 @@ codeunit 85200 "HX003 Service Oracle"
         UnbindSubscription(Override);
     end;
 
+    [Test]
+    procedure SwapToDueHeavyDutyIsRefused()
+    var
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        Prepare();
+        MakeVehicle('HX3-O', Enum::"CGR Maintenance Strategy"::Default, 0, 1000);
+        MakeVehicle('HX3-P', Enum::"CGR Maintenance Strategy"::"Heavy Duty", 10000, 15000);
+        ContractNo := NewContract('HX3-O');
+        RentalMgt.CheckOut(ContractNo);
+        asserterror RentalMgt.SwapVehicle(ContractNo, 'HX3-P');
+        Assert.ExpectedError(StrSubstNo(DueErr, 'HX3-P'));
+    end;
+
+    [Test]
+    procedure AvailabilityFollowsStrategyBoundary()
+    var
+        FleetMgt: Codeunit "CGR Fleet Mgt";
+    begin
+        Prepare();
+        MakeVehicle('HX3-Q', Enum::"CGR Maintenance Strategy"::"HX3 Short", 10000, 11000);
+        MakeVehicle('HX3-R', Enum::"CGR Maintenance Strategy"::"HX3 Short", 10000, 10999);
+        Assert.IsFalse(FleetMgt.IsAvailable('HX3-Q'), 'A vehicle at its strategy service km is not available');
+        Assert.IsTrue(FleetMgt.IsAvailable('HX3-R'), 'A vehicle one km below its strategy service km is available');
+    end;
+
     local procedure Prepare()
     var
         Setup: Record "CGR Setup";
