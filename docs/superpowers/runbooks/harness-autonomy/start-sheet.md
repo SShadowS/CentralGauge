@@ -17,7 +17,7 @@ Everything below is for the owner. About 15 minutes.
      `claude mcp add pi -s user -e PI_MCP_PROVIDER=openai-codex -- bun run U:/Git/pi-mcp/src/pi-server.ts`
      (if `pi` already exists there: `claude mcp remove pi -s user` first). Check with
      `claude mcp get pi` that the env var is shown, and in a session `pi_models` lists
-     `openai-codex` rows including `gpt-5.6-sol` and `gpt-6-astra`.
+     `openai-codex` rows including `gpt-6-sol` and `gpt-6-astra`.
    - `/plugin` shows `superpowers` enabled (plans use `writing-plans` and
      `subagent-driven-development`)
    - your global `CLAUDE.md` rules (Git Bash, no `2>nul`, no destructive git) are present in

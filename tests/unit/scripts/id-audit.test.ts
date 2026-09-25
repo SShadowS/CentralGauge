@@ -311,3 +311,109 @@ Deno.test("auditObjects: prereq co-installation collisions", async (t) => {
     assertEquals(problems, []);
   });
 });
+
+Deno.test("harness-tasks: units, bands, reserved subranges, 80013", async (t) => {
+  const f = (file: string, id: number) => obj({ file, unit: unitOf(file), id });
+  const shipped = "harness-tasks/refapp/Test/src/RentalTests.Codeunit.al";
+  const core = "harness-tasks/refapp/Core/src/A.Codeunit.al";
+  const oracle = "harness-tasks/tasks/HX-001/oracle/src/O.Codeunit.al";
+  const refTests =
+    "harness-tasks/tasks/HX-002/reference-tests/Test/src/L.Codeunit.al";
+  const naiveTests =
+    "harness-tasks/tasks/HX-002/naive/near-complete/Test/src/N.Codeunit.al";
+  const mutant =
+    "harness-tasks/tasks/HX-002/mutants/off-by-one/Leasing/src/M.Codeunit.al";
+  const fixture =
+    "tests/fixtures/harness/hostile/leave-state/Test/src/H.Codeunit.al";
+
+  await t.step("unitOf", () => {
+    assertEquals(unitOf(shipped), "refapp:Test");
+    assertEquals(unitOf(oracle), "harness-oracle:HX-001");
+    assertEquals(unitOf(refTests), "harness-reference-tests:HX-002:Test");
+    assertEquals(unitOf(naiveTests), "harness-naive:HX-002:near-complete:Test");
+    assertEquals(unitOf(mutant), "harness-mutants:HX-002:off-by-one:Leasing");
+    assertEquals(unitOf(fixture), "harness-fixture:Test");
+  });
+
+  await t.step("in-band objects pass", () => {
+    assertEquals(
+      auditObjects([
+        f(core, 70001),
+        f(shipped, 80010),
+        f(oracle, 85001),
+        f(refTests, 80100),
+        f(naiveTests, 80101),
+        f(mutant, 70310),
+        f(fixture, 84998),
+      ]).problems,
+      [],
+    );
+  });
+
+  await t.step("out-of-band objects fail", () => {
+    const p = auditObjects([
+      f(core, 80001),
+      f(shipped, 80150),
+      f(oracle, 80001),
+      f(refTests, 80050),
+      f(fixture, 80098),
+      f(mutant, 85001),
+    ]).problems;
+    assertEquals(p.length, 6);
+    assertStringIncludes(p[1]!, "shipped visible test band");
+    assertStringIncludes(p[3]!, "task test suite band");
+    assertStringIncludes(p[4]!, "harness fixture band");
+  });
+
+  await t.step("80013 is refused everywhere in harness content", () => {
+    const p = auditObjects([f(shipped, 80013), f(refTests, 80013)]).problems;
+    assertEquals(
+      p.filter((x) => x.includes("80013 is forbidden in harness content"))
+        .length,
+      2,
+    );
+  });
+});
+
+Deno.test("harness-tasks: per-task oracle band, fail-closed paths", async (t) => {
+  const f = (file: string, id: number) => obj({ file, unit: unitOf(file), id });
+  const o1 = "harness-tasks/tasks/HX-001/oracle/src/O.Codeunit.al";
+  const o2 = "harness-tasks/tasks/HX-002/oracle/src/O.Codeunit.al";
+
+  await t.step("each task owns 85000+(N-1)*100..+99", () => {
+    const p = auditObjects([f(o1, 85100), f(o2, 85000), f(o2, 85100)])
+      .problems;
+    assertEquals(p.length, 2);
+    assertStringIncludes(p[0]!, "HX-001");
+    assertStringIncludes(p[0]!, "85000-85099");
+    assertStringIncludes(p[1]!, "HX-002");
+    assertStringIncludes(p[1]!, "85100-85199");
+  });
+
+  await t.step("only HX-NNN task ids get an oracle band", () => {
+    const at = (id: string) =>
+      `harness-tasks/tasks/${id}/oracle/src/O.Codeunit.al`;
+    for (const id of ["ZZ-001", "HX-1", "HX-0001", "hx-001", "HX-001x"]) {
+      const p = auditObjects([f(at(id), 85000)]).problems;
+      assertEquals(p.length, 1, id);
+      assertStringIncludes(p[0]!, "no band");
+    }
+  });
+
+  await t.step("unclassified harness-tasks paths are problems", () => {
+    const stray = "harness-tasks/tasks/HX-001/stray/x.al";
+    const p = auditObjects([f(stray, 70001)]).problems;
+    assertEquals(p.length, 1);
+    assertStringIncludes(p[0]!, "unclassified harness path");
+  });
+
+  await t.step(
+    "80013 is banned on unclassified harness-tasks paths too",
+    () => {
+      const p = auditObjects([f("harness-tasks/stray.al", 80013)]).problems;
+      assert(
+        p.some((x) => x.includes("80013 is forbidden in harness content")),
+      );
+    },
+  );
+});
