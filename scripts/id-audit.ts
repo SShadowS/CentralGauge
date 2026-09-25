@@ -32,6 +32,11 @@ import {
   BENCHMARK_APP_ID_BUFFER,
   BENCHMARK_APP_ID_RANGE,
   HARNESS_APP_ID_RANGE,
+  HARNESS_FIXTURE_TEST_RANGE,
+  HARNESS_FORBIDDEN_IDS,
+  HARNESS_ORACLE_RANGE,
+  HARNESS_SHIPPED_TEST_RANGE,
+  HARNESS_TASK_SUITE_RANGE,
   PREREQ_APP_ID_RANGE,
   SPIKE_APP_ID_RANGE,
   TEST_CODEUNIT_ID_RANGE,
@@ -130,6 +135,24 @@ export function unitOf(file: string): string {
 
   if (file.startsWith("infra/cg-test-harness/")) return "app:cg-test-harness";
 
+  const refapp = /^harness-tasks\/refapp\/([^/]+)\//.exec(file);
+  if (refapp) return `refapp:${refapp[1]}`;
+  if (/^tests\/fixtures\/harness\/.*\/Test\//.test(file)) {
+    return "harness-fixture:Test";
+  }
+  const task =
+    /^harness-tasks\/tasks\/([^/]+)\/(overlay|correct|naive|mutants|oracle|reference-tests)\/(.+)$/
+      .exec(file);
+  if (task) {
+    const [, id, part, rest] = task;
+    if (part === "oracle") return `harness-oracle:${id}`;
+    const segs = rest!.split("/");
+    const variant = part === "naive" || part === "mutants"
+      ? `:${segs.shift()}`
+      : "";
+    return `harness-${part}:${id}${variant}:${segs[0]}`;
+  }
+
   return `unclassified:${file}`;
 }
 
@@ -152,6 +175,22 @@ function bandOf(unit: string): Band | null {
   }
   if (unit === "app:cg-test-harness") {
     return { label: "harness", ...HARNESS_APP_ID_RANGE };
+  }
+  const refappBand = { label: "refapp", ...BENCHMARK_APP_ID_RANGE };
+  if (unit === "refapp:Test") {
+    return { label: "shipped visible test", ...HARNESS_SHIPPED_TEST_RANGE };
+  }
+  if (unit.startsWith("refapp:")) return refappBand;
+  if (unit === "harness-fixture:Test") {
+    return { label: "harness fixture", ...HARNESS_FIXTURE_TEST_RANGE };
+  }
+  if (unit.startsWith("harness-oracle:")) {
+    return { label: "harness oracle", ...HARNESS_ORACLE_RANGE };
+  }
+  if (/^harness-(overlay|correct|naive|mutants|reference-tests):/.test(unit)) {
+    return unit.endsWith(":Test")
+      ? { label: "task test suite", ...HARNESS_TASK_SUITE_RANGE }
+      : refappBand;
   }
   return null;
 }
@@ -229,6 +268,16 @@ export function auditObjects(
         `${obj.file}: ${obj.kind} ${obj.id} "${obj.name}" is in the RESERVED ` +
           `buffer ${BENCHMARK_APP_ID_BUFFER.start}-${BENCHMARK_APP_ID_BUFFER.end} ` +
           `(see BENCHMARK_APP_ID_BUFFER in src/constants.ts)`,
+      );
+    }
+    const harnessUnit = /^(refapp|harness-)/.test(obj.unit);
+    if (
+      harnessUnit &&
+      (HARNESS_FORBIDDEN_IDS as readonly number[]).includes(obj.id)
+    ) {
+      problems.push(
+        `${obj.file}: ${obj.kind} ${obj.id} is forbidden in harness content ` +
+          `(collides with a foreign app on Cronus28)`,
       );
     }
   }

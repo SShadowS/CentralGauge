@@ -214,6 +214,19 @@ export const TEST_CODEUNIT_ID_RANGE = {
   end: 89999,
 } as const;
 
+/** Harness Bench Test app (spec 1b section 4, M4): the declared idRanges. */
+export const HARNESS_TEST_APP_RANGE = { start: 80000, end: 84999 } as const;
+/** Shipped visible tests and the test library. */
+export const HARNESS_SHIPPED_TEST_RANGE = { start: 80000, end: 80099 } as const;
+/** Task reference-tests and naive test suites. */
+export const HARNESS_TASK_SUITE_RANGE = { start: 80100, end: 80999 } as const;
+/** Harness and hostile fixture tests. Agents may not use it. */
+export const HARNESS_FIXTURE_TEST_RANGE = { start: 84900, end: 84999 } as const;
+/** Hidden oracle apps. */
+export const HARNESS_ORACLE_RANGE = { start: 85000, end: 89999 } as const;
+/** Ids that collide with foreign apps on shared containers (Cronus28: 80013). */
+export const HARNESS_FORBIDDEN_IDS = [80013] as const;
+
 /**
  * ID range for the SOAP test harness app (`infra/cg-test-harness`).
  * Range: 50500-50599, matching its own app.json idRanges.

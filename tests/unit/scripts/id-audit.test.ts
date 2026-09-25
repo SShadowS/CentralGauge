@@ -311,3 +311,66 @@ Deno.test("auditObjects: prereq co-installation collisions", async (t) => {
     assertEquals(problems, []);
   });
 });
+
+Deno.test("harness-tasks: units, bands, reserved subranges, 80013", async (t) => {
+  const f = (file: string, id: number) => obj({ file, unit: unitOf(file), id });
+  const shipped = "harness-tasks/refapp/Test/src/RentalTests.Codeunit.al";
+  const core = "harness-tasks/refapp/Core/src/A.Codeunit.al";
+  const oracle = "harness-tasks/tasks/HX-001/oracle/src/O.Codeunit.al";
+  const refTests =
+    "harness-tasks/tasks/HX-002/reference-tests/Test/src/L.Codeunit.al";
+  const naiveTests =
+    "harness-tasks/tasks/HX-002/naive/near-complete/Test/src/N.Codeunit.al";
+  const mutant =
+    "harness-tasks/tasks/HX-002/mutants/off-by-one/Leasing/src/M.Codeunit.al";
+  const fixture =
+    "tests/fixtures/harness/hostile/leave-state/Test/src/H.Codeunit.al";
+
+  await t.step("unitOf", () => {
+    assertEquals(unitOf(shipped), "refapp:Test");
+    assertEquals(unitOf(oracle), "harness-oracle:HX-001");
+    assertEquals(unitOf(refTests), "harness-reference-tests:HX-002:Test");
+    assertEquals(unitOf(naiveTests), "harness-naive:HX-002:near-complete:Test");
+    assertEquals(unitOf(mutant), "harness-mutants:HX-002:off-by-one:Leasing");
+    assertEquals(unitOf(fixture), "harness-fixture:Test");
+  });
+
+  await t.step("in-band objects pass", () => {
+    assertEquals(
+      auditObjects([
+        f(core, 70001),
+        f(shipped, 80010),
+        f(oracle, 85001),
+        f(refTests, 80100),
+        f(naiveTests, 80101),
+        f(mutant, 70310),
+        f(fixture, 84998),
+      ]).problems,
+      [],
+    );
+  });
+
+  await t.step("out-of-band objects fail", () => {
+    const p = auditObjects([
+      f(core, 80001),
+      f(shipped, 80150),
+      f(oracle, 80001),
+      f(refTests, 80050),
+      f(fixture, 80098),
+      f(mutant, 85001),
+    ]).problems;
+    assertEquals(p.length, 6);
+    assertStringIncludes(p[1]!, "shipped visible test band");
+    assertStringIncludes(p[3]!, "task test suite band");
+    assertStringIncludes(p[4]!, "harness fixture band");
+  });
+
+  await t.step("80013 is refused everywhere in harness content", () => {
+    const p = auditObjects([f(shipped, 80013), f(refTests, 80013)]).problems;
+    assertEquals(
+      p.filter((x) => x.includes("80013 is forbidden in harness content"))
+        .length,
+      2,
+    );
+  });
+});
