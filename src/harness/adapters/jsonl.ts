@@ -22,8 +22,69 @@ export interface NonJson {
   first: { line: number; bytes: number }[];
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
+/** Stream record: the keys the parsers read are declared (noPropertyAccessFromIndexSignature). */
+export interface J {
+  [k: string]: unknown;
+  type?: unknown;
+  subtype?: unknown;
+  claude_code_version?: unknown;
+  message?: unknown;
+  content?: unknown;
+  tool_use_id?: unknown;
+  is_error?: unknown;
+  id?: unknown;
+  model?: unknown;
+  usage?: unknown;
+  name?: unknown;
+  session_id?: unknown;
+  parent_tool_use_id?: unknown;
+  cache_creation?: unknown;
+  ephemeral_5m_input_tokens?: unknown;
+  ephemeral_1h_input_tokens?: unknown;
+  tool_use_result?: unknown;
+  resolvedModel?: unknown;
+  modelUsage?: unknown;
+  thinkingTokens?: unknown;
+  input_tokens?: unknown;
+  cache_read_input_tokens?: unknown;
+  cache_creation_input_tokens?: unknown;
+  output_tokens?: unknown;
+  rate_limit_info?: unknown;
+  status?: unknown;
+  resetsAt?: unknown;
+  api_error_status?: unknown;
+  stop_reason?: unknown;
+  skills?: unknown;
+  mcp_servers?: unknown;
+  total_cost_usd?: unknown;
+  num_turns?: unknown;
+  duration_ms?: unknown;
+  timestamp?: unknown;
+  input?: unknown;
+  text?: unknown;
+  op?: unknown;
+  client?: unknown;
+  result?: unknown;
+  request?: unknown;
+  ok?: unknown;
+  infra?: unknown;
+  apps?: unknown;
+  tests?: unknown;
+  failure?: unknown;
+  diagnostics?: unknown;
+  skill?: unknown;
+  subagent_type?: unknown;
+  file_path?: unknown;
+  notebook_path?: unknown;
+  path?: unknown;
+  command?: unknown;
+  permission_denials?: unknown;
+}
+
+export const isObj = (v: unknown): v is J =>
   v !== null && typeof v === "object" && !Array.isArray(v);
+export const obj = (v: unknown): J => (isObj(v) ? v : {});
+export const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
 export function readRecords<T extends object>(
   text: string,

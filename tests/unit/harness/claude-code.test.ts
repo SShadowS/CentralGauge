@@ -77,9 +77,10 @@ Deno.test("claude-code parse: the M0-04 probe log gives estimated cost, reported
     .flatMap((j) =>
       j.message.content.filter((c: { type: string }) => c.type === "tool_use")
     ).length;
-  assertEquals(r.traceEvents, toolUses);
   const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
     .split("\n").map((l) => JSON.parse(l));
+  assertEquals(trace.filter((e) => e.type === "tool_call").length, toolUses);
+  assertEquals(r.traceEvents, trace.length);
   assertEquals(
     trace.find((e) => e.tool === "mcp__al-tools__al_compile").transport,
     "mcp:al-tools",
@@ -353,7 +354,7 @@ Deno.test("claude-code hardening: a non-JSON line keeps the attempt, cost incomp
     const { r } = await parse(text);
     assertEquals(r.termination, "completed");
     assertEquals(r.telemetry.reported_cost_usd, 0.12881720000000002);
-    assertEquals([r.telemetry.turns, r.traceEvents], [8, 7]);
+    assertEquals([r.telemetry.turns, r.traceEvents], [8, 13]);
     assertNonJson(r, "line 6");
   }
 });
@@ -450,17 +451,22 @@ Deno.test("claude-code hardening: tool calls and errors are counted per the find
   const { r, dir } = await parse(await Deno.readTextFile(FIXTURE));
   const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
     .split("\n").map((x) => JSON.parse(x));
-  assertEquals(trace.map((e) => e.seq), [1, 2, 3, 4, 5, 6, 7]);
   assertEquals(
-    trace.filter((e) => e.outcome === "error").map((e) => e.tool),
+    trace.map((e) => e.seq),
+    [...Array(13).keys()].map((i) => i + 1),
+  );
+  const calls = trace.filter((e) => e.type === "tool_call");
+  assertEquals(calls.length, 7);
+  assertEquals(
+    calls.filter((e) => e.outcome === "error").map((e) => e.tool),
     ["Bash"],
   );
-  assertEquals(trace.filter((e) => e.outcome === null).length, 0);
+  assertEquals(calls.filter((e) => e.outcome === null).length, 0);
   assertEquals(
-    trace.filter((e) => e.agent === "subagent").map((e) => e.tool),
-    ["Glob"],
+    calls.filter((e) => e.agent !== "main").map((e) => [e.tool, e.agent]),
+    [["Glob", "general-purpose"]],
   );
-  assertEquals(r.traceEvents, 7);
+  assertEquals(r.traceEvents, 13);
   const dup = (await lines()).map((x) =>
     x.replace(
       "toolu_016ibAqnTG6Kx46utXnH1TXP",
@@ -491,7 +497,8 @@ Deno.test("claude-code hardening: result_bytes counts UTF-8 bytes", async () => 
     },
   });
   const { dir } = await parse([INIT, use, res, RESULT].join("\n"));
-  const e = JSON.parse(await Deno.readTextFile(join(dir, "trace.jsonl")));
+  const e = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+    .split("\n").map((x) => JSON.parse(x)).find((x) => x.type === "tool_call");
   assertEquals(e.result_bytes, 6);
 });
 

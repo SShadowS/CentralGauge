@@ -22,47 +22,10 @@ import { ConfigurationError } from "../../errors.ts";
 import { requestedComponents } from "../adapter.ts";
 import { estimateCost } from "../pricing.ts";
 import { writeTrace } from "../trace.ts";
-import type { Line as JsonlLine } from "./jsonl.ts";
-import { nonJsonReason, readRecords, refuse } from "./jsonl.ts";
+import type { J, Line as JsonlLine } from "./jsonl.ts";
+import { claudeTrace } from "./claude-trace.ts";
+import { list, nonJsonReason, obj, readRecords, refuse } from "./jsonl.ts";
 
-/** Stream-json record: the keys this parser reads are declared (noPropertyAccessFromIndexSignature). */
-interface J {
-  [k: string]: unknown;
-  type?: unknown;
-  subtype?: unknown;
-  claude_code_version?: unknown;
-  message?: unknown;
-  content?: unknown;
-  tool_use_id?: unknown;
-  is_error?: unknown;
-  id?: unknown;
-  model?: unknown;
-  usage?: unknown;
-  name?: unknown;
-  session_id?: unknown;
-  parent_tool_use_id?: unknown;
-  cache_creation?: unknown;
-  ephemeral_5m_input_tokens?: unknown;
-  ephemeral_1h_input_tokens?: unknown;
-  tool_use_result?: unknown;
-  resolvedModel?: unknown;
-  modelUsage?: unknown;
-  thinkingTokens?: unknown;
-  input_tokens?: unknown;
-  cache_read_input_tokens?: unknown;
-  cache_creation_input_tokens?: unknown;
-  output_tokens?: unknown;
-  rate_limit_info?: unknown;
-  status?: unknown;
-  resetsAt?: unknown;
-  api_error_status?: unknown;
-  stop_reason?: unknown;
-  skills?: unknown;
-  mcp_servers?: unknown;
-  total_cost_usd?: unknown;
-  num_turns?: unknown;
-  duration_ms?: unknown;
-}
 type Line = JsonlLine<J>;
 
 const KNOWN_TYPES = new Set([
@@ -73,10 +36,6 @@ const KNOWN_TYPES = new Set([
   "rate_limit_event",
 ]);
 
-const isObj = (v: unknown): v is J =>
-  v !== null && typeof v === "object" && !Array.isArray(v);
-const obj = (v: unknown): J => (isObj(v) ? v : {});
-const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 /** Lower bound only (raw_usage.partial): never feeds the cost. */
@@ -88,17 +47,10 @@ const req = (x: J, k: string, problems: string[]): number => {
   problems.push(`${k} missing or not a number`);
   return 0;
 };
-const utf8 = new TextEncoder();
 
 /** A JSON round trip: the value is JSON by construction, whatever the log held. */
 const toJson = (v: unknown): Telemetry["raw_usage"] =>
   JSON.parse(JSON.stringify(v));
-
-function transportOf(tool: string): string {
-  const m = /^mcp__([^_]+(?:_[^_]+)*?)__/.exec(tool);
-  if (m) return `mcp:${m[1]}`;
-  return tool === "Bash" || tool === "PowerShell" ? "shell" : "builtin";
-}
 
 const linesOf = (recs: Line[]) => `lines ${recs.map((r) => r.line).join(", ")}`;
 
@@ -325,80 +277,26 @@ export function parseClaudeStream(
     ? init.claude_code_version
     : null;
 
-  // Tool outcomes, one per tool_use id.
-  const outcomes = new Map<string, { error: boolean; bytes: number }>();
-  for (const { rec, line } of of("user")) {
-    for (const c of list(obj(rec.message).content).map(obj)) {
-      if (c.type !== "tool_result") continue;
-      const id = c.tool_use_id;
-      if (typeof id !== "string") {
-        refuse(`${file}:${line}: tool_result without a tool_use_id`);
-      }
-      if (outcomes.has(id)) refuse(`${file}:${line}: second result for ${id}`);
-      const body = typeof c.content === "string"
-        ? c.content
-        : JSON.stringify(c.content ?? "");
-      outcomes.set(id, {
-        error: c.is_error === true,
-        bytes: utf8.encode(body).length,
-      });
-    }
-  }
-
-  // Tool calls: one tool_use block per call (the stream repeats a message
-  // once per content block, each record carrying a different block).
-  const trace: TraceEvent[] = [];
-  const callLine = new Map<string, number>();
+  // Per message id, for the TTL split and the partial usage (the stream
+  // repeats a message once per content block).
   const perMessage = new Map<string, { model: string; usage: J }>();
   let didWork = false;
-  for (const { rec, line } of of("assistant")) {
+  for (const { rec } of of("assistant")) {
     didWork = true;
     const msg = obj(rec.message);
     const model = typeof msg.model === "string" ? msg.model : "";
     if (typeof msg.id === "string") {
       perMessage.set(msg.id, { model, usage: obj(msg.usage) });
     }
-    for (const c of list(msg.content).map(obj)) {
-      if (c.type !== "tool_use") continue;
-      if (typeof c.id !== "string" || typeof c.name !== "string") {
-        refuse(`${file}:${line}: tool_use without a string id and name`);
-      }
-      const id = c.id;
-      const seen = callLine.get(id);
-      if (seen !== undefined) {
-        refuse(`${file}:${line}: tool_use id ${id} repeats line ${seen}`);
-      }
-      callLine.set(id, line);
-      const out = outcomes.get(id);
-      const parent = typeof rec.parent_tool_use_id === "string"
-        ? rec.parent_tool_use_id
-        : null;
-      trace.push({
-        v: 1,
-        seq: trace.length + 1,
-        t_ms: null,
-        type: "tool_call",
-        session: typeof rec.session_id === "string" ? rec.session_id : null,
-        agent: parent ? "subagent" : "main",
-        parent,
-        call_id: id,
-        request_id: typeof msg.id === "string" ? msg.id : null,
-        tool: c.name,
-        transport: transportOf(c.name),
-        skill: null,
-        backend_request: null,
-        outcome: out ? (out.error ? "error" : "ok") : null,
-        error_class: null,
-        result_bytes: out?.bytes ?? null,
-        truncated: null,
-        duration_ms: null,
-        model: model || null,
-      });
-    }
   }
-  for (const id of [...outcomes.keys()].sort()) {
-    if (!callLine.has(id)) streamProblems.push(`tool_result for unknown ${id}`);
-  }
+
+  const denied = new Set(
+    list(result?.permission_denials).map(obj).map((d) => d.tool_use_id)
+      .filter((x): x is string => typeof x === "string"),
+  );
+  const built = claudeTrace(lines, file, denied);
+  streamProblems.push(...built.problems, ...built.structural);
+  const trace = built.events;
 
   // TTL splits: assistant messages (deduplicated by id) plus sub-agent
   // tool_use_result usage, per model. A split that is absent leaves the sum
