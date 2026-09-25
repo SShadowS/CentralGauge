@@ -55,7 +55,7 @@ Deno.test("incompleteTelemetry: declared nulls and empty lists", () => {
 Deno.test("writeTrace: one versioned JSON line per event", async () => {
   const p = join(await Deno.realPath(await Deno.makeTempDir()), "trace.jsonl");
   const n = await writeTrace(p, [{
-    v: 1,
+    v: 2,
     seq: 1,
     t_ms: null,
     type: "tool_call",
@@ -74,6 +74,11 @@ Deno.test("writeTrace: one versioned JSON line per event", async () => {
     truncated: false,
     duration_ms: null,
     model: "anthropic/claude-sonnet-5",
+    command: null,
+    command_cut: null,
+    target: null,
+    category: null,
+    classifier: null,
   }]);
   assertEquals(n, 1);
   assertEquals(JSON.parse((await Deno.readTextFile(p)).trim()).tool, "Read");
@@ -81,7 +86,7 @@ Deno.test("writeTrace: one versioned JSON line per event", async () => {
 
 const EV = (seq: number, over: Record<string, unknown> = {}) =>
   ({
-    v: 1,
+    v: 2,
     seq,
     t_ms: 5,
     type: "model_request",
@@ -100,6 +105,11 @@ const EV = (seq: number, over: Record<string, unknown> = {}) =>
     truncated: null,
     duration_ms: 3,
     model: null,
+    command: null,
+    command_cut: null,
+    target: null,
+    category: null,
+    classifier: null,
     ...over,
   }) as TraceEvent;
 
@@ -110,7 +120,7 @@ Deno.test("writeTrace: strict events, monotonic seq, error names the file, nothi
     [EV(2), EV(1)],
     [EV(0)],
     [EV(1, { extra: 1 })],
-    [EV(1, { v: 2 })],
+    [EV(1, { v: 1 })],
     [EV(1, { type: "bogus" })],
     [EV(1, { t_ms: NaN })],
     [EV(1, { duration_ms: -1 })],
