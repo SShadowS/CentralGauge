@@ -2,127 +2,140 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Grow the M0 refapp skeleton into refapp v1 and author six gated harness tasks (HX-001 to HX-006) that are qualified and frozen by 2026-10-09, with HX-001 complete and gated by 2026-10-01 so the 10-02 end-to-end gate has a task.
+**Goal:** Grow the M0 refapp skeleton into refapp v1 and author six harness tasks (HX-001 to HX-006) that are authoring-qualified by the interim gate and then qualified through the real M1 pipeline and frozen by 2026-10-09, with HX-001 authoring-qualified by 2026-10-01 for the 10-02 end-to-end gate.
 
-**Architecture:** lane-content writes AL only: refapp slices under `harness-tasks/refapp/`, and per task `task.yml`, `prompt.md`, `overlay/`, `oracle/`, `correct/`, `naive/`, and for the test-authoring task `mutants/` and `reference-tests/`. Every container run is a lane-ops job through one interim script, `scripts/harness/gate-task.ts`, that stages refapp + layers, compiles and publishes on a leased Cronus container, runs the listed tests over SOAP and writes a gate report under `H:\Temp3\harness-spike\M4\<task>\`. The same script has two container-free subcommands: `check` (static rules, the orchestrator's acceptance check) and `compile` (host `al compile` against the cached symbols, lane-content's fast loop). Tasks are authored one at a time because every slice edits shared refapp files; ops gates interleave.
+**Architecture:** lane-content writes AL only: refapp slices under `harness-tasks/refapp/`, and per task `task.yml`, `prompt.md`, `overlay/`, `oracle/`, `correct/`, `naive/`, and for the test-authoring task `mutants/` and `reference-tests/`. lane-ops owns the interim gate, split into three reviewable files: `scripts/harness/gate-core.ts` (pure decision contract), `scripts/harness/gate-stage.ts` (staging from an exported git revision and static checks) and `scripts/harness/gate-task.ts` (CLI, host compile, container executor). The gate stages a named commit, never the working tree, compiles and publishes on a leased Cronus container, runs the listed tests over SOAP, classifies every failure, checks the full run matrix and writes a report under `H:\Temp3\harness-spike\M4\<task>\`. A task promoted by this gate is **authoring-qualified**; the 10-09 freeze additionally needs real-pipeline judgments and non-provisional identities (M4-15).
 
-**Tech Stack:** AL (BC 28, runtime 17.0, `NoImplicitWith`), Library Assert, the repo SOAP test harness (`infra/cg-test-harness`, TestIsolation = Codeunit), Deno + TypeScript for the gate script (`BcContainerProvider`, `runTestsViaSoap`, `loadTask` from M1-01), host AL Tools (`al compile`).
+**Tech Stack:** AL (BC 28.4, runtime 17.0, `NoImplicitWith`), Library Assert, the repo SOAP test harness (`infra/cg-test-harness`, TestIsolation = Codeunit), Deno + TypeScript (`BcContainerProvider`, `runTestsViaSoap`, `loadTask` and `hashTree` from M1-01/M1-02), host AL Tools (`al compile`), git (`read-tree`, `checkout-index` with a private index).
 
-**Spec:** `docs/superpowers/specs/2026-09-24-harness-refapp-design.md` (1b, primary). Also 1a `docs/superpowers/specs/2026-09-24-harness-bench-design.md` sections 5-8 and 14, findings `docs/superpowers/specs/2026-09-29-harness-spikes-findings.md` sections 1, 2 and 8, the M1 plan `docs/superpowers/plans/2026-09-30-harness-core.md` (M1-01 schema), and the launch contract `docs/superpowers/runbooks/harness-autonomy/launch-contract.md`.
+**Spec:** `docs/superpowers/specs/2026-09-24-harness-refapp-design.md` (1b, primary). Also 1a `docs/superpowers/specs/2026-09-24-harness-bench-design.md` sections 5-8 and 14, findings `docs/superpowers/specs/2026-09-29-harness-spikes-findings.md` sections 1, 2 and 8, M1 plans `docs/superpowers/plans/2026-09-30-harness-core.md` (M1-01 schema) and `docs/superpowers/plans/2026-09-30-harness-core-part2.md` (M1-11 to M1-30), the launch contract `docs/superpowers/runbooks/harness-autonomy/launch-contract.md`.
+
+**Revision 2 inputs:** review `H:\cg-coord\reviews\M4-plan-001\review-gpt6astra.md` (ACCEPT-WITH-CHANGES, all must-change items applied), owner decision `H:\cg-coord\decisions\2026-09-25-m4-coverage-pilot.md`, premise probe `H:\Temp3\harness-spike\M4-00-results.md` (HX-001 redesigned).
 
 ## Global Constraints
 
-- lane-content never touches a container (launch contract, lane.md). Every compile/publish/test on a Cronus container is a lane-ops job named in this plan, run from a clean checkout of the named commit (`git worktree add H:\cg-coord\jobs\<id>-<n> <sha>`), with a lease, on Cronus281 to Cronus283 (lane.md: content gate runs).
-- Host compile (`gate-task.ts compile`) runs the `al` dotnet tool on the host against the read-only BCH symbol cache. It starts no container and publishes nothing. It is a pre-check only; the container gate is authoritative.
-- ID bands (1b section 4): refapp modules Core 70000-70099, Fleet 70100-70199, Rental 70200-70299, Leasing 70300-70399, Integration 70400-70499, Reporting 70500-70599; `Test` app 80000-84999; hidden oracles 85000-89999, HX-00N owns 85000+(N-1)*100 to 85099+(N-1)*100. Never 75000-79999.
-- App ids are static: refapp `c6a1e000-0000-4000-8000-00000000000N` (existing), oracle of HX-00N `c6a1e000-0000-4000-8001-00000000000N`, name `CGR Oracle HX-00N`, publisher `CentralGauge`, dependencies only `CGR <module>` for modules in `fail_to_pass.depends_on` plus Library Assert. An oracle never depends on `CGR Test` (agent-editable).
-- Every test codeunit (visible, oracle, reference, naive) has `Subtype = Test;` and `TestPermissions = Disabled;` (findings section 2, M0-01a).
-- The SOAP harness runs with TestIsolation = Codeunit: data rolls back after each test codeunit, not after each procedure. Every procedure uses its own vehicle and contract keys and sets every Setup value it depends on.
-- Oracles are hidden tests; the rules of CLAUDE.md "Writing AL Tests" apply in full: no placeholder assertions, every requirement in `prompt.md` is asserted, boundaries probed on both sides, interface behavior tested through an implementing codeunit.
-- Prompts follow CLAUDE.md "Writing Task Specifications": ticket style, what to build or what users see, never how; required names and signatures are stated, AL rules and pitfalls are not. A prompt never names an oracle codeunit, procedure or mutant (checked by `gate-task.ts check`).
-- The oracle tables in this plan are normative. An implemented oracle contains at least every row, with the same inputs and expected values. After the first gate run of a task, an oracle may change only to fix a defect the auditor or the owner confirmed; the change is recorded in `H:\Temp3\harness-spike\M4\<task>\oracle-changes.md` (what, why, who confirmed) and followed by a new auditor pass and a full re-gate. Removing a procedure, an assertion or loosening an expected value to get a green gate is forbidden (launch contract, "Forbidden without the owner").
-- A slice that edits a refapp file which an earlier task's `overlay/`, `correct/`, `naive/` or `mutants/` replaces must re-derive those task files (slice change plus task change), re-pin that task to the new slice's rc tag, and have the slice's ops gate task re-gate it on the same commit. `check` flags every such file (Review Focus 5). Known case: slice D edits `RentalMgt`, which HX-003 replaces (M4-08 Step 9, M4-09).
-- Keep tasks hard (CLAUDE.md, Benchmark Tasks). A gate failure caused by the task being too easy is redesigned, never softened.
-- Refapp breadth stays at what HX-001 to HX-006 need. Number series, dimensions, API pages and the HTTP mock from 1b sections 2-3 are not built in M4 (cut order item 4 covers breadth beyond the six).
-- Evidence (gate reports, auditor output, oracle change notes) goes to `H:\Temp3\harness-spike\M4\<task>\`. Nothing else outside the repo and the coord root.
-- `deno fmt`, `deno check`, `deno lint` on changed `.ts` files only. `.al` files are not formatted by deno.
-- No em dash in any committed text.
-- Dates: content task N lands in the order below. A slip of more than one day against the 10-01 (HX-001) or 10-09 (six frozen) gates goes to the owner.
+- lane-content never touches a container. Every compile/publish/test on a Cronus container is a lane-ops job named in this plan, with a lease, on Cronus281 to Cronus283 (lane.md: content gate runs). lane-content may run the host `al` compile (`gate-task.ts compile`, orchestrator ruling); it starts no container and publishes nothing, and it is a pre-check only.
+- lane-ops owns `scripts/harness/gate-*.ts` (orchestrator ruling).
+- Every gate stages an exported commit (`--rev`), not a working tree, and records `source_commit`, `refapp_tree` and `task_tree`.
+- Temporary workspaces live under `H:\Temp3\harness-spike\M4\tmp\` (launch contract: outputs only in the repo, the coord root and `H:\Temp3\harness-spike\`). Evidence goes to `H:\Temp3\harness-spike\M4\<task>\`.
+- ID bands (1b section 4): refapp Core 70000-70099, Fleet 70100-70199, Rental 70200-70299, Leasing 70300-70399, Integration 70400-70499, Reporting 70500-70599; `Test` app 80000-84999 (codeunit 80013 is never used: Cronus28 hosts a foreign 80013); hidden oracles 85000-89999, HX-00N owns 85000+(N-1)*100 to 85099+(N-1)*100. Never 75000-79999. Production-replacing mutants keep their module's ids.
+- App ids are static: refapp `c6a1e000-0000-4000-8000-00000000000N` (existing); oracle of HX-00N `c6a1e000-0000-4000-8001-00000000000N`, name `CGR Oracle HX-00N`, publisher `CentralGauge`, dependencies only `CGR <module>` for modules in `fail_to_pass.depends_on` plus Library Assert. An oracle never depends on `CGR Test`.
+- Trusted test boundary (1a section 7): `correct/`, `naive/` and `mutants/` never contain files under `Test/`; `reference-tests/` and naive test suites only add new files under `Test/`, never replace a shipped one. `check` enforces it.
+- Layers add or replace files; nothing is deleted. A zero-byte layer file is refused as an unsupported deletion.
+- Every test codeunit has `Subtype = Test;`, `TestPermissions = Disabled;` and at least one `[Test]` procedure.
+- The SOAP harness rolls back per test codeunit, not per procedure: every procedure uses its own keys, sets every Setup value and the work date it depends on, and never relies on state from another procedure.
+- Oracles follow CLAUDE.md "Writing AL Tests": no placeholder assertions, every requirement in `prompt.md` asserted, boundaries probed on both sides, interface behavior tested through an implementing codeunit. An oracle asserts only what the prompt or an existing refapp contract states.
+- Prompts follow CLAUDE.md "Writing Task Specifications": ticket style, symptom or requirement, never mechanism or how; required names and signatures stated; no oracle, codeunit or mutant name (`check` enforces).
+- The oracle tables in this plan are normative: an implemented oracle has at least every row with the same inputs and expected values, and each variant's kill mapping holds. After the first gate run of a task an oracle changes only for a defect the auditor or the owner confirmed, recorded in `H:\Temp3\harness-spike\M4\<task>\oracle-changes.md`, followed by a new audit and a full re-gate. Removing a procedure or assertion, or loosening an expected value, to get a green gate is forbidden (launch contract).
+- A slice that edits a refapp file which an earlier task's layers replace re-derives those layer files, re-pins the task to the new rc tag and has the slice's ops gate re-gate it on the same commit (Review Focus 5). Known case: slice D edits `RentalMgt`, which HX-003 replaces.
+- Keep tasks hard (CLAUDE.md, Benchmark Tasks). A task the pilot (M4-17) finds easy is hardened, never softened.
+- Refapp breadth stays at what the six tasks need. Number series, dimensions, API pages and the HTTP mock are not built (cut order item 4). The coverage gap is accepted by the owner and stated as a report caveat (decision `2026-09-25-m4-coverage-pilot.md`).
+- The difficulty pilot is developmental and excluded from results; it uses pi through OpenRouter only (never the Team account) and counts against the USD 150 paid cap.
+- `deno fmt`, `deno check`, `deno lint` on changed `.ts` files only. No em dash in any committed text.
+- Dates: a slip of more than one day against 10-01 (HX-001 authoring-qualified) or 10-09 (six frozen) goes to the owner.
 
 ## Review Focus
 
-1. **A listed oracle procedure never runs** (renamed, not discovered, zero tests after publish) and the gate counts it as a naive failure, so a task "discriminates" on nothing. Expected: a missing procedure is `missing`, never `fail`, and blocks promotion. Pinned in M4-01 (`setStatus: missing wins`, `decideGate: naive with a missing oracle procedure is refused`).
-2. **A naive variant fails by compile error or by breaking the refapp build**, not by losing assertions (1b section 8). Expected: refused with the variant named. Pinned in M4-01 (`decideGate: naive compile failure is refused`).
-3. **A flaky oracle** (fixed keys reused across procedures inside one codeunit, a Setup value inherited from an earlier procedure, `WorkDate` or `Today` dependence) passes once and fails on repeat. Expected: `correct/` must pass three fresh runs. Pinned in M4-01 (`decideGate: one flaky correct run blocks promotion`) and by the per-procedure key rule in every oracle table.
-4. **A prompt leaks the oracle** (procedure names, oracle codeunit ids, mutant names), or an oracle or layer object sits outside its band. Expected: `check` fails. Pinned in M4-01 (`checkTask: prompt leak`, `checkTask: oracle id in visible band`, `checkTask: missing TestPermissions`).
-5. **A later refapp slice edits a file that an earlier task's overlay or correct/ replaces**, so the earlier task silently reverts the slice or no longer starts green. Expected: `check` flags the drift against the task's pinned tag, and the freeze re-gates every task on the final commit. Pinned in M4-01 (`baseDrift: flags a replaced file that changed since the tag`) and M4-15.
+1. **A failure that is not an assertion counts as discrimination**: a naive solution or a mutant "fails" through a runtime error, a missing procedure, a compile error or a publish fault. Expected: only an assertion failure with every expected procedure run is a kill; runtime-only failures are refused, publish faults are infra. Pinned in M4-01a (`naive runtime-only failure is refused`, `naive with a missing procedure is refused`, `infra run is refused`, `baseline oracle compile with an unexpected diagnostic is refused`).
+2. **An incomplete run matrix promotes a task**: a planned variant or repeat never ran, or a test-authoring suite ran only some of its procedures. Expected: refused with the missing entry named. Pinned in M4-01a (`matrix incomplete`, `naive suite with a missing procedure on a mutant`).
+3. **A layer replaces a shipped test** and a suite passes only because of it. Expected: `check` refuses and staging skips candidate replacements of shipped tests. Pinned in M4-01b (`check refuses a layer that replaces a shipped test`, `candidate layer cannot replace a shipped test`).
+4. **The gate stages something other than the commit it reports**: the working tree, a moved tag, a stale refapp under an rc tag. Expected: staging from `git` objects of the named revision; `tag_status: mismatch` blocks promotion. Pinned in M4-01b (`exportSource ignores working tree changes`) and M4-01c (`tag mismatch blocks promotion`).
+5. **A later refapp slice changes what an earlier task stages.** Expected: `check` names every changed file a task replaces (problem) and warns on any other refapp change since the task's tag; the freeze re-gates every task on the candidate commit. Pinned in M4-01b (`drift: replaced file is a problem, other change a warning`) and M4-15.
 
 ## Decisions argued from the spec
 
-- **Interim gate script, not the M1 pipeline.** 1b section 8 says the `mock` harness runs both solutions "through the real pipeline", but the verdict workspace, staging and mock harness are M1 Part 2 (M1 plan, "Part 2, after M0-08") and do not exist on 09-30. HX-001 must be gated by 10-01 (launch contract). So `gate-task.ts` implements the 1b section 8 checks directly, reusing the spike's publish path (`publishApp` for every app, never `prepareCandidateApp`, findings section 2 change 2). M4-15 re-runs each task through the mock harness when `harness cell` exists.
-- **Gate expectations (1b section 8, 1a section 7).** Baseline (refapp + overlay): all seven apps build, `pass_to_pass` passes, `fail_to_pass` fails (a baseline oracle that does not compile against the unchanged refapp counts as failing: the oracle needs the change). `correct/`: every scorer passes. Each `naive/<x>`: all seven apps and the oracle build, and at least one listed oracle procedure runs and fails (the workbench `--strict-fail-mode` evidence rule, `src/workbench/probe.ts`). Test-authoring: reference tests pass on `correct/` and fail on mutant 0 (the staged state) and every listed mutant; each naive test suite passes on `correct/` and leaves at least one mutant alive.
-- **Determinism** is not a separate 1b gate. It is added here because 1a D7 runs 3 repeats and records results per procedure (1a section 7): `correct/` (or the reference tests on `correct/`) runs 3 times, each naive 2 times, every run from a fresh prenuke.
-- **Layer semantics** (1b section 5): `overlay/`, `correct/`, `naive/<x>/`, `mutants/<m>/`, `reference-tests/` mirror the workspace (`<Module>/src/...`) and replace or add files by relative path; nothing is deleted. A "removed feature" is expressed by replacing a file with its stubbed version. Order: refapp, overlay, correct, mutant, test suite.
-- **Refapp versioning** (1b section 5, "git-tagged, resolved to an immutable commit"). A tag is never moved. Each task is gated against the commit it lands on, and the orchestrator tags that commit `refapp-v1-rcN` (N = task number) on acceptance; the task pins that tag. M4-14 re-pins all six to `refapp-v1`, tagged once, and M4-15 re-gates all six on it. Executions made before the freeze (the 10-02 end-to-end run) are pipeline proof, not campaign data.
-- **Reference tests of the test-authoring task live in `reference-tests/`**, not in `correct/`: 1a section 7 resets production code to the reference sources for `mutant_kill`, so tests inside `correct/` would risk being handed to the verdict as if the agent wrote them. See Open questions 1.
-- **Coupling tags** use the 1b section 3 edges: `events` (Rental -> Core), `internal` (Leasing -> Core), `interface` (strategy enum + interface across apps), `queries` (Reporting: table extensions, cross-app FlowFields, queries), `facade` (Integration facade + JSON), `ishandled` (Rental -> Fleet IsHandled events and the legacy direct call), `core-facade` (reaction through a Core publisher).
+- **Interim gate, then real pipeline.** 1b section 8 says the `mock` harness runs both solutions "through the real pipeline". The M1 Part 2 pipeline lands 10-01 to 10-08 (its Schedule), too late for HX-001 by 10-01. So `gate-*.ts` implements the 1b section 8 checks for authoring, and M4-15 requires real-pipeline judgments through M1-24 `harness cell` / `harness run` before freeze. Without them by 10-09 the freeze needs an explicit owner exception.
+- **Failure classes match M1.** Part 2 M1-17 classifies a failed procedure as `assertion` when its message matches `\bAssert\.\w+ failed\b`, else `runtime_error`; compile and infra are separate. The gate uses the same rule plus one addition: BC's "An error was expected inside an ASSERTERROR statement." is an assertion failure (it is the test's own expectation losing). M4-16 P5 records the exact texts; parity with M1-17 is an open question.
+- **Gate expectations** (1b section 8, 1a section 7), all on a complete matrix with no infra run:
+  - f2p tasks. Baseline: all seven apps build, every `pass_to_pass` procedure passes, and `fail_to_pass` fails: either the oracle compiles, every listed procedure runs and at least one fails, or the oracle fails to compile with only missing-feature diagnostics (`MISSING_FEATURE_CODES`). `correct/` x3: every scorer passes. Each `naive/<x>` x2: the refapp and the oracle build, every listed procedure runs, at least one loses an assertion.
+  - test-authoring. Baseline builds and passes `pass_to_pass`. Reference tests: every discovered procedure passes on `correct/` x3; on m0 (the staged state) and on every named mutant everything builds, every procedure runs and at least one loses an assertion. Each naive suite: passes completely on `correct/`, runs completely on every target, and leaves at least one mutant alive. Naive suites run once per target (their matrix already has one run per mutant); f2p naive variants run twice.
+  - A hidden regression row may pass on the baseline; the scorer must fail on the baseline, every procedure must pass on `correct/`, and the report keeps baseline per-procedure outcomes so no row is mislabeled as a transition.
+- **Layer semantics** (1b section 5): layers mirror the workspace (`<Module>/...`) and add or replace files. Order: refapp, overlay, correct, mutant, test suite. Deletion is not supported and refused.
+- **Provenance and tags.** Each task is gated at a named commit; the orchestrator tags it `refapp-v1-rcN` on acceptance and the task pins that tag. The gate reports `tag_status`: `match` (the tag's `harness-tasks/refapp` tree equals the gated tree), `pending` (tag not created yet) or `mismatch` (blocks promotion). The final `refapp-v1` tag is created locally on the freeze candidate so the real pipeline can resolve it, and pushed only after M4-15 qualifies all six; a failed qualification deletes the unpushed local tag and a fixed commit is tagged instead.
+- **Reference tests** live in `reference-tests/` (review answer 1): an authoring input in neither hash; the gate report records its tree id.
+- **HX-001 is a final-state task.** M4-00 measured that a stale record's `Modify` after a subscriber modified the same row in the same transaction raises no error on BC 28.4; the stale buffer silently overwrites (lost update). The ticket reports the observable symptom; the oracle asserts final state across apps.
+- **Coupling tags** use the 1b section 3 edges: `events`, `internal`, `interface`, `queries` (the Reporting row: table extensions, cross-app FlowFields, queries; M4 exercises FlowFields, not query objects), `facade`, `ishandled`, `core-facade`.
+
+## Cross-lane dependencies
+
+| Gate | M4 provides | Needs from other lanes |
+| --- | --- | --- |
+| 10-02 end to end (launch contract: refapp, Claude Code in the sandbox, trusted verdict, cost in the records) | HX-001 at `refapp-v1-rc1`, authoring-qualified (M4-03) | M1-13 staging, M1-14 verdict workspace, M1-15/M1-16 BC lane, M1-17 verdict, M1-19 `cg-al` backend, M1-20 sandbox runtime, M1-21 adapter contract and images, M1-22 execution pipeline, M1-24 `harness cell`, M1-26 symbols lock and images, plus the M2 Claude Code adapter. M1-28 must accept `refapp-v1-rc1` in place of `refapp-v1`. |
+| 10-09 freeze | six tasks at a candidate commit, pinned to `refapp-v1` (M4-14) | M1-24 `harness run`/`cell`, M1-26 lock (non-provisional identity), M1-29 mock contract (its mock arms apply `correct/` and `naive/`) |
 
 ## Task set, coverage and schedule
 
-| Task | Kind | Touches | Coupling | Author (content) | Gate (ops) | Target |
+| Task | Kind | Touches | Coupling | Author | Gate | Target |
 | --- | --- | --- | --- | --- | --- | --- |
 | HX-001 | bugfix | Rental, Fleet, Core | events, core-facade | M4-02 | M4-03 | 10-01 |
 | HX-002 | test-authoring | Leasing, Core, Test | internal | M4-04 | M4-05 | 10-02 |
-| HX-003 | feature | Fleet, Rental, Core | ishandled, interface | M4-06 | M4-07 | 10-03 |
-| HX-004 | feature | Reporting, Leasing, Rental | queries, internal | M4-08 | M4-09 | 10-05 |
+| HX-003 | feature | Fleet, Rental, Core | ishandled, interface | M4-06 | M4-07 (re-gate M4-09) | 10-03 |
+| HX-004 | feature | Reporting, Leasing, Rental, Fleet | queries, internal | M4-08 | M4-09 | 10-05 |
 | HX-005 | refactor | Rental | interface | M4-10 | M4-11 | 10-06 |
-| HX-006 | feature | Integration, Core | facade, events, core-facade | M4-12 | M4-13 | 10-07 |
-| freeze | | | | M4-14 | M4-15 | 10-08 to 10-09 |
+| HX-006 | feature | Integration, Core, Rental | facade, events, core-facade | M4-12 | M4-13 | 10-07 |
 
-Kinds: every 1b kind at least once. Coupling styles used by two tasks: events, core-facade, internal, interface. Used once: ishandled, queries, facade (1b section 9 asks two per style for the ~10-task v1; see Open questions 4). In-app styles: posting codeunit chain (HX-004, HX-005), event subscriber instance mode (manual binding in HX-003), temporary state none (Open questions 4).
+Coverage caveat (owner decision, stated in the report): `ishandled`, `queries` and `facade` are exercised once; single-instance state, temporary tables and `CommitBehavior` not at all. 1b section 9's two-per-style rule is not met by the v1 six.
 
-HX-002 is second on purpose: 1a section 12 item 6 needs a test-authoring task to prove `mutant_kill` in M1.
+| Day | lane-ops | lane-content |
+| --- | --- | --- |
+| 09-30 | M4-01a, M4-01b | M4-02 (slice A, HX-001) |
+| 10-01 | M4-01c, M4-16 (probes, morning), M4-03 | M4-02 audit fixes, M4-04 |
+| 10-02 | M4-05, M4-17 (pilot HX-002) | M4-04 finish, M4-06 |
+| 10-03 | M4-07 | M4-08 |
+| 10-05 | M4-09 (HX-004, HX-003) | M4-10 |
+| 10-06 | M4-11, M4-17 (pilot HX-005) | M4-12 |
+| 10-07 | M4-13, M4-17 (remaining) | hardening from pilot, if any |
+| 10-08 | M4-15 | M4-14 |
+| 10-09 | M4-15 finish | |
+
+Container load: about 77 initial gate runs, 10 for the HX-003 re-gate, 77 for the freeze re-gate and the real-pipeline arms, plus retries. At the spike's 73.2 s per seven-app operation sum that is over 3 aggregate container-hours before oracle apps, staging and cleanup (findings section 1 excludes those). M4-03 records per-run wall time; ops reserves gate windows on Cronus281-283 from that measurement.
 
 ## File Structure
 
 | Path | Responsibility | Task |
 | --- | --- | --- |
-| `scripts/harness/gate-task.ts` | `check`, `compile`, `gate` for one task | M4-01 |
-| `tests/unit/harness/gate-task.test.ts` | pure parts of the gate script | M4-01 |
-| `harness-tasks/refapp/<Module>/src/*.al` | refapp v1, grown per slice | M4-02, 04, 06, 08, 10, 12 |
+| `scripts/harness/gate-core.ts` | variants, layers, failure classes, tallies, summaries, run matrix, `decideGate` (pure) | M4-01a |
+| `scripts/harness/gate-stage.ts` | export a revision, stage layers, `checkTask`, drift, test manifests | M4-01b |
+| `scripts/harness/gate-task.ts` | CLI (`check`, `compile`, `stage`, `gate`, `judge`), host compile, container executor, reports | M4-01c |
+| `tests/unit/harness/gate-core.test.ts`, `gate-stage.test.ts`, `gate-task.test.ts`, `gate-fixtures.ts` | unit tests and the shared seven-module fixture | M4-01a-c |
+| `harness-tasks/refapp/<Module>/src/*.al` | refapp v1, grown per slice | M4-02, 04, 06, 08, 12 |
 | `harness-tasks/refapp/Test/src/*.al` | visible tests and test library | same |
-| `harness-tasks/tasks/HX-00N/task.yml` | M1-01 schema | per task |
-| `harness-tasks/tasks/HX-00N/prompt.md` | ticket text | per task |
-| `harness-tasks/tasks/HX-00N/overlay/` | injected bug or starting state | per task |
-| `harness-tasks/tasks/HX-00N/oracle/` | hidden test app (`app.json`, `src/`) | f2p tasks |
-| `harness-tasks/tasks/HX-00N/correct/` | reference solution | per task |
-| `harness-tasks/tasks/HX-00N/naive/<x>/` | plausible wrong solutions, at least two | per task |
+| `harness-tasks/tasks/HX-00N/...` | `task.yml`, `prompt.md`, `overlay/`, `oracle/`, `correct/`, `naive/<x>/` | per task |
 | `harness-tasks/tasks/HX-002/mutants/<m>/`, `reference-tests/` | test-authoring only | M4-04 |
-| `H:\Temp3\harness-spike\M4\HX-00N\` | `gate-*.json`, `audit-*.md`, `oracle-changes.md` | evidence |
+| `harness/experiments/m4-qualify.yml` | real-pipeline qualification experiment | M4-14 |
+| `tests/unit/harness/task-set-v1.test.ts` | loads all six manifests | M4-14 |
+| `H:\Temp3\harness-spike\M4\...` | reports, audits, oracle change notes, probes, pilot | evidence |
 
 ---
 
-### Task M4-01: gate script (`check`, `compile`, `gate`)
+### Task M4-01a: gate decision contract (pure)
 
-**Lane:** ops. **Deps:** M1-01 (`loadTask`, `HarnessTaskSchema`). **Target:** 09-30.
-
-Spec 1b section 8 (the gate), 1a section 7 (mutant 0, zero tests is infra), findings section 2 (publish every app with `publishApp`; `prepareCandidateApp` cleanup removes refapp dependencies), findings section 6 (`al compile` offline).
+**Lane:** ops. **Deps:** M1-01 (merged: `src/harness/task.ts`). **Target:** 09-30.
 
 **Files:**
-- Create: `scripts/harness/gate-task.ts`
-- Test: `tests/unit/harness/gate-task.test.ts`
+- Create: `scripts/harness/gate-core.ts`
+- Test: `tests/unit/harness/gate-core.test.ts`
 
 **Interfaces:**
-- Consumes: `loadTask(dir): Promise<LoadedTask>`, `HarnessTaskSchema`, `type HarnessTask`, `type LoadedTask` (M1-01); `BcContainerProvider` (`setCredentials`, `isHealthy`, `ensureTestHarness`, `prenukeCentralGaugeApps`, `compileProject`, `publishApp`, `dispose`); `runTestsViaSoap`, `resolveSoapTimeoutMs`, `type SoapTestRunnerConfig` (`src/container/soap-test-client.ts`).
-- Produces (CLI, used by every later task):
-  - `deno run --allow-all scripts/harness/gate-task.ts check <taskDir>...` exit 0 when every task passes the static rules (warnings allowed).
-  - `deno run --allow-all scripts/harness/gate-task.ts compile <taskDir> <variant>` host compile of a staged variant; `<variant>` is `baseline`, `correct`, `naive/<x>`, or `tests:<suite>@<mutant|correct>`.
-  - `deno run --allow-all scripts/harness/gate-task.ts gate <container> <taskDir>` writes `H:\Temp3\harness-spike\M4\<id>\gate-<stamp>.json` with `{ task, commit, container, refapp_version, at, promoted, reasons, runs[] }`; exit 0 promoted, 1 not promoted, 3 infra.
+- Consumes: `type HarnessTask`, `HarnessTaskSchema` (M1-01).
+- Produces: `BUILD_ORDER`, `RANGES`, `CORRECT_RUNS = 3`, `NAIVE_RUNS = 2`, `MISSING_FEATURE_CODES`; `type Variant`, `variantName`, `parseVariant`, `interface Layer { path: string; mode: "task" | "candidate" | "candidate-tests"; optional?: boolean }`, `layers(taskDir, v, testAuthoring): Layer[]`; `objectIds`, `isTestCodeunit`, `parseTestManifest(al): TestRef | null`; `interface ProcResult`, `classifyTestFailure`; `interface TestRef`, `interface Tally`, `tally`, `allPass`, `assertionKill`, `complete`; `interface BuildStep`, `interface RunResult`, `type AppState`, `interface RunSummary`, `summarize`; `interface PlanEntry`, `interface GateRun`, `gatePlan(task, naive): PlanEntry[]`, `runKey`, `decideGate(task, plan, runs): { promoted: boolean; matrix_complete: boolean; reasons: string[] }`.
 
 - [ ] **Step 1: Write the failing test**
 
-`tests/unit/harness/gate-task.test.ts`:
+`tests/unit/harness/gate-core.test.ts`:
 
 ```typescript
-import { assert, assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { dirname, join } from "@std/path";
-import type { GateRun, RunSummary, Variant } from "../../../scripts/harness/gate-task.ts";
+import { assert, assertEquals } from "@std/assert";
+import type { GateRun, RunSummary, Tally, Variant } from "../../../scripts/harness/gate-core.ts";
 import {
-  checkTask,
+  classifyTestFailure,
   decideGate,
   gatePlan,
   layers,
   parseVariant,
-  setStatus,
-  stageWorkspace,
-  testCodeunitsIn,
-} from "../../../scripts/harness/gate-task.ts";
-import { HarnessTaskSchema, loadTask } from "../../../src/harness/task.ts";
-
-async function write(root: string, rel: string, text: string): Promise<void> {
-  await Deno.mkdir(dirname(join(root, rel)), { recursive: true });
-  await Deno.writeTextFile(join(root, rel), text);
-}
+  tally,
+} from "../../../scripts/harness/gate-core.ts";
+import { HarnessTaskSchema } from "../../../src/harness/task.ts";
 
 const F2P = HarnessTaskSchema.parse({
   id: "HX-001",
@@ -132,10 +145,7 @@ const F2P = HarnessTaskSchema.parse({
   source: "refapp",
   scorers: ["build", "pass_to_pass", "fail_to_pass"],
   pass_to_pass: [{ codeunit: 80010, procedures: ["Visible"] }],
-  fail_to_pass: {
-    depends_on: ["Core"],
-    tests: [{ codeunit: 85000, procedures: ["Hidden"] }],
-  },
+  fail_to_pass: { depends_on: ["Core"], tests: [{ codeunit: 85000, procedures: ["Hidden"] }] },
 });
 const TA = HarnessTaskSchema.parse({
   id: "HX-002",
@@ -148,187 +158,607 @@ const TA = HarnessTaskSchema.parse({
   mutants: ["m1"],
 });
 
+const T = (k: "pass" | "assert" | "runtime" | "missing"): Tally => ({
+  expected: 1,
+  passed: k === "pass" ? 1 : 0,
+  assertion: k === "assert" ? 1 : 0,
+  runtime: k === "runtime" ? 1 : 0,
+  missing: k === "missing" ? 1 : 0,
+});
 const S = (o: Partial<RunSummary>): RunSummary => ({
-  build: true,
-  p2p: "pass",
-  oracleBuild: null,
+  refapp: "ok",
+  oracle: null,
+  oracleCodes: [],
+  p2p: T("pass"),
   f2p: null,
   own: null,
+  infra: false,
   ...o,
 });
 const run = (variant: Variant, summary: RunSummary, repeat = 1): GateRun => ({
   variant,
   repeat,
   summary,
+  staged_hash: `${JSON.stringify(variant)}`,
 });
-function f2pHappy(): GateRun[] {
+
+function f2pRuns(): GateRun[] {
   return [
-    run({ kind: "baseline" }, S({ oracleBuild: true, f2p: "fail" })),
-    ...[1, 2, 3].map((i) =>
-      run({ kind: "correct" }, S({ oracleBuild: true, f2p: "pass" }), i)
-    ),
+    run({ kind: "baseline" }, S({ oracle: "ok", f2p: T("assert") })),
+    ...[1, 2, 3].map((i) => run({ kind: "correct" }, S({ oracle: "ok", f2p: T("pass") }), i)),
     ...["a", "b"].flatMap((name) =>
-      [1, 2].map((i) =>
-        run({ kind: "naive", name }, S({ oracleBuild: true, f2p: "fail" }), i)
-      )
+      [1, 2].map((i) => run({ kind: "naive", name }, S({ oracle: "ok", f2p: T("assert") }), i))
     ),
   ];
 }
-function taHappy(): GateRun[] {
-  const t = (suite: string, mutant: string | null, own: RunSummary["own"], i = 1) =>
+function taRuns(): GateRun[] {
+  const t = (suite: string, mutant: string | null, own: Tally, i = 1) =>
     run({ kind: "tests", suite, mutant }, S({ own }), i);
   return [
     run({ kind: "baseline" }, S({})),
-    t("reference-tests", null, "pass", 1),
-    t("reference-tests", null, "pass", 2),
-    t("reference-tests", null, "pass", 3),
-    t("reference-tests", "m0", "fail"),
-    t("reference-tests", "m1", "fail"),
+    t("reference-tests", null, T("pass"), 1),
+    t("reference-tests", null, T("pass"), 2),
+    t("reference-tests", null, T("pass"), 3),
+    t("reference-tests", "m0", T("assert")),
+    t("reference-tests", "m1", T("assert")),
     ...["naive/a", "naive/b"].flatMap((s) => [
-      t(s, null, "pass"),
-      t(s, "m0", "fail"),
-      t(s, "m1", "pass"),
+      t(s, null, T("pass")),
+      t(s, "m0", T("assert")),
+      t(s, "m1", T("pass")),
     ]),
   ];
 }
+const planF2P = gatePlan(F2P, ["a", "b"]);
+const planTA = gatePlan(TA, ["a", "b"]);
 
 Deno.test("layers: order refapp < overlay < correct < mutant < suite", () => {
-  assertEquals(layers({ kind: "baseline" }), ["overlay"]);
-  assertEquals(layers({ kind: "correct" }), ["overlay", "correct"]);
-  assertEquals(layers({ kind: "naive", name: "x" }), ["overlay", "naive/x"]);
-  assertEquals(
-    layers({ kind: "tests", suite: "reference-tests", mutant: "m0" }),
-    ["overlay", "reference-tests"],
-  );
-  assertEquals(
-    layers({ kind: "tests", suite: "naive/x", mutant: "m1" }),
-    ["overlay", "correct", "mutants/m1", "naive/x"],
-  );
+  const p = (v: Variant, ta = false) =>
+    layers("T", v, ta).map((l) => `${l.path.replaceAll("\\", "/")}:${l.mode}`);
+  assertEquals(p({ kind: "baseline" }), ["T/overlay:task"]);
+  assertEquals(p({ kind: "correct" }), ["T/overlay:task", "T/correct:task"]);
+  assertEquals(p({ kind: "tests", suite: "naive/x", mutant: "m1" }, true), [
+    "T/overlay:task",
+    "T/correct:task",
+    "T/mutants/m1:task",
+    "T/naive/x:task",
+  ]);
+  assertEquals(p({ kind: "tests", suite: "reference-tests", mutant: "m0" }, true), [
+    "T/overlay:task",
+    "T/reference-tests:task",
+  ]);
+  assertEquals(p({ kind: "candidate", dir: "W", mutant: null }, true), [
+    "T/overlay:task",
+    "T/correct:task",
+    "W:candidate-tests",
+  ]);
+  assertEquals(p({ kind: "candidate", dir: "W", mutant: null }), ["T/overlay:task", "W:candidate"]);
 });
 
-Deno.test("parseVariant: round trips the CLI spellings", () => {
-  assertEquals(parseVariant("correct"), { kind: "correct" });
+Deno.test("parseVariant: CLI spellings", () => {
   assertEquals(parseVariant("naive/skip"), { kind: "naive", name: "skip" });
   assertEquals(parseVariant("tests:reference-tests@correct"), {
     kind: "tests",
     suite: "reference-tests",
     mutant: null,
   });
-  assertEquals(parseVariant("tests:naive/a@m0"), {
-    kind: "tests",
-    suite: "naive/a",
-    mutant: "m0",
-  });
+  assertEquals(parseVariant("tests:naive/a@m0"), { kind: "tests", suite: "naive/a", mutant: "m0" });
 });
 
-Deno.test("stageWorkspace: later layers win, build output skipped, layer outside a module refused", async () => {
-  const root = await Deno.makeTempDir();
-  const refapp = join(root, "refapp");
-  const task = join(root, "task");
-  await write(refapp, "Core/app.json", "{}");
-  await write(refapp, "Core/src/A.al", "base");
-  await write(refapp, "Core/.alpackages/x.app", "bin");
-  await write(task, "overlay/Core/src/A.al", "bug");
-  await write(task, "correct/Core/src/A.al", "fix");
-  await write(task, "correct/Core/src/B.al", "new");
-  const out = join(root, "out");
-  await stageWorkspace(refapp, task, ["overlay", "correct"], out);
-  assertEquals(await Deno.readTextFile(join(out, "Core/src/A.al")), "fix");
-  assertEquals(await Deno.readTextFile(join(out, "Core/src/B.al")), "new");
-  await assertRejects(() => Deno.stat(join(out, "Core/.alpackages/x.app")));
-  await write(task, "naive/bad/Elsewhere/x.al", "x");
-  await assertRejects(
-    () => stageWorkspace(refapp, task, ["naive/bad"], join(root, "o2")),
-    Error,
-    "module folder",
-  );
+Deno.test("classifyTestFailure: assertion, lost asserterror, runtime", () => {
+  assertEquals(classifyTestFailure("Assert.AreEqual failed. Expected:<1> Actual:<0>"), "assertion");
+  assertEquals(classifyTestFailure("An error was expected inside an ASSERTERROR statement."), "assertion");
+  assertEquals(classifyTestFailure("The CGR Vehicle does not exist."), "runtime_error");
 });
 
-Deno.test("testCodeunitsIn: only Subtype = Test codeunits", async () => {
-  const root = await Deno.makeTempDir();
-  await write(root, "Test/src/T.al", "codeunit 80100 \"T\"\n{\n    Subtype = Test;\n}\n");
-  await write(root, "Test/src/L.al", "codeunit 80101 \"L\"\n{\n}\n");
-  assertEquals(await testCodeunitsIn(root), [80100]);
-});
-
-Deno.test("setStatus: missing wins over fail", () => {
-  const refs = [{ codeunit: 85000, procedures: ["A", "B"] }];
-  assertEquals(
-    setStatus([{ codeunit: 85000, procedure: "A", passed: false }], refs),
-    "missing",
-  );
-  assertEquals(
-    setStatus([
-      { codeunit: 85000, procedure: "A", passed: false },
-      { codeunit: 85000, procedure: "B", passed: true },
-    ], refs),
-    "fail",
-  );
+Deno.test("tally: missing, assertion and runtime counted apart", () => {
+  const t = tally([
+    { codeunit: 85000, procedure: "A", passed: false, failure: "assertion" },
+    { codeunit: 85000, procedure: "B", passed: false, failure: "runtime_error" },
+  ], [{ codeunit: 85000, procedures: ["A", "B", "C"] }]);
+  assertEquals(t, { expected: 3, passed: 0, assertion: 1, runtime: 1, missing: 1 });
 });
 
 Deno.test("decideGate: happy f2p task is promoted", () => {
-  assertEquals(decideGate(F2P, f2pHappy()), { promoted: true, reasons: [] });
+  assertEquals(decideGate(F2P, planF2P, f2pRuns()), {
+    promoted: true,
+    matrix_complete: true,
+    reasons: [],
+  });
 });
 
 const F2P_BAD: Array<[string, (r: GateRun[]) => void, string]> = [
   ["one flaky correct run blocks promotion", (r) => {
-    r[2]!.summary = S({ oracleBuild: true, f2p: "fail" });
-  }, "correct/"],
+    r[2]!.summary = S({ oracle: "ok", f2p: T("assert") });
+  }, "correct#2"],
   ["naive compile failure is refused", (r) => {
-    r[4]!.summary = S({ build: false });
-  }, "naive/a"],
-  ["naive with a missing oracle procedure is refused", (r) => {
-    r[5]!.summary = S({ oracleBuild: true, f2p: "missing" });
-  }, "naive/a"],
+    r[4]!.summary = S({ refapp: "compile_fail" });
+  }, "naive/a#1"],
+  ["naive runtime-only failure is refused", (r) => {
+    r[4]!.summary = S({ oracle: "ok", f2p: T("runtime") });
+  }, "naive/a#1"],
+  ["naive with a missing procedure is refused", (r) => {
+    r[5]!.summary = S({ oracle: "ok", f2p: T("missing") });
+  }, "naive/a#2"],
   ["baseline that already passes the oracle is refused", (r) => {
-    r[0]!.summary = S({ oracleBuild: true, f2p: "pass" });
-  }, "baseline"],
-  ["only one naive variant is refused", (r) => {
-    r.splice(6, 2);
-  }, "fewer than two"],
+    r[0]!.summary = S({ oracle: "ok", f2p: T("pass") });
+  }, "baseline#1"],
+  ["baseline oracle compile with an unexpected diagnostic is refused", (r) => {
+    r[0]!.summary = S({ oracle: "compile_fail", oracleCodes: ["AL0001"] });
+  }, "baseline#1"],
+  ["infra run is refused", (r) => {
+    r[1]!.summary = S({ oracle: "publish_fail", infra: true });
+  }, "infra"],
+  ["matrix incomplete", (r) => {
+    r.splice(7, 1);
+  }, "matrix incomplete"],
 ];
 for (const [name, mutate, needle] of F2P_BAD) {
   Deno.test(`decideGate: ${name}`, () => {
-    const runs = f2pHappy();
+    const runs = f2pRuns();
     mutate(runs);
-    const d = decideGate(F2P, runs);
+    const d = decideGate(F2P, planF2P, runs);
     assertEquals(d.promoted, false);
     assert(d.reasons.some((x) => x.includes(needle)), d.reasons.join("; "));
   });
 }
 
-Deno.test("decideGate: baseline oracle that does not compile counts as failing", () => {
-  const runs = f2pHappy();
-  runs[0]!.summary = S({ oracleBuild: false });
-  assertEquals(decideGate(F2P, runs).promoted, true);
+Deno.test("decideGate: only one naive variant is refused", () => {
+  const plan = gatePlan(F2P, ["a"]);
+  const d = decideGate(F2P, plan, f2pRuns().slice(0, 6));
+  assert(d.reasons.some((x) => x.includes("fewer than two")));
 });
 
-Deno.test("decideGate: test-authoring happy path, surviving mutant, over-strong naive", () => {
-  assertEquals(decideGate(TA, taHappy()).promoted, true);
-  const survivor = taHappy();
-  survivor[5]!.summary = S({ own: "pass" });
-  assert(decideGate(TA, survivor).reasons.some((x) => x.includes("mutant m1")));
-  const strong = taHappy();
-  strong[8]!.summary = S({ own: "fail" });
-  assert(decideGate(TA, strong).reasons.some((x) => x.includes("naive/a")));
+Deno.test("decideGate: baseline oracle failing on missing objects only is accepted", () => {
+  const runs = f2pRuns();
+  runs[0]!.summary = S({ oracle: "compile_fail", oracleCodes: ["AL0118", "AL0132"] });
+  assertEquals(decideGate(F2P, planF2P, runs).promoted, true);
+});
+
+Deno.test("decideGate: test-authoring", () => {
+  assertEquals(decideGate(TA, planTA, taRuns()).promoted, true);
+  const survivor = taRuns();
+  survivor[5]!.summary = S({ own: T("pass") });
+  assert(decideGate(TA, planTA, survivor).reasons.some((x) => x.includes("@m1")));
+  const strong = taRuns();
+  strong[8]!.summary = S({ own: T("assert") });
+  assert(decideGate(TA, planTA, strong).reasons.some((x) => x.includes("naive/a must leave")));
+  const partial = taRuns();
+  partial[7]!.summary = S({ own: T("missing") });
+  assert(decideGate(TA, planTA, partial).reasons.some((x) => x.includes("naive/a@m0")));
 });
 
 Deno.test("gatePlan: run counts", () => {
-  assertEquals(gatePlan(F2P, ["a", "b"]).length, 1 + 3 + 2 * 2);
-  assertEquals(gatePlan(TA, ["a", "b"]).length, 1 + 3 + 2 + 2 * 3);
+  assertEquals(planF2P.length, 1 + 3 + 2 * 2);
+  assertEquals(planTA.length, 1 + 3 + 2 + 2 * 3);
 });
+```
 
-async function fixtureTask(root: string, promptText: string): Promise<string> {
-  const refapp = join(root, "harness-tasks/refapp");
-  await write(refapp, "Core/app.json", "{}");
-  await write(refapp, "Core/src/A.al", "codeunit 70000 \"A\"\n{\n}\n");
-  await write(
-    refapp,
-    "Test/src/V.al",
-    "codeunit 80010 \"V\"\n{\n    Subtype = Test;\n    TestPermissions = Disabled;\n    [Test]\n    procedure Visible()\n    begin\n    end;\n}\n",
+- [ ] **Step 2: Run it and see it fail**
+
+Run: `deno test --allow-all tests/unit/harness/gate-core.test.ts`
+Expected: FAIL, `Module not found ".../scripts/harness/gate-core.ts"`.
+
+- [ ] **Step 3: Implement** `scripts/harness/gate-core.ts`:
+
+```typescript
+// Pure decision contract of the M4 authoring gate (spec 1b section 8,
+// spec 1a section 7). No I/O. Owner: lane-ops.
+import { join } from "@std/path";
+import type { HarnessTask } from "../../src/harness/task.ts";
+
+export const BUILD_ORDER = [
+  "Core",
+  "Fleet",
+  "Rental",
+  "Leasing",
+  "Integration",
+  "Reporting",
+  "Test",
+];
+/** Spec 1b section 4. Oracle = the hidden test app of a task. */
+export const RANGES: Record<string, readonly [number, number]> = {
+  Core: [70000, 70099],
+  Fleet: [70100, 70199],
+  Rental: [70200, 70299],
+  Leasing: [70300, 70399],
+  Integration: [70400, 70499],
+  Reporting: [70500, 70599],
+  Test: [80000, 84999],
+  Oracle: [85000, 89999],
+};
+export const CORRECT_RUNS = 3;
+/** f2p naive variants only; test-authoring naive suites run once per target. */
+export const NAIVE_RUNS = 2;
+/**
+ * Compiler diagnostics a baseline oracle may fail with: an object or member
+ * the task asks for does not exist yet. Verified against real output in M4-07
+ * and M4-11; a change needs orchestrator approval.
+ */
+export const MISSING_FEATURE_CODES = new Set(["AL0118", "AL0132", "AL0185"]);
+
+export type Variant =
+  | { kind: "baseline" }
+  | { kind: "correct" }
+  | { kind: "naive"; name: string }
+  /** Test-authoring suite on correct code (null), the staged state ("m0") or a named mutant. */
+  | { kind: "tests"; suite: string; mutant: string | null }
+  /** An agent workspace (pilot judge). For test-authoring, mutant as above. */
+  | { kind: "candidate"; dir: string; mutant: string | null };
+
+export function variantName(v: Variant): string {
+  switch (v.kind) {
+    case "baseline":
+    case "correct":
+      return v.kind;
+    case "naive":
+      return `naive/${v.name}`;
+    case "tests":
+      return `${v.suite}@${v.mutant ?? "correct"}`;
+    case "candidate":
+      return `candidate@${v.mutant ?? "correct"}`;
+  }
+}
+
+export function parseVariant(s: string): Variant {
+  if (s === "baseline" || s === "correct") return { kind: s };
+  if (s.startsWith("naive/")) return { kind: "naive", name: s.slice(6) };
+  const m = s.match(/^tests:(.+)@(.+)$/);
+  if (m) return { kind: "tests", suite: m[1]!, mutant: m[2] === "correct" ? null : m[2]! };
+  throw new Error(`unknown variant ${s}`);
+}
+
+export interface Layer {
+  path: string;
+  mode: "task" | "candidate" | "candidate-tests";
+  optional?: boolean;
+}
+
+/** Layers over the refapp snapshot, in order (spec 1a section 7: mutant 0 = staged state). */
+export function layers(taskDir: string, v: Variant, testAuthoring: boolean): Layer[] {
+  const t = (rel: string): Layer => ({ path: join(taskDir, rel), mode: "task" });
+  const overlay: Layer = { ...t("overlay"), optional: true };
+  const production = (mutant: string | null): Layer[] =>
+    mutant === "m0"
+      ? [overlay]
+      : mutant === null
+      ? [overlay, t("correct")]
+      : [overlay, t("correct"), t(`mutants/${mutant}`)];
+  switch (v.kind) {
+    case "baseline":
+      return [overlay];
+    case "correct":
+      return [overlay, t("correct")];
+    case "naive":
+      return [overlay, t(`naive/${v.name}`)];
+    case "tests":
+      return [...production(v.mutant), t(v.suite)];
+    case "candidate":
+      return testAuthoring
+        ? [...production(v.mutant), { path: v.dir, mode: "candidate-tests" }]
+        : [overlay, { path: v.dir, mode: "candidate" }];
+  }
+}
+
+const OBJECT_RE =
+  /^\s*(table|tableextension|page|pageextension|codeunit|report|reportextension|query|xmlport|enum|enumextension|permissionset|permissionsetextension)\s+(\d+)\s/gim;
+export function objectIds(al: string): number[] {
+  return [...al.matchAll(OBJECT_RE)].map((m) => Number(m[2]));
+}
+export const isTestCodeunit = (al: string) => /Subtype\s*=\s*Test\s*;/i.test(al);
+
+export interface TestRef {
+  codeunit: number;
+  procedures: string[];
+}
+
+/** The [Test] procedures of a test codeunit file, or null for any other file. */
+export function parseTestManifest(al: string): TestRef | null {
+  if (!isTestCodeunit(al)) return null;
+  const codeunit = objectIds(al)[0];
+  if (codeunit === undefined) return null;
+  const procedures = [
+    ...al.matchAll(
+      /\[Test\][^\n]*\r?\n(?:\s*\[[^\]]*\][^\n]*\r?\n)*\s*(?:local\s+)?procedure\s+([A-Za-z0-9_]+)\s*\(/gi,
+    ),
+  ].map((m) => m[1]!);
+  return { codeunit, procedures };
+}
+
+export interface ProcResult {
+  codeunit: number;
+  procedure: string;
+  passed: boolean;
+  failure: "assertion" | "runtime_error" | null;
+  message?: string;
+}
+
+/**
+ * M1-17 `classifyTestFailure` rule, plus BC's lost-asserterror text (the
+ * test's own expectation losing). Parity with M1-17 is an open question.
+ */
+export function classifyTestFailure(error: string): "assertion" | "runtime_error" {
+  return /\bAssert\.\w+ failed\b/i.test(error) ||
+      /An error was expected inside an ASSERTERROR statement/i.test(error)
+    ? "assertion"
+    : "runtime_error";
+}
+
+export interface Tally {
+  expected: number;
+  passed: number;
+  assertion: number;
+  runtime: number;
+  missing: number;
+}
+
+export function tally(tests: ProcResult[], refs: TestRef[]): Tally {
+  const t: Tally = { expected: 0, passed: 0, assertion: 0, runtime: 0, missing: 0 };
+  for (const r of refs) {
+    for (const p of r.procedures) {
+      t.expected++;
+      const hit = tests.find((x) => x.codeunit === r.codeunit && x.procedure === p);
+      if (!hit) t.missing++;
+      else if (hit.passed) t.passed++;
+      else if (hit.failure === "assertion") t.assertion++;
+      else t.runtime++;
+    }
+  }
+  return t;
+}
+export const complete = (t: Tally) => t.expected > 0 && t.missing === 0;
+export const allPass = (t: Tally) => complete(t) && t.passed === t.expected;
+/** Killed: every expected procedure ran and at least one lost an assertion. */
+export const assertionKill = (t: Tally) => complete(t) && t.assertion > 0;
+
+export interface BuildStep {
+  app: string;
+  stage: "compile" | "publish";
+  ok: boolean;
+  codes: string[];
+  detail?: string;
+}
+export interface RunResult {
+  variant: string;
+  repeat: number;
+  usesOracle: boolean;
+  /** Expected procedures of the suite under test (test-authoring, pilot). */
+  own: TestRef[];
+  builds: BuildStep[];
+  tests: ProcResult[];
+  staged_hash: string;
+  ms: number;
+  infra?: string;
+}
+export type AppState = "ok" | "compile_fail" | "publish_fail" | "not_run";
+export interface RunSummary {
+  refapp: AppState;
+  oracle: AppState | null;
+  oracleCodes: string[];
+  p2p: Tally;
+  f2p: Tally | null;
+  own: Tally | null;
+  infra: boolean;
+}
+
+function appState(run: RunResult, app: string): AppState {
+  const b = run.builds.find((x) => x.app === app);
+  if (!b) return "not_run";
+  if (b.ok) return "ok";
+  return b.stage === "compile" ? "compile_fail" : "publish_fail";
+}
+
+export function summarize(task: HarnessTask, run: RunResult): RunSummary {
+  const states = BUILD_ORDER.map((a) => appState(run, a));
+  const oracle = run.usesOracle ? appState(run, "Oracle") : null;
+  return {
+    refapp: states.find((s) => s !== "ok") ?? "ok",
+    oracle,
+    oracleCodes: run.builds.find((b) => b.app === "Oracle")?.codes ?? [],
+    p2p: tally(run.tests, task.pass_to_pass),
+    f2p: task.fail_to_pass && oracle === "ok" ? tally(run.tests, task.fail_to_pass.tests) : null,
+    own: run.own.length > 0 ? tally(run.tests, run.own) : null,
+    infra: run.infra !== undefined || states.includes("publish_fail") ||
+      oracle === "publish_fail",
+  };
+}
+
+export interface PlanEntry {
+  variant: Variant;
+  repeat: number;
+}
+export interface GateRun extends PlanEntry {
+  summary: RunSummary;
+  staged_hash: string;
+}
+export const runKey = (v: Variant, repeat: number) => `${variantName(v)}#${repeat}`;
+
+export function gatePlan(task: HarnessTask, naive: string[]): PlanEntry[] {
+  const plan: PlanEntry[] = [];
+  const add = (variant: Variant, n: number) => {
+    for (let i = 1; i <= n; i++) plan.push({ variant, repeat: i });
+  };
+  add({ kind: "baseline" }, 1);
+  if (task.kind !== "test-authoring") {
+    add({ kind: "correct" }, CORRECT_RUNS);
+    for (const name of naive) add({ kind: "naive", name }, NAIVE_RUNS);
+    return plan;
+  }
+  const targets = ["m0", ...task.mutants];
+  add({ kind: "tests", suite: "reference-tests", mutant: null }, CORRECT_RUNS);
+  for (const m of targets) add({ kind: "tests", suite: "reference-tests", mutant: m }, 1);
+  for (const name of naive) {
+    add({ kind: "tests", suite: `naive/${name}`, mutant: null }, 1);
+    for (const m of targets) add({ kind: "tests", suite: `naive/${name}`, mutant: m }, 1);
+  }
+  return plan;
+}
+
+/** Spec 1b section 8 on a complete matrix; see "Decisions argued from the spec". */
+export function decideGate(
+  task: HarnessTask,
+  plan: PlanEntry[],
+  runs: GateRun[],
+): { promoted: boolean; matrix_complete: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const byKey = new Map(runs.map((r) => [runKey(r.variant, r.repeat), r]));
+  let matrixComplete = true;
+  for (const p of plan) {
+    if (!byKey.has(runKey(p.variant, p.repeat))) {
+      matrixComplete = false;
+      reasons.push(`matrix incomplete: ${runKey(p.variant, p.repeat)} has no run`);
+    }
+  }
+  const hashes = new Map<string, string>();
+  for (const r of runs) {
+    const name = variantName(r.variant);
+    if (hashes.has(name) && hashes.get(name) !== r.staged_hash) {
+      reasons.push(`${name}: staged content differs between repeats`);
+    }
+    hashes.set(name, r.staged_hash);
+    if (r.summary.infra) reasons.push(`${runKey(r.variant, r.repeat)}: infra, rerun (never scored)`);
+  }
+  const check = (
+    pred: (v: Variant) => boolean,
+    test: (s: RunSummary) => boolean,
+    why: string,
+  ) => {
+    for (const r of runs.filter((x) => pred(x.variant))) {
+      if (!r.summary.infra && !test(r.summary)) reasons.push(`${runKey(r.variant, r.repeat)}: ${why}`);
+    }
+  };
+  const built = (s: RunSummary) => s.refapp === "ok";
+  const naiveNames = new Set(
+    plan.flatMap((p) =>
+      p.variant.kind === "naive"
+        ? [p.variant.name]
+        : p.variant.kind === "tests" && p.variant.suite.startsWith("naive/")
+        ? [p.variant.suite]
+        : []
+    ),
   );
-  const dir = join(root, "harness-tasks/tasks/HX-001");
-  await write(dir, "task.yml", `id: HX-001
+  if (naiveNames.size < 2) reasons.push("fewer than two naive variants (spec 1b section 8)");
+
+  if (task.kind !== "test-authoring") {
+    check(
+      (v) => v.kind === "baseline",
+      (s) =>
+        built(s) && allPass(s.p2p) &&
+        (s.oracle === "compile_fail"
+          ? s.oracleCodes.length > 0 && s.oracleCodes.every((c) => MISSING_FEATURE_CODES.has(c))
+          : s.oracle === "ok" && s.f2p !== null && complete(s.f2p) && !allPass(s.f2p)),
+      "baseline must build, pass pass_to_pass and fail fail_to_pass",
+    );
+    check(
+      (v) => v.kind === "correct",
+      (s) => built(s) && allPass(s.p2p) && s.oracle === "ok" && s.f2p !== null && allPass(s.f2p),
+      "correct/ must pass every scorer",
+    );
+    check(
+      (v) => v.kind === "naive",
+      (s) => built(s) && s.oracle === "ok" && s.f2p !== null && assertionKill(s.f2p),
+      "naive must build and lose an oracle assertion with every listed procedure run",
+    );
+  } else {
+    const suite = (name: string, onCorrect: boolean) => (v: Variant) =>
+      v.kind === "tests" && v.suite === name && (v.mutant === null) === onCorrect;
+    const naiveSuite = (onCorrect: boolean) => (v: Variant) =>
+      v.kind === "tests" && v.suite.startsWith("naive/") && (v.mutant === null) === onCorrect;
+    check((v) => v.kind === "baseline", (s) => built(s) && allPass(s.p2p), "baseline must build and pass pass_to_pass");
+    check(
+      suite("reference-tests", true),
+      (s) => built(s) && allPass(s.p2p) && s.own !== null && allPass(s.own),
+      "reference tests must all pass on correct/",
+    );
+    check(
+      suite("reference-tests", false),
+      (s) => built(s) && s.own !== null && assertionKill(s.own),
+      "reference tests must kill this target by assertion",
+    );
+    check(
+      naiveSuite(true),
+      (s) => built(s) && s.own !== null && allPass(s.own),
+      "naive suite must pass on correct/, or it fails for the wrong reason",
+    );
+    check(
+      naiveSuite(false),
+      (s) => built(s) && s.own !== null && complete(s.own),
+      "naive suite run is incomplete",
+    );
+    for (const name of naiveNames) {
+      const survives = runs.some((r) =>
+        r.variant.kind === "tests" && r.variant.suite === name && r.variant.mutant !== null &&
+        r.summary.own !== null && allPass(r.summary.own)
+      );
+      if (!survives) reasons.push(`${name} must leave at least one mutant alive`);
+    }
+  }
+  return { promoted: reasons.length === 0, matrix_complete: matrixComplete, reasons };
+}
+```
+
+- [ ] **Step 4: Run it and see it pass**
+
+Run: `deno test --allow-all tests/unit/harness/gate-core.test.ts`
+Expected: `ok | 17 passed | 0 failed`.
+
+- [ ] **Step 5: Check, lint, format, commit**
+
+```bash
+deno check scripts/harness/gate-core.ts tests/unit/harness/gate-core.test.ts
+deno lint scripts/harness/gate-core.ts tests/unit/harness/gate-core.test.ts
+deno fmt scripts/harness/gate-core.ts tests/unit/harness/gate-core.test.ts
+git add scripts/harness/gate-core.ts tests/unit/harness/gate-core.test.ts
+git commit -m "feat(harness): M4 gate decision contract"
+```
+
+**Acceptance:** `deno test --allow-all tests/unit/harness/gate-core.test.ts` prints `ok | 17 passed | 0 failed`; check and lint clean; the test file contains the named cases of Review Focus 1 and 2.
+
+---
+
+### Task M4-01b: staging from a revision and static checks
+
+**Lane:** ops. **Deps:** M4-01a, M1-02 (merged: `hashTree`). **Target:** 09-30.
+
+**Files:**
+- Create: `scripts/harness/gate-stage.ts`
+- Create: `tests/unit/harness/gate-fixtures.ts`
+- Test: `tests/unit/harness/gate-stage.test.ts`
+
+**Interfaces:**
+- Consumes: M4-01a exports; `hashTree(dir, "task")` (M1-02); `loadTask`, `type LoadedTask` (M1-01).
+- Produces: `exists`, `git(cwd, args, env?)`; `interface Source { commit; root; refappDir; refappTree; taskDir; taskTree }`; `exportSource(repo, rev, taskId, out): Promise<Source>`; `stageWorkspace(refappDir, layers: Layer[], out): Promise<void>`; `stagedHash(dir): Promise<string>`; `testManifestIn(dir): Promise<TestRef[]>`; `checkTask(loaded, refappDir, repoRoot, opts?: { drift?: boolean }): Promise<{ problems: string[]; warnings: string[] }>`. Fixture: `writeRefapp(root)`, `writeTask(root, id, promptText)`, `write(root, rel, text)`.
+
+- [ ] **Step 1: Shared fixture** `tests/unit/harness/gate-fixtures.ts`:
+
+```typescript
+import { dirname, join } from "@std/path";
+import { BUILD_ORDER } from "../../../scripts/harness/gate-core.ts";
+
+export async function write(root: string, rel: string, text: string): Promise<void> {
+  await Deno.mkdir(dirname(join(root, rel)), { recursive: true });
+  await Deno.writeTextFile(join(root, rel), text);
+}
+
+const TEST_CU = (id: number, proc: string) =>
+  `codeunit ${id} "T${id}"\n{\n    Subtype = Test;\n    TestPermissions = Disabled;\n\n    [Test]\n    procedure ${proc}()\n    begin\n    end;\n}\n`;
+export { TEST_CU };
+
+/** A refapp with all seven modules (stageWorkspace refuses an incomplete one). */
+export async function writeRefapp(refapp: string): Promise<void> {
+  let n = 0;
+  for (const m of BUILD_ORDER) {
+    n++;
+    await write(refapp, `${m}/app.json`, JSON.stringify({ id: `c6a1e000-0000-4000-8000-00000000000${n}` }));
+  }
+  await write(refapp, "Core/src/A.al", 'codeunit 70000 "A"\n{\n}\n');
+  await write(refapp, "Test/src/V.al", TEST_CU(80010, "Visible"));
+}
+
+/** Repo layout harness-tasks/{refapp,tasks/<id>} with a clean bugfix task. */
+export async function writeTask(root: string, id: string, promptText: string): Promise<string> {
+  await writeRefapp(join(root, "harness-tasks/refapp"));
+  const dir = join(root, "harness-tasks/tasks", id);
+  await write(dir, "task.yml", `id: ${id}
 refapp_version: refapp-v1-rc1
 kind: bugfix
 prompt: prompt.md
@@ -343,163 +773,185 @@ fail_to_pass:
 `);
   await write(dir, "prompt.md", promptText);
   await write(dir, "oracle/app.json", JSON.stringify({
+    id: "c6a1e000-0000-4000-8001-000000000001",
+    name: `CGR Oracle ${id}`,
     publisher: "CentralGauge",
     idRanges: [{ from: 85000, to: 85099 }],
     dependencies: [{ name: "CGR Core" }, { name: "Library Assert" }],
   }));
-  await write(
-    dir,
-    "oracle/src/O.al",
-    "codeunit 85000 \"O\"\n{\n    Subtype = Test;\n    TestPermissions = Disabled;\n    [Test]\n    procedure Hidden()\n    begin\n    end;\n}\n",
-  );
-  await write(dir, "overlay/Core/src/A.al", "codeunit 70000 \"A\"\n{\n}\n");
-  await write(dir, "correct/Core/src/A.al", "codeunit 70000 \"A\"\n{\n}\n");
-  await write(dir, "naive/x/Core/src/A.al", "codeunit 70000 \"A\"\n{\n}\n");
-  await write(dir, "naive/y/Core/src/A.al", "codeunit 70000 \"A\"\n{\n}\n");
+  await write(dir, "oracle/src/O.al", TEST_CU(85000, "Hidden"));
+  for (const l of ["overlay", "correct", "naive/x", "naive/y"]) {
+    await write(dir, `${l}/Core/src/A.al`, 'codeunit 70000 "A"\n{\n    // ' + l + "\n}\n");
+  }
   return dir;
 }
+```
+
+- [ ] **Step 2: Write the failing test** `tests/unit/harness/gate-stage.test.ts`:
+
+```typescript
+import { assert, assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import { join } from "@std/path";
+import { layers } from "../../../scripts/harness/gate-core.ts";
+import {
+  checkTask,
+  exportSource,
+  stageWorkspace,
+  testManifestIn,
+} from "../../../scripts/harness/gate-stage.ts";
+import { loadTask } from "../../../src/harness/task.ts";
+import { TEST_CU, write, writeRefapp, writeTask } from "./gate-fixtures.ts";
+
+const git = (cwd: string, ...args: string[]) =>
+  new Deno.Command("git", { args, cwd, stdout: "null", stderr: "null" }).output();
+async function commitAll(root: string, tag?: string) {
+  await git(root, "add", "-A");
+  await git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "x");
+  if (tag) await git(root, "tag", tag);
+}
+
+Deno.test("stageWorkspace: precedence, build output skipped, bad layers refused", async () => {
+  const root = await Deno.makeTempDir();
+  const refapp = join(root, "refapp");
+  await writeRefapp(refapp);
+  await write(refapp, "Core/.alpackages/x.app", "bin");
+  const task = join(root, "task");
+  await write(task, "overlay/Core/src/A.al", "bug");
+  await write(task, "correct/Core/src/A.al", "fix");
+  await write(task, "correct/Core/src/B.al", "new");
+  const out = join(root, "out");
+  await stageWorkspace(refapp, layers(task, { kind: "correct" }, false), out);
+  assertEquals(await Deno.readTextFile(join(out, "Core/src/A.al")), "fix");
+  assertEquals(await Deno.readTextFile(join(out, "Core/src/B.al")), "new");
+  await assertRejects(() => Deno.stat(join(out, "Core/.alpackages/x.app")));
+  await write(task, "naive/bad/Elsewhere/x.al", "x");
+  await assertRejects(
+    () => stageWorkspace(refapp, layers(task, { kind: "naive", name: "bad" }, false), join(root, "o2")),
+    Error,
+    "module folder",
+  );
+  await write(task, "naive/empty/Core/src/A.al", "");
+  await assertRejects(
+    () => stageWorkspace(refapp, layers(task, { kind: "naive", name: "empty" }, false), join(root, "o3")),
+    Error,
+    "deletion",
+  );
+  await Deno.remove(join(refapp, "Reporting"), { recursive: true });
+  await assertRejects(() => stageWorkspace(refapp, [], join(root, "o4")), Error, "Reporting");
+});
+
+Deno.test("stageWorkspace: candidate layer cannot replace a shipped test", async () => {
+  const root = await Deno.makeTempDir();
+  const refapp = join(root, "refapp");
+  await writeRefapp(refapp);
+  const cand = join(root, "ws");
+  await write(cand, "Test/src/V.al", "always passes");
+  await write(cand, "Test/src/New.al", TEST_CU(80200, "Mine"));
+  await write(cand, "Core/src/A.al", "agent change");
+  await write(cand, "Core/notes.txt", "ignored");
+  const out = join(root, "out");
+  await stageWorkspace(refapp, [{ path: cand, mode: "candidate" }], out);
+  assertStringIncludes(await Deno.readTextFile(join(out, "Test/src/V.al")), "Visible");
+  assertStringIncludes(await Deno.readTextFile(join(out, "Test/src/New.al")), "Mine");
+  assertEquals(await Deno.readTextFile(join(out, "Core/src/A.al")), "agent change");
+  await assertRejects(() => Deno.stat(join(out, "Core/notes.txt")));
+  const out2 = join(root, "out2");
+  await stageWorkspace(refapp, [{ path: cand, mode: "candidate-tests" }], out2);
+  assertStringIncludes(await Deno.readTextFile(join(out2, "Core/src/A.al")), "codeunit 70000");
+});
+
+Deno.test("testManifestIn: [Test] procedures per codeunit", async () => {
+  const root = await Deno.makeTempDir();
+  await write(root, "Test/src/T.al", TEST_CU(80100, "One"));
+  await write(root, "Test/src/L.al", 'codeunit 80101 "L"\n{\n}\n');
+  assertEquals(await testManifestIn(root), [{ codeunit: 80100, procedures: ["One"] }]);
+});
 
 Deno.test("checkTask: clean fixture has no problems", async () => {
   const root = await Deno.makeTempDir();
-  const dir = await fixtureTask(root, "# Bug\nReturns fail.\n");
+  const dir = await writeTask(root, "HX-001", "# Bug\nThe vehicle is not blocked.\n");
   const { problems } = await checkTask(await loadTask(dir), join(root, "harness-tasks/refapp"), root);
   assertEquals(problems, []);
 });
 
-Deno.test("checkTask: prompt leak, oracle id in visible band, missing TestPermissions, one naive", async () => {
+Deno.test("checkTask: every static rule fires", async () => {
   const root = await Deno.makeTempDir();
-  const dir = await fixtureTask(root, "Make Hidden pass.\n");
-  await write(dir, "oracle/src/P.al", "codeunit 80001 \"P\"\n{\n    Subtype = Test;\n}\n");
+  const dir = await writeTask(root, "HX-001", "Make Hidden pass.\n");
+  await write(dir, "oracle/src/P.al", 'codeunit 80001 "P"\n{\n    Subtype = Test;\n}\n');
+  await write(dir, "correct/Test/src/V.al", TEST_CU(80010, "Visible"));
+  await write(dir, "naive/x/Core/src/Z.al", "");
   await Deno.remove(join(dir, "naive/y"), { recursive: true });
-  const { problems } = await checkTask(await loadTask(dir), join(root, "harness-tasks/refapp"), root);
-  const all = problems.join("\n");
-  assertStringIncludes(all, "hidden name Hidden");
-  assertStringIncludes(all, "object id 80001 outside Oracle");
-  assertStringIncludes(all, "TestPermissions");
-  assertStringIncludes(all, "at least two");
+  await write(dir, "oracle/app.json", JSON.stringify({
+    id: "c6a1e000-0000-4000-8001-000000000009",
+    name: "Wrong",
+    publisher: "CentralGauge",
+    idRanges: [{ from: 85000, to: 85099 }],
+    dependencies: [{ name: "CGR Test" }],
+  }));
+  const all = (await checkTask(await loadTask(dir), join(root, "harness-tasks/refapp"), root))
+    .problems.join("\n");
+  for (
+    const needle of [
+      "hidden name Hidden",
+      "object id 80001 outside Oracle",
+      "TestPermissions",
+      "no [Test] procedure",
+      "at least two",
+      "must not touch Test/",
+      "deletion",
+      "oracle/app.json: id",
+      "oracle/app.json: name",
+      "dependency CGR Test",
+    ]
+  ) assertStringIncludes(all, needle);
 });
 
-Deno.test("baseDrift: flags a replaced file that changed since the tag", async () => {
+Deno.test("drift: replaced file is a problem, other change a warning", async () => {
   const root = await Deno.makeTempDir();
-  const dir = await fixtureTask(root, "# Bug\n");
-  const git = (...args: string[]) =>
-    new Deno.Command("git", { args, cwd: root, stdout: "null", stderr: "null" }).output();
-  await git("init", "-q");
-  await git("add", "-A");
-  await git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "x");
-  await git("tag", "refapp-v1-rc1");
-  await write(join(root, "harness-tasks/refapp"), "Core/src/A.al", "codeunit 70000 \"A\"\n{\n    // slice\n}\n");
-  const { problems } = await checkTask(await loadTask(dir), join(root, "harness-tasks/refapp"), root);
-  assert(problems.some((p) => p.includes("changed since refapp-v1-rc1")), problems.join("; "));
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  await git(root, "init", "-q");
+  await commitAll(root, "refapp-v1-rc1");
+  const refapp = join(root, "harness-tasks/refapp");
+  await write(refapp, "Core/src/A.al", 'codeunit 70000 "A"\n{\n    // slice\n}\n');
+  await write(refapp, "Fleet/src/N.al", 'codeunit 70150 "N"\n{\n}\n');
+  const r = await checkTask(await loadTask(dir), refapp, root);
+  assert(r.problems.some((p) => p.includes("Core/src/A.al") && p.includes("refapp-v1-rc1")), r.problems.join("; "));
+  assert(r.warnings.some((w) => w.includes("re-gate")), r.warnings.join("; "));
+});
+
+Deno.test("exportSource ignores working tree changes", async () => {
+  const root = await Deno.makeTempDir();
+  await writeTask(root, "HX-001", "# Bug\n");
+  await git(root, "init", "-q");
+  await commitAll(root, "refapp-v1-rc1");
+  await write(join(root, "harness-tasks/refapp"), "Core/src/A.al", "dirty");
+  const out = await Deno.makeTempDir();
+  const src = await exportSource(root, "refapp-v1-rc1", "HX-001", out);
+  assertStringIncludes(await Deno.readTextFile(join(src.refappDir, "Core/src/A.al")), "codeunit 70000");
+  assertEquals(src.commit.length, 40);
+  assertEquals(src.refappTree.length, 40);
+  assert(await loadTask(src.taskDir));
 });
 ```
 
-- [ ] **Step 2: Run it and see it fail**
+- [ ] **Step 3: Run it and see it fail**
 
-Run: `deno test --allow-all tests/unit/harness/gate-task.test.ts`
-Expected: FAIL, `Module not found ".../scripts/harness/gate-task.ts"`.
+Run: `deno test --allow-all tests/unit/harness/gate-stage.test.ts`
+Expected: FAIL, `Module not found ".../scripts/harness/gate-stage.ts"`.
 
-- [ ] **Step 3: Implement**
-
-`scripts/harness/gate-task.ts`:
+- [ ] **Step 4: Implement** `scripts/harness/gate-stage.ts`:
 
 ```typescript
-// Interim authoring gate for harness tasks (spec 1b section 8). Used until the
-// M1 Part 2 mock harness runs task solutions through the real verdict
-// pipeline; M4-15 cross-checks against that pipeline when it exists.
-//
-//   gate-task.ts check <taskDir>...              static rules, no container
-//   gate-task.ts compile <taskDir> <variant>      host al compile, no container
-//   gate-task.ts gate <container> <taskDir>       lane-ops container job
-import * as colors from "@std/fmt/colors";
+// Staging from a git revision and static checks for the M4 authoring gate.
+// No container. Owner: lane-ops.
 import { walk } from "@std/fs";
 import { dirname, join, relative } from "@std/path";
-import type { ALProject } from "../../src/container/types.ts";
-import type { SoapTestRunnerConfig } from "../../src/container/soap-test-client.ts";
-import type { HarnessTask, LoadedTask } from "../../src/harness/task.ts";
-import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
-import {
-  resolveSoapTimeoutMs,
-  runTestsViaSoap,
-} from "../../src/container/soap-test-client.ts";
-import { loadTask } from "../../src/harness/task.ts";
+import type { Layer, TestRef } from "./gate-core.ts";
+import type { LoadedTask } from "../../src/harness/task.ts";
+import { hashTree } from "../../src/harness/hash.ts";
+import { BUILD_ORDER, isTestCodeunit, objectIds, parseTestManifest, RANGES } from "./gate-core.ts";
 
-export const BUILD_ORDER = [
-  "Core",
-  "Fleet",
-  "Rental",
-  "Leasing",
-  "Integration",
-  "Reporting",
-  "Test",
-];
-/** Spec 1b section 4. Oracle is the hidden test app of a task. */
-export const RANGES: Record<string, [number, number]> = {
-  Core: [70000, 70099],
-  Fleet: [70100, 70199],
-  Rental: [70200, 70299],
-  Leasing: [70300, 70399],
-  Integration: [70400, 70499],
-  Reporting: [70500, 70599],
-  Test: [80000, 84999],
-  Oracle: [85000, 89999],
-};
-const CORRECT_RUNS = 3;
-const NAIVE_RUNS = 2;
-const EVIDENCE_ROOT = "H:\\Temp3\\harness-spike\\M4";
-const SYMBOLS = Deno.env.get("CG_AL_SYMBOLS") ??
-  "C:\\ProgramData\\BcContainerHelper\\compiler-cache-15ff3c5d109b\\symbols";
-
-export type Variant =
-  | { kind: "baseline" }
-  | { kind: "correct" }
-  | { kind: "naive"; name: string }
-  /** Test-authoring: a test suite on correct code (mutant null), the staged state ("m0") or a mutant. */
-  | { kind: "tests"; suite: string; mutant: string | null };
-
-export function variantName(v: Variant): string {
-  switch (v.kind) {
-    case "baseline":
-    case "correct":
-      return v.kind;
-    case "naive":
-      return `naive/${v.name}`;
-    case "tests":
-      return `tests:${v.suite}@${v.mutant ?? "correct"}`;
-  }
-}
-
-export function parseVariant(s: string): Variant {
-  if (s === "baseline" || s === "correct") return { kind: s };
-  if (s.startsWith("naive/")) return { kind: "naive", name: s.slice(6) };
-  const m = s.match(/^tests:(.+)@(.+)$/);
-  if (m) {
-    return {
-      kind: "tests",
-      suite: m[1]!,
-      mutant: m[2] === "correct" ? null : m[2]!,
-    };
-  }
-  throw new Error(`unknown variant ${s}`);
-}
-
-/** Layer folders over the refapp snapshot, in order (spec 1a section 7: mutant 0 = staged state). */
-export function layers(v: Variant): string[] {
-  switch (v.kind) {
-    case "baseline":
-      return ["overlay"];
-    case "correct":
-      return ["overlay", "correct"];
-    case "naive":
-      return ["overlay", `naive/${v.name}`];
-    case "tests":
-      if (v.mutant === "m0") return ["overlay", v.suite];
-      if (v.mutant === null) return ["overlay", "correct", v.suite];
-      return ["overlay", "correct", `mutants/${v.mutant}`, v.suite];
-  }
-}
-
-async function exists(p: string): Promise<boolean> {
+export async function exists(p: string): Promise<boolean> {
   try {
     await Deno.lstat(p);
     return true;
@@ -509,6 +961,126 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+export async function git(
+  cwd: string,
+  args: string[],
+  env?: Record<string, string>,
+): Promise<{ ok: boolean; out: string }> {
+  const r = await new Deno.Command("git", {
+    args,
+    cwd,
+    ...(env ? { env } : {}),
+    stdout: "piped",
+    stderr: "null",
+  }).output();
+  return { ok: r.success, out: new TextDecoder().decode(r.stdout) };
+}
+
+const posix = (p: string) => p.replaceAll("\\", "/");
+
+export interface Source {
+  commit: string;
+  root: string;
+  refappDir: string;
+  refappTree: string;
+  taskDir: string;
+  taskTree: string;
+}
+
+/**
+ * Write `harness-tasks` of `rev` into `out` from git objects, through a
+ * private index, so the working tree and the repo index are never read or
+ * touched. The gate stages exactly the commit it reports.
+ */
+export async function exportSource(repo: string, rev: string, taskId: string, out: string): Promise<Source> {
+  const c = await git(repo, ["rev-parse", "--verify", "-q", `${rev}^{commit}`]);
+  if (!c.ok) throw new Error(`${rev} does not resolve to a commit`);
+  const commit = c.out.trim();
+  const env = { GIT_INDEX_FILE: join(out, ".gate-index") };
+  if (!(await git(repo, ["read-tree", `--prefix=harness-tasks/`, `${commit}:harness-tasks`], env)).ok) {
+    throw new Error(`read-tree ${commit}:harness-tasks failed`);
+  }
+  if (!(await git(repo, ["checkout-index", "-a", "-f", `--prefix=${posix(out)}/`], env)).ok) {
+    throw new Error("checkout-index failed");
+  }
+  await Deno.remove(env.GIT_INDEX_FILE);
+  const tree = async (p: string) => {
+    const r = await git(repo, ["rev-parse", "--verify", "-q", `${commit}:${p}`]);
+    if (!r.ok) throw new Error(`${p} not in ${commit}`);
+    return r.out.trim();
+  };
+  return {
+    commit,
+    root: out,
+    refappDir: join(out, "harness-tasks", "refapp"),
+    refappTree: await tree("harness-tasks/refapp"),
+    taskDir: join(out, "harness-tasks", "tasks", taskId),
+    taskTree: await tree(`harness-tasks/tasks/${taskId}`),
+  };
+}
+
+function isBuildOutput(rel: string): boolean {
+  const parts = rel.split("/");
+  return parts.includes(".alpackages") || parts.includes("output") || rel.toLowerCase().endsWith(".app");
+}
+
+async function* files(root: string): AsyncGenerator<{ path: string; rel: string }> {
+  for await (const e of walk(root, { followSymlinks: false })) {
+    if (e.isSymlink) throw new Error(`link refused: ${e.path}`);
+    if (e.isFile) yield { path: e.path, rel: posix(relative(root, e.path)) };
+  }
+}
+
+async function put(src: string, out: string, rel: string) {
+  await Deno.mkdir(dirname(join(out, rel)), { recursive: true });
+  await Deno.copyFile(src, join(out, rel));
+}
+
+/** Refapp modules (all seven required), then each layer (spec 1b section 5). */
+export async function stageWorkspace(refappDir: string, ls: Layer[], out: string): Promise<void> {
+  for (const m of BUILD_ORDER) {
+    if (!(await exists(join(refappDir, m, "app.json")))) throw new Error(`refapp module missing: ${m}`);
+    for await (const f of files(join(refappDir, m))) {
+      if (!isBuildOutput(f.rel)) await put(f.path, join(out, m), f.rel);
+    }
+  }
+  for (const l of ls) {
+    if (!(await exists(l.path))) {
+      if (l.optional) continue;
+      throw new Error(`layer folder missing: ${l.path}`);
+    }
+    for await (const f of files(l.path)) {
+      const top = f.rel.split("/")[0]!;
+      if (isBuildOutput(f.rel)) continue;
+      if (l.mode === "task") {
+        if (!BUILD_ORDER.includes(top)) throw new Error(`${f.path}: layer files must sit under a module folder`);
+        if ((await Deno.stat(f.path)).size === 0) throw new Error(`${f.path}: deletion is not supported`);
+        await put(f.path, out, f.rel);
+        continue;
+      }
+      // Agent workspace: sources and manifests only; shipped tests are restored (spec 1a section 7).
+      if (!BUILD_ORDER.includes(top)) continue;
+      if (!f.rel.endsWith(".al") && f.rel !== `${top}/app.json`) continue;
+      if (top === "Test" && (await exists(join(out, f.rel)))) continue;
+      if (l.mode === "candidate-tests" && top !== "Test") continue;
+      await put(f.path, out, f.rel);
+    }
+  }
+}
+
+export const stagedHash = (dir: string) => hashTree(dir, "task");
+
+export async function testManifestIn(dir: string): Promise<TestRef[]> {
+  const out: TestRef[] = [];
+  if (!(await exists(dir))) return out;
+  for await (const f of files(dir)) {
+    if (!f.rel.endsWith(".al")) continue;
+    const m = parseTestManifest(await Deno.readTextFile(f.path));
+    if (m) out.push(m);
+  }
+  return out.sort((a, b) => a.codeunit - b.codeunit);
+}
+
 async function subdirs(p: string): Promise<string[]> {
   if (!(await exists(p))) return [];
   const out: string[] = [];
@@ -516,271 +1088,9 @@ async function subdirs(p: string): Promise<string[]> {
   return out.sort();
 }
 
-/** Copy files by relative path. Refuses links, skips build output. */
-async function copyTree(src: string, dst: string, moduleRooted: boolean) {
-  for await (const e of walk(src, { followSymlinks: false })) {
-    if (e.isSymlink) throw new Error(`link refused: ${e.path}`);
-    if (!e.isFile) continue;
-    const rel = relative(src, e.path);
-    const parts = rel.split(/[\\/]/);
-    if (
-      parts.includes(".alpackages") || parts.includes("output") ||
-      rel.toLowerCase().endsWith(".app")
-    ) continue;
-    if (moduleRooted && !BUILD_ORDER.includes(parts[0]!)) {
-      throw new Error(`${e.path}: layer files must sit under a module folder`);
-    }
-    await Deno.mkdir(dirname(join(dst, rel)), { recursive: true });
-    await Deno.copyFile(e.path, join(dst, rel));
-  }
-}
-
-/** Refapp modules, then each layer folder over them (spec 1b section 5). */
-export async function stageWorkspace(
-  refappDir: string,
-  taskDir: string,
-  layerDirs: string[],
-  out: string,
-): Promise<void> {
-  for (const m of BUILD_ORDER) {
-    await copyTree(join(refappDir, m), join(out, m), false);
-  }
-  for (const l of layerDirs) {
-    const src = join(taskDir, l);
-    if (!(await exists(src))) {
-      if (l === "overlay") continue; // a feature may start from the plain refapp
-      throw new Error(`layer folder missing: ${l}`);
-    }
-    await copyTree(src, out, true);
-  }
-}
-
-const OBJECT_RE =
-  /^\s*(table|tableextension|page|pageextension|codeunit|report|reportextension|query|xmlport|enum|enumextension|permissionset|permissionsetextension)\s+(\d+)\s/gim;
-export function objectIds(al: string): number[] {
-  return [...al.matchAll(OBJECT_RE)].map((m) => Number(m[2]));
-}
-const isTestCodeunit = (al: string) => /Subtype\s*=\s*Test\s*;/i.test(al);
-
-export async function testCodeunitsIn(dir: string): Promise<number[]> {
-  const ids: number[] = [];
-  for await (const e of walk(dir, { exts: [".al"], followSymlinks: false })) {
-    if (!e.isFile) continue;
-    const text = await Deno.readTextFile(e.path);
-    if (isTestCodeunit(text)) ids.push(...objectIds(text));
-  }
-  return ids.sort((a, b) => a - b);
-}
-
-export interface ProcResult {
-  codeunit: number;
-  procedure: string;
-  passed: boolean;
-  message?: string;
-}
-export interface RunResult {
-  variant: string;
-  usesOracle: boolean;
-  ownCodeunits: number[];
-  builds: { app: string; ok: boolean; detail?: string }[];
-  tests: ProcResult[];
-}
-export type SetStatus = "pass" | "fail" | "missing";
-export interface RunSummary {
-  build: boolean;
-  p2p: SetStatus;
-  oracleBuild: boolean | null;
-  f2p: SetStatus | null;
-  own: SetStatus | null;
-}
-type Ref = { codeunit: number; procedures: string[] };
-
-/** A listed procedure that never ran is infra (GH #13 zero-tests rule), never a fail. */
-export function setStatus(tests: ProcResult[], refs: Ref[]): SetStatus {
-  const found = refs.flatMap((r) =>
-    r.procedures.map((p) =>
-      tests.find((t) => t.codeunit === r.codeunit && t.procedure === p)
-    )
-  );
-  if (found.some((t) => t === undefined)) return "missing";
-  return found.every((t) => t?.passed) ? "pass" : "fail";
-}
-
-export function summarize(task: HarnessTask, run: RunResult): RunSummary {
-  const built = (app: string) =>
-    run.builds.some((b) => b.app === app && b.ok);
-  const own = run.tests.filter((t) => run.ownCodeunits.includes(t.codeunit));
-  return {
-    build: BUILD_ORDER.every(built),
-    p2p: setStatus(run.tests, task.pass_to_pass),
-    oracleBuild: run.usesOracle ? built("Oracle") : null,
-    f2p: run.usesOracle && task.fail_to_pass && built("Oracle")
-      ? setStatus(run.tests, task.fail_to_pass.tests)
-      : null,
-    own: run.ownCodeunits.length === 0
-      ? null
-      : own.length === 0
-      ? "missing"
-      : own.every((t) => t.passed)
-      ? "pass"
-      : "fail",
-  };
-}
-
-export interface GateRun {
-  variant: Variant;
-  repeat: number;
-  summary: RunSummary;
-}
-
-export function gatePlan(
-  task: HarnessTask,
-  naive: string[],
-): { variant: Variant; repeat: number }[] {
-  const plan: { variant: Variant; repeat: number }[] = [];
-  const add = (variant: Variant, n: number) => {
-    for (let i = 1; i <= n; i++) plan.push({ variant, repeat: i });
-  };
-  add({ kind: "baseline" }, 1);
-  if (task.kind !== "test-authoring") {
-    add({ kind: "correct" }, CORRECT_RUNS);
-    for (const name of naive) add({ kind: "naive", name }, NAIVE_RUNS);
-    return plan;
-  }
-  const mutants = ["m0", ...task.mutants];
-  add({ kind: "tests", suite: "reference-tests", mutant: null }, CORRECT_RUNS);
-  for (const m of mutants) {
-    add({ kind: "tests", suite: "reference-tests", mutant: m }, 1);
-  }
-  for (const name of naive) {
-    add({ kind: "tests", suite: `naive/${name}`, mutant: null }, 1);
-    for (const m of mutants) {
-      add({ kind: "tests", suite: `naive/${name}`, mutant: m }, 1);
-    }
-  }
-  return plan;
-}
-
-/** Spec 1b section 8 gate, plus three correct runs for determinism. */
-export function decideGate(
-  task: HarnessTask,
-  runs: GateRun[],
-): { promoted: boolean; reasons: string[] } {
-  const reasons: string[] = [];
-  const need = (ok: boolean, why: string) => {
-    if (!ok) reasons.push(why);
-  };
-  const base = runs.filter((r) => r.variant.kind === "baseline");
-  if (task.kind !== "test-authoring") {
-    need(
-      base.length > 0 &&
-        base.every(({ summary: s }) =>
-          s.build && s.p2p === "pass" &&
-          (s.oracleBuild === false || s.f2p === "fail")
-        ),
-      "baseline must build, pass pass_to_pass and fail fail_to_pass",
-    );
-    const correct = runs.filter((r) => r.variant.kind === "correct");
-    need(
-      correct.length >= CORRECT_RUNS &&
-        correct.every(({ summary: s }) =>
-          s.build && s.p2p === "pass" && s.oracleBuild === true &&
-          s.f2p === "pass"
-        ),
-      `correct/ must pass every scorer in all ${CORRECT_RUNS} runs`,
-    );
-    const names = [
-      ...new Set(
-        runs.flatMap((r) => r.variant.kind === "naive" ? [r.variant.name] : []),
-      ),
-    ];
-    need(names.length >= 2, "fewer than two naive variants (spec 1b section 8)");
-    for (const name of names) {
-      const rs = runs.filter((r) =>
-        r.variant.kind === "naive" && r.variant.name === name
-      );
-      need(
-        rs.length >= NAIVE_RUNS &&
-          rs.every(({ summary: s }) =>
-            s.build && s.oracleBuild === true && s.f2p === "fail"
-          ),
-        `naive/${name} must build and lose oracle assertions in all ${NAIVE_RUNS} runs`,
-      );
-    }
-    return { promoted: reasons.length === 0, reasons };
-  }
-  need(
-    base.length > 0 &&
-      base.every(({ summary: s }) => s.build && s.p2p === "pass"),
-    "baseline must build and pass pass_to_pass",
-  );
-  const suiteRuns = (suite: string, mutant: string | null | undefined) =>
-    runs.filter((r) =>
-      r.variant.kind === "tests" && r.variant.suite === suite &&
-      (mutant === undefined
-        ? r.variant.mutant !== null
-        : r.variant.mutant === mutant)
-    );
-  const ref = suiteRuns("reference-tests", null);
-  need(
-    ref.length >= CORRECT_RUNS &&
-      ref.every(({ summary: s }) =>
-        s.build && s.p2p === "pass" && s.own === "pass"
-      ),
-    `reference tests must pass on correct/ in all ${CORRECT_RUNS} runs`,
-  );
-  for (const m of ["m0", ...task.mutants]) {
-    const rs = suiteRuns("reference-tests", m);
-    need(
-      rs.length > 0 &&
-        rs.every(({ summary: s }) => s.build && s.own === "fail"),
-      `reference tests must kill mutant ${m}`,
-    );
-  }
-  const naive = [
-    ...new Set(
-      runs.flatMap((r) =>
-        r.variant.kind === "tests" && r.variant.suite.startsWith("naive/")
-          ? [r.variant.suite]
-          : []
-      ),
-    ),
-  ];
-  need(naive.length >= 2, "fewer than two naive variants (spec 1b section 8)");
-  for (const suite of naive) {
-    const onCorrect = suiteRuns(suite, null);
-    need(
-      onCorrect.length > 0 &&
-        onCorrect.every(({ summary: s }) => s.build && s.own === "pass"),
-      `${suite} must pass on correct/, or it fails for the wrong reason`,
-    );
-    need(
-      suiteRuns(suite, undefined).some(({ summary: s }) =>
-        s.build && s.own === "pass"
-      ),
-      `${suite} must leave at least one mutant alive`,
-    );
-  }
-  return { promoted: reasons.length === 0, reasons };
-}
-
-async function git(
-  cwd: string,
-  args: string[],
-): Promise<{ ok: boolean; out: string }> {
-  const r = await new Deno.Command("git", {
-    args,
-    cwd,
-    stdout: "piped",
-    stderr: "null",
-  }).output();
-  return { ok: r.success, out: new TextDecoder().decode(r.stdout) };
-}
-const eol = (s: string) => s.replaceAll("\r\n", "\n");
-
 interface AlFile {
-  file: string;
-  source: string;
+  source: string; // "refapp" | layer folder, e.g. "correct", "naive/x", "oracle"
+  rel: string; // module-rooted posix path, e.g. "Fleet/src/X.al"
   module: string;
   text: string;
 }
@@ -790,298 +1100,666 @@ export async function checkTask(
   loaded: LoadedTask,
   refappDir: string,
   repoRoot: string,
+  opts: { drift?: boolean } = {},
 ): Promise<{ problems: string[]; warnings: string[] }> {
   const { task, dir } = loaded;
   const problems: string[] = [];
   const warnings: string[] = [];
-  const naive = await subdirs(join(dir, "naive"));
-  if (naive.length < 2) {
-    problems.push("naive/ needs at least two variants (spec 1b section 8)");
-  }
-  if (task.mutants.includes("m0")) {
-    problems.push("mutant name m0 is reserved for the staged state");
-  }
   const testAuthoring = task.kind === "test-authoring";
+  const naive = await subdirs(join(dir, "naive"));
+  if (naive.length < 2) problems.push("naive/ needs at least two variants (spec 1b section 8)");
+  if (task.mutants.includes("m0")) problems.push("mutant name m0 is reserved for the staged state");
   if (testAuthoring && !(await exists(join(dir, "reference-tests")))) {
     problems.push("test-authoring needs reference-tests/");
   }
 
-  const scan: [string, string | null][] = [
-    ["oracle", "Oracle"],
-    ["overlay", null],
-    ["correct", null],
-    ["reference-tests", null],
-    ...naive.map((n): [string, null] => [`naive/${n}`, null]),
-    ...task.mutants.map((m): [string, null] => [`mutants/${m}`, null]),
+  const layerRoots = [
+    "overlay",
+    "correct",
+    "reference-tests",
+    ...naive.map((n) => `naive/${n}`),
+    ...task.mutants.map((m) => `mutants/${m}`),
   ];
-  const files: AlFile[] = [];
+  const all: AlFile[] = [];
+  const layerFiles: { source: string; rel: string; size: number }[] = [];
   for (const m of BUILD_ORDER) {
     const root = join(refappDir, m);
     if (!(await exists(root))) continue;
-    for await (const e of walk(root, { exts: [".al"], followSymlinks: false })) {
-      if (!e.isFile) continue;
-      files.push({
-        file: join("refapp", m, relative(root, e.path)),
-        source: "refapp",
-        module: m,
-        text: await Deno.readTextFile(e.path),
-      });
+    for await (const f of files(root)) {
+      if (f.rel.endsWith(".al")) {
+        all.push({ source: "refapp", rel: `${m}/${f.rel}`, module: m, text: await Deno.readTextFile(f.path) });
+      }
     }
   }
-  for (const [rel, fixed] of scan) {
-    const root = join(dir, rel);
+  if (await exists(join(dir, "oracle"))) {
+    for await (const f of files(join(dir, "oracle"))) {
+      if (f.rel.endsWith(".al")) {
+        all.push({ source: "oracle", rel: f.rel, module: "Oracle", text: await Deno.readTextFile(f.path) });
+      }
+    }
+  }
+  for (const lr of layerRoots) {
+    const root = join(dir, lr);
     if (!(await exists(root))) continue;
-    for await (const e of walk(root, { exts: [".al"], followSymlinks: false })) {
-      if (!e.isFile) continue;
-      const inner = relative(root, e.path);
-      files.push({
-        file: join(rel, inner),
-        source: rel,
-        module: fixed ?? inner.split(/[\\/]/)[0]!,
-        text: await Deno.readTextFile(e.path),
-      });
+    for await (const f of files(root)) {
+      layerFiles.push({ source: lr, rel: f.rel, size: (await Deno.stat(f.path)).size });
+      if (f.rel.endsWith(".al")) {
+        all.push({ source: lr, rel: f.rel, module: f.rel.split("/")[0]!, text: await Deno.readTextFile(f.path) });
+      }
     }
   }
-  for (const f of files) {
+
+  for (const f of all) {
+    const where = `${f.source}/${f.rel}`;
     const range = RANGES[f.module];
     if (!range) {
-      problems.push(`${f.file}: not under a module folder`);
+      problems.push(`${where}: not under a module folder`);
       continue;
     }
     for (const id of objectIds(f.text)) {
       if (id < range[0] || id > range[1]) {
-        problems.push(
-          `${f.file}: object id ${id} outside ${f.module} range ${range[0]}-${range[1]}`,
-        );
+        problems.push(`${where}: object id ${id} outside ${f.module} range ${range[0]}-${range[1]}`);
+      }
+      if (f.module === "Test" && id === 80013) problems.push(`${where}: 80013 collides on Cronus28`);
+    }
+    if (isTestCodeunit(f.text)) {
+      if (!/TestPermissions\s*=\s*Disabled\s*;/i.test(f.text)) {
+        problems.push(`${where}: test codeunit without TestPermissions = Disabled`);
+      }
+      if ((parseTestManifest(f.text)?.procedures.length ?? 0) === 0) {
+        problems.push(`${where}: test codeunit with no [Test] procedure`);
       }
     }
-    if (
-      isTestCodeunit(f.text) && !/TestPermissions\s*=\s*Disabled\s*;/i.test(f.text)
-    ) {
-      problems.push(`${f.file}: test codeunit without TestPermissions = Disabled`);
-    }
     if (/Assert\.(IsTrue\(\s*true|IsFalse\(\s*false)\b/i.test(f.text)) {
-      problems.push(`${f.file}: placeholder assertion`);
+      problems.push(`${where}: placeholder assertion`);
     }
-    if (
-      testAuthoring &&
-      (f.source === "reference-tests" || f.source.startsWith("naive/")) &&
-      f.module !== "Test"
-    ) {
-      problems.push(`${f.file}: test-authoring suites add files under Test/ only`);
+  }
+
+  const shippedTests = new Set(
+    all.filter((f) => f.module === "Test" && (f.source === "refapp" || f.source === "overlay"))
+      .map((f) => f.rel),
+  );
+  for (const f of layerFiles) {
+    const where = `${f.source}/${f.rel}`;
+    if (f.size === 0) problems.push(`${where}: zero-byte file; deletion is not supported`);
+    const inTest = f.rel.startsWith("Test/");
+    const suite = testAuthoring && (f.source === "reference-tests" || f.source.startsWith("naive/"));
+    if (suite && !inTest) problems.push(`${where}: test suites add files under Test/ only`);
+    if (suite && shippedTests.has(f.rel)) problems.push(`${where}: replaces a shipped test`);
+    if (!suite && f.source !== "overlay" && inTest) {
+      problems.push(`${where}: correct/, naive/ and mutants/ must not touch Test/`);
     }
   }
 
   const declares = (pool: AlFile[], codeunit: number, proc: string) =>
-    pool.some((f) =>
-      objectIds(f.text)[0] === codeunit &&
-      new RegExp(`procedure\\s+${proc}\\s*\\(`, "i").test(f.text)
-    );
-  const visible = files.filter((f) =>
-    f.module === "Test" && (f.source === "refapp" || f.source === "overlay")
-  );
+    pool.some((f) => {
+      const m = parseTestManifest(f.text);
+      return m?.codeunit === codeunit && m.procedures.includes(proc);
+    });
+  const visible = all.filter((f) => f.module === "Test" && (f.source === "refapp" || f.source === "overlay"));
   for (const r of task.pass_to_pass) {
     for (const p of r.procedures) {
-      if (!declares(visible, r.codeunit, p)) {
-        problems.push(`pass_to_pass ${r.codeunit}.${p} not found in shipped tests`);
-      }
+      if (!declares(visible, r.codeunit, p)) problems.push(`pass_to_pass ${r.codeunit}.${p} not found in shipped tests`);
     }
   }
   const hidden: string[] = [...task.mutants];
   if (task.fail_to_pass) {
-    const oracle = files.filter((f) => f.module === "Oracle");
+    const oracle = all.filter((f) => f.module === "Oracle");
     for (const r of task.fail_to_pass.tests) {
       hidden.push(String(r.codeunit), ...r.procedures);
       for (const p of r.procedures) {
-        if (!declares(oracle, r.codeunit, p)) {
-          problems.push(`fail_to_pass ${r.codeunit}.${p} not found in oracle/`);
-        }
+        if (!declares(oracle, r.codeunit, p)) problems.push(`fail_to_pass ${r.codeunit}.${p} not found in oracle/`);
       }
     }
-    if (task.fail_to_pass.depends_on.includes("Test")) {
-      problems.push("oracle must not depend on the agent-editable Test app");
-    }
-    const app = JSON.parse(
-      await Deno.readTextFile(join(dir, "oracle", "app.json")),
-    ) as {
+    const app = JSON.parse(await Deno.readTextFile(join(dir, "oracle", "app.json"))) as {
+      id?: string;
+      name?: string;
       publisher?: string;
       idRanges?: { from: number; to: number }[];
       dependencies?: { name: string }[];
     };
-    const allowed = new Set([
-      ...task.fail_to_pass.depends_on.map((m) => `CGR ${m}`),
-      "Library Assert",
-    ]);
+    const n = task.id.slice(3);
+    if (app.id !== `c6a1e000-0000-4000-8001-000000000${n}`) problems.push(`oracle/app.json: id must be c6a1e000-0000-4000-8001-000000000${n}`);
+    if (app.name !== `CGR Oracle ${task.id}`) problems.push(`oracle/app.json: name must be CGR Oracle ${task.id}`);
+    if (app.publisher !== "CentralGauge") problems.push("oracle/app.json: publisher must be CentralGauge");
+    const allowed = new Set([...task.fail_to_pass.depends_on.map((m) => `CGR ${m}`), "Library Assert"]);
+    allowed.delete("CGR Test");
     for (const d of app.dependencies ?? []) {
-      if (!allowed.has(d.name)) {
-        problems.push(`oracle/app.json: dependency ${d.name} not in depends_on`);
-      }
-    }
-    if (app.publisher !== "CentralGauge") {
-      problems.push("oracle/app.json: publisher must be CentralGauge");
+      if (!allowed.has(d.name)) problems.push(`oracle/app.json: dependency ${d.name} not allowed`);
     }
     for (const r of app.idRanges ?? []) {
-      if (r.from < 85000 || r.to > 89999) {
-        problems.push("oracle/app.json: idRanges outside 85000-89999");
-      }
+      if (r.from < 85000 || r.to > 89999) problems.push("oracle/app.json: idRanges outside 85000-89999");
     }
   }
   const prompt = await Deno.readTextFile(join(dir, task.prompt));
   for (const h of hidden) {
-    if (new RegExp(`\\b${h}\\b`).test(prompt)) {
-      problems.push(`prompt.md mentions hidden name ${h}`);
-    }
+    if (new RegExp(`\\b${h}\\b`).test(prompt)) problems.push(`prompt.md mentions hidden name ${h}`);
   }
-  if (/\b(oracle|mutants?)\b/i.test(prompt)) {
-    problems.push("prompt.md mentions the oracle or mutants");
-  }
+  if (/\b(oracle|mutants?)\b/i.test(prompt)) problems.push("prompt.md mentions the oracle or mutants");
 
-  const tag = task.refapp_version;
-  if (!(await git(repoRoot, ["rev-parse", "-q", "--verify", `refs/tags/${tag}`])).ok) {
-    warnings.push(`refapp_version ${tag} does not resolve yet (tagged on acceptance)`);
-  } else {
-    for (const f of files) {
-      if (f.source === "refapp" || f.module === "Oracle") continue;
-      const inner = f.file.slice(f.source.length + 1).replaceAll("\\", "/");
-      const current = join(refappDir, inner);
-      if (!(await exists(current))) continue;
-      const atTag = await git(repoRoot, [
-        "show",
-        `${tag}:harness-tasks/refapp/${inner}`,
-      ]);
-      if (
-        atTag.ok && eol(atTag.out) !== eol(await Deno.readTextFile(current))
-      ) {
-        problems.push(`${f.file}: refapp base changed since ${tag}`);
+  if (opts.drift !== false) {
+    const tag = task.refapp_version;
+    if (!(await git(repoRoot, ["rev-parse", "-q", "--verify", `refs/tags/${tag}`])).ok) {
+      warnings.push(`refapp_version ${tag} does not resolve yet (tagged on acceptance)`);
+    } else {
+      const prefix = "harness-tasks/refapp/";
+      const changed = [
+        ...(await git(repoRoot, ["diff", "--name-only", tag, "--", prefix])).out.split(/\r?\n/),
+        ...(await git(repoRoot, ["ls-files", "--others", "--exclude-standard", "--", prefix])).out.split(/\r?\n/),
+      ].filter((p) => p.startsWith(prefix)).map((p) => p.slice(prefix.length));
+      const replaced = new Set(layerFiles.map((f) => f.rel));
+      for (const c of changed) {
+        if (replaced.has(c)) problems.push(`${c}: refapp changed since ${tag} under a file this task replaces`);
       }
+      if (changed.length > 0) warnings.push(`refapp changed since ${tag} (${changed.length} files): re-gate before freeze`);
     }
   }
   return { problems, warnings };
 }
+```
 
-interface Ctx {
-  provider: BcContainerProvider;
-  container: string;
-  soap: SoapTestRunnerConfig;
-  refapp: string;
+- [ ] **Step 5: Run it and see it pass**
+
+Run: `deno test --allow-all tests/unit/harness/gate-stage.test.ts`
+Expected: `ok | 7 passed | 0 failed`.
+
+- [ ] **Step 6: Check, lint, format, commit**
+
+```bash
+deno check scripts/harness/gate-stage.ts tests/unit/harness/gate-stage.test.ts tests/unit/harness/gate-fixtures.ts
+deno lint scripts/harness/gate-stage.ts tests/unit/harness/gate-stage.test.ts tests/unit/harness/gate-fixtures.ts
+deno fmt scripts/harness/gate-stage.ts tests/unit/harness/gate-stage.test.ts tests/unit/harness/gate-fixtures.ts
+git add scripts/harness/gate-stage.ts tests/unit/harness/gate-stage.test.ts tests/unit/harness/gate-fixtures.ts
+git commit -m "feat(harness): M4 gate staging from a revision and static checks"
+```
+
+**Acceptance:** `deno test --allow-all tests/unit/harness/gate-stage.test.ts` prints `ok | 7 passed | 0 failed`; check and lint clean.
+
+---
+
+### Task M4-01c: host and container executors, CLI
+
+**Lane:** ops. **Deps:** M4-01a, M4-01b. **Target:** 10-01 morning (HX-001 gate the same day).
+
+**Files:**
+- Create: `scripts/harness/gate-task.ts`
+- Test: `tests/unit/harness/gate-task.test.ts`
+
+**Interfaces:**
+- Consumes: M4-01a and M4-01b exports; `BcContainerProvider`, `runTestsViaSoap`, `resolveSoapTimeoutMs`, `type ALProject`, `type TestResult`.
+- Produces: `interface GateBc { prenuke(); compile(project): Promise<CompileOut>; publish(artifact); runTests(codeunit, appId): Promise<TestResult>; dispose() }`; `containerBc(container, credentials): Promise<GateBc | null>`; `runVariant(bc, task, source, v, repeat, tmpRoot): Promise<RunResult>`; `runGate(o: { bc; loaded; source; container; outDir; tmpRoot; tagTree: string | null }): Promise<{ file: string; code: number }>`; CLI:
+  - `check <taskDir>...` (working tree, no container)
+  - `compile <taskDir> <variant>` (working tree, host `al`, no container)
+  - `stage <taskId> <outDir> [--rev R]` (staged baseline workspace for the pilot, no hidden files)
+  - `gate <container> <taskId> [--rev R]` (container job; default rev `HEAD`)
+  - `judge <container> <taskId> <workspaceDir> [--rev R]` (pilot: scores an agent workspace; developmental)
+  Report `H:\Temp3\harness-spike\M4\<id>\gate-<stamp>.json`: `{ task, source_commit, refapp_tree, task_tree, refapp_version, tag_status, container, at, plan, matrix_complete, promoted, reasons, cleanup_error, runs[] }`. Exit 0 promoted, 1 not promoted, 3 infra.
+
+- [ ] **Step 1: Write the failing test** `tests/unit/harness/gate-task.test.ts` (mocked BC, no container):
+
+```typescript
+import { assert, assertEquals } from "@std/assert";
+import { basename, join } from "@std/path";
+import type { ALProject, TestResult } from "../../../src/container/types.ts";
+import type { GateBc } from "../../../scripts/harness/gate-task.ts";
+import { runGate, runVariant } from "../../../scripts/harness/gate-task.ts";
+import { loadTask } from "../../../src/harness/task.ts";
+import { writeTask } from "./gate-fixtures.ts";
+
+function mockBc(o: {
+  failCompile?: string;
+  failPublish?: string;
+  soapThrows?: boolean;
+  prenukeThrowsAfter?: number;
+  seen?: string[];
+}): GateBc {
+  let prenukes = 0;
+  return {
+    prenuke: () => {
+      prenukes++;
+      if (o.prenukeThrowsAfter !== undefined && prenukes > o.prenukeThrowsAfter) {
+        return Promise.reject(new Error("prenuke failed"));
+      }
+      return Promise.resolve();
+    },
+    compile: async (p: ALProject) => {
+      o.seen?.push(p.path);
+      if (basename(p.path) === o.failCompile) {
+        return { ok: false, codes: ["AL0118"], detail: "AL0118 missing" };
+      }
+      const artifact = join(p.path, "out.app");
+      await Deno.writeTextFile(artifact, "x");
+      return { ok: true, codes: [], detail: "", artifact };
+    },
+    publish: (a: string) =>
+      a.includes(`${o.failPublish}`) && o.failPublish
+        ? Promise.reject(new Error("publish failed"))
+        : Promise.resolve(),
+    runTests: (codeunit: number): Promise<TestResult> => {
+      if (o.soapThrows) return Promise.reject(new Error("SOAP timeout"));
+      const name = codeunit === 80010 ? "Visible" : "Hidden";
+      return Promise.resolve({
+        success: true,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        duration: 1,
+        results: [{ name, passed: true, duration: 1 }],
+        output: "",
+      });
+    },
+    dispose: () => Promise.resolve(),
+  };
+}
+
+async function fixture() {
+  const root = await Deno.makeTempDir();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  const loaded = await loadTask(dir);
+  const source = {
+    commit: "c".repeat(40),
+    root,
+    refappDir: join(root, "harness-tasks/refapp"),
+    refappTree: "r".repeat(40),
+    taskDir: dir,
+    taskTree: "t".repeat(40),
+  };
+  const tmpRoot = await Deno.makeTempDir();
+  return { root, loaded, source, tmpRoot };
+}
+
+Deno.test("runVariant: compile failure stops the chain and is a compile step", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const r = await runVariant(mockBc({ failCompile: "Fleet" }), loaded.task, source, { kind: "correct" }, 1, tmpRoot);
+  assertEquals(r.builds.map((b) => `${b.app}:${b.stage}:${b.ok}`), ["Core:publish:true", "Fleet:compile:false"]);
+  assertEquals(r.builds[1]!.codes, ["AL0118"]);
+  assertEquals(r.tests, []);
+});
+
+Deno.test("runVariant: oracle publish failure is recorded as publish", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const r = await runVariant(mockBc({ failPublish: "Oracle" }), loaded.task, source, { kind: "correct" }, 1, tmpRoot);
+  assertEquals(r.builds.at(-1), { app: "Oracle", stage: "publish", ok: false, codes: [], detail: "publish failed" });
+});
+
+Deno.test("runVariant: temp dirs live under the tmp root and are removed", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const seen: string[] = [];
+  await runVariant(mockBc({ seen }), loaded.task, source, { kind: "baseline" }, 1, tmpRoot);
+  assert(seen.length > 0 && seen.every((p) => p.startsWith(tmpRoot)), seen.join(", "));
+  assertEquals([...Deno.readDirSync(tmpRoot)].length, 0);
+});
+
+Deno.test("runGate: SOAP failure is infra and the report survives a failing cleanup", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const outDir = await Deno.makeTempDir();
+  const { file, code } = await runGate({
+    bc: mockBc({ soapThrows: true, prenukeThrowsAfter: 1 }),
+    loaded,
+    source,
+    container: "Mock",
+    outDir,
+    tmpRoot,
+    tagTree: null,
+  });
+  assertEquals(code, 3);
+  const report = JSON.parse(await Deno.readTextFile(file));
+  assertEquals(report.promoted, false);
+  assertEquals(report.tag_status, "pending");
+  assert(report.reasons.some((x: string) => x.includes("infra")));
+  assert(String(report.cleanup_error).includes("prenuke failed"));
+});
+
+Deno.test("runVariant: candidate test-authoring counts only added codeunits", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const yml = join(source.taskDir, "task.yml");
+  await Deno.writeTextFile(
+    yml,
+    (await Deno.readTextFile(yml))
+      .replace("kind: bugfix", "kind: test-authoring")
+      .replace("fail_to_pass]", "mutant_kill]")
+      .replace(/fail_to_pass:\n[\s\S]*$/, ""),
+  );
+  const ta = (await loadTask(source.taskDir)).task;
+  const ws = await Deno.makeTempDir();
+  await writeTask(ws, "HX-009", "x"); // any refapp copy; only Test/ below matters
+  const cand = join(ws, "harness-tasks/refapp");
+  await Deno.writeTextFile(
+    join(cand, "Test/src/New.al"),
+    'codeunit 80200 "New"\n{\n    Subtype = Test;\n    TestPermissions = Disabled;\n\n    [Test]\n    procedure Mine()\n    begin\n    end;\n}\n',
+  );
+  const r = await runVariant(mockBc({}), ta, source, { kind: "candidate", dir: cand, mutant: null }, 1, tmpRoot);
+  assertEquals(r.own, [{ codeunit: 80200, procedures: ["Mine"] }]);
+  assertEquals(loaded.task.id, "HX-001");
+});
+
+Deno.test("runGate: tag mismatch blocks promotion", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const { file } = await runGate({
+    bc: mockBc({}),
+    loaded,
+    source,
+    container: "Mock",
+    outDir: await Deno.makeTempDir(),
+    tmpRoot,
+    tagTree: "x".repeat(40),
+  });
+  const report = JSON.parse(await Deno.readTextFile(file));
+  assertEquals(report.tag_status, "mismatch");
+  assertEquals(report.promoted, false);
+});
+```
+
+- [ ] **Step 2: Run it and see it fail**
+
+Run: `deno test --allow-all tests/unit/harness/gate-task.test.ts`
+Expected: FAIL, `Module not found ".../scripts/harness/gate-task.ts"`.
+
+- [ ] **Step 3: Implement** `scripts/harness/gate-task.ts`:
+
+```typescript
+// CLI and executors of the M4 authoring gate. Owner: lane-ops.
+//   check <taskDir>...                        static rules, no container
+//   compile <taskDir> <variant>               host al compile, no container
+//   stage <taskId> <outDir> [--rev R]         baseline workspace for the pilot
+//   gate <container> <taskId> [--rev R]       container job
+//   judge <container> <taskId> <ws> [--rev R] pilot scoring, developmental
+import { parseArgs } from "@std/cli/parse-args";
+import * as colors from "@std/fmt/colors";
+import { walk } from "@std/fs";
+import { dirname, join, relative } from "@std/path";
+import type { ALProject, TestResult } from "../../src/container/types.ts";
+import type { HarnessTask, LoadedTask } from "../../src/harness/task.ts";
+import type { GateRun, RunResult, TestRef, Variant } from "./gate-core.ts";
+import type { Source } from "./gate-stage.ts";
+import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
+import { resolveSoapTimeoutMs, runTestsViaSoap } from "../../src/container/soap-test-client.ts";
+import { loadTask } from "../../src/harness/task.ts";
+import {
+  allPass,
+  assertionKill,
+  BUILD_ORDER,
+  classifyTestFailure,
+  decideGate,
+  gatePlan,
+  layers,
+  parseVariant,
+  runKey,
+  summarize,
+  variantName,
+} from "./gate-core.ts";
+import { checkTask, exists, exportSource, git, stagedHash, stageWorkspace, testManifestIn } from "./gate-stage.ts";
+
+const EVIDENCE_ROOT = "H:\\Temp3\\harness-spike\\M4";
+const TMP_ROOT = Deno.env.get("CG_GATE_TMP") ?? join(EVIDENCE_ROOT, "tmp");
+const SYMBOLS = Deno.env.get("CG_AL_SYMBOLS") ??
+  "C:\\ProgramData\\BcContainerHelper\\compiler-cache-15ff3c5d109b\\symbols";
+
+export interface CompileOut {
+  ok: boolean;
+  codes: string[];
+  detail: string;
+  artifact?: string;
+}
+export interface GateBc {
+  prenuke(): Promise<void>;
+  compile(project: ALProject): Promise<CompileOut>;
+  publish(artifact: string): Promise<void>;
+  runTests(codeunit: number, appId: string): Promise<TestResult>;
+  dispose(): Promise<void>;
+}
+
+export async function containerBc(
+  container: string,
+  credentials: { username: string; password: string },
+): Promise<GateBc | null> {
+  const provider = new BcContainerProvider();
+  provider.setCredentials(container, credentials);
+  if (!(await provider.isHealthy(container))) return null;
+  await provider.ensureTestHarness([container]);
+  const soap = {
+    host: container,
+    port: 7047,
+    company: "My Company",
+    tenant: "default",
+    credentials,
+    timeoutMs: resolveSoapTimeoutMs(undefined),
+  };
+  return {
+    prenuke: () => provider.prenukeCentralGaugeApps([container]),
+    compile: async (project) => {
+      const r = await provider.compileProject(container, project);
+      return {
+        ok: r.success && r.artifactPath !== undefined,
+        codes: r.errors.map((e) => e.code),
+        detail: r.errors.map((e) => `${e.code} ${e.message}`).join("; "),
+        ...(r.artifactPath ? { artifact: r.artifactPath } : {}),
+      };
+    },
+    // Never runTests()/prepareCandidateApp: its cleanup removes the refapp apps (findings section 2).
+    publish: (artifact) => provider.publishApp(container, artifact),
+    runTests: (codeunit, appId) => runTestsViaSoap(soap, codeunit, appId),
+    dispose: () => provider.dispose(),
+  };
 }
 
 async function loadProject(dir: string): Promise<ALProject> {
   const appJson = JSON.parse(await Deno.readTextFile(join(dir, "app.json")));
   const sourceFiles: string[] = [];
-  for await (
-    const e of walk(join(dir, "src"), { exts: [".al"], followSymlinks: false })
-  ) if (e.isFile) sourceFiles.push(e.path);
+  for await (const e of walk(dir, { exts: [".al"], followSymlinks: false })) {
+    if (e.isFile && !e.path.includes(".alpackages")) sourceFiles.push(e.path);
+  }
   return { path: dir, appJson, sourceFiles, testFiles: [] };
 }
 
 async function stageVariant(
-  loaded: LoadedTask,
-  refapp: string,
+  task: HarnessTask,
+  source: Source,
   v: Variant,
   ws: string,
-): Promise<{ apps: string[]; usesOracle: boolean }> {
-  await stageWorkspace(refapp, loaded.dir, layers(v), ws);
-  const usesOracle = loaded.task.fail_to_pass !== null && v.kind !== "tests";
+): Promise<{ apps: string[]; usesOracle: boolean; own: TestRef[] }> {
+  const testAuthoring = task.kind === "test-authoring";
+  await stageWorkspace(source.refappDir, layers(source.taskDir, v, testAuthoring), ws);
+  const usesOracle = task.fail_to_pass !== null && v.kind !== "tests" &&
+    !(v.kind === "candidate" && testAuthoring);
   if (usesOracle) {
-    await copyTree(join(loaded.dir, "oracle"), join(ws, "Oracle"), false);
+    const oracleDir = join(source.taskDir, "oracle");
+    for await (const e of walk(oracleDir, { followSymlinks: false })) {
+      if (e.isSymlink) throw new Error(`link refused: ${e.path}`);
+      if (!e.isFile) continue;
+      const rel = relative(oracleDir, e.path);
+      await Deno.mkdir(dirname(join(ws, "Oracle", rel)), { recursive: true });
+      await Deno.copyFile(e.path, join(ws, "Oracle", rel));
+    }
   }
-  return {
-    apps: usesOracle ? [...BUILD_ORDER, "Oracle"] : BUILD_ORDER,
-    usesOracle,
-  };
+  let own: TestRef[] = [];
+  if (v.kind === "tests") {
+    own = await testManifestIn(join(source.taskDir, v.suite));
+  } else if (v.kind === "candidate" && testAuthoring) {
+    // Only codeunits the agent added count as its tests (shipped ones are restored).
+    const shipped = new Set([
+      ...(await testManifestIn(join(source.refappDir, "Test"))).map((m) => m.codeunit),
+      ...(await testManifestIn(join(source.taskDir, "overlay", "Test"))).map((m) => m.codeunit),
+    ]);
+    own = (await testManifestIn(join(ws, "Test"))).filter((m) => !shipped.has(m.codeunit));
+  }
+  return { apps: usesOracle ? [...BUILD_ORDER, "Oracle"] : BUILD_ORDER, usesOracle, own };
 }
 
-async function runVariant(
-  ctx: Ctx,
-  loaded: LoadedTask,
+export async function runVariant(
+  bc: GateBc,
+  task: HarnessTask,
+  source: Source,
   v: Variant,
+  repeat: number,
+  tmpRoot: string,
 ): Promise<RunResult> {
-  const { task, dir } = loaded;
-  const ws = await Deno.makeTempDir({ prefix: `cg-harness-gate-${task.id}-` });
+  await Deno.mkdir(tmpRoot, { recursive: true });
+  const ws = await Deno.makeTempDir({ dir: tmpRoot, prefix: `${task.id}-` });
+  const t0 = performance.now();
   try {
-    const { apps, usesOracle } = await stageVariant(loaded, ctx.refapp, v, ws);
-    const own = v.kind === "tests" ? await testCodeunitsIn(join(dir, v.suite)) : [];
+    const { apps, usesOracle, own } = await stageVariant(task, source, v, ws);
     const result: RunResult = {
       variant: variantName(v),
+      repeat,
       usesOracle,
-      ownCodeunits: own,
+      own,
       builds: [],
       tests: [],
+      staged_hash: await stagedHash(ws),
+      ms: 0,
     };
-    await ctx.provider.prenukeCentralGaugeApps([ctx.container]);
-    const built: string[] = [];
-    const appIds: Record<string, string> = {};
-    for (const app of apps) {
-      const appDir = join(ws, app);
-      await Deno.mkdir(join(appDir, ".alpackages"), { recursive: true });
-      for (const dep of built) {
-        await Deno.copyFile(dep, join(appDir, ".alpackages", dep.split(/[/\\]/).pop()!));
+    try {
+      await bc.prenuke();
+      const built: string[] = [];
+      const appIds: Record<string, string> = {};
+      for (const app of apps) {
+        const appDir = join(ws, app);
+        await Deno.mkdir(join(appDir, ".alpackages"), { recursive: true });
+        for (let i = 0; i < built.length; i++) {
+          await Deno.copyFile(built[i]!, join(appDir, ".alpackages", `dep${i}.app`));
+        }
+        const project = await loadProject(appDir);
+        appIds[app] = (project.appJson as { id: string }).id;
+        const c = await bc.compile(project);
+        if (!c.ok || !c.artifact) {
+          result.builds.push({ app, stage: "compile", ok: false, codes: c.codes, detail: c.detail });
+          break;
+        }
+        try {
+          await bc.publish(c.artifact);
+        } catch (err) {
+          result.builds.push({
+            app,
+            stage: "publish",
+            ok: false,
+            codes: [],
+            detail: err instanceof Error ? err.message : String(err),
+          });
+          break;
+        }
+        result.builds.push({ app, stage: "publish", ok: true, codes: [] });
+        built.push(c.artifact);
       }
-      const project = await loadProject(appDir);
-      appIds[app] = (project.appJson as { id: string }).id;
-      const compiled = await ctx.provider.compileProject(ctx.container, project);
-      if (!compiled.success || !compiled.artifactPath) {
-        result.builds.push({
-          app,
-          ok: false,
-          detail: compiled.errors.map((e) => `${e.code} ${e.message}`).join("; "),
-        });
-        break;
+      const ok = (app: string) => result.builds.some((b) => b.app === app && b.ok);
+      const suites: { app: string; codeunit: number }[] = [];
+      if (ok("Test")) {
+        for (const t of task.pass_to_pass) suites.push({ app: "Test", codeunit: t.codeunit });
+        for (const t of own) suites.push({ app: "Test", codeunit: t.codeunit });
       }
-      try {
-        // Never runTests()/prepareCandidateApp: its cleanup removes the refapp apps (findings section 2).
-        await ctx.provider.publishApp(ctx.container, compiled.artifactPath);
-      } catch (err) {
-        result.builds.push({
-          app,
-          ok: false,
-          detail: `publish: ${err instanceof Error ? err.message : String(err)}`,
-        });
-        break;
+      if (usesOracle && task.fail_to_pass && ok("Oracle")) {
+        for (const t of task.fail_to_pass.tests) suites.push({ app: "Oracle", codeunit: t.codeunit });
       }
-      result.builds.push({ app, ok: true });
-      built.push(compiled.artifactPath);
+      const seen = new Set<number>();
+      for (const s of suites) {
+        if (seen.has(s.codeunit)) continue;
+        seen.add(s.codeunit);
+        const res = await bc.runTests(s.codeunit, appIds[s.app] ?? "");
+        for (const c of res.results) {
+          result.tests.push({
+            codeunit: s.codeunit,
+            procedure: c.name,
+            passed: c.passed,
+            failure: c.passed ? null : classifyTestFailure(c.error ?? ""),
+            ...(c.error ? { message: c.error } : {}),
+          });
+        }
+      }
+    } catch (err) {
+      result.infra = err instanceof Error ? err.message : String(err);
     }
-    const ok = (app: string) => result.builds.some((b) => b.app === app && b.ok);
-    const suites: { app: string; codeunit: number }[] = [];
-    if (ok("Test")) {
-      for (const t of task.pass_to_pass) suites.push({ app: "Test", codeunit: t.codeunit });
-      for (const c of own) suites.push({ app: "Test", codeunit: c });
-    }
-    if (usesOracle && task.fail_to_pass && ok("Oracle")) {
-      for (const t of task.fail_to_pass.tests) {
-        suites.push({ app: "Oracle", codeunit: t.codeunit });
-      }
-    }
-    const seen = new Set<number>();
-    for (const s of suites) {
-      if (seen.has(s.codeunit)) continue;
-      seen.add(s.codeunit);
-      const res = await runTestsViaSoap(ctx.soap, s.codeunit, appIds[s.app] ?? "");
-      for (const c of res.results) {
-        result.tests.push({
-          codeunit: s.codeunit,
-          procedure: c.name,
-          passed: c.passed,
-          ...(c.error ? { message: c.error } : {}),
-        });
-      }
-    }
+    result.ms = Math.round(performance.now() - t0);
     return result;
   } finally {
     await Deno.remove(ws, { recursive: true });
   }
 }
 
-async function hostCompile(
-  loaded: LoadedTask,
-  refapp: string,
-  v: Variant,
-): Promise<number> {
-  const ws = await Deno.makeTempDir({ prefix: `cg-harness-compile-${loaded.task.id}-` });
+export async function runGate(o: {
+  bc: GateBc;
+  loaded: LoadedTask;
+  source: Source;
+  container: string;
+  outDir: string;
+  tmpRoot: string;
+  tagTree: string | null;
+}): Promise<{ file: string; code: number }> {
+  const { task } = o.loaded;
+  const naive: string[] = [];
+  if (await exists(join(o.source.taskDir, "naive"))) {
+    for await (const e of Deno.readDir(join(o.source.taskDir, "naive"))) if (e.isDirectory) naive.push(e.name);
+  }
+  const plan = gatePlan(task, naive.sort());
+  const runs: GateRun[] = [];
+  const results: RunResult[] = [];
+  let infra = false;
+  for (const step of plan) {
+    const result = await runVariant(o.bc, task, o.source, step.variant, step.repeat, o.tmpRoot);
+    const summary = summarize(task, result);
+    runs.push({ ...step, summary, staged_hash: result.staged_hash });
+    results.push(result);
+    console.log(`[gate] ${task.id} ${runKey(step.variant, step.repeat)} ${result.ms} ms ${JSON.stringify(summary)}`);
+    if (summary.infra) {
+      infra = true;
+      break; // an infra fault is never scored; the whole gate is rerun
+    }
+  }
+  let cleanupError: string | null = null;
   try {
-    const { apps } = await stageVariant(loaded, refapp, v, ws);
+    await o.bc.prenuke();
+  } catch (err) {
+    cleanupError = err instanceof Error ? err.message : String(err);
+  }
+  try {
+    await o.bc.dispose();
+  } catch (err) {
+    cleanupError = `${cleanupError ?? ""} dispose: ${err instanceof Error ? err.message : String(err)}`.trim();
+  }
+  const decision = decideGate(task, plan, runs);
+  const tagStatus = o.tagTree === null ? "pending" : o.tagTree === o.source.refappTree ? "match" : "mismatch";
+  if (tagStatus === "mismatch") decision.reasons.push(`${task.refapp_version} tree differs from the gated refapp tree`);
+  const promoted = decision.reasons.length === 0;
+  await Deno.mkdir(o.outDir, { recursive: true });
+  const file = join(o.outDir, `gate-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+  await Deno.writeTextFile(
+    file,
+    JSON.stringify(
+      {
+        task: task.id,
+        source_commit: o.source.commit,
+        refapp_tree: o.source.refappTree,
+        task_tree: o.source.taskTree,
+        refapp_version: task.refapp_version,
+        tag_status: tagStatus,
+        container: o.container,
+        at: new Date().toISOString(),
+        plan: plan.map((p) => runKey(p.variant, p.repeat)),
+        matrix_complete: decision.matrix_complete,
+        promoted,
+        reasons: decision.reasons,
+        cleanup_error: cleanupError,
+        runs: runs.map((r, i) => ({ key: runKey(r.variant, r.repeat), summary: r.summary, result: results[i] })),
+      },
+      null,
+      2,
+    ),
+  );
+  return { file, code: infra ? 3 : promoted ? 0 : 1 };
+}
+
+async function hostCompile(loaded: LoadedTask, refappDir: string, v: Variant): Promise<number> {
+  await Deno.mkdir(TMP_ROOT, { recursive: true });
+  const ws = await Deno.makeTempDir({ dir: TMP_ROOT, prefix: `compile-${loaded.task.id}-` });
+  try {
+    const src: Source = {
+      commit: "worktree",
+      root: "",
+      refappDir,
+      refappTree: "",
+      taskDir: loaded.dir,
+      taskTree: "",
+    };
+    const { apps } = await stageVariant(loaded.task, src, v, ws);
     const pkg = join(ws, ".alpackages");
     await Deno.mkdir(pkg);
     for await (const e of Deno.readDir(SYMBOLS)) {
@@ -1094,18 +1772,12 @@ async function hostCompile(
     }
     for (const app of apps) {
       const r = await new Deno.Command("al", {
-        args: [
-          "compile",
-          `/project:${join(ws, app)}`,
-          `/out:${join(pkg, `${app}.app`)}`,
-          `/packagecachepath:${pkg}`,
-        ],
+        args: ["compile", `/project:${join(ws, app)}`, `/out:${join(pkg, `${app}.app`)}`, `/packagecachepath:${pkg}`],
         stdout: "piped",
         stderr: "piped",
       }).output();
-      const text = new TextDecoder().decode(r.stdout) +
-        new TextDecoder().decode(r.stderr);
-      const errors = text.split(/\r?\n/).filter((l) => /error [A-Z]{2}\d+/.test(l));
+      const text = new TextDecoder().decode(r.stdout) + new TextDecoder().decode(r.stderr);
+      const errors = text.split(/\r?\n/).filter((l) => /error AL\d+/.test(l));
       if (!r.success || errors.length > 0) {
         console.log(`${colors.red("[FAIL]")} ${app}`);
         for (const l of errors.length > 0 ? errors : [text.trim()]) console.log(`  ${l}`);
@@ -1119,105 +1791,20 @@ async function hostCompile(
   }
 }
 
-async function gate(
-  container: string,
-  loaded: LoadedTask,
-  repo: string,
-  refapp: string,
-): Promise<number> {
-  const { problems } = await checkTask(loaded, refapp, repo);
-  if (problems.length > 0) {
-    for (const p of problems) console.log(`${colors.red("[FAIL]")} ${p}`);
-    return 1;
-  }
-  if ((await git(repo, ["status", "--porcelain", "--", "harness-tasks"])).out.trim()) {
-    console.error(`${colors.red("[FAIL]")} harness-tasks has uncommitted changes; gate a clean commit`);
-    return 1;
-  }
-  const commit = (await git(repo, ["rev-parse", "HEAD"])).out.trim();
+async function main(): Promise<number> {
+  const a = parseArgs(Deno.args, { string: ["rev"], default: { rev: "HEAD" } });
+  const [cmd, ...rest] = a._.map(String);
+  const repo = (await git(Deno.cwd(), ["rev-parse", "--show-toplevel"])).out.trim();
+  const refapp = join(repo, "harness-tasks", "refapp");
   const credentials = {
     username: Deno.env.get("CG_GATE_BC_USER") ?? "sshadows",
     password: Deno.env.get("CG_GATE_BC_PASSWORD") ?? "1234",
   };
-  const provider = new BcContainerProvider();
-  provider.setCredentials(container, credentials);
-  if (!(await provider.isHealthy(container))) {
-    console.error(
-      `${colors.red("[INFRA]")} ${container} not healthy or not visible under DOCKER_CONTEXT=${
-        Deno.env.get("DOCKER_CONTEXT") ?? "(inherited)"
-      }`,
-    );
-    return 3;
-  }
-  await provider.ensureTestHarness([container]);
-  const ctx: Ctx = {
-    provider,
-    container,
-    refapp,
-    soap: {
-      host: container,
-      port: 7047,
-      company: "My Company",
-      tenant: "default",
-      credentials,
-      timeoutMs: resolveSoapTimeoutMs(undefined),
-    },
+  const exported = async (taskId: string) => {
+    await Deno.mkdir(TMP_ROOT, { recursive: true });
+    const out = await Deno.makeTempDir({ dir: TMP_ROOT, prefix: `src-${taskId}-` });
+    return await exportSource(repo, a.rev, taskId, out);
   };
-  const runs: GateRun[] = [];
-  const results: RunResult[] = [];
-  let infra: string | undefined;
-  try {
-    for (const step of gatePlan(loaded.task, await subdirs(join(loaded.dir, "naive")))) {
-      const result = await runVariant(ctx, loaded, step.variant);
-      const summary = summarize(loaded.task, result);
-      runs.push({ ...step, summary });
-      results.push(result);
-      console.log(`[gate] ${loaded.task.id} ${result.variant} #${step.repeat} ${JSON.stringify(summary)}`);
-    }
-  } catch (err) {
-    infra = err instanceof Error ? err.message : String(err);
-  } finally {
-    await provider.prenukeCentralGaugeApps([container]);
-    await provider.dispose();
-  }
-  const decision = infra
-    ? { promoted: false, reasons: [`infra: ${infra}`] }
-    : decideGate(loaded.task, runs);
-  const outDir = join(EVIDENCE_ROOT, loaded.task.id);
-  await Deno.mkdir(outDir, { recursive: true });
-  const file = join(outDir, `gate-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-  await Deno.writeTextFile(
-    file,
-    JSON.stringify(
-      {
-        task: loaded.task.id,
-        commit,
-        container,
-        refapp_version: loaded.task.refapp_version,
-        at: new Date().toISOString(),
-        ...decision,
-        runs: runs.map((r, i) => ({
-          variant: variantName(r.variant),
-          repeat: r.repeat,
-          summary: r.summary,
-          result: results[i],
-        })),
-      },
-      null,
-      2,
-    ),
-  );
-  console.log(
-    `${decision.promoted ? colors.green("[OK]") : colors.red("[FAIL]")} ${loaded.task.id} gate -> ${file}`,
-  );
-  for (const r of decision.reasons) console.log(`  - ${r}`);
-  return infra ? 3 : decision.promoted ? 0 : 1;
-}
-
-async function main(args: string[]): Promise<number> {
-  const [cmd, ...rest] = args;
-  const repo = (await git(Deno.cwd(), ["rev-parse", "--show-toplevel"])).out.trim();
-  const refapp = join(repo, "harness-tasks", "refapp");
   try {
     if (cmd === "check" && rest.length > 0) {
       let failed = 0;
@@ -1233,34 +1820,88 @@ async function main(args: string[]): Promise<number> {
     if (cmd === "compile" && rest.length === 2) {
       return await hostCompile(await loadTask(rest[0]!), refapp, parseVariant(rest[1]!));
     }
-    if (cmd === "gate" && rest.length === 2) {
-      return await gate(rest[0]!, await loadTask(rest[1]!), repo, refapp);
+    if (cmd === "stage" && rest.length === 2) {
+      const src = await exported(rest[0]!);
+      const loaded = await loadTask(src.taskDir);
+      await stageWorkspace(src.refappDir, layers(src.taskDir, { kind: "baseline" }, false), rest[1]!);
+      console.log(`${colors.green("[OK]")} ${loaded.task.id} baseline at ${src.commit} -> ${rest[1]}`);
+      return 0;
+    }
+    if ((cmd === "gate" && rest.length === 2) || (cmd === "judge" && rest.length === 3)) {
+      const src = await exported(rest[1]!);
+      const loaded = await loadTask(src.taskDir);
+      const { problems } = await checkTask(loaded, src.refappDir, repo, { drift: false });
+      if (problems.length > 0) {
+        for (const p of problems) console.log(`${colors.red("[FAIL]")} ${p}`);
+        return 1;
+      }
+      const bc = await containerBc(rest[0]!, credentials);
+      if (!bc) {
+        console.error(`${colors.red("[INFRA]")} ${rest[0]} not healthy or not visible under DOCKER_CONTEXT=${Deno.env.get("DOCKER_CONTEXT") ?? "(inherited)"}`);
+        return 3;
+      }
+      const outDir = join(EVIDENCE_ROOT, loaded.task.id);
+      if (cmd === "gate") {
+        const tag = await git(repo, ["rev-parse", "--verify", "-q", `${loaded.task.refapp_version}:harness-tasks/refapp`]);
+        const { file, code } = await runGate({
+          bc,
+          loaded,
+          source: src,
+          container: rest[0]!,
+          outDir,
+          tmpRoot: TMP_ROOT,
+          tagTree: tag.ok ? tag.out.trim() : null,
+        });
+        console.log(`${code === 0 ? colors.green("[OK]") : colors.red("[FAIL]")} ${loaded.task.id} gate -> ${file}`);
+        return code;
+      }
+      return await judge(bc, loaded, src, rest[2]!, outDir);
     }
   } catch (err) {
     console.error(`${colors.red("[FAIL]")} ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
-  console.error(
-    "usage: gate-task.ts check <taskDir>... | compile <taskDir> <variant> | gate <container> <taskDir>",
-  );
+  console.error("usage: gate-task.ts check|compile|stage|gate|judge (see header)");
   return 2;
 }
 
-if (import.meta.main) Deno.exit(await main(Deno.args));
+/** Pilot scoring (developmental, never a verdict): same staging rules as the M1 verdict workspace, not its validation. */
+async function judge(bc: GateBc, loaded: LoadedTask, src: Source, wsDir: string, outDir: string): Promise<number> {
+  const { task } = loaded;
+  const targets: (string | null)[] = task.kind === "test-authoring" ? [null, "m0", ...task.mutants] : [null];
+  const runs: RunResult[] = [];
+  try {
+    for (const m of targets) {
+      runs.push(await runVariant(bc, task, src, { kind: "candidate", dir: wsDir, mutant: m }, 1, TMP_ROOT));
+    }
+  } finally {
+    await bc.prenuke().catch(() => {});
+    await bc.dispose().catch(() => {});
+  }
+  const s = runs.map((r) => summarize(task, r));
+  const pass = task.kind === "test-authoring"
+    ? s[0]!.refapp === "ok" && s[0]!.own !== null && allPass(s[0]!.own) &&
+      s.slice(1).every((x) => x.refapp === "ok" && x.own !== null && assertionKill(x.own))
+    : s[0]!.refapp === "ok" && allPass(s[0]!.p2p) && s[0]!.f2p !== null && allPass(s[0]!.f2p);
+  await Deno.mkdir(outDir, { recursive: true });
+  const file = join(outDir, `pilot-judge-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+  await Deno.writeTextFile(
+    file,
+    JSON.stringify({ task: task.id, source_commit: src.commit, workspace: wsDir, pass, summaries: s, runs }, null, 2),
+  );
+  console.log(`${pass ? "[PASS]" : "[FAIL]"} ${task.id} pilot judge -> ${file}`);
+  return runs.some((r) => r.infra !== undefined) ? 3 : 0;
+}
+
+if (import.meta.main) Deno.exit(await main());
 ```
 
 - [ ] **Step 4: Run it and see it pass**
 
 Run: `deno test --allow-all tests/unit/harness/gate-task.test.ts`
-Expected: `ok | 17 passed | 0 failed`.
+Expected: `ok | 6 passed | 0 failed`.
 
-- [ ] **Step 5: Verify the host toolchain `compile` relies on**
-
-No task exists yet, so check the `al` tool against the cached symbols directly (Core has no refapp dependencies):
-```bash
-al compile '/project:U:\Git\CentralGauge\harness-tasks\refapp\Core' "/out:$TEMP\\core.app" '/packagecachepath:C:\ProgramData\BcContainerHelper\compiler-cache-15ff3c5d109b\symbols'
-```
-Expected: exit 0, no `error AL` lines. If it fails, put the output in the M4-01 submit note and mark `compile` unavailable (lane-content then asks ops for compile jobs); `check` and `gate` are unaffected.
+- [ ] **Step 5: Host toolchain check.** `al compile '/project:U:\Git\CentralGauge\harness-tasks\refapp\Core' "/out:H:\Temp3\harness-spike\M4\tmp\core.app" '/packagecachepath:C:\ProgramData\BcContainerHelper\compiler-cache-15ff3c5d109b\symbols'`. Expected: exit 0, no `error AL`. Quote the result in the submit note.
 
 - [ ] **Step 6: Check, lint, format, commit**
 
@@ -1269,39 +1910,61 @@ deno check scripts/harness/gate-task.ts tests/unit/harness/gate-task.test.ts
 deno lint scripts/harness/gate-task.ts tests/unit/harness/gate-task.test.ts
 deno fmt scripts/harness/gate-task.ts tests/unit/harness/gate-task.test.ts
 git add scripts/harness/gate-task.ts tests/unit/harness/gate-task.test.ts
-git commit -m "feat(harness): interim task gate script (check, compile, gate)"
+git commit -m "feat(harness): M4 gate executors and CLI"
 ```
 
-**Acceptance:** `deno test --allow-all tests/unit/harness/gate-task.test.ts` prints `ok | 17 passed | 0 failed`; `deno check` and `deno lint` clean on both files.
+**Acceptance:** `deno test --allow-all tests/unit/harness/gate-core.test.ts tests/unit/harness/gate-stage.test.ts tests/unit/harness/gate-task.test.ts` prints `ok | 30 passed | 0 failed`; check and lint clean; submit note quotes the host compile result.
 
 ---
 
-### Task M4-02: refapp slice A and HX-001 (bugfix: damaged return)
+### Task M4-16: premise probes for task semantics
 
-**Lane:** content. **Deps:** M4-01 (Steps 7 on; Steps 1-6 can start at once). **Target:** 09-30.
+**Lane:** ops. **Deps:** none (reuses the M4-00 runner pattern `scripts/spikes/harness/premise-hx001/run-probe.ts`). **Target:** 10-01 morning. Probe task id M4-16 (M4-00 is taken).
 
-Spec 1b sections 3 (Rental -> Core events, Fleet reacting to Rental through a Core publisher, in-app subscriber), 5, 6, 8, 9 (prompt describes what users observe). HX-001 is the anchor task for the 10-02 end-to-end gate: moderate difficulty, but the root cause is two event hops away from the symptom (Rental raises a Core event, a Fleet subscriber calls damage registration, whose own event is handled by a second Fleet subscriber that modifies the same vehicle).
+Spike code: `scripts/spikes/harness/premise-m4-16/` (apps "M16P Core" ids 50200-50249, "M16P Test" 50250-50299, publisher CentralGauge; prenuke after). Evidence `H:\Temp3\harness-spike\M4-16-results.md` with the exact message texts.
+
+| Probe | Question | Used by |
+| --- | --- | --- |
+| P1 | After `asserterror` catches an error raised after a `DeleteAll` in the same call, are the deleted rows back? | HX-002 mutant `partial-reschedule` (killable only if rows stay deleted) |
+| P2 | `CalcDate('<+0M>', 20270131D)` = 20270131D; `CalcDate('<+1M>', 20270131D)` = 20270228D; `CalcDate('<+1M>', 20280131D)` = 20280229D; `Date2DWY(20270306D, 1)` = 6 | HX-002, HX-005 |
+| P3 | `JsonToken.WriteTo` of an Integer 1450 gives `1450`, of a Boolean gives `false`; `JsonObject.WriteTo` is compact and keeps insertion order; a text with `"` and `å` round-trips through `WriteTo`/`ReadFrom` | HX-006 |
+| P4 | An `AutoIncrement` Entry No. is set in the record variable after `Insert(true)` | HX-001 (`RegisterDamage` returns it), HX-004 ledger |
+| P5 | SOAP harness messages for: a failed `Assert.AreEqual`, a failed `Assert.ExpectedError`, an `asserterror` whose statement raised no error, and a runtime `Error` | `classifyTestFailure` in M4-01a |
+
+- [ ] **Step 1:** Write the probe apps (one test procedure per row, recording actual values with `Assert` so the message shows them), run through the M4-00 runner shape, prenuke, verify no `M16P` app remains.
+- [ ] **Step 2:** Write the results file: per probe the observed value or message verbatim, and a verdict line per consumer (for example `P1: rows restored -> partial-reschedule is equivalent, drop it`).
+- [ ] **Step 3:** Message lane-content and the orchestrator with the path. If P5 contradicts `classifyTestFailure`, M4-01a is fixed before any gate is accepted.
+
+**Acceptance:** `H:\Temp3\harness-spike\M4-16-results.md` has five probe sections with verbatim observations and one consumer verdict each, and a final line stating the probe apps were removed.
+
+---
+
+### Task M4-02: refapp slice A and HX-001 (bugfix: damaged return leaves the vehicle unblocked)
+
+**Lane:** content. **Deps:** M4-01c for Steps 6-8 (Steps 1-5 start at once). **Target:** 09-30 to 10-01.
+
+Spec 1b sections 3 (Rental -> Core events; Fleet reacting to Rental through a Core publisher; in-app subscriber), 5, 6, 8, 9. Premise measured by M4-00: on BC 28.4 a stale record's `Modify` after a subscriber modified the same row in the same transaction raises no error and overwrites the subscriber's change. The overlay reorders the Fleet return handler so damage registration (whose own event, in a second Fleet subscriber, blocks the vehicle and counts the open damage) runs between the handler's read and its `Modify`. The symptom is silent: the vehicle ends up not blocked with zero open damages. The agent has no error to search for; it must trace Rental.Return -> Core event -> Fleet handler -> DamageMgt -> `OnAfterDamageRegistered` -> block subscriber.
 
 **Files:**
 - Modify: `harness-tasks/refapp/Core/src/CoreEvents.Codeunit.al`
 - Create: `harness-tasks/refapp/Core/src/Setup.Table.al`
-- Modify: `harness-tasks/refapp/Fleet/src/Vehicle.Table.al`, `harness-tasks/refapp/Fleet/src/FleetMgt.Codeunit.al`
+- Modify: `harness-tasks/refapp/Fleet/src/Vehicle.Table.al`, `FleetMgt.Codeunit.al`
 - Create: `harness-tasks/refapp/Fleet/src/DamageEntry.Table.al`, `DamageMgt.Codeunit.al`, `FleetReturnHandler.Codeunit.al`, `VehicleBlockSubscriber.Codeunit.al`
 - Create: `harness-tasks/refapp/Rental/src/RentalStatus.Enum.al`, `RentalContract.Table.al`
 - Modify: `harness-tasks/refapp/Rental/src/RentalMgt.Codeunit.al`
-- Modify: `harness-tasks/refapp/Test/app.json` (idRanges 80000-84999)
-- Delete: `harness-tasks/refapp/Test/src/SkeletonTests.Codeunit.al` (its tests move into the module test codeunits below)
+- Modify: `harness-tasks/refapp/Test/app.json` (idRanges 80000-84999; also answers M1 Part 2 open question 6)
+- Delete: `harness-tasks/refapp/Test/src/SkeletonTests.Codeunit.al` (its tests move into the module codeunits)
 - Create: `harness-tasks/refapp/Test/src/TestLibrary.Codeunit.al`, `RentalTests.Codeunit.al`, `FleetTests.Codeunit.al`, `LeasingTests.Codeunit.al`, `IntegrationTests.Codeunit.al`
-- Create: `harness-tasks/tasks/HX-001/{task.yml,prompt.md}`, `overlay/Fleet/src/FleetReturnHandler.Codeunit.al`, `correct/Fleet/src/FleetReturnHandler.Codeunit.al`, `oracle/app.json`, `oracle/src/ReturnOracle.Codeunit.al`, `naive/skip-modify-on-damage/Fleet/src/FleetReturnHandler.Codeunit.al`, `naive/drop-block/Fleet/src/VehicleBlockSubscriber.Codeunit.al`
+- Create: `harness-tasks/tasks/HX-001/{task.yml,prompt.md}`, `overlay/Fleet/src/FleetReturnHandler.Codeunit.al`, `correct/Fleet/src/FleetReturnHandler.Codeunit.al`, `oracle/app.json`, `oracle/src/ReturnOracle.Codeunit.al`, `naive/skip-modify-on-damage/...`, `naive/reblock-in-handler/...`, `naive/lock-table/...`
 
 **Interfaces:**
-- Produces (refapp v1 API used by later tasks and oracles):
-  - `"CGR Core Events"`: `RaiseVehicleCheckedOut(VehicleNo: Code[20])`, `RaiseVehicleReturned(VehicleNo: Code[20]; ReturnKm: Integer; DamageDescription: Text[100])`, events `OnAfterVehicleCheckedOut`, `OnAfterVehicleReturned` (same parameters).
+- Produces (refapp v1 API):
+  - `"CGR Core Events"` (70000): `RaiseVehicleCheckedOut(VehicleNo: Code[20])`, `RaiseVehicleReturned(VehicleNo: Code[20]; ReturnKm: Integer; DamageDescription: Text[100])`, events `OnAfterVehicleCheckedOut`, `OnAfterVehicleReturned`.
   - table 70003 `"CGR Setup"`: `GetOrCreate()`, `NextContractNo(): Code[20]`, `NextLeaseNo(): Code[20]`.
-  - table 70100 `"CGR Vehicle"` fields 1 No., 2 Mileage, 3 Checked Out, 4 Strategy, 5 Blocked, 6 Last Service Km, 7 Daily Rate, 8 Description.
+  - table 70100 `"CGR Vehicle"`: 1 No., 2 Mileage, 3 Checked Out, 4 Strategy, 5 Blocked, 6 Last Service Km, 7 Daily Rate, 8 Description, 9 Open Damages (Integer).
   - table 70101 `"CGR Damage Entry"`; codeunit 70102 `"CGR Damage Mgt"`: `RegisterDamage(VehicleNo: Code[20]; Description: Text[100]): Integer`, `RepairDamage(EntryNo: Integer)`, event `OnAfterDamageRegistered(var DamageEntry)`.
   - codeunit 70100 `"CGR Fleet Mgt"`: `IsAvailable(VehicleNo): Boolean` (event `OnBeforeIsAvailable(VehicleNo; var Result; var IsHandled)`), `NextServiceKm(VehicleNo): Integer`.
-  - enum 70200 `"CGR Rental Status"` (Open, Checked Out, Returned, Posted); table 70200 `"CGR Rental Contract"`; codeunit 70200 `"CGR Rental Mgt"`: `CreateContract(VehicleNo: Code[20]; CustomerName: Text[100]; StartDate: Date; EndDate: Date): Code[20]`, `CheckOut(ContractNo: Code[20])`, `Return(ContractNo: Code[20]; ReturnKm: Integer; DamageDescription: Text[100])`.
+  - enum 70200 `"CGR Rental Status"`; table 70200 `"CGR Rental Contract"`; codeunit 70200 `"CGR Rental Mgt"`: `CreateContract(VehicleNo: Code[20]; CustomerName: Text[100]; StartDate: Date; EndDate: Date): Code[20]`, `CheckOut(ContractNo: Code[20])`, `Return(ContractNo: Code[20]; ReturnKm: Integer; DamageDescription: Text[100])`.
   - Test codeunit 80090 `"CGR Test Library"`: `CreateVehicle(VehicleNo; Mileage; Strategy)`, `CreateContract(VehicleNo): Code[20]`.
 
 - [ ] **Step 1: Core**
@@ -1388,12 +2051,10 @@ table 70003 "CGR Setup"
         field(6; "Last Service Km"; Integer) { }
         field(7; "Daily Rate"; Decimal) { }
         field(8; Description; Text[100]) { }
+        field(9; "Open Damages"; Integer) { }
 ```
 
-`Fleet/src/FleetMgt.Codeunit.al`: keep the skeleton, change the last line of `IsAvailable` to
-```al
-        exit(not Vehicle."Checked Out" and not Vehicle.Blocked);
-```
+`Fleet/src/FleetMgt.Codeunit.al`: keep the skeleton; `IsAvailable` ends with `exit(not Vehicle."Checked Out" and not Vehicle.Blocked);`.
 
 `Fleet/src/DamageEntry.Table.al`:
 ```al
@@ -1446,11 +2107,11 @@ codeunit 70102 "CGR Damage Mgt"
         DamageEntry.Modify(true);
         OpenDamage.SetRange("Vehicle No.", DamageEntry."Vehicle No.");
         OpenDamage.SetRange(Repaired, false);
-        if OpenDamage.IsEmpty() then
-            if Vehicle.Get(DamageEntry."Vehicle No.") then begin
-                Vehicle.Blocked := false;
-                Vehicle.Modify(true);
-            end;
+        if Vehicle.Get(DamageEntry."Vehicle No.") then begin
+            Vehicle."Open Damages" := OpenDamage.Count();
+            Vehicle.Blocked := Vehicle."Open Damages" > 0;
+            Vehicle.Modify(true);
+        end;
     end;
 
     [IntegrationEvent(false, false)]
@@ -1471,13 +2132,14 @@ codeunit 70104 "CGR Vehicle Block Subscriber"
     begin
         if not Vehicle.Get(DamageEntry."Vehicle No.") then
             exit;
+        Vehicle."Open Damages" += 1;
         Vehicle.Blocked := true;
         Vehicle.Modify(true);
     end;
 }
 ```
 
-`Fleet/src/FleetReturnHandler.Codeunit.al` (the correct refapp version; also copied verbatim to `tasks/HX-001/correct/Fleet/src/`):
+`Fleet/src/FleetReturnHandler.Codeunit.al` (correct refapp version; copied verbatim to `tasks/HX-001/correct/Fleet/src/`):
 ```al
 codeunit 70103 "CGR Fleet Return Handler"
 {
@@ -1540,7 +2202,7 @@ table 70200 "CGR Rental Contract"
 }
 ```
 
-`Rental/src/RentalMgt.Codeunit.al` (the direct `FleetMgt.IsAvailable` call and direct Vehicle read are the 1b section 3 "legacy direct call left in on purpose"):
+`Rental/src/RentalMgt.Codeunit.al` (the direct `FleetMgt.IsAvailable` call and Vehicle read are the 1b section 3 legacy direct call):
 ```al
 codeunit 70200 "CGR Rental Mgt"
 {
@@ -1603,7 +2265,7 @@ codeunit 70200 "CGR Rental Mgt"
 }
 ```
 
-- [ ] **Step 4: Visible tests (Test app)**
+- [ ] **Step 4: Visible tests**
 
 `Test/app.json`: `"idRanges": [{ "from": 80000, "to": 84999 }]`. Delete `SkeletonTests.Codeunit.al`.
 
@@ -1639,21 +2301,21 @@ codeunit 80090 "CGR Test Library"
 }
 ```
 
-Visible test codeunits (each `Subtype = Test; TestPermissions = Disabled;`, `Assert: Codeunit "Library Assert"`, `Lib: Codeunit "CGR Test Library"`, one vehicle key per procedure):
+Visible test codeunits (each `Subtype = Test; TestPermissions = Disabled;`, `Assert: Codeunit "Library Assert"`, `Lib: Codeunit "CGR Test Library"`, one vehicle key per procedure). No visible test returns a vehicle with damage (that is the task).
 
 | Codeunit | Procedure | Arrange / act | Assert |
 | --- | --- | --- | --- |
-| 80010 "CGR Rental Tests" | CheckOutMarksVehicleCheckedOut | vehicle T-RENT-001 km 1000, contract, CheckOut | vehicle Checked Out true; contract Status Checked Out; Start Km 1000 |
+| 80010 "CGR Rental Tests" | CheckOutMarksVehicleCheckedOut | T-RENT-001 km 1000, contract, CheckOut | vehicle Checked Out true; contract Checked Out; Start Km 1000 |
 | 80010 | CheckOutTwiceFails | T-RENT-002, two contracts, check out first | `asserterror` CheckOut second; `ExpectedError('Vehicle T-RENT-002 is not available.')` |
-| 80010 | ReturnWithoutDamageReleasesVehicle | T-RENT-003 km 1000, check out, Return(1300, '') | vehicle Checked Out false, Mileage 1300, Blocked false; contract Returned, Return Km 1300 |
-| 80010 | ReturnBelowStartKmFails | T-RENT-004 km 1000, check out | `asserterror` Return(999, ''); `ExpectedError('Return km 999 is below the start km 1000.')`; contract still Checked Out |
+| 80010 | ReturnWithoutDamageReleasesVehicle | T-RENT-003 km 1000, check out, Return(1300, '') | vehicle Checked Out false, Mileage 1300, Blocked false, Open Damages 0; contract Returned, Return Km 1300 |
+| 80010 | ReturnBelowStartKmFails | T-RENT-004 km 1000, check out | `asserterror` Return(999, ''); `ExpectedError('Return km 999 is below the start km 1000.')`; contract Checked Out |
 | 80020 "CGR Fleet Tests" | HeavyDutyStrategyFromFleetExtension | T-FLT-001 km 1000 Heavy Duty | `NextServiceKm` = 6000 |
-| 80020 | BlockedVehicleNotAvailable | T-FLT-002, RegisterDamage('Dent') | vehicle Blocked true; `IsAvailable` false |
-| 80020 | RepairLastDamageUnblocks | T-FLT-003, two RegisterDamage | repair first: Blocked true, IsAvailable false; repair second: Blocked false, IsAvailable true |
+| 80020 | DamageBlocksVehicle | T-FLT-002, RegisterDamage('Dent') | Blocked true; Open Damages 1; `IsAvailable` false |
+| 80020 | RepairLastDamageUnblocks | T-FLT-003, two RegisterDamage | Open Damages 2; repair first: 1, Blocked true; repair second: 0, Blocked false, IsAvailable true |
 | 80030 "CGR Leasing Tests" | LeaseRateUsesCoreInternal | none | `MonthlyRate(100, 12)` = 112 |
 | 80040 "CGR Integration Tests" | PayloadCarriesVehicleNo | none | `VehicleCheckedOutPayload('T-INT-001')` = `{"event":"vehicleCheckedOut","vehicleNo":"T-INT-001"}` |
 
-Example, the first row in full (the rest follow the same shape):
+The first row in full (the rest follow this shape):
 ```al
 codeunit 80010 "CGR Rental Tests"
 {
@@ -1699,11 +2361,11 @@ attachments: []
 scorers: [build, pass_to_pass, fail_to_pass]
 pass_to_pass:
   - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, ReturnWithoutDamageReleasesVehicle, ReturnBelowStartKmFails] }
-  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension, BlockedVehicleNotAvailable, RepairLastDamageUnblocks] }
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle, RepairLastDamageUnblocks] }
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 85000, procedures: [ReturnWithDamageReleasesAndBlocksVehicle, ReturnWithDamageRegistersOneOpenDamageEntry, ReturnWithDamageCompletesContract, DamagedVehicleCannotBeRentedAgain, RepairAfterDamagedReturnMakesVehicleAvailable, ReturnWithoutDamageLeavesVehicleUnblocked] }
+    - { codeunit: 85000, procedures: [DamagedReturnBlocksVehicle, DamagedReturnReleasesVehicle, DamagedReturnRecordsDamage, DamagedReturnCompletesContract, DamagedVehicleCannotBeRentedAgain, RepairAfterDamagedReturnReleasesVehicle, SecondDamagedReturnAfterRepair, ReturnWithoutDamageLeavesVehicleUnblocked] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
@@ -1711,22 +2373,18 @@ limits: { timeout_min: 30 }
 
 `tasks/HX-001/prompt.md`:
 ```markdown
-# Bug 4127: Returning a damaged vehicle fails
+# Bug 4127: Damaged returns do not block the vehicle
 
 Reported by the front desk, Aarhus branch.
 
-When a customer returns a rental vehicle and the clerk records damage on the return, the return fails with:
+When the clerk records damage while returning a rental vehicle, the damage entry is created, but the vehicle is not blocked and its "Open Damages" count stays at 0. The vehicle then shows as available, and one has already been rented out again with the damage still open.
 
-> Another user has modified the record for this CGR Vehicle after you retrieved it from the database.
+Expected: a return with damage completes like any other return (the contract is returned and the vehicle is back with the return mileage), and the vehicle is blocked, with the damage counted as open, until the damage is repaired.
 
-Nobody else is working on that vehicle. Returns without damage work. Because the return fails, the contract stays checked out, the damage is not recorded and the vehicle still shows as out.
-
-Expected: a return with damage completes like any other return (the contract is returned, the vehicle is back with the return mileage), the damage is recorded, and the vehicle cannot be rented out again until the damage is repaired.
-
-To reproduce: create a rental contract, check it out, then return it with a damage description (`CGR Rental Mgt`, Return).
+To reproduce: create a rental contract, check it out, return it with a damage description (`CGR Rental Mgt`, Return), then look at the vehicle.
 ```
 
-`tasks/HX-001/overlay/Fleet/src/FleetReturnHandler.Codeunit.al` (the injected bug: damage is registered, and through `OnAfterDamageRegistered` the vehicle is modified, before the handler modifies its stale copy):
+`tasks/HX-001/overlay/Fleet/src/FleetReturnHandler.Codeunit.al` (injected: damage registered between the read and the `Modify`; the stale buffer silently overwrites `Blocked` and `Open Damages`):
 ```al
 codeunit 70103 "CGR Fleet Return Handler"
 {
@@ -1747,41 +2405,12 @@ codeunit 70103 "CGR Fleet Return Handler"
 }
 ```
 
-`tasks/HX-001/correct/Fleet/src/FleetReturnHandler.Codeunit.al`: byte-identical to the refapp file from Step 2.
+`correct/Fleet/src/FleetReturnHandler.Codeunit.al`: byte-identical to the refapp file from Step 2.
 
-`tasks/HX-001/naive/skip-modify-on-damage/Fleet/src/FleetReturnHandler.Codeunit.al` (makes the error go away by not saving the vehicle when damage is reported):
-```al
-codeunit 70103 "CGR Fleet Return Handler"
-{
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Core Events", 'OnAfterVehicleReturned', '', false, false)]
-    local procedure HandleVehicleReturned(VehicleNo: Code[20]; ReturnKm: Integer; DamageDescription: Text[100])
-    var
-        Vehicle: Record "CGR Vehicle";
-        DamageMgt: Codeunit "CGR Damage Mgt";
-    begin
-        if not Vehicle.Get(VehicleNo) then
-            exit;
-        if DamageDescription <> '' then begin
-            DamageMgt.RegisterDamage(VehicleNo, DamageDescription);
-            exit;
-        end;
-        Vehicle."Checked Out" := false;
-        Vehicle.Mileage := ReturnKm;
-        Vehicle.Modify(true);
-    end;
-}
-```
-
-`tasks/HX-001/naive/drop-block/Fleet/src/VehicleBlockSubscriber.Codeunit.al` (removes the conflicting modify instead of fixing the order; overlay handler stays):
-```al
-codeunit 70104 "CGR Vehicle Block Subscriber"
-{
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Damage Mgt", 'OnAfterDamageRegistered', '', false, false)]
-    local procedure BlockDamagedVehicle(var DamageEntry: Record "CGR Damage Entry")
-    begin
-    end;
-}
-```
+Naive variants (each replaces `Fleet/src/FleetReturnHandler.Codeunit.al`; all compile):
+- `naive/skip-modify-on-damage`: after `RegisterDamage`, `exit` (the vehicle is never saved on a damaged return). Plausible "the second save is the problem".
+- `naive/reblock-in-handler`: keeps the overlay order and adds `if DamageDescription <> '' then Vehicle.Blocked := true;` before `Modify`. Plausible "set the flag again"; still loses `Open Damages`.
+- `naive/lock-table`: `Vehicle.LockTable();` before `Vehicle.Get`, overlay order kept. Plausible "concurrency, lock it"; M4-00 measured that LockTable does not help.
 
 `tasks/HX-001/oracle/app.json`:
 ```json
@@ -1805,141 +2434,45 @@ codeunit 70104 "CGR Vehicle Block Subscriber"
 }
 ```
 
-`tasks/HX-001/oracle/src/ReturnOracle.Codeunit.al`:
-```al
-codeunit 85000 "HX001 Return Oracle"
-{
-    Subtype = Test;
-    TestPermissions = Disabled;
+Oracle (normative), codeunit 85000 "HX001 Return Oracle". A local `CheckedOutContract(VehicleNo; Mileage)` deletes the vehicle's damage entries and contracts, inserts the vehicle (Blocked false, Open Damages 0, Checked Out false), creates a contract 2027-03-01..03 and checks it out. Damage text `Scratch on rear door` (`Locked = true` label). No assertion on `Reported On` (not in the ticket).
 
-    var
-        Assert: Codeunit "Library Assert";
-        RentalMgt: Codeunit "CGR Rental Mgt";
-        DamageTxt: Label 'Scratch on rear door', Locked = true;
+| Procedure | Arrange / act | Assert |
+| --- | --- | --- |
+| DamagedReturnBlocksVehicle | HX001-A km 1000, Return(1450, damage) | Blocked true; Open Damages 1 |
+| DamagedReturnReleasesVehicle | HX001-B, Return(1450, damage) | Checked Out false; Mileage 1450 |
+| DamagedReturnRecordsDamage | HX001-C, Return(1450, damage) | exactly 1 damage entry for C; Description = damage text; Repaired false |
+| DamagedReturnCompletesContract | HX001-D, Return(1450, damage) | contract Returned; Return Km 1450; Damage Description = damage text |
+| DamagedVehicleCannotBeRentedAgain | HX001-E, Return(1450, damage); new contract 2027-03-10..12 | `asserterror` CheckOut; `ExpectedError('Vehicle HX001-E is not available.')` |
+| RepairAfterDamagedReturnReleasesVehicle | HX001-F, Return(1450, damage); RepairDamage(its entry) | Blocked false; Open Damages 0; `IsAvailable` true; Mileage 1450 |
+| SecondDamagedReturnAfterRepair | HX001-G, Return(1450, 'Scratch on rear door'); repair; new contract, CheckOut, Return(1900, 'Dent') | Blocked true; Open Damages 1; Mileage 1900; 2 damage entries, 1 open (`Dent`) |
+| ReturnWithoutDamageLeavesVehicleUnblocked | HX001-H, Return(1200, '') | Blocked false; Open Damages 0; Checked Out false; Mileage 1200; no damage entry |
 
-    [Test]
-    procedure ReturnWithDamageReleasesAndBlocksVehicle()
-    var
-        Vehicle: Record "CGR Vehicle";
-    begin
-        RentalMgt.Return(CheckedOutContract('HX001-A'), 1450, DamageTxt);
-        Vehicle.Get('HX001-A');
-        Assert.IsFalse(Vehicle."Checked Out", 'A returned vehicle must not stay checked out');
-        Assert.AreEqual(1450, Vehicle.Mileage, 'Vehicle mileage must be the return km');
-        Assert.IsTrue(Vehicle.Blocked, 'A vehicle returned with damage must be blocked');
-    end;
+Kill mapping (each naive loses at least one assertion; runtime errors elsewhere are allowed):
 
-    [Test]
-    procedure ReturnWithDamageRegistersOneOpenDamageEntry()
-    var
-        DamageEntry: Record "CGR Damage Entry";
-    begin
-        RentalMgt.Return(CheckedOutContract('HX001-B'), 1450, DamageTxt);
-        DamageEntry.SetRange("Vehicle No.", 'HX001-B');
-        Assert.AreEqual(1, DamageEntry.Count(), 'Exactly one damage entry for the return');
-        DamageEntry.FindFirst();
-        Assert.AreEqual(DamageTxt, DamageEntry.Description, 'Damage description from the return');
-        Assert.IsFalse(DamageEntry.Repaired, 'New damage is open');
-        Assert.AreEqual(WorkDate(), DamageEntry."Reported On", 'Damage reported on the work date');
-    end;
+| Naive | Rows lost by assertion |
+| --- | --- |
+| skip-modify-on-damage | DamagedReturnReleasesVehicle, RepairAfterDamagedReturnReleasesVehicle (mileage) |
+| reblock-in-handler | DamagedReturnBlocksVehicle (Open Damages 0), SecondDamagedReturnAfterRepair |
+| lock-table | DamagedReturnBlocksVehicle, DamagedVehicleCannotBeRentedAgain (lost asserterror), SecondDamagedReturnAfterRepair |
 
-    [Test]
-    procedure ReturnWithDamageCompletesContract()
-    var
-        Contract: Record "CGR Rental Contract";
-        ContractNo: Code[20];
-    begin
-        ContractNo := CheckedOutContract('HX001-C');
-        RentalMgt.Return(ContractNo, 1450, DamageTxt);
-        Contract.Get(ContractNo);
-        Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'Contract status after return');
-        Assert.AreEqual(1450, Contract."Return Km", 'Contract return km');
-        Assert.AreEqual(DamageTxt, Contract."Damage Description", 'Contract damage description');
-    end;
+The last oracle row is a hidden regression row: it passes on the baseline (Decisions: kept, baseline outcomes recorded).
 
-    [Test]
-    procedure DamagedVehicleCannotBeRentedAgain()
-    var
-        NextContractNo: Code[20];
-    begin
-        RentalMgt.Return(CheckedOutContract('HX001-D'), 1450, DamageTxt);
-        NextContractNo := RentalMgt.CreateContract('HX001-D', 'Next Customer', 20270310D, 20270312D);
-        asserterror RentalMgt.CheckOut(NextContractNo);
-        Assert.ExpectedError('Vehicle HX001-D is not available.');
-    end;
-
-    [Test]
-    procedure RepairAfterDamagedReturnMakesVehicleAvailable()
-    var
-        DamageEntry: Record "CGR Damage Entry";
-        Vehicle: Record "CGR Vehicle";
-        DamageMgt: Codeunit "CGR Damage Mgt";
-        FleetMgt: Codeunit "CGR Fleet Mgt";
-    begin
-        RentalMgt.Return(CheckedOutContract('HX001-E'), 1450, DamageTxt);
-        DamageEntry.SetRange("Vehicle No.", 'HX001-E');
-        DamageEntry.FindFirst();
-        DamageMgt.RepairDamage(DamageEntry."Entry No.");
-        Assert.IsTrue(FleetMgt.IsAvailable('HX001-E'), 'Repaired vehicle is available again');
-        Vehicle.Get('HX001-E');
-        Assert.AreEqual(1450, Vehicle.Mileage, 'Repair keeps the return mileage');
-    end;
-
-    [Test]
-    procedure ReturnWithoutDamageLeavesVehicleUnblocked()
-    var
-        Vehicle: Record "CGR Vehicle";
-        DamageEntry: Record "CGR Damage Entry";
-    begin
-        RentalMgt.Return(CheckedOutContract('HX001-F'), 1200, '');
-        Vehicle.Get('HX001-F');
-        Assert.IsFalse(Vehicle.Blocked, 'No damage, no block');
-        Assert.IsFalse(Vehicle."Checked Out", 'Vehicle is back');
-        Assert.AreEqual(1200, Vehicle.Mileage, 'Mileage from the return');
-        DamageEntry.SetRange("Vehicle No.", 'HX001-F');
-        Assert.IsTrue(DamageEntry.IsEmpty(), 'No damage entry without damage');
-    end;
-
-    local procedure CheckedOutContract(VehicleNo: Code[20]) ContractNo: Code[20]
-    var
-        Vehicle: Record "CGR Vehicle";
-        DamageEntry: Record "CGR Damage Entry";
-        Contract: Record "CGR Rental Contract";
-    begin
-        DamageEntry.SetRange("Vehicle No.", VehicleNo);
-        DamageEntry.DeleteAll();
-        Contract.SetRange("Vehicle No.", VehicleNo);
-        Contract.DeleteAll();
-        if Vehicle.Get(VehicleNo) then
-            Vehicle.Delete();
-        Vehicle.Init();
-        Vehicle."No." := VehicleNo;
-        Vehicle.Mileage := 1000;
-        Vehicle.Insert();
-        ContractNo := RentalMgt.CreateContract(VehicleNo, 'Oracle Customer', 20270301D, 20270303D);
-        RentalMgt.CheckOut(ContractNo);
-    end;
-}
-```
-
-The last procedure is a hidden regression row: it passes on the baseline; the scorer still fails on the baseline through the other five.
-
-- [ ] **Step 6: Host compile every variant (requires M4-01)**
+- [ ] **Step 6: Host compile every variant (M4-01c)**
 
 ```bash
-for v in baseline correct naive/skip-modify-on-damage naive/drop-block; do
+for v in baseline correct naive/skip-modify-on-damage naive/reblock-in-handler naive/lock-table; do
   deno run --allow-all scripts/harness/gate-task.ts compile harness-tasks/tasks/HX-001 "$v" || break
 done
 ```
-Expected: `[OK]` for all seven apps and `Oracle` in each variant. A compile error is fixed in the AL, never by removing an oracle row.
+Expected: `[OK]` for the seven apps and `Oracle` in each variant. A compile error is fixed in the AL, never by removing an oracle row.
 
 - [ ] **Step 7: al-test-auditor pass**
 
-Dispatch the `al-test-auditor` agent with this prompt (the same template is used by every content task, with the task id and plan section swapped):
+Dispatch `al-test-auditor` with this template (reused by every content task with the id, audited test folder and plan section swapped):
 
-> Audit harness task `U:\Git\CentralGauge\harness-tasks\tasks\HX-001`. The layout differs from `tasks/`: the specification is `prompt.md` plus `task.yml`; the oracle is `oracle/src/*.al` (hidden test app, ids 85000-89999; visible tests are `harness-tasks/refapp/Test`, 80000-84999). Apply your rule sets A, B, C and E to the pair (prompt.md, oracle). In addition: (1) compare the oracle against the normative table in `docs/superpowers/plans/2026-09-30-harness-refapp-v1.md` Task M4-02 Step 5 and report any row missing or with a different expected value; (2) report any requirement in prompt.md with no assertion; (3) report any assertion that depends on something prompt.md does not state; (4) report state shared between procedures of one codeunit (the harness rolls back per codeunit, not per procedure). Read-only. End with a line `VERDICT: clean` or `VERDICT: <n> critical, <m> major`.
+> Audit harness task `U:\Git\CentralGauge\harness-tasks\tasks\HX-001` at task tree `<git rev-parse HEAD:harness-tasks/tasks/HX-001>`. Layout differs from `tasks/`: the specification is `prompt.md` plus `task.yml`; the oracle is `oracle/src/*.al` (hidden test app, 85000-89999; visible tests are `harness-tasks/refapp/Test`, 80000-84999). Apply rule sets A, B, C and E to the pair (prompt.md, oracle). Also: (1) compare the oracle with the normative table in `docs/superpowers/plans/2026-09-30-harness-refapp-v1.md` Task M4-02 Step 5 and report any missing row or different value; (2) report any prompt requirement with no assertion; (3) report any assertion that depends on something neither the prompt nor an existing refapp contract states; (4) report state shared between procedures of one codeunit or inherited from the session (work date, Setup); (5) check each naive variant against the kill mapping table and report a claimed loss that the code would not produce. Read-only. First line of your answer: `TASK TREE: <the id above>`. Last line: `VERDICT: clean` or `VERDICT: <n> critical, <m> major`.
 
-Save the output verbatim to `H:\Temp3\harness-spike\M4\HX-001\audit-1.md`. Fix every critical and major finding in the task (never by weakening an oracle row; a finding that asks to weaken one goes to `coord ask`), then re-run the auditor to `audit-2.md` until the verdict line is clean.
+Commit the task first (Step 8) so the tree id exists; save the answer to `H:\Temp3\harness-spike\M4\HX-001\audit-1.md`; fix critical and major findings (never by weakening an oracle row; a finding asking for that goes to `coord ask`), commit, re-audit to `audit-2.md` until clean.
 
 - [ ] **Step 8: Static check, commit, request the gate job**
 
@@ -1948,41 +2481,43 @@ deno run --allow-all scripts/harness/gate-task.ts check harness-tasks/tasks/HX-0
 git add harness-tasks/refapp harness-tasks/tasks/HX-001
 git commit -m "feat(harness-tasks): refapp v1 slice A and HX-001 damaged return bugfix"
 ```
-Expected from `check`: `[WARN] ... refapp-v1-rc1 does not resolve yet` and `[OK]`. Then message lane-ops: `need container job: deno run --allow-all scripts/harness/gate-task.ts gate <Cronus281-283> harness-tasks/tasks/HX-001 at <sha> for M4-03, report to lane-content`.
+Expected from `check`: `[WARN] ... refapp-v1-rc1 does not resolve yet` and `[OK]`. After the audit is clean: message lane-ops `need container job: deno run --allow-all scripts/harness/gate-task.ts gate <Cronus281-283> HX-001 --rev <sha> for M4-03, report to lane-content`.
 
-**Acceptance:** `deno run --allow-all scripts/harness/gate-task.ts check harness-tasks/tasks/HX-001` prints `[OK]` (the unresolved-tag warning is allowed); `H:\Temp3\harness-spike\M4\HX-001\` holds an `audit-*.md` whose last line is `VERDICT: clean`; the oracle file contains all six procedures of Step 5.
+**Acceptance:** `check` prints `[OK]` for HX-001; the latest `audit-*.md` starts with `TASK TREE: <id>` equal to `git rev-parse <sha>:harness-tasks/tasks/HX-001` and ends `VERDICT: clean`; the oracle has the eight procedures of Step 5; three naive folders exist.
 
 ---
 
 ### Task M4-03: gate job HX-001
 
-**Lane:** ops. **Deps:** M4-01, M4-02. **Target:** 10-01.
+**Lane:** ops. **Deps:** M4-01c, M4-02. **Target:** 10-01.
 
-- [ ] **Step 1:** Bench-live check (`find results/.bench-running.json -mmin -2` prints nothing), lease a content container (Cronus281-283), checkpoint the job in the note, `git worktree add H:\cg-coord\jobs\M4-03-<n> <sha from M4-02>`.
-- [ ] **Step 2:** In that worktree: `deno run --allow-all scripts/harness/gate-task.ts gate <container> harness-tasks/tasks/HX-001`. Expected: 8 runs (baseline, correct x3, 2 naive x2), exit 0, `[OK] HX-001 gate -> H:\Temp3\harness-spike\M4\HX-001\gate-<stamp>.json`.
-- [ ] **Step 3: Premise check.** In the report, the baseline run's failing oracle procedures carry the stale-record message (`jq -r '.runs[0].result.tests[] | select(.passed==false) | .message' <file>` contains `has modified the record`). If the baseline fails for another reason, or passes, the task premise does not hold on BC 28: report to lane-content and the orchestrator; HX-001 goes back to M4-02, not forward.
-- [ ] **Step 4:** Exit 1 (not promoted): send the `reasons` and the report path to lane-content; do not edit AL. Exit 3 (infra): release, re-lease another content container, rerun once; a second infra exit goes to `coord ask`.
-- [ ] **Step 5:** Release the lease, remove the job worktree, report the path to lane-content and the orchestrator. The orchestrator tags the gated commit `refapp-v1-rc1` on acceptance.
+Common procedure for every gate job (M4-05, M4-07, M4-09, M4-11, M4-13 refer to it):
 
-**Acceptance:** `jq -e '.promoted == true and .commit == "<M4-02 sha>" and (.runs | length) == 8' H:\Temp3\harness-spike\M4\HX-001\gate-<stamp>.json` exits 0, and the Step 3 message check holds.
+- [ ] **Step 1:** Bench-live check (`find results/.bench-running.json -mmin -2` prints nothing); lease a content container (Cronus281-283); checkpoint the job in the note.
+- [ ] **Step 2:** From the repo (no job worktree needed: the gate exports the revision itself): `deno run --allow-all scripts/harness/gate-task.ts gate <container> HX-001 --rev <sha>`. Expected: 10 runs (baseline, correct x3, 3 naive x2), exit 0, `[OK] HX-001 gate -> H:\Temp3\harness-spike\M4\HX-001\gate-<stamp>.json`.
+- [ ] **Step 3: Premise evidence (HX-001 only).** In the baseline run, `DamagedReturnBlocksVehicle` failed by assertion: `jq -r '.runs[0].result.tests[] | select(.procedure=="DamagedReturnBlocksVehicle") | .failure' <file>` prints `assertion`.
+- [ ] **Step 4:** Record wall time: `jq '[.runs[].result.ms] | add' <file>` in the submit note (first real distribution, for the container budget).
+- [ ] **Step 5:** Exit 1: send `reasons` and the path to lane-content; do not edit AL. Exit 3: re-lease another content container and rerun once; a second infra exit goes to `coord ask`.
+- [ ] **Step 6:** Release the lease; report the path to lane-content and the orchestrator. The orchestrator tags the gated commit `refapp-v1-rcN` on acceptance.
+
+**Acceptance (all gate jobs, offline):** `jq -e '.promoted and .matrix_complete and .source_commit == "<sha>" and .task_tree == "<TASK TREE of the latest audit>" and (.runs | length) == (.plan | length) and .cleanup_error == null' <report>` exits 0; `tag_status` is `pending` (first gate) or `match` (re-gate). For HX-001 also the Step 3 line prints `assertion`.
 
 ---
 
 ### Task M4-04: refapp slice B and HX-002 (test-authoring: lease schedule)
 
-**Lane:** content. **Deps:** M4-02. **Target:** 10-01 to 10-02.
+**Lane:** content. **Deps:** M4-02, M4-16 (P1, P2, P5). **Target:** 10-01 to 10-02.
 
-Spec 1a section 7 (test-authoring boundary: agent tests must build, discover at least one test, pass on reference code, fail on every mutant by an assertion; mutant 0 is the staged buggy state), 1b section 3 (Leasing -> Core `internal` with `internalsVisibleTo`), 1b section 8 (reference tests kill every mutant).
+Spec 1a section 7 (test-authoring boundary; mutant 0 is the staged buggy state), 1b section 3 (Leasing -> Core `internal`), 1b section 8.
 
 **Files:**
-- Modify: `harness-tasks/refapp/Core/src/LeaseMath.Codeunit.al`
-- Create: `harness-tasks/refapp/Leasing/src/LeaseContract.Table.al`, `LeaseScheduleLine.Table.al`
-- Modify: `harness-tasks/refapp/Leasing/src/LeaseMgt.Codeunit.al`
-- Modify: `harness-tasks/refapp/Test/src/LeasingTests.Codeunit.al`, `TestLibrary.Codeunit.al` (add `CreateLease`)
-- Create: `harness-tasks/tasks/HX-002/{task.yml,prompt.md}`, `overlay/Leasing/src/LeaseMgt.Codeunit.al`, `correct/Leasing/src/LeaseMgt.Codeunit.al`, `mutants/{no-carry,first-due-shift,invoiced-rebuilt,flat-factor}/...`, `reference-tests/Test/src/LeaseScheduleTests.Codeunit.al`, `naive/{drift-repro-only,totals-only}/Test/src/*.al`
+- Modify: `Core/src/LeaseMath.Codeunit.al`
+- Create: `Leasing/src/LeaseContract.Table.al`, `LeaseScheduleLine.Table.al`
+- Modify: `Leasing/src/LeaseMgt.Codeunit.al`, `Test/src/TestLibrary.Codeunit.al` (add `CreateLease`)
+- Create: `tasks/HX-002/{task.yml,prompt.md}`, `overlay/Leasing/src/LeaseMgt.Codeunit.al`, `correct/Leasing/src/LeaseMgt.Codeunit.al`, `mutants/<m>/...`, `reference-tests/Test/src/LeaseScheduleTests.Codeunit.al`, `naive/{drift-repro-only,near-complete}/Test/src/*.al`
 
 **Interfaces:**
-- Produces: table 70300 `"CGR Lease Contract"` (No. Code[20], Vehicle No. Code[20] with no TableRelation (Leasing cannot see Fleet), Customer Name Text[100], Start Date, Months Integer, Base Rate Decimal); table 70301 `"CGR Lease Schedule Line"` (PK Contract No., Line No.; Due Date, Amount Decimal, Invoiced Boolean); `"CGR Lease Mgt"`: `MonthlyRate(BaseRate; Months): Decimal` (unchanged), `CreateContract(VehicleNo: Code[20]; CustomerName: Text[100]; StartDate: Date; Months: Integer; BaseRate: Decimal): Code[20]`, `CreateSchedule(ContractNo: Code[20])`, `InvoiceLine(ContractNo: Code[20]; LineNo: Integer)`. Core `"CGR Lease Math"` internal: `RateFactor`, `LeaseTotal(BaseRate; Months): Decimal`, `SplitInstallments(Total; Count; var Amounts: List of [Decimal])`.
+- Produces: table 70300 `"CGR Lease Contract"` (No. Code[20], Vehicle No. Code[20] without TableRelation, Customer Name Text[100], Start Date, Months Integer, Base Rate Decimal); table 70301 `"CGR Lease Schedule Line"` (PK Contract No., Line No.; Due Date, Amount, Invoiced); `"CGR Lease Mgt"`: `MonthlyRate(BaseRate; Months): Decimal`, `CreateContract(VehicleNo: Code[20]; CustomerName: Text[100]; StartDate: Date; Months: Integer; BaseRate: Decimal): Code[20]`, `CreateSchedule(ContractNo: Code[20])`, `InvoiceLine(ContractNo: Code[20]; LineNo: Integer)`. Core `"CGR Lease Math"` internal: `RateFactor`, `LeaseTotal(BaseRate; Months): Decimal`, `SplitInstallments(Total; Count; var Amounts: List of [Decimal])`.
 
 - [ ] **Step 1: Core internal math** (`Core/src/LeaseMath.Codeunit.al`):
 ```al
@@ -2015,7 +2550,7 @@ codeunit 70002 "CGR Lease Math"
 }
 ```
 
-- [ ] **Step 2: Leasing tables and `CGR Lease Mgt`**. `CreateContract` uses `Setup.NextLeaseNo()`; `InvoiceLine` gets the line and sets `Invoiced := true`. The correct `CreateSchedule` (refapp and `correct/`):
+- [ ] **Step 2: Leasing.** `CreateContract` uses `Setup.NextLeaseNo()`; `InvoiceLine` sets `Invoiced := true`. Correct `CreateSchedule` (refapp and `correct/`):
 ```al
     procedure CreateSchedule(ContractNo: Code[20])
     var
@@ -2047,7 +2582,7 @@ codeunit 70002 "CGR Lease Math"
 ```
 with `MonthsErr: Label 'Lease %1 must run for at least one month.'` and `InvoicedErr: Label 'Lease %1 has invoiced schedule lines and cannot be rescheduled.'`.
 
-- [ ] **Step 3: Overlay (mutant 0, the reported drift).** `overlay/Leasing/src/LeaseMgt.Codeunit.al` = the correct file with the loop computing due dates cumulatively:
+- [ ] **Step 3: Overlay (mutant 0, the reported drift).** `overlay/Leasing/src/LeaseMgt.Codeunit.al` = correct file with cumulative due dates:
 ```al
         DueDate := Contract."Start Date";
         for i := 1 to Contract.Months do begin
@@ -2061,14 +2596,17 @@ with `MonthsErr: Label 'Lease %1 must run for at least one month.'` and `Invoice
         end;
 ```
 
-- [ ] **Step 4: Mutants** (each folder holds one whole file, identical to `correct/` or the refapp file except for the change):
+- [ ] **Step 4: Mutants** (one whole file each, identical to `correct/` or the refapp file except the change; production ids unchanged):
 
 | Mutant | File | Change |
 | --- | --- | --- |
-| no-carry | `mutants/no-carry/Core/src/LeaseMath.Codeunit.al` | `SplitInstallments` adds `Installment` for every line (no rounding carry) |
-| first-due-shift | `mutants/first-due-shift/Leasing/src/LeaseMgt.Codeunit.al` | `'<+%1M>'` with `i` instead of `i - 1` |
-| invoiced-rebuilt | `mutants/invoiced-rebuilt/Leasing/src/LeaseMgt.Codeunit.al` | no invoiced check; `DeleteAll` removes invoiced lines too |
-| flat-factor | `mutants/flat-factor/Core/src/LeaseMath.Codeunit.al` | `RateFactor` returns `1 + (Months div 100)` |
+| no-carry | `Core/src/LeaseMath.Codeunit.al` | `SplitInstallments` adds `Installment` for every line |
+| first-due-shift | `Leasing/src/LeaseMgt.Codeunit.al` | `'<+%1M>'` with `i` instead of `i - 1` |
+| invoiced-rebuilt | `Leasing/src/LeaseMgt.Codeunit.al` | no invoiced check; `DeleteAll` removes invoiced lines too |
+| flat-factor | `Core/src/LeaseMath.Codeunit.al` | `RateFactor` returns `1 + (Months div 100)` |
+| no-op-reschedule | `Leasing/src/LeaseMgt.Codeunit.al` | `if not Line.IsEmpty() then exit;` before the invoiced check (unfiltered) |
+| line-numbering | `Leasing/src/LeaseMgt.Codeunit.al` | `Line."Line No." := i * 1000` |
+| partial-reschedule | `Leasing/src/LeaseMgt.Codeunit.al` | uninvoiced lines deleted before the invoiced check. **Only if M4-16 P1 shows the rows stay deleted after `asserterror`;** otherwise it is equivalent and not added. |
 
 - [ ] **Step 5: task.yml and prompt**
 
@@ -2085,10 +2623,11 @@ scorers: [build, pass_to_pass, mutant_kill]
 pass_to_pass:
   - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
   - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, ReturnWithoutDamageReleasesVehicle] }
-mutants: [no-carry, first-due-shift, invoiced-rebuilt, flat-factor]
+mutants: [no-carry, first-due-shift, invoiced-rebuilt, flat-factor, no-op-reschedule, line-numbering]
 contamination: null
 limits: { timeout_min: 30 }
 ```
+(append `partial-reschedule` to `mutants` per P1.)
 
 `prompt.md`:
 ```markdown
@@ -2103,41 +2642,43 @@ How a lease schedule must behave (schedules are created with `CGR Lease Mgt`, Cr
 - One schedule line per month of the lease, line numbers 10000, 20000, 30000 and so on.
 - The first installment is due on the lease start date; installment n is due n-1 months after the start date.
 - The lease total is base rate x months x rate factor, rounded to 0.01, where the rate factor is 1 + months/100. Every installment is the total divided by the number of months, rounded to 0.01, except the last one, which takes the remainder so that the installments add up exactly to the total.
-- Creating the schedule again replaces the existing lines.
-- A lease with an invoiced schedule line cannot be rescheduled: the attempt fails and the schedule stays as it was.
+- Creating the schedule again replaces the existing lines with a schedule for the lease as it is now.
+- A lease with an invoiced schedule line cannot be rescheduled: the attempt fails and the schedule stays exactly as it was.
 ```
 
-- [ ] **Step 6: Reference tests** (`reference-tests/Test/src/LeaseScheduleTests.Codeunit.al`, codeunit 80100 "CGR Lease Schedule Tests"; each procedure creates its own lease through `CreateContract`):
+- [ ] **Step 6: Reference tests** (`reference-tests/Test/src/LeaseScheduleTests.Codeunit.al`, codeunit 80100 "CGR Lease Schedule Tests"; each procedure creates its own lease):
 
 | Procedure | Arrange | Assert | Kills |
 | --- | --- | --- | --- |
-| DueDatesFollowStartDate | start 2027-01-31, 12 months, base 10.07 | line 10000 due 2027-01-31, 20000 2027-02-28, 30000 2027-03-31, 120000 2027-12-31 | m0, first-due-shift |
-| OneLinePerMonthNumbered | same lease | 12 lines; line numbers 10000..120000 step 10000 | first-due-shift not required |
-| InstallmentsCarryRoundingToLastLine | same lease | lines 10000-110000 each 11.28; line 120000 11.26; sum 135.34 | no-carry, flat-factor |
-| RescheduleReplacesLines | same lease, CreateSchedule twice | 12 lines, same amounts | none (spec coverage) |
-| InvoicedLeaseCannotBeRescheduled | same lease, InvoiceLine(10000) | `asserterror` CreateSchedule; still 12 lines; line 10000 still Invoiced; amounts unchanged | invoiced-rebuilt |
+| DueDatesFollowStartDate | start 2027-01-31, 12 months, base 10.07 | due dates 01-31, 02-28, 03-31, 04-30 ... 12-31 (all twelve) | m0, first-due-shift |
+| LeapYearDueDates | start 2028-01-31, 3 months, base 100 | 2028-01-31, 2028-02-29, 2028-03-31 | m0, first-due-shift |
+| OneLinePerMonthNumbered | start 2027-01-31, 12 months, base 10.07 | 12 lines, numbers 10000..120000 step 10000 | line-numbering |
+| SingleMonthLease | start 2027-02-28, 1 month, base 100 | one line 10000, due 2027-02-28, amount 101.00 | flat-factor |
+| InstallmentsCarryRoundingToLastLine | start 2027-01-31, 12 months, base 10.07 | lines 1-11 = 11.28 each; line 12 = 11.26; sum 135.34 | no-carry, flat-factor |
+| RescheduleReplacesLines | 12 months base 10.07, schedule; set Months 6, Base Rate 20, `Modify`; schedule again | 6 lines (10000..60000), each 21.20, sum 127.20; no line above 60000 | no-op-reschedule |
+| InvoicedLeaseCannotBeRescheduled | 12 months base 10.07, schedule, InvoiceLine(10000); snapshot all lines (No., Due Date, Amount, Invoiced); set Months 6, `Modify` | `asserterror` CreateSchedule; the 12 lines equal the snapshot field by field | invoiced-rebuilt, partial-reschedule |
 
-Values: 10.07 x 1.12 x 12 = 135.3408, total 135.34; 135.34 / 12 = 11.2783, installment 11.28; 11 x 11.28 = 124.08; last 11.26.
+Values: 10.07 x 1.12 x 12 = 135.3408, total 135.34; 135.34 / 12 = 11.2783, installment 11.28; 11 x 11.28 = 124.08; last 11.26. 20 x 1.06 x 6 = 127.20, installments 21.20. 100 x 1.01 x 1 = 101.00.
 
-- [ ] **Step 7: Naive test suites** (under `naive/<x>/Test/src/`, codeunit 80101, pass on `correct/`, leave mutants alive):
-  - `drift-repro-only`: one procedure asserting the 31 January lease's line 30000 is due 2027-03-31. Kills m0 and first-due-shift; no-carry, invoiced-rebuilt, flat-factor survive.
-  - `totals-only`: one procedure asserting 12 lines exist and every amount is positive. Kills nothing but proves the gate detects weak suites.
+- [ ] **Step 7: Naive suites** (codeunit 80101 under `naive/<x>/Test/src/`; each passes on `correct/`, runs completely on every target, leaves a mutant alive):
+  - `drift-repro-only`: DueDatesFollowStartDate only. Survivors: no-carry, invoiced-rebuilt, flat-factor, no-op-reschedule, line-numbering.
+  - `near-complete`: every reference procedure except RescheduleReplacesLines and InvoicedLeaseCannotBeRescheduled. Survivors: invoiced-rebuilt, no-op-reschedule (and partial-reschedule).
 
-- [ ] **Step 8: Visible tests.** `LeasingTests` 80030 keeps `LeaseRateUsesCoreInternal` and adds nothing about schedules (the task is to write them). `TestLibrary` gets `CreateLease(VehicleNo; StartDate; Months; BaseRate): Code[20]`.
+- [ ] **Step 8: Visible tests.** `LeasingTests` 80030 keeps `LeaseRateUsesCoreInternal` only. `TestLibrary` gets `CreateLease(VehicleNo; StartDate; Months; BaseRate): Code[20]`.
 
-- [ ] **Step 9: Host compile, audit, check, commit, request gate.** Compile variants `baseline`, `tests:reference-tests@correct`, `tests:reference-tests@m0`, each `tests:reference-tests@<mutant>`, each `tests:naive/<x>@correct`. Auditor prompt as in M4-02 Step 7 with `reference-tests/` as the audited test code and the table of Step 6 as the normative rows; output `H:\Temp3\harness-spike\M4\HX-002\audit-*.md`. Then `check` HX-001 and HX-002 (slice B must not flag drift on HX-001), commit `feat(harness-tasks): refapp v1 slice B and HX-002 lease schedule tests`, and request `gate` for M4-05.
+- [ ] **Step 9: Host compile, audit, check, commit, request gate.** Compile `baseline`, `tests:reference-tests@correct`, `tests:reference-tests@m0`, each `tests:reference-tests@<mutant>`, each `tests:naive/<x>@correct`. Audit with `reference-tests/` as the audited tests and Step 6 as the normative table; the auditor also checks every row of the "Kills" column. `check` HX-001 and HX-002, commit `feat(harness-tasks): refapp v1 slice B and HX-002 lease schedule tests`, request `gate ... HX-002 --rev <sha>` for M4-05.
 
-**Acceptance:** `gate-task.ts check harness-tasks/tasks/HX-001 harness-tasks/tasks/HX-002` prints `[OK]` for both; last `audit-*.md` line `VERDICT: clean`; `reference-tests/` contains the five procedures of Step 6.
+**Acceptance:** `check` `[OK]` for HX-001 and HX-002; latest audit `TASK TREE` matches and `VERDICT: clean`; `reference-tests/` has the seven procedures of Step 6; `mutants/` folders match `task.yml`.
 
 ---
 
 ### Task M4-05: gate job HX-002
 
-**Lane:** ops. **Deps:** M4-01, M4-04. **Target:** 10-02.
+**Lane:** ops. **Deps:** M4-01c, M4-04. **Target:** 10-02.
 
-Same procedure as M4-03 Steps 1, 2, 4, 5 with `harness-tasks/tasks/HX-002`. Expected 21 runs: baseline 1, reference tests on correct x3, reference tests on m0 and the four mutants (5), and each of the two naive suites on correct, m0 and the four mutants (2 x 6). Tag on acceptance: `refapp-v1-rc2`.
+M4-03 Steps 1, 2, 4, 5, 6 with HX-002. Plan: baseline 1, reference tests on correct x3, reference tests on m0 and each named mutant, each naive suite on correct, m0 and each mutant (with six mutants: 1 + 3 + 7 + 2 x 8 = 27 runs). Tag `refapp-v1-rc2`.
 
-**Acceptance:** `jq -e '.promoted == true and .commit == "<M4-04 sha>" and (.runs | length) == 21' H:\Temp3\harness-spike\M4\HX-002\gate-<stamp>.json` exits 0.
+**Acceptance:** the common gate acceptance line (M4-03).
 
 ---
 
@@ -2145,18 +2686,18 @@ Same procedure as M4-03 Steps 1, 2, 4, 5 with `harness-tasks/tasks/HX-002`. Expe
 
 **Lane:** content. **Deps:** M4-04. **Target:** 10-02 to 10-03.
 
-Spec 1b section 3 (Rental -> Fleet: IsHandled business events plus one legacy direct call; Fleet -> Core: interface plus extensible enum), in-app style "event subscriber instance modes" (the oracle binds a manual subscriber).
+Spec 1b section 3 (Rental -> Fleet IsHandled plus legacy direct call; Fleet -> Core interface plus extensible enum), in-app style "event subscriber instance modes" (manual binding in the oracle).
 
 **Files:**
 - Modify: `Fleet/src/FleetMgt.Codeunit.al` (`NextServiceKm` counts from `"Last Service Km"`)
 - Modify: `Core/src/Setup.Table.al` (field 4 `"Suspend Rentals"` Boolean)
-- Create: `Rental/src/RentalFleetSubscribers.Codeunit.al` (codeunit 70201: subscribes to Fleet `OnBeforeIsAvailable`; when Setup `"Suspend Rentals"` is true sets `Result := false; IsHandled := true`, otherwise does nothing)
-- Modify: `Rental/src/RentalMgt.Codeunit.al` (add legacy `SwapVehicle(ContractNo: Code[20]; NewVehicleNo: Code[20])`: contract must be Checked Out; reads the new `Vehicle."Checked Out"` directly and errors `NotAvailableErr` when true or Blocked; sets old vehicle Checked Out false and new vehicle Checked Out true by direct `Modify`; sets contract Vehicle No. and Start Km := new vehicle Mileage)
+- Create: `Rental/src/RentalFleetSubscribers.Codeunit.al` (70201: on Fleet `OnBeforeIsAvailable`, when Setup `"Suspend Rentals"` is true sets `Result := false; IsHandled := true`; otherwise nothing)
+- Modify: `Rental/src/RentalMgt.Codeunit.al` (legacy `SwapVehicle(ContractNo: Code[20]; NewVehicleNo: Code[20])`: contract must be Checked Out; reads the new vehicle directly and errors `NotAvailableErr` when Checked Out or Blocked; old vehicle Checked Out false and new vehicle Checked Out true by direct `Modify`; contract Vehicle No. and Start Km := new vehicle Mileage)
 - Modify: `Test/src/FleetTests.Codeunit.al` (`HeavyDutyStrategyFromFleetExtension` sets Last Service Km 1000, expects 6000), `RentalTests.Codeunit.al` (add `SwapMovesContractToFreeVehicle`, `SuspendRentalsBlocksCheckout`)
-- Create: `tasks/HX-003/{task.yml,prompt.md}`, `correct/...`, `oracle/app.json` (id suffix 3, idRanges 85200-85299, deps Core, Fleet, Rental, Library Assert), `oracle/src/ServiceOracle.Codeunit.al` (85200), `oracle/src/AvailabilityOverride.Codeunit.al` (85201, `EventSubscriberInstance = Manual`, subscribes `OnBeforeIsAvailable`, sets `Result := true; IsHandled := true`), `oracle/src/ShortInterval.Codeunit.al` (85202 implements `"CGR Maintenance Strategy"`, `exit(CurrentKm + 1000)`), `oracle/src/Strategies.EnumExt.al` (enumextension 85200 value 85200 `"HX3 Short"`), `naive/{checkout-only,after-ishandled,hardcoded-interval}/...`
-- No overlay (feature starts from the plain refapp).
+- Create: `tasks/HX-003/{task.yml,prompt.md}`, `correct/...`, `oracle/app.json` (suffix 3, 85200-85299, deps Core, Fleet, Rental, Library Assert), `oracle/src/ServiceOracle.Codeunit.al` (85200), `AvailabilityOverride.Codeunit.al` (85201, `EventSubscriberInstance = Manual`, sets `Result := true; IsHandled := true`), `ShortInterval.Codeunit.al` (85202 implements `"CGR Maintenance Strategy"`, `exit(CurrentKm + 1000)`), `Strategies.EnumExt.al` (enumextension 85200, value 85200 `"HX3 Short"`), `naive/{checkout-only,after-ishandled,hardcoded-interval}/...`
+- No overlay.
 
-- [ ] **Step 1: Slice C refapp changes** as listed, then host compile `baseline` and run `check` on HX-001 and HX-002 (drift must stay clean; `FleetMgt` is not replaced by either).
+- [ ] **Step 1: Slice C** as listed; host compile `baseline`; `check` HX-001 and HX-002 (drift must stay clean).
 
 - [ ] **Step 2: prompt.md**
 ```markdown
@@ -2167,65 +2708,70 @@ The workshop wants vehicles that have reached their service interval kept away f
 A vehicle is due for service when its mileage has reached the next service km that its maintenance strategy gives for the mileage at its last service ("Last Service Km"). Default vehicles go 15,000 km between services and Heavy Duty vehicles 5,000 km; other apps can add strategies.
 
 - Checking out a rental contract for a vehicle that is due for service fails with the error "Vehicle <No.> is due for service." and leaves the contract and the vehicle unchanged.
-- Swapping a checked-out contract to a vehicle that is due for service fails with the same error and leaves the contract on its current vehicle.
+- Swapping a checked-out contract to a vehicle that is due for service fails with the same error and leaves the contract, its current vehicle and the other vehicle unchanged.
 - The fleet availability check (`CGR Fleet Mgt`, IsAvailable) reports a vehicle that is due for service as not available.
-- This is a safety rule: extensions that customize vehicle availability cannot make a vehicle that is due for service available. For vehicles that are not due, their customizations keep working as today.
+- This is a safety rule: extensions that customize vehicle availability cannot make a vehicle that is due for service available, for checkouts or swaps. For vehicles that are not due, their customizations keep working as today.
 ```
 
-- [ ] **Step 3: task.yml**: `kind: feature`, `touches: [Fleet, Rental, Core]`, `coupling: [ishandled, interface]`, `refapp_version: refapp-v1-rc3`, `pass_to_pass` = 80010 {CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, SwapMovesContractToFreeVehicle, SuspendRentalsBlocksCheckout} and 80020 {HeavyDutyStrategyFromFleetExtension, BlockedVehicleNotAvailable}, `fail_to_pass.depends_on: [Core, Fleet, Rental]`, tests codeunit 85200 with the procedures below, `limits: { timeout_min: 30 }`.
+- [ ] **Step 3: task.yml**: `kind: feature`, `touches: [Fleet, Rental, Core]`, `coupling: [ishandled, interface]`, `refapp_version: refapp-v1-rc3`, p2p 80010 {CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, SwapMovesContractToFreeVehicle, SuspendRentalsBlocksCheckout}, 80020 {HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle}; f2p codeunit 85200 with the procedures below; `limits: { timeout_min: 30 }`.
 
-- [ ] **Step 4: Oracle (normative)**, codeunit 85200 "HX003 Service Oracle", one vehicle key per procedure, every vehicle created with Blocked false, Checked Out false:
+- [ ] **Step 4: Oracle (normative)**, codeunit 85200 "HX003 Service Oracle". Every procedure sets Setup `"Suspend Rentals"` false and creates its own vehicles (Blocked false, Checked Out false). "Unchanged" means: contract Status, Vehicle No. and Start Km as before the call; vehicle Checked Out, Mileage and Blocked as before.
 
 | Procedure | Arrange | Assert |
 | --- | --- | --- |
-| DefaultVehicleDueIsRefused | HX3-A Default, Last Service 10000, Mileage 25000 | `asserterror` CheckOut; `ExpectedError('Vehicle HX3-A is due for service.')`; contract Open; vehicle Checked Out false |
-| DefaultVehicleBelowIntervalRents | HX3-B Default, 10000 / 24999 | CheckOut succeeds; contract Checked Out |
-| HeavyDutyDueAtFiveThousand | HX3-C Heavy Duty, 10000 / 15000 | refused, message for HX3-C |
+| DefaultVehicleDueIsRefused | HX3-A Default, Last Service 10000, Mileage 25000 | `asserterror` CheckOut; `ExpectedError('Vehicle HX3-A is due for service.')`; contract and vehicle unchanged |
+| DefaultVehicleBelowIntervalRents | HX3-B Default, 10000 / 24999 | CheckOut succeeds; contract Checked Out; Start Km 24999 |
+| HeavyDutyDueAtFiveThousand | HX3-C Heavy Duty, 10000 / 15000 | refused with HX3-C message; unchanged |
 | HeavyDutyBelowIntervalRents | HX3-D Heavy Duty, 10000 / 14999 | CheckOut succeeds |
-| ExtensionStrategyIsRespected | HX3-E "HX3 Short", 10000 / 11000; HX3-F "HX3 Short", 10000 / 10999 | E refused with its message; F checks out |
-| SwapToDueVehicleIsRefused | HX3-G Default not due, checked out on contract; HX3-H Default 0 / 15000 | `asserterror` SwapVehicle(contract, HX3-H); message for HX3-H; contract Vehicle No. HX3-G; G Checked Out true; H Checked Out false |
+| ExtensionStrategyIsRespected | HX3-E "HX3 Short" 10000 / 11000; HX3-F "HX3 Short" 10000 / 10999 | E refused with its message; F checks out |
+| SwapToDueVehicleIsRefused | HX3-G Default not due, checked out; HX3-H Default 0 / 15000 | `asserterror` SwapVehicle(contract, HX3-H); H message; contract unchanged (Vehicle No. HX3-G); G and H unchanged |
 | AvailabilityReportsDueVehicle | HX3-I due, HX3-J not due | `IsAvailable(HX3-I)` false; `IsAvailable(HX3-J)` true |
-| OverrideCannotReleaseDueVehicle | `BindSubscription(Override)`; HX3-K due | `IsAvailable` false; CheckOut refused with the due message; `UnbindSubscription` |
-| OverrideStillAppliesToVehiclesNotDue | bind; HX3-L not due, Blocked true | `IsAvailable` true; CheckOut succeeds; unbind |
+| OverrideCannotReleaseDueVehicle | bind override; HX3-K due | `IsAvailable` false; CheckOut refused with the due message; unchanged; unbind |
+| SwapUnderOverrideRefused | bind override; HX3-M not due checked out; HX3-N due | `asserterror` SwapVehicle(contract, HX3-N); N message; contract and both vehicles unchanged; unbind |
+| OverrideStillAppliesToVehiclesNotDue | bind override; HX3-L not due, Blocked true | `IsAvailable` true; CheckOut succeeds; unbind |
 
-- [ ] **Step 5: correct/** (one valid solution; the oracle accepts any): `FleetMgt` gets `IsDueForService(VehicleNo): Boolean` (`Mileage >= NextServiceKm(VehicleNo)`), `IsAvailable` returns false for a due vehicle before raising `OnBeforeIsAvailable`, and `RentalMgt.CheckOut` and `SwapVehicle` raise `DueForServiceErr: Label 'Vehicle %1 is due for service.'` before the availability check.
+- [ ] **Step 5: correct/**: `FleetMgt.IsDueForService(VehicleNo): Boolean` (`Mileage >= NextServiceKm(VehicleNo)`); `IsAvailable` returns false for a due vehicle before raising `OnBeforeIsAvailable`; `RentalMgt.CheckOut` and `SwapVehicle` raise `DueForServiceErr: Label 'Vehicle %1 is due for service.'` before any other check or change. Any solution meeting the oracle is valid.
 
-- [ ] **Step 6: naive/**
-  - `checkout-only`: only `CheckOut` checks due (correct message, strategy used); `SwapVehicle` and `IsAvailable` unchanged. Loses SwapToDueVehicleIsRefused, AvailabilityReportsDueVehicle.
-  - `after-ishandled`: due check inside `IsAvailable` after the `IsHandled` exit; `CheckOut` and `SwapVehicle` call `IsAvailable` and raise the due message when `IsDueForService`. Loses the two override rows.
-  - `hardcoded-interval`: correct structure, due = `Mileage >= "Last Service Km" + 15000`. Loses HeavyDutyDueAtFiveThousand and ExtensionStrategyIsRespected.
+- [ ] **Step 6: naive/** and kill mapping (lost by assertion; a lost `asserterror` is an assertion class per M4-01a):
 
-- [ ] **Step 7: Host compile all variants, audit (normative table Step 4), check HX-001..HX-003, commit `feat(harness-tasks): refapp v1 slice C and HX-003 service-due vehicles`, request gate M4-07.**
+| Naive | Change | Rows lost |
+| --- | --- | --- |
+| checkout-only | only `CheckOut` checks due (message and strategy right); `SwapVehicle`, `IsAvailable` unchanged | SwapToDueVehicleIsRefused, AvailabilityReportsDueVehicle, OverrideCannotReleaseDueVehicle (IsAvailable), SwapUnderOverrideRefused |
+| after-ishandled | due check inside `IsAvailable` after the `IsHandled` exit; `CheckOut`/`SwapVehicle` call `IsAvailable` and raise the due message when `IsDueForService` | OverrideCannotReleaseDueVehicle, SwapUnderOverrideRefused |
+| hardcoded-interval | correct structure, due = `Mileage >= "Last Service Km" + 15000` | HeavyDutyDueAtFiveThousand, ExtensionStrategyIsRespected |
 
-**Acceptance:** `check` prints `[OK]` for HX-001, HX-002, HX-003; last `audit-*.md` `VERDICT: clean`; oracle has the nine procedures of Step 4.
+- [ ] **Step 7: Host compile all variants, audit (Step 4 table, Step 6 mapping), `check` HX-001..HX-003, commit `feat(harness-tasks): refapp v1 slice C and HX-003 service-due vehicles`, request gate M4-07.**
+
+**Acceptance:** `check` `[OK]` for HX-001..HX-003; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the ten procedures of Step 4.
 
 ---
 
 ### Task M4-07: gate job HX-003
 
-**Lane:** ops. **Deps:** M4-01, M4-06. **Target:** 10-03.
+**Lane:** ops. **Deps:** M4-01c, M4-06. **Target:** 10-03.
 
-M4-03 Steps 1, 2, 4, 5 with HX-003. Expected 10 runs (baseline, correct x3, 3 naive x2 = 1 + 3 + 6). Baseline: the oracle does not compile against the plain refapp or its due rows fail; either is accepted. Tag `refapp-v1-rc3`.
+M4-03 Steps 1, 2, 4, 5, 6 with HX-003; 10 runs. The baseline oracle fails to compile or loses its due rows; if it fails to compile, quote `.runs[0].summary.oracleCodes` in the note (evidence for `MISSING_FEATURE_CODES`; an unexpected code goes to the orchestrator, not into the list). Tag `refapp-v1-rc3`.
 
-**Acceptance:** `jq -e '.promoted == true and .commit == "<M4-06 sha>" and (.runs | length) == 10' <report>` exits 0.
+**Acceptance:** the common gate acceptance line.
 
 ---
 
 ### Task M4-08: refapp slice D and HX-004 (feature: revenue per vehicle)
 
-**Lane:** content. **Deps:** M4-06. **Target:** 10-04 to 10-05.
+**Lane:** content. **Deps:** M4-06, M4-16 (P4). **Target:** 10-04 to 10-05.
 
-Spec 1b section 3 (Reporting -> Rental/Leasing/Fleet: table extensions, cross-app FlowFields) and in-app style "posting codeunit chains".
+Spec 1b section 3 (Reporting -> Rental/Leasing/Fleet: table extensions, cross-app FlowFields), in-app style "posting codeunit chains".
 
 **Files:**
 - Modify: `Core/src/Setup.Table.al` (fields 5 `"Weekend Surcharge %"` Decimal, 6 `"Km Allowance per Day"` Integer, 7 `"Excess Km Rate"` Decimal)
-- Create: `Rental/src/PricingMethod.Enum.al` (enum 70201, `Extensible = false`, values `Daily` 0, `"Weekend Package"` 1), field 10 `"Pricing Method"` on `"CGR Rental Contract"`
-- Create: `Rental/src/RentalPricing.Codeunit.al` (codeunit 70203), `RentalPost.Codeunit.al` (70204, `TableNo = "CGR Rental Contract"`), `RentalPostLedger.Codeunit.al` (70205), `RentalLedgerEntry.Table.al` (table 70205: Entry No. AutoIncrement, Contract No., Vehicle No., Posting Date, Amount, Km Driven)
-- Modify: `RentalMgt.Codeunit.al` (add `Post(ContractNo: Code[20])`: `Contract.Get`; `Codeunit.Run(Codeunit::"CGR Rental-Post", Contract)`)
+- Create: `Rental/src/PricingMethod.Enum.al` (enum 70201, `Extensible = false`, `Daily` 0, `"Weekend Package"` 1); field 10 `"Pricing Method"` on `"CGR Rental Contract"`
+- Create: `Rental/src/RentalPricing.Codeunit.al` (70203), `RentalPost.Codeunit.al` (70204, `TableNo = "CGR Rental Contract"`), `RentalPostLedger.Codeunit.al` (70205), `RentalLedgerEntry.Table.al` (table 70205: Entry No. AutoIncrement, Contract No., Vehicle No., Posting Date, Amount, Km Driven)
+- Modify: `Rental/src/RentalMgt.Codeunit.al` (add `Post(ContractNo: Code[20])`: `Contract.Get`; `Codeunit.Run(Codeunit::"CGR Rental-Post", Contract)`)
 - Modify: `Test/src/RentalTests.Codeunit.al` (add `PostCreatesLedgerEntry`, `DailyPriceWithWeekendSurcharge`, `ExcessKmCharged`)
+- Modify (re-derive, Step 9): `tasks/HX-003/correct/Rental/src/RentalMgt.Codeunit.al`, `tasks/HX-003/naive/*/Rental/src/RentalMgt.Codeunit.al`, `tasks/HX-003/task.yml`
 - Create: `tasks/HX-004/{task.yml,prompt.md}`, `correct/{Leasing,Reporting}/...`, `oracle/` (suffix 4, 85300-85399, deps Core, Fleet, Rental, Leasing, Reporting, Library Assert), `naive/{no-follow,all-lines,moves-invoiced}/...`
 
-- [ ] **Step 1: Pricing (the hard-wired base HX-005 refactors).** `"CGR Rental Pricing".CalcAmount(Contract: Record "CGR Rental Contract"): Decimal`:
+- [ ] **Step 1: Pricing** (the hard-wired base HX-005 refactors), `"CGR Rental Pricing".CalcAmount(Contract: Record "CGR Rental Contract"): Decimal`:
 ```al
     procedure CalcAmount(Contract: Record "CGR Rental Contract"): Decimal
     var
@@ -2259,7 +2805,7 @@ Spec 1b section 3 (Reporting -> Rental/Leasing/Fleet: table extensions, cross-ap
     end;
 ```
 
-- [ ] **Step 2: Posting chain.** `"CGR Rental-Post"` `OnRun`: status must be Returned (`NotReturnedErr`), `OnBeforePostRentalContract(Rec)`, `Amount := Pricing.CalcAmount(Rec)`, `"CGR Rental-Post Ledger".InsertEntry(Rec, Amount)` (Posting Date := Contract."End Date", Km Driven := Return Km - Start Km), `Rec.Status := Posted; Rec.Modify(true)`, `OnAfterPostRentalContract(Rec, Amount)`.
+- [ ] **Step 2: Posting chain.** `"CGR Rental-Post"` `OnRun`: status must be Returned (`NotReturnedErr`); `OnBeforePostRentalContract(Rec)`; `Amount := Pricing.CalcAmount(Rec)`; `"CGR Rental-Post Ledger".InsertEntry(Rec, Amount)` (Posting Date := End Date, Km Driven := Return Km - Start Km); `Rec.Status := Posted; Rec.Modify(true)`; `OnAfterPostRentalContract(Rec, Amount)`.
 
 - [ ] **Step 3: prompt.md**
 ```markdown
@@ -2271,53 +2817,57 @@ Add three fields to the vehicle, in the Reporting app:
 
 - "Date Filter": a date filter.
 - "Rental Revenue" (Decimal): the total amount of the rental ledger entries of the vehicle, limited to posting dates within the date filter when one is set.
-- "Lease Revenue" (Decimal): the total amount of the invoiced lease schedule lines for the vehicle, limited to due dates within the date filter. Lines that are not invoiced do not count.
+- "Lease Revenue" (Decimal): the total amount of the invoiced lease schedule lines for the vehicle, limited to due dates within the date filter when one is set. Lines that are not invoiced do not count.
 
-Both revenue fields are calculated fields (FlowFields), so they can be used on lists and in queries.
+Both revenue fields are calculated fields (FlowFields), so they can be shown on lists.
 
 When the vehicle of a lease contract is changed (validating its "Vehicle No."), the schedule lines that are not invoiced yet move with the lease to the new vehicle; lines already invoiced stay with the vehicle they were invoiced on.
 ```
 
-- [ ] **Step 4: task.yml**: `kind: feature`, `touches: [Reporting, Leasing, Rental, Fleet]`, `coupling: [queries, internal]`, `refapp_version: refapp-v1-rc4`, p2p = 80010 {PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged}, 80030 {LeaseRateUsesCoreInternal}; f2p codeunit 85300, procedures below.
+- [ ] **Step 4: task.yml**: `kind: feature`, `touches: [Reporting, Leasing, Rental, Fleet]`, `coupling: [queries, internal]`, `refapp_version: refapp-v1-rc4`, p2p 80010 {PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged}, 80030 {LeaseRateUsesCoreInternal}; f2p codeunit 85300.
 
-- [ ] **Step 5: Oracle (normative)**, codeunit 85300 "HX004 Revenue Oracle". Every procedure first sets Setup `"Weekend Surcharge %"` 0, `"Km Allowance per Day"` 1000, `"Excess Km Rate"` 0 and uses its own vehicles (daily rate 50). Rentals are created, checked out, returned with no extra km and posted through `CGR Rental Mgt`.
+- [ ] **Step 5: Oracle (normative)**, codeunit 85300 "HX004 Revenue Oracle". Every procedure sets Setup `"Weekend Surcharge %"` 0, `"Km Allowance per Day"` 1000, `"Excess Km Rate"` 0, and uses its own vehicles (daily rate 50). Rentals are created, checked out, returned with no extra km and posted through `CGR Rental Mgt`. Leases through `CGR Lease Mgt`.
 
 | Procedure | Arrange | Assert |
 | --- | --- | --- |
-| RentalRevenueSumsPostedContracts | HX4-A: posted Daily 2027-03-01..03 (150.00) and 2027-03-08..09 (100.00); HX4-B: posted 2027-03-01..04 (200.00) | A `CalcFields("Rental Revenue")` = 250.00; B = 200.00 |
-| RentalRevenueRespectsDateFilter | HX4-C: same two contracts as A | `SetRange("Date Filter", 20270301D, 20270305D)`: 150.00 |
-| RentalRevenueIgnoresUnposted | HX4-D: one posted (150.00), one returned not posted | 150.00 |
-| LeaseRevenueCountsInvoicedLinesOnly | HX4-E: lease start 2027-03-01, 3 months, base 100 (lines 103.00 each), invoice 10000 and 20000 | `Lease Revenue` = 206.00 |
-| LeaseRevenueRespectsDateFilter | HX4-F: same lease, all three invoiced | filter 2027-03-01..2027-03-31: 103.00; no filter: 309.00 |
-| UninvoicedLinesFollowVehicleChange | HX4-G lease as E, invoice 10000; `Validate("Vehicle No.", 'HX4-H')`, `Modify(true)`; invoice 20000 | G = 103.00 and H = 103.00; then invoice 30000: G still 103.00, H = 206.00 |
-| RevenueSourcesStaySeparate | HX4-I: one posted rental (150.00) and one lease with line 10000 invoiced (103.00) | Rental Revenue 150.00; Lease Revenue 103.00 |
+| RentalRevenueSumsPostedContracts | HX4-A: posted Daily 2027-03-01..03 (150.00) and 2027-03-08..09 (100.00); HX4-B: posted 2027-03-01..04 (200.00) | A = 250.00; B = 200.00 |
+| RentalRevenueDateFilterInclusive | HX4-C as A (posting dates 03-03 and 03-09) | filter 03-03..03-09: 250.00; 03-04..03-08: 0; 03-03..03-03: 150.00 |
+| RentalRevenueIgnoresUnposted | HX4-D: one posted (150.00), one returned, not posted | 150.00 |
+| LeaseRevenueCountsInvoicedLinesOnly | HX4-E: lease 2027-03-01, 3 months, base 100 (103.00 each), invoice 10000 and 20000 | 206.00 |
+| LeaseRevenueDateFilterInclusive | HX4-F: same lease, all three invoiced | filter 04-01..04-01: 103.00; 03-01..05-01: 309.00; 03-02..03-31: 0 |
+| UninvoicedLinesFollowVehicleChange | HX4-G lease as E, invoice 10000; `Validate("Vehicle No.", 'HX4-H')`, `Modify(true)` | right after: G = 103.00, H = 0; invoice 20000: G 103.00, H 103.00; invoice 30000: G 103.00, H 206.00 |
+| RepeatedVehicleChangeFollowsLastVehicle | HX4-I lease as E, invoice 10000; change to HX4-J, then to HX4-K; invoice 20000 and 30000 | I = 103.00; J = 0; K = 206.00 |
+| RevenueSourcesStaySeparate | HX4-L: one posted rental (150.00) and one lease, line 10000 invoiced (103.00) | Rental Revenue 150.00; Lease Revenue 103.00 |
 
-Values: 2027-03-01 is a Monday, so the first two contracts have no weekend days; lease total 100 x 1.03 x 3 = 309.00, installments 103.00.
+Values: 2027-03-01 is a Monday; lease total 100 x 1.03 x 3 = 309.00. An implementation that assigns the line's vehicle at invoicing time instead of at validation is observably equivalent for every stated behavior; the oracle asserts revenue, never the private field design (review answer).
 
-- [ ] **Step 6: correct/**: `"Vehicle No."` field on `"CGR Lease Schedule Line"` (Code[20]), set in `CreateSchedule`; `OnValidate` of Lease Contract `"Vehicle No."` modifies uninvoiced lines of the contract; Reporting `tableextension 70500 "CGR Vehicle Revenue" extends "CGR Vehicle"` with `"Date Filter"` (FlowFilter), `"Rental Revenue"` (Sum of ledger Amount where Vehicle No. = No., Posting Date = Date Filter) and `"Lease Revenue"` (Sum of schedule line Amount where Vehicle No. = No., Invoiced = true, Due Date = Date Filter). The Leasing changes live in Leasing, the FlowFields in Reporting.
+- [ ] **Step 6: correct/**: a `"Vehicle No."` field on `"CGR Lease Schedule Line"` set in `CreateSchedule`; `OnValidate` of Lease Contract `"Vehicle No."` moves uninvoiced lines; Reporting `tableextension 70500 "CGR Vehicle Revenue" extends "CGR Vehicle"` with the three fields (`Sum` with `Invoiced = const(true)` and the date filter).
 
-- [ ] **Step 7: naive/**
-  - `no-follow`: line Vehicle No. set in `CreateSchedule`, no `OnValidate`. Loses UninvoicedLinesFollowVehicleChange.
-  - `all-lines`: Lease Revenue without the `Invoiced = const(true)` filter. Loses LeaseRevenueCountsInvoicedLinesOnly.
-  - `moves-invoiced`: `OnValidate` moves every line. Loses UninvoicedLinesFollowVehicleChange (G becomes 0).
+- [ ] **Step 7: naive/** and kill mapping:
 
-- [ ] **Step 8: Host compile all variants, audit (table Step 5).**
+| Naive | Change | Rows lost |
+| --- | --- | --- |
+| no-follow | line Vehicle No. set in `CreateSchedule`, no `OnValidate` | UninvoicedLinesFollowVehicleChange, RepeatedVehicleChangeFollowsLastVehicle |
+| all-lines | Lease Revenue without the Invoiced filter | LeaseRevenueCountsInvoicedLinesOnly, UninvoicedLinesFollowVehicleChange (H after validate) |
+| moves-invoiced | `OnValidate` moves every line | UninvoicedLinesFollowVehicleChange (G becomes 0), RepeatedVehicleChangeFollowsLastVehicle |
 
-- [ ] **Step 9: Re-derive HX-003.** Slice D adds `Post` to `RentalMgt`, which HX-003's `correct/` and all three `naive/` variants replace. Apply the slice D change to those four files (keep each task change as it was), set HX-003 `refapp_version: refapp-v1-rc4`, and host compile HX-003 `correct` and each naive. The HX-003 oracle is not touched.
+- [ ] **Step 8: Host compile all variants, audit (Steps 5, 7).**
 
-- [ ] **Step 10: Check HX-001..HX-004, commit `feat(harness-tasks): refapp v1 slice D and HX-004 revenue per vehicle`, request gate M4-09 for HX-004 and HX-003.**
+- [ ] **Step 9: Re-derive HX-003.** Slice D adds `Post` to `RentalMgt`, which HX-003's `correct/` and three `naive/` replace. Apply the slice D change to those four files (task changes kept), set HX-003 `refapp_version: refapp-v1-rc4`, host compile HX-003 `correct` and each naive. The HX-003 oracle is untouched.
 
-**Acceptance:** `check` `[OK]` for HX-001..HX-004 (no drift problem on HX-003 once its tag resolves); last audit `VERDICT: clean`; oracle has the seven procedures of Step 5; `git diff <rc3 sha> -- harness-tasks/tasks/HX-003/oracle` is empty.
+- [ ] **Step 10: `check` HX-001..HX-004, commit `feat(harness-tasks): refapp v1 slice D and HX-004 revenue per vehicle`, request gate M4-09 for HX-004 and HX-003.**
+
+**Acceptance:** `check` `[OK]` for HX-001..HX-004; latest HX-004 audit `TASK TREE` matches and `VERDICT: clean`; oracle has the eight procedures of Step 5; `git diff <rc3 sha> -- harness-tasks/tasks/HX-003/oracle` is empty.
 
 ---
 
-### Task M4-09: gate job HX-004
+### Task M4-09: gate jobs HX-004 and HX-003
 
-**Lane:** ops. **Deps:** M4-01, M4-08. **Target:** 10-05.
+**Lane:** ops. **Deps:** M4-01c, M4-08. **Target:** 10-05.
 
-M4-03 Steps 1, 2, 4, 5 with HX-004, then again with HX-003 (re-derived in M4-08 Step 9) on the same commit. Expected 10 runs each. Tag `refapp-v1-rc4`.
+M4-03 Steps 1, 2, 4, 5, 6 with HX-004, then with HX-003 on the same commit (10 runs each). Tag `refapp-v1-rc4`.
 
-**Acceptance:** for both HX-004 and HX-003 reports, `jq -e '.promoted == true and .commit == "<M4-08 sha>" and (.runs | length) == 10' <report>` exits 0.
+**Acceptance:** the common gate acceptance line for both reports.
 
 ---
 
@@ -2325,10 +2875,10 @@ M4-03 Steps 1, 2, 4, 5 with HX-004, then again with HX-003 (re-derived in M4-08 
 
 **Lane:** content. **Deps:** M4-08. **Target:** 10-05 to 10-06.
 
-Spec 1b section 3 (interface plus extensible enum implementing it, strategy style) and 1b section 9 (a refactor whose oracle proves the new extension point by extending it from another app). No refapp change: the task starts from slice D's hard-wired `case`.
+Spec 1b section 3 (interface plus extensible enum, strategy style) and 1b section 9. No refapp change: the task starts from slice D's hard-wired `case`. The review expects this task to be the most likely to saturate; the M4-17 pilot runs it first.
 
 **Files:**
-- Create: `tasks/HX-005/{task.yml,prompt.md}`, `correct/Rental/src/{PricingMethod.Enum.al,RentalPriceMethod.Interface.al,DailyPrice.Codeunit.al,WeekendPackagePrice.Codeunit.al,RentalPricing.Codeunit.al}`, `oracle/` (suffix 5, 85400-85499, deps Core, Fleet, Rental, Library Assert; `enumextension 85400 "HX005 Pricing Methods" extends "CGR Pricing Method"` value 85400 `"HX5 Flat Fee"` implemented by codeunit 85401 returning `DailyRate * 1.5`), `naive/{case-kept,excess-in-methods,surcharge-lost}/...`
+- Create: `tasks/HX-005/{task.yml,prompt.md}`, `correct/Rental/src/{PricingMethod.Enum.al,RentalPriceMethod.Interface.al,DailyPrice.Codeunit.al,WeekendPackagePrice.Codeunit.al,RentalPricing.Codeunit.al}`, `oracle/` (suffix 5, 85400-85499, deps Core, Fleet, Rental, Library Assert; `enumextension 85400 "HX005 Pricing Methods" extends "CGR Pricing Method"` value 85400 `"HX5 Flat Fee"` implemented by codeunit 85401 returning `DailyRate * 1.5 * (Contract."End Date" - Contract."Start Date" + 1)`, so the partner price depends on the forwarded contract and rate), `naive/{case-kept,excess-in-methods,surcharge-lost,early-rounding}/...`
 
 - [ ] **Step 1: prompt.md**
 ```markdown
@@ -2338,58 +2888,69 @@ Partners want to ship their own rental pricing methods, for example a flat corpo
 
 Change Rental so that:
 
-- "CGR Pricing Method" can be extended by other apps, and every method provides its price through an interface named "CGR Rental Price Method" with one procedure: `CalcBasePrice(Contract: Record "CGR Rental Contract"; DailyRate: Decimal): Decimal`.
+- "CGR Pricing Method" can be extended by other apps, and every method provides its base price through an interface named "CGR Rental Price Method" with one procedure: `CalcBasePrice(Contract: Record "CGR Rental Contract"; DailyRate: Decimal): Decimal`, where DailyRate is the daily rate of the contract's vehicle.
 - Daily and Weekend Package keep producing exactly the prices they produce today.
 - The excess km charge stays common: it is added on top of the base price of every method, including methods added by other apps.
+- The total is rounded to 0.01 once, after the excess km charge is added.
 - `CGR Rental Pricing`, CalcAmount(Contract) keeps its signature and still returns the full price, and posting keeps using it.
 ```
 
-- [ ] **Step 2: task.yml**: `kind: refactor`, `touches: [Rental]`, `coupling: [interface]`, `refapp_version: refapp-v1-rc5`, p2p 80010 {PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged}, f2p codeunit 85400.
+- [ ] **Step 2: task.yml**: `kind: refactor`, `touches: [Rental]`, `coupling: [interface]`, `refapp_version: refapp-v1-rc5`, p2p 80010 {PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged}; f2p codeunit 85400.
 
-- [ ] **Step 3: Oracle (normative)**, codeunit 85400 "HX005 Pricing Oracle". Each procedure sets Setup explicitly and uses its own vehicle (daily rate 40); contracts are inserted directly with Start/End Date, Start Km, Return Km and Pricing Method, then priced with `CalcAmount`.
+- [ ] **Step 3: Oracle (normative)**, codeunit 85400 "HX005 Pricing Oracle". Each procedure sets Setup explicitly and uses its own vehicle; contracts are inserted directly (Start/End Date, Start Km, Return Km, Pricing Method) and priced with `CalcAmount`, except the posting row.
 
-| Procedure | Setup (surcharge %, allowance/day, excess rate) | Contract | Expected |
-| --- | --- | --- | --- |
-| DailyWeekdaysUnchanged | 25, 1000, 0 | Daily 2027-03-01..03 (Mon-Wed), 0 km | 120.00 |
-| DailyWeekendSurchargeUnchanged | 25, 1000, 0 | Daily 2027-03-05..08 (Fri-Mon), 0 km | 180.00 |
-| WeekendPackageUnchanged | 25, 1000, 0 | Weekend Package 2027-03-05..07, 0 km | 80.00 |
-| ExcessKmOnDaily | 0, 100, 0.5 | Daily 2027-03-01..03, 450 km | 195.00 |
-| ExcessKmOnWeekendPackage | 0, 100, 0.5 | Weekend Package 2027-03-05..07, 400 km | 130.00 |
-| PartnerMethodPriceUsed | 0, 1000, 0 | HX5 Flat Fee 2027-03-01..03, 0 km | 60.00 |
-| PartnerMethodGetsExcessKm | 0, 100, 0.5 | HX5 Flat Fee 2027-03-01..01, 300 km | 160.00 |
-| PostingUsesPartnerMethod | 0, 1000, 0 | HX5 Flat Fee, created, checked out, returned, posted via `CGR Rental Mgt` | one ledger entry, Amount 60.00 |
+| Procedure | Setup (surcharge %, allowance/day, excess rate) | Rate | Contract | Expected |
+| --- | --- | --- | --- | --- |
+| DailyWeekdaysUnchanged | 25, 1000, 0 | 40 | Daily 2027-03-01..03, 0 km | 120.00 |
+| DailyWeekendSurchargeUnchanged | 25, 1000, 0 | 40 | Daily 2027-03-05..08, 0 km | 180.00 |
+| DailyFractionalSurcharge | 12.5, 1000, 0 | 33.33 | Daily 2027-03-05..08, 0 km | 141.65 |
+| WeekendPackageUnchanged | 25, 1000, 0 | 40 | Weekend Package 2027-03-05..07, 0 km | 80.00 |
+| ExcessKmBelowAllowance | 0, 100, 0.5 | 40 | Daily 2027-03-01..03, 299 km | 120.00 |
+| ExcessKmAtAllowance | 0, 100, 0.5 | 40 | same, 300 km | 120.00 |
+| ExcessKmAboveAllowance | 0, 100, 0.5 | 40 | same, 301 km | 120.50 |
+| ExcessKmOnWeekendPackage | 0, 100, 0.5 | 40 | Weekend Package 2027-03-05..07, 400 km | 130.00 |
+| PartnerMethodPriceUsed | 0, 1000, 0 | 40 | HX5 Flat Fee 2027-03-01..03, 0 km | 180.00 |
+| PartnerMethodGetsExcessKm | 0, 100, 0.5 | 40 | HX5 Flat Fee 2027-03-01..01, 300 km | 160.00 |
+| PartnerFractionalRoundedOnce | 0, 100, 0.005 | 33.33 | HX5 Flat Fee 2027-03-01..01, 101 km | 50.00 |
+| PostingUsesPartnerMethod | 0, 1000, 0 | 40 | HX5 Flat Fee 2027-03-01..03, created, checked out, returned, posted via `CGR Rental Mgt` | one ledger entry, Amount 180.00 |
 
-- [ ] **Step 4: naive/**
-  - `case-kept`: enum made extensible with the interface and two implementations, but `CalcAmount` keeps a `case` over the known values with `else` base 0. Loses both partner rows and the posting row.
-  - `excess-in-methods`: excess km moved into the Daily and Weekend Package implementations; `CalcAmount` returns `CalcBasePrice` only. Loses PartnerMethodGetsExcessKm.
-  - `surcharge-lost`: Daily implementation drops the weekend surcharge loop. Loses DailyWeekendSurchargeUnchanged.
+Values: 4 x 33.33 = 133.32 plus 2 x 4.16625 = 141.6525, rounded 141.65. 33.33 x 1.5 = 49.995 plus 1 km x 0.005 = 50.000, rounded 50.00; rounding the base first gives 50.00 + 0.005 = 50.01.
 
-- [ ] **Step 5: Host compile all variants, audit (table Step 3; auditor rule C applies: the partner method is exercised through the interface), check HX-001..HX-005, commit `feat(harness-tasks): HX-005 extensible pricing refactor`, request gate M4-11.**
+- [ ] **Step 4: naive/** and kill mapping:
 
-**Acceptance:** `check` `[OK]` for HX-001..HX-005; last audit `VERDICT: clean`; oracle has the eight procedures of Step 3.
+| Naive | Change | Rows lost |
+| --- | --- | --- |
+| case-kept | enum extensible with interface and two implementations, but `CalcAmount` keeps a `case` over known values, `else` base 0 | PartnerMethodPriceUsed, PartnerMethodGetsExcessKm, PartnerFractionalRoundedOnce, PostingUsesPartnerMethod |
+| excess-in-methods | excess km moved into Daily and Weekend Package; `CalcAmount` returns `CalcBasePrice` only | PartnerMethodGetsExcessKm, PartnerFractionalRoundedOnce |
+| surcharge-lost | Daily implementation drops the weekend surcharge | DailyWeekendSurchargeUnchanged, DailyFractionalSurcharge |
+| early-rounding | each implementation returns `Round(base, 0.01)` before the excess is added | PartnerFractionalRoundedOnce |
+
+- [ ] **Step 5: Host compile all variants, audit (Steps 3, 4; auditor rule C: the partner method is exercised through the interface), `check` HX-001..HX-005, commit `feat(harness-tasks): HX-005 extensible pricing refactor`, request gate M4-11.**
+
+**Acceptance:** `check` `[OK]` for HX-001..HX-005; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the twelve procedures of Step 3.
 
 ---
 
 ### Task M4-11: gate job HX-005
 
-**Lane:** ops. **Deps:** M4-01, M4-10. **Target:** 10-06.
+**Lane:** ops. **Deps:** M4-01c, M4-10. **Target:** 10-06.
 
-M4-03 Steps 1, 2, 4, 5 with HX-005. Expected 10 runs; baseline oracle does not compile (no interface), accepted. Tag `refapp-v1-rc5`.
+M4-03 Steps 1, 2, 4, 5, 6 with HX-005; 1 + 3 + 4 x 2 = 12 runs. The baseline oracle does not compile (no interface): quote `oracleCodes` in the note as `MISSING_FEATURE_CODES` evidence. Tag `refapp-v1-rc5`.
 
-**Acceptance:** `jq -e '.promoted == true and .commit == "<M4-10 sha>" and (.runs | length) == 10' <report>` exits 0.
+**Acceptance:** the common gate acceptance line.
 
 ---
 
 ### Task M4-12: refapp slice E and HX-006 (feature: return messages with sequence)
 
-**Lane:** content. **Deps:** M4-10. **Target:** 10-06 to 10-07.
+**Lane:** content. **Deps:** M4-10, M4-16 (P3). **Target:** 10-06 to 10-07.
 
 Spec 1b section 3 (Integration -> Core: facade codeunit, JSON; reaction to Rental through the Core publisher).
 
 **Files:**
 - Create: `Integration/src/OutboxEntry.Table.al` (table 70401: Entry No. AutoIncrement, `"Event Type"` Text[50], `"Vehicle No."` Code[20], Payload Text[2048], `"Created At"` DateTime, Sent Boolean)
-- Modify: `Integration/src/IntegrationFacade.Codeunit.al` (add `QueueVehicleCheckedOut(VehicleNo)`, `MarkSent(EntryNo: Integer)`, `PurgeSent()` which deletes Sent entries)
-- Create: `Integration/src/IntegrationSubscribers.Codeunit.al` (70402: subscribes Core `OnAfterVehicleCheckedOut`, calls `QueueVehicleCheckedOut`)
+- Modify: `Integration/src/IntegrationFacade.Codeunit.al` (add `QueueVehicleCheckedOut(VehicleNo)`, `MarkSent(EntryNo: Integer)`, `PurgeSent()`)
+- Create: `Integration/src/IntegrationSubscribers.Codeunit.al` (70402: on Core `OnAfterVehicleCheckedOut` calls `QueueVehicleCheckedOut`)
 - Modify: `Test/src/IntegrationTests.Codeunit.al` (add `OutboxQueuesCheckout`: after a checkout the last outbox entry for the vehicle has Event Type `vehicleCheckedOut` and its payload parses with `vehicleNo` = the vehicle)
 - Create: `tasks/HX-006/{task.yml,prompt.md}`, `correct/Integration/...`, `oracle/` (suffix 6, 85500-85599, deps Core, Fleet, Rental, Integration, Library Assert), `naive/{count-sequence,string-km,always-description}/...`
 
@@ -2402,86 +2963,121 @@ The partner portal gets a message in the integration outbox when a vehicle is ch
 1. When a rental vehicle is returned, queue an outbox entry with Event Type "vehicleReturned" and this JSON payload:
    `{"event":"vehicleReturned","vehicleNo":"<No.>","returnKm":<km>,"damage":<true|false>,"damageDescription":"<text>","sequence":<n>}`
    "returnKm" and "sequence" are JSON numbers and "damage" a JSON boolean. "damageDescription" is present only when damage was reported.
-2. Every outbox entry of a vehicle, checkouts and returns alike, carries a sequence number per vehicle: 1 for the first message of that vehicle, then 2, 3 and so on in the order the events happened. Store it in a new field "Vehicle Sequence No." (Integer) on the outbox entry, and add it as the last key of the checkout payload:
-   `{"event":"vehicleCheckedOut","vehicleNo":"<No.>","sequence":<n>}`
+2. Every outbox entry of a vehicle, checkouts and returns alike, carries a sequence number per vehicle: 1 for the first message of that vehicle, then 2, 3 and so on in the order the events happened. Store it in a new field "Vehicle Sequence No." (Integer) on the outbox entry and in the payload's "sequence". The checkout payload becomes `{"event":"vehicleCheckedOut","vehicleNo":"<No.>","sequence":<n>}`. Payloads are compact JSON (no whitespace) with the keys in the order shown.
 3. Sent entries are purged regularly (`CGR Integration Facade`, PurgeSent). Purging does not restart the numbering of a vehicle.
 ```
 
-- [ ] **Step 2: task.yml**: `kind: feature`, `touches: [Integration, Core, Rental]`, `coupling: [facade, events, core-facade]`, `refapp_version: refapp-v1-rc6`, p2p 80040 {OutboxQueuesCheckout} and 80010 {CheckOutMarksVehicleCheckedOut, ReturnWithoutDamageReleasesVehicle} (not `PayloadCarriesVehicleNo`: its exact payload predates the sequence key), f2p codeunit 85500.
+- [ ] **Step 2: task.yml**: `kind: feature`, `touches: [Integration, Core, Rental]`, `coupling: [facade, events, core-facade]`, `refapp_version: refapp-v1-rc6`, p2p 80040 {OutboxQueuesCheckout}, 80010 {CheckOutMarksVehicleCheckedOut, ReturnWithoutDamageReleasesVehicle} (not `PayloadCarriesVehicleNo`, whose exact payload predates the sequence key); f2p codeunit 85500.
 
-- [ ] **Step 3: Oracle (normative)**, codeunit 85500 "HX006 Outbox Oracle"; each procedure deletes outbox entries of its own vehicles first and uses its own keys; JSON types are checked with `JsonToken.WriteTo` (text `1450`, not `"1450"`).
+- [ ] **Step 3: Oracle (normative)**, codeunit 85500 "HX006 Outbox Oracle"; each procedure deletes the outbox entries of its own vehicles first; JSON types checked with `JsonToken.WriteTo` (text `1450`, not `"1450"`, per M4-16 P3). "Agreement" = for every entry of the vehicle, in entry order, `"Vehicle Sequence No."` equals the payload `sequence` and the expected 1, 2, 3...
 
 | Procedure | Arrange | Assert |
 | --- | --- | --- |
-| ReturnQueuesMessageWithNumbers | HX6-A km 1000, check out, Return(1450, '') | 2 entries for A; last: Event Type `vehicleReturned`, Vehicle Sequence No. 2; payload `event` `vehicleReturned`, `vehicleNo` `HX6-A`, `returnKm` token text `1450`, `damage` token text `false`, no `damageDescription` key, `sequence` token text `2` |
-| DamagedReturnCarriesDescription | HX6-B, Return(1300, 'Dent') | `damage` `true`; `damageDescription` `Dent` |
+| ReturnQueuesMessageWithNumbers | HX6-A km 1000, check out, Return(1450, '') | 2 entries for A with agreement; last: Event Type `vehicleReturned`; payload `event`, `vehicleNo` `HX6-A`, `returnKm` token `1450`, `damage` token `false`, no `damageDescription` key, `sequence` token `2` |
+| DamagedReturnCarriesDescription | HX6-B, Return(1300, `Bule på "dør"`) | `damage` token `true`; `damageDescription` parses back to `Bule på "dør"` |
 | CheckoutPayloadCarriesSequence | HX6-C, check out | payload text exactly `{"event":"vehicleCheckedOut","vehicleNo":"HX6-C","sequence":1}`; Vehicle Sequence No. 1 |
-| SequenceIsPerVehicle | HX6-D check out, HX6-E check out, D return, D check out (new contract) | D entries 1, 2, 3 in entry order; E entry 1 |
-| SequenceContinuesAfterPurge | HX6-F check out, return; `MarkSent` both; `PurgeSent`; check out again | the new entry has Vehicle Sequence No. 3 and payload `sequence` 3 |
-| FailedReturnLeavesNoMessage | HX6-G km 1000, check out; `asserterror` Return(999, '') | exactly 1 entry for G (the checkout) |
+| SequenceIsPerVehicle | HX6-D check out, HX6-E check out, D return, D check out (new contract), E return | D: 3 entries with agreement (1, 2, 3); E: 2 entries with agreement (1, 2) |
+| SequenceContinuesAfterPurge | HX6-F check out, return; `MarkSent` both; `PurgeSent`; check out again | 1 entry for F with agreement starting at 3 (field 3, payload 3) |
+| FailedReturnLeavesNoMessage | HX6-G km 1000, check out; `asserterror` Return(999, '') | exactly 1 entry for G (the checkout), sequence 1 |
 
-- [ ] **Step 4: correct/**: a per-vehicle counter table in Integration (for example table 70403 `"CGR Vehicle Message Seq."`, PK Vehicle No., Last Sequence No.), a subscriber to Core `OnAfterVehicleReturned`, and the facade building both payloads with `JsonObject` in the specified key order.
+- [ ] **Step 4: correct/**: a per-vehicle counter table in Integration (for example 70403 `"CGR Vehicle Message Seq."`), a subscriber to Core `OnAfterVehicleReturned`, both payloads built with `JsonObject` in the specified key order. The oracle does not depend on the counter design.
 
-- [ ] **Step 5: naive/**
-  - `count-sequence`: sequence = count of the vehicle's outbox entries + 1. Loses SequenceContinuesAfterPurge.
-  - `string-km`: `returnKm` added as `Format(ReturnKm)`. Loses ReturnQueuesMessageWithNumbers.
-  - `always-description`: `damageDescription` always added (empty when no damage). Loses ReturnQueuesMessageWithNumbers.
+- [ ] **Step 5: naive/** and kill mapping:
 
-- [ ] **Step 6: Host compile all variants, audit (table Step 3), check HX-001..HX-006, commit `feat(harness-tasks): refapp v1 slice E and HX-006 return messages`, request gate M4-13.**
+| Naive | Change | Rows lost |
+| --- | --- | --- |
+| count-sequence | sequence = count of the vehicle's outbox entries + 1 | SequenceContinuesAfterPurge |
+| string-km | `returnKm` added as `Format(ReturnKm)` | ReturnQueuesMessageWithNumbers |
+| always-description | `damageDescription` always added, empty without damage | ReturnQueuesMessageWithNumbers |
 
-**Acceptance:** `check` `[OK]` for HX-001..HX-006; last audit `VERDICT: clean`; oracle has the six procedures of Step 3.
+- [ ] **Step 6: Host compile all variants, audit (Steps 3, 5), `check` HX-001..HX-006, commit `feat(harness-tasks): refapp v1 slice E and HX-006 return messages`, request gate M4-13.**
+
+**Acceptance:** `check` `[OK]` for HX-001..HX-006; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the six procedures of Step 3.
 
 ---
 
 ### Task M4-13: gate job HX-006
 
-**Lane:** ops. **Deps:** M4-01, M4-12. **Target:** 10-07.
+**Lane:** ops. **Deps:** M4-01c, M4-12. **Target:** 10-07.
 
-M4-03 Steps 1, 2, 4, 5 with HX-006. Expected 10 runs. Tag `refapp-v1-rc6`.
+M4-03 Steps 1, 2, 4, 5, 6 with HX-006; 10 runs. Tag `refapp-v1-rc6`.
 
-**Acceptance:** `jq -e '.promoted == true and .commit == "<M4-12 sha>" and (.runs | length) == 10' <report>` exits 0.
-
----
-
-### Task M4-14: freeze preparation
-
-**Lane:** content. **Deps:** M4-03, M4-05, M4-07, M4-09, M4-11, M4-13. **Target:** 10-08.
-
-- [ ] **Step 1:** Set `refapp_version: refapp-v1` in all six `task.yml`. No other change: every oracle, overlay, correct and naive file stays byte-identical to its gated commit (`git diff <rcN sha> -- harness-tasks/tasks/HX-00N` shows only the `refapp_version` line).
-- [ ] **Step 2:** `deno run --allow-all scripts/harness/gate-task.ts check harness-tasks/tasks/HX-00*`: `[OK]` for all six; the only allowed warning is `refapp-v1 does not resolve yet`.
-- [ ] **Step 3:** If M1-10 has merged: `deno task start harness validate` loads all six tasks (it fails on the unresolved `refapp-v1` tag until the orchestrator tags; that failure is expected before Step 4).
-- [ ] **Step 4:** Commit `chore(harness-tasks): pin v1 task set to refapp-v1`, submit. The orchestrator tags that commit `refapp-v1` (never moved afterwards) and pushes the tag.
-
-**Acceptance:** the Step 1 diff check holds for all six tasks against their rc tags; `check` prints `[OK]` six times.
+**Acceptance:** the common gate acceptance line.
 
 ---
 
-### Task M4-15: freeze gate
+### Task M4-17: difficulty pilot (developmental)
 
-**Lane:** ops. **Deps:** M4-14 and the `refapp-v1` tag. **Target:** 10-08 to 10-09.
+**Lane:** ops. **Deps:** M4-01c; per task its gate (HX-002 after M4-05, HX-005 after M4-11, others after theirs). **Target:** HX-002 on 10-02, HX-005 on 10-06, others 10-07 as budget allows.
 
-- [ ] **Step 1:** In a job worktree at the `refapp-v1` commit, run `gate` for all six tasks, spread over Cronus281-283 (one lease per container, tasks queued per container). Expected: six reports, all `promoted: true`, all with the `refapp-v1` commit.
-- [ ] **Step 2:** If M1 Part 2 ships `centralgauge harness cell` with the `mock` harness before 10-09: for each task run the mock harness on `correct` and on the first `naive/` variant through the real verdict pipeline (1b section 8, last sentence) and record each judgment path in `H:\Temp3\harness-spike\M4\freeze\mock-pipeline.md`. A disagreement between the pipeline and `gate-task.ts` goes to `coord ask` with both files; it is not resolved by editing either. If `harness cell` is not available, the file says so in one line.
-- [ ] **Step 3:** Write `H:\Temp3\harness-spike\M4\freeze\task-set.json`: `{ "refapp_version": "refapp-v1", "commit": "<sha>", "tasks": [{ "id", "gate_report", "promoted" }] }`, plus the M1-04 task-set identity (`id`, visible hash, oracle hash) when M1-04 has merged.
-- [ ] **Step 4:** Any task that fails its freeze gate is reported to lane-content and the orchestrator at once. Fewer than six promoted tasks on 10-09 goes to the owner (launch contract: fewer than 6 tasks needs the owner).
+Owner decision `2026-09-25-m4-coverage-pilot.md`: one attempt per task, a frontier model through pi and OpenRouter only (no Team account), excluded from results, paid cap applies. Review section 1: HX-005 and HX-002 first.
 
-**Acceptance:** `jq -e '[.tasks[] | select(.promoted)] | length == 6' H:\Temp3\harness-spike\M4\freeze\task-set.json` exits 0, and each listed `gate_report` has `.commit` equal to the `refapp-v1` commit.
+- [ ] **Step 1: Model and estimate.** Pick the model with `deno task start models -p openrouter --live` and `deno task start models <slug> --check` (never hardcoded). Estimate per attempt = catalog input price x 3,000,000 tokens + output price x 150,000 tokens; write the estimate and the remaining cap (from `H:\cg-coord\decisions\spend.md`) to `H:\Temp3\harness-spike\M4\pilot\plan.md`. Stop and `coord ask` if the estimate for all six attempts exceeds 20 percent of the remaining cap, or if the remaining cap is under 80 percent (launch contract reporting rule).
+- [ ] **Step 2: Workspace.** `deno run --allow-all scripts/harness/gate-task.ts stage <task> H:\Temp3\harness-spike\M4\pilot\<task>\ws --rev <rc sha>`. Copy `prompt.md` next to it.
+- [ ] **Step 3: Run pi.** Preferably through `harness cell` with a pi config if M1-24 and the M3 pi adapter exist; otherwise `deno run --allow-all scripts/spikes/harness/run-sandbox.ts pi <model> H:\Temp3\harness-spike\M4\pilot\<task>\ws H:\Temp3\harness-spike\M4\pilot\<task>\prompt.md --kill-after-s 1800`. The spike sandbox has no `cg-al` backend, so the model cannot compile; record that limit next to the result.
+- [ ] **Step 4: Judge.** `deno run --allow-all scripts/harness/gate-task.ts judge <Cronus281-283> <task> H:\Temp3\harness-spike\M4\pilot\<task>\ws --rev <rc sha>`.
+- [ ] **Step 5: Record** in `H:\Temp3\harness-spike\M4\pilot\results.md`: task, model, `[PASS]`/`[FAIL]`, judge report path, cost (sum of pi assistant `message_end` `usage.cost.total`, findings section 4), and append the cost to `spend.md`. A pass on HX-005 or HX-002 goes to lane-content and the orchestrator as a hardening candidate: content proposes a harder requirement (never a weaker oracle), the orchestrator decides before M4-14.
+
+**Acceptance:** `results.md` has one row per piloted task with model, outcome, judge report path and cost; `spend.md` has the matching lines; `plan.md` holds the estimate made before the first run.
+
+---
+
+### Task M4-14: freeze candidate
+
+**Lane:** content. **Deps:** M4-03, M4-05, M4-07, M4-09, M4-11, M4-13, and any hardening decided from M4-17. **Target:** 10-08.
+
+- [ ] **Step 1: Pre-repin drift record.** For each task run `deno run --allow-all scripts/harness/gate-task.ts check harness-tasks/tasks/HX-00N` while it still pins its latest rc tag (HX-003: rc4). Save the output to `H:\Temp3\harness-spike\M4\freeze\pre-repin-check.txt`. Any drift problem is fixed (re-derive, re-gate) before Step 2.
+- [ ] **Step 2:** Set `refapp_version: refapp-v1` in all six `task.yml`. No other change: `git diff <latest rc sha of the task> -- harness-tasks/tasks/HX-00N` shows only that line.
+- [ ] **Step 3: Qualification experiment.** Create `harness/experiments/m4-qualify.yml` as a copy of M1-21's `harness/experiments/mock-contract.yml` with `id: m4-qualify`, `tasks: "harness-tasks/tasks/HX-*"`, `repeats: 1` and its hypothesis line saying it qualifies the v1 set (spec 1b section 8). `deno task start harness validate` loads it.
+- [ ] **Step 4: Shared manifest test.** `tests/unit/harness/task-set-v1.test.ts`:
+```typescript
+import { assertEquals } from "@std/assert";
+import { loadTaskSet } from "../../../src/harness/task.ts";
+
+Deno.test("v1 task set: six tasks, kinds and refapp version", async () => {
+  const set = await loadTaskSet("harness-tasks/tasks");
+  assertEquals(set.map((t) => `${t.task.id}:${t.task.kind}:${t.task.refapp_version}`), [
+    "HX-001:bugfix:refapp-v1",
+    "HX-002:test-authoring:refapp-v1",
+    "HX-003:feature:refapp-v1",
+    "HX-004:feature:refapp-v1",
+    "HX-005:refactor:refapp-v1",
+    "HX-006:feature:refapp-v1",
+  ]);
+});
+```
+Run: `deno test --allow-all tests/unit/harness/task-set-v1.test.ts`. Expected: `ok | 1 passed`.
+- [ ] **Step 5:** Commit `chore(harness-tasks): v1 freeze candidate pinned to refapp-v1`, submit. The orchestrator creates the local tag `refapp-v1` on this commit and does not push it yet.
+
+**Acceptance:** the Step 2 diff check holds for all six; `task-set-v1.test.ts` passes; `pre-repin-check.txt` shows `[OK]` for all six.
+
+---
+
+### Task M4-15: freeze qualification
+
+**Lane:** ops. **Deps:** M4-14 with the local `refapp-v1` tag; M1-24, M1-26, M1-29 accepted. **Target:** 10-08 to 10-09.
+
+- [ ] **Step 1: Stand-in re-gate.** `gate` for all six at `--rev refapp-v1`, spread over Cronus281-283. Expected: six reports with the common acceptance line and `tag_status: match`.
+- [ ] **Step 2: Real pipeline.** `deno task start harness run m4-qualify --dry-run`, then the full run (mock arms, no provider spend). Expected in `deno task start harness report m4-qualify --json`: pass rate 1.00 for `mock-correct` and 0.00 for `mock-naive` on every task; HX-002's `mutant_kill` with targets `reference`, `mutant:0` and each named mutant. Record the campaign id and report path in `H:\Temp3\harness-spike\M4\freeze\pipeline.md`. Any disagreement with Step 1 goes to `coord ask` with both files; neither side is edited to agree.
+- [ ] **Step 3: Identity.** `deno task start harness validate` prints `[OK] 6 tasks, task set <hash>` with no `(provisional ...)`. Quote it.
+- [ ] **Step 4: Freeze record.** `H:\Temp3\harness-spike\M4\freeze\task-set.json`: `{ "refapp_version": "refapp-v1", "commit": "<sha>", "task_set_hash": "<hash>", "campaign": "<id>", "tasks": [{ "id", "gate_report", "promoted", "pipeline_correct": "pass", "pipeline_naive": "fail" }] }`.
+- [ ] **Step 5:** All six qualified: the orchestrator pushes `refapp-v1`. Any task not qualified: report to lane-content and the orchestrator at once; the unpushed local tag is deleted and the fixed commit is tagged instead. No real pipeline by 10-09, or fewer than six qualified: `coord ask` to the owner (launch contract).
+
+**Acceptance:** `jq -e '[.tasks[] | select(.promoted and .pipeline_correct == "pass" and .pipeline_naive == "fail")] | length == 6' task-set.json` exits 0; every listed gate report has `.source_commit` equal to the `refapp-v1` commit; `pipeline.md` quotes the campaign id and the non-provisional `validate` line.
 
 ---
 
 ## Integration check (orchestrator)
 
-After each content task merges: `deno run --allow-all scripts/harness/gate-task.ts check harness-tasks/tasks/HX-*` is `[OK]` for every task landed so far, and the latest `audit-*.md` of the new task ends `VERDICT: clean`. After each ops gate task: the `jq` acceptance line of that task, then tag `refapp-v1-rcN` at the gated commit. After M4-15: the freeze acceptance line; `graphify update .`.
+After each content task: `check` is `[OK]` for every task landed so far, and the latest audit of the new task names the committed task tree and ends `VERDICT: clean`. After each gate job: the common acceptance line, then tag `refapp-v1-rcN` at `.source_commit`. After M4-01c: the 30 gate unit tests pass. After M4-15: the freeze acceptance line, push of `refapp-v1`, `graphify update .`.
 
 ## Open questions
 
-1. **Reference tests location.** 1b section 5 has no folder for the test-authoring reference tests; this plan uses `reference-tests/`. M1-04 must decide whether it is hashed (it is authoring-only, like `naive/`, so this plan assumes neither hash) and M1-01's loader must not reject it (it does not today). Confirm.
-2. **M1 schema fields this plan depends on** (M1-01 as of 09-25, under revision): `refapp_version` free string resolved to a tag (rc tags), `kind: test-authoring` with `mutants` names matching `^[A-Za-z0-9_-]+$` and `mutants/<m>` folders, `fail_to_pass.depends_on` over `MODULES`, `pass_to_pass` band 80000-84999, oracle band 85000-89999, `touches` including `Test` (HX-002), free-string `coupling` (M1 open question 7; this plan's vocabulary is `events, internal, interface, queries, facade, ishandled, core-facade`), optional `overlay/` (HX-003, HX-005 have none), no `oracle/` for test-authoring. A change to any of these needs a task.yml edit here.
-3. **Baseline oracle that does not compile.** For features and the refactor the oracle references objects that do not exist yet, so the baseline "fails fail_to_pass" by oracle compile failure. This plan accepts that for the baseline only (naive must compile). The M1 verdict must score an oracle compile failure on an agent workspace as `fail`, not infra. Confirm.
-4. **Coverage below 1b section 9.** With six tasks, `ishandled`, `queries` and `facade` are exercised once, and the in-app styles single-instance state, temporary tables and `CommitBehavior` not at all. 1b section 9 states the two-per-style rule for the ~10-task v1; tasks 7-10 are cut order item 4. Owner to confirm six is the M4 bar and the rest follows after 10-16.
-5. **Host compile for lane-content.** `gate-task.ts compile` runs `al` on the host against `C:\ProgramData\BcContainerHelper\compiler-cache-15ff3c5d109b\symbols` (read-only). It touches no container, but the lane rules only say "Only lane-ops touches containers". Confirm lane-content may run it; otherwise every compile error costs an ops round trip.
-6. **Gate script ownership.** `gate-task.ts` is written by lane-ops (M4-01) because it is container tooling and infra is on M1. It duplicates part of M1 Part 2 staging; it is retired when `harness cell` with the mock harness can gate a task. Confirm, or move M4-01 to lane-infra.
-7. **Removed-feature overlays.** 1b section 5 mentions overlays that remove a feature; layers here never delete files. No v1 task needs deletion. If M1 staging supports deletion, the semantics must be written down before a task uses it.
-8. **HX-001 premise.** The task relies on BC 28 raising the stale-record error when a subscriber modifies the vehicle through a second record variable in the same transaction. M4-03 Step 3 verifies it on the baseline; if it does not hold, HX-001 is redesigned and the 10-01 target slips.
-9. **Oracle hidden regression rows.** Some `fail_to_pass` procedures pass on the baseline (for example `ReturnWithoutDamageLeavesVehicleUnblocked`). 1b only requires the scorer to fail on the baseline. If M1 or the report treats `fail_to_pass` strictly per procedure (SWE-bench style), these rows move to a hidden `pass_to_pass` list, which the schema does not have today.
-10. **1a section 14 vs launch contract dates.** 1a section 14 targets six gated tasks by 10-16; the launch contract requires them qualified and frozen by 10-09. This plan follows the launch contract.
+1. **M1-28 and M1-29 need "refapp-v1 tagged".** With tags created only after qualification, the 10-02 end-to-end and M1-28 must use `refapp-v1-rc1` (HX-001). The M1 Part 2 plan needs that edit.
+2. **10-02 end-to-end is at risk outside M4.** M1 Part 2's Schedule lands M1-13 to M1-24 and M1-26 between 10-01 and 10-07, and the M2 Claude Code adapter is scheduled from 10-06. M4 delivers HX-001 by 10-01; the gate itself needs an owner-level date decision.
+3. **M1-17 failure classification parity.** M1-17 classifies "An error was expected inside an ASSERTERROR statement." as `runtime_error`; this gate counts it as an assertion (M4-16 P5 records the text). If M1-17 is not aligned, real-pipeline mutant kills and naive failures relying on a lost `asserterror` (HX-003 `hardcoded-interval`, HX-001 `lock-table`) are under-counted.
+4. **Mock arms and naive selection.** M4-15 Step 2 assumes M1-21's `mock-naive` applies a task's `naive/` variant; if it applies only the first, the other naive variants are qualified by the stand-in only.
+5. **M1 mutant ID wording.** M1's schema notes put `mutants` in the hidden band; production-replacing mutants here keep their module ids (review answer 2). The M1 id-audit rule (M1-11) must allow that.
+6. **Pilot fidelity.** Without the M3 pi adapter and `cg-al`, the pilot model cannot compile or run tests, so a pilot fail says less than a pilot pass.
+
+Closed in revision 2: reference-tests location (accepted, neither hash, tree id recorded), schema compatibility (M1-01 supports every field used), baseline oracle compile failure (missing-feature diagnostics only), coverage (owner accepted, caveat), host compile (lane-content may), gate ownership (lane-ops), deletion (refused), HX-001 premise (M4-00: redesigned), hidden regression rows (kept, baseline outcomes recorded), dates (launch contract).
