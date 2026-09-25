@@ -637,12 +637,23 @@ export function buildTestScript(
 }
 
 /** Harness Bench: every CentralGauge app with its installed state (verified in M1-27). */
+/** Container names as Docker allows them; anything else never reaches a script. */
+function harnessContainerName(name: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) {
+    throw new Error(
+      `refusing an unsafe container name: ${JSON.stringify(name)}`,
+    );
+  }
+  return name;
+}
+
 export function buildListHarnessAppsScript(containerName: string): string {
+  const cn = harnessContainerName(containerName);
   return `
       ${bcchImport()}
       ${bcchConfigInit()}
       try {
-        $cgRows = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+        $cgRows = Invoke-ScriptInBcContainer -containerName '${cn}' -scriptblock {
           Get-NAVAppInfo -ServerInstance BC -Tenant default -TenantSpecificProperties |
             Where-Object { $_.Publisher -eq "CentralGauge" } |
             ForEach-Object {
@@ -676,7 +687,10 @@ export function buildSyncHarnessAppsScript(
   removeIds: string[],
   appFiles: string[],
   credentials: ContainerCredentials = { username: "admin", password: "admin" },
+  /** Trusted exact-id removal allowlist; the script refuses any other id. */
+  allowIds: string[] = removeIds,
 ): string {
+  const cn = harnessContainerName(containerName);
   const useDevEndpoint =
     Deno.env.get("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH") !== "0";
   const credentialSetup = useDevEndpoint
@@ -700,21 +714,42 @@ export function buildSyncHarnessAppsScript(
       ${bcchConfigInit()}
 ${credentialSetup}
       $cgRemoveIds = ${list(removeIds)}
+      $cgAllowIds = ${list(allowIds)}
       $cgRemoveFailed = $false
       if ($cgRemoveIds.Count -gt 0) {
+        # Pre-check, before anything is uninstalled: every id is on the
+        # trusted allowlist and every app carrying it is ours. A foreign app
+        # sharing an id refuses the whole sync and stays untouched.
         try {
-          $cgReport = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+          $cgCheck = Invoke-ScriptInBcContainer -containerName '${cn}' -scriptblock {
+            param([string[]]$ids, [string[]]$allow)
+            foreach ($id in $ids) {
+              if ($allow -notcontains $id) { Write-Output "SYNC_REMOVE_REFUSED:$id not on the removal allowlist"; continue }
+              foreach ($app in @(Get-NAVAppInfo -ServerInstance BC -Id $id)) {
+                if ($app.Publisher -ne 'CentralGauge') { Write-Output "SYNC_REMOVE_REFUSED:$id publisher $($app.Publisher)" }
+              }
+            }
+          } -argumentList $cgRemoveIds, $cgAllowIds
+        } catch {
+          $cgCheck = @("SYNC_REMOVE_REFUSED:check $($_.Exception.Message)")
+        }
+        $cgCheck | ForEach-Object { Write-Output $_ }
+        if (@($cgCheck | Where-Object { "$_" -like 'SYNC_REMOVE_REFUSED:*' }).Count -gt 0) { exit 1 }
+        try {
+          $cgReport = Invoke-ScriptInBcContainer -containerName '${cn}' -scriptblock {
             param([string[]]$ids)
             # Passes: an id whose unpublish fails because another listed app
             # still depends on it is retried once that app is gone. Stop when
-            # a pass removes nothing.
+            # a pass removes nothing. Removal is clean (no saved data, schema
+            # cleaned) so a later lower version installs.
             $pending = @($ids)
             for ($cgPass = 1; $cgPass -le $ids.Count; $cgPass++) {
               $next = @()
               foreach ($id in $pending) {
                 foreach ($app in @(Get-NAVAppInfo -ServerInstance BC -Id $id)) {
-                  try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -Force -ErrorAction SilentlyContinue } catch { }
-                  try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction SilentlyContinue } catch { }
+                  try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -DoNotSaveData -Force -ErrorAction SilentlyContinue } catch { }
+                  try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -DoNotSaveData -Force -ErrorAction SilentlyContinue } catch { }
+                  try { Sync-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Mode Clean -Force -ErrorAction SilentlyContinue } catch { }
                   $done = $false
                   try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -ErrorAction Stop; $done = $true } catch { }
                   if (-not $done) {
@@ -742,7 +777,7 @@ ${credentialSetup}
       for ($i = 0; $i -lt $cgFiles.Count; $i++) {
         $cgSw = [Diagnostics.Stopwatch]::StartNew()
         try {
-          Publish-BcContainerApp -containerName "${containerName}" -appFile $cgFiles[$i] -skipVerification -sync -syncMode ForceSync -install${flag} -ErrorAction Stop
+          Publish-BcContainerApp -containerName '${cn}' -appFile $cgFiles[$i] -skipVerification -sync -syncMode ForceSync -install${flag} -ErrorAction Stop
           Write-Output "SYNC_PUBLISH_MS:$($i):$($cgSw.ElapsedMilliseconds)"
         } catch {
           Write-Output "SYNC_PUBLISH_MS:$($i):$($cgSw.ElapsedMilliseconds)"

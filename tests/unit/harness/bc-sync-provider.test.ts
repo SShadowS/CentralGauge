@@ -3,10 +3,14 @@ import {
   assertEquals,
   assertRejects,
   assertStringIncludes,
+  assertThrows,
 } from "@std/assert";
 import { join } from "@std/path";
 import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
-import { buildSyncHarnessAppsScript } from "../../../src/container/bc-script-builders.ts";
+import {
+  buildListHarnessAppsScript,
+  buildSyncHarnessAppsScript,
+} from "../../../src/container/bc-script-builders.ts";
 import {
   parseHarnessAppList,
   parseHarnessSyncOutput,
@@ -55,6 +59,7 @@ SYNC_DONE
     await Deno.writeTextFile(app, "x");
     const r = await provider.syncHarnessApps("Cronus281", {
       removeIds: [IDS.rental],
+      allowIds: [IDS.rental, IDS.core],
       publish: [app],
     });
     assertEquals(calls.length, 1);
@@ -79,6 +84,7 @@ Deno.test({
       () =>
         bad.provider.syncHarnessApps("Cronus281", {
           removeIds: [IDS.rental],
+          allowIds: [IDS.rental, IDS.core],
           publish: [],
         }),
       ContainerError,
@@ -89,6 +95,7 @@ Deno.test({
     );
     const r = await failed.provider.syncHarnessApps("Cronus281", {
       removeIds: [],
+      allowIds: [IDS.rental, IDS.core],
       publish: [],
     });
     assertEquals(r.failed, {
@@ -104,6 +111,7 @@ Deno.test("syncHarnessApps: a non-GUID id is refused before any script runs", as
     () =>
       provider.syncHarnessApps("Cronus281", {
         removeIds: ["x'; Remove-Item C:\\"],
+        allowIds: [IDS.rental, IDS.core],
         publish: [],
       }),
     Error,
@@ -185,4 +193,75 @@ Deno.test("buildSyncHarnessAppsScript: removal retries in passes and never publi
 
 Deno.test("parseHarnessAppList: a malformed CG_APP line is a failed listing, not a SyntaxError", () => {
   assertEquals(parseHarnessAppList(`CG_APP:{not json\nCG_APPS_DONE\n`), null);
+});
+
+Deno.test("syncHarnessApps: a removal id outside the trusted allowlist is refused before any script", async () => {
+  const { provider, calls } = await stubbed("SYNC_DONE");
+  await assertRejects(
+    () =>
+      provider.syncHarnessApps("Cronus281", {
+        removeIds: [IDS.rental],
+        publish: [],
+        allowIds: [IDS.core],
+      }),
+    Error,
+    "not on the removal allowlist",
+  );
+  assertEquals(calls.length, 0);
+});
+
+Deno.test("syncHarnessApps: a foreign app sharing a removal id is refused (nothing removed)", async () => {
+  const { provider } = await stubbed(
+    `SYNC_REMOVE_REFUSED:${IDS.rental} publisher Continia\n`,
+  );
+  await assertRejects(
+    () =>
+      provider.syncHarnessApps("Cronus281", {
+        removeIds: [IDS.rental],
+        publish: [],
+        allowIds: [IDS.rental],
+      }),
+    ContainerError,
+    "refused",
+  );
+});
+
+Deno.test("buildSyncHarnessAppsScript: publisher and allowlist pre-check before any uninstall; clean removal", () => {
+  const s = buildSyncHarnessAppsScript(
+    "Cronus281",
+    [IDS.rental],
+    [],
+    undefined,
+    [IDS.rental],
+  );
+  const refused = s.indexOf("SYNC_REMOVE_REFUSED:");
+  const firstUninstall = s.indexOf("Uninstall-NAVApp");
+  assert(
+    refused > 0 && refused < firstUninstall,
+    "pre-check before any uninstall",
+  );
+  assert(
+    s.indexOf("exit 1", refused) < firstUninstall,
+    "a refusal stops before any uninstall",
+  );
+  assertStringIncludes(s, "$app.Publisher -ne 'CentralGauge'");
+  assertStringIncludes(s, "$allow -notcontains");
+  const uninstalls = s.split("Uninstall-NAVApp").slice(1);
+  assert(
+    uninstalls.length > 0 &&
+      uninstalls.every((u) => u.split("\n")[0]!.includes("-DoNotSaveData")),
+  );
+  const clean = s.indexOf("Sync-NAVApp");
+  assert(clean > firstUninstall && clean < s.indexOf("Unpublish-NAVApp"));
+  assertStringIncludes(s.slice(clean, clean + 200), "-Mode Clean");
+});
+
+Deno.test("harness script builders refuse a hostile container name", () => {
+  const bad = `x"; Remove-Item C:\ -Recurse; "`;
+  assertThrows(
+    () => buildSyncHarnessAppsScript(bad, [], []),
+    Error,
+    "container name",
+  );
+  assertThrows(() => buildListHarnessAppsScript(bad), Error, "container name");
 });

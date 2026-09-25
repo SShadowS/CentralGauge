@@ -2115,12 +2115,25 @@ ${script}
    */
   async syncHarnessApps(
     containerName: string,
-    plan: { removeIds: string[]; publish: string[] },
+    plan: {
+      removeIds: string[];
+      publish: string[];
+      /**
+       * Trusted exact-id removal allowlist (ledger plus refapp/task
+       * manifests, never agent input). Any other id is refused here and
+       * again inside the script, which also refuses non-CentralGauge apps.
+       */
+      allowIds: readonly string[];
+    },
   ): Promise<HarnessSyncResult> {
     const guid =
       /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const allow = new Set(plan.allowIds.map((x) => x.toLowerCase()));
     for (const id of plan.removeIds) {
       if (!guid.test(id)) throw new Error(`not an app id: ${id}`);
+      if (!allow.has(id.toLowerCase())) {
+        throw new Error(`app id ${id} is not on the removal allowlist`);
+      }
     }
     const shared = this.harnessSharedFolder(containerName);
     const staged: string[] = [];
@@ -2142,9 +2155,21 @@ ${script}
           plan.removeIds,
           staged,
           this.getCredentials(containerName),
+          [...allow],
         ),
         "harness-sync",
       );
+      const refused = /^SYNC_REMOVE_REFUSED:(.*)$/m.exec(result.output);
+      if (refused) {
+        throw this.buildPwshError({
+          containerName,
+          operation: "setup",
+          message: `Harness app sync refused, nothing removed: ${
+            refused[1]!.trim()
+          }`,
+          output: result.output,
+        });
+      }
       const parsed = parseHarnessSyncOutput(result.output);
       if (
         parsed.removeIncomplete.length > 0 ||
