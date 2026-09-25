@@ -1,0 +1,21 @@
+{
+  "steps": [
+    {
+      "status": 529,
+      "error_type": "overloaded_error"
+    },
+    {
+      "status": 529,
+      "error_type": "overloaded_error"
+    },
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "ok"
+        }
+      ],
+      "stop_reason": "end_turn"
+    }
+  ]
+}

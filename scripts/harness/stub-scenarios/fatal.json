@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {
+      "status": 500,
+      "error_type": "api_error"
+    }
+  ],
+  "after": "repeat_last"
+}

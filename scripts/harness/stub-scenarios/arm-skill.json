@@ -1,0 +1,52 @@
+{
+  "steps": [
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_01",
+          "name": "Skill",
+          "input": {
+            "skill": "al-build-loop"
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_02",
+          "name": "Bash",
+          "input": {
+            "command": "echo sk-ant-oat01-CANARYCANARYCANARYCANARYCANARY01"
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_03",
+          "name": "Bash",
+          "input": {
+            "command": "cg-al --version"
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "done"
+        }
+      ],
+      "stop_reason": "end_turn"
+    }
+  ]
+}

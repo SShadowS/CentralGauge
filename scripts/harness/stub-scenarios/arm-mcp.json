@@ -1,0 +1,103 @@
+{
+  "steps": [
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_01",
+          "name": "ToolSearch",
+          "input": {
+            "query": "select:mcp__al-tools__al_compile",
+            "max_results": 1
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_02",
+          "name": "mcp__al-tools__al_compile",
+          "input": {
+            "apps": [
+              "Core"
+            ]
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_03",
+          "name": "mcp__al-tools__al_symbols",
+          "input": {}
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_04",
+          "name": "Agent",
+          "input": {
+            "subagent_type": "general-purpose",
+            "description": "list",
+            "prompt": "List C:\\workspace."
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_05",
+          "name": "Glob",
+          "input": {
+            "pattern": "*"
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "listed"
+        }
+      ],
+      "stop_reason": "end_turn"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_06",
+          "name": "Bash",
+          "input": {
+            "command": "cat /c/cg-secrets/backend-token"
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "done"
+        }
+      ],
+      "stop_reason": "end_turn"
+    }
+  ]
+}
