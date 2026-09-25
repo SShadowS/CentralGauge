@@ -575,6 +575,8 @@ export async function sweepOwnedSandboxes(
 }
 
 export const SECRETS_DIR_PREFIX = "cg-harness-secrets-";
+/** Empty marker in the secrets mount; every entrypoint waits for it before starting. Never a secret. */
+export const READY_FILE = "ready";
 
 export type IcaclsRunner = (
   args: string[],
