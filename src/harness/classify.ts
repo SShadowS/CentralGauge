@@ -73,6 +73,9 @@ const MCP_TOKENS: [string, Category][] = [
   ["symbols", "symbols"],
 ];
 
+/** Words that may precede the action token of an unknown MCP tool (`run-tests`). */
+const RUN_VERBS = new Set(["run", "do", "exec", "execute", "start", "trigger"]);
+
 function classifyMcp(tool: string): Classification {
   const rest = tool.slice("mcp__".length);
   const cut = rest.indexOf("__");
@@ -87,7 +90,11 @@ function classifyMcp(tool: string): Classification {
   }
   const tokens = name.toLowerCase().split(/[_\-.]+/);
   for (const [tok, cat] of MCP_TOKENS) {
-    if (tokens.includes(tok)) return at(`mcp-token.${tok}`, cat);
+    const i = tokens.indexOf(tok);
+    // `get_build_logs`, `list_tests`: the action word is an object, not the verb.
+    if (i >= 0 && tokens.slice(0, i).every((t) => RUN_VERBS.has(t))) {
+      return at(`mcp-token.${tok}`, cat);
+    }
   }
   return NONE();
 }
@@ -174,9 +181,19 @@ const STRENGTH: Category[] = [
   "search",
   "other",
 ];
-/** A redirect to a real file, tested on the unquoted text only; 2>&1, >$null, >/dev/null, >nul are not edits. */
-const REDIRECT = /(^|[^0-9&>])>>?\s*(?!&|\$null\b|\/dev\/null\b|nul\b)[^\s&|]/i;
-const unquoted = (s: string) => s.replace(/"[^"]*"|'[^']*'/g, "");
+/**
+ * A redirect of stdout (`>`, `>>`, `1>`, `&>`, `*>`) to a real file, on text
+ * whose quoted parts are replaced by `_` (a quoted target still counts, a `>`
+ * inside quotes does not). `2>` and other stream numbers, `N>&M`, and targets
+ * `$null`, `/dev/null`, `nul` are not edits.
+ */
+const REDIRECT =
+  /(^|[^0-9>]|(?<![0-9])1)>>?\s*(?!&|\$null\b|\/dev\/null\b|nul\b)[^\s&|]/i;
+const unquoted = (s: string) => s.replace(/"[^"]*"|'[^']*'/g, "_");
+/** A lone `&` (background or cmd separator), not `&&`, `>&`, `&>` or a leading call operator. */
+const BARE_AMP = /(?<![>&])&(?![>&])/;
+/** Text the rules cannot see through: substitutions and escaped quotes. */
+const OPAQUE = /\$\(|`|\\"/;
 
 /** Split on ; && || | and newlines outside quotes; a segment after | is piped. */
 function segments(cmd: string): { text: string; piped: boolean }[] {
@@ -225,6 +242,7 @@ const commandWord = (w: string) =>
     .toLowerCase().replace(/\.(exe|cmd|ps1|bat|dll)$/, "");
 
 function classifyShell(cmd: string, depth = 0): Classification {
+  if (OPAQUE.test(cmd)) return NONE();
   const picked: Classification[] = [];
   for (const seg of segments(cmd)) {
     const r = classifySegment(seg.text, seg.piped, depth);
@@ -243,22 +261,26 @@ function base(ws: string[], piped: boolean): Classification | "neutral" | null {
   if (piped && FILTERS.has(w0)) return "neutral";
   if (NEUTRAL.has(w0)) return "neutral";
   if (w0 === "cg-al") {
-    const op = (ws[1] ?? "").toLowerCase();
+    const op = (ws[1] ?? "").replace(/\).*$/, "").toLowerCase();
     return ["compile", "test", "symbols"].includes(op)
       ? at(`shell.cg-al.${op}`, op as Category)
       : at("shell.cg-al.meta", "other");
   }
   if (w0 === "al" || w0 === "altool") {
-    return (ws[1] ?? "").toLowerCase() === "compile"
+    return (ws[1] ?? "").replace(/\).*$/, "").toLowerCase() === "compile"
       ? at("shell.toolchain.al", "compile")
       : null;
   }
   if (w0 === "alc") return at("shell.toolchain.alc", "compile");
   if (w0 === "git") return at("shell.git", "vcs");
   if (READ.has(w0)) return at("shell.read", "read");
+  if (
+    w0 === "find" &&
+    ws.some((w) => /^-(delete|exec|execdir|ok|okdir)$/i.test(w))
+  ) return null;
   if (SEARCH.has(w0)) return at("shell.search", "search");
   if (EDIT.has(w0)) return at("shell.edit", "edit");
-  if (ENV.has(w0)) return at("shell.env", "other");
+  if (ENV.has(w0)) return ws.length === 1 ? at("shell.env", "other") : null;
   return null;
 }
 
@@ -267,6 +289,7 @@ function classifySegment(
   piped: boolean,
   depth: number,
 ): Classification | "neutral" | null {
+  if (BARE_AMP.test(unquoted(text).replace(/^\s*&/, ""))) return null;
   let ws = words(text);
   if (ws[0] === "&") ws = ws.slice(1);
   if (ws.length === 0) return "neutral";
