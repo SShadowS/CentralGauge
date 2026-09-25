@@ -34,6 +34,7 @@ import { FakeDocker } from "../../harness/fake-docker.ts";
 import {
   ccBehavior,
   makeEnv,
+  mockImageBehavior,
   probeLines,
   type TestEnv,
 } from "../../harness/runtime-fixture.ts";
@@ -754,6 +755,48 @@ Deno.test("cellGate: credential-bearing arms need enforcement, or --supervised a
       ),
     ConfigurationError,
     "terminal",
+  );
+});
+
+Deno.test("harnessCell: a mock arm runs unattended with the variant from --qualify-manifest", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.docker.behavior = mockImageBehavior();
+  const manifest = join(t.env.privateRoot, "qualify-manifest.json");
+  await Deno.writeTextFile(
+    manifest,
+    JSON.stringify({
+      v: 1,
+      refapp_version: "refapp-v1",
+      tasks: {
+        "HX-001": { rev: "refapp-v1", positive: "correct", naive: ["b"] },
+      },
+    }),
+  );
+  const open = () =>
+    Promise.resolve({
+      env: { ...t.env, supervised: false, qualifyManifest: null },
+      close: () => Promise.resolve(),
+    });
+  const o = cellOpts(t, { supervised: false, qualifyManifest: manifest });
+  const r = await harnessCell(
+    "mock-positive",
+    "HX-001",
+    o,
+    open,
+    () => false,
+    noInterrupt,
+  );
+  assertEquals(
+    (await t.env.store.judgments(r.executions[0]!.id))[0]!.verdict,
+    "pass",
+  );
+  // The manifest from the option is the one used: naive:a is not listed in it.
+  await assertRejects(
+    () =>
+      harnessCell("mock-naive-a", "HX-001", o, open, () => false, noInterrupt),
+    ConfigurationError,
+    "naive variant a is not listed",
   );
 });
 

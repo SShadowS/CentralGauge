@@ -1,0 +1,6 @@
+id: mock-leave-state
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "fixture:leave-state", cg_al: true }
+limits: { timeout_min: 10, max_budget_usd: 1 }

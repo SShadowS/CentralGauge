@@ -21,6 +21,7 @@ import type {
   JudgmentRecord,
   RunKind,
 } from "./records.ts";
+import type { QualifyManifest } from "./qualify.ts";
 import type { LoadedTask } from "./task.ts";
 import {
   ConfigurationError,
@@ -115,6 +116,8 @@ export interface HarnessEnv {
   credentialLedger: string | null;
   /** Coordination lane name recorded with a reservation. */
   lane_id: string;
+  /** Qualification manifest (--qualify-manifest): names the variants mock arms apply (M1-35). */
+  qualifyManifest?: QualifyManifest | null;
   /** Operator interrupt (Ctrl+C, M1-24). */
   stop?: AbortSignal;
   now?: () => Date;
@@ -1076,6 +1079,13 @@ export async function runExecution(
   // Immutable task snapshot for recovery; the folder keeps the task id (loadTask checks it).
   const snapshot = join(p.taskCopy, cell.task.task.id);
   await safeCopyTree(cell.task.dir, snapshot);
+  // Resolved before the intent: a refused variant reserves and runs nothing.
+  const copies = adapter.configCopies?.({
+    settings: manifest.settings.native,
+    task: { ...cell.task, dir: snapshot },
+    repoRoot: env.repoRoot,
+    qualify: env.qualifyManifest ?? null,
+  }) ?? [];
   const staged = await stage(env, cell, p.work);
   const pristineHash = await hashTree(staged.pristine, "task");
   const name = sandboxName(cell.campaignId, id);
@@ -1132,6 +1142,11 @@ export async function runExecution(
     }
     const configDir = join(p.work, "config");
     await writeConfigDir(env.harnessRoot, configDir, manifest);
+    for (const c of copies) {
+      const dst = join(configDir, ...c.dst.split("/"));
+      if ((await Deno.stat(c.src)).isDirectory) await safeCopyTree(c.src, dst);
+      else await Deno.copyFile(c.src, dst);
+    }
     const extraMounts = await adapter.extraMounts(
       manifest.settings.native,
       cell.task.dir,

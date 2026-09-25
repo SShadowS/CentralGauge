@@ -342,6 +342,8 @@ export interface CellCliOptions {
   supervised: boolean;
   repeat: number;
   rev: string | null;
+  /** Qualification manifest naming the variants mock arms apply (M1-35). */
+  qualifyManifest?: string | null;
 }
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
@@ -419,7 +421,13 @@ export async function harnessCell(
     stop.abort();
   });
   try {
-    const env = { ...h.env, stop: stop.signal };
+    const env = {
+      ...h.env,
+      stop: stop.signal,
+      ...(o.qualifyManifest
+        ? { qualifyManifest: await loadQualifyManifest(o.qualifyManifest) }
+        : {}),
+    };
     cellGate(adapter, env, isTerminal);
     const facts = runtimeFacts(
       config,
@@ -709,6 +717,7 @@ interface CellCliFlags {
   supervised?: boolean;
   repeat?: number;
   rev?: string;
+  qualifyManifest?: string;
 }
 
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
@@ -737,6 +746,7 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     supervised: f.supervised === true,
     repeat: f.repeat ?? 1,
     rev: f.rev ?? null,
+    qualifyManifest: f.qualifyManifest ? abs(f.qualifyManifest) : null,
   };
 }
 
@@ -858,6 +868,10 @@ export function registerHarnessCommand(cli: Command): void {
       "Operator watches this credential-bearing run at the terminal (before egress enforcement)",
     )
     .option("--repeat <n:integer>", "Repeat index", { default: 1 })
+    .option(
+      "--qualify-manifest <path:string>",
+      "Qualification manifest naming the variants mock arms apply",
+    )
     .action((opts: CellCliFlags, config: string, task: string) =>
       fail(async () => void await harnessCell(config, task, cliOpts(opts)))
     );

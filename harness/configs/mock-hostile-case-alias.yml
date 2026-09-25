@@ -1,0 +1,6 @@
+id: mock-hostile-case-alias
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: hostile-case-alias, variant: positive }
+limits: { timeout_min: 10, max_budget_usd: 1 }

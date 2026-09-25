@@ -1,0 +1,7 @@
+# Mock harness image (spec 1a section 11). Built by `harness images build mock --version 1`.
+# BASE has no default: `harness images build` passes the inspected immutable base image and then
+# verifies that the built image's layers start with the base's layers (M1-24).
+ARG BASE
+FROM ${BASE}
+COPY mock.ps1 C:/mock.ps1
+CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\mock.ps1"]

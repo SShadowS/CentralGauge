@@ -1,0 +1,6 @@
+id: mock-sleep
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: sleep, variant: positive }
+limits: { timeout_min: 2, max_budget_usd: 1 }

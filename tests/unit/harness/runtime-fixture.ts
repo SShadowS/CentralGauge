@@ -4,9 +4,10 @@
  * git (the refapp repo) and System32 tar (staging) are the only processes.
  */
 
-import { join } from "@std/path";
+import { fromFileUrl, join } from "@std/path";
 import type { PricingBook } from "../../../src/harness/pricing.ts";
-import { claudeCodeAdapter } from "../../../src/harness/adapters/claude-code.ts";
+import type { QualifyManifest } from "../../../src/harness/qualify.ts";
+import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { Backend, defaultBackendOps } from "../../../src/harness/backend.ts";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
 import { loadConfig } from "../../../src/harness/config.ts";
@@ -131,6 +132,62 @@ export function ccBehavior(
   };
 }
 
+export const MOCK_IMAGE_ID = `sha256:${"a".repeat(64)}`;
+
+/** Mock arms (M1-35): the settings.json `settings` of each mock config. */
+const MOCK_ARMS: Record<string, Record<string, unknown>> = {
+  "mock-positive": { mode: "apply", variant: "positive" },
+  "mock-naive-a": { mode: "apply", variant: "naive:a" },
+  "mock-crash": { mode: "crash" },
+  "mock-crash-after-work": { mode: "crash-after-work", variant: "positive" },
+  "mock-usage": { mode: "usage-limit" },
+};
+
+/** The per-task qualification manifest mock arms resolve variants from (M1-24 schema). */
+export const QUALIFY: QualifyManifest = {
+  v: 1,
+  refapp_version: "refapp-v1",
+  tasks: { "HX-001": { rev: "refapp-v1", positive: "correct", naive: ["a"] } },
+};
+
+const MOCK_PS1 = fromFileUrl(
+  new URL("../../../harness/images/mock/mock.ps1", import.meta.url),
+);
+
+/**
+ * The mock image for FakeDocker: runs the real mock.ps1 in local pwsh with
+ * the container paths redirected to the mounted host folders.
+ */
+export function mockImageBehavior(): RunBehavior {
+  return async (call, io) => {
+    const child = new Deno.Command("pwsh", {
+      args: ["-NoProfile", "-NonInteractive", "-File", MOCK_PS1],
+      env: {
+        CG_MOCK_CONFIG: call.mounts.get("C:\\config")!.src,
+        CG_MOCK_WORKSPACE: call.mounts.get("C:\\workspace")!.src,
+      },
+      stdout: "piped",
+      stderr: "null",
+    }).spawn();
+    io.killed.then(() => {
+      try {
+        child.kill();
+      } catch { /* already exited */ }
+    });
+    let buf = "";
+    for await (
+      const chunk of child.stdout.pipeThrough(new TextDecoderStream())
+    ) {
+      buf += chunk;
+      const parts = buf.split(/\r?\n/);
+      buf = parts.pop()!;
+      for (const l of parts) if (l.trim()) await io.stdout(l.trim());
+    }
+    if (buf.trim()) await io.stdout(buf.trim());
+    return (await child.status).code;
+  };
+}
+
 export interface TestEnv {
   env: HarnessEnv;
   repo: RefappRepo;
@@ -159,10 +216,28 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
     "bundles/env/instructions/CLAUDE.md",
     "Environment facts.\n",
   );
+  for (const [id, settings] of Object.entries(MOCK_ARMS)) {
+    await write(
+      harnessRoot,
+      `configs/${id}.yml`,
+      `id: ${id}
+harness: mock
+harness_version: "1"
+models: {}
+settings: ${JSON.stringify(settings)}
+limits: { timeout_min: 5, max_budget_usd: 1 }
+`,
+    );
+  }
   const docker = new FakeDocker();
   docker.addImage(imageTag("claude-code", "2.1.282"), IMAGE_ID, {
     "centralgauge.harness": "claude-code",
     "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+  });
+  docker.addImage(imageTag("mock", "1"), MOCK_IMAGE_ID, {
+    "centralgauge.harness": "mock",
+    "centralgauge.harness.version": "1",
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
   });
   docker.behavior = ccBehavior(join(repo.tasksDir, "HX-001"), "correct");
@@ -211,6 +286,7 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
     egressEnforced: false,
     credentialLedger: join(privateRoot, "credential-runs.jsonl"),
     lane_id: "lane-test",
+    qualifyManifest: QUALIFY,
     killGraceMs: 50,
     opTimeoutMs: 100,
   };
@@ -225,8 +301,11 @@ export async function cellFor(
   const config = await loadConfig(t.harnessRoot, configId);
   const facts = runtimeFacts(
     config,
-    await imageFacts(t.docker, imageTag("claude-code", "2.1.282")),
-    claudeCodeAdapter,
+    await imageFacts(
+      t.docker,
+      imageTag(config.harness, config.harness_version),
+    ),
+    adapterFor(config.harness),
     catalog,
   );
   const armManifest = await resolveManifest(t.harnessRoot, config, facts);
