@@ -29,8 +29,14 @@ codeunit 50150 "My Feature Tests"
 - Test codeunits usually live in a separate test app that depends on the app under test
   (and on the test libraries it uses). `internalsVisibleTo` in the app under test lets it
   call internal procedures.
-- Database changes are rolled back when the test codeunit finishes, not between its test
-  procedures. Give each test its own keys and do not assume a table is empty.
+- Whether test changes to the database are rolled back depends on the test runner's
+  `TestIsolation` property: `Disabled` (the default) keeps them, `Codeunit` rolls back when
+  each test codeunit finishes, `Function` rolls back after each test procedure.
+- Here, tests run under the standard "Test Runner - Isol. Codeunit": changes are rolled back
+  when the test codeunit finishes, not between its test procedures. So give each test its
+  own keys and do not assume a table is empty. A test codeunit that declares
+  `RequiredTestIsolation = Disabled` is run by the isolation-disabled runner instead, and
+  its changes are kept.
 - Run them with `cg-al test <codeunit number>`.
 
 ## Assertions (codeunit Assert)

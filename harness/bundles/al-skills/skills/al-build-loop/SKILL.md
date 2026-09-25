@@ -5,43 +5,57 @@ description: Compile and test Business Central AL apps with the cg-al tool. Use 
 
 # AL build loop with cg-al
 
-`cg-al` is the only way to build and run AL here. It sends the workspace to a
-Business Central server and prints one line of JSON.
+`cg-al` is the only way to build and run AL here. It sends a small request to a
+Business Central build server: app names or test codeunit numbers, never files.
+The server reads the workspace itself.
 
-## Commands
+## Usage
 
-- `cg-al compile` compiles the apps in the workspace; `cg-al compile App1 App2` names app folders.
-- `cg-al test` runs every test codeunit; `cg-al test 50100 50101` runs only those codeunit numbers.
+```
+cg-al compile [App ...] | cg-al test [codeunit ...] | cg-al symbols | cg-al --version
+```
+
+- `cg-al compile` compiles every app in the workspace. `cg-al compile App1 App2` compiles the
+  named app folders and the apps they depend on.
+- `cg-al test` runs every runnable test codeunit of the Test app. `cg-al test <number> ...`
+  runs only those codeunits; each argument must be a codeunit number.
 - `cg-al symbols` asks the server for symbol information about the workspace.
 - `cg-al --version` prints the tool version.
 
-## Reading the output
+Run one cg-al command at a time; a second request while one is running is refused.
 
-The JSON normally has three parts: `op` (the command), `client` (`status` is the HTTP
-status, `script_ms` the wall time) and `result` (what the server returned).
-`result.ok` tells you whether the operation succeeded; the rest of `result`
-holds the compiler diagnostics or the per-test outcomes. If the tool could not reach the server, `client.status` is 0 and
-`result` only holds an `error`. Read the diagnostics
-in full: the first error often causes the ones after it.
+## Output
+
+Every operation prints one line of JSON:
+`{"op": ..., "client": {"script_ms": ..., "status": ...}, "result": ...}`.
+`client.status` is the HTTP status (0 when the server did not answer) and `result`
+is what the server returned: `result.ok` says whether the operation succeeded, and
+the rest holds compiler diagnostics per app or per-test outcomes. When the server
+did not answer, `result` only holds an `error`. If the tool's own credentials are
+missing it prints `{"op": ..., "error": ...}` instead.
+
+Bad arguments (an unknown operation, a test argument that is not a number) print a
+usage message on stderr and no JSON.
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                                                                                | What to do                                                           |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 0    | Success                                                                                                                                                                                | Move on.                                                             |
-| 1    | Your code or your request: compile errors, failing tests, an unknown app name, a codeunit that is not a runnable test, a workspace too large, or a second request while one is running | Read `result`, fix, run again. Never run two cg-al commands at once. |
-| 2    | The environment failed (no response, timeout, server error)                                                                                                                            | Retry once. If it repeats, say so; it is not your code.              |
-| 3    | Unauthorized                                                                                                                                                                           | Stop and report it; you cannot fix it.                               |
-| 64   | Bad arguments                                                                                                                                                                          | Check the usage above.                                               |
+| Code | Meaning                                                                                                                                                                                                                                                                             | What to do                                              |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| 0    | HTTP 200 and `result.ok`                                                                                                                                                                                                                                                            | Move on.                                                |
+| 1    | Your code or your request: HTTP 200 but not ok (compile errors, failing tests, violations), or a request the server refused (400 bad JSON, unknown app or codeunit that is not a runnable test; 404; 413 too large; 422 workspace over the limits; 429 a second concurrent request) | Read `result`, fix, run again.                          |
+| 2    | The environment: no response, 408, a 5xx error, or the tool's credentials unavailable                                                                                                                                                                                               | Retry once. If it repeats, say so; it is not your code. |
+| 3    | 401 unauthorized                                                                                                                                                                                                                                                                    | Stop and report it; you cannot fix it.                  |
+| 64   | Usage error                                                                                                                                                                                                                                                                         | Fix the arguments.                                      |
 
 ## Loop
 
 1. Make the smallest change that moves the task forward.
 2. `cg-al compile` the app you changed. Fix every error before testing; warnings can wait.
+   Read the diagnostics in full: the first error often causes the ones after it.
 3. `cg-al test` the codeunits that cover the change, then the whole suite before you finish.
 4. When a test fails, read its message and the code under test before editing. Do not
    change a test to make it pass unless the task asks you to change that test.
 5. Finish only after a clean compile of every app and a passing full test run.
 
-Compile the app that others depend on first: an error in a base app surfaces as
-missing symbols in every app built on it.
+An error in an app that others depend on surfaces as missing symbols in every
+app built on it: fix the base app first.
