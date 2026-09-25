@@ -76,10 +76,17 @@ export function incompleteTelemetry(
   declared: readonly (keyof Telemetry)[],
   t: Telemetry,
 ): (keyof Telemetry)[] {
+  // The run's own capabilities (raw_usage), never the installed adapter's.
+  const caps = (t.raw_usage as { capabilities?: { nested?: unknown } } | null)
+    ?.capabilities;
+  const nested = Array.isArray(caps?.nested) ? caps.nested : [];
   return declared.filter((k) => {
     const v = t[k];
-    return v === null || v === undefined ||
-      (Array.isArray(v) && v.length === 0);
+    if (v === null || v === undefined || (Array.isArray(v) && v.length === 0)) {
+      return true;
+    }
+    return k === "per_model" && nested.includes("per_model.requests") &&
+      t.per_model.some((m) => m.requests === null);
   });
 }
 

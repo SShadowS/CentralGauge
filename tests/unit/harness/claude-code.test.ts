@@ -9,7 +9,10 @@ import {
 import { join } from "@std/path";
 import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import { incompleteTelemetry } from "../../../src/harness/adapter.ts";
-import { claudeCodeAdapter } from "../../../src/harness/adapters/claude-code.ts";
+import {
+  CLAUDE_CAPABILITIES,
+  claudeCodeAdapter,
+} from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import {
   checkModelsInCatalog,
@@ -905,6 +908,10 @@ Deno.test("claude-code resume: a same-session resume parses; cost from the last 
     incompleteTelemetry(claudeCodeAdapter.declared, r.telemetry),
     [],
   );
+  assertEquals(
+    [raw(r).trace_complete, raw(r).incomplete_reasons],
+    [true, {}],
+  );
   const calls = (await resumeRecs()).flatMap((j, i) =>
     j.type === "assistant"
       ? j.message.content.filter((c: Rec) => c.type === "tool_use").map((
@@ -1069,10 +1076,21 @@ Deno.test("claude-code resume provenance: a result without session_id gives a nu
     trace.filter((x) => JSON.parse(x).type === "tool_call").length,
     36,
   );
-  const raw = r.telemetry.raw_usage as { trace_incomplete: string[] };
+  const raw = r.telemetry.raw_usage as {
+    trace_incomplete: string[];
+    trace_complete: boolean;
+    incomplete_reasons: Record<string, string>;
+  };
   assert(
     raw.trace_incomplete.some((m) => m.includes("line 144")),
     JSON.stringify(raw.trace_incomplete),
+  );
+  // M2-05 x M1-32b: records not proven the run's leave the trace incomplete,
+  // and the null reported cost names the provenance failure.
+  assertEquals(raw.trace_complete, false);
+  assertStringIncludes(
+    raw.incomplete_reasons["reported_cost_usd"] ?? "",
+    "line 144: result without session_id",
   );
 });
 
@@ -1343,4 +1361,80 @@ Deno.test("claude-code MCP review: run.ps1 never puts the backend token in mcp.j
   assert(!/token|cg-secrets/i.test(block), "no secret in mcp.json");
   assert(!block.includes("Set-Content"), "no re-encoding write");
   assert(code.some((l) => l.trim() === "$prompt | & claude @claudeArgs"));
+});
+
+const raw = (r: { telemetry: Telemetry }) =>
+  r.telemetry.raw_usage as unknown as {
+    capabilities: unknown;
+    trace_complete: boolean;
+    incomplete_reasons: {
+      [k: string]: string;
+      cost_usd: string;
+      per_model: string;
+    };
+  };
+
+Deno.test("metrics: probe is complete; requests per model; capabilities persisted; no reasons", async () => {
+  const { r } = await parse(await Deno.readTextFile(FIXTURE));
+  assertEquals([raw(r).trace_complete, raw(r).incomplete_reasons], [true, {}]);
+  assertEquals(r.telemetry.per_model.map((m) => m.requests), [4]);
+  assertEquals(raw(r).capabilities, CLAUDE_CAPABILITIES);
+  assertEquals(
+    incompleteTelemetry(claudeCodeAdapter.declared, r.telemetry),
+    [],
+  );
+});
+
+Deno.test("metrics: usable final usage but an assistant record without a message id: cost valid, requests null, per_model incomplete with a reason", async () => {
+  const lines = (await Deno.readTextFile(FIXTURE)).split("\n").filter(Boolean)
+    .map((l) => JSON.parse(l));
+  const i = lines.findIndex((j) => j.type === "assistant");
+  delete lines[i].message.id;
+  const { r } = await parse(
+    lines.map((j) => JSON.stringify(j)).join("\n") + "\n",
+  );
+  assert(r.telemetry.cost_usd !== null, "primary cost stays valid");
+  assertEquals(r.telemetry.per_model.map((m) => m.requests), [null]);
+  assertEquals(raw(r).trace_complete, false);
+  assertEquals(incompleteTelemetry(claudeCodeAdapter.declared, r.telemetry), [
+    "per_model",
+  ]);
+  assertStringIncludes(
+    raw(r)
+      .incomplete_reasons["per_model[anthropic/claude-sonnet-5].requests"] ??
+      "",
+    "without a message id",
+  );
+});
+
+Deno.test("metrics: final result plus a non-JSON line: capture incomplete, requests null, reasons named", async () => {
+  const text = (await Deno.readTextFile(FIXTURE)).replace(
+    "\n",
+    "\nWARNING stray\n",
+  );
+  const { r } = await parse(text);
+  assertEquals([
+    raw(r).trace_complete,
+    r.telemetry.per_model.map((m) => m.requests),
+  ], [false, [null]]);
+  assertStringIncludes(raw(r).incomplete_reasons.cost_usd, "non-JSON");
+});
+
+Deno.test("metrics: a killed stream: every declared field null has a reason; compactions undeclared stays null", async () => {
+  const lines = (await Deno.readTextFile(FIXTURE)).split("\n").filter(Boolean)
+    .slice(0, 20);
+  const { r } = await parse(lines.join("\n") + "\n", null);
+  const missing = incompleteTelemetry(claudeCodeAdapter.declared, r.telemetry);
+  const reasons = raw(r).incomplete_reasons;
+  // No result record: modelUsage is absent, so per_model is empty and its reason is the top-level key, never a nested one.
+  assertEquals(r.telemetry.per_model, []);
+  assert(missing.includes("per_model"));
+  assertEquals(Object.keys(reasons).sort(), [...missing].sort());
+  assertEquals(
+    Object.keys(reasons).filter((k) => k.startsWith("per_model[")),
+    [],
+  );
+  assertStringIncludes(reasons.per_model, "no result record");
+  assertStringIncludes(reasons.cost_usd, "no result record");
+  assertEquals(r.telemetry.compactions, null);
 });

@@ -19,7 +19,8 @@ import type { ModelTokens } from "../pricing.ts";
 import type { Telemetry, Termination } from "../records.ts";
 import type { TraceEvent } from "../trace.ts";
 import { ConfigurationError } from "../../errors.ts";
-import { requestedComponents } from "../adapter.ts";
+import { incompleteTelemetry, requestedComponents } from "../adapter.ts";
+import { RULES_VERSION } from "../classify.ts";
 import { estimateCost } from "../pricing.ts";
 import { writeTrace } from "../trace.ts";
 import type { J, Line as JsonlLine } from "./jsonl.ts";
@@ -204,6 +205,27 @@ function provenanceAndPlacement(
   return { costs: [...costs, ...trace], trace };
 }
 
+const DECLARED: (keyof Telemetry)[] = [
+  "harness_version",
+  "cost_usd",
+  "reported_cost_usd",
+  "per_model",
+  "turns",
+  "wall_ms",
+  "exit_code",
+  "stop_reason",
+];
+
+/** Per-run provenance persisted in raw_usage.capabilities; the report reads it, never the installed adapter. */
+export const CLAUDE_CAPABILITIES = {
+  v: 1,
+  parser: "claude-code-trace@2",
+  rules: `rules@${RULES_VERSION}`,
+  telemetry: DECLARED,
+  nested: ["per_model.requests"],
+  trace_types: ["tool_call", "model_request", "subagent_spawn", "skill_invoke"],
+} as const;
+
 export function parseClaudeStream(
   text: string,
   input: Omit<ParseInput, "traceOut">,
@@ -297,6 +319,11 @@ export function parseClaudeStream(
   const built = claudeTrace(lines, file, denied);
   streamProblems.push(...built.problems, ...built.structural);
   const trace = built.events;
+  // Three notions, never merged (M2-05): capture, trace and per-metric completeness.
+  const captureComplete = result !== undefined && nonJson.count === 0;
+  const traceComplete = captureComplete && built.structural.length === 0 &&
+    unproven.trace.length === 0;
+  const requestsKnown = captureComplete && built.unidentified === 0;
 
   // TTL splits: assistant messages (deduplicated by id) plus sub-agent
   // tool_use_result usage, per model. A split that is absent leaves the sum
@@ -360,7 +387,7 @@ export function parseClaudeStream(
     }
     return {
       model,
-      requests: null,
+      requests: requestsKnown ? (built.requests.get(model) ?? 0) : null,
       input: req(x, "inputTokens", problems),
       cache_read: req(x, "cacheReadInputTokens", problems),
       cache_write_5m: exact ? s.m5 : 0,
@@ -476,46 +503,74 @@ export function parseClaudeStream(
     c.startsWith("plugin:") || c.startsWith("lsp:") ||
     c.startsWith("toolchain:")
   );
+  const telemetry: Telemetry = {
+    harness_version: version,
+    cost_usd: est?.cost_usd ?? null,
+    cost_source: est?.cost_usd != null ? "estimated" : null,
+    pricing_snapshot: est?.cost_usd != null ? est.pricing_snapshot : null,
+    reported_cost_usd: proven && typeof result?.total_cost_usd === "number"
+      ? result.total_cost_usd
+      : null,
+    per_model: est?.per_model ?? [],
+    // Per segment in 2.1.282 (fixture proof: 13 then 7): summed.
+    turns: sumOf(results, "num_turns"),
+    compactions: null,
+    wall_ms: sumOf(results, "duration_ms"),
+    exit_code: input.exitCode,
+    stop_reason: stop,
+    refusal_detected: result ? stop === "refusal" : null,
+    raw_usage: null,
+  };
+  const noResult =
+    "no result record (the run was killed or crashed before its final record)";
+  const reasonOf = (k: string) =>
+    !result
+      ? noResult
+      : k === "reported_cost_usd" && !proven
+      ? unproven.costs.join("; ")
+      : k === "cost_usd"
+      ? (est?.missing.join("; ") || "cost not computable")
+      : nonJson.count > 0
+      ? nonJsonReason(nonJson)
+      : `${k} not reported by the result record`;
+  const reasons: Record<string, string> = {};
+  for (const k of incompleteTelemetry(DECLARED, telemetry)) {
+    if (k !== "per_model" || telemetry.per_model.length === 0) {
+      reasons[k] = reasonOf(k);
+    }
+  }
+  for (const m of telemetry.per_model) {
+    if (m.requests === null) {
+      reasons[`per_model[${m.model}].requests`] = !captureComplete
+        ? (result ? nonJsonReason(nonJson) : noResult)
+        : `${built.unidentified} assistant record(s) without a message id or model`;
+    }
+  }
+  telemetry.raw_usage = toJson({
+    usage: result?.usage ?? null,
+    modelUsage: result?.modelUsage ?? null,
+    ...(results.length > 1
+      ? {
+        results: results.map(({ rec, line }) => ({
+          line,
+          num_turns: rec.num_turns ?? null,
+          duration_ms: rec.duration_ms ?? null,
+          total_cost_usd: rec.total_cost_usd ?? null,
+          usage: rec.usage ?? null,
+        })),
+      }
+      : {}),
+    partial,
+    missing: est?.missing ??
+      (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
+    stream_problems: streamProblems,
+    ...(unproven.trace.length > 0 ? { trace_incomplete: unproven.trace } : {}),
+    capabilities: CLAUDE_CAPABILITIES,
+    trace_complete: traceComplete,
+    incomplete_reasons: reasons,
+  });
   return {
-    telemetry: {
-      harness_version: version,
-      cost_usd: est?.cost_usd ?? null,
-      cost_source: est?.cost_usd != null ? "estimated" : null,
-      pricing_snapshot: est?.cost_usd != null ? est.pricing_snapshot : null,
-      reported_cost_usd: proven && typeof result?.total_cost_usd === "number"
-        ? result.total_cost_usd
-        : null,
-      per_model: est?.per_model ?? [],
-      // Per segment in 2.1.282 (fixture proof: 13 then 7): summed.
-      turns: sumOf(results, "num_turns"),
-      compactions: null,
-      wall_ms: sumOf(results, "duration_ms"),
-      exit_code: input.exitCode,
-      stop_reason: stop,
-      refusal_detected: result ? stop === "refusal" : null,
-      raw_usage: toJson({
-        usage: result?.usage ?? null,
-        modelUsage: result?.modelUsage ?? null,
-        ...(results.length > 1
-          ? {
-            results: results.map(({ rec, line }) => ({
-              line,
-              num_turns: rec.num_turns ?? null,
-              duration_ms: rec.duration_ms ?? null,
-              total_cost_usd: rec.total_cost_usd ?? null,
-              usage: rec.usage ?? null,
-            })),
-          }
-          : {}),
-        partial,
-        missing: est?.missing ??
-          (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
-        stream_problems: streamProblems,
-        ...(unproven.trace.length > 0
-          ? { trace_incomplete: unproven.trace }
-          : {}),
-      }),
-    },
+    telemetry,
     observed: {
       harness_version: version,
       models: result ? models.map(slugOf) : null,
@@ -552,16 +607,7 @@ const DISALLOWED_TOOLS = [
 
 export const claudeCodeAdapter: HarnessAdapter = {
   harness: "claude-code",
-  declared: [
-    "harness_version",
-    "cost_usd",
-    "reported_cost_usd",
-    "per_model",
-    "turns",
-    "wall_ms",
-    "exit_code",
-    "stop_reason",
-  ],
+  declared: DECLARED,
   secretFiles: ["claude-oauth-token"],
   credentialBearing: true,
   enforcesBudget: true,
