@@ -32,6 +32,7 @@ const SHELL_RULES: [RegExp, Category][] = [
   [/^\s*cg-al\s+compile\b/i, "compile"],
   [/^\s*cg-al\s+test\b/i, "test"],
   [/^\s*cg-al\s+symbols\b/i, "symbols"],
+  [/^\s*cg-al\s+publish\b/i, "publish"],
   [/^\s*(al|altool)(\.exe)?\s+compile\b/i, "compile"],
   [/\balc(\.exe)?\s/i, "compile"],
   [/^\s*git\s/i, "vcs"],
@@ -47,7 +48,9 @@ const MCP_RULES: [RegExp, Category][] = [
 
 export function classify(tool: string, command?: string): Category | null {
   if (tool.startsWith("mcp__")) {
-    for (const [re, c] of MCP_RULES) if (re.test(tool)) return c;
+    // Match the tool part only: the server name must not decide the category.
+    const name = tool.split("__").pop() ?? "";
+    for (const [re, c] of MCP_RULES) if (re.test(name)) return c;
     return null;
   }
   if (
@@ -94,6 +97,8 @@ function selfCheck() {
     ["Bash", "git status", "vcs"],
     ["Read", undefined, "read"],
     ["mcp__al-tools__al_compile", undefined, "compile"],
+    ["mcp__test-server__read_file", undefined, null],
+    ["Bash", "cg-al publish Core", "publish"],
     ["Bash", "python make_stuff.py", null],
     ["bash", "ls -la", "search"],
     ["write", undefined, "edit"],
