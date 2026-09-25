@@ -39,16 +39,16 @@ end;
 ## Interfaces
 
 ```al
-interface "Price Calculator"
+interface "Label Printer"
 {
-    procedure Calculate(Amount: Decimal): Decimal;
+    procedure Print(LabelText: Text): Boolean;
 }
 
-codeunit 50110 "Standard Price" implements "Price Calculator"
+codeunit 50110 "Plain Label Printer" implements "Label Printer"
 {
-    procedure Calculate(Amount: Decimal): Decimal
+    procedure Print(LabelText: Text): Boolean
     begin
-        exit(Amount);
+        exit(LabelText <> '');
     end;
 }
 ```
@@ -58,14 +58,14 @@ codeunit 50110 "Standard Price" implements "Price Calculator"
 - Combine with an extensible enum so other apps can add implementations:
 
 ```al
-enum 50110 "Price Method" implements "Price Calculator"
+enum 50110 "Printer Kind" implements "Label Printer"
 {
     Extensible = true;
-    value(0; Standard) { Implementation = "Price Calculator" = "Standard Price"; }
+    value(0; Plain) { Implementation = "Label Printer" = "Plain Label Printer"; }
 }
 ```
 
-Then `Calculator := Setup."Price Method";` picks the implementation, and another app adds
+Then `Printer := Setup."Printer Kind";` picks the implementation, and another app adds
 a value in an `enumextension` with its own codeunit.
 
 - Use an interface when callers need one of several interchangeable behaviors; use an event

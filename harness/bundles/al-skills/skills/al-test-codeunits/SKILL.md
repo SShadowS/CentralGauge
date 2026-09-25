@@ -29,8 +29,8 @@ codeunit 50150 "My Feature Tests"
 - Test codeunits usually live in a separate test app that depends on the app under test
   (and on the test libraries it uses). `internalsVisibleTo` in the app under test lets it
   call internal procedures.
-- Each `[Test]` procedure runs in its own transaction; database changes are rolled back
-  when the test ends. Do not rely on data another test created.
+- Database changes are rolled back when the test codeunit finishes, not between its test
+  procedures. Give each test its own keys and do not assume a table is empty.
 - Run them with `cg-al test <codeunit number>`.
 
 ## Assertions (codeunit Assert)
