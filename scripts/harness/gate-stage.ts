@@ -28,7 +28,7 @@ export async function git(
   cwd: string,
   args: string[],
   env?: Record<string, string>,
-): Promise<{ ok: boolean; out: string }> {
+): Promise<{ ok: boolean; out: string; bytes: Uint8Array }> {
   const r = await new Deno.Command("git", {
     args,
     cwd,
@@ -37,7 +37,11 @@ export async function git(
     stdout: "piped",
     stderr: "null",
   }).output();
-  return { ok: r.success, out: new TextDecoder().decode(r.stdout) };
+  return {
+    ok: r.success,
+    out: new TextDecoder().decode(r.stdout),
+    bytes: r.stdout,
+  };
 }
 
 const posix = (p: string) => p.replaceAll("\\", "/");
@@ -137,15 +141,23 @@ export async function exportSource(
   if (!ls.ok) throw new Error(`ls-tree ${commit} failed`);
   const blobs: { path: string; sha: string }[] = [];
   const seen = new Map<string, string>();
-  for (const rec of ls.out.split("\0")) {
-    if (rec === "") continue;
-    const tab = rec.indexOf("\t");
-    const [mode, , sha] = rec.slice(0, tab).split(" ") as [
-      string,
-      string,
-      string,
-    ];
-    const path = rec.slice(tab + 1);
+  // Parsed from raw bytes: a path that is not valid UTF-8 is refused, never
+  // rewritten (a lossy decode would stage a file under a different name).
+  const utf8 = new TextDecoder("utf-8", { fatal: true });
+  for (let at = 0; at < ls.bytes.length;) {
+    const end = ls.bytes.indexOf(0, at);
+    const rec = ls.bytes.subarray(at, end < 0 ? ls.bytes.length : end);
+    at = end < 0 ? ls.bytes.length : end + 1;
+    if (rec.length === 0) continue;
+    const tab = rec.indexOf(9);
+    const [mode, , sha] = new TextDecoder().decode(rec.subarray(0, tab))
+      .split(" ") as [string, string, string];
+    let path: string;
+    try {
+      path = utf8.decode(rec.subarray(tab + 1));
+    } catch {
+      throw new Error(`a path under ${sha} is not valid UTF-8`);
+    }
     if (mode === "120000" || mode === "160000") {
       throw new Error(`${path}: link or submodule refused`);
     }
@@ -225,10 +237,13 @@ async function* files(
   }
 }
 
+/** AL source by extension, in any case (.al, .AL, .Al). */
+const isAl = (p: string) => p.toLowerCase().endsWith(".al");
+
 /** Zero bytes, or an .al file with nothing but whitespace and comments. */
 async function noContent(path: string): Promise<boolean> {
   if ((await Deno.stat(path)).size === 0) return true;
-  if (!path.toLowerCase().endsWith(".al")) return false;
+  if (!isAl(path)) return false;
   const text = decodeAl(await Deno.readFile(path));
   return text !== null && stripAl(text, true).trim() === "";
 }
@@ -300,7 +315,11 @@ export async function stageWorkspace(
       }
       // Agent workspace: sources and manifests only; shipped tests are restored (spec 1a section 7).
       if (!BUILD_ORDER.includes(top)) continue;
-      if (!f.rel.endsWith(".al") && f.rel !== `${top}/app.json`) continue;
+      if (
+        !isAl(f.rel) && f.rel.toLowerCase() !== `${top}/app.json`.toLowerCase()
+      ) {
+        continue;
+      }
       if (await noContent(f.path)) {
         throw new Error(`${f.path}: deletion is not supported`);
       }
@@ -317,7 +336,7 @@ export async function testManifestIn(dir: string): Promise<TestRef[]> {
   const out: TestRef[] = [];
   if (!(await exists(dir))) return out;
   for await (const f of files(dir)) {
-    if (!f.rel.endsWith(".al")) continue;
+    if (!isAl(f.rel)) continue;
     out.push(...testManifests(decodeAl(await Deno.readFile(f.path)) ?? ""));
   }
   return out.sort((a, b) => a.codeunit - b.codeunit);
@@ -356,6 +375,8 @@ function placeholderAssertions(al: string): string[] {
     )
     .map((m) => m[0].replace(/\s+/g, " "));
 }
+
+const DIRECTIVE_RE = /^[ \t]*#[ \t]*(if|elif|else|endif|define|undef)\b/gim;
 
 /** Static rules. Problems block; warnings do not. */
 export async function checkTask(
@@ -397,7 +418,7 @@ export async function checkTask(
     const root = join(refappDir, m);
     if (!(await exists(root))) continue;
     for await (const f of files(root)) {
-      if (f.rel.endsWith(".al")) {
+      if (isAl(f.rel)) {
         all.push({
           source: "refapp",
           rel: `${m}/${f.rel}`,
@@ -409,7 +430,7 @@ export async function checkTask(
   }
   if (await exists(join(dir, "oracle"))) {
     for await (const f of files(join(dir, "oracle"))) {
-      if (f.rel.endsWith(".al")) {
+      if (isAl(f.rel)) {
         all.push({
           source: "oracle",
           rel: f.rel,
@@ -428,7 +449,7 @@ export async function checkTask(
         rel: f.rel,
         size: (await Deno.stat(f.path)).size,
       });
-      if (f.rel.endsWith(".al")) {
+      if (isAl(f.rel)) {
         const text = await alText(f.path, `${lr}/${f.rel}`);
         if (text !== "" && stripAl(text, true).trim() === "") {
           problems.push(
@@ -456,6 +477,18 @@ export async function checkTask(
   }
   for (const f of all) {
     const where = `${f.source}/${f.rel}`;
+    // Conditional compilation could hide checked code from these rules while
+    // the compiler sees something else. #region/#endregion are layout only.
+    if (f.source !== "refapp") {
+      const found = new Set(
+        [...stripAl(f.text).matchAll(DIRECTIVE_RE)].map((m) =>
+          m[1]!.toLowerCase()
+        ),
+      );
+      for (const d of found) {
+        problems.push(`${where}: preprocessor directive #${d}`);
+      }
+    }
     const range = f.module === "Oracle" ? oracleBand : RANGES[f.module];
     if (!range) {
       problems.push(`${where}: not under a module folder`);
