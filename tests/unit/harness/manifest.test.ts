@@ -11,6 +11,7 @@ import {
   executionMismatch,
   forTask,
   manifestHash,
+  mcpDerivedSettingsOnly,
   ResolvedManifestSchema,
   resolveManifest,
   type RuntimeFacts,
@@ -298,4 +299,103 @@ Deno.test("ResolvedManifestSchema: route keys must equal model slots as a set", 
     provider_routes: { a: "anthropic", b: "anthropic" },
   });
   assertEquals(r.success, false);
+});
+
+// M2-14: under vary [mcp], a settings difference is allowed only when it is
+// entirely MCP-derived (settings.native.mcp and .mcp_tools from the mcp component).
+const MCP_NATIVE = {
+  mcp: ["al-tools"],
+  mcp_tools: { "al-tools": ["al_compile", "al_symbols", "al_test"] },
+};
+const withNative = (extra: Record<string, unknown>): RuntimeFacts => ({
+  ...FACTS,
+  native_settings: { ...FACTS.native_settings, ...extra },
+});
+
+Deno.test("vary [mcp]: a variant whose settings differ only by MCP-derived native keys passes", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), FACTS);
+  const v = await resolveManifest(
+    r,
+    config("mcp", { mcp: ["al-tools"] }),
+    withNative(MCP_NATIVE),
+  );
+  assertEquals(await mcpDerivedSettingsOnly(base, v), true);
+  await assertVaryHolds(base, v, ["mcp"]);
+});
+
+Deno.test("vary [mcp]: an unrelated native setting still fails", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), FACTS);
+  const v = await resolveManifest(
+    r,
+    config("mcp", { mcp: ["al-tools"] }),
+    withNative({ ...MCP_NATIVE, thinking: "high" }),
+  );
+  await assertRejects(
+    () => assertVaryHolds(base, v, ["mcp"]),
+    ConfigurationError,
+    "settings",
+  );
+});
+
+Deno.test("vary [mcp]: MCP keys that do not match the mcp component fail", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), FACTS);
+  for (
+    const extra of [
+      { ...MCP_NATIVE, mcp: ["other"] },
+      {
+        ...MCP_NATIVE,
+        mcp_tools: { "al-tools": ["al_compile"], other: ["x"] },
+      },
+    ]
+  ) {
+    const v = await resolveManifest(
+      r,
+      config("mcp", { mcp: ["al-tools"] }),
+      withNative(extra),
+    );
+    assertEquals(await mcpDerivedSettingsOnly(base, v), false);
+    await assertRejects(
+      () => assertVaryHolds(base, v, ["mcp"]),
+      ConfigurationError,
+      "settings",
+    );
+  }
+});
+
+Deno.test("vary [skills]: MCP-derived native keys are refused", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), FACTS);
+  const v = await resolveManifest(
+    r,
+    config("skills", { skills: "bundles/al/skills", mcp: ["al-tools"] }),
+    withNative(MCP_NATIVE),
+  );
+  const err = await assertRejects(
+    () => assertVaryHolds(base, v, ["skills"]),
+    ConfigurationError,
+  );
+  assertEquals(
+    /\bmcp\b/.test(err.message) && /\bsettings\b/.test(err.message),
+    true,
+    err.message,
+  );
+});
+
+Deno.test("vary [mcp]: a requested settings difference still fails", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), FACTS);
+  const cfg = HarnessConfigSchema.parse({
+    ...config("mcp", { mcp: ["al-tools"] }),
+    settings: { effort: "low" },
+  });
+  const v = await resolveManifest(r, cfg, withNative(MCP_NATIVE));
+  assertEquals(await mcpDerivedSettingsOnly(base, v), false);
+  await assertRejects(
+    () => assertVaryHolds(base, v, ["mcp"]),
+    ConfigurationError,
+    "settings",
+  );
 });
