@@ -19,7 +19,8 @@ export const SECRET_PATTERNS: readonly { name: string; re: RegExp }[] = [
     re: /eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
   },
 ];
-const BEARER = /(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/gi;
+// Same-line whitespace only: `Bearer\n<word>` in prose is not a header.
+const BEARER = /(Bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
 
 export function redactPatternText(s: string): { text: string; count: number } {
   let count = 0;
