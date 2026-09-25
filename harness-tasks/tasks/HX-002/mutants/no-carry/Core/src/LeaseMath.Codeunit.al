@@ -18,10 +18,9 @@ codeunit 70002 "CGR Lease Math"
     begin
         Clear(Amounts);
         Installment := Round(Total / Count, 0.01);
-        for i := 1 to Count - 1 do begin
+        for i := 1 to Count do begin
             Amounts.Add(Installment);
             Allocated += Installment;
         end;
-        Amounts.Add(Total - Allocated);
     end;
 }

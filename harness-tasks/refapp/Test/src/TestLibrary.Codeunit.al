@@ -25,4 +25,11 @@ codeunit 80090 "CGR Test Library"
     begin
         exit(RentalMgt.CreateContract(VehicleNo, 'Test Customer', 20270301D, 20270303D));
     end;
+
+    procedure CreateLease(VehicleNo: Code[20]; StartDate: Date; Months: Integer; BaseRate: Decimal): Code[20]
+    var
+        LeaseMgt: Codeunit "CGR Lease Mgt";
+    begin
+        exit(LeaseMgt.CreateContract(VehicleNo, 'Test Customer', StartDate, Months, BaseRate));
+    end;
 }
