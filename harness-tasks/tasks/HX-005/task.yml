@@ -1,0 +1,18 @@
+id: HX-005
+refapp_version: refapp-v1-rc5
+kind: refactor
+prompt: prompt.md
+touches: [Rental]
+coupling: [interface]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 85400, procedures: [DailyWeekdaysUnchanged, DailyWeekendSurchargeUnchanged, DailyFractionalSurcharge, WeekendPackageUnchanged, ExcessKmBelowAllowance, ExcessKmAtAllowance, ExcessKmAboveAllowance, ExcessKmOnWeekendPackage, PartnerMethodPriceUsed, PartnerMethodGetsExcessKm, PartnerFractionalRoundedOnce, PostingUsesPartnerMethod] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
