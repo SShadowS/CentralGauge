@@ -237,12 +237,12 @@ Deno.test("runGate: tag mismatch blocks promotion", async () => {
   assertEquals(report.promoted, false);
 });
 
-// Orchestrator ruling (M4-01b): a staged variant whose objects or app.json
-// collide on publish is a candidate build failure, never infra.
+// Orchestrator ruling (M4-01b): a staged variant whose objects collide on
+// publish is a candidate build failure, never infra.
 for (
   const msg of [
     "The object Codeunit 70100 already exists in another extension",
-    "An application with the same App ID and Version is already published",
+    "The name 'CGR Vehicle' is already declared by another extension",
   ]
 ) {
   Deno.test(`runGate: publish collision is a build failure, not infra (${msg.slice(0, 30)})`, async () => {
@@ -284,6 +284,35 @@ for (
     );
   });
 }
+
+// Orchestrator ruling (M4-01c review, a): the BCH unpublish race also produces
+// "same App ID and Version", so it stays infra (exit 3, retryable).
+Deno.test("runGate: 'same App ID and Version' on publish stays infra", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const msg =
+    "An application with the same App ID and Version is already published";
+  const bc = mockBc({ failPublish: "Fleet", publishError: msg });
+  const r = await runVariant(
+    bc,
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertEquals(r.builds.at(-1)?.detail, msg);
+  assert(summarize(loaded.task, r).infra);
+  const { code } = await runGate({
+    bc,
+    loaded,
+    source,
+    container: "Mock",
+    outDir: await tmp(),
+    tmpRoot,
+    tagTree: null,
+  });
+  assertEquals(code, 3);
+});
 
 Deno.test("runVariant: a non-collision publish failure stays infra", async () => {
   const { loaded, source, tmpRoot } = await fixture();

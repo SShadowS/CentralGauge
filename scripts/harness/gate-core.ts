@@ -294,12 +294,12 @@ function appState(run: RunResult, app: string): AppState {
 }
 
 /**
- * Publish rejections caused by the staged content itself (an object id/name or
- * the app id+version already taken): a candidate build failure, never infra
- * (orchestrator ruling, M4-01b).
+ * Publish rejections caused by the staged content itself (an object id or name
+ * already taken): a candidate build failure, never infra (orchestrator ruling,
+ * M4-01b). "same App ID and Version" is deliberately NOT here: the BCH
+ * unpublish race produces it too, so it stays infra (ruling a, M4-01c review).
  */
-export const PUBLISH_COLLISION =
-  /already exists|already (?:been )?declared|same App ID and Version/i;
+export const PUBLISH_COLLISION = /already exists|already (?:been )?declared/i;
 
 export function summarize(task: HarnessTask, run: RunResult): RunSummary {
   const states = BUILD_ORDER.map((a) => appState(run, a));
