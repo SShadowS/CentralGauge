@@ -1,0 +1,19 @@
+# Harness Bench base sandbox (spec 1a section 3): Node, Git, cg-al client.
+# SERVERCORE is the digest-pinned image from harness/images/pins.json (M1-26).
+# Node 22.19.0, not 22.12.0: pi-coding-agent 0.87.1 needs >= 22.19.0 (findings section 3).
+# No secret is ever copied into a layer.
+ARG SERVERCORE
+FROM ${SERVERCORE}
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+RUN Invoke-WebRequest -Uri 'https://nodejs.org/dist/v22.19.0/node-v22.19.0-x64.msi' -OutFile 'nodejs.msi'; \
+    Start-Process msiexec.exe -ArgumentList '/i', 'nodejs.msi', '/quiet', '/norestart' -Wait; \
+    Remove-Item -Force nodejs.msi; \
+    [Environment]::SetEnvironmentVariable('PATH', 'C:\Program Files\nodejs;' + $env:PATH, [EnvironmentVariableTarget]::Machine)
+RUN Invoke-WebRequest -Uri 'https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-64-bit.7z.exe' -OutFile 'git-portable.exe'; \
+    Start-Process -FilePath '.\git-portable.exe' -ArgumentList '-o', 'C:\Git', '-y' -Wait; \
+    Remove-Item -Force git-portable.exe; \
+    [Environment]::SetEnvironmentVariable('PATH', 'C:\Git\cmd;C:\Git\bin;C:\Git\usr\bin;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
+RUN New-Item -ItemType Directory -Force -Path C:\workspace, C:\task, C:\config | Out-Null
+WORKDIR C:/workspace
+COPY cg-al.ps1 C:/cg-al.ps1
+RUN Set-Content -Path C:\Windows\System32\cg-al.cmd -Value '@powershell -NoProfile -ExecutionPolicy Bypass -File C:\cg-al.ps1 %*'
