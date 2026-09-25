@@ -59,7 +59,7 @@ export const BOOK: PricingBook = {
 export const PROBE_COST =
   (10 * 2 + 120646 * 0.2 + 22276 * 2.5 + 6792 * 4 + 2181 * 10) / 1e6;
 export const IMAGE_ID = `sha256:${"c".repeat(64)}`;
-const catalog = {
+export const CATALOG = {
   models: [{
     slug: "anthropic/claude-sonnet-5",
     api_model_id: "claude-sonnet-5",
@@ -306,7 +306,7 @@ export async function cellFor(
       imageTag(config.harness, config.harness_version),
     ),
     adapterFor(config.harness),
-    catalog,
+    CATALOG,
   );
   const armManifest = await resolveManifest(t.harnessRoot, config, facts);
   const task = await loadTask(join(t.repo.tasksDir, taskId));
