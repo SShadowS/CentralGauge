@@ -12,7 +12,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 85400, procedures: [DailyWeekdaysUnchanged, DailyWeekendSurchargeUnchanged, DailyFractionalSurcharge, WeekendPackageUnchanged, ExcessKmBelowAllowance, ExcessKmAtAllowance, ExcessKmAboveAllowance, ExcessKmOnWeekendPackage, PartnerMethodPriceUsed, PartnerMethodGetsExcessKm, PartnerFractionalRoundedOnce, PostingUsesPartnerMethod] }
+    - { codeunit: 85400, procedures: [DailyWeekdaysUnchanged, DailyWeekendSurchargeUnchanged, DailyFractionalSurcharge, WeekendPackageUnchanged, ExcessKmBelowAllowance, ExcessKmAtAllowance, ExcessKmAboveAllowance, ExcessKmOnWeekendPackage, PartnerMethodPriceUsed, PartnerMethodGetsExcessKm, PartnerFractionalRoundedOnce, PostingUsesPartnerMethod, DailyFractionalExcessRoundedOnce] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

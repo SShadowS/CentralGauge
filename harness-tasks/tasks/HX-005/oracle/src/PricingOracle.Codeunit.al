@@ -84,6 +84,13 @@ codeunit 85400 "HX005 Pricing Oracle"
     end;
 
     [Test]
+    procedure DailyFractionalExcessRoundedOnce()
+    begin
+        SetPricing(12.5, 100, 0.0025);
+        Assert.AreEqual(141.66, Price('HX5-M', 33.33, Enum::"CGR Pricing Method"::Daily, 20270305D, 20270308D, 401), '141.6525 plus 0.0025, rounded once after the excess charge');
+    end;
+
+    [Test]
     procedure PostingUsesPartnerMethod()
     var
         Contract: Record "CGR Rental Contract";
