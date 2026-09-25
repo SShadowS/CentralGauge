@@ -88,12 +88,12 @@ Deno.test("hashFile: binary bytes are preserved, text CRLF is normalized", async
   await Deno.writeTextFile(join(root, "a.al"), "x\r\n");
   await Deno.writeTextFile(join(root, "b.al"), "x\n");
   assertNotEquals(
-    await hashFile(join(root, "a.bin")),
-    await hashFile(join(root, "b.bin")),
+    await hashFile(root, join(root, "a.bin")),
+    await hashFile(root, join(root, "b.bin")),
   );
   assertEquals(
-    await hashFile(join(root, "a.al")),
-    await hashFile(join(root, "b.al")),
+    await hashFile(root, join(root, "a.al")),
+    await hashFile(root, join(root, "b.al")),
   );
 });
 
@@ -134,7 +134,7 @@ Deno.test("links: refused as root, as entry, inside a skipped folder, and by has
   // A direct hashFile call on a link is refused too (a junction here, since
   // file symlinks need Developer Mode on Windows).
   await assertRejects(
-    () => hashFile(join(parent, "rootlink")),
+    () => hashFile(parent, join(parent, "rootlink")),
     ValidationError,
     "link",
   );
@@ -149,8 +149,8 @@ Deno.test("hashFile: text normalization is byte-level (BOM and malformed UTF-8 k
   );
   await Deno.writeFile(join(root, "plain.al"), new Uint8Array(body));
   assertNotEquals(
-    await hashFile(join(root, "bom.al")),
-    await hashFile(join(root, "plain.al")),
+    await hashFile(root, join(root, "bom.al")),
+    await hashFile(root, join(root, "plain.al")),
   );
   // 0xff is not valid UTF-8; a decode round trip would turn it into U+FFFD.
   await Deno.writeFile(join(root, "bad.al"), new Uint8Array([0xff, 13, 10]));
@@ -159,8 +159,8 @@ Deno.test("hashFile: text normalization is byte-level (BOM and malformed UTF-8 k
     new Uint8Array([0xef, 0xbf, 0xbd, 10]),
   );
   assertNotEquals(
-    await hashFile(join(root, "bad.al")),
-    await hashFile(join(root, "fffd.al")),
+    await hashFile(root, join(root, "bad.al")),
+    await hashFile(root, join(root, "fffd.al")),
   );
 });
 
@@ -184,19 +184,42 @@ Deno.test("hashTree task domain: only DIRECTORIES named output/.alpackages are a
   );
 });
 
-Deno.test("links: a linked ancestor is refused for tree roots and direct file hashing", async () => {
+Deno.test("links: a junction ABOVE the root is accepted, one BELOW it refused", async () => {
   const target = await Deno.makeTempDir();
   await writeTree(target, { "sub/t.al": "x" });
   const parent = await Deno.makeTempDir();
   await linkDir(target, join(parent, "anc"));
+  const above = join(parent, "anc", "sub");
+  const file = join(above, "t.al");
+
+  // Tree root and file root below the junction: nothing above the root is inspected.
+  assertEquals((await listTree(above, "task")).map((e) => e.path), ["t.al"]);
+  assertEquals(
+    await hashFile(above, file),
+    (await listTree(above, "task"))[0]!.sha256,
+  );
+
+  // Root above the junction: the junction is between root and file, refused.
+  await assertRejects(() => hashFile(parent, file), ValidationError, "link");
   await assertRejects(
-    () => hashFile(join(parent, "anc", "sub", "t.al")),
+    () => hashTree(join(parent, "anc"), "task"),
     ValidationError,
     "link",
   );
+});
+
+Deno.test("hashFile: a file outside its root is refused", async () => {
+  const root = await Deno.makeTempDir();
+  const other = await Deno.makeTempDir();
+  await Deno.writeTextFile(join(other, "x.al"), "x");
   await assertRejects(
-    () => hashTree(join(parent, "anc", "sub"), "task"),
+    () => hashFile(root, join(other, "x.al")),
     ValidationError,
-    "link",
+    "outside",
+  );
+  await assertRejects(
+    () => hashFile(root, join(root, "..", "x.al")),
+    ValidationError,
+    "outside",
   );
 });

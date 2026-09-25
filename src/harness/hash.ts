@@ -12,14 +12,15 @@
  * section 7 names: `.alpackages/`, `output/`, `*.app`.
  *
  * Link refusal covers what Deno reports as a symlink (symlinks and junctions
- * on Windows), for every ancestor component of a root or file and for every
- * entry, before any skip rule. This is an identity helper, not the
+ * on Windows), at a tree root and every component below it (for hashFile:
+ * from its root down to the file), before any skip rule. Nothing above the
+ * root is inspected. This is an identity helper, not the
  * hostile-artifact copy boundary: the Part 2 verdict workspace copy must
  * enforce its own reparse-point policy.
  */
 
 import { walk } from "@std/fs/walk";
-import { join, parse, relative, resolve, SEPARATOR } from "@std/path";
+import { isAbsolute, join, relative, resolve, SEPARATOR } from "@std/path";
 import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
 import { canonicalJSON } from "../../shared/canonical.ts";
 import { ValidationError } from "../errors.ts";
@@ -51,17 +52,25 @@ function isText(path: string): boolean {
 }
 
 /**
- * Refuses a link at `path` or at any ancestor component: every component of
- * the absolute path from the filesystem root down (like M1-01 probe()).
+ * Refuses a link at `root` and at every component from `root` down to `path`
+ * (like M1-01 probe()). Nothing above `root` is inspected, so a junction or
+ * mapped drive above the repo is fine. `path` outside `root` is refused.
  */
-async function refuseLink(path: string): Promise<void> {
-  const abs = resolve(path);
-  let p = parse(abs).root;
-  for (const part of abs.slice(p.length).split(SEPARATOR)) {
-    if (part === "") continue;
-    p = join(p, part);
-    if ((await Deno.lstat(p)).isSymlink) {
-      throw new ValidationError(`refusing link or reparse point: ${p}`, [p]);
+async function refuseLink(root: string, path: string): Promise<void> {
+  const absRoot = resolve(root);
+  const rel = relative(absRoot, resolve(path));
+  if (rel === ".." || rel.startsWith(`..${SEPARATOR}`) || isAbsolute(rel)) {
+    throw new ValidationError(`refusing path outside ${absRoot}: ${path}`, [
+      path,
+    ]);
+  }
+  let p = absRoot;
+  const parts = rel.split(SEPARATOR).filter((x) => x !== "");
+  for (const next of [absRoot, ...parts.map((x) => (p = join(p, x)))]) {
+    if ((await Deno.lstat(next)).isSymlink) {
+      throw new ValidationError(`refusing link or reparse point: ${next}`, [
+        next,
+      ]);
     }
   }
 }
@@ -81,10 +90,12 @@ export function posixRel(rel: string, os: typeof Deno.build.os): string {
 
 /**
  * Per-file SHA-256 hex. CRLF becomes LF for text extensions only; other
- * bytes are hashed as-is. Refuses a link at the file or any ancestor.
+ * bytes are hashed as-is. `root` is the tree or task directory the file
+ * belongs to: a link from `root` down to the file, or a file outside `root`,
+ * is refused.
  */
-export async function hashFile(path: string): Promise<string> {
-  await refuseLink(path);
+export async function hashFile(root: string, path: string): Promise<string> {
+  await refuseLink(root, path);
   return hashContent(path, await Deno.readFile(path));
 }
 
@@ -132,7 +143,7 @@ export async function listTree(
   opts: { optional?: boolean } = {},
 ): Promise<TreeEntry[]> {
   try {
-    await refuseLink(dir);
+    await refuseLink(dir, dir);
   } catch (err) {
     if (err instanceof Deno.errors.NotFound && opts.optional) return [];
     throw err;
@@ -148,7 +159,7 @@ export async function listTree(
     }
     if (!e.isFile) continue;
     if (domain === "task" && isTaskBuildArtifact(rel)) continue;
-    // Ancestors were checked by refuseLink(dir); entries by the walk.
+    // The root was checked by refuseLink; entries by the walk.
     const bytes = await Deno.readFile(e.path);
     out.push({ path: rel, sha256: await hashContent(e.path, bytes) });
   }
