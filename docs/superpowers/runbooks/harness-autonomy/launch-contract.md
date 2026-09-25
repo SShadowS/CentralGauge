@@ -47,7 +47,10 @@ Needs the owner: dropping pi, fewer than 6 tasks, changing the primary metric.
   Lanes never push.
 - Create and remove disposable sandbox containers named `cg-harness-*`.
 - Build images tagged `centralgauge/harness-*`.
-- Use BC containers `Cronus28`, `Cronus281` to `Cronus285` through leases (lane-ops only).
+- Use only the BC containers allocated to this project in `H:\cg-coord\allocation.json` (owner
+  decision 2026-09-25: `Cronus281`, `Cronus282`, `Cronus283`), through leases (lane-ops only).
+  `Cronus28` belongs to LethAL; `Cronus284`/`Cronus285` are unallocated until the owner
+  allocates them.
 - Sandbox Claude Code runs authenticate with the Team account OAuth token
   (`<secrets>/claude-oauth-token`), so the builders (Max) and the benchmarked runs (Team)
   draw on different usage.

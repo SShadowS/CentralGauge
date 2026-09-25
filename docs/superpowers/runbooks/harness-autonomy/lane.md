@@ -68,7 +68,8 @@ name (`infra`, `infra2`, `content`, `ops`).
 - Container jobs for other lanes run in a clean checkout of the commit they name
   (`git worktree add H:\cg-coord\jobs\<id>-<n> <sha>`), never in their worktree. Report the
   result file path back to the requesting session and the orchestrator.
-- Suggested container use: Cronus28 and Cronus284 for spike and campaign work, Cronus281 to
-  Cronus283 for content gate runs, Cronus285 for infra integration tests.
+- Containers: only those allocated to this project in `H:\cg-coord\allocation.json` (owner
+  decision 2026-09-25: Cronus281, Cronus282, Cronus283; Cronus28 belongs to LethAL;
+  Cronus284/285 unallocated). `coord lease` refuses any other container.
 - Sandbox containers you create are named `cg-harness-<id>-<runId>-...` so cleanup targets
   only your own run.
