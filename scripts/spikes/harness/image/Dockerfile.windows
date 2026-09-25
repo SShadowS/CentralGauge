@@ -21,3 +21,5 @@ RUN New-Item -ItemType Directory -Path C:\workspace -Force
 WORKDIR C:/workspace
 COPY run-claude.ps1 C:/run-claude.ps1
 COPY run-pi.ps1 C:/run-pi.ps1
+COPY cg-al.ps1 C:/cg-al.ps1
+RUN Set-Content -Path C:\Windows\System32\cg-al.cmd -Value '@powershell -NoProfile -File C:\cg-al.ps1 %*'
