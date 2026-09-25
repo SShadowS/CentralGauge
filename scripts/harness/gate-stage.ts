@@ -1,7 +1,7 @@
 // Staging from a git revision and static checks for the M4 authoring gate.
 // No container. Owner: lane-ops.
 import { walk } from "@std/fs";
-import { dirname, join, relative } from "@std/path";
+import { dirname, join, relative, resolve } from "@std/path";
 import type { Layer, TestRef } from "./gate-core.ts";
 import type { LoadedTask } from "../../src/harness/task.ts";
 import { hashTree } from "../../src/harness/hash.ts";
@@ -40,6 +40,14 @@ export async function git(
 
 const posix = (p: string) => p.replaceAll("\\", "/");
 
+/** Output dirs must be new or empty: a reused dir would stage stale files. */
+async function requireEmpty(out: string): Promise<void> {
+  if (!(await exists(out))) return;
+  for await (const _ of Deno.readDir(out)) {
+    throw new Error(`output dir is not empty: ${out}`);
+  }
+}
+
 export interface Source {
   commit: string;
   root: string;
@@ -58,31 +66,47 @@ export async function exportSource(
   repo: string,
   rev: string,
   taskId: string,
-  out: string,
+  outArg: string,
 ): Promise<Source> {
+  const out = resolve(outArg);
+  await requireEmpty(out);
   const c = await git(repo, ["rev-parse", "--verify", "-q", `${rev}^{commit}`]);
   if (!c.ok) throw new Error(`${rev} does not resolve to a commit`);
   const commit = c.out.trim();
+  await Deno.mkdir(out, { recursive: true });
   const env = { GIT_INDEX_FILE: join(out, ".gate-index") };
-  if (
-    !(await git(repo, [
-      "read-tree",
-      `--prefix=harness-tasks/`,
-      `${commit}:harness-tasks`,
-    ], env)).ok
-  ) {
-    throw new Error(`read-tree ${commit}:harness-tasks failed`);
+  try {
+    if (
+      !(await git(repo, [
+        "read-tree",
+        `--prefix=harness-tasks/`,
+        `${commit}:harness-tasks`,
+      ], env)).ok
+    ) {
+      throw new Error(`read-tree ${commit}:harness-tasks failed`);
+    }
+    // Committed bytes only: no autocrlf, and attributes from the commit, not
+    // the working tree, so the staged hash does not depend on the machine.
+    if (
+      !(await git(
+        repo,
+        [
+          "-c",
+          "core.autocrlf=false",
+          `--attr-source=${commit}`,
+          "checkout-index",
+          "-a",
+          "-f",
+          `--prefix=${posix(out)}/`,
+        ],
+        env,
+      )).ok
+    ) {
+      throw new Error("checkout-index failed");
+    }
+  } finally {
+    await Deno.remove(env.GIT_INDEX_FILE).catch(() => {});
   }
-  if (
-    !(await git(
-      repo,
-      ["checkout-index", "-a", "-f", `--prefix=${posix(out)}/`],
-      env,
-    )).ok
-  ) {
-    throw new Error("checkout-index failed");
-  }
-  await Deno.remove(env.GIT_INDEX_FILE);
   const tree = async (p: string) => {
     const r = await git(repo, [
       "rev-parse",
@@ -104,9 +128,10 @@ export async function exportSource(
 }
 
 function isBuildOutput(rel: string): boolean {
-  const parts = rel.split("/");
+  const lower = rel.toLowerCase();
+  const parts = lower.split("/");
   return parts.includes(".alpackages") || parts.includes("output") ||
-    rel.toLowerCase().endsWith(".app");
+    lower.endsWith(".app");
 }
 
 async function* files(
@@ -129,12 +154,18 @@ export async function stageWorkspace(
   ls: Layer[],
   out: string,
 ): Promise<void> {
+  await requireEmpty(out);
+  // Shipped tests: the refapp's Test/ plus whatever the overlay ships there.
+  // Paths compare lowercased (NTFS is case-insensitive).
+  const shipped = new Set<string>();
   for (const m of BUILD_ORDER) {
     if (!(await exists(join(refappDir, m, "app.json")))) {
       throw new Error(`refapp module missing: ${m}`);
     }
     for await (const f of files(join(refappDir, m))) {
-      if (!isBuildOutput(f.rel)) await put(f.path, join(out, m), f.rel);
+      if (isBuildOutput(f.rel)) continue;
+      await put(f.path, join(out, m), f.rel);
+      if (m === "Test") shipped.add(`test/${f.rel.toLowerCase()}`);
     }
   }
   for (const l of ls) {
@@ -153,6 +184,14 @@ export async function stageWorkspace(
         }
         if ((await Deno.stat(f.path)).size === 0) {
           throw new Error(`${f.path}: deletion is not supported`);
+        }
+        const key = f.rel.toLowerCase();
+        if (posix(l.path).split("/").pop() === "overlay") {
+          if (top === "Test") shipped.add(key);
+        } else if (shipped.has(key)) {
+          throw new Error(
+            `${f.path}: a task layer cannot replace a shipped test`,
+          );
         }
         await put(f.path, out, f.rel);
         continue;
@@ -199,7 +238,7 @@ export async function checkTask(
   loaded: LoadedTask,
   refappDir: string,
   repoRoot: string,
-  opts: { drift?: boolean } = {},
+  opts: { drift?: boolean; rev?: string } = {},
 ): Promise<{ problems: string[]; warnings: string[] }> {
   const { task, dir } = loaded;
   const problems: string[] = [];
@@ -309,7 +348,9 @@ export async function checkTask(
   const shippedTests = new Set<string>();
   for (const root of [join(refappDir, "Test"), join(dir, "overlay", "Test")]) {
     if (!(await exists(root))) continue;
-    for await (const f of files(root)) shippedTests.add(`Test/${f.rel}`);
+    for await (const f of files(root)) {
+      shippedTests.add(`test/${f.rel.toLowerCase()}`);
+    }
   }
   for (const f of layerFiles) {
     const where = `${f.source}/${f.rel}`;
@@ -322,7 +363,7 @@ export async function checkTask(
     if (suite && !inTest) {
       problems.push(`${where}: test suites add files under Test/ only`);
     }
-    if (suite && shippedTests.has(f.rel)) {
+    if (suite && shippedTests.has(f.rel.toLowerCase())) {
       problems.push(`${where}: replaces a shipped test`);
     }
     if (!suite && f.source !== "overlay" && inTest) {
@@ -352,6 +393,10 @@ export async function checkTask(
   const hidden: string[] = [...task.mutants];
   if (task.fail_to_pass) {
     const oracle = all.filter((f) => f.module === "Oracle");
+    for (const f of oracle) {
+      const name = f.text.match(/^\s*codeunit\s+\d+\s+(?:"([^"]+)"|(\w+))/im);
+      if (name) hidden.push(name[1] ?? name[2]!);
+    }
     for (const r of task.fail_to_pass.tests) {
       hidden.push(String(r.codeunit), ...r.procedures);
       for (const p of r.procedures) {
@@ -360,15 +405,17 @@ export async function checkTask(
         }
       }
     }
-    const app = JSON.parse(
-      await Deno.readTextFile(join(dir, "oracle", "app.json")),
-    ) as {
-      id?: string;
-      name?: string;
-      publisher?: string;
-      idRanges?: { from: number; to: number }[];
-      dependencies?: { name: string }[];
-    };
+    const appPath = join(dir, "oracle", "app.json");
+    if (!(await exists(appPath))) problems.push("oracle/app.json: missing");
+    const app = (await exists(appPath)
+      ? JSON.parse(await Deno.readTextFile(appPath))
+      : {}) as {
+        id?: string;
+        name?: string;
+        publisher?: string;
+        idRanges?: { from: number; to: number }[];
+        dependencies?: { name: string }[];
+      };
     const n = task.id.slice(3);
     if (app.id !== `c6a1e000-0000-4000-8001-000000000${n}`) {
       problems.push(
@@ -382,7 +429,9 @@ export async function checkTask(
       problems.push("oracle/app.json: publisher must be CentralGauge");
     }
     const allowed = new Set([
-      ...task.fail_to_pass.depends_on.map((m) => `CGR ${m}`),
+      ...task.fail_to_pass.depends_on.map((m) =>
+        `CGR ${m}`
+      ),
       "Library Assert",
     ]);
     allowed.delete("CGR Test");
@@ -390,6 +439,9 @@ export async function checkTask(
       if (!allowed.has(d.name)) {
         problems.push(`oracle/app.json: dependency ${d.name} not allowed`);
       }
+    }
+    if (!app.idRanges?.length) {
+      problems.push("oracle/app.json: idRanges missing");
     }
     for (const r of app.idRanges ?? []) {
       if (r.from < 85000 || r.to > 89999) {
@@ -399,7 +451,8 @@ export async function checkTask(
   }
   const prompt = await Deno.readTextFile(join(dir, task.prompt));
   for (const h of hidden) {
-    if (new RegExp(`\\b${h}\\b`).test(prompt)) {
+    const lit = h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`(?<!\\w)${lit}(?!\\w)`, "i").test(prompt)) {
       problems.push(`prompt.md mentions hidden name ${h}`);
     }
   }
@@ -422,20 +475,32 @@ export async function checkTask(
       );
     } else {
       const prefix = "harness-tasks/refapp/";
+      // With opts.rev: the gated commit against the tag. Without: the working
+      // tree (authoring), including untracked files. Renames count as a
+      // delete plus an add so a replaced file's old path is never missed.
+      const lines = async (args: string[]) => {
+        const r = await git(repoRoot, ["-c", "core.quotePath=false", ...args]);
+        if (!r.ok) throw new Error(`git ${args.join(" ")} failed`);
+        return r.out.split(/\r?\n/);
+      };
+      const diff = ["diff", "--no-renames", "--name-only", tag];
       const changed = [
-        ...(await git(repoRoot, ["diff", "--name-only", tag, "--", prefix])).out
-          .split(/\r?\n/),
-        ...(await git(repoRoot, [
+        ...(await lines(
+          opts.rev
+            ? [...diff, opts.rev, "--", prefix]
+            : [...diff, "--", prefix],
+        )),
+        ...(opts.rev ? [] : await lines([
           "ls-files",
           "--others",
           "--exclude-standard",
           "--",
           prefix,
-        ])).out.split(/\r?\n/),
+        ])),
       ].filter((p) => p.startsWith(prefix)).map((p) => p.slice(prefix.length));
-      const replaced = new Set(layerFiles.map((f) => f.rel));
+      const replaced = new Set(layerFiles.map((f) => f.rel.toLowerCase()));
       for (const c of changed) {
-        if (replaced.has(c)) {
+        if (replaced.has(c.toLowerCase())) {
           problems.push(
             `${c}: refapp changed since ${tag} under a file this task replaces`,
           );
