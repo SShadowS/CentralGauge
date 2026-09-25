@@ -256,15 +256,70 @@ export function allowedDiffs(vary: readonly VaryKey[]): Set<ManifestKey> {
 }
 
 /** Refuse a variant whose template differs from the baseline outside `vary`. */
+const MCP_NATIVE_KEYS = ["mcp", "mcp_tools"] as const;
+
+/** native.mcp and native.mcp_tools, when present, are exactly this manifest's mcp servers. */
+function mcpKeysDerived(m: ResolvedManifest): boolean {
+  const names = m.mcp.map((s) => s.name).sort();
+  const native = m.settings.native;
+  if (names.length === 0) {
+    return !Object.hasOwn(native, "mcp") && !Object.hasOwn(native, "mcp_tools");
+  }
+  if (
+    Object.hasOwn(native, "mcp") &&
+    JSON.stringify(native["mcp"]) !== JSON.stringify(names)
+  ) return false;
+  if (Object.hasOwn(native, "mcp_tools")) {
+    const tools = native["mcp_tools"];
+    if (tools === null || typeof tools !== "object" || Array.isArray(tools)) {
+      return false;
+    }
+    if (JSON.stringify(Object.keys(tools).sort()) !== JSON.stringify(names)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * True when two manifests' settings differ only by MCP-derived native keys
+ * (M2-14): removing exactly native.mcp and native.mcp_tools makes the settings
+ * hash-equal, and on each side those keys follow its own mcp component.
+ * Exported for the test only.
+ */
+export async function mcpDerivedSettingsOnly(
+  a: ResolvedManifest,
+  b: ResolvedManifest,
+): Promise<boolean> {
+  if (!mcpKeysDerived(a) || !mcpKeysDerived(b)) return false;
+  const strip = (m: ResolvedManifest) => ({
+    requested: m.settings.requested,
+    native: Object.fromEntries(
+      Object.entries(m.settings.native).filter(([k]) =>
+        !(MCP_NATIVE_KEYS as readonly string[]).includes(k)
+      ),
+    ),
+  });
+  return await hashJson({ settings: strip(a) }) ===
+    await hashJson({ settings: strip(b) });
+}
+
 export async function assertVaryHolds(
   baseline: ResolvedManifest,
   variant: ResolvedManifest,
   vary: readonly VaryKey[],
 ): Promise<void> {
   const allowed = allowedDiffs(vary);
-  const bad = (await diffManifests(baseline, variant)).filter((k) =>
+  let bad = (await diffManifests(baseline, variant)).filter((k) =>
     !allowed.has(k)
   );
+  // Under vary [mcp], native.mcp and native.mcp_tools follow the mcp component.
+  if (
+    vary.includes("mcp") && bad.includes("settings") &&
+    await mcpDerivedSettingsOnly(baseline, variant)
+  ) {
+    bad = bad.filter((k) => k !== "settings");
+  }
   if (bad.length > 0) {
     throw new ConfigurationError(
       `${variant.config_id} differs from ${baseline.config_id} outside vary [${
