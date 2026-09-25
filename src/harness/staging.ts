@@ -362,12 +362,89 @@ const STAGE_CHILDREN = [
   "refapp.tar",
 ];
 
+async function gitBytes(repoRoot: string, args: string[]): Promise<Uint8Array> {
+  const out = await new Deno.Command("git", {
+    args,
+    cwd: repoRoot,
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!out.success) {
+    const err = new TextDecoder().decode(out.stderr).trim();
+    throw new ValidationError(`git ${args.join(" ")} failed: ${err}`, [err]);
+  }
+  return out.stdout;
+}
+
+async function rawSha256(bytes: Uint8Array): Promise<string> {
+  const d = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new Uint8Array(bytes)),
+  );
+  return [...d].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Raw-byte sha256 of the commit's shipped test blobs (no filters, no CRLF
+ * normalization), keyed by path relative to the refapp; build artifacts are
+ * left out as staging drops them.
+ */
+async function commitShippedTests(o: StageOptions): Promise<string> {
+  const list = new TextDecoder().decode(
+    await gitBytes(o.repoRoot, [
+      "ls-tree",
+      "-r",
+      "-z",
+      o.refapp.commit,
+      "--",
+      REFAPP_PATH,
+    ]),
+  );
+  const out: [string, string][] = [];
+  for (const rec of list.split("\0")) {
+    if (rec === "") continue;
+    const [meta, path] = [
+      rec.slice(0, rec.indexOf("\t")),
+      rec.slice(rec.indexOf("\t") + 1),
+    ];
+    const [, type, oid] = meta.split(" ");
+    const rel = path.slice(REFAPP_PATH.length + 1);
+    if (
+      type !== "blob" || !isShippedTestPath(rel) || isTaskBuildArtifact(rel)
+    ) {
+      continue;
+    }
+    out.push([
+      rel,
+      await rawSha256(await gitBytes(o.repoRoot, ["cat-file", "blob", oid!])),
+    ]);
+  }
+  return JSON.stringify(
+    out.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0),
+  );
+}
+
+/** Raw-byte sha256 of a staged tree's shipped test files, same shape. */
+async function stagedShippedTests(dir: string): Promise<string> {
+  const out: [string, string][] = [];
+  for (const e of await listTree(dir, "task")) {
+    if (!isShippedTestPath(e.path)) continue;
+    out.push([
+      e.path,
+      await rawSha256(await Deno.readFile(join(dir, ...e.path.split("/")))),
+    ]);
+  }
+  return JSON.stringify(
+    out.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0),
+  );
+}
+
 export async function stageRefappTask(
   o: StageOptions,
 ): Promise<StagedWorkspace> {
   const out = await validatedDest(o.out);
   // Refuse to start over existing content; remove only what this call created.
   const created: string[] = [];
+  const preEmpty: string[] = [];
   for (const name of STAGE_CHILDREN) {
     const p = join(out, name);
     const st = await Deno.lstat(p).catch(() => null);
@@ -385,12 +462,19 @@ export async function stageRefappTask(
     if (!empty) {
       throw new ValidationError(`staging output already exists: ${p}`, [p]);
     }
+    preEmpty.push(p);
   }
   try {
     return await stageInto(o, out);
   } catch (err) {
     for (const p of created) {
       await Deno.remove(p, { recursive: true }).catch(() => {});
+    }
+    // A permitted pre-existing empty directory goes back to empty.
+    for (const p of preEmpty) {
+      for (const e of [...Deno.readDirSync(p)]) {
+        await Deno.remove(join(p, e.name), { recursive: true }).catch(() => {});
+      }
     }
     throw err;
   }
@@ -461,11 +545,10 @@ async function stageInto(
     JSON.stringify(agentVisibleMetadata(t), null, 2) + "\n",
   );
   // 5. pristine = the staged workspace after the overlay; its shipped tests
-  //    must be byte-identical to the commit's.
+  //    must be byte-identical (raw bytes, no CRLF normalization) to the
+  //    commit's blobs.
   await safeCopyTree(workspace, pristine);
-  const shipped = (es: { path: string }[]) =>
-    JSON.stringify(es.filter((e) => isShippedTestPath(e.path)));
-  if (shipped(await listTree(pristine, "task")) !== shipped(o.refapp.files)) {
+  if (await stagedShippedTests(pristine) !== await commitShippedTests(o)) {
     throw new ValidationError(
       `staged shipped tests differ from ${o.refapp.version} (${o.refapp.commit})`,
       [o.refapp.commit],

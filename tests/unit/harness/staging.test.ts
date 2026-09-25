@@ -409,3 +409,42 @@ Deno.test("TAR_BINARY is an absolute, pinned path", () => {
     assertEquals(TAR_BINARY.toLowerCase(), "c:\\windows\\system32\\tar.exe");
   }
 });
+
+Deno.test("stageRefappTask: a permitted empty out/workspace is emptied back on failure; the retry works", async () => {
+  const repo = await makeRefappRepo();
+  const out = join(await Deno.realPath(await Deno.makeTempDir()), "stage");
+  await Deno.mkdir(join(out, "workspace"), { recursive: true });
+  const store = join(repo.symbolStore, `${repo.symbols[0]!.sha256}.app`);
+  const good = await Deno.readFile(store);
+  await Deno.writeTextFile(store, "tampered");
+  const o = {
+    repoRoot: repo.root,
+    task: await loadTask(join(repo.tasksDir, "HX-001")),
+    refapp: await resolveRefapp(repo.root, "refapp-v1"),
+    symbols: repo.symbols,
+    symbolStore: repo.symbolStore,
+    out,
+  };
+  await assertRejects(
+    () => stageRefappTask(o),
+    ValidationError,
+    "does not match",
+  );
+  assertEquals([...Deno.readDirSync(join(out, "workspace"))], []);
+  await Deno.writeFile(store, good);
+  assertEquals((await stageRefappTask(o)).apps.length, 3);
+});
+
+Deno.test("stageRefappTask: shipped tests are compared by raw bytes (CRLF vs LF is a difference)", async () => {
+  const repo = await makeRefappRepo();
+  // An eol attribute makes git archive write CRLF; listTree normalizes that away.
+  await write(repo.root, ".gitattributes", "*.al text eol=crlf\n");
+  await git(repo.root, "add", ".");
+  await git(repo.root, "commit", "-q", "-m", "eol");
+  await git(repo.root, "tag", "-f", "refapp-v1");
+  await assertRejects(
+    () => stage(repo),
+    ValidationError,
+    "shipped tests differ",
+  );
+});
