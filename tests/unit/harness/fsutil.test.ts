@@ -716,3 +716,20 @@ Deno.test("safeCopyTree: a swap is refused even when the filesystem reports the 
     set("open", realOpen);
   }
 });
+
+Deno.test("freezeWorkspace: the workspace freeze is not pattern-redacted", async () => {
+  const results = await tmp();
+  const a = await tmp();
+  const line = `// sk-ant-oat01-${"D".repeat(40)}
+`;
+  await writeTree(a, { "Core/src/A.al": line });
+  const fa = await freeze(results, a, { secrets: [] });
+  assertEquals(fa.redactions, 0);
+  assertEquals(
+    await Deno.readTextFile(
+      join(results, fa.stored_path, "Core", "src", "A.al"),
+    ),
+    line,
+    "stored tree byte-identical",
+  );
+});
