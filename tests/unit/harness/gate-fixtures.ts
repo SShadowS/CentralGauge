@@ -47,6 +47,8 @@ export async function writeTask(
 ): Promise<string> {
   await writeRefapp(join(root, "harness-tasks/refapp"));
   const dir = join(root, "harness-tasks/tasks", id);
+  // Each task owns the oracle band 85000 + (N - 1) * 100 .. + 99.
+  const band = 85000 + (Number(id.slice(3)) - 1) * 100;
   await write(
     dir,
     "task.yml",
@@ -61,7 +63,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core]
   tests:
-    - { codeunit: 85000, procedures: [Hidden] }
+    - { codeunit: ${band}, procedures: [Hidden] }
 `,
   );
   await write(dir, "prompt.md", promptText);
@@ -69,14 +71,14 @@ fail_to_pass:
     dir,
     "oracle/app.json",
     JSON.stringify({
-      id: "c6a1e000-0000-4000-8001-000000000001",
+      id: `c6a1e000-0000-4000-8001-000000000${id.slice(3)}`,
       name: `CGR Oracle ${id}`,
       publisher: "CentralGauge",
-      idRanges: [{ from: 85000, to: 85099 }],
+      idRanges: [{ from: band, to: band + 99 }],
       dependencies: [{ name: "CGR Core" }, { name: "Library Assert" }],
     }),
   );
-  await write(dir, "oracle/src/O.al", TEST_CU(85000, "Hidden"));
+  await write(dir, "oracle/src/O.al", TEST_CU(band, "Hidden"));
   for (const l of ["overlay", "correct", "naive/x", "naive/y"]) {
     await write(
       dir,
