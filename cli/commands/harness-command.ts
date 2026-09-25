@@ -80,6 +80,8 @@ import {
   IMAGE_LABELS,
   imageFacts,
   imageTag,
+  mcpFacts,
+  mcpLabel,
   runtimeFacts,
 } from "../../src/harness/images.ts";
 import { manifestHash, resolveManifest } from "../../src/harness/manifest.ts";
@@ -666,12 +668,15 @@ export async function harnessImagesBuild(
   const images = join(o.root, "harness", "images");
   if (harness === "base") {
     const pin = await servercorePin(o.root);
+    const [mk, mv] = await mcpLabel(o.root);
     const code = await docker.build([
       "build",
       "-f",
       join(images, "base", "Dockerfile.windows"),
       "--build-arg",
       `SERVERCORE=${pin}`,
+      "--label",
+      `${mk}=${mv}`,
       "-t",
       BASE_IMAGE,
       join(images, "base"),
@@ -679,12 +684,32 @@ export async function harnessImagesBuild(
     if (code !== 0) {
       throw new ConfigurationError(`base image build failed (exit ${code})`);
     }
-    const img = await docker.inspectImage(BASE_IMAGE) as { Id?: string } | null;
+    const img = await docker.inspectImage(BASE_IMAGE) as {
+      Id?: string;
+      Config?: { Labels?: Record<string, string> | null };
+    } | null;
     if (!img?.Id) {
       throw new ConfigurationError(`${BASE_IMAGE} is missing after the build`);
     }
+    // The base carries no harness labels, so imageFacts does not apply; its
+    // MCP labels are read back with the same parser and must match the build.
+    const labels = img.Config?.Labels ?? {};
+    const mcp = mcpFacts(BASE_IMAGE, labels);
+    if (labels[mk] !== mv) {
+      throw new ConfigurationError(
+        `image ${BASE_IMAGE}: label ${mk} did not land on the built image (want "${mv}", got "${
+          labels[mk] ?? ""
+        }")`,
+      );
+    }
     console.log(`${colors.green("[OK]")} ${BASE_IMAGE} = ${img.Id}`);
-    return { digest: img.Id, base_digest: pin, harness: "base", version: "1" };
+    return {
+      digest: img.Id,
+      base_digest: pin,
+      harness: "base",
+      version: "1",
+      mcp,
+    };
   }
   if (!o.version) throw new ConfigurationError(`pass --version for ${harness}`);
   const base = await docker.inspectImage(BASE_IMAGE) as { Id?: string } | null;

@@ -32,7 +32,11 @@ import {
 } from "../../../../cli/commands/harness-env.ts";
 import { claudeCodeAdapter } from "../../../../src/harness/adapters/claude-code.ts";
 import { loadSymbolsLock } from "../../../../src/harness/identity.ts";
-import { BASE_IMAGE } from "../../../../src/harness/images.ts";
+import {
+  AL_TOOLS_DEF,
+  BASE_IMAGE,
+  mcpLabel,
+} from "../../../../src/harness/images.ts";
 import { runCampaign } from "../../../../src/harness/campaign.ts";
 import { scorerFingerprint } from "../../../../src/harness/records.ts";
 import { oracleHash } from "../../../../src/harness/identity.ts";
@@ -959,15 +963,63 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
     JSON.stringify({ servercore: pin }),
   );
   await assertRejects(
+    () => harnessImagesBuild("base", { root }, docker),
+    ConfigurationError,
+    "al-tools-tools.json",
+  );
+  assertEquals(docker.builds.length, 0, "no build without the MCP label");
+  await Deno.mkdir(join(root, "harness", "images", "base"), {
+    recursive: true,
+  });
+  await Deno.copyFile(
+    AL_TOOLS_DEF,
+    join(root, "harness", "images", "base", "al-tools-tools.json"),
+  );
+  await assertRejects(
     () =>
       harnessImagesBuild("claude-code", { root, version: "2.1.282" }, docker),
     ConfigurationError,
     "base",
   );
   const baseId = `sha256:${"b".repeat(64)}`;
+  const [mk, mv] = await mcpLabel(root);
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
-  await harnessImagesBuild("base", { root }, docker);
+  await assertRejects(
+    () => harnessImagesBuild("base", { root }, docker),
+    ConfigurationError,
+    `${BASE_IMAGE}: label ${mk}`,
+  );
+  docker.builds.length = 0;
+  docker.addImage(BASE_IMAGE, baseId, {
+    [mk]: `${mv.split(" ")[0]} ${"0".repeat(64)}`,
+  }, ["l1", "l2"]);
+  await assertRejects(
+    () => harnessImagesBuild("base", { root }, docker),
+    ConfigurationError,
+    `${BASE_IMAGE}: label ${mk}`,
+  );
+  docker.builds.length = 0;
+  docker.addImage(BASE_IMAGE, baseId, { [mk]: mv }, ["l1", "l2"]);
+  const bf = await harnessImagesBuild("base", { root }, docker);
+  assertEquals(bf, {
+    digest: baseId,
+    base_digest: pin,
+    harness: "base",
+    version: "1",
+    mcp: {
+      "al-tools": {
+        version: mv.split(" ")[0]!,
+        tool_schema_hash: mv.split(" ")[1]!,
+      },
+    },
+  });
   assertStringIncludes(docker.builds[0]!.join(" "), `SERVERCORE=${pin}`);
+  const baseArgs = docker.builds[0]!;
+  const li = baseArgs.indexOf(`${mk}=${mv}`);
+  assert(
+    li > 0 && baseArgs[li - 1] === "--label" && li < baseArgs.indexOf("-t"),
+    `base build labels al-tools before -t: ${baseArgs.join(" ")}`,
+  );
   const labels = {
     "centralgauge.harness": "claude-code",
     "centralgauge.harness.version": "2.1.282",

@@ -1191,8 +1191,6 @@ Deno.test("claude-code settings: session-control tools present in 2.1.282 are di
   );
 });
 
-// M3-03a: the Dockerfile COPY assertions of the plan's test stay for M3-03
-// (Dockerfile.windows is out of this task's scope).
 Deno.test("claude-code MCP: settings carry the MCP list only when set; run.ps1 writes mcp.json with the backend env", async () => {
   const cfg = HarnessConfigSchema.parse({
     id: "cc",
@@ -1235,6 +1233,11 @@ Deno.test("claude-code MCP: settings carry the MCP list only when set; run.ps1 w
   ) {
     assertStringIncludes(run, s);
   }
+  const base = await Deno.readTextFile(
+    "harness/images/base/Dockerfile.windows",
+  );
+  assertStringIncludes(base, "COPY al-tools-mcp.mjs C:/al-tools-mcp.mjs");
+  assertStringIncludes(base, "COPY al-tools-tools.json C:/al-tools-tools.json");
 });
 
 Deno.test("claude-code MCP review: settings.mcp is reserved, so MCP loads only from components.mcp", () => {
