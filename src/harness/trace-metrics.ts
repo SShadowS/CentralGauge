@@ -1,6 +1,6 @@
 /** Per-execution metrics from a trace, read with the run's own capabilities (spec 1a sections 5 and 9). */
 
-import { isAbsolute, join, normalize } from "@std/path";
+import { isAbsolute, join, normalize, relative } from "@std/path";
 import type { Category } from "./classify.ts";
 import type { ExecutionRecord } from "./records.ts";
 import type { TraceEvent } from "./trace.ts";
@@ -38,6 +38,13 @@ export interface LoadedTrace {
 }
 
 const SHELL_TOOLS = new Set(["Bash", "PowerShell", "bash"]);
+
+/** `path` lies under `root` (both real paths); case-insensitive on Windows. */
+function within(root: string, path: string): boolean {
+  const fold = (p: string) => Deno.build.os === "windows" ? p.toLowerCase() : p;
+  const rel = relative(fold(root), fold(path));
+  return rel !== "" && !/^\.\.([\\/]|$)/.test(rel) && !isAbsolute(rel);
+}
 
 const bump = (m: Record<string, number>, k: string) => (m[k] = (m[k] ?? 0) + 1);
 
@@ -137,6 +144,7 @@ export async function loadTraces(
   invalid: { execution: string; error: string }[];
 }> {
   const traces = new Map<string, LoadedTrace | null>();
+  let realRoot: string | undefined;
   const invalid: { execution: string; error: string }[] = [];
   for (const e of executions) {
     if (e.trace_path === null) {
@@ -162,9 +170,27 @@ export async function loadTraces(
       continue;
     }
     const full = join(root, rel);
+    // Lexical checks are not enough: a junction or symlink under the root
+    // can point outside it. Resolve both and require containment.
+    let real: string;
+    try {
+      realRoot ??= await Deno.realPath(root);
+      real = await Deno.realPath(full);
+    } catch (err) {
+      bad(
+        err instanceof Deno.errors.NotFound
+          ? `trace missing: ${rel}`
+          : `trace path not resolvable: ${rel}`,
+      );
+      continue;
+    }
+    if (!within(realRoot, real)) {
+      bad(`trace path resolves outside the results root: ${rel}`);
+      continue;
+    }
     try {
       traces.set(e.id, {
-        events: await readTrace(full),
+        events: await readTrace(real),
         complete: raw?.trace_complete === true,
         trace_types: Array.isArray(types) ? types.map(String) : ["tool_call"],
       });
@@ -175,7 +201,7 @@ export async function loadTraces(
         err instanceof Deno.errors.NotFound
           ? `trace missing: ${rel}`
           : (err instanceof Error ? err.message : String(err))
-            .replaceAll(full, rel),
+            .replaceAll(real, rel),
       );
     }
   }

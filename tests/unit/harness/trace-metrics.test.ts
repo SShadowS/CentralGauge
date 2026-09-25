@@ -172,3 +172,41 @@ Deno.test("loadTraces: a missing file behind trace_path and a path outside the r
   assertStringIncludes(invalid[3]!.error, "runs/bad/trace.jsonl:1");
   for (const x of invalid) assertEquals(x.error.includes(root), false, x.error);
 });
+
+Deno.test("loadTraces: a trace reached through a junction or symlink outside the results root is invalid, never read", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const outside = await Deno.realPath(await Deno.makeTempDir());
+  const ev = call({});
+  await Deno.writeTextFile(
+    join(outside, "trace.jsonl"),
+    JSON.stringify(ev) + "\n",
+  );
+  await Deno.mkdir(join(root, "runs"), { recursive: true });
+  await Deno.symlink(outside, join(root, "runs", "link"), {
+    type: Deno.build.os === "windows" ? "junction" : "dir",
+  });
+  // A link inside the root that stays inside is fine.
+  await Deno.mkdir(join(root, "real"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, "real", "trace.jsonl"),
+    JSON.stringify(ev) + "\n",
+  );
+  await Deno.symlink(join(root, "real"), join(root, "runs", "inner"), {
+    type: Deno.build.os === "windows" ? "junction" : "dir",
+  });
+  const exec = (id: string, trace_path: string) =>
+    ({
+      id,
+      trace_path,
+      telemetry: { raw_usage: null },
+    }) as unknown as ExecutionRecord;
+  const { traces, invalid } = await loadTraces(root, [
+    exec("escape", "runs/link/trace.jsonl"),
+    exec("inner", "runs/inner/trace.jsonl"),
+  ]);
+  assertEquals(traces.get("escape"), null);
+  assertEquals(invalid.map((x) => x.execution), ["escape"]);
+  assertStringIncludes(invalid[0]!.error, "outside the results root");
+  assertEquals(invalid[0]!.error.includes(outside), false);
+  assertEquals(traces.get("inner")?.events.length, 1);
+});
