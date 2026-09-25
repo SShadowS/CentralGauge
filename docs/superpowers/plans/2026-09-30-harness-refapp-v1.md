@@ -121,6 +121,8 @@ Container load (review round 2): 79 initial gate runs (HX-001 10, HX-002 27, HX-
 
 ---
 
+**Rule from M4-16 P1 (2026-09-25):** `asserterror` rolls back the whole write transaction, including data the test seeded before it. No oracle or visible test may assert on database state after an `asserterror` in the same test; pin the refusal with `ExpectedError` and test preserved state in a separate procedure only if it is observable without an error. `partial-reschedule` is equivalent and not added (P1 verdict). Do not assert literal AutoIncrement values (P4: identity is not reset between installs).
+
 ### Task M4-01a: gate decision contract (pure)
 
 **Lane:** ops. **Deps:** M1-01 (merged: `src/harness/task.ts`). **Target:** 09-30.
@@ -2478,7 +2480,7 @@ Visible test codeunits (each `Subtype = Test; TestPermissions = Disabled;`, `Ass
 | 80010 "CGR Rental Tests" | CheckOutMarksVehicleCheckedOut | T-RENT-001 km 1000, contract, CheckOut | vehicle Checked Out true; contract Checked Out; Start Km 1000 |
 | 80010 | CheckOutTwiceFails | T-RENT-002, two contracts, check out first | `asserterror` CheckOut second; `ExpectedError('Vehicle T-RENT-002 is not available.')` |
 | 80010 | ReturnWithoutDamageReleasesVehicle | T-RENT-003 km 1000, check out, Return(1300, '') | vehicle Checked Out false, Mileage 1300, Blocked false, Open Damages 0; contract Returned, Return Km 1300 |
-| 80010 | ReturnBelowStartKmFails | T-RENT-004 km 1000, check out | `asserterror` Return(999, ''); `ExpectedError('Return km 999 is below the start km 1000.')`; contract Checked Out |
+| 80010 | ReturnBelowStartKmFails | T-RENT-004 km 1000, check out | `asserterror` Return(999, ''); `ExpectedError('Return km 999 is below the start km 1000.')` (no data assertion after asserterror: M4-16 P1, asserterror rolls back the whole transaction) |
 | 80020 "CGR Fleet Tests" | HeavyDutyStrategyFromFleetExtension | T-FLT-001 km 1000 Heavy Duty | `NextServiceKm` = 6000 |
 | 80020 | DamageBlocksVehicle | T-FLT-002, RegisterDamage('Dent') | Blocked true; Open Damages 1; `IsAvailable` false |
 | 80020 | RepairLastDamageUnblocks | T-FLT-003, two RegisterDamage | Open Damages 2; repair first: 1, Blocked true; repair second: 0, Blocked false, IsAvailable true |
@@ -2829,13 +2831,13 @@ How a lease schedule must behave (schedules are created with `CGR Lease Mgt`, Cr
 | SingleMonthLease | start 2027-02-28, 1 month, base 100 | one line 10000, due 2027-02-28, amount 101.00 | flat-factor |
 | InstallmentsCarryRoundingToLastLine | start 2027-01-31, 12 months, base 10.07 | lines 1-11 = 11.28 each; line 12 = 11.26; sum 135.34 | no-carry, flat-factor |
 | RescheduleReplacesLines | 12 months base 10.07, schedule; set Months 6, Base Rate 20, `Modify`; schedule again | 6 lines (10000..60000), each 21.20, sum 127.20; no line above 60000 | no-op-reschedule |
-| InvoicedLeaseCannotBeRescheduled | 12 months base 10.07, schedule, InvoiceLine(10000); snapshot all lines (No., Due Date, Amount, Invoiced); set Months 6, `Modify` | `asserterror` CreateSchedule; the 12 lines equal the snapshot field by field | invoiced-rebuilt, partial-reschedule |
+| InvoicedLeaseCannotBeRescheduled | 12 months base 10.07, schedule, InvoiceLine(10000); set Months 6, `Modify` | `asserterror` CreateSchedule; `ExpectedError` with the invoiced-line message (no line assertions after asserterror: M4-16 P1 shows the whole transaction, incl. the seeded schedule, is rolled back) | invoiced-rebuilt |
 
 Values: 10.07 x 1.12 x 12 = 135.3408, total 135.34; 135.34 / 12 = 11.2783, installment 11.28; 11 x 11.28 = 124.08; last 11.26. 20 x 1.06 x 6 = 127.20, installments 21.20. 100 x 1.01 x 1 = 101.00.
 
 - [ ] **Step 7: Naive suites** (codeunit 80101 under `naive/<x>/Test/src/`; each passes on `correct/`, runs completely on every target, leaves a mutant alive):
   - `drift-repro-only`: DueDatesFollowStartDate only. Survivors: no-carry, invoiced-rebuilt, flat-factor, no-op-reschedule, line-numbering.
-  - `near-complete`: every reference procedure except RescheduleReplacesLines and InvoicedLeaseCannotBeRescheduled. Survivors: invoiced-rebuilt, no-op-reschedule (and partial-reschedule).
+  - `near-complete`: every reference procedure except RescheduleReplacesLines and InvoicedLeaseCannotBeRescheduled. Survivors: invoiced-rebuilt, no-op-reschedule.
 
 - [ ] **Step 8: Visible tests.** `LeasingTests` 80030 keeps `LeaseRateUsesCoreInternal` only. `TestLibrary` gets `CreateLease(VehicleNo; StartDate; Months; BaseRate): Code[20]`.
 
