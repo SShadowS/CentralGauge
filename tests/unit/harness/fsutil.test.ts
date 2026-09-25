@@ -66,9 +66,14 @@ async function freeze(
     privateRoot: await tmp(),
     workspace,
     secrets: SECRETS,
+    // The real scan (pwsh) has its own Windows-only test below.
+    scanReparsePoints: NO_SCAN,
     ...over,
   });
 }
+
+const NO_SCAN = () =>
+  Promise.resolve({ ancestors: [], entries: [], seen: 0, capped: false });
 
 Deno.test("validatedDir: relative, drive-relative, linked ancestor and case alias are refused", async () => {
   await assertRejects(
@@ -715,4 +720,62 @@ Deno.test("safeCopyTree: a swap is refused even when the filesystem reports the 
     set("lstat", realLstat);
     set("open", realOpen);
   }
+});
+
+Deno.test("freezeWorkspace: the reparse-scan seam decides refusals, ancestors and the entry cap", async () => {
+  const results = await tmp();
+  const ws = await tmp();
+  await writeTree(ws, { "Core/src/A.al": "a", "Core/src/B.al": "b" });
+  const seen: [string, number][] = [];
+  const f = await freeze(results, ws, {
+    scanReparsePoints: (root: string, max: number) => {
+      seen.push([root, max]);
+      return Promise.resolve({
+        ancestors: [],
+        entries: ["Core/src/B.al"],
+        seen: 3,
+        capped: false,
+      });
+    },
+  });
+  assertEquals(seen, [[ws, DEFAULT_COPY_LIMITS.maxEntries]]);
+  assertStringIncludes(f.violations.join(" | "), "Core/src/B.al");
+  assert(!await exists(join(results, f.stored_path, "Core", "src", "B.al")));
+  await assertRejects(
+    () =>
+      freeze(results, ws, {
+        scanReparsePoints: () =>
+          Promise.resolve({
+            ancestors: ["C:/up"],
+            entries: [],
+            seen: 1,
+            capped: false,
+          }),
+      }),
+    ValidationError,
+    "at or above the workspace",
+  );
+  const capped = await freeze(results, ws, {
+    scanReparsePoints: () =>
+      Promise.resolve({ ancestors: [], entries: [], seen: 9, capped: true }),
+  });
+  assertStringIncludes(capped.violations.join(" | "), "size limit");
+});
+
+Deno.test({
+  name:
+    "freezeWorkspace: the real reparse scan (pwsh) is the default (Windows)",
+  ignore: !windows,
+}, async () => {
+  const results = await tmp();
+  const ws = await tmp();
+  await writeTree(ws, { "Core/src/A.al": "a" });
+  await linkDir(await tmp(), join(ws, "Core", "hostlink"));
+  const f = await freezeWorkspace({
+    resultsRoot: results,
+    privateRoot: await tmp(),
+    workspace: ws,
+    secrets: SECRETS,
+  });
+  assertStringIncludes(f.violations.join(" | "), "Core/hostlink");
 });

@@ -10,7 +10,8 @@
  * receives only redacted, finished files.
  */
 
-import { join } from "@std/path";
+import { createHash } from "node:crypto";
+import { dirname, join, resolve, SEPARATOR } from "@std/path";
 import type { PricingBook } from "./pricing.ts";
 import type { RefappRef, SymbolPackage } from "./identity.ts";
 import type { ResolvedManifest } from "./manifest.ts";
@@ -36,12 +37,19 @@ import { adapterFor } from "./adapters/mod.ts";
 import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, DeployContext } from "./bc-lane.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
-import { exists, freezeWorkspace, safeCopyTree } from "./fsutil.ts";
+import {
+  exists,
+  freezeWorkspace,
+  safeCopyTree,
+  type scanReparsePoints,
+  validatedDir,
+} from "./fsutil.ts";
 import { hashFile, hashJson, hashTree } from "./hash.ts";
 import { taskSetIdentity } from "./identity.ts";
 import { forTask } from "./manifest.ts";
 import {
   ExecutionRecordSchema,
+  JudgmentRecordSchema,
   outcomePolicy,
   RecordStore,
   retryProblem,
@@ -50,11 +58,13 @@ import {
   bounded,
   type DockerCli,
   type IcaclsRunner,
+  MIN_SECRET_LENGTH,
   OP_TIMEOUT_MS,
   prepareSecrets,
   publishRedacted,
   redactText,
   removeSecrets,
+  restrictPath,
   runSandbox,
   sandboxName,
   type SandboxResult,
@@ -90,6 +100,10 @@ export interface HarnessEnv {
   secretsSource: string;
   /** Windows custody ACL seam (tests inject icacls); defaults to the real icacls and user. */
   secretAcl?: { icacls: IcaclsRunner; user: string };
+  /** Drive type of the private root ("Fixed" is the only local type accepted); tests inject it. */
+  driveType?: (path: string) => Promise<string>;
+  /** Test seam for the freeze's reparse attribute scan (default: the real pwsh scan). */
+  scanReparsePoints?: typeof scanReparsePoints;
   /** The per-container BC ledger; trusted roots are set per grant and judgment, never here. */
   deploy: Pick<DeployContext, "ledgerRoot">;
   pricing(at: Date): Promise<PricingBook>;
@@ -172,6 +186,8 @@ export function privatePaths(env: HarnessEnv, id: string) {
     pending: join(p, "pending", id),
     intent: join(p, "intents", `${id}.json`),
     taskCopy: join(p, "taskcopy", id),
+    /** Salted hashes of the custody secrets: kept after publication so a rejudge still redacts. */
+    keys: join(p, "redaction", `${id}.json`),
     raw: join(p, "quarantine", id, "raw.jsonl"),
     stderr: join(p, "quarantine", id, "stderr.txt"),
     host: join(p, "quarantine", id, "host-log.jsonl"),
@@ -256,16 +272,244 @@ async function readJson<T>(path: string): Promise<T | null> {
  * backslash in it).
  */
 function redactDeep(v: unknown, secrets: SecretValue[]): unknown {
-  if (typeof v === "string") return redactText(v, secrets).text;
-  if (Array.isArray(v)) return v.map((x) => redactDeep(x, secrets));
+  return mapStrings(v, (x) => redactText(x, secrets).text);
+}
+
+function mapStrings(v: unknown, f: (s: string) => string): unknown {
+  if (typeof v === "string") return f(v);
+  if (Array.isArray(v)) return v.map((x) => mapStrings(x, f));
   if (v !== null && typeof v === "object") {
     return Object.fromEntries(
-      Object.entries(v).map((
-        [k, x],
-      ) => [redactText(k, secrets).text, redactDeep(x, secrets)]),
+      Object.entries(v).map(([k, x]) => [f(k), mapStrings(x, f)]),
     );
   }
   return v;
+}
+
+/**
+ * A custody secret as a salted hash: judge output (BC test messages the
+ * agent's code can assemble at runtime) is redacted with it, including on a
+ * rejudge after the custody plaintext is deleted. Kept private.
+ */
+interface RedactionKey {
+  name: string;
+  length: number;
+  salt: string;
+  sha256: string;
+}
+
+const saltedHash = (salt: string, s: string) =>
+  createHash("sha256").update(salt).update(s, "utf8").digest("hex");
+
+function redactionKeys(secrets: SecretValue[]): RedactionKey[] {
+  return secrets.map((s) => {
+    const salt = [...crypto.getRandomValues(new Uint8Array(16))]
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+    return {
+      name: s.name,
+      length: s.value.length,
+      salt,
+      sha256: saltedHash(salt, s.value),
+    };
+  });
+}
+
+/**
+ * Replace every window of a string whose salted hash matches a key, longest
+ * key first. ponytail: one hash per position per key; fine for verdict-log
+ * sizes, a rolling prefilter if logs ever reach many megabytes.
+ */
+function redactByKeys(text: string, keys: RedactionKey[]): string {
+  let out = text;
+  for (const k of [...keys].sort((a, b) => b.length - a.length)) {
+    if (k.length === 0 || out.length < k.length) continue;
+    let acc = "";
+    let last = 0;
+    for (let i = 0; i + k.length <= out.length;) {
+      if (saltedHash(k.salt, out.slice(i, i + k.length)) === k.sha256) {
+        acc += `${out.slice(last, i)}[REDACTED:${k.name}]`;
+        i += k.length;
+        last = i;
+      } else i++;
+    }
+    out = acc + out.slice(last);
+  }
+  return out;
+}
+
+async function readRedactionKeys(
+  env: HarnessEnv,
+  id: string,
+): Promise<RedactionKey[]> {
+  const path = privatePaths(env, id).keys;
+  const keys = await readJson<RedactionKey[]>(path);
+  if (
+    !Array.isArray(keys) ||
+    !keys.every((k) =>
+      typeof k?.name === "string" && Number.isSafeInteger(k.length) &&
+      typeof k.salt === "string" && /^[0-9a-f]{64}$/.test(k.sha256)
+    )
+  ) {
+    throw new ValidationError(
+      `redaction keys ${path} for execution ${id} are missing or invalid; refusing to judge (nothing could be redacted)`,
+      [path],
+    );
+  }
+  return keys;
+}
+
+/** Judge output: custody secrets (by salted hash) and private paths scrubbed from every string. */
+function scrubJudgeOutput<T>(v: T, keys: RedactionKey[], env: HarnessEnv): T {
+  const paths = privatePathValues(env);
+  return mapStrings(
+    v,
+    (x) => redactText(redactByKeys(x, keys), paths).text,
+  ) as T;
+}
+
+const DRIVE_TYPE_PS = "[System.IO.DriveInfo]::new($env:CG_DRIVE).DriveType";
+const driveTypes = new Map<string, string>();
+
+/** Windows drive type (Fixed, Network, Removable, ...), one bounded Windows PowerShell call per drive. */
+async function realDriveType(path: string): Promise<string> {
+  // ponytail: POSIX network mounts are not detected; add a statfs check if a non-Windows host runs sandboxes.
+  if (Deno.build.os !== "windows") return "Fixed";
+  const drive = path.slice(0, 3).toUpperCase();
+  const known = driveTypes.get(drive);
+  if (known) return known;
+  const exe = `${
+    Deno.env.get("SystemRoot") ?? "C:\\Windows"
+  }\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+  const out = await new Deno.Command(exe, {
+    args: ["-NoProfile", "-NonInteractive", "-Command", DRIVE_TYPE_PS],
+    env: { CG_DRIVE: drive },
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+    signal: AbortSignal.timeout(OP_TIMEOUT_MS),
+  }).output().catch((err) => {
+    throw new ConfigurationError(
+      `cannot determine the drive type of ${drive}: ${msg(err)}`,
+    );
+  });
+  const type = new TextDecoder().decode(out.stdout).trim();
+  if (!out.success || type === "") {
+    throw new ConfigurationError(
+      `cannot determine the drive type of ${drive}: ${
+        new TextDecoder().decode(out.stderr).trim()
+      }`,
+    );
+  }
+  driveTypes.set(drive, type);
+  return type;
+}
+
+/**
+ * The private root holds secret custody: canonical, local (no UNC path, a
+ * fixed drive), disjoint from results/ and from the repo worktree. Checked
+ * before anything is reserved or written.
+ */
+async function validatePrivateRoot(env: HarnessEnv): Promise<void> {
+  const r = env.privateRoot;
+  if (/^[\\/]{2}/.test(r)) {
+    throw new ConfigurationError(
+      `privateRoot ${r} is a UNC path; it must be on a local drive`,
+    );
+  }
+  let canon: string;
+  try {
+    canon = await validatedDir(r);
+  } catch (err) {
+    throw new ConfigurationError(
+      `privateRoot ${r} is not a canonical local directory (${msg(err)})`,
+    );
+  }
+  const type = await (env.driveType ?? realDriveType)(canon);
+  if (type !== "Fixed") {
+    throw new ConfigurationError(
+      `privateRoot ${canon} is on a ${type} drive; a network, removable or unknown drive is refused`,
+    );
+  }
+  const fold = (x: string) => Deno.build.os === "windows" ? x.toLowerCase() : x;
+  for (
+    const [other, what] of [
+      [env.resultsRoot, "results root"],
+      [env.repoRoot, "repo worktree"],
+    ] as const
+  ) {
+    const o = await Deno.realPath(resolve(other)).catch(() => resolve(other));
+    const [a, b] = [fold(canon), fold(o)];
+    if (a === b || a.startsWith(b + SEPARATOR) || b.startsWith(a + SEPARATOR)) {
+      throw new ConfigurationError(
+        `privateRoot ${canon} overlaps the ${what} ${o}; they must be disjoint`,
+      );
+    }
+  }
+}
+
+/** Operator secret files as the adapter declares them: present and long enough (preflight, nothing released). */
+async function checkOperatorSecrets(
+  source: string,
+  files: readonly string[],
+): Promise<void> {
+  for (const f of files) {
+    if (!/^[A-Za-z0-9._-]+$/.test(f) || f.startsWith(".")) {
+      throw new ConfigurationError(`bad secret file name: ${f}`);
+    }
+    let v: string;
+    try {
+      v = (await Deno.readTextFile(join(source, f))).trim();
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) {
+        throw new ConfigurationError(
+          `harness secret ${f} not found in ${source}`,
+        );
+      }
+      throw err;
+    }
+    if (v.length < MIN_SECRET_LENGTH) {
+      throw new ConfigurationError(
+        `secret ${f} is shorter than ${MIN_SECRET_LENGTH} characters`,
+      );
+    }
+  }
+}
+
+/** The custody temp file, created empty and given the verified owner-only ACL before any content. */
+async function prepareCustodyFile(
+  env: HarnessEnv,
+  path: string,
+): Promise<string> {
+  await Deno.mkdir(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp-${crypto.randomUUID()}`;
+  (await Deno.open(tmp, { write: true, createNew: true, mode: 0o600 })).close();
+  try {
+    await restrictPath(tmp, env.secretAcl ?? {}, "file");
+  } catch (err) {
+    await Deno.remove(tmp).catch(() => {});
+    throw err;
+  }
+  return tmp;
+}
+
+/** Write the secrets into the restricted temp file, sync, rename (the ACL moves with the file). */
+async function writeCustody(tmp: string, path: string, values: SecretValue[]) {
+  try {
+    const f = await Deno.open(tmp, { write: true, truncate: true });
+    try {
+      const bytes = new TextEncoder().encode(JSON.stringify(values));
+      for (let off = 0; off < bytes.length;) {
+        off += await f.write(bytes.subarray(off));
+      }
+      await f.sync();
+    } finally {
+      f.close();
+    }
+    await Deno.rename(tmp, path);
+  } catch (err) {
+    await Deno.remove(tmp).catch(() => {});
+    throw err;
+  }
 }
 
 /**
@@ -516,6 +760,9 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       privateRoot: env.privateRoot,
       workspace: f.workspace,
       secrets,
+      ...(env.scanReparsePoints
+        ? { scanReparsePoints: env.scanReparsePoints }
+        : {}),
     })
     : null;
   let parseError: string | null = null;
@@ -766,6 +1013,20 @@ async function finishCleanup(env: HarnessEnv, id: string) {
   }
 }
 
+/** An attempt refused before any secret was released: remove its private state. */
+async function discardAttempt(env: HarnessEnv, id: string): Promise<void> {
+  const p = privatePaths(env, id);
+  for (const d of [p.work, p.quarantine, p.pending, p.taskCopy]) {
+    await Deno.remove(d, { recursive: true }).catch((err) => {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    });
+  }
+  await removeTemps(join(env.privateRoot, "custody"), `${id}.json`);
+  await Deno.remove(p.intent).catch((err) => {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  });
+}
+
 export async function runExecution(
   env: HarnessEnv,
   cell: CellRef,
@@ -788,18 +1049,16 @@ export async function runExecution(
         `${cell.arm}: credential-bearing arms run only supervised (harness cell --supervised) until egress enforcement is verified (M1-33/M1-34)`,
       );
     }
-    await reserveCredentialRun(
-      env.credentialLedger,
-      {
-        lane: env.lane_id,
-        task: cell.task.task.id,
-        config: cell.arm,
-        purpose: "supervised dev run",
-      },
-      undefined,
-      env.stop ? { signal: env.stop } : {},
-    );
+    if (!env.credentialLedger) {
+      throw new ConfigurationError(
+        "no shared credential-run ledger configured (CG_CREDENTIAL_LEDGER): refusing a credential-bearing run",
+      );
+    }
   }
+  // Ruling (b): a reserved slot stays counted, so every predictable failure
+  // comes first; the reservation is the last step before secrets are released.
+  const needsSlot = adapter.credentialBearing && !env.egressEnforced;
+  await validatePrivateRoot(env);
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
   const started_at = now().toISOString();
@@ -851,6 +1110,7 @@ export async function runExecution(
   const stop = env.stop
     ? AbortSignal.any([env.stop, faultStop.signal])
     : faultStop.signal;
+  let refusal: unknown = null;
   try {
     // By immutable id: retagging never substitutes or invalidates the pinned image.
     const img = await bounded(
@@ -873,6 +1133,8 @@ export async function runExecution(
     const timeoutMs = (env.timeoutMsFor ?? ((m) => m * 60_000))(
       manifest.limits.timeout_min,
     );
+    await checkOperatorSecrets(env.secretsSource, adapter.secretFiles);
+    const custodyTmp = await prepareCustodyFile(env, p.custody);
     const token = await env.backend.grant({
       executionId: id,
       sandbox: name,
@@ -893,6 +1155,24 @@ export async function runExecution(
     }, timeoutMs + 5 * 60_000);
     let secretsDir: string | null = null;
     try {
+      if (needsSlot) {
+        try {
+          await reserveCredentialRun(
+            env.credentialLedger,
+            {
+              lane: env.lane_id,
+              task: cell.task.task.id,
+              config: cell.arm,
+              purpose: "supervised dev run",
+            },
+            undefined,
+            env.stop ? { signal: env.stop } : {},
+          );
+        } catch (err) {
+          refusal = err;
+          throw err;
+        }
+      }
       const s = await prepareSecrets(
         env.secretsSource,
         adapter.secretFiles,
@@ -905,7 +1185,8 @@ export async function runExecution(
       );
       secretsDir = s.dir;
       secrets = s.values;
-      await writeAtomic(p.custody, JSON.stringify(s.values));
+      await writeCustody(custodyTmp, p.custody, s.values);
+      await writeAtomic(p.keys, JSON.stringify(redactionKeys(s.values)));
       await writeAtomic(
         p.intent,
         JSON.stringify({ ...intent, phase: "released" }, null, 2),
@@ -938,6 +1219,11 @@ export async function runExecution(
       if (secretsDir) await removeSecrets(secretsDir);
     }
   } catch (err) {
+    if (err === refusal) {
+      // Refused before any secret: no execution, no private state left.
+      await discardAttempt(env, id);
+      throw err;
+    }
     if (
       !(err instanceof ConfigurationError) && !(err instanceof ValidationError)
     ) {
@@ -984,13 +1270,15 @@ export async function judgeExecution(
   if (!art) {
     throw new ValidationError(`no artifact for execution ${e.id}`, [e.id]);
   }
+  // Before judging: no key set means nothing could be redacted (fail closed).
+  const keys = await readRedactionKeys(env, e.id);
   const workDir = join(
     env.privateRoot,
     "judge",
     `${e.id}-${crypto.randomUUID().slice(0, 8)}`,
   );
   try {
-    const { judgment, log } = await judge(env.lane, {
+    const raw = await judge(env.lane, {
       executionId: e.id,
       workspaceHash: art.workspace_hash,
       task: cell.task,
@@ -1002,6 +1290,12 @@ export async function judgeExecution(
       lock: { store: env.symbolStore, packages: env.symbols },
       deploy: env.deploy,
     }, env.now);
+    // Every judge output is published through the custody redaction (the
+    // agent's code can assemble a secret at runtime in a test message).
+    const log = scrubJudgeOutput(raw.log, keys, env);
+    const judgment = JudgmentRecordSchema.parse(
+      scrubJudgeOutput(raw.judgment, keys, env),
+    );
     // The side file first: a crash between the two leaves an orphan log, never a judgment without its log.
     await writeVerdictLog(env.resultsRoot, log);
     await env.store.writeJudgment(judgment);
@@ -1268,6 +1562,10 @@ export async function recoverInterrupted(
           continue;
         }
         secrets = c;
+        // A crash between the custody and the key file: derive the keys again.
+        if (!await exists(p.keys)) {
+          await writeAtomic(p.keys, JSON.stringify(redactionKeys(secrets)));
+        }
       }
       const why = "interrupted before any secret was released";
       draft = await buildDraft(own, {

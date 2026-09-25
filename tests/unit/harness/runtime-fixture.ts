@@ -81,10 +81,11 @@ function fakeIcacls(args: string[]) {
   }
   const dir = args[0]!;
   const pad = " ".repeat(dir.length + 1);
+  // A directory lists inheritable entries, a file plain ones.
+  const f = Deno.statSync(dir).isDirectory ? "(OI)(CI)" : "";
   return Promise.resolve({
     code: 0,
-    stdout:
-      `${dir} NT AUTHORITY\\SYSTEM:(OI)(CI)(F)\n${pad}${ACL_USER}:(OI)(CI)(F)\n` +
+    stdout: `${dir} NT AUTHORITY\\SYSTEM:${f}(F)\n${pad}${ACL_USER}:${f}(F)\n` +
       `\nSuccessfully processed 1 files; Failed processing 0 files\r\n`,
     stderr: "",
   });
@@ -202,6 +203,8 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
     symbolStore: repo.symbolStore,
     secretsSource,
     secretAcl: { icacls: fakeIcacls, user: ACL_USER },
+    driveType: () => Promise.resolve("Fixed"),
+    scanReparsePoints: NO_SCAN,
     deploy: { ledgerRoot: join(privateRoot, "bc-ledger") },
     pricing: () => Promise.resolve(BOOK),
     supervised: true,

@@ -15,6 +15,7 @@ import {
   privatePaths,
   type PublishStep,
   recoverInterrupted,
+  rejudgeExecution,
   runCell,
 } from "../../../src/harness/execution.ts";
 import { taskSetIdentity } from "../../../src/harness/identity.ts";
@@ -43,6 +44,7 @@ import {
   type TestEnv,
 } from "./runtime-fixture.ts";
 import { write } from "./refapp-fixture.ts";
+import { FakeBc, result } from "./fake-bc.ts";
 
 const U16 = (s: string) =>
   String.fromCharCode(
@@ -1068,4 +1070,163 @@ Deno.test("runCell: an automatic retry needs its parent in prior, at attempt par
     "attempt",
   );
   assertEquals(t.docker.runs, []);
+});
+
+/** A verdict container whose oracle failure message is built at runtime from the attempt's secrets. */
+function leakingBc(secrets: () => string[]): FakeBc {
+  return new FakeBc((cu) => {
+    if (cu === 80010) return result({ ShippedPasses: true });
+    if (cu === 85000) {
+      return result({
+        FixWorks: `Assert.AreEqual failed. Expected:<${secrets().join("|")}>`,
+      });
+    }
+    return result({});
+  });
+}
+
+async function judgeLeakEnv() {
+  let token = "";
+  const t = await makeEnv({ bc: leakingBc(() => [SECRET_OAUTH, token]) });
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    token = await tokenOf(call);
+    return await inner(call, io);
+  };
+  return { t, token: () => token };
+}
+
+async function assertJudgeOutputRedacted(t: TestEnv, token: string) {
+  const published = await allBytes(t.env.resultsRoot);
+  assert(token.length === 64);
+  assert(!leaks(published, SECRET_OAUTH), "oauth in a published file");
+  assert(!leaks(published, token), "backend token in a published file");
+  const logs = [...Deno.readDirSync(join(t.env.resultsRoot, "verdicts"))];
+  assert(logs.length > 0);
+  for (const l of logs) {
+    const text = await Deno.readTextFile(
+      join(t.env.resultsRoot, "verdicts", l.name),
+    );
+    assertStringIncludes(text, "[REDACTED:claude-oauth-token]");
+    assertStringIncludes(text, "[REDACTED:backend-token]");
+  }
+}
+
+Deno.test("judge output is redacted with the custody secrets: live run", async () => {
+  const { t, token } = await judgeLeakEnv();
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals((await t.env.store.judgments(e.id))[0]!.verdict, "fail");
+  await assertJudgeOutputRedacted(t, token());
+});
+
+Deno.test("judge output is redacted with the custody secrets: recovery and rejudge", async () => {
+  const { t, token } = await judgeLeakEnv();
+  t.env.hooks = {
+    after: (s) =>
+      s === "artifact"
+        ? Promise.reject(new Error("runner killed"))
+        : Promise.resolve(),
+  };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), Error, "runner killed");
+  t.env.hooks = {};
+  const [e] = await recoverInterrupted(t.env, loadTask);
+  assertEquals((await t.env.store.judgments(e!.id)).length, 1);
+  await assertJudgeOutputRedacted(t, token());
+  // After publication the custody plaintext is gone; a rejudge still redacts.
+  assert(!await exists(privatePaths(t.env, e!.id).custody));
+  await rejudgeExecution(t.env, cell, e!, cell.oracleHash);
+  assertEquals((await t.env.store.judgments(e!.id)).length, 2);
+  await assertJudgeOutputRedacted(t, token());
+});
+
+Deno.test("privateRoot is validated before any secret: under results/, under the worktree, UNC or a network drive is refused", async () => {
+  const cases: [string, (t: TestEnv) => Promise<void>][] = [
+    ["results", async (t) => {
+      const p = join(t.env.resultsRoot, "private");
+      await Deno.mkdir(p);
+      t.env.privateRoot = p;
+    }],
+    ["worktree", async (t) => {
+      const p = join(t.repo.root, "private");
+      await Deno.mkdir(p);
+      t.env.privateRoot = p;
+    }],
+    ["UNC", (t) => {
+      t.env.privateRoot = "\\\\server\\share\\cg-private";
+      return Promise.resolve();
+    }],
+    ["network", (t) => {
+      t.env.driveType = () => Promise.resolve("Network");
+      return Promise.resolve();
+    }],
+  ];
+  for (const [want, setup] of cases) {
+    const t = await makeEnv();
+    const ledger = t.env.credentialLedger!;
+    await setup(t);
+    await assertRejects(
+      async () => runCell(t.env, await cellFor(t)),
+      ConfigurationError,
+      want,
+    );
+    assert(!await exists(ledger), `${want}: no slot reserved`);
+    assertEquals(t.docker.runs, [], want);
+  }
+});
+
+Deno.test({
+  name:
+    "custody: the temp file gets the verified owner-only ACL before any content is written",
+  ignore: Deno.build.os !== "windows",
+}, async () => {
+  const t = await makeEnv();
+  const acl = t.env.secretAcl!;
+  const seen: { args: string[]; size: number | null }[] = [];
+  t.env.secretAcl = {
+    user: acl.user,
+    icacls: async (args) => {
+      const size = await Deno.stat(args[0]!).then((s) => s.size, () => null);
+      seen.push({ args, size });
+      return await acl.icacls(args);
+    },
+  };
+  t.env.hooks = {
+    beforeDraft: () => Promise.reject(new Error("runner killed")),
+  };
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t)),
+    Error,
+    "runner killed",
+  );
+  const custody = seen.filter((s) =>
+    /[\\/]custody[\\/][0-9a-f-]+\.json\.tmp-/.test(s.args[0]!)
+  );
+  assertEquals(custody.map((s) => [s.args.length > 1, s.size]), [
+    [true, 0],
+    [false, 0],
+  ], "grant, then verify, both on the empty temp file");
+  const [id] = intentIds(t);
+  assert(
+    (await Deno.readTextFile(privatePaths(t.env, id!).custody)).includes(
+      "backend-token",
+    ),
+  );
+});
+
+Deno.test("preflight failures (missing image, missing operator secret) reserve no credential run", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  t.docker.images.delete(IMAGE_ID);
+  assertEquals(
+    (await runCell(t.env, cell)).executions[0]!.termination,
+    "setup_failed",
+  );
+  assert(!await exists(t.env.credentialLedger!), "image: no slot reserved");
+  const t2 = await makeEnv();
+  await Deno.remove(join(t2.env.secretsSource, "claude-oauth-token"));
+  const e = (await runCell(t2.env, await cellFor(t2))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assert(!await exists(t2.env.credentialLedger!), "secret: no slot reserved");
+  assertEquals(t2.docker.runs, []);
 });

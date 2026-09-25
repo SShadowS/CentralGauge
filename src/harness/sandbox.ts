@@ -633,6 +633,8 @@ export function aclIsPrivate(
   listing: string,
   dir: string,
   user: string,
+  /** "(oi)(ci)" for a directory (inherited by its files), "" for a file. */
+  inherit = "(oi)(ci)",
 ): boolean {
   const lines = listing.split(/\r?\n/);
   const end = lines.indexOf("");
@@ -647,37 +649,55 @@ export function aclIsPrivate(
     (l) => l.trim().toLowerCase(),
   );
   const want = [
-    `nt authority\\system:(oi)(ci)(f)`,
-    `${user.toLowerCase()}:(oi)(ci)(f)`,
+    `nt authority\\system:${inherit}(f)`,
+    `${user.toLowerCase()}:${inherit}(f)`,
   ];
   return entries.length === 2 && want.every((w) => entries.includes(w));
 }
 
 /** Restrict a new custody dir to this user (and SYSTEM), verified, before any secret is written. */
-async function restrictDir(dir: string, custody: SecretCustody): Promise<void> {
+function restrictDir(dir: string, custody: SecretCustody): Promise<void> {
+  return restrictPath(dir, custody, "dir");
+}
+
+/**
+ * Restrict a new, still empty custody dir or file to this user (and
+ * SYSTEM) with no inherited entries, verified strictly, before any secret is
+ * written into it.
+ */
+export async function restrictPath(
+  path: string,
+  custody: Pick<SecretCustody, "icacls" | "user">,
+  kind: "dir" | "file",
+): Promise<void> {
   if (Deno.build.os !== "windows") {
-    await Deno.chmod(dir, 0o700);
+    await Deno.chmod(path, kind === "dir" ? 0o700 : 0o600);
     return;
   }
+  const flags = kind === "dir" ? "(OI)(CI)" : "";
+  const what = kind === "dir" ? "secrets dir" : "secrets file";
   const icacls = custody.icacls ??
     ((args: string[]) => runTool("icacls.exe", args));
   const user = custody.user ?? await currentUser();
   const grant = await icacls([
-    dir,
+    path,
     "/inheritance:r",
     "/grant:r",
-    `${user}:(OI)(CI)F`,
-    "SYSTEM:(OI)(CI)F",
+    `${user}:${flags}F`,
+    `SYSTEM:${flags}F`,
   ]);
   if (grant.code !== 0) {
     throw new ConfigurationError(
-      `could not set the ACL of secrets dir ${dir}: icacls exited ${grant.code}: ${grant.stderr.trim()}`,
+      `could not set the ACL of ${what} ${path}: icacls exited ${grant.code}: ${grant.stderr.trim()}`,
     );
   }
-  const listing = await icacls([dir]);
-  if (listing.code !== 0 || !aclIsPrivate(listing.stdout, dir, user)) {
+  const listing = await icacls([path]);
+  if (
+    listing.code !== 0 ||
+    !aclIsPrivate(listing.stdout, path, user, flags.toLowerCase())
+  ) {
     throw new ConfigurationError(
-      `refusing secrets dir ${dir}: its ACL is not exactly ${user} and SYSTEM: ${listing.stdout.trim()}`,
+      `refusing ${what} ${path}: its ACL is not exactly ${user} and SYSTEM: ${listing.stdout.trim()}`,
     );
   }
 }
