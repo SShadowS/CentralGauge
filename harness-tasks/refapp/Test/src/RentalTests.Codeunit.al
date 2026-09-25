@@ -99,6 +99,68 @@ codeunit 80010 "CGR Rental Tests"
     end;
 
     [Test]
+    procedure PostCreatesLedgerEntry()
+    var
+        Entry: Record "CGR Rental Ledger Entry";
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        Lib.SetPricing(0, 1000, 0);
+        Lib.CreateVehicle('T-RENT-008', 1000, Enum::"CGR Maintenance Strategy"::Default);
+        Lib.SetDailyRate('T-RENT-008', 50);
+        ContractNo := Lib.CreateContract('T-RENT-008');
+        RentalMgt.CheckOut(ContractNo);
+        RentalMgt.Return(ContractNo, 1200, '');
+        RentalMgt.Post(ContractNo);
+        Contract.Get(ContractNo);
+        Assert.AreEqual(Contract.Status::Posted, Contract.Status, 'Posting sets the contract status');
+        Entry.SetRange("Contract No.", ContractNo);
+        Assert.AreEqual(1, Entry.Count(), 'Posting creates one ledger entry');
+        Entry.FindFirst();
+        Assert.AreEqual('T-RENT-008', Entry."Vehicle No.", 'Ledger entry vehicle');
+        Assert.AreEqual(20270303D, Entry."Posting Date", 'Ledger entry is posted on the end date');
+        Assert.AreEqual(150.00, Entry.Amount, '3 days x 50');
+        Assert.AreEqual(200, Entry."Km Driven", 'Ledger entry km driven');
+    end;
+
+    [Test]
+    procedure DailyPriceWithWeekendSurcharge()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Pricing: Codeunit "CGR Rental Pricing";
+        ContractNo: Code[20];
+    begin
+        Lib.SetPricing(50, 1000, 0);
+        Lib.CreateVehicle('T-RENT-009', 1000, Enum::"CGR Maintenance Strategy"::Default);
+        Lib.SetDailyRate('T-RENT-009', 50);
+        ContractNo := RentalMgt.CreateContract('T-RENT-009', 'Test Customer', 20270305D, 20270307D);
+        RentalMgt.CheckOut(ContractNo);
+        RentalMgt.Return(ContractNo, 1000, '');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(200.00, Pricing.CalcAmount(Contract), 'Fri-Sun: 3 x 50 plus 50 percent on Saturday and Sunday');
+    end;
+
+    [Test]
+    procedure ExcessKmCharged()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Pricing: Codeunit "CGR Rental Pricing";
+        ContractNo: Code[20];
+    begin
+        Lib.SetPricing(0, 100, 0.5);
+        Lib.CreateVehicle('T-RENT-010', 1000, Enum::"CGR Maintenance Strategy"::Default);
+        Lib.SetDailyRate('T-RENT-010', 50);
+        ContractNo := Lib.CreateContract('T-RENT-010');
+        RentalMgt.CheckOut(ContractNo);
+        RentalMgt.Return(ContractNo, 1450, '');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(225.00, Pricing.CalcAmount(Contract), '3 x 50 plus 150 km over the 300 km allowance at 0.50');
+    end;
+
+    [Test]
     procedure SuspendRentalsBlocksCheckout()
     var
         Setup: Record "CGR Setup";

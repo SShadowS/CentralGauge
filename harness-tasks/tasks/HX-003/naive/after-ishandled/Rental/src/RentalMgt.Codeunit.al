@@ -87,4 +87,12 @@ codeunit 70200 "CGR Rental Mgt"
         Contract.Modify(true);
         CoreEvents.RaiseVehicleReturned(Contract."Vehicle No.", ReturnKm, DamageDescription);
     end;
+
+    procedure Post(ContractNo: Code[20])
+    var
+        Contract: Record "CGR Rental Contract";
+    begin
+        Contract.Get(ContractNo);
+        Codeunit.Run(Codeunit::"CGR Rental-Post", Contract);
+    end;
 }
