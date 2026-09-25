@@ -12,6 +12,8 @@
 
 **Revision 2 (2026-09-25).** Applies the six must-change items and the per-task acceptance table of the M1-00-001 review, and builds in the owner rules. All code below was re-run in a scratch copy of the repo: 109 tests pass, `deno check` and `deno lint` are clean, and the three golden hashes were confirmed independently with Python. M1-07 is split into M1-07 (records and store) and M1-07b (cross-record validation).
 
+**Revision 3 (2026-09-25).** Applies the six must-change items and defects A to F of the round-2 review (`H:\cg-coord\reviews\M1-00-002\review-gpt6astra-round2.md`) and the owner addendum (rules 5 and 6). M1-01 to M1-04 are already being implemented and are unchanged; every fix lands in M1-05 and later. Re-run in the scratch copy: 123 tests pass, `deno check`, `deno lint` and `deno fmt --check` are clean, and all golden hashes are unchanged.
+
 ## Global Constraints
 
 - No container, Docker or BC operation in any task. Every test in this plan runs without a container, so it is safe while a bench is live (it never touches `tests/unit/container`).
@@ -35,7 +37,7 @@
 
 From `H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md`:
 
-1. **Cost per solved task** = sum over tasks of per-task mean spend, counting the spend of every attempt (scored or not, including usage-limited and exhausted setup retries), divided by the sum of per-task pass rates. Equal task weight. Pending spend is disclosed; the headline is marked provisional while cells are pending. (M1-06, M1-09)
+1. **Cost per solved task** = sum over tasks of per-task mean spend, counting the spend of every attempt (scored or not, including usage-limited and exhausted setup retries, and manual reruns), divided by the sum of per-task solve rates. Equal task weight. (M1-06, M1-08, M1-09)
 2. **Matched pairs.** A baseline-variant comparison uses only (task, repeat) cells eligible in both arms; each arm's raw spend and exclusions are reported separately. (M1-06, M1-09)
 3. **Reruns.** An automatic infra-retry chain resolves by its final attempt. A manual rerun is a separate execution and never replaces a scored result; the report states which execution was used. (M1-07, M1-08, M1-09)
 4. **Sparse bootstrap.** When any resample is undefined (zero solves), the CI and the distinguishable verdict are suppressed and the undefined share is reported. (M1-06, M1-09)
@@ -47,13 +49,16 @@ From `H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md`:
 10. Derived `vary` defaults approved; image provenance recorded; rule-version mismatch rejected. (M1-05)
 11. Symbols lock is provisional-until-present, with a versioned, strict format. (M1-04)
 12. Block order is repeat-major with a seeded arm order within each block. (M1-07)
+13. **Addendum rule 5, denominators.** Per task, mean spend and solve rate are computed over the SAME terminal cells; a terminally unscored cell adds its spend and no solve. Scored-only pass rate is reported separately; unscored is never labelled a model failure. (M1-06)
+14. **Addendum rule 6, pending.** The provisional headline uses terminal cells only; pending cells' known spend and count are shown next to it. (M1-06, M1-09)
+15. **Coordinator rulings.** Nonempty `reuse` is rejected in Part 1. Judgments carry a scorer fingerprint and a comparison that mixes fingerprints fails closed; the supersession policy is Part 2. (M1-07, M1-07b, M1-09)
 
 ## Review Focus
 
-1. **Spend disappears from the headline** because a cell never got a verdict (exhausted setup retry, usage-limit pause). Expected: its spend counts. Pinned in M1-06 (`spend of an unscored cell counts`) and M1-08 (`exhausted automatic retry is terminally unscored, spend kept`).
+1. **Spend disappears or dilutes the headline.** A cell that never got a verdict, a free unscored cell, or a cell with one attempt of unknown cost. Expected: unscored spend counts with no solve over the same cells, a $0 unscored cell cannot halve the cost, and known attempt spend stays in the raw totals. Pinned in M1-06 (`adds spend and no solve over the same cells`, `dilution case`, `known spend survives an unknown attempt`) and M1-08 (`known spend is kept`).
 2. **A rejudge of one execution changes another's result** because both produced identical workspace bytes, or a judgment against a different oracle is picked up. Expected: judgments are selected per execution, task, workspace and judging oracle. Pinned in M1-07 (`identical workspaces keep separate artifacts and judgments`) and M1-08 (`judgments are selected by execution, task, workspace and oracle`).
 3. **Sparse solves produce a confident "distinguishable".** Expected: CI suppressed with the undefined share. Pinned in M1-06 (`any undefined resample suppresses CI and verdict`) and M1-09 (`sparse solves suppress the CI and say why`).
-4. **Validly shaped records from different inputs enter one comparison** (wrong visible hash, wrong arm manifest, duplicate attempts, foreign campaign). Expected: the report refuses before computing. Pinned in M1-07b and M1-09 (`inconsistent records are refused`).
+4. **Validly shaped records from different inputs enter one comparison** (wrong visible hash, a limit other than the task-effective one, duplicate attempts, an automatic retry hanging off a manual rerun or a completed run, a foreign campaign, mixed scorer versions). Expected: refusal before any number. Pinned in M1-07b, M1-08 (`automatic retry of a manual rerun never replaces`) and M1-09 (`inconsistent records are refused`, `mixed scorer versions fail closed`).
 5. **A hidden bundle file or tracked build output changes behavior without changing identity, or vice versa.** Expected: bundles hash every file; task content drops only build artifacts; a new commit with identical refapp content changes nothing. Pinned in M1-02, M1-04 and M1-05.
 
 ## Reuse
@@ -82,11 +87,11 @@ Deliberately not reused:
 | `src/harness/hash.ts` | `HASH_RULES_VERSION`, `hashJson`, `hashFile`, `hashContent`, domain-aware `listTree` / `hashTree` | M1-02 |
 | `src/harness/config.ts` | config and experiment schemas, loaders, catalog check, `effectiveLimits` | M1-03 |
 | `src/harness/identity.ts` | canonical refapp source, visible and oracle hashes, metadata whitelist, symbols lock, task-set identity | M1-04 |
-| `src/harness/manifest.ts` | arm template and execution manifests, component hashes, `vary` enforcement, arm membership | M1-05 |
+| `src/harness/manifest.ts` | arm template and execution manifests, component hashes, `vary` enforcement, exact execution membership | M1-05 |
 | `src/harness/stats.ts` | cells, cost per solved task, pass rate, pass^k, matched-pair bootstrap | M1-06 |
-| `src/harness/records.ts` | execution, artifact association, judgment, campaign schemas, `planBlocks`, crash-safe `RecordStore` | M1-07 |
+| `src/harness/records.ts` | execution, artifact association, judgment, campaign schemas, termination policy, retry-chain ancestry, scorer fingerprint, `planBlocks`, crash-safe `RecordStore` | M1-07 |
 | `src/harness/integrity.ts` | `validateCampaignRecords` across records and stored hashes | M1-07b |
-| `src/harness/outcome.ts` | termination rules, judging context, judgment selection, records to cells | M1-08 |
+| `src/harness/outcome.ts` | complete judging context, judgment selection, records to cells | M1-08 |
 | `src/harness/report.ts` | `buildReport` (JSON shape), `renderReport` (console) | M1-09 |
 | `cli/commands/harness-command.ts` | `harness validate`, `harness report` | M1-10 |
 | `tests/unit/harness/*.test.ts`, `tests/unit/harness/fixtures.ts` | unit tests and consistent record builders | all |
@@ -118,11 +123,12 @@ Part 2 implements the producers; the shapes below do not change without a rules 
 - **Refapp source** (M1-04). The canonical refapp content is every tracked file under `harness-tasks/refapp` at the resolved commit except build artifacts, hashed with the same content rule as `listTree(dir, "task")`. Part 2 staging copies exactly those paths from that commit; `resolveRefapp(...).files` equals `listTree` of a checkout (tested).
 - **Agent-visible metadata** (M1-04). `AGENT_VISIBLE_FIELDS = ["id", "attachments", "limits"]` is what staging writes to `C:\task`. Anything added there is hashed as visible (and also as oracle if it is an oracle input).
 - **Symbols lock** (M1-04). `{ v: 1, packages: [{ app_id, name, publisher, version, file, sha256 }] }`, unique `app_id`, lower-case hex digests, sorted by `app_id` on load.
-- **Execution** (M1-07). `run_kind: planned | auto_retry | manual_rerun`, `retry_of`, unique `attempt` per cell; `did_work` means the agent took any action (model request, tool call, file read or edit, build attempt); `validity: { incomplete_telemetry: string[], infra_exposed: boolean }`; `image_attachments: none | delivered | unsupported | unknown`; `telemetry.cost_usd` only with `cost_source: "estimated"` and a pricing snapshot, the harness's own figure in `reported_cost_usd`; `workspace_hash`.
+- **Execution** (M1-07). `run_kind: planned | auto_retry | manual_rerun`, `retry_of` (chains are resolved by this ancestry; a planned or manual root plus its automatic retries; an automatic retry only after a termination that allows one, and the one retry for setup or pre-work crash used at most once), unique `attempt` per cell; `validity.incomplete_telemetry` containing `cost_usd` requires a null cost; `did_work` means the agent took any action (model request, tool call, file read or edit, build attempt); `validity: { incomplete_telemetry: string[], infra_exposed: boolean }`; `image_attachments: none | delivered | unsupported | unknown`; `telemetry.cost_usd` only with `cost_source: "estimated"` and a pricing snapshot, the harness's own figure in `reported_cost_usd`; `workspace_hash`.
 - **Artifact and workspace** (M1-07). One association per execution; the workspace copy is content-addressed and may be shared.
-- **Judgment** (M1-07). Keyed by execution; per-procedure results carry `target: candidate | reference | mutant:<name>` and `failure: assertion | compile | runtime_error | infra | null`.
-- **Campaign** (M1-07). Full immutable plan (every task x repeat); staged runs (`--sample`, first repeat, remaining repeats) execute subsets of it and never rewrite it. `reuse: [{ campaign_id, execution_id }]` references historical executions explicitly; `tasks_meta` carries `kind` and `coupling` for slices.
-- **Judging context** (M1-08). Report and rejudge name the oracle per task explicitly (`campaign` or `current`); the report prints which.
+- **Judgment** (M1-07). Keyed by execution; `scorer_fingerprint = scorerFingerprint(scorer_versions)`; per-procedure results carry `target: candidate | reference | mutant:<name>` and `failure: assertion | compile | runtime_error | infra | null`.
+- **Campaign** (M1-07). Full immutable plan (every task x repeat); staged runs (`--sample`, first repeat, remaining repeats) execute subsets of it and never rewrite it. `reuse: [{ campaign_id, execution_id }]` is the frozen shape for historical references but must be empty until Part 2 implements loading and mapping; `tasks_meta` carries `kind`, `coupling` and the task `limits` (so exact execution limits can be checked).
+- **Judging context** (M1-08). Report and rejudge name the oracle per task explicitly (`campaign` or `current`); it must cover every campaign task, and the same map drives selection and the reported identity.
+- **Cells** (M1-06, M1-08). `spend_usd` (all attempts, null if any is unknown) and `known_spend_usd` (sum of the known ones); provenance `used_execution`, `used_kind` (root kind of the chain used), `judgment_id`, `oracle_hash`, `scorer_fingerprint`.
 
 ---
 
@@ -1924,7 +1930,7 @@ git commit -m "feat(harness): visible and oracle task hashes, canonical refapp s
 
 ### Task M1-05: resolved manifest, component hashes, vary enforcement
 
-Spec 1a section 4 (resolved execution manifest: native settings as written, component contents, MCP versions and tool-schema hashes, model routing and provider route, image digest, backend version, limits; per-component hashes; config identity), section 6 and D15 (`vary`), section 11 (`vary` enforcement test). Review must-change 5 and 6: manifests under other hashing rules are refused before any comparison; every model slot needs a provider route; native settings and image provenance (digest and base digest) are recorded; the arm template and the task-effective execution manifest are separate, so a stricter task limit never changes arm identity. Owner rule 10: image differs only with `harness`, `harness_version` or `toolchain`; provider routes only with `models`; backend never.
+Spec 1a section 4 (resolved execution manifest: native settings as written, component contents, MCP versions and tool-schema hashes, model routing and provider route, image digest, backend version, limits; per-component hashes; config identity), section 6 and D15 (`vary`), section 11 (`vary` enforcement test). Review must-change 5 and 6: manifests under other hashing rules are refused before any comparison; every model slot needs a provider route; native settings and image provenance (digest and base digest) are recorded; the arm template and the task-effective execution manifest are separate, so a stricter task limit never changes arm identity. Round 2 defect D: `executionMismatch` requires the execution manifest to be exactly `forTask(template, task.limits)`, so an arbitrary tighter limit is caught too; limits must be positive. Owner rule 10: image differs only with `harness`, `harness_version` or `toolchain`; provider routes only with `models`; backend never.
 
 **Deps:** M1-02, M1-03.
 
@@ -1934,7 +1940,7 @@ Spec 1a section 4 (resolved execution manifest: native settings as written, comp
 
 **Interfaces:**
 - Consumes: `HarnessConfig`, `HarnessConfigSchema`, `Limits`, `VaryKey`, `effectiveLimits` (M1-03); `HASH_RULES_VERSION`, `hashFile`, `hashJson`, `hashTree`, `listTree` (M1-02); `HarnessTask` (M1-01).
-- Produces: `ResolvedManifestSchema`, `type ResolvedManifest`; `interface RuntimeFacts`; `resolveManifest(harnessRoot, config, facts): Promise<ResolvedManifest>` (arm template); `forTask(template, taskLimits): ResolvedManifest`; `MANIFEST_KEYS`, `type ManifestKey`; `componentHashes(m)`; `manifestHash(m)`; `diffManifests(a, b): Promise<ManifestKey[]>` (refuses other rules); `allowedDiffs(vary)`; `assertVaryHolds(baseline, variant, vary)`; `armMismatch(template, execution): Promise<string[]>`.
+- Produces: `ResolvedManifestSchema`, `type ResolvedManifest`; `interface RuntimeFacts`; `resolveManifest(harnessRoot, config, facts): Promise<ResolvedManifest>` (arm template); `forTask(template, taskLimits): ResolvedManifest`; `MANIFEST_KEYS`, `type ManifestKey`; `componentHashes(m)`; `manifestHash(m)`; `diffManifests(a, b): Promise<ManifestKey[]>` (refuses other rules); `allowedDiffs(vary)`; `assertVaryHolds(baseline, variant, vary)`; `executionMismatch(template, execution, taskLimits): Promise<string[]>`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1949,9 +1955,9 @@ import {
   HarnessConfigSchema,
 } from "../../../src/harness/config.ts";
 import {
-  armMismatch,
   assertVaryHolds,
   diffManifests,
+  executionMismatch,
   forTask,
   manifestHash,
   ResolvedManifestSchema,
@@ -1996,28 +2002,30 @@ function config(
   });
 }
 
+const GOLDEN = {
+  v: 1,
+  rules: "hr1",
+  config_id: "golden",
+  harness: "claude-code",
+  harness_version: "2.1.282",
+  models: { main: "anthropic/model-a" },
+  settings: { requested: { reasoning: "high" }, native: { effort: "high" } },
+  limits: { timeout_min: 30, max_budget_usd: 5 },
+  instructions: null,
+  skills: null,
+  agents: null,
+  hooks: null,
+  plugins: [],
+  mcp: [{ name: "al-tools", version: "1.0.0", tool_schema_hash: "s1" }],
+  lsp: [],
+  toolchain: [],
+  image: { digest: "sha256:img1", base_digest: "sha256:base1" },
+  backend_version: "b1",
+  provider_routes: { main: "anthropic" },
+};
+
 Deno.test("manifestHash: golden resolved manifest", async () => {
-  const m = ResolvedManifestSchema.parse({
-    v: 1,
-    rules: "hr1",
-    config_id: "golden",
-    harness: "claude-code",
-    harness_version: "2.1.282",
-    models: { main: "anthropic/model-a" },
-    settings: { requested: { reasoning: "high" }, native: { effort: "high" } },
-    limits: { timeout_min: 30, max_budget_usd: 5 },
-    instructions: null,
-    skills: null,
-    agents: null,
-    hooks: null,
-    plugins: [],
-    mcp: [{ name: "al-tools", version: "1.0.0", tool_schema_hash: "s1" }],
-    lsp: [],
-    toolchain: [],
-    image: { digest: "sha256:img1", base_digest: "sha256:base1" },
-    backend_version: "b1",
-    provider_routes: { main: "anthropic" },
-  });
+  const m = ResolvedManifestSchema.parse(GOLDEN);
   assertEquals(
     await manifestHash(m),
     "6ae14d261de04f54c09e5e9d8585ad15a3537c757e9cb5f7dcb07e7b08cfdf40",
@@ -2154,19 +2162,51 @@ Deno.test("forTask: task limits tighten the execution, not the arm", async () =>
   const exec = forTask(template, { timeout_min: 20 });
   assertEquals(exec.limits, { timeout_min: 20, max_budget_usd: 5 });
   assertEquals(template.limits.timeout_min, 30);
-  assertEquals(await armMismatch(template, exec), []);
-  const looser = { ...exec, limits: { timeout_min: 60, max_budget_usd: 5 } };
-  assertEquals(await armMismatch(template, looser), [
-    "limits are looser than the arm template",
-  ]);
+  assertEquals(
+    await executionMismatch(template, exec, { timeout_min: 20 }),
+    [],
+  );
   const other = await resolveManifest(
     r,
     config("a", { skills: "bundles/al/skills" }),
     FACTS,
   );
-  assertEquals(await armMismatch(template, other), [
-    "component skills differs from the arm",
+  assertEquals(await executionMismatch(template, other, {}), [
+    "component skills differs from the arm template with task limits",
   ]);
+});
+
+Deno.test("executionMismatch: any limit other than the exact task-effective one is caught", async () => {
+  const r = await root();
+  const template = await resolveManifest(r, config("a"), FACTS);
+  const tighter = {
+    ...template,
+    limits: { timeout_min: 1, max_budget_usd: 5 },
+  };
+  const looser = {
+    ...template,
+    limits: { timeout_min: 60, max_budget_usd: 5 },
+  };
+  for (const m of [tighter, looser]) {
+    assertEquals(await executionMismatch(template, m, {}), [
+      "component limits differs from the arm template with task limits",
+    ]);
+  }
+});
+
+Deno.test("ResolvedManifestSchema: nonpositive limits are refused", () => {
+  for (
+    const limits of [{ timeout_min: 0, max_budget_usd: 5 }, {
+      timeout_min: 30,
+      max_budget_usd: 0,
+    }]
+  ) {
+    const r = ResolvedManifestSchema.safeParse({
+      ...ResolvedManifestSchema.parse(GOLDEN),
+      limits,
+    });
+    assertEquals(r.success, false);
+  }
 });
 ```
 
@@ -2197,7 +2237,7 @@ Expected: FAIL, `Module not found ".../src/harness/manifest.ts"`.
 import { join } from "@std/path";
 import { z } from "zod";
 import { ConfigurationError } from "../errors.ts";
-import type { HarnessConfig, Limits, VaryKey } from "./config.ts";
+import type { HarnessConfig, VaryKey } from "./config.ts";
 import { effectiveLimits } from "./config.ts";
 import {
   HASH_RULES_VERSION,
@@ -2234,8 +2274,8 @@ export const ResolvedManifestSchema = z.strictObject({
     native: z.record(z.string(), z.unknown()),
   }),
   limits: z.strictObject({
-    timeout_min: z.number(),
-    max_budget_usd: z.number(),
+    timeout_min: z.number().int().positive(),
+    max_budget_usd: z.number().positive(),
   }),
   instructions: PathComponent.nullable(),
   skills: PathComponent.nullable(),
@@ -2441,23 +2481,19 @@ export async function assertVaryHolds(
 }
 
 /**
- * Problems that stop an execution manifest from belonging to an arm: any
- * component other than limits differs, or a limit is looser than the
- * template. Empty = belongs.
+ * Problems that stop an execution manifest from belonging to an arm: it must
+ * be exactly `forTask(template, taskLimits)`. Names the differing components
+ * (limits included, so an arbitrary tighter limit is caught). Empty = ok.
  */
-export async function armMismatch(
+export async function executionMismatch(
   template: ResolvedManifest,
   execution: ResolvedManifest,
+  taskLimits: HarnessTask["limits"],
 ): Promise<string[]> {
-  const diffs = (await diffManifests(template, execution))
-    .filter((k) => k !== "limits");
-  const problems = diffs.map((k) => `component ${k} differs from the arm`);
-  const t: Limits = template.limits;
-  const e: Limits = execution.limits;
-  if (e.timeout_min > t.timeout_min || e.max_budget_usd > t.max_budget_usd) {
-    problems.push("limits are looser than the arm template");
-  }
-  return problems;
+  const expected = forTask(template, taskLimits);
+  return (await diffManifests(expected, execution)).map((k) =>
+    `component ${k} differs from the arm template with task limits`
+  );
 }
 ```
 
@@ -2489,9 +2525,10 @@ git commit -m "feat(harness): resolved manifests, component diff, vary and rules
 
 Spec 1a section 1 (primary metric counts every execution's spend), section 9 (task is the unit; equal task weight; paired task-level bootstrap; "not distinguishable", never "equal"; pass rate; pass^k), D8 (unknown is null, never 0). Owner rules 1, 2 and 4, and review must-changes 1 and 2:
 
-- A cell is `unrun`, `pending`, `scored` or `unscored` (terminal). Its spend sums every attempt.
-- The cost headline uses terminal cells with known spend: per task, mean spend over those cells divided into the sum of per-task pass rates over the scored ones. Unscored terminal spend counts; pending spend is reported separately and makes the result provisional.
-- Pass rate uses scored cells only. pass^k needs every distinct repeat 1..k scored.
+- A cell is `unrun`, `pending`, `scored` or `unscored` (terminal). `spend_usd` sums every attempt (null if any is unknown); `known_spend_usd` sums the known ones and feeds the raw and pending totals (round 2 defect B).
+- Cost headline (addendum rule 5, round 2 defect A): per task, over the SAME terminal cells with complete spend, mean spend and solve rate (passes / cells, so an unscored cell adds spend and no solve). A $1 pass plus a $9 unscored cell is $10 per solved task, and a $10 pass plus a $0 unscored cell stays $10.
+- Pass rate is separate: scored cells only, so unscored is never a model failure. pass^k needs every distinct repeat 1..k scored.
+- Pending cells are not in the headline; their count and known spend are reported next to it and the result is provisional (addendum rule 6). `unknown_spend_cells` counts attempted cells of any status, `unknown_spend_terminal_cells` those left out of the cost metric.
 - Comparisons use matched (task, repeat) pairs eligible in both arms; each exclusion is counted per arm and reason (`unrun`, `pending`, `unscored`, `unknown_spend`, `missing`).
 - Any undefined resample suppresses the CI and the verdict. Resamples must be a positive integer, the level strictly between 0 and 1, the seed a non-negative integer.
 
@@ -2503,7 +2540,7 @@ Spec 1a section 1 (primary metric counts every execution's spend), section 9 (ta
 
 **Interfaces:**
 - Consumes: `type PrimaryMetric` (M1-03); `percentile` from `cli/commands/report/stats-calculator.ts`.
-- Produces: `type CellStatus`; `interface Cell { task; arm; repeat; status; pass: boolean | null; spend_usd: number | null; attempts: number }`; `type ExclusionReason`; `mulberry32(seed)`; `checkCells(cells)`; `interface ArmSummary` (planned / attempted / scored / unscored / pending / unrun counts, `unknown_spend_cells`, `total_spend_usd`, `pending_spend_usd`, `cost_per_solved_task`, `pass_rate`, `pass_k`, `pass_k_tasks`, `provisional`); `armSummary(cells, arm, k)`; `interface Comparison` (`pairs`, `tasks`, `tasks_dropped`, `excluded`, `delta`, `ci`, `level`, `undefined_share`, `distinguishable`, `resamples`, `seed`, `provisional`); `interface BootstrapOptions`; `checkBootstrapOptions(opts)`; `compareArms(cells, baseline, variant, metric, opts?)`.
+- Produces: `type CellStatus`; `interface Cell { task; arm; repeat; status; pass: boolean | null; spend_usd: number | null; known_spend_usd: number; attempts: number }`; `type ExclusionReason`; `mulberry32(seed)`; `checkCells(cells)`; `interface ArmSummary` (planned / attempted / scored / unscored / pending / unrun counts, `unknown_spend_cells`, `unknown_spend_terminal_cells`, `total_spend_usd`, `pending_spend_usd`, `cost_per_solved_task`, `pass_rate`, `pass_k`, `pass_k_tasks`, `provisional`); `armSummary(cells, arm, k)`; `interface Comparison` (`pairs`, `tasks`, `tasks_dropped`, `excluded`, `delta`, `ci`, `level`, `undefined_share`, `distinguishable`, `resamples`, `seed`, `provisional`); `interface BootstrapOptions`; `checkBootstrapOptions(opts)`; `compareArms(cells, baseline, variant, metric, opts?)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2536,6 +2573,7 @@ function cells(arm: string, task: string, rows: Row[]): Cell[] {
     status: typeof s === "boolean" ? "scored" : s,
     pass: typeof s === "boolean" ? s : null,
     spend_usd: s === "unrun" ? 0 : spend,
+    known_spend_usd: spend ?? 0,
     attempts: s === "unrun" ? 0 : 1,
   }));
 }
@@ -2571,14 +2609,39 @@ Deno.test("armSummary: every task has equal weight", () => {
   assertEquals(armSummary(cs, "A", 3).cost_per_solved_task, 5.5);
 });
 
-Deno.test("armSummary: spend of an unscored cell counts (owner rule 1)", () => {
-  // $1 solved cell plus a $9 cell whose setup retries were exhausted.
-  const cs = cells("A", "t1", [[true, 1], ["unscored", 9]]);
-  const s = armSummary(cs, "A", 2);
-  // mean spend (1 + 9) / 2 = 5; pass rate over scored cells = 1 -> $5, not $1
-  assertEquals(s.cost_per_solved_task, 5);
+Deno.test("armSummary: an unscored cell adds spend and no solve over the same cells (addendum rule 5)", () => {
+  // $1 solved cell plus a $9 cell whose setup retries were exhausted:
+  // mean spend (1 + 9) / 2 = 5, solve rate 1 / 2 -> $10 per solved task.
+  const s = armSummary(cells("A", "t1", [[true, 1], ["unscored", 9]]), "A", 2);
+  assertEquals(s.cost_per_solved_task, 10);
   assertEquals(s.total_spend_usd, 10);
+  // Scored-only pass rate: the unscored cell is not a model failure.
+  assertEquals(s.pass_rate, 1);
   assertEquals(s.unscored_cells, 1);
+});
+
+Deno.test("armSummary: a free unscored cell cannot halve the cost (dilution case)", () => {
+  // $10 solved cell plus a $0 unscored cell: still $10 per solved task.
+  const s = armSummary(cells("A", "t1", [[true, 10], ["unscored", 0]]), "A", 2);
+  assertEquals(s.cost_per_solved_task, 10);
+});
+
+Deno.test("armSummary: known spend survives an unknown attempt, in any status", () => {
+  const partial = (status: "scored" | "pending", known: number): Cell => ({
+    task: "t1",
+    arm: "A",
+    repeat: status === "scored" ? 1 : 2,
+    status,
+    pass: status === "scored" ? true : null,
+    spend_usd: null,
+    known_spend_usd: known,
+    attempts: 2,
+  });
+  const s = armSummary([partial("scored", 2), partial("pending", 3)], "A", 2);
+  assertEquals(s.total_spend_usd, 5);
+  assertEquals(s.pending_spend_usd, 3);
+  assertEquals([s.unknown_spend_cells, s.unknown_spend_terminal_cells], [2, 1]);
+  assertEquals(s.cost_per_solved_task, null);
 });
 
 Deno.test("armSummary: pending spend is disclosed, not in the headline, and marks it provisional", () => {
@@ -2596,7 +2659,7 @@ Deno.test("armSummary: unknown spend leaves the cost metric but not the pass rat
   const s = armSummary(cs, "A", 3);
   assertEquals(s.cost_per_solved_task, 6);
   assertAlmostEquals(s.pass_rate!, 2 / 3, 1e-12);
-  assertEquals(s.unknown_spend_cells, 1);
+  assertEquals(s.unknown_spend_terminal_cells, 1);
 });
 
 Deno.test("armSummary: no solved task gives null, not Infinity or 0", () => {
@@ -2622,6 +2685,7 @@ Deno.test("cells: duplicate repeats and pass/status mismatch are refused", () =>
     status: "pending",
     pass: true,
     spend_usd: 1,
+    known_spend_usd: 1,
     attempts: 1,
   }];
   assertThrows(
@@ -2743,11 +2807,14 @@ Expected: FAIL, `Module not found ".../src/harness/stats.ts"`.
  * Harness Bench statistics (spec 1a section 9, owner rules
  * H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md).
  *
- * - Cost per solved task = sum over tasks of per-task mean spend (spend of
- *   EVERY attempt of a cell, scored or not) / sum over tasks of per-task pass
- *   rate. Equal task weight. Only terminal cells (scored or terminally
- *   unscored) enter the headline; pending spend is disclosed and the headline
- *   is provisional while any cell is pending or unrun.
+ * - Cost per solved task = sum over tasks of per-task mean spend / sum over
+ *   tasks of per-task solve rate, both over the SAME terminal cells with
+ *   complete spend (addendum rule 5). A cell's spend is every attempt's. A
+ *   terminally unscored cell adds its spend and no solve; it is never called
+ *   a model failure. Equal task weight.
+ * - Pass rate is separate: scored cells only.
+ * - The headline uses terminal cells only; pending cells' known spend and
+ *   count are shown next to it and the headline is provisional (rule 6).
  * - A baseline-variant comparison uses matched (task, repeat) pairs eligible
  *   in both arms; exclusions are counted per arm and reason.
  * - Paired task-level bootstrap. If any resample is undefined (no solve), the
@@ -2776,6 +2843,8 @@ export interface Cell {
   pass: boolean | null;
   /** Sum over every attempt; null when any attempt's cost is unknown. */
   spend_usd: number | null;
+  /** Sum over the attempts whose cost is known (raw disclosure). */
+  known_spend_usd: number;
   attempts: number;
 }
 
@@ -2829,7 +2898,11 @@ interface TaskStat {
   solved: number;
 }
 
-/** Per-task means over eligible cells (see module comment). */
+/**
+ * Per-task means over eligible cells. For the cost metric, spend and solve
+ * rate use the same cells (unscored cells solve nothing). For pass rate,
+ * only scored cells are eligible.
+ */
 function taskStats(
   cells: Cell[],
   metric: PrimaryMetric,
@@ -2841,12 +2914,9 @@ function taskStats(
   }
   const out = new Map<string, TaskStat>();
   for (const [task, cs] of byTask) {
-    const scored = cs.filter((c) => c.status === "scored");
     out.set(task, {
       spend: metric === "pass_rate" ? 0 : mean(cs.map((c) => c.spend_usd!)),
-      solved: scored.length === 0
-        ? 0
-        : scored.filter((c) => c.pass).length / scored.length,
+      solved: cs.filter((c) => c.pass === true).length / cs.length,
     });
   }
   return out;
@@ -2867,11 +2937,13 @@ export interface ArmSummary {
   unscored_cells: number;
   pending_cells: number;
   unrun_cells: number;
-  /** Terminal cells left out of the cost metric (an attempt's cost unknown). */
+  /** Attempted cells (any status) with at least one attempt of unknown cost. */
   unknown_spend_cells: number;
+  /** Of those, the terminal ones: left out of the cost metric. */
+  unknown_spend_terminal_cells: number;
   /** Known spend of every attempt in every cell, raw. */
   total_spend_usd: number;
-  /** Known spend of pending cells (not yet in the headline). */
+  /** Known spend of pending cells (shown next to the headline, not in it). */
   pending_spend_usd: number;
   cost_per_solved_task: number | null;
   pass_rate: number | null;
@@ -2886,7 +2958,8 @@ export function armSummary(cells: Cell[], arm: string, k: number): ArmSummary {
   checkCells(cells);
   const mine = cells.filter((c) => c.arm === arm);
   const count = (s: CellStatus) => mine.filter((c) => c.status === s).length;
-  const known = (cs: Cell[]) => sum(cs.map((c) => c.spend_usd ?? 0));
+  const known = (cs: Cell[]) => sum(cs.map((c) => c.known_spend_usd));
+  const unknown = mine.filter((c) => c.attempts > 0 && c.spend_usd === null);
   const repeatsByTask = new Map<string, Map<number, boolean>>();
   for (const c of mine) {
     if (c.status !== "scored") continue;
@@ -2906,11 +2979,10 @@ export function armSummary(cells: Cell[], arm: string, k: number): ArmSummary {
     unscored_cells: count("unscored"),
     pending_cells: count("pending"),
     unrun_cells: count("unrun"),
-    unknown_spend_cells:
-      mine.filter((c) =>
-        (c.status === "scored" || c.status === "unscored") &&
-        c.spend_usd === null
-      ).length,
+    unknown_spend_cells: unknown.length,
+    unknown_spend_terminal_cells:
+      unknown.filter((c) => c.status === "scored" || c.status === "unscored")
+        .length,
     total_spend_usd: known(mine),
     pending_spend_usd: known(mine.filter((c) => c.status === "pending")),
     cost_per_solved_task: statistic("cost_per_solved_task", [
@@ -3103,8 +3175,10 @@ Spec 1a section 6 (execution, artifact, judgment records; randomized, recorded a
 
 - Artifacts are per-execution associations (`artifacts/<execution-id>.json`) to a content-addressed workspace; judgments are stored per execution. Identical bytes from two executions no longer collide.
 - `telemetry.cost_usd` must be the estimated list price with a pricing snapshot; the harness's own number goes to `reported_cost_usd`.
-- Validity is `{ incomplete_telemetry: fields[], infra_exposed }`.
-- `run_kind` and `retry_of` separate automatic retry chains from manual reruns.
+- Validity is `{ incomplete_telemetry: fields[], infra_exposed }`; `cost_usd` listed as incomplete with a numeric cost is refused (round 2 defect B); a missing `turns` alone leaves the cost usable.
+- `run_kind` and `retry_of` separate automatic retry chains from manual reruns. `outcomePolicy` (spec 1a section 8), `retryChains` (grouping by `retry_of` ancestry, round 2 defect C) and `retryProblem` (eligibility and the one-retry rule) live here, so M1-07b can validate them without depending on M1-08.
+- Judgments store `scorer_fingerprint`; `scorerFingerprint(versions)` computes it.
+- `reuse` must be empty in Part 1 (coordinator ruling); `tasks_meta` carries the task limits.
 - The campaign schema enforces the arm set, unique and complete (task, repeat) coverage, block indices and permutations, `tasks_meta`, and explicit `reuse` references.
 - Publication is crash-safe (temp file, hard link with no replace, remove temp); malformed JSON is a `ValidationError` naming the file.
 
@@ -3116,8 +3190,8 @@ Spec 1a section 6 (execution, artifact, judgment records; randomized, recorded a
 - Test: `tests/unit/harness/records.test.ts`
 
 **Interfaces:**
-- Consumes: `ExperimentSchema`, `Experiment` (M1-03); `hashJson` (M1-02); `TaskSetIdentitySchema`, `taskSetHash` (M1-04, fixtures); `ResolvedManifestSchema`, `manifestHash` (M1-05); `mulberry32` (M1-06); `TASK_KINDS` (M1-01).
-- Produces: `TERMINATIONS`, `VERDICTS`, `RUN_KINDS`; `TelemetrySchema`/`Telemetry`; `ValiditySchema`; `ExecutionRecordSchema`/`ExecutionRecord`; `ArtifactRecordSchema`/`ArtifactRecord`; `TestResultSchema`; `JudgmentRecordSchema`/`JudgmentRecord`; `BlockSchema`/`Block`; `CampaignRecordSchema`/`CampaignRecord`; `experimentHash(e)`; `planBlocks(taskIds, repeats, arms, seed)`; `class RecordStore { writeCampaign; writeExecution; writeArtifact; writeJudgment; campaigns(experimentId) (newest first); executions(campaignId); artifact(executionId); judgments(executionId); sweepTemp() }`. Fixtures: `H`, `CAMPAIGN_ID`, `manifest`, `telemetry`, `campaign(opts)` (async), `execution(c, sel, over)`, `judgment(c, e, passed, over)`.
+- Consumes: `ExperimentSchema`, `Experiment` (M1-03); `hashJson` (M1-02); `TaskSetIdentitySchema`, `taskSetHash` (M1-04, fixtures); `ResolvedManifestSchema`, `manifestHash` (M1-05); `mulberry32` (M1-06); `TASK_KINDS`, `TaskLimitsSchema` (M1-01).
+- Produces: `TERMINATIONS`, `VERDICTS`, `RUN_KINDS`; `type Termination`, `type RunKind`; `interface OutcomePolicy`; `outcomePolicy(termination, didWork)`; `interface RetryChain { root; members }`; `retryChains(cellExecutions): { chains; orphans }`; `retryProblem(parent, member, grandparent): string | null`; `scorerFingerprint(versions): Promise<string>`; `TelemetrySchema`/`Telemetry`; `ValiditySchema`; `ExecutionRecordSchema`/`ExecutionRecord`; `ArtifactRecordSchema`/`ArtifactRecord`; `TestResultSchema`; `JudgmentRecordSchema`/`JudgmentRecord`; `BlockSchema`/`Block`; `CampaignRecordSchema`/`CampaignRecord`; `experimentHash(e)`; `planBlocks(taskIds, repeats, arms, seed)`; `class RecordStore { writeCampaign; writeExecution; writeArtifact; writeJudgment; campaigns(experimentId) (newest first); executions(campaignId); artifact(executionId); judgments(executionId); sweepTemp() }`. Fixtures: `H`, `CAMPAIGN_ID`, `SCORERS_V1`, `SCORERS_V1_FP`, `manifest`, `telemetry`, `campaign(opts)` (async), `execution(c, sel, over)`, `judgment(c, e, passed, over)`.
 
 - [ ] **Step 1: Write the fixtures and the failing test**
 
@@ -3143,10 +3217,13 @@ import {
   experimentHash,
   type JudgmentRecord,
   planBlocks,
+  scorerFingerprint,
   type Telemetry,
 } from "../../../src/harness/records.ts";
 
 export const H = (c: string) => c.repeat(64);
+export const SCORERS_V1 = { build: "1" };
+export const SCORERS_V1_FP = await scorerFingerprint(SCORERS_V1);
 export const CAMPAIGN_ID = "00000000-0000-4000-8000-000000000001";
 const TASK_HASHES: Record<string, [string, string]> = {
   "HX-001": [H("1"), H("2")],
@@ -3241,6 +3318,7 @@ export async function campaign(
       id: t.id,
       kind: "bugfix" as const,
       coupling: ["events"],
+      limits: {},
     })),
     arms: [
       {
@@ -3335,7 +3413,8 @@ export function judgment(
     workspace_hash: e.workspace_hash!,
     task_id: e.task_id,
     task_oracle_hash: c.task_set.tasks.find((t) => t.id === e.task_id)!.oracle,
-    scorer_versions: { build: "1" },
+    scorer_versions: SCORERS_V1,
+    scorer_fingerprint: SCORERS_V1_FP,
     scorers: [{ name: "build", passed, tests: [] }],
     verdict: passed === null ? "unscored" : passed ? "pass" : "fail",
     verdict_container: "Cronus282",
@@ -3356,8 +3435,11 @@ import {
   CampaignRecordSchema,
   ExecutionRecordSchema,
   JudgmentRecordSchema,
+  outcomePolicy,
   planBlocks,
   RecordStore,
+  retryChains,
+  retryProblem,
 } from "../../../src/harness/records.ts";
 import {
   campaign,
@@ -3584,6 +3666,108 @@ Deno.test("RecordStore: an interrupted publish leaves only a temp file, which re
   assertEquals(await store.executions(CAMPAIGN_ID), [e]);
   assertEquals(await store.sweepTemp(), 1);
 });
+
+Deno.test("outcomePolicy: spec 1a section 8 table", () => {
+  const judged = { judge: true, retry: "none" };
+  assertEquals(outcomePolicy("completed", true), judged);
+  assertEquals(outcomePolicy("timeout", true), judged);
+  assertEquals(outcomePolicy("budget_exhausted", false), judged);
+  assertEquals(outcomePolicy("refusal", false), judged);
+  assertEquals(outcomePolicy("harness_crash", true), judged);
+  assertEquals(outcomePolicy("harness_crash", false), {
+    judge: false,
+    retry: "once",
+  });
+  assertEquals(outcomePolicy("setup_failed", false), {
+    judge: false,
+    retry: "once",
+  });
+  assertEquals(outcomePolicy("usage_limited", true), {
+    judge: false,
+    retry: "after_usage_reset",
+  });
+});
+
+Deno.test("retryChains: grouped by retry_of ancestry, not by label", async () => {
+  const c = await campaign();
+  const planned = execution(c);
+  const manual = execution(c, { attempt: 2, run_kind: "manual_rerun" }, {
+    termination: "setup_failed",
+    did_work: false,
+  });
+  const retryOfManual = execution(c, {
+    attempt: 3,
+    run_kind: "auto_retry",
+    retry_of: manual.id,
+  });
+  const { chains, orphans } = retryChains([retryOfManual, planned, manual]);
+  assertEquals(orphans, []);
+  assertEquals(
+    chains.map((ch) => ch.members.map((m) => m.attempt)),
+    [[1], [2, 3]],
+  );
+  const lost = execution(c, {
+    attempt: 4,
+    run_kind: "auto_retry",
+    retry_of: "00000000-0000-4000-9000-00000000dead",
+  });
+  assertEquals(retryChains([planned, lost]).orphans, [lost]);
+});
+
+Deno.test("retryProblem: no retry after a judged ending, only one retry per failure kind", async () => {
+  const c = await campaign();
+  const done = execution(c);
+  const setup = { termination: "setup_failed" as const, did_work: false };
+  const failed = execution(c, {}, setup);
+  const retry1 = execution(c, {
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: failed.id,
+  }, setup);
+  const retry2 = execution(c, {
+    attempt: 3,
+    run_kind: "auto_retry",
+    retry_of: retry1.id,
+  });
+  assertEquals(retryProblem(failed, retry1, undefined), null);
+  assert(retryProblem(done, retry1, undefined)!.includes("ended completed"));
+  assert(retryProblem(retry1, retry2, failed)!.includes("one retry was used"));
+  const limited = execution(c, {}, { termination: "usage_limited" });
+  const again = execution(c, {
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: limited.id,
+  }, {
+    termination: "usage_limited",
+  });
+  assertEquals(retryProblem(again, retry2, limited), null);
+});
+
+Deno.test("schemas: cost declared incomplete cannot carry a value; reuse is refused in Part 1", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  assertThrows(() =>
+    ExecutionRecordSchema.parse({
+      ...e,
+      validity: { incomplete_telemetry: ["cost_usd"], infra_exposed: false },
+    })
+  );
+  // Missing turns alone keeps the cost usable.
+  ExecutionRecordSchema.parse({
+    ...e,
+    validity: { incomplete_telemetry: ["turns"], infra_exposed: false },
+  });
+  const r = CampaignRecordSchema.safeParse({
+    ...c,
+    reuse: [{ campaign_id: c.id, execution_id: e.id }],
+  });
+  assert(!r.success);
+  assert(
+    r.error.issues.some((i) =>
+      i.message.includes("not supported before Part 2")
+    ),
+  );
+});
 ```
 
 - [ ] **Step 2: Run it and see it fail**
@@ -3625,7 +3809,7 @@ import { hashJson } from "./hash.ts";
 import { TaskSetIdentitySchema } from "./identity.ts";
 import { ResolvedManifestSchema } from "./manifest.ts";
 import { mulberry32 } from "./stats.ts";
-import { TASK_KINDS } from "./task.ts";
+import { TASK_KINDS, TaskLimitsSchema } from "./task.ts";
 
 const Sha = z.string().length(64);
 const Iso = z.iso.datetime();
@@ -3754,6 +3938,16 @@ export const ExecutionRecordSchema = z.strictObject({
   if (e.run_kind === "manual_rerun" && (e.attempt < 2 || e.retry_of !== null)) {
     bad("manual_rerun has attempt >= 2 and no retry_of");
   }
+  if (
+    e.validity.incomplete_telemetry.includes("cost_usd") &&
+    e.telemetry.cost_usd !== null
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "cost_usd is declared incomplete but has a value",
+      path: ["validity", "incomplete_telemetry"],
+    });
+  }
 });
 export type ExecutionRecord = z.output<typeof ExecutionRecordSchema>;
 
@@ -3789,6 +3983,8 @@ export const JudgmentRecordSchema = z.strictObject({
   task_id: z.string(),
   task_oracle_hash: Sha,
   scorer_versions: z.record(z.string(), z.string()),
+  /** scorerFingerprint(scorer_versions); checked in M1-07b. */
+  scorer_fingerprint: Sha,
   scorers: z.array(z.strictObject({
     name: z.string(),
     /** null = infra fault, not a fail (GH #13 rule). */
@@ -3824,17 +4020,26 @@ export const CampaignRecordSchema = z.strictObject({
   experiment_hash: Sha,
   created_at: Iso,
   seed: z.number().int().nonnegative(),
-  /** Historical executions reused on explicit request (--reuse-history). */
+  /**
+   * Historical executions reused on explicit request (--reuse-history).
+   * The shape is frozen, but Part 1 cannot load or map them, so it must be
+   * empty until Part 2 implements reuse.
+   */
   reuse: z.array(z.strictObject({
     campaign_id: z.uuid(),
     execution_id: z.uuid(),
-  })),
+  })).max(0, "historical reuse is not supported before Part 2"),
   task_set: TaskSetIdentitySchema,
-  /** Analysis metadata for report slices; not part of any hash. */
+  /**
+   * Per task: `kind` and `coupling` for report slices (not hashed), and the
+   * task limits, so M1-07b can check each execution's exact limits (the
+   * limits are also inside the task's visible hash).
+   */
   tasks_meta: z.array(z.strictObject({
     id: z.string(),
     kind: z.enum(TASK_KINDS),
     coupling: z.array(z.string()),
+    limits: TaskLimitsSchema,
   })),
   arms: z.array(z.strictObject({
     config_id: z.string(),
@@ -3897,6 +4102,106 @@ export const CampaignRecordSchema = z.strictObject({
   }
 });
 export type CampaignRecord = z.output<typeof CampaignRecordSchema>;
+
+export type Termination = (typeof TERMINATIONS)[number];
+export type RunKind = (typeof RUN_KINDS)[number];
+
+export interface OutcomePolicy {
+  /** Send the artifact to the verdict pipeline. false = unscored. */
+  judge: boolean;
+  /** once: one automatic retry. after_usage_reset: pause, then retry the cell. */
+  retry: "none" | "once" | "after_usage_reset";
+}
+
+/** Spec 1a section 8. Lives here so M1-07b can validate retries. */
+export function outcomePolicy(
+  termination: Termination,
+  didWork: boolean,
+): OutcomePolicy {
+  switch (termination) {
+    case "completed":
+    case "timeout":
+    case "budget_exhausted":
+    case "refusal":
+      return { judge: true, retry: "none" };
+    case "harness_crash":
+      return didWork
+        ? { judge: true, retry: "none" }
+        : { judge: false, retry: "once" };
+    case "setup_failed":
+      return { judge: false, retry: "once" };
+    case "usage_limited":
+      return { judge: false, retry: "after_usage_reset" };
+  }
+}
+
+/** A root execution (planned or manual_rerun) and its auto_retry descendants. */
+export interface RetryChain {
+  root: ExecutionRecord;
+  /** Root first, then each automatic retry in ancestry order. */
+  members: ExecutionRecord[];
+}
+
+/**
+ * Group one cell's executions into retry chains by `retry_of` ancestry, not
+ * by label. Each auto_retry joins the chain of its parent; an execution
+ * whose parent is missing, or that has two children, is returned in
+ * `orphans` for M1-07b to report.
+ */
+export function retryChains(
+  cell: ExecutionRecord[],
+): { chains: RetryChain[]; orphans: ExecutionRecord[] } {
+  const children = new Map<string, ExecutionRecord[]>();
+  for (const e of cell) {
+    if (e.retry_of !== null) {
+      children.set(e.retry_of, [...(children.get(e.retry_of) ?? []), e]);
+    }
+  }
+  const chains: RetryChain[] = [];
+  const placed = new Set<string>();
+  for (const root of cell.filter((e) => e.retry_of === null)) {
+    const members = [root];
+    placed.add(root.id);
+    let at = root;
+    while ((children.get(at.id) ?? []).length === 1) {
+      at = children.get(at.id)![0]!;
+      members.push(at);
+      placed.add(at.id);
+    }
+    chains.push({ root, members });
+  }
+  return { chains, orphans: cell.filter((e) => !placed.has(e.id)) };
+}
+
+/**
+ * Whether `member` is an allowed automatic retry of `parent`: the parent's
+ * termination allows a retry, and a "once" retry is not used twice in a row.
+ */
+export function retryProblem(
+  parent: ExecutionRecord,
+  member: ExecutionRecord,
+  grandparent: ExecutionRecord | undefined,
+): string | null {
+  const p = outcomePolicy(parent.termination, parent.did_work);
+  if (p.retry === "none") {
+    return `automatic retry ${member.id} of an execution that ended ${parent.termination}`;
+  }
+  if (
+    p.retry === "once" && parent.run_kind === "auto_retry" && grandparent &&
+    outcomePolicy(grandparent.termination, grandparent.did_work).retry ===
+      "once"
+  ) {
+    return `second automatic retry ${member.id}: the one retry was used`;
+  }
+  return null;
+}
+
+/** The fingerprint a judgment stores for its scorer versions. */
+export function scorerFingerprint(
+  versions: Record<string, string>,
+): Promise<string> {
+  return hashJson({ scorer_versions: versions });
+}
 
 /** The stored experiment_hash of a campaign. */
 export function experimentHash(e: Experiment): Promise<string> {
@@ -4115,7 +4420,7 @@ git commit -m "feat(harness): immutable records, per-execution artifacts, crash-
 
 ### Task M1-07b: cross-record validation
 
-Review must-change 4: shapes are validated in M1-07, relationships here. `validateCampaignRecords` recomputes the campaign's stored hashes (experiment, task set projection, each arm manifest), re-checks `vary` between the stored arms, and checks every execution against the campaign (block, position in the block order, visible-input hash, arm template hash, arm membership of the task-effective manifest, unique attempts, `retry_of` chain, foreign campaign only when listed in `reuse`), every artifact association and every judgment against its execution (task, workspace). It collects every problem into one `ValidationError`. M1-09 calls it before computing any number; Part 2's runner calls it before resuming a campaign.
+Review must-change 4: shapes are validated in M1-07, relationships here. `validateCampaignRecords` recomputes the campaign's stored hashes (experiment, task set projection, each arm manifest), re-checks `vary` between the stored arms, and checks every execution against the campaign: block, position in the block order, visible-input hash, arm template hash, the exact task-effective manifest from `tasks_meta` limits (round 2 defect D), unique attempts, retry chains by ancestry with parent eligibility and the one-retry rule (defect C), and no execution from another campaign (reuse is Part 2). It checks every artifact association and every judgment against its execution (task, workspace) and each judgment's scorer fingerprint against its versions. It collects every problem into one `ValidationError`. M1-09 calls it before computing any number; Part 2's runner calls it before resuming a campaign.
 
 **Deps:** M1-04, M1-05, M1-07.
 
@@ -4124,7 +4429,7 @@ Review must-change 4: shapes are validated in M1-07, relationships here. `valida
 - Test: `tests/unit/harness/integrity.test.ts`
 
 **Interfaces:**
-- Consumes: `taskSetHash` (M1-04); `armMismatch`, `assertVaryHolds`, `manifestHash` (M1-05); record types and `experimentHash` (M1-07).
+- Consumes: `taskSetHash` (M1-04); `executionMismatch`, `assertVaryHolds`, `manifestHash` (M1-05); record types, `experimentHash`, `retryChains`, `retryProblem`, `scorerFingerprint` (M1-07).
 - Produces: `interface CampaignRecords { campaign; executions; artifacts; judgments }`; `validateCampaignRecords(r: CampaignRecords): Promise<void>`.
 
 - [ ] **Step 1: Write the failing test**
@@ -4228,16 +4533,24 @@ Deno.test("validateCampaignRecords: executions that do not belong are caught", a
       order_in_block: 1 - other.order_in_block,
     }],
     ["is not (HX-002, 1)", { ...other, block: first.block }],
-    ["not in reuse", {
+    ["belongs to campaign", {
       ...other,
       campaign_id: "00000000-0000-4000-8000-0000000000ff",
     }],
     ["arm_manifest_hash", { ...other, arm_manifest_hash: H("0") }],
-    ["looser than the arm", {
+    ["component limits differs", {
       ...other,
       manifest: {
         ...other.manifest,
         limits: { timeout_min: 99, max_budget_usd: 5 },
+      },
+    }],
+    // A tighter limit than the task allows is caught too (exact match).
+    ["component limits differs", {
+      ...other,
+      manifest: {
+        ...other.manifest,
+        limits: { timeout_min: 1, max_budget_usd: 5 },
       },
     }],
   ];
@@ -4262,7 +4575,7 @@ Deno.test("validateCampaignRecords: executions that do not belong are caught", a
       judgments: [],
     }))
       .join("\n"),
-    "retry_of is not the previous attempt",
+    "retry_of is not an execution of",
   );
 });
 
@@ -4298,6 +4611,80 @@ Deno.test("validateCampaignRecords: throws one ValidationError", async () => {
     "Inconsistent records",
   );
 });
+
+Deno.test("validateCampaignRecords: task-effective limits are the only allowed tightening", async () => {
+  const r = await scenario();
+  const tasks_meta = r.campaign.tasks_meta.map((t) =>
+    t.id === "HX-002" ? { ...t, limits: { timeout_min: 20 } } : t
+  );
+  const campaign = { ...r.campaign, tasks_meta };
+  const other = r.executions[2]!;
+  const exact = {
+    ...other,
+    manifest: {
+      ...other.manifest,
+      limits: { timeout_min: 20, max_budget_usd: 5 },
+    },
+  };
+  assertEquals(
+    await problems({
+      ...r,
+      campaign,
+      executions: [r.executions[0]!, r.executions[1]!, exact],
+      judgments: [],
+    }),
+    [],
+  );
+  assertStringIncludes(
+    (await problems({ ...r, campaign, judgments: [] })).join("\n"),
+    "component limits differs",
+  );
+});
+
+Deno.test("validateCampaignRecords: retries must be eligible and used once", async () => {
+  const r = await scenario();
+  const c = r.campaign;
+  const done = execution(c, { task: "HX-002", arm: "plain" });
+  const afterDone = execution(c, {
+    task: "HX-002",
+    arm: "plain",
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: done.id,
+  });
+  const setup = {
+    termination: "setup_failed" as const,
+    did_work: false,
+    workspace_hash: null,
+  };
+  const [first, retry] = r.executions as [typeof done, typeof done];
+  const retryAgain = execution(c, {
+    attempt: 3,
+    run_kind: "auto_retry",
+    retry_of: retry.id,
+  });
+  const text = (await problems({
+    ...r,
+    executions: [first, { ...retry, ...setup }, retryAgain, done, afterDone],
+    judgments: [],
+    artifacts: [],
+  })).join("\n");
+  assertStringIncludes(text, "of an execution that ended completed");
+  assertStringIncludes(text, "the one retry was used");
+});
+
+Deno.test("validateCampaignRecords: a judgment's scorer fingerprint must match its versions", async () => {
+  const r = await scenario();
+  const [j1, j2] = r.judgments as [
+    typeof r.judgments[0],
+    typeof r.judgments[0],
+  ];
+  const p = await problems({
+    ...r,
+    judgments: [{ ...j1, scorer_versions: { build: "2" } }, j2],
+  });
+  assertStringIncludes(p.join("\n"), "scorer_fingerprint does not match");
+});
 ```
 
 - [ ] **Step 2: Run it and see it fail**
@@ -4311,7 +4698,7 @@ Expected: FAIL, `Module not found ".../src/harness/integrity.ts"`.
 
 ```typescript
 /**
- * Cross-record validation (spec 1a sections 4 and 6). Zod checks each
+ * Cross-record validation (spec 1a sections 4, 6 and 8). Zod checks each
  * record's shape; this checks that records agree with each other and with
  * their stored hashes before anything is reported or executed. Every problem
  * is collected; one ValidationError lists them all.
@@ -4319,13 +4706,20 @@ Expected: FAIL, `Module not found ".../src/harness/integrity.ts"`.
 
 import { ConfigurationError, ValidationError } from "../errors.ts";
 import { taskSetHash } from "./identity.ts";
-import { armMismatch, assertVaryHolds, manifestHash } from "./manifest.ts";
+import {
+  assertVaryHolds,
+  executionMismatch,
+  manifestHash,
+} from "./manifest.ts";
 import {
   type ArtifactRecord,
   type CampaignRecord,
   type ExecutionRecord,
   experimentHash,
   type JudgmentRecord,
+  retryChains,
+  retryProblem,
+  scorerFingerprint,
 } from "./records.ts";
 
 export interface CampaignRecords {
@@ -4366,17 +4760,16 @@ async function executionProblems(
   executions: ExecutionRecord[],
 ): Promise<string[]> {
   const out: string[] = [];
-  const reused = new Set(c.reuse.map((r) => r.execution_id));
   const visible = new Map(c.task_set.tasks.map((t) => [t.id, t.visible]));
+  const limits = new Map(c.tasks_meta.map((t) => [t.id, t.limits]));
   const arms = new Map(c.arms.map((a) => [a.config_id, a]));
-  const byId = new Map(executions.map((e) => [e.id, e]));
-  const attempts = new Set<string>();
+  const cells = new Map<string, ExecutionRecord[]>();
   for (const e of executions) {
     const at = `execution ${e.id}`;
-    if (e.campaign_id !== c.id && !reused.has(e.id)) {
-      out.push(
-        `${at}: belongs to campaign ${e.campaign_id} and is not in reuse`,
-      );
+    if (e.campaign_id !== c.id) {
+      // Historical reuse is Part 2; a foreign execution is never mixed in.
+      out.push(`${at}: belongs to campaign ${e.campaign_id}`);
+      continue;
     }
     const block = c.blocks[e.block];
     if (!block || block.task_id !== e.task_id || block.repeat !== e.repeat) {
@@ -4394,24 +4787,40 @@ async function executionProblems(
       if (arm.manifest_hash !== e.arm_manifest_hash) {
         out.push(`${at}: arm_manifest_hash differs from the campaign arm`);
       }
-      for (const p of await armMismatch(arm.manifest, e.manifest)) {
-        out.push(`${at}: ${p}`);
-      }
+      const problems = await executionMismatch(
+        arm.manifest,
+        e.manifest,
+        limits.get(e.task_id) ?? {},
+      );
+      for (const p of problems) out.push(`${at}: ${p}`);
     }
-    const cell = `${e.task_id}/${e.repeat}/${e.arm}`;
-    if (attempts.has(`${cell}#${e.attempt}`)) {
-      out.push(`${at}: duplicate attempt ${e.attempt} for ${cell}`);
-    }
-    attempts.add(`${cell}#${e.attempt}`);
-    if (e.retry_of !== null) {
-      const parent = byId.get(e.retry_of);
-      if (
-        !parent ||
-        `${parent.task_id}/${parent.repeat}/${parent.arm}` !== cell ||
-        parent.attempt + 1 !== e.attempt
-      ) {
-        out.push(`${at}: retry_of is not the previous attempt of ${cell}`);
+    const k = `${e.task_id}/${e.repeat}/${e.arm}`;
+    cells.set(k, [...(cells.get(k) ?? []), e]);
+  }
+  for (const [cell, es] of cells) {
+    const attempts = new Set<number>();
+    for (const e of es) {
+      if (attempts.has(e.attempt)) {
+        out.push(
+          `execution ${e.id}: duplicate attempt ${e.attempt} for ${cell}`,
+        );
       }
+      attempts.add(e.attempt);
+    }
+    const { chains, orphans } = retryChains(es);
+    for (const o of orphans) {
+      out.push(`execution ${o.id}: retry_of is not an execution of ${cell}`);
+    }
+    for (const chain of chains) {
+      chain.members.forEach((m, i) => {
+        if (i === 0) return;
+        const parent = chain.members[i - 1]!;
+        if (m.attempt !== parent.attempt + 1) {
+          out.push(`execution ${m.id}: retry_of is not the previous attempt`);
+        }
+        const p = retryProblem(parent, m, chain.members[i - 2]);
+        if (p) out.push(`execution ${m.id}: ${p}`);
+      });
     }
   }
   return out;
@@ -4434,6 +4843,9 @@ export async function validateCampaignRecords(
     }
   }
   for (const j of r.judgments) {
+    if (j.scorer_fingerprint !== await scorerFingerprint(j.scorer_versions)) {
+      problems.push(`judgment ${j.id}: scorer_fingerprint does not match`);
+    }
     const e = byId.get(j.execution_id);
     if (!e) {
       problems.push(`judgment ${j.id}: unknown execution ${j.execution_id}`);
@@ -4483,12 +4895,12 @@ git commit -m "feat(harness): cross-record validation of campaigns"
 
 ### Task M1-08: termination rules, judgment selection and records-to-cells
 
-Spec 1a section 8: `timeout`, `budget_exhausted` and `refusal` are judged; `harness_crash` is judged when the agent took any action (`did_work`, including read-only work); `harness_crash` before any action and `setup_failed` get one automatic retry; `usage_limited` is unscored, pauses and retries; a verdict-side infra fault is rejudged, never re-run. Review must-change 3 and owner rule 3:
+Spec 1a section 8 and owner rule 3, with round 2 defects C and E. The termination policy and chain grouping come from M1-07.
 
-- Judgments are selected in an explicit judging context: same execution, task and workspace, and the context's oracle for the task; newest `ended_at` wins, ties by the larger judgment id.
-- The automatic chain (planned + auto_retry) resolves by its final attempt; an exhausted automatic retry is terminally `unscored`.
-- A manual rerun never replaces a scored chain result; it is used only when the chain has none, and the cell records `used_execution` and `used_kind`.
-- Every attempt's spend, chain and manual, stays in the cell.
+- The planned chain (planned root plus its automatic retries, by `retry_of` ancestry) resolves by its last member. An exhausted automatic retry (the one retry used after a setup failure or pre-work crash, failing the same way) is terminally `unscored`.
+- A manual rerun roots its own chain. A manual chain, including automatic retries of the manual rerun, never replaces a scored planned result; it is used only when the planned chain has none, newest manual root first. The cell records `used_execution` and `used_kind` (the chain root's kind).
+- Every attempt's spend, all chains, stays in the cell; `known_spend_usd` keeps what is known when one attempt is unknown.
+- The judging context must cover every campaign task (`checkJudging`), so selection and the reported identity use one complete map. Judgments are selected by execution, task, workspace and the context's oracle; newest `ended_at` wins, ties by the larger judgment id. Cells carry the selected judgment's `scorer_fingerprint`.
 
 **Deps:** M1-06, M1-07.
 
@@ -4497,8 +4909,8 @@ Spec 1a section 8: `timeout`, `budget_exhausted` and `refusal` are judged; `harn
 - Test: `tests/unit/harness/outcome.test.ts`
 
 **Interfaces:**
-- Consumes: record types, `TERMINATIONS`, `RUN_KINDS` (M1-07); `Cell`, `CellStatus` (M1-06).
-- Produces: `type Termination`, `type RunKind`; `interface OutcomePolicy`; `outcomePolicy(termination, didWork)`; `interface JudgingContext { source: "campaign" | "current"; oracle: Map<string, string> }`; `campaignJudging(c)`; `selectJudgment(e, judgments, oracle)`; `interface CellRecord extends Cell { used_execution; used_kind; judgment_id; oracle_hash; manual_reruns }`; `cellsFromRecords(campaign, executions, judgmentsByExecution: Map<string, JudgmentRecord[]>, judging?)`.
+- Consumes: record types, `outcomePolicy`, `retryChains`, `RetryChain`, `RunKind` (M1-07); `Cell`, `CellStatus` (M1-06).
+- Produces: `interface JudgingContext { source: "campaign" | "current"; oracle: Map<string, string> }`; `campaignJudging(c)`; `checkJudging(c, ctx)`; `selectJudgment(e, judgments, oracle)`; `interface CellRecord extends Cell { used_execution; used_kind; judgment_id; oracle_hash; scorer_fingerprint; manual_reruns }`; `cellsFromRecords(campaign, executions, judgmentsByExecution: Map<string, JudgmentRecord[]>, judging?)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4510,7 +4922,6 @@ import { ValidationError } from "../../../src/errors.ts";
 import {
   type CellRecord,
   cellsFromRecords,
-  outcomePolicy,
 } from "../../../src/harness/outcome.ts";
 import type {
   CampaignRecord,
@@ -4518,27 +4929,6 @@ import type {
   JudgmentRecord,
 } from "../../../src/harness/records.ts";
 import { campaign, execution, H, judgment, telemetry } from "./fixtures.ts";
-
-Deno.test("outcomePolicy: spec 1a section 8 table", () => {
-  const judged = { judge: true, retry: "none" };
-  assertEquals(outcomePolicy("completed", true), judged);
-  assertEquals(outcomePolicy("timeout", true), judged);
-  assertEquals(outcomePolicy("budget_exhausted", false), judged);
-  assertEquals(outcomePolicy("refusal", false), judged);
-  assertEquals(outcomePolicy("harness_crash", true), judged);
-  assertEquals(outcomePolicy("harness_crash", false), {
-    judge: false,
-    retry: "once",
-  });
-  assertEquals(outcomePolicy("setup_failed", false), {
-    judge: false,
-    retry: "once",
-  });
-  assertEquals(outcomePolicy("usage_limited", true), {
-    judge: false,
-    retry: "after_usage_reset",
-  });
-});
 
 function index(js: JudgmentRecord[]): Map<string, JudgmentRecord[]> {
   const m = new Map<string, JudgmentRecord[]>();
@@ -4723,6 +5113,59 @@ Deno.test("cellsFromRecords: an unknown attempt cost makes the cell spend unknow
   const e = execution(c, {}, { telemetry: telemetry(null) });
   assertEquals(cellOf(c, [e], [judgment(c, e, true)]).spend_usd, null);
 });
+
+Deno.test("cellsFromRecords: an automatic retry of a manual rerun never replaces the scored planned result", async () => {
+  const c = await campaign();
+  const planned = execution(c);
+  const manual = execution(c, { attempt: 2, run_kind: "manual_rerun" }, {
+    termination: "setup_failed",
+    did_work: false,
+    workspace_hash: null,
+  });
+  const retry = execution(c, {
+    attempt: 3,
+    run_kind: "auto_retry",
+    retry_of: manual.id,
+  });
+  const cell = cellOf(c, [planned, manual, retry], [
+    judgment(c, planned, false),
+    judgment(c, retry, true),
+  ]);
+  assertEquals(
+    [cell.pass, cell.used_execution, cell.used_kind, cell.spend_usd],
+    [false, planned.id, "planned", 3],
+  );
+});
+
+Deno.test("cellsFromRecords: a judging context missing a task is refused", async () => {
+  const c = await campaign();
+  const partial = {
+    source: "current" as const,
+    oracle: new Map([["HX-001", H("2")]]),
+  };
+  assertThrows(
+    () => cellsFromRecords(c, [], new Map(), partial),
+    ValidationError,
+    "no oracle for HX-002",
+  );
+});
+
+Deno.test("cellsFromRecords: known spend is kept when another attempt's cost is unknown", async () => {
+  const c = await campaign();
+  const first = execution(c, {}, {
+    termination: "setup_failed",
+    did_work: false,
+    workspace_hash: null,
+    telemetry: telemetry(2),
+  });
+  const retry = execution(
+    c,
+    { attempt: 2, run_kind: "auto_retry", retry_of: first.id },
+    { telemetry: telemetry(null) },
+  );
+  const cell = cellOf(c, [first, retry], [judgment(c, retry, true)]);
+  assertEquals([cell.spend_usd, cell.known_spend_usd], [null, 2]);
+});
 ```
 
 - [ ] **Step 2: Run it and see it fail**
@@ -4736,63 +5179,37 @@ Expected: FAIL, `Module not found ".../src/harness/outcome.ts"`.
 
 ```typescript
 /**
- * Termination rules (spec 1a section 8), judgment selection and the join
- * from immutable records to per-cell results (owner rules
- * H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md).
+ * Judgment selection and the join from immutable records to per-cell
+ * results (spec 1a section 8, owner rules
+ * H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md). The termination
+ * policy and retry-chain grouping live in records.ts (M1-07) so M1-07b can
+ * validate them.
  *
- * - An automatic retry chain (planned + auto_retry) resolves by its final
- *   attempt.
- * - A manual rerun never replaces a scored chain result. It is used only when
- *   the chain has no scored result, and the cell records which execution was
- *   used.
- * - Every attempt's spend (chain and manual) stays in the cell.
- * - Judgments are selected in an explicit judging context: same execution,
- *   same task, same workspace, and the context's oracle hash for the task.
+ * - Chains are resolved by `retry_of` ancestry. The planned chain (planned
+ *   root plus its automatic retries) resolves by its last member.
+ * - A manual rerun roots its own chain. A manual chain never replaces a
+ *   scored planned-chain result; it is used only when the planned chain has
+ *   none, newest manual root first, and the cell records which execution
+ *   was used.
+ * - Every attempt's spend (all chains) stays in the cell.
+ * - Judgments are selected in an explicit, complete judging context: same
+ *   execution, task and workspace, and the context's oracle for the task.
  *   Newest `ended_at` wins, ties broken by the larger judgment id.
  */
 
 import { ValidationError } from "../errors.ts";
-import type {
-  CampaignRecord,
-  ExecutionRecord,
-  JudgmentRecord,
-  RUN_KINDS,
-  TERMINATIONS,
+import {
+  type CampaignRecord,
+  type ExecutionRecord,
+  type JudgmentRecord,
+  outcomePolicy,
+  type RetryChain,
+  retryChains,
+  type RunKind,
 } from "./records.ts";
 import type { Cell, CellStatus } from "./stats.ts";
 
-export type Termination = (typeof TERMINATIONS)[number];
-export type RunKind = (typeof RUN_KINDS)[number];
-
-export interface OutcomePolicy {
-  /** Send the artifact to the verdict pipeline. false = unscored. */
-  judge: boolean;
-  /** once: one automatic retry. after_usage_reset: pause, then retry the cell. */
-  retry: "none" | "once" | "after_usage_reset";
-}
-
-export function outcomePolicy(
-  termination: Termination,
-  didWork: boolean,
-): OutcomePolicy {
-  switch (termination) {
-    case "completed":
-    case "timeout":
-    case "budget_exhausted":
-    case "refusal":
-      return { judge: true, retry: "none" };
-    case "harness_crash":
-      return didWork
-        ? { judge: true, retry: "none" }
-        : { judge: false, retry: "once" };
-    case "setup_failed":
-      return { judge: false, retry: "once" };
-    case "usage_limited":
-      return { judge: false, retry: "after_usage_reset" };
-  }
-}
-
-/** Which oracle each task is judged against. */
+/** Which oracle each task is judged against. Must cover every task. */
 export interface JudgingContext {
   source: "campaign" | "current";
   oracle: Map<string, string>;
@@ -4805,10 +5222,22 @@ export function campaignJudging(c: CampaignRecord): JudgingContext {
   };
 }
 
+/** Refuse a judging context that has no oracle for a campaign task. */
+export function checkJudging(c: CampaignRecord, ctx: JudgingContext): void {
+  const missing = c.task_set.tasks.filter((t) => !ctx.oracle.has(t.id))
+    .map((t) => t.id);
+  if (missing.length > 0) {
+    throw new ValidationError(
+      `${ctx.source} judging context has no oracle for ${missing.join(", ")}`,
+      missing,
+    );
+  }
+}
+
 export function selectJudgment(
   e: ExecutionRecord,
   judgments: JudgmentRecord[],
-  oracle: string | undefined,
+  oracle: string,
 ): JudgmentRecord | null {
   let best: JudgmentRecord | null = null;
   for (const j of judgments) {
@@ -4830,6 +5259,7 @@ export interface CellRecord extends Cell {
   used_kind: RunKind | null;
   judgment_id: string | null;
   oracle_hash: string | null;
+  scorer_fingerprint: string | null;
   manual_reruns: number;
 }
 
@@ -4839,14 +5269,15 @@ interface Resolved {
   judgment: JudgmentRecord | null;
 }
 
-function resolve(
-  e: ExecutionRecord,
-  judgments: JudgmentRecord[],
-  oracle: string | undefined,
+function resolveChain(
+  chain: RetryChain,
+  judgments: (e: ExecutionRecord) => JudgmentRecord[],
+  oracle: string,
 ): Resolved {
-  const policy = outcomePolicy(e.termination, e.did_work);
+  const last = chain.members[chain.members.length - 1]!;
+  const policy = outcomePolicy(last.termination, last.did_work);
   if (policy.judge) {
-    const j = selectJudgment(e, judgments, oracle);
+    const j = selectJudgment(last, judgments(last), oracle);
     if (j && j.verdict !== "unscored") {
       return { status: "scored", pass: j.verdict === "pass", judgment: j };
     }
@@ -4854,8 +5285,12 @@ function resolve(
     // rejudge on another container (spec 1a section 8).
     return { status: "pending", pass: null, judgment: j };
   }
-  if (policy.retry === "once" && e.run_kind === "auto_retry") {
-    return { status: "unscored", pass: null, judgment: null };
+  if (policy.retry === "once" && chain.members.length > 1) {
+    const parent = chain.members[chain.members.length - 2]!;
+    if (outcomePolicy(parent.termination, parent.did_work).retry === "once") {
+      // The one automatic retry was used and failed the same way.
+      return { status: "unscored", pass: null, judgment: null };
+    }
   }
   return { status: "pending", pass: null, judgment: null };
 }
@@ -4867,69 +5302,77 @@ export function cellsFromRecords(
   judgments: Map<string, JudgmentRecord[]>,
   judging: JudgingContext = campaignJudging(campaign),
 ): CellRecord[] {
-  const reused = new Set(campaign.reuse.map((r) => r.execution_id));
+  checkJudging(campaign, judging);
   const key = (task: string, repeat: number, arm: string) =>
     `${task}\u0000${repeat}\u0000${arm}`;
   const byCell = new Map<string, ExecutionRecord[]>();
   for (const e of executions) {
-    if (e.campaign_id !== campaign.id && !reused.has(e.id)) continue;
+    if (e.campaign_id !== campaign.id) continue;
     const k = key(e.task_id, e.repeat, e.arm);
     byCell.set(k, [...(byCell.get(k) ?? []), e]);
   }
+  const js = (e: ExecutionRecord) => judgments.get(e.id) ?? [];
   const cells: CellRecord[] = [];
   for (const b of campaign.blocks) {
     for (const arm of b.order) {
       const all = byCell.get(key(b.task_id, b.repeat, arm)) ?? [];
+      const label = `${b.task_id}/${b.repeat}/${arm}`;
       if (new Set(all.map((e) => e.attempt)).size !== all.length) {
         throw new ValidationError(
-          `duplicate attempt numbers in cell ${b.task_id}/${b.repeat}/${arm}`,
-          [`${b.task_id}/${b.repeat}/${arm}`],
+          `duplicate attempt numbers in cell ${label}`,
+          [
+            label,
+          ],
         );
       }
-      const oracle = judging.oracle.get(b.task_id);
-      const js = (e: ExecutionRecord) => judgments.get(e.id) ?? [];
-      const costs = all.map((e) => e.telemetry.cost_usd);
+      const { chains, orphans } = retryChains(all);
+      if (orphans.length > 0) {
+        throw new ValidationError(`broken retry chain in cell ${label}`, [
+          label,
+        ]);
+      }
+      const known = all.map((e) => e.telemetry.cost_usd);
+      const knownSum = known.reduce<number>((a, c) => a + (c ?? 0), 0);
       const cell: CellRecord = {
         task: b.task_id,
         arm,
         repeat: b.repeat,
-        status: "unrun",
+        status: all.length === 0 ? "unrun" : "pending",
         pass: null,
-        spend_usd: costs.includes(null)
-          ? null
-          : (costs as number[]).reduce((a, c) => a + c, 0),
+        spend_usd: known.includes(null) ? null : knownSum,
+        known_spend_usd: knownSum,
         attempts: all.length,
         used_execution: null,
         used_kind: null,
         judgment_id: null,
         oracle_hash: null,
+        scorer_fingerprint: null,
         manual_reruns: all.filter((e) => e.run_kind === "manual_rerun").length,
       };
-      const byAttempt = (xs: ExecutionRecord[]) =>
-        [...xs].sort((x, y) => y.attempt - x.attempt);
-      const chain = byAttempt(all.filter((e) => e.run_kind !== "manual_rerun"));
-      const manual = byAttempt(
-        all.filter((e) => e.run_kind === "manual_rerun"),
-      );
-      const use = (e: ExecutionRecord, r: Resolved) => {
+      const oracle = judging.oracle.get(b.task_id)!;
+      const use = (chain: RetryChain, r: Resolved) => {
+        const last = chain.members[chain.members.length - 1]!;
         cell.status = r.status;
         cell.pass = r.pass;
-        cell.used_execution = e.id;
-        cell.used_kind = e.run_kind;
+        cell.used_execution = last.id;
+        cell.used_kind = chain.root.run_kind;
         cell.judgment_id = r.judgment?.id ?? null;
         cell.oracle_hash = r.judgment?.task_oracle_hash ?? null;
+        cell.scorer_fingerprint = r.judgment?.scorer_fingerprint ?? null;
       };
-      if (chain[0]) use(chain[0], resolve(chain[0], js(chain[0]), oracle));
+      const planned = chains.find((c) => c.root.run_kind === "planned");
+      if (planned) use(planned, resolveChain(planned, js, oracle));
       if (cell.status !== "scored") {
+        const manual = chains.filter((c) => c.root.run_kind === "manual_rerun")
+          .sort((x, y) => y.root.attempt - x.root.attempt);
         for (const m of manual) {
-          const r = resolve(m, js(m), oracle);
+          const r = resolveChain(m, js, oracle);
           if (r.status === "scored") {
             use(m, r);
             break;
           }
         }
       }
-      if (cell.status === "unrun" && all.length > 0) cell.status = "pending";
       cells.push(cell);
     }
   }
@@ -4963,7 +5406,7 @@ git commit -m "feat(harness): termination rules, judging context, records-to-cel
 
 ### Task M1-09: report skeleton (console + JSON)
 
-Spec 1a section 9: header (hypothesis, primary metric, component diff baseline to each variant, campaign, coverage, incomplete-telemetry and infra-exposed counts per arm), primary (cost per solved task per arm and delta with CI, next to pass rate and its delta), outcome (pass rate, pass^k, per-task flip table). Non-primary metrics are labelled exploratory. Review must-change 6 and the M1-09 acceptance row: records are validated first (M1-07b); the report shows planned / attempted / scored / unscored / pending / unrun counts, raw and pending spend, the provisional marker, the matched-pair cohort with exclusion reasons, the judging context and which tasks use another oracle, and, in JSON, every cell's execution and judgment. Efficiency and slices are Part 2 (`tasks_meta` already carries `kind` and `coupling`).
+Spec 1a section 9: header (hypothesis, primary metric, component diff baseline to each variant, campaign, coverage, incomplete-telemetry and infra-exposed counts per arm), primary (cost per solved task per arm and delta with CI, next to pass rate and its delta), outcome (pass rate, pass^k, per-task flip table). Non-primary metrics are labelled exploratory. Review must-change 6 and the M1-09 acceptance row: records are validated first (M1-07b); the report shows planned / attempted / scored / unscored / pending / unrun counts, raw and pending spend, the provisional marker, the matched-pair cohort with exclusion reasons, the judging context and which tasks use another oracle, and, in JSON, every cell's execution and judgment. Round 2 changes: raw and pending spend use known attempt spend and pending count and spend sit next to the terminal-only headline (defect B, addendum rule 6); the judging identity comes from the same complete map as selection (defect E); a comparison whose scored cells carry more than one scorer fingerprint fails closed and each comparison reports its fingerprint (coordinator ruling); reuse is not reported because Part 1 refuses it. Efficiency and slices are Part 2 (`tasks_meta` already carries `kind` and `coupling`).
 
 **Deps:** M1-04, M1-05, M1-06, M1-07b, M1-08.
 
@@ -4972,8 +5415,8 @@ Spec 1a section 9: header (hypothesis, primary metric, component diff baseline t
 - Test: `tests/unit/harness/report.test.ts`
 
 **Interfaces:**
-- Consumes: `taskSetHash` (M1-04); `diffManifests`, `ManifestKey` (M1-05); `armSummary`, `compareArms`, `ArmSummary`, `Comparison`, `BootstrapOptions` (M1-06); `CampaignRecords`, `validateCampaignRecords` (M1-07b); `campaignJudging`, `cellsFromRecords`, `CellRecord`, `JudgingContext` (M1-08).
-- Produces: `interface ArmCoverage`; `interface HarnessReport { v: 1; experiment; campaign; judging; provisional; coverage; diffs; arms; comparisons; flips; cells }`; `interface ReportOptions extends BootstrapOptions { judging?: JudgingContext }`; `buildReport(records: CampaignRecords, opts?): Promise<HarnessReport>`; `renderReport(r): string`.
+- Consumes: `taskSetHash` (M1-04); `diffManifests`, `ManifestKey` (M1-05); `armSummary`, `compareArms`, `ArmSummary`, `Comparison`, `BootstrapOptions` (M1-06); `scorerFingerprint` (M1-07, tests); `CampaignRecords`, `validateCampaignRecords` (M1-07b); `campaignJudging`, `checkJudging`, `cellsFromRecords`, `CellRecord`, `JudgingContext` (M1-08).
+- Produces: `interface ArmCoverage`; `interface HarnessReport { v: 1; experiment; campaign; judging; provisional; coverage; diffs; arms; comparisons (each with `primary` and `scorer_fingerprint`); flips; cells }`; `interface ReportOptions extends BootstrapOptions { judging?: JudgingContext }`; `buildReport(records: CampaignRecords, opts?): Promise<HarnessReport>`; `renderReport(r): string`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4989,8 +5432,16 @@ import {
 import { stripAnsiCode } from "@std/fmt/colors";
 import { ValidationError } from "../../../src/errors.ts";
 import type { CampaignRecords } from "../../../src/harness/integrity.ts";
+import { scorerFingerprint } from "../../../src/harness/records.ts";
 import { buildReport, renderReport } from "../../../src/harness/report.ts";
-import { campaign, execution, H, judgment, telemetry } from "./fixtures.ts";
+import {
+  campaign,
+  execution,
+  H,
+  judgment,
+  SCORERS_V1_FP,
+  telemetry,
+} from "./fixtures.ts";
 
 /**
  * plain passes HX-001 only at $2 per cell; skills passes both at $1 per cell
@@ -5127,6 +5578,27 @@ Deno.test("renderReport: no solved task shows n/a", async () => {
   assertStringIncludes(text, "cost per solved task n/a");
   assertStringIncludes(text, "PROVISIONAL");
 });
+
+Deno.test("buildReport: mixed scorer versions in one comparison fail closed", async () => {
+  const base = await records();
+  const v2 = { build: "2" };
+  const fp2 = await scorerFingerprint(v2);
+  const [j0, ...rest] = base.judgments;
+  await assertRejects(
+    () =>
+      buildReport({
+        ...base,
+        judgments: [
+          { ...j0!, scorer_versions: v2, scorer_fingerprint: fp2 },
+          ...rest,
+        ],
+      }),
+    ValidationError,
+    "mixes scorer versions",
+  );
+  const r = await buildReport(base, { resamples: 20 });
+  assertEquals(r.comparisons[0]!.scorer_fingerprint, SCORERS_V1_FP);
+});
 ```
 
 - [ ] **Step 2: Run it and see it fail**
@@ -5150,6 +5622,7 @@ Expected: FAIL, `Module not found ".../src/harness/report.ts"`.
  */
 
 import * as colors from "@std/fmt/colors";
+import { ValidationError } from "../errors.ts";
 import type { PrimaryMetric } from "./config.ts";
 import { taskSetHash } from "./identity.ts";
 import { type CampaignRecords, validateCampaignRecords } from "./integrity.ts";
@@ -5158,6 +5631,7 @@ import {
   campaignJudging,
   type CellRecord,
   cellsFromRecords,
+  checkJudging,
   type JudgingContext,
 } from "./outcome.ts";
 import type { JudgmentRecord } from "./records.ts";
@@ -5190,7 +5664,6 @@ export interface HarnessReport {
   campaign: {
     id: string;
     created_at: string;
-    reused_executions: number;
     task_set_identity: string;
     tasks: number;
   };
@@ -5204,8 +5677,13 @@ export interface HarnessReport {
   coverage: ArmCoverage[];
   diffs: Array<{ variant: string; differing: ManifestKey[] }>;
   arms: ArmSummary[];
-  /** The declared primary metric first, the other one exploratory. */
-  comparisons: Array<Comparison & { primary: boolean }>;
+  /**
+   * The declared primary metric first, the other one exploratory. Each
+   * comparison names the one scorer fingerprint all its scored cells share.
+   */
+  comparisons: Array<
+    Comparison & { primary: boolean; scorer_fingerprint: string | null }
+  >;
   flips: Array<{
     task: string;
     kind: string;
@@ -5219,6 +5697,30 @@ export interface ReportOptions extends BootstrapOptions {
   judging?: JudgingContext;
 }
 
+/**
+ * Fail closed on mixed scorer versions: every scored cell of a comparison
+ * must have been judged by the same scorer fingerprint. Which version
+ * supersedes which is a Part 2 policy.
+ */
+function oneScorerFingerprint(
+  cells: CellRecord[],
+  baseline: string,
+  variant: string,
+): string | null {
+  const fps = new Set(
+    cells.filter((c) =>
+      (c.arm === baseline || c.arm === variant) && c.status === "scored"
+    ).map((c) => c.scorer_fingerprint),
+  );
+  if (fps.size > 1) {
+    throw new ValidationError(
+      `${variant} vs ${baseline} mixes scorer versions (${fps.size} fingerprints); rejudge with one scorer version`,
+      [...fps].map(String),
+    );
+  }
+  return fps.size === 1 ? [...fps][0]! : null;
+}
+
 export async function buildReport(
   records: CampaignRecords,
   opts: ReportOptions = {},
@@ -5228,6 +5730,7 @@ export async function buildReport(
   const exp = campaign.experiment;
   const arms = [exp.baseline, ...exp.variants];
   const judging = opts.judging ?? campaignJudging(campaign);
+  checkJudging(campaign, judging);
   const byExecution = new Map<string, JudgmentRecord[]>();
   for (const j of records.judgments) {
     byExecution.set(j.execution_id, [
@@ -5236,9 +5739,10 @@ export async function buildReport(
     ]);
   }
   const cells = cellsFromRecords(campaign, executions, byExecution, judging);
+  // The same complete map drives selection and the reported identity.
   const judgedTasks = campaign.task_set.tasks.map((t) => ({
     ...t,
-    oracle: judging.oracle.get(t.id) ?? t.oracle,
+    oracle: judging.oracle.get(t.id)!,
   }));
   const manifestOf = (id: string) =>
     campaign.arms.find((a) => a.config_id === id)!.manifest;
@@ -5260,12 +5764,14 @@ export async function buildReport(
     ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
     ...(opts.level !== undefined ? { level: opts.level } : {}),
   };
-  const comparisons = exp.variants.flatMap((variant) =>
-    metrics.map((metric) => ({
+  const comparisons = exp.variants.flatMap((variant) => {
+    const fingerprint = oneScorerFingerprint(cells, exp.baseline, variant);
+    return metrics.map((metric) => ({
       ...compareArms(cells, exp.baseline, variant, metric, bootstrap),
       primary: metric === exp.primary_metric,
-    }))
-  );
+      scorer_fingerprint: fingerprint,
+    }));
+  });
   const summaries = arms.map((arm) => armSummary(cells, arm, exp.repeats));
   const rate = (task: string, arm: string) => {
     const ps = cells.filter((c) =>
@@ -5294,7 +5800,6 @@ export async function buildReport(
     campaign: {
       id: campaign.id,
       created_at: campaign.created_at,
-      reused_executions: campaign.reuse.length,
       task_set_identity: campaign.task_set.identity,
       tasks: campaign.task_set.tasks.length,
     },
@@ -5365,11 +5870,7 @@ export function renderReport(r: HarnessReport): string {
   out.push(
     `Campaign ${r.campaign.id} (${r.campaign.created_at}), task set ${
       r.campaign.task_set_identity.slice(0, 12)
-    }, ${r.campaign.tasks} tasks${
-      r.campaign.reused_executions > 0
-        ? colors.yellow(`, REUSES ${r.campaign.reused_executions} executions`)
-        : ""
-    }`,
+    }, ${r.campaign.tasks} tasks`,
   );
   out.push(
     `Judged with ${r.judging.source} oracles (${
@@ -5403,15 +5904,18 @@ export function renderReport(r: HarnessReport): string {
         usd(a.cost_per_solved_task)
       }, pass rate ${pct(a.pass_rate)}; spend ${
         usd(a.total_spend_usd)
-      } (pending ${
+      } raw; headline over terminal cells, next to it: ${a.pending_cells} pending cells with ${
         usd(a.pending_spend_usd)
-      }, ${a.unknown_spend_cells} cells with unknown cost)`,
+      } known spend; ${a.unknown_spend_cells} cells with an attempt of unknown cost`,
     );
   }
   for (const c of r.comparisons) {
     const label = c.primary ? "" : colors.dim(" [exploratory]");
     out.push(
       `  ${c.variant} vs ${c.baseline}, ${c.metric}: ${fmtDelta(c)}${label}`,
+    );
+    out.push(
+      `    scorer ${c.scorer_fingerprint?.slice(0, 12) ?? "n/a"}`,
     );
     out.push(
       `    excluded: ${c.baseline} ${
@@ -5478,7 +5982,7 @@ git commit -m "feat(harness): report skeleton with cohort and judging provenance
 
 ### Task M1-10: `centralgauge harness validate` and `harness report`
 
-Spec 1a section 10 (CLI, Cliffy, `--no-X` rule) and section 9 (`harness report <experiment>`). `validate` is the static gate lane-content (M4) runs after authoring: it loads every task, the symbols lock and every experiment with its configs, checks model ids against `site/catalog`, prints the task-set identity, and says plainly that it ran no authoring gate, compile or runtime comparability check. `report` reads a campaign, validates it, and supports `--judging campaign|current` (current = the working tree's oracles, for use after an oracle fix and rejudge). No `--no-X` option is added. `run`, `cell`, `rejudge` and `images build` are Part 2. Tests go through real Cliffy parsing for `--json` output and `--help`.
+Spec 1a section 10 (CLI, Cliffy, `--no-X` rule) and section 9 (`harness report <experiment>`). `validate` is the static gate lane-content (M4) runs after authoring: it loads every task, the symbols lock and every experiment with its configs, checks model ids against `site/catalog`, prints the task-set identity, and says plainly that it ran no authoring gate, compile or runtime comparability check. `report` reads a campaign, validates it, and supports `--judging campaign|current` (current = the working tree's oracles, for use after an oracle fix and rejudge; refused when the working tree lacks a campaign task, round 2 defect E). No `--no-X` option is added. `run`, `cell`, `rejudge` and `images build` are Part 2. Tests go through real Cliffy parsing for `--json` output and `--help`.
 
 **Deps:** M1-01, M1-03, M1-04, M1-07, M1-08, M1-09.
 
@@ -5535,7 +6039,7 @@ async function git(root: string, ...args: string[]) {
   if (!out.success) throw new Error(new TextDecoder().decode(out.stderr));
 }
 
-async function repo(): Promise<string> {
+async function repo(ids = ["HX-001"]): Promise<string> {
   const root = await Deno.makeTempDir();
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "t@example.com");
@@ -5544,10 +6048,11 @@ async function repo(): Promise<string> {
   await git(root, "add", ".");
   await git(root, "commit", "-qm", "refapp");
   await git(root, "tag", "refapp-v1");
-  await write(
-    root,
-    "harness-tasks/tasks/HX-001/task.yml",
-    `id: HX-001
+  for (const id of ids) {
+    await write(
+      root,
+      `harness-tasks/tasks/${id}/task.yml`,
+      `id: ${id}
 refapp_version: refapp-v1
 kind: bugfix
 prompt: prompt.md
@@ -5558,9 +6063,10 @@ fail_to_pass:
   tests:
     - { codeunit: 85001, procedures: [A] }
 `,
-  );
-  await write(root, "harness-tasks/tasks/HX-001/prompt.md", "Fix it.");
-  await write(root, "harness-tasks/tasks/HX-001/oracle/T.al", "x");
+    );
+    await write(root, `harness-tasks/tasks/${id}/prompt.md`, "Fix it.");
+    await write(root, `harness-tasks/tasks/${id}/oracle/T.al`, "x");
+  }
   await write(
     root,
     "site/catalog/models.yml",
@@ -5656,9 +6162,21 @@ Deno.test("harnessReport: newest campaign from the store, loud when none, bad op
   );
 });
 
-Deno.test("harnessReport: --judging current uses the working tree's oracles", async () => {
+Deno.test("harnessReport: --judging current needs every campaign task, then uses the working tree's oracles", async () => {
   const dir = await storeWithOneCell();
-  const root = await repo();
+  const partial = await repo(["HX-001"]);
+  await assertRejects(
+    () =>
+      harnessReport("skills-vs-plain", {
+        resultsDir: dir,
+        ...OPTS,
+        judging: "current",
+        root: partial,
+      }),
+    ValidationError,
+    "no oracle for HX-002",
+  );
+  const root = await repo(["HX-001", "HX-002"]);
   const r = await harnessReport("skills-vs-plain", {
     resultsDir: dir,
     ...OPTS,
@@ -5666,8 +6184,8 @@ Deno.test("harnessReport: --judging current uses the working tree's oracles", as
     root,
   });
   assertEquals(r.judging.source, "current");
-  // The stored judgment was made against the campaign's oracle, not this one.
-  assertEquals(r.judging.tasks_with_other_oracle, ["HX-001"]);
+  // The stored judgment was made against the campaign's oracle, not these.
+  assertEquals(r.judging.tasks_with_other_oracle, ["HX-001", "HX-002"]);
   assertEquals(r.arms[0]!.scored_cells, 0);
   assertEquals(r.arms[0]!.pending_cells, 1);
 });
@@ -5988,7 +6506,7 @@ deno task start harness --help
 graphify update .
 ```
 
-Expected: all tests pass (109 at the time of writing), check, lint and fmt clean, help lists `validate` and `report`.
+Expected: all tests pass (123 at the time of writing), check, lint and fmt clean, help lists `validate` and `report`.
 
 ## Expected-failure check on the real repository (informational, not a gate)
 
@@ -6003,23 +6521,23 @@ Written from `docs/superpowers/specs/2026-09-29-harness-spikes-findings.md` once
 - **Verdict workspace + BC compile/test** (1a section 7): reconstruction, validation (app ids, dependency graph, object ranges), the hostile-artifact copy boundary with its own reparse-point policy (not `listTree`), scorers `build`, `pass_to_pass`, `fail_to_pass`, `mutant_kill` producing `target` and `failure` per procedure, rejudge on another container.
 - **Backend** (`cg-al` compile/test/symbols, scoped per-execution token, host call log, `CompileQueuePool` sharing, D12).
 - **Mock harness image** and the hostile contract tests (1a section 11).
-- **Campaign runner**: `harness run` / `cell` / `rejudge` / `images build`, resume (calls `validateCampaignRecords` first), staged runs over the immutable plan, `--reuse-history` writing `reuse` references, cost estimate before a run, usage-limit pause, runtime facts collection for `resolveManifest`, observed-manifest check (`setup_failed` on a missing component or version mismatch), `sweepTemp` at startup.
-- **Telemetry and trace parsing** per harness (metrics contract filling `validity.incomplete_telemetry`, token normalization, list-price estimate with pricing snapshot), call categorization (rules, Laya, opt-in Jev), secret redaction.
+- **Campaign runner**: `harness run` / `cell` / `rejudge` / `images build`, resume (calls `validateCampaignRecords` first), staged runs over the immutable plan, `--reuse-history`: loading referenced executions from their source campaigns, mapping them to target blocks, lifting the Part 1 empty-`reuse` rule and extending M1-07b and the report accordingly, cost estimate before a run, usage-limit pause, runtime facts collection for `resolveManifest`, observed-manifest check (`setup_failed` on a missing component or version mismatch), `sweepTemp` at startup.
+- **Telemetry and trace parsing** per harness (metrics contract filling `validity.incomplete_telemetry`, token normalization, list-price estimate with pricing snapshot), call categorization by deterministic, versioned rules only with the residue `unclassified` (Laya and hosted Jev are cut, spec 1a section 5 and D14), secret redaction.
+- **Scorer versioning**: how scorer versions are assigned and which supersedes which. Part 1 only records `scorer_fingerprint` and refuses mixed fingerprints within one comparison.
 - **Report sections** Efficiency (including time to first green build as a censored share, and the both-pass descriptive table) and Slices by `kind` and `coupling`.
 
 Carryover requirements that Part 2 must meet and must list as acceptance criteria (from `H:\cg-coord\decisions\2026-09-25-accept-M0-03.md`):
 
 1. No secret in any argv. Pass secrets by env or file only.
 2. The runner creates the container and opens capture files inside `try`, checks the exit status of `docker rm -f`, and at startup removes leftover `cg-harness-*` containers it owns (name prefix plus label).
-3. Secrets are not mounted into the agent-readable filesystem, or the threat model (1a section 1) states why they must be. This contradicts the current section 5 item 2 `C:\cg-secrets` mount and must be resolved in the Part 2 plan or a spec update.
+3. Secrets in the agent-readable filesystem are an owner-accepted risk (`H:\cg-coord\decisions\2026-09-25-secrets-accepted-risk.md`, spec 1a section 5 item 2). Part 2 must meet its conditions as acceptance criteria: dedicated benchmark credentials only; never in argv or image layers; egress limited to the provider and the backend; every captured log scanned for the exact secret values before it leaves the sandbox.
 
 Also from `H:\cg-coord\decisions\2026-09-25-accept-M0-01.md`: `deno task id-audit` (`scripts/id-audit.ts`) has no band rule for `harness-tasks/`. Add one: `harness-tasks/refapp/<module>` in 70000-74999, `harness-tasks/refapp/Test` and task overlays under `Test\` in 80000-84999, `harness-tasks/tasks/*/oracle` and `mutants` in 85000-89999, nothing in 75000-79999 (1b section 4).
 
 ## Open questions
 
-The ten questions of the first draft are decided (owner rules above). What is left, with the reason it is open:
+None left for Part 1. Settled since revision 2: denominators and pending treatment (addendum rules 5 and 6), manual-rerun spend counts in its cell (rule 1, confirmed by the round-2 review), unscored cells are out of the pass rate and add spend but no solve to the cost (rule 5), reuse is refused in Part 1, and mixed scorer versions fail closed.
 
-1. **Scorer-version policy for judgment selection.** Selection matches execution, task, workspace and oracle, and accepts any scorer versions. Whether a newer scorer version should supersede, or be required, depends on how the Part 2 verdict pipeline versions scorers. Open until that pipeline exists.
-2. **Manual rerun spend.** This plan counts a manual rerun's spend in its cell (reading owner rule 1, "every attempt"), even when the rerun is not the execution used. The owner rules say reruns are separate and never replace a scored result, but not whose spend they carry. Confirm.
-3. **Pending spend in the headline.** Pending cells' spend is disclosed and marks the headline provisional but is not in the headline until the cell is terminal, so the headline and the matched-pair comparison use the same cells. Rule 1 says "disclosed", not "included". Confirm.
-4. **Terminally unscored cells in the pass rate.** An exhausted retry cell counts its spend in cost per solved task (a spend with no solve) but is excluded from the pass rate rather than counted as a fail, because spec 1a section 8 says unscored is never a model failure. Confirm.
+Deferred with an owner, not open: scorer-version assignment and supersession (Part 2, verdict pipeline); historical reuse loading and mapping (Part 2, campaign runner).
+
+Follow-up outside the frozen tasks: the round-2 review suggests an M1-01 test for a linked ancestor directory (the loader's `lstat` checks only the final path). M1-01 is already in implementation, so this is left for the lane as an optional extra test, not a plan change.
