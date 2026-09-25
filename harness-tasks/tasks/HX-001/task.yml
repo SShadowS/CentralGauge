@@ -1,0 +1,19 @@
+id: HX-001
+refapp_version: refapp-v1-rc1
+kind: bugfix
+prompt: prompt.md
+touches: [Rental, Fleet, Core]
+coupling: [events, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, ReturnWithoutDamageReleasesVehicle, ReturnBelowStartKmFails] }
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle, RepairLastDamageUnblocks] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 85000, procedures: [DamagedReturnBlocksVehicle, DamagedReturnReleasesVehicle, DamagedReturnRecordsDamage, DamagedReturnCompletesContract, DamagedVehicleCannotBeRentedAgain, RepairAfterDamagedReturnReleasesVehicle, SecondDamagedReturnAfterRepair, MultipleOpenDamagesOnReturn, ReturnWithoutDamageLeavesVehicleUnblocked] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
