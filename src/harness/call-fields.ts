@@ -20,10 +20,11 @@ export function callFields(
 } {
   const full = rawCommand === null ? null : redactPatternText(rawCommand).text;
   const cut = full !== null && full.length > MAX_COMMAND_CHARS;
+  const safeTarget = target === null ? null : redactPatternText(target).text;
   return {
     command: cut ? null : full,
     command_cut: full === null ? null : cut,
-    target,
-    ...classify({ tool, command: full, target }),
+    target: safeTarget,
+    ...classify({ tool, command: full, target: safeTarget }),
   };
 }

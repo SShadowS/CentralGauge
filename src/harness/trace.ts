@@ -91,6 +91,9 @@ export async function writeTrace(
   return lines.length;
 }
 
+const issue = (i: { path: PropertyKey[]; message: string }) =>
+  `${i.path.map(String).join(".")}: ${i.message}`;
+
 /**
  * Read a trace back: every line validated, one version per file, `seq`
  * strictly increasing. v1 events are upgraded with null call fields. A bad
@@ -119,7 +122,7 @@ export async function readTrace(path: string): Promise<TraceEvent[]> {
     let e: TraceEvent;
     if (v === 1) {
       const r = V1.safeParse(raw);
-      if (!r.success) return fail(r.error.issues[0]!.message);
+      if (!r.success) return fail(issue(r.error.issues[0]!));
       e = {
         ...r.data,
         v: TRACE_VERSION,
@@ -131,7 +134,7 @@ export async function readTrace(path: string): Promise<TraceEvent[]> {
       };
     } else {
       const r = TraceEventSchema.safeParse(raw);
-      if (!r.success) return fail(r.error.issues[0]!.message);
+      if (!r.success) return fail(issue(r.error.issues[0]!));
       e = r.data;
     }
     const prev = out.at(-1);

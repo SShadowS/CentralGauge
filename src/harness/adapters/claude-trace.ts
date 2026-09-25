@@ -9,6 +9,7 @@
 import type { TraceEvent } from "../trace.ts";
 import type { J, Line } from "./jsonl.ts";
 import { callFields } from "../call-fields.ts";
+import { redactPatternText } from "../redact-patterns.ts";
 import { TRACE_VERSION } from "../trace.ts";
 import { isObj, list, obj, refuse } from "./jsonl.ts";
 
@@ -39,21 +40,36 @@ const ms = (ts: unknown) => {
   return Number.isFinite(t) ? t : null;
 };
 const str = (v: unknown) => (typeof v === "string" && v !== "" ? v : null);
+/** An agent-chosen name, pattern-redacted before storage. */
+const safe = (v: unknown) => {
+  const s = str(v);
+  return s === null ? null : redactPatternText(s).text;
+};
 const textOf = (c: unknown) =>
   typeof c === "string"
     ? c
     : list(c).map(obj).map((x) => (typeof x.text === "string" ? x.text : ""))
       .join("\n");
 
-/** The cg-al client line {op, client:{status}, result} or the al-tools MCP reply {op, status, result}. */
+/** Only these calls talk to the backend; any other tool's output is never read as a reply. */
+const isBackendCall = (tool: string, classifier: string) =>
+  tool.startsWith("mcp__al-tools__") || classifier.startsWith("shell.cg-al.");
+/** The backend's request id shape (backend.ts `br_<n>`); anything else is not stored. */
+const REQUEST_ID = /^br_[A-Za-z0-9]{1,32}$/;
+
+/**
+ * The cg-al client line {op, client:{status}, result} or the al-tools MCP
+ * reply {op, status, result}: the whole text as one JSON value, else the last
+ * line that is one (earlier lines may be echoed output).
+ */
 function backendReply(
   text: string,
 ): { op: string; status: number | null; result: J } | null {
-  for (const l of text.split(/\r?\n/)) {
-    const s = l.indexOf("{");
-    if (s < 0) continue;
+  for (const l of [text, ...text.split(/\r?\n/).reverse()]) {
+    const s = l.trim();
+    if (!s.startsWith("{")) continue;
     try {
-      const v = JSON.parse(l.slice(s));
+      const v = JSON.parse(s);
       if (isObj(v) && typeof v.op === "string") {
         const st = isObj(v.client) ? v.client.status : v.status;
         return {
@@ -231,7 +247,11 @@ export function claudeTrace(
         : r
         ? (r.error ? "error" : "ok")
         : null;
-      const reply = r ? backendReply(r.text) : null;
+      const fields = callFields(name, rawCmd, target);
+      const reply = r && isBackendCall(name, fields.classifier)
+        ? backendReply(r.text)
+        : null;
+      const skill = name === "Skill" ? safe(input.skill) : null;
       const common = {
         t_ms: rel(at),
         session,
@@ -247,18 +267,21 @@ export function claudeTrace(
         ...BASE,
         ...common,
         type: "tool_call",
-        skill: name === "Skill" ? str(input.skill) : null,
-        backend_request: reply ? str(reply.result.request) : null,
+        skill,
+        backend_request: reply && typeof reply.result.request === "string" &&
+            REQUEST_ID.test(reply.result.request)
+          ? reply.result.request
+          : null,
         outcome,
         error_class: errorClass(outcome, r?.text ?? "", reply),
         result_bytes: r?.bytes ?? null,
         duration_ms: r && r.at !== null && at !== null && r.at >= at
           ? r.at - at
           : null,
-        ...callFields(name, rawCmd, target),
+        ...fields,
       });
       if (SPAWN_TOOLS.has(name)) {
-        spawned.set(id, str(input.subagent_type) ?? "subagent");
+        spawned.set(id, safe(input.subagent_type) ?? "subagent");
         push({ ...BASE, ...common, type: "subagent_spawn" });
       }
       if (name === "Skill") {
@@ -266,7 +289,7 @@ export function claudeTrace(
           ...BASE,
           ...common,
           type: "skill_invoke",
-          skill: str(input.skill),
+          skill,
         });
       }
     }
