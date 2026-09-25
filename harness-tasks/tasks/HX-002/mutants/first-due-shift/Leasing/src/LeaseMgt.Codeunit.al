@@ -49,7 +49,7 @@ codeunit 70300 "CGR Lease Mgt"
             Line.Init();
             Line."Contract No." := ContractNo;
             Line."Line No." := i * 10000;
-            Line."Due Date" := CalcDate(StrSubstNo('<+%1M>', i - 1), Contract."Start Date");
+            Line."Due Date" := CalcDate(StrSubstNo('<+%1M>', i), Contract."Start Date");
             Line.Amount := Amounts.Get(i);
             Line.Insert(true);
         end;

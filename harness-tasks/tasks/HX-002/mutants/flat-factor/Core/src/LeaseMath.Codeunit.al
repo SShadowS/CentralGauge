@@ -2,7 +2,7 @@ codeunit 70002 "CGR Lease Math"
 {
     internal procedure RateFactor(Months: Integer): Decimal
     begin
-        exit(1 + Months / 100);
+        exit(1 + (Months div 100));
     end;
 
     internal procedure LeaseTotal(BaseRate: Decimal; Months: Integer): Decimal

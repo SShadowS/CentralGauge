@@ -39,10 +39,6 @@ codeunit 70300 "CGR Lease Mgt"
         if Contract.Months <= 0 then
             Error(MonthsErr, ContractNo);
         Line.SetRange("Contract No.", ContractNo);
-        Line.SetRange(Invoiced, true);
-        if not Line.IsEmpty() then
-            Error(InvoicedErr, ContractNo);
-        Line.SetRange(Invoiced);
         Line.DeleteAll(true);
         LeaseMath.SplitInstallments(LeaseMath.LeaseTotal(Contract."Base Rate", Contract.Months), Contract.Months, Amounts);
         for i := 1 to Contract.Months do begin

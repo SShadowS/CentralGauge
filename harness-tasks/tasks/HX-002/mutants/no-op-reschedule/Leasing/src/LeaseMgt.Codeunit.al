@@ -39,6 +39,8 @@ codeunit 70300 "CGR Lease Mgt"
         if Contract.Months <= 0 then
             Error(MonthsErr, ContractNo);
         Line.SetRange("Contract No.", ContractNo);
+        if not Line.IsEmpty() then
+            exit;
         Line.SetRange(Invoiced, true);
         if not Line.IsEmpty() then
             Error(InvoicedErr, ContractNo);
