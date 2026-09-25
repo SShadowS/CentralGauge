@@ -1,4 +1,4 @@
-codeunit 84991 "CGR Hostile Detect State"
+codeunit 84891 "CGR Hostile Detect State"
 {
     // M1-30 hostile row: fails if a previous execution's committed state survived.
     Subtype = Test;

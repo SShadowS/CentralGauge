@@ -2,11 +2,19 @@ import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
 import {
+  HOSTILE_FIXTURES,
   mockAdapter,
   resolveVariant,
 } from "../../../src/harness/adapters/mock.ts";
 import { HarnessConfigSchema } from "../../../src/harness/config.ts";
 import { runCell } from "../../../src/harness/execution.ts";
+import { safeCopyTree } from "../../../src/harness/fsutil.ts";
+import { loadSymbolsLock } from "../../../src/harness/identity.ts";
+import { readAppGraph } from "../../../src/harness/staging.ts";
+import {
+  alObjects,
+  validateApps,
+} from "../../../src/harness/verdict-workspace.ts";
 import { cellFor, makeEnv, mockImageBehavior } from "./runtime-fixture.ts";
 
 const manifest = {
@@ -158,7 +166,10 @@ Deno.test("mock arms: no qualification manifest, or an unlisted variant, is refu
   assertEquals(t.docker.runs.length, 0);
 });
 
-async function runMockPs1(settings: Record<string, unknown>) {
+async function runMockPs1(
+  settings: Record<string, unknown>,
+  extraEnv: Record<string, string> = {},
+) {
   const root = await Deno.realPath(await Deno.makeTempDir());
   const config = join(root, "config");
   const ws = join(root, "ws");
@@ -189,14 +200,14 @@ async function runMockPs1(settings: Record<string, unknown>) {
         new URL("../../../harness/images/mock/mock.ps1", import.meta.url),
       ),
     ],
-    env: { CG_MOCK_CONFIG: config, CG_MOCK_WORKSPACE: ws },
+    env: { CG_MOCK_CONFIG: config, CG_MOCK_WORKSPACE: ws, ...extraEnv },
     stdout: "piped",
     stderr: "piped",
   }).output();
   const lines = new TextDecoder().decode(out.stdout).split(/\r?\n/).filter(
     Boolean,
   ).map((l) => JSON.parse(l) as { type: string });
-  return { ws, code: out.code, types: lines.map((l) => l.type) };
+  return { ws, code: out.code, types: lines.map((l) => l.type), lines };
 }
 
 Deno.test({
@@ -219,5 +230,64 @@ Deno.test({
     const h = await runMockPs1({ mode: "hostile-app" });
     assertEquals(h.code, 0);
     await Deno.stat(join(h.ws, "Rental", "Rental.app"));
+  },
+});
+
+Deno.test("hostile fixtures: agent-range ids that pass the verdict-workspace id checks and collide with no refapp or oracle object", async () => {
+  const root = fromFileUrl(new URL("../../../", import.meta.url));
+  const taken = new Set(
+    (await alObjects(join(root, "harness-tasks"))).map((o) => o.id),
+  );
+  const symbols = await loadSymbolsLock(root);
+  const symbolIds = new Set(
+    (symbols ?? []).map((s) => s.app_id.toLowerCase()),
+  );
+  for (const name of ["leave-state", "detect-state"]) {
+    const fixture = join(root, HOSTILE_FIXTURES, name);
+    for (const o of await alObjects(fixture)) {
+      assertEquals(taken.has(o.id), false, `${name}: ${o.id} is already used`);
+    }
+    const ws = await Deno.realPath(await Deno.makeTempDir());
+    await safeCopyTree(join(root, "harness-tasks", "refapp"), join(ws, "w"));
+    await safeCopyTree(fixture, join(ws, "f"));
+    for (const o of await alObjects(join(ws, "f"))) {
+      const dst = join(ws, "w", ...o.file.split("/"));
+      await Deno.mkdir(join(dst, ".."), { recursive: true });
+      await Deno.copyFile(join(ws, "f", ...o.file.split("/")), dst);
+    }
+    const apps = await readAppGraph(join(ws, "w"));
+    assertEquals(
+      await validateApps(join(ws, "w"), apps, apps, symbolIds),
+      [],
+      name,
+    );
+  }
+});
+
+Deno.test({
+  name:
+    "mock.ps1 hostile-case-alias: two distinct case-alias files; a failed fsutil, or no distinct case-alias files, is mock_error and a non-zero exit",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const bin = await Deno.realPath(await Deno.makeTempDir());
+    const failing = join(bin, "fsutil-fails.cmd");
+    await Deno.writeTextFile(failing, "@exit /b 1\r\n");
+    const noop = join(bin, "fsutil-noop.cmd");
+    await Deno.writeTextFile(noop, "@exit /b 0\r\n");
+    for (const fsutil of [failing, noop]) {
+      const r = await runMockPs1({ mode: "hostile-case-alias" }, {
+        CG_MOCK_FSUTIL: fsutil,
+      });
+      assertEquals(r.code !== 0, true, fsutil);
+      assertEquals(r.types.includes("mock_error"), true, fsutil);
+      assertEquals(r.types.includes("mock_done"), false, fsutil);
+    }
+    // The real fsutil (the per-directory case flag works on this host): two distinct files.
+    const ok = await runMockPs1({ mode: "hostile-case-alias" });
+    assertEquals([ok.code, ok.types.includes("mock_case_alias")], [0, true]);
+    const names = [...Deno.readDirSync(join(ok.ws, "case-alias"))].map((e) =>
+      e.name
+    ).sort();
+    assertEquals(names, ["A.txt", "a.txt"]);
   },
 });

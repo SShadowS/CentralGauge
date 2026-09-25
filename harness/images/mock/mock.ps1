@@ -2,8 +2,8 @@
 # Reads C:\config\settings.json (settings.mode, settings.variant, settings.cg_al) and
 # C:\config\variant\ (the runner copies the resolved variant there; C:\task never holds
 # solutions), applies it to C:\workspace with .delete semantics, optionally calls cg-al,
-# and prints JSON lines: mock_init, mock_apply, mock_cg_al, mock_usage_limit, mock_done.
-# Windows PowerShell 5.1 and pwsh 7. CG_MOCK_CONFIG, CG_MOCK_WORKSPACE and CG_MOCK_CG_AL
+# and prints JSON lines: mock_init, mock_apply, mock_cg_al, mock_usage_limit, mock_error, mock_done.
+# Windows PowerShell 5.1 and pwsh 7. CG_MOCK_CONFIG, CG_MOCK_WORKSPACE, CG_MOCK_CG_AL and CG_MOCK_FSUTIL
 # override the container paths (unit tests run this script on the host).
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding $false
@@ -11,12 +11,19 @@ $utf8 = New-Object System.Text.UTF8Encoding $false
 $Config = if ($env:CG_MOCK_CONFIG) { $env:CG_MOCK_CONFIG } else { 'C:\config' }
 $Workspace = if ($env:CG_MOCK_WORKSPACE) { $env:CG_MOCK_WORKSPACE } else { 'C:\workspace' }
 $CgAl = if ($env:CG_MOCK_CG_AL) { $env:CG_MOCK_CG_AL } else { 'C:\cg-al.ps1' }
+$Fsutil = if ($env:CG_MOCK_FSUTIL) { $env:CG_MOCK_FSUTIL } else { 'fsutil.exe' }
 $Version = '1'
 
 function Emit([string]$type, [hashtable]$data) {
   $data['type'] = $type
   [Console]::Out.WriteLine((ConvertTo-Json -Compress -Depth 6 -InputObject $data))
   [Console]::Out.Flush()
+}
+
+# A mode that cannot do what it claims stops loudly: mock_error, exit 4.
+function Fail([string]$why) {
+  Emit 'mock_error' @{ error = $why }
+  exit 4
 }
 
 function Apply-Variant {
@@ -102,9 +109,16 @@ switch ($mode) {
     Apply-Variant
     $d = Join-Path $Workspace 'case-alias'
     New-Item -ItemType Directory -Force -Path $d | Out-Null
-    & fsutil.exe file setCaseSensitiveInfo $d enable | Out-Null
+    # Never a silent success: the ambiguity must really exist, or the row fails loudly.
+    $fsOut = & $Fsutil file setCaseSensitiveInfo $d enable 2>&1
+    if ($LASTEXITCODE -ne 0) { Fail "fsutil setCaseSensitiveInfo failed (exit $LASTEXITCODE): $fsOut" }
     Set-Content -LiteralPath (Join-Path $d 'a.txt') -Value 'lower' -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $d 'A.txt') -Value 'upper' -Encoding UTF8
+    $names = @(Get-ChildItem -LiteralPath $d -File | ForEach-Object { $_.Name })
+    if (-not (($names -ccontains 'a.txt') -and ($names -ccontains 'A.txt'))) {
+      Fail "case sensitivity is not in effect: $($names -join ', ')"
+    }
+    Emit 'mock_case_alias' @{ files = $names }
   }
   'hostile-app-id' {
     Apply-Variant
