@@ -211,8 +211,18 @@ export async function resolveRefapp(
   };
 }
 
+/**
+ * BC app ids are GUID-shaped but not always RFC 4122 (real Microsoft apps
+ * carry non-RFC version/variant nibbles, M1-26). Ids the harness generates
+ * keep z.uuid().
+ */
+export const BcGuid = z.string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  "BC GUID (8-4-4-4-12 hex)",
+);
+
 const SymbolPackageSchema = z.strictObject({
-  app_id: z.uuid(),
+  app_id: BcGuid,
   name: z.string().min(1),
   publisher: z.string().min(1),
   version: z.string().regex(/^\d+\.\d+\.\d+\.\d+$/),

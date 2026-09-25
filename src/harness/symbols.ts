@@ -84,6 +84,8 @@ export async function buildSymbolsLock(
   fromDir: string,
   store: string,
   read: ManifestReader,
+  /** Apps to lock; the rest are neither stored nor locked. */
+  include: (m: PackageManifest, file: string) => boolean = () => true,
 ): Promise<{ v: 1; packages: SymbolPackage[] }> {
   await Deno.mkdir(store, { recursive: true });
   const names: string[] = [];
@@ -96,8 +98,9 @@ export async function buildSymbolsLock(
   const packages: SymbolPackage[] = [];
   for (const name of names.sort()) {
     const path = join(fromDir, name);
-    const sha256 = await hashFile(fromDir, path);
     const m = await read(path);
+    if (!include(m, name)) continue;
+    const sha256 = await hashFile(fromDir, path);
     const stored = join(store, `${sha256}.app`);
     if (!await exists(stored)) await Deno.copyFile(path, stored);
     packages.push({
@@ -118,6 +121,46 @@ export async function buildSymbolsLock(
     );
   }
   return { v: 1, packages: parsed.data.packages };
+}
+
+export interface ExcludedApp {
+  file: string;
+  name: string;
+  publisher: string;
+}
+
+/**
+ * The lock the harness uses: Microsoft apps only (the platform System app
+ * included when its publisher is Microsoft). Every other app in the folder
+ * (e.g. CentralGauge prereqs in a compiler cache) is reported, not locked.
+ */
+export async function lockMicrosoftSymbols(
+  fromDir: string,
+  store: string,
+  read: ManifestReader,
+): Promise<
+  { lock: { v: 1; packages: SymbolPackage[] }; excluded: ExcludedApp[] }
+> {
+  const excluded: ExcludedApp[] = [];
+  let kept = 0;
+  const include = (m: PackageManifest, file: string) => {
+    if (m.publisher === "Microsoft") {
+      kept++;
+      return true;
+    }
+    excluded.push({ file, name: m.name, publisher: m.publisher });
+    return false;
+  };
+  // An empty lock would fail the schema with a generic message; say why.
+  const lock = await buildSymbolsLock(fromDir, store, read, include).catch(
+    (err) => {
+      if (kept === 0) {
+        throw new ValidationError(`no Microsoft apps in ${fromDir}`, [fromDir]);
+      }
+      throw err;
+    },
+  );
+  return { lock, excluded };
 }
 
 export async function writeSymbolsLock(

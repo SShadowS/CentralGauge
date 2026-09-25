@@ -4,7 +4,7 @@ import {
   assertRejects,
   assertStringIncludes,
 } from "@std/assert";
-import { isAbsolute, join } from "@std/path";
+import { basename, isAbsolute, join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
 import { exists } from "../../../src/harness/fsutil.ts";
 import { hashFile } from "../../../src/harness/hash.ts";
@@ -23,6 +23,7 @@ import {
 import {
   altoolReader,
   buildSymbolsLock,
+  lockMicrosoftSymbols,
 } from "../../../src/harness/symbols.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
@@ -446,5 +447,53 @@ Deno.test("stageRefappTask: shipped tests are compared by raw bytes (CRLF vs LF 
     () => stage(repo),
     ValidationError,
     "shipped tests differ",
+  );
+});
+
+Deno.test("lockMicrosoftSymbols: locks Microsoft apps only, reports the rest, refuses none", async () => {
+  const from = await Deno.realPath(await Deno.makeTempDir());
+  const store = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.writeTextFile(join(from, "Microsoft_System_28.0.0.0.app"), "sys");
+  await Deno.writeTextFile(
+    join(from, "CentralGauge_CG-AL-H028 Prereq_1.0.0.0.app"),
+    "cg",
+  );
+  const manifests: Record<
+    string,
+    { id: string; name: string; publisher: string }
+  > = {
+    "Microsoft_System_28.0.0.0.app": {
+      id: "8874ed3a-0643-4247-9ced-7a7002f7135d",
+      name: "System",
+      publisher: "Microsoft",
+    },
+    "CentralGauge_CG-AL-H028 Prereq_1.0.0.0.app": {
+      id: "a1b2c3d4-0028-0000-0000-000000000028",
+      name: "CG-AL-H028 Prereq",
+      publisher: "CentralGauge",
+    },
+  };
+  const read = (p: string) =>
+    Promise.resolve({ ...manifests[basename(p)]!, version: "28.0.0.0" });
+  const r = await lockMicrosoftSymbols(from, store, read);
+  assertEquals(r.lock.packages.map((p) => p.name), ["System"]);
+  assertEquals(r.excluded.map((e) => [e.file, e.publisher]), [
+    ["CentralGauge_CG-AL-H028 Prereq_1.0.0.0.app", "CentralGauge"],
+  ]);
+  assertEquals(
+    [...Deno.readDirSync(store)].length,
+    1,
+    "excluded apps are not stored",
+  );
+  await Deno.remove(join(from, "Microsoft_System_28.0.0.0.app"));
+  await assertRejects(
+    async () =>
+      lockMicrosoftSymbols(
+        from,
+        await Deno.realPath(await Deno.makeTempDir()),
+        read,
+      ),
+    ValidationError,
+    "Microsoft",
   );
 });
