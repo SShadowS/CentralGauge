@@ -18,9 +18,11 @@ bundle + MCP components + limits. Typical questions:
 **Primary use case:** same harness, same models, different MCP/skill sets.
 The question is as much about efficiency as about pass rate.
 
-**Primary metric: cost per solved task.** Total spend of an arm over all of
-its executions (failed, timed out and retried attempts included) divided by
-the number of passing executions. This is the headline number of the
+**Primary metric: cost per solved task.** Sum over tasks of each task's
+mean cost over all its attempts (failed, timed out, usage-limited and
+retried attempts included) divided by the sum of per-task pass rates, every
+task weighted equally (owner decision
+`H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md`). This is the headline number of the
 Directions EMEA talk on 2026-10-27 (`U:\Git\presentations\DirectionsEMEA2026\centralgauge-submission.md`),
 and the same framing as the existing LLM leaderboard. Tool calls, tool
 errors, build/test iterations, tokens and time are secondary and explain the
@@ -71,7 +73,7 @@ sets are out of scope for 1a.
 | D11 | Verdict fails on any build failure, any visible-test regression, or a failed hidden scorer. |
 | D12 | Agent `cg-al` calls and verdict runs share `CompileQueuePool` plus the health/drain machinery, at fixed concurrency. Agent credentials expose only agent operations. |
 | D13 | Harness task set is separate from `tasks/`, with its own task-set identity. Never mixed into the LLM leaderboard. |
-| D14 | Every tool call is recorded as a normalized, versioned trace event with correlation ids, shell commands in full (secrets redacted). Backend calls are also recorded host-side, independent of the harness. Calls are categorized after the run: deterministic rules first, a local decision model (Laya) for the rest, hosted Jev opt-in. |
+| D14 | Every tool call is recorded as a normalized, versioned trace event with correlation ids, shell commands in full (secrets redacted). Backend calls are also recorded host-side, independent of the harness. Calls are categorized after the run by deterministic rules; the residue is `unclassified` (Laya cut, spike findings 2026-09-29 section 7). |
 | D15 | An experiment declares which config components it varies. The runner compares the resolved execution manifests and refuses when arms differ in anything else. |
 | D16 | Task sources are pluggable at the staging step: `refapp` (snapshot + overlay) now, `git` (repo + base commit, BC-Bench style) later. Only the interface ships in 1a. |
 | D17 | Arms are interleaved in randomized order within (task, repeat) blocks. Historical executions are reused only on explicit request. |
@@ -161,7 +163,10 @@ Per execution (config x task x repeat):
    - `C:\task` read-only: `prompt.md`, attachments (screenshots, sample
      files) and agent-visible task metadata
    - `C:\config` read-only: resolved native config, bundle, MCP definitions
-   - `C:\cg-secrets` read-only: API keys, backend token (never `-e`)
+   - `C:\cg-secrets` read-only: API keys, backend token (never `-e`, never
+     argv). This mount is agent-readable; the production plan must either
+     keep secrets out of it or state here why they must be there (spike
+     findings 2026-09-29 section 8, M0-03 carryover).
 3. `run.ps1` translates `C:\config` into the harness's native format
    (`.claude\`, pi config, and so on) and runs the harness non-interactively
    on the prompt. The harness's structured output (Claude Code
@@ -242,16 +247,13 @@ be re-run with a newer classifier without re-running agents.
    harness builtin tools (Read, Edit, Grep...), and command patterns
    (`alc.exe`, `altool compile`, the AL Tools NuGet entry points, `git`).
    Rules are versioned and cover most calls with certainty.
-2. Events no rule matches go to a typed decision model: Laya running
-   locally by default. Hosted Jev is opt-in per run
-   (`--classifier jev`), because it sends commands, paths and code snippets
-   off the machine.
-3. Each event stores `category`, `classifier` (rule id, or model + version)
-   and `confidence`. Below a threshold the category is `unclassified`, never
-   a guess.
+2. Events no rule matches are `unclassified`, never a guess. (Laya and
+   hosted Jev are cut: Laya was 3/10 correct at p >= 0.8, spike findings
+   2026-09-29 section 7.)
+3. Each event stores `category` and `classifier` (rule id and rule version).
 
-The report shows how many events were rule-classified, model-classified and
-unclassified per arm. Compile counts from the backend and from classified
+The report shows how many events were rule-classified and unclassified per
+arm. Compile counts from the backend and from classified
 traces are shown separately and labelled by source.
 
 **Metrics contract.** Each adapter declares which fields its harness can
@@ -270,7 +272,10 @@ A run publishes several apps, heavier than today's single candidate. Fixed
 concurrency is used in 1a (no priority scheduling). Queue wait is recorded
 per backend call because BC latency changes agent behavior (a slow test run
 makes an agent change strategy) and cannot simply be subtracted afterward.
-Measure publish cost in the first spike before choosing the default.
+Spike result: 7-app compile + publish + test median 73.2 s (operation sum,
+spike findings 2026-09-29 section 1), under the 10 minute rule, so all apps
+are published per `cg-al test` call and the default is not forced to one
+execution per container.
 
 ## 6. Experiment, campaign and records
 
@@ -406,7 +411,10 @@ Each execution carries three independent fields:
   container (existing infra-retry and health monitor). The agent is never
   re-run for a verdict-side fault.
 - Rejudging adds a judgment; rerunning adds an execution. Neither becomes a
-  new repeat silently.
+  new repeat silently. For an automatic infra-retry chain the final attempt
+  counts; a manual rerun never silently replaces a scored result and the
+  report states which execution was used
+  (`H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md`).
 - Sandbox cleanup runs in `finally`. Orphans named `cg-harness-<id>-*` are
   swept at start. `acquireBenchLock` is held for harness runs, since BC
   containers are shared.
@@ -423,16 +431,24 @@ count are shown separately. When a CI includes zero the report says "not
 distinguishable", and it never presents that as "equal". Metrics other than
 the declared primary metric are labelled exploratory. Time to first green
 build is censored for executions that never got a green build and is
-reported as a survival-style share, not as a missing median.
+reported as a survival-style share, not as a missing median. A
+baseline-variant comparison uses only (task, repeat) cells eligible in both
+arms (matched pairs); each arm's raw spend and exclusions are reported
+separately. When any bootstrap resample is undefined (zero solves), the CI
+and the distinguishable verdict are suppressed and the undefined share is
+reported (`H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md`).
 
 Sections in this order:
 
 1. **Header**: hypothesis, primary metric, component diff between baseline
    and each variant, campaign(s) used, coverage (judged executions /
    planned), incomplete-telemetry count and infra-exposed count per arm.
-2. **Primary**: cost per solved task per arm and the delta with CI, next to
-   pass rate per arm and its delta. Cost counts every attempt of the arm,
-   including failed and retried ones.
+2. **Primary**: cost per solved task per arm (sum of per-task mean cost /
+   sum of per-task pass rates) and the delta with CI, next to pass rate per
+   arm and its delta. Cost counts every attempt of the arm, including
+   failed, usage-limited and retried ones; pending spend is disclosed and the
+   headline is marked provisional while cells are pending
+   (`H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md`).
 3. **Efficiency** (exploratory), per arm over all executions:
    - tool calls total and by transport, skill and agent
    - tool errors total and by `error_class`
@@ -478,8 +494,8 @@ Cliffy, following the existing `--no-X` rule.
   change an app id, try to reach the oracle or another workspace through the
   backend, leave state behind for the next execution. Each must be caught.
 - Categorization: rule fixtures per category and per toolchain command
-  shape; redaction of known secrets; model fallback stubbed in unit tests;
-  a small labelled sample of real calls to measure classifier accuracy once.
+  shape; redaction of known secrets; a small blind-labelled sample of real
+  calls to measure rule accuracy once.
 - Trace parser fixtures per harness: recorded raw logs covering tool call,
   tool error, skill invocation, MCP call, sub-agent, retry, compaction and a
   hard kill, with expected `trace.jsonl` and `telemetry.json`.
@@ -496,8 +512,9 @@ In spec 1a, in this order:
 2. `claude-code` harness (primary)
 3. `pi` harness, after the spike has proven its telemetry (needed for the
    Directions talk head-to-head)
-4. al-tools MCP component, AL Tools NuGet toolchain component, call
-   categorization (rules + local Laya)
+4. al-tools MCP component (Claude Code only: pi 0.87.1 has no native MCP,
+   spike findings 2026-09-29 section 4), AL Tools NuGet toolchain component,
+   call categorization (rules only)
 5. runner with campaigns and blocks, staging, verdict workspace, records,
    report (console + JSON)
 6. a minimal refapp slice (Core, Rental, Test) and 2 tasks, enough to prove
