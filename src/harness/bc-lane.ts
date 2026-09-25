@@ -423,6 +423,9 @@ export async function buildApps(
     });
     const compile_ms = performance.now() - t0;
     for await (const e of Deno.readDir(pk)) {
+      // Only packages are checked: BCH writes its own index
+      // (cache_AppInfo.json) into .alpackages during the compile.
+      if (!e.name.toLowerCase().endsWith(".app")) continue;
       if (workspaceFiles.has(e.name)) continue;
       const sha = lockedByName.get(e.name);
       if (sha === undefined || await hashFile(pk, join(pk, e.name)) !== sha) {

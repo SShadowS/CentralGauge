@@ -803,3 +803,40 @@ Deno.test("BcLane.exclusive: ties among idle healthy containers rotate", async (
   }
   assertEquals(used, ["C1", "C2", "C3", "C1", "C2", "C3"]);
 });
+
+Deno.test("buildApps: BCH's cache_AppInfo.json index is not a symbol package; an unlocked .APP still is", async () => {
+  const ws = await workspace();
+  const bc = new FakeBc();
+  bc.onCompile = async (dir) => {
+    await Deno.writeTextFile(
+      join(dir, ".alpackages", "cache_AppInfo.json"),
+      "[]",
+    );
+  };
+  const built = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lock(),
+  });
+  assert(built.every((b) => b.ok));
+  bc.onCompile = async (dir) => {
+    await Deno.writeTextFile(
+      join(dir, ".alpackages", "Microsoft_System Application_28.0.0.0.APP"),
+      "cache",
+    );
+  };
+  await assertRejects(
+    async () =>
+      buildApps(bc, "C1", {
+        srcDir: ws,
+        apps: await readAppGraph(ws),
+        versions: new Map(),
+        outDir: await tmp(),
+        lock: await lock(),
+      }),
+    ValidationError,
+    "unlocked symbol package",
+  );
+});
