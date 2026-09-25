@@ -36,13 +36,11 @@ function bc(extra: Script = () => result({})) {
   return new FakeBc((cu, deployed, container) => {
     const src = deployedSource(deployed, "CGR Rental");
     const ten = src.includes("exit(10);");
-    // An agent file planted in the Test app could sabotage a shipped test (subscriber, install trigger).
+    // An agent file planted in the Test app could blank a shipped test (subscriber, install trigger).
     if (cu === 80010) {
-      return result({
-        ShippedPasses: deployedSource(deployed, "CGR Test").includes("SABOTAGE")
-          ? "Assert.IsTrue failed. sabotaged"
-          : true,
-      });
+      return deployedSource(deployed, "CGR Test").includes("SABOTAGE")
+        ? result({})
+        : result({ ShippedPasses: true });
     }
     if (cu === 80100) {
       return result({
@@ -76,6 +74,7 @@ async function setup(
     tests?: number[];
     edits?: Record<string, string>;
   },
+  opts: { passToPass?: boolean } = {},
 ) {
   const repo = await makeRefappRepo();
   const task = await loadTask(
@@ -83,7 +82,7 @@ async function setup(
       "reference-tests": suite(80100),
       "naive/weak": suite(80101),
       "naive/crashy": suite(80103),
-    }),
+    }, opts),
   );
   const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
   const staged = await stageRefappTask({
@@ -401,21 +400,67 @@ Deno.test("mutant_kill: a thrown agent run is rerun once on another container be
   );
 });
 
-Deno.test("mutant_kill: a failing trusted control makes the run unscored, not the agent's failure", async () => {
-  const fake = bc((cu) => cu === 80111 ? result({}) : result({}));
-  // The control (shipped 80010) reports nothing on the agent-run builds: the container is suspect.
+Deno.test("mutant_kill: a trusted control that does not pass on the rerun container makes the run unscored", async () => {
+  // The first agent attempt throws; afterwards every shipped run reports nothing: the rerun's control fails.
+  let thrown = false;
+  const fake = bc((cu) => {
+    if (cu !== 80111) return result({});
+    if (!thrown) {
+      thrown = true;
+      return "throw-infra";
+    }
+    return result({});
+  });
   const control = new FakeBc((cu, deployed, c) =>
-    cu === 80010 && deployedSource(deployed, "CGR Test").includes("80111")
-      ? result({})
-      : fake.script(cu, deployed, c)
+    cu === 80010 && thrown ? result({}) : fake.script(cu, deployed, c)
   );
   const { judgment } = await judge(
-    new BcLane(control, ["C1"]),
+    new BcLane(control, ["C1", "C2"]),
     await setup({ "off-by-one": "exit(9);" }, {
       edits: { "Test/src/Agent80111.Test.al": suite(80111) },
     }),
   );
   assertEquals(sc(judgment, "mutant_kill").passed, null);
+});
+
+Deno.test("mutant_kill: the rerun control is the shipped build; an agent file cannot blank it", async () => {
+  let calls = 0;
+  const fake = bc((cu) =>
+    cu === 80112 ? (calls++ === 0 ? "throw-infra" : result({})) : result({})
+  );
+  const { judgment } = await judge(
+    new BcLane(fake, ["C1", "C2"]),
+    await setup({ "off-by-one": "exit(9);" }, {
+      edits: {
+        "Test/src/Agent80112.Test.al": suite(80112),
+        "Test/src/Sabotage.Test.al": `codeunit 80121 "Sabotage"
+{
+    // SABOTAGE
+}
+`,
+      },
+    }),
+  );
+  // The control on the shipped build passes, so the rerun's missing procedure is the agent's.
+  assertEquals(sc(judgment, "mutant_kill").passed, false);
+});
+
+Deno.test("mutant_kill: no pass_to_pass means no trusted control: a thrown agent run stays unscored, no rerun", async () => {
+  const fake = bc((cu) => cu === 80113 ? "throw-infra" : result({}));
+  const { judgment } = await judge(
+    new BcLane(fake, ["C1", "C2"]),
+    await setup({ "off-by-one": "exit(9);" }, {
+      edits: { "Test/src/Agent80113.Test.al": suite(80113) },
+    }, {
+      passToPass: false,
+    }),
+  );
+  assertEquals(sc(judgment, "mutant_kill").passed, null);
+  assertEquals(
+    fake.tests.filter((t) => t.codeunit === 80113).length,
+    1,
+    "no rerun without a control",
+  );
 });
 
 Deno.test("mutant_kill: the scorer version is bumped for the agent-suite rules", () => {

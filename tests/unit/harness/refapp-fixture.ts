@@ -207,8 +207,11 @@ export async function addTestAuthoringTask(
   repo: RefappRepo,
   mutants: Record<string, string>,
   suites: Record<string, string> = {},
+  /** passToPass false: no visible pass_to_pass (a task with no trusted control). */
+  opts: { passToPass?: boolean } = {},
 ): Promise<string> {
   const t = "harness-tasks/tasks/HX-002";
+  const p2p = opts.passToPass ?? true;
   await write(
     repo.root,
     `${t}/task.yml`,
@@ -217,10 +220,12 @@ refapp_version: refapp-v1
 kind: test-authoring
 prompt: prompt.md
 source: refapp
-scorers: [build, pass_to_pass, mutant_kill]
-pass_to_pass:
-  - { codeunit: 80010, procedures: [ShippedPasses] }
-mutants: [${Object.keys(mutants).join(", ")}]
+scorers: [build, ${p2p ? "pass_to_pass, " : ""}mutant_kill]
+${
+      p2p
+        ? "pass_to_pass:\n  - { codeunit: 80010, procedures: [ShippedPasses] }\n"
+        : ""
+    }mutants: [${Object.keys(mutants).join(", ")}]
 `,
   );
   await write(repo.root, `${t}/prompt.md`, "Write tests for Rental.Price.");

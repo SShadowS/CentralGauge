@@ -13,7 +13,9 @@ import type { InfraRetryRecord } from "../tasks/interfaces.ts";
 import type { WantedApp } from "./bc-apps.ts";
 import type {
   DeployContext,
+  DeployTestResult,
   HarnessBc,
+  Held,
   LockedSymbols,
   Prepared,
 } from "./bc-lane.ts";
@@ -30,6 +32,7 @@ import { CASCADE_CODES } from "../stats/omission.ts";
 import {
   type BcLane,
   buildApps,
+  CleanupFailedError,
   deployAndTest,
   prepareApps,
   scorerPassed,
@@ -321,7 +324,6 @@ export async function runHeld(
   tests: TestSpec[],
   cleanupIds: string[],
   bc: HarnessBc = ctx.lane.bc,
-  maxInfraRetries?: number,
 ): Promise<{ rows: TestRow[] }> {
   const held = await ctx.lane.exclusive(
     {
@@ -336,9 +338,15 @@ export async function runHeld(
         cleanupIds,
         ctx: ctx.deploy,
       }),
-    undefined,
-    maxInfraRetries === undefined ? {} : { maxInfraRetries },
   );
+  return { rows: accountHeld(ctx, held) };
+}
+
+/** A held run's spans, containers, retries and messages go to the verdict log. */
+function accountHeld(
+  ctx: JudgeContext,
+  held: Held<DeployTestResult>,
+): TestRow[] {
   const s = ctx.log.spans;
   s.queue_ms += held.queue_ms;
   s.provisioning_ms += held.result.deployed.provisioning_ms;
@@ -353,7 +361,7 @@ export async function runHeld(
       `quarantined ${held.container}: ${held.result.cleanupError}`,
     );
   }
-  return { rows: held.result.rows };
+  return held.result.rows;
 }
 
 async function buildOracle(
@@ -639,6 +647,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   if (!prep.buildOk) return scores.failRest();
   scores.set("build", true);
 
+  let control: { prep: Prepared; specs: TestSpec[] } | null = null;
   // pass_to_pass first, in its own hold with trusted code only: agent test
   // code cannot unscore it, and it is decided by a real run even when the
   // submission is rejected below (M1-18 review items 1 and 2).
@@ -674,6 +683,8 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
         [...sp.candidateIds].reverse(),
       )).rows;
       scores.set("pass_to_pass", scorerPassed(r), r);
+      // Known to pass: the trusted control for agent-suite reruns.
+      if (scorerPassed(r) === true) control = { prep: sp, specs: p2p };
     } catch (err) {
       if (!infraThrown(err)) throw err;
       log.error = err instanceof Error ? err.message : String(err);
@@ -725,45 +736,59 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     );
 
   // Agent-suite runs (decision 2026-09-25-agent-suite-infra): a completed
-  // run with a missing procedure is the agent's (agentSuiteBc); a thrown run
-  // is rerun once on another container, behind a fresh trusted control (the
-  // shipped pass_to_pass on the same build, right before it). The control
-  // must complete (no infra row; it may fail on a mutant) or the run is infra.
+  // run with a missing procedure is the agent's (agentSuiteBc). A thrown run
+  // is rerun once, on another container (the lane excludes the failed one),
+  // only when a trusted control exists: there the shipped pass_to_pass build
+  // is deployed and must pass first, then the agent build. Without
+  // pass_to_pass there is no control and a thrown run stays infra.
   const discovered = new Map(agent.map((a) => [a.codeunit, a.procedures]));
   const suiteBc = agentSuiteBc(ctx.lane.bc, discovered);
-  const agentRun = async (
-    p: Prepared,
-    target: string,
-  ): Promise<TestRow[] | "infra"> => {
-    const control: TestSpec[] = t.pass_to_pass.map((r) => ({
-      codeunit: r.codeunit,
-      procedures: r.procedures,
-      target: `control:${target}`,
-    }));
-    const rows = (await runHeld(
-      ctx,
-      p.wanted,
-      [...control, ...specs(target)],
-      [...p.candidateIds].reverse(),
-      suiteBc,
-      1,
-    )).rows;
-    const ctl = rows.filter((r) => r.target === `control:${target}`);
-    if (ctl.some((r) => r.failure === "infra")) {
-      log.notes.push(`${target}: the trusted control did not complete`);
-      return "infra";
-    }
-    return rows.filter((r) => r.target === target);
+  const agentRun = async (p: Prepared, target: string): Promise<TestRow[]> => {
+    let attempt = 0;
+    const held = await ctx.lane.exclusive(
+      { taskId: t.id, variantId: i.executionId, attemptNumber: 1 },
+      async (c) => {
+        if (attempt++ > 0 && control) {
+          const ctl = await deployAndTest(ctx.lane.bc, c, {
+            wanted: control.prep.wanted,
+            tests: control.specs,
+            cleanupIds: [...control.prep.candidateIds].reverse(),
+            ctx: ctx.deploy,
+          });
+          if (ctl.cleanupError) {
+            throw new CleanupFailedError(
+              new Error("trusted control"),
+              ctl.cleanupError,
+              c,
+            );
+          }
+          if (scorerPassed(ctl.rows) !== true) {
+            throw new ContainerError(
+              `trusted control did not pass on ${c} before the agent rerun`,
+              c,
+              "test",
+            );
+          }
+          log.notes.push(
+            `${target}: agent suite rerun on ${c} after a passing trusted control`,
+          );
+        }
+        return await deployAndTest(suiteBc, c, {
+          wanted: p.wanted,
+          tests: specs(target),
+          cleanupIds: [...p.candidateIds].reverse(),
+          ctx: ctx.deploy,
+        });
+      },
+      undefined,
+      { maxInfraRetries: control ? 1 : 0 },
+    );
+    return accountHeld(ctx, held);
   };
 
   let mkRows: TestRow[];
   try {
-    const r = await agentRun(prep, "reference");
-    if (r === "infra") {
-      scores.set("mutant_kill", null, infraRows("reference"));
-      return scores.failRest();
-    }
-    mkRows = r;
+    mkRows = await agentRun(prep, "reference");
   } catch (err) {
     if (!infraThrown(err)) throw err;
     log.notes.push(
@@ -820,11 +845,6 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
         continue;
       }
       const rows = await agentRun(mp, target);
-      if (rows === "infra") {
-        mkRows.push(...allRows("infra"));
-        outcomes.push("infra");
-        continue;
-      }
       mkRows.push(...rows);
       outcomes.push(mutantOutcome(rows));
     } catch (err) {
