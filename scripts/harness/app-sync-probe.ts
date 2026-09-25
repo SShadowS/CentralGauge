@@ -4,6 +4,7 @@ import { basename, join, resolve } from "@std/path";
 import { setupContainers } from "../../cli/commands/bench/container-setup.ts";
 import type { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 import { ConfigManager } from "../../src/config/config.ts";
+import { allocatedContainer } from "../../src/harness/allocation.ts";
 import {
   loadLedger,
   saveLedger,
@@ -26,10 +27,10 @@ import {
 import { acquireBenchLock } from "../../src/utils/bench-lock.ts";
 
 // Positional arguments only; flags (--list-only, --keep) are read separately.
-const [container, outArg, rev = "refapp-v1-rc1"] = Deno.args.filter((a) =>
+const [containerArg, outArg, rev = "refapp-v1-rc1"] = Deno.args.filter((a) =>
   !a.startsWith("--")
 );
-if (!container || !outArg) {
+if (!containerArg || !outArg) {
   throw new Error(
     "usage: app-sync-probe.ts <container> <outDir> [refapp-rev] [--list-only | --keep]",
   );
@@ -37,9 +38,8 @@ if (!container || !outArg) {
 const listOnly = Deno.args.includes("--list-only");
 /** Leave the apps of the last step installed (M1-27 Step 3 observes them afterwards). */
 const keep = Deno.args.includes("--keep");
-if (["cronus28", "cronus284"].includes(container.toLowerCase())) {
-  throw new Error(`${container} is excluded from harness use`);
-}
+// Allowlist from the owner's allocation (coord root allocation.json), fail closed.
+const container = await allocatedContainer(containerArg);
 const release = acquireBenchLock("results", {
   command: `app-sync-probe ${container}`,
 });
