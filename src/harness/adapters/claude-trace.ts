@@ -56,10 +56,10 @@ const textOf = (c: unknown) =>
 
 /**
  * A whole shell command that is exactly one cg-al invocation: app names,
- * codeunit numbers, quotes and spaces only, so no ; && || | redirect,
- * substitution or wrapper shell can put other output in the result.
+ * codeunit numbers, quotes, spaces and tabs only (no CR or LF), so no ; && || |
+ * redirect, substitution, second line or wrapper shell can put other output in the result.
  */
-const SINGLE_CG_AL = /^\s*cg-al(\s+[A-Za-z0-9 ._"'-]*)?\s*$/;
+const SINGLE_CG_AL = /^[ \t]*cg-al([ \t]+[A-Za-z0-9 \t._"'-]*)?$/;
 /** Only these calls talk to the backend; any other tool's output is never read as a reply. */
 const isBackendCall = (tool: string, rawCommand: string | null) =>
   tool.startsWith("mcp__al-tools__") ||
