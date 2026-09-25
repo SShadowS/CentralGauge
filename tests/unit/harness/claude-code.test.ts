@@ -1438,3 +1438,116 @@ Deno.test("metrics: a killed stream: every declared field null has a reason; com
   assertStringIncludes(reasons.cost_usd, "no result record");
   assertEquals(r.telemetry.compactions, null);
 });
+
+const probeRecords = async () =>
+  (await Deno.readTextFile(FIXTURE)).split("\n").filter(Boolean).map((l) =>
+    JSON.parse(l)
+  );
+const toText = (recs: unknown[]) =>
+  recs.map((j) => JSON.stringify(j)).join("\n") + "\n";
+
+Deno.test("metrics: capabilities are the literal provenance of this parser", async () => {
+  const { r } = await parse(await Deno.readTextFile(FIXTURE));
+  assertEquals(raw(r).capabilities, {
+    v: 1,
+    parser: "claude-code-trace@2",
+    rules: "rules@1",
+    telemetry: [...claudeCodeAdapter.declared],
+    nested: ["per_model.requests"],
+    trace_types: [
+      "tool_call",
+      "model_request",
+      "subagent_spawn",
+      "skill_invoke",
+    ],
+  });
+  assert(Object.isFrozen(claudeCodeAdapter.declared), "declared is frozen");
+});
+
+Deno.test("metrics: a model in modelUsage with no assistant record gets null requests and a reason, never 0", async () => {
+  const recs = await probeRecords();
+  const res = recs.find((j) => j.type === "result");
+  res.modelUsage["claude-haiku-4-5"] = {
+    inputTokens: 5,
+    outputTokens: 7,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+  };
+  const { r } = await parse(toText(recs));
+  const by = Object.fromEntries(
+    r.telemetry.per_model.map((m) => [m.model, m.requests]),
+  );
+  assertEquals(by["anthropic/claude-sonnet-5"], 4);
+  assertEquals(by["claude-haiku-4-5"], null);
+  assertStringIncludes(
+    raw(r).incomplete_reasons["per_model[claude-haiku-4-5].requests"] ?? "",
+    "no assistant record",
+  );
+});
+
+Deno.test("metrics: a counted model missing from modelUsage is a stream problem", async () => {
+  const recs = await probeRecords();
+  const a = recs.find((j) => j.type === "assistant");
+  a.message.model = "claude-other-1";
+  const { r } = await parse(toText(recs));
+  const problems = (r.telemetry.raw_usage as { stream_problems: string[] })
+    .stream_problems;
+  assert(
+    problems.some((p) =>
+      p.includes("claude-other-1") && p.includes("modelUsage")
+    ),
+    problems.join("\n"),
+  );
+});
+
+Deno.test("metrics: reasons name the real source of exit_code and harness_version", async () => {
+  const recs = await probeRecords();
+  const { r } = await parse(
+    toText(recs.filter((j) => !(j.type === "system" && j.subtype === "init"))),
+    null,
+  );
+  const reasons = raw(r).incomplete_reasons;
+  assertStringIncludes(reasons["exit_code"] ?? "", "process exit code");
+  assertStringIncludes(reasons["harness_version"] ?? "", "system/init");
+});
+
+Deno.test("metrics: a structural problem with a complete capture keeps requests known; trace incomplete", async () => {
+  const recs = await probeRecords();
+  const i = recs.findIndex((j) =>
+    j.type === "user" &&
+    j.message?.content?.some?.((c: { type: string }) =>
+      c.type === "tool_result"
+    )
+  );
+  recs.splice(i, 1);
+  const { r } = await parse(toText(recs));
+  assertEquals(raw(r).trace_complete, false);
+  assertEquals(r.telemetry.per_model.map((m) => m.requests), [4]);
+});
+
+Deno.test("metrics: an assistant record with an id but no model makes requests null with a reason", async () => {
+  const recs = await probeRecords();
+  delete recs.find((j) => j.type === "assistant").message.model;
+  const { r } = await parse(toText(recs));
+  assertEquals(r.telemetry.per_model.map((m) => m.requests), [null]);
+  assertStringIncludes(
+    raw(r)
+      .incomplete_reasons["per_model[anthropic/claude-sonnet-5].requests"] ??
+      "",
+    "without a message id or model",
+  );
+});
+
+Deno.test("metrics: a non-JSON line names the nested requests reason", async () => {
+  const text = (await Deno.readTextFile(FIXTURE)).replace(
+    "\n",
+    "\nWARNING stray\n",
+  );
+  const { r } = await parse(text);
+  assertStringIncludes(
+    raw(r)
+      .incomplete_reasons["per_model[anthropic/claude-sonnet-5].requests"] ??
+      "",
+    "non-JSON",
+  );
+});
