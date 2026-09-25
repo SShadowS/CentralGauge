@@ -118,7 +118,8 @@ export function stripAl(al: string, keepStrings = false): string {
   for (let i = 0; i < al.length;) {
     const c = al[i]!;
     if (c === "/" && al[i + 1] === "/") {
-      while (i < al.length && al[i] !== "\n") i++;
+      // Any line terminator ends it: a lone CR must not hide the next line.
+      while (i < al.length && !/[\n\r\u0085\u2028\u2029]/.test(al[i]!)) i++;
       out += " ";
     } else if (c === "/" && al[i + 1] === "*") {
       const end = al.indexOf("*/", i + 2);
@@ -154,8 +155,10 @@ export interface AlObject {
   body: string;
 }
 
+// An object keyword at a line start or right after "}" or ";" (so a variable
+// type like `C: Codeunit 70001` is not an object), not followed by "=".
 const OBJECT_RE =
-  /^[ \t]*(table|tableextension|page|pageextension|codeunit|report|reportextension|query|xmlport|enum|enumextension|permissionset|permissionsetextension)\s+(\d+)\s*(?:"([^"]*)"|([A-Za-z0-9_]+))?/gim;
+  /(?<=(?:^|[};])[ \t]*)(table|tableextension|page|pageextension|codeunit|report|reportextension|query|xmlport|enum|enumextension|permissionset|permissionsetextension)\s+(\d+)(?!\s*=)\s*(?:"([^"]*)"|([A-Za-z0-9_]+))?/gim;
 
 /** Numbered objects of a file, parsed with comments and strings stripped. */
 export function alObjects(al: string): AlObject[] {
