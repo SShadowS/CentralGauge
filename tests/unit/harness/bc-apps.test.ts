@@ -367,8 +367,10 @@ Deno.test("trustedHarnessAppIds: staged harness manifests and named ledger entri
     !t.has("00000000-0000-4000-8000-00000000dddd"),
     "a ledger entry without a name is not trusted",
   );
-  assert(matches(BENCH_CANDIDATE_APP_ID, "CentralGauge_CG-AL-E001_1"));
-  assert(!matches(BENCH_CANDIDATE_APP_ID, "Evil App"));
+  assert(
+    !t.has(BENCH_CANDIDATE_APP_ID),
+    "the bench candidate belongs to the bench, never a harness removal",
+  );
 });
 
 Deno.test("applySync: ledger entries carry the app name", () => {

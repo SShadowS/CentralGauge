@@ -198,8 +198,8 @@ const exactName = (name: string) =>
  * harness app.json files (each root and its immediate subfolders; publisher
  * CentralGauge, every idRange inside a harness band) and from ledger entries
  * the harness wrote itself (with a name). Never from agent input. The bench
- * candidate id is the one explicit extra: an owned leftover whose name
- * carries the bench task id and attempt.
+ * candidate is never trusted: it belongs to the bench, and a leftover one is
+ * a publish collision (infra, reroute), not a harness removal.
  */
 export async function trustedHarnessAppIds(
   roots: string[],
@@ -235,6 +235,5 @@ export async function trustedHarnessAppIds(
       out.set(id.toLowerCase(), exactName(entry.name));
     }
   }
-  out.set(BENCH_CANDIDATE_APP_ID, "^CentralGauge_[A-Za-z0-9-]+_\\d+$");
   return out;
 }
