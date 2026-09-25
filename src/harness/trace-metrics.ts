@@ -1,6 +1,6 @@
 /** Per-execution metrics from a trace, read with the run's own capabilities (spec 1a sections 5 and 9). */
 
-import { join } from "@std/path";
+import { isAbsolute, join, normalize } from "@std/path";
 import type { Category } from "./classify.ts";
 import type { ExecutionRecord } from "./records.ts";
 import type { TraceEvent } from "./trace.ts";
@@ -36,6 +36,8 @@ export interface LoadedTrace {
   complete: boolean;
   trace_types: string[];
 }
+
+const SHELL_TOOLS = new Set(["Bash", "PowerShell", "bash"]);
 
 const bump = (m: Record<string, number>, k: string) => (m[k] = (m[k] ?? 0) + 1);
 
@@ -95,7 +97,11 @@ export function traceMetrics(
       e.category !== null && e.classifier !== null &&
       e.classifier.endsWith(`@${RULES_VERSION}`)
     ) c = { category: e.category, classifier: e.classifier };
-    else if (e.command_cut === true) {
+    else if (
+      e.command_cut === true ||
+      (e.command === null && SHELL_TOOLS.has(e.tool ?? ""))
+    ) {
+      // A dropped command, or a v1 shell call whose command was never recorded.
       m.unreplayable++;
       c = { category: "unclassified", classifier: `none@${RULES_VERSION}` };
     } else {
@@ -119,8 +125,8 @@ export function traceMetrics(
 
 /**
  * Each execution's published trace with the run's own capabilities. Never
- * throws: a missing trace is null, a malformed one is null and listed in
- * `invalid`. Records written before M2-05 have no `trace_complete` and read
+ * throws: no trace_path is null; a missing, malformed or out-of-root trace is
+ * null and listed in `invalid`. Records written before M2-05 have no `trace_complete` and read
  * as incomplete.
  */
 export async function loadTraces(
@@ -142,20 +148,35 @@ export async function loadTraces(
       capabilities?: { trace_types?: unknown };
     } | null;
     const types = raw?.capabilities?.trace_types;
+    const rel = e.trace_path;
+    const bad = (error: string) => {
+      traces.set(e.id, null);
+      invalid.push({ execution: e.id, error });
+    };
+    // A published record names a path inside the results root; anything else is never read.
+    if (
+      isAbsolute(rel) || /^[A-Za-z]:/.test(rel) ||
+      normalize(rel).split(/[\\/]/).includes("..")
+    ) {
+      bad("trace_path outside the results root");
+      continue;
+    }
+    const full = join(root, rel);
     try {
       traces.set(e.id, {
-        events: await readTrace(join(root, e.trace_path)),
+        events: await readTrace(full),
         complete: raw?.trace_complete === true,
         trace_types: Array.isArray(types) ? types.map(String) : ["tool_call"],
       });
     } catch (err) {
-      traces.set(e.id, null);
-      if (!(err instanceof Deno.errors.NotFound)) {
-        invalid.push({
-          execution: e.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      // The record says a trace was published, so a missing file is data loss.
+      // Messages name the relative path only: the JSON must not depend on the machine.
+      bad(
+        err instanceof Deno.errors.NotFound
+          ? `trace missing: ${rel}`
+          : (err instanceof Error ? err.message : String(err))
+            .replaceAll(full, rel),
+      );
     }
   }
   return { traces, invalid };

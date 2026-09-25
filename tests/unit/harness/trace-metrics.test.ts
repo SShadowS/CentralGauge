@@ -1,8 +1,13 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
+import { join } from "@std/path";
 import { claudeTrace } from "../../../src/harness/adapters/claude-trace.ts";
 import type { J, Line } from "../../../src/harness/adapters/jsonl.ts";
 import type { TraceEvent } from "../../../src/harness/trace.ts";
-import { traceMetrics } from "../../../src/harness/trace-metrics.ts";
+import type { ExecutionRecord } from "../../../src/harness/records.ts";
+import {
+  loadTraces,
+  traceMetrics,
+} from "../../../src/harness/trace-metrics.ts";
 
 const FIXTURE = "tests/fixtures/harness/claude-code/probe.jsonl";
 const lines = (text: string): Line<J>[] =>
@@ -111,4 +116,59 @@ Deno.test("traceMetrics: an in-container toolchain compile is counted apart from
     null,
     null,
   ]);
+});
+
+Deno.test("traceMetrics: a v1 shell call (no command recorded) is unreplayable, not unclassified", () => {
+  const m = traceMetrics([
+    call({
+      command: null,
+      command_cut: null,
+      category: null,
+      classifier: null,
+    }),
+    call({
+      seq: 2,
+      call_id: "b",
+      tool: "Read",
+      transport: "builtin",
+      command: null,
+      command_cut: null,
+      category: null,
+      classifier: null,
+    }),
+  ], { complete: true, trace_types: ["tool_call"] });
+  assertEquals([
+    m.unreplayable,
+    m.unclassified,
+    m.rule_classified,
+    m.categories.read,
+  ], [1, 1, 1, 1]);
+});
+
+Deno.test("loadTraces: a missing file behind trace_path and a path outside the root are invalid; errors carry no local root", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const exec = (id: string, trace_path: string | null, raw: unknown = null) =>
+    ({
+      id,
+      trace_path,
+      telemetry: { raw_usage: raw },
+    }) as unknown as ExecutionRecord;
+  await Deno.mkdir(join(root, "runs", "bad"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, "runs", "bad", "trace.jsonl"),
+    '{"v":7}\n',
+  );
+  const { traces, invalid } = await loadTraces(root, [
+    exec("gone", "runs/gone/trace.jsonl"),
+    exec("up", "../outside/trace.jsonl"),
+    exec("abs", join(root, "runs", "bad", "trace.jsonl")),
+    exec("bad", "runs/bad/trace.jsonl", { capabilities: { trace_types: "x" } }),
+    exec("none", null),
+  ]);
+  assertEquals([...traces.values()], [null, null, null, null, null]);
+  assertEquals(invalid.map((x) => x.execution), ["gone", "up", "abs", "bad"]);
+  assertStringIncludes(invalid[0]!.error, "missing");
+  assertStringIncludes(invalid[1]!.error, "outside the results root");
+  assertStringIncludes(invalid[3]!.error, "runs/bad/trace.jsonl:1");
+  for (const x of invalid) assertEquals(x.error.includes(root), false, x.error);
 });
