@@ -30,7 +30,10 @@ import {
   planBlocks,
   RecordStore,
 } from "../../../src/harness/records.ts";
-import { SECRETS_DIR_PREFIX } from "../../../src/harness/sandbox.ts";
+import {
+  READY_FILE,
+  SECRETS_DIR_PREFIX,
+} from "../../../src/harness/sandbox.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
   ccBehavior,
@@ -1315,4 +1318,24 @@ Deno.test({
   );
   assert(!await exists(t.env.credentialLedger!), "no slot reserved");
   assertEquals(t.docker.runs, []);
+});
+
+Deno.test("non-enforced run: the secrets mount holds ready when the container starts; ready is not a secret", async () => {
+  const t = await makeEnv();
+  assert(!t.env.egressEnforced);
+  const seen: boolean[] = [];
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    const secrets = call.mounts.get("C:\\cg-secrets")!.src;
+    seen.push(
+      await Deno.stat(join(secrets, READY_FILE)).then(
+        (i) => i.isFile && i.size === 0,
+        () => false,
+      ),
+    );
+    return await inner(call, io);
+  };
+  const r = await runCell(t.env, await cellFor(t));
+  assertEquals(seen, [true]);
+  assertEquals(r.executions.length, 1);
 });

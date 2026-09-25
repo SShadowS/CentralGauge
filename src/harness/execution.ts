@@ -63,6 +63,7 @@ import {
   OP_TIMEOUT_MS,
   prepareSecrets,
   publishRedacted,
+  READY_FILE,
   redactText,
   removeSecrets,
   restrictPath,
@@ -1194,6 +1195,11 @@ export async function runExecution(
       );
       secretsDir = s.dir;
       secrets = s.values;
+      // Non-enforced runs: the entrypoint waits for ready (M1-33 writes it
+      // after the egress preflight in enforced runs). Empty, never custody.
+      if (!env.egressEnforced) {
+        await Deno.writeTextFile(join(s.dir, READY_FILE), "");
+      }
       await commitTemp(custodyTmp, p.custody, JSON.stringify(s.values));
       await commitTemp(
         keysTmp,
