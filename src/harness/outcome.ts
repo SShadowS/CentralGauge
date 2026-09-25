@@ -182,7 +182,10 @@ export function cellsFromRecords(
           }
         }
       }
-      const known = all.map((e) => e.telemetry.cost_usd);
+      // Sum in attempt order (unique per cell, checked above): float
+      // addition is not associative, so input order must not leak in.
+      const known = [...all].sort((x, y) => x.attempt - y.attempt)
+        .map((e) => e.telemetry.cost_usd);
       const knownSum = known.reduce<number>((a, c) => a + (c ?? 0), 0);
       const cell: CellRecord = {
         task: b.task_id,
