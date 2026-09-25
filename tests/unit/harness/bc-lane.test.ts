@@ -904,3 +904,23 @@ Deno.test("BcLane.compileOn: an infra fault moves to another allocated container
     "bounded: each allocated container once",
   );
 });
+
+Deno.test("deploy: owned apps with kept tenant data at a higher version are cleaned before provisioning; foreign data is left alone", async () => {
+  const bc = new FakeBc();
+  const lane = new BcLane(bc, ["C1"]);
+  const p = await prep(bc, lane);
+  // After a bench prenuke: our apps are gone, their data stays (Cronus281, M1-27).
+  bc.keptData.set(
+    "C1",
+    new Map([["CGR Core", "1.0.60000.1"], ["Continia Core", "9.0.0.0"]]),
+  );
+  const ctx = { ledgerRoot: await tmp(), trustedRoots: [p.pristine] };
+  const d = await deploy(bc, "C1", p.wanted, ctx);
+  assertEquals(d.published, 3);
+  assertEquals(bc.cleaned.at(-1), ["CGR Core"]);
+  assertEquals(
+    [...bc.keptData.get("C1")!.keys()],
+    ["Continia Core"],
+    "a foreign app's data is never touched",
+  );
+});

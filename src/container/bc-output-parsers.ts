@@ -446,7 +446,7 @@ export function parseHarnessSyncOutput(
     let m: RegExpExecArray | null;
     if ((m = /^SYNC_REMOVE:(\S+)/.exec(line))) {
       r.removed.push(m[1]!.toLowerCase());
-    } else if ((m = /^SYNC_REMOVE_WARN:(.*)$/.exec(line))) {
+    } else if ((m = /^SYNC_(?:REMOVE|CLEAN)_WARN:(.*)$/.exec(line))) {
       r.warnings.push(m[1]!);
     } else if ((m = /^SYNC_REMOVE_(?:INCOMPLETE|FAILED):(.*)$/.exec(line))) {
       r.removeIncomplete.push(m[1]!);

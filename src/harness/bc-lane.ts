@@ -60,6 +60,8 @@ export interface HarnessBc {
       publish: string[];
       /** Trusted removal allowlist (trustedHarnessAppIds): id to name regex. */
       allow: ReadonlyMap<string, string>;
+      /** Owned apps to publish: kept tenant data purged when unpublished (M1-15a). */
+      clean?: { id: string; name: string }[];
     },
   ): Promise<HarnessSyncResult>;
   runHarnessTests(container: string, codeunit: number): Promise<TestResult>;
@@ -790,6 +792,11 @@ export async function deploy(
       removeIds: plan.remove,
       publish: plan.publish.map((w) => w.file),
       allow,
+      // Kept data of our own apps (bench prenuke keeps data; stamp versions
+      // are not monotonic) would refuse a lower version (M1-15a).
+      clean: plan.publish.filter((w) => allow.has(w.id.toLowerCase())).map((
+        w,
+      ) => ({ id: w.id, name: w.name })),
     });
     assertSyncComplete(sync, container);
   } catch (err) {

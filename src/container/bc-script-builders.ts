@@ -751,6 +751,8 @@ export function buildSyncHarnessAppsScript(
   credentials: ContainerCredentials = { username: "admin", password: "admin" },
   /** Trusted allowlist: app id to the regex its name must match (trustedHarnessAppIds). */
   allow: ReadonlyMap<string, string> = new Map(),
+  /** Owned apps about to be published: purge kept tenant data when not published (M1-15a). */
+  clean: { id: string; name: string }[] = [],
 ): string {
   const cn = harnessContainerName(containerName);
   const useDevEndpoint =
@@ -771,6 +773,13 @@ export function buildSyncHarnessAppsScript(
     xs.length === 0
       ? "@()"
       : `@(${xs.map((x) => `'${escapeForPS(x)}'`).join(", ")})`;
+  const cleanList = clean.length === 0
+    ? "@()"
+    : `@(${
+      clean.map((c) =>
+        `@{ id = '${escapeForPS(c.id)}'; name = '${escapeForPS(c.name)}' }`
+      ).join(", ")
+    })`;
   const table = `@{ ${
     [...allow].map(([id, re]) => `'${escapeForPS(id)}' = '${escapeForPS(re)}'`)
       .join("; ")
@@ -811,6 +820,38 @@ ${buildHarnessRemoveBlock()}
         $cgReport | ForEach-Object { Write-Output $_ }
         # A contaminated container is never published onto.
         if (@($cgReport | Where-Object { "$_" -like 'SYNC_REMOVE_FAILED:*' }).Count -gt 0) { exit 1 }
+      }
+      $cgClean = ${cleanList}
+      if ($cgClean.Count -gt 0) {
+        # Owned apps about to be published that are NOT published now may still
+        # have tenant data at a higher version (the bench prenuke keeps data);
+        # BC then refuses the lower version. Purge that data by name (M1-15a).
+        # A published app is left to the removal path above.
+        try {
+          $cgCleanOut = Invoke-ScriptInBcContainer -containerName '${cn}' -scriptblock {
+            param($items, [hashtable]$allow)
+            foreach ($it in $items) {
+              $id = "$($it.id)"
+              $name = "$($it.name)"
+              if (-not $allow.ContainsKey($id) -or $name -cnotmatch $allow[$id]) {
+                Write-Output "SYNC_CLEAN_REFUSED:$id $name not on the removal allowlist"
+                continue
+              }
+              if (@(Get-NAVAppInfo -ServerInstance BC -Id $id).Count -gt 0) { continue }
+              try {
+                Sync-NAVApp -ServerInstance BC -Tenant default -Name $name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop
+                Write-Output "SYNC_CLEAN:$id"
+              } catch {
+                # Nothing to clean is not an error; a real problem surfaces at the publish below.
+                Write-Output "SYNC_CLEAN_WARN:$id $($_.Exception.Message)"
+              }
+            }
+          } -argumentList $cgClean, $cgAllow
+        } catch {
+          $cgCleanOut = @("SYNC_CLEAN_WARN:invoke $($_.Exception.Message)")
+        }
+        $cgCleanOut | ForEach-Object { Write-Output $_ }
+        if (@($cgCleanOut | Where-Object { "$_" -like 'SYNC_CLEAN_REFUSED:*' }).Count -gt 0) { exit 1 }
       }
       $cgFiles = ${list(appFiles)}
       for ($i = 0; $i -lt $cgFiles.Count; $i++) {

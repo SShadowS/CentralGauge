@@ -421,3 +421,20 @@ Deno.test("buildSyncHarnessAppsScript: publish failure messages collapse whitesp
     "-replace '\\s+', ' '",
   );
 });
+
+Deno.test("buildSyncHarnessAppsScript: owned apps to publish are cleaned by name only when not published, before any publish", () => {
+  const s = buildSyncHarnessAppsScript(
+    "Cronus281",
+    [],
+    ["C:\a.app"],
+    undefined,
+    new Map([[IDS.core, "^CGR Core$"]]),
+    [
+      { id: IDS.core, name: "CGR Core" },
+    ],
+  );
+  const clean = s.indexOf("-Mode Clean", s.indexOf("SYNC_CLEAN"));
+  assert(clean > 0 && clean < s.indexOf("Publish-BcContainerApp"));
+  assertStringIncludes(s, "'CGR Core'");
+  assertStringIncludes(s, "SYNC_CLEAN:");
+});
