@@ -459,3 +459,26 @@ Deno.test("validateCampaignRecords: a fail with a null scorer is consistent; uns
   });
   assertStringIncludes(bad.join("\n"), "verdict");
 });
+
+Deno.test("validateCampaignRecords: a campaign mixing execution record versions is refused", async () => {
+  const r = await scenario();
+  const old = {
+    ...r.executions[2]!,
+    v: 1 as const,
+    validity: { incomplete_telemetry: [], infra_exposed: false },
+  };
+  const text = (await problems({
+    ...r,
+    executions: [r.executions[0]!, r.executions[1]!, old],
+  })).join("\n");
+  assertStringIncludes(text, "mixes execution record versions");
+  assertStringIncludes(text, r.executions[0]!.id);
+  assertStringIncludes(text, old.id);
+  // One version throughout (all v: 1) is consistent.
+  const v1 = r.executions.map((e) => ({
+    ...e,
+    v: 1 as const,
+    validity: { incomplete_telemetry: [], infra_exposed: false },
+  }));
+  assertEquals(await problems({ ...r, executions: v1 }), []);
+});

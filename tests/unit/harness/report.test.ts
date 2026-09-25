@@ -48,6 +48,7 @@ async function records(): Promise<CampaignRecords> {
       telemetry: telemetry(cost),
       validity: {
         incomplete_telemetry: arm === "plain" ? ["turns"] : [],
+        incomplete_observed: [],
         infra_exposed: arm === "skills" && task === "HX-002",
       },
     });
@@ -497,4 +498,24 @@ Deno.test("report: pass-rate-primary leads with pass rate and labels cost and pa
     lines.find((l) => l.includes("skills vs plain, cost_per_solved_task"))!,
     "[exploratory]",
   );
+});
+
+Deno.test("coverage lists executions with unverified components", async () => {
+  const base = await records();
+  const e = base.executions[0]!;
+  const unverified = {
+    ...e,
+    validity: { ...e.validity, incomplete_observed: ["loaded_components"] },
+  } as typeof e;
+  const r = await buildReport(
+    { ...base, executions: [unverified, ...base.executions.slice(1)] },
+    { resamples: 50 },
+  );
+  assertEquals(
+    r.coverage.map((c) => [c.arm, c.unverified_components]),
+    [["plain", [e.id]], ["skills", []]],
+  );
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(text, `unverified components: ${e.id}`);
+  assertEquals(text.split("unverified components:").length, 2);
 });

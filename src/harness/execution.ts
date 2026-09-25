@@ -1,0 +1,1308 @@
+/**
+ * One execution (spec 1a section 5 items 1-6) and one cell (section 8).
+ * Live path: gate -> stage (private) -> pin image -> config -> grant ->
+ * intent -> secrets + custody -> docker run (quarantine) -> revoke (drain)
+ * -> delete secrets mount -> confirmed termination -> draft -> publish.
+ * Recovery resumes from the intent or the draft; every step is idempotent.
+ *
+ * Private state (work, quarantine, custody, pending, intents, task
+ * snapshots) lives under env.privateRoot, never under results/; results/
+ * receives only redacted, finished files.
+ */
+
+import { join } from "@std/path";
+import type { PricingBook } from "./pricing.ts";
+import type { RefappRef, SymbolPackage } from "./identity.ts";
+import type { ResolvedManifest } from "./manifest.ts";
+import type {
+  Block,
+  ExecutionRecord,
+  JudgmentRecord,
+  RunKind,
+} from "./records.ts";
+import type { LoadedTask } from "./task.ts";
+import {
+  ConfigurationError,
+  ContainerError,
+  ValidationError,
+} from "../errors.ts";
+import {
+  incompleteTelemetry,
+  observedMismatch,
+  type ParsedRun,
+  requestedComponents,
+} from "./adapter.ts";
+import { adapterFor } from "./adapters/mod.ts";
+import type { Backend, HostLogLine } from "./backend.ts";
+import type { BcLane, DeployContext } from "./bc-lane.ts";
+import { reserveCredentialRun } from "./credential-budget.ts";
+import { exists, freezeWorkspace, safeCopyTree } from "./fsutil.ts";
+import { hashFile, hashJson, hashTree } from "./hash.ts";
+import { taskSetIdentity } from "./identity.ts";
+import { forTask } from "./manifest.ts";
+import {
+  ExecutionRecordSchema,
+  outcomePolicy,
+  RecordStore,
+  retryProblem,
+} from "./records.ts";
+import {
+  bounded,
+  type DockerCli,
+  type IcaclsRunner,
+  OP_TIMEOUT_MS,
+  prepareSecrets,
+  publishRedacted,
+  redactText,
+  removeSecrets,
+  runSandbox,
+  sandboxName,
+  type SandboxResult,
+  type SecretValue,
+  sweepOwnedSandboxes,
+  sweepStaleSecrets,
+} from "./sandbox.ts";
+import { type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
+import { currentScorerFingerprint, judge, writeVerdictLog } from "./verdict.ts";
+
+export type PublishStep =
+  | "draft"
+  | "run"
+  | "execution"
+  | "artifact"
+  | "judgment";
+
+export interface HarnessEnv {
+  repoRoot: string;
+  harnessRoot: string;
+  /** results/harness: finished, redacted files only. */
+  resultsRoot: string;
+  /** Private state (work, quarantine, custody, pending, intents), never under results/. */
+  privateRoot: string;
+  store: RecordStore;
+  lane: BcLane;
+  backend: Backend;
+  backendUrl: string;
+  docker: DockerCli;
+  owner: string;
+  symbols: SymbolPackage[];
+  symbolStore: string;
+  secretsSource: string;
+  /** Windows custody ACL seam (tests inject icacls); defaults to the real icacls and user. */
+  secretAcl?: { icacls: IcaclsRunner; user: string };
+  /** The per-container BC ledger; trusted roots are set per grant and judgment, never here. */
+  deploy: Pick<DeployContext, "ledgerRoot">;
+  pricing(at: Date): Promise<PricingBook>;
+  /** Started by a human at a terminal; no automatic retries. */
+  supervised: boolean;
+  /** True only when M1-24 confirmed the verified enforcement state at start (M1-33, M1-34). */
+  egressEnforced: boolean;
+  /** Shared cross-lane reservation ledger for supervised credential-bearing runs. */
+  credentialLedger: string | null;
+  /** Coordination lane name recorded with a reservation. */
+  lane_id: string;
+  /** Operator interrupt (Ctrl+C, M1-24). */
+  stop?: AbortSignal;
+  now?: () => Date;
+  timeoutMsFor?: (minutes: number) => number;
+  killGraceMs?: number;
+  opTimeoutMs?: number;
+  maxCaptureBytes?: number;
+  /** Test seams: crash after a publication step, before the draft, or inside cleanup. */
+  hooks?: {
+    after?(step: PublishStep): Promise<void>;
+    beforeDraft?(): Promise<void>;
+    afterPublished?(): Promise<void>;
+  };
+}
+
+export interface CellRef {
+  campaignId: string;
+  block: Block;
+  orderInBlock: number;
+  arm: string;
+  armManifest: ResolvedManifest;
+  armManifestHash: string;
+  task: LoadedTask;
+  taskVisibleHash: string;
+  oracleHash: string;
+  refapp: RefappRef;
+}
+
+export interface AttemptRef {
+  attempt: number;
+  runKind: RunKind;
+  retryOf: string | null;
+}
+
+interface Intent {
+  v: 2;
+  execution_id: string;
+  /** prepared: nothing released; released: custody written, sandbox may start; published: records written. */
+  phase: "prepared" | "released" | "published";
+  /** The results root of the command that started the attempt (recovery publishes there). */
+  results_root: string;
+  cell: Omit<CellRef, "task"> & { task_dir: string };
+  /** Private snapshot of the task directory at run start (folder named by the task id). */
+  task_snapshot: string;
+  /** The effective execution manifest (forTask), never re-derived. */
+  manifest: ResolvedManifest;
+  at: AttemptRef;
+  started_at: string;
+  /** The pricing book loaded at run start: recovery prices with it. */
+  pricing: PricingBook;
+  sandbox: string;
+  workspace: string;
+  pristine_hash: string;
+}
+
+interface Draft {
+  v: 1;
+  execution: ExecutionRecord;
+  artifact: { workspace_hash: string; stored_path: string } | null;
+  usage_reset_at: string | null;
+}
+
+export function privatePaths(env: HarnessEnv, id: string) {
+  const p = env.privateRoot;
+  return {
+    work: join(p, "work", id),
+    quarantine: join(p, "quarantine", id),
+    custody: join(p, "custody", `${id}.json`),
+    pending: join(p, "pending", id),
+    intent: join(p, "intents", `${id}.json`),
+    taskCopy: join(p, "taskcopy", id),
+    raw: join(p, "quarantine", id, "raw.jsonl"),
+    stderr: join(p, "quarantine", id, "stderr.txt"),
+    host: join(p, "quarantine", id, "host-log.jsonl"),
+    trace: join(p, "quarantine", id, "trace.jsonl"),
+  };
+}
+
+const msg = (err: unknown) => err instanceof Error ? err.message : String(err);
+
+/** Temp write, sync, rename: a power loss never leaves a short file under the final name. */
+async function writeAtomic(path: string, text: string) {
+  await Deno.mkdir(join(path, ".."), { recursive: true });
+  const tmp = `${path}.tmp-${crypto.randomUUID()}`;
+  try {
+    const f = await Deno.open(tmp, { write: true, createNew: true });
+    try {
+      const bytes = new TextEncoder().encode(text);
+      for (let off = 0; off < bytes.length;) {
+        off += await f.write(bytes.subarray(off));
+      }
+      await f.sync();
+    } finally {
+      f.close();
+    }
+    await Deno.rename(tmp, path);
+  } catch (err) {
+    await Deno.remove(tmp).catch(() => {});
+    throw err;
+  }
+}
+
+/** Remove `.tmp-` leftovers of writeAtomic in a private dir (custody temps hold plaintext secrets). */
+async function removeTemps(dir: string, prefix = ""): Promise<void> {
+  let names: string[];
+  try {
+    names = [...Deno.readDirSync(dir)].filter((e) =>
+      e.isFile && e.name.startsWith(prefix) && e.name.includes(".tmp-")
+    ).map((e) => e.name);
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return;
+    throw err;
+  }
+  for (const n of names) {
+    await Deno.remove(join(dir, n)).catch((err) => {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    });
+  }
+}
+
+/** Move an unreadable private file to privateRoot/broken for the operator; recovery continues. */
+async function quarantineFile(
+  env: HarnessEnv,
+  path: string,
+  name: string,
+  why: string,
+): Promise<void> {
+  const dest = join(env.privateRoot, "broken", name);
+  await Deno.mkdir(join(dest, ".."), { recursive: true });
+  await Deno.rename(path, dest);
+  console.warn(`[WARN] recovery: ${why}; moved ${path} to ${dest}`);
+}
+
+/** A private JSON file: missing is null, anything else unreadable names the file. */
+async function readJson<T>(path: string): Promise<T | null> {
+  let text: string;
+  try {
+    text = await Deno.readTextFile(path);
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return null;
+    throw new ValidationError(`cannot read ${path}: ${msg(err)}`, [path]);
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch (err) {
+    throw new ValidationError(`invalid JSON in ${path}: ${msg(err)}`, [path]);
+  }
+}
+
+/**
+ * Redact every string (keys and values) before serializing: redacting the
+ * serialized text would miss a secret that JSON escapes (a quote or a
+ * backslash in it).
+ */
+function redactDeep(v: unknown, secrets: SecretValue[]): unknown {
+  if (typeof v === "string") return redactText(v, secrets).text;
+  if (Array.isArray(v)) return v.map((x) => redactDeep(x, secrets));
+  if (v !== null && typeof v === "object") {
+    return Object.fromEntries(
+      Object.entries(v).map((
+        [k, x],
+      ) => [redactText(k, secrets).text, redactDeep(x, secrets)]),
+    );
+  }
+  return v;
+}
+
+/**
+ * Absolute private paths (plain, forward-slash and JSON-escaped spellings)
+ * are scrubbed from everything published, like secrets.
+ */
+function privatePathValues(env: HarnessEnv): SecretValue[] {
+  const r = env.privateRoot;
+  return [
+    ...new Set([r, r.replaceAll("\\", "/"), JSON.stringify(r).slice(1, -1)]),
+  ].map((value) => ({ name: "private-path", value }));
+}
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|bmp|webp)$/i;
+
+/** Spec 1b section 6: whether image attachments reached the model. */
+export function imageAttachments(
+  attachments: string[],
+  support: boolean | null,
+): ExecutionRecord["image_attachments"] {
+  if (!attachments.some((a) => IMAGE_EXT.test(a))) return "none";
+  return support === true
+    ? "delivered"
+    : support === false
+    ? "unsupported"
+    : "unknown";
+}
+
+/**
+ * C:\config: settings.json, manifest.json and bundle copies. Each component
+ * is copied first and its copy hashed, so what is mounted is what was
+ * verified; any changed component (file or directory) is refused.
+ */
+export async function writeConfigDir(
+  harnessRoot: string,
+  dir: string,
+  m: ResolvedManifest,
+): Promise<void> {
+  await Deno.mkdir(join(dir, "bundle"), { recursive: true });
+  const parts: [string, { path: string; hash: string }][] = [];
+  for (const k of ["instructions", "skills", "agents", "hooks"] as const) {
+    const c = m[k];
+    if (c !== null) parts.push([k, c]);
+  }
+  m.plugins.forEach((p, i) => parts.push([`plugins/${i}`, p]));
+  for (const [name, c] of parts) {
+    const src = join(harnessRoot, c.path);
+    const dst = join(dir, "bundle", ...name.split("/"));
+    const st = await Deno.lstat(src);
+    let now: string;
+    if (st.isSymlink) {
+      throw new ConfigurationError(`component ${name} (${c.path}) is a link`);
+    }
+    // Part 1 rule: a directory hashes as its bundle tree, a file as hashJson({ file: sha256 }).
+    if (st.isDirectory) {
+      await safeCopyTree(src, dst);
+      now = await hashTree(dst, "bundle");
+    } else {
+      await Deno.mkdir(dst, { recursive: true });
+      const file = join(dst, c.path.split("/").pop()!);
+      await Deno.copyFile(src, file);
+      now = await hashJson({ file: await hashFile(dst, file) });
+    }
+    if (now !== c.hash) {
+      throw new ConfigurationError(
+        `component ${name} (${c.path}) changed since the campaign was created`,
+      );
+    }
+  }
+  await Deno.writeTextFile(
+    join(dir, "settings.json"),
+    JSON.stringify(
+      {
+        harness: m.harness,
+        harness_version: m.harness_version,
+        models: m.models,
+        settings: m.settings.native,
+        limits: m.limits,
+        toolchain: m.toolchain,
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  await Deno.writeTextFile(
+    join(dir, "manifest.json"),
+    JSON.stringify(m, null, 2) + "\n",
+  );
+}
+
+/** Nothing ran: exact zero cost. */
+function notStarted(exitCode: number | null): ParsedRun {
+  return {
+    telemetry: {
+      harness_version: null,
+      cost_usd: 0,
+      cost_source: "estimated",
+      pricing_snapshot: "none: the harness did not start",
+      reported_cost_usd: null,
+      per_model: [],
+      turns: null,
+      compactions: null,
+      wall_ms: null,
+      exit_code: exitCode,
+      stop_reason: null,
+      refusal_detected: null,
+      raw_usage: null,
+    },
+    observed: { harness_version: null, models: null, loaded_components: null },
+    unobservable: [],
+    didWork: false,
+    termination: null,
+    usageResetAt: null,
+    imageSupport: null,
+    traceEvents: 0,
+  };
+}
+
+/** The harness ran but its log was refused (contradictory records): everything unknown. */
+function unparsed(exitCode: number | null, m: ResolvedManifest): ParsedRun {
+  const p = notStarted(exitCode);
+  return {
+    ...p,
+    telemetry: {
+      ...p.telemetry,
+      cost_usd: null,
+      cost_source: null,
+      pricing_snapshot: null,
+    },
+    unobservable: requestedComponents(m),
+  };
+}
+
+/** raw_usage.stream_problems of an adapter parse (M1-32), [] when absent. */
+function streamProblems(raw: unknown): string[] {
+  const p = raw !== null && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)["stream_problems"]
+    : undefined;
+  return Array.isArray(p) ? p.map(String) : [];
+}
+
+/** Backend host log, tolerant of a line cut by a crash: bad lines are counted, never fatal. */
+async function hostLog(
+  path: string,
+): Promise<{ lines: HostLogLine[]; bad: number[] }> {
+  let text = "";
+  try {
+    text = await Deno.readTextFile(path);
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) {
+      throw new ValidationError(`cannot read host log ${path}: ${msg(err)}`, [
+        path,
+      ]);
+    }
+  }
+  const lines: HostLogLine[] = [];
+  const bad: number[] = [];
+  for (const [i, l] of text.split(/\r?\n/).entries()) {
+    if (l.trim() === "") continue;
+    try {
+      lines.push(JSON.parse(l) as HostLogLine);
+    } catch {
+      bad.push(i + 1);
+    }
+  }
+  return { lines, bad };
+}
+
+async function stage(
+  env: HarnessEnv,
+  cell: CellRef,
+  out: string,
+): Promise<StagedWorkspace> {
+  return await TASK_SOURCES[cell.task.task.source]({
+    repoRoot: env.repoRoot,
+    task: cell.task,
+    refapp: cell.refapp,
+    symbols: env.symbols,
+    symbolStore: env.symbolStore,
+    out,
+  });
+}
+
+/**
+ * Strict: a released attempt must have its exact redaction set (round 3 B3).
+ * Missing or unreadable stops recovery (intent kept); present but not a
+ * valid redaction set (a short write, corruption) is "corrupt".
+ */
+async function readCustody(path: string): Promise<SecretValue[] | "corrupt"> {
+  let text: string;
+  try {
+    text = await Deno.readTextFile(path);
+  } catch (err) {
+    throw new ContainerError(
+      `secret custody ${path} is unavailable (${
+        msg(err)
+      }); refusing to publish, intent kept`,
+      "custody",
+      "stop",
+    );
+  }
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return "corrupt";
+  }
+  const ok = Array.isArray(v) && v.length > 0 &&
+    v.every((x) =>
+      x !== null && typeof x === "object" &&
+      typeof (x as SecretValue).name === "string" &&
+      typeof (x as SecretValue).value === "string" &&
+      (x as SecretValue).value.length > 0
+    );
+  return ok ? v as SecretValue[] : "corrupt";
+}
+
+interface DraftInput {
+  id: string;
+  cell: CellRef;
+  at: AttemptRef;
+  started_at: string;
+  manifest: ResolvedManifest;
+  workspace: string;
+  pristineHash: string;
+  sandbox: SandboxResult;
+  setupError: string | null;
+  pricing: PricingBook;
+  interrupted: boolean;
+  /** The exact secrets released to this attempt ([] only when nothing was released). */
+  secrets: SecretValue[];
+  /** Set when the backend reported a fault (failed unpause). */
+  fault: string | null;
+}
+
+/** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
+async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
+  const now = env.now ?? (() => new Date());
+  const adapter = adapterFor(f.manifest.harness);
+  const p = privatePaths(env, f.id);
+  const secrets = f.secrets;
+  /** Secrets and private paths: what may never reach results/. */
+  const scrub = [...secrets, ...privatePathValues(env)];
+  const started = f.sandbox.started;
+  const frozen = started && await exists(f.workspace)
+    ? await freezeWorkspace({
+      resultsRoot: env.resultsRoot,
+      privateRoot: env.privateRoot,
+      workspace: f.workspace,
+      secrets,
+    })
+    : null;
+  let parseError: string | null = null;
+  let parsed: ParsedRun;
+  if (!started) parsed = notStarted(f.sandbox.exitCode);
+  else {
+    try {
+      parsed = await adapter.parse({
+        rawLog: p.raw,
+        exitCode: f.sandbox.exitCode,
+        manifest: f.manifest,
+        pricing: f.pricing,
+        traceOut: p.trace,
+      });
+    } catch (err) {
+      if (!(err instanceof ValidationError)) throw err;
+      parseError = err.message;
+      parsed = unparsed(f.sandbox.exitCode, f.manifest);
+    }
+  }
+  // M1-32 ruling: stream problems with no usable result expose infra; with
+  // a usable result they make the cost unprovable.
+  const problems = started ? streamProblems(parsed.telemetry.raw_usage) : [];
+  let telemetry = parsed.telemetry;
+  if (parsed.termination !== null && problems.length > 0) {
+    telemetry = {
+      ...telemetry,
+      cost_usd: null,
+      cost_source: null,
+      pricing_snapshot: null,
+    };
+  }
+  const host = await hostLog(p.host);
+  const infraReasons = [
+    ...(parsed.termination === null && problems.length > 0
+      ? [
+        `no usable result record; non-JSON harness stdout or other stream problems: ${
+          problems.join("; ")
+        }`,
+      ]
+      : []),
+    ...(parseError ? [`harness log refused: ${parseError}`] : []),
+    ...(host.bad.length > 0
+      ? [`host log lines unreadable: ${host.bad.join(", ")}`]
+      : []),
+  ];
+  const check = started
+    ? observedMismatch(f.manifest, parsed.observed, parsed.unobservable)
+    : { mismatch: null, unverified: [] };
+  const stopReason = f.fault
+    ? "backend_fault"
+    : f.sandbox.interrupted
+    ? "operator_interrupt"
+    : f.sandbox.overflow
+    ? "capture_overflow"
+    : f.interrupted
+    ? "runner_interrupted"
+    : null;
+  const termination: ExecutionRecord["termination"] =
+    !started || f.setupError !== null || check.mismatch !== null
+      ? "setup_failed"
+      : stopReason !== null || parseError !== null
+      ? "harness_crash"
+      : parsed.termination === "usage_limited"
+      ? "usage_limited"
+      : f.sandbox.timedOut
+      ? "timeout"
+      : f.sandbox.startError !== null
+      ? "harness_crash"
+      : parsed.termination ??
+        (f.sandbox.exitCode === 0 ? "completed" : "harness_crash");
+  const did_work = parsed.didWork || host.lines.length > 0 ||
+    (frozen !== null && frozen.workspace_hash !== f.pristineHash);
+  const runDir = join(p.pending, "run");
+  await Deno.remove(runDir, { recursive: true }).catch(() => {});
+  await Deno.mkdir(runDir, { recursive: true }); // a setup failure has no captures but still writes its side file
+  const redactions = await publishRedacted([
+    { src: p.raw, dest: join(runDir, "raw.jsonl") },
+    { src: p.stderr, dest: join(runDir, "stderr.txt") },
+    { src: p.host, dest: join(runDir, "host-log.jsonl") },
+    { src: p.trace, dest: join(runDir, "trace.jsonl") },
+  ], scrub);
+  const side = redactDeep({
+    v: 1,
+    sandbox: f.sandbox,
+    setup_error: f.setupError ?? check.mismatch,
+    unverified: check.unverified,
+    stop_reason: stopReason,
+    fault: f.fault,
+    infra_reason: infraReasons.length > 0 ? infraReasons.join("; ") : null,
+    stream_problems: problems,
+    usage_reset_at: parsed.usageResetAt,
+    redactions,
+    workspace_redactions: frozen?.redactions ?? 0,
+    pricing_book_at: f.pricing.at,
+    pristine_hash: f.pristineHash,
+    freeze_violations: frozen?.violations ?? [],
+  }, scrub);
+  await Deno.writeTextFile(
+    join(runDir, "sandbox.json"),
+    JSON.stringify(side, null, 2) + "\n",
+  );
+  const runRel = `runs/${f.id}`;
+  const record = {
+    v: 2,
+    id: f.id,
+    campaign_id: f.cell.campaignId,
+    block: f.cell.block.index,
+    order_in_block: f.cell.orderInBlock,
+    arm: f.cell.arm,
+    task_id: f.cell.task.task.id,
+    task_visible_hash: f.cell.taskVisibleHash,
+    repeat: f.cell.block.repeat,
+    attempt: f.at.attempt,
+    run_kind: f.at.runKind,
+    retry_of: f.at.retryOf,
+    started_at: f.started_at,
+    ended_at: now().toISOString(),
+    arm_manifest_hash: f.cell.armManifestHash,
+    manifest: f.manifest,
+    observed: parsed.observed,
+    termination,
+    did_work,
+    validity: {
+      incomplete_telemetry: started
+        ? incompleteTelemetry(adapter.declared, telemetry)
+        : [],
+      incomplete_observed: check.unverified.length > 0
+        ? ["loaded_components"]
+        : [],
+      infra_exposed: f.fault !== null ||
+        host.lines.some((l) => l.outcome === "infra") ||
+        infraReasons.length > 0,
+    },
+    image_attachments: imageAttachments(
+      f.cell.task.task.attachments,
+      parsed.imageSupport,
+    ),
+    telemetry,
+    trace_path: parsed.traceEvents > 0 ? `${runRel}/trace.jsonl` : null,
+    host_log_path: await exists(p.host) ? `${runRel}/host-log.jsonl` : null,
+    raw_log_path: await exists(p.raw) ? `${runRel}/raw.jsonl` : null,
+    container_assignments: [
+      ...new Set(
+        host.lines.map((l) => l.container).filter((c): c is string => !!c),
+      ),
+    ],
+    workspace_hash: frozen?.workspace_hash ?? null,
+  };
+  const draft: Draft = {
+    v: 1,
+    execution: ExecutionRecordSchema.parse(redactDeep(record, scrub)),
+    artifact: frozen
+      ? {
+        workspace_hash: frozen.workspace_hash,
+        stored_path: frozen.stored_path,
+      }
+      : null,
+    usage_reset_at: parsed.usageResetAt,
+  };
+  await env.hooks?.beforeDraft?.();
+  await writeAtomic(join(p.pending, "draft.json"), JSON.stringify(draft));
+  await env.hooks?.after?.("draft");
+  return draft;
+}
+
+/** Idempotent publication of a saved draft, step by step; judging only when the task is unchanged. */
+async function publishDraft(
+  env: HarnessEnv,
+  cell: CellRef,
+  draft: Draft,
+  pristine: string | null,
+  taskUnchanged: boolean,
+) {
+  const now = env.now ?? (() => new Date());
+  const e = draft.execution;
+  const p = privatePaths(env, e.id);
+  const runs = join(env.resultsRoot, "runs");
+  if (!await exists(join(runs, e.id))) {
+    await Deno.mkdir(runs, { recursive: true });
+    // A crash inside an earlier copy left a temp name: remove it first.
+    for (const x of [...Deno.readDirSync(runs)]) {
+      if (x.name.startsWith(`.tmp-${e.id}-`)) {
+        await Deno.remove(join(runs, x.name), { recursive: true });
+      }
+    }
+    const tmp = join(runs, `.tmp-${e.id}-${crypto.randomUUID().slice(0, 8)}`);
+    await safeCopyTree(join(p.pending, "run"), tmp);
+    await Deno.rename(tmp, join(runs, e.id));
+  }
+  await env.hooks?.after?.("run");
+  if (!(await env.store.executions(e.campaign_id)).some((x) => x.id === e.id)) {
+    await env.store.writeExecution(e);
+  }
+  await env.hooks?.after?.("execution");
+  if (draft.artifact && !await env.store.artifact(e.id)) {
+    await env.store.writeArtifact({
+      v: 1,
+      execution_id: e.id,
+      ...draft.artifact,
+      created_at: now().toISOString(),
+    });
+  }
+  await env.hooks?.after?.("artifact");
+  const policy = outcomePolicy(e.termination, e.did_work);
+  const fp = await currentScorerFingerprint();
+  const judged = (await env.store.judgments(e.id)).some((j) =>
+    j.scorer_fingerprint === fp
+  );
+  if (policy.judge && e.workspace_hash !== null && !judged && taskUnchanged) {
+    const out = join(p.work, `restage-${crypto.randomUUID().slice(0, 8)}`);
+    try {
+      await judgeExecution(
+        env,
+        cell,
+        e,
+        pristine ?? (await stage(env, cell, out)).pristine,
+      );
+    } finally {
+      await Deno.remove(out, { recursive: true }).catch(() => {});
+    }
+  }
+  await env.hooks?.after?.("judgment");
+  await finishCleanup(env, e.id);
+}
+
+/** Completion protocol: mark published, delete private state, delete the intent last. */
+async function finishCleanup(env: HarnessEnv, id: string) {
+  const p = privatePaths(env, id);
+  const intent = await readJson<Intent>(p.intent);
+  if (intent && intent.phase !== "published") {
+    await writeAtomic(
+      p.intent,
+      JSON.stringify({ ...intent, phase: "published" }, null, 2),
+    );
+  }
+  await env.hooks?.afterPublished?.();
+  for (const d of [p.work, p.quarantine, p.pending, p.taskCopy]) {
+    await Deno.remove(d, { recursive: true }).catch((err) => {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    });
+  }
+  await removeTemps(join(env.privateRoot, "custody"), `${id}.json`);
+  for (const f of [p.custody, p.intent]) {
+    await Deno.remove(f).catch((err) => {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    });
+  }
+}
+
+export async function runExecution(
+  env: HarnessEnv,
+  cell: CellRef,
+  at: AttemptRef,
+): Promise<{ execution: ExecutionRecord; usageResetAt: string | null }> {
+  const adapter = adapterFor(cell.armManifest.harness);
+  if (!adapter.enforcesBudget) {
+    throw new ConfigurationError(
+      `${cell.arm}: the ${adapter.harness} adapter cannot enforce max_budget_usd; refusing the arm`,
+    );
+  }
+  if (env.stop?.aborted) {
+    throw new ConfigurationError(
+      `${cell.arm}: stopped by the operator before the start; nothing reserved or run`,
+    );
+  }
+  if (adapter.credentialBearing && !env.egressEnforced) {
+    if (!env.supervised) {
+      throw new ConfigurationError(
+        `${cell.arm}: credential-bearing arms run only supervised (harness cell --supervised) until egress enforcement is verified (M1-33/M1-34)`,
+      );
+    }
+    await reserveCredentialRun(
+      env.credentialLedger,
+      {
+        lane: env.lane_id,
+        task: cell.task.task.id,
+        config: cell.arm,
+        purpose: "supervised dev run",
+      },
+      undefined,
+      env.stop ? { signal: env.stop } : {},
+    );
+  }
+  const now = env.now ?? (() => new Date());
+  const id = crypto.randomUUID();
+  const started_at = now().toISOString();
+  const pricing = await env.pricing(now()); // loaded once; stored in the intent
+  const manifest = forTask(cell.armManifest, cell.task.task.limits);
+  const p = privatePaths(env, id);
+  await Deno.mkdir(p.quarantine, { recursive: true });
+  // Immutable task snapshot for recovery; the folder keeps the task id (loadTask checks it).
+  const snapshot = join(p.taskCopy, cell.task.task.id);
+  await safeCopyTree(cell.task.dir, snapshot);
+  const staged = await stage(env, cell, p.work);
+  const pristineHash = await hashTree(staged.pristine, "task");
+  const name = sandboxName(cell.campaignId, id);
+  const opMs = env.opTimeoutMs ?? OP_TIMEOUT_MS;
+  const { task: _t, ...rest } = cell;
+  const intent: Intent = {
+    v: 2,
+    execution_id: id,
+    phase: "prepared",
+    results_root: env.resultsRoot,
+    cell: { ...rest, task_dir: cell.task.dir },
+    task_snapshot: snapshot,
+    manifest,
+    at,
+    started_at,
+    pricing,
+    sandbox: name,
+    workspace: staged.workspace,
+    pristine_hash: pristineHash,
+  };
+  await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
+
+  let setupError: string | null = null;
+  let sandbox: SandboxResult = {
+    exitCode: null,
+    started: false,
+    startError: null,
+    timedOut: false,
+    interrupted: false,
+    overflow: false,
+    confirmedGone: true,
+    cleanup: "ok",
+    wall_ms: 0,
+  };
+  let secrets: SecretValue[] = [];
+  let drained = true;
+  let fault: string | null = null;
+  const faultStop = new AbortController();
+  const stop = env.stop
+    ? AbortSignal.any([env.stop, faultStop.signal])
+    : faultStop.signal;
+  try {
+    // By immutable id: retagging never substitutes or invalidates the pinned image.
+    const img = await bounded(
+      env.docker.inspectImage(manifest.image.digest),
+      opMs,
+      "docker image inspect",
+    ) as { Id?: string } | null;
+    if (img?.Id !== manifest.image.digest) {
+      throw new ConfigurationError(
+        `image ${manifest.image.digest} pinned by the campaign is no longer present`,
+      );
+    }
+    const configDir = join(p.work, "config");
+    await writeConfigDir(env.harnessRoot, configDir, manifest);
+    const extraMounts = await adapter.extraMounts(
+      manifest.settings.native,
+      cell.task.dir,
+      env.repoRoot,
+    );
+    const timeoutMs = (env.timeoutMsFor ?? ((m) => m * 60_000))(
+      manifest.limits.timeout_min,
+    );
+    const token = await env.backend.grant({
+      executionId: id,
+      sandbox: name,
+      workspace: staged.workspace,
+      pristine: staged.pristine,
+      trusted: staged.apps,
+      symbols: env.symbols,
+      lock: { store: env.symbolStore, packages: env.symbols },
+      deploy: {
+        ledgerRoot: env.deploy.ledgerRoot,
+        trustedRoots: [staged.pristine],
+      },
+      hostLog: p.host,
+      onFault: (reason) => {
+        fault = reason;
+        faultStop.abort(new Error(reason));
+      },
+    }, timeoutMs + 5 * 60_000);
+    let secretsDir: string | null = null;
+    try {
+      const s = await prepareSecrets(
+        env.secretsSource,
+        adapter.secretFiles,
+        token,
+        {
+          privateRoot: env.privateRoot,
+          owner: env.owner,
+          ...(env.secretAcl ?? {}),
+        },
+      );
+      secretsDir = s.dir;
+      secrets = s.values;
+      await writeAtomic(p.custody, JSON.stringify(s.values));
+      await writeAtomic(
+        p.intent,
+        JSON.stringify({ ...intent, phase: "released" }, null, 2),
+      );
+      sandbox = await runSandbox(
+        env.docker,
+        {
+          name,
+          owner: env.owner,
+          executionId: id,
+          imageId: manifest.image.digest,
+          workspace: staged.workspace,
+          taskDir: staged.taskDir,
+          configDir,
+          secretsDir: s.dir,
+          extraMounts,
+          env: { CG_BACKEND_URL: env.backendUrl, CG_EXECUTION_ID: id },
+          timeoutMs,
+          killGraceMs: env.killGraceMs ?? 60_000,
+          opTimeoutMs: opMs,
+          maxCaptureBytes: env.maxCaptureBytes ?? 256 * 1024 * 1024,
+          rawLog: p.raw,
+          stderrLog: p.stderr,
+        },
+        s.values.map((v) => v.value),
+        stop,
+      );
+    } finally {
+      drained = await env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
+      if (secretsDir) await removeSecrets(secretsDir);
+    }
+  } catch (err) {
+    if (
+      !(err instanceof ConfigurationError) && !(err instanceof ValidationError)
+    ) {
+      throw err;
+    }
+    setupError = err.message;
+  }
+  if (!sandbox.confirmedGone || !drained) {
+    throw new ContainerError(
+      `termination not confirmed for ${name} (${sandbox.cleanup}${
+        drained ? "" : "; backend request did not drain"
+      }); nothing frozen, intent kept; resolve and restart (recovery finalizes it)`,
+      name,
+      "stop",
+    );
+  }
+  const draft = await buildDraft(env, {
+    id,
+    cell,
+    at,
+    started_at,
+    manifest,
+    workspace: staged.workspace,
+    pristineHash,
+    sandbox,
+    setupError,
+    pricing,
+    interrupted: false,
+    secrets,
+    fault,
+  });
+  await publishDraft(env, cell, draft, staged.pristine, true);
+  return { execution: draft.execution, usageResetAt: draft.usage_reset_at };
+}
+
+export async function judgeExecution(
+  env: HarnessEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+  pristine: string,
+  oracleHash = cell.oracleHash,
+): Promise<JudgmentRecord> {
+  const art = await env.store.artifact(e.id);
+  if (!art) {
+    throw new ValidationError(`no artifact for execution ${e.id}`, [e.id]);
+  }
+  const workDir = join(
+    env.privateRoot,
+    "judge",
+    `${e.id}-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  try {
+    const { judgment, log } = await judge(env.lane, {
+      executionId: e.id,
+      workspaceHash: art.workspace_hash,
+      task: cell.task,
+      oracleHash,
+      pristine,
+      artifact: join(env.resultsRoot, art.stored_path),
+      symbolIds: new Set(env.symbols.map((s) => s.app_id.toLowerCase())),
+      workDir,
+      lock: { store: env.symbolStore, packages: env.symbols },
+      deploy: env.deploy,
+    }, env.now);
+    // The side file first: a crash between the two leaves an orphan log, never a judgment without its log.
+    await writeVerdictLog(env.resultsRoot, log);
+    await env.store.writeJudgment(judgment);
+    return judgment;
+  } finally {
+    await Deno.remove(workDir, { recursive: true }).catch(() => {});
+  }
+}
+
+/** Judge a stored execution again: restage the task, never re-run the agent. */
+export async function rejudgeExecution(
+  env: HarnessEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+  oracleHash: string,
+): Promise<JudgmentRecord> {
+  const out = join(
+    env.privateRoot,
+    "work",
+    `rejudge-${e.id}-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  try {
+    return await judgeExecution(
+      env,
+      cell,
+      e,
+      (await stage(env, cell, out)).pristine,
+      oracleHash,
+    );
+  } finally {
+    await Deno.remove(out, { recursive: true }).catch(() => {});
+  }
+}
+
+export interface CellResult {
+  executions: ExecutionRecord[];
+  /** Reset time (or "unknown") when a usage limit paused the cell. */
+  pause: string | null;
+  /** Why an automatic retry the policy allows was not started (supervised mode). */
+  withheld: string | null;
+  /** Why no further automatic retry is allowed (Part 1 retryProblem, or an operator interrupt). */
+  stopped: string | null;
+}
+
+/** One cell: run, judge per policy, automatic retries decided by ancestry (never in supervised mode). */
+export async function runCell(
+  env: HarnessEnv,
+  cell: CellRef,
+  first: AttemptRef = { attempt: 1, runKind: "planned", retryOf: null },
+  prior: ExecutionRecord[] = [],
+): Promise<CellResult> {
+  const bad = (why: string): never => {
+    throw new ConfigurationError(
+      `${cell.arm} ${cell.task.task.id}: refusing attempt ${first.attempt} (${first.runKind}): ${why}`,
+    );
+  };
+  if (
+    first.runKind === "planned" &&
+    (first.attempt !== 1 || first.retryOf !== null)
+  ) {
+    bad("a planned execution is attempt 1 with no retry_of");
+  }
+  if (
+    first.runKind === "manual_rerun" &&
+    (first.attempt < 2 || first.retryOf !== null)
+  ) {
+    bad("a manual rerun has attempt >= 2 and no retry_of");
+  }
+  if (first.runKind === "auto_retry") {
+    const parent = prior.find((x) => x.id === first.retryOf) ??
+      bad(`its parent execution ${first.retryOf} is not in prior`);
+    if (first.attempt !== parent.attempt + 1) {
+      bad(`an automatic retry is attempt parent + 1 (${parent.attempt + 1})`);
+    }
+    const problem = retryProblem(
+      parent,
+      {
+        ...parent,
+        id: "(requested retry)",
+        attempt: first.attempt,
+        run_kind: "auto_retry",
+        retry_of: parent.id,
+      },
+      prior.find((x) => x.id === parent.retry_of),
+    );
+    if (problem) bad(problem);
+  }
+  const executions: ExecutionRecord[] = [];
+  let at = first;
+  for (;;) {
+    const { execution: e, usageResetAt } = await runExecution(env, cell, at);
+    executions.push(e);
+    const policy = outcomePolicy(e.termination, e.did_work);
+    if (policy.retry === "after_usage_reset") {
+      return {
+        executions,
+        pause: usageResetAt ?? "unknown",
+        withheld: null,
+        stopped: null,
+      };
+    }
+    if (policy.retry === "none") {
+      return { executions, pause: null, withheld: null, stopped: null };
+    }
+    if (env.stop?.aborted) {
+      return {
+        executions,
+        pause: null,
+        withheld: null,
+        stopped: "operator interrupt: no automatic retry",
+      };
+    }
+    const all = [...prior, ...executions];
+    const grandparent = all.find((x) => x.id === e.retry_of);
+    // Part 1: an automatic retry is its parent's attempt + 1 (integrity checks it).
+    const next: AttemptRef = {
+      attempt: e.attempt + 1,
+      runKind: "auto_retry",
+      retryOf: e.id,
+    };
+    const candidate = {
+      ...e,
+      id: "(next automatic retry)",
+      attempt: next.attempt,
+      run_kind: next.runKind,
+      retry_of: e.id,
+    };
+    const problem = retryProblem(e, candidate, grandparent);
+    if (problem) {
+      return { executions, pause: null, withheld: null, stopped: problem };
+    }
+    if (env.supervised) {
+      return {
+        executions,
+        pause: null,
+        withheld:
+          `automatic retry after ${e.termination} withheld in supervised mode`,
+        stopped: null,
+      };
+    }
+    at = next;
+  }
+}
+
+/**
+ * Startup: remove this owner's leftover sandboxes, then its stale secret
+ * custody dirs (M1-20 handoff: the mounts are released first), then complete
+ * every attempt a killed runner left behind (review gate 5, round 2 item 3,
+ * round 3 B3).
+ */
+export async function recoverInterrupted(
+  env: HarnessEnv,
+  loadTaskFn: (dir: string) => Promise<LoadedTask>,
+): Promise<ExecutionRecord[]> {
+  const opMs = env.opTimeoutMs ?? OP_TIMEOUT_MS;
+  await sweepOwnedSandboxes(env.docker, env.owner, opMs);
+  await sweepStaleSecrets(env.privateRoot, env.owner);
+  // Temp files of an interrupted writeAtomic are never needed (the final
+  // name is renamed into place), and a custody temp holds plaintext secrets.
+  await removeTemps(join(env.privateRoot, "custody"));
+  const dir = join(env.privateRoot, "intents");
+  await removeTemps(dir);
+  const recovered: ExecutionRecord[] = [];
+  let names: string[] = [];
+  try {
+    names = [...Deno.readDirSync(dir)]
+      .filter((e) =>
+        e.isFile && e.name.endsWith(".json") && !e.name.includes(".tmp-")
+      )
+      .map((e) => e.name).sort();
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  for (const n of names) {
+    let intent: Intent | null;
+    try {
+      intent = await readJson<Intent>(join(dir, n));
+    } catch (err) {
+      if (!(err instanceof ValidationError)) throw err;
+      await quarantineFile(
+        env,
+        join(dir, n),
+        n,
+        `unreadable intent (${err.message})`,
+      );
+      continue;
+    }
+    if (!intent) continue; // removed meanwhile by a finished cleanup
+    const id = intent.execution_id;
+    // Publish into the store of the command that started the attempt, whatever command recovers it.
+    const own: HarnessEnv = {
+      ...env,
+      resultsRoot: intent.results_root,
+      store: new RecordStore(intent.results_root),
+    };
+    if (intent.phase === "published") {
+      await finishCleanup(own, id);
+      continue;
+    }
+    const p = privatePaths(own, id);
+    const { task_dir, ...rest } = intent.cell;
+    // The task comes from the private snapshot: a deleted or edited task never blocks or relabels recovery.
+    const cell: CellRef = {
+      ...rest,
+      task: await loadTaskFn(intent.task_snapshot),
+    };
+    const current = await loadTaskFn(task_dir).catch(() => null);
+    const ids = current
+      ? await taskSetIdentity(env.repoRoot, [current], env.symbols).catch(() =>
+        null
+      )
+      : null;
+    const taskUnchanged = ids !== null &&
+      ids.tasks[0]!.visible === cell.taskVisibleHash &&
+      ids.tasks[0]!.oracle === cell.oracleHash;
+    const draftPath = join(p.pending, "draft.json");
+    let draft: Draft | null;
+    try {
+      draft = await readJson<Draft>(draftPath);
+    } catch (err) {
+      if (!(err instanceof ValidationError)) throw err;
+      // The draft is derived state: set it aside and build it again.
+      await quarantineFile(
+        env,
+        draftPath,
+        `${id}.draft-${crypto.randomUUID().slice(0, 8)}.json`,
+        `unreadable draft (${err.message})`,
+      );
+      draft = null;
+    }
+    if (!draft) {
+      const st = () =>
+        bounded(
+          env.docker.state(intent.sandbox),
+          opMs,
+          `docker inspect ${intent.sandbox}`,
+        );
+      if (await st() !== null) {
+        await bounded(
+          env.docker.rm(intent.sandbox),
+          opMs,
+          `docker rm -f ${intent.sandbox}`,
+        );
+        if (await st() !== null) {
+          throw new ContainerError(
+            `recovery: ${intent.sandbox} still exists; intent kept`,
+            intent.sandbox,
+            "stop",
+          );
+        }
+      }
+      const released = intent.phase === "released";
+      let secrets: SecretValue[] = [];
+      if (released) {
+        const c = await readCustody(p.custody);
+        if (c === "corrupt") {
+          // Nothing can be redacted, so nothing is published; the attempt waits for the operator.
+          await quarantineFile(
+            env,
+            join(dir, n),
+            n,
+            `custody ${p.custody} is not a valid redaction set; attempt ${id} not published (its private state is kept)`,
+          );
+          continue;
+        }
+        secrets = c;
+      }
+      const why = "interrupted before any secret was released";
+      draft = await buildDraft(own, {
+        id,
+        cell,
+        at: intent.at,
+        started_at: intent.started_at,
+        manifest: intent.manifest,
+        workspace: intent.workspace,
+        pristineHash: intent.pristine_hash,
+        sandbox: {
+          exitCode: null,
+          started: released,
+          startError: released ? null : why,
+          timedOut: false,
+          interrupted: false,
+          overflow: false,
+          confirmedGone: true,
+          cleanup: "ok",
+          wall_ms: 0,
+        },
+        setupError: released ? null : why,
+        pricing: intent.pricing,
+        interrupted: true,
+        secrets,
+        fault: null,
+      });
+    }
+    await publishDraft(own, cell, draft, null, taskUnchanged);
+    if (!taskUnchanged) {
+      console.warn(
+        `[WARN] ${id}: task files changed or unavailable since the attempt; recorded, not judged (use harness rejudge)`,
+      );
+    }
+    recovered.push(draft.execution);
+  }
+  return recovered;
+}

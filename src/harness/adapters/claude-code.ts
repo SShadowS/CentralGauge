@@ -10,6 +10,7 @@
  * raw_usage.stream_problems.
  */
 
+import { basename } from "@std/path";
 import type { HarnessAdapter, ParsedRun, ParseInput } from "../adapter.ts";
 import type { ModelTokens } from "../pricing.ts";
 import type { Telemetry, Termination } from "../records.ts";
@@ -171,7 +172,8 @@ export function parseClaudeStream(
   /** Problems found before parsing (a missing log); reported first. */
   streamProblems: string[] = [],
 ): ParsedRun & { trace: TraceEvent[] } {
-  const file = input.rawLog;
+  // The file name only: messages reach published records, private paths never do.
+  const file = basename(input.rawLog);
   const { lines, nonJson } = readRecords(text);
   if (nonJson.count > 0) {
     streamProblems.push(
@@ -532,7 +534,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
       text = await Deno.readTextFile(input.rawLog);
     } catch (err) {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
-      problems.push(`${input.rawLog}: raw log missing`);
+      problems.push(`${basename(input.rawLog)}: raw log missing`);
     }
     const { trace, ...parsed } = parseClaudeStream(text, input, problems);
     await writeTrace(input.traceOut, trace);

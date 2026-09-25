@@ -5,6 +5,7 @@ import { ValidationError } from "../../../src/errors.ts";
 import {
   CampaignRecordSchema,
   ExecutionRecordSchema,
+  incompleteObserved,
   JudgmentRecordSchema,
   outcomePolicy,
   planBlocks,
@@ -65,6 +66,7 @@ Deno.test("execution schema: loud on bad records", async () => {
       ...e,
       validity: {
         incomplete_telemetry: ["turns", "turns"],
+        incomplete_observed: [],
         infra_exposed: false,
       },
     }],
@@ -322,13 +324,21 @@ Deno.test("schemas: cost declared incomplete cannot carry a value; reuse is refu
   assertThrows(() =>
     ExecutionRecordSchema.parse({
       ...e,
-      validity: { incomplete_telemetry: ["cost_usd"], infra_exposed: false },
+      validity: {
+        incomplete_telemetry: ["cost_usd"],
+        incomplete_observed: [],
+        infra_exposed: false,
+      },
     })
   );
   // Missing turns alone keeps the cost usable.
   ExecutionRecordSchema.parse({
     ...e,
-    validity: { incomplete_telemetry: ["turns"], infra_exposed: false },
+    validity: {
+      incomplete_telemetry: ["turns"],
+      incomplete_observed: [],
+      infra_exposed: false,
+    },
   });
   const r = CampaignRecordSchema.safeParse({
     ...c,
@@ -663,7 +673,11 @@ Deno.test("schemas: incomplete_telemetry names known fields; null cost must be d
   assertThrows(() =>
     ExecutionRecordSchema.parse({
       ...e,
-      validity: { incomplete_telemetry: ["cost_us"], infra_exposed: false },
+      validity: {
+        incomplete_telemetry: ["cost_us"],
+        incomplete_observed: [],
+        infra_exposed: false,
+      },
     })
   );
   assertThrows(() =>
@@ -672,7 +686,11 @@ Deno.test("schemas: incomplete_telemetry names known fields; null cost must be d
   ExecutionRecordSchema.parse({
     ...e,
     telemetry: telemetry(null),
-    validity: { incomplete_telemetry: ["cost_usd"], infra_exposed: false },
+    validity: {
+      incomplete_telemetry: ["cost_usd"],
+      incomplete_observed: [],
+      infra_exposed: false,
+    },
   });
 });
 
@@ -731,5 +749,40 @@ Deno.test("judgment schema: a false scorer wins over a null one (decision 2026-0
   );
   assertThrows(() =>
     JudgmentRecordSchema.parse({ ...nullPass, verdict: "pass" })
+  );
+});
+
+Deno.test("execution v2: incomplete_observed required in v2, forbidden in v1; both round-trip", async () => {
+  const c = await campaign();
+  const e2 = execution(c); // fixtures now default to v: 2 with incomplete_observed: []
+  assertEquals(ExecutionRecordSchema.parse(e2).v, 2);
+  const e1 = execution(c, {}, {
+    v: 1,
+    validity: { incomplete_telemetry: [], infra_exposed: false },
+  });
+  assertEquals(incompleteObserved(ExecutionRecordSchema.parse(e1)), []);
+  assertThrows(() =>
+    ExecutionRecordSchema.parse({
+      ...e2,
+      validity: { incomplete_telemetry: [], infra_exposed: false },
+    })
+  );
+  assertThrows(() =>
+    ExecutionRecordSchema.parse({
+      ...e1,
+      validity: { ...e1.validity, incomplete_observed: [] },
+    })
+  );
+  assertThrows(() =>
+    ExecutionRecordSchema.parse({
+      ...e2,
+      validity: { ...e2.validity, incomplete_observed: ["cost_usd"] },
+    })
+  );
+  const store = new RecordStore(await Deno.makeTempDir());
+  await store.writeExecution(e2);
+  assertEquals(
+    (await store.executions(c.id))[0],
+    ExecutionRecordSchema.parse(e2),
   );
 });
