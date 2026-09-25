@@ -38,6 +38,7 @@ import {
 } from "../../src/harness/identity.ts";
 import { RecordStore } from "../../src/harness/records.ts";
 import { buildReport, renderReport } from "../../src/harness/report.ts";
+import { loadTraces } from "../../src/harness/trace-metrics.ts";
 import { loadTaskSet } from "../../src/harness/task.ts";
 
 /** Loud, file-naming failures are collected; anything else is a bug. */
@@ -285,6 +286,7 @@ export async function harnessReport(
   return buildReport({ campaign, executions, artifacts, judgments }, {
     resamples: opts.resamples,
     seed: opts.seed,
+    traces: await loadTraces(opts.resultsDir, executions),
     ...(opts.judging === "current"
       ? { judging: await currentJudging(opts.root) }
       : {}),
