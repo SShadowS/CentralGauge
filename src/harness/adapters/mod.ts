@@ -1,13 +1,15 @@
-/** Adapter registry (M1-32 adds claude-code, M1-35 adds mock); helper modules never import it. */
+/** Adapter registry (M1-32 adds claude-code, M3-02 adds pi, M1-35 adds mock); helper modules never import it. */
 
 import type { HarnessAdapter } from "../adapter.ts";
 import { ConfigurationError } from "../../errors.ts";
 import { claudeCodeAdapter } from "./claude-code.ts";
 import { mockAdapter } from "./mock.ts";
+import { piAdapter } from "./pi.ts";
 
 export const ADAPTERS: Record<string, HarnessAdapter> = {
   "claude-code": claudeCodeAdapter,
   mock: mockAdapter,
+  pi: piAdapter,
 };
 
 export function adapterFor(harness: string): HarnessAdapter {

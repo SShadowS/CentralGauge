@@ -11,12 +11,14 @@
  */
 
 import { basename } from "@std/path";
-import type { ParsedRun, ParseInput } from "../adapter.ts";
+import type { HarnessAdapter, ParsedRun, ParseInput } from "../adapter.ts";
 import type { ModelTokens } from "../pricing.ts";
 import type { Telemetry, Termination } from "../records.ts";
 import type { TraceEvent } from "../trace.ts";
+import { ConfigurationError } from "../../errors.ts";
 import { requestedComponents } from "../adapter.ts";
 import { estimateCost } from "../pricing.ts";
+import { writeTrace } from "../trace.ts";
 import {
   type Line,
   nonJsonReason,
@@ -513,3 +515,115 @@ export function parsePiStream(
     trace,
   };
 }
+
+/** pi agent settings written into the isolated agent directory (recorded in the manifest). */
+export const PI_SETTINGS = {
+  compaction: { enabled: false },
+  cacheWarming: "off",
+  retry: {
+    enabled: true,
+    maxRetries: 3,
+    baseDelayMs: 2000,
+    provider: { maxRetries: 0 },
+  },
+} as const;
+const THINKING = new Set([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+
+export const piAdapter: HarnessAdapter = {
+  harness: "pi",
+  declared: [
+    "harness_version",
+    "cost_usd",
+    "reported_cost_usd",
+    "per_model",
+    "turns",
+    "exit_code",
+    "stop_reason",
+  ],
+  secretFiles: ["openrouter-api-key"],
+  credentialBearing: true,
+  enforcesBudget: true,
+  nativeSettings(config, catalog) {
+    const c = config.components;
+    const unsupported = [
+      ...(c.mcp.length > 0 ? ["mcp"] : []),
+      ...(c.lsp.length > 0 ? ["lsp"] : []),
+      ...(c.agents !== null ? ["agents"] : []),
+      ...(c.hooks !== null ? ["hooks"] : []),
+      ...(c.plugins.length > 0 ? ["plugins"] : []),
+    ];
+    if (unsupported.length > 0) {
+      throw new ConfigurationError(
+        `${config.id}: pi 0.87.1 has no MCP and supports only instructions, skills and toolchain (refused: ${
+          unsupported.join(", ")
+        })`,
+      );
+    }
+    const slots = Object.keys(config.models);
+    if (slots.length !== 1 || slots[0] !== "main") {
+      throw new ConfigurationError(
+        `${config.id}: pi takes exactly one model slot, main (got ${
+          slots.join(", ")
+        })`,
+      );
+    }
+    const slug = config.models["main"]!;
+    if (!slug.startsWith(`${PI_PROVIDER}/`)) {
+      throw new ConfigurationError(
+        `${config.id}: pi runs through ${PI_PROVIDER}; ${slug} is not an ${PI_PROVIDER}/ slug`,
+      );
+    }
+    const m = catalog.models.find((x) => x.slug === slug);
+    if (!m) {
+      throw new ConfigurationError(
+        `model ${slug} (slot main) is not in the catalog`,
+      );
+    }
+    for (const k of Object.keys(config.settings)) {
+      if (k !== "thinking") {
+        throw new ConfigurationError(
+          `${config.id}: unknown setting ${k} for pi (known: thinking)`,
+        );
+      }
+    }
+    const t = config.settings["thinking"];
+    if (t !== undefined && !(typeof t === "string" && THINKING.has(t))) {
+      throw new ConfigurationError(
+        `${config.id}: thinking must be one of ${[...THINKING].join(", ")}`,
+      );
+    }
+    return {
+      ...config.settings,
+      provider: PI_PROVIDER,
+      api_models: { main: m.api_model_id },
+      pi_settings: PI_SETTINGS,
+    };
+  },
+  providerRoutes(config) {
+    return Object.fromEntries(
+      Object.keys(config.models).map((slot) => [slot, PI_ROUTE]),
+    );
+  },
+  extraMounts: () => Promise.resolve([]),
+  async parse(input) {
+    let text = "";
+    const problems: string[] = [];
+    try {
+      text = await Deno.readTextFile(input.rawLog);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+      problems.push(`${input.rawLog}: raw log missing`);
+    }
+    const { trace, ...parsed } = parsePiStream(text, input, problems);
+    await writeTrace(input.traceOut, trace);
+    return parsed;
+  },
+};

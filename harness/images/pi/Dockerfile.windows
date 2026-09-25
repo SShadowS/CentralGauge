@@ -1,0 +1,12 @@
+# pi harness image. Built by `harness images build pi --version 0.87.1`.
+# BASE has no default: `harness images build` passes the inspected immutable base image and
+# verifies the layers (M1-24). Node 22.19.0 comes from the base (pi 0.87.1 engines, findings section 3).
+# No secret is ever copied into a layer: the provider key arrives as a file at run time.
+ARG BASE
+FROM ${BASE}
+RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
+    npm install -g @earendil-works/pi-coding-agent@0.87.1; \
+    [Environment]::SetEnvironmentVariable('PATH', (npm config get prefix) + ';' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
+COPY run.ps1 C:/run.ps1
+COPY cg-budget.ts C:/cg-budget.ts
+CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\run.ps1"]

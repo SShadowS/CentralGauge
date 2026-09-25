@@ -5,10 +5,22 @@ import {
   assertStringIncludes,
   assertThrows,
 } from "@std/assert";
-import { ValidationError } from "../../../src/errors.ts";
+import { join } from "@std/path";
 import type { ResolvedManifest } from "../../../src/harness/manifest.ts";
 import type { PricingBook } from "../../../src/harness/pricing.ts";
-import { parsePiStream } from "../../../src/harness/adapters/pi.ts";
+import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
+import { adapterFor } from "../../../src/harness/adapters/mod.ts";
+import {
+  parsePiStream,
+  PI_SETTINGS,
+  piAdapter,
+} from "../../../src/harness/adapters/pi.ts";
+import {
+  checkModelsInCatalog,
+  HarnessConfigSchema,
+  loadConfig,
+} from "../../../src/harness/config.ts";
+import { budgetStep } from "../../../harness/images/pi/cg-budget.ts";
 import { manifest } from "./fixtures.ts";
 
 const FIXTURE = "tests/fixtures/harness/pi/probe.jsonl";
@@ -725,4 +737,459 @@ Deno.test("pi parse: pi's reported cost is null whenever the estimate is null or
     HEAD + assistant({ stopReason: "stop", usage: usage({}) }) + "\n" + END,
   );
   assertEquals(ok.telemetry.reported_cost_usd, 0.5);
+});
+
+const CATALOG = {
+  models: [
+    {
+      slug: "openrouter/google/gemini-3.8-flash",
+      api_model_id: "google/gemini-3.8-flash",
+      family: "gemini",
+      display_name: "F",
+    },
+    {
+      slug: "anthropic/claude-sonnet-5",
+      api_model_id: "claude-sonnet-5",
+      family: "claude",
+      display_name: "S5",
+    },
+  ],
+  pricing: [],
+  families: [],
+};
+const CFG = HarnessConfigSchema.parse({
+  id: "pi",
+  harness: "pi",
+  harness_version: "0.87.1",
+  models: { main: "openrouter/google/gemini-3.8-flash" },
+  settings: {},
+  limits: { timeout_min: 30, max_budget_usd: 2 },
+});
+
+Deno.test("pi adapter: registered; contract fields; parse writes the trace; a missing log is not a result", async () => {
+  assertEquals(adapterFor("pi"), piAdapter);
+  assertEquals([
+    piAdapter.credentialBearing,
+    piAdapter.enforcesBudget,
+    piAdapter.secretFiles,
+  ], [true, true, ["openrouter-api-key"]]);
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.writeTextFile(
+    join(dir, "raw.jsonl"),
+    HEAD + await Deno.readTextFile(FIXTURE),
+  );
+  const r = await piAdapter.parse({
+    rawLog: join(dir, "raw.jsonl"),
+    exitCode: 0,
+    manifest: pm(),
+    pricing: BOOK,
+    traceOut: join(dir, "trace.jsonl"),
+  });
+  assertEquals(r.traceEvents, 4);
+  assertEquals(
+    (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim().split("\n")
+      .length,
+    4,
+  );
+  const missing = await piAdapter.parse({
+    rawLog: join(dir, "absent.jsonl"),
+    exitCode: null,
+    manifest: pm(),
+    pricing: BOOK,
+    traceOut: join(dir, "t2.jsonl"),
+  });
+  assertEquals(missing.termination, null);
+  assertStringIncludes(
+    JSON.stringify(missing.telemetry.raw_usage),
+    "raw log missing",
+  );
+});
+
+Deno.test("pi adapter: nativeSettings records the agent settings; one openrouter model; unsupported components refused", () => {
+  assertEquals(piAdapter.nativeSettings(CFG, CATALOG), {
+    provider: "openrouter",
+    api_models: { main: "google/gemini-3.8-flash" },
+    pi_settings: PI_SETTINGS,
+  });
+  assertEquals(PI_SETTINGS.compaction.enabled, false);
+  assertEquals(PI_SETTINGS.cacheWarming, "off");
+  assertEquals(piAdapter.providerRoutes(CFG), { main: "openrouter:api-key" });
+  assertEquals(
+    piAdapter.nativeSettings(
+      { ...CFG, settings: { thinking: "high" } },
+      CATALOG,
+    )["thinking"],
+    "high",
+  );
+  const bad: [Partial<typeof CFG>, string][] = [
+    [{ models: { main: "anthropic/claude-sonnet-5" } }, "openrouter"],
+    [{ models: { main: "openrouter/google/nope" } }, "catalog"],
+    [{
+      models: {
+        main: "openrouter/google/gemini-3.8-flash",
+        small: "openrouter/google/gemini-3.8-flash",
+      },
+    }, "one model slot"],
+    [{ components: { ...CFG.components, mcp: ["al-tools"] } }, "no MCP"],
+    [{ components: { ...CFG.components, agents: "bundles/a" } }, "agents"],
+    [{ settings: { reasoning: "high" } }, "unknown setting reasoning"],
+    [{ settings: { thinking: "huge" } }, "thinking"],
+    [{ settings: { pi_settings: {} } }, "unknown setting pi_settings"],
+  ];
+  for (const [over, msg] of bad) {
+    assertThrows(
+      () => piAdapter.nativeSettings({ ...CFG, ...over }, CATALOG),
+      ConfigurationError,
+      msg,
+    );
+  }
+});
+
+Deno.test("run.ps1 never handles the key; the image pins pi 0.87.1 and has no secret", async () => {
+  const run = await Deno.readTextFile("harness/images/pi/run.ps1");
+  for (const s of ["--api-key", "OPENROUTER_API_KEY", "openrouter-api-key"]) {
+    assert(!run.includes(s), s);
+  }
+  const docker = await Deno.readTextFile(
+    "harness/images/pi/Dockerfile.windows",
+  );
+  assertStringIncludes(docker, "@earendil-works/pi-coding-agent@0.87.1");
+  assert(!/OPENROUTER|api-key|cg-secrets/i.test(docker));
+  assertStringIncludes(docker, "COPY cg-budget.ts C:/cg-budget.ts");
+});
+
+Deno.test("run.ps1: waits for ready before pi, isolated agent dir, guard explicit, JSON mode, offline, stdin prompt", async () => {
+  const run = await Deno.readTextFile("harness/images/pi/run.ps1");
+  for (
+    const s of [
+      "C:\\cg-secrets\\ready",
+      "CG_READY_TIMEOUT_S",
+      "ready = $false",
+      "exit 3",
+      "$env:PI_CODING_AGENT_DIR = 'C:\\pi-agent'",
+      "$cfg.settings.pi_settings",
+      "'--mode', 'json'",
+      "'--no-session'",
+      "'--offline'",
+      "'--no-approve'",
+      "'--no-extensions'",
+      "'-e', 'C:\\cg-budget.ts'",
+      "'--no-skills'",
+      "$env:CG_MAX_BUDGET_USD",
+      "$env:PI_OFFLINE = '1'",
+      "type = 'cg_entry'",
+      "| & pi @piArgs",
+      "$env:PI_CODING_AGENT_DIR\\AGENTS.md",
+      "Get-FileHash",
+      "-Encoding UTF8",
+    ]
+  ) assertStringIncludes(run, s);
+  assert(
+    !run.includes("--append-system-prompt"),
+    "instructions load once, from the agent directory",
+  );
+  const wait = run.indexOf("C:\\cg-secrets\\ready");
+  assert(
+    wait < run.indexOf("& pi --version") &&
+      wait < run.indexOf("| & pi @piArgs"),
+    "no pi before ready",
+  );
+});
+
+Deno.test("cg-budget: sums assistant cost, ignores other roles, fails closed on any unpriced billable usage", () => {
+  const a = (total: unknown, u: Record<string, number> = { output: 10 }) => ({
+    role: "assistant",
+    usage: { ...u, cost: { total } },
+  });
+  assertEquals(budgetStep(0, a(0.5)), { spent: 0.5, unpriced: false });
+  assertEquals(
+    budgetStep(0.5, { role: "toolResult", usage: { cost: { total: 9 } } }),
+    { spent: 0.5, unpriced: false },
+  );
+  assertEquals(budgetStep(0, a(0, { output: 0 })), {
+    spent: 0,
+    unpriced: false,
+  }, "an empty error message costs nothing");
+  assertEquals(budgetStep(0, a(0)), { spent: 0, unpriced: true });
+  assertEquals(budgetStep(0, a(0, { input: 1000 })), {
+    spent: 0,
+    unpriced: true,
+  }, "input-only usage");
+  assertEquals(budgetStep(0, a(0, { cacheRead: 5 })), {
+    spent: 0,
+    unpriced: true,
+  });
+  assertEquals(budgetStep(0, a(undefined)), { spent: 0, unpriced: true });
+  assertEquals(budgetStep(0, a(-1)), { spent: 0, unpriced: true });
+});
+
+Deno.test("pi-flash-plain: loads and passes the catalog check", async () => {
+  const cfg = await loadConfig("harness", "pi-flash-plain");
+  await checkModelsInCatalog([cfg], "site/catalog");
+  assertEquals(cfg.harness, piAdapter.harness);
+});
+
+Deno.test("instructions parity: AGENTS.md is byte-identical to CLAUDE.md; pi configs point at bundles with AGENTS.md", async () => {
+  for await (const b of Deno.readDir("harness/bundles")) {
+    const dir = join("harness/bundles", b.name, "instructions");
+    const names: string[] = [];
+    try {
+      for await (const e of Deno.readDir(dir)) names.push(e.name);
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) continue;
+      throw err;
+    }
+    assertEquals(
+      names.filter((n) => n !== "AGENTS.md" && n !== "CLAUDE.md"),
+      [],
+      dir,
+    );
+    if (names.includes("AGENTS.md") && names.includes("CLAUDE.md")) {
+      assertEquals(
+        await Deno.readFile(join(dir, "AGENTS.md")),
+        await Deno.readFile(join(dir, "CLAUDE.md")),
+        `${dir}: parity`,
+      );
+    }
+  }
+  for await (const c of Deno.readDir("harness/configs")) {
+    const cfg = await loadConfig("harness", c.name.replace(/\.yml$/, ""));
+    if (cfg.harness !== "pi" || cfg.components.instructions === null) continue;
+    await Deno.stat(join("harness", cfg.components.instructions, "AGENTS.md"));
+  }
+  const claude = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  for (const s of ["CLAUDE.md", "AGENTS.md", "Get-FileHash"]) {
+    assertStringIncludes(claude, s);
+  }
+});
+
+Deno.test("cg-budget: refuses a key pi would interpolate or a missing key file, so no provider is registered", async () => {
+  const { default: guard } = await import(
+    "../../../harness/images/pi/cg-budget.ts"
+  );
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const registered: unknown[] = [];
+  const api = {
+    registerProvider: (_n: string, c: { apiKey: string }) => registered.push(c),
+    appendEntry: () => {},
+    on: () => {},
+  };
+  const prev = [
+    Deno.env.get("CG_PI_KEY_FILE"),
+    Deno.env.get("CG_MAX_BUDGET_USD"),
+  ];
+  try {
+    Deno.env.set("CG_MAX_BUDGET_USD", "2");
+    Deno.env.set("CG_PI_KEY_FILE", join(dir, "absent"));
+    assertThrows(() => guard(api));
+    for (
+      const k of [
+        "short",
+        "$OPENROUTER_API_KEY_0123",
+        "!cmd-0123456789abcdef",
+        "sk-or-v1-abc${HOME}0123456789",
+        "sk-or-v1-abc$HOME0123456789",
+        "sk-or-v1-0123 456789abcdef",
+      ]
+    ) {
+      await Deno.writeTextFile(join(dir, "key"), k);
+      Deno.env.set("CG_PI_KEY_FILE", join(dir, "key"));
+      assertThrows(() => guard(api), Error, undefined, k);
+    }
+    assertEquals(registered, []);
+    await Deno.writeTextFile(
+      join(dir, "key"),
+      "sk-or-v1-cgfake" + "0".repeat(48) + "\n",
+    );
+    guard(api);
+    assertEquals(registered, [{ apiKey: "sk-or-v1-cgfake" + "0".repeat(48) }]);
+  } finally {
+    for (
+      const [k, v] of [["CG_PI_KEY_FILE", prev[0]], [
+        "CG_MAX_BUDGET_USD",
+        prev[1],
+      ]] as const
+    ) {
+      if (v === undefined) Deno.env.delete(k);
+      else Deno.env.set(k, v);
+    }
+  }
+});
+
+Deno.test("cg-budget: a malformed usage count or a missing usage object fails closed", () => {
+  const a = (u: unknown) => ({ role: "assistant", usage: u });
+  assertEquals(budgetStep(0, a({ output: "10", cost: { total: 0 } })), {
+    spent: 0,
+    unpriced: true,
+  });
+  assertEquals(budgetStep(0, a({ input: -5, cost: { total: 0 } })), {
+    spent: 0,
+    unpriced: true,
+  });
+  assertEquals(
+    budgetStep(0, a({ cacheWrite: Number.NaN, cost: { total: 0.1 } })),
+    { spent: 0, unpriced: true },
+  );
+  assertEquals(budgetStep(0, { role: "assistant" }), {
+    spent: 0,
+    unpriced: true,
+  });
+});
+
+Deno.test("cg-budget: one armed entry; a trip aborts even if recording fails, then blocks every tool call", async () => {
+  const { default: guard } = await import(
+    "../../../harness/images/pi/cg-budget.ts"
+  );
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.writeTextFile(
+    join(dir, "key"),
+    "sk-or-v1-cgfake" + "0".repeat(48),
+  );
+  const h: Record<string, (...x: unknown[]) => unknown> = {};
+  const entries: unknown[] = [];
+  let failAppend = false;
+  let aborts = 0;
+  const api = {
+    registerProvider: () => {},
+    appendEntry: (_t: string, d: unknown) => {
+      if (failAppend) throw new Error("append failed");
+      entries.push(d);
+    },
+    on: (e: string, f: (...x: unknown[]) => unknown) => {
+      h[e] = f;
+    },
+  };
+  const prev = [
+    Deno.env.get("CG_PI_KEY_FILE"),
+    Deno.env.get("CG_MAX_BUDGET_USD"),
+  ];
+  try {
+    Deno.env.set("CG_MAX_BUDGET_USD", "1");
+    Deno.env.set("CG_PI_KEY_FILE", join(dir, "key"));
+    guard(api as unknown as Parameters<typeof guard>[0]);
+    h["agent_start"]!();
+    h["agent_start"]!();
+    assertEquals(entries, [{ event: "armed", limit_usd: 1 }]);
+    assertEquals(h["tool_call"]!(), undefined);
+    failAppend = true;
+    const ctx = { abort: () => aborts++ };
+    assertThrows(() =>
+      h["message_end"]!({
+        message: {
+          role: "assistant",
+          usage: { output: 5, cost: { total: 2 } },
+        },
+      }, ctx)
+    );
+    assertEquals(aborts, 1, "abort runs although the record failed");
+    assertEquals(h["tool_call"]!(), {
+      block: true,
+      reason: "budget exhausted",
+    });
+  } finally {
+    for (
+      const [k, v] of [["CG_PI_KEY_FILE", prev[0]], [
+        "CG_MAX_BUDGET_USD",
+        prev[1],
+      ]] as const
+    ) {
+      if (v === undefined) Deno.env.delete(k);
+      else Deno.env.set(k, v);
+    }
+  }
+});
+
+Deno.test("run.ps1 review: pi_settings and the ready timeout are validated, instructions staged before pi starts", async () => {
+  const run = await Deno.readTextFile("harness/images/pi/run.ps1");
+  const piStart = run.indexOf("& pi --version");
+  for (
+    const s of [
+      "-cne 'off'",
+      "-is [bool]",
+      "[int]::TryParse($env:CG_READY_TIMEOUT_S",
+    ]
+  ) {
+    assertStringIncludes(run, s);
+  }
+  assert(!run.includes("[int]$env:CG_READY_TIMEOUT_S"), "no raw [int] cast");
+  const at = (s: string) => {
+    const i = run.indexOf(s);
+    assert(i >= 0, s);
+    return i;
+  };
+  assert(
+    at("-cne 'off'") < at('\\settings.json"'),
+    "settings checked before written",
+  );
+  assert(
+    at("-cne 'off'") < at("C:\\cg-secrets\\ready"),
+    "settings checked before the wait",
+  );
+  assert(
+    at('\\AGENTS.md" -Force') < at("& pi --version"),
+    "instructions copied before pi --version",
+  );
+  assert(at("Get-FileHash") < piStart);
+  assert(at("& pi --version") < at("ready = $true"));
+});
+
+Deno.test("cg-budget: armed only once the record is written; a failed arm retries and the limit still holds", async () => {
+  const { default: guard } = await import(
+    "../../../harness/images/pi/cg-budget.ts"
+  );
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.writeTextFile(
+    join(dir, "key"),
+    "sk-or-v1-cgfake" + "0".repeat(48),
+  );
+  const h: Record<string, (...x: unknown[]) => unknown> = {};
+  const entries: unknown[] = [];
+  let failAppend = true;
+  let aborts = 0;
+  const api = {
+    registerProvider: () => {},
+    appendEntry: (_t: string, d: unknown) => {
+      if (failAppend) throw new Error("append failed");
+      entries.push(d);
+    },
+    on: (e: string, f: (...x: unknown[]) => unknown) => {
+      h[e] = f;
+    },
+  };
+  const prev = [
+    Deno.env.get("CG_PI_KEY_FILE"),
+    Deno.env.get("CG_MAX_BUDGET_USD"),
+  ];
+  try {
+    Deno.env.set("CG_MAX_BUDGET_USD", "1");
+    Deno.env.set("CG_PI_KEY_FILE", join(dir, "key"));
+    guard(api as unknown as Parameters<typeof guard>[0]);
+    assertThrows(() => h["agent_start"]!());
+    failAppend = false;
+    h["agent_start"]!();
+    h["agent_start"]!();
+    assertEquals(
+      entries,
+      [{ event: "armed", limit_usd: 1 }],
+      "the failed arm retried once, then never again",
+    );
+    h["message_end"]!({
+      message: { role: "assistant", usage: { output: 5, cost: { total: 2 } } },
+    }, { abort: () => aborts++ });
+    assertEquals(aborts, 1);
+    assertEquals(h["tool_call"]!(), {
+      block: true,
+      reason: "budget exhausted",
+    });
+  } finally {
+    for (
+      const [k, v] of [["CG_PI_KEY_FILE", prev[0]], [
+        "CG_MAX_BUDGET_USD",
+        prev[1],
+      ]] as const
+    ) {
+      if (v === undefined) Deno.env.delete(k);
+      else Deno.env.set(k, v);
+    }
+  }
 });
