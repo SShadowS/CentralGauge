@@ -10,4 +10,4 @@ How a lease schedule must behave (schedules are created with `CGR Lease Mgt`, Cr
 - The first installment is due on the lease start date; installment n is due n-1 months after the start date.
 - The lease total is base rate x months x rate factor, rounded to 0.01, where the rate factor is 1 + months/100. Every installment is the total divided by the number of months, rounded to 0.01, except the last one, which takes the remainder so that the installments add up exactly to the total.
 - Creating the schedule again replaces the existing lines with a schedule for the lease as it is now.
-- A lease with an invoiced schedule line cannot be rescheduled: the attempt fails and the schedule stays exactly as it was.
+- A lease with an invoiced schedule line cannot be rescheduled: the attempt fails.
