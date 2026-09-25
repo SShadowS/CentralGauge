@@ -109,3 +109,22 @@ Deno.test("skills bundle: loads through resolveManifest as a skills component, h
     await Deno.remove(tmp, { recursive: true });
   }
 });
+
+Deno.test("al-build-loop: usage line and exit codes match cg-al.ps1", async () => {
+  const ps1 = await Deno.readTextFile(join(ROOT, "images/base/cg-al.ps1"));
+  const skill = await Deno.readTextFile(
+    join(ROOT, SKILLS, "al-build-loop", "SKILL.md"),
+  );
+  const usage = ps1.match(/^# Usage: (.+)$/m)?.[1]?.trim();
+  assert(usage, "cg-al.ps1 has a Usage line");
+  assert(skill.includes(usage), `skill states the usage: ${usage}`);
+  const codes = (text: string, re: RegExp) =>
+    [...new Set([...text.matchAll(re)].map((m) => Number(m[1])))].sort((
+      a,
+      b,
+    ) => a - b);
+  assertEquals(
+    codes(skill, /^\| (\d+) +\|/gm),
+    codes(ps1, /\bexit (\d+)\b/g),
+  );
+});
