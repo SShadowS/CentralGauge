@@ -293,15 +293,35 @@ function appState(run: RunResult, app: string): AppState {
   return b.stage === "compile" ? "compile_fail" : "publish_fail";
 }
 
+/**
+ * Publish rejections caused by the staged content itself (an object id/name or
+ * the app id+version already taken): a candidate build failure, never infra
+ * (orchestrator ruling, M4-01b).
+ */
+export const PUBLISH_COLLISION =
+  /already exists|already (?:been )?declared|same App ID and Version/i;
+
 export function summarize(task: HarnessTask, run: RunResult): RunSummary {
   const states = BUILD_ORDER.map((a) => appState(run, a));
   const oracle = run.usesOracle ? appState(run, "Oracle") : null;
+  const apps = oracle === null ? BUILD_ORDER : [...BUILD_ORDER, "Oracle"];
+  const collided = (app: string) =>
+    run.builds.some((b) =>
+      b.app === app && b.stage === "publish" && !b.ok &&
+      PUBLISH_COLLISION.test(b.detail ?? "")
+    );
   // An app that never built is infra, unless an earlier app in build order
-  // failed to compile: then it was skipped and the compile failure explains it.
+  // failed to compile or collided on publish: then it was skipped and that
+  // candidate failure explains it.
   const ordered = oracle === null ? states : [...states, oracle];
-  const firstCompileFail = ordered.indexOf("compile_fail");
+  const firstFail = ordered.findIndex((st, i) =>
+    st === "compile_fail" || (st === "publish_fail" && collided(apps[i]!))
+  );
   const unexplainedNotRun = ordered.some((st, i) =>
-    st === "not_run" && (firstCompileFail < 0 || i < firstCompileFail)
+    st === "not_run" && (firstFail < 0 || i < firstFail)
+  );
+  const infraPublish = ordered.some((st, i) =>
+    st === "publish_fail" && !collided(apps[i]!)
   );
   const testBuilt = appState(run, "Test") === "ok";
   const p2p = tally(run.tests, task.pass_to_pass);
@@ -317,9 +337,8 @@ export function summarize(task: HarnessTask, run: RunResult): RunSummary {
     f2p,
     own,
     // Missing results from an app that built are infra, never evidence (GH #13 rule).
-    infra: run.infra !== undefined || unexplainedNotRun ||
-      states.includes("publish_fail") ||
-      oracle === "publish_fail" || (testBuilt && p2p.missing > 0) ||
+    infra: run.infra !== undefined || unexplainedNotRun || infraPublish ||
+      (testBuilt && p2p.missing > 0) ||
       (f2p !== null && f2p.missing > 0) ||
       (testBuilt && own !== null && own.missing > 0),
   };

@@ -785,7 +785,7 @@ async function graft(
     ? `${kind === "blob" ? "100644" : "040000"} ${kind} ${blob}\t${head}`
     : `040000 tree ${await graft(
       root,
-      same?.split(" ")[2]!.split("\t")[0] ?? "",
+      same?.split(" ")[2]?.split("\t")[0] ?? "",
       rest,
       blob,
       kind,
