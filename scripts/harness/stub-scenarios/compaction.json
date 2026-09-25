@@ -1,0 +1,38 @@
+{
+  "steps": [
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_01",
+          "name": "Read",
+          "input": {
+            "file_path": "C:\\workspace\\app.json"
+          }
+        }
+      ],
+      "stop_reason": "tool_use",
+      "usage": {
+        "input_tokens": 190000
+      }
+    },
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "Summary: read app.json."
+        }
+      ],
+      "stop_reason": "end_turn"
+    },
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "ok"
+        }
+      ],
+      "stop_reason": "end_turn"
+    }
+  ]
+}
