@@ -1,0 +1,19 @@
+id: HX-003
+refapp_version: refapp-v1-rc3
+kind: feature
+prompt: prompt.md
+touches: [Fleet, Rental, Core]
+coupling: [ishandled, interface]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, SwapMovesContractToFreeVehicle, SuspendRentalsBlocksCheckout] }
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 85200, procedures: [DefaultVehicleDueIsRefused, DefaultVehicleBelowIntervalRents, HeavyDutyDueAtFiveThousand, HeavyDutyBelowIntervalRents, ExtensionStrategyDueIsRefused, ExtensionStrategyBelowIntervalRents, SwapToDueVehicleIsRefused, AvailabilityReportsDueVehicle, OverrideCannotReleaseDueVehicle, SwapUnderOverrideRefused, OverrideStillAppliesToVehiclesNotDue] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

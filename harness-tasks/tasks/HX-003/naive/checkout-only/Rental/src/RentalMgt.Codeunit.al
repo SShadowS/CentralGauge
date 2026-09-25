@@ -4,6 +4,7 @@ codeunit 70200 "CGR Rental Mgt"
         NotAvailableErr: Label 'Vehicle %1 is not available.', Comment = '%1 = vehicle number';
         WrongStatusErr: Label 'Rental contract %1 must have status %2.', Comment = '%1 = contract number, %2 = status';
         ReturnKmErr: Label 'Return km %1 is below the start km %2.', Comment = '%1 = return km, %2 = start km';
+        DueForServiceErr: Label 'Vehicle %1 is due for service.', Comment = '%1 = vehicle number';
 
     procedure CreateContract(VehicleNo: Code[20]; CustomerName: Text[100]; StartDate: Date; EndDate: Date): Code[20]
     var
@@ -29,6 +30,8 @@ codeunit 70200 "CGR Rental Mgt"
         CoreEvents: Codeunit "CGR Core Events";
     begin
         Contract.Get(ContractNo);
+        if FleetMgt.IsDueForService(Contract."Vehicle No.") then
+            Error(DueForServiceErr, Contract."Vehicle No.");
         if Contract.Status <> Contract.Status::Open then
             Error(WrongStatusErr, ContractNo, Contract.Status::Open);
         if not FleetMgt.IsAvailable(Contract."Vehicle No.") then

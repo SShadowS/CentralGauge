@@ -74,4 +74,43 @@ codeunit 80010 "CGR Rental Tests"
         asserterror RentalMgt.Return(ContractNo, 999, '');
         Assert.ExpectedError('Return km 999 is below the start km 1000.');
     end;
+
+    [Test]
+    procedure SwapMovesContractToFreeVehicle()
+    var
+        OldVehicle: Record "CGR Vehicle";
+        NewVehicle: Record "CGR Vehicle";
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        Lib.CreateVehicle('T-RENT-005', 1000, Enum::"CGR Maintenance Strategy"::Default);
+        Lib.CreateVehicle('T-RENT-006', 2500, Enum::"CGR Maintenance Strategy"::Default);
+        ContractNo := Lib.CreateContract('T-RENT-005');
+        RentalMgt.CheckOut(ContractNo);
+        RentalMgt.SwapVehicle(ContractNo, 'T-RENT-006');
+        Contract.Get(ContractNo);
+        Assert.AreEqual('T-RENT-006', Contract."Vehicle No.", 'Contract moves to the new vehicle');
+        Assert.AreEqual(2500, Contract."Start Km", 'Start km is the new vehicle mileage');
+        OldVehicle.Get('T-RENT-005');
+        Assert.IsFalse(OldVehicle."Checked Out", 'The old vehicle is released');
+        NewVehicle.Get('T-RENT-006');
+        Assert.IsTrue(NewVehicle."Checked Out", 'The new vehicle is checked out');
+    end;
+
+    [Test]
+    procedure SuspendRentalsBlocksCheckout()
+    var
+        Setup: Record "CGR Setup";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        Lib.CreateVehicle('T-RENT-007', 1000, Enum::"CGR Maintenance Strategy"::Default);
+        ContractNo := Lib.CreateContract('T-RENT-007');
+        Setup.GetOrCreate();
+        Setup."Suspend Rentals" := true;
+        Setup.Modify();
+        asserterror RentalMgt.CheckOut(ContractNo);
+        Assert.ExpectedError('Vehicle T-RENT-007 is not available.');
+    end;
 }

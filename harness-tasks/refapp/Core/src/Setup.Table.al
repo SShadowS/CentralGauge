@@ -7,6 +7,7 @@ table 70003 "CGR Setup"
         field(1; "Primary Key"; Code[10]) { }
         field(2; "Last Contract No."; Integer) { }
         field(3; "Last Lease No."; Integer) { }
+        field(4; "Suspend Rentals"; Boolean) { }
     }
 
     keys

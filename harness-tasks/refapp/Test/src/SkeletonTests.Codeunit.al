@@ -40,6 +40,7 @@ codeunit 80000 "CGR Skeleton Tests"
         FleetMgt: Codeunit "CGR Fleet Mgt";
     begin
         Lib.CreateVehicle('SPIKE-003', 1000, Enum::"CGR Maintenance Strategy"::"Heavy Duty");
+        Lib.SetLastServiceKm('SPIKE-003', 1000);
         Assert.AreEqual(6000, FleetMgt.NextServiceKm('SPIKE-003'), 'Heavy Duty adds 5000 km (Integer vs Integer)');
     end;
 

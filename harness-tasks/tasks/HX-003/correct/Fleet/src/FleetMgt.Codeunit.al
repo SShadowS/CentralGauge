@@ -6,6 +6,9 @@ codeunit 70100 "CGR Fleet Mgt"
         Result: Boolean;
         IsHandled: Boolean;
     begin
+        // Safety rule: a vehicle due for service is never available, whatever subscribers decide.
+        if IsDueForService(VehicleNo) then
+            exit(false);
         OnBeforeIsAvailable(VehicleNo, Result, IsHandled);
         if IsHandled then
             exit(Result);
@@ -22,6 +25,15 @@ codeunit 70100 "CGR Fleet Mgt"
         Vehicle.Get(VehicleNo);
         Strategy := Vehicle.Strategy;
         exit(Strategy.NextServiceKm(Vehicle."Last Service Km"));
+    end;
+
+    procedure IsDueForService(VehicleNo: Code[20]): Boolean
+    var
+        Vehicle: Record "CGR Vehicle";
+    begin
+        if not Vehicle.Get(VehicleNo) then
+            exit(false);
+        exit(Vehicle.Mileage >= NextServiceKm(VehicleNo));
     end;
 
     [IntegrationEvent(false, false)]
