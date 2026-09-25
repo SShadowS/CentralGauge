@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** By the 2026-10-09 launch gate ("Claude Code and pi adapters working"), a pi 0.87.1 cell (openrouter provider) runs HX-001 in the Windows sandbox behind the egress proxy after authorization, with an estimated cost in the records; Claude Code can load the al-tools MCP component. The AL Tools NuGet toolchain component is cut (launch contract cut item 2, applied in this revision).
+**Goal:** By the 2026-10-09 launch gate ("Claude Code and pi adapters working"), a pi 0.87.1 cell (openrouter provider) runs HX-001 in the Windows sandbox behind the egress proxy after authorization (or, per the ruling, as a supervised ledger-slot run if authorization is not in place by 10-08), with an estimated cost in the records; Claude Code can load the al-tools MCP component. The AL Tools NuGet toolchain component is cut (launch contract cut item 2, applied in this revision).
 
 **Architecture:** The pi adapter mirrors the accepted Claude Code adapter (M1-32): a pure stream parser (`parsePiStream`) behind the frozen `HarnessAdapter` contract, one image (`harness/images/pi/`) whose `run.ps1` reads `C:\config`, waits for the runner's `C:\cg-secrets\ready`, isolates pi's agent directory and starts pi. A pi extension (`cg-budget.ts`) is the only holder of the OpenRouter key (it registers it with `pi.registerProvider`), so a guard that fails to load leaves pi without a credential; it records `armed` and `exhausted` through `pi.appendEntry` (JSON-mode `entry_appended` records) and stops with `ctx.abort()` plus a `tool_call` block. The al-tools MCP component is a dependency-free stdio MCP server in the base image that forwards to the same `cg-al` backend.
 
@@ -22,6 +22,16 @@
 | 6 | MCP: no Claude-client loading proof; protocol and argument validation | M3-03 (version policy, strict argument validation without a backend call), M3-07 (Claude Code `system/init` shows `al-tools` connected with a fake token, plus all three backend operations) |
 | 7 | Schedule, cut, authorization-first gate, contradictions | Schedule below; toolchain cut (section "Cut"); M3-09 after M1-34 Step 12; the `--api-key` test no longer contradicts the entrypoint (the entrypoint never handles the key) |
 
+**Revision 3 (after M3-plan-002, ACCEPT-WITH-CHANGES, `H:\cg-coord\reviews\M3-plan-002\review-gpt6astra-round2.md`; rulings `H:\cg-coord\decisions\2026-09-25-m3-rulings.md`).**
+
+| # | Round-2 item | Addressed in |
+| --- | --- | --- |
+| C1 | Cache-warming usage arrives as a nested `entry_appended` entry (`type: "usage"`, `kind: "cache_warm"`) and escaped the cost-gap check | M3-01: `NON_BILLING_ENTRIES` plus the nested-entry scan in `parsePiStream`; test `pi parse: a nested usage entry (cache warming) nulls the estimate` with the pi 0.87.1 shape |
+| C2 | The M3-07 probe raced the backend's one-request-per-execution admission (429) | M3-03: the MCP server serializes backend calls (`serialized`); test `tool calls reach the backend one at a time` against a mock with the backend's 429 semantics; M3-07 Step 3 sends `notifications/initialized` and relies on the serialization |
+| C3 | Supervised fallback had no branch and no slot | Global Constraints (revised 5-slot allocation); M3-09 Branch B (ledger reservation, `--supervised`, no reruns, enforcement state recorded, fail-closed marker) |
+| C4 | The gate image was taken from the MCP task and could predate M1-33's image changes | New M3-08 (enforced-branch image handoff: base and pi rebuilt after M1-33, ids recorded, OpenRouter preflight proven in that image); M3-10 (non-enforced `ready` writer, independent of M1-33); M3-09 no longer depends on M3-07 |
+| C5 | AGENTS.md parity ruling not implemented; the loaders required exactly one file | M3-02: `harness/bundles/env/instructions/AGENTS.md` byte copy, bundle parity test, both entrypoints select their canonical file and refuse a mismatch; pi loads it once from the isolated agent directory; M3-04 Step 5 counts it once |
+
 ## Global Constraints
 
 - The adapter contract in `src/harness/adapter.ts` is reused exactly: no new field on `HarnessAdapter`, `ParseInput` or `ParsedRun`. `Telemetry`, `TraceEvent`, `ExecutionRecord` shapes unchanged.
@@ -32,7 +42,7 @@
 - Non-JSON stdout (accept-M1-32): counted with line numbers and byte lengths, never content; nulls the cost; never discards the attempt.
 - Secrets: the OpenRouter key file is read only by the budget guard inside pi's process; `run.ps1` never reads it, never sets an env var for it, never passes `--api-key`. Never `docker run -e`, never an image layer.
 - Credential release (M1-33): the entrypoint starts pi only after `C:\cg-secrets\ready` exists, bounded by `CG_READY_TIMEOUT_S` (default 600); on timeout it writes `cg_entry` with `ready: false` and exits 3 without starting pi.
-- Egress and the 5-run budget: the M1/M4 allocation already fills all five pre-authorization slots (M4-17 HX-002, M1-29, M4-17 HX-005, M1-34 Step 11, M1-29 reserve). **No M3 run uses a slot:** every credential-bearing pi run happens after M1-34 Step 12 writes `authorized` and `harness egress verify` passes. Every other M3 run uses a fake key.
+- Egress and the 5-run budget (ruling `m3-rulings`: the pi gate falls back to a supervised slot if M1-34 is not authorized by 10-08). **Revised shared allocation, effective before the first slot is consumed (M4-17 HX-002 pilot, 10-03):** slot 1 M4-17 HX-002 pilot, slot 2 M1-29 Claude gate, slot 3 M4-17 HX-005 pilot, slot 4 M1-34 Step 11 qualification cell, slot 5 the pi gate fallback (M3-09 Branch B). The former M1-29 infra-repeat reserve is withdrawn: an M1-29 infra failure goes to the owner. The orchestrator writes this allocation into the M1 part 2 schedule and `H:\cg-coord\decisions\` before 10-03. M3-09 Branch A (after `authorized`) uses no slot; every other M3 run uses a fake key.
 - Paid spend: OpenRouter spend is logged in `H:\cg-coord\decisions\spend.md` (cap USD 150, report at 120).
 - pi 0.87.1 has no native MCP; the pi adapter refuses MCP. pi arms vary skills, instructions and models.
 - Model ids never hardcoded in code; configs name catalog slugs. No `sync-catalog --apply`, no ingest, no deploy.
@@ -46,7 +56,7 @@
 1. **Every provider call fails and pi exits 0.** Expected: never `completed`; `usage_limited` only when the final failure text names 402, 429, rate limit, insufficient credits or quota; `did_work` false. Pinned in M3-01 (`pi parse: pi exits 0 after every provider call failed`), M3-02 runtime (`scripted 500s end in harness_crash`, `scripted 429s end in usage_limited`), M3-05 (captured auth failure).
 2. **Killed during a retry or after an earlier `agent_end`.** Expected: termination null, cost null ("no agent_settled"), partial usage kept. Pinned in M3-01 (`pi parse: a cut stream`, `pi parse: a kill during a retry after an earlier agent_end`).
 3. **The budget guard does not load, loads twice, or trips.** Expected: not loaded means no key, so no provider request; repeated `agent_start` gives one `armed`; a trip stops further provider requests. Pinned in M3-02 runtime (`guard missing: pi makes no provider request`, `one armed record across retries`, `a trip stops further provider requests`).
-4. **Paid work outside `message_end` (compaction, cache warming, an event type pi adds later).** Expected: disabled by recorded settings; if it appears anyway, cost null with the reason. Pinned in M3-01 (`pi parse: compaction or an unknown record nulls the cost`), M3-02 (`nativeSettings records the agent settings`).
+4. **Paid work outside `message_end` (compaction, cache warming as a nested `usage` entry, an event type pi adds later).** Expected: disabled by recorded settings; if it appears anyway, cost null with the reason. Pinned in M3-01 (`pi parse: compaction or an unknown record nulls the cost`, `pi parse: a nested usage entry (cache warming) nulls the estimate`), M3-02 (`nativeSettings records the agent settings`).
 5. **The OpenRouter key leaks.** Expected: not in argv, env, image layers or stdout; a printed key is redacted on publication (M1-22). Pinned in M3-02 (`run.ps1 never handles the key`, runtime `the key reaches the provider only as the Authorization header`) and M3-09 Step 5 (secret scan).
 
 ## Reuse
@@ -63,7 +73,7 @@ Owned elsewhere, stated so nothing disappears: call categorization for pi (`SKIL
 
 - **A1. One route-to-host policy** in `src/harness/egress.ts`: `ROUTE_HOSTS: Record<string, string[]> = { "anthropic:first-party-oauth": [<hosts recorded by M1-34 Step 11>, "api.anthropic.com"], "openrouter:api-key": ["openrouter.ai"] }`; `hostsForRoutes(routes)` throws `ConfigurationError` for an unknown route (fail closed). The proxy allowlist for an execution is `hostsForRoutes(Object.values(manifest.provider_routes))`, never the union over all arms.
 - **A2. Route-aware positive preflight:** the expected-open probe is `proxy-allow-<host>` for exactly that execution's hosts (a pi arm probes `openrouter.ai`, a Claude arm `api.anthropic.com`).
-- **A3. `ready` in every mode:** the runner writes `C:\cg-secrets\ready` after the secret files in every run (enforced: after the preflight; not enforced: right after the secrets), so every entrypoint waits unconditionally. M3-02's `run.ps1` implements the pi side; M1-33 adds the same wait to the Claude Code `run.ps1` (already in its file list).
+- **A3. `ready` in every mode:** the runner writes `C:\cg-secrets\ready` after the secret files in every run, so every entrypoint waits unconditionally. The non-enforced writer is M3-10 (independent of M1-33, so the M3-09 fallback does not wait for egress work); M1-33 owns the enforced ordering (secrets and `ready` only after the preflight) and adds the wait to the Claude Code `run.ps1` (already in its file list). M3-02's `run.ps1` implements the pi side.
 
 ## Schedule (resequenced against the M1/M4 schedule; coordinator: lane `infra` is idle until M1-16 lands, lane `infra2` is on M1-16)
 
@@ -74,8 +84,10 @@ Owned elsewhere, stated so nothing disappears: call categorization for pi (`SKIL
 | M3-03 | infra | M1-19, M1-24 | 10-05 (after M1-24, before M1-33 starts 10-06) | al-tools MCP component: server with version policy and argument validation, image label facts, `runtimeFacts`, Claude Code wiring |
 | M3-04 | ops | M3-02, M1-28 | 10-05 (reserved block after M1-29, before M4-09 on Cronus282/283; no BC container) | build the pi image; fake-key probes in the sandbox: ready gating, auth failure, proxy honored plus host list, skills and prompt; runtime scenarios re-run inside the image; fixtures delivered by 16:00 |
 | M3-05 | infra2 | M3-04 | 10-05 (after the fixtures; before M1-18/M1-35 on 10-06) | parser pinned to the captured fixtures |
-| M3-07 | ops | M3-03, M1-28 | 10-07 (sequential block, before or after M4-13, not concurrent; Cronus281 lease) | Claude Code loads the al-tools MCP (fake token, `system/init`); all three operations through the MCP server to the real backend |
-| M3-09 | ops | M3-05, M1-29, M1-33 (with A1-A3), M1-34 through Step 12 (`authorized`), M1-38 | 10-09 (after M1-34 Step 12 and M1-38; acceptance may land late on 10-09) | **gate:** pi cell on HX-001 behind the proxy with an estimated cost; not a ledger slot; optional real budget trip |
+| M3-10 | infra | M1-22 | 10-05 (before M3-03) | runner writes `ready` in non-enforced runs (A3, non-enforced half) |
+| M3-07 | ops | M3-03, M1-28 | 10-07 (sequential block, before or after M4-13, not concurrent; Cronus281 lease) | Claude Code loads the al-tools MCP (fake token, `system/init`); all three operations through the serialized MCP server to the real backend. Not a dependency of the pi gate. |
+| M3-08 | ops | M1-33 (image changes and A1-A3 merged), M1-34 through Step 6, M3-02 | 10-09 morning (after M1-34 Steps 9 to 12, before M3-09 Branch A) | enforced-branch gate image handoff: rebuild base and pi after M1-33, record immutable ids, prove the OpenRouter preflight in that exact pi image (no credential) |
+| M3-09 | ops | Branch A: M3-05, M3-08, M1-29, M1-34 through Step 12 (`authorized`), M1-38. Branch B: M3-05, M3-04 (image), M3-10, M1-29 | 10-09 (Branch A after M1-34 Step 12 and M1-38; Branch B if the marker is not `authorized` with a passing verification at the end of 10-08) | **gate:** pi cell on HX-001 with an estimated cost. Branch A behind the proxy, no slot; Branch B supervised, ledger slot 5 |
 
 Protected, no M3 work: 10-06 to 10-08 on `infra` (M1-33) and `infra2` (M1-18, M1-35, M1-23, M1-24b); 10-08 ops blackout for M1-34 apply, revert and re-apply. Requested from the orchestrator (cut item 3, secondary report sections): defer M1-25's report extras so `infra2` keeps 10-09 for integration repairs; the primary metric and outcome reporting stay.
 
@@ -98,7 +110,7 @@ Termination, in order:
 6. last assistant `stopReason`: `stop`/`length` give `completed`; `error`/`aborted` give failure with that message's `errorMessage`; `toolUse` gives failure (loop ended with tool use outstanding); missing or any other value gives failure plus a stream problem `unknown stopReason`.
 7. failure: `usage_limited` when the final failure text (only that one) matches `402`, `429`, `rate limit`, `insufficient credits`, `quota`; else `harness_crash`.
 
-Cost null reasons (in addition to `estimateCost`'s): non-JSON lines; no `agent_settled`; a pending retry; `compaction_start`, `compaction_end` or `summarization_*` records ("billable work outside message_end"); an unknown record type ("possibly billable"). Cache writes: pi through OpenRouter only (the adapter requires provider `openrouter` on every message), all `cacheWrite` tokens go to `cache_write_5m` and `raw_usage.assumptions` names the count and the decision.
+Cost null reasons (in addition to `estimateCost`'s): non-JSON lines; no `agent_settled`; a pending retry; `compaction_start`, `compaction_end` or `summarization_*` records ("billable work outside message_end"); an unknown record type ("possibly billable"); an `entry_appended` whose nested `entry.type` is not in `NON_BILLING_ENTRIES` or which carries `usage` (pi 0.87.1 records cache warming as `entry.type: "usage"`, `kind: "cache_warm"`). Cache writes: pi through OpenRouter only (the adapter requires provider `openrouter` on every message), all `cacheWrite` tokens go to `cache_write_5m` and `raw_usage.assumptions` names the count and the decision.
 
 `did_work`: a `tool_execution_start`, or an assistant `message_end` with `stopReason` `stop`, `length` or `toolUse`.
 
@@ -375,6 +387,27 @@ Deno.test("pi parse: compaction or an unknown record nulls the cost", async () =
   assertStringIncludes(raw(r).missing.join("\n"), "unknown record type cache_refresh (possibly billable)");
 });
 
+Deno.test("pi parse: a nested usage entry (cache warming) nulls the estimate; budget and context-edit entries do not", async () => {
+  const text = await Deno.readTextFile(FIXTURE);
+  // Shape of pi 0.87.1 SessionManager.appendUsage("cache_warm", ...) emitted as entry_appended (dist/core/cache-warmer.js).
+  const warm = JSON.stringify({
+    type: "entry_appended",
+    entry: {
+      type: "usage", id: "w1", parentId: "p1", timestamp: "2026-10-05T00:00:00.000Z", kind: "cache_warm",
+      provider: "openrouter", model: "google/gemini-3.8-flash",
+      usage: { input: 0, output: 1, cacheRead: 9000, cacheWrite: 0, totalTokens: 9001, cost: { total: 0.0007 } },
+    },
+  });
+  const r = run(HEAD + warm + "\n" + text);
+  assertEquals([r.termination, r.telemetry.cost_usd], ["completed", null]);
+  assertStringIncludes(raw(r).missing.join("\n"), "session entry usage/cache_warm (1): billing source outside message_end");
+  const edit = JSON.stringify({ type: "entry_appended", entry: { type: "context_edit", id: "c1", parentId: "p1" } });
+  const other = JSON.stringify({ type: "entry_appended", entry: { type: "custom", id: "x1", parentId: null, customType: "someone-else", data: {} } });
+  assert(run(HEAD + edit + "\n" + other + "\n" + text).telemetry.cost_usd !== null);
+  const compaction = JSON.stringify({ type: "entry_appended", entry: { type: "compaction", id: "k1", parentId: "p1", summary: "s" } });
+  assertEquals(run(HEAD + compaction + "\n" + text).telemetry.cost_usd, null);
+});
+
 Deno.test("pi parse: budget guard records: missing, wrong limit, late, repeated", async () => {
   const text = await Deno.readTextFile(FIXTURE);
   const none = run(ENTRY + "\n" + text);
@@ -517,6 +550,23 @@ const KNOWN_TYPES = new Set([
   "thinking_level_changed",
   ENTRY_RECORD,
 ]);
+/**
+ * Nested session entries (pi emits them as entry_appended) that never bill:
+ * custom data (including our cg-budget records), custom messages, context
+ * edits (retry context), labels, session info, thinking-level and model
+ * changes. Any other entry type (usage entries such as cache_warm,
+ * compaction, branch_summary, anything new) or any entry carrying `usage` is
+ * a billing source outside message_end: the estimate becomes null.
+ */
+const NON_BILLING_ENTRIES = new Set([
+  "custom",
+  "custom_message",
+  "context_edit",
+  "label",
+  "session_info",
+  "thinking_level_change",
+  "model_change",
+]);
 /** Billable outside message_end; disabled by the recorded agent settings (M3-02). */
 const BILLABLE = /^(compaction_|summarization_)/;
 const SHELL_TOOLS = new Set(["bash", "powershell"]);
@@ -585,6 +635,19 @@ export function parsePiStream(
   const armedLine = only(budgetOf("armed"), `${BUDGET_ENTRY} armed`, file);
   const exhausted = only(budgetOf("exhausted"), `${BUDGET_ENTRY} exhausted`, file);
   const armed = armedLine ? obj(obj(armedLine.rec["entry"])["data"]) : undefined;
+  const entryGaps = new Map<string, number>();
+  for (const { rec } of of("entry_appended")) {
+    const e = obj(rec["entry"]);
+    const et = str(e["type"]) ?? "(no type)";
+    if (NON_BILLING_ENTRIES.has(et) && e["usage"] === undefined) continue;
+    const key = et === "usage" ? `usage/${str(e["kind"]) ?? "(no kind)"}` : et;
+    entryGaps.set(key, (entryGaps.get(key) ?? 0) + 1);
+  }
+  for (const [k, n] of [...entryGaps].sort(([a], [b]) => a < b ? -1 : 1)) {
+    const why = `session entry ${k} (${n}): billing source outside message_end, not in the estimate`;
+    streamProblems.push(why);
+    costGaps.push(why);
+  }
   const settled = of("agent_settled").length > 0;
   const retryStarts = of("auto_retry_start");
   const retryEnds = of("auto_retry_end");
@@ -824,7 +887,7 @@ and return `cost_assumptions: Object.fromEntries(Object.entries(assumed).sort(([
 - [ ] **Step 6: Run to see them pass**
 
 Run: `deno test --allow-all tests/unit/harness/pi.test.ts tests/unit/harness/report.test.ts tests/unit/harness/claude-code.test.ts`
-Expected: PASS (16 pi tests; report and Claude Code counts plus one).
+Expected: PASS (17 pi tests; report and Claude Code counts plus one).
 
 - [ ] **Step 7: Check, lint, format** (`src/harness/adapters/{jsonl,pi,claude-code}.ts`, `src/harness/report.ts`, both tests)
 
@@ -847,7 +910,9 @@ git commit -m "feat(harness): pi stream parser with settlement, retries and disc
 - on each assistant `message_end`: `budgetStep` adds `usage.cost.total`; any billable usage (input, output, cache read or cache write above 0) with a missing, negative or zero cost is `unpriced` (fails closed); at `spent >= limit` or `unpriced`: `appendEntry("cg-budget", { event: "exhausted", spent_usd, limit_usd, reason })`, then `ctx.abort()`; from then on every `tool_call` is blocked;
 - overshoot is bounded by one request: the check runs at request boundaries, so a run can exceed the limit by the cost of the request that crossed it. The OpenRouter key's own credit cap (set in the console) is defense in depth, not the proof.
 
-**Agent settings** (recorded): `nativeSettings` returns `pi_settings = { compaction: { enabled: false }, cacheWarming: "off", retry: { enabled: true, maxRetries: 3, baseDelayMs: 2000, provider: { maxRetries: 0 } } }` next to `provider` and `api_models`; `run.ps1` writes it to an isolated `PI_CODING_AGENT_DIR` (`C:\pi-agent`, empty otherwise, so no agent-level context file, skill, extension or `models.json`). Context files: pi still discovers `AGENTS.md`/`CLAUDE.md` in `C:\workspace` and its parents (`docs/configuration.md`: discovery does not need trust); the workspace is staged and hashed, `C:\` holds none; Claude Code reads `CLAUDE.md` only. That difference is documented, not hidden (open question 5).
+**Agent settings** (recorded): `nativeSettings` returns `pi_settings = { compaction: { enabled: false }, cacheWarming: "off", retry: { enabled: true, maxRetries: 3, baseDelayMs: 2000, provider: { maxRetries: 0 } } }` next to `provider` and `api_models`; `run.ps1` writes it to an isolated `PI_CODING_AGENT_DIR` (`C:\pi-agent`, empty otherwise, so no agent-level context file, skill, extension or `models.json`). Context files: pi still discovers `AGENTS.md`/`CLAUDE.md` in `C:\workspace` and its parents (`docs/configuration.md`: discovery does not need trust); the workspace is staged and hashed, `C:\` holds none; Claude Code reads `CLAUDE.md` only.
+
+**Instructions parity (ruling `m3-rulings`: pi bundles ship an `AGENTS.md` byte-identical to the arm's `CLAUDE.md`).** Staging is in the repo bundle, owned by this task: `harness/bundles/env/instructions/AGENTS.md` is a byte copy of `harness/bundles/env/instructions/CLAUDE.md` (created with `cp`, never retyped). An instructions bundle may hold only `CLAUDE.md` and `AGENTS.md`; when both exist they are byte-identical (unit test over every `harness/bundles/*/instructions`; every config with `harness: pi` and instructions must point at a bundle holding `AGENTS.md`). Each entrypoint selects its canonical file explicitly instead of "exactly one file": Claude Code copies `CLAUDE.md` to `%USERPROFILE%\.claude\CLAUDE.md`; pi copies `AGENTS.md` to `C:\pi-agent\AGENTS.md` (an agent-directory context file, pi's analogue of the user-level `CLAUDE.md`), loaded once because `C:\pi-agent` is not an ancestor of `C:\workspace`; no `--append-system-prompt`. Both entrypoints compare the two files' SHA-256 when both are present and throw on a mismatch or any other file. M3-04 Step 5 verifies the text reaches pi exactly once.
 
 `run.ps1`: waits for `C:\cg-secrets\ready` (poll 500 ms, bounded by `CG_READY_TIMEOUT_S`, default 600; on timeout writes `cg_entry` with `ready: false`, exits 3, pi never starts); then `pi --version`; writes `cg_entry`; runs `pi --mode json --no-session --offline --no-approve --no-extensions -e C:\cg-budget.ts --no-skills [--skill C:\config\bundle\skills] [--append-system-prompt <file>] [--thinking <level>] --provider openrouter --model <api id>` with the prompt on stdin. `--no-skills` is always passed.
 
@@ -855,7 +920,8 @@ git commit -m "feat(harness): pi stream parser with settlement, retries and disc
 
 **Files:**
 - Modify: `src/harness/adapters/pi.ts` (adapter object), `src/harness/adapters/mod.ts` (register)
-- Create: `harness/images/pi/Dockerfile.windows`, `harness/images/pi/run.ps1`, `harness/images/pi/cg-budget.ts`, `harness/configs/pi-flash-plain.yml`, `scripts/harness/pi-probe.ts`, `tests/integration/harness/pi-runtime.test.ts`, `tests/integration/harness/fake-openrouter.ts`
+- Create: `harness/images/pi/Dockerfile.windows`, `harness/images/pi/run.ps1`, `harness/images/pi/cg-budget.ts`, `harness/configs/pi-flash-plain.yml`, `harness/bundles/env/instructions/AGENTS.md` (byte copy: `cp harness/bundles/env/instructions/CLAUDE.md harness/bundles/env/instructions/AGENTS.md`), `scripts/harness/pi-probe.ts`, `tests/integration/harness/pi-runtime.test.ts`, `tests/integration/harness/fake-openrouter.ts`
+- Modify (parity): `harness/images/claude-code/run.ps1` (instructions loader selects `CLAUDE.md`, allows only `CLAUDE.md` and `AGENTS.md`, refuses a hash mismatch)
 - Test: `tests/unit/harness/pi.test.ts` (append)
 
 **Interfaces:**
@@ -934,8 +1000,9 @@ Deno.test("run.ps1: waits for ready before pi, isolated agent dir, guard explici
     "C:\\cg-secrets\\ready", "CG_READY_TIMEOUT_S", "ready = $false", "exit 3", "$env:PI_CODING_AGENT_DIR = 'C:\\pi-agent'",
     "$cfg.settings.pi_settings", "'--mode', 'json'", "'--no-session'", "'--offline'", "'--no-approve'", "'--no-extensions'",
     "'-e', 'C:\\cg-budget.ts'", "'--no-skills'", "$env:CG_MAX_BUDGET_USD", "$env:PI_OFFLINE = '1'", "type = 'cg_entry'",
-    "| & pi @piArgs", "'--append-system-prompt'", "-Encoding UTF8",
+    "| & pi @piArgs", "$env:PI_CODING_AGENT_DIR\\AGENTS.md", "Get-FileHash", "-Encoding UTF8",
   ]) assertStringIncludes(run, s);
+  assert(!run.includes("--append-system-prompt"), "instructions load once, from the agent directory");
   const wait = run.indexOf("C:\\cg-secrets\\ready");
   assert(wait < run.indexOf("& pi --version") && wait < run.indexOf("| & pi @piArgs"), "no pi before ready");
 });
@@ -956,6 +1023,30 @@ Deno.test("pi-flash-plain: loads and passes the catalog check", async () => {
   const cfg = await loadConfig("harness", "pi-flash-plain");
   await checkModelsInCatalog([cfg], "site/catalog");
   assertEquals(cfg.harness, piAdapter.harness);
+});
+
+Deno.test("instructions parity: AGENTS.md is byte-identical to CLAUDE.md; pi configs point at bundles with AGENTS.md", async () => {
+  for await (const b of Deno.readDir("harness/bundles")) {
+    const dir = join("harness/bundles", b.name, "instructions");
+    const names: string[] = [];
+    try {
+      for await (const e of Deno.readDir(dir)) names.push(e.name);
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) continue;
+      throw err;
+    }
+    assertEquals(names.filter((n) => n !== "AGENTS.md" && n !== "CLAUDE.md"), [], dir);
+    if (names.includes("AGENTS.md") && names.includes("CLAUDE.md")) {
+      assertEquals(await Deno.readFile(join(dir, "AGENTS.md")), await Deno.readFile(join(dir, "CLAUDE.md")), `${dir}: parity`);
+    }
+  }
+  for await (const c of Deno.readDir("harness/configs")) {
+    const cfg = await loadConfig("harness", c.name.replace(/\.yml$/, ""));
+    if (cfg.harness !== "pi" || cfg.components.instructions === null) continue;
+    await Deno.stat(join("harness", cfg.components.instructions, "AGENTS.md"));
+  }
+  const claude = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  for (const s of ["CLAUDE.md", "AGENTS.md", "Get-FileHash"]) assertStringIncludes(claude, s);
 });
 ```
 
@@ -1296,9 +1387,15 @@ $entry = @{ type = 'cg_entry'; pi_version = $version; max_budget_usd = $budget; 
 $piArgs = @('--mode', 'json', '--no-session', '--offline', '--no-approve', '--no-extensions', '-e', 'C:\cg-budget.ts', '--no-skills')
 if (Test-Path 'C:\config\bundle\skills') { $piArgs += @('--skill', 'C:\config\bundle\skills') }
 if (Test-Path 'C:\config\bundle\instructions') {
-  $instructions = @(Get-ChildItem 'C:\config\bundle\instructions' -File)
-  if ($instructions.Count -ne 1) { throw "bundle instructions must hold exactly one file, found $($instructions.Count)" }
-  $piArgs += @('--append-system-prompt', $instructions[0].FullName)
+  $dir = 'C:\config\bundle\instructions'
+  $names = @(Get-ChildItem $dir -File | ForEach-Object { $_.Name })
+  $extra = @($names | Where-Object { $_ -notin @('AGENTS.md', 'CLAUDE.md') })
+  if ($extra.Count -gt 0) { throw "instructions bundle holds unexpected files: $($extra -join ', ')" }
+  if ($names -notcontains 'AGENTS.md') { throw 'pi instructions bundle must hold AGENTS.md' }
+  if (($names -contains 'CLAUDE.md') -and ((Get-FileHash "$dir\AGENTS.md").Hash -ne (Get-FileHash "$dir\CLAUDE.md").Hash)) {
+    throw 'AGENTS.md and CLAUDE.md differ: the parity rule needs byte-identical files'
+  }
+  Copy-Item -LiteralPath "$dir\AGENTS.md" -Destination "$env:PI_CODING_AGENT_DIR\AGENTS.md" -Force
 }
 if ($cfg.settings.thinking) { $piArgs += @('--thinking', $cfg.settings.thinking) }
 $piArgs += @('--provider', $cfg.settings.provider, '--model', $cfg.settings.api_models.main)
@@ -1320,6 +1417,24 @@ components:
   instructions: bundles/env/instructions
 limits: { timeout_min: 30, max_budget_usd: 2 }
 ```
+
+`harness/images/claude-code/run.ps1`: replace the "exactly one file" instructions block with (the existing test's `Copy-Item ... CLAUDE.md` line stays):
+
+```powershell
+if (Test-Path 'C:\config\bundle\instructions') {
+  $dir = 'C:\config\bundle\instructions'
+  $names = @(Get-ChildItem $dir -File | ForEach-Object { $_.Name })
+  $extra = @($names | Where-Object { $_ -notin @('AGENTS.md', 'CLAUDE.md') })
+  if ($extra.Count -gt 0) { throw "instructions bundle holds unexpected files: $($extra -join ', ')" }
+  if ($names -notcontains 'CLAUDE.md') { throw 'Claude Code instructions bundle must hold CLAUDE.md' }
+  if (($names -contains 'AGENTS.md') -and ((Get-FileHash "$dir\AGENTS.md").Hash -ne (Get-FileHash "$dir\CLAUDE.md").Hash)) {
+    throw 'AGENTS.md and CLAUDE.md differ: the parity rule needs byte-identical files'
+  }
+  Copy-Item -LiteralPath "$dir\CLAUDE.md" -Destination "$userHome\.claude\CLAUDE.md" -Force
+}
+```
+
+Adding `AGENTS.md` to `bundles/env/instructions` also changes that component's hash for `cc-sonnet-plain` (same bundle): arms are compared within one campaign, so this is recorded, not a problem; M1-29's execution keeps its own manifest.
 
 `scripts/harness/pi-probe.ts` (ops helper for M3-04; `deno check` only; every branch runs a container):
 
@@ -1401,7 +1516,7 @@ console.log(JSON.stringify({ sandbox: res, termination: r.termination, didWork: 
 - [ ] **Step 5: Run to see them pass**
 
 Run: `deno test --allow-all tests/unit/harness/pi.test.ts`
-Expected: PASS (22 tests).
+Expected: PASS (23 tests).
 Run: `CG_PI_CLI="C:\Users\SShadowS\AppData\Local\nvm\v24.14.0\node_modules\@earendil-works\pi-coding-agent\dist\bundle\cli.js" deno test --allow-all tests/integration/harness/pi-runtime.test.ts`
 Expected: PASS, 6 tests, none ignored. If the `models.json` baseUrl override for the built-in `openrouter` provider is not honored (the fake receives no request in the first test), register the base URL in a test-only extension `tests/integration/harness/fake-base.ts` (`pi.registerProvider("openrouter", { baseUrl: process.env.CG_FAKE_BASE })`, loaded with a second `-e` before the guard) and record which form worked in the commit message. If `appendEntry` records do not appear on stdout under `--no-session`, stop and report: the guard transport is then unproven and M3-04/M3-09 must not proceed.
 
@@ -1443,7 +1558,7 @@ import { join } from "@std/path";
 const DEF = "harness/images/base/al-tools-tools.json";
 const TOKEN = "t".repeat(32);
 
-async function converse(msgs: unknown[], handler: (req: Request) => Response, stopBackendFirst = false) {
+async function converse(msgs: unknown[], handler: (req: Request) => Response | Promise<Response>, stopBackendFirst = false) {
   const calls: { path: string; auth: string | null; exec: string | null; body: string }[] = [];
   const backend = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (req) => {
     calls.push({ path: new URL(req.url).pathname, auth: req.headers.get("authorization"), exec: req.headers.get("x-cg-execution"), body: await req.text() });
@@ -1517,6 +1632,21 @@ Deno.test("al-tools MCP: malformed arguments are tool errors and never reach the
   ], () => new Response("{}"));
   assertEquals(calls.length, 0);
   for (const id of [1, 2, 3, 4, 5, 6, 7, 8, 9]) assertEquals(replies.get(id).result.isError, true, `call ${id}`);
+});
+
+Deno.test("al-tools MCP: tool calls reach the backend one at a time (the backend admits one request per execution)", async () => {
+  let inFlight = false;
+  const { replies, calls } = await converse([
+    call(1, "al_compile", { apps: ["Core"] }), call(2, "al_symbols", {}), call(3, "al_test", {}),
+  ], async () => {
+    if (inFlight) return new Response("busy", { status: 429 }); // M1-19 admission semantics
+    inFlight = true;
+    await new Promise((r) => setTimeout(r, 50));
+    inFlight = false;
+    return new Response(JSON.stringify({ ok: true }));
+  });
+  assertEquals(calls.map((c) => c.path), ["/v1/compile", "/v1/symbols", "/v1/test"], "arrival order");
+  for (const id of [1, 2, 3]) assertEquals(replies.get(id).result.isError, false, `call ${id}`);
 });
 
 Deno.test("al-tools MCP: an unreachable backend is a tool error; the token never reaches stdout", async () => {
@@ -1693,6 +1823,16 @@ async function call(name, args) {
   return result({ op, status, result: parsed }, !ok);
 }
 
+// The backend admits one request per execution at a time (429 otherwise, M1-19),
+// and a client may send several tools/call requests at once: backend calls run
+// one after another, in arrival order.
+let chain = Promise.resolve();
+function serialized(fn) {
+  const p = chain.then(fn, fn);
+  chain = p.catch(() => {});
+  return p;
+}
+
 async function handle(msg) {
   const { id, method, params } = isObj(msg) ? msg : {};
   if (id === undefined || id === null) return;
@@ -1706,7 +1846,9 @@ async function handle(msg) {
   }
   if (method === "ping") return send({ jsonrpc: "2.0", id, result: {} });
   if (method === "tools/list") return send({ jsonrpc: "2.0", id, result: { tools: DEF.tools } });
-  if (method === "tools/call") return send({ jsonrpc: "2.0", id, result: await call(params?.name, params?.arguments) });
+  if (method === "tools/call") {
+    return send({ jsonrpc: "2.0", id, result: await serialized(() => call(params?.name, params?.arguments)) });
+  }
   send({ jsonrpc: "2.0", id, error: { code: -32601, message: `method not found: ${method}` } });
 }
 
@@ -1808,7 +1950,7 @@ and the invocation becomes `$prompt | & claude @claudeArgs @mcpArgs`.
 - [ ] **Step 5: Check, lint, format** (`.ts` files; `deno lint` for the `.mjs`)
 - [ ] **Step 6: Commit** `feat(harness): al-tools MCP component on the cg-al backend with validated arguments (M3-03)`
 
-**Acceptance (no container):** the four test files pass; `grep -n "0.0.0.0\|BcContainerProvider" harness/images/base/al-tools-mcp.mjs` prints nothing.
+**Acceptance (no container):** the four test files pass (including `tool calls reach the backend one at a time`); `grep -n "0.0.0.0\|BcContainerProvider" harness/images/base/al-tools-mcp.mjs` prints nothing.
 
 ---
 
@@ -1822,7 +1964,7 @@ No real credential, no spend, no ledger slot, no BC container. Reserved block on
 - [ ] **Step 2: ready gating.** `deno run --allow-all scripts/harness/pi-probe.ts <id> H:\Temp3\harness-spike\M3-04\noready --no-ready`. Expected: exit 3, `raw.jsonl` is exactly one `cg_entry` line with `ready: false`, termination `setup_failed`, no `session` record (pi never started). Quote.
 - [ ] **Step 3: auth failure.** Same without `--no-ready` into `...\auth`. Expected: `cg_entry` line 1 with `ready: true`; one `cg-budget` `armed` entry with `limit_usd` 0.05 before the first assistant `message_start`; pi exit 0; termination `harness_crash`; `didWork` false. Quote `raw.jsonl` lines for `cg_entry`, `entry_appended`, the last assistant `stopReason`/`errorMessage`, every `auto_retry_*`.
 - [ ] **Step 4: proxy honored and host list.** Same with `--proxy-log <nat gateway ip>` (from `docker network inspect nat`) into `...\proxy`. Quote `proxy.log` (expected only `CONNECT openrouter.ai:443`) and the error text; a different error from Step 3 proves the proxy was used. Any other host goes into the evidence as an A1 question for M1-33.
-- [ ] **Step 5: components and prompt.** Same with `--skills <scripts\spikes\harness\probe-workspace\.pi\skills>` and `--instructions harness\bundles\env\instructions` into `...\components`. Quote the system `message_start` `sections` keys, the `<name>` entries, whether the instructions text appears in any section, and the first user message (equals the prompt).
+- [ ] **Step 5: components, instructions once, prompt.** Same with `--skills <scripts\spikes\harness\probe-workspace\.pi\skills>` and `--instructions harness\bundles\env\instructions` (holds `CLAUDE.md` and its byte-identical `AGENTS.md`) into `...\components`. Quote the system `message_start` `sections` keys, the `<name>` entries, the first user message (equals the prompt), and the count of the bundle line `The task statement is in C:\task\prompt.md.` in the first system message: `jq -r 'select(.type=="message_start" and .message.role=="system") | .message | tojson' raw.jsonl | grep -o "The task statement is in" | wc -l` prints `1` (loaded once, from `C:\pi-agent\AGENTS.md`). Then a negative run with a scratch bundle whose `AGENTS.md` differs by one byte: non-zero exit before pi starts, stderr names the parity rule.
 - [ ] **Step 6: runtime scenarios inside the image.** Run the M3-02 runtime test with pi from the image instead of the host: `DOCKER_CONTEXT=desktop-windows docker cp <container>:C:\Users\ContainerAdministrator\AppData\Roaming\npm\node_modules\@earendil-works\pi-coding-agent H:\Temp3\harness-spike\M3-04\pi-image-pkg` from a stopped `docker create <id>` container, then `CG_PI_CLI=H:\Temp3\harness-spike\M3-04\pi-image-pkg\dist\bundle\cli.js deno test --allow-all tests/integration/harness/pi-runtime.test.ts`; quote the summary (6 passed, 0 ignored). This proves the image's pi package, not only the host's. `docker rm` the created container.
 - [ ] **Step 7: fixtures.** Byte-copy the four `raw.jsonl` files to `tests/fixtures/harness/pi/{not-ready,auth-fail,proxy-refused,components}.jsonl`; `grep -c "sk-or-v1-" tests/fixtures/harness/pi/*.jsonl` prints `0` for each (if not: stop, never hand-edit). Commit on the lane branch: `test(harness): pi fake-key fixtures (M3-04)`.
 - [ ] **Step 8: cleanup.** `docker ps -a --filter name=cg-harness-probe` empty.
@@ -1882,9 +2024,9 @@ No model credential, so no ledger slot. Sequential ops block on 10-07, not concu
 
 **Lane:** ops. **Deps:** M3-03, M1-28. **Date:** 10-07.
 
-- [ ] **Step 1: rebuild.** `deno task start harness images build base`, then `... images build claude-code --version 2.1.282` and `... images build pi --version 0.87.1` (the plain images are rebuilt on the new base; quote all three ids and the inherited label `docker image inspect <claude id> --format "{{index .Config.Labels \"centralgauge.mcp.al-tools\"}}"`). The M3-09 pi run uses the pi id recorded here.
+- [ ] **Step 1: rebuild.** `deno task start harness images build base`, then `... images build claude-code --version 2.1.282` and `... images build pi --version 0.87.1` (the plain images are rebuilt on the new base; quote all three ids and the inherited label `docker image inspect <claude id> --format "{{index .Config.Labels \"centralgauge.mcp.al-tools\"}}"`). These ids are for the MCP proof only; the pi gate image comes from M3-04 (Branch B) or M3-08 (Branch A).
 - [ ] **Step 2: Claude loads the server (fake token).** Run a `harness cell` for a config `cc-sonnet-mcp` (a scratch copy of `cc-sonnet-plain` with `components.mcp: [al-tools]`, never committed) with a secrets dir whose `claude-oauth-token` is a fake 40-character value and **without** `--supervised` ledger use: if M1-24's `cellGate` refuses a credential-bearing arm without `--supervised`, use M1-24's `backend-probe.ts` with the claude-code image's default command instead (it grants the backend token, runs the entrypoint, captures stdout). Expected: the `system/init` record lists `mcp_servers` with `{"name":"al-tools","status":"connected"}` and `tools` containing `mcp__al-tools__al_compile`, `mcp__al-tools__al_test`, `mcp__al-tools__al_symbols`; then the run fails with an authentication error, `total_cost_usd` 0. Quote the init record and the result record.
-- [ ] **Step 3: all three operations.** Hold the Cronus281 lease and `acquireBenchLock`; run `backend-probe.ts` for HX-001 at `refapp-v1-rc1` with the command override (add a `--command` passthrough in this ops commit if absent) `powershell -NoProfile -Command "$m = @('{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}','{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}','{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"al_compile\",\"arguments\":{\"apps\":[\"Core\"]}}}','{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"al_symbols\",\"arguments\":{}}}','{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"al_test\",\"arguments\":{}}}'); $m | node C:\al-tools-mcp.mjs"`. Quote the five replies and the matching backend host-log lines (operations `compile`, `symbols`, `test`, the execution id).
+- [ ] **Step 3: all three operations.** Hold the Cronus281 lease and `acquireBenchLock`; run `backend-probe.ts` for HX-001 at `refapp-v1-rc1` with the command override (add a `--command` passthrough in this ops commit if absent) `powershell -NoProfile -Command "$m = @('{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}','{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}','{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}','{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"al_compile\",\"arguments\":{\"apps\":[\"Core\"]}}}','{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"al_symbols\",\"arguments\":{}}}','{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"al_test\",\"arguments\":{}}}'); $m | node C:\al-tools-mcp.mjs"`. The requests are piped together on purpose: the server serializes backend calls (M3-03), so the backend sees one request at a time; a `429` in any reply fails this step (the serialization did not hold) and is never retried by hand. Quote the five replies and the matching backend host-log lines in order (operations `compile`, `symbols`, `test`, the execution id, non-overlapping spans).
 - [ ] **Step 4: negative.** Same with an empty secrets dir: every tool call `isError: true`, no host-log line. Quote.
 - [ ] **Step 5: cleanup and scan.** Empty `docker ps -a` for the owner label; the backend token is absent from the captured stdout (`grep -c`).
 
@@ -1892,45 +2034,97 @@ No model credential, so no ledger slot. Sequential ops block on 10-07, not concu
 
 ---
 
-### Task M3-09 (ops): GATE 10-09: pi cell on HX-001 behind the proxy, after authorization
+### Task M3-10: runner writes `ready` in non-enforced runs
 
-Runs after M1-34 Step 12 writes `authorized` and `harness egress verify` passes, so it is an enforced run and reserves no pre-authorization slot. Sequenced after M1-38 on Cronus281 (M4-15 holds Cronus282/283). Acceptance may land late on 10-09; a slip past 10-09 goes to the owner (launch contract).
+A3, non-enforced half: every entrypoint waits for `C:\cg-secrets\ready` (pi now, Claude Code after M1-33), so a non-enforced run must get the file too. It is written right after `prepareSecrets` and before `docker run`; M1-33 keeps the enforced ordering (secrets and `ready` only after the preflight). Independent of M1-33 so the M3-09 fallback (Branch B) works even if egress work slips.
 
-**Lane:** ops. **Deps:** M3-05, M1-29, M1-33 (with A1-A3), M1-34 through Step 12, M1-38. **Date:** 10-09.
+**Lane:** infra. **Deps:** M1-22 (`src/harness/execution.ts`, `tests/unit/harness/runtime-fixture.ts`). **Date:** 10-05 (before M3-03).
 
-- [ ] **Step 1: preflight.** Quote: `deno task start harness egress verify` (no problem) and the marker state `authorized`; the Cronus281 lease; empty `docker ps -a --filter label=centralgauge.harness.owner=$env:COMPUTERNAME`; `spend.md` running total (below USD 120); the pi image id from M3-07 Step 1; the rotated OpenRouter key file (M1-34 Step 10) in the secrets dir, value never printed, and the key's credit cap from the OpenRouter console (quote the cap). The catalog row for `openrouter/google/gemini-3.8-flash` in force today has non-zero `cache_read_per_mtoken` and `cache_write_per_mtoken` (open question 1); if not, stop: the orchestrator fixes the catalog locally first.
-- [ ] **Step 2: run.** `deno task start harness cell pi-flash-plain HX-001 --rev refapp-v1-rc1 --containers Cronus281 --secrets-dir <dedicated secrets dir>` (enforced: no `--supervised` reservation). Watch the execution's `egress.jsonl`; any `deny` or a host other than `openrouter.ai`: Ctrl+C, record, stop.
+**Files:**
+- Modify: `src/harness/sandbox.ts` (`export const READY_FILE = "ready";`), `src/harness/execution.ts` (write it)
+- Test: `tests/unit/harness/execution.test.ts` (append)
+
+- [ ] **Step 1: Write the failing test** (the file's `makeEnv`, `cellFor` and `runCell`; `parseRunArgs` from `fake-docker.ts` gives each `run`'s mounts)
+
+```typescript
+Deno.test("non-enforced run: the secrets mount holds ready when docker run starts; ready is not a secret", async () => {
+  const t = await makeEnv(); // egressEnforced false, supervised as the fixture sets it
+  const seen: boolean[] = [];
+  const run = t.docker.run.bind(t.docker);
+  t.docker.run = async (args, c) => {
+    const secrets = parseRunArgs(args).mounts.find((m) => m.dst === "C:\\cg-secrets")!.src;
+    seen.push(await Deno.stat(join(secrets, READY_FILE)).then((i) => i.isFile && i.size === 0, () => false));
+    return run(args, c);
+  };
+  await runCell(t.env, cellFor(t));
+  assertEquals(seen, [true]);
+});
+```
+
+If `parseRunArgs` names the mount fields differently, use its names; the assertion stays. If `makeEnv` enforces egress by default, pass the option that turns it off.
+
+- [ ] **Step 2: Run to see it fail** (`deno test --allow-all tests/unit/harness/execution.test.ts`).
+- [ ] **Step 3: Implement.** In `execution.ts`, right after the `prepareSecrets(...)` call that fills the execution's secrets dir: `if (!env.egressEnforced) await Deno.writeTextFile(join(s.dir, READY_FILE), "");` (import `READY_FILE` from `./sandbox.ts`). The file is empty and is never added to the custody secret values; the 16-character minimum applies only to declared secret files.
+- [ ] **Step 4: Run all `tests/unit/harness/` tests; PASS.**
+- [ ] **Step 5: Check, lint, format; commit** `feat(harness): write the ready file for non-enforced runs (M3-10)`.
+
+**Acceptance (no container):** `deno test --allow-all tests/unit/harness/execution.test.ts` passes with the new test.
+
+---
+
+### Task M3-08 (ops): enforced-branch gate image handoff
+
+The pi image for Branch A is built after M1-33's image changes (base `egress-check.ps1`, A1-A3) have merged, and its OpenRouter preflight is proven in that exact image before any credential. Independent of M3-07: the base build includes the MCP files if M3-03 has merged, but nothing here depends on M3-07 passing. No credential, no slot.
+
+**Lane:** ops. **Deps:** M1-33 merged (with A1-A3), M1-34 through Step 6 (proxy and backend on the gateway), M3-02. **Date:** 10-09 morning (after M1-34 Steps 9 to 12, before M3-09 Branch A).
+
+- [ ] **Step 1: build.** At the merged commit: `deno task start harness images build base`, then `... images build pi --version 0.87.1`. Quote both ids, M1-24's layer check output (the pi layers start with the base layers), and `DOCKER_CONTEXT=desktop-windows docker run --rm --network none <pi id> powershell -NoProfile -Command "Test-Path C:\egress-check.ps1; Test-Path C:\run.ps1; Test-Path C:\cg-budget.ts"` printing `True` three times.
+- [ ] **Step 2: route-aware preflight in this image.** `deno run --allow-all scripts/harness/backend-probe.ts Cronus281 <empty secrets dir> --enforced --image <pi id> --route openrouter:api-key` (flags from M1-33; add `--image`/`--route` passthroughs in this ops commit if absent). Expected: every expected-blocked probe blocked, `proxy-allow-openrouter.ai` open, no `proxy-allow-api.anthropic.com` probe, the secrets dir still empty afterwards. Quote every line.
+- [ ] **Step 3: handoff.** Write `H:\cg-coord\tasks\M3-08\runs\<nnn>\images.json` `{ "base": "<id>", "pi": "<id>", "commit": "<sha>" }`; M3-09 Branch A runs only this pi id.
+
+**Acceptance (no container):** the evidence quotes both ids, the file checks, every preflight line with `proxy-allow-openrouter.ai` open, the empty secrets dir, and the handoff file.
+
+---
+
+### Task M3-09 (ops): GATE 10-09: pi cell on HX-001 (Branch A enforced, Branch B supervised fallback)
+
+Ruling `m3-rulings`: if M1-34 is not authorized by 10-08, the pi gate uses one of the owner-approved supervised credential-bearing runs, no slip. The branch is chosen at the end of 10-08 and recorded in the evidence: **Branch A** when the marker is `authorized` and `deno task start harness egress verify` prints no problem; otherwise **Branch B**. A marker that exists and fails verification stops every command (fail closed): neither branch runs, `coord ask` to the owner. Cronus281 lease, after M1-38 (M4-15 holds Cronus282/283). Acceptance may land late on 10-09; a slip past 10-09 goes to the owner.
+
+**Lane:** ops. **Deps:** Branch A: M3-05, M3-08, M1-29, M1-34 through Step 12, M1-38. Branch B: M3-05, M3-04 (pi image id), M3-10, M1-29. **Date:** 10-09.
+
+- [ ] **Step 1: preflight (both branches).** Quote: the chosen branch and why (marker state and the `harness egress verify` output, or "no marker"); the Cronus281 lease; empty `docker ps -a --filter label=centralgauge.harness.owner=$env:COMPUTERNAME`; `spend.md` running total (below USD 120); the catalog row for `openrouter/google/gemini-3.8-flash` in force today has non-zero `cache_read_per_mtoken` and `cache_write_per_mtoken` (ruling: the orchestrator fixes it locally first; if not fixed, stop); the key's credit cap from the OpenRouter console (the key value never printed). Branch A adds: the pi id from M3-08's `images.json`; the rotated key file (M1-34 Step 10). Branch B adds: the pi id from M3-04 Step 1 (tagged `centralgauge/harness-pi:0.87.1`; if the tag now points elsewhere, retag that id first); the current pre-rotation OpenRouter benchmark key file; `wc -l H:\cg-coord\ledgers\credential-runs.jsonl` equal to 4 (slots 1 to 4 of the revised allocation used or reserved; if slot 5 is gone, stop and `coord ask`).
+- [ ] **Step 2A: run (Branch A, enforced, no slot).** `deno task start harness cell pi-flash-plain HX-001 --rev refapp-v1-rc1 --containers Cronus281 --secrets-dir <dedicated secrets dir>`. Watch `egress.jsonl`; any `deny` or a host other than `openrouter.ai`: Ctrl+C, record, stop.
+- [ ] **Step 2B: run (Branch B, supervised, slot 5).** In a second terminal start the network watch as M1-29 Step 2 (`pktmon` on the sandbox's network). Then, from an interactive terminal: `CG_CREDENTIAL_LEDGER=H:\cg-coord\ledgers\credential-runs.jsonl deno task start harness cell pi-flash-plain HX-001 --rev refapp-v1-rc1 --supervised --containers Cronus281 --secrets-dir <pre-rotation secrets dir>`. The reservation happens before any credential is released (M1-22); a refusal stops the task. Supervised mode runs no automatic retry, and no manual rerun follows a failure: a failed or `harness_crash` result is reported as it is. Destinations other than `openrouter.ai` and the backend: Ctrl+C, record, stop. If the marker is `qualified` with a passing verification, the runner places the sandbox on `cg-harness-sandbox` behind the proxy (M1-24 `resolveEgress`): quote `egress.jsonl`; otherwise the sandbox runs on `nat` and the evidence says **"no proxy enforcement"**, never "behind the proxy".
 - [ ] **Step 3: records** under `results/harness/cells/`; quote:
-  - execution: `termination`, `did_work`, `telemetry.cost_usd` (non-null), `cost_source`, `pricing_snapshot`, `reported_cost_usd`, `per_model`, `turns`, `stop_reason`, `observed` (`harness_version` `0.87.1`, `models` `["openrouter/google/gemini-3.8-flash"]`), `validity` (`incomplete_observed: ["loaded_components"]` expected: instructions unobservable), `raw_usage.assumptions` (listed if cache writes occurred), `raw_usage.stream_problems` (expected empty);
+  - execution: `termination`, `did_work`, `telemetry.cost_usd` (non-null), `cost_source`, `pricing_snapshot`, `reported_cost_usd`, `per_model`, `turns`, `stop_reason`, `observed` (`harness_version` `0.87.1`, `models` `["openrouter/google/gemini-3.8-flash"]`), `validity` (`incomplete_observed: ["loaded_components"]` expected: instructions unobservable), `raw_usage.assumptions`, `raw_usage.stream_problems` (expected empty);
   - judgment: `verdict`, `scorer_fingerprint`, each scorer's `passed` (pass or fail both pass the gate);
   - `runs/<id>/raw.jsonl`: line 1 `cg_entry` with `ready: true`; one `cg-budget` `armed` entry with `limit_usd` 2 before the first request; final `agent_settled`; `runs/<id>/sandbox.json` `confirmedGone: true`;
-  - `egress.jsonl`: only `allow` lines for `openrouter.ai:443` (count), no `deny`; the preflight lines include `proxy-allow-openrouter.ai` open and no `api.anthropic.com` probe (A2).
-- [ ] **Step 4: report disclosure.** `deno task start harness report` (or M1-24b's equivalent) over the cell store shows the coverage line with `cost assumptions: ...` (`none` when no cache writes). Quote.
+  - Branch A: `egress.jsonl` only `allow` lines for `openrouter.ai:443`, no `deny`; the preflight includes `proxy-allow-openrouter.ai` and no `api.anthropic.com` probe (A2). Branch B: the enforcement state (`no proxy enforcement` or `cg-harness-sandbox, marker qualified`), the pktmon destination list with byte counts, and the new ledger line (slot 5).
+- [ ] **Step 4: report disclosure.** The harness report over the cell store shows the coverage line with `cost assumptions: ...` (`none` when no cache writes). Quote.
 - [ ] **Step 5: secret scan and cleanup.** `grep -rF -f <secrets dir>/openrouter-api-key results/harness | wc -l` prints `0`; private state gone; `docker ps -a` for the owner label empty.
-- [ ] **Step 6: spend.** One row in `H:\cg-coord\decisions\spend.md` (date, `M3-09`, OpenRouter, the run's `reported_cost_usd`, source: the execution record path); update the running total.
-- [ ] **Step 7 (optional, enforced, after Step 6): real budget trip.** A scratch config `pi-flash-trip` (copy of `pi-flash-plain` with `max_budget_usd: 0.001`, never committed) on HX-001: termination `budget_exhausted`, a `cg-budget` `exhausted` entry with `reason: "limit"`, one provider request after which none follow (count the `allow` lines in `egress.jsonl`: one CONNECT or keep-alive reuse; quote), sandbox gone. Spend row added.
+- [ ] **Step 6: spend.** One row in `H:\cg-coord\decisions\spend.md` (date, `M3-09 Branch A` or `B`, OpenRouter, the run's `reported_cost_usd`, source: the execution record path); update the running total.
+- [ ] **Step 7 (optional, Branch A only, after Step 6): real budget trip.** A scratch config `pi-flash-trip` (copy of `pi-flash-plain` with `max_budget_usd: 0.001`, never committed) on HX-001: termination `budget_exhausted`, a `cg-budget` `exhausted` entry with `reason: "limit"`, one provider request and none after it (quote the `allow` lines), sandbox gone, spend row added. Never under Branch B: no slot is left.
 
-**Acceptance (no container):** the evidence quotes the preflight with `authorized`, the execution fields with a non-null estimated cost, the judgment, the `egress.jsonl` summary with zero `deny` and the route-aware preflight line, the report coverage line, the zero-hit key scan, the empty private state and `docker ps`, and the `spend.md` row; Step 7 quoted or marked not run.
+**Acceptance (no container):** the evidence names the branch with its marker evidence; quotes the execution fields with a non-null estimated cost, the judgment, the report coverage line, the zero-hit key scan, the empty private state and `docker ps`, and the `spend.md` row; Branch A adds the `egress.jsonl` summary with zero `deny` and the route-aware preflight line; Branch B adds the ledger line (slot 5), the destination list and the explicit enforcement state. Step 7 quoted or marked not run.
 
 ---
 
 ## Final integration (orchestrator, 10-09)
 
 - `deno test --allow-all tests/unit/harness/` passes on the merge; the runtime test passes with `CG_PI_CLI` (0 ignored); `deno check`/`deno lint` clean on the M3 files; `graphify update .`.
-- M3-09 evidence accepted; the launch-gate line "Claude Code and pi adapters working" cites M1-29 and M3-09.
+- M3-09 evidence accepted (either branch); the launch-gate line "Claude Code and pi adapters working" cites M1-29 and M3-09 and names the branch.
 - Recorded in `H:\cg-coord\decisions\`: the toolchain cut (cut item 2) and, if the orchestrator applies it, the M1-25 report-extras deferral (cut item 3).
 
 ## Self-review notes
 
 - Spec 1a section 12 item 3: M3-01, M3-02, M3-04, M3-05, M3-09. Item 4: al-tools MCP (M3-03, M3-07); toolchain cut (item 2); categorization is M2.
-- Section 5 "a new image, `run.ps1`, a metrics contract, and a host-side trace parser; the orchestrator does not change": M3-02, M3-01; runner changes only through the M1-33 amendment A1-A3, which M1-33 owns.
+- Section 5 "a new image, `run.ps1`, a metrics contract, and a host-side trace parser; the orchestrator does not change": M3-02, M3-01; runner changes: M3-10 (non-enforced `ready`) and the M1-33 amendment A1-A3, which M1-33 owns.
 - Section 11 parser fixtures: tool call, tool error (probe); fatal run (auth-fail, proxy-refused, runtime 500/429); retry (runtime, real pi records); hard kill (cut stream, kill during retry); compaction disabled and, if seen, cost-nulling (unit). Skill invocation: observed as loaded; invocation is M2 categorization.
 - Names across tasks: `parsePiStream`, `piAdapter`, `PI_SETTINGS`, `PI_ROUTE`, `BUDGET_ENTRY`, `TTL_ASSUMPTION`, `budgetStep`, `startFakeOpenRouter`, `mcpLabel`, `MCP_LABEL_PREFIX`, `AL_TOOLS_DEF`, `ArmCoverage.cost_assumptions`: each defined once.
 
 ## Open questions (owner or orchestrator)
 
-1. **Catalog rates of 0.** The latest `openrouter/google/gemini-3.8-flash` row (2026-09-08) has cache read and cache write rates of 0, so a run with cache tokens gets a null cost ("rate is 0"). The orchestrator corrects it locally from documented OpenRouter prices before M3-09. The same-model head-to-head also needs a catalog entry and pricing such as `openrouter/anthropic/claude-sonnet-5` before the 10-10 campaigns.
-2. **Gate timing (owner).** M3-09 depends on M1-34 reaching `authorized` on 10-09. If that slips, the pi gate slips with it: a NAT run is not evidence for "behind the proxy" and no pre-authorization slot is free. Accept a slip report, or approve a different gate proof?
-3. **M1-25 extras (orchestrator, cut item 3).** Defer M1-25's report extras so `infra2` keeps 10-09 for integration repairs?
-4. **Pattern redaction (owner of M1-22).** The M0-04 carryover "redactor beyond exact secrets" has no task in M1 part 2 or M3; M3 only scans its own fixtures for `sk-or-v1-`. Assign it to M1-22 follow-up or M2?
-5. **Context-file parity (owner).** pi reads `AGENTS.md` and `CLAUDE.md` from `C:\workspace` and its parents; Claude Code reads `CLAUDE.md`. The agent directory and skills are isolated and explicit. Is this documented difference acceptable for the head-to-head, or should refapp workspaces carry no context files at all?
+1. **Catalog (ruled: the orchestrator fixes the zero cache rates locally before M3-09).** Still open: the same-model head-to-head needs a catalog entry and pricing such as `openrouter/anthropic/claude-sonnet-5` before the 10-10 campaigns.
+2. **Settled by `m3-rulings`:** the pi gate fallback is a supervised slot (M3-09 Branch B, slot 5 of the revised allocation). The orchestrator records the revised allocation (M1-29 infra reserve withdrawn) before 10-03.
+3. **Settled by `m3-rulings`:** M1-25 extras deferred past 10-09.
+4. **Settled by `m3-rulings`:** pattern redaction beyond exact secrets is M2-02 (lane content); M3 scans its own fixtures for `sk-or-v1-`.
