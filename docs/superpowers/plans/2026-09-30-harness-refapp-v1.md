@@ -2868,7 +2868,7 @@ Spec 1b section 3 (Rental -> Fleet IsHandled plus legacy direct call; Fleet -> C
 - Modify: `Core/src/Setup.Table.al` (field 4 `"Suspend Rentals"` Boolean)
 - Create: `Rental/src/RentalFleetSubscribers.Codeunit.al` (70201: on Fleet `OnBeforeIsAvailable`, when Setup `"Suspend Rentals"` is true sets `Result := false; IsHandled := true`; otherwise nothing)
 - Modify: `Rental/src/RentalMgt.Codeunit.al` (legacy `SwapVehicle(ContractNo: Code[20]; NewVehicleNo: Code[20])`: contract must be Checked Out; reads the new vehicle directly and errors `NotAvailableErr` when Checked Out or Blocked; old vehicle Checked Out false and new vehicle Checked Out true by direct `Modify`; contract Vehicle No. and Start Km := new vehicle Mileage)
-- Modify: `Test/src/FleetTests.Codeunit.al` (`HeavyDutyStrategyFromFleetExtension` sets Last Service Km 1000, expects 6000), `RentalTests.Codeunit.al` (add `SwapMovesContractToFreeVehicle`, `SuspendRentalsBlocksCheckout`)
+- Modify: `Test/src/FleetTests.Codeunit.al` (`HeavyDutyStrategyFromFleetExtension` sets Last Service Km 1000, expects 6000), `RentalTests.Codeunit.al` (add `SwapMovesContractToFreeVehicle`, and `SuspendRentalsBlocksCheckout`: Setup "Suspend Rentals" true, `asserterror` CheckOut, `ExpectedError('Vehicle <No.> is not available.')` and no data assertion after it, M4-16 P1)
 - Create: `tasks/HX-003/{task.yml,prompt.md}`, `correct/...`, `oracle/app.json` (suffix 3, 85200-85299, deps Core, Fleet, Rental, Library Assert), `oracle/src/ServiceOracle.Codeunit.al` (85200), `AvailabilityOverride.Codeunit.al` (85201, `EventSubscriberInstance = Manual`, sets `Result := true; IsHandled := true`), `ShortInterval.Codeunit.al` (85202 implements `"CGR Maintenance Strategy"`, `exit(CurrentKm + 1000)`), `Strategies.EnumExt.al` (enumextension 85200, value 85200 `"HX3 Short"`), `naive/{checkout-only,after-ishandled,hardcoded-interval}/...`
 - No overlay.
 
@@ -2882,27 +2882,28 @@ The workshop wants vehicles that have reached their service interval kept away f
 
 A vehicle is due for service when its mileage has reached the next service km that its maintenance strategy gives for the mileage at its last service ("Last Service Km"). Default vehicles go 15,000 km between services and Heavy Duty vehicles 5,000 km; other apps can add strategies.
 
-- Checking out a rental contract for a vehicle that is due for service fails with the error "Vehicle <No.> is due for service." and leaves the contract and the vehicle unchanged.
-- Swapping a checked-out contract to a vehicle that is due for service fails with the same error and leaves the contract, its current vehicle and the other vehicle unchanged.
+- Checking out a rental contract for a vehicle that is due for service fails with the error "Vehicle <No.> is due for service."
+- Swapping a checked-out contract to a vehicle that is due for service fails with the same error.
 - The fleet availability check (`CGR Fleet Mgt`, IsAvailable) reports a vehicle that is due for service as not available.
 - This is a safety rule: extensions that customize vehicle availability cannot make a vehicle that is due for service available, for checkouts or swaps. For vehicles that are not due, their customizations keep working as today.
 ```
 
 - [ ] **Step 3: task.yml**: `kind: feature`, `touches: [Fleet, Rental, Core]`, `coupling: [ishandled, interface]`, `refapp_version: refapp-v1-rc3`, p2p 80010 {CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, SwapMovesContractToFreeVehicle, SuspendRentalsBlocksCheckout}, 80020 {HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle}; f2p codeunit 85200 with the procedures below; `limits: { timeout_min: 30 }`.
 
-- [ ] **Step 4: Oracle (normative)**, codeunit 85200 "HX003 Service Oracle". Every procedure sets Setup `"Suspend Rentals"` false and creates its own vehicles (Blocked false, Checked Out false). "Unchanged" means: contract Status, Vehicle No. and Start Km as before the call; vehicle Checked Out, Mileage and Blocked as before.
+- [ ] **Step 4: Oracle (normative)**, codeunit 85200 "HX003 Service Oracle". Every procedure sets Setup `"Suspend Rentals"` false and creates its own vehicles (Blocked false, Checked Out false). Rollback rule (M4-16 P1): `asserterror` is the last database-dependent step of a procedure, followed only by `ExpectedError` and, where bound, `UnbindSubscription`. There is no "unchanged" assertion after a refusal: the error rolls back every write of the transaction, so an unchanged state is guaranteed by the platform, not by the solution, and is not observable without an error.
 
 | Procedure | Arrange | Assert |
 | --- | --- | --- |
-| DefaultVehicleDueIsRefused | HX3-A Default, Last Service 10000, Mileage 25000 | `asserterror` CheckOut; `ExpectedError('Vehicle HX3-A is due for service.')`; contract and vehicle unchanged |
+| DefaultVehicleDueIsRefused | HX3-A Default, Last Service 10000, Mileage 25000 | `asserterror` CheckOut; `ExpectedError('Vehicle HX3-A is due for service.')` |
 | DefaultVehicleBelowIntervalRents | HX3-B Default, 10000 / 24999 | CheckOut succeeds; contract Checked Out; Start Km 24999 |
-| HeavyDutyDueAtFiveThousand | HX3-C Heavy Duty, 10000 / 15000 | refused with HX3-C message; unchanged |
+| HeavyDutyDueAtFiveThousand | HX3-C Heavy Duty, 10000 / 15000 | `asserterror` CheckOut; `ExpectedError` with the HX3-C message |
 | HeavyDutyBelowIntervalRents | HX3-D Heavy Duty, 10000 / 14999 | CheckOut succeeds |
-| ExtensionStrategyIsRespected | HX3-E "HX3 Short" 10000 / 11000; HX3-F "HX3 Short" 10000 / 10999 | E refused with its message; F checks out |
-| SwapToDueVehicleIsRefused | HX3-G Default not due, checked out; HX3-H Default 0 / 15000 | `asserterror` SwapVehicle(contract, HX3-H); H message; contract unchanged (Vehicle No. HX3-G); G and H unchanged |
+| ExtensionStrategyDueIsRefused | HX3-E "HX3 Short" 10000 / 11000 | `asserterror` CheckOut; `ExpectedError` with the HX3-E message |
+| ExtensionStrategyBelowIntervalRents | HX3-F "HX3 Short" 10000 / 10999 (own procedure: no `asserterror` before it) | CheckOut succeeds; contract Checked Out |
+| SwapToDueVehicleIsRefused | HX3-G Default not due, checked out; HX3-H Default 0 / 15000 | `asserterror` SwapVehicle(contract, HX3-H); `ExpectedError` with the HX3-H message |
 | AvailabilityReportsDueVehicle | HX3-I due, HX3-J not due | `IsAvailable(HX3-I)` false; `IsAvailable(HX3-J)` true |
-| OverrideCannotReleaseDueVehicle | bind override; HX3-K due | `IsAvailable` false; CheckOut refused with the due message; unchanged; unbind |
-| SwapUnderOverrideRefused | bind override; HX3-M not due checked out; HX3-N due | `asserterror` SwapVehicle(contract, HX3-N); N message; contract and both vehicles unchanged; unbind |
+| OverrideCannotReleaseDueVehicle | bind override; HX3-K due | `IsAvailable(HX3-K)` false (asserted first, no error involved); then `asserterror` CheckOut; `ExpectedError` with the HX3-K message; unbind |
+| SwapUnderOverrideRefused | bind override; HX3-M not due checked out; HX3-N due | `asserterror` SwapVehicle(contract, HX3-N); `ExpectedError` with the HX3-N message; unbind |
 | OverrideStillAppliesToVehiclesNotDue | bind override; HX3-L not due, Blocked true | `IsAvailable` true; CheckOut succeeds; unbind |
 
 - [ ] **Step 5: correct/**: `FleetMgt.IsDueForService(VehicleNo): Boolean` (`Mileage >= NextServiceKm(VehicleNo)`); `IsAvailable` returns false for a due vehicle before raising `OnBeforeIsAvailable`; `RentalMgt.CheckOut` and `SwapVehicle` raise `DueForServiceErr: Label 'Vehicle %1 is due for service.'` before any other check or change. Any solution meeting the oracle is valid.
@@ -2911,13 +2912,15 @@ A vehicle is due for service when its mileage has reached the next service km th
 
 | Naive | Change | Rows lost |
 | --- | --- | --- |
-| checkout-only | only `CheckOut` checks due (message and strategy right); `SwapVehicle`, `IsAvailable` unchanged | SwapToDueVehicleIsRefused, AvailabilityReportsDueVehicle, OverrideCannotReleaseDueVehicle (IsAvailable), SwapUnderOverrideRefused |
-| after-ishandled | due check inside `IsAvailable` after the `IsHandled` exit; `CheckOut`/`SwapVehicle` call `IsAvailable` and raise the due message when `IsDueForService` | OverrideCannotReleaseDueVehicle, SwapUnderOverrideRefused |
-| hardcoded-interval | correct structure, due = `Mileage >= "Last Service Km" + 15000` | HeavyDutyDueAtFiveThousand, ExtensionStrategyIsRespected |
+| checkout-only | only `CheckOut` checks due (message and strategy right); `SwapVehicle`, `IsAvailable` unchanged | SwapToDueVehicleIsRefused (lost asserterror), AvailabilityReportsDueVehicle, OverrideCannotReleaseDueVehicle (IsAvailable assertion), SwapUnderOverrideRefused (lost asserterror) |
+| after-ishandled | due check inside `IsAvailable` after the `IsHandled` exit; `CheckOut`/`SwapVehicle` call `IsAvailable` and raise the due message when `IsDueForService` | OverrideCannotReleaseDueVehicle (IsAvailable assertion), SwapUnderOverrideRefused (lost asserterror) |
+| hardcoded-interval | correct structure, due = `Mileage >= "Last Service Km" + 15000` | HeavyDutyDueAtFiveThousand (lost asserterror), ExtensionStrategyDueIsRefused (lost asserterror) |
+
+No kill is lost by the rollback rule: every refusal row kills through `ExpectedError` or the lost `asserterror`, never through the dropped "unchanged" checks.
 
 - [ ] **Step 7: Host compile all variants, audit (Step 4 table, Step 6 mapping), `check` HX-001..HX-003, commit `feat(harness-tasks): refapp v1 slice C and HX-003 service-due vehicles`, request gate M4-07.**
 
-**Acceptance:** `check` `[OK]` for HX-001..HX-003; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the ten procedures of Step 4.
+**Acceptance:** `check` `[OK]` for HX-001..HX-003; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the eleven procedures of Step 4.
 
 ---
 
@@ -3144,7 +3147,7 @@ The partner portal gets a message in the integration outbox when a vehicle is ch
 
 - [ ] **Step 2: task.yml**: `kind: feature`, `touches: [Integration, Core, Rental]`, `coupling: [facade, events, core-facade]`, `refapp_version: refapp-v1-rc6`, p2p 80040 {OutboxQueuesCheckout}, 80010 {CheckOutMarksVehicleCheckedOut, ReturnWithoutDamageReleasesVehicle} (not `PayloadCarriesVehicleNo`, whose exact payload predates the sequence key); f2p codeunit 85500.
 
-- [ ] **Step 3: Oracle (normative)**, codeunit 85500 "HX006 Outbox Oracle"; each procedure deletes the outbox entries of its own vehicles first; JSON types checked with `JsonToken.WriteTo` (text `1450`, not `"1450"`, per M4-16 P3). "Agreement" = for every entry of the vehicle, in entry order, `"Vehicle Sequence No."` equals the payload `sequence` and the expected 1, 2, 3...
+- [ ] **Step 3: Oracle (normative)**, codeunit 85500 "HX006 Outbox Oracle"; each procedure deletes the outbox entries of its own vehicles first; no procedure uses `asserterror` (M4-16 P1). `FailedReturnLeavesNoMessage` is dropped: the failing return's error rolls back the outbox insert with the rest of the transaction, including the seeded checkout, so the row tested the platform and killed no variant; JSON types checked with `JsonToken.WriteTo` (text `1450`, not `"1450"`, per M4-16 P3). "Agreement" = for every entry of the vehicle, in entry order, `"Vehicle Sequence No."` equals the payload `sequence` and the expected 1, 2, 3...
 
 | Procedure | Arrange | Assert |
 | --- | --- | --- |
@@ -3153,7 +3156,6 @@ The partner portal gets a message in the integration outbox when a vehicle is ch
 | CheckoutPayloadCarriesSequence | HX6-C, check out | payload text exactly `{"event":"vehicleCheckedOut","vehicleNo":"HX6-C","sequence":1}`; Vehicle Sequence No. 1 |
 | SequenceIsPerVehicle | HX6-D check out, HX6-E check out, D return, D check out (new contract), E return | D: 3 entries with agreement (1, 2, 3); E: 2 entries with agreement (1, 2) |
 | SequenceContinuesAfterPurge | HX6-F check out, return; `MarkSent` both; `PurgeSent`; check out again | 1 entry for F with agreement starting at 3 (field 3, payload 3) |
-| FailedReturnLeavesNoMessage | HX6-G km 1000, check out; `asserterror` Return(999, '') | exactly 1 entry for G (the checkout), sequence 1 |
 
 - [ ] **Step 4: correct/**: a per-vehicle counter table in Integration (for example 70403 `"CGR Vehicle Message Seq."`), a subscriber to Core `OnAfterVehicleReturned`, both payloads built with `JsonObject` in the specified key order. The oracle does not depend on the counter design.
 
@@ -3167,7 +3169,7 @@ The partner portal gets a message in the integration outbox when a vehicle is ch
 
 - [ ] **Step 6: Host compile all variants, audit (Steps 3, 5), `check` HX-001..HX-006, commit `feat(harness-tasks): refapp v1 slice E and HX-006 return messages`, request gate M4-13.**
 
-**Acceptance:** `check` `[OK]` for HX-001..HX-006; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the six procedures of Step 3.
+**Acceptance:** `check` `[OK]` for HX-001..HX-006; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the five procedures of Step 3.
 
 ---
 
