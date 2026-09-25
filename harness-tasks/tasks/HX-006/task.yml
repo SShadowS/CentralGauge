@@ -1,0 +1,19 @@
+id: HX-006
+refapp_version: refapp-v1-rc6
+kind: feature
+prompt: prompt.md
+touches: [Integration, Core, Rental]
+coupling: [facade, events, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80040, procedures: [OutboxQueuesCheckout] }
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, ReturnWithoutDamageReleasesVehicle] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Integration]
+  tests:
+    - { codeunit: 85500, procedures: [ReturnQueuesMessageWithNumbers, DamagedReturnCarriesDescription, CheckoutPayloadCarriesSequence, SequenceIsPerVehicle, SequenceContinuesAfterPurge] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
