@@ -203,6 +203,39 @@ codeunit 85200 "HX003 Service Oracle"
         Assert.IsTrue(FleetMgt.IsAvailable('HX3-R'), 'A vehicle one km below its strategy service km is available');
     end;
 
+    [Test]
+    procedure SwapToVehicleNotDueSucceeds()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        Prepare();
+        MakeVehicle('HX3-T', Enum::"CGR Maintenance Strategy"::Default, 0, 1000);
+        MakeVehicle('HX3-S', Enum::"CGR Maintenance Strategy"::Default, 5000, 19999);
+        ContractNo := NewContract('HX3-T');
+        RentalMgt.CheckOut(ContractNo);
+        RentalMgt.SwapVehicle(ContractNo, 'HX3-S');
+        Contract.Get(ContractNo);
+        Assert.AreEqual('HX3-S', Contract."Vehicle No.", 'A swap to a vehicle that is not due moves the contract');
+        Assert.AreEqual(19999, Contract."Start Km", 'Start km is the new vehicle mileage');
+    end;
+
+    [Test]
+    procedure SwapToDueExtensionStrategyIsRefused()
+    var
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        Prepare();
+        MakeVehicle('HX3-U', Enum::"CGR Maintenance Strategy"::Default, 0, 1000);
+        MakeVehicle('HX3-V', Enum::"CGR Maintenance Strategy"::"HX3 Short", 10000, 11000);
+        ContractNo := NewContract('HX3-U');
+        RentalMgt.CheckOut(ContractNo);
+        asserterror RentalMgt.SwapVehicle(ContractNo, 'HX3-V');
+        Assert.ExpectedError(StrSubstNo(DueErr, 'HX3-V'));
+    end;
+
     local procedure Prepare()
     var
         Setup: Record "CGR Setup";
