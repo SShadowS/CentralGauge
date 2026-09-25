@@ -231,6 +231,13 @@ function appState(run: RunResult, app: string): AppState {
 export function summarize(task: HarnessTask, run: RunResult): RunSummary {
   const states = BUILD_ORDER.map((a) => appState(run, a));
   const oracle = run.usesOracle ? appState(run, "Oracle") : null;
+  // An app that never built is infra, unless an earlier app in build order
+  // failed to compile: then it was skipped and the compile failure explains it.
+  const ordered = oracle === null ? states : [...states, oracle];
+  const firstCompileFail = ordered.indexOf("compile_fail");
+  const unexplainedNotRun = ordered.some((st, i) =>
+    st === "not_run" && (firstCompileFail < 0 || i < firstCompileFail)
+  );
   const testBuilt = appState(run, "Test") === "ok";
   const p2p = tally(run.tests, task.pass_to_pass);
   const f2p = task.fail_to_pass && oracle === "ok"
@@ -245,7 +252,8 @@ export function summarize(task: HarnessTask, run: RunResult): RunSummary {
     f2p,
     own,
     // Missing results from an app that built are infra, never evidence (GH #13 rule).
-    infra: run.infra !== undefined || states.includes("publish_fail") ||
+    infra: run.infra !== undefined || unexplainedNotRun ||
+      states.includes("publish_fail") ||
       oracle === "publish_fail" || (testBuilt && p2p.missing > 0) ||
       (f2p !== null && f2p.missing > 0) ||
       (testBuilt && own !== null && own.missing > 0),
@@ -292,10 +300,20 @@ export function gatePlan(task: HarnessTask, naive: string[]): PlanEntry[] {
 export function decideGate(
   task: HarnessTask,
   plan: PlanEntry[],
-  runs: GateRun[],
+  allRuns: GateRun[],
 ): { promoted: boolean; matrix_complete: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  const byKey = new Map(runs.map((r) => [runKey(r.variant, r.repeat), r]));
+  // Score only a one-to-one match of the plan: an unplanned or repeated key is
+  // refused and never counted as evidence.
+  const planned = new Set(plan.map((p) => runKey(p.variant, p.repeat)));
+  const byKey = new Map<string, GateRun>();
+  for (const r of allRuns) {
+    const key = runKey(r.variant, r.repeat);
+    if (!planned.has(key)) reasons.push(`${key}: unplanned run`);
+    else if (byKey.has(key)) reasons.push(`${key}: duplicate run`);
+    else byKey.set(key, r);
+  }
+  const runs = [...byKey.values()];
   let matrixComplete = true;
   for (const p of plan) {
     if (!byKey.has(runKey(p.variant, p.repeat))) {
@@ -400,10 +418,11 @@ export function decideGate(
       (s) => built(s) && s.own !== null && complete(s.own),
       "naive suite run is incomplete",
     );
+    const targets = new Set(["m0", ...task.mutants]);
     for (const name of naiveNames) {
       const survives = runs.some((r) =>
         r.variant.kind === "tests" && r.variant.suite === name &&
-        r.variant.mutant !== null &&
+        r.variant.mutant !== null && targets.has(r.variant.mutant) &&
         r.summary.own !== null && allPass(r.summary.own)
       );
       if (!survives) {
