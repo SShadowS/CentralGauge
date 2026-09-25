@@ -6,7 +6,7 @@ import { oracleHash, resolveRefapp } from "../../../src/harness/identity.ts";
 import { JudgmentRecordSchema } from "../../../src/harness/records.ts";
 import { applyOverlay, stageRefappTask } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
-import { judge } from "../../../src/harness/verdict.ts";
+import { judge, SCORER_SUITE } from "../../../src/harness/verdict.ts";
 import { deployedSource, FakeBc, result } from "./fake-bc.ts";
 import {
   addTestAuthoringTask,
@@ -25,6 +25,7 @@ const suite = (cu: number, procs: string[] = ["PriceIsTen"], extra = "") =>
 type Script = (
   cu: number,
   src: string,
+  container: string,
 ) => ReturnType<typeof result> | "throw-infra";
 
 /**
@@ -35,7 +36,14 @@ function bc(extra: Script = () => result({})) {
   return new FakeBc((cu, deployed, container) => {
     const src = deployedSource(deployed, "CGR Rental");
     const ten = src.includes("exit(10);");
-    if (cu === 80010) return result({ ShippedPasses: true });
+    // An agent file planted in the Test app could sabotage a shipped test (subscriber, install trigger).
+    if (cu === 80010) {
+      return result({
+        ShippedPasses: deployedSource(deployed, "CGR Test").includes("SABOTAGE")
+          ? "Assert.IsTrue failed. sabotaged"
+          : true,
+      });
+    }
     if (cu === 80100) {
       return result({
         PriceIsTen: ten ? true : "Assert.AreEqual failed. Expected:<10>",
@@ -53,7 +61,7 @@ function bc(extra: Script = () => result({})) {
           : "An error was expected inside an ASSERTERROR statement.",
       });
     }
-    const x = extra(cu, src);
+    const x = extra(cu, src, container);
     if (x === "throw-infra") {
       throw new Error(`SOAP request timed out on ${container}`);
     }
@@ -196,7 +204,7 @@ Deno.test("mutant_kill: a mutant that does not compile is not a kill", async () 
   assertEquals(judgment.verdict, "fail");
 });
 
-Deno.test("mutant_kill: conformance fixture: assertion in A, missing B on a mutant is infra, not a kill", async () => {
+Deno.test("mutant_kill: the conformance fixture's infra rule is for trusted suites; in an agent suite, a missing B is the agent's, A's assertion still kills", async () => {
   const fx = JSON.parse(
     await Deno.readTextFile(
       "tests/fixtures/harness/conformance/mixed-assertion-missing.json",
@@ -220,13 +228,17 @@ Deno.test("mutant_kill: conformance fixture: assertion in A, missing B on a muta
     edits: { "Test/src/Agent80105.Test.al": suite(80105, procs) },
   });
   const { judgment } = await judge(new BcLane(fake, ["C1"]), input);
+  // The fixture (an oracle suite) stays infra: decision 2026-09-25-agent-suite-infra scopes it to trusted suites.
   assertEquals(fx.expected, { infra: true, kill: false });
-  assertEquals(
-    sc(judgment, "mutant_kill").passed,
-    null,
-    "no survivor, every mutant infra: unscored",
+  const mk = sc(judgment, "mutant_kill");
+  assertEquals(mk.passed, true, "A's assertion kills every mutant");
+  assert(
+    mk.tests.some((t) =>
+      t.target === "mutant:off-by-one" && t.procedure === "B" &&
+      t.outcome === "not_run" && t.failure === "runtime_error"
+    ),
+    "B never reported: the agent's, not infra",
   );
-  assertEquals(judgment.verdict, "unscored");
 });
 
 Deno.test("mutant_kill: infra on a later mutant keeps an earlier survivor (definite fail)", async () => {
@@ -318,4 +330,94 @@ Deno.test("mutant_kill: a TestPage or empty submission still has pass_to_pass de
   );
   assertEquals(sc(none.judgment, "pass_to_pass").passed, true);
   assert(sc(none.judgment, "pass_to_pass").tests.length > 0);
+});
+
+Deno.test("mutant_kill: the pass_to_pass hold deploys the shipped tests only; an agent file cannot sabotage it", async () => {
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+    edits: {
+      "Test/src/Sabotage.Test.al":
+        `codeunit 80120 "Sabotage"\n{\n    // SABOTAGE: an install trigger or subscriber in agent code\n}\n`,
+    },
+  });
+  const { judgment } = await judge(new BcLane(bc(), ["C1"]), input);
+  assertEquals(sc(judgment, "pass_to_pass").passed, true);
+});
+
+Deno.test("mutant_kill: a completed agent run with a missing or zero-result procedure is the agent's failure, not unscored", async () => {
+  const fake = bc((cu) => cu === 80109 ? result({}) : result({}));
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    edits: { "Test/src/Agent80109.Test.al": suite(80109) },
+  });
+  const { judgment } = await judge(new BcLane(fake, ["C1", "C2"]), input);
+  assertEquals(sc(judgment, "mutant_kill").passed, false);
+  assertEquals(judgment.verdict, "fail");
+});
+
+Deno.test("mutant_kill: a thrown agent run is rerun once on another container behind a trusted control", async () => {
+  // The first agent attempt throws (wherever it lands); the rerun completes
+  // with a missing procedure -> the agent's failure.
+  let calls = 0;
+  const once = bc((cu) =>
+    cu === 80110 ? (calls++ === 0 ? "throw-infra" : result({})) : result({})
+  );
+  const a = await judge(
+    new BcLane(once, ["C1", "C2"]),
+    await setup({ "off-by-one": "exit(9);" }, {
+      edits: { "Test/src/Agent80110.Test.al": suite(80110) },
+    }),
+  );
+  assertEquals(sc(a.judgment, "mutant_kill").passed, false);
+  const [first, second] = once.tests.filter((t) => t.codeunit === 80110).map((
+    t,
+  ) => t.container);
+  assert(
+    first && second && first !== second,
+    "the rerun is on another container",
+  );
+  const controlBefore = once.tests.findIndex((t) =>
+    t.container === second && t.codeunit === 80010
+  );
+  const agentRerun = once.tests.findIndex((t) =>
+    t.container === second && t.codeunit === 80110
+  );
+  assert(
+    controlBefore >= 0 && controlBefore < agentRerun,
+    "the trusted control runs right before, on that container",
+  );
+  // Throws everywhere: the single rerun is exhausted -> unscored.
+  const always = bc((cu) => cu === 80110 ? "throw-infra" : result({}));
+  const b = await judge(
+    new BcLane(always, ["C1", "C2", "C3"]),
+    await setup({ "off-by-one": "exit(9);" }, {
+      edits: { "Test/src/Agent80110.Test.al": suite(80110) },
+    }),
+  );
+  assertEquals(sc(b.judgment, "mutant_kill").passed, null);
+  assertEquals(
+    always.tests.filter((t) => t.codeunit === 80110).length,
+    2,
+    "one rerun only",
+  );
+});
+
+Deno.test("mutant_kill: a failing trusted control makes the run unscored, not the agent's failure", async () => {
+  const fake = bc((cu) => cu === 80111 ? result({}) : result({}));
+  // The control (shipped 80010) reports nothing on the agent-run builds: the container is suspect.
+  const control = new FakeBc((cu, deployed, c) =>
+    cu === 80010 && deployedSource(deployed, "CGR Test").includes("80111")
+      ? result({})
+      : fake.script(cu, deployed, c)
+  );
+  const { judgment } = await judge(
+    new BcLane(control, ["C1"]),
+    await setup({ "off-by-one": "exit(9);" }, {
+      edits: { "Test/src/Agent80111.Test.al": suite(80111) },
+    }),
+  );
+  assertEquals(sc(judgment, "mutant_kill").passed, null);
+});
+
+Deno.test("mutant_kill: the scorer version is bumped for the agent-suite rules", () => {
+  assertEquals(SCORER_SUITE["mutant_kill"], "2");
 });
