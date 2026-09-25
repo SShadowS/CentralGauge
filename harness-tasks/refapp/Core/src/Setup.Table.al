@@ -8,6 +8,9 @@ table 70003 "CGR Setup"
         field(2; "Last Contract No."; Integer) { }
         field(3; "Last Lease No."; Integer) { }
         field(4; "Suspend Rentals"; Boolean) { }
+        field(5; "Weekend Surcharge %"; Decimal) { }
+        field(6; "Km Allowance per Day"; Integer) { }
+        field(7; "Excess Km Rate"; Decimal) { }
     }
 
     keys

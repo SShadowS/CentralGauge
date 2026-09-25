@@ -28,6 +28,27 @@ codeunit 80090 "CGR Test Library"
         Vehicle.Modify();
     end;
 
+    procedure SetDailyRate(VehicleNo: Code[20]; DailyRate: Decimal)
+    var
+        Vehicle: Record "CGR Vehicle";
+    begin
+        Vehicle.Get(VehicleNo);
+        Vehicle."Daily Rate" := DailyRate;
+        Vehicle.Modify();
+    end;
+
+    procedure SetPricing(WeekendSurchargePct: Decimal; KmAllowancePerDay: Integer; ExcessKmRate: Decimal)
+    var
+        Setup: Record "CGR Setup";
+    begin
+        Setup.GetOrCreate();
+        Setup."Weekend Surcharge %" := WeekendSurchargePct;
+        Setup."Km Allowance per Day" := KmAllowancePerDay;
+        Setup."Excess Km Rate" := ExcessKmRate;
+        Setup."Suspend Rentals" := false;
+        Setup.Modify();
+    end;
+
     procedure CreateContract(VehicleNo: Code[20]): Code[20]
     var
         RentalMgt: Codeunit "CGR Rental Mgt";

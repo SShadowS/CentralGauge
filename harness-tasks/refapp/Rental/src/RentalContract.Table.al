@@ -13,6 +13,7 @@ table 70200 "CGR Rental Contract"
         field(7; "Start Km"; Integer) { }
         field(8; "Return Km"; Integer) { }
         field(9; "Damage Description"; Text[100]) { }
+        field(10; "Pricing Method"; Enum "CGR Pricing Method") { }
     }
 
     keys

@@ -1,0 +1,19 @@
+id: HX-004
+refapp_version: refapp-v1-rc4
+kind: feature
+prompt: prompt.md
+touches: [Reporting, Leasing, Rental, Fleet]
+coupling: [queries, internal]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged] }
+  - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Leasing, Reporting]
+  tests:
+    - { codeunit: 85300, procedures: [RentalRevenueSumsPostedContracts, RentalRevenueDateFilterInclusive, RentalRevenueIgnoresUnposted, LeaseRevenueCountsInvoicedLinesOnly, LeaseRevenueDateFilterInclusive, UninvoicedLinesFollowVehicleChange, RepeatedVehicleChangeFollowsLastVehicle, RevenueSourcesStaySeparate] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
