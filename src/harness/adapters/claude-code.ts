@@ -689,6 +689,12 @@ export const claudeCodeAdapter: HarnessAdapter = {
         `${config.id}: settings.mcp is reserved; name MCP components under components.mcp`,
       );
     }
+    // mcp_tools is written by M2-09 from the tool inventory, never by a config.
+    if (Object.hasOwn(config.settings, "mcp_tools")) {
+      throw new ConfigurationError(
+        `${config.id}: settings.mcp_tools is reserved; it is derived from the MCP tool inventory`,
+      );
+    }
     // Plain arms keep their manifest hash: mcp only when non-empty.
     return {
       ...config.settings,

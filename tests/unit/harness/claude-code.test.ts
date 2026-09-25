@@ -1263,6 +1263,50 @@ Deno.test("claude-code MCP review: settings.mcp is reserved, so MCP loads only f
   );
 });
 
+Deno.test("claude-code MCP review: settings.mcp_tools is reserved (M2-09 writes it from the tool inventory)", () => {
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings: { mcp_tools: ["mcp__al-tools__al_compile"] },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const catalog = {
+    models: [{
+      slug: "anthropic/claude-sonnet-5",
+      api_model_id: "claude-sonnet-5",
+      family: "claude",
+      display_name: "S5",
+    }],
+    pricing: [],
+    families: [],
+  };
+  assertThrows(
+    () => claudeCodeAdapter.nativeSettings(cfg, catalog),
+    ConfigurationError,
+    "settings.mcp_tools",
+  );
+  const withMcp = {
+    ...cfg,
+    components: { ...cfg.components, mcp: ["al-tools"] },
+  };
+  assertThrows(
+    () => claudeCodeAdapter.nativeSettings(withMcp, catalog),
+    ConfigurationError,
+    "settings.mcp_tools",
+  );
+  const plain = { ...withMcp, settings: {} };
+  assertEquals(
+    Object.hasOwn(
+      claudeCodeAdapter.nativeSettings(plain, catalog),
+      "mcp_tools",
+    ),
+    false,
+    "this half never emits mcp_tools",
+  );
+});
+
 Deno.test("claude-code MCP review: run.ps1 never puts the backend token in mcp.json and keeps the stdin invocation", async () => {
   const run = await Deno.readTextFile("harness/images/claude-code/run.ps1");
   const code = run.split("\n").filter((l) => !l.trimStart().startsWith("#"));

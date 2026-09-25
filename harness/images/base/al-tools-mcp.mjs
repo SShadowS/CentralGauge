@@ -30,7 +30,10 @@ const CALL_TIMEOUT_MS = envMs(
 // A queued call's deadline starts when it arrives.
 const QUEUE_WAIT_MS = envMs("CG_AL_TOOLS_QUEUE_WAIT_MS", 10 * 60_000);
 const MAX_QUEUED = 4;
+// The cap is on the agent-visible tool result as serialized (after JSON
+// escaping, wrapper included); the raw read bound only limits memory.
 const MAX_RESULT_BYTES = 256 * 1024;
+const MAX_READ_BYTES = 1024 * 1024;
 const APP = /^[A-Za-z][A-Za-z0-9 ]{0,63}$/;
 function envMs(name, fallback) {
   const v = process.env[name];
@@ -85,7 +88,7 @@ function validate(name, args) {
 /** Set after a client timeout: the backend may still hold the request, so nothing more is sent. */
 let dead = false;
 
-/** The body up to MAX_RESULT_BYTES; over it, the prefix and truncated. */
+/** The body up to MAX_READ_BYTES; over it, the prefix and truncated. */
 async function readCapped(r) {
   const chunks = [];
   let n = 0;
@@ -94,9 +97,9 @@ async function readCapped(r) {
   while (reader) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (n + value.length > MAX_RESULT_BYTES) {
-      chunks.push(value.subarray(0, MAX_RESULT_BYTES - n));
-      n = MAX_RESULT_BYTES;
+    if (n + value.length > MAX_READ_BYTES) {
+      chunks.push(value.subarray(0, MAX_READ_BYTES - n));
+      n = MAX_READ_BYTES;
       truncated = true;
       await reader.cancel();
       break;
@@ -111,6 +114,39 @@ async function readCapped(r) {
     at += c.length;
   }
   return { text: new TextDecoder().decode(all), truncated };
+}
+
+const serializedBytes = (r) =>
+  new TextEncoder().encode(JSON.stringify(r)).length;
+
+/** The tool result for a backend reply, at most MAX_RESULT_BYTES serialized. */
+function capped(op, status, raw, readTruncated) {
+  if (!readTruncated) {
+    let parsed = raw;
+    try {
+      parsed = JSON.parse(raw);
+    } catch { /* not JSON: returned as text */ }
+    const ok = status === 200 && isObj(parsed) && parsed.ok === true;
+    const r = result({ op, status, result: parsed }, !ok);
+    if (serializedBytes(r) <= MAX_RESULT_BYTES) return r;
+  }
+  const cut = (k) =>
+    result({
+      op,
+      status,
+      truncated: true,
+      limit_bytes: MAX_RESULT_BYTES,
+      result: raw.slice(0, k),
+    }, true);
+  // The longest raw prefix whose wrapped, serialized result fits.
+  let lo = 0;
+  let hi = raw.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (serializedBytes(cut(mid)) <= MAX_RESULT_BYTES) lo = mid;
+    else hi = mid - 1;
+  }
+  return cut(lo);
 }
 
 async function call(op, body) {
@@ -147,16 +183,7 @@ async function call(op, body) {
     });
     status = r.status;
     const b = await readCapped(r);
-    if (b.truncated) {
-      return result({
-        op,
-        status,
-        truncated: true,
-        limit_bytes: MAX_RESULT_BYTES,
-        result: b.text,
-      }, true);
-    }
-    raw = b.text;
+    return capped(op, status, b.text, b.truncated);
   } catch (e) {
     if (e?.name === "TimeoutError") {
       dead = true;
@@ -169,12 +196,7 @@ async function call(op, body) {
     // The name only: a fetch error message can echo the URL and headers.
     raw = JSON.stringify({ error: `backend unreachable: ${e?.name ?? "error"}` });
   }
-  let parsed = raw;
-  try {
-    parsed = JSON.parse(raw);
-  } catch { /* not JSON: returned as text */ }
-  const ok = status === 200 && isObj(parsed) && parsed.ok === true;
-  return result({ op, status, result: parsed }, !ok);
+  return capped(op, status, raw, false);
 }
 
 // The backend admits one request per execution at a time (429 otherwise, M1-19),
