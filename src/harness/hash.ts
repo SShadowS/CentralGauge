@@ -12,13 +12,14 @@
  * section 7 names: `.alpackages/`, `output/`, `*.app`.
  *
  * Link refusal covers what Deno reports as a symlink (symlinks and junctions
- * on Windows), for the root and every entry, before any skip rule. This is
- * an identity helper, not the hostile-artifact copy boundary: the Part 2
- * verdict workspace copy must enforce its own reparse-point policy.
+ * on Windows), for every ancestor component of a root or file and for every
+ * entry, before any skip rule. This is an identity helper, not the
+ * hostile-artifact copy boundary: the Part 2 verdict workspace copy must
+ * enforce its own reparse-point policy.
  */
 
 import { walk } from "@std/fs/walk";
-import { relative } from "@std/path";
+import { join, parse, relative, resolve, SEPARATOR } from "@std/path";
 import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
 import { canonicalJSON } from "../../shared/canonical.ts";
 import { ValidationError } from "../errors.ts";
@@ -49,20 +50,41 @@ function isText(path: string): boolean {
     TEXT_EXTENSIONS.includes(path.slice(dot).toLowerCase());
 }
 
-async function refuseLink(path: string, label: string): Promise<void> {
-  if ((await Deno.lstat(path)).isSymlink) {
-    throw new ValidationError(`refusing link or reparse point: ${label}`, [
-      label,
-    ]);
+/**
+ * Refuses a link at `path` or at any ancestor component: every component of
+ * the absolute path from the filesystem root down (like M1-01 probe()).
+ */
+async function refuseLink(path: string): Promise<void> {
+  const abs = resolve(path);
+  let p = parse(abs).root;
+  for (const part of abs.slice(p.length).split(SEPARATOR)) {
+    if (part === "") continue;
+    p = join(p, part);
+    if ((await Deno.lstat(p)).isSymlink) {
+      throw new ValidationError(`refusing link or reparse point: ${p}`, [p]);
+    }
   }
 }
 
 /**
+ * A walked relative path in posix form. "\" is a separator only on Windows;
+ * elsewhere it is a filename character that would alias a directory, so it
+ * is refused.
+ */
+export function posixRel(rel: string, os: typeof Deno.build.os): string {
+  if (os === "windows") return rel.replaceAll("\\", "/");
+  if (rel.includes("\\")) {
+    throw new ValidationError(`refusing backslash in file name: ${rel}`, [rel]);
+  }
+  return rel;
+}
+
+/**
  * Per-file SHA-256 hex. CRLF becomes LF for text extensions only; other
- * bytes are hashed as-is. Refuses a link.
+ * bytes are hashed as-is. Refuses a link at the file or any ancestor.
  */
 export async function hashFile(path: string): Promise<string> {
-  await refuseLink(path, path);
+  await refuseLink(path);
   return hashContent(path, await Deno.readFile(path));
 }
 
@@ -72,14 +94,26 @@ export function hashContent(
   bytes: Uint8Array<ArrayBuffer>,
 ): Promise<string> {
   if (!isText(path)) return sha256Hex(bytes);
-  const text = new TextDecoder().decode(bytes).replaceAll("\r\n", "\n");
-  return sha256Hex(enc.encode(text));
+  // Byte-level CRLF -> LF: no decode round trip, so a BOM and malformed
+  // UTF-8 survive as-is.
+  const out = new Uint8Array(bytes.length);
+  let n = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 13 && bytes[i + 1] === 10) continue;
+    out[n++] = bytes[i]!;
+  }
+  return sha256Hex(out.slice(0, n));
 }
 
-/** True when a `task`-domain path is a spec 1b section 7 build artifact. */
+/**
+ * True when a `task`-domain file path is a spec 1b section 7 build artifact:
+ * under a `.alpackages/` or `output/` directory, or a `*.app` file. A regular
+ * file named `output` is content.
+ */
 export function isTaskBuildArtifact(rel: string): boolean {
   const segs = rel.split("/");
-  return segs.some((s) => s === ".alpackages" || s === "output") ||
+  const dirs = segs.slice(0, -1);
+  return dirs.some((s) => s === ".alpackages" || s === "output") ||
     /\.app$/i.test(segs[segs.length - 1]!);
 }
 
@@ -98,14 +132,14 @@ export async function listTree(
   opts: { optional?: boolean } = {},
 ): Promise<TreeEntry[]> {
   try {
-    await refuseLink(dir, dir);
+    await refuseLink(dir);
   } catch (err) {
     if (err instanceof Deno.errors.NotFound && opts.optional) return [];
     throw err;
   }
   const out: TreeEntry[] = [];
   for await (const e of walk(dir, { followSymlinks: false })) {
-    const rel = relative(dir, e.path).replaceAll("\\", "/");
+    const rel = posixRel(relative(dir, e.path), Deno.build.os);
     if (rel === "") continue;
     if (e.isSymlink) {
       throw new ValidationError(`refusing link or reparse point: ${rel}`, [
@@ -114,7 +148,9 @@ export async function listTree(
     }
     if (!e.isFile) continue;
     if (domain === "task" && isTaskBuildArtifact(rel)) continue;
-    out.push({ path: rel, sha256: await hashFile(e.path) });
+    // Ancestors were checked by refuseLink(dir); entries by the walk.
+    const bytes = await Deno.readFile(e.path);
+    out.push({ path: rel, sha256: await hashContent(e.path, bytes) });
   }
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }

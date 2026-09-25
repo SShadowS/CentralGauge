@@ -1,4 +1,9 @@
-import { assertEquals, assertNotEquals, assertRejects } from "@std/assert";
+import {
+  assertEquals,
+  assertNotEquals,
+  assertRejects,
+  assertThrows,
+} from "@std/assert";
 import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
 import {
@@ -7,6 +12,7 @@ import {
   hashJson,
   hashTree,
   listTree,
+  posixRel,
 } from "../../../src/harness/hash.ts";
 
 async function writeTree(root: string, files: Record<string, string>) {
@@ -129,6 +135,67 @@ Deno.test("links: refused as root, as entry, inside a skipped folder, and by has
   // file symlinks need Developer Mode on Windows).
   await assertRejects(
     () => hashFile(join(parent, "rootlink")),
+    ValidationError,
+    "link",
+  );
+});
+
+Deno.test("hashFile: text normalization is byte-level (BOM and malformed UTF-8 kept)", async () => {
+  const root = await Deno.makeTempDir();
+  const body = [120, 13, 10, 121];
+  await Deno.writeFile(
+    join(root, "bom.al"),
+    new Uint8Array([0xef, 0xbb, 0xbf, ...body]),
+  );
+  await Deno.writeFile(join(root, "plain.al"), new Uint8Array(body));
+  assertNotEquals(
+    await hashFile(join(root, "bom.al")),
+    await hashFile(join(root, "plain.al")),
+  );
+  // 0xff is not valid UTF-8; a decode round trip would turn it into U+FFFD.
+  await Deno.writeFile(join(root, "bad.al"), new Uint8Array([0xff, 13, 10]));
+  await Deno.writeFile(
+    join(root, "fffd.al"),
+    new Uint8Array([0xef, 0xbf, 0xbd, 10]),
+  );
+  assertNotEquals(
+    await hashFile(join(root, "bad.al")),
+    await hashFile(join(root, "fffd.al")),
+  );
+});
+
+Deno.test("posixRel: backslash is a separator only on Windows", () => {
+  assertEquals(posixRel("a\\b/c", "windows"), "a/b/c");
+  assertEquals(posixRel("a/b", "linux"), "a/b");
+  assertThrows(() => posixRel("a\\b", "linux"), ValidationError, "backslash");
+  assertThrows(() => posixRel("a\\b", "darwin"), ValidationError, "backslash");
+});
+
+Deno.test("hashTree task domain: only DIRECTORIES named output/.alpackages are artifacts", async () => {
+  const root = await Deno.makeTempDir();
+  await writeTree(root, {
+    "output": "o",
+    "Core/.alpackages": "p",
+    "Core/output/x.al": "dropped",
+  });
+  assertEquals(
+    (await listTree(root, "task")).map((e) => e.path),
+    ["Core/.alpackages", "output"],
+  );
+});
+
+Deno.test("links: a linked ancestor is refused for tree roots and direct file hashing", async () => {
+  const target = await Deno.makeTempDir();
+  await writeTree(target, { "sub/t.al": "x" });
+  const parent = await Deno.makeTempDir();
+  await linkDir(target, join(parent, "anc"));
+  await assertRejects(
+    () => hashFile(join(parent, "anc", "sub", "t.al")),
+    ValidationError,
+    "link",
+  );
+  await assertRejects(
+    () => hashTree(join(parent, "anc", "sub"), "task"),
     ValidationError,
     "link",
   );
