@@ -141,6 +141,8 @@ scripts/*
 !scripts/spikes/**
 !scripts/coord/
 !scripts/coord/**
+!scripts/harness/
+!scripts/harness/**
 TestLookupSandbox.md
 bug.md
 dockerstatus.md

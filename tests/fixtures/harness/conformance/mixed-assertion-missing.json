@@ -1,0 +1,36 @@
+{
+  "description": "Oracle procedure A lost an assertion; procedure B never reported. Expected: infra, not a kill. The M4 gate and M1-18 must agree.",
+  "task": {
+    "id": "HX-001",
+    "refapp_version": "refapp-v1-rc1",
+    "kind": "bugfix",
+    "prompt": "prompt.md",
+    "source": "refapp",
+    "scorers": ["build", "pass_to_pass", "fail_to_pass"],
+    "pass_to_pass": [{ "codeunit": 80010, "procedures": ["Visible"] }],
+    "fail_to_pass": { "depends_on": ["Core"], "tests": [{ "codeunit": 85000, "procedures": ["A", "B"] }] }
+  },
+  "run": {
+    "variant": "naive/x",
+    "repeat": 1,
+    "usesOracle": true,
+    "own": [],
+    "builds": [
+      { "app": "Core", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Fleet", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Rental", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Leasing", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Integration", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Reporting", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Test", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Oracle", "stage": "publish", "ok": true, "codes": [] }
+    ],
+    "tests": [
+      { "codeunit": 80010, "procedure": "Visible", "passed": true, "failure": null },
+      { "codeunit": 85000, "procedure": "A", "passed": false, "failure": "assertion", "message": "Assert.AreEqual failed. Expected:<1> (Integer). Actual:<0> (Integer)." }
+    ],
+    "staged_hash": "x",
+    "ms": 1
+  },
+  "expected": { "infra": true, "kill": false }
+}
