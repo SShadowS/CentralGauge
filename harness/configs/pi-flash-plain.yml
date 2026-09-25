@@ -1,0 +1,9 @@
+id: pi-flash-plain
+harness: pi
+harness_version: "0.87.1"
+models:
+  main: openrouter/google/gemini-3.8-flash
+settings: {}
+components:
+  instructions: bundles/env/instructions
+limits: { timeout_min: 30, max_budget_usd: 2 }

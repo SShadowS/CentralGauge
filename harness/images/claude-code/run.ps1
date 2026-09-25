@@ -38,9 +38,15 @@ $mcpPath = "$userHome\mcp.json"
 [IO.File]::WriteAllText($mcpPath, (ConvertTo-Json -InputObject @{ mcpServers = $servers } -Depth 6), $utf8)
 $mcpArgs = @('--mcp-config', $mcpPath, '--strict-mcp-config')
 if (Test-Path 'C:\config\bundle\instructions') {
-  $instructions = @(Get-ChildItem 'C:\config\bundle\instructions' -File)
-  if ($instructions.Count -ne 1) { throw "bundle instructions must hold exactly one file, found $($instructions.Count)" }
-  Copy-Item -LiteralPath $instructions[0].FullName -Destination "$userHome\.claude\CLAUDE.md" -Force
+  $dir = 'C:\config\bundle\instructions'
+  $names = @(Get-ChildItem $dir -File | ForEach-Object { $_.Name })
+  $extra = @($names | Where-Object { $_ -notin @('AGENTS.md', 'CLAUDE.md') })
+  if ($extra.Count -gt 0) { throw "instructions bundle holds unexpected files: $($extra -join ', ')" }
+  if ($names -notcontains 'CLAUDE.md') { throw 'Claude Code instructions bundle must hold CLAUDE.md' }
+  if (($names -contains 'AGENTS.md') -and ((Get-FileHash "$dir\AGENTS.md").Hash -ne (Get-FileHash "$dir\CLAUDE.md").Hash)) {
+    throw 'AGENTS.md and CLAUDE.md differ: the parity rule needs byte-identical files'
+  }
+  Copy-Item -LiteralPath "$dir\CLAUDE.md" -Destination "$userHome\.claude\CLAUDE.md" -Force
 }
 if (Test-Path 'C:\config\bundle\skills') {
   Copy-Item 'C:\config\bundle\skills' "$userHome\.claude\skills" -Recurse -Force
