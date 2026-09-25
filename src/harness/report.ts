@@ -38,6 +38,8 @@ export interface ArmCoverage {
   infra_exposed: number;
   /** Executions per missing declared telemetry field. */
   incomplete_telemetry: Record<string, number>;
+  /** Executions priced under each cost assumption (raw_usage.assumptions keys), sorted keys. */
+  cost_assumptions: Record<string, number>;
 }
 
 /** Every reported metric is the declared primary one or exploratory. */
@@ -231,6 +233,21 @@ export async function buildReport(
           fields[f] = (fields[f] ?? 0) + 1;
         }
       }
+      const assumed: Record<string, number> = {};
+      for (const e of es) {
+        const raw = e.telemetry.raw_usage;
+        const list =
+          raw !== null && typeof raw === "object" && !Array.isArray(raw)
+            ? (raw as { assumptions?: unknown }).assumptions
+            : undefined;
+        const keys = new Set(
+          (Array.isArray(list) ? list : []).map((a) =>
+            (a as { key?: unknown })?.key
+          )
+            .filter((k): k is string => typeof k === "string"),
+        );
+        for (const k of keys) assumed[k] = (assumed[k] ?? 0) + 1;
+      }
       return {
         arm,
         executions: es.length,
@@ -239,6 +256,11 @@ export async function buildReport(
         // Sorted keys: JSON must not depend on execution order.
         incomplete_telemetry: Object.fromEntries(
           Object.entries(fields).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),
+        ),
+        cost_assumptions: Object.fromEntries(
+          Object.entries(assumed).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0
+          ),
         ),
       };
     }),
@@ -314,7 +336,7 @@ export function renderReport(r: HarnessReport): string {
     out.push(
       `  ${a.arm}: planned ${a.planned_cells}, attempted ${a.attempted_cells}, scored ${a.scored_cells}, unscored ${a.unscored_cells}, pending ${a.pending_cells}, unrun ${a.unrun_cells}; ${c.executions} executions (${c.manual_reruns} manual reruns), infra exposed ${c.infra_exposed}, incomplete telemetry: ${
         reasons(c.incomplete_telemetry)
-      }`,
+      }, cost assumptions: ${reasons(c.cost_assumptions)}`,
     );
   }
   h("Primary");
