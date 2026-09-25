@@ -265,3 +265,30 @@ Deno.test("cells: non-finite or negative numbers are refused, never leak into a 
     );
   }
 });
+
+Deno.test("armSummary: k must be a positive integer", () => {
+  const cs = cells("A", "t1", [[true, 1]]);
+  for (const k of [0, 1.5, -1, Number.NaN]) {
+    assertThrows(() => armSummary(cs, "A", k), ValidationError, "k must be");
+  }
+});
+
+Deno.test("armSummary: a repeat beyond the planned k is refused, naming the task", () => {
+  const cs = cells("A", "t1", [[true, 1], [true, 1], [true, 1]]);
+  assertThrows(() => armSummary(cs, "A", 2), ValidationError, "t1");
+  // Also when the extra repeat is not scored: it is still outside the plan.
+  const un = cells("A", "t2", [[true, 1], [true, 1], ["unscored", 1]]);
+  assertThrows(() => armSummary(un, "A", 2), ValidationError, "t2");
+});
+
+Deno.test("compareArms: a seed outside 0..0xffffffff is refused, never aliased", () => {
+  const cs = twoArms(1);
+  for (const seed of [2 ** 32, 1.5]) {
+    assertThrows(
+      () => compareArms(cs, "base", "var", "pass_rate", { seed }),
+      ValidationError,
+      "seed",
+    );
+  }
+  compareArms(cs, "base", "var", "pass_rate", { seed: 0xffffffff });
+});

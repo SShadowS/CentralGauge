@@ -162,9 +162,27 @@ export interface ArmSummary {
   provisional: boolean;
 }
 
+/**
+ * k is the planned repeat count. A cell (any status) with repeat > k is
+ * outside the plan and refused. Repeats within 1..k that are missing or not
+ * scored only keep the task out of pass^k.
+ */
 export function armSummary(cells: Cell[], arm: string, k: number): ArmSummary {
   checkCells(cells);
+  if (!Number.isInteger(k) || k < 1) {
+    throw new ValidationError(`k must be a positive integer, got ${k}`, [
+      `k must be a positive integer, got ${k}`,
+    ]);
+  }
   const mine = cells.filter((c) => c.arm === arm);
+  const beyond = mine.filter((c) => c.repeat > k)
+    .map((c) => `task ${c.task}: repeat ${c.repeat} exceeds planned k=${k}`);
+  if (beyond.length > 0) {
+    throw new ValidationError(
+      `Repeats outside the plan:\n  ${beyond.join("\n  ")}`,
+      beyond,
+    );
+  }
   const count = (s: CellStatus) => mine.filter((c) => c.status === s).length;
   const known = (cs: Cell[]) => sum(cs.map((c) => c.known_spend_usd));
   const unknown = mine.filter((c) => c.attempts > 0 && c.spend_usd === null);
@@ -176,8 +194,7 @@ export function armSummary(cells: Cell[], arm: string, k: number): ArmSummary {
     repeatsByTask.set(c.task, m);
   }
   const full = [...repeatsByTask.values()].filter((m) =>
-    m.size === k && Array.from({ length: k }, (_, i) => i + 1)
-      .every((r) => m.has(r))
+    Array.from({ length: k }, (_, i) => i + 1).every((r) => m.has(r))
   );
   return {
     arm,
@@ -248,8 +265,8 @@ export function checkBootstrapOptions(opts: BootstrapOptions): void {
   if (!Number.isInteger(resamples) || resamples < 1) {
     errors.push(`resamples must be a positive integer, got ${resamples}`);
   }
-  if (!Number.isInteger(seed) || seed < 0) {
-    errors.push(`seed must be a non-negative integer, got ${seed}`);
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) {
+    errors.push(`seed must be an integer in 0..0xffffffff, got ${seed}`);
   }
   if (!(level > 0 && level < 1)) {
     errors.push(`level must be between 0 and 1, got ${level}`);
