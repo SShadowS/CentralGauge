@@ -99,36 +99,57 @@ function transportOf(tool: string): string {
   return tool === "Bash" || tool === "PowerShell" ? "shell" : "builtin";
 }
 
+/** Non-JSON stdout is kept as evidence only: a count, the first few line numbers and short prefixes. */
+const NON_JSON_SHOWN = 3;
+const NON_JSON_PREFIX = 32;
+interface NonJson {
+  count: number;
+  first: { line: number; prefix: string }[];
+}
+
 /**
  * One JSON object with a string `type` per line. A leading BOM, CRLF and
- * blank lines are accepted; an unparseable last line is the tail of a hard
- * kill and is reported; anything else malformed is refused.
+ * blank lines are accepted. Any other line (a stray warning, a corrupt or
+ * truncated record, a non-object) never throws the attempt away: it is
+ * counted, and the first few are kept as short prefixes (raw lines may carry
+ * secrets; the full log stays in quarantine).
  */
-function readRecords(text: string, file: string, problems: string[]): Line[] {
-  const raw = (text.startsWith("﻿") ? text.slice(1) : text).split(
+function readRecords(text: string): { lines: Line[]; nonJson: NonJson } {
+  const raw = (text.startsWith("\uFEFF") ? text.slice(1) : text).split(
     /\r?\n/,
   );
-  let last = raw.length - 1;
-  while (last >= 0 && raw[last]!.trim() === "") last--;
-  const out: Line[] = [];
+  const lines: Line[] = [];
+  const nonJson: NonJson = { count: 0, first: [] };
   for (const [i, l] of raw.entries()) {
     if (l.trim() === "") continue;
     let v: unknown;
-    let syntax = false;
     try {
       v = JSON.parse(l);
     } catch {
-      syntax = true;
+      v = undefined;
     }
     if (isObj(v) && typeof v.type === "string") {
-      out.push({ rec: v, line: i + 1 });
-    } else if (syntax && i === last) {
-      problems.push(`line ${i + 1}: truncated last line`);
-    } else {
-      refuse(`${file}:${i + 1}: not a stream-json record (object with type)`);
+      lines.push({ rec: v, line: i + 1 });
+      continue;
+    }
+    nonJson.count++;
+    if (nonJson.first.length < NON_JSON_SHOWN) {
+      const cut = [...l];
+      nonJson.first.push({
+        line: i + 1,
+        prefix: cut.slice(0, NON_JSON_PREFIX).join("") +
+          (cut.length > NON_JSON_PREFIX ? "..." : ""),
+      });
     }
   }
-  return out;
+  return { lines, nonJson };
+}
+
+/** Names the non-JSON lines: count and the first line numbers. */
+function nonJsonReason(n: NonJson): string {
+  return `${n.count} non-JSON stdout line${n.count === 1 ? "" : "s"} (${
+    n.first.map((x) => `line ${x.line}`).join(", ")
+  }${n.count > n.first.length ? ", ..." : ""})`;
 }
 
 function only(recs: Line[], what: string, file: string): Line | undefined {
@@ -149,7 +170,15 @@ export function parseClaudeStream(
   streamProblems: string[] = [],
 ): ParsedRun & { trace: TraceEvent[] } {
   const file = input.rawLog;
-  const lines = readRecords(text, file, streamProblems);
+  const { lines, nonJson } = readRecords(text);
+  if (nonJson.count > 0) {
+    streamProblems.push(
+      `${nonJsonReason(nonJson)}: ${
+        nonJson.first.map((x) => `line ${x.line} ${JSON.stringify(x.prefix)}`)
+          .join(", ")
+      }`,
+    );
+  }
   const of = (t: string) => lines.filter((x) => x.rec.type === t);
 
   const unknown = new Map<string, number>();
@@ -329,7 +358,20 @@ export function parseClaudeStream(
       problems,
     };
   });
-  const est = result ? estimateCost(usage, input.pricing) : null;
+  const priced = result ? estimateCost(usage, input.pricing) : null;
+  // A lost line may have been a second result or a usage record the TTL
+  // check needed, so the cost is not provable: null, with the lines named.
+  const est = priced && nonJson.count > 0
+    ? {
+      ...priced,
+      cost_usd: null,
+      pricing_snapshot: null,
+      missing: [
+        `${nonJsonReason(nonJson)}: the result record may not cover the run`,
+        ...priced.missing,
+      ],
+    }
+    : priced;
   const partial: Record<string, ModelTokens> = {};
   for (const { model, usage: u } of perMessage.values()) {
     const p = partial[model] ??= {
@@ -423,7 +465,8 @@ export function parseClaudeStream(
         usage: result?.usage ?? null,
         modelUsage: result?.modelUsage ?? null,
         partial,
-        missing: est?.missing ?? [],
+        missing: est?.missing ??
+          (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
         stream_problems: streamProblems,
       }),
     },

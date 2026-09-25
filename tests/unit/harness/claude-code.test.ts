@@ -17,6 +17,7 @@ import {
   loadConfig,
 } from "../../../src/harness/config.ts";
 import type { PricingBook } from "../../../src/harness/pricing.ts";
+import type { Telemetry } from "../../../src/harness/records.ts";
 import { manifest } from "./fixtures.ts";
 
 const FIXTURE = "tests/fixtures/harness/claude-code/probe.jsonl";
@@ -315,23 +316,79 @@ const lines = async () =>
 const problems = (r: { telemetry: { raw_usage: unknown } }) =>
   (r.telemetry.raw_usage as { stream_problems: string[] }).stream_problems;
 
-Deno.test("claude-code hardening: a malformed line before the end is refused with file and line", async () => {
+/** A preserved parse whose non-JSON stdout makes the cost unprovable, with the lines named. */
+function assertNonJson(r: { telemetry: Telemetry }, at: string) {
+  assertEquals(r.telemetry.cost_usd, null);
+  assert(
+    incompleteTelemetry(claudeCodeAdapter.declared, r.telemetry).includes(
+      "cost_usd",
+    ),
+  );
+  const raw = r.telemetry.raw_usage as {
+    missing: string[];
+    stream_problems: string[];
+  };
+  assert(
+    raw.missing.some((m) => m.includes("non-JSON") && m.includes(at)),
+    JSON.stringify(raw.missing),
+  );
+  assert(
+    raw.stream_problems.some((m) => m.includes("non-JSON") && m.includes(at)),
+  );
+}
+
+Deno.test("claude-code hardening: a non-JSON line keeps the attempt, cost incomplete with the line named", async () => {
   const l = await lines();
-  for (const bad of ['{"type":"assistant",', "42", "[1]", "not json"]) {
+  for (
+    const bad of [
+      '{"type":"assistant",',
+      "42",
+      "[1]",
+      "not json",
+      '{"x":1}',
+      "\uFEFF{}",
+    ]
+  ) {
     const text = [...l.slice(0, 5), bad, ...l.slice(5)].join("\n") + "\n";
-    const err = await assertRejects(() => parse(text), ValidationError);
-    assertStringIncludes(err.message, "raw.jsonl:6");
+    const { r } = await parse(text);
+    assertEquals(r.termination, "completed");
+    assertEquals(r.telemetry.reported_cost_usd, 0.12881720000000002);
+    assertEquals([r.telemetry.turns, r.traceEvents], [8, 7]);
+    assertNonJson(r, "line 6");
   }
 });
 
-Deno.test("claude-code hardening: a truncated last line (hard kill) is reported, cost unknown", async () => {
+Deno.test("claude-code hardening: non-JSON lines are capped: count, first 3, short prefixes", async () => {
+  const l = await lines();
+  const secret = "a".repeat(40) + "SECRET-TAIL-" + "z".repeat(200);
+  const bad = ["w1 " + secret, "w2", "w3", "w4", "w5"];
+  const { r } = await parse([...bad, ...l].join("\n"));
+  const all = JSON.stringify(r.telemetry.raw_usage);
+  assert(!all.includes("SECRET-TAIL"), "only a short prefix is stored");
+  assert(!all.includes("w4") && !all.includes("w5"));
+  assertStringIncludes(all, "5 non-JSON stdout lines");
+  assertNonJson(r, "line 1");
+});
+
+Deno.test("claude-code hardening: non-JSON lines and no result record: termination unknown, reason kept", async () => {
+  const l = await lines();
+  const { r } = await parse(
+    [...l.slice(0, 10), "npm WARN something", ...l.slice(10, 20)].join("\n"),
+    1,
+  );
+  assertEquals(r.termination, null);
+  assert(r.didWork);
+  assertNonJson(r, "line 11");
+});
+
+Deno.test("claude-code hardening: a truncated last line (hard kill) is a non-JSON line, cost unknown", async () => {
   const l = await lines();
   const { r } = await parse(
     l.slice(0, 20).join("\n") + '\n{"type":"assist',
     -1,
   );
-  assertEquals([r.telemetry.cost_usd, r.termination], [null, null]);
-  assertEquals(problems(r), ["line 21: truncated last line"]);
+  assertEquals(r.termination, null);
+  assertNonJson(r, "line 21");
 });
 
 Deno.test("claude-code hardening: duplicate result or init records are refused", async () => {
@@ -368,22 +425,20 @@ Deno.test("claude-code hardening: unknown record types are reported, not dropped
   const { r } = await parse(text);
   assert(r.telemetry.cost_usd !== null);
   assertEquals(problems(r), ["unknown record type new_thing (2)"]);
-  const untyped = [...l.slice(0, 3), '{"x":1}', ...l.slice(3)].join("\n");
-  await assertRejects(() => parse(untyped), ValidationError);
 });
 
 Deno.test("claude-code hardening: BOM and CRLF parse exactly like the plain fixture (same trace bytes)", async () => {
   const text = await Deno.readTextFile(FIXTURE);
   const a = await parse(text);
-  const b = await parse("﻿" + text.replaceAll("\n", "\r\n"));
+  const b = await parse("\uFEFF" + text.replaceAll("\n", "\r\n"));
   assertEquals(b.r.telemetry, a.r.telemetry);
   assertEquals(
     await Deno.readTextFile(join(b.dir, "trace.jsonl")),
     await Deno.readTextFile(join(a.dir, "trace.jsonl")),
   );
   assertEquals(problems(a.r), []);
-  const midBom = text.replace("\n{", "\n﻿{");
-  await assertRejects(() => parse(midBom), ValidationError);
+  const midBom = text.replace("\n{", "\n\uFEFF{");
+  assertNonJson((await parse(midBom)).r, "line 2");
 });
 
 Deno.test("claude-code hardening: tool calls and errors are counted per the findings", async () => {
