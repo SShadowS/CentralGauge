@@ -390,6 +390,16 @@ Deno.test("harness-tasks: per-task oracle band, fail-closed paths", async (t) =>
     assertStringIncludes(p[1]!, "85100-85199");
   });
 
+  await t.step("only HX-NNN task ids get an oracle band", () => {
+    const at = (id: string) =>
+      `harness-tasks/tasks/${id}/oracle/src/O.Codeunit.al`;
+    for (const id of ["ZZ-001", "HX-1", "HX-0001", "hx-001", "HX-001x"]) {
+      const p = auditObjects([f(at(id), 85000)]).problems;
+      assertEquals(p.length, 1, id);
+      assertStringIncludes(p[0]!, "no band");
+    }
+  });
+
   await t.step("unclassified harness-tasks paths are problems", () => {
     const stray = "harness-tasks/tasks/HX-001/stray/x.al";
     const p = auditObjects([f(stray, 70001)]).problems;

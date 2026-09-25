@@ -159,14 +159,16 @@ export function unitOf(file: string): string {
 /**
  * Each task owns the oracle band 85000 + (N - 1) * 100 .. + 99 inside
  * HARNESS_ORACLE_RANGE. Mirrors the M4 gate (scripts/harness/gate-stage.ts,
- * "Each task owns the oracle band"); keep the two in step. A task id with no
- * band gets an empty one, so every object in it is reported.
+ * "Each task owns the oracle band"); keep the two in step. Only ids matching
+ * ^HX-(\d{3})$ have a band; any other id gets an empty one, so every object in
+ * it is reported.
  */
 function oracleBand(taskId: string): Band {
-  const n = Number(taskId.slice(3));
+  const m = /^HX-(\d{3})$/.exec(taskId);
+  const n = m ? Number(m[1]) : NaN;
   const start = HARNESS_ORACLE_RANGE.start + (n - 1) * 100;
   const label = `harness oracle ${taskId}`;
-  if (!Number.isInteger(n) || n < 1 || start + 99 > HARNESS_ORACLE_RANGE.end) {
+  if (!m || n < 1 || start + 99 > HARNESS_ORACLE_RANGE.end) {
     return { label: `${label} (no band inside 85000-89999)`, start: 1, end: 0 };
   }
   return { label, start, end: start + 99 };
