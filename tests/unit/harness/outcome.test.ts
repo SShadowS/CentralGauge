@@ -405,3 +405,23 @@ Deno.test("cellsFromRecords: the current context picks its oracle's judgment eve
     H("e"),
   ]);
 });
+
+Deno.test("cellsFromRecords: attempt spend sums the same whatever the input order", async () => {
+  const c = await campaign();
+  const es = [
+    execution(c, {}, { telemetry: telemetry(0.1) }),
+    execution(c, { attempt: 2, run_kind: "manual_rerun" }, {
+      telemetry: telemetry(0.2),
+    }),
+    execution(c, { attempt: 3, run_kind: "manual_rerun" }, {
+      telemetry: telemetry(0.3),
+    }),
+  ];
+  const js = es.map((e) => judgment(c, e, true));
+  const a = cellOf(c, es, js);
+  const b = cellOf(c, [...es].reverse(), js);
+  assertEquals(
+    [b.spend_usd, b.known_spend_usd],
+    [a.spend_usd, a.known_spend_usd],
+  );
+});

@@ -1118,3 +1118,52 @@
   batch_cache_write_per_mtoken: 0.0625
   source: litellm-api
   fetched_at: '2026-09-23T00:00:00.000Z'
+# Cache rates restored 2026-09-25: the 2026-09-08/09 LiteLLM freshness rows
+# carried cache_read/cache_write 0 (= unknown), shadowing the correct rates and
+# nulling cost estimates. Source: claude-api skill, SKILL.md model table (input
+# $/MTok) x shared/prompt-caching.md "Economics" multipliers (cache read 0.1x,
+# 5-minute write 1.25x; 1-hour write 2x has no column in this schema). Batch
+# cache = 50% of sync (shared/cost-optimization.md: batch discount applies to
+# cache reads and writes).
+- pricing_version: '2026-09-25'
+  model_slug: anthropic/claude-sonnet-5
+  effective_from: '2026-09-25T00:00:00.000Z'
+  effective_until: null
+  input_per_mtoken: 2
+  output_per_mtoken: 10
+  cache_read_per_mtoken: 0.2
+  cache_write_per_mtoken: 2.5
+  batch_input_per_mtoken: 1
+  batch_output_per_mtoken: 5
+  batch_cache_read_per_mtoken: 0.1
+  batch_cache_write_per_mtoken: 1.25
+  source: manual
+  fetched_at: '2026-09-25T00:00:00.000Z'
+- pricing_version: '2026-09-25'
+  model_slug: anthropic/claude-opus-5
+  effective_from: '2026-09-25T00:00:00.000Z'
+  effective_until: null
+  input_per_mtoken: 5
+  output_per_mtoken: 25
+  cache_read_per_mtoken: 0.5
+  cache_write_per_mtoken: 6.25
+  batch_input_per_mtoken: 2.5
+  batch_output_per_mtoken: 12.5
+  batch_cache_read_per_mtoken: 0.25
+  batch_cache_write_per_mtoken: 3.125
+  source: manual
+  fetched_at: '2026-09-25T00:00:00.000Z'
+- pricing_version: '2026-09-25'
+  model_slug: anthropic/claude-haiku-4-5
+  effective_from: '2026-09-25T00:00:00.000Z'
+  effective_until: null
+  input_per_mtoken: 1
+  output_per_mtoken: 5
+  cache_read_per_mtoken: 0.1
+  cache_write_per_mtoken: 1.25
+  batch_input_per_mtoken: 0.5
+  batch_output_per_mtoken: 2.5
+  batch_cache_read_per_mtoken: 0.05
+  batch_cache_write_per_mtoken: 0.625
+  source: manual
+  fetched_at: '2026-09-25T00:00:00.000Z'

@@ -93,6 +93,7 @@ const SEP = Deno.build.os === "windows" ? "\\" : "/";
 const DEVICE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
 /** A git path part that is not a plain, portable file or folder name. */
 const unsafePart = (p: string) =>
+  // deno-lint-ignore no-control-regex -- control characters are exactly what is refused
   p === "" || p === "." || p === ".." || /[\\:<>"|?*\x00-\x1f]/.test(p) ||
   /[. ]$/.test(p) || DEVICE.test(p);
 
