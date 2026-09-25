@@ -440,3 +440,36 @@ Deno.test("vary [mcp]: mcp_tools values must be tool-name lists; unchanged serve
     "settings",
   );
 });
+
+Deno.test("vary [mcp]: a side with servers must carry both native.mcp and native.mcp_tools", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), FACTS);
+  for (
+    const extra of [
+      { mcp: ["al-tools"] },
+      { mcp_tools: MCP_NATIVE.mcp_tools },
+      {},
+    ]
+  ) {
+    const v = await resolveManifest(
+      r,
+      config("mcp", { mcp: ["al-tools"] }),
+      withNative(extra),
+    );
+    assertEquals(
+      await mcpDerivedSettingsOnly(base, v),
+      false,
+      JSON.stringify(extra),
+    );
+  }
+  const v = await resolveManifest(
+    r,
+    config("mcp", { mcp: ["al-tools"] }),
+    withNative({ mcp: ["al-tools"] }),
+  );
+  await assertRejects(
+    () => assertVaryHolds(base, v, ["mcp"]),
+    ConfigurationError,
+    "settings",
+  );
+});

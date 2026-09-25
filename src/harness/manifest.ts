@@ -255,36 +255,36 @@ export function allowedDiffs(vary: readonly VaryKey[]): Set<ManifestKey> {
   return allowed;
 }
 
-/** Refuse a variant whose template differs from the baseline outside `vary`. */
 const MCP_NATIVE_KEYS = ["mcp", "mcp_tools"] as const;
 
-/** native.mcp and native.mcp_tools, when present, are exactly this manifest's mcp servers. */
+/**
+ * A side with MCP servers carries native.mcp (its sorted server names) and
+ * native.mcp_tools (keyed by exactly those names, each a sorted,
+ * duplicate-free tool-name list); a side without servers carries neither.
+ */
 function mcpKeysDerived(m: ResolvedManifest): boolean {
   const names = m.mcp.map((s) => s.name).sort();
   const native = m.settings.native;
   if (names.length === 0) {
     return !Object.hasOwn(native, "mcp") && !Object.hasOwn(native, "mcp_tools");
   }
-  if (
-    Object.hasOwn(native, "mcp") &&
-    JSON.stringify(native["mcp"]) !== JSON.stringify(names)
-  ) return false;
-  if (Object.hasOwn(native, "mcp_tools")) {
-    const tools = native["mcp_tools"];
-    if (tools === null || typeof tools !== "object" || Array.isArray(tools)) {
-      return false;
-    }
-    if (JSON.stringify(Object.keys(tools).sort()) !== JSON.stringify(names)) {
-      return false;
-    }
-    // Each value is a tool-name list (sorted, no duplicates), never a place
-    // for other settings to ride along.
-    for (const list of Object.values(tools)) {
-      if (
-        !Array.isArray(list) || !list.every((t) => typeof t === "string") ||
-        list.some((t, i) => i > 0 && t <= (list[i - 1] as string))
-      ) return false;
-    }
+  if (!Object.hasOwn(native, "mcp") || !Object.hasOwn(native, "mcp_tools")) {
+    return false;
+  }
+  if (JSON.stringify(native["mcp"]) !== JSON.stringify(names)) return false;
+  const tools = native["mcp_tools"];
+  if (tools === null || typeof tools !== "object" || Array.isArray(tools)) {
+    return false;
+  }
+  if (JSON.stringify(Object.keys(tools).sort()) !== JSON.stringify(names)) {
+    return false;
+  }
+  // Each value is a tool-name list, never a place for other settings to ride along.
+  for (const list of Object.values(tools)) {
+    if (
+      !Array.isArray(list) || !list.every((t) => typeof t === "string") ||
+      list.some((t, i) => i > 0 && t <= (list[i - 1] as string))
+    ) return false;
   }
   return true;
 }
@@ -328,6 +328,7 @@ export async function mcpDerivedSettingsOnly(
     await hashJson({ settings: strip(b) });
 }
 
+/** Refuse a variant whose template differs from the baseline outside `vary`. */
 export async function assertVaryHolds(
   baseline: ResolvedManifest,
   variant: ResolvedManifest,
