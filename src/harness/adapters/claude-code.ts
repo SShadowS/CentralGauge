@@ -683,10 +683,20 @@ export const claudeCodeAdapter: HarnessAdapter = {
       }
       api_models[slot] = m.api_model_id;
     }
+    // run.ps1 loads MCP from settings.mcp: only components.mcp (checked against the image) may set it.
+    if (Object.hasOwn(config.settings, "mcp")) {
+      throw new ConfigurationError(
+        `${config.id}: settings.mcp is reserved; name MCP components under components.mcp`,
+      );
+    }
+    // Plain arms keep their manifest hash: mcp only when non-empty.
     return {
       ...config.settings,
       api_models,
       disallowed_tools: [...DISALLOWED_TOOLS],
+      ...(config.components.mcp.length > 0
+        ? { mcp: [...config.components.mcp].sort() }
+        : {}),
     };
   },
   providerRoutes(config) {

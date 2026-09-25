@@ -1190,3 +1190,88 @@ Deno.test("claude-code settings: session-control tools present in 2.1.282 are di
     "run.ps1 refuses a config without the list",
   );
 });
+
+// M3-03a: the Dockerfile COPY assertions of the plan's test stay for M3-03
+// (Dockerfile.windows is out of this task's scope).
+Deno.test("claude-code MCP: settings carry the MCP list only when set; run.ps1 writes mcp.json with the backend env", async () => {
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings: {},
+    components: { mcp: ["al-tools"] },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const catalog = {
+    models: [{
+      slug: "anthropic/claude-sonnet-5",
+      api_model_id: "claude-sonnet-5",
+      family: "claude",
+      display_name: "S5",
+    }],
+    pricing: [],
+    families: [],
+  };
+  assertEquals(claudeCodeAdapter.nativeSettings(cfg, catalog)["mcp"], [
+    "al-tools",
+  ]);
+  assertEquals(
+    claudeCodeAdapter.nativeSettings({
+      ...cfg,
+      components: { ...cfg.components, mcp: [] },
+    }, catalog)["mcp"],
+    undefined,
+  );
+  const run = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  for (
+    const s of [
+      "'--mcp-config'",
+      "'--strict-mcp-config'",
+      "C:\\al-tools-mcp.mjs",
+      "CG_BACKEND_URL = $env:CG_BACKEND_URL",
+      "CG_EXECUTION_ID = $env:CG_EXECUTION_ID",
+    ]
+  ) {
+    assertStringIncludes(run, s);
+  }
+});
+
+Deno.test("claude-code MCP review: settings.mcp is reserved, so MCP loads only from components.mcp", () => {
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings: { mcp: ["al-tools"] },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const catalog = {
+    models: [{
+      slug: "anthropic/claude-sonnet-5",
+      api_model_id: "claude-sonnet-5",
+      family: "claude",
+      display_name: "S5",
+    }],
+    pricing: [],
+    families: [],
+  };
+  assertThrows(
+    () => claudeCodeAdapter.nativeSettings(cfg, catalog),
+    ConfigurationError,
+    "settings.mcp",
+  );
+});
+
+Deno.test("claude-code MCP review: run.ps1 never puts the backend token in mcp.json and keeps the stdin invocation", async () => {
+  const run = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  const code = run.split("\n").filter((l) => !l.trimStart().startsWith("#"));
+  const block = code.slice(
+    code.findIndex((l) => l.includes("$cfg.settings.mcp")),
+    code.findIndex((l) => l.includes("--strict-mcp-config")) + 1,
+  ).join("\n");
+  assert(block.length > 0);
+  assert(!/token|cg-secrets/i.test(block), "no secret in mcp.json");
+  assert(!block.includes("Set-Content"), "no re-encoding write");
+  assert(code.some((l) => l.trim() === "$prompt | & claude @claudeArgs"));
+});
