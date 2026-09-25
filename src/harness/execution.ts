@@ -301,6 +301,8 @@ export function privatePaths(env: HarnessEnv, id: string) {
     taskCopy: join(p, "taskcopy", id),
     /** Salted hashes of the custody secrets: kept after publication so a rejudge still redacts. */
     keys: join(p, "redaction", `${id}.json`),
+    /** Private stub marker, kept after publication beside the keys: judging never trusts results/ alone. */
+    stubMarker: join(p, "redaction", `${id}.stub.json`),
     raw: join(p, "quarantine", id, "raw.jsonl"),
     stderr: join(p, "quarantine", id, "stderr.txt"),
     host: join(p, "quarantine", id, "host-log.jsonl"),
@@ -1247,6 +1249,7 @@ export async function runExecution(
     stub,
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
+  if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
   await env.hooks?.prepared?.(id);
 
   let setupError: string | null = null;
@@ -1444,10 +1447,22 @@ export async function judgeExecution(
   pristine: string,
   oracleHash = cell.oracleHash,
 ): Promise<JudgmentRecord> {
-  const side = await readJson<{ stub_provider?: unknown }>(
-    join(env.resultsRoot, "runs", e.id, "sandbox.json"),
-  ).catch(() => null);
-  if (side?.stub_provider !== undefined) {
+  // Fail closed: judging needs proof the run was not scripted. The published
+  // side file must be readable and the private marker (kept after
+  // publication) must not say stub; either marker refuses.
+  const sidePath = join(env.resultsRoot, "runs", e.id, "sandbox.json");
+  const side = await readJson<{ stub_provider?: unknown }>(sidePath).catch(
+    () => null,
+  );
+  if (side === null || typeof side !== "object") {
+    throw new ConfigurationError(
+      `execution ${e.id}: ${sidePath} is missing or unreadable; refusing to judge (the run's mode cannot be proven)`,
+    );
+  }
+  if (
+    side.stub_provider !== undefined ||
+    await exists(privatePaths(env, e.id).stubMarker)
+  ) {
     throw new ConfigurationError(
       `execution ${e.id} is a stub-provider run (scripted model): never judged`,
     );

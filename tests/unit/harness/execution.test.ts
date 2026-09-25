@@ -1497,6 +1497,47 @@ Deno.test("stub provider: a stub execution is never judged, not even by a rejudg
   assertEquals(await t.env.store.judgments(e.id), []);
 });
 
+for (
+  const [what, tamper] of [
+    ["deleted", (p: string) => Deno.remove(p)],
+    ["corrupt", (p: string) => Deno.writeTextFile(p, "{not json")],
+    [
+      "stripped of stub_provider",
+      async (p: string) => {
+        const { stub_provider: _s, ...rest } = JSON.parse(
+          await Deno.readTextFile(p),
+        );
+        await Deno.writeTextFile(p, JSON.stringify(rest));
+      },
+    ],
+  ] as const
+) {
+  Deno.test(`stub provider: rejudge fails closed when the stub's side file is ${what}`, async () => {
+    const t = await makeEnv();
+    await stubEnv(t);
+    const cell = await cellFor(t);
+    const e = (await runCell(t.env, cell)).executions[0]!;
+    await tamper(join(t.env.resultsRoot, "runs", e.id, "sandbox.json"));
+    await assertRejects(
+      () => rejudgeExecution(t.env, cell, e, cell.oracleHash),
+      ConfigurationError,
+    );
+    assertEquals(await t.env.store.judgments(e.id), []);
+  });
+}
+
+Deno.test("rejudge: a normal execution whose side file is missing is refused (fail closed)", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  await Deno.remove(join(t.env.resultsRoot, "runs", e.id, "sandbox.json"));
+  await assertRejects(
+    () => rejudgeExecution(t.env, cell, e, cell.oracleHash),
+    ConfigurationError,
+    "sandbox.json",
+  );
+});
+
 Deno.test("stub provider: the dummy credential and then ready are written before the sandbox starts", async () => {
   const t = await makeEnv();
   t.env.egressEnforced = true; // not consulted in stub mode: ready is still written
