@@ -17,6 +17,8 @@ import type {
   ContainerConfig,
   ContainerCredentials,
   ContainerStatus,
+  HarnessInstalledApp,
+  HarnessSyncResult,
   TestResult,
 } from "./types.ts";
 import { ensureDir } from "@std/fs";
@@ -52,14 +54,18 @@ import {
   mapHealthStatus,
   parseCompilationErrors,
   parseCompilationWarnings,
+  parseHarnessAppList,
+  parseHarnessSyncOutput,
   parseStatusOutput,
   parseTestResults,
 } from "./bc-output-parsers.ts";
 import {
   buildCleanupStaleCandidatesScript,
   buildCompileScript,
+  buildListHarnessAppsScript,
   buildPrepareCandidateScript,
   buildPrereqCleanupScript,
+  buildSyncHarnessAppsScript,
   buildTestScript,
   escapeForPS,
 } from "./bc-script-builders.ts";
@@ -751,6 +757,8 @@ export class BcContainerProvider implements ContainerProvider {
     "nst-maintain": "health",
     "harness-probe": "health",
     "test-legacy": "test",
+    "harness-apps": "publish",
+    "harness-sync": "publish",
   };
 
   /**
@@ -2058,6 +2066,111 @@ ${script}
         output: result.output,
       });
     }
+  }
+
+  /** BCH shared "my" folder for app files. Overridden in unit tests. */
+  protected harnessSharedFolder(containerName: string): string {
+    return `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+  }
+
+  /** Harness Bench: compiler identity for prerequisite stamps (review round 2 item 5). */
+  async harnessCompilerIdentity(containerName: string): Promise<string> {
+    const i = await this.dockerInspectSeam(containerName);
+    if (!i?.artifactUrl) {
+      throw new ContainerError(
+        `cannot read the artifact URL of ${containerName}`,
+        containerName,
+        "compile",
+      );
+    }
+    return `${i.artifactUrl}|bccontainerhelper ${BCCH_PINNED_VERSION}`;
+  }
+
+  /** Harness Bench: every CentralGauge app on the container. One warm-slot script. */
+  async listHarnessApps(containerName: string): Promise<HarnessInstalledApp[]> {
+    const result = await this.runScriptThroughSession(
+      containerName,
+      buildListHarnessAppsScript(containerName),
+      "harness-apps",
+    );
+    const apps = parseHarnessAppList(result.output);
+    if (apps === null) {
+      throw this.buildPwshError({
+        containerName,
+        operation: "publish",
+        message: "Listing harness apps failed",
+        output: result.output,
+      });
+    }
+    return apps;
+  }
+
+  /**
+   * Harness Bench app sync: remove `removeIds` and publish `publish` in ONE
+   * warm-slot script (see buildSyncHarnessAppsScript). Never use
+   * prepareCandidateApp for harness apps: its cleanup removes the refapp
+   * dependency apps (findings 2026-09-29 section 2). Incomplete removal is
+   * container contamination and throws; a publish failure is returned so
+   * the caller can tell a model defect from infra.
+   */
+  async syncHarnessApps(
+    containerName: string,
+    plan: { removeIds: string[]; publish: string[] },
+  ): Promise<HarnessSyncResult> {
+    const guid =
+      /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    for (const id of plan.removeIds) {
+      if (!guid.test(id)) throw new Error(`not an app id: ${id}`);
+    }
+    const shared = this.harnessSharedFolder(containerName);
+    const staged: string[] = [];
+    try {
+      if (plan.publish.length > 0) {
+        await Deno.mkdir(shared, { recursive: true });
+      }
+      for (const f of plan.publish) {
+        const p = `${shared}\\${crypto.randomUUID().slice(0, 8)}_${f.split(
+          /[/\\]/,
+        ).pop()!}`;
+        await Deno.copyFile(f, p);
+        staged.push(p);
+      }
+      const result = await this.runScriptThroughSession(
+        containerName,
+        buildSyncHarnessAppsScript(
+          containerName,
+          plan.removeIds,
+          staged,
+          this.getCredentials(containerName),
+        ),
+        "harness-sync",
+      );
+      const parsed = parseHarnessSyncOutput(result.output);
+      if (
+        parsed.removeIncomplete.length > 0 ||
+        (!parsed.done && parsed.failed === null)
+      ) {
+        throw this.buildPwshError({
+          containerName,
+          operation: "setup",
+          message: `Harness app sync incomplete: ${
+            parsed.removeIncomplete.join(", ") || "no SYNC_DONE marker"
+          }`,
+          output: result.output,
+        });
+      }
+      return { ...parsed, output: result.output };
+    } finally {
+      for (const p of staged) await Deno.remove(p).catch(() => {});
+    }
+  }
+
+  /** Harness Bench: one test codeunit through the SOAP runner. */
+  runHarnessTests(
+    containerName: string,
+    codeunit: number,
+  ): Promise<TestResult> {
+    return runTestsViaSoap(this.soapConfigFor(containerName), codeunit, "");
   }
 
   /**

@@ -9,6 +9,8 @@ import type {
   CompilationError,
   CompilationWarning,
   ContainerStatus,
+  HarnessInstalledApp,
+  HarnessSyncResult,
   TestCaseResult,
 } from "./types.ts";
 
@@ -399,4 +401,60 @@ export function isContainerNotFound(output: string): boolean {
  */
 export function isModuleMissing(output: string): boolean {
   return output.includes("MISSING_MODULE");
+}
+
+/** Parse `buildListHarnessAppsScript` output; null when the done marker is missing. */
+export function parseHarnessAppList(
+  output: string,
+): HarnessInstalledApp[] | null {
+  if (!output.includes("CG_APPS_DONE")) return null;
+  const apps: HarnessInstalledApp[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const m = /^CG_APP:(.+)$/.exec(line.trim());
+    if (!m) continue;
+    let j: Record<string, unknown>;
+    try {
+      j = JSON.parse(m[1]!) as Record<string, unknown>;
+    } catch {
+      return null; // a garbled listing is a failed listing (ContainerError)
+    }
+    apps.push({
+      id: String(j["id"]).toLowerCase(),
+      name: String(j["name"]),
+      publisher: String(j["publisher"]),
+      version: String(j["version"]),
+      installed: j["installed"] === true,
+    });
+  }
+  return apps;
+}
+
+/** Parse `buildSyncHarnessAppsScript` markers. */
+export function parseHarnessSyncOutput(
+  output: string,
+): Omit<HarnessSyncResult, "output"> {
+  const r: Omit<HarnessSyncResult, "output"> = {
+    removed: [],
+    warnings: [],
+    removeIncomplete: [],
+    published: [],
+    failed: null,
+    done: false,
+  };
+  for (const raw of output.split(/\r?\n/)) {
+    const line = raw.trim();
+    let m: RegExpExecArray | null;
+    if ((m = /^SYNC_REMOVE:(\S+)/.exec(line))) {
+      r.removed.push(m[1]!.toLowerCase());
+    } else if ((m = /^SYNC_REMOVE_WARN:(.*)$/.exec(line))) {
+      r.warnings.push(m[1]!);
+    } else if ((m = /^SYNC_REMOVE_INCOMPLETE:(.*)$/.exec(line))) {
+      r.removeIncomplete.push(m[1]!);
+    } else if ((m = /^SYNC_PUBLISH_MS:(\d+):(\d+)$/.exec(line))) {
+      r.published.push({ index: Number(m[1]), ms: Number(m[2]) });
+    } else if ((m = /^SYNC_PUBLISH_FAILED:(\d+):(.*)$/.exec(line))) {
+      r.failed = { index: Number(m[1]), message: m[2]!.trim() };
+    } else if (line === "SYNC_DONE") r.done = true;
+  }
+  return r;
 }

@@ -82,3 +82,24 @@ export interface ALProject {
   sourceFiles: string[];
   testFiles: string[];
 }
+
+/** A CentralGauge app on a container, as Harness Bench lists it. */
+export interface HarnessInstalledApp {
+  id: string;
+  name: string;
+  publisher: string;
+  version: string;
+  installed: boolean;
+}
+
+/** Outcome of one `syncHarnessApps` warm-slot script. */
+export interface HarnessSyncResult {
+  removed: string[];
+  warnings: string[];
+  removeIncomplete: string[];
+  /** Per published file (index into the publish list), Stopwatch milliseconds. */
+  published: { index: number; ms: number }[];
+  failed: { index: number; message: string } | null;
+  done: boolean;
+  output: string;
+}
