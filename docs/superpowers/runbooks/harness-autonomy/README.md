@@ -16,6 +16,7 @@ permissions and approval rules.
 | --- | --- | --- | --- | --- |
 | `cg-orchestrator` | `U:\Git\CentralGauge` (main checkout) | `master` | writes plans and `task.md` files, reviews, merges, pushes, decides, asks the owner | writes product code, oracles or reference solutions, resolves merge conflicts by writing code, runs container jobs, loosens a safety control, approves its own work |
 | `lane-infra` | `U:\Git\CentralGauge-wt\lane-infra` | `harness/lane-infra` | M1 to M3 code (TDD, subagents) | touches containers directly (asks lane-ops), edits specs or plans |
+| `lane-infra2` | `U:\Git\CentralGauge-wt\lane-infra2` | `harness/lane-infra2` | M1 part 2 stream B code (containment, sandbox, staging, BC lane, backend), same rules as lane-infra; coord lane `infra2` | touches containers directly (asks lane-ops), edits specs or plans |
 | `lane-content` | `U:\Git\CentralGauge-wt\lane-content` | `harness/lane-content` | refapp and task authoring (M0-01, M4) | touches containers directly (asks lane-ops), edits specs or plans |
 | `lane-ops` | `U:\Git\CentralGauge-wt\lane-ops` | `harness/lane-ops` | every container operation: spike measurements, gate runs for other lanes, campaigns | edits product code beyond spike scripts, starts or restarts BC containers |
 

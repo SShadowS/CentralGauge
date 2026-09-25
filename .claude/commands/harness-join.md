@@ -14,6 +14,7 @@ Run `git rev-parse --show-toplevel` and map it:
 | `U:/Git/CentralGauge-wt/lane-infra` | lane infra | `lane-infra` |
 | `U:/Git/CentralGauge-wt/lane-content` | lane content | `lane-content` |
 | `U:/Git/CentralGauge-wt/lane-ops` | lane ops | `lane-ops` |
+| `U:/Git/CentralGauge-wt/lane-infra2` | lane infra2 | `lane-infra2` |
 
 Anything else: say that this directory has no role and stop.
 
