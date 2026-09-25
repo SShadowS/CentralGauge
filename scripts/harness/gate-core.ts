@@ -29,9 +29,16 @@ export const NAIVE_RUNS = 2;
 /**
  * Compiler diagnostics a baseline oracle may fail with: an object or member
  * the task asks for does not exist yet. Verified against real output in M4-07
- * and M4-11; a change needs orchestrator approval.
+ * and M4-11; a change needs orchestrator approval. AL0504 (enum is not
+ * extensible) added 2026-09-25 for HX-005, whose refactor makes the enum
+ * extensible (orchestrator ruling q-20260925T200428-3b1fda27).
  */
-export const MISSING_FEATURE_CODES = new Set(["AL0118", "AL0132", "AL0185"]);
+export const MISSING_FEATURE_CODES = new Set([
+  "AL0118",
+  "AL0132",
+  "AL0185",
+  "AL0504",
+]);
 
 export type Variant =
   | { kind: "baseline" }

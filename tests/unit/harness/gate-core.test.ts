@@ -229,6 +229,17 @@ Deno.test("decideGate: only one naive variant is refused", () => {
   assert(d.reasons.some((x) => x.includes("fewer than two")));
 });
 
+Deno.test("decideGate: baseline oracle failing on a missing interface and a non-extensible enum is accepted", () => {
+  // HX-005: the refactor makes "CGR Pricing Method" extensible, so the
+  // baseline oracle's enumextension fails with AL0504 (orchestrator ruling).
+  const runs = f2pRuns();
+  runs[0]!.summary = S({
+    oracle: "compile_fail",
+    oracleCodes: ["AL0185", "AL0504"],
+  });
+  assertEquals(decideGate(F2P, planF2P, runs).promoted, true);
+});
+
 Deno.test("decideGate: baseline oracle failing on missing objects only is accepted", () => {
   const runs = f2pRuns();
   runs[0]!.summary = S({
