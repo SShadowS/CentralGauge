@@ -13,6 +13,7 @@ export { registerClusterReviewCommand } from "./cluster-review-command.ts";
 export { registerCycleCommand } from "./cycle-command.ts";
 export { registerDigestSubcommand } from "./digest-command.ts";
 export { registerDoctorCommand } from "./doctor-command.ts";
+export { registerHarnessCommand } from "./harness-command.ts";
 export { registerIngestCommand } from "./ingest-command.ts";
 export { registerModelsCommand } from "./models-command.ts";
 export { registerPopulateShortcomingsCommand } from "./populate-shortcomings-command.ts";

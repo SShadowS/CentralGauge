@@ -29,6 +29,7 @@ import {
   registerCycleCommand,
   registerDigestSubcommand,
   registerDoctorCommand,
+  registerHarnessCommand,
   registerIngestCommand,
   registerModelsCommand,
   registerPopulateShortcomingsCommand,
@@ -132,6 +133,7 @@ registerPopulateShortcomingsCommand(cliAny);
 registerPopulateTaskSetCommand(cliAny);
 registerRulesCommand(cliAny);
 registerRunsCommand(cliAny);
+registerHarnessCommand(cliAny);
 cliAny.command("analyze", analyzeCommand);
 
 // `lifecycle` parent — hosts the operator triage subcommands. Wave 4
