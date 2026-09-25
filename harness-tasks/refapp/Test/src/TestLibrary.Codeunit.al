@@ -19,6 +19,15 @@ codeunit 80090 "CGR Test Library"
         Vehicle.Insert();
     end;
 
+    procedure SetLastServiceKm(VehicleNo: Code[20]; LastServiceKm: Integer)
+    var
+        Vehicle: Record "CGR Vehicle";
+    begin
+        Vehicle.Get(VehicleNo);
+        Vehicle."Last Service Km" := LastServiceKm;
+        Vehicle.Modify();
+    end;
+
     procedure CreateContract(VehicleNo: Code[20]): Code[20]
     var
         RentalMgt: Codeunit "CGR Rental Mgt";

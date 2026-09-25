@@ -4,6 +4,7 @@ codeunit 70200 "CGR Rental Mgt"
         NotAvailableErr: Label 'Vehicle %1 is not available.', Comment = '%1 = vehicle number';
         WrongStatusErr: Label 'Rental contract %1 must have status %2.', Comment = '%1 = contract number, %2 = status';
         ReturnKmErr: Label 'Return km %1 is below the start km %2.', Comment = '%1 = return km, %2 = start km';
+        DueForServiceErr: Label 'Vehicle %1 is due for service.', Comment = '%1 = vehicle number';
 
     procedure CreateContract(VehicleNo: Code[20]; CustomerName: Text[100]; StartDate: Date; EndDate: Date): Code[20]
     var
@@ -31,8 +32,11 @@ codeunit 70200 "CGR Rental Mgt"
         Contract.Get(ContractNo);
         if Contract.Status <> Contract.Status::Open then
             Error(WrongStatusErr, ContractNo, Contract.Status::Open);
-        if not FleetMgt.IsAvailable(Contract."Vehicle No.") then
+        if not FleetMgt.IsAvailable(Contract."Vehicle No.") then begin
+            if FleetMgt.IsDueForService(Contract."Vehicle No.") then
+                Error(DueForServiceErr, Contract."Vehicle No.");
             Error(NotAvailableErr, Contract."Vehicle No.");
+        end;
         Vehicle.Get(Contract."Vehicle No.");
         Contract."Start Km" := Vehicle.Mileage;
         Contract.Status := Contract.Status::"Checked Out";
@@ -45,7 +49,11 @@ codeunit 70200 "CGR Rental Mgt"
         Contract: Record "CGR Rental Contract";
         OldVehicle: Record "CGR Vehicle";
         NewVehicle: Record "CGR Vehicle";
+        FleetMgt: Codeunit "CGR Fleet Mgt";
     begin
+        if not FleetMgt.IsAvailable(NewVehicleNo) then
+            if FleetMgt.IsDueForService(NewVehicleNo) then
+                Error(DueForServiceErr, NewVehicleNo);
         Contract.Get(ContractNo);
         if Contract.Status <> Contract.Status::"Checked Out" then
             Error(WrongStatusErr, ContractNo, Contract.Status::"Checked Out");

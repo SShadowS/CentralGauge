@@ -24,6 +24,15 @@ codeunit 70100 "CGR Fleet Mgt"
         exit(Strategy.NextServiceKm(Vehicle."Last Service Km"));
     end;
 
+    procedure IsDueForService(VehicleNo: Code[20]): Boolean
+    var
+        Vehicle: Record "CGR Vehicle";
+    begin
+        if not Vehicle.Get(VehicleNo) then
+            exit(false);
+        exit(Vehicle.Mileage >= NextServiceKm(VehicleNo));
+    end;
+
     [IntegrationEvent(false, false)]
     local procedure OnBeforeIsAvailable(VehicleNo: Code[20]; var Result: Boolean; var IsHandled: Boolean)
     begin

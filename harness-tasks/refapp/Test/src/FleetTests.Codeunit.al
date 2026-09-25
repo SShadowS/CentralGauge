@@ -13,6 +13,7 @@ codeunit 80020 "CGR Fleet Tests"
         FleetMgt: Codeunit "CGR Fleet Mgt";
     begin
         Lib.CreateVehicle('T-FLT-001', 1000, Enum::"CGR Maintenance Strategy"::"Heavy Duty");
+        Lib.SetLastServiceKm('T-FLT-001', 1000);
         Assert.AreEqual(6000, FleetMgt.NextServiceKm('T-FLT-001'), 'Heavy Duty adds 5000 km');
     end;
 
