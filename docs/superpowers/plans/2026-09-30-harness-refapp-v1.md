@@ -2920,7 +2920,7 @@ No kill is lost by the rollback rule: every refusal row kills through `ExpectedE
 
 - [ ] **Step 7: Host compile all variants, audit (Step 4 table, Step 6 mapping), `check` HX-001..HX-003, commit `feat(harness-tasks): refapp v1 slice C and HX-003 service-due vehicles`, request gate M4-07.**
 
-**Acceptance:** `check` `[OK]` for HX-001..HX-003; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the thirteen procedures: the eleven of Step 4 plus rows 12-13 added by orchestrator ruling 2026-09-25 (swap to Heavy Duty at Last Service 10000 / Mileage 15000 -> due error; IsAvailable at a nonzero-Last-Service boundary and one below), closing the hardcoded-15000 gap found by audit-1.
+**Acceptance:** `check` `[OK]` for HX-001..HX-003; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the fifteen procedures: the eleven of Step 4 plus four added by orchestrator rulings 2026-09-25 after audits 1-3: (12) swap to Heavy Duty HX3-P at Last Service 5000 / Mileage 10000 -> due error; (13) IsAvailable at a nonzero-Last-Service boundary and one below; (14) SwapToVehicleNotDueSucceeds: swap to HX3-S Default at Last Service 5000 / Mileage 19999 succeeds (Vehicle No., Start Km asserted); (15) swap to an HX3 Short vehicle at Last Service 10000 / Mileage 11000 -> due error (ExpectedError only). Audit-4 is final for coverage-type findings; only critical or correctness findings reopen the task.
 
 ---
 
