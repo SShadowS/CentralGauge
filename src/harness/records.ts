@@ -24,13 +24,12 @@ import { z } from "zod";
 import { ValidationError } from "../errors.ts";
 import { type Experiment, ExperimentSchema } from "./config.ts";
 import { hashJson } from "./hash.ts";
-import { TaskSetIdentitySchema } from "./identity.ts";
+import { Sha256Hex, TaskSetIdentitySchema } from "./identity.ts";
 import { ResolvedManifestSchema } from "./manifest.ts";
 import { mulberry32 } from "./stats.ts";
 import { TASK_KINDS, TaskLimitsSchema } from "./task.ts";
 
 /** Lower-case hex SHA-256 (a workspace hash becomes a path in Part 2). */
-const Sha = z.string().regex(/^[0-9a-f]{64}$/, "lower-case hex sha256");
 /** Lower-case only: ids become file names, and Windows folds case. */
 const Uuid = z.uuid().refine((s) => s === s.toLowerCase(), "lower-case uuid");
 const Iso = z.iso.datetime();
@@ -55,7 +54,7 @@ export const RUN_KINDS = ["planned", "auto_retry", "manual_rerun"] as const;
  * cost_source "estimated" and a pricing snapshot. A harness's own figure goes
  * in `reported_cost_usd` only.
  */
-export const TelemetrySchema = z.strictObject({
+const TelemetryFields = z.strictObject({
   harness_version: z.string().nullable(),
   cost_usd: n,
   cost_source: z.literal("estimated").nullable(),
@@ -79,7 +78,10 @@ export const TelemetrySchema = z.strictObject({
   refusal_detected: z.boolean().nullable(),
   /** Harness usage payload as reported; always written, null if none. */
   raw_usage: z.json(),
-}).refine(
+});
+/** Telemetry field names; `incomplete_telemetry` may only list these. */
+export const TelemetryField = TelemetryFields.keyof();
+export const TelemetrySchema = TelemetryFields.refine(
   (t) =>
     t.cost_usd === null ||
     (t.cost_source === "estimated" && t.pricing_snapshot !== null),
@@ -96,7 +98,7 @@ export type Telemetry = z.output<typeof TelemetrySchema>;
  * section 5), so a missing `turns` never looks like a missing primary cost.
  */
 export const ValiditySchema = z.strictObject({
-  incomplete_telemetry: z.array(z.string().min(1)),
+  incomplete_telemetry: z.array(TelemetryField),
   infra_exposed: z.boolean(),
 }).refine((v) =>
   new Set(v.incomplete_telemetry).size ===
@@ -113,7 +115,7 @@ export const ExecutionRecordSchema = z.strictObject({
   order_in_block: z.number().int().nonnegative(),
   arm: z.string(),
   task_id: z.string(),
-  task_visible_hash: Sha,
+  task_visible_hash: Sha256Hex,
   repeat: z.number().int().positive(),
   /** Unique per cell: planned = 1, auto retry = parent + 1, manual = next. */
   attempt: z.number().int().positive(),
@@ -123,7 +125,7 @@ export const ExecutionRecordSchema = z.strictObject({
   started_at: Iso,
   ended_at: Iso,
   /** Hash of the campaign arm template this execution belongs to. */
-  arm_manifest_hash: Sha,
+  arm_manifest_hash: Sha256Hex,
   /** The execution manifest: arm template with task-effective limits. */
   manifest: ResolvedManifestSchema,
   /** What actually ran; filled by the adapter (Part 2). */
@@ -147,7 +149,7 @@ export const ExecutionRecordSchema = z.strictObject({
   raw_log_path: z.string().nullable(),
   container_assignments: z.array(z.string()),
   /** Hash of the frozen workspace; null when nothing was frozen. */
-  workspace_hash: Sha.nullable(),
+  workspace_hash: Sha256Hex.nullable(),
 }).superRefine((e, ctx) => {
   const bad = (message: string) =>
     ctx.addIssue({ code: "custom", message, path: ["run_kind"] });
@@ -170,13 +172,23 @@ export const ExecutionRecordSchema = z.strictObject({
       path: ["validity", "incomplete_telemetry"],
     });
   }
+  if (
+    e.telemetry.cost_usd === null &&
+    !e.validity.incomplete_telemetry.includes("cost_usd")
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "cost_usd is null but not declared incomplete",
+      path: ["validity", "incomplete_telemetry"],
+    });
+  }
 });
 export type ExecutionRecord = z.output<typeof ExecutionRecordSchema>;
 
 export const ArtifactRecordSchema = z.strictObject({
   v: z.literal(1),
   execution_id: Uuid,
-  workspace_hash: Sha,
+  workspace_hash: Sha256Hex,
   /** Content-addressed copy, e.g. workspaces/<workspace_hash>. */
   stored_path: z.string().min(1),
   created_at: Iso,
@@ -201,12 +213,12 @@ export const JudgmentRecordSchema = z.strictObject({
   v: z.literal(1),
   id: Uuid,
   execution_id: Uuid,
-  workspace_hash: Sha,
+  workspace_hash: Sha256Hex,
   task_id: z.string(),
-  task_oracle_hash: Sha,
+  task_oracle_hash: Sha256Hex,
   scorer_versions: z.record(z.string(), z.string()),
   /** scorerFingerprint(scorer_versions); checked in M1-07b. */
-  scorer_fingerprint: Sha,
+  scorer_fingerprint: Sha256Hex,
   scorers: z.array(z.strictObject({
     name: z.string(),
     /** null = infra fault, not a fail (GH #13 rule). */
@@ -242,7 +254,7 @@ export const CampaignRecordSchema = z.strictObject({
   v: z.literal(1),
   id: Uuid,
   experiment: ExperimentSchema,
-  experiment_hash: Sha,
+  experiment_hash: Sha256Hex,
   created_at: Iso,
   /** mulberry32 seed; wider values would alias (seed >>> 0). */
   seed: z.number().int().min(0).max(0xffffffff),
@@ -269,7 +281,7 @@ export const CampaignRecordSchema = z.strictObject({
   })),
   arms: z.array(z.strictObject({
     config_id: z.string(),
-    manifest_hash: Sha,
+    manifest_hash: Sha256Hex,
     manifest: ResolvedManifestSchema,
   })).min(2),
   /** The full plan (every task x repeat). Staged runs execute subsets of it. */

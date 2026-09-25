@@ -12,6 +12,8 @@ import {
   retryChains,
   retryProblem,
 } from "../../../src/harness/records.ts";
+import { TaskSetIdentitySchema } from "../../../src/harness/identity.ts";
+import { ResolvedManifestSchema } from "../../../src/harness/manifest.ts";
 import {
   campaign,
   CAMPAIGN_ID,
@@ -627,4 +629,49 @@ Deno.test("RecordStore: a junctioned record folder is refused", async () => {
     "link",
   );
   await assertRejects(() => store.judgments(e.id), ValidationError, "link");
+});
+
+Deno.test("schemas: every embedded hash is 64 lower-case hex", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const bad = "G".repeat(64);
+  const t0 = c.task_set.tasks[0]!;
+  for (
+    const ts of [
+      { ...c.task_set, identity: bad },
+      { ...c.task_set, tasks: [{ ...t0, visible: bad }] },
+      { ...c.task_set, tasks: [{ ...t0, oracle: bad }] },
+    ]
+  ) {
+    assert(!TaskSetIdentitySchema.safeParse(ts).success);
+    assertThrows(() => CampaignRecordSchema.parse({ ...c, task_set: ts }));
+  }
+  const skills = c.arms[1]!.manifest;
+  const badComponent = {
+    ...skills,
+    skills: { path: "bundles/s", hash: bad, files: [] },
+  };
+  assert(!ResolvedManifestSchema.safeParse(badComponent).success);
+  assertThrows(() =>
+    ExecutionRecordSchema.parse({ ...e, manifest: badComponent })
+  );
+});
+
+Deno.test("schemas: incomplete_telemetry names known fields; null cost must be declared", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  assertThrows(() =>
+    ExecutionRecordSchema.parse({
+      ...e,
+      validity: { incomplete_telemetry: ["cost_us"], infra_exposed: false },
+    })
+  );
+  assertThrows(() =>
+    ExecutionRecordSchema.parse({ ...e, telemetry: telemetry(null) })
+  );
+  ExecutionRecordSchema.parse({
+    ...e,
+    telemetry: telemetry(null),
+    validity: { incomplete_telemetry: ["cost_usd"], infra_exposed: false },
+  });
 });
