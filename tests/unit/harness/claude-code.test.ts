@@ -358,15 +358,20 @@ Deno.test("claude-code hardening: a non-JSON line keeps the attempt, cost incomp
   }
 });
 
-Deno.test("claude-code hardening: non-JSON lines are capped: count, first 3, short prefixes", async () => {
+Deno.test("claude-code hardening: non-JSON lines store no content: count, line numbers, byte lengths", async () => {
   const l = await lines();
-  const secret = "a".repeat(40) + "SECRET-TAIL-" + "z".repeat(200);
-  const bad = ["w1 " + secret, "w2", "w3", "w4", "w5"];
+  const token = "sk-ant-oat01-FAKE0123456789abcdef";
+  const bad = [`${token} leaked`, "w2", "w3", "w4", "w5"];
   const { r } = await parse([...bad, ...l].join("\n"));
   const all = JSON.stringify(r.telemetry.raw_usage);
-  assert(!all.includes("SECRET-TAIL"), "only a short prefix is stored");
-  assert(!all.includes("w4") && !all.includes("w5"));
+  for (const piece of [token.slice(0, 6), "FAKE", "leaked", "w2"]) {
+    assert(!all.includes(piece), `stored content: ${piece}`);
+  }
   assertStringIncludes(all, "5 non-JSON stdout lines");
+  assertStringIncludes(
+    all,
+    `line 1 (${new TextEncoder().encode(bad[0]).length} bytes)`,
+  );
   assertNonJson(r, "line 1");
 });
 

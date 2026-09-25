@@ -3,9 +3,11 @@
  * Parses stream-json (findings section 4): the run is judged from the final
  * `result` record, never the exit code; cost from result.modelUsage per model
  * (repeated assistant chunks are never summed); tool calls from assistant
- * tool_use blocks, errors from tool_result.is_error. A malformed stream is
- * refused with the file and line named; anything unexpected but harmless is
- * listed in raw_usage.stream_problems.
+ * tool_use blocks, errors from tool_result.is_error. Non-JSON lines never
+ * discard the attempt: they are counted (no content stored). Contradictory
+ * records (a second result or init, a reused tool id) are refused with the
+ * file and line; anything unexpected but harmless is listed in
+ * raw_usage.stream_problems.
  */
 
 import type { HarnessAdapter, ParsedRun, ParseInput } from "../adapter.ts";
@@ -99,20 +101,22 @@ function transportOf(tool: string): string {
   return tool === "Bash" || tool === "PowerShell" ? "shell" : "builtin";
 }
 
-/** Non-JSON stdout is kept as evidence only: a count, the first few line numbers and short prefixes. */
+/**
+ * Non-JSON stdout is evidence only: a count, the first few line numbers and
+ * their byte lengths. No content is stored, since even a prefix can carry part
+ * of a secret; the full log stays in quarantine.
+ */
 const NON_JSON_SHOWN = 3;
-const NON_JSON_PREFIX = 32;
 interface NonJson {
   count: number;
-  first: { line: number; prefix: string }[];
+  first: { line: number; bytes: number }[];
 }
 
 /**
  * One JSON object with a string `type` per line. A leading BOM, CRLF and
  * blank lines are accepted. Any other line (a stray warning, a corrupt or
  * truncated record, a non-object) never throws the attempt away: it is
- * counted, and the first few are kept as short prefixes (raw lines may carry
- * secrets; the full log stays in quarantine).
+ * counted, and the first few are named by line number and byte length.
  */
 function readRecords(text: string): { lines: Line[]; nonJson: NonJson } {
   const raw = (text.startsWith("\uFEFF") ? text.slice(1) : text).split(
@@ -134,11 +138,9 @@ function readRecords(text: string): { lines: Line[]; nonJson: NonJson } {
     }
     nonJson.count++;
     if (nonJson.first.length < NON_JSON_SHOWN) {
-      const cut = [...l];
       nonJson.first.push({
         line: i + 1,
-        prefix: cut.slice(0, NON_JSON_PREFIX).join("") +
-          (cut.length > NON_JSON_PREFIX ? "..." : ""),
+        bytes: new TextEncoder().encode(l).length,
       });
     }
   }
@@ -174,7 +176,7 @@ export function parseClaudeStream(
   if (nonJson.count > 0) {
     streamProblems.push(
       `${nonJsonReason(nonJson)}: ${
-        nonJson.first.map((x) => `line ${x.line} ${JSON.stringify(x.prefix)}`)
+        nonJson.first.map((x) => `line ${x.line} (${x.bytes} bytes)`)
           .join(", ")
       }`,
     );
