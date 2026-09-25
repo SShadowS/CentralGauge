@@ -10,6 +10,8 @@
 
 **Spec and binding inputs:** spec 1a `docs/superpowers/specs/2026-09-24-harness-bench-design.md`, spec 1b `2026-09-24-harness-refapp-design.md`, findings `2026-09-29-harness-spikes-findings.md` (section 8). Decisions under `H:\cg-coord\decisions\`: `accept-M0-02`, `accept-M0-03`, `accept-M0-05`, `accept-M1-02` (containment carryover), `secrets-accepted-risk`, `egress` (amends it), `gate-1002-moved`, `m1-metric-rules`, `m4-coverage-pilot`, `accept-M1-31`, `m1p2-round2`. Reviews: `H:\cg-coord\reviews\M1p2-plan-001\review-gpt6astra.md` (REJECT of 7bccd03b) and `H:\cg-coord\reviews\M1p2-plan-002\review-gpt6astra-round2.md` (REJECT of d8374fbc; revision 3 applies all 11 must-change items, mapped in the Schedule section), `H:\cg-coord\reviews\M4-plan-002\review-gpt6astra-round2.md` section 4 (classifier, RC tags, probe). Part 1: `docs/superpowers/plans/2026-09-30-harness-core.md` (final) and `src/harness/*.ts` on master.
 
+**Revision 4 (2026-09-25, after round 3 ACCEPT-WITH-CHANGES, `H:\cg-coord\reviews\M1p2-plan-003\review-gpt6astra-round3.md`).** Applies B1 to B6 and the part-2 share of B7 (mapped in the Schedule section); M1-11 and M1-21 are unchanged from f6865359.
+
 **Revision 3 (2026-09-25, for the third review round).** Applies the 11 round-2 must-change items and the owner decisions in `2026-09-25-m1p2-round2.md` (cache pricing by logged TTL; D12 amended to `BcLane`; P5 a hard predecessor; no NAT Allow rule; one shared five-run budget, fail closed) and the integrated M1/M4 schedule. No date moves.
 
 **Revision 2 (2026-09-25).** Replanned as a vertical slice after the M1p2-plan-001 rejection and the owner decisions of 2026-09-25. The code in this plan has not been executed; the tests are the contract. Where Part 1 is still in implementation (M1-05 in review; M1-07, M1-07b, M1-08 not merged), this plan uses the names and shapes of the final Part 1 plan; if they move at merge, follow Part 1 and keep each test's intent.
@@ -85,7 +87,7 @@ Not reused, with the reason: `CompileQueuePool` (typed to single LLM candidates 
 
 ## Schedule
 
-Two infra lanes (owner decision): stream A is coord lane `infra` (lane-infra) and finishes Part 1's record modules first (M1-05 review fixes, M1-07, M1-07b, M1-08 per the Part 1 plan, **accepted by the orchestrator by 09-29 end of day**, before M1-21 starts on 09-30); stream B is coord lane `infra2` (lane-infra2) and starts Part 2's boundary work at once. Container verification is lane-ops. No round-2 fix moves a date; the only tightened dependency is M1-16 on P5 acceptance (10-01 morning, same day as M1-16).
+Two infra lanes (owner decision): stream A is coord lane `infra` (lane-infra) and finishes Part 1's record modules first (M1-05 review fixes, M1-07, M1-07b, M1-08 per the Part 1 plan, **accepted by the orchestrator by 09-29 end of day**, before M1-21 starts on 09-30); stream B is coord lane `infra2` (lane-infra2) and starts Part 2's boundary work at once. Container verification is lane-ops. No round-2 or round-3 fix moves a date. P5 is already accepted (decision `2026-09-25-accept-M4-16`); M1-16 consumes the accepted texts. M1-22's first commit (the shared credential budget and its reservation helper) is due 10-02, before M4-17's first pilot on 10-03.
 
 **Vertical slice (gate 10-05):**
 
@@ -99,15 +101,15 @@ Two infra lanes (owner decision): stream A is coord lane `infra` (lane-infra) an
 | M1-14 | infra2 | M1-11, M1-13 | 09-29 | verdict workspace; discovered `[Test]` procedures |
 | M1-15 | infra2 | M1-13 | 09-30 | owned-id app sync; build identity in stamps; invalidate-before-mutate ledger |
 | M1-21 | infra | M1-05, M1-07 (accepted) | 09-30 | adapter contract, TTL-aware pricing book, cost estimate, trace v1 |
-| M1-16 | infra2 | M1-07, M1-15, M4-16 P5 accepted | 10-01 | BC lane: admission, health record, quarantine, compileOn, P5 classifier fixture, probe script |
+| M1-16 | infra2 | M1-07, M1-15, M4-16 (P5 accepted) | 10-01 | BC lane: admission, health record, quarantine, compileOn, P5 classifier fixture, probe script |
 | M1-32 | infra | M1-21 | 10-01 | Claude Code adapter, image (base passed in), cost parser with TTL split, budget flag |
 | M1-17 | infra | M1-07, M1-14, M1-16 | 10-02 | verdict: build, pass_to_pass, fail_to_pass, full-suite fingerprint, oracle through admission |
 | M1-19 | infra2 | M1-14, M1-16, M1-20 | 10-02 | `cg-al` backend: paused snapshot, atomic admission and revoke, bounded body, trusted identities |
 | M1-27 | ops | M1-16, M4-03 accepted (rc1) | 10-02 | app sync on Cronus281 (read-only uninstalled check), qualify Cronus282/283 (10-03 morning) |
-| M1-22 | infra | M1-07b, M1-17, M1-19, M1-20, M1-32 | 10-03 | execution: private state, custody, transactional publication, recovery, ancestry retries, shared credential ledger |
+| M1-22 | infra | M1-07b, M1-09, M1-17, M1-19, M1-20, M1-32 | 10-02 (first commit: credential budget and `reserve-credential-run.ts`), 10-03 | execution: private state, custody phases, transactional publication, store-true recovery, versioned records, ancestry retries, backend faults |
 | M1-24 | infra | M1-22 | 10-04 | CLI: `cell` (gate, interrupt), `judge-fixture` (persisted, `--rev`, manifest), `images build` (layer provenance), `symbols lock`; task revisions; qualification manifest schema |
 | M1-28 | ops | M1-24, M1-27 | 10-04 | images, budget flag, verdict controls at rc1 (every naive), backend round trip |
-| M1-29 | ops | M1-28, M4-16 P5 accepted, M4-03 accepted | 10-05 | **gate:** supervised Claude Code cell, HX-001 at rc1, Cronus281 |
+| M1-29 | ops | M1-28, M4-16 (P5 accepted), M4-03 accepted | 10-05 | **gate:** supervised Claude Code cell, HX-001 at rc1, Cronus281 |
 
 **After 10-05 (to finish before the 10-10 campaigns):**
 
@@ -127,7 +129,7 @@ Two infra lanes (owner decision): stream A is coord lane `infra` (lane-infra) an
 
 ## Integrated M1/M4 schedule and handoff contract (round 2 item 11)
 
-**Content-gate chain to the 10-05 gate** (no fallback, no waiver without the owner): M4-16 P5 accepted (10-01 morning) -> M4-03 HX-001 gate accepted (10-01) -> orchestrator tags `refapp-v1-rc1` at the gated commit (by 10-02) -> M1-27 (10-02) -> M1-28 (10-04) -> M1-29 (10-05). P5 also feeds M1-16's classifier fixture (`tests/fixtures/harness/p5-messages.json`, copied verbatim from `H:\Temp3\harness-spike\M4-16-results.md`). HX-002 at `refapp-v1-rc2` comes from M4-05 (10-02) and is needed only by M1-38 (10-09).
+**Content-gate chain to the 10-05 gate** (no fallback, no waiver without the owner): P5 accepted (done: decision `2026-09-25-accept-M4-16`, integrated 6443bb31) -> M4-03 HX-001 gate accepted (10-01) -> orchestrator tags `refapp-v1-rc1` at the gated commit (by 10-02) -> M1-27 (10-02) -> M1-28 (10-04) -> M1-29 (10-05). The accepted P5 texts feed M1-16's classifier fixture (`tests/fixtures/harness/p5-messages.json`, copied verbatim from `H:\Temp3\harness-spike\M4-16-results.md`; no rerun). HX-002 at `refapp-v1-rc2` comes from M4-05 (10-02) and is needed only by M1-38 (10-09).
 
 **One ops lane, per day** (M4 gate runs from the M4 plan's container budget: 168 interim gate runs, about 3.4 container-hours at 73 s per operation plus overhead; containers Cronus281 to Cronus283 only; Cronus28 and Cronus284 never; each job holds its container lease):
 
@@ -135,9 +137,9 @@ Two infra lanes (owner decision): stream A is coord lane `infra` (lane-infra) an
 | --- | --- | --- |
 | 09-29 | M1-26 (host checks; Hyper-V pause on a throwaway servercore container) | none of the BC containers |
 | 09-30 | M4-01a, M4-01b (per the M4 plan) | none |
-| 10-01 | M4-16 probes (morning), M4-01c, M4-03 HX-001 gate (10 runs) | M4-16 and M4-03 on Cronus281 |
+| 10-01 | M4-01c, M4-03 HX-001 gate (10 runs) (M4-16 is already accepted) | M4-03 on Cronus281 |
 | 10-02 | M1-27 Steps 1 to 4 and 6 (morning); M4-05 HX-002 gate (27 runs) | M1-27 on Cronus281; M4-05 on Cronus282 and Cronus283 |
-| 10-03 | M1-27 Step 5 on Cronus282 then Cronus283 (morning, before any gate there); M4-07 HX-003 gate (10 runs); M4-17 HX-002 pilot (credential slot 1 of 5 in the shared ledger) | M1-27 then M4-07 on Cronus282/283; the pilot judges on Cronus281 |
+| 10-03 | M1-27 Step 5 on Cronus282 then Cronus283 (morning, before any gate there); M4-07 HX-003 gate (10 runs); M4-17 HX-002 pilot (credential slot 1 of 5, reserved with `scripts/harness/reserve-credential-run.ts` from M1-22's 10-02 commit) | M1-27 then M4-07 on Cronus282/283; the pilot judges on Cronus281 |
 | 10-04 | M1-28 (images, verdict controls at rc1, backend probe) | Cronus281 |
 | 10-05 | M1-29 gate (credential slot 2); M4-09 HX-004 and HX-003 re-gate (20 runs) | M1-29 on Cronus281; M4-09 on Cronus282/283 |
 | 10-06 | M4-11 HX-005 gate (12 runs); M4-17 HX-005 pilot (slot 3) | Cronus282/283; pilot judging on Cronus281 |
@@ -149,13 +151,51 @@ Slot 5 of the shared credential ledger is the reserve for one repeat of M1-29 if
 
 **Shared credential ledger.** One file for every lane: `H:\cg-coord\ledgers\credential-runs.jsonl`, set as `CG_CREDENTIAL_LEDGER` in every lane's environment. `harness cell` reserves through it (M1-22); M4-17's pilot runner reserves with `deno run --allow-all scripts/harness/reserve-credential-run.ts --lane lane-ops --task <HX-00N> --config <model> --purpose "M4-17 pilot"` before it releases the OpenRouter key. The sixth reservation is refused for everyone until M1-34 writes the `authorized` marker and the verification passes.
 
+**Agreed M4-14 / M4-15 contract (round 3 B7; the M4 plan's Steps are updated to this text by the orchestrator).**
+- M4-14 Step 3 writes `H:\Temp3\harness-spike\M4\freeze\qualify-manifest.json` exactly in this form (validated by `QualifyManifestSchema` from `src/harness/qualify.ts`):
+
+```json
+{
+  "v": 1,
+  "refapp_version": "refapp-v1",
+  "tasks": {
+    "HX-001": { "rev": "refapp-v1", "positive": "correct", "naive": ["<every folder under naive/>"] },
+    "HX-002": { "rev": "refapp-v1", "positive": "reference-tests", "naive": ["drift-repro-only", "near-complete"] },
+    "HX-003": { "rev": "refapp-v1", "positive": "correct", "naive": ["<every folder under naive/>"] },
+    "HX-004": { "rev": "refapp-v1", "positive": "correct", "naive": ["<every folder under naive/>"] },
+    "HX-005": { "rev": "refapp-v1", "positive": "correct", "naive": ["<every folder under naive/>"] },
+    "HX-006": { "rev": "refapp-v1", "positive": "correct", "naive": ["count-sequence", "string-km", "always-description"] }
+  }
+}
+```
+
+  Every `naive` list names every folder under the task's `naive/` at the `rev` (M4-14's acceptance checks this with `git ls-tree`).
+- M4-15 Step 3 runs exactly `deno task start harness qualify --manifest H:\Temp3\harness-spike\M4\freeze\qualify-manifest.json --containers Cronus282,Cronus283` (M1-24b) and reads `results/harness/qualify/<manifest sha256>/index.json`: one entry per `(task, variant)` with `judgment_path`, `provenance_path`, `verdict`, `expected` (`pass` for the positive, `fail` for each naive), `reasons` (failing oracle procedures, or surviving mutants for HX-002), `targets` (HX-002: `reference`, `mutant:0` and each named mutant) and `mock_cell` (the mock cell's execution id and verdict). M4-15's `pipeline.md` quotes that index; `task-set.json`'s `pipeline` entries copy `variant`, `judgment_path` (as `judgment`), `verdict` and `expected`.
+- Both sides use the `refapp-v1` tag as `rev`; judging at that immutable revision is what makes the result independent of later working-tree edits.
+
 **Qualification manifest (shared path, schema, route).** Schema `QualifyManifestSchema` in `src/harness/qualify.ts` (M1-24): `{ "v": 1, "refapp_version": "...", "tasks": { "HX-00N": { "rev": "<tag or commit>", "positive": "correct" | "reference-tests", "naive": ["<name>", ...] } } }`. M4-14 writes the freeze manifest at `H:\Temp3\harness-spike\M4\freeze\qualify-manifest.json` on 10-08 with `rev: "refapp-v1"` for all six tasks (cross-lane request to M4: add `v`, `refapp_version` and per-task `rev` to its Step 3 manifest). M1-38 uses its own manifest `H:\cg-coord\tasks\M1-38\qualify-rc.json` in the same schema with `rev: refapp-v1-rc1` (HX-001) and `refapp-v1-rc2` (HX-002). The route is the CLI option: `harness judge-fixture --manifest <path>` and `harness qualify --manifest <path>` (M1-24b); unit tests use temporary manifests, never `harness/qualify-manifest.json`.
 
 **Immutable task revisions.** `harness cell --rev` and `harness judge-fixture --rev` load `harness-tasks/tasks/<id>` from `git archive` of that revision, so M4-14's working-tree repin to `refapp-v1` on 10-08 cannot change what M1-28 and M1-38 judge at rc1 and rc2. The judgment provenance records the rev, the commit and the task tree id (M4's `TASK TREE`).
 
-**Persisted `judge-fixture` results.** `results/harness/fixtures/<task>/<variant>/<judgment-id>/judgment.json` (the complete judgment: every scorer, every test row and target), `provenance.json` (variant tree hash, rev, commit, task tree, visible and oracle hashes, refapp, workspace hash, scorer fingerprint, containers) and the verdict log; `harness qualify` indexes them per manifest.
+**Persisted `judge-fixture` results.** `<results-dir>/fixtures/<task>/<variant>/<judgment-id>/judgment.json` (default `results/harness/fixtures/...`, built once from `--results-dir`) (the complete judgment: every scorer, every test row and target), `provenance.json` (variant tree hash, rev, commit, task tree, visible and oracle hashes, refapp, workspace hash, scorer fingerprint, containers) and the verdict log; `harness qualify` indexes them per manifest.
 
 **M1-27 checks** (fixed): the uninstalled-app observation uses the probe's read-only `--list-only` mode after a `--keep` run; Cronus28 is only listed read-only with ad-hoc pwsh, never touched by a harness script.
+
+## Round 3 blocking corrections (M1p2-plan-003) and where each is addressed
+
+M1-11 and M1-21 are unchanged from f6865359 (they were being loaded); no round-3 item needed them.
+
+| # | Correction | Tasks | Tested by |
+| --- | --- | --- | --- |
+| B1 | Slice-blocking contracts | M1-13 (overlay into scratch, validated merge), M1-24 (`loadTaskAt` creates its export dir), M1-22 (run dir always created; versioned execution `v: 2` with `incomplete_observed`, one version per campaign, report coverage), M1-16 (`HarnessBc.harnessCompilerIdentity` declared) | `applyOverlay: merges into a populated workspace ...`; `loadTaskAt` fresh-dir case; `a setup failure with no captures still writes its draft`; `execution v2` round trip, mixed-version campaign, coverage line |
+| B2 | Cancellation end to end; bounded shutdown; failed unpause | M1-16 (signals in `compile`, `compileOn`, `exclusive`, `buildApps`), M1-19 (per-request deadline, production ops pass the signal, unpause fault), M1-22 (`onFault` stops the execution), M1-24 (bounded server shutdown) | `production ops: a revoke past the grace cancels before any further BC mutation`; `a request past its deadline is refused before any publish`; `a failed unpause is a 503 infra fault`; `a backend fault (failed unpause) stops the execution as infra` |
+| B3 | Recovery isolation, custody fail-closed, cleanup protocol, secret-bearing names | M1-22 (intent results root, stored manifest, task snapshot, phases prepared/released/published, strict custody, cleanup after `published`), M1-12 (names and marker redaction) | cross-store/deleted-task/changed-limits recovery; custody missing after release; interruption inside cleanup; `secret-bearing file names and link names never reach the stored tree or the marker` |
+| B4 | Quarantine before release; recheck after waits | M1-16 (`CleanupFailedError`, quarantine inside `exclusive`, `admit` after every wait, `compileOn` checks) | `tests throwing together with a cleanup failure quarantine the container before release`; `queued work is refused after its container is quarantined` |
+| B5 | Incomplete firewall observations and broken probes fail closed | M1-33 (exact profile set, collector throws, probe `error` field, .NET ping under Windows PowerShell) | `verifyEgressState` `profiles` cases; `collectEgressState ... throws`; `evaluatePreflight` `could not run`; probe script test |
+| B6 | Budget never reset on read failure | M1-22 (`reserveCredentialRun`) | `an unreadable ledger refuses; partial lines still count` |
+| B7 (part 2 share) | Helper before the pilot; M4-14/M4-15 contract | M1-22 first commit 10-02; the agreed contract above | `credential-budget.test.ts` in the 10-02 commit; schema test in M1-24 |
+
+Non-blocking notes applied: P5 wording (accepted, no rerun); `judge-fixture` output path built once from `--results-dir`. The M4 rows of B7 (HX-003 and HX-006 post-`asserterror` assertions) are fixed in the M4 plan by the orchestrator.
 
 ## Round 2 must-change items (M1p2-plan-002) and where each is addressed
 
@@ -363,6 +403,7 @@ Spec 1a section 7 item 4 (refuse symlinks, junctions and other reparse points), 
 - **Destinations** are created one level at a time under a validated parent (`validatedDest`) and must be new or empty; the destination is always private to the harness.
 - **Limits**: files, bytes, directories and depth.
 - **Redaction** never touches the live tree: `freezeWorkspace` copies the quiescent workspace into a private scratch directory (outside `results/`), redacts the private copy byte-wise (`redactTree`: every secret as UTF-8 and as UTF-16LE bytes, longest first, no word-boundary assumption), refuses files larger than `MAX_SCAN_BYTES` (removed from the copy and recorded as a freeze violation, so the build fails), and only then hashes and publishes the copy under `results/harness/workspaces/`.
+- **Names are scanned too** (round 3 B3): after content redaction, any file or directory whose name contains a secret is removed from the private copy and reported with the name redacted; the violations marker is itself redacted before it is written and hashed, so a secret in a refused link's name never reaches `results/`.
 - The case-ambiguity rule is proven by a deterministic test through the `listDir` seam; the host case-sensitive-directory test is an additional check only and never counts as proof when it is skipped.
 
 On this host `Deno.realPath("u:/git/centralgauge")` returns `U:\Git\CentralGauge`, and `lstat` reports `ino` and `dev` on NTFS (checked 2026-09-25).
@@ -630,6 +671,22 @@ Deno.test("freezeWorkspace: never writes the live tree; stores a redacted copy; 
   assertStringIncludes(big.violations.join("\n"), "larger than");
   const over = await freeze(results, a, { limits: { maxFiles: 0, maxBytes: 0, maxDirs: 0, maxDepth: 0 } });
   assertStringIncludes(over.violations[0]!, "size limit");
+});
+
+Deno.test("freezeWorkspace: secret-bearing file names and link names never reach the stored tree or the marker", async () => {
+  const results = await tmp();
+  const ws = await tmp();
+  await writeTree(ws, { [`Core/src/${TOKEN}.al`]: "x", "Core/src/Ok.al": "y" });
+  const target = await tmp();
+  await linkDir(target, join(ws, "Core", `link-${TOKEN}`));
+  const f = await freeze(results, ws);
+  const stored = join(results, f.stored_path);
+  assert(!await exists(join(stored, "Core", "src", `${TOKEN}.al`)));
+  assert(await exists(join(stored, "Core", "src", "Ok.al")));
+  const marker = await Deno.readTextFile(join(stored, FREEZE_VIOLATIONS_FILE));
+  assert(!marker.includes(TOKEN));
+  assertStringIncludes(marker, "[REDACTED:backend-token]");
+  assertStringIncludes(marker, "name contains a secret");
 });
 
 Deno.test("sweepWorkspaceTemp: removes interrupted freezes and private scratch only", async () => {
@@ -952,6 +1009,32 @@ export async function redactTree(
   return { count, violations };
 }
 
+/** Replace every secret in a string, longest first. */
+function redactString(text: string, secrets: SecretValue[]): string {
+  let out = text;
+  for (const x of [...secrets].filter((y) => y.value.length > 0).sort((a, b) => b.value.length - a.value.length)) {
+    out = out.replaceAll(x.value, `[REDACTED:${x.name}]`);
+  }
+  return out;
+}
+
+/** Remove entries of a private tree whose name contains a secret; report them with the name redacted. */
+async function dropSecretNames(dir: string, secrets: SecretValue[]): Promise<string[]> {
+  const out: string[] = [];
+  const visit = async (d: string, rel: string): Promise<void> => {
+    for (const name of await listNames(d)) {
+      const r1 = rel ? `${rel}/${name}` : name;
+      const p = join(d, name);
+      if (secrets.some((x) => x.value.length > 0 && name.includes(x.value))) {
+        await Deno.remove(p, { recursive: true });
+        out.push(`name contains a secret: ${redactString(r1, secrets)}`);
+      } else if ((await Deno.lstat(p)).isDirectory) await visit(p, r1);
+    }
+  };
+  await visit(dir, "");
+  return out;
+}
+
 export interface FreezeInput {
   resultsRoot: string;
   /** Harness-private area outside results/ (M1-22 privateRoot). */
@@ -995,8 +1078,10 @@ export async function freezeWorkspace(i: FreezeInput): Promise<Frozen> {
     }
     const red = await redactTree(scratch, i.secrets, i.maxScanBytes ?? MAX_SCAN_BYTES);
     violations.push(...red.violations);
+    violations.push(...await dropSecretNames(scratch, i.secrets));
     if (violations.length > 0) {
-      await Deno.writeTextFile(join(scratch, FREEZE_VIOLATIONS_FILE), violations.join("\n") + "\n");
+      // The marker is generated metadata built from untrusted names: redact it before it is hashed.
+      await Deno.writeTextFile(join(scratch, FREEZE_VIOLATIONS_FILE), redactString(violations.join("\n"), i.secrets) + "\n");
     }
     const workspace_hash = await hashTree(scratch, "task");
     const stored_path = `workspaces/${workspace_hash}`;
@@ -1034,7 +1119,7 @@ export async function sweepWorkspaceTemp(resultsRoot: string, privateRoot: strin
 - [ ] **Step 4: Run it and see it pass**
 
 Run: `deno test --allow-all tests/unit/harness/fsutil.test.ts`
-Expected: all 15 tests pass. The host case-sensitive test may return early on a Windows host without `fsutil setCaseSensitiveInfo`; the deterministic `listDir` test is the requirement's proof.
+Expected: all 16 tests pass. The host case-sensitive test may return early on a Windows host without `fsutil setCaseSensitiveInfo`; the deterministic `listDir` test is the requirement's proof.
 
 - [ ] **Step 5: Check, lint, format** (`src/harness/fsutil.ts`, `tests/unit/harness/fsutil.test.ts`)
 
@@ -1045,7 +1130,7 @@ git add src/harness/fsutil.ts tests/unit/harness/fsutil.test.ts
 git commit -m "feat(harness): containment copy with ancestor identity, byte-safe redaction and private freeze"
 ```
 
-**Acceptance:** `deno test --allow-all tests/unit/harness/fsutil.test.ts` passes (15 tests, the ancestor-swap, junction-after-listing, destination and deterministic case-ambiguity tests among them); check, lint and `deno fmt --check` clean.
+**Acceptance:** `deno test --allow-all tests/unit/harness/fsutil.test.ts` passes (16 tests, the secret-name, ancestor-swap, junction-after-listing, destination and deterministic case-ambiguity tests among them); check, lint and `deno fmt --check` clean.
 
 ---
 
@@ -1901,7 +1986,7 @@ A removed file is expressed by `overlay/.delete`: one workspace-relative path pe
 
 **Lane:** infra2 (stream B). **Deps:** M1-01 (`loadTask`), M1-02 (`hashFile(root, path)`, `listTree`, `isTaskBuildArtifact`), M1-04 (`resolveRefapp`, `SymbolsLockSchema`, `agentVisibleMetadata`), M1-12. **Date:** 09-28.
 
-Revision 2 changes: `hashFile` takes its root (M1-02 ruling); every directory goes through `validatedDir`/`validatedDest`; overlay application refuses case-ambiguous and linked entries; fixture ids follow M4 (shipped tests 80010, library 80090, HX-001 oracle 85000); `applyOverlay` is the one overlay implementation (the mock and `judge-fixture` reuse it, so `.delete` semantics are identical everywhere).
+Revision 2 changes: `hashFile` takes its root (M1-02 ruling); every directory goes through `validatedDir`/`validatedDest`; overlay application refuses case-ambiguous and linked entries; fixture ids follow M4 (shipped tests 80010, library 80090, HX-001 oracle 85000); `applyOverlay` is the one overlay implementation (the mock and `judge-fixture` reuse it, so `.delete` semantics are identical everywhere). Round 3 B1: `safeCopyTree` keeps its strict new-or-empty destination rule, so `applyOverlay` first copies the overlay into fresh private scratch with it, then performs an explicitly validated merge into the populated workspace: every destination directory is validated or created under a validated parent, and an existing destination entry must be a plain file with the same canonical spelling (a link, a directory or a case alias is refused).
 
 **Files:**
 - Create: `src/harness/symbols.ts`
@@ -2112,6 +2197,7 @@ import {
   resolveRefapp,
 } from "../../../src/harness/identity.ts";
 import {
+  applyOverlay,
   readAppGraph,
   stageRefappTask,
   TASK_SOURCES,
@@ -2174,6 +2260,33 @@ Deno.test("stageRefappTask: refapp at the commit, overlay, deletions, symbols, C
     await Deno.readTextFile(join(s.workspace, "Rental/src/Rental.Codeunit.al")),
   );
   assertEquals((await loadSymbolsLock(repo.root))!.length, 1);
+});
+
+Deno.test("applyOverlay: merges into a populated workspace; a linked destination or a case alias is refused", async () => {
+  const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+  const ws = await tmp();
+  await write(ws, "Rental/src/Rental.al", "old");
+  await write(ws, "Core/src/Core.al", "core");
+  const ov = await tmp();
+  await write(ov, "Rental/src/Rental.al", "new");
+  await write(ov, "Rental/src/Added.al", "added");
+  await write(ov, "Fresh/src/F.al", "fresh");
+  await write(ov, ".delete", "Core/src/Core.al\n");
+  await applyOverlay(ov, ws);
+  assertEquals(await Deno.readTextFile(join(ws, "Rental", "src", "Rental.al")), "new");
+  assert(await exists(join(ws, "Rental", "src", "Added.al")) && await exists(join(ws, "Fresh", "src", "F.al")));
+  assert(!await exists(join(ws, "Core", "src", "Core.al")));
+  const outside = await tmp();
+  await Deno.symlink(outside, join(ws, "Linked"), { type: Deno.build.os === "windows" ? "junction" : "dir" });
+  const ov2 = await tmp();
+  await write(ov2, "Linked/x.al", "x");
+  await assertRejects(() => applyOverlay(ov2, ws), ValidationError);
+  assert(!await exists(join(outside, "x.al")));
+  if (Deno.build.os === "windows") {
+    const ov3 = await tmp();
+    await write(ov3, "Rental/src/rental.al", "alias");
+    await assertRejects(() => applyOverlay(ov3, ws), ValidationError, "case");
+  }
 });
 
 Deno.test("stageRefappTask: a symbol store entry that does not match the lock is refused", async () => {
@@ -2449,7 +2562,7 @@ import {
   type RefappRef,
   type SymbolPackage,
 } from "./identity.ts";
-import { exists, safeCopyTree, validatedDest } from "./fsutil.ts";
+import { exists, safeCopyTree, validatedDest, validatedDir } from "./fsutil.ts";
 import { restoreSymbols } from "./symbols.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
 
@@ -2580,12 +2693,43 @@ export async function applyOverlay(
   opts: { exclude?: (rel: string) => boolean } = {},
 ): Promise<void> {
   if (!await exists(overlayDir)) return;
-  const r = await safeCopyTree(overlayDir, target, {
-    skip: (rel) => rel === DELETE_LIST || (opts.exclude?.(rel) ?? false),
-  });
-  if (r.refused.length + r.ambiguous.length > 0) {
-    const bad = [...r.refused, ...r.ambiguous];
-    throw new ValidationError(`links or case-ambiguous names in ${overlayDir}: ${bad.join(", ")}`, bad);
+  const root = await validatedDir(target);
+  // 1. Hostile copy into fresh private scratch (the strict new-or-empty API is unchanged).
+  const tmp = await Deno.makeTempDir({ prefix: "cg-overlay-" });
+  try {
+    const r = await safeCopyTree(overlayDir, join(tmp, "o"), {
+      skip: (rel) => rel === DELETE_LIST || (opts.exclude?.(rel) ?? false),
+    });
+    if (r.refused.length + r.ambiguous.length > 0) {
+      const bad = [...r.refused, ...r.ambiguous];
+      throw new ValidationError(`links or case-ambiguous names in ${overlayDir}: ${bad.join(", ")}`, bad);
+    }
+    // 2. Validated merge into the populated workspace.
+    const files: string[] = [];
+    const walk = async (d: string, rel: string): Promise<void> => {
+      for await (const e of Deno.readDir(d)) {
+        const r1 = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory) await walk(join(d, e.name), r1);
+        else files.push(r1);
+      }
+    };
+    await walk(r.dst, "");
+    for (const rel of files.sort()) {
+      const parts = rel.split("/");
+      const dir = await validatedDest(join(root, ...parts.slice(0, -1)));
+      const dest = join(dir, parts.at(-1)!);
+      const st = await Deno.lstat(dest).catch(() => null);
+      if (st) {
+        if (st.isSymlink || !st.isFile) throw new ValidationError(`overlay destination is not a plain file: ${rel}`, [rel]);
+        if (await Deno.realPath(dest) !== dest) throw new ValidationError(`overlay destination is a case alias: ${rel}`, [rel]);
+      } else {
+        const alias = [...Deno.readDirSync(dir)].find((e) => e.name.toLowerCase() === parts.at(-1)!.toLowerCase());
+        if (alias) throw new ValidationError(`overlay destination is a case alias of ${alias.name}: ${rel}`, [rel]);
+      }
+      await Deno.copyFile(join(r.dst, ...parts), dest);
+    }
+  } finally {
+    await Deno.remove(tmp, { recursive: true }).catch(() => {});
   }
   const list = join(overlayDir, DELETE_LIST);
   if (!await exists(list)) return;
@@ -2596,7 +2740,7 @@ export async function applyOverlay(
     if (!safeRelative(line)) {
       throw new ValidationError(`${list}: .delete entry escapes the workspace: ${line}`, [line]);
     }
-    const p = join(r.dst, ...line.replaceAll("\\", "/").split("/"));
+    const p = join(root, ...line.replaceAll("\\", "/").split("/"));
     if (!await exists(p)) {
       throw new ValidationError(`${list}: .delete entry not found: ${line}`, [line]);
     }
@@ -2710,7 +2854,7 @@ console.log(`[OK] ${lock.packages.length} symbol packages locked; store ${a.stor
 - [ ] **Step 5: Run it and see it pass**
 
 Run: `deno test --allow-all tests/unit/harness/staging.test.ts`
-Expected: all 7 tests pass (needs `git` and `tar` on PATH; Windows 10+ ships `tar.exe`).
+Expected: all 8 tests pass (needs `git` and `tar` on PATH; Windows 10+ ships `tar.exe`).
 
 - [ ] **Step 6: Check, lint, format**
 
@@ -3976,19 +4120,21 @@ Spec 1a section 5 (fixed concurrency, queue wait recorded), D12 (agent calls and
 - **No prerequisite cache** in the slice (M1-36 adds one with a complete key: stamp, symbols lock hash, container artifact URL).
 - **Build identity** (round 2 item 5): `prepareApps` computes `buildId = hash(symbols lock packages, bc.harnessCompilerIdentity(container))` on the container it compiles for and passes it to `appStamps`, so a deployed prerequisite built against other inputs is never kept.
 - **Ledger ordering**: `deploy` saves the ledger with every touched id invalidated **before** calling the sync, then adds the published entries; a failed or interrupted sync leaves at most missing entries.
-- **Cleanup is never swallowed**: a failed or incomplete cleanup empties that container's ledger and is returned as `cleanupError`; the caller quarantines the container in the lane (`BcLane.quarantine`), which excludes it from every later compile and hold until the operator clears it. When tests threw and cleanup failed too, the container is quarantined through the error path (`deployAndTest` attaches the cleanup failure to the thrown error).
+- **Cleanup is never swallowed** (round 3 B4): a failed or incomplete cleanup empties that container's ledger and is carried structurally: as `cleanupError` on the result, or as a `CleanupFailedError` (a `ContainerError`, so infra) wrapping the original error when the tests threw too. `BcLane.exclusive` quarantines the container **inside the held region, before the lock is released**, on both paths; a quarantined container is excluded from every later compile and hold until the operator clears it.
+- **Eligibility is rechecked after waiting** (round 3 B4): `exclusive`, `compile` and `compileOn` check health and quarantine again after acquiring the lock or slot; queued work on a container that became ineligible is refused (infra, so holds reroute) without calling the job.
+- **Cancellation** (round 3 B2): `compile`, `compileOn` and `exclusive` take an optional `AbortSignal`; an aborted signal refuses admission before and after the wait, so no BC mutation starts after cancellation (an operation already inside SOAP completes, then no further step runs).
 - **Health handling**: the lane records every held attempt's outcome into the health view (`record`: pass, or `infra_error` on an infra fault), and skips alerted and quarantined containers. The real wiring passes `ContainerHealthMonitor` (M1-24).
 - **Oracle compiles take admission**: `BcLane.compileOn(container, fn)` runs `fn` under that container's compile slot (the oracle build must use the container whose prerequisites it links against, M1-17).
-- **Classifier** shared with the M4 gate (`scripts/harness/gate-core.ts` uses the same two patterns): `Assert.<x> failed` and "An error was expected inside an ASSERTERROR statement." are `assertion`; other messages `runtime_error`. A listed procedure missing from a run that returned results is `infra`; a listed codeunit with zero results throws infra (reroute); a scorer with any infra row is unscored even when another row has an assertion. The M4-16 P5 captured texts are the classifier fixture (`tests/fixtures/harness/p5-messages.json`, copied verbatim from `H:\Temp3\harness-spike\M4-16-results.md`); P5 acceptance is a hard predecessor of this task, with no fallback.
+- **Classifier** shared with the M4 gate (`scripts/harness/gate-core.ts` uses the same two patterns): `Assert.<x> failed` and "An error was expected inside an ASSERTERROR statement." are `assertion`; other messages `runtime_error`. A listed procedure missing from a run that returned results is `infra`; a listed codeunit with zero results throws infra (reroute); a scorer with any infra row is unscored even when another row has an assertion. The M4-16 P5 captured texts are the classifier fixture (`tests/fixtures/harness/p5-messages.json`, copied verbatim from `H:\Temp3\harness-spike\M4-16-results.md`); P5 is accepted (decision `2026-09-25-accept-M4-16`: the failure texts match the classifier); the fixture copies the accepted texts, with no rerun.
 
-**Lane:** infra2 (stream B). **Deps:** M1-07 (`TestResultSchema`), M1-13 (`restoreSymbols`), M1-15, M4-16 (P5 accepted: its captured texts are the classifier fixture). **Date:** 10-01.
+**Lane:** infra2 (stream B). **Deps:** M1-07 (`TestResultSchema`), M1-13 (`restoreSymbols`), M1-15, M4-16 (P5 is accepted, decision accept-M4-16: its captured texts are the classifier fixture). **Date:** 10-01.
 
 **Files:**
 - Create: `src/harness/bc-lane.ts`, `tests/unit/harness/fake-bc.ts`, `scripts/harness/app-sync-probe.ts`
 - Test: `tests/unit/harness/bc-lane.test.ts`
 
 **Interfaces:**
-- Produces: `interface HarnessBc { compileProject; harnessCompilerIdentity; listHarnessApps; syncHarnessApps; runHarnessTests }`; `type TestRow`; `interface HealthView { getState(): { containers: { containerName: string; alert?: unknown }[] }; record(o: ContainerOutcome): unknown }`; `class BcLane { constructor(bc, containers, opts?: { health?: HealthView; maxInfraRetries?: number; compileSlots?: number }); bc; containers; compile<T>(fn): Promise<T>; compileOn<T>(container, fn): Promise<T>; exclusive<T>(ctx, fn): Promise<Held<T>>; quarantine(container, reason): void; quarantined: Map<string, string> }`; `interface Held<T> { result; container; queue_ms /* summed over attempts */; retries }`; `interface LockedSymbols { store: string; packages: SymbolPackage[] }`; `interface BuiltApp { folder; id; version; ok; attempted; file; diagnostics; compile_ms }`; `buildApps(bc, container, o: { srcDir; apps; versions; outDir; lock: LockedSymbols; prebuilt?: Map<string, string> })`; `interface PrepareInput { pristine; pristineApps; candidateDir; candidateApps; changed; workDir; lock }`; `interface Prepared { container; built; wanted: WantedApp[]; candidateIds; buildOk; compile_ms; per_app_compiles }`; `prepareApps(lane, o)`; `interface TestSpec { codeunit; procedures: string[] | null; target; zeroIsInfra }`; `interface TestMessage`; `classifyTestFailure(error)`; `runTests(bc, container, specs)`; `scorerPassed(rows)`; `interface DeployContext { ledgerRoot: string; owned: ReadonlySet<string> }`; `interface Deployed { provisioning_ms; candidate_publish_ms; candidateFailure; removed; published }`; `deploy(bc, container, wanted, ctx)`; `interface DeployTestResult { deployed; rows; messages; test_ms; cleanupError: string | null }`; `deployAndTest(bc, container, i: { wanted; tests; cleanupIds; ctx: DeployContext })`.
+- Produces: `interface HarnessBc { compileProject; harnessCompilerIdentity; listHarnessApps; syncHarnessApps; runHarnessTests }` (declared in the interface code below); `class CleanupFailedError extends ContainerError { cleanupError; cause }`; `type TestRow`; `interface HealthView { getState(): { containers: { containerName: string; alert?: unknown }[] }; record(o: ContainerOutcome): unknown }`; `class BcLane { constructor(bc, containers, opts?: { health?: HealthView; maxInfraRetries?: number; compileSlots?: number }); bc; containers; compile<T>(fn, signal?): Promise<T>; compileOn<T>(container, fn, signal?): Promise<T>; exclusive<T>(ctx, fn, signal?): Promise<Held<T>>; quarantine(container, reason): void; quarantined: Map<string, string> }`; `interface Held<T> { result; container; queue_ms /* summed over attempts */; retries }`; `interface LockedSymbols { store: string; packages: SymbolPackage[] }`; `interface BuiltApp { folder; id; version; ok; attempted; file; diagnostics; compile_ms }`; `buildApps(bc, container, o: { srcDir; apps; versions; outDir; lock: LockedSymbols; prebuilt?: Map<string, string>; signal? })`; `interface PrepareInput { pristine; pristineApps; candidateDir; candidateApps; changed; workDir; lock; signal? }`; `interface Prepared { container; built; wanted: WantedApp[]; candidateIds; buildOk; compile_ms; per_app_compiles }`; `prepareApps(lane, o)`; `interface TestSpec { codeunit; procedures: string[] | null; target; zeroIsInfra }`; `interface TestMessage`; `classifyTestFailure(error)`; `runTests(bc, container, specs)`; `scorerPassed(rows)`; `interface DeployContext { ledgerRoot: string; owned: ReadonlySet<string> }`; `interface Deployed { provisioning_ms; candidate_publish_ms; candidateFailure; removed; published }`; `deploy(bc, container, wanted, ctx)`; `interface DeployTestResult { deployed; rows; messages; test_ms; cleanupError: string | null }`; `deployAndTest(bc, container, i: { wanted; tests; cleanupIds; ctx: DeployContext })`.
 
 - [ ] **Step 1: Write the fake and the failing test**
 
@@ -4296,7 +4442,7 @@ Deno.test("a collision on publish is infra and reroutes", async () => {
 });
 
 Deno.test("classification matches the M4 gate", async () => {
-  // The M4-16 P5 captured texts, verbatim (P5 acceptance is a predecessor of this task).
+  // The accepted M4-16 P5 texts, verbatim (decision accept-M4-16).
   const P5 = JSON.parse(await Deno.readTextFile("tests/fixtures/harness/p5-messages.json")) as Record<string, string>;
   const AREEQUAL = P5.assert_areequal!;
   const EXPECTEDERROR = P5.assert_expectederror!;
@@ -4376,9 +4522,46 @@ Deno.test("deployAndTest: a failed cleanup empties the ledger, is returned, and 
   assertEquals(held.container, "C1");
   assertStringIncludes(held.result.cleanupError!, "incomplete");
   assertEquals(await loadLedger(ctx.ledgerRoot, "C1"), {});
-  lane.quarantine(held.container, held.result.cleanupError!);
+  assert(lane.quarantined.has("C1"), "quarantined inside the held region");
   assertEquals((await lane.exclusive({ taskId: "t", variantId: "v", attemptNumber: 1 }, (c) => Promise.resolve(c))).container, "C2");
   assertEquals(await lane.compile((c) => Promise.resolve(c)), "C2");
+});
+
+Deno.test("deployAndTest: tests throwing together with a cleanup failure quarantine the container before release", async () => {
+  const bc = new FakeBc(() => {
+    throw new ContainerError("soap down", "C1", "test");
+  });
+  const lane = new BcLane(bc, ["C1", "C2"], { maxInfraRetries: 0 });
+  const p = await prep(bc, lane);
+  bc.cleanupFails.add("C1");
+  await assertRejects(() =>
+    lane.exclusive({ taskId: "t", variantId: "v", attemptNumber: 1 }, (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted, tests: [{ codeunit: 80010, procedures: null, target: "candidate", zeroIsInfra: true }],
+        cleanupIds: [IDS.test], ctx: { ledgerRoot: Deno.makeTempDirSync(), owned: new Set() },
+      }))
+  );
+  assert(lane.quarantined.has("C1"));
+});
+
+Deno.test("BcLane: queued work is refused after its container is quarantined; a cancelled signal is never admitted", async () => {
+  const lane = new BcLane(new FakeBc(), ["C1"], { compileSlots: 1 });
+  let release!: () => void;
+  const first = lane.compileOn("C1", () => new Promise<void>((r) => (release = r)));
+  let ran = false;
+  const queued = lane.compileOn("C1", () => Promise.resolve(void (ran = true)));
+  lane.quarantine("C1", "cleanup failed");
+  release();
+  await first;
+  await assertRejects(() => queued, ContainerError, "ineligible");
+  assertEquals(ran, false);
+  const l2 = new BcLane(new FakeBc(), ["C1"]);
+  const stop = new AbortController();
+  stop.abort(new Error("grant revoked"));
+  let called = false;
+  await assertRejects(() => l2.exclusive({ taskId: "t", variantId: "v", attemptNumber: 1 }, () => Promise.resolve(void (called = true)), stop.signal));
+  await assertRejects(() => l2.compile(() => Promise.resolve(void (called = true)), stop.signal));
+  assertEquals(called, false);
 });
 
 Deno.test("BcLane: outcomes are recorded into the health view; compileOn takes that container's slot", async () => {
@@ -4493,6 +4676,8 @@ import { restoreSymbols } from "./symbols.ts";
 
 export interface HarnessBc {
   compileProject(container: string, project: ALProject): Promise<CompilationResult>;
+  /** Artifact URL plus pinned BCH version: part of every prerequisite stamp. */
+  harnessCompilerIdentity(container: string): Promise<string>;
   listHarnessApps(container: string): Promise<HarnessInstalledApp[]>;
   syncHarnessApps(container: string, plan: { removeIds: string[]; publish: string[] }): Promise<HarnessSyncResult>;
   runHarnessTests(container: string, codeunit: number): Promise<TestResult>;
@@ -4551,12 +4736,22 @@ export class BcLane {
     this.opts.health?.record({ containerName, result, timestamp: Date.now() });
   }
 
+  /** After a wait: refuse if cancelled or if the container became ineligible (infra, so holds reroute). */
+  private admit(c: string, signal?: AbortSignal): void {
+    signal?.throwIfAborted();
+    if (!this.healthy().includes(c)) {
+      throw new ContainerError(`${c} became ineligible while queued (${this.quarantined.get(c) ?? "health alert"})`, c, "setup");
+    }
+  }
+
   /** Run fn under `container`'s compile slot (the oracle build must use a specific container). */
-  async compileOn<T>(container: string, fn: (container: string) => Promise<T>): Promise<T> {
+  async compileOn<T>(container: string, fn: (container: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
     const slot = this.slots.get(container);
     if (!slot) throw new Error(`unknown container ${container}`);
+    this.admit(container, signal);
     const release = await slot.acquire();
     try {
+      this.admit(container, signal);
       return await fn(container);
     } finally {
       release();
@@ -4564,16 +4759,18 @@ export class BcLane {
   }
 
   /** Host-side compile job; admitted per container; next container on infra error. */
-  async compile<T>(fn: (container: string) => Promise<T>): Promise<T> {
+  async compile<T>(fn: (container: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted();
     const eligible = this.healthy();
     if (eligible.length === 0) throw new NoEligibleContainersError(this.containers, this.containers);
     for (let k = 0;; k++) {
       const c = eligible[this.rotor++ % eligible.length]!;
       const release = await this.slots.get(c)!.acquire();
       try {
+        this.admit(c, signal);
         return await fn(c);
       } catch (err) {
-        if (!isInfraError(err) || k + 1 >= eligible.length) throw err;
+        if (signal?.aborted || !isInfraError(err) || k + 1 >= eligible.length) throw err;
       } finally {
         release();
       }
@@ -4583,7 +4780,9 @@ export class BcLane {
   async exclusive<T>(
     ctx: { taskId: string; variantId: string; attemptNumber: number },
     fn: (container: string) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<Held<T>> {
+    signal?.throwIfAborted();
     let container = "";
     let queue_ms = 0;
     const { result, retries } = await withInfraRetry<T>(
@@ -4598,10 +4797,15 @@ export class BcLane {
         queue_ms += performance.now() - t0;
         container = c;
         try {
+          this.admit(c, signal);
           const out = await fn(c);
+          // Quarantine inside the held region, before the lock is released (round 3 B4).
+          const cleanupError = (out as { cleanupError?: string | null } | null)?.cleanupError;
+          if (cleanupError) this.quarantine(c, cleanupError);
           this.record(c, "pass");
           return out;
         } catch (err) {
+          if (err instanceof CleanupFailedError) this.quarantine(c, err.cleanupError);
           if (isInfraError(err)) this.record(c, "infra_error");
           throw err;
         } finally {
@@ -4622,6 +4826,14 @@ export class BcLane {
 export interface LockedSymbols {
   store: string;
   packages: SymbolPackage[];
+}
+
+/** Tests (or deploy) failed and the cleanup failed too: the container is quarantined by the lane. */
+export class CleanupFailedError extends ContainerError {
+  constructor(readonly original: unknown, readonly cleanupError: string, container: string) {
+    super(`${original instanceof Error ? original.message : String(original)} (and ${cleanupError})`, container, "setup");
+    this.name = "CleanupFailedError";
+  }
 }
 
 export interface BuiltApp {
@@ -4654,6 +4866,8 @@ export async function buildApps(
     outDir: string;
     lock: LockedSymbols;
     prebuilt?: Map<string, string>;
+    /** Cancellation: checked before every compile, so no further app is built after an abort. */
+    signal?: AbortSignal;
   },
 ): Promise<BuiltApp[]> {
   const files = new Map(o.prebuilt ?? []);
@@ -4661,6 +4875,7 @@ export async function buildApps(
   await Deno.mkdir(join(o.outDir, ".apps"), { recursive: true });
   const lockedByName = new Map(o.lock.packages.map((p) => [p.file, p.sha256]));
   for (const app of o.apps) {
+    o.signal?.throwIfAborted();
     const version = o.versions.get(app.folder) ?? app.version;
     const failed = app.depends.find((d) => !files.has(d));
     if (failed) {
@@ -4713,6 +4928,7 @@ export interface PrepareInput {
   changed: string[];
   workDir: string;
   lock: LockedSymbols;
+  signal?: AbortSignal;
 }
 
 export interface Prepared {
@@ -4726,7 +4942,7 @@ export interface Prepared {
 }
 
 export function prepareApps(lane: BcLane, o: PrepareInput): Promise<Prepared> {
-  return lane.compile((container) => prepareOn(lane, container, o));
+  return lane.compile((container) => prepareOn(lane, container, o), o.signal);
 }
 
 async function prepareOn(lane: BcLane, container: string, o: PrepareInput): Promise<Prepared> {
@@ -4745,7 +4961,7 @@ async function prepareOn(lane: BcLane, container: string, o: PrepareInput): Prom
   }));
   const prereqs = graph.filter((a) => !cands.has(a.folder));
   const pre = await buildApps(lane.bc, container, {
-    srcDir: o.pristine, apps: prereqs, versions, outDir: join(o.workDir, "prereq"), lock: o.lock,
+    srcDir: o.pristine, apps: prereqs, versions, outDir: join(o.workDir, "prereq"), lock: o.lock, signal: o.signal,
   });
   const failedPre = pre.find((b) => !b.ok);
   if (failedPre) {
@@ -4758,7 +4974,7 @@ async function prepareOn(lane: BcLane, container: string, o: PrepareInput): Prom
   const prebuilt = new Map(pre.map((b) => [b.folder, b.file!] as const));
   const candApps = graph.filter((a) => cands.has(a.folder));
   const built = await buildApps(lane.bc, container, {
-    srcDir: o.candidateDir, apps: candApps, versions, outDir: join(o.workDir, "candidate"), lock: o.lock, prebuilt,
+    srcDir: o.candidateDir, apps: candApps, versions, outDir: join(o.workDir, "candidate"), lock: o.lock, prebuilt, signal: o.signal,
   });
   const all = [...pre, ...built];
   const buildOk = built.every((b) => b.ok);
@@ -4944,7 +5160,7 @@ export async function deployAndTest(
       : { deployed, ...await runTests(bc, container, i.tests) };
   } catch (err) {
     const c = await cleanup();
-    if (c && err instanceof Error) err.message += ` (and ${c}; quarantine ${container})`;
+    if (c) throw new CleanupFailedError(err, c, container);
     throw err;
   }
   return { ...r, cleanupError: await cleanup() };
@@ -5058,7 +5274,7 @@ try {
 - [ ] **Step 4: Run it and see it pass**
 
 Run: `deno test --allow-all tests/unit/harness/bc-lane.test.ts` then `deno check scripts/harness/app-sync-probe.ts`
-Expected: all 16 tests pass; the probe type-checks.
+Expected: all 18 tests pass; the probe type-checks.
 
 - [ ] **Step 5: Check, lint, format** (the four files)
 
@@ -6624,7 +6840,7 @@ git commit -m "feat(harness): verdict pipeline with build, pass_to_pass and fail
 
 Spec 1a section 5 item 4 (compile, test and symbol lookup on the caller's own workspace only; no endpoint lists apps, reads other workspaces or runs the oracle), section 5 telemetry (host call log per request, units kept apart), D12, section 8 (a BC fault on the agent's own call is a tool error and marks `infra_exposed`). M0-05 carryover in full. Review gate 2 and section 2 item 1: the snapshot is validated against the grant's **trusted** app identities before any compile, publish or cleanup; cleanup is limited to owned ids (M1-15); discovered codeunits obey the same bands as explicit ones; the body is read as a stream with a hard limit and the busy check comes first; revocation waits for the in-flight request; two simultaneously valid grants cannot be crossed; the server binds only an allowed container-facing address.
 
-The snapshot is taken from a **quiescent** workspace (review round 2 item 1): the backend pauses the sandbox (`docker pause`, bounded; Hyper-V isolation, proven on this host in M1-26), copies with `safeCopyTree` (M1-12), and unpauses in `finally`. A failed pause is an infra error (503) and nothing is copied. Every request is bounded (review round 2 item 2): the body read has a deadline (408), each operation receives an `AbortSignal`, and `revoke` is atomic with admission (a `closing` flag checked synchronously right before a request is admitted) and waits for the in-flight request up to a grace, then aborts it and waits once more; it reports whether the grant drained. The client measures its own script time with a Stopwatch (`script_ms`, monotonic); process start-up is derived later from the trace's tool duration minus `script_ms` (M2).
+The snapshot is taken from a **quiescent** workspace (review round 2 item 1): the backend pauses the sandbox (`docker pause`, bounded; Hyper-V isolation, proven on this host in M1-26), copies with `safeCopyTree` (M1-12), and unpauses in `finally`. A failed pause is an infra error (503) and nothing is copied. Every request is bounded (review round 2 item 2): the body read has a deadline (408), each operation receives an `AbortSignal`, and `revoke` is atomic with admission (a `closing` flag checked synchronously right before a request is admitted) and waits for the in-flight request up to a grace, then aborts it and waits once more; it reports whether the grant drained. Round 3 B2: the cancellation reaches the **production** operations: `defaultBackendOps` passes the request signal (grant revocation combined with a per-request deadline, `requestDeadlineMs`, default 30 minutes) to compile admission, every app compile and the exclusive publish-and-test hold, so no BC mutation starts after cancellation; an operation already inside a SOAP call finishes, then nothing further runs and the candidates are cleaned up. A failed or throwing `docker unpause` is an infra fault: the request returns 503 and the grant's `onFault` is called, so the runner stops the execution (M1-22). The client measures its own script time with a Stopwatch (`script_ms`, monotonic); process start-up is derived later from the trace's tool duration minus `script_ms` (M2).
 
 **Lane:** infra2 (stream B). **Deps:** M1-12, M1-13, M1-14 (`validateApps`, `testCodeunits`), M1-15, M1-16, M1-20. **Date:** 10-02.
 
@@ -6633,7 +6849,7 @@ The snapshot is taken from a **quiescent** workspace (review round 2 item 1): th
 - Test: `tests/unit/harness/backend.test.ts`
 
 **Interfaces:**
-- Produces: `BACKEND_VERSION = "cg-al-backend@1"`; `MAX_BODY_BYTES = 65536`; `sha256(text)`; `timingSafeEqual(a, b)`; `interface BackendGrant { executionId; sandbox: string | null /* container to pause for snapshots */; workspace; pristine; trusted: StagedApp[]; symbols: SymbolPackage[]; lock: LockedSymbols; deploy: DeployContext; hostLog }`; `interface HostLogLine`; `interface OpContext { grant; snapshot; apps; requestId; workDir; signal: AbortSignal }`; `interface OpResult`; `interface BackendOps { compile(ctx, apps); test(ctx, codeunits) }`; `class Backend { constructor(o: { approvedRoots; workRoot; ops; allowedHosts: string[]; docker?: DockerCli; opTimeoutMs?; bodyTimeoutMs?; revokeGraceMs?; now? }); grant(g, ttlMs): Promise<string>; revoke(executionId): Promise<boolean /* drained */>; handle(req): Promise<Response>; serve(hostname, port) }`; `checkSnapshot(snapshot, trusted, symbolIds): Promise<string[]>`; `defaultBackendOps(lane): BackendOps`; `resolveBackendHost(): Promise<string>`; `readHostLog(path)`.
+- Produces: `BACKEND_VERSION = "cg-al-backend@1"`; `MAX_BODY_BYTES = 65536`; `sha256(text)`; `timingSafeEqual(a, b)`; `interface BackendGrant { executionId; sandbox: string | null /* container to pause for snapshots */; onFault?(reason: string): void /* unpause failed: stop the execution */; workspace; pristine; trusted: StagedApp[]; symbols: SymbolPackage[]; lock: LockedSymbols; deploy: DeployContext; hostLog }`; `interface HostLogLine`; `interface OpContext { grant; snapshot; apps; requestId; workDir; signal: AbortSignal }`; `interface OpResult`; `interface BackendOps { compile(ctx, apps); test(ctx, codeunits) }`; `class Backend { constructor(o: { approvedRoots; workRoot; ops; allowedHosts: string[]; docker?: DockerCli; opTimeoutMs?; bodyTimeoutMs?; revokeGraceMs?; requestDeadlineMs?; now? }); grant(g, ttlMs): Promise<string>; revoke(executionId): Promise<boolean /* drained */>; handle(req): Promise<Response>; serve(hostname, port) }`; `checkSnapshot(snapshot, trusted, symbolIds): Promise<string[]>`; `defaultBackendOps(lane): BackendOps`; `resolveBackendHost(): Promise<string>`; `readHostLog(path)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -6830,6 +7046,64 @@ Deno.test("backend: a stalled body is 408 within the deadline", async () => {
   assert(performance.now() - t0 < 1_000);
 });
 
+Deno.test("backend: a failed unpause is a 503 infra fault and stops the execution through onFault", async () => {
+  const root = await tmp();
+  await Deno.mkdir(join(root, "work"), { recursive: true });
+  const docker = new FakeDocker();
+  docker.unpause = () => Promise.resolve(1);
+  const faults: string[] = [];
+  const ops: BackendOps = {
+    compile: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
+    test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
+  };
+  const b = new Backend({ approvedRoots: [join(root, "work")], workRoot: join(root, "backend"), ops, allowedHosts: ["127.0.0.1"], docker, opTimeoutMs: 100 });
+  const ws = await workspace(root, EXEC_A);
+  const tok = await b.grant({
+    executionId: EXEC_A, sandbox: "cg-harness-x", onFault: (r) => faults.push(r), workspace: ws, pristine: ws,
+    trusted: await readAppGraph(ws), symbols: [], lock: { store: root, packages: [] }, deploy: { ledgerRoot: root, owned: new Set() },
+    hostLog: join(root, "hl.jsonl"),
+  }, 60_000);
+  assertEquals((await b.handle(req("/v1/compile", tok, '{"apps":["Core"]}'))).status, 503);
+  assertStringIncludes(faults.join("\n"), "unpause");
+});
+
+Deno.test("production ops: a revoke past the grace cancels before any further BC mutation", async () => {
+  const s = await setup();
+  let releaseCompile!: () => void;
+  const gate = new Promise<void>((r) => (releaseCompile = r));
+  const bc = new FakeBc(() => result({ A: true }));
+  bc.onCompile = () => gate;
+  const exec = "00000000-0000-4000-8000-00000000e004";
+  const b = new Backend({
+    approvedRoots: [join(s.root, "work")], workRoot: join(s.root, "backend4"), ops: defaultBackendOps(new BcLane(bc, ["C1"])),
+    allowedHosts: ["127.0.0.1"], docker: new FakeDocker(), revokeGraceMs: 100,
+  });
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hl4.jsonl"));
+  const pending = b.handle(req("/v1/test", tok, "{}", exec));
+  await new Promise((r) => setTimeout(r, 30));
+  const revoking = b.revoke(exec);
+  await new Promise((r) => setTimeout(r, 150)); // past the first grace: the signal is aborted
+  releaseCompile();
+  assertEquals(await revoking, true);
+  assert([500, 503].includes((await pending).status));
+  assertEquals(bc.compiles.length, 1, "no further app compiled after the abort");
+  assertEquals(bc.syncs, [], "no publish after the abort");
+});
+
+Deno.test("production ops: a request past its deadline is refused before any publish", async () => {
+  const s = await setup();
+  const bc = new FakeBc(() => result({ A: true }));
+  bc.onCompile = () => new Promise((r) => setTimeout(r, 80));
+  const exec = "00000000-0000-4000-8000-00000000e005";
+  const b = new Backend({
+    approvedRoots: [join(s.root, "work")], workRoot: join(s.root, "backend5"), ops: defaultBackendOps(new BcLane(bc, ["C1"])),
+    allowedHosts: ["127.0.0.1"], docker: new FakeDocker(), requestDeadlineMs: 40,
+  });
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hl5.jsonl"));
+  assertEquals((await b.handle(req("/v1/test", tok, "{}", exec))).status, 503);
+  assertEquals(bc.syncs, []);
+});
+
 Deno.test("backend: the snapshot is taken with the sandbox paused; a failed pause is 503 and copies nothing", async () => {
   const s = await setup();
   assertEquals((await s.backend.handle(req("/v1/compile", s.tokenA, '{"apps":["Core"]}'))).status, 200);
@@ -7019,6 +7293,8 @@ export interface BackendGrant {
   executionId: string;
   /** Sandbox container paused for each snapshot; null only in unit tests without a sandbox. */
   sandbox: string | null;
+  /** Called when the sandbox cannot be unpaused: the runner stops the execution. */
+  onFault?(reason: string): void;
   workspace: string;
   pristine: string;
   /** The staged workspace's app identities: the only apps the backend builds. */
@@ -7191,6 +7467,8 @@ export class Backend {
     opTimeoutMs?: number;
     bodyTimeoutMs?: number;
     revokeGraceMs?: number;
+    /** End-to-end deadline of one request (compile admission, compiles, publish and tests). */
+    requestDeadlineMs?: number;
     now?: () => number;
   }) {
     this.now = o.now ?? (() => Date.now());
@@ -7307,7 +7585,8 @@ export class Backend {
         await this.append(st.g, this.line(st, op, 200, "failed", t0, { request: requestId, message: violations.join("; "), spans: { snapshot_ms } }));
         return json(200, { request: requestId, backend_version: BACKEND_VERSION, ok: false, violations, ignored_links: copy.refused });
       }
-      const ctx: OpContext = { grant: st.g, snapshot: copy.dst, apps: await readAppGraph(copy.dst), requestId, workDir, signal: st.abort.signal };
+      const signal = AbortSignal.any([st.abort.signal, AbortSignal.timeout(this.o.requestDeadlineMs ?? 30 * 60_000)]);
+      const ctx: OpContext = { grant: st.g, snapshot: copy.dst, apps: await readAppGraph(copy.dst), requestId, workDir, signal };
       const r = op === "compile" ? await this.o.ops.compile(ctx, apps) : await this.o.ops.test(ctx, (parsed.data as { codeunits: number[] }).codeunits);
       const line = this.line(st, op, 200, r.log.outcome, t0, { ...r.log, request: requestId, spans: { snapshot_ms, ...(r.log.spans ?? {}) } });
       await this.append(st.g, line);
@@ -7336,11 +7615,19 @@ export class Backend {
     if (await bounded(d.pause(name), ms, `docker pause ${name}`) !== 0) {
       throw new ContainerError(`docker pause ${name} failed: snapshot refused`, name, "test");
     }
+    let copy;
     try {
-      return await safeCopyTree(st.canonical, snapshot, { skip: isTaskBuildArtifact });
+      copy = await safeCopyTree(st.canonical, snapshot, { skip: isTaskBuildArtifact });
     } finally {
-      await bounded(d.unpause(name), ms, `docker unpause ${name}`).catch(() => {});
+      const code = await bounded(d.unpause(name), ms, `docker unpause ${name}`).catch((e) => String(e));
+      if (code !== 0) {
+        const reason = `docker unpause ${name} failed (${code}): the sandbox may still be paused`;
+        st.g.onFault?.(reason);
+        // deno-lint-ignore no-unsafe-finally
+        throw new ContainerError(reason, name, "test");
+      }
     }
+    return copy;
   }
 
   serve(hostname: string, port: number): { url: string; shutdown(): Promise<void> } {
@@ -7368,8 +7655,9 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
       const versions = new Map(ctx.grant.trusted.map((a) => [a.folder, a.version]));
       const t0 = performance.now();
       const built = await lane.compile((c) =>
-        buildApps(lane.bc, c, { srcDir: ctx.snapshot, apps: selected, versions, outDir: ctx.workDir, lock: ctx.grant.lock })
-      );
+        buildApps(lane.bc, c, {
+          srcDir: ctx.snapshot, apps: selected, versions, outDir: ctx.workDir, lock: ctx.grant.lock, signal: ctx.signal,
+        }), ctx.signal);
       const ok = built.every((b) => b.ok);
       return {
         body: { apps: built.map((b) => ({ app: b.folder, ok: b.ok, diagnostics: b.diagnostics })) },
@@ -7388,7 +7676,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
       }
       const prep = await prepareApps(lane, {
         pristine: ctx.grant.pristine, pristineApps: ctx.grant.trusted, candidateDir: ctx.snapshot, candidateApps: ctx.apps,
-        changed, workDir: ctx.workDir, lock: ctx.grant.lock,
+        changed, workDir: ctx.workDir, lock: ctx.grant.lock, signal: ctx.signal,
       });
       const compiled = prep.built.filter((b) => b.attempted).map((b) => b.folder);
       if (!prep.buildOk) {
@@ -7408,8 +7696,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           wanted: prep.wanted,
           tests: units.map((u) => ({ codeunit: u, procedures: byCu.get(u)?.procedures ?? null, target: "candidate", zeroIsInfra: false })),
           cleanupIds: [...prep.candidateIds].reverse(), ctx: ctx.grant.deploy,
-        }));
-      if (held.result.cleanupError) lane.quarantine(held.container, held.result.cleanupError);
+        }), ctx.signal); // a failed cleanup is quarantined by the lane before release
       const rows = held.result.rows;
       const failed = rows.filter((r) => r.outcome !== "pass").length;
       return {
@@ -7507,7 +7794,7 @@ exit 2
 - [ ] **Step 4: Run it and see it pass**
 
 Run: `deno test --allow-all tests/unit/harness/backend.test.ts`
-Expected: all 19 tests pass (the client test runs on Windows only; it binds 127.0.0.1, no container).
+Expected: all 22 tests pass (the client test runs on Windows only; it binds 127.0.0.1, no container).
 
 - [ ] **Step 5: Check, lint, format** (`src/harness/backend.ts`, the test)
 
@@ -7536,18 +7823,22 @@ Design:
 - **Retries by ancestry.** `runCell` asks Part 1's `retryProblem(parent, candidate, grandparent)` over the cell's prior and new executions; supervised mode withholds every automatic retry. `usage_reset_at` is persisted in the side file.
 - **Credential gate and shared budget (item 9).** A credential-bearing arm runs only when (a) `env.egressEnforced` is true, which M1-24 sets only after the verified enforcement state checks out (M1-33), or (b) `env.supervised` and a reservation in the **shared cross-lane ledger** (`env.credentialLedger`, one file for M1 and M4, see the integrated schedule) succeeds before any container or credential is touched. Five reservations across all lanes, then every further supervised run is refused. No ledger configured means refused.
 - **Budget (item 10).** An adapter must declare `enforcesBudget` (its entrypoint passes the manifest's effective `max_budget_usd`); otherwise the arm is refused.
-- **Validity.** Unverifiable requested components set `validity.incomplete_observed: ["loaded_components"]`. Part 1's `ValiditySchema` gets this additive, defaulted field in this task (its `incomplete_telemetry` accepts telemetry field names only).
+- **Validity and record version (round 3 B1).** Unverifiable requested components set `validity.incomplete_observed: ["loaded_components"]`. Part 1 froze the execution shape ("no change without a schema version bump"), so this is a **versioned** change, coordinated with the Part 1 maintainer: execution records carry `v: 2` when written by Part 2 and must then include `incomplete_observed`; `v: 1` records must not carry it and read as `[]`; `validateCampaignRecords` refuses a campaign whose executions mix versions (a campaign has one producer version); the Part 1 fixtures gain a `v: 2` default with a `v: 1` variant for the compatibility tests; the report (M1-09) lists executions with unverified components in its coverage section. Old strict readers do not exist outside this repository, so no dual-writing is needed.
+- **Recovery isolation (round 3 B3).** The intent records the command's **results root**, the **effective manifest** and the task's immutable metadata, and a private **snapshot of the task directory** (`privateRoot/taskcopy/<id>/`) taken at run start, so recovery publishes into the original store and never re-derives the attempt from current files; it judges only when the current task files still have the recorded hashes (otherwise the execution is recorded and left for `rejudge`), and a deleted task never blocks recovery.
+- **Custody phases (round 3 B3).** The intent moves through `prepared` (before any secret is read), `released` (custody written, right before `docker run`) and `published` (every record written); custody is read strictly: in `released` a missing or unreadable custody file stops recovery (fail closed, intent kept); only `prepared` proves nothing was released. Cleanup runs after `published` is saved and deletes the intent last, so a crash inside cleanup only repeats the cleanup.
+- **Backend faults (round 3 B2).** The grant's `onFault` (a failed unpause) aborts the execution's stop signal; the attempt ends `harness_crash` with side-file reason `backend_fault` and `infra_exposed: true`.
 
-**Lane:** infra (stream A). **Deps:** M1-05 (`resolveManifest`, `forTask`, `manifestHash`), M1-07 (records, `outcomePolicy`, `retryProblem`), M1-07b, M1-12, M1-13, M1-17, M1-19, M1-20, M1-21, M1-32. **Date:** 10-03.
+**Lane:** infra (stream A). **Deps:** M1-05 (`resolveManifest`, `forTask`, `manifestHash`), M1-07 (records, `outcomePolicy`, `retryProblem`), M1-07b, M1-09 (report coverage), M1-12, M1-13, M1-17, M1-19, M1-20, M1-21, M1-32. **Date:** 10-03; the shared credential budget (`credential-budget.ts`, its test and `scripts/harness/reserve-credential-run.ts`) is this task's **first commit, due 10-02**, before M4-17's 10-03 pilot (round 3 B7).
 
 **Files:**
-- Create: `src/harness/images.ts`, `src/harness/execution.ts`, `src/harness/credential-budget.ts`
-- Modify: `src/harness/records.ts` (`ValiditySchema.incomplete_observed`), `tests/unit/harness/records.test.ts` (append)
+- Create (first commit, 10-02): `src/harness/credential-budget.ts`, `scripts/harness/reserve-credential-run.ts`, `tests/unit/harness/credential-budget.test.ts`
+- Create: `src/harness/images.ts`, `src/harness/execution.ts`
+- Modify: `src/harness/records.ts` (execution `v: 2` with `incomplete_observed`), `src/harness/integrity.ts` (one version per campaign), `src/harness/report.ts` (coverage line), `tests/unit/harness/fixtures.ts` (`v: 2` default, `v: 1` variant), `tests/unit/harness/records.test.ts`, `tests/unit/harness/integrity.test.ts`, `tests/unit/harness/report.test.ts` (append)
 - Create: `tests/unit/harness/runtime-fixture.ts` (a full `HarnessEnv` over fakes; reused by M1-24, M1-23, M1-35)
 - Test: `tests/unit/harness/images.test.ts`, `tests/unit/harness/credential-budget.test.ts`, `tests/unit/harness/execution.test.ts`
 
 **Interfaces:**
-- Produces (records.ts, additive): `ValiditySchema.incomplete_observed: ("harness_version" | "models" | "loaded_components")[]`, default `[]`.
+- Produces (records.ts, versioned): `ExecutionRecord.v: 1 | 2`; `validity.incomplete_observed?: ("harness_version" | "models" | "loaded_components")[]` (required in `v: 2`, absent in `v: 1`); `incompleteObserved(e): string[]` (`[]` for `v: 1`).
 - Produces (images.ts): `BASE_IMAGE = "centralgauge/harness-base:1"`; `imageTag(harness, version)`; `IMAGE_LABELS`; `interface ImageFacts { digest; base_digest; harness; version }`; `imageFacts(docker, ref)`; `hasBaseLayers(docker, imageRef, baseRef): Promise<boolean>`; `runtimeFacts(config, image, adapter, catalog): RuntimeFacts`.
 - Produces (credential-budget.ts): `CREDENTIAL_RUN_LIMIT = 5`; `interface Reservation { lane; task; config; purpose }`; `reserveCredentialRun(ledgerPath: string | null, r, limit?): Promise<number>` (the reservation's ordinal).
 - Produces (execution.ts): `interface HarnessEnv { repoRoot; harnessRoot; resultsRoot; privateRoot; store; lane; backend; backendUrl; docker; owner; symbols; symbolStore; secretsSource; deploy: DeployContext; pricing(at): Promise<PricingBook>; supervised; egressEnforced; credentialLedger: string | null; lane_id: string; stop?: AbortSignal; now?; timeoutMsFor?; killGraceMs?; opTimeoutMs?; maxCaptureBytes?; hooks?: { after?(step: PublishStep): Promise<void> } }`; `type PublishStep = "draft" | "run" | "execution" | "artifact" | "judgment"`; `privatePaths(env, id)`; `interface CellRef`; `interface AttemptRef`; `imageAttachments(attachments, support)`; `writeConfigDir(harnessRoot, dir, m)`; `runExecution(env, cell, at)`; `judgeExecution(env, cell, e, pristine, oracleHash?)`; `rejudgeExecution(env, cell, e, oracleHash)`; `interface CellResult { executions; pause: string | null; withheld: string | null; stopped: string | null }`; `runCell(env, cell, first?, prior?: ExecutionRecord[])`; `recoverInterrupted(env, loadTask): Promise<ExecutionRecord[]>`.
@@ -7558,17 +7849,24 @@ Design:
 Append to `tests/unit/harness/records.test.ts`:
 
 ```typescript
-Deno.test("validity: incomplete_observed defaults to [] and accepts loaded_components only among observed fields", async () => {
+Deno.test("execution v2: incomplete_observed required in v2, forbidden in v1; both round-trip", async () => {
   const c = await campaign();
-  const e = execution(c);
-  const { incomplete_observed: _drop, ...validity } = ExecutionRecordSchema.parse(e).validity;
-  assertEquals(ExecutionRecordSchema.parse({ ...e, validity }).validity.incomplete_observed, []);
-  ExecutionRecordSchema.parse({ ...e, validity: { ...validity, incomplete_observed: ["loaded_components"] } });
-  assertThrows(() => ExecutionRecordSchema.parse({ ...e, validity: { ...validity, incomplete_observed: ["cost_usd"] } }));
+  const e2 = execution(c); // fixtures now default to v: 2 with incomplete_observed: []
+  assertEquals(ExecutionRecordSchema.parse(e2).v, 2);
+  const e1 = execution(c, {}, { v: 1, validity: { incomplete_telemetry: [], infra_exposed: false } });
+  assertEquals(incompleteObserved(ExecutionRecordSchema.parse(e1)), []);
+  assertThrows(() => ExecutionRecordSchema.parse({ ...e2, validity: { incomplete_telemetry: [], infra_exposed: false } }));
+  assertThrows(() => ExecutionRecordSchema.parse({ ...e1, validity: { ...e1.validity, incomplete_observed: [] } }));
+  assertThrows(() => ExecutionRecordSchema.parse({ ...e2, validity: { ...e2.validity, incomplete_observed: ["cost_usd"] } }));
+  const store = new RecordStore(await Deno.makeTempDir());
+  await store.writeExecution(e2);
+  assertEquals((await store.executions(c.id))[0], ExecutionRecordSchema.parse(e2));
 });
 ```
 
-`records.ts` change (inside `ValiditySchema`): `incomplete_observed: z.array(z.enum(["harness_version", "models", "loaded_components"])).default([]),` with the same duplicate refinement as `incomplete_telemetry`.
+Append to `tests/unit/harness/integrity.test.ts`: `a campaign mixing execution record versions is refused` (one `v: 1` and one `v: 2` execution; `validateCampaignRecords` names both ids). Append to `tests/unit/harness/report.test.ts`: `coverage lists executions with unverified components` (a `v: 2` execution with `["loaded_components"]` appears in the coverage section by id).
+
+`records.ts` change: `v: z.union([z.literal(1), z.literal(2)])`; `ValiditySchema` gains `incomplete_observed: z.array(z.enum(["harness_version", "models", "loaded_components"])).optional()` with the duplicate refinement; the execution `superRefine` requires the field when `v === 2` and refuses it when `v === 1`; `export const incompleteObserved = (e: ExecutionRecord) => e.validity.incomplete_observed ?? [];`. `integrity.ts`: one execution `v` per campaign. `report.ts`: coverage section line `unverified components: <ids>` when any.
 
 `tests/unit/harness/credential-budget.test.ts`:
 
@@ -7591,6 +7889,36 @@ Deno.test("reserveCredentialRun: five across all lanes, then refused; concurrent
 Deno.test("reserveCredentialRun: no shared ledger configured is refused (fail closed)", async () => {
   await assertRejects(() => reserveCredentialRun(null, r), ConfigurationError, "ledger");
 });
+
+Deno.test("reserveCredentialRun: an unreadable ledger refuses; partial lines still count", async () => {
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const asDir = join(dir, "ledger-is-a-directory");
+  await Deno.mkdir(asDir);
+  await assertRejects(() => reserveCredentialRun(asDir, r), ConfigurationError, "cannot read");
+  const partial = join(dir, "partial.jsonl");
+  await Deno.writeTextFile(partial, '{"v":1}\n{"trunc\nx\nx\nx\n');
+  await assertRejects(() => reserveCredentialRun(partial, r), ConfigurationError, "5 supervised");
+});
+```
+
+`scripts/harness/reserve-credential-run.ts` (first commit; M4-17's pilot runner calls it before releasing a key):
+
+```typescript
+// Usage: deno run --allow-all scripts/harness/reserve-credential-run.ts --lane <lane> --task <HX-00N> --config <model-or-arm> --purpose <text>
+// Uses CG_CREDENTIAL_LEDGER, the one ledger for every lane. Exit 0 with the ordinal, exit 1 when refused.
+import { parseArgs } from "@std/cli/parse-args";
+import { reserveCredentialRun } from "../../src/harness/credential-budget.ts";
+
+const a = parseArgs(Deno.args, { string: ["lane", "task", "config", "purpose"] });
+try {
+  const n = await reserveCredentialRun(Deno.env.get("CG_CREDENTIAL_LEDGER") ?? null, {
+    lane: a.lane ?? "", task: a.task ?? "", config: a.config ?? "", purpose: a.purpose ?? "",
+  });
+  console.log(`[OK] credential run ${n} of 5 reserved`);
+} catch (err) {
+  console.error(`[FAIL] ${err instanceof Error ? err.message : err}`);
+  Deno.exit(1);
+}
 ```
 
 `tests/unit/harness/images.test.ts`:
@@ -7789,7 +8117,7 @@ import { join } from "@std/path";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { privatePaths, type PublishStep, recoverInterrupted, runCell } from "../../../src/harness/execution.ts";
-import { ExecutionRecordSchema } from "../../../src/harness/records.ts";
+import { ExecutionRecordSchema, RecordStore } from "../../../src/harness/records.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import { ccBehavior, cellFor, IMAGE_ID, INIT, makeEnv, PROBE_COST, probeLines, SECRET_OAUTH } from "./runtime-fixture.ts";
 import { write } from "./refapp-fixture.ts";
@@ -8027,6 +8355,75 @@ Deno.test("recovery: an interrupted attempt keeps its spend at the original pric
   assertEquals(await recoverInterrupted(t.env, loadTask), [], "recovery is idempotent");
 });
 
+Deno.test("recovery: publishes into the original results root, from the stored manifest and task snapshot, even after the task was deleted or its limits changed", async () => {
+  const t = await makeEnv();
+  const cellsRoot = join(t.env.resultsRoot, "cells");
+  const cellsEnv = { ...t.env, resultsRoot: cellsRoot, store: new RecordStore(cellsRoot) };
+  cellsEnv.hooks = { beforeDraft: () => Promise.reject(new Error("runner killed")) };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(cellsEnv, cell), Error, "runner killed");
+  await write(t.repo.tasksDir, "HX-001/task.yml", (await Deno.readTextFile(join(t.repo.tasksDir, "HX-001", "task.yml"))).replace("timeout_min: 20", "timeout_min: 5"));
+  await Deno.rename(join(t.repo.tasksDir, "HX-001"), join(t.repo.tasksDir, "HX-001-moved"));
+  const [e] = await recoverInterrupted(t.env, loadTask); // a different command's env: results/harness
+  assertEquals(await t.env.store.executions(cell.campaignId), [], "nothing lands in the other command's store");
+  const stored = await cellsEnv.store.executions(cell.campaignId);
+  assertEquals(stored.map((x) => x.id), [e!.id]);
+  assertEquals(stored[0]!.manifest.limits.timeout_min, 20, "the original effective limits, not the edited ones");
+  assertEquals(await cellsEnv.store.judgments(e!.id), [], "task unavailable: recorded, not judged");
+});
+
+Deno.test("recovery: custody missing after release stops (fail closed) and keeps the intent", async () => {
+  const t = await makeEnv();
+  t.env.hooks = { beforeDraft: () => Promise.reject(new Error("runner killed")) };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), Error, "runner killed");
+  const intentFile = [...Deno.readDirSync(join(t.env.privateRoot, "intents"))][0]!.name;
+  const id = intentFile.replace(".json", "");
+  await Deno.remove(privatePaths(t.env, id).custody);
+  t.env.hooks = {};
+  await assertRejects(() => recoverInterrupted(t.env, loadTask), ContainerError, "custody");
+  assert(await exists(privatePaths(t.env, id).intent), "intent kept");
+});
+
+Deno.test("a setup failure with no captures still writes its draft and publishes", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  t.docker.images.delete(IMAGE_ID);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals([e.termination, e.telemetry.cost_usd], ["setup_failed", 0]);
+  assert(await exists(join(t.env.resultsRoot, "runs", e.id, "sandbox.json")));
+});
+
+Deno.test("recovery: an interruption inside cleanup only repeats the cleanup", async () => {
+  const t = await makeEnv();
+  t.env.hooks = { afterPublished: () => Promise.reject(new Error("runner killed")) };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), Error, "runner killed");
+  t.env.hooks = {};
+  assertEquals(await recoverInterrupted(t.env, loadTask), []);
+  const [e] = await t.env.store.executions(cell.campaignId);
+  assertEquals((await t.env.store.judgments(e!.id)).length, 1);
+  assertEquals([...Deno.readDirSync(join(t.env.privateRoot, "intents"))], []);
+});
+
+Deno.test("a backend fault (failed unpause) stops the execution as infra", async () => {
+  const t = await makeEnv();
+  t.docker.unpause = () => Promise.resolve(1);
+  t.docker.behavior = async (call, io) => {
+    await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", (await probeLines()).slice(0, 12))(call, io);
+    const token = await tokenOf(call);
+    await t.env.backend.handle(new Request("http://b/v1/compile", {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "x-cg-execution": call.env.get("CG_EXECUTION_ID")! }, body: '{"apps":["Core"]}',
+    }));
+    await io.killed;
+    return 137;
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals([e.termination, e.validity.infra_exposed], ["harness_crash", true]);
+  const side = JSON.parse(await Deno.readTextFile(join(t.env.resultsRoot, "runs", e.id, "sandbox.json")));
+  assertEquals(side.stop_reason, "backend_fault");
+});
+
 for (const step of ["draft", "run", "execution", "artifact", "judgment"] as PublishStep[]) {
   Deno.test(`recovery: a crash after the ${step} step completes exactly once`, async () => {
     const t = await makeEnv();
@@ -8124,7 +8521,16 @@ export async function reserveCredentialRun(ledgerPath: string | null, r: Reserva
     }
   }
   try {
-    const used = await Deno.readTextFile(ledgerPath).then((t) => t.split(/\r?\n/).filter(Boolean).length, () => 0);
+    let used: number;
+    try {
+      // Every non-empty line counts, parseable or not (conservative).
+      used = (await Deno.readTextFile(ledgerPath)).split(/\r?\n/).filter((l) => l.trim() !== "").length;
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) {
+        throw new ConfigurationError(`cannot read the credential-run ledger ${ledgerPath}: ${err instanceof Error ? err.message : err}; refusing`);
+      }
+      used = 0; // only a genuinely absent ledger means no run yet
+    }
     if (used >= limit) {
       throw new ConfigurationError(
         `${limit} supervised credential-bearing runs are used across all lanes; egress enforcement must be verified (M1-33, M1-34) before more`,
@@ -8232,7 +8638,7 @@ import { exists, freezeWorkspace, safeCopyTree } from "./fsutil.ts";
 import { hashFile, hashJson, hashTree } from "./hash.ts";
 import { taskSetIdentity } from "./identity.ts";
 import { forTask } from "./manifest.ts";
-import { ExecutionRecordSchema, outcomePolicy, type RecordStore, retryProblem } from "./records.ts";
+import { ExecutionRecordSchema, outcomePolicy, RecordStore, retryProblem } from "./records.ts";
 import {
   bounded,
   type DockerCli,
@@ -8284,8 +8690,8 @@ export interface HarnessEnv {
   killGraceMs?: number;
   opTimeoutMs?: number;
   maxCaptureBytes?: number;
-  /** Test seams: crash after a publication step, or before the draft. */
-  hooks?: { after?(step: PublishStep): Promise<void>; beforeDraft?(): Promise<void> };
+  /** Test seams: crash after a publication step, before the draft, or inside cleanup. */
+  hooks?: { after?(step: PublishStep): Promise<void>; beforeDraft?(): Promise<void>; afterPublished?(): Promise<void> };
 }
 
 export interface CellRef {
@@ -8308,9 +8714,17 @@ export interface AttemptRef {
 }
 
 interface Intent {
-  v: 1;
+  v: 2;
   execution_id: string;
+  /** prepared: nothing released; released: custody written, sandbox may start; published: records written. */
+  phase: "prepared" | "released" | "published";
+  /** The results root of the command that started the attempt (recovery publishes there). */
+  results_root: string;
   cell: Omit<CellRef, "task"> & { task_dir: string };
+  /** Private snapshot of the task directory at run start. */
+  task_snapshot: string;
+  /** The effective execution manifest (forTask), never re-derived. */
+  manifest: ResolvedManifest;
   at: AttemptRef;
   started_at: string;
   pricing: PricingBook;
@@ -8334,6 +8748,7 @@ export function privatePaths(env: HarnessEnv, id: string) {
     custody: join(p, "custody", `${id}.json`),
     pending: join(p, "pending", id),
     intent: join(p, "intents", `${id}.json`),
+    taskCopy: join(p, "taskcopy", id),
     raw: join(p, "quarantine", id, "raw.jsonl"),
     stderr: join(p, "quarantine", id, "stderr.txt"),
     host: join(p, "quarantine", id, "host-log.jsonl"),
@@ -8403,8 +8818,13 @@ async function stage(env: HarnessEnv, cell: CellRef, out: string): Promise<Stage
   });
 }
 
+/** Strict: a released attempt must have its exact redaction set (round 3 B3). */
 async function readCustody(path: string): Promise<SecretValue[]> {
-  return await Deno.readTextFile(path).then((t) => JSON.parse(t) as SecretValue[], () => []);
+  try {
+    return JSON.parse(await Deno.readTextFile(path)) as SecretValue[];
+  } catch (err) {
+    throw new ContainerError(`secret custody ${path} is unavailable (${err instanceof Error ? err.message : err}); refusing to publish`, "custody", "stop");
+  }
 }
 
 interface DraftInput {
@@ -8419,6 +8839,10 @@ interface DraftInput {
   setupError: string | null;
   pricing: PricingBook;
   interrupted: boolean;
+  /** The exact secrets released to this attempt ([] only when nothing was released). */
+  secrets: SecretValue[];
+  /** Set when the backend reported a fault (failed unpause). */
+  fault: string | null;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -8426,7 +8850,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const now = env.now ?? (() => new Date());
   const adapter = adapterFor(f.manifest.harness);
   const p = privatePaths(env, f.id);
-  const secrets = await readCustody(p.custody);
+  const secrets = f.secrets;
   const started = f.sandbox.started;
   const wsThere = started && await exists(f.workspace);
   const frozen = wsThere
@@ -8437,7 +8861,15 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     : notStarted(f.sandbox.exitCode);
   const host = await readHostLog(p.host);
   const check = started ? observedMismatch(f.manifest, parsed.observed, parsed.unobservable) : { mismatch: null, unverified: [] };
-  const stopReason = f.sandbox.interrupted ? "operator_interrupt" : f.sandbox.overflow ? "capture_overflow" : f.interrupted ? "runner_interrupted" : null;
+  const stopReason = f.fault
+    ? "backend_fault"
+    : f.sandbox.interrupted
+    ? "operator_interrupt"
+    : f.sandbox.overflow
+    ? "capture_overflow"
+    : f.interrupted
+    ? "runner_interrupted"
+    : null;
   const termination: ExecutionRecord["termination"] = !started || f.setupError !== null || check.mismatch !== null
     ? "setup_failed"
     : stopReason !== null
@@ -8452,6 +8884,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const did_work = parsed.didWork || host.length > 0 || (frozen !== null && frozen.workspace_hash !== f.pristineHash);
   const runDir = join(p.pending, "run");
   await Deno.remove(runDir, { recursive: true }).catch(() => {});
+  await Deno.mkdir(runDir, { recursive: true }); // a setup failure has no captures but still writes its side file
   const redactions = await publishRedacted([
     { src: p.raw, dest: join(runDir, "raw.jsonl") },
     { src: p.stderr, dest: join(runDir, "stderr.txt") },
@@ -8459,14 +8892,14 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     { src: p.trace, dest: join(runDir, "trace.jsonl") },
   ], secrets);
   const side = redactText(JSON.stringify({
-    v: 1, sandbox: f.sandbox, setup_error: f.setupError ?? check.mismatch, unverified: check.unverified, stop_reason: stopReason,
+    v: 1, sandbox: f.sandbox, setup_error: f.setupError ?? check.mismatch, unverified: check.unverified, stop_reason: stopReason, fault: f.fault,
     usage_reset_at: parsed.usageResetAt, redactions, workspace_redactions: frozen?.redactions ?? 0,
     pricing_book_at: f.pricing.at, pristine_hash: f.pristineHash, freeze_violations: frozen?.violations ?? [],
   }, null, 2), secrets).text;
   await Deno.writeTextFile(join(runDir, "sandbox.json"), side + "\n");
   const runRel = `runs/${f.id}`;
   const record = {
-    v: 1, id: f.id, campaign_id: f.cell.campaignId, block: f.cell.block.index, order_in_block: f.cell.orderInBlock,
+    v: 2, id: f.id, campaign_id: f.cell.campaignId, block: f.cell.block.index, order_in_block: f.cell.orderInBlock,
     arm: f.cell.arm, task_id: f.cell.task.task.id, task_visible_hash: f.cell.taskVisibleHash, repeat: f.cell.block.repeat,
     attempt: f.at.attempt, run_kind: f.at.runKind, retry_of: f.at.retryOf, started_at: f.started_at,
     ended_at: now().toISOString(), arm_manifest_hash: f.cell.armManifestHash, manifest: f.manifest,
@@ -8474,7 +8907,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     validity: {
       incomplete_telemetry: started ? incompleteTelemetry(adapter.declared, parsed.telemetry) : [],
       incomplete_observed: check.unverified.length > 0 ? ["loaded_components"] : [],
-      infra_exposed: host.some((l) => l.outcome === "infra"),
+      infra_exposed: f.fault !== null || host.some((l) => l.outcome === "infra"),
     },
     image_attachments: imageAttachments(f.cell.task.task.attachments, parsed.imageSupport),
     telemetry: parsed.telemetry,
@@ -8527,7 +8960,16 @@ async function publishDraft(env: HarnessEnv, cell: CellRef, draft: Draft, pristi
     }
   }
   await env.hooks?.after?.("judgment");
-  for (const d of [p.work, p.quarantine, p.pending]) await Deno.remove(d, { recursive: true }).catch(() => {});
+  await finishCleanup(env, e.id);
+}
+
+/** Completion protocol: mark published, delete private state, delete the intent last. */
+async function finishCleanup(env: HarnessEnv, id: string) {
+  const p = privatePaths(env, id);
+  const intent = await Deno.readTextFile(p.intent).then((t) => JSON.parse(t) as Intent, () => null);
+  if (intent && intent.phase !== "published") await writeAtomic(p.intent, JSON.stringify({ ...intent, phase: "published" }, null, 2));
+  await env.hooks?.afterPublished?.();
+  for (const d of [p.work, p.quarantine, p.pending, p.taskCopy]) await Deno.remove(d, { recursive: true }).catch(() => {});
   await Deno.remove(p.custody).catch(() => {});
   await Deno.remove(p.intent).catch(() => {});
 }
@@ -8556,17 +8998,28 @@ export async function runExecution(
   const manifest = forTask(cell.armManifest, cell.task.task.limits);
   const p = privatePaths(env, id);
   await Deno.mkdir(p.quarantine, { recursive: true });
+  await safeCopyTree(cell.task.dir, p.taskCopy); // immutable task snapshot for recovery
   const staged = await stage(env, cell, p.work);
   const pristineHash = await hashTree(staged.pristine, "task");
   const name = sandboxName(cell.campaignId, id);
   const opMs = env.opTimeoutMs ?? OP_TIMEOUT_MS;
+  const { task: _t, ...rest } = cell;
+  const intent: Intent = {
+    v: 2, execution_id: id, phase: "prepared", results_root: env.resultsRoot, cell: { ...rest, task_dir: cell.task.dir },
+    task_snapshot: p.taskCopy, manifest, at, started_at, pricing, sandbox: name, workspace: staged.workspace, pristine_hash: pristineHash,
+  };
+  await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
 
   let setupError: string | null = null;
   let sandbox: SandboxResult = {
     exitCode: null, started: false, startError: null, timedOut: false, interrupted: false, overflow: false,
     confirmedGone: true, cleanup: "ok", wall_ms: 0,
   };
+  let secrets: SecretValue[] = [];
   let drained = true;
+  let fault: string | null = null;
+  const faultStop = new AbortController();
+  const stop = env.stop ? AbortSignal.any([env.stop, faultStop.signal]) : faultStop.signal;
   try {
     const img = await bounded(env.docker.inspectImage(manifest.image.digest), opMs, "docker image inspect") as { Id?: string } | null;
     if (img?.Id !== manifest.image.digest) {
@@ -8579,25 +9032,25 @@ export async function runExecution(
     const token = await env.backend.grant({
       executionId: id, sandbox: name, workspace: staged.workspace, pristine: staged.pristine, trusted: staged.apps,
       symbols: env.symbols, lock: { store: env.symbolStore, packages: env.symbols }, deploy: env.deploy, hostLog: p.host,
+      onFault: (reason) => {
+        fault = reason;
+        faultStop.abort(new Error(reason));
+      },
     }, timeoutMs + 5 * 60_000);
-    const { task: _t, ...rest } = cell;
-    const intent: Intent = {
-      v: 1, execution_id: id, cell: { ...rest, task_dir: cell.task.dir }, at, started_at, pricing,
-      sandbox: name, workspace: staged.workspace, pristine_hash: pristineHash,
-    };
-    await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
     let secretsDir: string | null = null;
     try {
       const s = await prepareSecrets(env.secretsSource, adapter.secretFiles, token);
       secretsDir = s.dir;
+      secrets = s.values;
       await writeAtomic(p.custody, JSON.stringify(s.values));
+      await writeAtomic(p.intent, JSON.stringify({ ...intent, phase: "released" }, null, 2));
       sandbox = await runSandbox(env.docker, {
         name, owner: env.owner, executionId: id, imageId: manifest.image.digest,
         workspace: staged.workspace, taskDir: staged.taskDir, configDir, secretsDir: s.dir, extraMounts,
         env: { CG_BACKEND_URL: env.backendUrl, CG_EXECUTION_ID: id }, timeoutMs,
         killGraceMs: env.killGraceMs ?? 60_000, opTimeoutMs: opMs, maxCaptureBytes: env.maxCaptureBytes ?? 256 * 1024 * 1024,
         rawLog: p.raw, stderrLog: p.stderr,
-      }, s.values.map((v) => v.value), env.stop);
+      }, s.values.map((v) => v.value), stop);
     } finally {
       drained = await env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
       if (secretsDir) await removeSecrets(secretsDir);
@@ -8614,7 +9067,8 @@ export async function runExecution(
     );
   }
   const draft = await buildDraft(env, {
-    id, cell, at, started_at, manifest, workspace: staged.workspace, pristineHash, sandbox, setupError, pricing, interrupted: false,
+    id, cell, at, started_at, manifest, workspace: staged.workspace, pristineHash, sandbox, setupError, pricing,
+    interrupted: false, secrets, fault,
   });
   await publishDraft(env, cell, draft, staged.pristine, true);
   return { execution: draft.execution, usageResetAt: draft.usage_reset_at };
@@ -8691,7 +9145,7 @@ export async function runCell(
   }
 }
 
-/** Complete every attempt a killed runner left behind (review gate 5, round 2 item 3). */
+/** Complete every attempt a killed runner left behind (review gate 5, round 2 item 3, round 3 B3). */
 export async function recoverInterrupted(
   env: HarnessEnv,
   loadTaskFn: (dir: string) => Promise<LoadedTask>,
@@ -8708,33 +9162,43 @@ export async function recoverInterrupted(
   for (const n of names) {
     const intent = JSON.parse(await Deno.readTextFile(join(dir, n))) as Intent;
     const id = intent.execution_id;
-    const p = privatePaths(env, id);
+    // Publish into the store of the command that started the attempt, whatever command recovers it.
+    const store = new RecordStore(intent.results_root);
+    const own: HarnessEnv = { ...env, resultsRoot: intent.results_root, store };
+    if (intent.phase === "published") {
+      await finishCleanup(own, id);
+      continue;
+    }
+    const p = privatePaths(own, id);
     const { task_dir, ...rest } = intent.cell;
-    const cell: CellRef = { ...rest, task: await loadTaskFn(task_dir) };
-    const ids = await taskSetIdentity(env.repoRoot, [cell.task], env.symbols);
-    const taskUnchanged = ids.tasks[0]!.visible === cell.taskVisibleHash && ids.tasks[0]!.oracle === cell.oracleHash;
+    // The task comes from the private snapshot: a deleted or edited task never blocks or relabels recovery.
+    const cell: CellRef = { ...rest, task: await loadTaskFn(intent.task_snapshot) };
+    const current = await loadTaskFn(task_dir).catch(() => null);
+    const ids = current ? await taskSetIdentity(env.repoRoot, [current], env.symbols).catch(() => null) : null;
+    const taskUnchanged = ids !== null && ids.tasks[0]!.visible === cell.taskVisibleHash && ids.tasks[0]!.oracle === cell.oracleHash;
     let draft = await Deno.readTextFile(join(p.pending, "draft.json")).then((t) => JSON.parse(t) as Draft, () => null);
     if (!draft) {
-      // Confirm the sandbox is gone before touching the workspace (bounded).
       if (await bounded(env.docker.state(intent.sandbox), opMs, `docker inspect ${intent.sandbox}`) !== null) {
         await bounded(env.docker.rm(intent.sandbox), opMs, `docker rm -f ${intent.sandbox}`);
         if (await bounded(env.docker.state(intent.sandbox), opMs, `docker inspect ${intent.sandbox}`) !== null) {
           throw new ContainerError(`recovery: ${intent.sandbox} still exists; intent kept`, intent.sandbox, "stop");
         }
       }
-      const started = await exists(p.custody);
-      draft = await buildDraft(env, {
-        id, cell, at: intent.at, started_at: intent.started_at, manifest: forTask(cell.armManifest, cell.task.task.limits),
+      const released = intent.phase === "released";
+      const secrets = released ? await readCustody(p.custody) : [];
+      draft = await buildDraft(own, {
+        id, cell, at: intent.at, started_at: intent.started_at, manifest: intent.manifest,
         workspace: intent.workspace, pristineHash: intent.pristine_hash,
         sandbox: {
-          exitCode: null, started, startError: started ? null : "interrupted before the sandbox started", timedOut: false,
-          interrupted: false, overflow: false, confirmedGone: true, cleanup: "ok", wall_ms: 0,
+          exitCode: null, started: released, startError: released ? null : "interrupted before any secret was released",
+          timedOut: false, interrupted: false, overflow: false, confirmedGone: true, cleanup: "ok", wall_ms: 0,
         },
-        setupError: started ? null : "interrupted before the sandbox started", pricing: intent.pricing, interrupted: true,
+        setupError: released ? null : "interrupted before any secret was released", pricing: intent.pricing,
+        interrupted: true, secrets, fault: null,
       });
     }
-    await publishDraft(env, cell, draft, null, taskUnchanged);
-    if (!taskUnchanged) console.warn(`[WARN] ${id}: task files changed since the attempt; recorded, not judged (use harness rejudge)`);
+    await publishDraft(own, cell, draft, null, taskUnchanged);
+    if (!taskUnchanged) console.warn(`[WARN] ${id}: task files changed or unavailable since the attempt; recorded, not judged (use harness rejudge)`);
     recovered.push(draft.execution);
   }
   return recovered;
@@ -8743,22 +9207,26 @@ export async function recoverInterrupted(
 
 Notes for the implementer:
 - `runExecution` inspects the pinned image by immutable id, so retagging never substitutes an image and never invalidates a pinned one.
-- Custody is written after `prepareSecrets` and before `runSandbox`; its existence is recovery's evidence that the sandbox may have started (unknown cost), its absence that it never did (exact zero).
+- The intent's phase, not the custody file's existence, decides: `prepared` means nothing was released (exact zero), `released` means the sandbox may have started, so its custody must be readable or recovery stops.
 - `publishDraft` is idempotent step by step; the `run` step copies into `runs/.tmp-*` and renames, so a partial copy never looks published (M1-07's `sweepTemp` removes leftover temp names under `results/`).
 - The recovery-crash test simulates a kill before the draft through `hooks.beforeDraft`; the per-step tests use `hooks.after`.
 
 - [ ] **Step 4: Run them and see them pass**
 
 Run: `deno test --allow-all tests/unit/harness/records.test.ts tests/unit/harness/credential-budget.test.ts tests/unit/harness/images.test.ts tests/unit/harness/execution.test.ts`
-Expected: all pass (execution: 21 tests including the five per-step recovery tests).
+Expected: all pass (execution: 26 tests including the five per-step recovery tests; credential budget: 3).
 
 - [ ] **Step 5: Check, lint, format** (the files above)
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/harness/records.ts src/harness/images.ts src/harness/execution.ts src/harness/credential-budget.ts tests/unit/harness/records.test.ts tests/unit/harness/runtime-fixture.ts tests/unit/harness/images.test.ts tests/unit/harness/credential-budget.test.ts tests/unit/harness/execution.test.ts
-git commit -m "feat(harness): execution pipeline with private state, transactional publication, recovery and a shared credential budget"
+# first commit, due 10-02 (before M4-17's 10-03 pilot):
+git add src/harness/credential-budget.ts scripts/harness/reserve-credential-run.ts tests/unit/harness/credential-budget.test.ts
+git commit -m "feat(harness): shared cross-lane credential-run budget and reservation helper"
+# then:
+git add src/harness/records.ts src/harness/integrity.ts src/harness/report.ts src/harness/images.ts src/harness/execution.ts tests/unit/harness/fixtures.ts tests/unit/harness/records.test.ts tests/unit/harness/integrity.test.ts tests/unit/harness/report.test.ts tests/unit/harness/runtime-fixture.ts tests/unit/harness/images.test.ts tests/unit/harness/execution.test.ts
+git commit -m "feat(harness): execution pipeline with private state, transactional publication, recovery and versioned execution records"
 ```
 
 **Acceptance:** the four test files pass (per-step crash recovery, credential rotation before recovery, workspace-only and UTF-16 leaks, capture failure after the spawn, unconfirmed termination, ancestry retries and the shared ledger among them); records pass Part 1's `ExecutionRecordSchema` and `validateCampaignRecords` (M1-07b) where a campaign exists; check, lint and `deno fmt --check` clean.
@@ -8774,16 +9242,17 @@ Spec 1a section 10 (`harness cell <config> <task>`, `harness images build <harne
 Rules:
 - **Cell gating** (`cellGate`, pure): a non-credential-bearing arm (mocks, M1-35) runs unattended; a credential-bearing arm runs when egress is enforced and verified, or with `--supervised` from an interactive terminal (then M1-22 reserves in the shared ledger before any credential is released).
 - **Egress state fails closed** (`resolveEgress`): no marker means not enforced; a marker in state `authorized` counts only if the host verification passes now; a marker whose verification fails **stops** the command (it never downgrades to another supervised run). Until M1-33 lands, the verifier reports "not implemented" and any marker therefore stops the command.
-- **Shared credential ledger**: `--credential-ledger` or `CG_CREDENTIAL_LEDGER` (the orchestrator sets one path for every lane, see the integrated schedule); absent means every credential-bearing supervised run is refused. `scripts/harness/reserve-credential-run.ts` is the same reservation for M4-17's pilot runner.
+- **Shared credential ledger**: `--credential-ledger` or `CG_CREDENTIAL_LEDGER` (the orchestrator sets one path for every lane, see the integrated schedule); absent means every credential-bearing supervised run is refused. `scripts/harness/reserve-credential-run.ts` (delivered by M1-22's first commit on 10-02) is the same reservation for M4-17's pilot runner.
+- **Bounded shutdown** (round 3 B2): closing the environment bounds the backend server's shutdown (10 s); a server that does not stop in time is reported and abandoned (the process exits) rather than awaited forever.
 - **Interrupt**: `harness cell` installs a Ctrl+C handler that aborts the execution's `stop` signal; the sandbox is killed at once (bounded), and the attempt is finalized (or recovered at the next start).
 - **Task revisions**: `--rev <commit-or-tag>` loads the task from `git archive` of that revision into private storage; the judgment provenance records the commit and the task tree id (`git rev-parse <rev>:harness-tasks/tasks/<id>`, the same tree M4's audits name). Without `--rev` the working tree is used and recorded as such.
-- **`judge-fixture` persistence**: each run writes `results/harness/fixtures/<task>/<variant>/<judgment-id>/` with `judgment.json` (the complete judgment record: every scorer, every test row with its target), `provenance.json` (task id, variant, variant tree hash, task commit and tree, visible and oracle hashes, refapp version and commit, workspace hash, scorer fingerprint, container, command line) and the verdict log.
+- **`judge-fixture` persistence**: each run writes `<results-dir>/fixtures/<task>/<variant>/<judgment-id>/` (default `results/harness/fixtures/...`; the path is built once from `--results-dir`, round 3 note) with `judgment.json` (the complete judgment record: every scorer, every test row with its target), `provenance.json` (task id, variant, variant tree hash, task commit and tree, visible and oracle hashes, refapp version and commit, workspace hash, scorer fingerprint, container, command line) and the verdict log.
 - **Qualification manifest** (`src/harness/qualify.ts`, shared with M4): `{ v: 1, refapp_version, tasks: { "<HX id>": { rev, positive: "correct" | "reference-tests", naive: string[] } } }`; `judge-fixture --manifest <path>` refuses a variant or revision the manifest does not list for that task.
 
 **Lane:** infra (stream A). **Deps:** M1-10 (`registerHarnessCommand`), M1-03 (`checkModelsInCatalog`), M1-13, M1-16, M1-17, M1-19, M1-21, M1-22, M1-32. **Date:** 10-04.
 
 **Files:**
-- Create: `cli/commands/harness-env.ts`, `src/harness/task-rev.ts`, `src/harness/qualify.ts`, `harness/images/pins.json`, `scripts/harness/backend-probe.ts`, `scripts/harness/cg-al-probe.ps1`, `scripts/harness/reserve-credential-run.ts`
+- Create: `cli/commands/harness-env.ts`, `src/harness/task-rev.ts`, `src/harness/qualify.ts`, `harness/images/pins.json`, `scripts/harness/backend-probe.ts`, `scripts/harness/cg-al-probe.ps1`
 - Modify: `cli/commands/harness-command.ts` (four subcommands and exported action functions)
 - Test: `tests/unit/cli/commands/harness-command.test.ts` (append), `tests/unit/harness/task-rev.test.ts`
 
@@ -8815,6 +9284,9 @@ Deno.test("loadTaskAt: a tag yields the task as committed, with commit and tree;
   assertStringIncludes(await Deno.readTextFile(join(at.task.dir, "correct", "Rental", "src", "Rental.Codeunit.al")), "FIXED");
   const wt = await loadTaskAt(repo.root, "HX-001", null, await Deno.realPath(await Deno.makeTempDir()));
   assertEquals([wt.commit, wt.tree], [null, null]);
+  // Production passes a directory that does not exist yet (harness cell --rev).
+  const fresh = join(await Deno.realPath(await Deno.makeTempDir()), "work", "task-new");
+  assertEquals((await loadTaskAt(repo.root, "HX-001", "refapp-v1-rc1", fresh)).commit, at.commit);
   assertStringIncludes(await Deno.readTextFile(join(wt.task.dir, "correct", "Rental", "src", "Rental.Codeunit.al")), "edited after the tag");
 });
 ```
@@ -9055,6 +9527,7 @@ export async function loadTaskAt(repoRoot: string, taskId: string, rev: string |
   if (rev === null) return { task: await loadTask(join(repoRoot, rel)), commit: null, tree: null };
   const commit = await git(repoRoot, ["rev-parse", "--verify", `${rev}^{commit}`]);
   const tree = await git(repoRoot, ["rev-parse", `${commit}:${rel}`]);
+  await Deno.mkdir(outDir, { recursive: true });
   const tar = join(outDir, `${taskId}-${commit.slice(0, 12)}.tar`);
   await git(repoRoot, ["archive", "--format=tar", "-o", tar, commit, rel]);
   const out = await new Deno.Command("tar", { args: ["-xf", tar, "-C", outDir], stdout: "null", stderr: "piped" }).output();
@@ -9135,7 +9608,7 @@ import { sweepWorkspaceTemp } from "../../src/harness/fsutil.ts";
 import { loadSymbolsLock, SYMBOLS_LOCK_PATH } from "../../src/harness/identity.ts";
 import { loadPricingBook } from "../../src/harness/pricing.ts";
 import { RecordStore } from "../../src/harness/records.ts";
-import { realDocker, sweepOwnedSandboxes } from "../../src/harness/sandbox.ts";
+import { bounded, realDocker, sweepOwnedSandboxes } from "../../src/harness/sandbox.ts";
 import { loadTask, loadTaskSet } from "../../src/harness/task.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import { acquireBenchLock, DEFAULT_BENCH_LOCK_DIR } from "../../src/utils/bench-lock.ts";
@@ -9255,7 +9728,13 @@ export async function openHarnessEnv(o: EnvOptions, deps: EnvDeps = REAL_DEPS): 
       allowedHosts: [host], docker,
     });
     const server = backend.serve(host, o.backendPort);
-    closers.unshift(() => server.shutdown());
+    closers.unshift(async () => {
+      try {
+        await bounded(server.shutdown(), 10_000, "backend server shutdown");
+      } catch (err) {
+        console.error(`${colors.yellow("[WARN]")} ${err instanceof Error ? err.message : err}; abandoning the server`);
+      }
+    });
     const env: HarnessEnv = {
       repoRoot: o.repoRoot, harnessRoot: join(o.repoRoot, "harness"), resultsRoot: o.resultsDir, privateRoot: o.privateRoot,
       store, lane, backend, backendUrl: server.url, docker, owner, symbols, symbolStore: o.symbolStore,
@@ -9415,7 +9894,7 @@ export async function harnessJudgeFixture(
       symbolIds: new Set(h.env.symbols.map((s) => s.app_id.toLowerCase())), workDir: join(scratch, "judge"),
       lock: { store: h.env.symbolStore, packages: h.env.symbols }, deploy: h.env.deploy,
     });
-    const out = join(h.env.resultsRoot, "fixtures", taskId, variant, judgment.id);
+    const out = join(o.resultsDir, "fixtures", taskId, variant, judgment.id);
     await Deno.mkdir(out, { recursive: true });
     await Deno.writeTextFile(join(out, "judgment.json"), JSON.stringify(judgment, null, 2) + "\n");
     await Deno.writeTextFile(join(out, "provenance.json"), JSON.stringify({
@@ -9522,26 +10001,6 @@ In `registerHarnessCommand`, add (shared options: `--results-dir <dir:string>` d
 
 - [ ] **Step 6: Operator scripts**
 
-`scripts/harness/reserve-credential-run.ts` (M4-17's pilot runner calls it before releasing a key):
-
-```typescript
-// Usage: deno run --allow-all scripts/harness/reserve-credential-run.ts --lane <lane> --task <HX-00N> --config <model-or-arm> --purpose <text>
-// Uses CG_CREDENTIAL_LEDGER, the one ledger for every lane. Exit 0 with the ordinal, exit 1 when refused.
-import { parseArgs } from "@std/cli/parse-args";
-import { reserveCredentialRun } from "../../src/harness/credential-budget.ts";
-
-const a = parseArgs(Deno.args, { string: ["lane", "task", "config", "purpose"] });
-try {
-  const n = await reserveCredentialRun(Deno.env.get("CG_CREDENTIAL_LEDGER") ?? null, {
-    lane: a.lane ?? "", task: a.task ?? "", config: a.config ?? "", purpose: a.purpose ?? "",
-  });
-  console.log(`[OK] credential run ${n} of 5 reserved`);
-} catch (err) {
-  console.error(`[FAIL] ${err instanceof Error ? err.message : err}`);
-  Deno.exit(1);
-}
-```
-
 `scripts/harness/cg-al-probe.ps1` (copied into the config dir; runs inside the sandbox; statuses only, never the token):
 
 ```powershell
@@ -9642,17 +10101,17 @@ Expected: all pass, including the Part 1 tests already in the file.
 Run: `deno task start harness --help`
 Expected: lists `validate`, `report`, `cell`, `judge-fixture`, `images`, `symbols`.
 
-- [ ] **Step 8: Check, lint, format** (the files above; `deno check scripts/harness/backend-probe.ts scripts/harness/reserve-credential-run.ts`)
+- [ ] **Step 8: Check, lint, format** (the files above; `deno check scripts/harness/backend-probe.ts`)
 
 - [ ] **Step 9: Commit, then refresh the graph**
 
 ```bash
-git add cli/commands/harness-env.ts cli/commands/harness-command.ts src/harness/task-rev.ts src/harness/qualify.ts harness/images/pins.json scripts/harness/backend-probe.ts scripts/harness/cg-al-probe.ps1 scripts/harness/reserve-credential-run.ts tests/unit/harness/task-rev.test.ts tests/unit/cli/commands/harness-command.test.ts
+git add cli/commands/harness-env.ts cli/commands/harness-command.ts src/harness/task-rev.ts src/harness/qualify.ts harness/images/pins.json scripts/harness/backend-probe.ts scripts/harness/cg-al-probe.ps1 tests/unit/harness/task-rev.test.ts tests/unit/cli/commands/harness-command.test.ts
 git commit -m "feat(harness): cell, judge-fixture with provenance, images build with base provenance, task revisions, qualification manifest"
 graphify update .
 ```
 
-**Acceptance:** both test files pass (fail-closed egress state, cell gating, interrupt, ownership, persisted judgment and provenance, revision and manifest refusals, base-layer provenance among them); `deno task start harness --help` lists the four new subcommands; the two scripts type-check; check, lint and `deno fmt --check` clean.
+**Acceptance:** both test files pass (fail-closed egress state, cell gating, interrupt, ownership, persisted judgment and provenance, revision and manifest refusals, base-layer provenance among them); `deno task start harness --help` lists the four new subcommands; the probe script type-checks; check, lint and `deno fmt --check` clean.
 
 ---
 
@@ -10228,10 +10687,10 @@ Egress decision 2026-09-25 as amended the same evening (M1-31: HNS endpoint ACLs
 Design:
 - **One persistent network** `cg-harness-sandbox` (`docker network create -d internal --subnet 172.30.60.0/24 --gateway 172.30.60.1`), created by ops. Proxy `3128` and cg-al backend `3210` bind `172.30.60.1` only.
 - **Rules** (group `cg-harness-egress`): every rule is enabled, `Inbound`, `Block`, profile `Any`, remote address `Any`, local address `Any`, program `Any`, service `Any`, bound to the **interface index** of the adapter that owns the gateway IP. TCP as complementary ranges (`1-3127`, `3129-3209`, `3211-65535`), because a block rule overrides any allow rule; one rule per other IP protocol number (0-255 except 6), which covers UDP, ICMPv4, ICMPv6 and the rest. No allow rule, no outbound rule.
-- **Effective policy, not intent.** `collectEgressState` reads the **active store** (`Get-NetFirewallRule -PolicyStore ActiveStore`, which includes policy-derived rules) with each rule's port, address, application, service and interface filters, the three profiles, the docker network (`Id`, driver, subnet, gateway and its `com.docker.network.windowsshim.hnsid`), the HNS network with that id (type `Internal`, same subnet), and the adapter that owns the gateway IP (index, alias, prefix). `verifyEgressState` requires: network internal with the planned subnet and gateway; the HNS network internal with the same subnet; the gateway adapter's prefix equal to the subnet; the group's rules exactly the plan, compared field by field (enabled, direction, action, profile, protocol, ports, remote and local address, program, service, interface index); every profile enabled with default inbound and outbound `Allow`; no effective foreign `Block` rule; and the marker's recorded network id and interface index equal to the current ones (a recreated network fails until the rules are regenerated and reapplied).
+- **Effective policy, not intent; incomplete observations fail** (round 3 B5). `collectEgressState` throws when any part of its output is missing, truncated or unparseable (never an empty inventory), and `verifyEgressState` requires exactly the three profiles Domain, Private and Public, each once. `collectEgressState` reads the **active store** (`Get-NetFirewallRule -PolicyStore ActiveStore`, which includes policy-derived rules) with each rule's port, address, application, service and interface filters, the three profiles, the docker network (`Id`, driver, subnet, gateway and its `com.docker.network.windowsshim.hnsid`), the HNS network with that id (type `Internal`, same subnet), and the adapter that owns the gateway IP (index, alias, prefix). `verifyEgressState` requires: network internal with the planned subnet and gateway; the HNS network internal with the same subnet; the gateway adapter's prefix equal to the subnet; the group's rules exactly the plan, compared field by field (enabled, direction, action, profile, protocol, ports, remote and local address, program, service, interface index); every profile enabled with default inbound and outbound `Allow`; no effective foreign `Block` rule; and the marker's recorded network id and interface index equal to the current ones (a recreated network fails until the rules are regenerated and reapplied).
 - **Transactional apply and revert** (`applyScript`, `revertScript`, generated by `scripts/harness/egress-scripts.ts`, run by ops elevated): the apply script takes an invocation id; it refuses before any change if the group already exists, if the gateway's adapter is not the planned one, or if any effective foreign enabled Block rule exists (inventory written to `fw-block-inventory-<id>.json`: owner decision); it snapshots the profiles to `fw-snapshot-<id>.json`, sets defaults to Allow **before** enabling profiles, creates the rules while recording each created name in `fw-apply-<id>.json`; on any error it rolls back **only what this invocation did** (the recorded rule names; the profiles only if this invocation changed them). The revert script removes the group, restores the profiles from the latest applied snapshot, and archives that invocation's files (`*.reverted-<timestamp>`), so a later apply starts clean.
 - **States** in the marker `results/harness/egress-verified.json`: `candidate` (applied), `qualified` (host verified and in-sandbox probes passed, no credential), `authorized` (after credential rotation and one enforced supervised Claude cell). M1-24's `resolveEgress` treats only `authorized` plus a passing verification as enforced for unattended credential runs; `qualified` or `authorized` plus a passing verification places sandboxes on the internal network with the proxy; any marker with a failing verification stops the command.
-- **Per-run preflight before credentials.** An enforced sandbox starts on `cg-harness-sandbox` with `HTTPS_PROXY`/`HTTP_PROXY=http://172.30.60.1:3128`, `NO_PROXY=172.30.60.1`, and an **empty** secrets mount; the entrypoints wait for `C:\cg-secrets\ready`. The runner (1) checks that the proxy and backend are listening on the gateway only, (2) runs `C:\egress-check.ps1` (shipped in the base image) and evaluates its lines, (3) only then writes the secret files and `ready`. Any failure: kill, no secret written, `setup_failed`, the campaign stops. The probe script bounds every attempt itself (a `TcpClient.ConnectAsync(...).Wait(3000)` wrapper, `Resolve-DnsName -QuickTimeout`, `Invoke-WebRequest -TimeoutSec 5`), never `Test-NetConnection`.
+- **Per-run preflight before credentials.** An enforced sandbox starts on `cg-harness-sandbox` with `HTTPS_PROXY`/`HTTP_PROXY=http://172.30.60.1:3128`, `NO_PROXY=172.30.60.1`, and an **empty** secrets mount; the entrypoints wait for `C:\cg-secrets\ready`. The runner (1) checks that the proxy and backend are listening on the gateway only, (2) runs `C:\egress-check.ps1` (shipped in the base image) and evaluates its lines, (3) only then writes the secret files and `ready`. Any failure: kill, no secret written, `setup_failed`, the campaign stops. The probe script runs under the image's Windows PowerShell 5.1 and bounds every attempt itself with .NET APIs available there (a `TcpClient.ConnectAsync(...).Wait(3000)` wrapper, `System.Net.NetworkInformation.Ping.Send(host, 3000)` for ICMP, a UDP client with `ReceiveTimeout = 3000`, `Resolve-DnsName -QuickTimeout`, `Invoke-WebRequest -TimeoutSec 5`), never `Test-NetConnection` or PowerShell 7's `Test-Connection -TimeoutSeconds`. Each line reports `ok` for the connection outcome and, separately, `error` when the probe itself could not run (missing cmdlet or parameter, bad setup); an `error` line is never read as "blocked" (round 3 B5).
 - **Proxy** `src/harness/egress-proxy.ts`: CONNECT only, port 443 only, exact host allowlist from the arm's provider routes (plus the OAuth hosts M1-34 records), no IP literals, resolves DNS itself and refuses private, loopback and link-local resolutions, binds the gateway only, logs every decision to the execution's quarantine `egress.jsonl`; a `deny` during a run kills the sandbox (`harness_crash`, reason `egress_violation`).
 
 **Lane:** infra (stream A). **Deps:** M1-31, M1-22, M1-24. **Date:** 10-06 to 10-08.
@@ -10241,16 +10700,17 @@ Design:
 - Modify: `harness/images/base/Dockerfile.windows` (`COPY egress-check.ps1 C:/egress-check.ps1`), `harness/images/claude-code/run.ps1` (wait for `ready`), `src/harness/sandbox.ts` users (`network` set when enforced), `src/harness/execution.ts` (listener check, preflight, secrets after preflight), `cli/commands/harness-env.ts` (`REAL_DEPS.verifyEgress`, proxy start, backend on the sandbox gateway when placed), `cli/commands/harness-command.ts` (`harness egress verify`), `scripts/harness/backend-probe.ts` (`--enforced`)
 - Test: `tests/unit/harness/egress.test.ts`
 
-**Interfaces:** `SANDBOX_NETWORK = { name: "cg-harness-sandbox", subnet: "172.30.60.0/24", gateway: "172.30.60.1" }`; `PROXY_PORT = 3128`; `BACKEND_PORT = 3210`; `RULE_GROUP = "cg-harness-egress"`; `blockedTcpRanges(allowed)`; `interface FirewallRule { name; enabled: boolean; direction: "Inbound" | "Outbound"; action: "Block" | "Allow"; profile: string; protocol: number; localPorts: string[] | "Any"; remoteAddress: string; localAddress: string; program: string; service: string; interfaceIndex: number }`; `firewallPlan(interfaceIndex): FirewallRule[]`; `applyScript(plan, o: { invocation; dir; interfaceAlias }): string`; `revertScript(dir): string`; `interface EgressState { network: { id; driver; subnet; gateway; hnsId } | null; hns: { id; type; subnet } | null; gatewayAdapter: { index; alias; prefix } | null; profiles: { name; enabled; inbound; outbound }[]; groupRules: FirewallRule[]; foreignBlockRules: string[]; marker: { state; networkId; interfaceIndex } | null }`; `verifyEgressState(s): string[]`; `collectEgressState(run?): Promise<EgressState>`; `PREFLIGHT_EXPECT: Record<string, boolean>`; `evaluatePreflight(lines): string[]`; `startEgressProxy(o: { hostname; port; allow; log; allowedHosts; resolve?; dial? }): { port: number; shutdown(): Promise<void> }`.
+**Interfaces:** `SANDBOX_NETWORK = { name: "cg-harness-sandbox", subnet: "172.30.60.0/24", gateway: "172.30.60.1" }`; `PROXY_PORT = 3128`; `BACKEND_PORT = 3210`; `RULE_GROUP = "cg-harness-egress"`; `blockedTcpRanges(allowed)`; `interface FirewallRule { name; enabled: boolean; direction: "Inbound" | "Outbound"; action: "Block" | "Allow"; profile: string; protocol: number; localPorts: string[] | "Any"; remoteAddress: string; localAddress: string; program: string; service: string; interfaceIndex: number }`; `firewallPlan(interfaceIndex): FirewallRule[]`; `applyScript(plan, o: { invocation; dir; interfaceAlias }): string`; `revertScript(dir): string`; `interface EgressState { network: { id; driver; subnet; gateway; hnsId } | null; hns: { id; type; subnet } | null; gatewayAdapter: { index; alias; prefix } | null; profiles: { name; enabled; inbound; outbound }[]; groupRules: FirewallRule[]; foreignBlockRules: string[]; marker: { state; networkId; interfaceIndex } | null }`; `verifyEgressState(s): string[]`; `collectEgressState(run?): Promise<EgressState>`; `PREFLIGHT_EXPECT: Record<string, boolean>`; `interface ProbeLine { probe; ok: boolean; error?: string }`; `evaluatePreflight(lines): string[]`; `startEgressProxy(o: { hostname; port; allow; log; allowedHosts; resolve?; dial? }): { port: number; shutdown(): Promise<void> }`.
 
 - [ ] **Step 1: Write the failing tests** (`tests/unit/harness/egress.test.ts`):
 
 ```typescript
-import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertStringIncludes, assertThrows } from "@std/assert";
 import { ConfigurationError } from "../../../src/errors.ts";
 import {
   applyScript,
   blockedTcpRanges,
+  collectEgressState,
   type EgressState,
   evaluatePreflight,
   firewallPlan,
@@ -10337,6 +10797,8 @@ Deno.test("verifyEgressState: effective-policy mutations are each a named proble
     ["default inbound", (s) => (s.profiles[0]!.inbound = "Block")],
     ["default outbound", (s) => (s.profiles[1]!.outbound = "Block")],
     ["foreign block", (s) => (s.foreignBlockRules = ["Some app block (policy)"])],
+    ["profiles", (s) => (s.profiles = [])],
+    ["profiles", (s) => (s.profiles = [s.profiles[0]!, s.profiles[0]!, s.profiles[1]!])],
     ["recreated", (s) => (s.network!.id = "net2")],
     ["recreated", (s) => (s.gatewayAdapter!.index = 43)],
   ];
@@ -10357,13 +10819,24 @@ Deno.test("evaluatePreflight: every negative must fail, every positive pass, no 
   assertEquals([PREFLIGHT_EXPECT["proxy-allow-api.anthropic.com"], PREFLIGHT_EXPECT["backend-3210"]], [true, true]);
   assertStringIncludes(evaluatePreflight(all.map((l) => l.probe === "gw-smb-445" ? { ...l, ok: true } : l)).join("\n"), "gw-smb-445");
   assertStringIncludes(evaluatePreflight(all.slice(1)).join("\n"), "missing");
+  const broken = all.map((l) => l.probe === "gw-icmp" ? { ...l, ok: false, error: "The term 'Test-Connection' parameter TimeoutSeconds was not found" } : l);
+  assertStringIncludes(evaluatePreflight(broken).join("\n"), "could not run");
+});
+
+Deno.test("collectEgressState: a failed or truncated observation throws; it is never an empty inventory", async () => {
+  const run = (out: string) => () => Promise.resolve({ code: 0, stdout: out });
+  await assertRejects(() => collectEgressState(run("")), Error, "egress");
+  await assertRejects(() => collectEgressState(run('{"profiles":[')), Error, "egress");
+  await assertRejects(() => collectEgressState(() => Promise.resolve({ code: 1, stdout: "Access denied" })), Error, "egress");
 });
 
 Deno.test("egress-check.ps1 ships in the base image and bounds every probe itself", async () => {
   assertStringIncludes(await Deno.readTextFile("harness/images/base/Dockerfile.windows"), "COPY egress-check.ps1 C:/egress-check.ps1");
   const ps = await Deno.readTextFile("harness/images/base/egress-check.ps1");
   assertStringIncludes(ps, ".Wait(3000)");
-  assert(!ps.includes("Test-NetConnection"));
+  assertStringIncludes(ps, "System.Net.NetworkInformation.Ping");
+  assert(!ps.includes("Test-NetConnection") && !ps.includes("-TimeoutSeconds"));
+  assertStringIncludes(ps, "error ="); // execution errors are reported separately from blocked connections
   for (const probe of Object.keys(PREFLIGHT_EXPECT)) assertStringIncludes(ps, `'${probe}'`);
 });
 
@@ -10472,6 +10945,10 @@ export function verifyEgressState(s: EgressState): string[] {
     }
   }
   for (const r of s.groupRules) if (!plan.some((w) => w.name === r.name)) p.push(`extra rule ${r.name} in ${RULE_GROUP}`);
+  const names = s.profiles.map((x) => x.name).sort();
+  if (JSON.stringify(names) !== JSON.stringify(["Domain", "Private", "Public"])) {
+    p.push(`firewall profiles observed ${JSON.stringify(names)}: expected exactly Domain, Private and Public`);
+  }
   for (const pr of s.profiles) {
     if (!pr.enabled) p.push(`firewall profile ${pr.name} disabled`);
     if (pr.inbound !== "Allow") p.push(`profile ${pr.name}: default inbound is ${pr.inbound}`);
@@ -10482,9 +10959,9 @@ export function verifyEgressState(s: EgressState): string[] {
 }
 ```
 
-`applyScript` emits, in order: an elevation check; `if (Get-NetFirewallRule -Group '<group>' -ErrorAction SilentlyContinue) { throw "group exists: revert first" }` (nothing changed yet, nothing to roll back); `(Get-NetIPAddress -IPAddress <gateway>).InterfaceAlias` must equal the planned alias; `$foreign = Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -Action Block | Where-Object Group -ne '<group>'` written to `fw-block-inventory-<id>.json`, then `if ($foreign) { throw "owner decision required: effective block rules exist outside cg-harness-egress" }`; the profile snapshot to `fw-snapshot-<id>.json`; `$changedProfiles = $true`; `Set-NetFirewallProfile -All -DefaultInboundAction Allow -DefaultOutboundAction Allow`; `Set-NetFirewallProfile -All -Enabled True`; one `New-NetFirewallRule -Group '<group>' -Name ... -Direction Inbound -Action Block -Profile Any -Protocol <n> [-LocalPort ...] -InterfaceAlias '<alias>'` per rule, each name appended to `$created` and written to `fw-apply-<id>.json`; the whole body in `try { } catch { foreach ($n in $created) { Remove-NetFirewallRule -Name $n }; if ($changedProfiles) { <restore fw-snapshot-<id>.json> }; throw }`. `revertScript` finds the newest `fw-apply-*.json` without a `.reverted-` twin, removes the group, restores that invocation's snapshot per profile, and renames the invocation's three files to `*.reverted-<timestamp>`. `collectEgressState` runs one non-elevated `powershell -NoProfile -Command` script (no secret in it) that prints JSON for the active-store rules of the group with their filters, the foreign effective block rules, the profiles, `Get-NetIPAddress -IPAddress <gateway>` (index, alias, prefix) and `Get-HnsNetwork | Where-Object Id -eq <hnsId>`, plus `docker network inspect cg-harness-sandbox` through `dockerContextEnv()`, and reads the marker. `egress-check.ps1` prints one `{ "probe": ..., "ok": ... }` line per `PREFLIGHT_EXPECT` key, using a `TcpClient.ConnectAsync(host, port).Wait(3000)` wrapper for TCP, a UDP send-and-receive with a 3 s receive timeout for `gw-udp-3202` (a UDP echo the preflight starts on the gateway), `Test-Connection -Count 1 -TimeoutSeconds 3` for ICMP, `Resolve-DnsName -Server 1.1.1.1 -QuickTimeout` for DNS, and `Invoke-WebRequest -Proxy -TimeoutSec 5` for the proxy.
+`applyScript` emits, in order: an elevation check; `if (Get-NetFirewallRule -Group '<group>' -ErrorAction SilentlyContinue) { throw "group exists: revert first" }` (nothing changed yet, nothing to roll back); `(Get-NetIPAddress -IPAddress <gateway>).InterfaceAlias` must equal the planned alias; `$foreign = Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -Action Block | Where-Object Group -ne '<group>'` written to `fw-block-inventory-<id>.json`, then `if ($foreign) { throw "owner decision required: effective block rules exist outside cg-harness-egress" }`; the profile snapshot to `fw-snapshot-<id>.json`; `$changedProfiles = $true`; `Set-NetFirewallProfile -All -DefaultInboundAction Allow -DefaultOutboundAction Allow`; `Set-NetFirewallProfile -All -Enabled True`; one `New-NetFirewallRule -Group '<group>' -Name ... -Direction Inbound -Action Block -Profile Any -Protocol <n> [-LocalPort ...] -InterfaceAlias '<alias>'` per rule, each name appended to `$created` and written to `fw-apply-<id>.json`; the whole body in `try { } catch { foreach ($n in $created) { Remove-NetFirewallRule -Name $n }; if ($changedProfiles) { <restore fw-snapshot-<id>.json> }; throw }`. `revertScript` finds the newest `fw-apply-*.json` without a `.reverted-` twin, removes the group, restores that invocation's snapshot per profile, and renames the invocation's three files to `*.reverted-<timestamp>`. `evaluatePreflight` reports, per expected probe, `missing`, `<probe> could not run: <error>` for a line carrying `error`, or the mismatch between `ok` and the expectation. `collectEgressState(run = realRun)` throws an error naming `egress` when the command fails, prints nothing, or its JSON lacks any of the expected sections; otherwise it runs one non-elevated `powershell -NoProfile -Command` script (no secret in it) that prints JSON for the active-store rules of the group with their filters, the foreign effective block rules, the profiles, `Get-NetIPAddress -IPAddress <gateway>` (index, alias, prefix) and `Get-HnsNetwork | Where-Object Id -eq <hnsId>`, plus `docker network inspect cg-harness-sandbox` through `dockerContextEnv()`, and reads the marker. `egress-check.ps1` prints one `{ "probe": ..., "ok": ..., "error": ... }` line per `PREFLIGHT_EXPECT` key (each probe in its own `try`; `ok = $false` for a refused or timed-out connection, `error = <message>` when the probe itself threw for any other reason), using a `TcpClient.ConnectAsync(host, port).Wait(3000)` wrapper for TCP, a UDP client with `ReceiveTimeout = 3000` for `gw-udp-3202` (a UDP echo the preflight starts on the gateway), `(New-Object System.Net.NetworkInformation.Ping).Send(host, 3000).Status -eq 'Success'` for ICMP, `Resolve-DnsName -Server 1.1.1.1 -QuickTimeout` for DNS, and `Invoke-WebRequest -Proxy -TimeoutSec 5` for the proxy.
 
-- [ ] **Steps 4-6:** run (8 plus the 4 run-time tests pass), check/lint/fmt, commit `feat(harness): egress enforcement with verified effective firewall policy, internal network, proxy and preflight-gated credentials`.
+- [ ] **Steps 4-6:** run (9 plus the 4 run-time tests pass), check/lint/fmt, commit `feat(harness): egress enforcement with verified effective firewall policy, internal network, proxy and preflight-gated credentials`.
 
 **Acceptance (reviewer conditions from accept-M1-31 and round 2 item 7, each a tested item):**
 
@@ -10496,7 +10973,8 @@ export function verifyEgressState(s: EgressState): string[] {
 | Rules recreated and verified when the network is recreated | `verifyEgressState` `recreated` cases; run-time `recreated network` test; M1-34 Step 9 drill |
 | Effective foreign block rules inventoried before enabling profiles; abort for an owner decision | `applyScript` inventory ordering; `verifyEgressState` `foreign block`; M1-34 Step 0 |
 | Effective enforcement verified (enabled, direction, action, profile, filters, interface index) | `verifyEgressState: effective-policy mutations` |
-| Probe delivered in the image and bounded | `egress-check.ps1 ships in the base image and bounds every probe itself` |
+| Probe delivered in the image, bounded, runnable on Windows PowerShell, errors never read as blocked | `egress-check.ps1 ships in the base image and bounds every probe itself`; `evaluatePreflight` `could not run` case |
+| Incomplete observations fail closed | `verifyEgressState` `profiles` cases; `collectEgressState: a failed or truncated observation throws` |
 | WSL, Linux and BC containers regression-checked | M1-34 Steps 0, 4, 8 and its acceptance |
 
 ---
@@ -10558,7 +11036,7 @@ Spec 1a section 6 (a campaign fixes arms, image ids and task identities; each (t
 
 ### Task M1-24b: CLI `run`, `rejudge`, `qualify`
 
-Spec 1a section 10 (`harness run <experiment> [--dry-run] [--sample N] [--repeats N]`, `harness rejudge`), answer 15 (`rejudge <experiment> [--execution <id>]` with owner confirmation; requires the restaged `visibleInputHash` to equal the execution's, complete task coverage, record validation and the current scorer suite; always judged against the current oracle and labeled so), `--reuse-history` is not added until M1-37. `harness qualify --manifest <path>` runs, for every manifest entry at its immutable `rev`, `judge-fixture` for the positive variant and each named naive variant and one mock cell per variant (M1-35), and writes `results/harness/qualify/<manifest hash>/index.json` listing each variant's persisted judgment path, verdict, expected verdict, scorer reasons, target coverage and provenance (the M1-38 and M4-15 evidence source).
+Spec 1a section 10 (`harness run <experiment> [--dry-run] [--sample N] [--repeats N]`, `harness rejudge`), answer 15 (`rejudge <experiment> [--execution <id>]` with owner confirmation; requires the restaged `visibleInputHash` to equal the execution's, complete task coverage, record validation and the current scorer suite; always judged against the current oracle and labeled so), `--reuse-history` is not added until M1-37. `harness qualify --manifest <path>` runs, for every manifest entry at its immutable `rev`, `judge-fixture` for the positive variant and each named naive variant and one mock cell per variant (M1-35), and writes `results/harness/qualify/<manifest sha256>/index.json`: one entry per `(task, variant)` with `judgment_path`, `provenance_path`, `verdict`, `expected`, `reasons`, `targets` and `mock_cell`, exactly as the agreed M4-14/M4-15 contract in the Schedule section specifies (the M1-38 and M4-15 evidence source).
 
 **Lane:** infra2 (stream B). **Deps:** M1-23. **Date:** 10-08.
 

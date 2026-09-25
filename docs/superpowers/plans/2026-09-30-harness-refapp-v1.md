@@ -2818,7 +2818,7 @@ How a lease schedule must behave (schedules are created with `CGR Lease Mgt`, Cr
 - The first installment is due on the lease start date; installment n is due n-1 months after the start date.
 - The lease total is base rate x months x rate factor, rounded to 0.01, where the rate factor is 1 + months/100. Every installment is the total divided by the number of months, rounded to 0.01, except the last one, which takes the remainder so that the installments add up exactly to the total.
 - Creating the schedule again replaces the existing lines with a schedule for the lease as it is now.
-- A lease with an invoiced schedule line cannot be rescheduled: the attempt fails and the schedule stays exactly as it was.
+- A lease with an invoiced schedule line cannot be rescheduled: the attempt fails.
 ```
 
 - [ ] **Step 6: Reference tests** (`reference-tests/Test/src/LeaseScheduleTests.Codeunit.al`, codeunit 80100 "CGR Lease Schedule Tests"; each procedure creates its own lease):
@@ -2836,7 +2836,7 @@ How a lease schedule must behave (schedules are created with `CGR Lease Mgt`, Cr
 Values: 10.07 x 1.12 x 12 = 135.3408, total 135.34; 135.34 / 12 = 11.2783, installment 11.28; 11 x 11.28 = 124.08; last 11.26. 20 x 1.06 x 6 = 127.20, installments 21.20. 100 x 1.01 x 1 = 101.00.
 
 - [ ] **Step 7: Naive suites** (codeunit 80101 under `naive/<x>/Test/src/`; each passes on `correct/`, runs completely on every target, leaves a mutant alive):
-  - `drift-repro-only`: DueDatesFollowStartDate only. Survivors: no-carry, invoiced-rebuilt, flat-factor, no-op-reschedule, line-numbering.
+  - `drift-repro-only`: DueDatesFollowStartDate only. Survivors: no-carry, invoiced-rebuilt, flat-factor, no-op-reschedule (line-numbering is killed: i*1000 numbering makes Get(10000) find line 10, per lane-content trace 2026-09-25).
   - `near-complete`: every reference procedure except RescheduleReplacesLines and InvoicedLeaseCannotBeRescheduled. Survivors: invoiced-rebuilt, no-op-reschedule.
 
 - [ ] **Step 8: Visible tests.** `LeasingTests` 80030 keeps `LeaseRateUsesCoreInternal` only. `TestLibrary` gets `CreateLease(VehicleNo; StartDate; Months; BaseRate): Code[20]`.
