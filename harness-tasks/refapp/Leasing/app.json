@@ -1,0 +1,15 @@
+{
+  "id": "c6a1e000-0000-4000-8000-000000000004",
+  "name": "CGR Leasing",
+  "publisher": "CentralGauge",
+  "version": "1.0.0.0",
+  "platform": "28.0.0.0",
+  "application": "28.0.0.0",
+  "idRanges": [{ "from": 70300, "to": 70399 }],
+  "runtime": "17.0",
+  "target": "OnPrem",
+  "features": ["NoImplicitWith"],
+  "dependencies": [
+    { "id": "c6a1e000-0000-4000-8000-000000000001", "name": "CGR Core", "publisher": "CentralGauge", "version": "1.0.0.0" }
+  ]
+}

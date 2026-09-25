@@ -1,0 +1,15 @@
+{
+  "id": "c6a1e000-0000-4000-8000-000000000005",
+  "name": "CGR Integration",
+  "publisher": "CentralGauge",
+  "version": "1.0.0.0",
+  "platform": "28.0.0.0",
+  "application": "28.0.0.0",
+  "idRanges": [{ "from": 70400, "to": 70499 }],
+  "runtime": "17.0",
+  "target": "OnPrem",
+  "features": ["NoImplicitWith"],
+  "dependencies": [
+    { "id": "c6a1e000-0000-4000-8000-000000000001", "name": "CGR Core", "publisher": "CentralGauge", "version": "1.0.0.0" }
+  ]
+}
