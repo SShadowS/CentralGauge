@@ -437,3 +437,25 @@ Deno.test("validateCampaignRecords: artifacts and judgments of unknown execution
   assertStringIncludes(text, `artifact for unknown execution ${ghost}`);
   assertStringIncludes(text, `judgment ${j.id}: unknown execution ${ghost}`);
 });
+
+Deno.test("validateCampaignRecords: a fail with a null scorer is consistent; unscored next to a false is not", async () => {
+  const r = await scenario();
+  const scorers = [
+    { name: "build", passed: true, tests: [] },
+    { name: "pass_to_pass", passed: null, tests: [] },
+    { name: "fail_to_pass", passed: false, tests: [] },
+  ];
+  const j = r.judgments[1]!;
+  assertEquals(
+    await problems({
+      ...r,
+      judgments: [r.judgments[0]!, { ...j, scorers, verdict: "fail" }],
+    }),
+    [],
+  );
+  const bad = await problems({
+    ...r,
+    judgments: [r.judgments[0]!, { ...j, scorers, verdict: "unscored" }],
+  });
+  assertStringIncludes(bad.join("\n"), "verdict");
+});

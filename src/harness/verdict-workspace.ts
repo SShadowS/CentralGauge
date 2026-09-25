@@ -431,7 +431,7 @@ export interface TestCodeunit {
 }
 
 const TEST_PROC =
-  /\[Test\]\s*(?:\[[^\]]*\]\s*)*(?:local\s+|internal\s+)?procedure\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\(/gi;
+  /\[\s*Test\s*\]\s*(?:\[[^\]]*\]\s*)*(?:local\s+|internal\s+)?procedure\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\(/gi;
 
 export async function testCodeunits(dir: string): Promise<TestCodeunit[]> {
   const out: TestCodeunit[] = [];

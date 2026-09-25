@@ -425,3 +425,21 @@ Deno.test("cellsFromRecords: attempt spend sums the same whatever the input orde
     [a.spend_usd, a.known_spend_usd],
   );
 });
+
+Deno.test("cellsFromRecords: a fail judgment with a null scorer is scored, never pending", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const j = judgment(c, e, false, {
+    scorers: [
+      { name: "build", passed: true, tests: [] },
+      { name: "pass_to_pass", passed: null, tests: [] },
+      { name: "fail_to_pass", passed: false, tests: [] },
+    ],
+  });
+  const cell = cellOf(c, [e], [j]);
+  assertEquals([cell.status, cell.pass, cell.judgment_id], [
+    "scored",
+    false,
+    j.id,
+  ]);
+});

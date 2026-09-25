@@ -2,8 +2,9 @@
  * Verdict pipeline (spec 1a section 7): scorers on a reconstructed
  * workspace, per-procedure results. A BC fault rejudges on another
  * container (BcLane); when every container fails, the scorers that did not
- * finish are null and the verdict is unscored (spec 1a section 8). The
- * agent is never re-run for a verdict-side fault.
+ * finish are null; the verdict is fail if any scorer failed, else unscored
+ * (spec 1a section 8, decision 2026-09-25-verdict-fail-wins). The agent is
+ * never re-run for a verdict-side fault.
  */
 
 import { dirname, join } from "@std/path";
@@ -36,7 +37,11 @@ import {
   type TestSpec,
 } from "./bc-lane.ts";
 import { hashFile } from "./hash.ts";
-import { JudgmentRecordSchema, scorerFingerprint } from "./records.ts";
+import {
+  JudgmentRecordSchema,
+  scorerFingerprint,
+  verdictOf,
+} from "./records.ts";
 import { readAppGraph, readAppJson } from "./staging.ts";
 import {
   addedTestCodeunits,
@@ -564,11 +569,7 @@ export async function judge(
   }
   log.spans.total_ms = performance.now() - t0;
   const list = scores.list;
-  const verdict = list.some((s) => s.passed === null)
-    ? "unscored"
-    : list.every((s) => s.passed)
-    ? "pass"
-    : "fail";
+  const verdict = verdictOf(list);
   const judgment = JudgmentRecordSchema.parse({
     v: 1,
     id: log.judgment_id,

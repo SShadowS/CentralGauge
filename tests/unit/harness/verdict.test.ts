@@ -393,3 +393,65 @@ Deno.test("judge: an oracle publish failure on one container rejudges on another
   assertEquals(judgment.verdict, "pass");
   assertEquals(judgment.verdict_container, "C2");
 });
+
+// Decision 2026-09-25-verdict-fail-wins: a false scorer makes the verdict fail; null scorers stay null.
+
+/** 80010 reports a result without ShippedPasses (a missing listed procedure: infra row). */
+function missingShipped() {
+  const bc = script();
+  const inner = bc.script;
+  bc.script = (cu, deployed, container) =>
+    cu === 80010 ? result({ Other: true }) : inner(cu, deployed, container);
+  return bc;
+}
+
+Deno.test("judge: an oracle compile failure with pass_to_pass infra is a fail", async () => {
+  const bc = missingShipped();
+  bc.onCompile = async (dir) => {
+    if (dir.replaceAll("\\", "/").endsWith("/oracle")) {
+      await Deno.writeTextFile(join(dir, "Broken.al"), "COMPILE_ERROR");
+    }
+  };
+  const { input } = await setup("correct");
+  const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
+  JudgmentRecordSchema.parse(judgment);
+  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, false]);
+  assertEquals(judgment.scorers[2]!.tests[0]!.failure, "compile");
+  assertEquals(judgment.verdict, "fail");
+});
+
+Deno.test("judge: a fail_to_pass assertion with a missing pass_to_pass procedure is a fail", async () => {
+  const { input } = await setup("naive/a");
+  const { judgment } = await judge(new BcLane(missingShipped(), ["C1"]), input);
+  JudgmentRecordSchema.parse(judgment);
+  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, false]);
+  assert(
+    judgment.scorers[1]!.tests.some((t) =>
+      t.procedure === "ShippedPasses" && t.failure === "infra"
+    ),
+  );
+  assertEquals(judgment.scorers[2]!.tests[0]!.failure, "assertion");
+  assertEquals(judgment.verdict, "fail");
+});
+
+Deno.test("judge: an agent-added failing test written as [ Test ] is discovered and fails pass_to_pass", async () => {
+  const bc = script();
+  const inner = bc.script;
+  bc.script = (cu, deployed, container) =>
+    cu === 81003
+      ? result({ Fails: "Assert.IsTrue failed. agent" })
+      : inner(cu, deployed, container);
+  const { input } = await setup("correct", {
+    "Test/src/Spaced.Test.al":
+      `codeunit 81003 "Spaced"\n{\n    Subtype = Test;\n\n    [ Test ]\n    procedure Fails()\n    begin\n    end;\n}\n`,
+  });
+  const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(judgment.scorers[1]!.passed, false);
+  assert(
+    judgment.scorers[1]!.tests.some((t) =>
+      t.codeunit === 81003 && t.procedure === "Fails" &&
+      t.failure === "assertion"
+    ),
+  );
+});

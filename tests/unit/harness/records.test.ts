@@ -696,3 +696,40 @@ Deno.test("RecordStore: lists order exactly below a millisecond", async () => {
     [earlier.id, later.id],
   );
 });
+
+Deno.test("judgment schema: a false scorer wins over a null one (decision 2026-09-25-verdict-fail-wins)", async () => {
+  const c = await campaign();
+  const j = judgment(c, execution(c), false);
+  const mixed = {
+    ...j,
+    scorers: [
+      { name: "build", passed: true, tests: [] },
+      { name: "pass_to_pass", passed: null, tests: [] },
+      { name: "fail_to_pass", passed: false, tests: [] },
+    ],
+  };
+  assertEquals(
+    JudgmentRecordSchema.parse({ ...mixed, verdict: "fail" }).verdict,
+    "fail",
+  );
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({ ...mixed, verdict: "unscored" })
+  );
+  const nullPass = {
+    ...j,
+    scorers: [
+      { name: "build", passed: true, tests: [] },
+      { name: "pass_to_pass", passed: null, tests: [] },
+    ],
+  };
+  assertEquals(
+    JudgmentRecordSchema.parse({ ...nullPass, verdict: "unscored" }).verdict,
+    "unscored",
+  );
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({ ...nullPass, verdict: "fail" })
+  );
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({ ...nullPass, verdict: "pass" })
+  );
+});
