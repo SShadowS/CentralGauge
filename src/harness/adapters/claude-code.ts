@@ -54,7 +54,7 @@ const req = (x: J, k: string, problems: string[]): number => {
 const toJson = (v: unknown): Telemetry["raw_usage"] =>
   JSON.parse(JSON.stringify(v));
 
-const DECLARED: (keyof Telemetry)[] = [
+const DECLARED: readonly (keyof Telemetry)[] = Object.freeze([
   "harness_version",
   "cost_usd",
   "reported_cost_usd",
@@ -63,7 +63,7 @@ const DECLARED: (keyof Telemetry)[] = [
   "wall_ms",
   "exit_code",
   "stop_reason",
-];
+]);
 
 /** Per-run provenance persisted in raw_usage.capabilities; the report reads it, never the installed adapter. */
 export const CLAUDE_CAPABILITIES = {
@@ -189,6 +189,13 @@ export function parseClaudeStream(
   }
 
   // Usage: result.modelUsage is authoritative (includes sub-agents).
+  if (result) {
+    for (const m of [...built.requests.keys()].sort()) {
+      if (!models.includes(m)) {
+        streamProblems.push(`assistant records for ${m} outside modelUsage`);
+      }
+    }
+  }
   const usage: ModelTokens[] = models.map((model) => {
     const x = obj(obj(result?.modelUsage)[model]);
     const problems: string[] = [];
@@ -209,7 +216,8 @@ export function parseClaudeStream(
     }
     return {
       model,
-      requests: requestsKnown ? (built.requests.get(model) ?? 0) : null,
+      // A model with usage but no visible assistant record is unproven, never 0.
+      requests: requestsKnown ? (built.requests.get(model) ?? null) : null,
       input: req(x, "inputTokens", problems),
       cache_read: req(x, "cacheReadInputTokens", problems),
       cache_write_5m: exact ? s.m5 : 0,
@@ -327,7 +335,11 @@ export function parseClaudeStream(
   const noResult =
     "no result record (the run was killed or crashed before its final record)";
   const why = (k: string) =>
-    !result
+    k === "exit_code"
+      ? "process exit code not captured"
+      : k === "harness_version"
+      ? "no system/init record with a claude_code_version"
+      : !result
       ? noResult
       : k === "cost_usd"
       ? (est?.missing.join("; ") || "cost not computable")
@@ -340,12 +352,18 @@ export function parseClaudeStream(
       reasons[k] = why(k);
     }
   }
-  for (const m of telemetry.per_model) {
-    if (m.requests === null) {
-      reasons[`per_model[${m.model}].requests`] = !captureComplete
-        ? (result ? nonJsonReason(nonJson) : noResult)
-        : `${built.unidentified} assistant record(s) without a message id or model`;
-    }
+  // per_model rows follow `usage` order (estimateCost); rows sharing a slug merge their reasons.
+  for (const [i, m] of telemetry.per_model.entries()) {
+    if (m.requests !== null) continue;
+    const why = !captureComplete
+      ? (result ? nonJsonReason(nonJson) : noResult)
+      : built.unidentified > 0
+      ? `${built.unidentified} assistant record(s) without a message id or model`
+      : `no assistant record for ${
+        usage[i]?.model ?? m.model
+      } (usage only in the result record)`;
+    const key = `per_model[${m.model}].requests`;
+    reasons[key] = reasons[key] ? `${reasons[key]}; ${why}` : why;
   }
   telemetry.raw_usage = toJson({
     usage: result?.usage ?? null,
