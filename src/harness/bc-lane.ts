@@ -235,6 +235,8 @@ export class BcLane {
     ctx: { taskId: string; variantId: string; attemptNumber: number },
     fn: (container: string) => Promise<T>,
     signal?: AbortSignal,
+    /** Per-call reroute bound (e.g. one rerun for an agent suite); default: the lane's. */
+    opts: { maxInfraRetries?: number } = {},
   ): Promise<Held<T>> {
     checkCancel(signal);
     let container = "";
@@ -291,7 +293,7 @@ export class BcLane {
         }
       },
       {
-        maxRetries: this.opts.maxInfraRetries ??
+        maxRetries: opts.maxInfraRetries ?? this.opts.maxInfraRetries ??
           Math.max(1, this.containers.length - 1),
         configuredContainers: this.containers,
         context: ctx,

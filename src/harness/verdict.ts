@@ -13,13 +13,16 @@ import type { InfraRetryRecord } from "../tasks/interfaces.ts";
 import type { WantedApp } from "./bc-apps.ts";
 import type {
   DeployContext,
+  DeployTestResult,
   HarnessBc,
+  Held,
   LockedSymbols,
   Prepared,
 } from "./bc-lane.ts";
 import type { JudgmentRecord } from "./records.ts";
 import type { StagedApp } from "./staging.ts";
 import type { LoadedTask } from "./task.ts";
+import { ContainerError, ValidationError } from "../errors.ts";
 import { isInfraError } from "../health/is-infra-error.ts";
 import {
   InfraRetriesExhaustedError,
@@ -29,6 +32,7 @@ import { CASCADE_CODES } from "../stats/omission.ts";
 import {
   type BcLane,
   buildApps,
+  CleanupFailedError,
   deployAndTest,
   prepareApps,
   scorerPassed,
@@ -36,13 +40,14 @@ import {
   type TestRow,
   type TestSpec,
 } from "./bc-lane.ts";
+import { safeCopyTree } from "./fsutil.ts";
 import { hashFile } from "./hash.ts";
 import {
   JudgmentRecordSchema,
   scorerFingerprint,
   verdictOf,
 } from "./records.ts";
-import { readAppGraph, readAppJson } from "./staging.ts";
+import { applyOverlay, readAppGraph, readAppJson } from "./staging.ts";
 import {
   addedTestCodeunits,
   buildVerdictWorkspace,
@@ -59,7 +64,8 @@ export const SCORER_SUITE: Record<string, string> = {
   build: "1",
   pass_to_pass: "1",
   fail_to_pass: "1",
-  mutant_kill: "1",
+  // 2: agent-suite rules (decision 2026-09-25-agent-suite-infra).
+  mutant_kill: "2",
 };
 type ScorerName = "build" | "pass_to_pass" | "fail_to_pass" | "mutant_kill";
 
@@ -258,6 +264,59 @@ export function agentTestsBc(
   };
 }
 
+/**
+ * mutant_kill's view of agent-authored suites (decision
+ * 2026-09-25-agent-suite-infra). A completed run (a result set came back)
+ * with a missing or zero-result agent procedure is the agent's failure: the
+ * procedure is filled in as not run (runtime_error), never infra. A thrown
+ * or timed-out run is ambiguous and stays infra (ContainerError), so the lane
+ * reruns it on another container behind a fresh trusted control. Trusted
+ * codeunits (the control) pass through unchanged: their missing or zero
+ * results stay infra.
+ */
+export function agentSuiteBc(
+  bc: HarnessBc,
+  discovered: ReadonlyMap<number, readonly string[]>,
+): HarnessBc {
+  return {
+    compileProject: (c, p) => bc.compileProject(c, p),
+    harnessCompilerIdentity: (c) => bc.harnessCompilerIdentity(c),
+    listHarnessApps: (c) => bc.listHarnessApps(c),
+    syncHarnessApps: (c, p) => bc.syncHarnessApps(c, p),
+    async runHarnessTests(c, codeunit): Promise<TestResult> {
+      const procs = discovered.get(codeunit);
+      if (!procs) return await bc.runHarnessTests(c, codeunit);
+      let r: TestResult;
+      try {
+        r = await bc.runHarnessTests(c, codeunit);
+      } catch (err) {
+        throw new ContainerError(
+          `agent suite ${codeunit} did not complete on ${c}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          c,
+          "test",
+        );
+      }
+      const byName = new Map(r.results.map((x) => [x.name.toLowerCase(), x]));
+      // No error text: runTests records a filled-in procedure as not_run, runtime_error.
+      const results = procs.map((name) =>
+        byName.get(name.toLowerCase()) ?? { name, passed: false, duration: 0 }
+      );
+      const passed = results.filter((x) => x.passed).length;
+      return {
+        success: passed === results.length,
+        totalTests: results.length,
+        passedTests: passed,
+        failedTests: results.length - passed,
+        duration: r.duration,
+        results,
+        output: "",
+      };
+    },
+  };
+}
+
 /** Publish + test on one held container; spans and retries go to the log. */
 export async function runHeld(
   ctx: JudgeContext,
@@ -280,6 +339,14 @@ export async function runHeld(
         ctx: ctx.deploy,
       }),
   );
+  return { rows: accountHeld(ctx, held) };
+}
+
+/** A held run's spans, containers, retries and messages go to the verdict log. */
+function accountHeld(
+  ctx: JudgeContext,
+  held: Held<DeployTestResult>,
+): TestRow[] {
   const s = ctx.log.spans;
   s.queue_ms += held.queue_ms;
   s.provisioning_ms += held.result.deployed.provisioning_ms;
@@ -294,7 +361,7 @@ export async function runHeld(
       `quarantined ${held.container}: ${held.result.cleanupError}`,
     );
   }
-  return { rows: held.result.rows };
+  return held.result.rows;
 }
 
 async function buildOracle(
@@ -511,9 +578,293 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   scores.failRest();
 }
 
-/** Implemented in M1-18; until then a test-authoring task is refused loudly. */
-export function scoreTestAuthoring(_ctx: JudgeContext): Promise<void> {
-  return Promise.reject(new Error("mutant_kill is implemented in M1-18"));
+const isTestPath = (rel: string) =>
+  rel === TEST_APP || rel.startsWith(`${TEST_APP}/`);
+const infraThrown = (err: unknown) =>
+  err instanceof InfraRetriesExhaustedError ||
+  err instanceof NoEligibleContainersError || isInfraError(err);
+
+type MutantOutcome = "killed" | "survived" | "infra";
+
+/** Per mutant (M4 gate parity): any infra row is infra; else an assertion failure kills; else it survived. */
+function mutantOutcome(rows: TestRow[]): MutantOutcome {
+  if (rows.length === 0 || rows.some((r) => r.failure === "infra")) {
+    return "infra";
+  }
+  if (rows.some((r) => r.outcome === "fail" && r.failure === "assertion")) {
+    return "killed";
+  }
+  return "survived";
+}
+
+/**
+ * test-authoring: production is the reference (staged + correct/); only the
+ * agent's Test\\ changes are kept. pass_to_pass runs on the reference; the
+ * submitted suite runs on the reference, on mutant 0 (staged production)
+ * and on every named mutant.
+ */
+export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
+  const { i, scores, log } = ctx;
+  const t = i.task.task;
+  if (t.mutants.includes("0")) {
+    throw new ValidationError(`${t.id}: mutant name "0" is reserved`, ["0"]);
+  }
+  const tr = performance.now();
+  const reference = join(i.workDir, "reference");
+  await safeCopyTree(i.pristine, reference);
+  await applyOverlay(join(i.task.dir, "correct"), reference, {
+    exclude: isTestPath,
+  });
+  const vw = await buildVerdictWorkspace({
+    pristine: i.pristine,
+    artifact: i.artifact,
+    out: join(i.workDir, "verdict"),
+    productionFrom: reference,
+    symbolIds: i.symbolIds,
+  });
+  log.spans.reconstruct_ms = performance.now() - tr;
+  log.violations = vw.violations;
+  if (vw.violations.length > 0) return scores.failRest();
+
+  const pristineApps = await readAppGraph(i.pristine);
+  const prepare = (
+    dir: string,
+    apps: StagedApp[],
+    changed: string[],
+    name: string,
+  ) =>
+    prepareApps(ctx.lane, {
+      pristine: i.pristine,
+      pristineApps,
+      candidateDir: dir,
+      candidateApps: apps,
+      changed,
+      workDir: join(i.workDir, name),
+      lock: i.lock,
+    });
+  const prep = await prepare(vw.dir, vw.apps, vw.changed, "apps-reference");
+  recordBuild(ctx, prep, "reference");
+  if (!prep.buildOk) return scores.failRest();
+  scores.set("build", true);
+
+  let control: { prep: Prepared; specs: TestSpec[] } | null = null;
+  // pass_to_pass first, in its own hold with trusted code only: agent test
+  // code cannot unscore it, and it is decided by a real run even when the
+  // submission is rejected below (M1-18 review items 1 and 2).
+  if (scores.has("pass_to_pass")) {
+    const p2p: TestSpec[] = t.pass_to_pass.map((r) => ({
+      codeunit: r.codeunit,
+      procedures: r.procedures,
+      target: "reference",
+    }));
+    // Trusted code only: the reference production plus the SHIPPED Test
+    // sources, no agent file (a subscriber or install trigger in agent code
+    // could act on a shipped test).
+    const sw = await buildVerdictWorkspace({
+      pristine: i.pristine,
+      artifact: i.pristine,
+      out: join(i.workDir, "p2p"),
+      productionFrom: reference,
+      symbolIds: i.symbolIds,
+    });
+    const sp = await prepare(sw.dir, sw.apps, sw.changed, "apps-p2p");
+    recordBuild(ctx, sp, "pass_to_pass");
+    if (!sp.buildOk) {
+      throw new ValidationError(
+        `${t.id}: the reference with the shipped tests does not build`,
+        [t.id],
+      );
+    }
+    try {
+      const r = (await runHeld(
+        ctx,
+        sp.wanted,
+        p2p,
+        [...sp.candidateIds].reverse(),
+      )).rows;
+      scores.set("pass_to_pass", scorerPassed(r), r);
+      // Known to pass: the trusted control for agent-suite reruns.
+      if (scorerPassed(r) === true) control = { prep: sp, specs: p2p };
+    } catch (err) {
+      if (!infraThrown(err)) throw err;
+      log.error = err instanceof Error ? err.message : String(err);
+      return scores.nullRest();
+    }
+  }
+
+  const added = await addedTestCodeunits(
+    join(i.pristine, TEST_APP),
+    join(vw.dir, TEST_APP),
+  );
+  const unsupported = added.filter((a) => a.testPage);
+  if (unsupported.length > 0) {
+    for (const u of unsupported) {
+      log.test_messages.push({
+        codeunit: u.codeunit,
+        procedure: "(TestPage)",
+        target: "reference",
+        message: "TestPage tests are not supported by the harness test runner",
+      });
+    }
+    scores.set("mutant_kill", false);
+    return scores.failRest();
+  }
+  const agent = added.filter((a) => a.procedures.length > 0);
+  for (const a of added.filter((x) => x.procedures.length === 0)) {
+    log.notes.push(`codeunit ${a.codeunit} has no [Test] procedure`);
+  }
+  if (agent.length === 0) {
+    log.notes.push("mutant_kill: no agent test codeunit discovered");
+    scores.set("mutant_kill", false);
+    return scores.failRest();
+  }
+  const specs = (target: string): TestSpec[] =>
+    agent.map((a) => ({
+      codeunit: a.codeunit,
+      procedures: a.procedures,
+      target,
+    }));
+  const infraRows = (target: string): TestRow[] =>
+    agent.flatMap((a) =>
+      a.procedures.map((p) => ({
+        codeunit: a.codeunit,
+        procedure: p,
+        target,
+        outcome: "not_run" as const,
+        failure: "infra" as const,
+      }))
+    );
+
+  // Agent-suite runs (decision 2026-09-25-agent-suite-infra): a completed
+  // run with a missing procedure is the agent's (agentSuiteBc). A thrown run
+  // is rerun once, on another container (the lane excludes the failed one),
+  // only when a trusted control exists: there the shipped pass_to_pass build
+  // is deployed and must pass first, then the agent build. Without
+  // pass_to_pass there is no control and a thrown run stays infra.
+  const discovered = new Map(agent.map((a) => [a.codeunit, a.procedures]));
+  const suiteBc = agentSuiteBc(ctx.lane.bc, discovered);
+  const agentRun = async (p: Prepared, target: string): Promise<TestRow[]> => {
+    let attempt = 0;
+    const held = await ctx.lane.exclusive(
+      { taskId: t.id, variantId: i.executionId, attemptNumber: 1 },
+      async (c) => {
+        if (attempt++ > 0 && control) {
+          const ctl = await deployAndTest(ctx.lane.bc, c, {
+            wanted: control.prep.wanted,
+            tests: control.specs,
+            cleanupIds: [...control.prep.candidateIds].reverse(),
+            ctx: ctx.deploy,
+          });
+          if (ctl.cleanupError) {
+            throw new CleanupFailedError(
+              new Error("trusted control"),
+              ctl.cleanupError,
+              c,
+            );
+          }
+          if (scorerPassed(ctl.rows) !== true) {
+            throw new ContainerError(
+              `trusted control did not pass on ${c} before the agent rerun`,
+              c,
+              "test",
+            );
+          }
+          log.notes.push(
+            `${target}: agent suite rerun on ${c} after a passing trusted control`,
+          );
+        }
+        return await deployAndTest(suiteBc, c, {
+          wanted: p.wanted,
+          tests: specs(target),
+          cleanupIds: [...p.candidateIds].reverse(),
+          ctx: ctx.deploy,
+        });
+      },
+      undefined,
+      { maxInfraRetries: control ? 1 : 0 },
+    );
+    return accountHeld(ctx, held);
+  };
+
+  let mkRows: TestRow[];
+  try {
+    mkRows = await agentRun(prep, "reference");
+  } catch (err) {
+    if (!infraThrown(err)) throw err;
+    log.notes.push(
+      `reference: agent suite infra after reroutes: ${
+        err instanceof Error ? err.message : err
+      }`,
+    );
+    scores.set("mutant_kill", null, infraRows("reference"));
+    return scores.failRest();
+  }
+  const onRef = scorerPassed(mkRows);
+  if (onRef !== true) {
+    scores.set("mutant_kill", onRef, mkRows);
+    return scores.failRest();
+  }
+
+  const outcomes: MutantOutcome[] = [];
+  for (const m of ["0", ...t.mutants]) {
+    const target = `mutant:${m}`;
+    const allRows = (
+      failure: TestRow["failure"],
+      procedureOverride?: string,
+    ): TestRow[] =>
+      agent.flatMap((a) =>
+        a.procedures.map((p) => ({
+          codeunit: a.codeunit,
+          procedure: procedureOverride ?? p,
+          target,
+          outcome: "not_run" as const,
+          failure,
+        }))
+      );
+    try {
+      let production = i.pristine;
+      if (m !== "0") {
+        production = join(i.workDir, `mutant-src-${m}`);
+        await safeCopyTree(reference, production);
+        await applyOverlay(join(i.task.dir, "mutants", m), production, {
+          exclude: isTestPath,
+        });
+      }
+      const mv = await buildVerdictWorkspace({
+        pristine: i.pristine,
+        artifact: i.artifact,
+        out: join(i.workDir, `mutant-${m}`),
+        productionFrom: production,
+        symbolIds: i.symbolIds,
+      });
+      const mp = await prepare(mv.dir, mv.apps, mv.changed, `apps-mutant-${m}`);
+      recordBuild(ctx, mp, target);
+      if (!mp.buildOk) {
+        mkRows.push(...allRows("compile"));
+        outcomes.push("survived"); // not a kill
+        continue;
+      }
+      const rows = await agentRun(mp, target);
+      mkRows.push(...rows);
+      outcomes.push(mutantOutcome(rows));
+    } catch (err) {
+      if (!infraThrown(err)) throw err;
+      log.notes.push(
+        `${target}: infra after reroutes: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      mkRows.push(...allRows("infra"));
+      outcomes.push("infra");
+    }
+  }
+  const passed = outcomes.includes("survived")
+    ? false
+    : outcomes.includes("infra")
+    ? null
+    : true;
+  scores.set("mutant_kill", passed, mkRows);
+  scores.failRest();
 }
 
 export async function judge(
