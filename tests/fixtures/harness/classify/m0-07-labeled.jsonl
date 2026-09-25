@@ -1,0 +1,45 @@
+{"i":0,"harness":"claude","tool":"PowerShell","command":"Set-Content -Path hello.txt -Value \"hello\" -Encoding utf8 -NoNewline; Get-ChildItem","label":"edit"}
+{"i":1,"harness":"claude","tool":"Bash","command":"ls -la /c/workspace | head -50","label":"search"}
+{"i":2,"harness":"claude","tool":"Write","command":null,"label":"edit"}
+{"i":3,"harness":"claude","tool":"Write","command":null,"label":"edit"}
+{"i":4,"harness":"claude","tool":"Write","command":null,"label":"edit"}
+{"i":5,"harness":"claude","tool":"Write","command":null,"label":"edit"}
+{"i":6,"harness":"claude","tool":"Write","command":null,"label":"edit"}
+{"i":7,"harness":"claude","tool":"Skill","command":null,"label":"other"}
+{"i":8,"harness":"claude","tool":"Read","command":null,"label":"read"}
+{"i":9,"harness":"claude","tool":"Bash","command":"cg-al --version","label":"other"}
+{"i":10,"harness":"claude","tool":"Agent","command":null,"label":"other"}
+{"i":11,"harness":"claude","tool":"ToolSearch","command":null,"label":"other"}
+{"i":12,"harness":"claude","tool":"Glob","command":null,"label":"search"}
+{"i":13,"harness":"claude","tool":"mcp__al-tools__al_compile","command":null,"label":"compile"}
+{"i":14,"harness":"claude","tool":"Skill","command":null,"label":"other"}
+{"i":15,"harness":"claude","tool":"Read","command":null,"label":"read"}
+{"i":16,"harness":"claude","tool":"Bash","command":"cg-al --version","label":"other"}
+{"i":17,"harness":"claude","tool":"ToolSearch","command":null,"label":"other"}
+{"i":18,"harness":"claude","tool":"Agent","command":null,"label":"other"}
+{"i":19,"harness":"claude","tool":"PowerShell","command":"(Get-ChildItem -Path \"C:\\workspace\\src\" -Filter *.al -Recurse -File | Measure-Object).Count","label":"search"}
+{"i":20,"harness":"claude","tool":"Skill","command":null,"label":"other"}
+{"i":21,"harness":"claude","tool":"Bash","command":"ls src/FleetMgt.Codeunit.al 2>&1 || find / -iname \"FleetMgt.Codeunit.al\" 2>/dev/null","label":"search"}
+{"i":22,"harness":"claude","tool":"ToolSearch","command":null,"label":"other"}
+{"i":23,"harness":"claude","tool":"Read","command":null,"label":"read"}
+{"i":24,"harness":"claude","tool":"Bash","command":"cg-al --version","label":"other"}
+{"i":25,"harness":"claude","tool":"Agent","command":null,"label":"other"}
+{"i":26,"harness":"claude","tool":"PowerShell","command":"Get-ChildItem -Path 'C:\\workspace\\src' -Recurse -Filter '*.al' -File | Select-Object -ExpandProperty FullName","label":"search"}
+{"i":27,"harness":"pi","tool":"write","command":null,"label":"edit"}
+{"i":28,"harness":"pi","tool":"bash","command":"ls -la","label":"search"}
+{"i":29,"harness":"pi","tool":"bash","command":"ls -la","label":"search"}
+{"i":30,"harness":"pi","tool":"bash","command":"set | grep PI_","label":"other"}
+{"i":31,"harness":"pi","tool":"bash","command":"grep -i \"max\" /c/Users/ContainerAdministrator/AppData/Roaming/npm/node_modules/@earendil-works/pi-coding-agent/docs/*.md","label":"search"}
+{"i":32,"harness":"pi","tool":"bash","command":"grep -rn \"executeTool\" /c/Users/ContainerAdministrator/AppData/Roaming/npm/node_modules/@earendil-works/pi-coding-agent/","label":"search"}
+{"i":33,"harness":"pi","tool":"read","command":null,"label":"read"}
+{"i":34,"harness":"pi","tool":"read","command":null,"label":"read"}
+{"i":35,"harness":"pi","tool":"bash","command":"cg-al --version","label":"other"}
+{"i":36,"harness":"pi","tool":"bash","command":"find src -type f -name \"*.al\"","label":"search"}
+{"i":37,"harness":"pi","tool":"read","command":null,"label":"read"}
+{"i":38,"harness":"pi","tool":"read","command":null,"label":"read"}
+{"i":39,"harness":"pi","tool":"bash","command":"cg-al --version","label":"other"}
+{"i":40,"harness":"pi","tool":"bash","command":"find src -type f -name \"*.al\"","label":"search"}
+{"i":41,"harness":"pi","tool":"read","command":null,"label":"read"}
+{"i":42,"harness":"pi","tool":"read","command":null,"label":"read"}
+{"i":43,"harness":"pi","tool":"bash","command":"cg-al --version","label":"other"}
+{"i":44,"harness":"pi","tool":"bash","command":"find src -type f -name \"*.al\"","label":"search"}
