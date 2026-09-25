@@ -206,6 +206,15 @@ export function estimateCost(
         why.push(`${u.model}: ${k} not a non-negative integer (${n})`);
       }
     }
+    // Never a partial sum (null + n is n in JS), never past the safe range.
+    const parts = [u.cache_write_5m, u.cache_write_1h, u.cache_write_unknown];
+    let cacheWrite: number | null = parts.every(isCount)
+      ? parts.reduce((a, b) => a + b, 0)
+      : null;
+    if (cacheWrite !== null && !isCount(cacheWrite)) {
+      why.push(`${u.model}: cache_write total is not a safe integer`);
+      cacheWrite = null;
+    }
     // Output includes reasoning; more reasoning than output means separately
     // counted thinking tokens that the output rate would leave unbilled.
     if (isCount(u.reasoning) && isCount(u.output) && u.reasoning > u.output) {
@@ -254,11 +263,7 @@ export function estimateCost(
       requests: valid(u.requests),
       tokens_in_uncached: valid(u.input),
       tokens_cache_read: valid(u.cache_read),
-      // Never a partial sum: null + n is n in JS, so validate each part first.
-      tokens_cache_write: isCount(u.cache_write_5m) &&
-          isCount(u.cache_write_1h) && isCount(u.cache_write_unknown)
-        ? u.cache_write_5m + u.cache_write_1h + u.cache_write_unknown
-        : null,
+      tokens_cache_write: cacheWrite,
       tokens_out: valid(u.output),
       tokens_reasoning: valid(u.reasoning),
       cost_usd: cost,

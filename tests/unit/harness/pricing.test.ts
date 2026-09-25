@@ -384,6 +384,17 @@ Deno.test("estimateCost: a missing or invalid cache-write field never yields a k
   }
 });
 
+Deno.test("estimateCost: a cache-write total past the safe integer range is unknown", () => {
+  const big = Number.MAX_SAFE_INTEGER;
+  const r = estimateCost([T({ cache_write_5m: big, cache_write_1h: 2 })], BOOK);
+  assertEquals(r.cost_usd, null);
+  assertEquals(r.per_model[0]!.tokens_cache_write, null);
+  assertStringIncludes(
+    r.missing.join(";"),
+    "claude-sonnet-5: cache_write total is not a safe integer",
+  );
+});
+
 Deno.test("loadPricingBook: a price for a model not in models.yml and an invalid date fail loudly", async () => {
   const orphan = await catalog(
     MODELS_YML,
