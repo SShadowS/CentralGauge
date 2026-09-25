@@ -232,7 +232,6 @@ Deno.test("a collision on publish is infra and reroutes", async () => {
           codeunit: 80010,
           procedures: ["Works"],
           target: "candidate",
-          zeroIsInfra: true,
         }],
         cleanupIds: [IDS.test],
         ctx,
@@ -264,7 +263,6 @@ Deno.test("classification matches the M4 gate", async () => {
     codeunit: 80010,
     procedures: ["A", "b", "C", "Missing"],
     target: "candidate",
-    zeroIsInfra: true,
   }]);
   assertEquals(r.rows.map((x) => [x.procedure, x.outcome, x.failure]), [
     ["A", "pass", null],
@@ -283,18 +281,21 @@ Deno.test("classification matches the M4 gate", async () => {
         codeunit: 80011,
         procedures: ["X"],
         target: "candidate",
-        zeroIsInfra: true,
       }]),
     ContainerError,
     "zero tests",
   );
-  const agent = await runTests(bc, "C1", [{
-    codeunit: 80011,
-    procedures: null,
-    target: "candidate",
-    zeroIsInfra: false,
-  }]);
-  assertEquals(agent.rows.map((x) => x.outcome), ["not_run"]);
+  // No escape: zero results are infra for agent-authored suites too.
+  await assertRejects(
+    () =>
+      runTests(bc, "C1", [{
+        codeunit: 80011,
+        procedures: null,
+        target: "candidate",
+      }]),
+    ContainerError,
+    "zero tests",
+  );
 });
 
 Deno.test("deployAndTest: candidates are cleaned up even when tests throw", async () => {
@@ -310,7 +311,6 @@ Deno.test("deployAndTest: candidates are cleaned up even when tests throw", asyn
         codeunit: 80010,
         procedures: null,
         target: "candidate",
-        zeroIsInfra: true,
       }],
       cleanupIds: [IDS.test],
       ctx: { ledgerRoot, trustedRoots: [p.pristine] },
@@ -369,7 +369,6 @@ Deno.test("deployAndTest: a failed cleanup empties the ledger, is returned, and 
           codeunit: 80010,
           procedures: ["Works"],
           target: "candidate",
-          zeroIsInfra: true,
         }],
         cleanupIds: [IDS.test],
         ctx,
@@ -406,7 +405,6 @@ Deno.test("deployAndTest: tests throwing together with a cleanup failure quarant
             codeunit: 80010,
             procedures: null,
             target: "candidate",
-            zeroIsInfra: true,
           }],
           cleanupIds: [IDS.test],
           ctx: {
@@ -660,7 +658,6 @@ Deno.test("deployAndTest: a cleanup refused before any change is loud and quaran
             codeunit: 80010,
             procedures: ["Works"],
             target: "candidate",
-            zeroIsInfra: true,
           }],
           cleanupIds: [IDS.test, untrusted],
           ctx: { ledgerRoot: await tmp(), trustedRoots: [p.pristine] },
@@ -700,4 +697,109 @@ Deno.test("BcLane.exclusive: queued work refused as ineligible is not recorded a
   await first;
   await refused;
   assertEquals(recorded, ["C1:pass"]);
+});
+
+Deno.test("runTests: a short response (totalTests above the rows returned) is infra, never a pass", async () => {
+  const bc = new FakeBc(() => ({ ...result({ A: true }), totalTests: 3 }));
+  const r = await runTests(bc, "C1", [{
+    codeunit: 80010,
+    procedures: null,
+    target: "candidate",
+  }]);
+  assert(r.rows.some((x) => x.failure === "infra"));
+  assertEquals(scorerPassed(r.rows), null);
+});
+
+Deno.test("deploy and cleanup: an incomplete sync result is a failure, not a success", async () => {
+  const incomplete = (
+    s: import("../../../src/container/types.ts").HarnessSyncResult,
+  ) => ({
+    ...s,
+    done: false,
+    failed: null,
+    removeIncomplete: ["x"],
+  });
+  // deploy
+  const bc = new FakeBc();
+  const lane = new BcLane(bc, ["C1"]);
+  const p = await prep(bc, lane);
+  const ctx = { ledgerRoot: await tmp(), trustedRoots: [p.pristine] };
+  const sync = bc.syncHarnessApps.bind(bc);
+  bc.syncHarnessApps = async (c, plan) => incomplete(await sync(c, plan));
+  await assertRejects(
+    () => deploy(bc, "C1", p.wanted, ctx),
+    ContainerError,
+    "incomplete",
+  );
+  assertEquals(await loadLedger(ctx.ledgerRoot, "C1"), {});
+  // cleanup: a complete deploy, then an incomplete cleanup quarantines and claims nothing
+  const bc2 = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane2 = new BcLane(bc2, ["C1", "C2"]);
+  const p2 = await prep(bc2, lane2);
+  const ctx2 = { ledgerRoot: await tmp(), trustedRoots: [p2.pristine] };
+  const sync2 = bc2.syncHarnessApps.bind(bc2);
+  bc2.syncHarnessApps = async (c, plan) => {
+    const r = await sync2(c, plan);
+    return plan.publish.length === 0 ? incomplete(r) : r;
+  };
+  const held = await lane2.exclusive({
+    taskId: "t",
+    variantId: "v",
+    attemptNumber: 1,
+  }, (c) =>
+    deployAndTest(bc2, c, {
+      wanted: p2.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [IDS.test],
+      ctx: ctx2,
+    }));
+  assertStringIncludes(held.result.cleanupError!, "incomplete");
+  assert(lane2.quarantined.has(held.container));
+  assertEquals(await loadLedger(ctx2.ledgerRoot, held.container), {});
+});
+
+Deno.test("BcLane: an abort while fn is pending yields LaneCancelledError, no success, no pass recorded", async () => {
+  const recorded: string[] = [];
+  const health = {
+    getState: () => ({ containers: [] }),
+    record: (o: { containerName: string; result: string }) =>
+      recorded.push(`${o.containerName}:${o.result}`),
+  };
+  const lane = new BcLane(new FakeBc(), ["C1"], { health });
+  const pending = (stop: AbortController) => (c: string) =>
+    new Promise<string>((r) =>
+      setTimeout(() => {
+        stop.abort(new Error("grant revoked"));
+        r(c);
+      }, 5)
+    );
+  for (
+    const run of [
+      (s: AbortController) => lane.compile(pending(s), s.signal),
+      (s: AbortController) => lane.compileOn("C1", pending(s), s.signal),
+      (s: AbortController) =>
+        lane.exclusive(
+          { taskId: "t", variantId: "v", attemptNumber: 1 },
+          pending(s),
+          s.signal,
+        ),
+    ]
+  ) {
+    const stop = new AbortController();
+    const err = await assertRejects(() => run(stop));
+    assertEquals((err as Error).name, "LaneCancelledError");
+  }
+  assertEquals(recorded, []);
+});
+
+Deno.test("BcLane.exclusive: ties among idle healthy containers rotate", async () => {
+  const lane = new BcLane(new FakeBc(), ["C1", "C2", "C3"]);
+  const ctx = { taskId: "t", variantId: "v", attemptNumber: 1 };
+  const used: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    used.push((await lane.exclusive(ctx, (c) => Promise.resolve(c))).container);
+  }
+  assertEquals(used, ["C1", "C2", "C3", "C1", "C2", "C3"]);
 });

@@ -86,6 +86,9 @@ export class BcLane {
   private readonly slots = new Map<string, Semaphore>();
   private readonly load = new Map<string, number>();
   private rotor = 0;
+  /** Exclusive-hold tie-break: least recently routed first (fair rotation). */
+  private readonly lastRouted = new Map<string, number>();
+  private routeTick = 0;
 
   constructor(
     readonly bc: HarnessBc,
@@ -151,7 +154,9 @@ export class BcLane {
     const release = await slot.acquire();
     try {
       this.admit(container, signal);
-      return await fn(container);
+      const out = await fn(container);
+      checkCancel(signal); // an abort while fn was pending is not a success
+      return out;
     } finally {
       release();
     }
@@ -183,7 +188,9 @@ export class BcLane {
       const release = await this.slots.get(c)!.acquire();
       try {
         this.admit(c, signal);
-        return await fn(c);
+        const out = await fn(c);
+        checkCancel(signal); // an abort while fn was pending is not a success
+        return out;
       } catch (err) {
         if (signal?.aborted) throw cancelled(signal);
         if (!isInfraError(err) || tried.size >= eligible.length) throw err;
@@ -213,9 +220,12 @@ export class BcLane {
             this.containers,
           );
         }
-        const c = eligible.reduce((a, b) =>
-          this.load.get(b)! < this.load.get(a)! ? b : a
-        );
+        const lru = (x: string) => this.lastRouted.get(x) ?? -1;
+        const c = eligible.reduce((a, b) => {
+          const la = this.load.get(a)!, lb = this.load.get(b)!;
+          return lb < la || (lb === la && lru(b) < lru(a)) ? b : a;
+        });
+        this.lastRouted.set(c, ++this.routeTick);
         onRouted(c);
         this.load.set(c, this.load.get(c)! + 1);
         const t0 = performance.now();
@@ -231,6 +241,7 @@ export class BcLane {
           const cleanupError = (out as { cleanupError?: string | null } | null)
             ?.cleanupError;
           if (cleanupError) this.quarantine(c, cleanupError);
+          checkCancel(signal); // an abort while fn was pending: no pass recorded
           this.record(c, "pass");
           return out;
         } catch (err) {
@@ -554,7 +565,6 @@ export interface TestSpec {
   codeunit: number;
   procedures: string[] | null;
   target: string;
-  zeroIsInfra: boolean;
 }
 
 export interface TestMessage {
@@ -611,18 +621,24 @@ export async function runTests(
       );
     }
     test_ms += performance.now() - t0;
+    // Zero results are infra for every suite, agent-authored included (M4 parity).
     if (r.totalTests === 0 || r.results.length === 0) {
-      if (s.zeroIsInfra) {
-        throw new ContainerError(
-          `codeunit ${s.codeunit} ran zero tests after publish on ${container} (infra, GH #13)`,
-          container,
-          "test",
-        );
-      }
-      rows.push(
-        row(s, s.procedures?.[0] ?? "(none)", "not_run", "runtime_error"),
+      throw new ContainerError(
+        `codeunit ${s.codeunit} ran zero tests after publish on ${container} (infra, GH #13)`,
+        container,
+        "test",
       );
-      continue;
+    }
+    // A response that reports more tests than it returned rows is incomplete: infra.
+    if (s.procedures === null && r.totalTests > r.results.length) {
+      rows.push(
+        row(
+          s,
+          `(${r.totalTests - r.results.length} results missing)`,
+          "not_run",
+          "infra",
+        ),
+      );
     }
     const byName = new Map(r.results.map((x) => [x.name.toLowerCase(), x]));
     for (const name of s.procedures ?? r.results.map((x) => x.name)) {
@@ -649,6 +665,25 @@ export async function runTests(
 export function scorerPassed(rows: TestRow[]): boolean | null {
   if (rows.some((r) => r.failure === "infra")) return null;
   return rows.length > 0 && rows.every((r) => r.outcome === "pass");
+}
+
+/**
+ * A sync result that did not finish (removal incomplete, or neither done nor
+ * a reported publish failure) is a container failure, whether the provider
+ * threw or returned it.
+ */
+function assertSyncComplete(sync: HarnessSyncResult, container: string): void {
+  if (
+    sync.removeIncomplete.length > 0 || (!sync.done && sync.failed === null)
+  ) {
+    throw new ContainerError(
+      `harness app sync on ${container} incomplete: ${
+        sync.removeIncomplete.join(", ") || "no SYNC_DONE"
+      }`,
+      container,
+      "setup",
+    );
+  }
 }
 
 export interface DeployContext {
@@ -699,6 +734,7 @@ export async function deploy(
       publish: plan.publish.map((w) => w.file),
       allow,
     });
+    assertSyncComplete(sync, container);
   } catch (err) {
     // Unknown container state: forget it so the next deploy republishes everything.
     await saveLedger(ctx.ledgerRoot, container, {});
@@ -776,6 +812,8 @@ export async function deployAndTest(
           await loadLedger(i.ctx.ledgerRoot, container),
         ),
       });
+      // An incomplete result is a failed cleanup (quarantine), never a removal.
+      assertSyncComplete(s, container);
       await saveLedger(
         i.ctx.ledgerRoot,
         container,

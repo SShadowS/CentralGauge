@@ -137,7 +137,6 @@ try {
         codeunit: u.codeunit,
         procedures: null,
         target: "candidate",
-        zeroIsInfra: true,
       })),
     );
     log(name, {
