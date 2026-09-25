@@ -137,7 +137,7 @@ line to every lane when it starts, and each lane re-reads the files.
 
 1. Freeze inputs: write the relevant files with `git show <sha>:<path>` into
    `H:\cg-coord\reviews\<id>-<runId>\` and pass those absolute paths.
-2. `pi_ask` with `model: gpt-5.6-sol` (milestone plans: `gpt-6-astra`), `require_evidence`
+2. `pi_ask` with `model: gpt-6-sol` (milestone plans: `gpt-6-astra`), `require_evidence`
    left on, `output_file` inside the same review folder.
 3. No file reads, timeout or unreadable files: not reviewed, retry once, then `coord ask`.
 4. Separate questions for design, implementation correctness, and oracle quality.

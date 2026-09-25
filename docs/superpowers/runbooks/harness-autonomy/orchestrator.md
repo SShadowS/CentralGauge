@@ -59,7 +59,7 @@ Run as `/loop` without an interval (self-paced). Each sweep:
 ## Review and integration of a submitted task
 
 1. `coord status --json` for the run: commit, branch.
-2. Freeze and review per README "Reviews" with `gpt-5.6-sol`. For oracle and test changes,
+2. Freeze and review per README "Reviews" with `gpt-6-sol`. For oracle and test changes,
    ask the reviewer specifically whether any test was weakened.
 3. Integrate per README "Git": merge onto current master in the main checkout, run the
    task's acceptance checks on that tree (never container tests: ask lane-ops for those and
