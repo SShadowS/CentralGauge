@@ -1,0 +1,7 @@
+{
+  "source": "H:\\Temp3\\harness-spike\\M4-16-results.md section P5 (decision 2026-09-25-accept-M4-16), first line of each message, verbatim",
+  "assert_areequal": "Assert.AreEqual failed. Expected:<1> (Integer). Actual:<2> (Integer). P5a probe message.",
+  "assert_expectederror": "Assert.ExpectedError failed. Expected: P5b expected error text. Actual: P5b actual error text.",
+  "lost_asserterror": "Microsoft.Dynamics.Nav.Types.Exceptions.NavNCLAssertErrorException: An error was expected inside an ASSERTERROR statement.\\   at Microsoft.Dynamics.Nav.Runtime.NavMethodScope.AssertErrorAsync(Func``1 body)",
+  "runtime_error": "P5d runtime error text"
+}

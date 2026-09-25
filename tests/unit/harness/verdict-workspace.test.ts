@@ -364,3 +364,19 @@ Deno.test("stripAlNoise: comments and strings become same-length whitespace, nev
     [[80022, ["P"]]],
   );
 });
+
+Deno.test("testCodeunits: [Test] tolerates whitespace inside the brackets and any case (M4 gate rule)", async () => {
+  const d = await tmp();
+  const procs = ["[ Test ]", "[Test ]", "[ Test]", "[test]", "[ TEST ]"]
+    .map((a, i) => `    ${a}\n    procedure P${i}()\n    begin\n    end;\n`)
+    .join("\n");
+  await write(
+    d,
+    "ws.al",
+    `codeunit 80040 W\n{\n    subtype = test;\n\n${procs}}\n`,
+  );
+  assertEquals(
+    (await testCodeunits(d)).map((t) => [t.codeunit, t.procedures]),
+    [[80040, ["P0", "P1", "P2", "P3", "P4"]]],
+  );
+});

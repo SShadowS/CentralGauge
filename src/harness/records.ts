@@ -209,6 +209,18 @@ export const TestResultSchema = z.strictObject({
   path: ["failure"],
 });
 
+/**
+ * Verdict from scorer results (decision 2026-09-25-verdict-fail-wins): any
+ * false scorer fails the judgment (null scorers stay null in the record);
+ * otherwise any null is unscored; otherwise pass.
+ */
+export function verdictOf(
+  scorers: readonly { passed: boolean | null }[],
+): "pass" | "fail" | "unscored" {
+  if (scorers.some((s) => s.passed === false)) return "fail";
+  return scorers.some((s) => s.passed === null) ? "unscored" : "pass";
+}
+
 export const JudgmentRecordSchema = z.strictObject({
   v: z.literal(1),
   id: Uuid,
@@ -232,14 +244,10 @@ export const JudgmentRecordSchema = z.strictObject({
   verdict_container: z.string().nullable(),
   started_at: Iso,
   ended_at: Iso,
-}).refine((j) => {
-  const expected = j.scorers.some((s) => s.passed === null)
-    ? "unscored"
-    : j.scorers.every((s) => s.passed)
-    ? "pass"
-    : "fail";
-  return j.verdict === expected;
-}, { message: "verdict disagrees with scorer results", path: ["verdict"] });
+}).refine((j) => j.verdict === verdictOf(j.scorers), {
+  message: "verdict disagrees with scorer results",
+  path: ["verdict"],
+});
 export type JudgmentRecord = z.output<typeof JudgmentRecordSchema>;
 
 export const BlockSchema = z.strictObject({
