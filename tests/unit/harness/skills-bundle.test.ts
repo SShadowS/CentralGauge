@@ -118,6 +118,10 @@ Deno.test("al-build-loop: usage line and exit codes match cg-al.ps1", async () =
   const usage = ps1.match(/^# Usage: (.+)$/m)?.[1]?.trim();
   assert(usage, "cg-al.ps1 has a Usage line");
   assert(skill.includes(usage), `skill states the usage: ${usage}`);
+  const version = ps1.match(/--version'\) \{ Write-Output '([^']+)'; exit 0/)
+    ?.[1];
+  assert(version, "cg-al.ps1 answers --version locally");
+  assert(skill.includes(`\`${version}\``), `skill states ${version}`);
   const codes = (text: string, re: RegExp) =>
     [...new Set([...text.matchAll(re)].map((m) => Number(m[1])))].sort((
       a,
