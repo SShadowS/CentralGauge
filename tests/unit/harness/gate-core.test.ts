@@ -1,6 +1,8 @@
 import { assert, assertEquals } from "@std/assert";
 import type {
+  BuildStep,
   GateRun,
+  RunResult,
   RunSummary,
   Tally,
   Variant,
@@ -262,7 +264,10 @@ Deno.test("decideGate: test-authoring", () => {
 Deno.test("summarize: mixed assertion and missing is infra, not a kill", async () => {
   const fx = JSON.parse(
     await Deno.readTextFile(
-      "tests/fixtures/harness/conformance/mixed-assertion-missing.json",
+      new URL(
+        "../../fixtures/harness/conformance/mixed-assertion-missing.json",
+        import.meta.url,
+      ),
     ),
   );
   const task = HarnessTaskSchema.parse(fx.task);
@@ -298,4 +303,130 @@ Deno.test("summarize: missing pass_to_pass procedure of a built Test app is infr
 Deno.test("gatePlan: run counts", () => {
   assertEquals(planF2P.length, 1 + 3 + 2 * 2);
   assertEquals(planTA.length, 1 + 3 + 2 + 2 * 3);
+});
+
+Deno.test("decideGate: matrix incomplete sets matrix_complete false", () => {
+  const runs = f2pRuns();
+  runs.splice(7, 1);
+  assertEquals(decideGate(F2P, planF2P, runs).matrix_complete, false);
+});
+
+Deno.test("decideGate: duplicate run key is refused", () => {
+  const runs = f2pRuns();
+  runs.push({ ...runs[1]! });
+  const d = decideGate(F2P, planF2P, runs);
+  assertEquals(d.promoted, false);
+  assert(
+    d.reasons.some((x) => x.includes("correct#1: duplicate")),
+    d.reasons.join("; "),
+  );
+});
+
+Deno.test("decideGate: unplanned passing run does not rescue an all-killed naive suite", () => {
+  const runs = taRuns();
+  runs[8]!.summary = S({ own: T("assert") });
+  runs.push(
+    run(
+      { kind: "tests", suite: "naive/a", mutant: "bogus" },
+      S({ own: T("pass") }),
+    ),
+  );
+  const d = decideGate(TA, planTA, runs);
+  assertEquals(d.promoted, false);
+  assert(
+    d.reasons.some((x) => x.includes("naive/a@bogus#1: unplanned")),
+    d.reasons.join("; "),
+  );
+  assert(
+    d.reasons.some((x) => x.includes("naive/a must leave")),
+    d.reasons.join("; "),
+  );
+});
+
+const BUILT = (apps: string[]): BuildStep[] =>
+  apps.map((app) => ({ app, stage: "publish" as const, ok: true, codes: [] }));
+const REFAPP = [
+  "Core",
+  "Fleet",
+  "Rental",
+  "Leasing",
+  "Integration",
+  "Reporting",
+  "Test",
+];
+const result = (o: Partial<RunResult>): RunResult => ({
+  variant: "correct",
+  repeat: 1,
+  usesOracle: false,
+  own: [],
+  builds: BUILT(REFAPP),
+  tests: [{
+    codeunit: 80010,
+    procedure: "Visible",
+    passed: true,
+    failure: null,
+  }],
+  staged_hash: "h",
+  ms: 1,
+  ...o,
+});
+
+Deno.test("summarize: app missing from builds without a compile failure is infra", () => {
+  const s = summarize(
+    F2P,
+    result({ builds: BUILT(REFAPP.filter((a) => a !== "Reporting")) }),
+  );
+  assertEquals(s.refapp, "not_run");
+  assertEquals(s.infra, true);
+});
+
+Deno.test("summarize: oracle missing from builds of a fully built refapp is infra", () => {
+  assertEquals(summarize(F2P, result({ usesOracle: true })).infra, true);
+});
+
+Deno.test("summarize: apps skipped after a compile failure stay attributed to it", () => {
+  const s = summarize(
+    F2P,
+    result({
+      usesOracle: true,
+      builds: [
+        ...BUILT(["Core"]),
+        { app: "Fleet", stage: "compile", ok: false, codes: ["AL0118"] },
+      ],
+      tests: [],
+    }),
+  );
+  assertEquals(s.refapp, "compile_fail");
+  assertEquals(s.infra, false);
+});
+
+Deno.test("summarize + decideGate: naive suite missing an added test on a mutant is infra, not a kill", () => {
+  const own = [{ codeunit: 80050, procedures: ["AddedA", "AddedB"] }];
+  const s = summarize(
+    TA,
+    result({
+      variant: "naive/a@m0",
+      own,
+      tests: [
+        { codeunit: 80010, procedure: "Visible", passed: true, failure: null },
+        {
+          codeunit: 80050,
+          procedure: "AddedA",
+          passed: false,
+          failure: "assertion",
+          message: "Assert.AreEqual failed.",
+        },
+      ],
+    }),
+  );
+  assertEquals(s.infra, true);
+  assertEquals(assertionKill(s.own!), false);
+  const runs = taRuns();
+  runs[7]!.summary = s;
+  const d = decideGate(TA, planTA, runs);
+  assertEquals(d.promoted, false);
+  assert(
+    d.reasons.some((x) => x.includes("naive/a@m0#1: infra")),
+    d.reasons.join("; "),
+  );
 });
