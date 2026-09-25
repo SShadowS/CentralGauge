@@ -1,0 +1,2 @@
+# Recorded harness logs must stay byte-exact (no CRLF conversion on checkout)
+tests/fixtures/harness/** -text
