@@ -374,3 +374,36 @@ Deno.test("harness-tasks: units, bands, reserved subranges, 80013", async (t) =>
     );
   });
 });
+
+Deno.test("harness-tasks: per-task oracle band, fail-closed paths", async (t) => {
+  const f = (file: string, id: number) => obj({ file, unit: unitOf(file), id });
+  const o1 = "harness-tasks/tasks/HX-001/oracle/src/O.Codeunit.al";
+  const o2 = "harness-tasks/tasks/HX-002/oracle/src/O.Codeunit.al";
+
+  await t.step("each task owns 85000+(N-1)*100..+99", () => {
+    const p = auditObjects([f(o1, 85100), f(o2, 85000), f(o2, 85100)])
+      .problems;
+    assertEquals(p.length, 2);
+    assertStringIncludes(p[0]!, "HX-001");
+    assertStringIncludes(p[0]!, "85000-85099");
+    assertStringIncludes(p[1]!, "HX-002");
+    assertStringIncludes(p[1]!, "85100-85199");
+  });
+
+  await t.step("unclassified harness-tasks paths are problems", () => {
+    const stray = "harness-tasks/tasks/HX-001/stray/x.al";
+    const p = auditObjects([f(stray, 70001)]).problems;
+    assertEquals(p.length, 1);
+    assertStringIncludes(p[0]!, "unclassified harness path");
+  });
+
+  await t.step(
+    "80013 is banned on unclassified harness-tasks paths too",
+    () => {
+      const p = auditObjects([f("harness-tasks/stray.al", 80013)]).problems;
+      assert(
+        p.some((x) => x.includes("80013 is forbidden in harness content")),
+      );
+    },
+  );
+});

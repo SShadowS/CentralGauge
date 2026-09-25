@@ -156,6 +156,22 @@ export function unitOf(file: string): string {
   return `unclassified:${file}`;
 }
 
+/**
+ * Each task owns the oracle band 85000 + (N - 1) * 100 .. + 99 inside
+ * HARNESS_ORACLE_RANGE. Mirrors the M4 gate (scripts/harness/gate-stage.ts,
+ * "Each task owns the oracle band"); keep the two in step. A task id with no
+ * band gets an empty one, so every object in it is reported.
+ */
+function oracleBand(taskId: string): Band {
+  const n = Number(taskId.slice(3));
+  const start = HARNESS_ORACLE_RANGE.start + (n - 1) * 100;
+  const label = `harness oracle ${taskId}`;
+  if (!Number.isInteger(n) || n < 1 || start + 99 > HARNESS_ORACLE_RANGE.end) {
+    return { label: `${label} (no band inside 85000-89999)`, start: 1, end: 0 };
+  }
+  return { label, start, end: start + 99 };
+}
+
 /** Expected band for a unit, or null when the unit has no enforced band. */
 function bandOf(unit: string): Band | null {
   if (unit.startsWith("prereq:")) {
@@ -184,9 +200,7 @@ function bandOf(unit: string): Band | null {
   if (unit === "harness-fixture:Test") {
     return { label: "harness fixture", ...HARNESS_FIXTURE_TEST_RANGE };
   }
-  if (unit.startsWith("harness-oracle:")) {
-    return { label: "harness oracle", ...HARNESS_ORACLE_RANGE };
-  }
+  if (unit.startsWith("harness-oracle:")) return oracleBand(unit.slice(15));
   if (/^harness-(overlay|correct|naive|mutants|reference-tests):/.test(unit)) {
     return unit.endsWith(":Test")
       ? { label: "task test suite", ...HARNESS_TASK_SUITE_RANGE }
@@ -270,7 +284,14 @@ export function auditObjects(
           `(see BENCHMARK_APP_ID_BUFFER in src/constants.ts)`,
       );
     }
-    const harnessUnit = /^(refapp|harness-)/.test(obj.unit);
+    if (obj.unit.startsWith("unclassified:harness-tasks/")) {
+      problems.push(
+        `${obj.file}: ${obj.kind} ${obj.id} "${obj.name}" is on an ` +
+          `unclassified harness path (no known unit under harness-tasks/)`,
+      );
+    }
+    const harnessUnit = /^(refapp|harness-)/.test(obj.unit) ||
+      obj.file.startsWith("harness-tasks/");
     if (
       harnessUnit &&
       (HARNESS_FORBIDDEN_IDS as readonly number[]).includes(obj.id)
