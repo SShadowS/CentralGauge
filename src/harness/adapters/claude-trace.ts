@@ -40,22 +40,33 @@ const ms = (ts: unknown) => {
   return Number.isFinite(t) ? t : null;
 };
 const str = (v: unknown) => (typeof v === "string" && v !== "" ? v : null);
-/** An agent-chosen name, pattern-redacted before storage. */
-const safe = (v: unknown) => {
-  const s = str(v);
-  return s === null ? null : redactPatternText(s).text;
-};
+/** The one place a stored event is redacted: every string field, including any future one. */
+function redacted(e: TraceEvent): TraceEvent {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(e)) {
+    out[k] = typeof v === "string" ? redactPatternText(v).text : v;
+  }
+  return out as TraceEvent;
+}
 const textOf = (c: unknown) =>
   typeof c === "string"
     ? c
     : list(c).map(obj).map((x) => (typeof x.text === "string" ? x.text : ""))
       .join("\n");
 
+/**
+ * A whole shell command that is exactly one cg-al invocation: app names,
+ * codeunit numbers, quotes and spaces only, so no ; && || | redirect,
+ * substitution or wrapper shell can put other output in the result.
+ */
+const SINGLE_CG_AL = /^\s*cg-al(\s+[A-Za-z0-9 ._"'-]*)?\s*$/;
 /** Only these calls talk to the backend; any other tool's output is never read as a reply. */
-const isBackendCall = (tool: string, classifier: string) =>
-  tool.startsWith("mcp__al-tools__") || classifier.startsWith("shell.cg-al.");
+const isBackendCall = (tool: string, rawCommand: string | null) =>
+  tool.startsWith("mcp__al-tools__") ||
+  (SHELL_TOOLS.has(tool) && rawCommand !== null &&
+    SINGLE_CG_AL.test(rawCommand));
 /** The backend's request id shape (backend.ts `br_<n>`); anything else is not stored. */
-const REQUEST_ID = /^br_[A-Za-z0-9]{1,32}$/;
+const REQUEST_ID = /^br_[0-9]{1,18}$/;
 
 /**
  * The cg-al client line {op, client:{status}, result} or the al-tools MCP
@@ -144,7 +155,7 @@ export function claudeTrace(
   const structural: string[] = [];
   const events: TraceEvent[] = [];
   const push = (e: Omit<TraceEvent, "v" | "seq">) =>
-    events.push({ v: TRACE_VERSION, seq: events.length + 1, ...e });
+    events.push(redacted({ v: TRACE_VERSION, seq: events.length + 1, ...e }));
   const t0 = lines.map((l) => ms(l.rec.timestamp)).find((t) => t !== null) ??
     null;
   const rel = (
@@ -248,10 +259,10 @@ export function claudeTrace(
         ? (r.error ? "error" : "ok")
         : null;
       const fields = callFields(name, rawCmd, target);
-      const reply = r && isBackendCall(name, fields.classifier)
+      const reply = r && isBackendCall(name, rawCmd)
         ? backendReply(r.text)
         : null;
-      const skill = name === "Skill" ? safe(input.skill) : null;
+      const skill = name === "Skill" ? str(input.skill) : null;
       const common = {
         t_ms: rel(at),
         session,
@@ -281,7 +292,7 @@ export function claudeTrace(
         ...fields,
       });
       if (SPAWN_TOOLS.has(name)) {
-        spawned.set(id, safe(input.subagent_type) ?? "subagent");
+        spawned.set(id, str(input.subagent_type) ?? "subagent");
         push({ ...BASE, ...common, type: "subagent_spawn" });
       }
       if (name === "Skill") {
