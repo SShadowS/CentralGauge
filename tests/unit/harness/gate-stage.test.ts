@@ -4,7 +4,7 @@ import {
   assertRejects,
   assertStringIncludes,
 } from "@std/assert";
-import { join } from "@std/path";
+import { join, relative } from "@std/path";
 import { layers } from "../../../scripts/harness/gate-core.ts";
 import {
   checkTask,
@@ -247,4 +247,208 @@ Deno.test("exportSource ignores working tree changes", async () => {
   assertEquals(src.commit.length, 40);
   assertEquals(src.refappTree.length, 40);
   assert(await loadTask(src.taskDir));
+});
+
+// Review fixes (run 001 adversarial review).
+
+Deno.test("exportSource and stageWorkspace refuse a non-empty output dir", async () => {
+  const root = await tmp();
+  await writeTask(root, "HX-001", "# Bug\n");
+  await git(root, "init", "-q");
+  await commitAll(root);
+  const out = await tmp();
+  await write(out, "harness-tasks/tasks/HX-001/naive/z/Core/src/A.al", "stale");
+  await assertRejects(
+    () => exportSource(root, "HEAD", "HX-001", out),
+    Error,
+    "not empty",
+  );
+  const stage = await tmp();
+  await write(stage, "Test/src/Stale.al", "stale");
+  await assertRejects(
+    () => stageWorkspace(join(root, "harness-tasks/refapp"), [], stage),
+    Error,
+    "not empty",
+  );
+});
+
+Deno.test("exportSource: relative out, no line-ending conversion, no index left behind", async () => {
+  const root = await tmp();
+  await writeTask(root, "HX-001", "# Bug\n");
+  await git(root, "init", "-q");
+  await commitAll(root);
+  await git(root, "config", "core.autocrlf", "true");
+  await Deno.writeTextFile(join(root, ".gitattributes"), "* text eol=crlf\n");
+  const out = await tmp();
+  const rel = relative(Deno.cwd(), out);
+  const src = await exportSource(root, "HEAD", "HX-001", rel);
+  const bytes = await Deno.readTextFile(join(src.refappDir, "Core/src/A.al"));
+  assert(!bytes.includes("\r"), "exported bytes must be the committed blob");
+  await assertRejects(() => Deno.stat(join(out, ".gate-index")));
+  await assertRejects(
+    async () => exportSource(root, "no-such-rev", "HX-001", await tmp()),
+    Error,
+    "does not resolve",
+  );
+});
+
+Deno.test("stageWorkspace: build output skipped case-insensitively", async () => {
+  const root = await tmp();
+  const refapp = join(root, "refapp");
+  await writeRefapp(refapp);
+  await write(refapp, "Core/Output/x.txt", "bin");
+  const out = join(root, "out");
+  await stageWorkspace(refapp, [], out);
+  await assertRejects(() => Deno.stat(join(out, "Core/Output/x.txt")));
+});
+
+Deno.test("stageWorkspace: a task layer other than overlay cannot replace a shipped test", async () => {
+  const root = await tmp();
+  const refapp = join(root, "refapp");
+  await writeRefapp(refapp);
+  const task = join(root, "task");
+  await write(task, "reference-tests/Test/SRC/v.al", "always passes");
+  await assertRejects(
+    () =>
+      stageWorkspace(
+        refapp,
+        layers(
+          task,
+          { kind: "tests", suite: "reference-tests", mutant: "m0" },
+          true,
+        ),
+        join(root, "out"),
+      ),
+    Error,
+    "shipped test",
+  );
+  await write(task, "overlay/Test/src/V.al", TEST_CU(80010, "Visible"));
+  await Deno.remove(join(task, "reference-tests"), { recursive: true });
+  await write(task, "reference-tests/Test/src/R.al", TEST_CU(80100, "Ref"));
+  await stageWorkspace(
+    refapp,
+    layers(
+      task,
+      { kind: "tests", suite: "reference-tests", mutant: "m0" },
+      true,
+    ),
+    join(root, "out2"),
+  );
+});
+
+async function testAuthoringTask(root: string): Promise<string> {
+  const dir = await writeTask(root, "HX-002", "# Task\n");
+  const yml = join(dir, "task.yml");
+  await Deno.writeTextFile(
+    yml,
+    (await Deno.readTextFile(yml))
+      .replace("kind: bugfix", "kind: test-authoring")
+      .replace("fail_to_pass]", "mutant_kill]")
+      .replace(/fail_to_pass:\n[\s\S]*$/, ""),
+  );
+  await write(dir, "reference-tests/Test/src/R.al", TEST_CU(80100, "Ref"));
+  return dir;
+}
+
+Deno.test("checkTask: case-variant path still replaces a shipped test", async () => {
+  const root = await tmp();
+  const dir = await testAuthoringTask(root);
+  await write(dir, "reference-tests/Test/SRC/v.al", TEST_CU(80010, "Visible"));
+  const all = (await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  ))
+    .problems.join("\n");
+  assert(
+    /reference-tests\/Test\/src\/v\.al: replaces a shipped test/i.test(all),
+    all,
+  );
+});
+
+Deno.test("checkTask: hidden names are matched literally, case-insensitively, codeunit names included", async () => {
+  const root = await tmp();
+  const dir = await writeTask(
+    root,
+    "HX-001",
+    "Look at t85000 and make hidden pass.\n",
+  );
+  const all = (await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  ))
+    .problems.join("\n");
+  assertStringIncludes(all, "hidden name Hidden");
+  assertStringIncludes(all, "hidden name T85000");
+  const yml = join(dir, "task.yml");
+  await Deno.writeTextFile(
+    yml,
+    (await Deno.readTextFile(yml)).replace("[Hidden]", '["Hid(den"]'),
+  );
+  await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  );
+});
+
+Deno.test("checkTask: missing oracle app.json or idRanges is a problem, not a crash", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  await write(
+    dir,
+    "oracle/app.json",
+    JSON.stringify({
+      id: "c6a1e000-0000-4000-8001-000000000001",
+      name: "CGR Oracle HX-001",
+      publisher: "CentralGauge",
+      dependencies: [],
+    }),
+  );
+  let all = (await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  ))
+    .problems.join("\n");
+  assertStringIncludes(all, "oracle/app.json: idRanges");
+  await Deno.remove(join(dir, "oracle/app.json"));
+  all = (await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  ))
+    .problems.join("\n");
+  assertStringIncludes(all, "oracle/app.json: missing");
+});
+
+Deno.test("drift against a revision: renames count, working tree ignored", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  await git(root, "init", "-q");
+  await commitAll(root, "refapp-v1-rc1");
+  const refapp = join(root, "harness-tasks/refapp");
+  await git(
+    root,
+    "mv",
+    "harness-tasks/refapp/Core/src/A.al",
+    "harness-tasks/refapp/Core/src/B.al",
+  );
+  await commitAll(root);
+  await write(refapp, "Fleet/src/Dirty.al", 'codeunit 70150 "N"\n{\n}\n');
+  const r = await checkTask(await loadTask(dir), refapp, root, { rev: "HEAD" });
+  assert(
+    r.problems.some((p) => p.includes("Core/src/A.al")),
+    r.problems.join("; "),
+  );
+  assert(
+    r.warnings.some((w) => w.includes("(2 files)")),
+    r.warnings.join("; "),
+  );
+  await assertRejects(
+    async () =>
+      checkTask(await loadTask(dir), refapp, root, { rev: "no-such-rev" }),
+    Error,
+  );
 });
