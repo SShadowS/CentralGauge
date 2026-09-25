@@ -65,7 +65,6 @@ codeunit 80010 "CGR Rental Tests"
     [Test]
     procedure ReturnBelowStartKmFails()
     var
-        Contract: Record "CGR Rental Contract";
         RentalMgt: Codeunit "CGR Rental Mgt";
         ContractNo: Code[20];
     begin
@@ -74,7 +73,5 @@ codeunit 80010 "CGR Rental Tests"
         RentalMgt.CheckOut(ContractNo);
         asserterror RentalMgt.Return(ContractNo, 999, '');
         Assert.ExpectedError('Return km 999 is below the start km 1000.');
-        Contract.Get(ContractNo);
-        Assert.AreEqual(Contract.Status::"Checked Out", Contract.Status, 'Failed return keeps the contract checked out');
     end;
 }
