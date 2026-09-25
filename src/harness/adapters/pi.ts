@@ -18,7 +18,7 @@ import type { TraceEvent } from "../trace.ts";
 import { ConfigurationError } from "../../errors.ts";
 import { requestedComponents } from "../adapter.ts";
 import { estimateCost } from "../pricing.ts";
-import { writeTrace } from "../trace.ts";
+import { TRACE_VERSION, writeTrace } from "../trace.ts";
 import {
   type Line,
   nonJsonReason,
@@ -196,7 +196,7 @@ export function parsePiStream(
 
   const trace: TraceEvent[] = [];
   const ev = (o: Partial<TraceEvent>): TraceEvent => ({
-    v: 1,
+    v: TRACE_VERSION,
     seq: trace.length + 1,
     t_ms: null,
     type: "tool_call",
@@ -215,6 +215,12 @@ export function parsePiStream(
     truncated: null,
     duration_ms: null,
     model: null,
+    // ponytail: v2 call fields left null until M2-15 fills them (callFields).
+    command: null,
+    command_cut: null,
+    target: null,
+    category: null,
+    classifier: null,
     ...o,
   });
   const started = new Map<string, number>();
