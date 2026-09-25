@@ -175,3 +175,25 @@ Deno.test("classify: review findings, redirects and subshells", () => {
   }
   assertEquals(c("mcp__other__run-tests").category, "test");
 });
+
+Deno.test("classify: rejection fixes (pipe then redirect, MCP whole-name action)", () => {
+  assertEquals(c("Bash", "cat a.al | grep x > out.txt").category, "edit");
+  for (
+    const tool of [
+      "mcp__ci__build_logs",
+      "mcp__ci__test_results",
+      "mcp__ci__publish_status",
+      "mcp__ci__build_list",
+    ]
+  ) {
+    assertEquals(c(tool).category, "unclassified", tool);
+  }
+  const ok: [string, string][] = [
+    ["mcp__ci__run_tests", "test"],
+    ["mcp__ci__build_app", "compile"],
+    ["mcp__ci__publish_app", "publish"],
+    ["mcp__ci__build", "compile"],
+    ["mcp__ci__run-tests", "test"],
+  ];
+  for (const [tool, want] of ok) assertEquals(c(tool).category, want, tool);
+});

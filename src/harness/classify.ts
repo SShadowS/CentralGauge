@@ -75,6 +75,23 @@ const MCP_TOKENS: [string, Category][] = [
 
 /** Words that may precede the action token of an unknown MCP tool (`run-tests`). */
 const RUN_VERBS = new Set(["run", "do", "exec", "execute", "start", "trigger"]);
+/**
+ * The only words that may follow it: what is built, tested or published
+ * (`build_app`). Anything else (`build_logs`, `test_results`) names data
+ * about the action, not the action, so the tool stays unclassified.
+ */
+const ACTION_TARGETS = new Set([
+  "app",
+  "apps",
+  "project",
+  "projects",
+  "extension",
+  "extensions",
+  "package",
+  "packages",
+  "workspace",
+  "all",
+]);
 
 function classifyMcp(tool: string): Classification {
   const rest = tool.slice("mcp__".length);
@@ -91,8 +108,12 @@ function classifyMcp(tool: string): Classification {
   const tokens = name.toLowerCase().split(/[_\-.]+/);
   for (const [tok, cat] of MCP_TOKENS) {
     const i = tokens.indexOf(tok);
-    // `get_build_logs`, `list_tests`: the action word is an object, not the verb.
-    if (i >= 0 && tokens.slice(0, i).every((t) => RUN_VERBS.has(t))) {
+    // The whole name must be an action: `run_tests`, `build_app`. Not
+    // `get_build_logs`, `list_tests` (object) or `build_logs` (retrieval).
+    if (
+      i >= 0 && tokens.slice(0, i).every((t) => RUN_VERBS.has(t)) &&
+      tokens.slice(i + 1).every((t) => ACTION_TARGETS.has(t))
+    ) {
       return at(`mcp-token.${tok}`, cat);
     }
   }
