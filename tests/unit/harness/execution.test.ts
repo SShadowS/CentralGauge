@@ -50,6 +50,7 @@ import {
 } from "./runtime-fixture.ts";
 import { write } from "./refapp-fixture.ts";
 import { FakeBc, result } from "./fake-bc.ts";
+import type { RunBehavior } from "./fake-docker.ts";
 
 const U16 = (s: string) =>
   String.fromCharCode(
@@ -1681,5 +1682,133 @@ Deno.test("mcp inventory: a plain arm that connects an unrequested MCP server is
   assertStringIncludes(
     (await sideOf(t, e.id)).setup_error,
     "unrequested components loaded: mcp:al-tools",
+  );
+});
+
+// M2-10: pattern secrets that are NOT in custody (the agent echoes a key it
+// found, a daemon message carries a Bearer header) never reach a published
+// surface, on the normal path or through recovery.
+const PATTERN_KEY = `sk-ant-oat01-${"Q".repeat(40)}`;
+const has = (text: string, s: string) =>
+  text.includes(s) || text.includes(U16(s));
+
+/** probeLines with a Bash call (command and result carry the key), an orphan sub-agent parent naming it, and a UTF-16LE stderr line. */
+function leakingBehavior(t: TestEnv): RunBehavior {
+  return async (call, io) => {
+    const probe = await probeLines();
+    const leak = [
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          id: "msg_leak",
+          model: "claude-sonnet-5",
+          content: [{
+            type: "tool_use",
+            id: "toolu_leak",
+            name: "Bash",
+            input: { command: `echo ${PATTERN_KEY}` },
+          }],
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "toolu_leak",
+            content: PATTERN_KEY,
+            is_error: false,
+          }],
+        },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        parent_tool_use_id: `toolu_${PATTERN_KEY}`,
+        message: { id: "msg_leak2", model: "claude-sonnet-5", content: [] },
+      }),
+    ];
+    await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", [
+      ...probe.slice(0, -1),
+      ...leak,
+      probe.at(-1)!,
+    ])(call, io);
+    const stderr = t.docker.lastCapture!.stderrPath;
+    const u16 = new Uint8Array(
+      new Uint16Array(
+        [...`warning: key ${PATTERN_KEY}\n`].map((c) => c.charCodeAt(0)),
+      ).buffer,
+    );
+    await Deno.writeFile(stderr, u16, { append: true });
+    return 0;
+  };
+}
+
+async function assertPublishedRedacted(t: TestEnv, id: string) {
+  const all = await allBytes(t.env.resultsRoot);
+  assert(!leaks(all, PATTERN_KEY), "the key reaches no published byte");
+  const run = join(t.env.resultsRoot, "runs", id);
+  const marker = "[REDACTED:anthropic-key]";
+  for (const f of ["raw.jsonl", "stderr.txt", "trace.jsonl", "sandbox.json"]) {
+    const text = new TextDecoder("latin1").decode(
+      await Deno.readFile(join(run, f)),
+    );
+    assert(has(text, marker), `${f} holds ${marker}`);
+  }
+  const trace = (await Deno.readTextFile(join(run, "trace.jsonl"))).trim()
+    .split("\n").map((l) => JSON.parse(l));
+  assertEquals(
+    trace.find((e) => e.call_id === "toolu_leak").command,
+    `echo ${marker}`,
+  );
+}
+
+Deno.test("publication redacts a non-custody pattern secret in raw log, stderr, trace command and side file", async () => {
+  const t = await makeEnv();
+  t.docker.behavior = leakingBehavior(t);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  await assertPublishedRedacted(t, e.id);
+});
+
+Deno.test("recovery publishes a crashed attempt with a non-custody pattern secret redacted", async () => {
+  const t = await makeEnv();
+  t.docker.behavior = leakingBehavior(t);
+  t.env.hooks = {
+    after: (s) =>
+      s === "draft"
+        ? Promise.reject(new Error("runner killed"))
+        : Promise.resolve(),
+  };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), Error, "runner killed");
+  assert(
+    !leaks(await allBytes(t.env.resultsRoot), PATTERN_KEY),
+    "nothing unredacted is published before recovery",
+  );
+  t.env.hooks = {};
+  const [e] = await recoverInterrupted(t.env, loadTask);
+  await assertPublishedRedacted(t, e!.id);
+});
+
+Deno.test("record and error strings are pattern-redacted", async () => {
+  // Master dropped the backend-fault string (M1-19b run 002); an observed
+  // version is still echoed into setup_error, so it carries the secret.
+  const t = await makeEnv();
+  const bearer = `Bearer ${"z".repeat(30)}`;
+  t.docker.behavior = async (_c, io) => {
+    await io.stdout(
+      INIT.replace("2.1.282", `2.1.300 Authorization: ${bearer}`),
+    );
+    return 0;
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  const side = await sideOf(t, e.id);
+  assertStringIncludes(side.setup_error, "2.1.300");
+  assertStringIncludes(side.setup_error, "[REDACTED:bearer]");
+  const all = await allBytes(t.env.resultsRoot);
+  assert(
+    !all.includes("z".repeat(30)),
+    "the header value reaches no published byte",
   );
 });
