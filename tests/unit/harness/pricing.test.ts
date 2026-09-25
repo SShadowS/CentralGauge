@@ -300,6 +300,7 @@ Deno.test("estimateCost: unknown TTL, a missing usage field, an unknown model, a
       cache_write_5m: 0,
       cache_write_1h: 0,
       output: 0,
+      reasoning: 0,
     }),
   ], BOOK);
   assertEquals(fine.cost_usd, 1);
@@ -361,6 +362,26 @@ Deno.test("estimateCost: a null priced token kind, or reasoning above output, gi
   assertEquals([over.cost_usd, over.missing], [null, [
     "claude-sonnet-5: reasoning tokens (101) exceed output tokens (100)",
   ]]);
+  const zeroOut = estimateCost([T({ output: 0, reasoning: 5 })], BOOK);
+  assertEquals([zeroOut.cost_usd, zeroOut.missing], [null, [
+    "claude-sonnet-5: reasoning tokens (5) exceed output tokens (0)",
+  ]]);
+});
+
+Deno.test("estimateCost: a missing or invalid cache-write field never yields a known cache-write total", () => {
+  for (const k of ["cache_write_5m", "cache_write_1h", "cache_write_unknown"]) {
+    for (const bad of [null, undefined, NaN, -1, 2.5]) {
+      const r = estimateCost([
+        T({ [k]: bad } as unknown as Partial<ModelTokens>),
+      ], BOOK);
+      assertEquals(r.cost_usd, null, `${k}=${bad}`);
+      assertEquals(r.per_model[0]!.tokens_cache_write, null, `${k}=${bad}`);
+      assertStringIncludes(
+        r.missing.join(";"),
+        `claude-sonnet-5: ${k} tokens not a non-negative integer (${bad})`,
+      );
+    }
+  }
 });
 
 Deno.test("loadPricingBook: a price for a model not in models.yml and an invalid date fail loudly", async () => {

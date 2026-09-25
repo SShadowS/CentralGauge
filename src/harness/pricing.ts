@@ -208,12 +208,7 @@ export function estimateCost(
     }
     // Output includes reasoning; more reasoning than output means separately
     // counted thinking tokens that the output rate would leave unbilled.
-    // ponytail: output 0 is exempt only because the plan's M1-21 fixture
-    // (output 0, reasoning 694) must price; drop the exemption once it is fixed.
-    if (
-      isCount(u.reasoning) && isCount(u.output) && u.output > 0 &&
-      u.reasoning > u.output
-    ) {
+    if (isCount(u.reasoning) && isCount(u.output) && u.reasoning > u.output) {
       why.push(
         `${u.model}: reasoning tokens (${u.reasoning}) exceed output tokens (${u.output})`,
       );
@@ -259,9 +254,11 @@ export function estimateCost(
       requests: valid(u.requests),
       tokens_in_uncached: valid(u.input),
       tokens_cache_read: valid(u.cache_read),
-      tokens_cache_write: valid(
-        u.cache_write_5m + u.cache_write_1h + u.cache_write_unknown,
-      ),
+      // Never a partial sum: null + n is n in JS, so validate each part first.
+      tokens_cache_write: isCount(u.cache_write_5m) &&
+          isCount(u.cache_write_1h) && isCount(u.cache_write_unknown)
+        ? u.cache_write_5m + u.cache_write_1h + u.cache_write_unknown
+        : null,
       tokens_out: valid(u.output),
       tokens_reasoning: valid(u.reasoning),
       cost_usd: cost,
