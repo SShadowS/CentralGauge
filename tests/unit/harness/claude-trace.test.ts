@@ -528,3 +528,59 @@ Deno.test("claudeTrace: target and skill are pattern-redacted before storage", (
     "C:\\[REDACTED:anthropic-key].txt",
   );
 });
+
+Deno.test("claudeTrace: every stored string is pattern-redacted, including tool and transport", () => {
+  const key = `sk-ant-oat01-${"K".repeat(40)}`;
+  const tool = `mcp__${key}__al_compile`;
+  const t = claudeTrace(
+    [
+      rec(asst("1", [use("a", tool, {})]), 1),
+      rec(res("a", "ok"), 2),
+    ],
+    "f",
+    new Set(),
+  );
+  const call = t.events.find((e) => e.type === "tool_call")!;
+  assertEquals(JSON.stringify(t.events).includes("sk-ant-oat01"), false);
+  assertEquals(call.transport, "mcp:[REDACTED:anthropic-key]");
+  assertEquals(call.tool!.startsWith("mcp__[REDACTED:anthropic-key]"), true);
+});
+
+Deno.test("claudeTrace: only a single cg-al command is a backend call; request ids are br_<digits>", () => {
+  const reply = (request: string) =>
+    JSON.stringify({
+      op: "compile",
+      client: { script_ms: 1, status: 200 },
+      result: { request, ok: false, apps: [{ ok: false, diagnostics: [1] }] },
+    });
+  const t = claudeTrace(
+    [
+      rec(
+        asst("1", [
+          use("a", "Bash", { command: "cg-al compile Core; cat report.json" }),
+          use("b", "PowerShell", { command: 'pwsh -c "cg-al compile Core"' }),
+          use("c", "Bash", { command: "cg-al compile Core" }),
+          use("d", "Bash", { command: 'cg-al compile "Fleet Mgt"' }),
+        ]),
+        1,
+      ),
+      rec(res("a", `Exit code 1\n${reply("br_1")}`, true), 2),
+      rec(res("b", `Exit code 1\n${reply("br_2")}`, true), 3),
+      rec(res("c", `Exit code 1\n${reply("br_abc")}`, true), 4),
+      rec(res("d", `Exit code 1\n${reply("br_4")}`, true), 5),
+    ],
+    "f",
+    new Set(),
+  );
+  const by = (id: string) =>
+    t.events.find((x) => x.call_id === id && x.type === "tool_call")!;
+  assertEquals(
+    ["a", "b", "c", "d"].map((
+      id,
+    ) => [by(id).backend_request, by(id).error_class]),
+    [[null, null], [null, null], [null, "compile_diagnostics"], [
+      "br_4",
+      "compile_diagnostics",
+    ]],
+  );
+});
