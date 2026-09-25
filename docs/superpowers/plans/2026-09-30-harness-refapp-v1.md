@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Grow the M0 refapp skeleton into refapp v1 and author six harness tasks (HX-001 to HX-006) that are authoring-qualified by the interim gate and then qualified through the real M1 pipeline and frozen by 2026-10-09, with HX-001 authoring-qualified by 2026-10-01 for the 10-02 end-to-end gate.
+**Goal:** Grow the M0 refapp skeleton into refapp v1 and author six harness tasks (HX-001 to HX-006) that are authoring-qualified by the interim gate and then qualified through the real M1 pipeline and frozen by 2026-10-09, with HX-001 authoring-qualified by 2026-10-01 and pinned as `refapp-v1-rc1` by 10-02, well before the end-to-end gate (moved to 10-05, decision `2026-09-25-gate-1002-moved.md`).
 
 **Architecture:** lane-content writes AL only: refapp slices under `harness-tasks/refapp/`, and per task `task.yml`, `prompt.md`, `overlay/`, `oracle/`, `correct/`, `naive/`, and for the test-authoring task `mutants/` and `reference-tests/`. lane-ops owns the interim gate, split into three reviewable files: `scripts/harness/gate-core.ts` (pure decision contract), `scripts/harness/gate-stage.ts` (staging from an exported git revision and static checks) and `scripts/harness/gate-task.ts` (CLI, host compile, container executor). The gate stages a named commit, never the working tree, compiles and publishes on a leased Cronus container, runs the listed tests over SOAP, classifies every failure, checks the full run matrix and writes a report under `H:\Temp3\harness-spike\M4\<task>\`. A task promoted by this gate is **authoring-qualified**; the 10-09 freeze additionally needs real-pipeline judgments and non-provisional identities (M4-15).
 
@@ -12,15 +12,19 @@
 
 **Revision 2 inputs:** review `H:\cg-coord\reviews\M4-plan-001\review-gpt6astra.md` (ACCEPT-WITH-CHANGES, all must-change items applied), owner decision `H:\cg-coord\decisions\2026-09-25-m4-coverage-pilot.md`, premise probe `H:\Temp3\harness-spike\M4-00-results.md` (HX-001 redesigned).
 
+**Revision 3 inputs:** round-2 review `H:\cg-coord\reviews\M4-plan-002\review-gpt6astra-round2.md` (ACCEPT-WITH-CHANGES, last round: must-change items 1-6, blockers A-D and the section 4 rulings applied), decisions `H:\cg-coord\decisions\2026-09-25-gate-1002-moved.md` (end-to-end gate 10-05, M1 Part 2 replanned as a vertical slice) and `H:\cg-coord\decisions\2026-09-25-egress.md` (at most 5 supervised credential-bearing dev runs before egress enforcement).
+
 ## Global Constraints
 
 - lane-content never touches a container. Every compile/publish/test on a Cronus container is a lane-ops job named in this plan, with a lease, on Cronus281 to Cronus283 (lane.md: content gate runs). lane-content may run the host `al` compile (`gate-task.ts compile`, orchestrator ruling); it starts no container and publishes nothing, and it is a pre-check only.
 - lane-ops owns `scripts/harness/gate-*.ts` (orchestrator ruling).
 - Every gate stages an exported commit (`--rev`), not a working tree, and records `source_commit`, `refapp_tree` and `task_tree`.
-- Temporary workspaces live under `H:\Temp3\harness-spike\M4\tmp\` (launch contract: outputs only in the repo, the coord root and `H:\Temp3\harness-spike\`). Evidence goes to `H:\Temp3\harness-spike\M4\<task>\`.
+- Temporary workspaces live under `H:\Temp3\harness-spike\M4\tmp\` (launch contract: outputs only in the repo, the coord root and `H:\Temp3\harness-spike\`), unit-test temp dirs under `H:\Temp3\harness-spike\M4\tmp\unit\` (`tmp()` in `gate-fixtures.ts`; `CG_GATE_TMP` overrides both). Evidence goes to `H:\Temp3\harness-spike\M4\<task>\`.
+- Tags: `refapp-v1-rcN` and the published `refapp-v1` are never moved. The local `refapp-v1` created for the freeze candidate is a provisional alias until M4-15 qualifies it; a failed candidate's SHA and evidence are kept under `H:\Temp3\harness-spike\M4\freeze\failed-<sha>\`.
+- Credential-bearing sandbox runs before egress enforcement exists: at most 5 in total across all lanes, each supervised, no unattended retries, terminated on unexpected network activity (decision `2026-09-25-egress.md`). The M4-17 pilot counts against those 5 unless it runs through the production adapter behind tested egress enforcement.
 - ID bands (1b section 4): refapp Core 70000-70099, Fleet 70100-70199, Rental 70200-70299, Leasing 70300-70399, Integration 70400-70499, Reporting 70500-70599; `Test` app 80000-84999 (codeunit 80013 is never used: Cronus28 hosts a foreign 80013); hidden oracles 85000-89999, HX-00N owns 85000+(N-1)*100 to 85099+(N-1)*100. Never 75000-79999. Production-replacing mutants keep their module's ids.
 - App ids are static: refapp `c6a1e000-0000-4000-8000-00000000000N` (existing); oracle of HX-00N `c6a1e000-0000-4000-8001-00000000000N`, name `CGR Oracle HX-00N`, publisher `CentralGauge`, dependencies only `CGR <module>` for modules in `fail_to_pass.depends_on` plus Library Assert. An oracle never depends on `CGR Test`.
-- Trusted test boundary (1a section 7): `correct/`, `naive/` and `mutants/` never contain files under `Test/`; `reference-tests/` and naive test suites only add new files under `Test/`, never replace a shipped one. `check` enforces it.
+- Trusted test boundary (1a section 7): `correct/`, `naive/` and `mutants/` never contain files under `Test/`; `reference-tests/` and naive test suites only add new files under `Test/`, never replace any shipped `Test/` file (including `Test/app.json`). `check` enforces it over every file, not only `.al`.
 - Layers add or replace files; nothing is deleted. A zero-byte layer file is refused as an unsupported deletion.
 - Every test codeunit has `Subtype = Test;`, `TestPermissions = Disabled;` and at least one `[Test]` procedure.
 - The SOAP harness rolls back per test codeunit, not per procedure: every procedure uses its own keys, sets every Setup value and the work date it depends on, and never relies on state from another procedure.
@@ -32,42 +36,51 @@
 - Refapp breadth stays at what the six tasks need. Number series, dimensions, API pages and the HTTP mock are not built (cut order item 4). The coverage gap is accepted by the owner and stated as a report caveat (decision `2026-09-25-m4-coverage-pilot.md`).
 - The difficulty pilot is developmental and excluded from results; it uses pi through OpenRouter only (never the Team account) and counts against the USD 150 paid cap.
 - `deno fmt`, `deno check`, `deno lint` on changed `.ts` files only. No em dash in any committed text.
-- Dates: a slip of more than one day against 10-01 (HX-001 authoring-qualified) or 10-09 (six frozen) goes to the owner.
+- Dates: a slip of more than one day against 10-01 (HX-001 authoring-qualified), 10-02 (rc1 tagged, needed by the 10-05 end-to-end gate) or 10-09 (six frozen) goes to the owner.
 
 ## Review Focus
 
-1. **A failure that is not an assertion counts as discrimination**: a naive solution or a mutant "fails" through a runtime error, a missing procedure, a compile error or a publish fault. Expected: only an assertion failure with every expected procedure run is a kill; runtime-only failures are refused, publish faults are infra. Pinned in M4-01a (`naive runtime-only failure is refused`, `naive with a missing procedure is refused`, `infra run is refused`, `baseline oracle compile with an unexpected diagnostic is refused`).
+1. **A failure that is not an assertion counts as discrimination**: a naive solution or a mutant "fails" through a runtime error, a missing procedure, a compile error or a publish fault. Expected: only an assertion failure with every expected procedure run is a kill; runtime-only failures are refused; publish faults, zero-result codeunits and missing procedures are infra (exit 3). Pinned in M4-01a (`naive runtime-only failure is refused`, `naive with a missing procedure is infra`, `mixed assertion and missing is infra, not a kill`, `infra run is refused`, `baseline oracle compile with an unexpected diagnostic is refused`) and M4-01c (`zero results from a codeunit is infra`).
 2. **An incomplete run matrix promotes a task**: a planned variant or repeat never ran, or a test-authoring suite ran only some of its procedures. Expected: refused with the missing entry named. Pinned in M4-01a (`matrix incomplete`, `naive suite with a missing procedure on a mutant`).
-3. **A layer replaces a shipped test** and a suite passes only because of it. Expected: `check` refuses and staging skips candidate replacements of shipped tests. Pinned in M4-01b (`check refuses a layer that replaces a shipped test`, `candidate layer cannot replace a shipped test`).
+3. **A layer replaces a shipped test** and a suite passes only because of it. Expected: `check` refuses a suite that replaces any shipped `Test/` file (including `Test/app.json`), and staging skips candidate replacements of shipped tests. Pinned in M4-01b (`every static rule fires`: `replaces a shipped test` for `Test/app.json`; `candidate layer cannot replace a shipped test`).
 4. **The gate stages something other than the commit it reports**: the working tree, a moved tag, a stale refapp under an rc tag. Expected: staging from `git` objects of the named revision; `tag_status: mismatch` blocks promotion. Pinned in M4-01b (`exportSource ignores working tree changes`) and M4-01c (`tag mismatch blocks promotion`).
 5. **A later refapp slice changes what an earlier task stages.** Expected: `check` names every changed file a task replaces (problem) and warns on any other refapp change since the task's tag; the freeze re-gates every task on the candidate commit. Pinned in M4-01b (`drift: replaced file is a problem, other change a warning`) and M4-15.
 
 ## Decisions argued from the spec
 
-- **Interim gate, then real pipeline.** 1b section 8 says the `mock` harness runs both solutions "through the real pipeline". The M1 Part 2 pipeline lands 10-01 to 10-08 (its Schedule), too late for HX-001 by 10-01. So `gate-*.ts` implements the 1b section 8 checks for authoring, and M4-15 requires real-pipeline judgments through M1-24 `harness cell` / `harness run` before freeze. Without them by 10-09 the freeze needs an explicit owner exception.
-- **Failure classes match M1.** Part 2 M1-17 classifies a failed procedure as `assertion` when its message matches `\bAssert\.\w+ failed\b`, else `runtime_error`; compile and infra are separate. The gate uses the same rule plus one addition: BC's "An error was expected inside an ASSERTERROR statement." is an assertion failure (it is the test's own expectation losing). M4-16 P5 records the exact texts; parity with M1-17 is an open question.
+- **Interim gate, then real pipeline.** 1b section 8 says the `mock` harness runs both solutions "through the real pipeline". M1 Part 2 is being replanned as a vertical slice for the 10-05 end-to-end gate (decision `2026-09-25-gate-1002-moved.md`); mutant scoring and campaigns are deferred in that slice. So `gate-*.ts` implements the 1b section 8 checks for authoring, and M4-15 requires real-pipeline judgments through `harness cell` before freeze. Without them by 10-09 the freeze needs an explicit owner exception.
+- **Failure classes, aligned with M1 (review round 2, ruling 3).** A failed procedure is `assertion` when its message matches `\bAssert\.\w+ failed\b` or is BC's "An error was expected inside an ASSERTERROR statement." (the test's own expected-error assertion losing), else `runtime_error`. The M1 classifier lives in M1-16's `src/harness/bc-lane.ts`; lane-infra aligns it and uses the M4-16 P5 messages as regression fixtures (cross-lane request 3). M4-16 P5 acceptance is a predecessor of the first accepted gate (M4-03).
+- **Missing results are infra.** A test codeunit that returns zero results, or an expected procedure (listed `pass_to_pass`/`fail_to_pass`, or discovered in the suite under test) missing from the results of an app that built, marks the run infra: reported, exit 3, never scored. A kill needs an assertion with every expected procedure present; "assertion in A, missing B" is infra, not a kill (shared fixture `tests/fixtures/harness/conformance/mixed-assertion-missing.json`, M4-01a; M1-18 must agree, cross-lane request 3).
 - **Gate expectations** (1b section 8, 1a section 7), all on a complete matrix with no infra run:
   - f2p tasks. Baseline: all seven apps build, every `pass_to_pass` procedure passes, and `fail_to_pass` fails: either the oracle compiles, every listed procedure runs and at least one fails, or the oracle fails to compile with only missing-feature diagnostics (`MISSING_FEATURE_CODES`). `correct/` x3: every scorer passes. Each `naive/<x>` x2: the refapp and the oracle build, every listed procedure runs, at least one loses an assertion.
   - test-authoring. Baseline builds and passes `pass_to_pass`. Reference tests: every discovered procedure passes on `correct/` x3; on m0 (the staged state) and on every named mutant everything builds, every procedure runs and at least one loses an assertion. Each naive suite: passes completely on `correct/`, runs completely on every target, and leaves at least one mutant alive. Naive suites run once per target (their matrix already has one run per mutant); f2p naive variants run twice.
   - A hidden regression row may pass on the baseline; the scorer must fail on the baseline, every procedure must pass on `correct/`, and the report keeps baseline per-procedure outcomes so no row is mislabeled as a transition.
 - **Layer semantics** (1b section 5): layers mirror the workspace (`<Module>/...`) and add or replace files. Order: refapp, overlay, correct, mutant, test suite. Deletion is not supported and refused.
-- **Provenance and tags.** Each task is gated at a named commit; the orchestrator tags it `refapp-v1-rcN` on acceptance and the task pins that tag. The gate reports `tag_status`: `match` (the tag's `harness-tasks/refapp` tree equals the gated tree), `pending` (tag not created yet) or `mismatch` (blocks promotion). The final `refapp-v1` tag is created locally on the freeze candidate so the real pipeline can resolve it, and pushed only after M4-15 qualifies all six; a failed qualification deletes the unpushed local tag and a fixed commit is tagged instead.
-- **Reference tests** live in `reference-tests/` (review answer 1): an authoring input in neither hash; the gate report records its tree id.
-- **HX-001 is a final-state task.** M4-00 measured that a stale record's `Modify` after a subscriber modified the same row in the same transaction raises no error on BC 28.4; the stale buffer silently overwrites (lost update). The ticket reports the observable symptom; the oracle asserts final state across apps.
+- **Provenance and tags.** Each task is gated at a named commit; the orchestrator tags it `refapp-v1-rcN` on acceptance and the task pins that tag. The gate reports `tag_status`: `match` (the tag's `harness-tasks/refapp` tree equals the gated tree), `pending` (tag not created yet) or `mismatch` (blocks promotion). The final `refapp-v1` tag is created locally on the freeze candidate as a provisional alias so the real pipeline can resolve it, and pushed only after M4-15 qualifies all six; a failed qualification keeps the failed SHA and its evidence, deletes the unpushed local alias and tags a fixed commit instead. A published tag is never moved.
+- **Audit identity.** Every gate report's `task_tree` must equal the `TASK TREE` of the task's latest full audit or of an auditor-approved metadata-only re-attestation (`reattest-*.md`: old audited tree, new tree, the exact permitted diff, `VERDICT: clean`). A re-derivation (HX-003 in M4-08) needs a fresh full audit; the freeze re-pin (M4-14) needs a re-attestation per task.
+- **Reference tests** live in `reference-tests/` (review answer 1): an authoring input in neither hash; the gate report records its tree id. In the real pipeline `reference-tests/` is HX-002's positive submitted test solution (the verdict supplies reference production itself); it is not moved into `correct/` (ruling 4).
+- **HX-001 is a final-state task.** M4-00 measured that a stale record's `Modify` after a subscriber modified the same row in the same transaction raises no error on BC 28.4; the stale buffer silently overwrites (lost update). The ticket reports the observable symptom; the oracle asserts final state across apps, including a return that adds a second open damage.
 - **Coupling tags** use the 1b section 3 edges: `events`, `internal`, `interface`, `queries` (the Reporting row: table extensions, cross-app FlowFields, queries; M4 exercises FlowFields, not query objects), `facade`, `ishandled`, `core-facade`.
+- **Smoke codeunit 80000 stays.** M1-27's probe runs test codeunit 80000 and expects 5 passing procedures (findings section 1). Refapp v1 keeps `"CGR Skeleton Tests"` (80000) with its five procedures ported to the v1 API, so the probe keeps working (ruling 1).
 
-## Cross-lane dependencies
+## Cross-lane dependencies and requests
 
 | Gate | M4 provides | Needs from other lanes |
 | --- | --- | --- |
-| 10-02 end to end (launch contract: refapp, Claude Code in the sandbox, trusted verdict, cost in the records) | HX-001 at `refapp-v1-rc1`, authoring-qualified (M4-03) | M1-13 staging, M1-14 verdict workspace, M1-15/M1-16 BC lane, M1-17 verdict, M1-19 `cg-al` backend, M1-20 sandbox runtime, M1-21 adapter contract and images, M1-22 execution pipeline, M1-24 `harness cell`, M1-26 symbols lock and images, plus the M2 Claude Code adapter. M1-28 must accept `refapp-v1-rc1` in place of `refapp-v1`. |
-| 10-09 freeze | six tasks at a candidate commit, pinned to `refapp-v1` (M4-14) | M1-24 `harness run`/`cell`, M1-26 lock (non-provisional identity), M1-29 mock contract (its mock arms apply `correct/` and `naive/`) |
+| 10-05 end to end (moved from 10-02; refapp, Claude Code in the sandbox, trusted verdict, cost in the records) | HX-001 authoring-qualified (M4-03, 10-01) and tagged `refapp-v1-rc1` by 10-02 | the M1 Part 2 vertical slice: staging and freeze, locked build inputs, scoped BC lifecycle, trusted bugfix/feature verdict, `cg-al` backend, sandbox, thin `harness cell`, minimal Claude Code adapter and cost parser. Old ids where they still fit: M1-13, M1-14, M1-15, M1-16, M1-17, M1-19, M1-20, M1-21, M1-24, M1-26; the replanned ids replace these when the slice plan lands. M1-28 uses `refapp-v1-rc1`. |
+| 10-09 freeze | six tasks at a candidate commit, pinned to `refapp-v1` (M4-14) | `harness cell` mock arms that take a named variant (`correct`, `naive:<name>`, and `reference-tests` as the test-authoring positive), mutant scoring for HX-002 (deferred in the slice, needed by 10-08), the symbols lock (non-provisional identity). M1-29 uses HX-001 at rc1 and HX-002 at rc2, not the final tag. |
+
+Cross-lane requests (sent by `coord ask` with this plan; not resolved here):
+1. M1-28/M1-29 dependencies: replace "refapp-v1 tagged" with HX-001 at `refapp-v1-rc1` (M1-28) and HX-001 rc1 plus HX-002 rc2 (M1-29); each task resolves its own pin.
+2. Mock positive artifact for test-authoring = `reference-tests/`; every named naive variant selectable; judgments expose raw reasons, target coverage and artifact identity.
+3. M1-16 `bc-lane.ts` classifier counts the lost-ASSERTERROR text as `assertion` (P5 fixtures), and M1-18 checks infra and missing procedures before accepting an assertion kill (fixture `mixed-assertion-missing.json`).
+4. The obsolete Part 1 wording that puts all `mutants` in the hidden band is updated: production-replacing mutants keep module ids (already so in Part 2, ruling 5).
 
 ## Task set, coverage and schedule
 
 | Task | Kind | Touches | Coupling | Author | Gate | Target |
 | --- | --- | --- | --- | --- | --- | --- |
-| HX-001 | bugfix | Rental, Fleet, Core | events, core-facade | M4-02 | M4-03 | 10-01 |
+| HX-001 | bugfix | Rental, Fleet, Core | events, core-facade | M4-02 | M4-03 | 10-01 (rc1 by 10-02) |
 | HX-002 | test-authoring | Leasing, Core, Test | internal | M4-04 | M4-05 | 10-02 |
 | HX-003 | feature | Fleet, Rental, Core | ishandled, interface | M4-06 | M4-07 (re-gate M4-09) | 10-03 |
 | HX-004 | feature | Reporting, Leasing, Rental, Fleet | queries, internal | M4-08 | M4-09 | 10-05 |
@@ -80,15 +93,15 @@ Coverage caveat (owner decision, stated in the report): `ishandled`, `queries` a
 | --- | --- | --- |
 | 09-30 | M4-01a, M4-01b | M4-02 (slice A, HX-001) |
 | 10-01 | M4-01c, M4-16 (probes, morning), M4-03 | M4-02 audit fixes, M4-04 |
-| 10-02 | M4-05, M4-17 (pilot HX-002) | M4-04 finish, M4-06 |
-| 10-03 | M4-07 | M4-08 |
-| 10-05 | M4-09 (HX-004, HX-003) | M4-10 |
-| 10-06 | M4-11, M4-17 (pilot HX-005) | M4-12 |
-| 10-07 | M4-13, M4-17 (remaining) | hardening from pilot, if any |
+| 10-02 | M4-05; orchestrator tags rc1, rc2 | M4-04 finish, M4-06 |
+| 10-03 | M4-07; M4-17 HX-002 if the runner check passed | M4-08 |
+| 10-05 | M4-09 (HX-004, HX-003); end-to-end gate on HX-001 (other lanes) | M4-10 |
+| 10-06 | M4-11; M4-17 HX-005 | M4-12 |
+| 10-07 | M4-13 | hardening from pilot, if any |
 | 10-08 | M4-15 | M4-14 |
 | 10-09 | M4-15 finish | |
 
-Container load: about 77 initial gate runs, 10 for the HX-003 re-gate, 77 for the freeze re-gate and the real-pipeline arms, plus retries. At the spike's 73.2 s per seven-app operation sum that is over 3 aggregate container-hours before oracle apps, staging and cleanup (findings section 1 excludes those). M4-03 records per-run wall time; ops reserves gate windows on Cronus281-283 from that measurement.
+Container load (review round 2): 79 initial gate runs (HX-001 10, HX-002 27, HX-003 10, HX-004 10, HX-005 12, HX-006 10), 10 for the HX-003 re-gate, 79 for the freeze re-gate: **168 runs** before real-pipeline qualification, probes, pilot judging and retries; `partial-reschedule` adds 6 across initial and freeze gates. At the spike's 73.2 s per seven-app operation sum that is about 3.4 aggregate container-hours before oracle apps, staging and cleanup (findings section 1 excludes those). M4-03 records per-run wall time; ops reserves gate windows on Cronus281-283 from that measurement.
 
 ## File Structure
 
@@ -114,6 +127,7 @@ Container load: about 77 initial gate runs, 10 for the HX-003 re-gate, 77 for th
 
 **Files:**
 - Create: `scripts/harness/gate-core.ts`
+- Create: `tests/fixtures/harness/conformance/mixed-assertion-missing.json`
 - Test: `tests/unit/harness/gate-core.test.ts`
 
 **Interfaces:**
@@ -128,11 +142,13 @@ Container load: about 77 initial gate runs, 10 for the HX-003 re-gate, 77 for th
 import { assert, assertEquals } from "@std/assert";
 import type { GateRun, RunSummary, Tally, Variant } from "../../../scripts/harness/gate-core.ts";
 import {
+  assertionKill,
   classifyTestFailure,
   decideGate,
   gatePlan,
   layers,
   parseVariant,
+  summarize,
   tally,
 } from "../../../scripts/harness/gate-core.ts";
 import { HarnessTaskSchema } from "../../../src/harness/task.ts";
@@ -276,9 +292,9 @@ const F2P_BAD: Array<[string, (r: GateRun[]) => void, string]> = [
   ["naive runtime-only failure is refused", (r) => {
     r[4]!.summary = S({ oracle: "ok", f2p: T("runtime") });
   }, "naive/a#1"],
-  ["naive with a missing procedure is refused", (r) => {
-    r[5]!.summary = S({ oracle: "ok", f2p: T("missing") });
-  }, "naive/a#2"],
+  ["naive with a missing procedure is infra", (r) => {
+    r[5]!.summary = S({ oracle: "ok", f2p: T("missing"), infra: true });
+  }, "naive/a#2: infra"],
   ["baseline that already passes the oracle is refused", (r) => {
     r[0]!.summary = S({ oracle: "ok", f2p: T("pass") });
   }, "baseline#1"],
@@ -327,10 +343,77 @@ Deno.test("decideGate: test-authoring", () => {
   assert(decideGate(TA, planTA, partial).reasons.some((x) => x.includes("naive/a@m0")));
 });
 
+Deno.test("summarize: mixed assertion and missing is infra, not a kill", async () => {
+  const fx = JSON.parse(
+    await Deno.readTextFile("tests/fixtures/harness/conformance/mixed-assertion-missing.json"),
+  );
+  const task = HarnessTaskSchema.parse(fx.task);
+  const s = summarize(task, fx.run);
+  assertEquals(s.infra, fx.expected.infra);
+  assertEquals(assertionKill(s.f2p!), fx.expected.kill);
+});
+
+Deno.test("summarize: missing pass_to_pass procedure of a built Test app is infra", () => {
+  const builds = ["Core", "Fleet", "Rental", "Leasing", "Integration", "Reporting", "Test"]
+    .map((app) => ({ app, stage: "publish" as const, ok: true, codes: [] }));
+  const s = summarize(F2P, {
+    variant: "correct",
+    repeat: 1,
+    usesOracle: false,
+    own: [],
+    builds,
+    tests: [],
+    staged_hash: "h",
+    ms: 1,
+  });
+  assertEquals(s.infra, true);
+});
+
 Deno.test("gatePlan: run counts", () => {
   assertEquals(planF2P.length, 1 + 3 + 2 * 2);
   assertEquals(planTA.length, 1 + 3 + 2 + 2 * 3);
 });
+```
+
+Shared conformance fixture (also handed to lane-infra for M1-18, cross-lane request 3), `tests/fixtures/harness/conformance/mixed-assertion-missing.json`:
+
+```json
+{
+  "description": "Oracle procedure A lost an assertion; procedure B never reported. Expected: infra, not a kill. The M4 gate and M1-18 must agree.",
+  "task": {
+    "id": "HX-001",
+    "refapp_version": "refapp-v1-rc1",
+    "kind": "bugfix",
+    "prompt": "prompt.md",
+    "source": "refapp",
+    "scorers": ["build", "pass_to_pass", "fail_to_pass"],
+    "pass_to_pass": [{ "codeunit": 80010, "procedures": ["Visible"] }],
+    "fail_to_pass": { "depends_on": ["Core"], "tests": [{ "codeunit": 85000, "procedures": ["A", "B"] }] }
+  },
+  "run": {
+    "variant": "naive/x",
+    "repeat": 1,
+    "usesOracle": true,
+    "own": [],
+    "builds": [
+      { "app": "Core", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Fleet", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Rental", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Leasing", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Integration", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Reporting", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Test", "stage": "publish", "ok": true, "codes": [] },
+      { "app": "Oracle", "stage": "publish", "ok": true, "codes": [] }
+    ],
+    "tests": [
+      { "codeunit": 80010, "procedure": "Visible", "passed": true, "failure": null },
+      { "codeunit": 85000, "procedure": "A", "passed": false, "failure": "assertion", "message": "Assert.AreEqual failed. Expected:<1> (Integer). Actual:<0> (Integer)." }
+    ],
+    "staged_hash": "x",
+    "ms": 1
+  },
+  "expected": { "infra": true, "kill": false }
+}
 ```
 
 - [ ] **Step 2: Run it and see it fail**
@@ -550,15 +633,21 @@ function appState(run: RunResult, app: string): AppState {
 export function summarize(task: HarnessTask, run: RunResult): RunSummary {
   const states = BUILD_ORDER.map((a) => appState(run, a));
   const oracle = run.usesOracle ? appState(run, "Oracle") : null;
+  const testBuilt = appState(run, "Test") === "ok";
+  const p2p = tally(run.tests, task.pass_to_pass);
+  const f2p = task.fail_to_pass && oracle === "ok" ? tally(run.tests, task.fail_to_pass.tests) : null;
+  const own = run.own.length > 0 ? tally(run.tests, run.own) : null;
   return {
     refapp: states.find((s) => s !== "ok") ?? "ok",
     oracle,
     oracleCodes: run.builds.find((b) => b.app === "Oracle")?.codes ?? [],
-    p2p: tally(run.tests, task.pass_to_pass),
-    f2p: task.fail_to_pass && oracle === "ok" ? tally(run.tests, task.fail_to_pass.tests) : null,
-    own: run.own.length > 0 ? tally(run.tests, run.own) : null,
+    p2p,
+    f2p,
+    own,
+    // Missing results from an app that built are infra, never evidence (GH #13 rule).
     infra: run.infra !== undefined || states.includes("publish_fail") ||
-      oracle === "publish_fail",
+      oracle === "publish_fail" || (testBuilt && p2p.missing > 0) ||
+      (f2p !== null && f2p.missing > 0) || (testBuilt && own !== null && own.missing > 0),
   };
 }
 
@@ -699,7 +788,7 @@ export function decideGate(
 - [ ] **Step 4: Run it and see it pass**
 
 Run: `deno test --allow-all tests/unit/harness/gate-core.test.ts`
-Expected: `ok | 17 passed | 0 failed`.
+Expected: `ok | 19 passed | 0 failed`.
 
 - [ ] **Step 5: Check, lint, format, commit**
 
@@ -707,11 +796,11 @@ Expected: `ok | 17 passed | 0 failed`.
 deno check scripts/harness/gate-core.ts tests/unit/harness/gate-core.test.ts
 deno lint scripts/harness/gate-core.ts tests/unit/harness/gate-core.test.ts
 deno fmt scripts/harness/gate-core.ts tests/unit/harness/gate-core.test.ts
-git add scripts/harness/gate-core.ts tests/unit/harness/gate-core.test.ts
+git add scripts/harness/gate-core.ts tests/unit/harness/gate-core.test.ts tests/fixtures/harness/conformance/mixed-assertion-missing.json
 git commit -m "feat(harness): M4 gate decision contract"
 ```
 
-**Acceptance:** `deno test --allow-all tests/unit/harness/gate-core.test.ts` prints `ok | 17 passed | 0 failed`; check and lint clean; the test file contains the named cases of Review Focus 1 and 2.
+**Acceptance:** `deno test --allow-all tests/unit/harness/gate-core.test.ts` prints `ok | 19 passed | 0 failed`; check and lint clean; the test file contains the named cases of Review Focus 1 and 2; the conformance fixture exists.
 
 ---
 
@@ -733,6 +822,16 @@ git commit -m "feat(harness): M4 gate decision contract"
 ```typescript
 import { dirname, join } from "@std/path";
 import { BUILD_ORDER } from "../../../scripts/harness/gate-core.ts";
+
+/** Unit-test temp root under the launch contract's authorized output root. */
+export const TEST_TMP = join(
+  Deno.env.get("CG_GATE_TMP") ?? "H:\\Temp3\\harness-spike\\M4\\tmp",
+  "unit",
+);
+export async function tmp(): Promise<string> {
+  await Deno.mkdir(TEST_TMP, { recursive: true });
+  return await Deno.makeTempDir({ dir: TEST_TMP });
+}
 
 export async function write(root: string, rel: string, text: string): Promise<void> {
   await Deno.mkdir(dirname(join(root, rel)), { recursive: true });
@@ -800,7 +899,7 @@ import {
   testManifestIn,
 } from "../../../scripts/harness/gate-stage.ts";
 import { loadTask } from "../../../src/harness/task.ts";
-import { TEST_CU, write, writeRefapp, writeTask } from "./gate-fixtures.ts";
+import { TEST_CU, tmp, write, writeRefapp, writeTask } from "./gate-fixtures.ts";
 
 const git = (cwd: string, ...args: string[]) =>
   new Deno.Command("git", { args, cwd, stdout: "null", stderr: "null" }).output();
@@ -811,7 +910,7 @@ async function commitAll(root: string, tag?: string) {
 }
 
 Deno.test("stageWorkspace: precedence, build output skipped, bad layers refused", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await tmp();
   const refapp = join(root, "refapp");
   await writeRefapp(refapp);
   await write(refapp, "Core/.alpackages/x.app", "bin");
@@ -841,7 +940,7 @@ Deno.test("stageWorkspace: precedence, build output skipped, bad layers refused"
 });
 
 Deno.test("stageWorkspace: candidate layer cannot replace a shipped test", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await tmp();
   const refapp = join(root, "refapp");
   await writeRefapp(refapp);
   const cand = join(root, "ws");
@@ -861,21 +960,21 @@ Deno.test("stageWorkspace: candidate layer cannot replace a shipped test", async
 });
 
 Deno.test("testManifestIn: [Test] procedures per codeunit", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await tmp();
   await write(root, "Test/src/T.al", TEST_CU(80100, "One"));
   await write(root, "Test/src/L.al", 'codeunit 80101 "L"\n{\n}\n');
   assertEquals(await testManifestIn(root), [{ codeunit: 80100, procedures: ["One"] }]);
 });
 
 Deno.test("checkTask: clean fixture has no problems", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await tmp();
   const dir = await writeTask(root, "HX-001", "# Bug\nThe vehicle is not blocked.\n");
   const { problems } = await checkTask(await loadTask(dir), join(root, "harness-tasks/refapp"), root);
   assertEquals(problems, []);
 });
 
 Deno.test("checkTask: every static rule fires", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await tmp();
   const dir = await writeTask(root, "HX-001", "Make Hidden pass.\n");
   await write(dir, "oracle/src/P.al", 'codeunit 80001 "P"\n{\n    Subtype = Test;\n}\n');
   await write(dir, "correct/Test/src/V.al", TEST_CU(80010, "Visible"));
@@ -906,8 +1005,26 @@ Deno.test("checkTask: every static rule fires", async () => {
   ) assertStringIncludes(all, needle);
 });
 
+Deno.test("check refuses a test suite that replaces Test/app.json", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-002", "# Task\n");
+  const yml = join(dir, "task.yml");
+  await Deno.writeTextFile(
+    yml,
+    (await Deno.readTextFile(yml))
+      .replace("kind: bugfix", "kind: test-authoring")
+      .replace("fail_to_pass]", "mutant_kill]")
+      .replace(/fail_to_pass:\n[\s\S]*$/, ""),
+  );
+  await write(dir, "reference-tests/Test/app.json", "{}");
+  await write(dir, "reference-tests/Test/src/R.al", TEST_CU(80100, "Ref"));
+  const all = (await checkTask(await loadTask(dir), join(root, "harness-tasks/refapp"), root))
+    .problems.join("\n");
+  assertStringIncludes(all, "reference-tests/Test/app.json: replaces a shipped test");
+});
+
 Deno.test("drift: replaced file is a problem, other change a warning", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await tmp();
   const dir = await writeTask(root, "HX-001", "# Bug\n");
   await git(root, "init", "-q");
   await commitAll(root, "refapp-v1-rc1");
@@ -920,12 +1037,12 @@ Deno.test("drift: replaced file is a problem, other change a warning", async () 
 });
 
 Deno.test("exportSource ignores working tree changes", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await tmp();
   await writeTask(root, "HX-001", "# Bug\n");
   await git(root, "init", "-q");
   await commitAll(root, "refapp-v1-rc1");
   await write(join(root, "harness-tasks/refapp"), "Core/src/A.al", "dirty");
-  const out = await Deno.makeTempDir();
+  const out = await tmp();
   const src = await exportSource(root, "refapp-v1-rc1", "HX-001", out);
   assertStringIncludes(await Deno.readTextFile(join(src.refappDir, "Core/src/A.al")), "codeunit 70000");
   assertEquals(src.commit.length, 40);
@@ -1175,10 +1292,12 @@ export async function checkTask(
     }
   }
 
-  const shippedTests = new Set(
-    all.filter((f) => f.module === "Test" && (f.source === "refapp" || f.source === "overlay"))
-      .map((f) => f.rel),
-  );
+  // Every shipped Test/ file is protected, not only .al (Test/app.json included).
+  const shippedTests = new Set<string>();
+  for (const root of [join(refappDir, "Test"), join(dir, "overlay", "Test")]) {
+    if (!(await exists(root))) continue;
+    for await (const f of files(root)) shippedTests.add(`Test/${f.rel}`);
+  }
   for (const f of layerFiles) {
     const where = `${f.source}/${f.rel}`;
     if (f.size === 0) problems.push(`${where}: zero-byte file; deletion is not supported`);
@@ -1261,7 +1380,7 @@ export async function checkTask(
 - [ ] **Step 5: Run it and see it pass**
 
 Run: `deno test --allow-all tests/unit/harness/gate-stage.test.ts`
-Expected: `ok | 7 passed | 0 failed`.
+Expected: `ok | 8 passed | 0 failed`.
 
 - [ ] **Step 6: Check, lint, format, commit**
 
@@ -1273,7 +1392,7 @@ git add scripts/harness/gate-stage.ts tests/unit/harness/gate-stage.test.ts test
 git commit -m "feat(harness): M4 gate staging from a revision and static checks"
 ```
 
-**Acceptance:** `deno test --allow-all tests/unit/harness/gate-stage.test.ts` prints `ok | 7 passed | 0 failed`; check and lint clean.
+**Acceptance:** `deno test --allow-all tests/unit/harness/gate-stage.test.ts` prints `ok | 8 passed | 0 failed`; check and lint clean.
 
 ---
 
@@ -1304,12 +1423,13 @@ import type { ALProject, TestResult } from "../../../src/container/types.ts";
 import type { GateBc } from "../../../scripts/harness/gate-task.ts";
 import { runGate, runVariant } from "../../../scripts/harness/gate-task.ts";
 import { loadTask } from "../../../src/harness/task.ts";
-import { writeTask } from "./gate-fixtures.ts";
+import { tmp, writeTask } from "./gate-fixtures.ts";
 
 function mockBc(o: {
   failCompile?: string;
   failPublish?: string;
   soapThrows?: boolean;
+  emptyResults?: boolean;
   prenukeThrowsAfter?: number;
   seen?: string[];
 }): GateBc {
@@ -1337,6 +1457,17 @@ function mockBc(o: {
         : Promise.resolve(),
     runTests: (codeunit: number): Promise<TestResult> => {
       if (o.soapThrows) return Promise.reject(new Error("SOAP timeout"));
+      if (o.emptyResults) {
+        return Promise.resolve({
+          success: true,
+          totalTests: 0,
+          passedTests: 0,
+          failedTests: 0,
+          duration: 1,
+          results: [],
+          output: "",
+        });
+      }
       const name = codeunit === 80010 ? "Visible" : "Hidden";
       return Promise.resolve({
         success: true,
@@ -1353,7 +1484,7 @@ function mockBc(o: {
 }
 
 async function fixture() {
-  const root = await Deno.makeTempDir();
+  const root = await tmp();
   const dir = await writeTask(root, "HX-001", "# Bug\n");
   const loaded = await loadTask(dir);
   const source = {
@@ -1364,7 +1495,7 @@ async function fixture() {
     taskDir: dir,
     taskTree: "t".repeat(40),
   };
-  const tmpRoot = await Deno.makeTempDir();
+  const tmpRoot = await tmp();
   return { root, loaded, source, tmpRoot };
 }
 
@@ -1392,7 +1523,7 @@ Deno.test("runVariant: temp dirs live under the tmp root and are removed", async
 
 Deno.test("runGate: SOAP failure is infra and the report survives a failing cleanup", async () => {
   const { loaded, source, tmpRoot } = await fixture();
-  const outDir = await Deno.makeTempDir();
+  const outDir = await tmp();
   const { file, code } = await runGate({
     bc: mockBc({ soapThrows: true, prenukeThrowsAfter: 1 }),
     loaded,
@@ -1421,7 +1552,7 @@ Deno.test("runVariant: candidate test-authoring counts only added codeunits", as
       .replace(/fail_to_pass:\n[\s\S]*$/, ""),
   );
   const ta = (await loadTask(source.taskDir)).task;
-  const ws = await Deno.makeTempDir();
+  const ws = await tmp();
   await writeTask(ws, "HX-009", "x"); // any refapp copy; only Test/ below matters
   const cand = join(ws, "harness-tasks/refapp");
   await Deno.writeTextFile(
@@ -1433,6 +1564,29 @@ Deno.test("runVariant: candidate test-authoring counts only added codeunits", as
   assertEquals(loaded.task.id, "HX-001");
 });
 
+Deno.test("runVariant: zero results from a codeunit is infra", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const r = await runVariant(mockBc({ emptyResults: true }), loaded.task, source, { kind: "correct" }, 1, tmpRoot);
+  assert(r.infra?.includes("zero results"), r.infra);
+});
+
+Deno.test("runGate: a staging exception still cleans up and writes an infra report", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  await Deno.remove(join(source.refappDir, "Reporting"), { recursive: true });
+  const { file, code } = await runGate({
+    bc: mockBc({}),
+    loaded,
+    source,
+    container: "Mock",
+    outDir: await tmp(),
+    tmpRoot,
+    tagTree: null,
+  });
+  assertEquals(code, 3);
+  const report = JSON.parse(await Deno.readTextFile(file));
+  assert(report.reasons.some((x: string) => x.includes("refapp module missing")));
+});
+
 Deno.test("runGate: tag mismatch blocks promotion", async () => {
   const { loaded, source, tmpRoot } = await fixture();
   const { file } = await runGate({
@@ -1440,7 +1594,7 @@ Deno.test("runGate: tag mismatch blocks promotion", async () => {
     loaded,
     source,
     container: "Mock",
-    outDir: await Deno.makeTempDir(),
+    outDir: await tmp(),
     tmpRoot,
     tagTree: "x".repeat(40),
   });
@@ -1655,6 +1809,10 @@ export async function runVariant(
         if (seen.has(s.codeunit)) continue;
         seen.add(s.codeunit);
         const res = await bc.runTests(s.codeunit, appIds[s.app] ?? "");
+        if (res.results.length === 0) {
+          result.infra = `codeunit ${s.codeunit}: zero results after publish`;
+          break;
+        }
         for (const c of res.results) {
           result.tests.push({
             codeunit: s.codeunit,
@@ -1671,7 +1829,11 @@ export async function runVariant(
     result.ms = Math.round(performance.now() - t0);
     return result;
   } finally {
-    await Deno.remove(ws, { recursive: true });
+    try {
+      await Deno.remove(ws, { recursive: true });
+    } catch (err) {
+      console.warn(`[gate] could not remove ${ws}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 
@@ -1693,16 +1855,23 @@ export async function runGate(o: {
   const runs: GateRun[] = [];
   const results: RunResult[] = [];
   let infra = false;
-  for (const step of plan) {
-    const result = await runVariant(o.bc, task, o.source, step.variant, step.repeat, o.tmpRoot);
-    const summary = summarize(task, result);
-    runs.push({ ...step, summary, staged_hash: result.staged_hash });
-    results.push(result);
-    console.log(`[gate] ${task.id} ${runKey(step.variant, step.repeat)} ${result.ms} ms ${JSON.stringify(summary)}`);
-    if (summary.infra) {
-      infra = true;
-      break; // an infra fault is never scored; the whole gate is rerun
+  let escaped: string | null = null;
+  try {
+    for (const step of plan) {
+      const result = await runVariant(o.bc, task, o.source, step.variant, step.repeat, o.tmpRoot);
+      const summary = summarize(task, result);
+      runs.push({ ...step, summary, staged_hash: result.staged_hash });
+      results.push(result);
+      console.log(`[gate] ${task.id} ${runKey(step.variant, step.repeat)} ${result.ms} ms ${JSON.stringify(summary)}`);
+      if (summary.infra) {
+        infra = true;
+        break; // an infra fault is never scored; the whole gate is rerun
+      }
     }
+  } catch (err) {
+    // Staging or any other exception: still clean up and write the report.
+    infra = true;
+    escaped = err instanceof Error ? err.message : String(err);
   }
   let cleanupError: string | null = null;
   try {
@@ -1716,6 +1885,7 @@ export async function runGate(o: {
     cleanupError = `${cleanupError ?? ""} dispose: ${err instanceof Error ? err.message : String(err)}`.trim();
   }
   const decision = decideGate(task, plan, runs);
+  if (escaped !== null) decision.reasons.push(`infra: ${escaped}`);
   const tagStatus = o.tagTree === null ? "pending" : o.tagTree === o.source.refappTree ? "match" : "mismatch";
   if (tagStatus === "mismatch") decision.reasons.push(`${task.refapp_version} tree differs from the gated refapp tree`);
   const promoted = decision.reasons.length === 0;
@@ -1899,7 +2069,7 @@ if (import.meta.main) Deno.exit(await main());
 - [ ] **Step 4: Run it and see it pass**
 
 Run: `deno test --allow-all tests/unit/harness/gate-task.test.ts`
-Expected: `ok | 6 passed | 0 failed`.
+Expected: `ok | 8 passed | 0 failed`.
 
 - [ ] **Step 5: Host toolchain check.** `al compile '/project:U:\Git\CentralGauge\harness-tasks\refapp\Core' "/out:H:\Temp3\harness-spike\M4\tmp\core.app" '/packagecachepath:C:\ProgramData\BcContainerHelper\compiler-cache-15ff3c5d109b\symbols'`. Expected: exit 0, no `error AL`. Quote the result in the submit note.
 
@@ -1913,7 +2083,7 @@ git add scripts/harness/gate-task.ts tests/unit/harness/gate-task.test.ts
 git commit -m "feat(harness): M4 gate executors and CLI"
 ```
 
-**Acceptance:** `deno test --allow-all tests/unit/harness/gate-core.test.ts tests/unit/harness/gate-stage.test.ts tests/unit/harness/gate-task.test.ts` prints `ok | 30 passed | 0 failed`; check and lint clean; submit note quotes the host compile result.
+**Acceptance:** `deno test --allow-all tests/unit/harness/gate-core.test.ts tests/unit/harness/gate-stage.test.ts tests/unit/harness/gate-task.test.ts` prints `ok | 35 passed | 0 failed`; check and lint clean; submit note quotes the host compile result; no test writes outside `H:\Temp3\harness-spike\M4\tmp\unit\` (or `CG_GATE_TMP`).
 
 ---
 
@@ -1953,7 +2123,7 @@ Spec 1b sections 3 (Rental -> Core events; Fleet reacting to Rental through a Co
 - Create: `harness-tasks/refapp/Rental/src/RentalStatus.Enum.al`, `RentalContract.Table.al`
 - Modify: `harness-tasks/refapp/Rental/src/RentalMgt.Codeunit.al`
 - Modify: `harness-tasks/refapp/Test/app.json` (idRanges 80000-84999; also answers M1 Part 2 open question 6)
-- Delete: `harness-tasks/refapp/Test/src/SkeletonTests.Codeunit.al` (its tests move into the module codeunits)
+- Modify: `harness-tasks/refapp/Test/src/SkeletonTests.Codeunit.al` (codeunit 80000 kept with its five procedures ported to the v1 API: M1-27's probe runs 80000 and expects 5 passing rows)
 - Create: `harness-tasks/refapp/Test/src/TestLibrary.Codeunit.al`, `RentalTests.Codeunit.al`, `FleetTests.Codeunit.al`, `LeasingTests.Codeunit.al`, `IntegrationTests.Codeunit.al`
 - Create: `harness-tasks/tasks/HX-001/{task.yml,prompt.md}`, `overlay/Fleet/src/FleetReturnHandler.Codeunit.al`, `correct/Fleet/src/FleetReturnHandler.Codeunit.al`, `oracle/app.json`, `oracle/src/ReturnOracle.Codeunit.al`, `naive/skip-modify-on-damage/...`, `naive/reblock-in-handler/...`, `naive/lock-table/...`
 
@@ -2267,7 +2437,7 @@ codeunit 70200 "CGR Rental Mgt"
 
 - [ ] **Step 4: Visible tests**
 
-`Test/app.json`: `"idRanges": [{ "from": 80000, "to": 84999 }]`. Delete `SkeletonTests.Codeunit.al`.
+`Test/app.json`: `"idRanges": [{ "from": 80000, "to": 84999 }]`. `SkeletonTests.Codeunit.al` (80000 "CGR Skeleton Tests") keeps exactly five `[Test]` procedures, ported: `CheckOutMarksVehicleCheckedOut` (vehicle SPIKE-001, via `Lib.CreateContract` and `CheckOut`), `CheckOutTwiceFails` (SPIKE-002, expects `Vehicle SPIKE-002 is not available.`), `HeavyDutyStrategyFromFleetExtension` (SPIKE-003, 6000), `LeaseRateUsesCoreInternal` (112), `PayloadCarriesVehicleNo` (SPIKE-004). They duplicate module rows on purpose: codeunit 80000 is the M1 probe's fixed smoke suite, not a scored list.
 
 `Test/src/TestLibrary.Codeunit.al`:
 ```al
@@ -2365,7 +2535,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 85000, procedures: [DamagedReturnBlocksVehicle, DamagedReturnReleasesVehicle, DamagedReturnRecordsDamage, DamagedReturnCompletesContract, DamagedVehicleCannotBeRentedAgain, RepairAfterDamagedReturnReleasesVehicle, SecondDamagedReturnAfterRepair, ReturnWithoutDamageLeavesVehicleUnblocked] }
+    - { codeunit: 85000, procedures: [DamagedReturnBlocksVehicle, DamagedReturnReleasesVehicle, DamagedReturnRecordsDamage, DamagedReturnCompletesContract, DamagedVehicleCannotBeRentedAgain, RepairAfterDamagedReturnReleasesVehicle, SecondDamagedReturnAfterRepair, MultipleOpenDamagesOnReturn, ReturnWithoutDamageLeavesVehicleUnblocked] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
@@ -2445,15 +2615,18 @@ Oracle (normative), codeunit 85000 "HX001 Return Oracle". A local `CheckedOutCon
 | DamagedVehicleCannotBeRentedAgain | HX001-E, Return(1450, damage); new contract 2027-03-10..12 | `asserterror` CheckOut; `ExpectedError('Vehicle HX001-E is not available.')` |
 | RepairAfterDamagedReturnReleasesVehicle | HX001-F, Return(1450, damage); RepairDamage(its entry) | Blocked false; Open Damages 0; `IsAvailable` true; Mileage 1450 |
 | SecondDamagedReturnAfterRepair | HX001-G, Return(1450, 'Scratch on rear door'); repair; new contract, CheckOut, Return(1900, 'Dent') | Blocked true; Open Damages 1; Mileage 1900; 2 damage entries, 1 open (`Dent`) |
+| MultipleOpenDamagesOnReturn | HX001-I km 1000 checked out; `RegisterDamage('HX001-I', 'Chipped windscreen')` while out; Return(1450, damage text) | 2 open damage entries; Open Damages 2; Blocked true; Checked Out false; Mileage 1450; repair the first entry: Blocked true, Open Damages 1; repair the second: Blocked false, Open Damages 0, `IsAvailable` true |
 | ReturnWithoutDamageLeavesVehicleUnblocked | HX001-H, Return(1200, '') | Blocked false; Open Damages 0; Checked Out false; Mileage 1200; no damage entry |
 
 Kill mapping (each naive loses at least one assertion; runtime errors elsewhere are allowed):
 
 | Naive | Rows lost by assertion |
 | --- | --- |
-| skip-modify-on-damage | DamagedReturnReleasesVehicle, RepairAfterDamagedReturnReleasesVehicle (mileage) |
-| reblock-in-handler | DamagedReturnBlocksVehicle (Open Damages 0), SecondDamagedReturnAfterRepair |
-| lock-table | DamagedReturnBlocksVehicle, DamagedVehicleCannotBeRentedAgain (lost asserterror), SecondDamagedReturnAfterRepair |
+| skip-modify-on-damage | DamagedReturnReleasesVehicle, MultipleOpenDamagesOnReturn (Checked Out), RepairAfterDamagedReturnReleasesVehicle (availability or mileage, whichever assertion the implemented order reaches first) |
+| reblock-in-handler | DamagedReturnBlocksVehicle (Open Damages 0), SecondDamagedReturnAfterRepair, MultipleOpenDamagesOnReturn (Open Damages 1, not 2) |
+| lock-table | DamagedReturnBlocksVehicle, DamagedVehicleCannotBeRentedAgain (lost asserterror), SecondDamagedReturnAfterRepair, MultipleOpenDamagesOnReturn |
+
+These are predicted kills until M4-03 records them. `MultipleOpenDamagesOnReturn` also kills a symptom patch that sets `Blocked := true; "Open Damages" := 1` before the stale `Modify` (round-2 review section 2).
 
 The last oracle row is a hidden regression row: it passes on the baseline (Decisions: kept, baseline outcomes recorded).
 
@@ -2483,13 +2656,13 @@ git commit -m "feat(harness-tasks): refapp v1 slice A and HX-001 damaged return 
 ```
 Expected from `check`: `[WARN] ... refapp-v1-rc1 does not resolve yet` and `[OK]`. After the audit is clean: message lane-ops `need container job: deno run --allow-all scripts/harness/gate-task.ts gate <Cronus281-283> HX-001 --rev <sha> for M4-03, report to lane-content`.
 
-**Acceptance:** `check` prints `[OK]` for HX-001; the latest `audit-*.md` starts with `TASK TREE: <id>` equal to `git rev-parse <sha>:harness-tasks/tasks/HX-001` and ends `VERDICT: clean`; the oracle has the eight procedures of Step 5; three naive folders exist.
+**Acceptance:** `check` prints `[OK]` for HX-001; the latest `audit-*.md` starts with `TASK TREE: <id>` equal to `git rev-parse <sha>:harness-tasks/tasks/HX-001` and ends `VERDICT: clean`; the oracle has the nine procedures of Step 5; three naive folders exist.
 
 ---
 
 ### Task M4-03: gate job HX-001
 
-**Lane:** ops. **Deps:** M4-01c, M4-02. **Target:** 10-01.
+**Lane:** ops. **Deps:** M4-01c, M4-02, M4-16 (P5 accepted and `classifyTestFailure` confirmed against its messages: explicit predecessor of the first accepted gate). **Target:** 10-01; orchestrator tags `refapp-v1-rc1` by 10-02 for the 10-05 end-to-end gate.
 
 Common procedure for every gate job (M4-05, M4-07, M4-09, M4-11, M4-13 refer to it):
 
@@ -2500,7 +2673,7 @@ Common procedure for every gate job (M4-05, M4-07, M4-09, M4-11, M4-13 refer to 
 - [ ] **Step 5:** Exit 1: send `reasons` and the path to lane-content; do not edit AL. Exit 3: re-lease another content container and rerun once; a second infra exit goes to `coord ask`.
 - [ ] **Step 6:** Release the lease; report the path to lane-content and the orchestrator. The orchestrator tags the gated commit `refapp-v1-rcN` on acceptance.
 
-**Acceptance (all gate jobs, offline):** `jq -e '.promoted and .matrix_complete and .source_commit == "<sha>" and .task_tree == "<TASK TREE of the latest audit>" and (.runs | length) == (.plan | length) and .cleanup_error == null' <report>` exits 0; `tag_status` is `pending` (first gate) or `match` (re-gate). For HX-001 also the Step 3 line prints `assertion`.
+**Acceptance (all gate jobs, offline):** `jq -e '.promoted and .matrix_complete and .source_commit == "<sha>" and .task_tree == "<TASK TREE of the latest audit or re-attestation>" and (.runs | length) == (.plan | length) and .cleanup_error == null' <report>` exits 0; `tag_status` is `pending` (first gate) or `match` (re-gate). For HX-001 also the Step 3 line prints `assertion`.
 
 ---
 
@@ -2853,11 +3026,11 @@ Values: 2027-03-01 is a Monday; lease total 100 x 1.03 x 3 = 309.00. An implemen
 
 - [ ] **Step 8: Host compile all variants, audit (Steps 5, 7).**
 
-- [ ] **Step 9: Re-derive HX-003.** Slice D adds `Post` to `RentalMgt`, which HX-003's `correct/` and three `naive/` replace. Apply the slice D change to those four files (task changes kept), set HX-003 `refapp_version: refapp-v1-rc4`, host compile HX-003 `correct` and each naive. The HX-003 oracle is untouched.
+- [ ] **Step 9: Re-derive HX-003.** Slice D adds `Post` to `RentalMgt`, which HX-003's `correct/` and three `naive/` replace. Apply the slice D change to those four files (task changes kept), set HX-003 `refapp_version: refapp-v1-rc4`, host compile HX-003 `correct` and each naive. The HX-003 oracle is untouched. Commit, then run a fresh full `al-test-auditor` pass on HX-003 (template of M4-02 Step 7, table M4-06 Step 4, mapping M4-06 Step 6) to `H:\Temp3\harness-spike\M4\HX-003\audit-rc4-*.md`; its `TASK TREE` is the one M4-09 checks.
 
 - [ ] **Step 10: `check` HX-001..HX-004, commit `feat(harness-tasks): refapp v1 slice D and HX-004 revenue per vehicle`, request gate M4-09 for HX-004 and HX-003.**
 
-**Acceptance:** `check` `[OK]` for HX-001..HX-004; latest HX-004 audit `TASK TREE` matches and `VERDICT: clean`; oracle has the eight procedures of Step 5; `git diff <rc3 sha> -- harness-tasks/tasks/HX-003/oracle` is empty.
+**Acceptance:** `check` `[OK]` for HX-001..HX-004; latest HX-004 audit and the fresh HX-003 audit name the committed trees and end `VERDICT: clean`; oracle has the eight procedures of Step 5; `git diff <rc3 sha> -- harness-tasks/tasks/HX-003/oracle` is empty.
 
 ---
 
@@ -2923,7 +3096,7 @@ Values: 4 x 33.33 = 133.32 plus 2 x 4.16625 = 141.6525, rounded 141.65. 33.33 x 
 | case-kept | enum extensible with interface and two implementations, but `CalcAmount` keeps a `case` over known values, `else` base 0 | PartnerMethodPriceUsed, PartnerMethodGetsExcessKm, PartnerFractionalRoundedOnce, PostingUsesPartnerMethod |
 | excess-in-methods | excess km moved into Daily and Weekend Package; `CalcAmount` returns `CalcBasePrice` only | PartnerMethodGetsExcessKm, PartnerFractionalRoundedOnce |
 | surcharge-lost | Daily implementation drops the weekend surcharge | DailyWeekendSurchargeUnchanged, DailyFractionalSurcharge |
-| early-rounding | each implementation returns `Round(base, 0.01)` before the excess is added | PartnerFractionalRoundedOnce |
+| early-rounding | `CalcAmount` rounds the base price returned through the interface to 0.01 before adding the excess charge (the oracle's partner implementation is unchanged) | PartnerFractionalRoundedOnce (50.01, not 50.00) |
 
 - [ ] **Step 5: Host compile all variants, audit (Steps 3, 4; auditor rule C: the partner method is exercised through the interface), `check` HX-001..HX-005, commit `feat(harness-tasks): HX-005 extensible pricing refactor`, request gate M4-11.**
 
@@ -2963,7 +3136,7 @@ The partner portal gets a message in the integration outbox when a vehicle is ch
 1. When a rental vehicle is returned, queue an outbox entry with Event Type "vehicleReturned" and this JSON payload:
    `{"event":"vehicleReturned","vehicleNo":"<No.>","returnKm":<km>,"damage":<true|false>,"damageDescription":"<text>","sequence":<n>}`
    "returnKm" and "sequence" are JSON numbers and "damage" a JSON boolean. "damageDescription" is present only when damage was reported.
-2. Every outbox entry of a vehicle, checkouts and returns alike, carries a sequence number per vehicle: 1 for the first message of that vehicle, then 2, 3 and so on in the order the events happened. Store it in a new field "Vehicle Sequence No." (Integer) on the outbox entry and in the payload's "sequence". The checkout payload becomes `{"event":"vehicleCheckedOut","vehicleNo":"<No.>","sequence":<n>}`. Payloads are compact JSON (no whitespace) with the keys in the order shown.
+2. Every outbox entry of a vehicle, checkouts and returns alike, carries a sequence number per vehicle: 1 for the first message of that vehicle, then 2, 3 and so on in the order the events happened. Store it in a new field "Vehicle Sequence No." (Integer) on the outbox entry and in the payload's "sequence". The checkout payload becomes `{"event":"vehicleCheckedOut","vehicleNo":"<No.>","sequence":<n>}`. Payloads are compact JSON (no formatting whitespace between tokens; text values keep their own spaces) with the keys in the order shown.
 3. Sent entries are purged regularly (`CGR Integration Facade`, PurgeSent). Purging does not restart the numbering of a vehicle.
 ```
 
@@ -2973,8 +3146,8 @@ The partner portal gets a message in the integration outbox when a vehicle is ch
 
 | Procedure | Arrange | Assert |
 | --- | --- | --- |
-| ReturnQueuesMessageWithNumbers | HX6-A km 1000, check out, Return(1450, '') | 2 entries for A with agreement; last: Event Type `vehicleReturned`; payload `event`, `vehicleNo` `HX6-A`, `returnKm` token `1450`, `damage` token `false`, no `damageDescription` key, `sequence` token `2` |
-| DamagedReturnCarriesDescription | HX6-B, Return(1300, `Bule på "dør"`) | `damage` token `true`; `damageDescription` parses back to `Bule på "dør"` |
+| ReturnQueuesMessageWithNumbers | HX6-A km 1000, check out, Return(1450, '') | 2 entries for A with agreement; last: Event Type `vehicleReturned`; payload text exactly `{"event":"vehicleReturned","vehicleNo":"HX6-A","returnKm":1450,"damage":false,"sequence":2}` (compact, ordered, no `damageDescription`, number and boolean types) |
+| DamagedReturnCarriesDescription | HX6-B, Return(1300, `Bule på "dør"`) | payload text starts with `{"event":"vehicleReturned","vehicleNo":"HX6-B","returnKm":1300,"damage":true,"damageDescription":"` and ends with `","sequence":2}` (order and compactness, independent of how the text is escaped); `damageDescription` parses back to `Bule på "dør"` |
 | CheckoutPayloadCarriesSequence | HX6-C, check out | payload text exactly `{"event":"vehicleCheckedOut","vehicleNo":"HX6-C","sequence":1}`; Vehicle Sequence No. 1 |
 | SequenceIsPerVehicle | HX6-D check out, HX6-E check out, D return, D check out (new contract), E return | D: 3 entries with agreement (1, 2, 3); E: 2 entries with agreement (1, 2) |
 | SequenceContinuesAfterPurge | HX6-F check out, return; `MarkSent` both; `PurgeSent`; check out again | 1 entry for F with agreement starting at 3 (field 3, payload 3) |
@@ -3008,17 +3181,20 @@ M4-03 Steps 1, 2, 4, 5, 6 with HX-006; 10 runs. Tag `refapp-v1-rc6`.
 
 ### Task M4-17: difficulty pilot (developmental)
 
-**Lane:** ops. **Deps:** M4-01c; per task its gate (HX-002 after M4-05, HX-005 after M4-11, others after theirs). **Target:** HX-002 on 10-02, HX-005 on 10-06, others 10-07 as budget allows.
+**Lane:** ops. **Deps:** M4-01c; a pilot runner cleared by Step 1; per task its gate (HX-002 after M4-05, HX-005 after M4-11, others after theirs). **Target:** HX-002 from 10-03, HX-005 on 10-06, others 10-07 only if the run budget below allows.
 
-Owner decision `2026-09-25-m4-coverage-pilot.md`: one attempt per task, a frontier model through pi and OpenRouter only (no Team account), excluded from results, paid cap applies. Review section 1: HX-005 and HX-002 first.
+Owner decision `2026-09-25-m4-coverage-pilot.md`: one attempt per task, a frontier model through pi and OpenRouter only (no Team account), excluded from results, paid cap applies. Review section 1: HX-005 and HX-002 first. Round-2 ruling 6: a limited developmental screen. A pilot **pass** is evidence the task may be easy; a pilot **fail** is inconclusive (no compile tool, one attempt) and never evidence of difficulty.
 
-- [ ] **Step 1: Model and estimate.** Pick the model with `deno task start models -p openrouter --live` and `deno task start models <slug> --check` (never hardcoded). Estimate per attempt = catalog input price x 3,000,000 tokens + output price x 150,000 tokens; write the estimate and the remaining cap (from `H:\cg-coord\decisions\spend.md`) to `H:\Temp3\harness-spike\M4\pilot\plan.md`. Stop and `coord ask` if the estimate for all six attempts exceeds 20 percent of the remaining cap, or if the remaining cap is under 80 percent (launch contract reporting rule).
-- [ ] **Step 2: Workspace.** `deno run --allow-all scripts/harness/gate-task.ts stage <task> H:\Temp3\harness-spike\M4\pilot\<task>\ws --rev <rc sha>`. Copy `prompt.md` next to it.
-- [ ] **Step 3: Run pi.** Preferably through `harness cell` with a pi config if M1-24 and the M3 pi adapter exist; otherwise `deno run --allow-all scripts/spikes/harness/run-sandbox.ts pi <model> H:\Temp3\harness-spike\M4\pilot\<task>\ws H:\Temp3\harness-spike\M4\pilot\<task>\prompt.md --kill-after-s 1800`. The spike sandbox has no `cg-al` backend, so the model cannot compile; record that limit next to the result.
-- [ ] **Step 4: Judge.** `deno run --allow-all scripts/harness/gate-task.ts judge <Cronus281-283> <task> H:\Temp3\harness-spike\M4\pilot\<task>\ws --rev <rc sha>`.
-- [ ] **Step 5: Record** in `H:\Temp3\harness-spike\M4\pilot\results.md`: task, model, `[PASS]`/`[FAIL]`, judge report path, cost (sum of pi assistant `message_end` `usage.cost.total`, findings section 4), and append the cost to `spend.md`. A pass on HX-005 or HX-002 goes to lane-content and the orchestrator as a hardening candidate: content proposes a harder requirement (never a weaker oracle), the orchestrator decides before M4-14.
+Egress (decision `2026-09-25-egress.md`): every pilot attempt is a credential-bearing run. Unless it goes through the production adapter behind tested egress enforcement, it counts against the 5 supervised dev runs allowed before enforcement, across all lanes: at most 2 pilot attempts (HX-005, HX-002) unless the orchestrator allocates more, each supervised by the ops session for its full duration, no unattended retries, killed on unexpected network activity.
 
-**Acceptance:** `results.md` has one row per piloted task with model, outcome, judge report path and cost; `spend.md` has the matching lines; `plan.md` holds the estimate made before the first run.
+- [ ] **Step 1: Runner check (before any credential is released).** Use the production pi adapter behind egress enforcement if it exists (then the run is not counted against the 5). Otherwise the fallback runner must first be shown to meet the M0-03 carryover (findings section 8): (a) no secret in any argv, host or container (the spike `run-pi.ps1` passed the key as `--api-key`; the fixed runner reads it from the mounted secrets file into the environment of the pi process only); (b) the container is created and capture files opened inside the protected region, `docker rm -f` exit status is checked, and leftover owned containers (`cg-harness-*` prefix plus owner label) are swept at start. Evidence in `H:\Temp3\harness-spike\M4\pilot\runner-check.md`: the runner diff or adapter version, `docker inspect <container> --format "{{json .Config.Cmd}} {{json .Config.Env}}"` from a no-credential dry start showing no key, and a forced-failure run whose cleanup removed the container. No evidence: no pilot, `coord ask`.
+- [ ] **Step 2: Model and estimate.** Pick the model with `deno task start models -p openrouter --live` and `deno task start models <slug> --check` (never hardcoded). Estimate per attempt = catalog input price x 3,000,000 tokens + output price x 150,000 tokens; write the estimate, spend to date and the dev-run count to date (from `H:\cg-coord\decisions\spend.md` and the orchestrator's run ledger) to `H:\Temp3\harness-spike\M4\pilot\plan.md`. Launch contract rule: at 80 percent of the USD 150 cap spent, `coord ask` and push notification. Additional conservative rule of this plan: stop and `coord ask` if the estimate for the planned attempts exceeds 20 percent of the unspent cap.
+- [ ] **Step 3: Workspace.** `deno run --allow-all scripts/harness/gate-task.ts stage <task> H:\Temp3\harness-spike\M4\pilot\<task>\ws --rev <rc sha>`. Copy `prompt.md` next to it.
+- [ ] **Step 4: Run pi (supervised).** Through the cleared runner with `--kill-after-s 1800`, the ops session watching the run; any network activity other than the provider and the backend: kill, record, `coord ask`. Record the dev-run number (n of 5) in `plan.md`.
+- [ ] **Step 5: Judge.** `deno run --allow-all scripts/harness/gate-task.ts judge <Cronus281-283> <task> H:\Temp3\harness-spike\M4\pilot\<task>\ws --rev <rc sha>`.
+- [ ] **Step 6: Record** in `H:\Temp3\harness-spike\M4\pilot\results.md`: task, model, `[PASS]`/`[FAIL]` (a fail is marked inconclusive), judge report path, cost (sum of pi assistant `message_end` `usage.cost.total`, findings section 4), dev-run number; append the cost to `spend.md`. A pass goes to lane-content and the orchestrator as a hardening candidate: content proposes a harder requirement (never a weaker oracle), the orchestrator decides before M4-14.
+
+**Acceptance:** `runner-check.md` shows no key in argv and a checked cleanup (or names the production adapter behind enforcement); `plan.md` holds the estimate and the dev-run numbers made before each run; `results.md` has one row per piloted task with model, outcome, judge path, cost and dev-run number; `spend.md` has the matching lines.
 
 ---
 
@@ -3026,9 +3202,9 @@ Owner decision `2026-09-25-m4-coverage-pilot.md`: one attempt per task, a fronti
 
 **Lane:** content. **Deps:** M4-03, M4-05, M4-07, M4-09, M4-11, M4-13, and any hardening decided from M4-17. **Target:** 10-08.
 
-- [ ] **Step 1: Pre-repin drift record.** For each task run `deno run --allow-all scripts/harness/gate-task.ts check harness-tasks/tasks/HX-00N` while it still pins its latest rc tag (HX-003: rc4). Save the output to `H:\Temp3\harness-spike\M4\freeze\pre-repin-check.txt`. Any drift problem is fixed (re-derive, re-gate) before Step 2.
+- [ ] **Step 1: Pre-repin drift record.** For each task run `deno run --allow-all scripts/harness/gate-task.ts check harness-tasks/tasks/HX-00N` while it still pins its latest rc tag (HX-003: rc4). Save the output to `H:\Temp3\harness-spike\M4\freeze\pre-repin-check.txt`. Any drift problem is fixed (re-derive, re-audit, re-gate) before Step 2.
 - [ ] **Step 2:** Set `refapp_version: refapp-v1` in all six `task.yml`. No other change: `git diff <latest rc sha of the task> -- harness-tasks/tasks/HX-00N` shows only that line.
-- [ ] **Step 3: Qualification experiment.** Create `harness/experiments/m4-qualify.yml` as a copy of M1-21's `harness/experiments/mock-contract.yml` with `id: m4-qualify`, `tasks: "harness-tasks/tasks/HX-*"`, `repeats: 1` and its hypothesis line saying it qualifies the v1 set (spec 1b section 8). `deno task start harness validate` loads it.
+- [ ] **Step 3: Qualification manifest.** Create `harness/experiments/m4-qualify.yml` as a copy of M1's mock contract experiment with `id: m4-qualify`, `tasks: "harness-tasks/tasks/HX-*"`, `repeats: 1` and a hypothesis line saying it qualifies the v1 set (spec 1b section 8), and `H:\Temp3\harness-spike\M4\freeze\qualify-manifest.json` listing per task the positive variant (`correct` for HX-001 and HX-003 to HX-006, `reference-tests` for HX-002) and every named naive variant from its `naive/` folder. It is loaded by `harness validate` only in M4-15, after the local tag exists.
 - [ ] **Step 4: Shared manifest test.** `tests/unit/harness/task-set-v1.test.ts`:
 ```typescript
 import { assertEquals } from "@std/assert";
@@ -3047,37 +3223,33 @@ Deno.test("v1 task set: six tasks, kinds and refapp version", async () => {
 });
 ```
 Run: `deno test --allow-all tests/unit/harness/task-set-v1.test.ts`. Expected: `ok | 1 passed`.
-- [ ] **Step 5:** Commit `chore(harness-tasks): v1 freeze candidate pinned to refapp-v1`, submit. The orchestrator creates the local tag `refapp-v1` on this commit and does not push it yet.
+- [ ] **Step 5: Commit** `chore(harness-tasks): v1 freeze candidate pinned to refapp-v1`.
+- [ ] **Step 6: Metadata-only re-attestation.** For each task dispatch `al-test-auditor`: "Re-attest `harness-tasks/tasks/HX-00N`: old audited tree `<TASK TREE of the latest full audit>`, new tree `<git rev-parse HEAD:harness-tasks/tasks/HX-00N>`. Confirm `git diff <old tree> <new tree>` changes only the `refapp_version` line of `task.yml` and nothing else. First line `TASK TREE: <new tree>`, then `FROM TREE: <old tree>`, the diff, last line `VERDICT: clean` or the deviation." Save to `H:\Temp3\harness-spike\M4\HX-00N\reattest-freeze.md`. Submit; the orchestrator creates the local provisional tag `refapp-v1` on this commit and does not push it.
 
-**Acceptance:** the Step 2 diff check holds for all six; `task-set-v1.test.ts` passes; `pre-repin-check.txt` shows `[OK]` for all six.
+**Acceptance:** the Step 2 diff check holds for all six; `task-set-v1.test.ts` passes; `pre-repin-check.txt` shows `[OK]` for all six; six `reattest-freeze.md` files name the committed trees and end `VERDICT: clean`; `qualify-manifest.json` lists every naive folder of every task.
 
 ---
 
 ### Task M4-15: freeze qualification
 
-**Lane:** ops. **Deps:** M4-14 with the local `refapp-v1` tag; M1-24, M1-26, M1-29 accepted. **Target:** 10-08 to 10-09.
+**Lane:** ops. **Deps:** M4-14 with the local `refapp-v1` tag; the M1 slice's `harness cell` with named mock variants and mutant scoring (cross-lane requests 2 and 3), the symbols lock. **Target:** 10-08 to 10-09.
 
-- [ ] **Step 1: Stand-in re-gate.** `gate` for all six at `--rev refapp-v1`, spread over Cronus281-283. Expected: six reports with the common acceptance line and `tag_status: match`.
-- [ ] **Step 2: Real pipeline.** `deno task start harness run m4-qualify --dry-run`, then the full run (mock arms, no provider spend). Expected in `deno task start harness report m4-qualify --json`: pass rate 1.00 for `mock-correct` and 0.00 for `mock-naive` on every task; HX-002's `mutant_kill` with targets `reference`, `mutant:0` and each named mutant. Record the campaign id and report path in `H:\Temp3\harness-spike\M4\freeze\pipeline.md`. Any disagreement with Step 1 goes to `coord ask` with both files; neither side is edited to agree.
-- [ ] **Step 3: Identity.** `deno task start harness validate` prints `[OK] 6 tasks, task set <hash>` with no `(provisional ...)`. Quote it.
-- [ ] **Step 4: Freeze record.** `H:\Temp3\harness-spike\M4\freeze\task-set.json`: `{ "refapp_version": "refapp-v1", "commit": "<sha>", "task_set_hash": "<hash>", "campaign": "<id>", "tasks": [{ "id", "gate_report", "promoted", "pipeline_correct": "pass", "pipeline_naive": "fail" }] }`.
-- [ ] **Step 5:** All six qualified: the orchestrator pushes `refapp-v1`. Any task not qualified: report to lane-content and the orchestrator at once; the unpushed local tag is deleted and the fixed commit is tagged instead. No real pipeline by 10-09, or fewer than six qualified: `coord ask` to the owner (launch contract).
+- [ ] **Step 1: Stand-in re-gate.** `gate` for all six at `--rev refapp-v1`, spread over Cronus281-283. Expected: six reports with the common acceptance line (the `TASK TREE` is the one of `reattest-freeze.md`) and `tag_status: match`.
+- [ ] **Step 2: Identity.** `deno task start harness validate` (the local tag now resolves) prints `[OK] 6 tasks, task set <hash>` with no `(provisional ...)` and loads `m4-qualify`. Quote it.
+- [ ] **Step 3: Real pipeline, every variant.** For each entry of `qualify-manifest.json` run one `harness cell` with the named mock variant (positive, then each naive). Expected per judgment, checked on the raw judgment files, not only aggregate pass rates: positive `pass`, each naive `fail` with a scorer reason that names at least one oracle assertion failure (test-authoring: at least one surviving mutant); HX-002 target coverage `reference`, `mutant:0` and each named mutant; the judgment's artifact contains the submitted variant's files (hash of the variant folder recorded next to the judgment) and its task visible and oracle hashes equal the Step 2 identity. Record every campaign or cell id and judgment path in `H:\Temp3\harness-spike\M4\freeze\pipeline.md`. Any disagreement with Step 1 goes to `coord ask` with both files; neither side is edited to agree.
+- [ ] **Step 4: Freeze record.** `H:\Temp3\harness-spike\M4\freeze\task-set.json`: `{ "refapp_version": "refapp-v1", "commit": "<sha>", "task_set_hash": "<hash>", "tasks": [{ "id", "gate_report", "promoted", "pipeline": [{ "variant", "judgment", "verdict", "expected" }] }] }`.
+- [ ] **Step 5:** All six qualified: the orchestrator pushes `refapp-v1`. Any task not qualified: report to lane-content and the orchestrator at once; copy that candidate's reports to `H:\Temp3\harness-spike\M4\freeze\failed-<sha>\`, the unpushed local alias is deleted and the fixed commit is tagged instead. No real pipeline by 10-09, or fewer than six qualified: `coord ask` to the owner (launch contract).
 
-**Acceptance:** `jq -e '[.tasks[] | select(.promoted and .pipeline_correct == "pass" and .pipeline_naive == "fail")] | length == 6' task-set.json` exits 0; every listed gate report has `.source_commit` equal to the `refapp-v1` commit; `pipeline.md` quotes the campaign id and the non-provisional `validate` line.
+**Acceptance:** `jq -e '[.tasks[] | select(.promoted and ([.pipeline[] | select(.verdict != .expected)] | length == 0))] | length == 6' task-set.json` exits 0; each task's `pipeline` has one entry per `qualify-manifest.json` variant; every gate report has `.source_commit` equal to the `refapp-v1` commit; `pipeline.md` quotes the non-provisional `validate` line.
 
 ---
 
 ## Integration check (orchestrator)
 
-After each content task: `check` is `[OK]` for every task landed so far, and the latest audit of the new task names the committed task tree and ends `VERDICT: clean`. After each gate job: the common acceptance line, then tag `refapp-v1-rcN` at `.source_commit`. After M4-01c: the 30 gate unit tests pass. After M4-15: the freeze acceptance line, push of `refapp-v1`, `graphify update .`.
+After each content task: `check` is `[OK]` for every task landed so far, and the latest audit (or re-attestation) of the new task names the committed task tree and ends `VERDICT: clean`. After each gate job: the common acceptance line, then tag `refapp-v1-rcN` at `.source_commit`. After M4-01c: the 35 gate unit tests pass. After M4-15: the freeze acceptance line, push of `refapp-v1`, `graphify update .`.
 
 ## Open questions
 
-1. **M1-28 and M1-29 need "refapp-v1 tagged".** With tags created only after qualification, the 10-02 end-to-end and M1-28 must use `refapp-v1-rc1` (HX-001). The M1 Part 2 plan needs that edit.
-2. **10-02 end-to-end is at risk outside M4.** M1 Part 2's Schedule lands M1-13 to M1-24 and M1-26 between 10-01 and 10-07, and the M2 Claude Code adapter is scheduled from 10-06. M4 delivers HX-001 by 10-01; the gate itself needs an owner-level date decision.
-3. **M1-17 failure classification parity.** M1-17 classifies "An error was expected inside an ASSERTERROR statement." as `runtime_error`; this gate counts it as an assertion (M4-16 P5 records the text). If M1-17 is not aligned, real-pipeline mutant kills and naive failures relying on a lost `asserterror` (HX-003 `hardcoded-interval`, HX-001 `lock-table`) are under-counted.
-4. **Mock arms and naive selection.** M4-15 Step 2 assumes M1-21's `mock-naive` applies a task's `naive/` variant; if it applies only the first, the other naive variants are qualified by the stand-in only.
-5. **M1 mutant ID wording.** M1's schema notes put `mutants` in the hidden band; production-replacing mutants here keep their module ids (review answer 2). The M1 id-audit rule (M1-11) must allow that.
-6. **Pilot fidelity.** Without the M3 pi adapter and `cg-al`, the pilot model cannot compile or run tests, so a pilot fail says less than a pilot pass.
+None left open in this plan. Round-2 rulings applied: M1-28 uses rc1 and M1-29 rc1 plus rc2 (cross-lane request 1), smoke codeunit 80000 kept for the M1-27 probe; the 10-02 date moved to 10-05 by the owner; lost-ASSERTERROR is an assertion and M1-16/M1-18 align (request 3); mock arms take named variants and `reference-tests/` as the test-authoring positive (request 2); mutant ids closed (request 4 updates the Part 1 wording); pilot accepted as a limited screen with the runner and egress conditions of M4-17. Closed in revision 2: reference-tests location, schema compatibility, baseline oracle compile failure, coverage (owner caveat), host compile, gate ownership, deletion, HX-001 premise, hidden regression rows, dates.
 
-Closed in revision 2: reference-tests location (accepted, neither hash, tree id recorded), schema compatibility (M1-01 supports every field used), baseline oracle compile failure (missing-feature diagnostics only), coverage (owner accepted, caveat), host compile (lane-content may), gate ownership (lane-ops), deletion (refused), HX-001 premise (M4-00: redesigned), hidden regression rows (kept, baseline outcomes recorded), dates (launch contract).
+Unresolved cross-lane items go to `coord ask` (launch contract: no relabeling after the last review round): the four cross-lane requests above, and whether mutant scoring lands in the M1 slice by 10-08 (without it HX-002 cannot be real-pipeline qualified and M4-15 needs an owner exception).
