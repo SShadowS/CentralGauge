@@ -97,18 +97,35 @@ export type Telemetry = z.output<typeof TelemetrySchema>;
  * list names which declared metrics are missing (metrics contract, spec 1a
  * section 5), so a missing `turns` never looks like a missing primary cost.
  */
+export const OBSERVED_FIELDS = [
+  "harness_version",
+  "models",
+  "loaded_components",
+] as const;
+
 export const ValiditySchema = z.strictObject({
   incomplete_telemetry: z.array(TelemetryField),
+  /**
+   * Observed fields the harness could not verify (execution `v: 2`, M1-22):
+   * required in `v: 2`, absent in `v: 1` (reads as `[]`).
+   */
+  incomplete_observed: z.array(z.enum(OBSERVED_FIELDS)).optional(),
   infra_exposed: z.boolean(),
 }).refine((v) =>
   new Set(v.incomplete_telemetry).size ===
     v.incomplete_telemetry.length, {
   message: "duplicate field",
   path: ["incomplete_telemetry"],
+}).refine((v) =>
+  v.incomplete_observed === undefined ||
+  new Set(v.incomplete_observed).size === v.incomplete_observed.length, {
+  message: "duplicate field",
+  path: ["incomplete_observed"],
 });
 
 export const ExecutionRecordSchema = z.strictObject({
-  v: z.literal(1),
+  /** 1: Part 1; 2: Part 2 (M1-22), adds validity.incomplete_observed. */
+  v: z.union([z.literal(1), z.literal(2)]),
   id: Uuid,
   campaign_id: Uuid,
   block: z.number().int().nonnegative(),
@@ -151,6 +168,20 @@ export const ExecutionRecordSchema = z.strictObject({
   /** Hash of the frozen workspace; null when nothing was frozen. */
   workspace_hash: Sha256Hex.nullable(),
 }).superRefine((e, ctx) => {
+  if (e.v === 2 && e.validity.incomplete_observed === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "execution v2 needs validity.incomplete_observed",
+      path: ["validity", "incomplete_observed"],
+    });
+  }
+  if (e.v === 1 && e.validity.incomplete_observed !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "execution v1 carries no validity.incomplete_observed",
+      path: ["validity", "incomplete_observed"],
+    });
+  }
   const bad = (message: string) =>
     ctx.addIssue({ code: "custom", message, path: ["run_kind"] });
   if (e.run_kind === "planned" && (e.attempt !== 1 || e.retry_of !== null)) {
@@ -184,6 +215,10 @@ export const ExecutionRecordSchema = z.strictObject({
   }
 });
 export type ExecutionRecord = z.output<typeof ExecutionRecordSchema>;
+
+/** Observed fields left unverified (`[]` for a `v: 1` record). */
+export const incompleteObserved = (e: ExecutionRecord): string[] =>
+  e.validity.incomplete_observed ?? [];
 
 export const ArtifactRecordSchema = z.strictObject({
   v: z.literal(1),

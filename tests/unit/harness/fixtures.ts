@@ -153,7 +153,11 @@ export interface CellSel {
   retry_of?: string | null;
 }
 
-/** An execution placed consistently in campaign `c`. */
+/**
+ * An execution placed consistently in campaign `c`: a Part 2 (`v: 2`)
+ * record by default; pass `{ v: 1, validity: { incomplete_telemetry,
+ * infra_exposed } }` for the Part 1 variant (no `incomplete_observed`).
+ */
 export function execution(
   c: CampaignRecord,
   sel: CellSel = {},
@@ -168,7 +172,7 @@ export function execution(
   const arm = c.arms.find((a) => a.config_id === armId)!;
   const n = next();
   return {
-    v: 1,
+    v: 2,
     id: `00000000-0000-4000-9000-${n}`,
     campaign_id: c.id,
     block: block.index,
@@ -187,7 +191,11 @@ export function execution(
     observed: { harness_version: null, models: null, loaded_components: null },
     termination: "completed",
     did_work: true,
-    validity: { incomplete_telemetry: [], infra_exposed: false },
+    validity: {
+      incomplete_telemetry: [],
+      incomplete_observed: [],
+      infra_exposed: false,
+    },
     image_attachments: "none",
     telemetry: telemetry(1),
     trace_path: null,

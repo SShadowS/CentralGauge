@@ -21,7 +21,7 @@ import {
   checkJudging,
   type JudgingContext,
 } from "./outcome.ts";
-import type { JudgmentRecord } from "./records.ts";
+import { incompleteObserved, type JudgmentRecord } from "./records.ts";
 import {
   type ArmSummary,
   armSummary,
@@ -38,6 +38,8 @@ export interface ArmCoverage {
   infra_exposed: number;
   /** Executions per missing declared telemetry field. */
   incomplete_telemetry: Record<string, number>;
+  /** Ids of executions with unverified observed components (execution v2), sorted. */
+  unverified_components: string[];
   /** Executions priced under each cost assumption (raw_usage.assumptions keys), sorted keys. */
   cost_assumptions: Record<string, number>;
 }
@@ -257,6 +259,9 @@ export async function buildReport(
         incomplete_telemetry: Object.fromEntries(
           Object.entries(fields).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),
         ),
+        unverified_components: es
+          .filter((e) => incompleteObserved(e).includes("loaded_components"))
+          .map((e) => e.id).sort(),
         cost_assumptions: Object.fromEntries(
           Object.entries(assumed).sort(([a], [b]) =>
             a < b ? -1 : a > b ? 1 : 0
@@ -338,6 +343,11 @@ export function renderReport(r: HarnessReport): string {
         reasons(c.incomplete_telemetry)
       }, cost assumptions: ${reasons(c.cost_assumptions)}`,
     );
+    if (c.unverified_components.length > 0) {
+      out.push(
+        `    unverified components: ${c.unverified_components.join(", ")}`,
+      );
+    }
   }
   h("Primary");
   for (const a of r.arms) {

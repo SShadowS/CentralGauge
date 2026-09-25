@@ -128,6 +128,20 @@ async function executionProblems(
   for (const id of duplicates(executions.map((e) => e.id))) {
     out.push(`duplicate execution id ${id}`);
   }
+  // A campaign has one producer version (M1-22 round 3 B1).
+  const byVersion = new Map<number, string[]>();
+  for (const e of executions) {
+    byVersion.set(e.v, [...(byVersion.get(e.v) ?? []), e.id]);
+  }
+  if (byVersion.size > 1) {
+    out.push(
+      `campaign mixes execution record versions: ${
+        [...byVersion].sort(([a], [b]) => a - b)
+          .map(([v, ids]) => `v${v} ${[...ids].sort().join(", ")}`)
+          .join("; ")
+      }`,
+    );
+  }
   for (const e of executions) {
     const at = `execution ${e.id}`;
     if (e.campaign_id !== c.id) {

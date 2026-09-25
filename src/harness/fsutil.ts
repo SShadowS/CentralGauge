@@ -486,6 +486,8 @@ export interface FreezeInput {
   secrets: SecretValue[];
   limits?: CopyLimits;
   maxScanBytes?: number;
+  /** Test seam: the reparse attribute scan (default: the real pwsh scan). */
+  scanReparsePoints?: typeof scanReparsePoints;
 }
 
 export interface Frozen {
@@ -674,7 +676,10 @@ async function freezeInner(i: FreezeInput): Promise<Frozen> {
   try {
     const violations: string[] = [];
     const ws = await validatedDir(i.workspace);
-    const scan = await scanReparsePoints(ws, limits.maxEntries);
+    const scan = await (i.scanReparsePoints ?? scanReparsePoints)(
+      ws,
+      limits.maxEntries,
+    );
     if (scan.ancestors.length > 0) {
       throw new ValidationError(
         `reparse point at or above the workspace: ${scan.ancestors.join(", ")}`,
