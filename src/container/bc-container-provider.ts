@@ -2119,16 +2119,19 @@ ${script}
       removeIds: string[];
       publish: string[];
       /**
-       * Trusted exact-id removal allowlist (ledger plus refapp/task
-       * manifests, never agent input). Any other id is refused here and
-       * again inside the script, which also refuses non-CentralGauge apps.
+       * Trusted removal allowlist from trustedHarnessAppIds: app id to the
+       * regex its installed name must match. Any other id is refused here;
+       * the script re-checks id, publisher and name per app before every
+       * mutation.
        */
-      allowIds: readonly string[];
+      allow: ReadonlyMap<string, string>;
     },
   ): Promise<HarnessSyncResult> {
     const guid =
       /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-    const allow = new Set(plan.allowIds.map((x) => x.toLowerCase()));
+    const allow = new Map(
+      [...plan.allow].map(([id, re]) => [id.toLowerCase(), re] as const),
+    );
     for (const id of plan.removeIds) {
       if (!guid.test(id)) throw new Error(`not an app id: ${id}`);
       if (!allow.has(id.toLowerCase())) {
@@ -2155,7 +2158,7 @@ ${script}
           plan.removeIds,
           staged,
           this.getCredentials(containerName),
-          [...allow],
+          allow,
         ),
         "harness-sync",
       );

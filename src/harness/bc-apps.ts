@@ -6,13 +6,18 @@
  */
 
 import { join } from "@std/path";
+import {
+  BENCHMARK_APP_ID_RANGE,
+  HARNESS_ORACLE_RANGE,
+  HARNESS_TEST_APP_RANGE,
+} from "../constants.ts";
 import type {
   HarnessInstalledApp,
   HarnessSyncResult,
 } from "../container/types.ts";
 import { ValidationError } from "../errors.ts";
 import { hashJson, hashTree } from "./hash.ts";
-import { dependentsClosure, type StagedApp } from "./staging.ts";
+import { dependentsClosure, readAppJson, type StagedApp } from "./staging.ts";
 
 export const CG_PUBLISHER = "CentralGauge";
 export const HARNESS_APP_NAME = "CG Test Harness";
@@ -38,7 +43,11 @@ export interface SyncPlan {
   publish: WantedApp[];
 }
 
-export type Ledger = Record<string, { version: string; stamp: string }>;
+/** Per installed app id; `name` (written by the harness) feeds the trusted allowlist. */
+export type Ledger = Record<
+  string,
+  { version: string; stamp: string; name?: string }
+>;
 
 /** Above the pristine version so dependency minima hold; build part stays below 65535 for build < 35000. */
 export function prereqVersion(base: string, stamp: string): string {
@@ -169,7 +178,63 @@ export function applySync(
   for (const p of sync.published) {
     if (sync.failed?.index === p.index) continue;
     const w = plan.publish[p.index];
-    if (w) next[w.id] = { version: w.version, stamp: w.stamp };
+    if (w) next[w.id] = { version: w.version, stamp: w.stamp, name: w.name };
   }
   return next;
+}
+
+const HARNESS_BANDS = [
+  BENCHMARK_APP_ID_RANGE,
+  HARNESS_TEST_APP_RANGE,
+  HARNESS_ORACLE_RANGE,
+];
+
+const exactName = (name: string) =>
+  `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
+
+/**
+ * The trusted removal allowlist, from ONE source: app id (lower case) to an
+ * anchored regex its installed name must match. Ids come only from staged
+ * harness app.json files (each root and its immediate subfolders; publisher
+ * CentralGauge, every idRange inside a harness band) and from ledger entries
+ * the harness wrote itself (with a name). Never from agent input. The bench
+ * candidate id is the one explicit extra: an owned leftover whose name
+ * carries the bench task id and attempt.
+ */
+export async function trustedHarnessAppIds(
+  roots: string[],
+  ledger: Ledger,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const consider = async (appJsonPath: string) => {
+    let a;
+    try {
+      a = await readAppJson(appJsonPath);
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return;
+      throw err;
+    }
+    const inBands = a.idRanges.length > 0 &&
+      a.idRanges.every((r) =>
+        HARNESS_BANDS.some((b) => r.from >= b.start && r.to <= b.end)
+      );
+    if (a.publisher === CG_PUBLISHER && inBands) {
+      out.set(a.id.toLowerCase(), exactName(a.name));
+    }
+  };
+  for (const root of roots) {
+    await consider(join(root, "app.json"));
+    for await (const e of Deno.readDir(root)) {
+      if (e.isDirectory && !e.name.startsWith(".")) {
+        await consider(join(root, e.name, "app.json"));
+      }
+    }
+  }
+  for (const [id, entry] of Object.entries(ledger)) {
+    if (entry.name && !out.has(id.toLowerCase())) {
+      out.set(id.toLowerCase(), exactName(entry.name));
+    }
+  }
+  out.set(BENCH_CANDIDATE_APP_ID, "^CentralGauge_[A-Za-z0-9-]+_\\d+$");
+  return out;
 }

@@ -9,6 +9,7 @@ import {
   type Ledger,
   planAppSync,
   prereqVersion,
+  trustedHarnessAppIds,
   type WantedApp,
 } from "../../../src/harness/bc-apps.ts";
 import type { StagedApp } from "../../../src/harness/staging.ts";
@@ -311,4 +312,76 @@ Deno.test("invalidate: every id the sync touches leaves the ledger before the mu
   assertEquals(Object.keys(next).length, 5);
   assert(!(id(7) in next) && !(id(3) in next));
   assertEquals(Object.keys(ledger).length, 7, "input unchanged");
+});
+
+Deno.test("trustedHarnessAppIds: staged harness manifests and named ledger entries only", async () => {
+  const staged = await Deno.realPath(await Deno.makeTempDir());
+  await write(
+    staged,
+    "Core/app.json",
+    appJson(IDS.core, "CGR Core", [70000, 70099], []),
+  );
+  await write(
+    staged,
+    "Test/app.json",
+    appJson(IDS.test, "CGR Test", [80000, 84999], []),
+  );
+  const prereqId = "a1b2c3d4-0028-0000-0000-000000000028";
+  await write(
+    staged,
+    "Prereq/app.json",
+    appJson(prereqId, "CG-AL-H028 Prereq", [69000, 69099], []),
+  );
+  const foreign = JSON.parse(
+    appJson("00000000-0000-4000-8000-00000000cccc", "Continia Core", [
+      70000,
+      70099,
+    ], []),
+  );
+  foreign.publisher = "Continia";
+  await write(staged, "Foreign/app.json", JSON.stringify(foreign));
+  const oracle = await Deno.realPath(await Deno.makeTempDir());
+  await write(
+    oracle,
+    "app.json",
+    appJson(IDS.oracle, "CGR Oracle HX-001", [85000, 85099], []),
+  );
+  const ledger: Ledger = {
+    [IDS.rental]: { version: "1.0.5.5", stamp: "s", name: "CGR Rental" },
+    "00000000-0000-4000-8000-00000000dddd": { version: "1.0.0.0", stamp: "s" },
+  };
+  const t = await trustedHarnessAppIds([staged, oracle], ledger);
+  const matches = (id: string, name: string) =>
+    new RegExp(t.get(id) ?? "(?!)").test(name);
+  assert(matches(IDS.core, "CGR Core") && !matches(IDS.core, "CGR Core2"));
+  assert(
+    matches(IDS.test, "CGR Test") && matches(IDS.oracle, "CGR Oracle HX-001"),
+  );
+  assert(matches(IDS.rental, "CGR Rental"));
+  assert(!t.has(prereqId), "a bench prerequisite is never trusted");
+  assert(
+    !t.has("00000000-0000-4000-8000-00000000cccc"),
+    "a foreign publisher is never trusted",
+  );
+  assert(
+    !t.has("00000000-0000-4000-8000-00000000dddd"),
+    "a ledger entry without a name is not trusted",
+  );
+  assert(matches(BENCH_CANDIDATE_APP_ID, "CentralGauge_CG-AL-E001_1"));
+  assert(!matches(BENCH_CANDIDATE_APP_ID, "Evil App"));
+});
+
+Deno.test("applySync: ledger entries carry the app name", () => {
+  const w = wanted(["Test"]);
+  const plan = planAppSync([], w, {}, OWNED);
+  const next = applySync({}, plan, {
+    removed: [],
+    warnings: [],
+    removeIncomplete: [],
+    published: plan.publish.map((_, index) => ({ index, ms: 1 })),
+    failed: null,
+    done: true,
+    output: "",
+  });
+  assertEquals(next[id(1)]!.name, "CGR Core");
 });
