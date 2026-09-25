@@ -199,6 +199,9 @@ Deno.test("harnessReport: newest campaign from the store, loud when none, bad op
   });
   assertEquals(r.campaign.id, CAMPAIGN_ID);
   assertEquals(r.arms[0]!.scored_cells, 1);
+  // The report path always loads traces: coverage[].trace is present, never null.
+  assertEquals(r.coverage.every((c) => c.trace !== null), true);
+  assertEquals(r.trace_invalid, []);
   await assertRejects(
     () =>
       harnessReport("skills-vs-plain", {

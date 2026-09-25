@@ -62,6 +62,7 @@ import {
   loadReportLogs,
   renderReport,
 } from "../../src/harness/report.ts";
+import { loadTraces } from "../../src/harness/trace-metrics.ts";
 import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
 import { rejudgeExecution, runCell } from "../../src/harness/execution.ts";
@@ -354,6 +355,7 @@ export async function harnessReport(
     resamples: opts.resamples,
     seed: opts.seed,
     logs: await loadReportLogs(opts.resultsDir, records),
+    traces: await loadTraces(opts.resultsDir, executions),
     ...(opts.judging === "current"
       ? { judging: await currentJudging(opts.root) }
       : {}),

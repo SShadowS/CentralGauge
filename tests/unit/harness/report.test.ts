@@ -5,6 +5,7 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import { stripAnsiCode } from "@std/fmt/colors";
+import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
 import { ExperimentSchema } from "../../../src/harness/config.ts";
 import type { CampaignRecords } from "../../../src/harness/integrity.ts";
@@ -16,6 +17,8 @@ import {
   scorerFingerprint,
 } from "../../../src/harness/records.ts";
 import { buildReport, renderReport } from "../../../src/harness/report.ts";
+import { loadTraces } from "../../../src/harness/trace-metrics.ts";
+import { type TraceEvent, writeTrace } from "../../../src/harness/trace.ts";
 import {
   campaign,
   execution,
@@ -553,4 +556,174 @@ Deno.test("buildReport: coverage counts executions priced under a cost assumptio
     renderReport(r),
     "cost assumptions: pi_openrouter_cache_write_5m 1",
   );
+});
+
+/** A v2 tool_call; `unclassified` marks a call no rule classified. */
+const traceCall = (seq: number, unclassified = false): TraceEvent => ({
+  v: 2,
+  seq,
+  t_ms: null,
+  type: "tool_call",
+  session: null,
+  agent: "main",
+  parent: null,
+  call_id: `c${seq}`,
+  request_id: null,
+  tool: unclassified ? "Bash" : "Read",
+  transport: unclassified ? "shell" : "builtin",
+  skill: null,
+  backend_request: null,
+  outcome: "ok",
+  error_class: null,
+  result_bytes: 1,
+  truncated: null,
+  duration_ms: null,
+  model: null,
+  command: unclassified ? "python x.py" : null,
+  command_cut: unclassified ? false : null,
+  target: null,
+  category: unclassified ? "unclassified" : "read",
+  classifier: unclassified ? "none@1" : "builtin.Read@1",
+});
+const CAPS = {
+  capabilities: {
+    trace_types: [
+      "tool_call",
+      "model_request",
+      "subagent_spawn",
+      "skill_invoke",
+    ],
+  },
+};
+
+/**
+ * plain: two complete traces (3 calls, one unclassified; 2 calls).
+ * skills: complete (2 calls), partial (9 calls), invalid, no trace.
+ */
+async function tracedRecords() {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const c = await campaign({ repeats: 2 });
+  type Kind = "complete" | "partial" | "invalid" | "none";
+  const rows: Array<[string, string, number, Kind, TraceEvent[]]> = [
+    ["plain", "HX-001", 1, "complete", [
+      traceCall(1),
+      traceCall(2),
+      traceCall(3, true),
+    ]],
+    ["plain", "HX-002", 1, "complete", [traceCall(1), traceCall(2)]],
+    ["skills", "HX-001", 1, "complete", [traceCall(1), traceCall(2)]],
+    [
+      "skills",
+      "HX-001",
+      2,
+      "partial",
+      [...Array(9).keys()].map((i) => traceCall(i + 1)),
+    ],
+    ["skills", "HX-002", 1, "invalid", []],
+    ["skills", "HX-002", 2, "none", []],
+  ];
+  const executions = [];
+  const judgments = [];
+  for (const [arm, task, repeat, kind, events] of rows) {
+    const path = kind === "none"
+      ? null
+      : `runs/${arm}-${task}-${repeat}/trace.jsonl`;
+    if (path !== null) {
+      await Deno.mkdir(join(root, path, ".."), { recursive: true });
+      if (kind === "invalid") {
+        await Deno.writeTextFile(join(root, path), '{"v":7}\n');
+      } else await writeTrace(join(root, path), events);
+    }
+    const e = execution(c, { arm, task, repeat }, {
+      telemetry: {
+        ...telemetry(1),
+        raw_usage: { ...CAPS, trace_complete: kind === "complete" },
+      },
+      trace_path: path,
+    });
+    executions.push(e);
+    judgments.push(judgment(c, e, true));
+  }
+  const records = { campaign: c, executions, artifacts: [], judgments };
+  return { records, traces: await loadTraces(root, executions) };
+}
+
+Deno.test("report coverage: trace lines per arm; partial and invalid traces counted, not mixed", async () => {
+  const { records, traces } = await tracedRecords();
+  const r = await buildReport(records, { resamples: 50, traces });
+  const by = Object.fromEntries(r.coverage.map((c) => [c.arm, c.trace]));
+  assertEquals(by["plain"], {
+    executions: 2,
+    with_trace: 2,
+    complete: 2,
+    invalid: 0,
+    tool_calls: 5,
+    rule_classified: 4,
+    unclassified: 1,
+    unreplayable: 0,
+    rules: "rules@1",
+  });
+  assertEquals(by["skills"], {
+    executions: 4,
+    with_trace: 2,
+    complete: 1,
+    invalid: 1,
+    tool_calls: 2,
+    rule_classified: 2,
+    unclassified: 0,
+    unreplayable: 0,
+    rules: "rules@1",
+  });
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text,
+    "calls rule-classified 4/5, unclassified 1 (rules@1); traces complete 2/2",
+  );
+  assertStringIncludes(
+    text,
+    "traces complete 1/4, 1 invalid, 1 without a trace",
+  );
+  assertStringIncludes(text, "[WARN] invalid trace for");
+});
+
+Deno.test("report: an invalid trace never breaks the primary metric", async () => {
+  const { records, traces } = await tracedRecords();
+  const without = await buildReport(records, { resamples: 50, seed: 1 });
+  const withTraces = await buildReport(records, {
+    resamples: 50,
+    seed: 1,
+    traces,
+  });
+  assertEquals(withTraces.arms, without.arms);
+  assertEquals(withTraces.comparisons, without.comparisons);
+});
+
+Deno.test("report coverage: no traces option gives trace null", async () => {
+  const r = await buildReport(await records(), { resamples: 50 });
+  assertEquals(r.coverage.map((c) => c.trace), [null, null]);
+});
+
+Deno.test("report: per_model in incomplete_telemetry never invalidates the primary metric", async () => {
+  const base = await records();
+  const flagged = {
+    ...base,
+    executions: base.executions.map((e) => ({
+      ...e,
+      validity: {
+        ...e.validity,
+        incomplete_telemetry: [
+          ...e.validity.incomplete_telemetry,
+          "per_model" as const,
+        ],
+      },
+    })),
+  };
+  const a = await buildReport(base, { resamples: 50, seed: 1 });
+  const b = await buildReport(flagged, { resamples: 50, seed: 1 });
+  assertEquals(b.arms, a.arms);
+  assertEquals(b.comparisons, a.comparisons);
+  assertEquals(b.coverage.map((c) => c.incomplete_telemetry["per_model"]), [
+    2,
+    2,
+  ]);
 });

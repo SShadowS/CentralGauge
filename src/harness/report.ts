@@ -30,6 +30,8 @@ import {
   incompleteObserved,
   type JudgmentRecord,
 } from "./records.ts";
+import { RULES_VERSION } from "./classify.ts";
+import { type LoadedTrace, traceMetrics } from "./trace-metrics.ts";
 import {
   type ArmSummary,
   armSummary,
@@ -51,6 +53,25 @@ export interface ArmCoverage {
   unverified_components: string[];
   /** Executions priced under each cost assumption (raw_usage.assumptions keys), sorted keys. */
   cost_assumptions: Record<string, number>;
+  /**
+   * Trace classification coverage (M2-06); null without the traces option.
+   * Call counts come from complete traces only; partial and invalid traces
+   * are counted, never mixed in. Category totals never rank harnesses.
+   */
+  trace: TraceCoverage | null;
+}
+
+export interface TraceCoverage {
+  executions: number;
+  /** Executions whose trace was read (complete or partial). */
+  with_trace: number;
+  complete: number;
+  invalid: number;
+  tool_calls: number;
+  rule_classified: number;
+  unclassified: number;
+  unreplayable: number;
+  rules: string;
 }
 
 /** Every reported metric is the declared primary one or exploratory. */
@@ -86,6 +107,8 @@ export interface HarnessReport {
    */
   metric_labels: Record<ReportedMetric, MetricLabel>;
   coverage: ArmCoverage[];
+  /** Traces that could not be read; a warning, never a failure of the report. */
+  trace_invalid: { execution: string; error: string }[];
   diffs: Array<{ variant: string; differing: ManifestKey[] }>;
   arms: ArmSummary[];
   /**
@@ -159,6 +182,42 @@ export interface ReportLogs {
 export interface ReportOptions extends BootstrapOptions {
   judging?: JudgingContext;
   logs?: ReportLogs;
+  /** Published traces (loadTraces); without it coverage[].trace is null. */
+  traces?: {
+    traces: Map<string, LoadedTrace | null>;
+    invalid: { execution: string; error: string }[];
+  };
+}
+
+function traceCoverage(
+  es: CampaignRecords["executions"],
+  t: NonNullable<ReportOptions["traces"]>,
+): TraceCoverage {
+  const bad = new Set(t.invalid.map((x) => x.execution));
+  const c: TraceCoverage = {
+    executions: es.length,
+    with_trace: 0,
+    complete: 0,
+    invalid: es.filter((e) => bad.has(e.id)).length,
+    tool_calls: 0,
+    rule_classified: 0,
+    unclassified: 0,
+    unreplayable: 0,
+    rules: `rules@${RULES_VERSION}`,
+  };
+  for (const e of es) {
+    const lt = t.traces.get(e.id);
+    if (!lt) continue;
+    c.with_trace++;
+    if (!lt.complete) continue;
+    c.complete++;
+    const m = traceMetrics(lt.events, lt);
+    c.tool_calls += m.tool_calls;
+    c.rule_classified += m.rule_classified;
+    c.unclassified += m.unclassified;
+    c.unreplayable += m.unreplayable;
+  }
+  return c;
 }
 
 /**
@@ -476,8 +535,10 @@ export async function buildReport(
             a < b ? -1 : a > b ? 1 : 0
           ),
         ),
+        trace: opts.traces ? traceCoverage(es, opts.traces) : null,
       };
     }),
+    trace_invalid: opts.traces?.invalid ?? [],
     diffs,
     arms: summaries,
     comparisons,
@@ -557,11 +618,32 @@ export function renderReport(r: HarnessReport): string {
         reasons(c.incomplete_telemetry)
       }, cost assumptions: ${reasons(c.cost_assumptions)}`,
     );
+    if (c.trace !== null) {
+      const t = c.trace;
+      const extra = [
+        ...(t.invalid > 0 ? [`${t.invalid} invalid`] : []),
+        ...(t.executions - t.with_trace - t.invalid > 0
+          ? [`${t.executions - t.with_trace - t.invalid} without a trace`]
+          : []),
+      ];
+      out.push(
+        `    calls rule-classified ${t.rule_classified}/${t.tool_calls}, unclassified ${t.unclassified}${
+          t.unreplayable > 0 ? ` (${t.unreplayable} unreplayable)` : ""
+        } (${t.rules}); traces complete ${t.complete}/${t.executions}${
+          extra.length > 0 ? `, ${extra.join(", ")}` : ""
+        }`,
+      );
+    }
     if (c.unverified_components.length > 0) {
       out.push(
         `    unverified components: ${c.unverified_components.join(", ")}`,
       );
     }
+  }
+  for (const w of r.trace_invalid) {
+    out.push(
+      colors.yellow(`  [WARN] invalid trace for ${w.execution}: ${w.error}`),
+    );
   }
   h("Primary");
   for (const a of r.arms) {
