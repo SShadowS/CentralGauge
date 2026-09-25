@@ -89,6 +89,14 @@ export const ExperimentSchema = z.strictObject({
       path: ["variants"],
     });
   }
+  const dup = e.vary.filter((k, i) => e.vary.indexOf(k) !== i);
+  if (dup.length > 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: `duplicate key ${[...new Set(dup)].join(", ")}`,
+      path: ["vary"],
+    });
+  }
 });
 export type Experiment = z.output<typeof ExperimentSchema>;
 

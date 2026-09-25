@@ -177,3 +177,20 @@ Deno.test("checkModelsInCatalog: malformed or empty catalog fails naming the fil
     assertStringIncludes((err as Error).message, "models.yml");
   }
 });
+
+Deno.test("loadExperiment: duplicate vary keys are refused", async () => {
+  const root = await harnessRoot({
+    "configs/cc-plain.yml": CONFIG("cc-plain"),
+    "configs/cc-skills.yml": CONFIG("cc-skills"),
+    "experiments/skills-vs-plain.yml": EXPERIMENT.replace(
+      "vary: [skills]",
+      "vary: [skills, skills]",
+    ),
+  });
+  const err = await assertRejects(() =>
+    loadExperiment(root, "skills-vs-plain")
+  );
+  assertEquals((err as Error).name, "ValidationError");
+  assertStringIncludes((err as Error).message, "vary: duplicate key skills");
+  assertStringIncludes((err as Error).message, "skills-vs-plain.yml");
+});
