@@ -3108,7 +3108,7 @@ Values: 4 x 33.33 = 133.32 plus 2 x 4.16625 = 141.6525, rounded 141.65. 33.33 x 
 
 - [ ] **Step 5: Host compile all variants, audit (Steps 3, 4; auditor rule C: the partner method is exercised through the interface), `check` HX-001..HX-005, commit `feat(harness-tasks): HX-005 extensible pricing refactor`, request gate M4-11.**
 
-**Acceptance:** `check` `[OK]` for HX-001..HX-005; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has the twelve procedures of Step 3.
+**Acceptance:** `check` `[OK]` for HX-001..HX-005; latest audit `TASK TREE` matches and `VERDICT: clean`; oracle has thirteen procedures: the twelve of Step 3 plus row 13 DailyFractionalExcessRoundedOnce (Setup 12.5/100/0.0025, rate 33.33, Daily 2027-03-05..08, 401 km -> 141.66; orchestrator ruling 2026-09-25 after audit 1).
 
 ---
 
