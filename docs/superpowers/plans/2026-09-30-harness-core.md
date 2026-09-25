@@ -25,7 +25,7 @@
 - Model ids are never hardcoded in code. Test fixtures use the placeholder `anthropic/model-a` with a test catalog.
 - ID bands (spec 1b section 4): visible tests 80000-84999, hidden oracles 85000-89999, 75000-79999 reserved.
 - Records are immutable (spec 1a section 6): crash-safe write-once publication; a second write of the same record is an error.
-- Hashing rules carry a version (spec 1a section 4). `HASH_RULES_VERSION = "hr1"`. Any change to what is hashed, or how, bumps it and updates the golden values in `hash.test.ts` and `manifest.test.ts` in the same commit. Manifests under other rules are never compared.
+- Hashing rules carry a version (spec 1a section 4). `HASH_RULES_VERSION = "hr1"` (superseded: `hr2` since M1-24 run 002, 2026-09-26, when extensionless `.delete` overlay files started hashing as text; the hr1 goldens quoted below are historical, `hash.test.ts` and `manifest.test.ts` hold the current ones). Any change to what is hashed, or how, bumps it and updates the golden values in `hash.test.ts` and `manifest.test.ts` in the same commit. Manifests under other rules are never compared.
 - Every YAML or JSON load validates with Zod and fails with a `ValidationError` naming the file, including malformed JSON. A silent load failure is a bug (CLAUDE.md, Benchmark Tasks).
 - Fixtures are contracts: record fixtures are built with the real hash functions and must pass `validateCampaignRecords`. Never hand-write a hash where an integrity check should succeed.
 - Acceptance per task = its focused test file passes, plus `deno check`, `deno lint` and `deno fmt --check` clean on the task's files, plus the focused tests of earlier tasks it modifies. Exact test counts are informational, not acceptance.
