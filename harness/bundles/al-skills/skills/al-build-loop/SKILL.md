@@ -17,10 +17,11 @@ Business Central server and prints one line of JSON.
 
 ## Reading the output
 
-The JSON has three parts: `op` (the command), `client` (`status` is the HTTP
+The JSON normally has three parts: `op` (the command), `client` (`status` is the HTTP
 status, `script_ms` the wall time) and `result` (what the server returned).
 `result.ok` tells you whether the operation succeeded; the rest of `result`
-holds the compiler diagnostics or the per-test outcomes. Read the diagnostics
+holds the compiler diagnostics or the per-test outcomes. If the tool could not reach the server, `client.status` is 0 and
+`result` only holds an `error`. Read the diagnostics
 in full: the first error often causes the ones after it.
 
 ## Exit codes

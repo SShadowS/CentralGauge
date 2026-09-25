@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
+import { copy } from "@std/fs";
 import { join } from "@std/path";
 import { parse } from "@std/yaml";
 import { HarnessConfigSchema } from "../../../src/harness/config.ts";
@@ -63,10 +64,18 @@ Deno.test("skills bundle: no task identifiers, hidden-test words, hidden-test id
         `${s.name} contains ${JSON.stringify(bad)}`,
       );
     }
-    assert(
-      !/\b8[5-9]\d{3}\b/.test(s.text),
-      `${s.name} names an id in 85000-89999`,
-    );
+    // Task names, the refapp prefix and id range, hidden-test ids, refapp domain nouns.
+    for (
+      const re of [
+        /HX-?\d/i,
+        /\bCGR\b/,
+        /\b70\d{3}\b/,
+        /\b8[5-9]\d{3}\b/,
+        /vehicle|lease|leasing|rental|outbox|damage|fleet/i,
+      ]
+    ) {
+      assert(!re.test(s.text), `${s.name} matches ${re}`);
+    }
   }
 });
 
@@ -85,4 +94,18 @@ Deno.test("skills bundle: loads through resolveManifest as a skills component, h
   assertEquals(a.skills?.hash, b.skills?.hash);
   const names = new Set(a.skills!.files.map((f) => f.path.split("/")[0]));
   assertEquals([...names].sort(), (await skillFiles()).map((s) => s.name));
+
+  // The hash follows content: one changed byte in a copy changes it.
+  const tmp = await Deno.makeTempDir();
+  try {
+    await copy(join(ROOT, "bundles"), join(tmp, "bundles"), {
+      overwrite: true,
+    });
+    const f = join(tmp, SKILLS, "al-build-loop", "SKILL.md");
+    await Deno.writeTextFile(f, (await Deno.readTextFile(f)) + "x");
+    const c = await resolveManifest(tmp, config, FACTS);
+    assert(c.skills?.hash !== a.skills?.hash, "hash changes with content");
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
 });

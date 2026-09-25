@@ -28,7 +28,7 @@ it, but one object per file named after the object keeps things findable.
 ## Picking IDs
 
 Before adding an object, list the IDs already used in that app (search for
-`codeunit 5`, `table 5` and so on) and take a free number inside `idRanges`.
+`codeunit`, `table` and so on) and take a free number inside `idRanges`.
 Two objects of the same type with the same ID, in any apps loaded together,
 fail to compile or publish.
 
@@ -37,8 +37,10 @@ fail to compile or publish.
 - `Access = Internal` on an object, or the `internal` keyword on a procedure, hides it from
   other apps unless `internalsVisibleTo` names them.
 - `local` procedures are visible only inside their own object.
-- Table extensions and page extensions add to objects of other apps; they cannot change
-  existing fields, only add fields, keys (on the new fields) and triggers.
+- Table extensions and page extensions add to objects of other apps: new fields, keys on
+  those fields, procedures and triggers. They cannot remove or retype existing fields; with
+  `modify` they can change some properties of existing fields or controls and add
+  validate triggers.
 
 ## Where a change belongs
 
