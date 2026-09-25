@@ -20,6 +20,7 @@ import type {
 import type { JudgmentRecord } from "./records.ts";
 import type { StagedApp } from "./staging.ts";
 import type { LoadedTask } from "./task.ts";
+import { ValidationError } from "../errors.ts";
 import { isInfraError } from "../health/is-infra-error.ts";
 import {
   InfraRetriesExhaustedError,
@@ -36,13 +37,14 @@ import {
   type TestRow,
   type TestSpec,
 } from "./bc-lane.ts";
+import { safeCopyTree } from "./fsutil.ts";
 import { hashFile } from "./hash.ts";
 import {
   JudgmentRecordSchema,
   scorerFingerprint,
   verdictOf,
 } from "./records.ts";
-import { readAppGraph, readAppJson } from "./staging.ts";
+import { applyOverlay, readAppGraph, readAppJson } from "./staging.ts";
 import {
   addedTestCodeunits,
   buildVerdictWorkspace,
@@ -511,9 +513,231 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   scores.failRest();
 }
 
-/** Implemented in M1-18; until then a test-authoring task is refused loudly. */
-export function scoreTestAuthoring(_ctx: JudgeContext): Promise<void> {
-  return Promise.reject(new Error("mutant_kill is implemented in M1-18"));
+const isTestPath = (rel: string) =>
+  rel === TEST_APP || rel.startsWith(`${TEST_APP}/`);
+const infraThrown = (err: unknown) =>
+  err instanceof InfraRetriesExhaustedError ||
+  err instanceof NoEligibleContainersError || isInfraError(err);
+
+type MutantOutcome = "killed" | "survived" | "infra";
+
+/** Per mutant (M4 gate parity): any infra row is infra; else an assertion failure kills; else it survived. */
+function mutantOutcome(rows: TestRow[]): MutantOutcome {
+  if (rows.length === 0 || rows.some((r) => r.failure === "infra")) {
+    return "infra";
+  }
+  if (rows.some((r) => r.outcome === "fail" && r.failure === "assertion")) {
+    return "killed";
+  }
+  return "survived";
+}
+
+/**
+ * test-authoring: production is the reference (staged + correct/); only the
+ * agent's Test\\ changes are kept. pass_to_pass runs on the reference; the
+ * submitted suite runs on the reference, on mutant 0 (staged production)
+ * and on every named mutant.
+ */
+export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
+  const { i, scores, log } = ctx;
+  const t = i.task.task;
+  if (t.mutants.includes("0")) {
+    throw new ValidationError(`${t.id}: mutant name "0" is reserved`, ["0"]);
+  }
+  const tr = performance.now();
+  const reference = join(i.workDir, "reference");
+  await safeCopyTree(i.pristine, reference);
+  await applyOverlay(join(i.task.dir, "correct"), reference, {
+    exclude: isTestPath,
+  });
+  const vw = await buildVerdictWorkspace({
+    pristine: i.pristine,
+    artifact: i.artifact,
+    out: join(i.workDir, "verdict"),
+    productionFrom: reference,
+    symbolIds: i.symbolIds,
+  });
+  log.spans.reconstruct_ms = performance.now() - tr;
+  log.violations = vw.violations;
+  if (vw.violations.length > 0) return scores.failRest();
+
+  const pristineApps = await readAppGraph(i.pristine);
+  const prepare = (
+    dir: string,
+    apps: StagedApp[],
+    changed: string[],
+    name: string,
+  ) =>
+    prepareApps(ctx.lane, {
+      pristine: i.pristine,
+      pristineApps,
+      candidateDir: dir,
+      candidateApps: apps,
+      changed,
+      workDir: join(i.workDir, name),
+      lock: i.lock,
+    });
+  const prep = await prepare(vw.dir, vw.apps, vw.changed, "apps-reference");
+  recordBuild(ctx, prep, "reference");
+  if (!prep.buildOk) return scores.failRest();
+  scores.set("build", true);
+
+  // pass_to_pass first, in its own hold with trusted code only: agent test
+  // code cannot unscore it, and it is decided by a real run even when the
+  // submission is rejected below (M1-18 review items 1 and 2).
+  if (scores.has("pass_to_pass")) {
+    const p2p: TestSpec[] = t.pass_to_pass.map((r) => ({
+      codeunit: r.codeunit,
+      procedures: r.procedures,
+      target: "reference",
+    }));
+    try {
+      const r = (await runHeld(
+        ctx,
+        prep.wanted,
+        p2p,
+        [...prep.candidateIds].reverse(),
+      )).rows;
+      scores.set("pass_to_pass", scorerPassed(r), r);
+    } catch (err) {
+      if (!infraThrown(err)) throw err;
+      log.error = err instanceof Error ? err.message : String(err);
+      return scores.nullRest();
+    }
+  }
+
+  const added = await addedTestCodeunits(
+    join(i.pristine, TEST_APP),
+    join(vw.dir, TEST_APP),
+  );
+  const unsupported = added.filter((a) => a.testPage);
+  if (unsupported.length > 0) {
+    for (const u of unsupported) {
+      log.test_messages.push({
+        codeunit: u.codeunit,
+        procedure: "(TestPage)",
+        target: "reference",
+        message: "TestPage tests are not supported by the harness test runner",
+      });
+    }
+    scores.set("mutant_kill", false);
+    return scores.failRest();
+  }
+  const agent = added.filter((a) => a.procedures.length > 0);
+  for (const a of added.filter((x) => x.procedures.length === 0)) {
+    log.notes.push(`codeunit ${a.codeunit} has no [Test] procedure`);
+  }
+  if (agent.length === 0) {
+    log.notes.push("mutant_kill: no agent test codeunit discovered");
+    scores.set("mutant_kill", false);
+    return scores.failRest();
+  }
+  const specs = (target: string): TestSpec[] =>
+    agent.map((a) => ({
+      codeunit: a.codeunit,
+      procedures: a.procedures,
+      target,
+    }));
+  const infraRows = (target: string): TestRow[] =>
+    agent.flatMap((a) =>
+      a.procedures.map((p) => ({
+        codeunit: a.codeunit,
+        procedure: p,
+        target,
+        outcome: "not_run" as const,
+        failure: "infra" as const,
+      }))
+    );
+
+  let mkRows: TestRow[];
+  try {
+    mkRows = (await runHeld(
+      ctx,
+      prep.wanted,
+      specs("reference"),
+      [...prep.candidateIds].reverse(),
+    )).rows;
+  } catch (err) {
+    if (!infraThrown(err)) throw err;
+    log.notes.push(
+      `reference: agent suite infra after reroutes: ${
+        err instanceof Error ? err.message : err
+      }`,
+    );
+    scores.set("mutant_kill", null, infraRows("reference"));
+    return scores.failRest();
+  }
+  const onRef = scorerPassed(mkRows);
+  if (onRef !== true) {
+    scores.set("mutant_kill", onRef, mkRows);
+    return scores.failRest();
+  }
+
+  const outcomes: MutantOutcome[] = [];
+  for (const m of ["0", ...t.mutants]) {
+    const target = `mutant:${m}`;
+    const allRows = (
+      failure: TestRow["failure"],
+      procedureOverride?: string,
+    ): TestRow[] =>
+      agent.flatMap((a) =>
+        a.procedures.map((p) => ({
+          codeunit: a.codeunit,
+          procedure: procedureOverride ?? p,
+          target,
+          outcome: "not_run" as const,
+          failure,
+        }))
+      );
+    try {
+      let production = i.pristine;
+      if (m !== "0") {
+        production = join(i.workDir, `mutant-src-${m}`);
+        await safeCopyTree(reference, production);
+        await applyOverlay(join(i.task.dir, "mutants", m), production, {
+          exclude: isTestPath,
+        });
+      }
+      const mv = await buildVerdictWorkspace({
+        pristine: i.pristine,
+        artifact: i.artifact,
+        out: join(i.workDir, `mutant-${m}`),
+        productionFrom: production,
+        symbolIds: i.symbolIds,
+      });
+      const mp = await prepare(mv.dir, mv.apps, mv.changed, `apps-mutant-${m}`);
+      recordBuild(ctx, mp, target);
+      if (!mp.buildOk) {
+        mkRows.push(...allRows("compile"));
+        outcomes.push("survived"); // not a kill
+        continue;
+      }
+      const rows = (await runHeld(
+        ctx,
+        mp.wanted,
+        specs(target),
+        [...mp.candidateIds].reverse(),
+      )).rows;
+      mkRows.push(...rows);
+      outcomes.push(mutantOutcome(rows));
+    } catch (err) {
+      if (!infraThrown(err)) throw err;
+      log.notes.push(
+        `${target}: infra after reroutes: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      mkRows.push(...allRows("infra"));
+      outcomes.push("infra");
+    }
+  }
+  const passed = outcomes.includes("survived")
+    ? false
+    : outcomes.includes("infra")
+    ? null
+    : true;
+  scores.set("mutant_kill", passed, mkRows);
+  scores.failRest();
 }
 
 export async function judge(

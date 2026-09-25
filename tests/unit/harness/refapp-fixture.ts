@@ -61,7 +61,7 @@ export function appJson(
   );
 }
 
-const rental = (body: string) =>
+export const rental = (body: string) =>
   `codeunit 70200 "CGR Rental"\n{\n    procedure Price(): Integer\n    begin\n        ${body}\n    end;\n}\n`;
 
 export const TASK_YML = `id: HX-001
@@ -200,4 +200,49 @@ export async function makeRefappRepo(): Promise<RefappRepo> {
     symbolStore,
     symbols,
   };
+}
+
+/** HX-002 shape (M4 contract): test-authoring on Rental.Price; staged = bug exit(11), correct = exit(10). */
+export async function addTestAuthoringTask(
+  repo: RefappRepo,
+  mutants: Record<string, string>,
+  suites: Record<string, string> = {},
+): Promise<string> {
+  const t = "harness-tasks/tasks/HX-002";
+  await write(
+    repo.root,
+    `${t}/task.yml`,
+    `id: HX-002
+refapp_version: refapp-v1
+kind: test-authoring
+prompt: prompt.md
+source: refapp
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [ShippedPasses] }
+mutants: [${Object.keys(mutants).join(", ")}]
+`,
+  );
+  await write(repo.root, `${t}/prompt.md`, "Write tests for Rental.Price.");
+  await write(
+    repo.root,
+    `${t}/overlay/Rental/src/Rental.Codeunit.al`,
+    rental("exit(11);"),
+  );
+  await write(
+    repo.root,
+    `${t}/correct/Rental/src/Rental.Codeunit.al`,
+    rental("exit(10);"),
+  );
+  for (const [name, body] of Object.entries(mutants)) {
+    await write(
+      repo.root,
+      `${t}/mutants/${name}/Rental/src/Rental.Codeunit.al`,
+      rental(body),
+    );
+  }
+  for (const [folder, text] of Object.entries(suites)) {
+    await write(repo.root, `${t}/${folder}/Test/src/Suite.Test.al`, text);
+  }
+  return join(repo.root, t);
 }
