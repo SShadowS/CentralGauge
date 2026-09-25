@@ -617,9 +617,9 @@ async function servercorePin(root: string): Promise<string> {
 
 /**
  * Base image from the digest pin; a harness image from the inspected base.
- * Provenance is checked, not asserted: after the build, the base tag must
- * still resolve to the inspected id and the new image's layers must start
- * with the base's layers.
+ * Provenance is checked, not asserted: the build gets the inspected base id
+ * (never the tag), and the new image's layers must start with that id's
+ * layers.
  */
 export async function harnessImagesBuild(
   harness: string,
@@ -662,7 +662,9 @@ export async function harnessImagesBuild(
     "-f",
     join(images, harness, "Dockerfile.windows"),
     "--build-arg",
-    `BASE=${BASE_IMAGE}`,
+    // The inspected immutable id, never the tag: a tag moved between inspect
+    // and build cannot change the base this image is recorded against.
+    `BASE=${base.Id}`,
     "--label",
     `${IMAGE_LABELS.harness}=${harness}`,
     "--label",
@@ -676,8 +678,7 @@ export async function harnessImagesBuild(
   if (code !== 0) {
     throw new ConfigurationError(`${tag} build failed (exit ${code})`);
   }
-  const after = await docker.inspectImage(BASE_IMAGE) as { Id?: string } | null;
-  if (after?.Id !== base.Id || !await hasBaseLayers(docker, tag, BASE_IMAGE)) {
+  if (!await hasBaseLayers(docker, tag, base.Id)) {
     throw new ConfigurationError(
       `${tag} was not built on base ${base.Id}: the layers do not start with the base's layers`,
     );

@@ -26,7 +26,7 @@ import { canonicalJSON } from "../../shared/canonical.ts";
 import { ValidationError } from "../errors.ts";
 import { TEXT_EXTENSIONS } from "../ingest/catalog/task-set-hash.ts";
 
-export const HASH_RULES_VERSION = "hr1";
+export const HASH_RULES_VERSION = "hr2";
 
 export type TreeDomain = "bundle" | "task";
 
@@ -45,10 +45,20 @@ export function hashJson(value: unknown): Promise<string> {
   );
 }
 
+/**
+ * Extensionless task-format control files that are text (hr2): the overlay
+ * `.delete` list (staging DELETE_LIST). An autocrlf checkout rewrites them.
+ */
+export const TEXT_FILE_NAMES: readonly string[] = [".delete"];
+
 function isText(path: string): boolean {
-  const dot = path.lastIndexOf(".");
+  const name = path.slice(
+    Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1,
+  );
+  if (TEXT_FILE_NAMES.includes(name.toLowerCase())) return true;
+  const dot = name.lastIndexOf(".");
   return dot !== -1 &&
-    TEXT_EXTENSIONS.includes(path.slice(dot).toLowerCase());
+    TEXT_EXTENSIONS.includes(name.slice(dot).toLowerCase());
 }
 
 /**
@@ -89,7 +99,8 @@ export function posixRel(rel: string, os: typeof Deno.build.os): string {
 }
 
 /**
- * Per-file SHA-256 hex. CRLF becomes LF for text extensions only; other
+ * Per-file SHA-256 hex. CRLF becomes LF for text extensions and
+ * TEXT_FILE_NAMES only; other
  * bytes are hashed as-is. `root` is the tree or task directory the file
  * belongs to: a link from `root` down to the file, or a file outside `root`,
  * is refused.

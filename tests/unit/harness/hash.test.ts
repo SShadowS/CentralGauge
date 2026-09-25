@@ -6,6 +6,7 @@ import {
 } from "@std/assert";
 import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
+import { DELETE_LIST } from "../../../src/harness/staging.ts";
 import {
   HASH_RULES_VERSION,
   hashFile,
@@ -13,6 +14,7 @@ import {
   hashTree,
   listTree,
   posixRel,
+  TEXT_FILE_NAMES,
 } from "../../../src/harness/hash.ts";
 
 async function writeTree(root: string, files: Record<string, string>) {
@@ -30,11 +32,12 @@ async function linkDir(target: string, path: string) {
   });
 }
 
-Deno.test("hashJson: golden value pins rules hr1", async () => {
-  assertEquals(HASH_RULES_VERSION, "hr1");
+Deno.test("hashJson: golden value pins rules hr2", async () => {
+  // hr2 (M1-24 run 002): extensionless overlay control files hash as text.
+  assertEquals(HASH_RULES_VERSION, "hr2");
   assertEquals(
     await hashJson({ b: [true, null, "x"], a: 1 }),
-    "b93bfb4cd226bb75b69866d163145c6bbe6e71eae8eb09e6079cf8b54747ea2a",
+    "1a554637537d70908ed52703ece84e8d93a6c510b7644c3d5b4bb4d77a0fd278",
   );
 });
 
@@ -66,7 +69,7 @@ Deno.test("hashTree task domain: golden, CRLF-invariant, drops only build artifa
   assertEquals(await hashTree(crlf, "task"), await hashTree(lf, "task"));
   assertEquals(
     await hashTree(lf, "task"),
-    "188dc9078eb86ea57ad930412e661ebe2a2323ab1ea3bc7b633d5e0b902cb677",
+    "fcdaaaa3300c949abd32a9d7f1492966758d04a806e43d5921ac972c7320ac8c",
   );
 });
 
@@ -95,6 +98,25 @@ Deno.test("hashFile: binary bytes are preserved, text CRLF is normalized", async
     await hashFile(root, join(root, "a.al")),
     await hashFile(root, join(root, "b.al")),
   );
+});
+
+Deno.test("hashFile: the overlay .delete list hashes as text (LF and CRLF agree)", async () => {
+  assertEquals(TEXT_FILE_NAMES.includes(DELETE_LIST), true);
+  const lf = await Deno.makeTempDir();
+  const crlf = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(lf, DELETE_LIST),
+    "# gone\nRental/src/Old.al\n",
+  );
+  await Deno.writeTextFile(
+    join(crlf, DELETE_LIST),
+    "# gone\r\nRental/src/Old.al\r\n",
+  );
+  assertEquals(
+    await hashFile(lf, join(lf, DELETE_LIST)),
+    await hashFile(crlf, join(crlf, DELETE_LIST)),
+  );
+  assertEquals(await hashTree(lf, "task"), await hashTree(crlf, "task"));
 });
 
 Deno.test("hashTree: missing dir throws unless optional", async () => {

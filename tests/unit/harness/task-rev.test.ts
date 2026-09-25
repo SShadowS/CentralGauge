@@ -1,5 +1,7 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
+import { hashTree } from "../../../src/harness/hash.ts";
+import { taskSetIdentity } from "../../../src/harness/identity.ts";
 import { loadTaskAt } from "../../../src/harness/task-rev.ts";
 import { git, makeRefappRepo, write } from "./refapp-fixture.ts";
 
@@ -49,5 +51,36 @@ Deno.test("loadTaskAt: a tag yields the task as committed, with commit and tree;
       join(wt.task.dir, "correct", "Rental", "src", "Rental.Codeunit.al"),
     ),
     "edited after the tag",
+  );
+});
+
+Deno.test("loadTaskAt: the committed tree and a CRLF working tree give the same visible and overlay hashes", async () => {
+  const repo = await makeRefappRepo();
+  await git(repo.root, "add", ".");
+  await git(repo.root, "commit", "-q", "-m", "tasks");
+  await git(repo.root, "tag", "refapp-v1-rc1");
+  // An autocrlf=true checkout rewrites the overlay's .delete list with CRLF.
+  const del = join(repo.tasksDir, "HX-001", "overlay", ".delete");
+  const lf = await Deno.readTextFile(del);
+  await Deno.writeTextFile(del, lf.replaceAll("\n", "\r\n"));
+  const at = await loadTaskAt(
+    repo.root,
+    "HX-001",
+    "refapp-v1-rc1",
+    await Deno.realPath(await Deno.makeTempDir()),
+  );
+  const wt = await loadTaskAt(
+    repo.root,
+    "HX-001",
+    null,
+    await Deno.realPath(await Deno.makeTempDir()),
+  );
+  const visible = async (t: typeof at) =>
+    (await taskSetIdentity(repo.root, [t.task], repo.symbols)).tasks[0]!
+      .visible;
+  assertEquals(await visible(wt), await visible(at));
+  assertEquals(
+    await hashTree(join(wt.task.dir, "overlay"), "task"),
+    await hashTree(join(at.task.dir, "overlay"), "task"),
   );
 });

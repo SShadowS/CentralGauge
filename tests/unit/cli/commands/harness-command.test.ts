@@ -932,7 +932,11 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
     docker,
   );
   const args = docker.builds[1]!.join(" ");
-  assertStringIncludes(args, `BASE=${BASE_IMAGE}`);
+  assertStringIncludes(
+    args,
+    `BASE=${baseId}`,
+    "the inspected immutable id, never the tag",
+  );
   assertStringIncludes(args, `centralgauge.harness.base_digest=${baseId}`);
   assertEquals(f.digest, `sha256:${"c".repeat(64)}`);
   docker.addImage(
@@ -967,4 +971,32 @@ Deno.test("harnessSymbolsLock: writes a strict lock the identity accepts", async
       }),
   );
   assertEquals([n, (await loadSymbolsLock(root))!.length], [1, 1]);
+});
+
+Deno.test("harnessImagesBuild: a base tag that moves between inspect and build cannot change the base", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
+  const tag = "centralgauge/harness-claude-code:2.1.282";
+  docker.build = (args) => {
+    docker.builds.push(args);
+    // Someone rebuilds the base tag while this build runs.
+    docker.addImage(BASE_IMAGE, `sha256:${"9".repeat(64)}`, {}, ["m1"]);
+    docker.addImage(tag, `sha256:${"c".repeat(64)}`, {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.version": "2.1.282",
+      "centralgauge.harness.base_digest": baseId,
+    }, ["l1", "l2", "l3"]);
+    return Promise.resolve(0);
+  };
+  const f = await harnessImagesBuild(
+    "claude-code",
+    { root, version: "2.1.282" },
+    docker,
+  );
+  const args = docker.builds[0]!.join(" ");
+  assertStringIncludes(args, `BASE=${baseId}`);
+  assertEquals(args.includes(`BASE=${BASE_IMAGE}`), false);
+  assertEquals(f.base_digest, baseId);
 });
