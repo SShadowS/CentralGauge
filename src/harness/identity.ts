@@ -15,6 +15,7 @@ import {
   hashJson,
   hashTree,
   isTaskBuildArtifact,
+  posixRel,
   type TreeEntry,
 } from "./hash.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
@@ -34,22 +35,51 @@ export interface RefappRef {
 async function git(
   repoRoot: string,
   args: string[],
-  stdin?: Uint8Array,
 ): Promise<Uint8Array<ArrayBuffer> | null> {
-  const child = new Deno.Command("git", {
+  const out = await new Deno.Command("git", {
     args,
     cwd: repoRoot,
-    stdin: stdin ? "piped" : "null",
+    stdin: "null",
     stdout: "piped",
     stderr: "piped",
-  }).spawn();
-  if (stdin) {
-    const w = child.stdin.getWriter();
-    await w.write(stdin);
-    await w.close();
-  }
-  const out = await child.output();
+  }).output();
   return out.success ? out.stdout : null;
+}
+
+/** Reads lines and exact byte counts off a stream, holding at most a chunk. */
+function byteReader(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  let buf = new Uint8Array(0);
+  const fill = async () => {
+    const { done, value } = await reader.read();
+    if (done) return false;
+    const next = new Uint8Array(buf.length + value.length);
+    next.set(buf);
+    next.set(value, buf.length);
+    buf = next;
+    return true;
+  };
+  return {
+    async line(): Promise<string | null> {
+      let nl;
+      while ((nl = buf.indexOf(10)) < 0) if (!(await fill())) return null;
+      const line = new TextDecoder().decode(buf.subarray(0, nl));
+      buf = buf.subarray(nl + 1);
+      return line;
+    },
+    async bytes(n: number): Promise<Uint8Array<ArrayBuffer> | null> {
+      const out = new Uint8Array(n);
+      for (let at = 0; at < n;) {
+        if (buf.length === 0 && !(await fill())) return null;
+        const k = Math.min(n - at, buf.length);
+        out.set(buf.subarray(0, k), at);
+        at += k;
+        buf = buf.subarray(k);
+      }
+      return out;
+    },
+    cancel: () => reader.cancel(),
+  };
 }
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b).trim();
@@ -77,9 +107,18 @@ async function refappSource(
   const blobs: Array<{ rel: string; sha: string }> = [];
   for (const rec of new TextDecoder().decode(ls).split("\0")) {
     if (rec === "") continue;
-    const [meta, path] = rec.split("\t") as [string, string];
-    const [mode, , sha] = meta.split(" ") as [string, string, string];
-    const rel = path.slice(REFAPP_PATH.length + 1);
+    // "<mode> <type> <sha>\t<path>": the path itself may contain tabs.
+    const tab = rec.indexOf("\t");
+    const [mode, , sha] = rec.slice(0, tab).split(" ") as [
+      string,
+      string,
+      string,
+    ];
+    // Git paths are POSIX: a backslash is a name character, never a separator.
+    const rel = posixRel(
+      rec.slice(tab + 1 + REFAPP_PATH.length + 1),
+      "linux",
+    );
     if (mode === "120000" || mode === "160000") {
       throw new ValidationError(`refapp contains a link or submodule: ${rel}`, [
         rel,
@@ -88,28 +127,49 @@ async function refappSource(
     if (!isTaskBuildArtifact(rel)) blobs.push({ rel, sha });
   }
   if (blobs.length === 0) return [];
-  const batch = await git(
-    repoRoot,
-    ["cat-file", "--batch"],
-    new TextEncoder().encode(blobs.map((b) => b.sha).join("\n") + "\n"),
-  );
-  if (!batch) throw new ValidationError("git cat-file failed", []);
+  // Requests are written while results are read: writing them all first
+  // deadlocks once git blocks on a full stdout pipe. Each blob is read and
+  // hashed on its own, so the whole refapp is never held in memory.
+  const child = new Deno.Command("git", {
+    args: ["cat-file", "--batch"],
+    cwd: repoRoot,
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "null",
+  }).spawn();
+  const writing = (async () => {
+    const w = child.stdin.getWriter();
+    await w.write(
+      new TextEncoder().encode(blobs.map((b) => b.sha).join("\n") + "\n"),
+    );
+    await w.close();
+  })();
+  const rd = byteReader(child.stdout);
   const out: TreeEntry[] = [];
-  let at = 0;
-  for (const b of blobs) {
-    const nl = batch.indexOf(10, at);
-    // "<sha> blob <size>"; anything else ("<sha> missing") is a broken repo.
-    const [, type, len] = text(batch.subarray(at, nl)).split(" ");
-    const size = Number(len);
-    if (nl < 0 || type !== "blob" || !Number.isInteger(size)) {
-      throw new ValidationError(
-        `git cat-file could not read ${REFAPP_PATH}/${b.rel} (${b.sha})`,
-        [b.rel],
-      );
+  try {
+    for (const b of blobs) {
+      // "<sha> blob <size>"; anything else ("<sha> missing") is a broken repo.
+      const [, type, len] = ((await rd.line()) ?? "").split(" ");
+      const size = Number(len);
+      const content = type === "blob" && Number.isInteger(size)
+        ? await rd.bytes(size)
+        : null;
+      if (!content || (await rd.bytes(1))?.[0] !== 10) {
+        throw new ValidationError(
+          `git cat-file could not read ${REFAPP_PATH}/${b.rel} (${b.sha})`,
+          [b.rel],
+        );
+      }
+      out.push({ path: b.rel, sha256: await hashContent(b.rel, content) });
     }
-    const content = batch.slice(nl + 1, nl + 1 + size);
-    at = nl + 1 + size + 1;
-    out.push({ path: b.rel, sha256: await hashContent(b.rel, content) });
+    await writing;
+  } finally {
+    await rd.cancel().catch(() => {});
+    await writing.catch(() => {});
+    try {
+      child.kill();
+    } catch { /* already exited; on success git is at EOF anyway */ }
+    await child.status;
   }
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }

@@ -259,3 +259,107 @@ Deno.test("resolveRefapp: a missing refapp blob fails loudly", async () => {
     "Core/src/A.al",
   );
 });
+
+/** Stage a blob at `path` without a checkout (names the filesystem may refuse). */
+async function stageBlob(root: string, path: string, content: string) {
+  const child = new Deno.Command("git", {
+    args: ["hash-object", "-w", "--stdin"],
+    cwd: root,
+    stdin: "piped",
+    stdout: "piped",
+  }).spawn();
+  const w = child.stdin.getWriter();
+  await w.write(new TextEncoder().encode(content));
+  await w.close();
+  const sha = new TextDecoder().decode((await child.output()).stdout).trim();
+  // Windows git refuses these names in the index unless NTFS protection is off.
+  await git(root, "config", "core.protectNTFS", "false");
+  await git(
+    root,
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    `100644,${sha},${path}`,
+  );
+}
+
+async function commitIndex(root: string, message: string) {
+  await git(root, "commit", "-q", "-m", message);
+  await git(root, "tag", "-f", "refapp-v1");
+}
+
+Deno.test("resolveRefapp: a tracked file name with a tab keeps its full path", async () => {
+  const root = await fixtureRepo();
+  await stageBlob(root, "harness-tasks/refapp/Core/a\tb.al", "x\n");
+  await commitIndex(root, "tab name");
+  const ref = await resolveRefapp(root, "refapp-v1");
+  assertEquals(ref.files.map((f) => f.path), [
+    "Core/a\tb.al",
+    "Core/app.json",
+    "Core/src/A.al",
+  ]);
+});
+
+Deno.test("resolveRefapp: a git path with a backslash is refused", async () => {
+  const root = await fixtureRepo();
+  await stageBlob(root, "harness-tasks/refapp/Core/a\\b.al", "x\n");
+  await commitIndex(root, "backslash name");
+  await assertRejects(
+    () => resolveRefapp(root, "refapp-v1"),
+    ValidationError,
+    "backslash",
+  );
+});
+
+Deno.test("resolveRefapp: binary and CRLF blobs hash as in a checkout", async () => {
+  const root = await fixtureRepo();
+  await Deno.writeFile(
+    join(root, "harness-tasks/refapp/Core/logo.png"),
+    new Uint8Array([0x89, 0x50, 0x0d, 0x0a, 0x00, 0xff, 0x0a]),
+  );
+  await write(root, "harness-tasks/refapp/Core/src/B.al", "a\r\nb\r\n");
+  await retag(root, "binary and crlf");
+  assertEquals(
+    (await resolveRefapp(root, "refapp-v1")).files,
+    await listTree(join(root, "harness-tasks", "refapp"), "task"),
+  );
+});
+
+// Measured on Windows: writing all requests before reading deadlocks at
+// 100k requests (not at 50k); 3000 or 16k real files did not hang.
+Deno.test("resolveRefapp: a large tree does not deadlock on the cat-file pipes", async () => {
+  const root = await fixtureRepo();
+  const n = 120_000;
+  await stageBlob(root, "harness-tasks/refapp/Big/F0.al", "x\n");
+  const sha = await new Deno.Command("git", {
+    args: ["rev-parse", ":harness-tasks/refapp/Big/F0.al"],
+    cwd: root,
+  }).output().then((o) => new TextDecoder().decode(o.stdout).trim());
+  // Index entries only (no checkout): every path shares one blob.
+  const child = new Deno.Command("git", {
+    args: ["update-index", "--index-info"],
+    cwd: root,
+    stdin: "piped",
+  }).spawn();
+  const lines = [];
+  for (let i = 1; i < n; i++) {
+    lines.push(`100644 ${sha}\tharness-tasks/refapp/Big/F${i}.al\n`);
+  }
+  const w = child.stdin.getWriter();
+  await w.write(new TextEncoder().encode(lines.join("")));
+  await w.close();
+  assertEquals((await child.status).success, true);
+  await commitIndex(root, "large tree");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("resolveRefapp hung")), 60_000);
+  });
+  try {
+    const ref = await Promise.race([resolveRefapp(root, "refapp-v1"), timeout]);
+    assertEquals(ref.files.length, n + 2);
+    const one = ref.files.find((f) => f.path === "Big/F0.al")!.sha256;
+    assertEquals(ref.files.filter((f) => f.sha256 === one).length, n);
+  } finally {
+    clearTimeout(timer);
+  }
+});
