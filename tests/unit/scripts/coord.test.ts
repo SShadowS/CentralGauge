@@ -289,6 +289,29 @@ Deno.test("coord: claim race across separate processes has one winner", async ()
   assertEquals((await taskState(root, "M0-01")).state, "doing");
 });
 
+Deno.test("coord: CLI keeps a numeric-looking run id as a string", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const { runId, token } = await claim(root, "M0-01", "content");
+  const script = new URL("../../../scripts/coord/coord.ts", import.meta.url)
+    .pathname
+    .replace(/^\/([A-Za-z]:)/, "$1");
+  const out = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--allow-all",
+      script,
+      "checkpoint",
+      "M0-01",
+      runId,
+      token,
+      "started",
+    ],
+    env: { CG_COORD_ROOT: root },
+  }).output();
+  assertEquals(out.code, 0, new TextDecoder().decode(out.stderr));
+});
+
 Deno.test("coord: pause blocks new claims and leases, drains, and resumes", async () => {
   const root = await freshRoot();
   await seed(root);

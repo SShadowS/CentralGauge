@@ -1092,7 +1092,8 @@ function arg(rest: string[], i: number): string {
 
 async function main(args: string[]): Promise<number> {
   const a = parseArgs(args, {
-    string: ["lane", "wait", "note", "task", "from", "campaign", "watch"],
+    // "_" keeps positionals as strings: run id "001" must not become 1
+    string: ["_", "lane", "wait", "note", "task", "from", "campaign", "watch"],
     boolean: ["json"],
   });
   const [cmd, ...rest] = a._.map(String);
