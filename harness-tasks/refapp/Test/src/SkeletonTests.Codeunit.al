@@ -5,6 +5,7 @@ codeunit 80000 "CGR Skeleton Tests"
 
     var
         Assert: Codeunit "Library Assert";
+        Lib: Codeunit "CGR Test Library";
 
     [Test]
     procedure CheckOutMarksVehicleCheckedOut()
@@ -12,8 +13,8 @@ codeunit 80000 "CGR Skeleton Tests"
         Vehicle: Record "CGR Vehicle";
         RentalMgt: Codeunit "CGR Rental Mgt";
     begin
-        CreateVehicle('SPIKE-001', 1000, Enum::"CGR Maintenance Strategy"::Default);
-        RentalMgt.CheckOut('SPIKE-001');
+        Lib.CreateVehicle('SPIKE-001', 1000, Enum::"CGR Maintenance Strategy"::Default);
+        RentalMgt.CheckOut(Lib.CreateContract('SPIKE-001'));
         Vehicle.Get('SPIKE-001');
         Assert.IsTrue(Vehicle."Checked Out", 'Fleet subscriber must mark the vehicle checked out');
     end;
@@ -22,10 +23,14 @@ codeunit 80000 "CGR Skeleton Tests"
     procedure CheckOutTwiceFails()
     var
         RentalMgt: Codeunit "CGR Rental Mgt";
+        FirstContractNo: Code[20];
+        SecondContractNo: Code[20];
     begin
-        CreateVehicle('SPIKE-002', 1000, Enum::"CGR Maintenance Strategy"::Default);
-        RentalMgt.CheckOut('SPIKE-002');
-        asserterror RentalMgt.CheckOut('SPIKE-002');
+        Lib.CreateVehicle('SPIKE-002', 1000, Enum::"CGR Maintenance Strategy"::Default);
+        FirstContractNo := Lib.CreateContract('SPIKE-002');
+        SecondContractNo := Lib.CreateContract('SPIKE-002');
+        RentalMgt.CheckOut(FirstContractNo);
+        asserterror RentalMgt.CheckOut(SecondContractNo);
         Assert.ExpectedError('Vehicle SPIKE-002 is not available.');
     end;
 
@@ -34,7 +39,7 @@ codeunit 80000 "CGR Skeleton Tests"
     var
         FleetMgt: Codeunit "CGR Fleet Mgt";
     begin
-        CreateVehicle('SPIKE-003', 1000, Enum::"CGR Maintenance Strategy"::"Heavy Duty");
+        Lib.CreateVehicle('SPIKE-003', 1000, Enum::"CGR Maintenance Strategy"::"Heavy Duty");
         Assert.AreEqual(6000, FleetMgt.NextServiceKm('SPIKE-003'), 'Heavy Duty adds 5000 km (Integer vs Integer)');
     end;
 
@@ -55,18 +60,5 @@ codeunit 80000 "CGR Skeleton Tests"
     begin
         Assert.AreEqual('{"event":"vehicleCheckedOut","vehicleNo":"SPIKE-004"}',
             Facade.VehicleCheckedOutPayload('SPIKE-004'), 'Payload shape');
-    end;
-
-    local procedure CreateVehicle(VehicleNo: Code[20]; Mileage: Integer; Strategy: Enum "CGR Maintenance Strategy")
-    var
-        Vehicle: Record "CGR Vehicle";
-    begin
-        if Vehicle.Get(VehicleNo) then
-            Vehicle.Delete();
-        Vehicle.Init();
-        Vehicle."No." := VehicleNo;
-        Vehicle.Mileage := Mileage;
-        Vehicle.Strategy := Strategy;
-        Vehicle.Insert();
     end;
 }

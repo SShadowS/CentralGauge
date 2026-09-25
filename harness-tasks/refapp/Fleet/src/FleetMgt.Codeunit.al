@@ -11,7 +11,7 @@ codeunit 70100 "CGR Fleet Mgt"
             exit(Result);
         if not Vehicle.Get(VehicleNo) then
             exit(false);
-        exit(not Vehicle."Checked Out");
+        exit(not Vehicle."Checked Out" and not Vehicle.Blocked);
     end;
 
     procedure NextServiceKm(VehicleNo: Code[20]): Integer
