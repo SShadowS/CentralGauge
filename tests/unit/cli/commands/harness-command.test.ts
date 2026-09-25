@@ -1,13 +1,42 @@
-import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import {
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from "@std/assert";
 import { Command } from "@cliffy/command";
 import { stripAnsiCode } from "@std/fmt/colors";
 import { join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import {
+  type CellCliOptions,
+  cellGate,
+  harnessCell,
+  harnessImagesBuild,
+  harnessJudgeFixture,
   harnessReport,
+  harnessSymbolsLock,
   registerHarnessCommand,
   validateHarness,
 } from "../../../../cli/commands/harness-command.ts";
+import {
+  EGRESS_MARKER,
+  type EnvDeps,
+  openHarnessEnv,
+  resolveEgress,
+} from "../../../../cli/commands/harness-env.ts";
+import { claudeCodeAdapter } from "../../../../src/harness/adapters/claude-code.ts";
+import { loadSymbolsLock } from "../../../../src/harness/identity.ts";
+import { BASE_IMAGE } from "../../../../src/harness/images.ts";
+import { BenchLockHeldError } from "../../../../src/utils/bench-lock.ts";
+import { FakeBc } from "../../harness/fake-bc.ts";
+import { FakeDocker } from "../../harness/fake-docker.ts";
+import {
+  ccBehavior,
+  makeEnv,
+  probeLines,
+  type TestEnv,
+} from "../../harness/runtime-fixture.ts";
 import {
   CentralGaugeError,
   ConfigurationError,
@@ -495,4 +524,447 @@ Deno.test("validateHarness: the catalog is read even with no experiments", async
     ConfigurationError,
     "catalog missing, empty or not a list",
   );
+});
+
+// ---- M1-24: cell, judge-fixture, images build, symbols lock ----
+
+function deps(
+  order: string[],
+  lock?: () => never,
+  verify: () => Promise<string[]> = () =>
+    Promise.resolve(["not implemented (M1-33)"]),
+): EnvDeps {
+  const docker = new FakeDocker();
+  docker.owned = ["cg-harness-dead-beef"];
+  const listOwned = docker.listOwned.bind(docker);
+  docker.listOwned = (o) => {
+    order.push("sweep");
+    return listOwned(o);
+  };
+  return {
+    // The campaign allocation (coord allocation.json) is its own seam; every container here is allocated.
+    allocated: (c) => Promise.resolve(c),
+    acquireLock: () => {
+      if (lock) lock();
+      order.push("lock");
+      return () => {
+        order.push("release");
+        return Promise.resolve();
+      };
+    },
+    docker: () => docker,
+    setup: (names) => {
+      order.push("setup");
+      return Promise.resolve({
+        bc: new FakeBc(),
+        names,
+        dispose: () => Promise.resolve(),
+      });
+    },
+    resolveHost: () => {
+      order.push("host");
+      return Promise.resolve("127.0.0.1");
+    },
+    owner: () => "HOST1",
+    health: (names) => {
+      order.push(`health:${names.join(",")}`);
+      return { getState: () => ({ containers: [] }), record: () => {} };
+    },
+    verifyEgress: verify,
+  };
+}
+
+const envOpts = (t: TestEnv, containers = ["Cronus281"]) => ({
+  repoRoot: t.repo.root,
+  resultsDir: t.env.resultsRoot,
+  containers,
+  backendPort: 0,
+  secretsSource: t.env.secretsSource,
+  symbolStore: t.repo.symbolStore,
+  privateRoot: t.env.privateRoot,
+  credentialLedger: t.env.credentialLedger,
+  command: "test",
+  supervised: true,
+});
+
+const cellOpts = (
+  t: TestEnv,
+  over: Partial<CellCliOptions> & { manifest?: string | null } = {},
+): CellCliOptions & { manifest: string | null } => ({
+  root: t.repo.root,
+  resultsDir: t.env.resultsRoot,
+  containers: ["Cronus281"],
+  backendPort: 0,
+  secretsDir: t.env.secretsSource,
+  symbolStore: t.repo.symbolStore,
+  privateDir: t.env.privateRoot,
+  credentialLedger: t.env.credentialLedger,
+  supervised: true,
+  repeat: 1,
+  rev: null,
+  manifest: null,
+  ...over,
+});
+
+const opener = (t: TestEnv) => () =>
+  Promise.resolve({ env: t.env, close: () => Promise.resolve() });
+const noInterrupt = () => () => {};
+
+/** harness cell reads the model catalog under <root>/site/catalog (the fixture repo has none). */
+async function writeCatalog(t: TestEnv) {
+  await write(
+    t.repo.root,
+    "site/catalog/models.yml",
+    "- slug: anthropic/claude-sonnet-5\n  api_model_id: claude-sonnet-5\n  family: claude\n  display_name: S5\n",
+  );
+  await write(t.repo.root, "site/catalog/pricing.yml", "[]\n");
+  await write(t.repo.root, "site/catalog/model-families.yml", "[]\n");
+}
+
+Deno.test("openHarnessEnv: refused containers first, then lock, sweep, containers, health monitor, backend, recovery; release last", async () => {
+  const t = await makeEnv();
+  const order: string[] = [];
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus281", "Cronus28"]), deps(order)),
+    ConfigurationError,
+    "Cronus28",
+  );
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["cronus284"]), deps(order)),
+    ConfigurationError,
+    "Cronus284",
+  );
+  assertEquals(order, []);
+  const h = await openHarnessEnv(envOpts(t), deps(order));
+  assertEquals(
+    h.env.deploy.ledgerRoot,
+    join(t.repo.root, "results", "harness", "bc-ledger"),
+    "one ledger scope for every caller",
+  );
+  await h.close();
+  // The second sweep is recoverInterrupted's own (it sweeps before recovering).
+  assertEquals(order, [
+    "lock",
+    "sweep",
+    "setup",
+    "health:Cronus281",
+    "host",
+    "sweep",
+    "release",
+  ]);
+});
+
+Deno.test("openHarnessEnv: a container outside the campaign allocation is refused before the lock", async () => {
+  const t = await makeEnv();
+  const order: string[] = [];
+  const d = deps(order);
+  d.allocated = (c) =>
+    c === "Cronus281"
+      ? Promise.resolve(c)
+      : Promise.reject(new ValidationError(`${c} is not allocated`, [c]));
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus281", "Cronus285"]), d),
+    ValidationError,
+    "Cronus285",
+  );
+  assertEquals(order, []);
+});
+
+Deno.test("openHarnessEnv: a task without an oracle app does not stop the start; the removal allowlist is never env-wide", async () => {
+  const t = await makeEnv();
+  await write(
+    t.repo.tasksDir,
+    "HX-002/task.yml",
+    "id: HX-002\nrefapp_version: refapp-v1\nkind: test-authoring\nprompt: prompt.md\nsource: refapp\nscorers: [build, mutant_kill]\n",
+  );
+  await write(t.repo.tasksDir, "HX-002/prompt.md", "x");
+  await write(t.repo.tasksDir, "HX-002/correct/Rental/src/R.al", "x");
+  const h = await openHarnessEnv(envOpts(t), deps([]));
+  // Owned ids come from each grant's and judgment's trusted roots (M1-16), never from the env.
+  assertEquals(Object.keys(h.env.deploy), ["ledgerRoot"]);
+  await h.close();
+});
+
+Deno.test("openHarnessEnv: a held bench lock stops before any docker call", async () => {
+  const t = await makeEnv();
+  const order: string[] = [];
+  const held = () => {
+    throw new BenchLockHeldError(null, "results/.bench-running.json");
+  };
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), deps(order, held)),
+    BenchLockHeldError,
+  );
+  assertEquals(order, []);
+});
+
+Deno.test("resolveEgress: no marker is not enforced; a marker that fails verification stops; only verified authorized counts", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  assertEquals(await resolveEgress(root, () => Promise.resolve([])), false);
+  await Deno.writeTextFile(
+    join(root, EGRESS_MARKER),
+    JSON.stringify({ v: 1, state: "authorized" }),
+  );
+  await assertRejects(
+    () =>
+      resolveEgress(
+        root,
+        () => Promise.resolve(["rule cg-harness-egress-tcp disabled"]),
+      ),
+    ConfigurationError,
+    "disabled",
+  );
+  assertEquals(await resolveEgress(root, () => Promise.resolve([])), true);
+  await Deno.writeTextFile(
+    join(root, EGRESS_MARKER),
+    JSON.stringify({ v: 1, state: "qualified" }),
+  );
+  assertEquals(await resolveEgress(root, () => Promise.resolve([])), false);
+});
+
+Deno.test("cellGate: credential-bearing arms need enforcement, or --supervised at a terminal; others run unattended", () => {
+  const mock = { ...claudeCodeAdapter, credentialBearing: false };
+  cellGate(mock, { supervised: false, egressEnforced: false }, () => false);
+  cellGate(
+    claudeCodeAdapter,
+    { supervised: false, egressEnforced: true },
+    () => false,
+  );
+  cellGate(
+    claudeCodeAdapter,
+    { supervised: true, egressEnforced: false },
+    () => true,
+  );
+  assertThrows(
+    () =>
+      cellGate(
+        claudeCodeAdapter,
+        { supervised: false, egressEnforced: false },
+        () => true,
+      ),
+    ConfigurationError,
+    "--supervised",
+  );
+  assertThrows(
+    () =>
+      cellGate(
+        claudeCodeAdapter,
+        { supervised: true, egressEnforced: false },
+        () => false,
+      ),
+    ConfigurationError,
+    "terminal",
+  );
+});
+
+Deno.test("harnessCell: one supervised cell; the reservation lands in the shared ledger", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const r = await harnessCell(
+    "cc-sonnet-plain",
+    "HX-001",
+    cellOpts(t),
+    opener(t),
+    () => true,
+    noInterrupt,
+  );
+  assertEquals([r.executions.length, r.executions[0]!.termination], [
+    1,
+    "completed",
+  ]);
+  assertEquals(
+    (await Deno.readTextFile(t.env.credentialLedger!)).trim().split("\n")
+      .length,
+    1,
+  );
+});
+
+Deno.test("harnessCell: Ctrl+C stops the sandbox at once and the attempt is recorded", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  let fire: () => void = () => {};
+  t.docker.behavior = async (call, io) => {
+    await ccBehavior(
+      join(t.repo.tasksDir, "HX-001"),
+      "correct",
+      (await probeLines()).slice(0, 12),
+    )(call, io);
+    fire();
+    await io.killed;
+    return 137;
+  };
+  const r = await harnessCell(
+    "cc-sonnet-plain",
+    "HX-001",
+    cellOpts(t),
+    opener(t),
+    () => true,
+    (cb) => {
+      fire = cb;
+      return () => {};
+    },
+  );
+  assertEquals(r.executions[0]!.termination, "harness_crash");
+  assertEquals(t.docker.kills.length, 1);
+});
+
+Deno.test("harnessJudgeFixture: complete judgment and provenance persisted; variants and revisions follow the manifest", async () => {
+  const t = await makeEnv();
+  await git(t.repo.root, "add", ".");
+  await git(t.repo.root, "commit", "-q", "-m", "tasks");
+  await git(t.repo.root, "tag", "refapp-v1-rc1");
+  const manifest = join(t.env.privateRoot, "qualify-manifest.json");
+  await Deno.writeTextFile(
+    manifest,
+    JSON.stringify({
+      v: 1,
+      refapp_version: "refapp-v1",
+      tasks: {
+        "HX-001": { rev: "refapp-v1-rc1", positive: "correct", naive: ["a"] },
+      },
+    }),
+  );
+  const o = cellOpts(t, { rev: "refapp-v1-rc1", manifest });
+  const pass = await harnessJudgeFixture("HX-001", "correct", o, opener(t));
+  assertEquals(pass.verdict, "pass");
+  const dir = join(t.env.resultsRoot, "fixtures", "HX-001", "correct", pass.id);
+  const saved = JSON.parse(
+    await Deno.readTextFile(join(dir, "judgment.json")),
+  );
+  assertEquals(saved.scorers.map((s: { name: string }) => s.name), [
+    "build",
+    "pass_to_pass",
+    "fail_to_pass",
+  ]);
+  const prov = JSON.parse(
+    await Deno.readTextFile(join(dir, "provenance.json")),
+  );
+  assertEquals([
+    prov.task_id,
+    prov.variant,
+    prov.rev,
+    prov.task_commit.length,
+    prov.task_tree.length,
+  ], ["HX-001", "correct", "refapp-v1-rc1", 40, 40]);
+  assertEquals(prov.workspace_hash, pass.workspace_hash);
+  assertEquals(
+    (await harnessJudgeFixture("HX-001", "naive/a", o, opener(t))).verdict,
+    "fail",
+  );
+  await assertRejects(
+    () => harnessJudgeFixture("HX-001", "naive/zz", o, opener(t)),
+    ConfigurationError,
+    "not listed",
+  );
+  await assertRejects(
+    () =>
+      harnessJudgeFixture("HX-001", "correct", { ...o, rev: null }, opener(t)),
+    ConfigurationError,
+    "refapp-v1-rc1",
+  );
+  await assertRejects(
+    () =>
+      harnessJudgeFixture(
+        "HX-001",
+        "naive/../oracle",
+        { ...o, manifest: null },
+        opener(t),
+      ),
+    ConfigurationError,
+    "variant",
+  );
+  assertEquals(
+    await t.env.store.executions("11111111-2222-4333-8444-555555555555"),
+    [],
+    "fixtures never create executions",
+  );
+});
+
+Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets the base and is verified by layers", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  await assertRejects(
+    () => harnessImagesBuild("base", { root }, docker),
+    ConfigurationError,
+    "pins.json",
+  );
+  await Deno.mkdir(join(root, "harness", "images"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, "harness", "images", "pins.json"),
+    JSON.stringify({
+      servercore: "mcr.microsoft.com/windows/servercore:ltsc2025",
+    }),
+  );
+  await assertRejects(
+    () => harnessImagesBuild("base", { root }, docker),
+    ConfigurationError,
+    "@sha256:",
+  );
+  const pin = `mcr.microsoft.com/windows/servercore@sha256:${"e".repeat(64)}`;
+  await Deno.writeTextFile(
+    join(root, "harness", "images", "pins.json"),
+    JSON.stringify({ servercore: pin }),
+  );
+  await assertRejects(
+    () =>
+      harnessImagesBuild("claude-code", { root, version: "2.1.282" }, docker),
+    ConfigurationError,
+    "base",
+  );
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
+  await harnessImagesBuild("base", { root }, docker);
+  assertStringIncludes(docker.builds[0]!.join(" "), `SERVERCORE=${pin}`);
+  const labels = {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": baseId,
+  };
+  docker.addImage(
+    "centralgauge/harness-claude-code:2.1.282",
+    `sha256:${"c".repeat(64)}`,
+    labels,
+    ["l1", "l2", "l3"],
+  );
+  const f = await harnessImagesBuild(
+    "claude-code",
+    { root, version: "2.1.282" },
+    docker,
+  );
+  const args = docker.builds[1]!.join(" ");
+  assertStringIncludes(args, `BASE=${BASE_IMAGE}`);
+  assertStringIncludes(args, `centralgauge.harness.base_digest=${baseId}`);
+  assertEquals(f.digest, `sha256:${"c".repeat(64)}`);
+  docker.addImage(
+    "centralgauge/harness-claude-code:2.1.282",
+    `sha256:${"d".repeat(64)}`,
+    labels,
+    ["x1", "l3"],
+  );
+  await assertRejects(
+    () =>
+      harnessImagesBuild("claude-code", { root, version: "2.1.282" }, docker),
+    ConfigurationError,
+    "layers",
+  );
+});
+
+Deno.test("harnessSymbolsLock: writes a strict lock the identity accepts", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const from = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.writeTextFile(
+    join(from, "Microsoft_System_28.0.0.0.app"),
+    "sys",
+  );
+  const n = await harnessSymbolsLock(
+    { root, from, store: join(root, "store") },
+    () =>
+      Promise.resolve({
+        id: "8874ed3a-0643-4247-9ced-7a7002f7135d",
+        name: "System",
+        publisher: "Microsoft",
+        version: "28.0.0.0",
+      }),
+  );
+  assertEquals([n, (await loadSymbolsLock(root))!.length], [1, 1]);
 });
