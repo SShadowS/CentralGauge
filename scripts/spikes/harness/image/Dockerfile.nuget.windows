@@ -1,0 +1,11 @@
+# SPIKE (throwaway): harness bench M0
+# DOTNET_ROOT is required: the al tool shim cannot find hostfxr.dll with dotnet in C:\dotnet otherwise.
+FROM centralgauge/harness-spike:windows
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+RUN Invoke-WebRequest -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile 'C:\dotnet-install.ps1'; \
+    & C:\dotnet-install.ps1 -Channel 8.0 -InstallDir 'C:\dotnet'; \
+    [Environment]::SetEnvironmentVariable('PATH', 'C:\dotnet;C:\dotnet-tools;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine); \
+    [Environment]::SetEnvironmentVariable('DOTNET_ROOT', 'C:\dotnet', [EnvironmentVariableTarget]::Machine)
+ARG AL_TOOLS_ID
+ARG AL_TOOLS_VERSION
+RUN & C:\dotnet\dotnet.exe tool install $env:AL_TOOLS_ID --version $env:AL_TOOLS_VERSION --tool-path C:\dotnet-tools
