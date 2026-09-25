@@ -7,6 +7,7 @@ import {
 } from "../../cli/commands/bench/container-setup.ts";
 import type { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 import { ConfigManager } from "../../src/config/config.ts";
+import { ContainerProviderRegistry } from "../../src/container/registry.ts";
 import { allocatedContainer } from "../../src/harness/allocation.ts";
 import {
   loadLedger,
@@ -70,19 +71,25 @@ export async function main(
   let bc: BcContainerProvider | null = null;
   try {
     const outDir = await validatedDest(resolve(outArg));
-    // The probe never prenukes through setup (M1-16c): --list-only and --keep
-    // observe what is installed; the full run prenukes explicitly below.
-    bc = (await setupContainers(
-      [container],
-      deps.provider,
-      await deps.containerConfig(),
-      { prenuke: false },
-    )).containerProvider as BcContainerProvider;
+    const cfg = await deps.containerConfig();
     if (listOnly) {
-      // Read-only observation: no prenuke, no publish, no cleanup (M1-27 Step 3).
+      // Strictly read-only (M1-16c): no setupContainers (it prenukes, warms
+      // compiler folders and publishes the bench test harness). Build the
+      // provider and list.
+      bc = ContainerProviderRegistry.create(
+        deps.provider,
+      ) as BcContainerProvider;
+      if (cfg.credentials && "setCredentials" in bc) {
+        bc.setCredentials(container, {
+          username: cfg.credentials.username || "admin",
+          password: cfg.credentials.password || "admin",
+        });
+      }
       log("list-only", { apps: await bc.listHarnessApps(container) });
       return;
     }
+    bc = (await setupContainers([container], deps.provider, cfg))
+      .containerProvider as BcContainerProvider;
     const packages = await loadSymbolsLock(".");
     if (!packages) throw new Error("no symbols lock; run M1-26 first");
     const lock = { store: resolve("results/harness/symbols"), packages };

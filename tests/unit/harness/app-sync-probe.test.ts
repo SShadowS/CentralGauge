@@ -4,7 +4,7 @@ import type { ContainerProvider } from "../../../src/container/interface.ts";
 import { ContainerProviderRegistry } from "../../../src/container/registry.ts";
 import { main } from "../../../scripts/harness/app-sync-probe.ts";
 
-Deno.test("app-sync-probe --list-only: no prenuke and no removal; the kept apps are listed", async () => {
+Deno.test("app-sync-probe --list-only: strictly read-only (no setup, prenuke, publish, harness or warmup); the kept apps are listed", async () => {
   const calls: string[] = [];
   const kept = {
     id: "c6a1e000-0000-4000-8000-000000000001",
@@ -23,8 +23,18 @@ Deno.test("app-sync-probe --list-only: no prenuke and no removal; the kept apps 
       calls.push("sync");
       return Promise.resolve();
     },
-    warmupCompilerFolders: () => Promise.resolve(),
-    ensureTestHarness: () => Promise.resolve(),
+    warmupCompilerFolders: () => {
+      calls.push("warmup");
+      return Promise.resolve();
+    },
+    ensureTestHarness: () => {
+      calls.push("ensureTestHarness");
+      return Promise.resolve();
+    },
+    publishApp: () => {
+      calls.push("publish");
+      return Promise.resolve();
+    },
     listHarnessApps: () => {
       calls.push("list");
       return Promise.resolve([kept]);

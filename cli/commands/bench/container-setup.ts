@@ -264,12 +264,7 @@ export async function setupContainers(
   containerNames: string[],
   containerProviderName: string | undefined,
   containerConfig: ContainerAppConfig,
-  options?: {
-    noCompilerCache?: boolean;
-    noReuseCompilerFolders?: boolean;
-    /** false: never prenuke (the read-only harness app-sync probe, M1-16c). Bench keeps the default. */
-    prenuke?: boolean;
-  },
+  options?: { noCompilerCache?: boolean; noReuseCompilerFolders?: boolean },
 ): Promise<MultiContainerSetupResult> {
   // Only clear compiler folders when the persistent cache is explicitly
   // disabled. Clearing on every startup destroyed the cache it was meant to
@@ -351,10 +346,7 @@ export async function setupContainers(
   // Pre-nuke any stale CentralGauge apps left over from a previous bench
   // that was killed mid-test — without this the next publishApp hits
   // bccontainerhelper@6.1.11's Unpublish-success-but-not-really race.
-  if (
-    options?.prenuke !== false &&
-    "prenukeCentralGaugeApps" in containerProvider
-  ) {
+  if ("prenukeCentralGaugeApps" in containerProvider) {
     await getTracer().span(
       "setup.prenuke",
       { cat: "setup" },

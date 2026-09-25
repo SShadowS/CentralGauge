@@ -374,26 +374,3 @@ Deno.test("setupContainer clears compiler folders when noCompilerCache is set", 
     ContainerProviderRegistry.clearInstances();
   }
 });
-
-// M1-16c: the harness app-sync probe must observe apps without removing them.
-Deno.test("setupContainers: prenuke false never prenukes; the default (bench) still prenukes", async () => {
-  const read = makeFakeProvider();
-  ContainerProviderRegistry.register("fake-no-prenuke", () => read.provider);
-  const bench = makeFakeProvider();
-  ContainerProviderRegistry.register(
-    "fake-bench-prenuke",
-    () => bench.provider,
-  );
-  try {
-    await setupContainers(["Cronus281"], "fake-no-prenuke", {
-      name: "Cronus281",
-    }, { prenuke: false });
-    assertEquals(read.calls.includes("prenuke"), false);
-    await setupContainers(["Cronus281"], "fake-bench-prenuke", {
-      name: "Cronus281",
-    });
-    assertEquals(bench.calls.includes("prenuke"), true);
-  } finally {
-    ContainerProviderRegistry.clearInstances();
-  }
-});
