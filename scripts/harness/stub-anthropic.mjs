@@ -205,12 +205,31 @@ if (/stub-anthropic\.mjs$/.test(process.argv[1] ?? "")) {
   const stub = createStub(
     checkScenario(JSON.parse(readFileSync(scenarioPath, "utf8"))),
   );
+  // Requests larger than this are answered 413, never cut mid-JSON (a cut
+  // body would silently turn a streaming request into a JSON reply).
+  const MAX_BODY = 8_000_000;
   http.createServer((req, res) => {
     let body = "";
+    let tooBig = false;
+    req.setEncoding("utf8"); // multi-byte characters split across chunks
     req.on("data", (c) => {
-      if (body.length < 1_000_000) body += c;
+      if (body.length + c.length > MAX_BODY) tooBig = true;
+      else body += c;
     });
     req.on("end", () => {
+      if (tooBig) {
+        appendFileSync(
+          logPath,
+          JSON.stringify({ path: req.url, status: 413 }) + "\n",
+        );
+        res.writeHead(413, { "content-type": "application/json" }).end(
+          JSON.stringify({
+            type: "error",
+            error: { type: "request_too_large", message: "stub" },
+          }),
+        );
+        return;
+      }
       const r = stub(
         req.method ?? "GET",
         new URL(req.url ?? "/", "http://stub").pathname,
