@@ -135,6 +135,27 @@ codeunit 85300 "HX004 Revenue Oracle"
         Assert.AreEqual(103.00, LeaseRevenue('HX4-L', 0D, 0D), 'Lease revenue counts leases only');
     end;
 
+    [Test]
+    procedure LineVehicleMovesAtValidation()
+    var
+        Line: Record "CGR Lease Schedule Line";
+        LeaseMgt: Codeunit "CGR Lease Mgt";
+        LeaseNo: Code[20];
+    begin
+        Prepare();
+        MakeVehicle('HX4-M');
+        MakeVehicle('HX4-N');
+        LeaseNo := NewLease('HX4-M');
+        LeaseMgt.InvoiceLine(LeaseNo, 10000);
+        ChangeLeaseVehicle(LeaseNo, 'HX4-N');
+        Line.Get(LeaseNo, 10000);
+        Assert.AreEqual('HX4-M', Line."Vehicle No.", 'The invoiced line keeps the vehicle it was invoiced on');
+        Line.Get(LeaseNo, 20000);
+        Assert.AreEqual('HX4-N', Line."Vehicle No.", 'An uninvoiced line moves to the new vehicle when the lease vehicle is validated');
+        Line.Get(LeaseNo, 30000);
+        Assert.AreEqual('HX4-N', Line."Vehicle No.", 'Every uninvoiced line moves to the new vehicle');
+    end;
+
     local procedure Prepare()
     var
         Setup: Record "CGR Setup";
