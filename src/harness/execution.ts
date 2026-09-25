@@ -155,10 +155,47 @@ const STUB_ENV: Record<string, string> = {
 const STUB_COMMAND = [
   "powershell",
   "-NoProfile",
+  "-ExecutionPolicy",
+  "Bypass",
   "-Command",
-  "Start-Process -NoNewWindow 'C:\\Program Files\\nodejs\\node.exe' -ArgumentList 'C:\\cg-stub\\stub-anthropic.mjs','C:\\cg-stub\\scenario.json',(Join-Path $env:TEMP 'cg-stub.jsonl'),'" +
-  "3400'; Start-Sleep -Seconds 1; & C:\\run.ps1; $rc = $LASTEXITCODE; Get-Content (Join-Path $env:TEMP 'cg-stub.jsonl') | ForEach-Object { [Console]::Error.WriteLine('CG_STUB ' + $_) }; exit $rc",
+  [
+    `Start-Process -NoNewWindow 'C:\\Program Files\\nodejs\\node.exe' -ArgumentList 'C:\\cg-stub\\stub-anthropic.mjs','C:\\cg-stub\\scenario.json',(Join-Path $env:TEMP 'cg-stub.jsonl'),'${STUB_PORT}'`,
+    `$up = $false; for ($i = 0; $i -lt 100 -and -not $up; $i++) { try { (New-Object Net.Sockets.TcpClient('127.0.0.1', ${STUB_PORT})).Close(); $up = $true } catch { Start-Sleep -Milliseconds 200 } }`,
+    "if (-not $up) { [Console]::Error.WriteLine('CG_STUB stub did not listen'); exit 2 }",
+    "$rc = 1",
+    "try { & C:\\run.ps1; $rc = $LASTEXITCODE } finally { Get-Content (Join-Path $env:TEMP 'cg-stub.jsonl') -ErrorAction SilentlyContinue | ForEach-Object { [Console]::Error.WriteLine('CG_STUB ' + $_) } }",
+    "exit $rc",
+  ].join("; "),
 ];
+
+/** The override image: same harness (label), recorded with its own base digest. */
+async function overrideImage(
+  env: HarnessEnv,
+  id: string,
+  harness: string,
+): Promise<{ digest: string; base_digest: string }> {
+  const img = await bounded(
+    env.docker.inspectImage(id),
+    env.opTimeoutMs ?? OP_TIMEOUT_MS,
+    "docker image inspect",
+  ) as { Id?: string; Config?: { Labels?: Record<string, string> } } | null;
+  const labels = img?.Config?.Labels ?? {};
+  if (img?.Id !== id) {
+    throw new ConfigurationError(`--image ${id} is not present`);
+  }
+  if (labels["centralgauge.harness"] !== harness) {
+    throw new ConfigurationError(
+      `--image ${id} is a ${
+        labels["centralgauge.harness"] ?? "unlabelled"
+      } image, not ${harness}`,
+    );
+  }
+  const base = labels["centralgauge.harness.base_digest"];
+  if (!base) {
+    throw new ConfigurationError(`--image ${id} has no base_digest label`);
+  }
+  return { digest: id, base_digest: base };
+}
 
 /** Stub cells publish only under results/harness/stub-cells (never beside real campaigns). */
 function checkStubRoot(resultsRoot: string): void {
@@ -1167,9 +1204,13 @@ export async function runExecution(
   const started_at = now().toISOString();
   const pricing = await env.pricing(now()); // loaded once; stored in the intent
   const base = forTask(cell.armManifest, cell.task.task.limits);
-  // A drift drill runs another image of the same harness; the manifest records the id it ran.
+  // A drift drill runs another image of the same harness; the manifest
+  // records the id and base digest of the image it ran.
   const manifest = stub?.image_override
-    ? { ...base, image: { ...base.image, digest: stub.image_override } }
+    ? {
+      ...base,
+      image: await overrideImage(env, stub.image_override, base.harness),
+    }
     : base;
   const p = privatePaths(env, id);
   await Deno.mkdir(p.quarantine, { recursive: true });
@@ -1229,18 +1270,10 @@ export async function runExecution(
       env.docker.inspectImage(manifest.image.digest),
       opMs,
       "docker image inspect",
-    ) as { Id?: string; Config?: { Labels?: Record<string, string> } } | null;
+    ) as { Id?: string } | null;
     if (img?.Id !== manifest.image.digest) {
       throw new ConfigurationError(
         `image ${manifest.image.digest} pinned by the campaign is no longer present`,
-      );
-    }
-    const imageHarness = img.Config?.Labels?.["centralgauge.harness"];
-    if (stub?.image_override && imageHarness !== manifest.harness) {
-      throw new ConfigurationError(
-        `--image ${stub.image_override} is a ${
-          imageHarness ?? "unlabelled"
-        } image, not ${manifest.harness}`,
       );
     }
     const configDir = join(p.work, "config");
@@ -1411,6 +1444,14 @@ export async function judgeExecution(
   pristine: string,
   oracleHash = cell.oracleHash,
 ): Promise<JudgmentRecord> {
+  const side = await readJson<{ stub_provider?: unknown }>(
+    join(env.resultsRoot, "runs", e.id, "sandbox.json"),
+  ).catch(() => null);
+  if (side?.stub_provider !== undefined) {
+    throw new ConfigurationError(
+      `execution ${e.id} is a stub-provider run (scripted model): never judged`,
+    );
+  }
   const art = await env.store.artifact(e.id);
   if (!art) {
     throw new ValidationError(`no artifact for execution ${e.id}`, [e.id]);

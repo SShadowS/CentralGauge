@@ -6,7 +6,8 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import { walk } from "@std/fs";
-import { join } from "@std/path";
+import { basename, join } from "@std/path";
+import { stub } from "@std/testing/mock";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { ExperimentSchema } from "../../../src/harness/config.ts";
@@ -1399,13 +1400,21 @@ Deno.test("stub provider: no ledger reservation, dummy credential, stub mount an
   assertEquals(call.mounts.get("C:\\cg-stub"), { src: s.dir, readonly: true });
   assertEquals(call.env.get("ANTHROPIC_BASE_URL"), "http://127.0.0.1:3400");
   assertEquals(call.env.get("CLAUDE_CODE_MAX_RETRIES"), "2");
-  assertEquals(call.command.slice(0, 3), [
+  // The plan's command, hardened: policy as the image's CMD, a real port
+  // wait, the stub log dumped even when run.ps1 throws.
+  assertEquals(call.command.slice(0, 6), [
     "powershell",
     "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
     "-Command",
+    call.command[5]!,
   ]);
-  assertStringIncludes(call.command[3]!, "C:\\cg-stub\\stub-anthropic.mjs");
-  assertStringIncludes(call.command[3]!, "& C:\\run.ps1");
+  assertEquals(call.command.length, 6);
+  assertStringIncludes(call.command[5]!, "C:\\cg-stub\\stub-anthropic.mjs");
+  assertStringIncludes(call.command[5]!, "& C:\\run.ps1");
+  assertStringIncludes(call.command.at(-1)!, "TcpClient");
+  assertStringIncludes(call.command.at(-1)!, "finally");
   assertEquals(await ledgerBytes(t), before);
   assertEquals(oauth.length, 40);
   assert(oauth !== SECRET_OAUTH);
@@ -1451,29 +1460,77 @@ Deno.test("stub provider: an --image of another harness is refused", async () =>
   const other = `sha256:${"e".repeat(64)}`;
   t.docker.addImage("x:1", other, { "centralgauge.harness": "pi" });
   await stubEnv(t, other);
-  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
-  assertEquals(e.termination, "setup_failed");
+  const cell = await cellFor(t);
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ConfigurationError,
+    "not claude-code",
+  );
   assertEquals(t.docker.runs, []);
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+});
+
+Deno.test("stub provider: --image records the override's base digest, not the tagged image's", async () => {
+  const t = await makeEnv();
+  const other = `sha256:${"d".repeat(64)}`;
+  const otherBase = `sha256:${"f".repeat(64)}`;
+  t.docker.addImage("drill:1", other, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.283",
+    "centralgauge.harness.base_digest": otherBase,
+  });
+  await stubEnv(t, other);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.manifest.image, { digest: other, base_digest: otherBase });
+});
+
+Deno.test("stub provider: a stub execution is never judged, not even by a rejudge", async () => {
+  const t = await makeEnv();
+  await stubEnv(t);
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  await assertRejects(
+    () => rejudgeExecution(t.env, cell, e, cell.oracleHash),
+    ConfigurationError,
+    "stub",
+  );
+  assertEquals(await t.env.store.judgments(e.id), []);
 });
 
 Deno.test("stub provider: the dummy credential and then ready are written before the sandbox starts", async () => {
   const t = await makeEnv();
   t.env.egressEnforced = true; // not consulted in stub mode: ready is still written
   await stubEnv(t);
-  const seen: string[] = [];
+  // The write order into the secrets dir, observed at the write itself (no timestamps).
+  const writes: string[] = [];
+  const original = Deno.writeTextFile;
+  const spy = stub(
+    Deno,
+    "writeTextFile",
+    (
+      path: string | URL,
+      data: string | ReadableStream<string>,
+      o?: Deno.WriteFileOptions,
+    ) => {
+      const p = String(path);
+      if (p.includes(SECRETS_DIR_PREFIX)) writes.push(basename(p));
+      return original(path, data, o);
+    },
+  );
+  let readyAtStart = false;
   const inner = t.docker.behavior;
   t.docker.behavior = async (call, io) => {
     const dir = call.mounts.get("C:\\cg-secrets")!.src;
-    const at = async (f: string) =>
-      (await Deno.stat(join(dir, f))).mtime!.getTime();
-    seen.push(
-      String(await at("claude-oauth-token") <= await at(READY_FILE)),
-      String((await Deno.stat(join(dir, READY_FILE))).size),
-    );
+    readyAtStart = (await Deno.stat(join(dir, READY_FILE))).size === 0;
     return await inner(call, io);
   };
-  await runCell(t.env, await cellFor(t));
-  assertEquals(seen, ["true", "0"]);
+  try {
+    await runCell(t.env, await cellFor(t));
+  } finally {
+    spy.restore();
+  }
+  assertEquals(writes, ["claude-oauth-token", "backend-token", READY_FILE]);
+  assert(readyAtStart);
 });
 
 Deno.test("stub provider: mode and stub provenance are in the intent before release", async () => {
