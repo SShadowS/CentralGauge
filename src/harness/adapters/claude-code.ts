@@ -18,10 +18,12 @@ import type { HarnessAdapter, ParsedRun, ParseInput } from "../adapter.ts";
 import type { ModelTokens } from "../pricing.ts";
 import type { Telemetry, Termination } from "../records.ts";
 import type { TraceEvent } from "../trace.ts";
-import { ConfigurationError, ValidationError } from "../../errors.ts";
+import { ConfigurationError } from "../../errors.ts";
 import { requestedComponents } from "../adapter.ts";
 import { estimateCost } from "../pricing.ts";
 import { writeTrace } from "../trace.ts";
+import type { Line as JsonlLine } from "./jsonl.ts";
+import { nonJsonReason, readRecords, refuse } from "./jsonl.ts";
 
 /** Stream-json record: the keys this parser reads are declared (noPropertyAccessFromIndexSignature). */
 interface J {
@@ -61,10 +63,7 @@ interface J {
   num_turns?: unknown;
   duration_ms?: unknown;
 }
-interface Line {
-  rec: J;
-  line: number;
-}
+type Line = JsonlLine<J>;
 
 const KNOWN_TYPES = new Set([
   "system",
@@ -95,67 +94,10 @@ const utf8 = new TextEncoder();
 const toJson = (v: unknown): Telemetry["raw_usage"] =>
   JSON.parse(JSON.stringify(v));
 
-function refuse(msg: string): never {
-  throw new ValidationError(msg, [msg]);
-}
-
 function transportOf(tool: string): string {
   const m = /^mcp__([^_]+(?:_[^_]+)*?)__/.exec(tool);
   if (m) return `mcp:${m[1]}`;
   return tool === "Bash" || tool === "PowerShell" ? "shell" : "builtin";
-}
-
-/**
- * Non-JSON stdout is evidence only: a count, the first few line numbers and
- * their byte lengths. No content is stored, since even a prefix can carry part
- * of a secret; the full log stays in quarantine.
- */
-const NON_JSON_SHOWN = 3;
-interface NonJson {
-  count: number;
-  first: { line: number; bytes: number }[];
-}
-
-/**
- * One JSON object with a string `type` per line. A leading BOM, CRLF and
- * blank lines are accepted. Any other line (a stray warning, a corrupt or
- * truncated record, a non-object) never throws the attempt away: it is
- * counted, and the first few are named by line number and byte length.
- */
-function readRecords(text: string): { lines: Line[]; nonJson: NonJson } {
-  const raw = (text.startsWith("\uFEFF") ? text.slice(1) : text).split(
-    /\r?\n/,
-  );
-  const lines: Line[] = [];
-  const nonJson: NonJson = { count: 0, first: [] };
-  for (const [i, l] of raw.entries()) {
-    if (l.trim() === "") continue;
-    let v: unknown;
-    try {
-      v = JSON.parse(l);
-    } catch {
-      v = undefined;
-    }
-    if (isObj(v) && typeof v.type === "string") {
-      lines.push({ rec: v, line: i + 1 });
-      continue;
-    }
-    nonJson.count++;
-    if (nonJson.first.length < NON_JSON_SHOWN) {
-      nonJson.first.push({
-        line: i + 1,
-        bytes: new TextEncoder().encode(l).length,
-      });
-    }
-  }
-  return { lines, nonJson };
-}
-
-/** Names the non-JSON lines: count and the first line numbers. */
-function nonJsonReason(n: NonJson): string {
-  return `${n.count} non-JSON stdout line${n.count === 1 ? "" : "s"} (${
-    n.first.map((x) => `line ${x.line}`).join(", ")
-  }${n.count > n.first.length ? ", ..." : ""})`;
 }
 
 const linesOf = (recs: Line[]) => `lines ${recs.map((r) => r.line).join(", ")}`;
@@ -318,7 +260,7 @@ export function parseClaudeStream(
 ): ParsedRun & { trace: TraceEvent[] } {
   // The file name only: messages reach published records, private paths never do.
   const file = basename(input.rawLog);
-  const { lines, nonJson } = readRecords(text);
+  const { lines, nonJson } = readRecords<J>(text);
   if (nonJson.count > 0) {
     streamProblems.push(
       `${nonJsonReason(nonJson)}: ${

@@ -519,3 +519,38 @@ Deno.test("coverage lists executions with unverified components", async () => {
   assertStringIncludes(text, `unverified components: ${e.id}`);
   assertEquals(text.split("unverified components:").length, 2);
 });
+
+/** The standard two-arm report with each execution passed through `map` first. */
+async function reportWith(
+  map: (
+    e: CampaignRecords["executions"][number],
+    i: number,
+  ) => CampaignRecords["executions"][number],
+) {
+  const base = await records();
+  return await buildReport(
+    { ...base, executions: base.executions.map(map) },
+    { resamples: 50 },
+  );
+}
+
+Deno.test("buildReport: coverage counts executions priced under a cost assumption, per arm", async () => {
+  const withAssumption = {
+    assumptions: [{
+      key: "pi_openrouter_cache_write_5m",
+      tokens: 50,
+      decision: "2026-09-25-pi-cache-ttl",
+    }],
+  };
+  const r = await reportWith((e, i) =>
+    i === 0
+      ? { ...e, telemetry: { ...e.telemetry, raw_usage: withAssumption } }
+      : e
+  );
+  const c = r.coverage.find((x) => x.arm === r.coverage[0]!.arm)!;
+  assertEquals(c.cost_assumptions, { pi_openrouter_cache_write_5m: 1 });
+  assertStringIncludes(
+    renderReport(r),
+    "cost assumptions: pi_openrouter_cache_write_5m 1",
+  );
+});
