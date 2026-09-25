@@ -6,7 +6,7 @@
  * @module cli/commands/harness
  */
 import * as colors from "@std/fmt/colors";
-import { join, relative, resolve } from "@std/path";
+import { fromFileUrl, join, relative, resolve } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
 import { Command, EnumType } from "@cliffy/command";
 import type {
@@ -63,6 +63,7 @@ import {
   renderReport,
 } from "../../src/harness/report.ts";
 import { loadTraces } from "../../src/harness/trace-metrics.ts";
+import { checkScenario } from "../../scripts/harness/stub-anthropic.mjs";
 import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
 import { rejudgeExecution, runCell } from "../../src/harness/execution.ts";
@@ -377,6 +378,10 @@ export interface CellCliOptions {
   rev: string | null;
   /** Qualification manifest naming the variants mock arms apply (M1-35). */
   qualifyManifest?: string | null;
+  /** Stub-provider scenario (M2-08): no credential, records under <results>/stub-cells, never judged. */
+  stubProvider?: string | null;
+  /** Another image of the same harness (sha256 id); only with stubProvider. */
+  image?: string | null;
 }
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
@@ -435,6 +440,19 @@ export async function harnessCell(
   isTerminal: () => boolean = () => Deno.stdin.isTerminal(),
   onInterrupt: OnInterrupt = sigint,
 ): Promise<CellResult> {
+  const stubScenario = o.stubProvider ?? null;
+  if (o.image && !stubScenario) {
+    throw new ConfigurationError(
+      "--image runs another image only in a stub cell: pass --stub-provider",
+    );
+  }
+  if (o.image && !/^sha256:[0-9a-f]{64}$/.test(o.image)) {
+    throw new ConfigurationError(
+      `--image must be a sha256 image id: ${o.image}`,
+    );
+  }
+  // Checked before anything opens: a bad scenario never reaches a sandbox.
+  const scenario = stubScenario ? await readScenario(stubScenario) : null;
   const config = await loadConfig(join(o.root, "harness"), configId);
   await checkModelsInCatalog([config], join(o.root, "site", "catalog"));
   const catalog = await readCatalog(join(o.root, "site", "catalog"));
@@ -442,7 +460,7 @@ export async function harnessCell(
   const h = await open(
     envOptions(
       o,
-      join(o.resultsDir, "cells"),
+      join(o.resultsDir, scenario ? "stub-cells" : "cells"),
       `harness cell ${configId} ${taskId}`,
     ),
   );
@@ -453,15 +471,38 @@ export async function harnessCell(
     );
     stop.abort();
   });
+  let stubDir: string | null = null;
   try {
+    if (scenario !== null) {
+      stubDir = join(
+        h.env.privateRoot,
+        "work",
+        `stub-${crypto.randomUUID().slice(0, 8)}`,
+      );
+      await Deno.mkdir(stubDir, { recursive: true });
+      await Deno.copyFile(
+        STUB_SCRIPT,
+        join(stubDir, "stub-anthropic.mjs"),
+      );
+      await Deno.writeTextFile(join(stubDir, "scenario.json"), scenario);
+    }
     const env = {
       ...h.env,
       stop: stop.signal,
       ...(o.qualifyManifest
         ? { qualifyManifest: await loadQualifyManifest(o.qualifyManifest) }
         : {}),
+      ...(stubDir
+        ? {
+          stubProvider: {
+            dir: stubDir,
+            ...(o.image ? { imageOverride: o.image } : {}),
+          },
+        }
+        : {}),
     };
-    cellGate(adapter, env, isTerminal);
+    // A stub cell releases no credential: the supervision gate does not apply.
+    if (!stubDir) cellGate(adapter, env, isTerminal);
     const facts = runtimeFacts(
       config,
       await imageFacts(
@@ -479,7 +520,7 @@ export async function harnessCell(
       join(env.privateRoot, "work", `task-${crypto.randomUUID().slice(0, 8)}`),
     );
     const ids = await taskSetIdentity(o.root, [at.task], env.symbols);
-    if (adapter.credentialBearing && !env.egressEnforced) {
+    if (!stubDir && adapter.credentialBearing && !env.egressEnforced) {
       console.log(
         `${
           colors.yellow("[PAUSE]")
@@ -511,8 +552,30 @@ export async function harnessCell(
     return r;
   } finally {
     unhook();
+    // The attempt persisted its mode; recovery never needs the stub dir.
+    if (stubDir) {
+      await Deno.remove(stubDir, { recursive: true }).catch(() => {});
+    }
     await h.close();
   }
+}
+
+/** The stub ships with the harness code, not with the repository under test. */
+const STUB_SCRIPT = fromFileUrl(
+  new URL("../../scripts/harness/stub-anthropic.mjs", import.meta.url),
+);
+
+/** The stub scenario, checked with the stub's own validator (M2-04). */
+async function readScenario(path: string): Promise<string> {
+  const text = await Deno.readTextFile(path);
+  try {
+    checkScenario(JSON.parse(text));
+  } catch (err) {
+    throw new ConfigurationError(
+      `stub scenario ${path}: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+  return text;
 }
 
 /** Judge a task variant without an agent; persists the complete judgment and its provenance; writes no execution. */
@@ -777,6 +840,8 @@ interface CellCliFlags {
   repeat?: number;
   rev?: string;
   qualifyManifest?: string;
+  stubProvider?: string;
+  image?: string;
 }
 
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
@@ -806,6 +871,8 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     repeat: f.repeat ?? 1,
     rev: f.rev ?? null,
     qualifyManifest: f.qualifyManifest ? abs(f.qualifyManifest) : null,
+    stubProvider: f.stubProvider ? abs(f.stubProvider) : null,
+    image: f.image ?? null,
   };
 }
 
@@ -1321,6 +1388,14 @@ export function registerHarnessCommand(cli: Command): void {
     .option(
       "--qualify-manifest <path:string>",
       "Qualification manifest naming the variants mock arms apply",
+    )
+    .option(
+      "--stub-provider <scenario:string>",
+      "Scripted in-container Messages API (no credential; records under <results-dir>/stub-cells; never judged)",
+    )
+    .option(
+      "--image <id:string>",
+      "Run this image id of the same harness (only with --stub-provider)",
     )
     .action((opts: CellCliFlags, config: string, task: string) =>
       fail(async () => void await harnessCell(config, task, cliOpts(opts)))

@@ -126,12 +126,72 @@ export interface HarnessEnv {
   killGraceMs?: number;
   opTimeoutMs?: number;
   maxCaptureBytes?: number;
+  /**
+   * Stub-provider cell (M2-08): a dir holding stub-anthropic.mjs and
+   * scenario.json. Read only when an attempt starts; everything later reads
+   * the attempt's persisted mode.
+   */
+  stubProvider?: { dir: string; imageOverride?: string } | undefined;
   /** Test seams: crash after a publication step, before the draft, or inside cleanup. */
   hooks?: {
+    /** The intent was written in the prepared phase (nothing released yet). */
+    prepared?(id: string): Promise<void>;
     after?(step: PublishStep): Promise<void>;
     beforeDraft?(): Promise<void>;
     afterPublished?(): Promise<void>;
   };
+}
+
+/** In-container stub (M2-04) on this port; non-secret env only. */
+const STUB_PORT = 3400;
+const STUB_ENV: Record<string, string> = {
+  ANTHROPIC_BASE_URL: `http://127.0.0.1:${STUB_PORT}`,
+  // Carried M2-04 risks: a scripted 5xx ends in a fatal exit, not a timeout
+  // kill (default 10 retries, backoff to 32 s); ToolSearch stays on with a
+  // non-Anthropic base URL.
+  CLAUDE_CODE_MAX_RETRIES: "2",
+  ENABLE_TOOL_SEARCH: "true",
+};
+const STUB_COMMAND = [
+  "powershell",
+  "-NoProfile",
+  "-Command",
+  "Start-Process -NoNewWindow 'C:\\Program Files\\nodejs\\node.exe' -ArgumentList 'C:\\cg-stub\\stub-anthropic.mjs','C:\\cg-stub\\scenario.json',(Join-Path $env:TEMP 'cg-stub.jsonl'),'" +
+  "3400'; Start-Sleep -Seconds 1; & C:\\run.ps1; $rc = $LASTEXITCODE; Get-Content (Join-Path $env:TEMP 'cg-stub.jsonl') | ForEach-Object { [Console]::Error.WriteLine('CG_STUB ' + $_) }; exit $rc",
+];
+
+/** Stub cells publish only under results/harness/stub-cells (never beside real campaigns). */
+function checkStubRoot(resultsRoot: string): void {
+  if (
+    !/[\\/]results[\\/]harness[\\/]stub-cells(?:[\\/]|$)/i.test(
+      resolve(resultsRoot),
+    )
+  ) {
+    throw new ConfigurationError(
+      `a stub-provider cell publishes only under results/harness/stub-cells, not ${resultsRoot}`,
+    );
+  }
+}
+
+/** A dummy (never a credential) for every credential file of the arm. */
+async function dummySecrets(
+  dir: string,
+  files: readonly string[],
+): Promise<string> {
+  await Deno.mkdir(dir, { recursive: true });
+  for (const f of files) {
+    await Deno.writeTextFile(
+      join(dir, f),
+      "stub-dummy-credential-".padEnd(40, "0"),
+    );
+  }
+  return dir;
+}
+
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export interface CellRef {
@@ -172,10 +232,22 @@ interface Intent {
   sandbox: string;
   workspace: string;
   pristine_hash: string;
+  /** Absent before M2-08: normal. */
+  mode?: AttemptMode;
+  stub?: StubProvenance | null;
+}
+
+type AttemptMode = "normal" | "stub";
+interface StubProvenance {
+  scenario_sha256: string;
+  image_override: string | null;
 }
 
 interface Draft {
   v: 1;
+  /** Absent before M2-08: normal. */
+  mode?: AttemptMode;
+  stub?: StubProvenance | null;
   execution: ExecutionRecord;
   artifact: { workspace_hash: string; stored_path: string } | null;
   usage_reset_at: string | null;
@@ -750,6 +822,9 @@ interface DraftInput {
   interrupted: boolean;
   /** The exact secrets released to this attempt ([] only when nothing was released). */
   secrets: SecretValue[];
+  /** The attempt's persisted mode (intent), never the current command's. */
+  mode: AttemptMode;
+  stub: StubProvenance | null;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -864,6 +939,9 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     pricing_book_at: f.pricing.at,
     pristine_hash: f.pristineHash,
     freeze_violations: frozen?.violations ?? [],
+    ...(f.stub
+      ? { stub_provider: { scenario_sha256: f.stub.scenario_sha256 } }
+      : {}),
   }, scrub);
   await Deno.writeTextFile(
     join(runDir, "sandbox.json"),
@@ -917,6 +995,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   };
   const draft: Draft = {
     v: 1,
+    mode: f.mode,
+    stub: f.stub,
     execution: ExecutionRecordSchema.parse(redactDeep(record, scrub)),
     artifact: frozen
       ? {
@@ -943,6 +1023,8 @@ async function publishDraft(
   const now = env.now ?? (() => new Date());
   const e = draft.execution;
   const p = privatePaths(env, e.id);
+  const mode = draft.mode ?? "normal";
+  if (mode === "stub") checkStubRoot(env.resultsRoot);
   const runs = join(env.resultsRoot, "runs");
   if (!await exists(join(runs, e.id))) {
     await Deno.mkdir(runs, { recursive: true });
@@ -975,7 +1057,10 @@ async function publishDraft(
   const judged = (await env.store.judgments(e.id)).some((j) =>
     j.scorer_fingerprint === fp
   );
-  if (policy.judge && e.workspace_hash !== null && !judged && taskUnchanged) {
+  if (
+    policy.judge && mode === "normal" && e.workspace_hash !== null &&
+    !judged && taskUnchanged
+  ) {
     const out = join(p.work, `restage-${crypto.randomUUID().slice(0, 8)}`);
     try {
       await judgeExecution(
@@ -1048,7 +1133,11 @@ export async function runExecution(
       `${cell.arm}: stopped by the operator before the start; nothing reserved or run`,
     );
   }
-  if (adapter.credentialBearing && !env.egressEnforced) {
+  // The mode is decided here, once, and persisted in the intent (review R4).
+  const stubProvider = env.stubProvider ?? null;
+  const mode: AttemptMode = stubProvider ? "stub" : "normal";
+  if (stubProvider) checkStubRoot(env.resultsRoot);
+  if (mode === "normal" && adapter.credentialBearing && !env.egressEnforced) {
     if (!env.supervised) {
       throw new ConfigurationError(
         `${cell.arm}: credential-bearing arms run only supervised (harness cell --supervised) until egress enforcement is verified (M1-33/M1-34)`,
@@ -1062,13 +1151,26 @@ export async function runExecution(
   }
   // Ruling (b): a reserved slot stays counted, so every predictable failure
   // comes first; the reservation is the last step before secrets are released.
-  const needsSlot = adapter.credentialBearing && !env.egressEnforced;
+  const needsSlot = mode === "normal" && adapter.credentialBearing &&
+    !env.egressEnforced;
+  const stub: StubProvenance | null = stubProvider
+    ? {
+      scenario_sha256: await sha256Hex(
+        await Deno.readFile(join(stubProvider.dir, "scenario.json")),
+      ),
+      image_override: stubProvider.imageOverride ?? null,
+    }
+    : null;
   await validatePrivateRoot(env);
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
   const started_at = now().toISOString();
   const pricing = await env.pricing(now()); // loaded once; stored in the intent
-  const manifest = forTask(cell.armManifest, cell.task.task.limits);
+  const base = forTask(cell.armManifest, cell.task.task.limits);
+  // A drift drill runs another image of the same harness; the manifest records the id it ran.
+  const manifest = stub?.image_override
+    ? { ...base, image: { ...base.image, digest: stub.image_override } }
+    : base;
   const p = privatePaths(env, id);
   await Deno.mkdir(p.quarantine, { recursive: true });
   // Immutable task snapshot for recovery; the folder keeps the task id (loadTask checks it).
@@ -1100,8 +1202,11 @@ export async function runExecution(
     sandbox: name,
     workspace: staged.workspace,
     pristine_hash: pristineHash,
+    mode,
+    stub,
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
+  await env.hooks?.prepared?.(id);
 
   let setupError: string | null = null;
   let sandbox: SandboxResult = {
@@ -1124,10 +1229,18 @@ export async function runExecution(
       env.docker.inspectImage(manifest.image.digest),
       opMs,
       "docker image inspect",
-    ) as { Id?: string } | null;
+    ) as { Id?: string; Config?: { Labels?: Record<string, string> } } | null;
     if (img?.Id !== manifest.image.digest) {
       throw new ConfigurationError(
         `image ${manifest.image.digest} pinned by the campaign is no longer present`,
+      );
+    }
+    const imageHarness = img.Config?.Labels?.["centralgauge.harness"];
+    if (stub?.image_override && imageHarness !== manifest.harness) {
+      throw new ConfigurationError(
+        `--image ${stub.image_override} is a ${
+          imageHarness ?? "unlabelled"
+        } image, not ${manifest.harness}`,
       );
     }
     const configDir = join(p.work, "config");
@@ -1145,7 +1258,11 @@ export async function runExecution(
     const timeoutMs = (env.timeoutMsFor ?? ((m) => m * 60_000))(
       manifest.limits.timeout_min,
     );
-    await checkOperatorSecrets(env.secretsSource, adapter.secretFiles);
+    // A stub cell releases no credential: every credential file is a dummy.
+    const secretsSource = stub
+      ? await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles)
+      : env.secretsSource;
+    await checkOperatorSecrets(secretsSource, adapter.secretFiles);
     // Both restricted before the reservation: an ACL failure is predictable.
     const custodyTmp = await restrictedTemp(env, p.custody);
     const keysTmp = await restrictedTemp(env, p.keys);
@@ -1184,7 +1301,7 @@ export async function runExecution(
         }
       }
       const s = await prepareSecrets(
-        env.secretsSource,
+        secretsSource,
         adapter.secretFiles,
         token,
         {
@@ -1197,7 +1314,8 @@ export async function runExecution(
       secrets = s.values;
       // Non-enforced runs: the entrypoint waits for ready (M1-33 writes it
       // after the egress preflight in enforced runs). Empty, never custody.
-      if (!env.egressEnforced) {
+      // Stub cells keep the release shape (egress state is not consulted).
+      if (stub || !env.egressEnforced) {
         await Deno.writeTextFile(join(s.dir, READY_FILE), "");
       }
       await commitTemp(custodyTmp, p.custody, JSON.stringify(s.values));
@@ -1221,8 +1339,15 @@ export async function runExecution(
           taskDir: staged.taskDir,
           configDir,
           secretsDir: s.dir,
-          extraMounts,
-          env: { CG_BACKEND_URL: env.backendUrl, CG_EXECUTION_ID: id },
+          extraMounts: stubProvider
+            ? [...extraMounts, { src: stubProvider.dir, dst: "C:\\cg-stub" }]
+            : extraMounts,
+          env: {
+            CG_BACKEND_URL: env.backendUrl,
+            CG_EXECUTION_ID: id,
+            ...(stub ? STUB_ENV : {}),
+          },
+          ...(stub ? { command: STUB_COMMAND } : {}),
           timeoutMs,
           killGraceMs: env.killGraceMs ?? 60_000,
           opTimeoutMs: opMs,
@@ -1272,6 +1397,8 @@ export async function runExecution(
     pricing,
     interrupted: false,
     secrets,
+    mode,
+    stub,
   });
   await publishDraft(env, cell, draft, staged.pristine, true);
   return { execution: draft.execution, usageResetAt: draft.usage_reset_at };
@@ -1614,6 +1741,8 @@ export async function recoverInterrupted(
         pricing: intent.pricing,
         interrupted: true,
         secrets,
+        mode: intent.mode ?? "normal",
+        stub: intent.stub ?? null,
       });
     }
     await publishDraft(own, cell, draft, null, taskUnchanged);

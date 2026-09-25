@@ -12,6 +12,7 @@ import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { ExperimentSchema } from "../../../src/harness/config.ts";
 import {
   type CellRef,
+  type HarnessEnv,
   privatePaths,
   type PublishStep,
   recoverInterrupted,
@@ -1339,3 +1340,226 @@ Deno.test("non-enforced run: the secrets mount holds ready when the container st
   assertEquals(seen, [true]);
   assertEquals(r.executions.length, 1);
 });
+
+// M2-08: stub-provider cells. The mode is decided once, persisted in the
+// intent before any release, and every later decision reads it.
+const STUB_SCENARIO = JSON.stringify({ steps: [], after: "end_turn" });
+
+async function stubDir(): Promise<{ dir: string; sha: string }> {
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.copyFile(
+    "scripts/harness/stub-anthropic.mjs",
+    join(dir, "stub-anthropic.mjs"),
+  );
+  await Deno.writeTextFile(join(dir, "scenario.json"), STUB_SCENARIO);
+  const d = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(STUB_SCENARIO),
+  );
+  const sha = [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return { dir, sha };
+}
+
+/** The stub results root (under results/harness/stub-cells) and its store. */
+function stubRoot(t: TestEnv) {
+  const resultsRoot = join(t.repo.root, "results", "harness", "stub-cells");
+  return { resultsRoot, store: new RecordStore(resultsRoot) };
+}
+
+async function stubEnv(t: TestEnv, imageOverride?: string) {
+  const s = await stubDir();
+  await Deno.mkdir(stubRoot(t).resultsRoot, { recursive: true });
+  Object.assign(t.env, stubRoot(t), {
+    stubProvider: { dir: s.dir, ...(imageOverride ? { imageOverride } : {}) },
+  });
+  return s;
+}
+
+const ledgerBytes = (t: TestEnv) =>
+  Deno.readFile(t.env.credentialLedger!).then(
+    (b) => [...b].join(","),
+    () => "absent",
+  );
+
+Deno.test("stub provider: no ledger reservation, dummy credential, stub mount and env, command override, no judgment", async () => {
+  const t = await makeEnv();
+  const s = await stubEnv(t);
+  const before = await ledgerBytes(t);
+  let oauth = "";
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    oauth = await Deno.readTextFile(
+      join(call.mounts.get("C:\\cg-secrets")!.src, "claude-oauth-token"),
+    );
+    return await inner(call, io);
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  const call = t.docker.runs.at(-1)!;
+  assertEquals(call.mounts.get("C:\\cg-stub"), { src: s.dir, readonly: true });
+  assertEquals(call.env.get("ANTHROPIC_BASE_URL"), "http://127.0.0.1:3400");
+  assertEquals(call.env.get("CLAUDE_CODE_MAX_RETRIES"), "2");
+  assertEquals(call.command.slice(0, 3), [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+  ]);
+  assertStringIncludes(call.command[3]!, "C:\\cg-stub\\stub-anthropic.mjs");
+  assertStringIncludes(call.command[3]!, "& C:\\run.ps1");
+  assertEquals(await ledgerBytes(t), before);
+  assertEquals(oauth.length, 40);
+  assert(oauth !== SECRET_OAUTH);
+  assertEquals(await t.env.store.judgments(e.id), []);
+  assertEquals(t.bc.tests, []);
+  assert(
+    await exists(join(stubRoot(t).resultsRoot, "runs", e.id, "sandbox.json")),
+  );
+  assertEquals((await sideOf(t, e.id)).stub_provider, {
+    scenario_sha256: s.sha,
+  });
+});
+
+Deno.test("stub provider: refused outside results/harness/stub-cells", async () => {
+  const t = await makeEnv();
+  const s = await stubDir();
+  t.env.stubProvider = { dir: s.dir };
+  const cell = await cellFor(t);
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ConfigurationError,
+    "stub-cells",
+  );
+  assertEquals(t.docker.runs, []);
+});
+
+Deno.test("stub provider: --image runs that id and the manifest records it", async () => {
+  const t = await makeEnv();
+  const other = `sha256:${"d".repeat(64)}`;
+  t.docker.addImage("centralgauge/harness-claude-code:drill", other, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+  });
+  await stubEnv(t, other);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(t.docker.runs.at(-1)!.image, other);
+  assertEquals(e.manifest.image.digest, other);
+});
+
+Deno.test("stub provider: an --image of another harness is refused", async () => {
+  const t = await makeEnv();
+  const other = `sha256:${"e".repeat(64)}`;
+  t.docker.addImage("x:1", other, { "centralgauge.harness": "pi" });
+  await stubEnv(t, other);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertEquals(t.docker.runs, []);
+});
+
+Deno.test("stub provider: the dummy credential and then ready are written before the sandbox starts", async () => {
+  const t = await makeEnv();
+  t.env.egressEnforced = true; // not consulted in stub mode: ready is still written
+  await stubEnv(t);
+  const seen: string[] = [];
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    const dir = call.mounts.get("C:\\cg-secrets")!.src;
+    const at = async (f: string) =>
+      (await Deno.stat(join(dir, f))).mtime!.getTime();
+    seen.push(
+      String(await at("claude-oauth-token") <= await at(READY_FILE)),
+      String((await Deno.stat(join(dir, READY_FILE))).size),
+    );
+    return await inner(call, io);
+  };
+  await runCell(t.env, await cellFor(t));
+  assertEquals(seen, ["true", "0"]);
+});
+
+Deno.test("stub provider: mode and stub provenance are in the intent before release", async () => {
+  const seen: unknown[] = [];
+  const record = (env: HarnessEnv) => async (id: string) => {
+    const i = JSON.parse(await Deno.readTextFile(privatePaths(env, id).intent));
+    seen.push([i.phase, i.mode, i.stub]);
+  };
+  const t = await makeEnv();
+  const s = await stubEnv(t);
+  t.env.hooks = { prepared: record(t.env) };
+  await runCell(t.env, await cellFor(t));
+  const n = await makeEnv();
+  n.env.hooks = { prepared: record(n.env) };
+  await runCell(n.env, await cellFor(n));
+  assertEquals(seen, [
+    ["prepared", "stub", { scenario_sha256: s.sha, image_override: null }],
+    ["prepared", "normal", null],
+  ]);
+});
+
+Deno.test("recovery: an intent written before M2-08 (no mode) recovers as normal and is judged", async () => {
+  const t = await makeEnv();
+  t.env.hooks = {
+    prepared: async (id) => {
+      const p = privatePaths(t.env, id).intent;
+      const { mode: _m, stub: _s, ...old } = JSON.parse(
+        await Deno.readTextFile(p),
+      );
+      await Deno.writeTextFile(p, JSON.stringify(old));
+    },
+    beforeDraft: () => Promise.reject(new Error("runner killed")),
+  };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), Error, "runner killed");
+  t.env.hooks = {};
+  const [e] = await recoverInterrupted(t.env, loadTask);
+  assertEquals((await t.env.store.judgments(e!.id)).length, 1);
+});
+
+for (const point of ["beforeDraft", "draft"] as const) {
+  const crash = (): NonNullable<HarnessEnv["hooks"]> =>
+    point === "beforeDraft"
+      ? { beforeDraft: () => Promise.reject(new Error("runner killed")) }
+      : {
+        after: (s) =>
+          s === "draft"
+            ? Promise.reject(new Error("runner killed"))
+            : Promise.resolve(),
+      };
+
+  Deno.test(`recovery (${point}): a stub attempt recovered by a normal command is published under the stub results root, never judged, no ledger change`, async () => {
+    const t = await makeEnv();
+    const normal = { resultsRoot: t.env.resultsRoot, store: t.env.store };
+    await stubEnv(t);
+    t.env.hooks = crash();
+    const cell = await cellFor(t);
+    await assertRejects(() => runCell(t.env, cell), Error, "runner killed");
+    // A normal command recovers: no stub provider, a real credential and ledger.
+    Object.assign(t.env, normal, { stubProvider: undefined, hooks: {} });
+    const before = await ledgerBytes(t);
+    const [e] = await recoverInterrupted(t.env, loadTask);
+    const stub = stubRoot(t).store;
+    assertEquals((await stub.executions(cell.campaignId)).map((x) => x.id), [
+      e!.id,
+    ]);
+    assertEquals(await stub.judgments(e!.id), []);
+    assertEquals(await t.env.store.executions(cell.campaignId), []);
+    assertEquals(t.bc.tests, []);
+    assertEquals(await ledgerBytes(t), before);
+  });
+
+  Deno.test(`recovery (${point}): a normal attempt recovered by a stub-mode command is judged as normal`, async () => {
+    const t = await makeEnv();
+    t.env.hooks = crash();
+    const cell = await cellFor(t);
+    await assertRejects(() => runCell(t.env, cell), Error, "runner killed");
+    const normalRoot = t.env.resultsRoot;
+    const normalStore = t.env.store;
+    await stubEnv(t); // the recovering command is a stub cell
+    t.env.hooks = {};
+    const [e] = await recoverInterrupted(t.env, loadTask);
+    assertEquals((await normalStore.judgments(e!.id)).length, 1);
+    const side = JSON.parse(
+      await Deno.readTextFile(join(normalRoot, "runs", e!.id, "sandbox.json")),
+    );
+    assertEquals("stub_provider" in side, false);
+  });
+}
