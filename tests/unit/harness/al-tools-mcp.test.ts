@@ -395,7 +395,55 @@ Deno.test("al-tools MCP: an oversized backend result is cut with an explicit mar
     true,
     262_144,
   ]);
-  assertEquals(o.result.length, 262_144);
+  // Review M3-03a-001 item 3: the cap is on the serialized result, so the
+  // prefix is shorter than the cap by the wrapper and the escaping.
+  assert(new TextEncoder().encode(JSON.stringify(r)).length <= 262_144);
+  assert(big.startsWith(o.result) && o.result.length > 200_000);
+});
+
+Deno.test("al-tools MCP: the 256 KiB cap holds for the serialized result of an escape-heavy body", async () => {
+  // Quotes, backslashes, control characters and non-ASCII: each escapes to
+  // several bytes twice (the tool text, then the JSON-RPC line).
+  const unit = '"\\\u0001\u001f\u00e9\u4e2d\ud83d\ude00\n';
+  const body = JSON.stringify({
+    ok: true,
+    blob: unit.repeat(30_000),
+  });
+  assert(body.length < 1024 * 1024);
+  const { list } = await converse(
+    [call(1, "al_symbols", {})],
+    () => new Response(body),
+  );
+  const r = list[0].result;
+  const bytes = new TextEncoder().encode(JSON.stringify(r)).length;
+  assert(bytes <= 262_144, `serialized result is ${bytes} bytes`);
+  assertEquals(r.isError, true);
+  const o = JSON.parse(r.content[0].text);
+  assertEquals([o.truncated, o.limit_bytes], [true, 262_144]);
+  assert(body.startsWith(o.result) && o.result.length > 0);
+});
+
+Deno.test("al-tools MCP: the queue bound stops at the start; a running call is bounded by the backend deadline only", async () => {
+  let n = 0;
+  const { replies, calls } = await converse([
+    call(1, "al_compile", { apps: ["Core"] }),
+    call(2, "al_symbols", {}),
+  ], async () => {
+    // Call 1 starts at once and runs 100 ms; call 2 starts within its 300 ms
+    // queue bound and then runs 700 ms, well past it.
+    await new Promise((r) => setTimeout(r, ++n === 1 ? 100 : 700));
+    return new Response(JSON.stringify({ ok: true }));
+  }, { env: { CG_AL_TOOLS_QUEUE_WAIT_MS: "300" } });
+  assertEquals(calls.map((c) => c.path), ["/v1/compile", "/v1/symbols"]);
+  for (const id of [1, 2]) {
+    assertEquals(replies.get(id).result.isError, false, `call ${id}`);
+  }
+  // The first call never waits: it may run past the queue bound too.
+  const alone = await converse([call(3, "al_test", {})], async () => {
+    await new Promise((r) => setTimeout(r, 700));
+    return new Response(JSON.stringify({ ok: true }));
+  }, { env: { CG_AL_TOOLS_QUEUE_WAIT_MS: "300" } });
+  assertEquals(alone.replies.get(3).result.isError, false);
 });
 
 Deno.test("al-tools MCP: bad ids and non-object tools/call params are JSON-RPC errors", async () => {
