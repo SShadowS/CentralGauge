@@ -1,0 +1,1613 @@
+{
+  "v": 1,
+  "packages": [
+    {
+      "app_id": "00155c68-8cdd-4d60-a451-2034ad094223",
+      "name": "Agent Design Experience",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Agent Design Experience_28.4.53241.53758.app",
+      "sha256": "755c856e12c02c652df484059e17ada4770c9d805e04b00eb06d674974708c25"
+    },
+    {
+      "app_id": "0242c240-2336-450f-9678-2f13f4ce9a6e",
+      "name": "Basic Experience",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Basic Experience_28.4.53241.53758.app",
+      "sha256": "bad0b713418d05bd01dee0acf08e67b71582db127e0e624f3cd664153b648a50"
+    },
+    {
+      "app_id": "0243a4ea-21b3-4fa8-ad70-9915a4400be0",
+      "name": "Tests-Resource",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Resource_28.4.53241.53758.app",
+      "sha256": "d92d328ad0f4e8c6934387967950789cffa35dee333acd73301f23e3e05ebd13"
+    },
+    {
+      "app_id": "02547a44-5300-4fab-abb4-5053335ee983",
+      "name": "Expense Agent Demo Data (DK)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Expense Agent Demo Data (DK)_28.4.53241.53758.app",
+      "sha256": "f544d5c703469fa859d6f3976943b464fa7a0df40469b538081bdfb84c7b0651"
+    },
+    {
+      "app_id": "07b9c47d-af8a-4066-9799-bb8eabe2f46d",
+      "name": "Tests-Performance-Internal",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Performance-Internal_28.4.53241.53758.app",
+      "sha256": "b15cc041db9ea5fea4aebc7110b2a9c316023972d06192ce22de1c2b69925470"
+    },
+    {
+      "app_id": "08d69832-9231-429e-be2c-8bab2c96905b",
+      "name": "Email - Current User Connector",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Email - Current User Connector_28.4.53241.53758.app",
+      "sha256": "c799044e2556b422768a6122e0505d6554763005c570c143dd5558352b22144e"
+    },
+    {
+      "app_id": "0a352a2b-f2f3-4029-8f81-1267982af1ff",
+      "name": "Expense Agent Demo Data",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Expense Agent Demo Data_28.4.53241.53758.app",
+      "sha256": "14612b7545093f98916a87087b9963fc992201089a9e7a03fef813b95c20f9c1"
+    },
+    {
+      "app_id": "0a9a9ce1-6f98-4cf0-82e2-0b3e7cabb32a",
+      "name": "EU 3-Party Trade Purchase",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_EU 3-Party Trade Purchase_28.4.53241.53758.app",
+      "sha256": "a0de555e30829e506f43bd8cbac766c7903aabd5c32f5382086020e058356e53"
+    },
+    {
+      "app_id": "0addc017-80c4-40ad-bac6-5852f4fc4c55",
+      "name": "E-Document Connector - FORNAV",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Connector - ForNAV_28.4.53241.53758.app",
+      "sha256": "7accb02ed74cdae7ab32b4c08922ffad53d3df6358dd6638a0cedac70b32d174"
+    },
+    {
+      "app_id": "0c098979-eadd-452c-90b1-6fd183e95651",
+      "name": "English language (United Kingdom)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_English language (United Kingdom)_28.4.53241.53758.app",
+      "sha256": "d62c968e6aaa10d7eae8169b39dd754df71332f7d1e31d9285ce35ad4e04571e"
+    },
+    {
+      "app_id": "0f0955b8-92e2-4ce2-a580-3c4583dde9ae",
+      "name": "Tests-VAT",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-VAT_28.4.53241.53758.app",
+      "sha256": "1432fe5aa2cddcaf45a53c9ffb45474d3761fb8366171766c3ea9a376afd3da4"
+    },
+    {
+      "app_id": "10cb69d9-bc8a-4d27-970a-9e110e9db2a5",
+      "name": "_Exclude_APIV2_",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_APIV2__28.4.53241.53758.app",
+      "sha256": "5599c4b8ffaf60aff6bb6c7d744f3b68428ce5de094863371b695cb1a41bb9c7"
+    },
+    {
+      "app_id": "114e4e19-182b-42e2-b5a9-91d8b8ee8ce1",
+      "name": "_Exclude_Email Logging Using Graph API",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_Email Logging Using Graph API_28.4.53241.53758.app",
+      "sha256": "5918e75c4df40a44382632607fa4d94a97d474a72fc674ba81a81d2752584284"
+    },
+    {
+      "app_id": "12fe63f9-1931-4404-be38-abfc46a2298d",
+      "name": "Transactions and Receipts Storage",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Transactions and Receipts Storage_28.4.53241.53758.app",
+      "sha256": "6c475922268a84fe630bd903bccde9ab6d8e42793d989c5e65da24b4e45128d4"
+    },
+    {
+      "app_id": "14aa1237-2f69-4c25-9a68-fa7d54e08613",
+      "name": "Payables Agent",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Payables Agent_28.4.53241.53758.app",
+      "sha256": "06c7279a8ec2a0ea939eb5e250994b653e8b34c620d66361b37657c20c508816"
+    },
+    {
+      "app_id": "155bc500-e420-4113-803e-7aa8e8eea112",
+      "name": "Tests-CRM integration",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-CRM integration_28.4.53241.53758.app",
+      "sha256": "8ea358770412afd2414a399b62c2c0a2937bf18876191d9d4f01babf76a0dc7b"
+    },
+    {
+      "app_id": "16319982-4995-4fb1-8fb2-2b1e13773e3b",
+      "name": "AMC Banking 365 Fundamentals",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_AMC Banking 365 Fundamentals_28.4.53241.53758.app",
+      "sha256": "22f4db4be8f6649bf6a6c77cc08c8a7e3e8acc5f4040381b9effc9277c93982f"
+    },
+    {
+      "app_id": "16419195-5f01-494f-9b02-34363dade478",
+      "name": "Tests-Cost Accounting",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Cost Accounting_28.4.53241.53758.app",
+      "sha256": "3aef655118a483ed488d409033b4953cfd1f066bdf0564f2770b7b9a4ac4a545"
+    },
+    {
+      "app_id": "16c26bda-5f9c-4a77-a17e-4835f06062c0",
+      "name": "_Exclude_Connectivity Apps",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_Connectivity Apps_28.4.53241.53758.app",
+      "sha256": "3ea9b8bb06fa42b0c2a4b7a5498f33d1a673976c92658ae2cf3e14638d215257"
+    },
+    {
+      "app_id": "1732e878-cee4-4787-9456-05f25f4118da",
+      "name": "English language (Australia)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_English language (Australia)_28.4.53241.53758.app",
+      "sha256": "6f68a1f3b766844cc83e8a4af0b74e695163575008e3ad9ad2b8202d2615a152"
+    },
+    {
+      "app_id": "1a424ad5-63df-4a3c-9e35-e347f644a831",
+      "name": "Tests-Integration-Internal",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Integration-Internal_28.4.53241.53758.app",
+      "sha256": "79e7c275a6a0a8a02015be1aa9897f3af347757548bae4d83f5ba0e791286425"
+    },
+    {
+      "app_id": "1ba1031e-eae9-4f20-b9d2-d19b6d1e3f29",
+      "name": "Field Service Integration",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Field Service Integration_28.4.53241.53758.app",
+      "sha256": "63b43cbbb862f7af8c199dd5f6c04ea1cfc590820be69e706239ac7f46cc9598"
+    },
+    {
+      "app_id": "1f32a50d-0057-4b95-b5df-cc04d7e89470",
+      "name": "Subcontracting",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Subcontracting_28.4.53241.53758.app",
+      "sha256": "c1f1c92ed64738255b5eda58a23101d01623b02633489185cc0394d265938de5"
+    },
+    {
+      "app_id": "1fb2e583-f2c3-4484-a8d4-387e3adce46d",
+      "name": "Tests-Bank",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Bank_28.4.53241.53758.app",
+      "sha256": "fce29d0c20777b6eae1a5baef3e0562001daf17946250d9a65930fe9a5dfd4f2"
+    },
+    {
+      "app_id": "2156302a-872f-4568-be0b-60968696f0d5",
+      "name": "AI Test Toolkit",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_AI Test Toolkit_28.4.53241.53758.app",
+      "sha256": "34fdd05c7e51c374d1159b1a21de51f5363208323c9b523904528f922e7e3fe8"
+    },
+    {
+      "app_id": "2363a2b7-1018-4976-a32a-c77338dc9f16",
+      "name": "Dynamics 365 Business Central v14 Reimplementation",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Dynamics 365 Business Central v14 Reimplementation_28.4.53241.53758.app",
+      "sha256": "f4df58fe2ed7fcf2f47165c34a2a188714cc1ce75ca4bcfc5d92c8300e17f9d2"
+    },
+    {
+      "app_id": "23b1772f-b8b8-4e87-9339-9ff7cbb2364b",
+      "name": "Sales Order Agent",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Sales Order Agent_28.4.53241.53758.app",
+      "sha256": "01478e727a4d178c22934f7c42dd2cc63626d1c7aee35bbc33db8c9b503a87b5"
+    },
+    {
+      "app_id": "23de40a6-dfe8-4f80-80db-d70f83ce8caf",
+      "name": "Test Runner",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Test Runner_28.4.53241.53758.app",
+      "sha256": "669f4b8cea6795249685b292a1ff3b03fd105d4abe600e1ce351cf70dd6ce331"
+    },
+    {
+      "app_id": "2654d7e7-9afd-4947-9e02-6bb8f3e0cd04",
+      "name": "Universal Print Integration",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Universal Print Integration_28.4.53241.53758.app",
+      "sha256": "085d41f501040f664ed6c6a33c100c04120911d4590e2eb7785fc39435de87c3"
+    },
+    {
+      "app_id": "2a5ff629-58b0-48e8-9414-319055c49e8d",
+      "name": "Tests-MOCKSERVICETESTS-Internal",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-MOCKSERVICETESTS-Internal_28.4.53241.53758.app",
+      "sha256": "edf0f7c91e0545b3a16ccfc5b498fe6a9c573bd1865590b958b231d91159f3bc"
+    },
+    {
+      "app_id": "2a89f298-7ffd-44a5-a7ce-e08dac98abce",
+      "name": "Essential Business Headlines",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Essential Business Headlines_28.4.53241.53758.app",
+      "sha256": "62f4111860b8c204f2da1fe54062bf06a5cd972c77be3a4a408299eed4e645ef"
+    },
+    {
+      "app_id": "2b634ad5-63df-4a3c-9e35-e347f646e940",
+      "name": "Tests-Integration",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Integration_28.4.53241.53758.app",
+      "sha256": "1bbed3a717363d915c49c583a0ec940069f43d03518458ed92bf5ca396e7e243"
+    },
+    {
+      "app_id": "2c97db9b-4aef-41e2-aa3e-03fa892c6815",
+      "name": "Tax File Formats (DK)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tax File Formats (DK)_28.4.53241.53758.app",
+      "sha256": "bf9f4b09e7d1ddcbc71f58708b21a2360b92e44aee9a6f6e9058d600eaa5e50b"
+    },
+    {
+      "app_id": "2ed02040-0300-4d64-b8c5-a48d09dddfc6",
+      "name": "Icelandic language (Iceland)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Icelandic language (Iceland)_28.4.53241.53758.app",
+      "sha256": "701c088c96c09f32c3b9c83f6b8c67967c24ba6ac8ac2ada87b5f8d4adc8f75a"
+    },
+    {
+      "app_id": "2fd9cbd8-c94a-46d6-8274-ea6ccb244f12",
+      "name": "Service Management",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Service Management_28.4.53241.53758.app",
+      "sha256": "dfae3100f41cdf616d5db6b87d22853b8dab70df297bdd17cf301400331a228a"
+    },
+    {
+      "app_id": "3099ffc7-4cf7-4df6-9b96-7e4bc2bb587c",
+      "name": "Subscription Billing",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Subscription Billing_28.4.53241.53758.app",
+      "sha256": "ff35c4e87eaab6a7827901d82c5dd5af5492d170014635eadacbc2645f4613ac"
+    },
+    {
+      "app_id": "31ef535a-1182-4354-98e8-e0e66a587055",
+      "name": "E-Document Connector - Continia",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Connector - Continia_28.4.53241.53758.app",
+      "sha256": "4aacedc5b33ce6dccf7be1928b86764d8c231e14b93cd6f9f749580a6d5f8ced"
+    },
+    {
+      "app_id": "334ef79e-547e-4631-8ba1-7a7f18e14de6",
+      "name": "Business Central Intelligent Cloud",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Business Central Intelligent Cloud_28.4.53241.53758.app",
+      "sha256": "8f9b95f13df638012c0e528df9a523b04141f9186d58575f9cfb18bfacb302fe"
+    },
+    {
+      "app_id": "34bfcef7-f8ed-449f-94be-74024cadba3b",
+      "name": "External File Storage - SharePoint Connector",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_External File Storage - SharePoint Connector_28.4.53241.53758.app",
+      "sha256": "081a37adeef8f008683e43951f40273e8f384a48472f860bb55c4c99b627db95"
+    },
+    {
+      "app_id": "3556cc45-5df4-46aa-8162-058cb6fea4f0",
+      "name": "Performance Toolkit Tests",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Performance Toolkit Tests.app",
+      "sha256": "f337e701d725af42b44ee31bcdb6d2c0a752b24f14ca5d53d896b55759400068"
+    },
+    {
+      "app_id": "3721d519-67eb-43ee-b55b-8a85c87c292d",
+      "name": "English language (New Zealand)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_English language (New Zealand)_28.4.53241.53758.app",
+      "sha256": "10e27bfb546c55d4ee5319b6ac3ad72d4c66980e0e624331e583758aa335f43f"
+    },
+    {
+      "app_id": "3a66faf9-4111-4ec3-be7e-7ca33e9421a0",
+      "name": "German language (Austria)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_German language (Austria)_28.4.53241.53758.app",
+      "sha256": "9da1054331b485dce048de9d9b2acd9cb22b520d584c07a22c896bb11d53e0cc"
+    },
+    {
+      "app_id": "3d5b2137-eeeb-4014-8489-41d37f8fd4c3",
+      "name": "C5 2012 Data Migration",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_C5 2012 Data Migration_28.4.53241.53758.app",
+      "sha256": "3f3b2635399346c0cc6863e4810fc11286e37956d7d605bd764ff385ff5c5c62"
+    },
+    {
+      "app_id": "3d5b2137-efeb-4014-8489-41d37f8fd4c3",
+      "name": "Late Payment Prediction",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Late Payment Prediction_28.4.53241.53758.app",
+      "sha256": "117c940212488f4a5d2c299999d53b0e6ebe71fa103ecb8b65eb5b388e7059c5"
+    },
+    {
+      "app_id": "3ef6b9df-8622-4b1f-8949-6a5c544fb224",
+      "name": "Nemhandel Notification in Denmark",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Nemhandel Notification in Denmark_28.4.53241.53758.app",
+      "sha256": "30883ae512513f754181c2665cdb608862ced6cfd0ea960ebfc25c0b485667f9"
+    },
+    {
+      "app_id": "40860557-a18d-42ad-aecb-22b7dd80dc80",
+      "name": "Permissions Mock",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Permissions Mock_28.4.53241.53758.app",
+      "sha256": "f043f8817c83e1afeac47667f9babfcd71c6801d013a836758e058685598793f"
+    },
+    {
+      "app_id": "40bf2bab-2a57-4c34-9002-c11d23fcbff6",
+      "name": "Quality Management Contoso Coffee Demo Dataset",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Quality Management Contoso Coffee Demo Dataset_28.4.53241.53758.app",
+      "sha256": "faea8a1149ae6b91ce7c5d7d854f6c7937d6ca2cca1036b9cc6a5f6df68a6143"
+    },
+    {
+      "app_id": "40d64215-8abc-4d96-87dc-2894e5431115",
+      "name": "DK Core",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_DK Core_28.4.53241.53758.app",
+      "sha256": "eef2d6b9b7ac6815fc381af8f65302f3ec3ee6830058b52382c7e8836b4c33f0"
+    },
+    {
+      "app_id": "437dbf0e-84ff-417a-965d-ed2bb9650972",
+      "name": "Base Application",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Base Application_28.4.53241.53758.app",
+      "sha256": "86ddeb076e60f61d2a3277c7deb19bafa0ec34cb500fbb03d43fa0b6f239227e"
+    },
+    {
+      "app_id": "44a6a6d5-4478-4f1e-a94e-421407fc122c",
+      "name": "English language (United States)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_English language (United States)_28.4.53241.53758.app",
+      "sha256": "9a8af195dfc3136707052ab8fdc6270799472d6cc6a39fc9bfc497c9e3a91ab0"
+    },
+    {
+      "app_id": "4564dd2f-e8b2-41ff-9905-9d7a950475a5",
+      "name": "Tests-Misc",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Misc_28.4.53241.53758.app",
+      "sha256": "111b09380673cd5f4c9ad940b266c124c70d80f0339ae221ca6d3bd858d65f66"
+    },
+    {
+      "app_id": "474a0e0a-d177-4c70-aae0-4ff674a04e74",
+      "name": "Tests-Graph",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Graph_28.4.53241.53758.app",
+      "sha256": "f5886ccd2b5ffe222ff399a48143c570ff1999747f3c8845d1ffce51aff420c6"
+    },
+    {
+      "app_id": "499ec319-ef73-463a-8d31-d66a58e2325a",
+      "name": "Dutch language (Netherlands)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Dutch language (Netherlands)_28.4.53241.53758.app",
+      "sha256": "ddb218ad9d747b57bc8d11740bfc768ab09ad0b567aa58c189343f3c885614c2"
+    },
+    {
+      "app_id": "4ce93371-6bd6-4027-a78f-021064ad250e",
+      "name": "SAF-T",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_SAF-T_28.4.53241.53758.app",
+      "sha256": "3c647f60f964bcff1efa9913ee5a6d76a9152c79dd499989d1f89b6d407ed18b"
+    },
+    {
+      "app_id": "4d6c453d-e61d-4872-b35d-6c731c0fd93e",
+      "name": "Manufacturing",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Manufacturing_28.4.53241.53758.app",
+      "sha256": "6c93b8e4d3896021f5ffc1c054d96c981a8927a7903676b944f6dab63b345124"
+    },
+    {
+      "app_id": "4e7ce29d-c973-4e89-8230-5e13b26ce9fb",
+      "name": "German language (Switzerland)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_German language (Switzerland)_28.4.53241.53758.app",
+      "sha256": "bab1d0c1aa526437ddc882aec92440b1bc30e3936fc8517cd1620d70ecc88fe2"
+    },
+    {
+      "app_id": "5095f467-0a01-4b99-99d1-9ff1237d286f",
+      "name": "Library Variable Storage",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Library Variable Storage_28.4.53241.53758.app",
+      "sha256": "a75de91da8a3dddd0679d73eb715ba4ed9ceb6ad9905cc234b5ba989df3725c5"
+    },
+    {
+      "app_id": "517f890c-b49f-47de-8120-d0327974b89d",
+      "name": "AI Development Toolkit - Evaluation",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_AI Development Toolkit - Evaluation_28.4.53241.53758.app",
+      "sha256": "4eb0ea7089680923edb34a2efd0dc553ce0e33dec1813c6c0dcfc014f8be38e9"
+    },
+    {
+      "app_id": "51ba3799-d76c-4cf0-afd3-e2c2f6c0576b",
+      "name": "Italian language (Italy)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Italian language (Italy)_28.4.53241.53758.app",
+      "sha256": "9fc825def28586ba8c55ca073de3168bdd4e284090625084b52cce44a9fdc2a6"
+    },
+    {
+      "app_id": "5363109d-5605-4580-9cb7-5b577d00bbb2",
+      "name": "French language (Canada)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_French language (Canada)_28.4.53241.53758.app",
+      "sha256": "af5badd45a66774e190daf253b25873cc19bf38ad15d1b31f633f5f02121628a"
+    },
+    {
+      "app_id": "538ca7e3-4f69-4123-b21f-97e764d396f3",
+      "name": "TestRunner-Internal",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_TestRunner-Internal_28.4.53241.53758.app",
+      "sha256": "29161a7b93dbd99dbd047840b44709b5484e4c2d4cadd75346ddb2247ba0994f"
+    },
+    {
+      "app_id": "57623bfa-0559-4bc2-ae1c-0979c29fc8d1",
+      "name": "Business Central Cloud Migration API",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Business Central Cloud Migration API_28.4.53241.53758.app",
+      "sha256": "2333e5b70c648c5a838f7753c7d58962f46f15688adbd0c726e516d3033c1a63"
+    },
+    {
+      "app_id": "58623bfa-0559-4bc2-ae1c-0979c29fd9e0",
+      "name": "Intelligent Cloud Base",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Intelligent Cloud Base_28.4.53241.53758.app",
+      "sha256": "d52ad86b62a535636141d5b86283ca53612a165edefea7c255e2aaa3089f1497"
+    },
+    {
+      "app_id": "5a0b41e9-7a42-4123-d521-2265186cfb31",
+      "name": "Contoso Coffee Demo Dataset",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Contoso Coffee Demo Dataset_28.4.53241.53758.app",
+      "sha256": "964ecc86aa2c285d9b5ea211c45139579986992067f09f4aa3cbb3272f9cf1e1"
+    },
+    {
+      "app_id": "5afe217e-507a-40b4-9aa5-f4325b6e8230",
+      "name": "Agent Test Library",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Agent Test Library_28.4.53241.53758.app",
+      "sha256": "83659c30973c0277de7f822693e9247d03292c7b978a970028b634931bac6a45"
+    },
+    {
+      "app_id": "5b061701-dae6-48cc-bc16-8c4761a2baf5",
+      "name": "Tests-SINGLESERVER",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-SINGLESERVER_28.4.53241.53758.app",
+      "sha256": "a9c4f566a3782b6fc9f76edf6448ce2327702b7a3409fdbcc5eb99e991cbe139"
+    },
+    {
+      "app_id": "5b0b41a1-7b42-1134-a521-2265186cfb33",
+      "name": "Contoso Coffee Demo Dataset (DK)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Contoso Coffee Demo Dataset (DK)_28.4.53241.53758.app",
+      "sha256": "86f13c17fd8807820aea2868c8d79397f5d97e85ac2c8e683ce48cec7d66a777"
+    },
+    {
+      "app_id": "5d86850b-0d76-4eca-bd7b-951ad998e997",
+      "name": "Tests-TestLibraries",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-TestLibraries_28.4.53241.53758.app",
+      "sha256": "4a928583106125a80db7bf48ccd23df4665b2806412e054b28313c6a6a838d9b"
+    },
+    {
+      "app_id": "5f2e93a0-6083-4718-b05a-7ac89be5644d",
+      "name": "External Storage - Document Attachments",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_External Storage - Document Attachments_28.4.53241.53758.app",
+      "sha256": "f4a546338af261340676123a2a0b32b1e3cdf32edb2af232832bb6decb3fd864"
+    },
+    {
+      "app_id": "5f92e0d5-a60e-435f-ae85-71ec28dd3e41",
+      "name": "_Exclude_PlanConfiguration_",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_PlanConfiguration__28.4.53241.53758.app",
+      "sha256": "09dfd2cfa9bec058d736427d37339c943a8465f65cfcc73fbe01000ce4746b8f"
+    },
+    {
+      "app_id": "63c9fbe6-d4f3-458c-8c25-644c90a0874a",
+      "name": "Bank Account Reconciliation With AI",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Bank Account Reconciliation With AI_28.4.53241.53758.app",
+      "sha256": "1f54326f33e7d17ca644c160e61ade20dbfe3525b380df01a6af50c2e37b48e5"
+    },
+    {
+      "app_id": "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+      "name": "System Application",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_System Application_28.4.53241.53758.app",
+      "sha256": "5c5cb680ccee8c632cc41f73ff5148d1f331bc5ff33e08a3c764353dc2f64366"
+    },
+    {
+      "app_id": "644f7e5b-a81c-408a-aaa2-766e655a80a3",
+      "name": "Payment and Reconciliation Formats (DK)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Payment and Reconciliation Formats (DK)_28.4.53241.53758.app",
+      "sha256": "8c351237dff7c15d4a24866934e53be0b5cd66caaf0230b9a25a506a6d646f65"
+    },
+    {
+      "app_id": "64977288-facd-4b48-abaa-bb0e288edfb3",
+      "name": "Electronic VAT Declaration for Denmark",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Electronic VAT Declaration for Denmark_28.4.53241.53758.app",
+      "sha256": "d75e9758dce3196f25e3e33708cbcde8ddfd3f9471b1b478e3ea7232769fb2bc"
+    },
+    {
+      "app_id": "64977288-facd-4b48-aaaa-bb0e288edfb3",
+      "name": "Payment Practices",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Payment Practices_28.4.53241.53758.app",
+      "sha256": "13796f1666c3b00706b095e45ffbf314643dcb8191cfeec36d8f1a2d53b95cc0"
+    },
+    {
+      "app_id": "64c9d5e2-7744-4866-bc0e-5ebc2898e651",
+      "name": "Error Messages with Recommendations",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Error Messages with Recommendations_28.4.53241.53758.app",
+      "sha256": "d44e2794a6e2dee20e058f3766d9d0f12f2488c0816cec89a0fa9f8a73051ea9"
+    },
+    {
+      "app_id": "66d1f41b-f670-4788-a2b3-0f82b4e5c05b",
+      "name": "Agent Test Internal Library",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Agent Test Internal Library_28.4.53241.53758.app",
+      "sha256": "cd8f37bba18f2c67af133ee9f9e6109ce2c597f01dce8bd08a49330cc6bcd7eb"
+    },
+    {
+      "app_id": "66efe10c-8033-403b-a86d-77c0887178ba",
+      "name": "Expense Agent (Preview)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Expense Agent (Preview)_28.4.53241.53758.app",
+      "sha256": "f117370b544e856c95713d00fc2a9f7569abc8a5d1755696cc6999c25abffe9a"
+    },
+    {
+      "app_id": "672777d5-ab26-4369-b334-6f04256efffd",
+      "name": "_Exclude_Onboarding Signals",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_Onboarding Signals_28.4.53241.53758.app",
+      "sha256": "26472ca99da480b6ebf7a8eb559963a4a245c4bdba0d73676c69abaa3dae68e1"
+    },
+    {
+      "app_id": "6813edab-d08b-4d30-a119-11f984e06669",
+      "name": "Czech language (Czechia)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Czech language (Czechia)_28.4.53241.53758.app",
+      "sha256": "d45bfb30d975b941743764b932fbbbc3ebbaad455139996f78202e9ab32434c3"
+    },
+    {
+      "app_id": "68e13fa3-217a-4be0-9141-99e5bf0ca818",
+      "name": "Email - SMTP Connector",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Email - SMTP Connector_28.4.53241.53758.app",
+      "sha256": "7d9899f0f95919c507e24dc07cfeaa76afa85fed540602ff2ff0c381ae395a62"
+    },
+    {
+      "app_id": "69837cc7-28e9-4db0-9a0f-6616f259c91a",
+      "name": "Tests-Cash Flow",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Cash Flow_28.4.53241.53758.app",
+      "sha256": "3734d99bf7c8e8770ef04cdd7e9dc268f36f50450dd5965107521552fa8da646"
+    },
+    {
+      "app_id": "698cfedb-66b9-44a8-b5ae-1ec18bd32fa7",
+      "name": "Agent Samples",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Agent Samples_28.4.53241.53758.app",
+      "sha256": "b4a288426fcbf8463acb5416158e77ec967d3ee90b358b0cf62293a3a0208175"
+    },
+    {
+      "app_id": "6992416f-3f39-4d3c-8242-3fff61350bea",
+      "name": "Business Central Cloud Migration - Previous Release",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Business Central Cloud Migration - Previous Release_28.4.53241.53758.app",
+      "sha256": "9403b7b86e41677a7ae8f2f86e23aecaa11f46472ef4b8fa1f5b8e3e8402478e"
+    },
+    {
+      "app_id": "6d9b6d22-97e0-4774-982a-2097fd660f97",
+      "name": "Tests-Dimension",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Dimension_28.4.53241.53758.app",
+      "sha256": "ad7a393ffb8a196aea358157644897995fd03ae8bf7ef18fb9068af0f10a26d9"
+    },
+    {
+      "app_id": "6f0b528b-a4de-4ccd-a948-d1350e228e4a",
+      "name": "Tests-SCM",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-SCM_28.4.53241.53758.app",
+      "sha256": "fb38a813ec5deac7f969a09f30a91b493eac2087206177e9e7ecb7060b7e2ed4"
+    },
+    {
+      "app_id": "6f2c034f-5ebe-4eae-b34c-90a0d4e87687",
+      "name": "_Exclude_Business_Events_",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_Business_Events__28.4.53241.53758.app",
+      "sha256": "6c71dc643521317d729be87701576a5af59a0ad4a59c0ddcbd85c0efc64a18b1"
+    },
+    {
+      "app_id": "70912191-3c4c-49fc-a1de-bc6ea1ac9da6",
+      "name": "Intrastat Core",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Intrastat Core_28.4.53241.53758.app",
+      "sha256": "3d1f91e1c444d518cef1030b98b250a8e13f2572537afff1024bfcd2ba21bd0a"
+    },
+    {
+      "app_id": "74e323c4-70a3-49ce-b18e-fe9ccaff01d3",
+      "name": "Tests-Marketing",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Marketing_28.4.53241.53758.app",
+      "sha256": "8b1f10e27c8316ae667099d387c4f50426c362829b76e9bfb5c910b11387a241"
+    },
+    {
+      "app_id": "75f1590f-55c5-4501-ae63-bada5504e852",
+      "name": "Performance Toolkit Samples",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Performance Toolkit Samples_28.4.53241.53758.app",
+      "sha256": "eebae7ed8d5235c76701946fe3698ae8de41964d48ce7faf66e069cedbf7a39d"
+    },
+    {
+      "app_id": "75f1590f-55c5-4501-ae63-bada5534e852",
+      "name": "Performance Toolkit",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Performance Toolkit_28.4.53241.53758.app",
+      "sha256": "fcafbef6161d471a274de8d220ad7cc4fedc59bf08dc5970fb102fb97fd9f5dd"
+    },
+    {
+      "app_id": "7819d79d-feea-4f09-bbed-5bbaca4bf323",
+      "name": "Data Archive",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Data Archive_28.4.53241.53758.app",
+      "sha256": "41c4f7a4a0b99a267e7435e3c6d856f6991e22c0230f2db61ad5f25e21a85dc0"
+    },
+    {
+      "app_id": "790cf8ce-f921-42a8-8c34-a0af2ddf6265",
+      "name": "Tests-General Journal",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-General Journal_28.4.53241.53758.app",
+      "sha256": "f1d1787afd91340046059795dc58256b2bf62713e2d9505048eeba911162a2e0"
+    },
+    {
+      "app_id": "79447b11-8301-4d02-a546-2261eb811296",
+      "name": "External File Storage - Azure File Service Connector",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_External File Storage - Azure File Service Connector_28.4.53241.53758.app",
+      "sha256": "759cc8c877907ed77157daedecdc9e440b7161bcfbd6aff4c643d2c07ffcec51"
+    },
+    {
+      "app_id": "79447c3f-14b4-4c10-8779-03911f30ab26",
+      "name": "Tests-Report",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Report_28.4.53241.53758.app",
+      "sha256": "b1dc16657158cbfa602ca42e0b1afa657b6633e82e450cf98b1c31120f1d9ed6"
+    },
+    {
+      "app_id": "7961e9dc-a8e5-49b1-839b-3a78803a4cb8",
+      "name": "Troubleshoot FA Ledger Entries",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Troubleshoot FA Ledger Entries_28.4.53241.53758.app",
+      "sha256": "e854057ed42065a4c23b3b9236853399029809a4edce719aede12b941700745e"
+    },
+    {
+      "app_id": "79b1a79a-2f66-4736-bc1b-8abb3537eb51",
+      "name": "Simplified Bank Statement Import",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Simplified Bank Statement Import_28.4.53241.53758.app",
+      "sha256": "7d25c52b4f5a250143a888151e22b5b708b109b56d82bcd0d3242af54ee16f10"
+    },
+    {
+      "app_id": "7a129d06-5fd6-4fb6-b82b-0bf539c779d0",
+      "name": "_Exclude_Bank Deposits",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_Bank Deposits_28.4.53241.53758.app",
+      "sha256": "4d691d7bf80e74fa49aae9d74830afdba0d9478d67e6d0f4abf19ba2b5daecf7"
+    },
+    {
+      "app_id": "7fe10be7-575f-4cce-957b-bcd0df8f9bd7",
+      "name": "Tests-Rapid Start",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Rapid Start_28.4.53241.53758.app",
+      "sha256": "37e47f5fdf3595c43f782d15f17c7f94b1d90c4453af17be08da900060cff46e"
+    },
+    {
+      "app_id": "80e80fa9-7100-4885-852c-ac6b053298dd",
+      "name": "Russian language (Russia)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Russian language (Russia)_28.4.53241.53758.app",
+      "sha256": "9c75ce76ed56441ac0254621b631b9cd002ccc049d88331a59af09649173f8f5"
+    },
+    {
+      "app_id": "8228f99b-cce5-4b9c-b247-9ee1145b7470",
+      "name": "E-Document format for OIOUBL",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document format for OIOUBL_28.4.53241.53758.app",
+      "sha256": "705532f1552f9d680ca2c6c3f1d97fa1ac00e4db902b8a7daca8e6a7e54974a4"
+    },
+    {
+      "app_id": "83e06f31-ba58-4901-a7fb-91c0466a7397",
+      "name": "Tests-SCM-Assembly",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-SCM-Assembly_28.4.53241.53758.app",
+      "sha256": "644d74caa351e842e714ca82dcf813ed06825ad6049b1be4a1e3e9bbf95081f4"
+    },
+    {
+      "app_id": "85125fdc-eb14-4f16-8c5d-6e4589aceb1d",
+      "name": "Tests-Data Exchange",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Data Exchange_28.4.53241.53758.app",
+      "sha256": "5d9eab0e1adeace6f75beb45931fcf19623fccb8951bc88991af9d14de830f7a"
+    },
+    {
+      "app_id": "865bb488-eec0-4d05-b196-258fd1ff8363",
+      "name": "French language (Switzerland)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_French language (Switzerland)_28.4.53241.53758.app",
+      "sha256": "ff6fd9288059f171ebcab7cff9a92bf5d7f0be67d7f1a84174b95ad5b2980532"
+    },
+    {
+      "app_id": "87990153-0e35-4e5d-ba61-2e93077d1699",
+      "name": "Review General Ledger Entries",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Review General Ledger Entries_28.4.53241.53758.app",
+      "sha256": "f19c06d0e3e7c238b13d8a7e305dc22eee34e55989172ebd3689d55e585bc514"
+    },
+    {
+      "app_id": "8874ed3a-0643-4247-9ced-7a7002f7135d",
+      "name": "System",
+      "publisher": "Microsoft",
+      "version": "28.0.53667.0",
+      "file": "System.app",
+      "sha256": "8085821ff5a037560b2d439025c544edc7b14e5244a727e948ab091158199083"
+    },
+    {
+      "app_id": "88f3615c-370c-4f39-bb5f-54e096c984e9",
+      "name": "Tests-SCM-Manufacturing",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-SCM-Manufacturing_28.4.53241.53758.app",
+      "sha256": "3ec33317d5df39847bfe05e5ac05df46f3a550cefc35dc53389dd17ba2e810a4"
+    },
+    {
+      "app_id": "8a3db2bc-9378-4d0f-b89a-a7dea0555449",
+      "name": "Subscription Billing Demo Data",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Subscription Billing Demo Data_28.4.53241.53758.app",
+      "sha256": "196fdb1b836038e668c271f8fbb5fcd0db513c47c5fbe1ba440065ef9aaa90f7"
+    },
+    {
+      "app_id": "8afe7b40-8c87-4beb-ada0-451d1761bf95",
+      "name": "_Exclude_APIV1_",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_APIV1__28.4.53241.53758.app",
+      "sha256": "0cb5494fb8fe97aa3bc246ee41593cc59b2c458cd3932c88047eb02fa9cc91c7"
+    },
+    {
+      "app_id": "8b3609cf-3947-44c3-9f20-ce6edc6da33f",
+      "name": "_Exclude_ClientAddIns_",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_ClientAddIns__28.4.53241.53758.app",
+      "sha256": "ec7db70a1941741a70346263f8922a08b9308bb49e32d7dc4f6925dda4a84a87"
+    },
+    {
+      "app_id": "8c972578-fe72-4aa5-ae51-cc5575fef2ea",
+      "name": "Send To Email Printer",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Send To Email Printer_28.4.53241.53758.app",
+      "sha256": "af7d26a8baf0fda7e6c196a7d3d51560b524760f849ab55e7ba7db92bf45de12"
+    },
+    {
+      "app_id": "8fc50dfb-d338-4fd9-9499-5e44cc8cbf50",
+      "name": "Email - SMTP API",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Email - SMTP API_28.4.53241.53758.app",
+      "sha256": "4a5ba8b9ceb59c95580e43cc7c0dc96f47eeffd00dd7d3f713383d6e7b26daeb"
+    },
+    {
+      "app_id": "93a71c5e-237e-47e8-835b-1a7f9e844f1b",
+      "name": "Create Product Information With Copilot",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Create Product Information With Copilot_28.4.53241.53758.app",
+      "sha256": "61a7640a434e2b2c6c4b1424bb19a551b3cc94ee1246cb4e787259ba980c5229"
+    },
+    {
+      "app_id": "972624b9-849a-40cd-98b1-fd0924b0defe",
+      "name": "Calculate Sustainability Emission with Copilot",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Calculate Sustainability Emission with Copilot_28.4.53241.53758.app",
+      "sha256": "50de0ebd8bc4217d0a7acec35d10b50ff59c862b0d1cbdbf95e3ffde3d7e15ae"
+    },
+    {
+      "app_id": "9856ae4f-d1a7-46ef-89bb-6ef056398228",
+      "name": "System Application Test Library",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_System Application Test Library_28.4.53241.53758.app",
+      "sha256": "34b73dfd9e534cc3e73e53ee44af7e7bc4a4b3b3faa012554606543f8c096bed"
+    },
+    {
+      "app_id": "9bf23d52-8194-4857-8896-5e48b24493f6",
+      "name": "Tests-Job",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Job_28.4.53241.53758.app",
+      "sha256": "f9c5afa373e622cd0585959f72c85ceffbfc9621615bccfbf1ce60df2df8100b"
+    },
+    {
+      "app_id": "9cc7e87b-8ba9-4c23-82d4-8af3e919c84b",
+      "name": "Tests-User",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-User_28.4.53241.53758.app",
+      "sha256": "1cc125c439a486abcbce5906cbaeebd214e461429da826c292d662760ee4a1cb"
+    },
+    {
+      "app_id": "9e737fc0-589a-436f-8b2f-0f27da2d2afd",
+      "name": "Spanish language (Mexico)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Spanish language (Mexico)_28.4.53241.53758.app",
+      "sha256": "c6b1c9498e032006c67afbcbbc234ffac656b2ac2b09711e5fb0e16bb3ae3c11"
+    },
+    {
+      "app_id": "a01864f8-9c3f-42f6-8328-8d7be1ce3e20",
+      "name": "_Exclude_Master_Data_Management",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_Master_Data_Management_28.4.53241.53758.app",
+      "sha256": "ebdae7afb2fbb5f3758e49c096e22418d726873e22a553d07ae98a09584c32b8"
+    },
+    {
+      "app_id": "a0673989-48a4-48a0-9517-499c9f4037d3",
+      "name": "Sustainability Contoso Coffee Demo Dataset",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Sustainability Contoso Coffee Demo Dataset_28.4.53241.53758.app",
+      "sha256": "3be7773d0eb896405237410dc080c1f36e6b637661ec01094a600ab660af4ba1"
+    },
+    {
+      "app_id": "a190e87b-2f59-4e14-a727-421877802768",
+      "name": "API - Cross Environment Intercompany",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_API - Cross Environment Intercompany_28.4.53241.53758.app",
+      "sha256": "cbec2901993733aef8c5e71bd7d984793dc4d8613207264d358989cb80d8953a"
+    },
+    {
+      "app_id": "a2cc2ef8-949f-43d4-45b8-10bd6f8bc62c",
+      "name": "API Reports - Finance",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_API Reports - Finance_28.4.53241.53758.app",
+      "sha256": "f459fa37fb2e5a18c557aa89d209129448690bc5635cbf085e7c58746a72bc25"
+    },
+    {
+      "app_id": "a3c8a6e2-834a-4e73-b1f1-79e76b652659",
+      "name": "Payroll Data Import Definitions (DK)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Payroll Data Import Definitions (DK)_28.4.53241.53758.app",
+      "sha256": "90d1bb651b198ee8c9e5a4181cdaa365fcb15450df8b57d68f404df6188c7a24"
+    },
+    {
+      "app_id": "a41b0c3e-bf1c-4c97-ad1b-b430a3933ada",
+      "name": "Audit File Export",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Audit File Export_28.4.53241.53758.app",
+      "sha256": "47f5682b29e20422437f189bab4621183646e5b37efd08f7ac39e8b519c93fc7"
+    },
+    {
+      "app_id": "a53a4bb0-aa53-8ff8-77d6-fe3388db0eb8",
+      "name": "Recommended Apps",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Recommended Apps_28.4.53241.53758.app",
+      "sha256": "43ad8fbbb7a98b212ee3d44d646f0d46b33b4ca2c8368b8b9fc332d6b4971499"
+    },
+    {
+      "app_id": "a5d61952-f432-4ee6-8686-e8aa5d3dedc0",
+      "name": "Italian language (Switzerland)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Italian language (Switzerland)_28.4.53241.53758.app",
+      "sha256": "3b1ad7a4a5d910de41069b93a7f8afcb0c3bf6b859e06563af91234ed3fbb1b0"
+    },
+    {
+      "app_id": "a7bd3b4e-5469-4185-88b5-06745dd4c153",
+      "name": "Excise Taxes",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Excise Taxes_28.4.53241.53758.app",
+      "sha256": "92b5ae1fce8367de00134ca3901e3d0b6d33241c916f3d1452b7c22d8baefdf5"
+    },
+    {
+      "app_id": "ab333b30-f600-4d0e-a519-73684ff42504",
+      "name": "Tests-Reverse",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Reverse_28.4.53241.53758.app",
+      "sha256": "1ce91df55840bb3c46e62c24cc658e6e609bc3d60fbd6d53149b3bdd4bc729b5"
+    },
+    {
+      "app_id": "ac14293f-1eb7-4a7b-9936-b280da31970b",
+      "name": "Data Search",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Data Search_28.4.53241.53758.app",
+      "sha256": "81cba5bc3b2d7f435246be1f08bd297daaf36c925880c828c55f27bc6e6cf818"
+    },
+    {
+      "app_id": "ac762be1-e90f-4a72-b519-612a5e3ddc2e",
+      "name": "OIOUBL",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_OIOUBL_28.4.53241.53758.app",
+      "sha256": "55b7de967e32e2319ed1759249845f2bbf42623e81334ac2fcab12d1b10ebac2"
+    },
+    {
+      "app_id": "aceb66c8-472e-437c-81d3-27e6c07d0f14",
+      "name": "Email - Microsoft 365 Connector",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Email - Microsoft 365 Connector_28.4.53241.53758.app",
+      "sha256": "1e6fd010c55b578d58354ee6b681bb8503c275a840614b302547c6acdb04a223"
+    },
+    {
+      "app_id": "ae1f0b7f-1ae3-4ca1-aeba-adc431cc12f9",
+      "name": "Swedish language (Sweden)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Swedish language (Sweden)_28.4.53241.53758.app",
+      "sha256": "1601c18ed2f38330bc8de83edc37e2b70661caeacf0da868b0d8981326608515"
+    },
+    {
+      "app_id": "aefe4506-6a2f-4ce4-8ba3-2c87dbc26f53",
+      "name": "Spanish language (Spain)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Spanish language (Spain)_28.4.53241.53758.app",
+      "sha256": "3164802cd498225b453a1feebbe3a17e468305334c96c65befa1e54357356327"
+    },
+    {
+      "app_id": "b3780cd9-f8f8-4a83-a4d5-0c2ad87b28af",
+      "name": "Sustainability",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Sustainability_28.4.53241.53758.app",
+      "sha256": "b1021e918fc095dde7b0b7af8ae578427c889f3041cda4fd7cacee75e43742c1"
+    },
+    {
+      "app_id": "b4305a63-f987-425b-8520-ca9ccf7b22b6",
+      "name": "E-Document Connector - B2Brouter",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Connector - B2Brouter_28.4.53241.53758.app",
+      "sha256": "55bddc06f16f11a8395dec183b78c943c2c903132094957304aa4b9352a21aa7"
+    },
+    {
+      "app_id": "b56171bd-9a8e-47ad-a527-99f476d5af83",
+      "name": "E-Document Connector - SignUp",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Connector - SignUp_28.4.53241.53758.app",
+      "sha256": "3a86dea1242fd6e9607ea987133c6b146a9dda75d10792b2da794895db9fbc45"
+    },
+    {
+      "app_id": "b7174aae-753c-4e71-bacb-d973995dce5e",
+      "name": "_Exclude_ReportLayouts",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_ReportLayouts_28.4.53241.53758.app",
+      "sha256": "eeab8e2f3f66a974804c6f5f7806d9af481380205be22192ffc1810b5dbe2aeb"
+    },
+    {
+      "app_id": "bb837764-d7cc-4b7b-898a-3ea5a1fab62f",
+      "name": "Enforced Digital Vouchers (DK)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Enforced Digital Vouchers (DK)_28.4.53241.53758.app",
+      "sha256": "c3e07c22e9e1edb69faf3be2aed957681ea8ababf48bcc9b4469df184c8b9a8f"
+    },
+    {
+      "app_id": "bc7b3891-f61b-4883-bbb3-384cdef88bec",
+      "name": "Quality Management",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Quality Management_28.4.53241.53758.app",
+      "sha256": "2948e4e08c1fa41050fe40b54017249e1082d0541757e41c7ecf62c1b4e2dc3e"
+    },
+    {
+      "app_id": "bd6c6741-7734-4109-bf2d-db58545d482c",
+      "name": "Tests-Local",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Local_28.4.53241.53758.app",
+      "sha256": "1092904fd1a7527e4a1caecca17e40f6f5ae5acc9da5bfcc6f493e22295e9e00"
+    },
+    {
+      "app_id": "bdbd8422-02d6-4b5f-9a35-948c5700a436",
+      "name": "Danish language (Denmark)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Danish language (Denmark)_28.4.53241.53758.app",
+      "sha256": "55f957af23a806477c1f72c494bc9166153d494ba0ce9c9a03676d146b751b1b"
+    },
+    {
+      "app_id": "bee8cf2f-494a-42f4-aabd-650e87934d39",
+      "name": "Business Foundation Test Libraries",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Business Foundation Test Libraries_28.4.53241.53758.app",
+      "sha256": "fe01f654066ea8f54fd3f4173ac610d01ede441792e1c98e75ab998fded8f8b6"
+    },
+    {
+      "app_id": "c1335042-3002-4257-bf8a-75c898ccb1b8",
+      "name": "Application",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Application_28.4.53241.53758.app",
+      "sha256": "6e80099c53b4395f0fe22c62dd03ae8acd0daea9c055160047efa43b43261470"
+    },
+    {
+      "app_id": "c31ee575-3fc7-4388-98ee-d75aa2fc5f87",
+      "name": "Withholding Tax",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Withholding Tax_28.4.53241.53758.app",
+      "sha256": "bfc9448027233ca3356ecfe4dd5c3aa801111376f91083eb3280d16906101d9c"
+    },
+    {
+      "app_id": "c4795dd0-aee3-47cc-b020-2ee93a47d4c4",
+      "name": "Tests-Workflow",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Workflow_28.4.53241.53758.app",
+      "sha256": "c34620cbef93f1e12eec45d9dfb8b6e2487f101f3134e538eccf3febf6c91248"
+    },
+    {
+      "app_id": "c49d9d12-1c94-4362-8bf7-3cce15be54dc",
+      "name": "Tests-Monitor Sensitive Fields",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Monitor Sensitive Fields_28.4.53241.53758.app",
+      "sha256": "0cfb0d3d8fba46514cccf2b020788c1f9ca03fc7507c7ce74e76053bee4270b9"
+    },
+    {
+      "app_id": "c50a4bf0-db51-4ad2-88d5-fe2287da0eb8",
+      "name": "VAT Group Management",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_VAT Group Management_28.4.53241.53758.app",
+      "sha256": "b6ec5dc28ac312b4ea5b88542d718d954122d260e7077a0c8a2477428c563130"
+    },
+    {
+      "app_id": "c512d720-63b9-4b26-b062-a0c09b4ed322",
+      "name": "Company Hub",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Company Hub_28.4.53241.53758.app",
+      "sha256": "c94e821c0c7a2626af12b436c67cd4690b1e167fb071cd435d15b59c01d7c156"
+    },
+    {
+      "app_id": "c526b3e9-b8ca-4683-81ba-fcd5f6b1472a",
+      "name": "Sales and Inventory Forecast",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Sales and Inventory Forecast_28.4.53241.53758.app",
+      "sha256": "fe78424c4d3727630604020342f77ad4bd1386b6a0ceb9c7373cfdc39a010554"
+    },
+    {
+      "app_id": "c75079ef-aa88-45c3-a2e0-e7df91ae2ff9",
+      "name": "Tests-NewObjects-Internal",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-NewObjects-Internal_28.4.53241.53758.app",
+      "sha256": "f6d5384dd0a2760a3220d8ca980bfd27c4c60e7ccdcabfe628885ba9aef226ad"
+    },
+    {
+      "app_id": "c75a45c6-4e83-46e1-b17b-48c6506c19f3",
+      "name": "French language (France)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_French language (France)_28.4.53241.53758.app",
+      "sha256": "01ae3cabb2599f0f3a8d8fd1d648e3ffd5548d0c125026d4280c2ced25b9fb07"
+    },
+    {
+      "app_id": "c81764a5-be79-4d50-ba3e-4ade02073780",
+      "name": "Tests-Fixed Asset",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Fixed Asset_28.4.53241.53758.app",
+      "sha256": "204f11898f84b881dc20bb26b43c6be7a2d1065ca40e7389c3bc32a7c1c27c18"
+    },
+    {
+      "app_id": "c9bea3a6-a9af-499f-b78a-130a42eceedd",
+      "name": "Tests-SMB",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-SMB_28.4.53241.53758.app",
+      "sha256": "b65d82114fd2d1fb84716862a66582039a4ac1fa2101fe05413cfe8c5bc5167c"
+    },
+    {
+      "app_id": "c9ce86fe-cb70-4b79-be03-d21856b1a4ca",
+      "name": "External File Storage - Azure Blob Service Connector",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_External File Storage - Azure Blob Service Connector_28.4.53241.53758.app",
+      "sha256": "51f648aab27015b5731bdb11532d5f0f3eaf38b2631e841296d68fbc51420f03"
+    },
+    {
+      "app_id": "cb8f8fd2-7704-470a-bc12-40ff71ee6a30",
+      "name": "French language (Belgium)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_French language (Belgium)_28.4.53241.53758.app",
+      "sha256": "bc01afe4b69f179e2e9175eaa8f7f8c3bda639fdb026997d98c271a09a3afef7"
+    },
+    {
+      "app_id": "cc11c22e-5ca3-423f-8804-88cac6d91983",
+      "name": "Dynamics BC Excel Reports",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Dynamics BC Excel Reports_28.4.53241.53758.app",
+      "sha256": "d7b9a41d7543de113494e853f357c11d0c6d6d6b6af0d74a5e56479024bcdf1d"
+    },
+    {
+      "app_id": "cc85911b-390d-42d5-b4bb-1ec519019a30",
+      "name": "Norwegian language (Norway)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Norwegian language (Norway)_28.4.53241.53758.app",
+      "sha256": "2cff9f71fb24666d27160dac23b7044f4968981db7bfb48421b6c879790e6946"
+    },
+    {
+      "app_id": "ce295b13-0f47-4175-96f9-280f1e6734f2",
+      "name": "Intrastat Core Demo Data",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Intrastat Core Demo Data_28.4.53241.53758.app",
+      "sha256": "5e845a5a232e91268cde7596b427ade8a1ce179ec45f8add311d2cb7791a45ac"
+    },
+    {
+      "app_id": "ce917438-506c-4724-9b01-13c1b860e851",
+      "name": "Microsoft Pay Payments",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Microsoft Pay Payments_28.4.53241.53758.app",
+      "sha256": "458f8d99ea1f6d2ccc874df5970ce58bcf6af0ba0b9c7936037c59aabb94df57"
+    },
+    {
+      "app_id": "d09fa965-9a2a-424d-b704-69f3b54ed0ce",
+      "name": "Payment Links to PayPal",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Payment Links to PayPal_28.4.53241.53758.app",
+      "sha256": "c9c95cf7d167d0668e62b5a7586f4eb9c1605d1ed38fb00d12ce974eeaa6e49e"
+    },
+    {
+      "app_id": "d0e99b97-089b-449f-a0f5-a2ab994dbfd7",
+      "name": "Tests-Upgrade",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Upgrade_28.4.53241.53758.app",
+      "sha256": "3c4f0c0fbba3cf73bcd182c8f43d7f14c275086bbe39f6e48ab606cd4116b797"
+    },
+    {
+      "app_id": "d196d21b-75c3-45da-831b-345055b9d25f",
+      "name": "ESG Statistical Accounts Demo Tool",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_ESG Statistical Accounts Demo Tool_28.4.53241.53758.app",
+      "sha256": "b9f47f261ca2e4be52f1279f8a5314e6684f6f6648b04e1ec19dcd80aba05a8f"
+    },
+    {
+      "app_id": "d852a468-263e-49e5-bfda-f09e33342b89",
+      "name": "E-Document Connector - Pagero",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Connector - Pagero_28.4.53241.53758.app",
+      "sha256": "603e8dd2c7873473e83d278913c4899d4f16c9e06ee9874d6159d5afc2b47790"
+    },
+    {
+      "app_id": "d852d5d2-a39d-4179-baeb-f99a19e32510",
+      "name": "Application Test Library",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Application Test Library_28.4.53241.53758.app",
+      "sha256": "e44593f68f71d45e1f8bc2f7e7f6801c448097b281273c775d661dd6a3170944"
+    },
+    {
+      "app_id": "d94a0cee-f211-4941-b609-7c984f85ad03",
+      "name": "Tests-Permissions",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Permissions_28.4.53241.53758.app",
+      "sha256": "12e2849856d876b848b76d0747b69aa7e6a5ddc0483456bc97633550718fc44f"
+    },
+    {
+      "app_id": "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+      "name": "Library Assert",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Library Assert_28.4.53241.53758.app",
+      "sha256": "c10f365aa9cac895966b94a23815bdec7b86d30da07e08606757478a58ac9697"
+    },
+    {
+      "app_id": "dd3f226b-40bf-4b3c-9988-9b1e0f74edd8",
+      "name": "Sales Lines Suggestions",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Sales Lines Suggestions_28.4.53241.53758.app",
+      "sha256": "31a9864d564fe88cd077ec54eb7e1225f9e4898124c3545a638f5acc33efcde5"
+    },
+    {
+      "app_id": "de0dddf3-9917-430d-8d20-6e7679a08500",
+      "name": "E-Document Core Demo Data",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Core Demo Data_28.4.53241.53758.app",
+      "sha256": "00d52e20556a98a4773406a27b77516f811ed75e81857820c2c1a570097d59c5"
+    },
+    {
+      "app_id": "e0df20ef-75a2-4fae-8e3a-88140ab29507",
+      "name": "External File Storage - SFTP Connector",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_External File Storage - SFTP Connector_28.4.53241.53758.app",
+      "sha256": "97b4febedc6ca00b57ec3db6e2b4011ad37da8c4f3782ac7d84600b58c409299"
+    },
+    {
+      "app_id": "e1966889-b5fb-4fda-a84c-ea71b590e1a9",
+      "name": "PEPPOL",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_PEPPOL_28.4.53241.53758.app",
+      "sha256": "3af8e934fd0380e877d4e64ba0e66e9b48a29b35cf219016357fd21ae52d59b1"
+    },
+    {
+      "app_id": "e1d97edc-c239-46b4-8d84-6368bdf67c8b",
+      "name": "E-Document Core",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Core_28.4.53241.53758.app",
+      "sha256": "c63f55d21e7c0ab251dc04e44d3fa98c2bfa60a7a8635d29d9e43a8434e80429"
+    },
+    {
+      "app_id": "e2ae191d-8829-44c3-a373-3749a2742d4d",
+      "name": "Service Declaration",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Service Declaration_28.4.53241.53758.app",
+      "sha256": "a65b54b35630864a0fa750268fa0fe4717bbfe32b57a02ce5477259e9453cdf1"
+    },
+    {
+      "app_id": "e2ae191d-8829-44c3-a373-3749a2742d4e",
+      "name": "Enforced Digital Vouchers",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Enforced Digital Vouchers_28.4.53241.53758.app",
+      "sha256": "4fd566980db11c3e2bbe1b81bc97b7eb9b7ca93f003d4ae58d07123beae69a1a"
+    },
+    {
+      "app_id": "e2d4cb5e-9120-4a92-824d-2e1e5dc1a699",
+      "name": "German language (Germany)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_German language (Germany)_28.4.53241.53758.app",
+      "sha256": "471166ee1ac785330d862ba6e64db6cf5395c9adc8c2a265238faada2d3adf64"
+    },
+    {
+      "app_id": "e4e86220-cac0-4ec3-b853-7c2fa610399d",
+      "name": "Power BI Report embeddings for Dynamics 365 Business Central",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Power BI Report embeddings for Dynamics 365 Business Central_28.4.53241.53758.app",
+      "sha256": "268cf1cb2d28466c54fb577874a3a73da9b53a288a741b3f45dce005ac25cea8"
+    },
+    {
+      "app_id": "e6328152-bb29-4664-9dae-3bc7eaae1fd8",
+      "name": "Email - Outlook REST API",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Email - Outlook REST API_28.4.53241.53758.app",
+      "sha256": "335c25a8567c04687de00e2b6a242d9a042d3ec78d8f07e327b7fab3286768c0"
+    },
+    {
+      "app_id": "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
+      "name": "Any",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Any_28.4.53241.53758.app",
+      "sha256": "958a42612fe16af7a08c65a9b88a6d9257981a68c9c354e33162039b445b68b1"
+    },
+    {
+      "app_id": "e737590a-fede-4692-ac4e-d1d4849dd043",
+      "name": "Tests-SCM-Service",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-SCM-Service_28.4.53241.53758.app",
+      "sha256": "652d69342393786897e980a3e821884fe2ceae5cbeeb39b7fca2f78d085d8cac"
+    },
+    {
+      "app_id": "e86e9234-8b95-459d-a9ba-4d901208ca38",
+      "name": "_Exclude_Microsoft Dynamics 365 - SmartList",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_Microsoft Dynamics 365 - SmartList_28.4.53241.53758.app",
+      "sha256": "6af06f4131c0f84e128a87bee2d98e55be7225b7d2456b2b5984ead072ae6376"
+    },
+    {
+      "app_id": "e94328f1-bf57-43d3-a862-93d54f83a9d7",
+      "name": "Tests-Physical Inventory",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Physical Inventory_28.4.53241.53758.app",
+      "sha256": "a3bb0bd06de02ee7b4c410ddbc64f78829e5d9b389db3cfba8503f619e211911"
+    },
+    {
+      "app_id": "ea130081-c669-460f-a5f4-5dde14f03131",
+      "name": "Statistical Accounts",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Statistical Accounts_28.4.53241.53758.app",
+      "sha256": "a3af07e949733861b0dbfb8bcff6e7edcd25cf70bb88d222494813113d4079d2"
+    },
+    {
+      "app_id": "ec255f57-31d0-4ca2-b751-f2fa7c745abb",
+      "name": "Shopify Connector",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Shopify Connector_28.4.53241.53758.app",
+      "sha256": "8b7e8975088059f325698c63c55623fb20c4cbcd12a3d4217df819ad0dab860d"
+    },
+    {
+      "app_id": "ec6b3b0e-f983-408b-8476-bafb4368ecbc",
+      "name": "E-Document Connector - Microsoft 365",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Connector - Microsoft 365_28.4.53241.53758.app",
+      "sha256": "3cd6602538fc13809a613758d4c1099bd69487b1e191421434d53e2b9b4a80e5"
+    },
+    {
+      "app_id": "f19ff748-0eb7-45e0-bac1-a79ff422c4bc",
+      "name": "Tests-DotNet-Internal",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-DotNet-Internal_28.4.53241.53758.app",
+      "sha256": "27b8d615e96c4c334f0146552e88687c067dfe1e8539fcd8316a09421d82b26e"
+    },
+    {
+      "app_id": "f1c6dae4-c092-429f-845c-00657fa4d293",
+      "name": "Expense Agent (Preview) (DK)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Expense Agent (Preview) (DK)_28.4.53241.53758.app",
+      "sha256": "240120714cc6a375a5ba7d30ed9c327c1458110d89691b5821053ce897dfd4b9"
+    },
+    {
+      "app_id": "f1ede36c-2f5f-47f1-ba20-258b509c0238",
+      "name": "Agent Samples Tests",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Agent Samples Tests_28.4.53241.53758.app",
+      "sha256": "867a69e8a47eb1ef7ce8a299f6668f51d44a9a719f66bb73c1ebbf535bb9f78d"
+    },
+    {
+      "app_id": "f2d0130c-4b0e-437a-bcfd-0dc9f84ac961",
+      "name": "AI Development Toolkit",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_AI Development Toolkit_28.4.53241.53758.app",
+      "sha256": "5a2f2d73959918f45198d4626dac43f722ffdbc637e36ee49b0e67b1f181658c"
+    },
+    {
+      "app_id": "f3552374-a1f2-4356-848e-196002525837",
+      "name": "Business Foundation",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Business Foundation_28.4.53241.53758.app",
+      "sha256": "333e72af68bbeaac035dc41befab7f476461a1e5d3e9d1e5bcbabbfee2b680b2"
+    },
+    {
+      "app_id": "f35c56a6-7c5f-4dbe-89c4-fef5145d00f4",
+      "name": "E-Document Connector - Avalara",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Connector - Avalara_28.4.53241.53758.app",
+      "sha256": "39f1f2ea02b91d3b42c6b33dd6178f450693f73dd9b634ed6192702721a4792e"
+    },
+    {
+      "app_id": "f3e4e6f8-2ba7-4202-834d-141ed9b89192",
+      "name": "E-Document Core Demo Data (DK)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Core Demo Data (DK)_28.4.53241.53758.app",
+      "sha256": "074d7d3e219512259e806efee7b26d3a5d1bc660271b1f1d4f8066455ee1643c"
+    },
+    {
+      "app_id": "f4a198ad-cd8c-44bb-aff1-814e0e28ab79",
+      "name": "E-Document Connector - Logiq",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_E-Document Connector - Logiq_28.4.53241.53758.app",
+      "sha256": "b64ac4fba9aae90661913309cddbae95ee591f0043b55ccd1b2bbac179137a11"
+    },
+    {
+      "app_id": "f4e3d2c1-b0a9-4867-8765-432109876543",
+      "name": "Business Central 14 Historical Data",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Business Central 14 Historical Data_28.4.53241.53758.app",
+      "sha256": "96ad3082d40e6f25b157c09a294c06a4aaac07321366ed9d14edcb6949ae051d"
+    },
+    {
+      "app_id": "f78952ee-aed3-43bb-896e-6598f98a3a35",
+      "name": "AI Development Toolkit - Design",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_AI Development Toolkit - Design_28.4.53241.53758.app",
+      "sha256": "1ec967b778f28c4e056bd379c9481984e3ac5ebe03b814843b4cd48fcb29d42e"
+    },
+    {
+      "app_id": "f8555f70-8cfe-46a2-b961-444c8af4cf4f",
+      "name": "Finnish language (Finland)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Finnish language (Finland)_28.4.53241.53758.app",
+      "sha256": "2ca549b530864cdc56eb49eaf9258b036993ae44e1759cac4fdcb5a1daf24941"
+    },
+    {
+      "app_id": "fa3e2564-a39e-417f-9be6-c0dbe3d94069",
+      "name": "Tests-ERM",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-ERM_28.4.53241.53758.app",
+      "sha256": "9d21480c91b3a333b67fa808610903329828aede25ed52aac144f171a7e0e16d"
+    },
+    {
+      "app_id": "fbb56a54-4f3b-4d2f-9330-ed8921ec4ec7",
+      "name": "_Exclude_SyncBaseApp_",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft__Exclude_SyncBaseApp__28.4.53241.53758.app",
+      "sha256": "a6774bb4cad6a36535a838c574c9a3461fc1b325c55610b12fd9df3240be565f"
+    },
+    {
+      "app_id": "fbc91b81-1986-420f-9dd4-c41b381364ab",
+      "name": "Dutch language (Belgium)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Dutch language (Belgium)_28.4.53241.53758.app",
+      "sha256": "2065d7ac1b2da5219913ecae9483fb338e884d083b6e892cb11d93e9ce0b975d"
+    },
+    {
+      "app_id": "fdddc5f1-3294-485f-aed1-0b798b6edd69",
+      "name": "Tests-Prepayment",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-Prepayment_28.4.53241.53758.app",
+      "sha256": "0747b1c7bd6a9a73b91581d8bad2e086ba2362891b328054d9dfb01d5627c324"
+    },
+    {
+      "app_id": "fe2381dc-81ce-4d36-9107-6aae586a6720",
+      "name": "English language (Canada)",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_English language (Canada)_28.4.53241.53758.app",
+      "sha256": "62a7b19f6ee3cc8e1a33eb40190eb25415bfd552c70e76c4d2ac08d2485e0859"
+    },
+    {
+      "app_id": "fed2a629-3c57-4250-b2b7-f3c7a9c53cd5",
+      "name": "SAF-T Modification DK",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_SAF-T Modification DK_28.4.53241.53758.app",
+      "sha256": "530cfcad7bb2c64a3a8ad76839cdf230b3107669c6e7db8e693aa9af0bb8adb1"
+    },
+    {
+      "app_id": "ff3a51e8-948c-42f8-9ff6-65128effe9d0",
+      "name": "Tests-SINGLESERVER-Internal",
+      "publisher": "Microsoft",
+      "version": "28.4.53241.53758",
+      "file": "Microsoft_Tests-SINGLESERVER-Internal_28.4.53241.53758.app",
+      "sha256": "f5f56419270c06da45206be73dc7b979f06e0a153e9fab60cfda626fd080db05"
+    }
+  ]
+}
