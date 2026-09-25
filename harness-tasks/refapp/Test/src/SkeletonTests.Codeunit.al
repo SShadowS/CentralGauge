@@ -1,6 +1,7 @@
 codeunit 80000 "CGR Skeleton Tests"
 {
     Subtype = Test;
+    TestPermissions = Disabled;
 
     var
         Assert: Codeunit "Library Assert";
