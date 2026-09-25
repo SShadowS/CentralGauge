@@ -350,3 +350,17 @@ Deno.test("preprocessor conditionals in verdict sources are a violation", async 
     "Core/src/PP.Codeunit.al: preprocessor conditional",
   );
 });
+
+Deno.test("stripAlNoise: comments and strings become same-length whitespace, never glue tokens", async () => {
+  const src =
+    `codeunit/* c */80013 "Hidden"\n{\n}\ncodeunit/*t*/80022 'x'\n{\n    Subtype = Test;\n\n    [Test]\n    procedure P()\n    begin\n    end;\n}\n`;
+  assertEquals(stripAlNoise(src).length, src.length);
+  assertEquals(stripAlNoise("a/*x\ny*/b").split("\n").length, 2);
+  const d = await tmp();
+  await write(d, "glued.al", src);
+  assertEquals((await alObjects(d)).map((o) => o.id), [80013, 80022]);
+  assertEquals(
+    (await testCodeunits(d)).map((t) => [t.codeunit, t.procedures]),
+    [[80022, ["P"]]],
+  );
+});

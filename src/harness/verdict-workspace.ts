@@ -226,44 +226,47 @@ export async function buildVerdictWorkspace(
 }
 
 /**
- * Remove comments and string literals (quoted identifiers kept), keeping
- * newlines so line-based declaration scanning still works.
+ * Blank comments and string literals (quoted identifiers kept) with
+ * same-length whitespace, newlines kept.
  */
 export function stripAlNoise(src: string): string {
+  const n = src.length;
   let out = "";
   let i = 0;
-  const n = src.length;
+  // Comments and string literals become whitespace of the same length
+  // (newlines kept): nothing is deleted, so "codeunit/* c */80013" still
+  // separates its tokens and offsets and line numbers stay put.
+  const blank = (to: number) => {
+    out += src.slice(i, to).replace(/[^\n]/g, " ");
+    i = to;
+  };
   while (i < n) {
     const c = src[i]!;
     const d = src[i + 1];
     if (c === "/" && d === "/") {
-      while (i < n && src[i] !== "\n") i++;
+      const end = src.indexOf("\n", i);
+      blank(end === -1 ? n : end);
     } else if (c === "/" && d === "*") {
-      i += 2;
-      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) {
-        if (src[i] === "\n") out += "\n";
-        i++;
-      }
-      i += 2;
+      const end = src.indexOf("*/", i + 2);
+      blank(end === -1 ? n : end + 2);
     } else if (c === "'") {
-      i++;
-      while (i < n) {
-        if (src[i] === "'" && src[i + 1] === "'") i += 2;
-        else if (src[i] === "'") {
-          i++;
+      // AL string literals never span lines: an unterminated quote cannot
+      // swallow the next declaration.
+      let j = i + 1;
+      while (j < n && src[j] !== "\n") {
+        if (src[j] === "'" && src[j + 1] === "'") j += 2;
+        else if (src[j] === "'") {
+          j++;
           break;
-        } else if (src[i] === "\n") {
-          // AL string literals never span lines: an unterminated quote
-          // cannot swallow the next declaration.
-          break;
-        } else i++;
+        } else j++;
       }
-      out += " ";
+      blank(j);
     } else if (c === '"') {
-      out += c;
-      i++;
-      while (i < n && src[i] !== '"' && src[i] !== "\n") out += src[i++];
-      if (src[i] === '"') out += src[i++];
+      let j = i + 1;
+      while (j < n && src[j] !== '"' && src[j] !== "\n") j++;
+      if (src[j] === '"') j++;
+      out += src.slice(i, j);
+      i = j;
     } else {
       out += c;
       i++;
