@@ -220,6 +220,13 @@ export function parsePiStream(
   let reported: number | null = 0;
   let last: Line<R> | undefined;
   let firstRequestLine: number | null = null;
+  // An assistant request that never ended: its usage (and tool calls) may be missing.
+  let openRequest: number | null = null;
+  const unclosed = (at: number) => {
+    const why = `line ${at}: assistant message without message_end`;
+    streamProblems.push(why);
+    costGaps.push(why);
+  };
   let requestId: string | null = null;
   let model: string | null = null;
   let systemSkills: string | null = null;
@@ -234,7 +241,10 @@ export function parsePiStream(
       systemSkills = str(obj(m["sections"])["skills"]) ?? "";
     } else if (t === "message_start" && m["role"] === "assistant") {
       firstRequestLine ??= line;
+      if (openRequest !== null) unclosed(openRequest);
+      openRequest = line;
     } else if (t === "message_end" && m["role"] === "assistant") {
+      openRequest = null;
       last = l;
       model = str(m["model"]);
       requestId = str(m["responseId"]);
@@ -333,8 +343,12 @@ export function parsePiStream(
       }));
     } else if (t === "auto_retry_start") {
       trace.push(ev({ type: "retry", request_id: requestId, model }));
+    } else if (t === "agent_settled" && openRequest !== null) {
+      unclosed(openRequest);
+      openRequest = null;
     }
   }
+  if (openRequest !== null) unclosed(openRequest);
   for (const id of [...outcomes.keys()].sort()) {
     if (!started.has(id)) {
       streamProblems.push(`tool_execution_end for unknown ${id}`);
@@ -463,10 +477,12 @@ export function parsePiStream(
       cost_usd: est.cost_usd,
       cost_source: est.cost_usd !== null ? "estimated" : null,
       pricing_snapshot: est.cost_usd !== null ? est.pricing_snapshot : null,
-      // A gap means pi may have billed requests this sum does not cover.
-      reported_cost_usd: last === undefined || gaps.length > 0
-        ? null
-        : reported,
+      // pi's own sum only beside a complete estimate: a gap or any unpriceable
+      // request means pi may have billed requests this sum does not cover.
+      reported_cost_usd:
+        last === undefined || est.cost_usd === null || est.missing.length > 0
+          ? null
+          : reported,
       per_model: est.per_model,
       turns: settled ? of("turn_end").length : null,
       compactions: null,
