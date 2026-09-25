@@ -52,6 +52,28 @@ Deno.test("incompleteTelemetry: declared nulls and empty lists", () => {
   );
 });
 
+Deno.test("incompleteTelemetry flags per_model only when the run declares nested requests", () => {
+  const withNested = (nested: string[]) => ({
+    ...telemetry(1),
+    per_model: [{
+      model: "anthropic/claude-sonnet-5",
+      requests: null,
+      tokens_in_uncached: 1,
+      tokens_cache_read: 0,
+      tokens_cache_write: 0,
+      tokens_out: 1,
+      tokens_reasoning: null,
+      cost_usd: 1,
+    }],
+    raw_usage: { capabilities: { nested } },
+  });
+  assertEquals(incompleteTelemetry(["per_model"], withNested([])), []);
+  assertEquals(
+    incompleteTelemetry(["per_model"], withNested(["per_model.requests"])),
+    ["per_model"],
+  );
+});
+
 Deno.test("writeTrace: one versioned JSON line per event", async () => {
   const p = join(await Deno.realPath(await Deno.makeTempDir()), "trace.jsonl");
   const n = await writeTrace(p, [{

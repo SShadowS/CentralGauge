@@ -15,7 +15,8 @@ import type { ModelTokens } from "../pricing.ts";
 import type { Telemetry, Termination } from "../records.ts";
 import type { TraceEvent } from "../trace.ts";
 import { ConfigurationError } from "../../errors.ts";
-import { requestedComponents } from "../adapter.ts";
+import { incompleteTelemetry, requestedComponents } from "../adapter.ts";
+import { RULES_VERSION } from "../classify.ts";
 import { estimateCost } from "../pricing.ts";
 import { writeTrace } from "../trace.ts";
 import type { J } from "./jsonl.ts";
@@ -52,6 +53,27 @@ const req = (x: J, k: string, problems: string[]): number => {
 /** A JSON round trip: the value is JSON by construction, whatever the log held. */
 const toJson = (v: unknown): Telemetry["raw_usage"] =>
   JSON.parse(JSON.stringify(v));
+
+const DECLARED: (keyof Telemetry)[] = [
+  "harness_version",
+  "cost_usd",
+  "reported_cost_usd",
+  "per_model",
+  "turns",
+  "wall_ms",
+  "exit_code",
+  "stop_reason",
+];
+
+/** Per-run provenance persisted in raw_usage.capabilities; the report reads it, never the installed adapter. */
+export const CLAUDE_CAPABILITIES = {
+  v: 1,
+  parser: "claude-code-trace@2",
+  rules: `rules@${RULES_VERSION}`,
+  telemetry: DECLARED,
+  nested: ["per_model.requests"],
+  trace_types: ["tool_call", "model_request", "subagent_spawn", "skill_invoke"],
+} as const;
 
 export function parseClaudeStream(
   text: string,
@@ -120,6 +142,10 @@ export function parseClaudeStream(
   const built = claudeTrace(lines, file, denied);
   streamProblems.push(...built.problems, ...built.structural);
   const trace = built.events;
+  // Three notions, never merged (M2-05): capture, trace and per-metric completeness.
+  const captureComplete = result !== undefined && nonJson.count === 0;
+  const traceComplete = captureComplete && built.structural.length === 0;
+  const requestsKnown = captureComplete && built.unidentified === 0;
 
   // TTL splits: assistant messages (deduplicated by id) plus sub-agent
   // tool_use_result usage, per model. A split that is absent leaves the sum
@@ -183,7 +209,7 @@ export function parseClaudeStream(
     }
     return {
       model,
-      requests: null,
+      requests: requestsKnown ? (built.requests.get(model) ?? 0) : null,
       input: req(x, "inputTokens", problems),
       cache_read: req(x, "cacheReadInputTokens", problems),
       cache_write_5m: exact ? s.m5 : 0,
@@ -279,33 +305,61 @@ export function parseClaudeStream(
     c.startsWith("plugin:") || c.startsWith("lsp:") ||
     c.startsWith("toolchain:")
   );
+  const telemetry: Telemetry = {
+    harness_version: version,
+    cost_usd: est?.cost_usd ?? null,
+    cost_source: est?.cost_usd != null ? "estimated" : null,
+    pricing_snapshot: est?.cost_usd != null ? est.pricing_snapshot : null,
+    reported_cost_usd: typeof result?.total_cost_usd === "number"
+      ? result.total_cost_usd
+      : null,
+    per_model: est?.per_model ?? [],
+    turns: typeof result?.num_turns === "number" ? result.num_turns : null,
+    compactions: null,
+    wall_ms: typeof result?.duration_ms === "number"
+      ? result.duration_ms
+      : null,
+    exit_code: input.exitCode,
+    stop_reason: stop,
+    refusal_detected: result ? stop === "refusal" : null,
+    raw_usage: null,
+  };
+  const noResult =
+    "no result record (the run was killed or crashed before its final record)";
+  const why = (k: string) =>
+    !result
+      ? noResult
+      : k === "cost_usd"
+      ? (est?.missing.join("; ") || "cost not computable")
+      : nonJson.count > 0
+      ? nonJsonReason(nonJson)
+      : `${k} not reported by the result record`;
+  const reasons: Record<string, string> = {};
+  for (const k of incompleteTelemetry(DECLARED, telemetry)) {
+    if (k !== "per_model" || telemetry.per_model.length === 0) {
+      reasons[k] = why(k);
+    }
+  }
+  for (const m of telemetry.per_model) {
+    if (m.requests === null) {
+      reasons[`per_model[${m.model}].requests`] = !captureComplete
+        ? (result ? nonJsonReason(nonJson) : noResult)
+        : `${built.unidentified} assistant record(s) without a message id or model`;
+    }
+  }
+  telemetry.raw_usage = toJson({
+    usage: result?.usage ?? null,
+    modelUsage: result?.modelUsage ?? null,
+    partial,
+    missing: est?.missing ??
+      (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
+    stream_problems: streamProblems,
+    capabilities: CLAUDE_CAPABILITIES,
+    trace_complete: traceComplete,
+    incomplete_reasons: reasons,
+  });
   return {
-    telemetry: {
-      harness_version: version,
-      cost_usd: est?.cost_usd ?? null,
-      cost_source: est?.cost_usd != null ? "estimated" : null,
-      pricing_snapshot: est?.cost_usd != null ? est.pricing_snapshot : null,
-      reported_cost_usd: typeof result?.total_cost_usd === "number"
-        ? result.total_cost_usd
-        : null,
-      per_model: est?.per_model ?? [],
-      turns: typeof result?.num_turns === "number" ? result.num_turns : null,
-      compactions: null,
-      wall_ms: typeof result?.duration_ms === "number"
-        ? result.duration_ms
-        : null,
-      exit_code: input.exitCode,
-      stop_reason: stop,
-      refusal_detected: result ? stop === "refusal" : null,
-      raw_usage: toJson({
-        usage: result?.usage ?? null,
-        modelUsage: result?.modelUsage ?? null,
-        partial,
-        missing: est?.missing ??
-          (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
-        stream_problems: streamProblems,
-      }),
-    },
+    telemetry,
     observed: {
       harness_version: version,
       models: result ? models.map(slugOf) : null,
@@ -325,16 +379,7 @@ export function parseClaudeStream(
 
 export const claudeCodeAdapter: HarnessAdapter = {
   harness: "claude-code",
-  declared: [
-    "harness_version",
-    "cost_usd",
-    "reported_cost_usd",
-    "per_model",
-    "turns",
-    "wall_ms",
-    "exit_code",
-    "stop_reason",
-  ],
+  declared: DECLARED,
   secretFiles: ["claude-oauth-token"],
   credentialBearing: true,
   enforcesBudget: true,
