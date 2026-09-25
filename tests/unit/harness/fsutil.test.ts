@@ -12,9 +12,11 @@ import {
   exists,
   FREEZE_VIOLATIONS_FILE,
   freezeWorkspace,
+  MAX_VIOLATIONS,
   redactBytes,
   redactTree,
   safeCopyTree,
+  scanReparsePoints,
   sweepWorkspaceTemp,
   validatedDest,
   validatedDir,
@@ -240,6 +242,7 @@ Deno.test("safeCopyTree: limits on files, bytes, dirs, depth and a growing file"
     maxBytes: 1_000_000,
     maxDirs: 100,
     maxDepth: 100,
+    maxEntries: 1000,
   };
   const out = async () => join(await tmp(), "out");
   await assertRejects(
@@ -360,7 +363,13 @@ Deno.test("freezeWorkspace: never writes the live tree; stores a redacted copy; 
   const big = await freeze(results, a, { maxScanBytes: 4 });
   assertStringIncludes(big.violations.join("\n"), "larger than");
   const over = await freeze(results, a, {
-    limits: { maxFiles: 0, maxBytes: 0, maxDirs: 0, maxDepth: 0 },
+    limits: {
+      maxFiles: 0,
+      maxBytes: 0,
+      maxDirs: 0,
+      maxDepth: 0,
+      maxEntries: 0,
+    },
   });
   assertStringIncludes(over.violations[0]!, "size limit");
 });
@@ -406,6 +415,7 @@ Deno.test("freezeWorkspace: the publish copy accepts every tree the freeze accep
     maxBytes: 1_000_000,
     maxDirs: 100,
     maxDepth: 30,
+    maxEntries: 1000,
   };
   const f = await freeze(results, ws, { limits });
   assertEquals(f.violations, []);
@@ -438,4 +448,154 @@ Deno.test("freezeWorkspace: thrown errors are redacted", async () => {
   assert(!err.message.includes(TOKEN), err.message);
   assert(!JSON.stringify([err.errors, err.context]).includes(TOKEN));
   assertStringIncludes(err.message, "[REDACTED:backend-token]");
+});
+
+Deno.test("safeCopyTree: every listed entry counts toward maxEntries (dirs, links, skipped)", async () => {
+  const limits = {
+    maxFiles: 100,
+    maxBytes: 1_000_000,
+    maxDirs: 100,
+    maxDepth: 100,
+    maxEntries: 4,
+  };
+  const dirs = await tmp();
+  for (let i = 0; i < 5; i++) await Deno.mkdir(join(dirs, `d${i}`));
+  await assertRejects(
+    async () => safeCopyTree(dirs, join(await tmp(), "out"), { limits }),
+    CopyLimitError,
+    "entries",
+  );
+  const links = await tmp();
+  const target = await tmp();
+  for (let i = 0; i < 5; i++) await linkDir(target, join(links, `l${i}`));
+  await assertRejects(
+    async () => safeCopyTree(links, join(await tmp(), "out"), { limits }),
+    CopyLimitError,
+    "entries",
+  );
+  const skipped = await tmp();
+  await writeTree(
+    skipped,
+    Object.fromEntries([0, 1, 2, 3, 4].map((i) => [`x${i}.app`, "b"])),
+  );
+  await assertRejects(
+    async () =>
+      safeCopyTree(skipped, join(await tmp(), "out"), {
+        limits,
+        skip: isTaskBuildArtifact,
+      }),
+    CopyLimitError,
+    "entries",
+  );
+});
+
+Deno.test("safeCopyTree: case collisions are over-approximated (NFC/NFD, lower and upper)", async () => {
+  const src = await tmp();
+  await writeTree(src, { "b.al": "x" });
+  const names = [
+    "a.al",
+    "A.al",
+    "straße",
+    "STRASSE",
+    "σ",
+    "ς",
+    "\u00e9.al",
+    "e\u0301.al",
+    "b.al",
+  ];
+  const r = await safeCopyTree(src, join(await tmp(), "out"), {
+    listDir: (d) => Promise.resolve(d === src ? names : []),
+  });
+  assertEquals(r.ambiguous.sort(), names.filter((n) => n !== "b.al").sort());
+  assertEquals(r.files, 1);
+});
+
+Deno.test("freezeWorkspace: violations are capped", async () => {
+  const results = await tmp();
+  const ws = await tmp();
+  const target = await tmp();
+  for (let i = 0; i < MAX_VIOLATIONS + 5; i++) {
+    await linkDir(target, join(ws, `l${String(i).padStart(3, "0")}`));
+  }
+  const f = await freeze(results, ws);
+  assertEquals(f.violations.length, MAX_VIOLATIONS + 1);
+  assertStringIncludes(f.violations.at(-1)!, "and 5 more");
+  const marker = await Deno.readTextFile(
+    join(results, f.stored_path, FREEZE_VIOLATIONS_FILE),
+  );
+  assertStringIncludes(marker, "and 5 more");
+});
+
+Deno.test("freezeWorkspace: the publish copy is bounded and still accepts a full tree", async () => {
+  // maxFiles files plus a link: the marker makes maxFiles + 1 in the private copy.
+  const results = await tmp();
+  const ws = await tmp();
+  await writeTree(ws, { "a.al": "x", "b.al": "y" });
+  await linkDir(await tmp(), join(ws, "link"));
+  const limits = {
+    maxFiles: 2,
+    maxBytes: 1_000_000,
+    maxDirs: 10,
+    maxDepth: 10,
+    maxEntries: 10,
+  };
+  const f = await freeze(results, ws, { limits });
+  assert(await exists(join(results, f.stored_path, FREEZE_VIOLATIONS_FILE)));
+  // Redaction growth: a short secret with a long name, content exactly at maxBytes.
+  const s = {
+    name: "a-rather-long-secret-name-for-growth",
+    value: "abcdefghijklmnop",
+  };
+  const ws2 = await tmp();
+  await writeTree(ws2, { "a.al": s.value.repeat(2) });
+  const f2 = await freeze(results, ws2, {
+    secrets: [s],
+    limits: { ...limits, maxBytes: 32 },
+  });
+  assertEquals(f2.redactions, 2);
+  assertEquals(f2.violations, []);
+});
+
+Deno.test({
+  name:
+    "scanReparsePoints: entries and ancestors by FILE_ATTRIBUTE_REPARSE_POINT (Windows)",
+  ignore: !windows,
+  fn: async () => {
+    const target = await tmp();
+    await writeTree(target, { "inner/f.txt": "x" });
+    const root = await tmp();
+    await writeTree(root, { "Core/a.al": "x" });
+    await linkDir(target, join(root, "Core", "j"));
+    let fileLink = false;
+    try {
+      await Deno.symlink(join(target, "inner", "f.txt"), join(root, "fl.txt"), {
+        type: "file",
+      });
+      fileLink = true;
+    } catch { /* needs Developer Mode or admin */ }
+    const s = await scanReparsePoints(root);
+    assertEquals(s.ancestors, []);
+    assertEquals(
+      s.entries.sort(),
+      fileLink ? ["Core/j", "fl.txt"] : ["Core/j"],
+    );
+    const parent = await tmp();
+    await linkDir(target, join(parent, "hop"));
+    const under = await scanReparsePoints(join(parent, "hop", "inner"));
+    assertEquals(under.ancestors.length, 1);
+    assertStringIncludes(under.ancestors[0]!, "hop");
+  },
+});
+
+Deno.test("safeCopyTree: entries in the refuse set are refused whatever lstat says", async () => {
+  // The attribute scan's result reaches the copy through `refuse`: a
+  // non-redirecting reparse point looks like a plain file to lstat and realPath.
+  const src = await tmp();
+  await writeTree(src, { "Core/plain.al": "x", "Core/ok.al": "y" });
+  const dst = join(await tmp(), "out");
+  const r = await safeCopyTree(src, dst, {
+    refuse: new Set(["Core/plain.al"]),
+  });
+  assertEquals([r.refused, r.files], [["Core/plain.al"], 1]);
+  assert(!await exists(join(dst, "Core", "plain.al")));
 });

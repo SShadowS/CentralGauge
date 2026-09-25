@@ -8,6 +8,9 @@
  * - ancestors: identity recorded on entry and re-checked before each open;
  * - files: handle identity equal to the pre-open lstat; bytes counted;
  * - destinations: new or empty, created under a validated parent;
+ * - reparse points: one FILE_ATTRIBUTE_REPARSE_POINT scan per freeze
+ *   (Windows), entries and ancestors, whatever the tag;
+ * - counts: every listed name counts toward maxEntries; violations capped;
  * - redaction: byte-wise on a private copy, never on the live tree.
  */
 
@@ -28,6 +31,8 @@ export interface CopyLimits {
   maxBytes: number;
   maxDirs: number;
   maxDepth: number;
+  /** Every listed name: files, directories, links, skipped and refused entries. */
+  maxEntries: number;
 }
 
 /** ponytail: fixed limits; make them config when a real task needs more. */
@@ -36,6 +41,7 @@ export const DEFAULT_COPY_LIMITS: CopyLimits = {
   maxBytes: 512 * 1024 * 1024,
   maxDirs: 5_000,
   maxDepth: 24,
+  maxEntries: 25_000,
 };
 
 export class CopyLimitError extends ValidationError {
@@ -117,6 +123,31 @@ export interface CopyOptions {
   beforeOpen?: (rel: string) => Promise<void>;
   afterList?: (rel: string) => Promise<void>;
   listDir?: (dirAbs: string) => Promise<string[]>;
+  /** Relative paths refused whatever lstat says (the reparse attribute scan). */
+  refuse?: ReadonlySet<string>;
+}
+
+/**
+ * Sibling names that could alias on some filesystem: an over-approximation.
+ * Two names collide when their NFC or NFD forms match under toLowerCase() or
+ * toUpperCase() ("straße"/"STRASSE", final and medial sigma). Over-refusing
+ * is acceptable; missing a collision is not.
+ */
+function collidingNames(names: string[]): Set<string> {
+  const byKey = new Map<string, Set<string>>();
+  for (const n of names) {
+    for (const f of ["NFC", "NFD"]) {
+      const m = n.normalize(f);
+      for (const k of [`l:${m.toLowerCase()}`, `u:${m.toUpperCase()}`]) {
+        byKey.set(k, (byKey.get(k) ?? new Set()).add(n));
+      }
+    }
+  }
+  const out = new Set<string>();
+  for (const group of byKey.values()) {
+    if (group.size > 1) { for (const n of group) out.add(n); }
+  }
+  return out;
 }
 
 interface DirId {
@@ -174,6 +205,7 @@ export async function safeCopyTree(
     ambiguous: [],
   };
   const buf = new Uint8Array(64 * 1024);
+  let entries = 0;
 
   const walk = async (
     dirAbs: string,
@@ -185,15 +217,22 @@ export async function safeCopyTree(
       throw new CopyLimitError(`${root}: deeper than ${limits.maxDepth}`);
     }
     const names = await list(dirAbs);
-    await opts.afterList?.(rel);
-    const byLower = new Map<string, number>();
-    for (const n of names) {
-      byLower.set(n.toLowerCase(), (byLower.get(n.toLowerCase()) ?? 0) + 1);
+    entries += names.length;
+    if (entries > limits.maxEntries) {
+      throw new CopyLimitError(
+        `${root}: more than ${limits.maxEntries} entries`,
+      );
     }
+    await opts.afterList?.(rel);
+    const colliding = collidingNames(names);
     for (const name of [...names].sort()) {
       const r1 = rel ? `${rel}/${name}` : name;
-      if (byLower.get(name.toLowerCase())! > 1) {
+      if (colliding.has(name)) {
         r.ambiguous.push(r1);
+        continue;
+      }
+      if (opts.refuse?.has(r1)) {
+        r.refused.push(r1);
         continue;
       }
       const p = join(dirAbs, name);
@@ -454,13 +493,117 @@ export async function freezeWorkspace(i: FreezeInput): Promise<Frozen> {
   }
 }
 
-/** Scratch is a harness-made copy already bounded by the first copy. */
-const PUBLISH_LIMITS: CopyLimits = {
-  maxFiles: Infinity,
-  maxBytes: Infinity,
-  maxDirs: Infinity,
-  maxDepth: Infinity,
-};
+/** Upper bound for the violations marker (MAX_VIOLATIONS lines of at most MAX_VIOLATION_CHARS). */
+const MARKER_OVERHEAD_BYTES = 1024 * 1024;
+
+/**
+ * Limits for the publish copy of the private scratch: the freeze limits plus
+ * what the harness itself adds (the marker file, and redaction markers that
+ * can be longer than the secret they replace). Bounded, never Infinity.
+ */
+function publishLimits(
+  limits: CopyLimits,
+  secrets: SecretValue[],
+  redactions: number,
+): CopyLimits {
+  const enc = new TextEncoder();
+  const growth = Math.max(
+    0,
+    ...secrets.map((x) => {
+      const mark = `[REDACTED:${x.name}]`;
+      return Math.max(
+        enc.encode(mark).length - enc.encode(x.value).length,
+        2 * (mark.length - x.value.length),
+      );
+    }),
+  );
+  return {
+    maxFiles: limits.maxFiles + 1,
+    maxBytes: limits.maxBytes + redactions * growth + MARKER_OVERHEAD_BYTES,
+    maxDirs: limits.maxDirs,
+    maxDepth: limits.maxDepth,
+    maxEntries: limits.maxEntries + 1,
+  };
+}
+
+/** Violations kept in the marker and the returned list; the rest are counted. */
+export const MAX_VIOLATIONS = 100;
+const MAX_VIOLATION_CHARS = 1000;
+
+/** Redact first, then truncate: truncating first could leave half a secret. */
+function capViolations(violations: string[], secrets: SecretValue[]): string[] {
+  const out = violations.slice(0, MAX_VIOLATIONS).map((v) =>
+    redactString(v, secrets).slice(0, MAX_VIOLATION_CHARS)
+  );
+  const more = violations.length - MAX_VIOLATIONS;
+  if (more > 0) out.push(`and ${more} more`);
+  return out;
+}
+
+export interface ReparseScan {
+  /** Reparse points above or at the root (full paths). */
+  ancestors: string[];
+  /** Reparse points inside the root, relative with "/". */
+  entries: string[];
+}
+
+const REPARSE_SCAN_PS = `
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$item = Get-Item -LiteralPath $env:CG_SCAN_ROOT -Force
+$anc = @()
+$p = $item
+while ($p) {
+  if ($p.Attributes -band [IO.FileAttributes]::ReparsePoint) { $anc += $p.FullName }
+  $p = $p.Parent
+}
+$ents = @(Get-ChildItem -LiteralPath $item.FullName -Recurse -Force -Attributes ReparsePoint |
+  ForEach-Object { $_.FullName })
+@{ root = $item.FullName; ancestors = $anc; entries = $ents } | ConvertTo-Json -Compress
+`;
+
+/**
+ * One FILE_ATTRIBUTE_REPARSE_POINT scan of a tree and its ancestors (Windows).
+ * The attribute, not the tag, decides: non-redirecting tags that realPath
+ * resolves to themselves are caught here; isSymlink and realPath stay as the
+ * second layer. Any scan failure is an error (fail closed). Elsewhere symlinks
+ * are the only link kind and lstat catches them, so the scan is empty.
+ */
+export async function scanReparsePoints(root: string): Promise<ReparseScan> {
+  if (Deno.build.os !== "windows") return { ancestors: [], entries: [] };
+  const out = await new Deno.Command("pwsh", {
+    args: ["-NoProfile", "-NonInteractive", "-Command", REPARSE_SCAN_PS],
+    env: { CG_SCAN_ROOT: root },
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!out.success) {
+    throw new ValidationError(`reparse point scan failed: ${root}`, [
+      new TextDecoder().decode(out.stderr).trim(),
+    ]);
+  }
+  const j = JSON.parse(new TextDecoder().decode(out.stdout)) as {
+    root: string;
+    ancestors: string[] | string | null;
+    entries: string[] | string | null;
+  };
+  const list = (v: string[] | string | null) =>
+    ([] as string[]).concat(v ?? []);
+  const prefix = j.root.replace(/\\$/, "") + "\\";
+  return {
+    ancestors: list(j.ancestors),
+    entries: list(j.entries).map((e) => {
+      if (!e.startsWith(prefix)) {
+        throw new ValidationError(
+          `reparse scan returned a path outside ${root}`,
+          [e],
+        );
+      }
+      return e.slice(prefix.length).replaceAll("\\", "/");
+    }),
+  };
+}
 
 async function freezeInner(i: FreezeInput): Promise<Frozen> {
   const limits = i.limits ?? DEFAULT_COPY_LIMITS;
@@ -472,10 +615,19 @@ async function freezeInner(i: FreezeInput): Promise<Frozen> {
   const tmpDir = join(base, `.tmp-${crypto.randomUUID()}`);
   try {
     const violations: string[] = [];
+    const ws = await validatedDir(i.workspace);
+    const scan = await scanReparsePoints(ws);
+    if (scan.ancestors.length > 0) {
+      throw new ValidationError(
+        `reparse point at or above the workspace: ${scan.ancestors.join(", ")}`,
+        scan.ancestors,
+      );
+    }
     try {
-      const r = await safeCopyTree(i.workspace, scratch, {
+      const r = await safeCopyTree(ws, scratch, {
         skip: isTaskBuildArtifact,
         limits,
+        refuse: new Set(scan.entries),
       });
       violations.push(
         ...r.refused.map((p) => `link, reparse point or special file: ${p}`),
@@ -496,7 +648,7 @@ async function freezeInner(i: FreezeInput): Promise<Frozen> {
     violations.push(...await dropSecretNames(scratch, i.secrets));
     // Violations are built from untrusted names: redact them before they are
     // written, hashed or returned to a caller that may persist them.
-    const redacted = violations.map((v) => redactString(v, i.secrets));
+    const redacted = capViolations(violations, i.secrets);
     if (redacted.length > 0) {
       await Deno.writeTextFile(
         join(scratch, FREEZE_VIOLATIONS_FILE),
@@ -507,7 +659,9 @@ async function freezeInner(i: FreezeInput): Promise<Frozen> {
     const stored_path = `workspaces/${workspace_hash}`;
     // ponytail: exists-then-rename; the bench lock makes the runner the only writer.
     if (!await exists(join(base, workspace_hash))) {
-      await safeCopyTree(scratch, tmpDir, { limits: PUBLISH_LIMITS });
+      await safeCopyTree(scratch, tmpDir, {
+        limits: publishLimits(limits, i.secrets, red.count),
+      });
       await Deno.rename(tmpDir, join(base, workspace_hash));
     }
     return {
