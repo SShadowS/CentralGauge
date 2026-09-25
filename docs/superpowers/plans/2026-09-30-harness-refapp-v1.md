@@ -2999,7 +2999,9 @@ Add three fields to the vehicle, in the Reporting app:
 
 Both revenue fields are calculated fields (FlowFields), so they can be shown on lists.
 
-When the vehicle of a lease contract is changed (validating its "Vehicle No."), the schedule lines that are not invoiced yet move with the lease to the new vehicle; lines already invoiced stay with the vehicle they were invoiced on.
+Add a "Vehicle No." field (Code[20]) to the lease schedule line (`CGR Lease Schedule Line`, in the Leasing app): the vehicle the line's revenue belongs to. Schedule lines get the vehicle of their lease when the schedule is created.
+
+When the vehicle of a lease contract is changed (validating its "Vehicle No."), the schedule lines that are not invoiced yet move with the lease to the new vehicle at once; lines already invoiced stay with the vehicle they were invoiced on.
 ```
 
 - [ ] **Step 4: task.yml**: `kind: feature`, `touches: [Reporting, Leasing, Rental, Fleet]`, `coupling: [queries, internal]`, `refapp_version: refapp-v1-rc4`, p2p 80010 {PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged}, 80030 {LeaseRateUsesCoreInternal}; f2p codeunit 85300.
@@ -3016,8 +3018,9 @@ When the vehicle of a lease contract is changed (validating its "Vehicle No."), 
 | UninvoicedLinesFollowVehicleChange | HX4-G lease as E, invoice 10000; `Validate("Vehicle No.", 'HX4-H')`, `Modify(true)` | right after: G = 103.00, H = 0; invoice 20000: G 103.00, H 103.00; invoice 30000: G 103.00, H 206.00 |
 | RepeatedVehicleChangeFollowsLastVehicle | HX4-I lease as E, invoice 10000; change to HX4-J, then to HX4-K; invoice 20000 and 30000 | I = 103.00; J = 0; K = 206.00 |
 | RevenueSourcesStaySeparate | HX4-L: one posted rental (150.00) and one lease, line 10000 invoiced (103.00) | Rental Revenue 150.00; Lease Revenue 103.00 |
+| LineVehicleMovesAtValidation | HX4-M lease as E, invoice 10000; `Validate("Vehicle No.", 'HX4-N')`, `Modify(true)` | right after the validation, no further invoicing: line 10000 `"Vehicle No."` = HX4-M; lines 20000 and 30000 `"Vehicle No."` = HX4-N |
 
-Values: 2027-03-01 is a Monday; lease total 100 x 1.03 x 3 = 309.00. An implementation that assigns the line's vehicle at invoicing time instead of at validation is observably equivalent for every stated behavior; the oracle asserts revenue, never the private field design (review answer).
+Values: 2027-03-01 is a Monday; lease total 100 x 1.03 x 3 = 309.00. The prompt names the line's `"Vehicle No."` field and says uninvoiced lines move "at once", so assigning the vehicle only at invoicing time is not equivalent: `LineVehicleMovesAtValidation` asserts the named field right after validation (run 002, master 6b6b07db).
 
 - [ ] **Step 6: correct/**: a `"Vehicle No."` field on `"CGR Lease Schedule Line"` set in `CreateSchedule`; `OnValidate` of Lease Contract `"Vehicle No."` moves uninvoiced lines; Reporting `tableextension 70500 "CGR Vehicle Revenue" extends "CGR Vehicle"` with the three fields (`Sum` with `Invoiced = const(true)` and the date filter).
 
@@ -3025,9 +3028,9 @@ Values: 2027-03-01 is a Monday; lease total 100 x 1.03 x 3 = 309.00. An implemen
 
 | Naive | Change | Rows lost |
 | --- | --- | --- |
-| no-follow | line Vehicle No. set in `CreateSchedule`, no `OnValidate` | UninvoicedLinesFollowVehicleChange, RepeatedVehicleChangeFollowsLastVehicle |
-| all-lines | Lease Revenue without the Invoiced filter | LeaseRevenueCountsInvoicedLinesOnly, UninvoicedLinesFollowVehicleChange (H after validate) |
-| moves-invoiced | `OnValidate` moves every line | UninvoicedLinesFollowVehicleChange (G becomes 0), RepeatedVehicleChangeFollowsLastVehicle |
+| no-follow | line Vehicle No. set in `CreateSchedule`, no `OnValidate` | UninvoicedLinesFollowVehicleChange, RepeatedVehicleChangeFollowsLastVehicle, LineVehicleMovesAtValidation |
+| all-lines | Lease Revenue without the Invoiced filter | LeaseRevenueCountsInvoicedLinesOnly, UninvoicedLinesFollowVehicleChange (H after validate), RevenueSourcesStaySeparate (uninvoiced lines counted); passes LineVehicleMovesAtValidation |
+| moves-invoiced | `OnValidate` moves every line | UninvoicedLinesFollowVehicleChange (G becomes 0), RepeatedVehicleChangeFollowsLastVehicle, LineVehicleMovesAtValidation (line 10000 moved) |
 
 - [ ] **Step 8: Host compile all variants, audit (Steps 5, 7).**
 
@@ -3035,7 +3038,7 @@ Values: 2027-03-01 is a Monday; lease total 100 x 1.03 x 3 = 309.00. An implemen
 
 - [ ] **Step 10: `check` HX-001..HX-004, commit `feat(harness-tasks): refapp v1 slice D and HX-004 revenue per vehicle`, request gate M4-09 for HX-004 and HX-003.**
 
-**Acceptance:** `check` `[OK]` for HX-001..HX-004; latest HX-004 audit and the fresh HX-003 audit name the committed trees and end `VERDICT: clean`; oracle has the eight procedures of Step 5; `git diff <rc3 sha> -- harness-tasks/tasks/HX-003/oracle` is empty.
+**Acceptance:** `check` `[OK]` for HX-001..HX-004; latest HX-004 audit and the fresh HX-003 audit name the committed trees and end `VERDICT: clean`; oracle has the nine procedures of Step 5; `git diff <rc3 sha> -- harness-tasks/tasks/HX-003/oracle` is empty.
 
 ---
 
