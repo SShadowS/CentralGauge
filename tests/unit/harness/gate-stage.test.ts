@@ -5,10 +5,11 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import { join, relative } from "@std/path";
-import { layers } from "../../../scripts/harness/gate-core.ts";
+import { layers, objectIds } from "../../../scripts/harness/gate-core.ts";
 import {
   checkTask,
   exportSource,
+  GATE_TMP,
   stageWorkspace,
   testManifestIn,
 } from "../../../scripts/harness/gate-stage.ts";
@@ -451,4 +452,214 @@ Deno.test("drift against a revision: renames count, working tree ignored", async
       checkTask(await loadTask(dir), refapp, root, { rev: "no-such-rev" }),
     Error,
   );
+});
+
+// Run 002 review fixes.
+
+async function gitOut(cwd: string, ...args: string[]): Promise<string> {
+  const r = await new Deno.Command("git", {
+    args,
+    cwd,
+    stdout: "piped",
+    stderr: "null",
+  })
+    .output();
+  return new TextDecoder().decode(r.stdout);
+}
+
+Deno.test("exportSource writes blob bytes even with committed eol attributes", async () => {
+  const root = await tmp();
+  await writeTask(root, "HX-001", "# Bug\n");
+  await Deno.writeTextFile(
+    join(root, ".gitattributes"),
+    "*.al text eol=crlf\n",
+  );
+  await git(root, "init", "-q");
+  await commitAll(root);
+  const src = await exportSource(root, "HEAD", "HX-001", await tmp());
+  const blob = await gitOut(
+    root,
+    "cat-file",
+    "blob",
+    "HEAD:harness-tasks/refapp/Core/src/A.al",
+  );
+  assertEquals(
+    await Deno.readTextFile(join(src.refappDir, "Core/src/A.al")),
+    blob,
+  );
+  assert(!blob.includes("\r"));
+});
+
+Deno.test("exportSource refuses links, submodules and case-colliding paths", async () => {
+  for (
+    const [mode, path] of [
+      ["120000", "harness-tasks/refapp/Core/src/L.al"],
+      ["160000", "harness-tasks/refapp/Core/sub"],
+      ["100644", "harness-tasks/refapp/Core/src/a.al"],
+    ]
+  ) {
+    const root = await tmp();
+    await writeTask(root, "HX-001", "# Bug\n");
+    await git(root, "init", "-q");
+    await commitAll(root);
+    const sha = mode === "160000"
+      ? (await gitOut(root, "rev-parse", "HEAD")).trim()
+      : (await gitOut(
+        root,
+        "rev-parse",
+        "HEAD:harness-tasks/refapp/Core/src/A.al",
+      )).trim();
+    await git(
+      root,
+      "update-index",
+      "--add",
+      "--cacheinfo",
+      `${mode},${sha},${path}`,
+    );
+    await git(
+      root,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "-q",
+      "-m",
+      "y",
+    );
+    await assertRejects(
+      async () => exportSource(root, "HEAD", "HX-001", await tmp()),
+      Error,
+      mode === "100644" ? "case" : "link or submodule",
+    );
+  }
+});
+
+Deno.test("exportSource and stageWorkspace refuse output outside the gate tmp root", async () => {
+  const outside = await Deno.makeTempDir();
+  try {
+    await assertRejects(
+      () => exportSource(".", "HEAD", "HX-001", outside),
+      Error,
+      GATE_TMP,
+    );
+    const root = await tmp();
+    await writeRefapp(join(root, "refapp"));
+    await assertRejects(
+      () => stageWorkspace(join(root, "refapp"), [], join(outside, "o")),
+      Error,
+      GATE_TMP,
+    );
+  } finally {
+    await Deno.remove(outside, { recursive: true });
+  }
+});
+
+Deno.test("stageWorkspace refuses a zero-byte candidate file", async () => {
+  const root = await tmp();
+  const refapp = join(root, "refapp");
+  await writeRefapp(refapp);
+  const cand = join(root, "ws");
+  await write(cand, "Core/src/A.al", "");
+  await assertRejects(
+    () =>
+      stageWorkspace(
+        refapp,
+        [{ path: cand, mode: "candidate" }],
+        join(root, "o1"),
+      ),
+    Error,
+    "deletion",
+  );
+  await Deno.remove(cand, { recursive: true });
+  await write(cand, "Test/src/V.al", "");
+  await assertRejects(
+    () =>
+      stageWorkspace(
+        refapp,
+        [{ path: cand, mode: "candidate-tests" }],
+        join(root, "o2"),
+      ),
+    Error,
+    "deletion",
+  );
+});
+
+Deno.test("checkTask: oracle objects and idRanges stay in the task's own band", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-002", "# Bug\n");
+  let r = await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  );
+  assertEquals(r.problems, []);
+  await write(dir, "oracle/src/P.al", TEST_CU(85000, "Other"));
+  await write(
+    dir,
+    "oracle/app.json",
+    JSON.stringify({
+      id: "c6a1e000-0000-4000-8001-000000000002",
+      name: "CGR Oracle HX-002",
+      publisher: "CentralGauge",
+      idRanges: [{ from: 85000, to: 85199 }],
+      dependencies: [],
+    }),
+  );
+  r = await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  );
+  const all = r.problems.join("\n");
+  assertStringIncludes(all, "object id 85000 outside Oracle range 85100-85199");
+  assertStringIncludes(all, "oracle/app.json: idRanges outside 85100-85199");
+});
+
+Deno.test("objectIds: comments, strings and tight spacing", () => {
+  assertEquals(objectIds('/*x*/codeunit 90000 "X"\n{\n}\n'), [90000]);
+  assertEquals(objectIds('codeunit 80013"X"\n{\n}\n'), [80013]);
+  assertEquals(
+    objectIds('// codeunit 70001 "Y"\n/* codeunit 70002 "Z" */\n'),
+    [],
+  );
+});
+
+Deno.test("testManifestIn: every test codeunit of a file, comments ignored", async () => {
+  const root = await tmp();
+  await write(
+    root,
+    "Test/src/Two.al",
+    TEST_CU(80100, "One") +
+      'codeunit 80101 "U"\n{\n    Subtype = Test;\n    TestPermissions = Disabled;\n\n    // [Test]\n    // procedure Ghost()\n    [Test]\n    procedure Two()\n    begin\n    end;\n}\n',
+  );
+  assertEquals(await testManifestIn(root), [
+    { codeunit: 80100, procedures: ["One"] },
+    { codeunit: 80101, procedures: ["Two"] },
+  ]);
+});
+
+Deno.test("checkTask: per-codeunit rules, comment evasion and constant assertions", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "Uses the Second Oracle.\n");
+  await write(
+    dir,
+    "oracle/src/More.al",
+    "codeunit 85001 \"Second Oracle\"\n{\n    Subtype = Test;\n    // TestPermissions = Disabled;\n\n    [Test]\n    procedure A()\n    begin\n        Assert . IsTrue ( TRUE , 'x');\n        Assert.AreEqual(5, 5, 'x');\n        Assert.AreEqual('a', 'a', 'x');\n        Assert.AreEqual('a', 'b', 'x');\n    end;\n}\n",
+  );
+  const all = (await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  ))
+    .problems.join("\n");
+  assertStringIncludes(
+    all,
+    "oracle/src/More.al: codeunit 85001 without TestPermissions = Disabled",
+  );
+  assertStringIncludes(all, "hidden name Second Oracle");
+  const placeholders = all.split("\n").filter((p) =>
+    p.includes("placeholder assertion")
+  );
+  assertEquals(placeholders.length, 3, placeholders.join("; "));
 });

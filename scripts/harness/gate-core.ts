@@ -109,30 +109,92 @@ export function layers(
   }
 }
 
-const OBJECT_RE =
-  /^\s*(table|tableextension|page|pageextension|codeunit|report|reportextension|query|xmlport|enum|enumextension|permissionset|permissionsetextension)\s+(\d+)\s/gim;
-export function objectIds(al: string): number[] {
-  return [...al.matchAll(OBJECT_RE)].map((m) => Number(m[2]));
+/**
+ * AL source with comments blanked (line breaks kept) and, unless keepStrings,
+ * string literal contents removed, so parsers never match inside either.
+ */
+export function stripAl(al: string, keepStrings = false): string {
+  let out = "";
+  for (let i = 0; i < al.length;) {
+    const c = al[i]!;
+    if (c === "/" && al[i + 1] === "/") {
+      while (i < al.length && al[i] !== "\n") i++;
+      out += " ";
+    } else if (c === "/" && al[i + 1] === "*") {
+      const end = al.indexOf("*/", i + 2);
+      const stop = end < 0 ? al.length : end + 2;
+      out += al.slice(i, stop).replace(/[^\n]/g, " ");
+      i = stop;
+    } else if (c === "'") {
+      // AL string: '' inside is an escaped quote.
+      let j = i + 1;
+      while (j < al.length && !(al[j] === "'" && al[j + 1] !== "'")) {
+        j += al[j] === "'" ? 2 : 1;
+      }
+      out += keepStrings ? al.slice(i, j + 1) : "''";
+      i = j + 1;
+    } else if (c === '"') {
+      const end = al.indexOf('"', i + 1);
+      const stop = end < 0 ? al.length : end + 1;
+      out += al.slice(i, stop);
+      i = stop;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
 }
-export const isTestCodeunit = (al: string) =>
-  /Subtype\s*=\s*Test\s*;/i.test(al);
+
+export interface AlObject {
+  kind: string;
+  id: number;
+  name: string;
+  /** Stripped source from this header up to the next object header. */
+  body: string;
+}
+
+const OBJECT_RE =
+  /^[ \t]*(table|tableextension|page|pageextension|codeunit|report|reportextension|query|xmlport|enum|enumextension|permissionset|permissionsetextension)\s+(\d+)\s*(?:"([^"]*)"|([A-Za-z0-9_]+))?/gim;
+
+/** Numbered objects of a file, parsed with comments and strings stripped. */
+export function alObjects(al: string): AlObject[] {
+  const text = stripAl(al);
+  const heads = [...text.matchAll(OBJECT_RE)];
+  return heads.map((m, i) => ({
+    kind: m[1]!.toLowerCase(),
+    id: Number(m[2]),
+    name: m[3] ?? m[4] ?? "",
+    body: text.slice(m.index, heads[i + 1]?.index ?? text.length),
+  }));
+}
+
+export function objectIds(al: string): number[] {
+  return alObjects(al).map((o) => o.id);
+}
+export const isTestObject = (o: AlObject) =>
+  o.kind === "codeunit" && /\bSubtype\s*=\s*Test\s*;/i.test(o.body);
+export const isTestCodeunit = (al: string) => alObjects(al).some(isTestObject);
 
 export interface TestRef {
   codeunit: number;
   procedures: string[];
 }
 
-/** The [Test] procedures of a test codeunit file, or null for any other file. */
+const TEST_PROC_RE =
+  /\[\s*Test\s*\]\s*(?:\[[^\]]*\]\s*)*(?:(?:local|internal)\s+)?procedure\s+(?:"([^"]+)"|([A-Za-z0-9_]+))\s*\(/gi;
+
+/** The [Test] procedures of every test codeunit in a file. */
+export function testManifests(al: string): TestRef[] {
+  return alObjects(al).filter(isTestObject).map((o) => ({
+    codeunit: o.id,
+    procedures: [...o.body.matchAll(TEST_PROC_RE)].map((m) => m[1] ?? m[2]!),
+  }));
+}
+
+/** The first test codeunit of a file, or null for any other file. */
 export function parseTestManifest(al: string): TestRef | null {
-  if (!isTestCodeunit(al)) return null;
-  const codeunit = objectIds(al)[0];
-  if (codeunit === undefined) return null;
-  const procedures = [
-    ...al.matchAll(
-      /\[Test\][^\n]*\r?\n(?:\s*\[[^\]]*\][^\n]*\r?\n)*\s*(?:local\s+)?procedure\s+([A-Za-z0-9_]+)\s*\(/gi,
-    ),
-  ].map((m) => m[1]!);
-  return { codeunit, procedures };
+  return testManifests(al)[0] ?? null;
 }
 
 export interface ProcResult {

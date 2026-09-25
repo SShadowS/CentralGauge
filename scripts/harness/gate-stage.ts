@@ -6,11 +6,12 @@ import type { Layer, TestRef } from "./gate-core.ts";
 import type { LoadedTask } from "../../src/harness/task.ts";
 import { hashTree } from "../../src/harness/hash.ts";
 import {
+  alObjects,
   BUILD_ORDER,
-  isTestCodeunit,
-  objectIds,
-  parseTestManifest,
+  isTestObject,
   RANGES,
+  stripAl,
+  testManifests,
 } from "./gate-core.ts";
 
 export async function exists(p: string): Promise<boolean> {
@@ -40,12 +41,27 @@ export async function git(
 
 const posix = (p: string) => p.replaceAll("\\", "/");
 
-/** Output dirs must be new or empty: a reused dir would stage stale files. */
-async function requireEmpty(out: string): Promise<void> {
-  if (!(await exists(out))) return;
+/** The only root the gate writes under (launch contract: authorized outputs). */
+export const GATE_TMP = resolve(
+  Deno.env.get("CG_GATE_TMP") ?? "H:\\Temp3\\harness-spike\\M4\\tmp",
+);
+
+/**
+ * Output dirs must sit under GATE_TMP and be new or empty: a reused dir
+ * would stage stale files.
+ */
+async function requireEmpty(outArg: string): Promise<string> {
+  const out = resolve(outArg);
+  const norm = (p: string) =>
+    Deno.build.os === "windows" ? posix(p).toLowerCase() : posix(p);
+  if (!norm(out).startsWith(norm(GATE_TMP) + "/")) {
+    throw new Error(`output dir ${out} is outside ${GATE_TMP}`);
+  }
+  if (!(await exists(out))) return out;
   for await (const _ of Deno.readDir(out)) {
     throw new Error(`output dir is not empty: ${out}`);
   }
+  return out;
 }
 
 export interface Source {
@@ -57,10 +73,27 @@ export interface Source {
   taskTree: string;
 }
 
+/** Reads git's `cat-file --batch` output: `<sha> <type> <size>\n<bytes>\n`. */
+function batchReader(bytes: Uint8Array) {
+  let at = 0;
+  return () => {
+    const nl = bytes.indexOf(10, at);
+    if (nl < 0) return null;
+    const [, type, len] = new TextDecoder().decode(bytes.subarray(at, nl))
+      .split(" ");
+    const size = Number(len);
+    if (type !== "blob" || !Number.isInteger(size)) return null;
+    const body = bytes.slice(nl + 1, nl + 1 + size);
+    at = nl + 1 + size + 1;
+    return body.length === size ? body : null;
+  };
+}
+
 /**
- * Write `harness-tasks` of `rev` into `out` from git objects, through a
- * private index, so the working tree and the repo index are never read or
- * touched. The gate stages exactly the commit it reports.
+ * Write `harness-tasks` of `rev` into `out` as the committed blob bytes
+ * (`ls-tree` + `cat-file`), so no working tree, index, eol rule, filter or
+ * encoding attribute can change what is staged. Links, submodules and paths
+ * that collide on a case-insensitive filesystem are refused.
  */
 export async function exportSource(
   repo: string,
@@ -68,44 +101,65 @@ export async function exportSource(
   taskId: string,
   outArg: string,
 ): Promise<Source> {
-  const out = resolve(outArg);
-  await requireEmpty(out);
+  const out = await requireEmpty(outArg);
   const c = await git(repo, ["rev-parse", "--verify", "-q", `${rev}^{commit}`]);
   if (!c.ok) throw new Error(`${rev} does not resolve to a commit`);
   const commit = c.out.trim();
-  await Deno.mkdir(out, { recursive: true });
-  const env = { GIT_INDEX_FILE: join(out, ".gate-index") };
-  try {
-    if (
-      !(await git(repo, [
-        "read-tree",
-        `--prefix=harness-tasks/`,
-        `${commit}:harness-tasks`,
-      ], env)).ok
-    ) {
-      throw new Error(`read-tree ${commit}:harness-tasks failed`);
+  const ls = await git(repo, [
+    "-c",
+    "core.quotePath=false",
+    "ls-tree",
+    "-r",
+    "-z",
+    commit,
+    "--",
+    "harness-tasks/",
+  ]);
+  if (!ls.ok) throw new Error(`ls-tree ${commit} failed`);
+  const blobs: { path: string; sha: string }[] = [];
+  const seen = new Map<string, string>();
+  for (const rec of ls.out.split("\0")) {
+    if (rec === "") continue;
+    const tab = rec.indexOf("\t");
+    const [mode, , sha] = rec.slice(0, tab).split(" ") as [
+      string,
+      string,
+      string,
+    ];
+    const path = rec.slice(tab + 1);
+    if (mode === "120000" || mode === "160000") {
+      throw new Error(`${path}: link or submodule refused`);
     }
-    // Committed bytes only: no autocrlf, and attributes from the commit, not
-    // the working tree, so the staged hash does not depend on the machine.
-    if (
-      !(await git(
-        repo,
-        [
-          "-c",
-          "core.autocrlf=false",
-          `--attr-source=${commit}`,
-          "checkout-index",
-          "-a",
-          "-f",
-          `--prefix=${posix(out)}/`,
-        ],
-        env,
-      )).ok
-    ) {
-      throw new Error("checkout-index failed");
+    const key = path.toLowerCase();
+    if (seen.has(key)) {
+      throw new Error(`${path} and ${seen.get(key)} differ only in case`);
     }
-  } finally {
-    await Deno.remove(env.GIT_INDEX_FILE).catch(() => {});
+    seen.set(key, path);
+    blobs.push({ path, sha });
+  }
+  const child = new Deno.Command("git", {
+    args: ["cat-file", "--batch"],
+    cwd: repo,
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "null",
+  }).spawn();
+  // Written while stdout drains, so a full pipe cannot deadlock.
+  const writing = (async () => {
+    const w = child.stdin.getWriter();
+    await w.write(
+      new TextEncoder().encode(blobs.map((b) => b.sha).join("\n") + "\n"),
+    );
+    await w.close();
+  })();
+  const [res] = await Promise.all([child.output(), writing]);
+  if (!res.success) throw new Error("git cat-file failed");
+  const next = batchReader(res.stdout);
+  for (const b of blobs) {
+    const body = next();
+    if (!body) throw new Error(`git cat-file could not read ${b.path}`);
+    await Deno.mkdir(dirname(join(out, b.path)), { recursive: true });
+    await Deno.writeFile(join(out, b.path), body);
   }
   const tree = async (p: string) => {
     const r = await git(repo, [
@@ -152,9 +206,9 @@ async function put(src: string, out: string, rel: string) {
 export async function stageWorkspace(
   refappDir: string,
   ls: Layer[],
-  out: string,
+  outArg: string,
 ): Promise<void> {
-  await requireEmpty(out);
+  const out = await requireEmpty(outArg);
   // Shipped tests: the refapp's Test/ plus whatever the overlay ships there.
   // Paths compare lowercased (NTFS is case-insensitive).
   const shipped = new Set<string>();
@@ -199,6 +253,9 @@ export async function stageWorkspace(
       // Agent workspace: sources and manifests only; shipped tests are restored (spec 1a section 7).
       if (!BUILD_ORDER.includes(top)) continue;
       if (!f.rel.endsWith(".al") && f.rel !== `${top}/app.json`) continue;
+      if ((await Deno.stat(f.path)).size === 0) {
+        throw new Error(`${f.path}: deletion is not supported`);
+      }
       if (top === "Test" && (await exists(join(out, f.rel)))) continue;
       if (l.mode === "candidate-tests" && top !== "Test") continue;
       await put(f.path, out, f.rel);
@@ -213,8 +270,7 @@ export async function testManifestIn(dir: string): Promise<TestRef[]> {
   if (!(await exists(dir))) return out;
   for await (const f of files(dir)) {
     if (!f.rel.endsWith(".al")) continue;
-    const m = parseTestManifest(await Deno.readTextFile(f.path));
-    if (m) out.push(m);
+    out.push(...testManifests(await Deno.readTextFile(f.path)));
   }
   return out.sort((a, b) => a.codeunit - b.codeunit);
 }
@@ -231,6 +287,26 @@ interface AlFile {
   rel: string; // module-rooted posix path, e.g. "Fleet/src/X.al"
   module: string;
   text: string;
+}
+
+const LITERAL = String.raw`'(?:[^']|'')*'|-?\d+(?:\.\d+)?|true|false`;
+const CONSTANT_ASSERT = new RegExp(
+  String
+    .raw`Assert\s*\.\s*(?:(IsTrue)\s*\(\s*true\b|(IsFalse)\s*\(\s*false\b|(AreEqual)\s*\(\s*(${LITERAL})\s*,\s*(${LITERAL})\s*[,)])`,
+  "gi",
+);
+
+/**
+ * Assertions that cannot fail: IsTrue(true), IsFalse(false), or AreEqual on
+ * two identical literals. Comments are ignored; string contents are kept.
+ */
+function placeholderAssertions(al: string): string[] {
+  return [...stripAl(al, true).matchAll(CONSTANT_ASSERT)]
+    .filter((m) =>
+      !m[3] || m[4]!.toLowerCase() === m[5]!.toLowerCase() &&
+        (m[4]!.startsWith("'") ? m[4] === m[5] : true)
+    )
+    .map((m) => m[0].replace(/\s+/g, " "));
 }
 
 /** Static rules. Problems block; warnings do not. */
@@ -310,37 +386,49 @@ export async function checkTask(
     }
   }
 
+  // Each task owns the oracle band 85000 + (N - 1) * 100 .. + 99.
+  const taskNo = Number(task.id.slice(3));
+  const oracleBand: readonly [number, number] = [
+    85000 + (taskNo - 1) * 100,
+    85000 + (taskNo - 1) * 100 + 99,
+  ];
+  if (!Number.isInteger(taskNo) || taskNo < 1 || oracleBand[1] > 89999) {
+    problems.push(`${task.id}: no oracle band inside 85000-89999`);
+  }
   for (const f of all) {
     const where = `${f.source}/${f.rel}`;
-    const range = RANGES[f.module];
+    const range = f.module === "Oracle" ? oracleBand : RANGES[f.module];
     if (!range) {
       problems.push(`${where}: not under a module folder`);
       continue;
     }
-    for (const id of objectIds(f.text)) {
-      if (id < range[0] || id > range[1]) {
+    for (const o of alObjects(f.text)) {
+      if (o.id < range[0] || o.id > range[1]) {
         problems.push(
-          `${where}: object id ${id} outside ${f.module} range ${range[0]}-${
+          `${where}: object id ${o.id} outside ${f.module} range ${range[0]}-${
             range[1]
           }`,
         );
       }
-      if (f.module === "Test" && id === 80013) {
+      if (f.module === "Test" && o.id === 80013) {
         problems.push(`${where}: 80013 collides on Cronus28`);
       }
-    }
-    if (isTestCodeunit(f.text)) {
-      if (!/TestPermissions\s*=\s*Disabled\s*;/i.test(f.text)) {
+      if (!isTestObject(o)) continue;
+      if (!/\bTestPermissions\s*=\s*Disabled\s*;/i.test(o.body)) {
         problems.push(
-          `${where}: test codeunit without TestPermissions = Disabled`,
+          `${where}: codeunit ${o.id} without TestPermissions = Disabled`,
         );
       }
-      if ((parseTestManifest(f.text)?.procedures.length ?? 0) === 0) {
-        problems.push(`${where}: test codeunit with no [Test] procedure`);
+    }
+    for (const m of testManifests(f.text)) {
+      if (m.procedures.length === 0) {
+        problems.push(
+          `${where}: test codeunit ${m.codeunit} with no [Test] procedure`,
+        );
       }
     }
-    if (/Assert\.(IsTrue\(\s*true|IsFalse\(\s*false)\b/i.test(f.text)) {
-      problems.push(`${where}: placeholder assertion`);
+    for (const a of placeholderAssertions(f.text)) {
+      problems.push(`${where}: placeholder assertion ${a}`);
     }
   }
 
@@ -374,10 +462,11 @@ export async function checkTask(
   }
 
   const declares = (pool: AlFile[], codeunit: number, proc: string) =>
-    pool.some((f) => {
-      const m = parseTestManifest(f.text);
-      return m?.codeunit === codeunit && m.procedures.includes(proc);
-    });
+    pool.some((f) =>
+      testManifests(f.text).some((m) =>
+        m.codeunit === codeunit && m.procedures.includes(proc)
+      )
+    );
   const visible = all.filter((f) =>
     f.module === "Test" && (f.source === "refapp" || f.source === "overlay")
   );
@@ -394,8 +483,7 @@ export async function checkTask(
   if (task.fail_to_pass) {
     const oracle = all.filter((f) => f.module === "Oracle");
     for (const f of oracle) {
-      const name = f.text.match(/^\s*codeunit\s+\d+\s+(?:"([^"]+)"|(\w+))/im);
-      if (name) hidden.push(name[1] ?? name[2]!);
+      for (const o of alObjects(f.text)) if (o.name) hidden.push(o.name);
     }
     for (const r of task.fail_to_pass.tests) {
       hidden.push(String(r.codeunit), ...r.procedures);
@@ -444,8 +532,10 @@ export async function checkTask(
       problems.push("oracle/app.json: idRanges missing");
     }
     for (const r of app.idRanges ?? []) {
-      if (r.from < 85000 || r.to > 89999) {
-        problems.push("oracle/app.json: idRanges outside 85000-89999");
+      if (r.from < oracleBand[0] || r.to > oracleBand[1]) {
+        problems.push(
+          `oracle/app.json: idRanges outside ${oracleBand[0]}-${oracleBand[1]}`,
+        );
       }
     }
   }
