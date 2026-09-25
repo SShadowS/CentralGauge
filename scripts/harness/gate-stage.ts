@@ -32,7 +32,8 @@ export async function git(
   const r = await new Deno.Command("git", {
     args,
     cwd,
-    ...(env ? { env } : {}),
+    // refs/replace must never swap the bytes of the commit we report.
+    env: { GIT_NO_REPLACE_OBJECTS: "1", ...env },
     stdout: "piped",
     stderr: "null",
   }).output();
@@ -54,7 +55,18 @@ async function requireEmpty(outArg: string): Promise<string> {
   const out = resolve(outArg);
   const norm = (p: string) =>
     Deno.build.os === "windows" ? posix(p).toLowerCase() : posix(p);
-  if (!norm(out).startsWith(norm(GATE_TMP) + "/")) {
+  // Compare real paths: a junction or symlink inside GATE_TMP may point out.
+  const real = async (p: string): Promise<string> => {
+    let base = p;
+    const tail: string[] = [];
+    while (!(await exists(base))) {
+      if (dirname(base) === base) return p;
+      tail.unshift(base.slice(dirname(base).length).replace(/^[\\/]/, ""));
+      base = dirname(base);
+    }
+    return join(await Deno.realPath(base), ...tail);
+  };
+  if (!norm(await real(out)).startsWith(norm(await real(GATE_TMP)) + "/")) {
     throw new Error(`output dir ${out} is outside ${GATE_TMP}`);
   }
   if (!(await exists(out))) return out;
@@ -72,6 +84,13 @@ export interface Source {
   taskDir: string;
   taskTree: string;
 }
+
+const SEP = Deno.build.os === "windows" ? "\\" : "/";
+const DEVICE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+/** A git path part that is not a plain, portable file or folder name. */
+const unsafePart = (p: string) =>
+  p === "" || p === "." || p === ".." || /[\\:<>"|?*\x00-\x1f]/.test(p) ||
+  /[. ]$/.test(p) || DEVICE.test(p);
 
 /** Reads git's `cat-file --batch` output: `<sha> <type> <size>\n<bytes>\n`. */
 function batchReader(bytes: Uint8Array) {
@@ -130,16 +149,25 @@ export async function exportSource(
     if (mode === "120000" || mode === "160000") {
       throw new Error(`${path}: link or submodule refused`);
     }
-    const key = path.toLowerCase();
-    if (seen.has(key)) {
-      throw new Error(`${path} and ${seen.get(key)} differ only in case`);
+    const parts = path.split("/");
+    if (parts.some(unsafePart)) throw new Error(`${path}: unsafe path`);
+    // Every folder prefix too: NTFS merges case-variant folders.
+    for (let i = 1; i <= parts.length; i++) {
+      const prefix = parts.slice(0, i).join("/");
+      const other = seen.get(prefix.toLowerCase());
+      if (other !== undefined && other !== prefix) {
+        throw new Error(`${prefix} and ${other} differ only in case`);
+      }
+      seen.set(prefix.toLowerCase(), prefix);
     }
-    seen.set(key, path);
+    const target = resolve(join(out, path));
+    if (!target.startsWith(out + SEP)) throw new Error(`${path}: unsafe path`);
     blobs.push({ path, sha });
   }
   const child = new Deno.Command("git", {
     args: ["cat-file", "--batch"],
     cwd: repo,
+    env: { GIT_NO_REPLACE_OBJECTS: "1" },
     stdin: "piped",
     stdout: "piped",
     stderr: "null",
@@ -197,6 +225,26 @@ async function* files(
   }
 }
 
+/** Zero bytes, or an .al file with nothing but whitespace and comments. */
+async function noContent(path: string): Promise<boolean> {
+  if ((await Deno.stat(path)).size === 0) return true;
+  if (!path.toLowerCase().endsWith(".al")) return false;
+  const text = decodeAl(await Deno.readFile(path));
+  return text !== null && stripAl(text, true).trim() === "";
+}
+
+/** UTF-8 AL source, or null for anything else (UTF-16, NUL bytes, bad UTF-8). */
+function decodeAl(bytes: Uint8Array): string | null {
+  if (bytes.includes(0)) return null;
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
+      bytes,
+    );
+  } catch {
+    return null;
+  }
+}
+
 async function put(src: string, out: string, rel: string) {
   await Deno.mkdir(dirname(join(out, rel)), { recursive: true });
   await Deno.copyFile(src, join(out, rel));
@@ -236,7 +284,7 @@ export async function stageWorkspace(
             `${f.path}: layer files must sit under a module folder`,
           );
         }
-        if ((await Deno.stat(f.path)).size === 0) {
+        if (await noContent(f.path)) {
           throw new Error(`${f.path}: deletion is not supported`);
         }
         const key = f.rel.toLowerCase();
@@ -253,7 +301,7 @@ export async function stageWorkspace(
       // Agent workspace: sources and manifests only; shipped tests are restored (spec 1a section 7).
       if (!BUILD_ORDER.includes(top)) continue;
       if (!f.rel.endsWith(".al") && f.rel !== `${top}/app.json`) continue;
-      if ((await Deno.stat(f.path)).size === 0) {
+      if (await noContent(f.path)) {
         throw new Error(`${f.path}: deletion is not supported`);
       }
       if (top === "Test" && (await exists(join(out, f.rel)))) continue;
@@ -270,7 +318,7 @@ export async function testManifestIn(dir: string): Promise<TestRef[]> {
   if (!(await exists(dir))) return out;
   for await (const f of files(dir)) {
     if (!f.rel.endsWith(".al")) continue;
-    out.push(...testManifests(await Deno.readTextFile(f.path)));
+    out.push(...testManifests(decodeAl(await Deno.readFile(f.path)) ?? ""));
   }
   return out.sort((a, b) => a.codeunit - b.codeunit);
 }
@@ -338,6 +386,11 @@ export async function checkTask(
     ...naive.map((n) => `naive/${n}`),
     ...task.mutants.map((m) => `mutants/${m}`),
   ];
+  const alText = async (path: string, where: string) => {
+    const t = decodeAl(await Deno.readFile(path));
+    if (t === null) problems.push(`${where}: not UTF-8 text`);
+    return t ?? "";
+  };
   const all: AlFile[] = [];
   const layerFiles: { source: string; rel: string; size: number }[] = [];
   for (const m of BUILD_ORDER) {
@@ -349,7 +402,7 @@ export async function checkTask(
           source: "refapp",
           rel: `${m}/${f.rel}`,
           module: m,
-          text: await Deno.readTextFile(f.path),
+          text: await alText(f.path, `refapp/${m}/${f.rel}`),
         });
       }
     }
@@ -361,7 +414,7 @@ export async function checkTask(
           source: "oracle",
           rel: f.rel,
           module: "Oracle",
-          text: await Deno.readTextFile(f.path),
+          text: await alText(f.path, `oracle/${f.rel}`),
         });
       }
     }
@@ -376,11 +429,17 @@ export async function checkTask(
         size: (await Deno.stat(f.path)).size,
       });
       if (f.rel.endsWith(".al")) {
+        const text = await alText(f.path, `${lr}/${f.rel}`);
+        if (text !== "" && stripAl(text, true).trim() === "") {
+          problems.push(
+            `${lr}/${f.rel}: no AL content; deletion is not supported`,
+          );
+        }
         all.push({
           source: lr,
           rel: f.rel,
           module: f.rel.split("/")[0]!,
-          text: await Deno.readTextFile(f.path),
+          text,
         });
       }
     }
@@ -532,6 +591,14 @@ export async function checkTask(
       problems.push("oracle/app.json: idRanges missing");
     }
     for (const r of app.idRanges ?? []) {
+      if (
+        !Number.isInteger(r.from) || !Number.isInteger(r.to) || r.from > r.to
+      ) {
+        problems.push(
+          "oracle/app.json: idRanges entry needs integer from <= to",
+        );
+        continue;
+      }
       if (r.from < oracleBand[0] || r.to > oracleBand[1]) {
         problems.push(
           `oracle/app.json: idRanges outside ${oracleBand[0]}-${oracleBand[1]}`,

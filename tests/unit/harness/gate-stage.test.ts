@@ -663,3 +663,214 @@ Deno.test("checkTask: per-codeunit rules, comment evasion and constant assertion
   );
   assertEquals(placeholders.length, 3, placeholders.join("; "));
 });
+
+// Run 002 second review: parser and export holes.
+
+Deno.test("objectIds: lone CR ends a line comment; objects after a brace; no var types", () => {
+  assertEquals(objectIds('// hi\rcodeunit 90000 "X"\r{\r}\r'), [90000]);
+  assertEquals(
+    objectIds('codeunit 85000 "A" { } codeunit 90000 "B" { }\n'),
+    [85000, 90000],
+  );
+  assertEquals(
+    objectIds(
+      'codeunit 70000 "A"\n{\n    var\n        C: Codeunit 70001;\n}\n',
+    ),
+    [70000],
+  );
+});
+
+Deno.test("checkTask: UTF-16 and NUL files are problems, not silently skipped", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  const utf16 = new Uint8Array([
+    0xff,
+    0xfe,
+    ...Array.from(new TextEncoder().encode('codeunit 90000 "X"'))
+      .flatMap((b) => [b, 0]),
+  ]);
+  await Deno.writeFile(join(dir, "correct/Core/src/W.al"), utf16);
+  const all = (await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  ))
+    .problems.join("\n");
+  assertStringIncludes(all, "correct/Core/src/W.al: not UTF-8 text");
+});
+
+Deno.test("checkTask: comment-only layer file counts as a deletion; idRanges need from and to", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  await write(dir, "naive/x/Core/src/A.al", "// gone\n");
+  await write(
+    dir,
+    "oracle/app.json",
+    JSON.stringify({
+      id: "c6a1e000-0000-4000-8001-000000000001",
+      name: "CGR Oracle HX-001",
+      publisher: "CentralGauge",
+      idRanges: [{ from: 85000 }],
+      dependencies: [],
+    }),
+  );
+  const all = (await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  ))
+    .problems.join("\n");
+  assertStringIncludes(
+    all,
+    "naive/x/Core/src/A.al: no AL content; deletion is not supported",
+  );
+  assertStringIncludes(
+    all,
+    "oracle/app.json: idRanges entry needs integer from <= to",
+  );
+});
+
+Deno.test("stageWorkspace refuses a comment-only candidate file", async () => {
+  const root = await tmp();
+  const refapp = join(root, "refapp");
+  await writeRefapp(refapp);
+  const cand = join(root, "ws");
+  await write(cand, "Core/src/A.al", "/* gone */\n");
+  await assertRejects(
+    () =>
+      stageWorkspace(
+        refapp,
+        [{ path: cand, mode: "candidate" }],
+        join(root, "o"),
+      ),
+    Error,
+    "deletion",
+  );
+});
+
+async function gitIn(
+  cwd: string,
+  input: string,
+  ...args: string[]
+): Promise<string> {
+  const child = new Deno.Command("git", {
+    args,
+    cwd,
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "null",
+  }).spawn();
+  const w = child.stdin.getWriter();
+  await w.write(new TextEncoder().encode(input));
+  await w.close();
+  return new TextDecoder().decode((await child.output()).stdout).trim();
+}
+
+/** Add a blob at `parts` under `tree` with mktree, bypassing path checks. */
+async function graft(
+  root: string,
+  tree: string,
+  parts: string[],
+  blob: string,
+): Promise<string> {
+  const entries = tree === ""
+    ? []
+    : (await gitOut(root, "ls-tree", "-z", tree)).split("\0").filter(Boolean);
+  const [head, ...rest] = parts as [string, ...string[]];
+  const same = entries.find((e) => e.split("\t")[1] === head);
+  const line = rest.length === 0
+    ? `100644 blob ${blob}\t${head}`
+    : `040000 tree ${await graft(
+      root,
+      same?.split(" ")[2]!.split("\t")[0] ?? "",
+      rest,
+      blob,
+    )}\t${head}`;
+  const kept = entries.filter((e) => e.split("\t")[1] !== head);
+  return await gitIn(root, [...kept, line].join("\0") + "\0", "mktree", "-z");
+}
+
+async function commitEntry(path: string): Promise<string> {
+  const root = await tmp();
+  await writeTask(root, "HX-001", "# Bug\n");
+  await git(root, "init", "-q");
+  await commitAll(root);
+  const blob =
+    (await gitOut(root, "rev-parse", "HEAD:harness-tasks/refapp/Core/src/A.al"))
+      .trim();
+  const tree = await graft(
+    root,
+    (await gitOut(root, "rev-parse", "HEAD^{tree}")).trim(),
+    path.split("/"),
+    blob,
+  );
+  const commit = await gitIn(
+    root,
+    "y",
+    "-c",
+    "user.email=t@t",
+    "-c",
+    "user.name=t",
+    "commit-tree",
+    tree,
+    "-p",
+    "HEAD",
+  );
+  await git(root, "update-ref", "HEAD", commit);
+  return root;
+}
+
+Deno.test("exportSource refuses unsafe path parts and case-colliding folders", async () => {
+  for (
+    const [path, needle] of [
+      ["harness-tasks/refapp/Core/src/..\\..\\x.al", "unsafe path"],
+      ["harness-tasks/refapp/Core/src/NUL.al", "unsafe path"],
+      ["harness-tasks/refapp/Core/src/x.al.", "unsafe path"],
+      ["harness-tasks/refapp/core/src/B.al", "differ only in case"],
+    ]
+  ) {
+    const root = await commitEntry(path!);
+    await assertRejects(
+      async () => exportSource(root, "HEAD", "HX-001", await tmp()),
+      Error,
+      needle,
+    );
+  }
+});
+
+Deno.test("exportSource ignores git replace objects", async () => {
+  const root = await tmp();
+  await writeTask(root, "HX-001", "# Bug\n");
+  await git(root, "init", "-q");
+  await commitAll(root);
+  const orig =
+    (await gitOut(root, "rev-parse", "HEAD:harness-tasks/refapp/Core/src/A.al"))
+      .trim();
+  await Deno.writeTextFile(join(root, "evil.txt"), "evil");
+  const evil = (await gitOut(root, "hash-object", "-w", "evil.txt")).trim();
+  await git(root, "replace", orig, evil);
+  const src = await exportSource(root, "HEAD", "HX-001", await tmp());
+  assertStringIncludes(
+    await Deno.readTextFile(join(src.refappDir, "Core/src/A.al")),
+    "codeunit 70000",
+  );
+});
+
+Deno.test("output dir through a junction out of GATE_TMP is refused", async () => {
+  if (Deno.build.os !== "windows") return;
+  const outside = await Deno.makeTempDir();
+  const link = join(await tmp(), "j");
+  try {
+    await Deno.symlink(outside, link, { type: "junction" });
+    const root = await tmp();
+    await writeRefapp(join(root, "refapp"));
+    await assertRejects(
+      () => stageWorkspace(join(root, "refapp"), [], join(link, "o")),
+      Error,
+      GATE_TMP,
+    );
+  } finally {
+    await Deno.remove(link).catch(() => {});
+    await Deno.remove(outside, { recursive: true });
+  }
+});
