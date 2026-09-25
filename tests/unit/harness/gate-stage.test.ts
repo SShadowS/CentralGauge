@@ -750,7 +750,7 @@ Deno.test("stageWorkspace refuses a comment-only candidate file", async () => {
 
 async function gitIn(
   cwd: string,
-  input: string,
+  input: string | Uint8Array,
   ...args: string[]
 ): Promise<string> {
   const child = new Deno.Command("git", {
@@ -761,17 +761,20 @@ async function gitIn(
     stderr: "null",
   }).spawn();
   const w = child.stdin.getWriter();
-  await w.write(new TextEncoder().encode(input));
+  await w.write(
+    typeof input === "string" ? new TextEncoder().encode(input) : input,
+  );
   await w.close();
   return new TextDecoder().decode((await child.output()).stdout).trim();
 }
 
-/** Add a blob at `parts` under `tree` with mktree, bypassing path checks. */
+/** Add a blob (or tree) at `parts` under `tree` with mktree, bypassing path checks. */
 async function graft(
   root: string,
   tree: string,
   parts: string[],
   blob: string,
+  kind: "blob" | "tree" = "blob",
 ): Promise<string> {
   const entries = tree === ""
     ? []
@@ -779,12 +782,13 @@ async function graft(
   const [head, ...rest] = parts as [string, ...string[]];
   const same = entries.find((e) => e.split("\t")[1] === head);
   const line = rest.length === 0
-    ? `100644 blob ${blob}\t${head}`
+    ? `${kind === "blob" ? "100644" : "040000"} ${kind} ${blob}\t${head}`
     : `040000 tree ${await graft(
       root,
       same?.split(" ")[2]!.split("\t")[0] ?? "",
       rest,
       blob,
+      kind,
     )}\t${head}`;
   const kept = entries.filter((e) => e.split("\t")[1] !== head);
   return await gitIn(root, [...kept, line].join("\0") + "\0", "mktree", "-z");
@@ -873,4 +877,107 @@ Deno.test("output dir through a junction out of GATE_TMP is refused", async () =
     await Deno.remove(link).catch(() => {});
     await Deno.remove(outside, { recursive: true });
   }
+});
+
+// Run 003 fixes.
+
+Deno.test("run 003 fix 1: .AL files are checked like .al", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  await write(
+    dir,
+    "correct/Core/src/Foo.AL",
+    'codeunit 70050 "Foo"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure P()\n    begin\n    end;\n}\n',
+  );
+  const all = (await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  ))
+    .problems.join("\n");
+  assertStringIncludes(
+    all,
+    "correct/Core/src/Foo.AL: codeunit 70050 without TestPermissions",
+  );
+  const tests = await tmp();
+  await write(tests, "Test/src/Upper.AL", TEST_CU(80100, "Up"));
+  assertEquals(await testManifestIn(tests), [{
+    codeunit: 80100,
+    procedures: ["Up"],
+  }]);
+  const refapp = join(root, "harness-tasks/refapp");
+  const cand = join(root, "ws");
+  await write(cand, "Core/src/New.AL", 'codeunit 70001 "New"\n{\n}\n');
+  const out = join(root, "out");
+  await stageWorkspace(refapp, [{ path: cand, mode: "candidate" }], out);
+  assertStringIncludes(
+    await Deno.readTextFile(join(out, "Core/src/New.AL")),
+    "70001",
+  );
+});
+
+Deno.test("run 003 fix 2: preprocessor directives are refused in task files", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  await write(
+    dir,
+    "oracle/src/O.al",
+    'codeunit 85000 "T85000"\n{\n    Subtype = Test;\n#if NEVER\n    TestPermissions = Disabled;\n#endif\n    #region Tests\n    [Test]\n    procedure Hidden()\n    begin\n    end;\n    #endregion\n}\n',
+  );
+  const all = (await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  ))
+    .problems.join("\n");
+  assertStringIncludes(all, "oracle/src/O.al: preprocessor directive #if");
+  assertStringIncludes(all, "oracle/src/O.al: preprocessor directive #endif");
+  assert(!all.includes("#region"), all);
+});
+
+Deno.test("run 003 fix 3: exportSource refuses a path that is not valid UTF-8", async () => {
+  const root = await tmp();
+  await writeTask(root, "HX-001", "# Bug\n");
+  await git(root, "init", "-q");
+  await commitAll(root);
+  const blob =
+    (await gitOut(root, "rev-parse", "HEAD:harness-tasks/refapp/Core/src/A.al"))
+      .trim();
+  const enc = new TextEncoder();
+  const leaf = await gitIn(
+    root,
+    new Uint8Array([
+      ...enc.encode(`100644 blob ${blob}\t`),
+      0xff,
+      ...enc.encode(".al"),
+      0,
+    ]),
+    "mktree",
+    "-z",
+  );
+  const tree = await graft(
+    root,
+    (await gitOut(root, "rev-parse", "HEAD^{tree}")).trim(),
+    ["harness-tasks", "refapp", "Core", "bad"],
+    leaf,
+    "tree",
+  );
+  const commit = await gitIn(
+    root,
+    "y",
+    "-c",
+    "user.email=t@t",
+    "-c",
+    "user.name=t",
+    "commit-tree",
+    tree,
+    "-p",
+    "HEAD",
+  );
+  await git(root, "update-ref", "HEAD", commit);
+  await assertRejects(
+    async () => exportSource(root, "HEAD", "HX-001", await tmp()),
+    Error,
+    "not valid UTF-8",
+  );
 });
