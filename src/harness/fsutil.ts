@@ -152,8 +152,27 @@ function collidingNames(names: string[]): Set<string> {
 
 interface DirId {
   path: string;
-  ino: number;
-  dev: number;
+  st: Deno.FileInfo;
+}
+
+const ms = (d: Date | null) => d?.getTime() ?? null;
+
+/**
+ * Same file or directory. ino alone is not an identity: Deno reports the
+ * 64-bit NTFS file id (MFT sequence << 48 | record) as a JS number, and once
+ * the sequence reaches 32 (routine under temp-dir churn) the low bits are
+ * lost, so two live files in adjacent records can report one ino (measured:
+ * a.al and other.txt both 0xfb0000002b5930, M1-12a). dev and birth time are
+ * compared too, and for files size and mtime (a quiescent file does not
+ * change between the check and the open).
+ * ponytail: composite identity; an exact file id needs FFI
+ * (GetFileInformationByHandleEx) if a same-size, same-timestamp swap ever
+ * matters beyond the quiescence contract.
+ */
+function sameIdentity(a: Deno.FileInfo, b: Deno.FileInfo): boolean {
+  return a.ino === b.ino && a.dev === b.dev &&
+    ms(a.birthtime) === ms(b.birthtime) &&
+    (a.isDirectory || (a.size === b.size && ms(a.mtime) === ms(b.mtime)));
 }
 
 async function listNames(dirAbs: string): Promise<string[]> {
@@ -167,7 +186,7 @@ async function checkChain(chain: DirId[]): Promise<void> {
   for (const c of chain) {
     const s = await Deno.lstat(c.path);
     if (
-      s.isSymlink || !s.isDirectory || s.ino !== c.ino || s.dev !== c.dev ||
+      s.isSymlink || !s.isDirectory || !sameIdentity(c.st, s) ||
       upperDrive(await Deno.realPath(c.path)) !== c.path
     ) {
       throw new ValidationError(
@@ -268,11 +287,7 @@ export async function safeCopyTree(
           );
         }
         await Deno.mkdir(target);
-        await walk(p, r1, depth + 1, [...chain, {
-          path: p,
-          ino: st.ino,
-          dev: st.dev,
-        }]);
+        await walk(p, r1, depth + 1, [...chain, { path: p, st }]);
         continue;
       }
       if (++r.files > limits.maxFiles) {
@@ -283,7 +298,14 @@ export async function safeCopyTree(
       const f = await Deno.open(p, { read: true });
       try {
         const hs = await f.stat();
-        if (!hs.isFile || hs.ino !== st.ino || hs.dev !== st.dev) {
+        // Limit first: a file that grew past the limit is a size violation,
+        // whatever else changed; any other change is an identity change.
+        if (hs.isFile && r.bytes + hs.size > limits.maxBytes) {
+          throw new CopyLimitError(
+            `${root}: more than ${limits.maxBytes} bytes`,
+          );
+        }
+        if (!hs.isFile || !sameIdentity(st, hs)) {
           throw new ValidationError(
             `file changed identity between check and open: ${r1}`,
             [r1],
@@ -311,7 +333,7 @@ export async function safeCopyTree(
       }
     }
   };
-  await walk(root, "", 0, [{ path: root, ino: rootSt.ino, dev: rootSt.dev }]);
+  await walk(root, "", 0, [{ path: root, st: rootSt }]);
   return { ...r, src: root, dst: out };
 }
 
