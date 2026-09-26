@@ -295,7 +295,10 @@ async function packScanned(
   const chunkSize = opts.chunkSize ?? CHUNK;
   const overlap = Math.max(
     64, // longer than the patterns' shortest match
-    ...secrets.flatMap((s) => s.needles.map((n) => n.length)),
+    ...secrets.flatMap((s) => [
+      ...s.needles.map((n) => n.length),
+      s.pctLower?.length ?? 0,
+    ]),
   );
   await Deno.mkdir(dirname(outDir), { recursive: true });
   const tmp = join(

@@ -354,6 +354,24 @@ Deno.test("files are scanned in chunks; a value straddling a chunk boundary is f
   assertEquals(await verify(o), []);
 });
 
+Deno.test("a percent-encoded value (3x its length) straddling a chunk boundary is found", async () => {
+  // Mostly reserved characters: the percent form (90 bytes) outgrows the
+  // UTF-16LE (60) and base64 forms and the 64-byte floor.
+  const v = "/?#&=+:@".repeat(3) + "/?#&=+";
+  const f = await secret(v);
+  const encoded = encodeURIComponent(v);
+  await assertRejects(
+    async () =>
+      pack(
+        await leakRoot("pct.txt", "x".repeat(20) + encoded + "y".repeat(70)),
+        await out(),
+        { meta: {}, secretFiles: [f], chunkSize: 100 },
+      ),
+    FindingError,
+    "pct.txt",
+  );
+});
+
 Deno.test("an interrupted publish leaves no outDir and no temp dir", async () => {
   const o = await out();
   await assertRejects(
