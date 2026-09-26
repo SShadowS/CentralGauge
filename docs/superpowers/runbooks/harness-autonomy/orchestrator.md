@@ -25,7 +25,9 @@ Run as `/loop` without an interval (self-paced). Each sweep:
    that lane `resume: continue from your handoff`, then sweep normally. (This works after
    your own restart too; it reads state, not memory.)
 
-1. Handle doorbell messages first: submitted tasks go to review (below).
+1. Handle doorbell messages first: submitted tasks go to review (below). An `online: <lane>`
+   message means that lane is a fresh session (after a `/clear` or a restart): send it the
+   protocol line, check `coord status --lane <lane>`, and dispatch it again if it is idle.
 2. For each lane with no `doing` task and a non-empty `coord next <lane>`, send the lane:
    `next: <id>`. For a lane with nothing ready, look at `coord why` for its blocked tasks and
    unblock what you can (write a missing plan, answer from the specs, ask the owner).

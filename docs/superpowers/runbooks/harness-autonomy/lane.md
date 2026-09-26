@@ -18,6 +18,9 @@ and "lane-admin specifics" below; it does no coding tasks.
 5. `coord status --lane <lane>`. A `doing` run of yours: continue it with the token from your
    handoff file. Otherwise wait for a `next: <id>` message, or take the first of
    `coord next <lane>`.
+6. Tell the orchestrator you are alive, always, also after a `/clear` or a resume:
+   send `cg-orchestrator` the message `online: lane-<lane> (fresh session), state: <doing
+   <id> run <runId> | idle>`. Without it the orchestrator keeps waiting on your old session.
 
 ## Doing a task
 

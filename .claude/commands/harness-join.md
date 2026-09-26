@@ -47,4 +47,5 @@ Also report which of the other three roles are still missing, with their directo
   `/loop You are cg-orchestrator. Follow docs/superpowers/runbooks/harness-autonomy/orchestrator.md: run its start procedure if you have not done so in this session, then do one sweep.`
   and stop until they do.
 - lane: read `docs/superpowers/runbooks/harness-autonomy/lane.md` and follow it, starting with
-  its "On every start" section.
+  its "On every start" section. Its last step messages `cg-orchestrator` that you are online;
+  never skip it, the orchestrator waits for it after a `/clear`.
