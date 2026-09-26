@@ -145,6 +145,23 @@ export async function mcpLabel(root: string): Promise<[string, string]> {
   ];
 }
 
+/** The repo's MCP definitions: per server, the definition hash (as in the image label) and its sorted tool names. */
+export type McpDefinitions = Record<string, { hash: string; tools: string[] }>;
+
+export async function mcpDefinitions(root: string): Promise<McpDefinitions> {
+  const [, value] = await mcpLabel(root);
+  const def = JSON.parse(await Deno.readTextFile(join(root, AL_TOOLS_DEF)));
+  const tools = (Array.isArray(def.tools) ? def.tools : [])
+    .map((t: { name?: unknown }) => t?.name)
+    .filter((n: unknown): n is string => typeof n === "string");
+  return {
+    "al-tools": {
+      hash: value.split(" ")[1]!,
+      tools: [...new Set<string>(tools)].sort(),
+    },
+  };
+}
+
 /** Provenance, not a label: the image's layers must start with the base image's layers. */
 export async function hasBaseLayers(
   docker: DockerCli,
@@ -163,6 +180,8 @@ export function runtimeFacts(
   image: ImageFacts,
   adapter: HarnessAdapter,
   catalog: Catalog,
+  /** Required when the config names MCP components (mcpDefinitions). */
+  defs: McpDefinitions = {},
 ): RuntimeFacts {
   if (
     image.harness !== config.harness ||
@@ -187,10 +206,33 @@ export function runtimeFacts(
         `${config.id}: image ${image.digest} has no MCP component ${name} (rebuild the base image, then the harness image)`,
       );
     }
+    // Definition drift: the repo's tool file is not the one the image shipped.
+    const def = Object.hasOwn(defs, name) ? defs[name] : undefined;
+    if (!def) {
+      throw new ConfigurationError(
+        `${config.id}: no repo definition loaded for MCP component ${name}`,
+      );
+    }
+    if (def.hash !== f.tool_schema_hash) {
+      throw new ConfigurationError(
+        `${config.id}: definition ${AL_TOOLS_DEF} differs from image ${image.digest}: rebuild`,
+      );
+    }
     servers[name] = f;
   }
+  const native = adapter.nativeSettings(config, catalog);
+  // The expected tool inventory, persisted with the manifest before release
+  // (M2-09): only when servers exist, keyed by exactly the sorted names.
+  const names = Object.keys(servers).sort();
   return {
-    native_settings: adapter.nativeSettings(config, catalog),
+    native_settings: names.length > 0
+      ? {
+        ...native,
+        mcp_tools: Object.fromEntries(
+          names.map((n) => [n, defs[n]!.tools]),
+        ),
+      }
+      : native,
     image: { digest: image.digest, base_digest: image.base_digest },
     backend_version: BACKEND_VERSION,
     servers,
