@@ -584,10 +584,10 @@ const infraThrown = (err: unknown) =>
   err instanceof InfraRetriesExhaustedError ||
   err instanceof NoEligibleContainersError || isInfraError(err);
 
-type MutantOutcome = "killed" | "survived" | "infra";
+export type MutantOutcome = "killed" | "survived" | "infra";
 
 /** Per mutant (M4 gate parity): any infra row is infra; else an assertion failure kills; else it survived. */
-function mutantOutcome(rows: TestRow[]): MutantOutcome {
+export function mutantOutcome(rows: readonly TestRow[]): MutantOutcome {
   if (rows.length === 0 || rows.some((r) => r.failure === "infra")) {
     return "infra";
   }

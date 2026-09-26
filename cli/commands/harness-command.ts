@@ -22,7 +22,13 @@ import type {
 import type { HarnessReport } from "../../src/harness/report.ts";
 import type { LoadedTask } from "../../src/harness/task.ts";
 import type { HarnessAdapter } from "../../src/harness/adapter.ts";
-import type { CellResult } from "../../src/harness/execution.ts";
+import type {
+  CampaignSummary,
+  OpenedTasks,
+  PlanEnv,
+} from "../../src/harness/campaign.ts";
+import type { CellResult, HarnessEnv } from "../../src/harness/execution.ts";
+import type { QualifyManifest } from "../../src/harness/qualify.ts";
 import type { ImageFacts } from "../../src/harness/images.ts";
 import type { ManifestReader } from "../../src/harness/symbols.ts";
 import type { DockerCli } from "../../src/harness/sandbox.ts";
@@ -35,6 +41,7 @@ import {
 } from "../../src/errors.ts";
 import {
   checkModelsInCatalog,
+  HarnessConfigSchema,
   loadConfig,
   loadExperiment,
   VARY_KEYS,
@@ -45,11 +52,22 @@ import {
   resolveRefapp,
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
-import { RecordStore } from "../../src/harness/records.ts";
+import {
+  compareInstant,
+  outcomePolicy,
+  RecordStore,
+} from "../../src/harness/records.ts";
 import { buildReport, renderReport } from "../../src/harness/report.ts";
 import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
-import { runCell } from "../../src/harness/execution.ts";
+import { rejudgeExecution, runCell } from "../../src/harness/execution.ts";
+import {
+  cellRefFor,
+  loadCampaignData,
+  planCampaign,
+  runCampaign,
+} from "../../src/harness/campaign.ts";
+import { validateCampaignRecords } from "../../src/harness/integrity.ts";
 import { freezeWorkspace, safeCopyTree } from "../../src/harness/fsutil.ts";
 import { hashTree } from "../../src/harness/hash.ts";
 import {
@@ -74,9 +92,14 @@ import {
   writeSymbolsLock,
 } from "../../src/harness/symbols.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
-import { judge, writeVerdictLog } from "../../src/harness/verdict.ts";
+import {
+  currentScorerFingerprint,
+  judge,
+  mutantOutcome,
+  writeVerdictLog,
+} from "../../src/harness/verdict.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
-import { openHarnessEnv } from "./harness-env.ts";
+import { openHarnessEnv, openPlanEnv } from "./harness-env.ts";
 
 /** Loud, file-naming failures are collected; anything else is a bug. */
 function isProblem(err: unknown): err is Error {
@@ -693,6 +716,9 @@ export async function harnessImagesBuild(
   }
   const f = await imageFacts(docker, tag);
   console.log(`${colors.green("[OK]")} ${tag} = ${f.digest} (base ${base.Id})`);
+  console.log(
+    `  labels: ${IMAGE_LABELS.harness}=${f.harness} ${IMAGE_LABELS.version}=${f.version} ${IMAGE_LABELS.base}=${f.base_digest}`,
+  );
   return f;
 }
 
@@ -748,6 +774,388 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     rev: f.rev ?? null,
     qualifyManifest: f.qualifyManifest ? abs(f.qualifyManifest) : null,
   };
+}
+
+export interface RunCliOptions extends CellCliOptions {
+  dryRun: boolean;
+  sample?: number;
+  repeats?: number;
+  concurrency: number;
+  seed?: number;
+  /** Longest usage-limit pause to wait out; 0 stops with a resume line. */
+  maxPauseMin: number;
+  /** rejudge: skip the confirmation. */
+  yes?: boolean;
+  /** rejudge: only this execution. */
+  execution?: string;
+}
+
+type Planner = (o: EnvOptions) => Promise<PlanEnv>;
+
+const sleepMs = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** `harness run`: a campaign (spec 1a section 6); a dry run takes no lock and opens no container. */
+export async function harnessRun(
+  experimentId: string,
+  o: RunCliOptions,
+  open: Opener = openHarnessEnv,
+  plan: Planner = (eo) => openPlanEnv(eo),
+  sleep: (ms: number) => Promise<void> = sleepMs,
+): Promise<CampaignSummary> {
+  const catalogDir = join(o.root, "site", "catalog");
+  const { configs } = await loadExperiment(
+    join(o.root, "harness"),
+    experimentId,
+  );
+  await checkModelsInCatalog(configs, catalogDir);
+  const io = {
+    log: (l: string) => console.log(l),
+    sleep,
+    catalog: await readCatalog(catalogDir),
+  };
+  const ro = {
+    concurrency: o.concurrency,
+    maxPauseMs: o.maxPauseMin * 60_000,
+    ...(o.sample !== undefined ? { sample: o.sample } : {}),
+    ...(o.repeats !== undefined ? { repeats: o.repeats } : {}),
+    ...(o.seed !== undefined ? { seed: o.seed } : {}),
+  };
+  const command = `harness run ${experimentId}`;
+  if (o.dryRun) {
+    const s = await planCampaign(
+      await plan(envOptions(o, o.resultsDir, `${command} --dry-run`)),
+      experimentId,
+      ro,
+      io,
+    );
+    console.log(
+      `${colors.dim("[DRY]")} ${s.planned} cells in ${
+        s.campaignId ? `campaign ${s.campaignId}` : "a new campaign"
+      }; nothing written`,
+    );
+    return s;
+  }
+  const h = await open(envOptions(o, o.resultsDir, command));
+  try {
+    const env = o.qualifyManifest
+      ? {
+        ...h.env,
+        qualifyManifest: await loadQualifyManifest(o.qualifyManifest),
+      }
+      : h.env;
+    const s = await runCampaign(
+      env,
+      experimentId,
+      { ...ro, dryRun: false },
+      io,
+    );
+    console.log(
+      `${colors.green("[OK]")} campaign ${s.campaignId}${
+        s.created ? " (new)" : ""
+      }: ${s.ran} executions, ${s.judged} judged, ${s.unscored} unscored${
+        s.paused ? `, paused until ${s.paused}` : ""
+      }`,
+    );
+    return s;
+  } finally {
+    await h.close();
+  }
+}
+
+/** The newest judgment of an execution, by ended_at then id. */
+function latestJudgment(js: JudgmentRecord[]): JudgmentRecord | undefined {
+  return [...js].sort((a, b) =>
+    compareInstant(b.ended_at, a.ended_at) || (a.id < b.id ? 1 : -1)
+  )[0];
+}
+
+const askUser = (q: string) => confirm(q);
+
+/**
+ * `harness rejudge` (answer 15): judge stored executions again with the
+ * current scorer suite and the current oracle (recorded as such in the
+ * judgment's task_oracle_hash), never re-running the agent. Refused unless
+ * the records validate, every campaign task is present, and each restaged
+ * task has the execution's visible-input hash. Asks unless --yes.
+ */
+export async function harnessRejudge(
+  experimentId: string,
+  o: RunCliOptions,
+  open: Opener = openHarnessEnv,
+  ask: (question: string) => boolean = askUser,
+): Promise<{ campaignId: string; rejudged: number }> {
+  const h = await open(
+    envOptions(o, o.resultsDir, `harness rejudge ${experimentId}`),
+  );
+  try {
+    const env = h.env;
+    const c = (await env.store.campaigns(experimentId))[0];
+    if (!c) {
+      throw new ConfigurationError(
+        `no campaign for experiment ${experimentId} in ${o.resultsDir}`,
+      );
+    }
+    const data = await loadCampaignData(env.store, c);
+    await validateCampaignRecords(data);
+    const tasks = new Map(
+      (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
+        t,
+      ) => [t.task.id, t]),
+    );
+    const missing = c.task_set.tasks.filter((t) => !tasks.has(t.id));
+    if (missing.length > 0) {
+      throw new ConfigurationError(
+        `rejudge needs every campaign task; missing: ${
+          missing.map((t) => t.id).join(", ")
+        }`,
+      );
+    }
+    if (o.execution && !data.executions.some((e) => e.id === o.execution)) {
+      throw new ConfigurationError(
+        `execution ${o.execution} is not in campaign ${c.id}`,
+      );
+    }
+    const current = await currentScorerFingerprint();
+    const due = data.executions.filter((e) => {
+      if (o.execution && e.id !== o.execution) return false;
+      if (!outcomePolicy(e.termination, e.did_work).judge) return false;
+      const j = latestJudgment(
+        data.judgments.filter((x) => x.execution_id === e.id),
+      );
+      return !j || j.verdict === "unscored" || j.scorer_fingerprint !== current;
+    });
+    const used = [...new Set(due.map((e) => e.task_id))].map((id) =>
+      tasks.get(id)!
+    );
+    const ids = await taskSetIdentity(o.root, used, env.symbols);
+    const byTask = new Map(ids.tasks.map((t) => [t.id, t]));
+    const changed = due.filter((e) =>
+      byTask.get(e.task_id)!.visible !== e.task_visible_hash
+    );
+    if (changed.length > 0) {
+      throw new ConfigurationError(
+        `restaged visible inputs differ from the execution's for ${
+          [...new Set(changed.map((e) => e.task_id))].join(", ")
+        }: rejudge refused (the task changed since those executions ran)`,
+      );
+    }
+    if (due.length === 0) {
+      console.log(
+        `${colors.green("[OK]")} nothing to rejudge in campaign ${c.id}`,
+      );
+      return { campaignId: c.id, rejudged: 0 };
+    }
+    if (
+      !o.yes &&
+      !ask(
+        `Rejudge ${due.length} execution(s) of campaign ${c.id} with the current scorer suite and the current oracle?`,
+      )
+    ) {
+      console.log(`${colors.yellow("[SKIP]")} rejudge not confirmed`);
+      return { campaignId: c.id, rejudged: 0 };
+    }
+    const opened: OpenedTasks = { tasks, refapps: new Map() };
+    for (const t of used) {
+      const v = t.task.refapp_version;
+      if (!opened.refapps.has(v)) {
+        opened.refapps.set(v, await resolveRefapp(o.root, v));
+      }
+    }
+    for (const e of due) {
+      const oracle = byTask.get(e.task_id)!.oracle;
+      const cell = cellRefFor(
+        c,
+        opened,
+        c.blocks[e.block]!,
+        e.arm,
+        e.order_in_block,
+      );
+      const j = await rejudgeExecution(env, cell, e, oracle);
+      console.log(
+        `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
+          oracle.slice(0, 12)
+        })`,
+      );
+    }
+    return { campaignId: c.id, rejudged: due.length };
+  } finally {
+    await h.close();
+  }
+}
+
+/** Failing oracle rows, or the surviving mutants of mutant_kill (the verdict's own rule). */
+function judgmentReasons(j: JudgmentRecord): string[] {
+  const out: string[] = [];
+  for (const s of j.scorers) {
+    if (s.passed !== false) continue;
+    if (s.name === "mutant_kill") {
+      const mutants = [
+        ...new Set(
+          s.tests.map((t) => t.target).filter((x) => x.startsWith("mutant:")),
+        ),
+      ];
+      for (const m of mutants) {
+        const rows = s.tests.filter((t) => t.target === m);
+        if (mutantOutcome(rows) === "survived") {
+          out.push(`mutant_kill: ${m} survived`);
+        }
+      }
+    } else {
+      for (const t of s.tests) {
+        if (t.outcome !== "pass") {
+          out.push(
+            `${s.name}: ${t.codeunit} ${t.procedure} (${t.target}) ${t.outcome}/${t.failure}`,
+          );
+        }
+      }
+    }
+  }
+  return out;
+}
+
+const posixRel = (from: string, to: string) =>
+  relative(from, to).replaceAll("\\", "/");
+
+/**
+ * One mock cell (M1-35) applying a manifest variant at its rev: the pipeline
+ * check beside judge-fixture. An internal mock arm, not a repo config.
+ */
+async function qualifyMockCell(
+  env: HarnessEnv,
+  root: string,
+  taskId: string,
+  variant: string,
+  rev: string,
+  manifest: QualifyManifest,
+): Promise<{ execution_id: string; verdict: string }> {
+  const config = HarnessConfigSchema.parse({
+    id: "mock-qualify",
+    harness: "mock",
+    harness_version: "1",
+    models: {},
+    settings: {
+      mode: "apply",
+      variant: variant.startsWith("naive/")
+        ? `naive:${variant.slice("naive/".length)}`
+        : "positive",
+    },
+    limits: { timeout_min: 30, max_budget_usd: 1 },
+  });
+  const facts = runtimeFacts(
+    config,
+    await imageFacts(
+      env.docker,
+      imageTag(config.harness, config.harness_version),
+    ),
+    adapterFor(config.harness),
+    await readCatalog(join(root, "site", "catalog")),
+  );
+  const armManifest = await resolveManifest(env.harnessRoot, config, facts);
+  const at = await loadTaskAt(
+    root,
+    taskId,
+    rev,
+    join(env.privateRoot, "work", `qualify-${crypto.randomUUID().slice(0, 8)}`),
+  );
+  const ids = await taskSetIdentity(root, [at.task], env.symbols);
+  const r = await runCell(
+    { ...env, supervised: false, qualifyManifest: manifest },
+    {
+      campaignId: crypto.randomUUID(),
+      block: { index: 0, task_id: taskId, repeat: 1, order: [config.id] },
+      orderInBlock: 0,
+      arm: config.id,
+      armManifest,
+      armManifestHash: await manifestHash(armManifest),
+      task: at.task,
+      taskVisibleHash: ids.tasks[0]!.visible,
+      oracleHash: ids.tasks[0]!.oracle,
+      refapp: await resolveRefapp(root, at.task.task.refapp_version),
+    },
+  );
+  const last = r.executions.at(-1)!;
+  const j = latestJudgment(await env.store.judgments(last.id));
+  return { execution_id: last.id, verdict: j?.verdict ?? "unscored" };
+}
+
+/**
+ * `harness qualify --manifest` (the agreed M4-14/M4-15 contract): per task at
+ * its rev, judge-fixture for the positive and every named naive variant plus
+ * one mock cell each; index at results/harness/qualify/<manifest sha256>/.
+ */
+export async function harnessQualify(
+  o: CellCliOptions & { manifest: string },
+  open: Opener = openHarnessEnv,
+): Promise<{ path: string; data: unknown }> {
+  const m = await loadQualifyManifest(o.manifest);
+  const sha = Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", await Deno.readFile(o.manifest)),
+    ),
+  ).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const out = join(o.resultsDir, "qualify", sha);
+  const h = await open(
+    envOptions(o, out, `harness qualify --manifest ${o.manifest}`),
+  );
+  // judge-fixture shares this environment (one lock, one backend).
+  const shared: Opener = () =>
+    Promise.resolve({ env: h.env, close: () => Promise.resolve() });
+  try {
+    const entries = [];
+    for (const [taskId, t] of Object.entries(m.tasks).sort()) {
+      for (
+        const variant of [t.positive, ...t.naive.map((n) => `naive/${n}`)]
+      ) {
+        const j = await harnessJudgeFixture(taskId, variant, {
+          ...o,
+          rev: t.rev,
+        }, shared);
+        const dir = join(o.resultsDir, "fixtures", taskId, variant, j.id);
+        entries.push({
+          task: taskId,
+          variant,
+          rev: t.rev,
+          judgment_path: posixRel(o.root, join(dir, "judgment.json")),
+          provenance_path: posixRel(o.root, join(dir, "provenance.json")),
+          verdict: j.verdict,
+          expected: variant === t.positive ? "pass" : "fail",
+          reasons: judgmentReasons(j),
+          targets: [
+            ...new Set(j.scorers.flatMap((s) => s.tests.map((x) => x.target))),
+          ].sort(),
+          mock_cell: await qualifyMockCell(
+            h.env,
+            o.root,
+            taskId,
+            variant,
+            t.rev,
+            m,
+          ),
+        });
+      }
+    }
+    const data = {
+      v: 1,
+      manifest: o.manifest,
+      manifest_sha256: sha,
+      refapp_version: m.refapp_version,
+      entries,
+    };
+    await Deno.mkdir(out, { recursive: true });
+    const path = join(out, "index.json");
+    await Deno.writeTextFile(path, JSON.stringify(data, null, 2) + "\n");
+    const bad = entries.filter((e) =>
+      e.verdict !== e.expected || e.mock_cell.verdict !== e.expected
+    );
+    console.log(
+      `${bad.length === 0 ? colors.green("[OK]") : colors.red("[FAIL]")} ${
+        entries.length - bad.length
+      }/${entries.length} variants as expected (${path})`,
+    );
+    return { path, data };
+  } finally {
+    await h.close();
+  }
 }
 
 /** Print a known failure as [FAIL] and set exit code 1; rethrow bugs. */
@@ -895,6 +1303,93 @@ export function registerHarnessCommand(cli: Command): void {
         void await harnessJudgeFixture(task, variant, {
           ...cliOpts(opts),
           manifest: opts.manifest ? resolve(opts.manifest) : null,
+        })
+      )
+    );
+
+  type RunFlags = CellCliFlags & {
+    dryRun?: boolean;
+    sample?: number;
+    repeats?: number;
+    concurrency: number;
+    seed?: number;
+    maxPauseMin: number;
+    yes?: boolean;
+    execution?: string;
+  };
+  const runOpts = (f: RunFlags): RunCliOptions => ({
+    ...cliOpts(f),
+    dryRun: f.dryRun === true,
+    concurrency: f.concurrency,
+    maxPauseMin: f.maxPauseMin,
+    ...(f.sample !== undefined ? { sample: f.sample } : {}),
+    ...(f.repeats !== undefined ? { repeats: f.repeats } : {}),
+    ...(f.seed !== undefined ? { seed: f.seed } : {}),
+    ...(f.yes ? { yes: true } : {}),
+    ...(f.execution ? { execution: f.execution } : {}),
+  });
+
+  shared(
+    parent.command(
+      "run <experiment:string>",
+      "Run (or resume) an experiment's campaign unattended",
+    ),
+  )
+    .option(
+      "--dry-run",
+      "Print the plan; no lock, no container, nothing written",
+    )
+    .option("--sample <n:integer>", "Run only the first N blocks")
+    .option("--repeats <n:integer>", "Run only repeats 1..N")
+    .option("--concurrency <n:integer>", "Blocks run at once", { default: 1 })
+    .option("--seed <n:integer>", "Seed of a new campaign's block order")
+    .option(
+      "--max-pause-min <n:number>",
+      "Longest usage-limit pause to wait out; 0 stops with a resume line",
+      { default: 0 },
+    )
+    .option(
+      "--qualify-manifest <path:string>",
+      "Qualification manifest naming the variants mock arms apply",
+    )
+    .action((opts: RunFlags, experiment: string) =>
+      fail(async () => void await harnessRun(experiment, runOpts(opts)))
+    );
+
+  shared(
+    parent.command(
+      "rejudge <experiment:string>",
+      "Judge stored executions again with the current scorers and oracle",
+    ),
+  )
+    .option("--execution <id:string>", "Only this execution")
+    .option("--yes", "Do not ask for confirmation")
+    .action((
+      opts: Omit<RunFlags, "concurrency" | "maxPauseMin">,
+      experiment: string,
+    ) =>
+      fail(async () =>
+        void await harnessRejudge(
+          experiment,
+          runOpts({ ...opts, concurrency: 1, maxPauseMin: 0 }),
+        )
+      )
+    );
+
+  shared(
+    parent.command(
+      "qualify",
+      "Judge every manifest variant at its rev (judge-fixture plus one mock cell) and index the results",
+    ),
+  )
+    .option("--manifest <path:string>", "Qualification manifest", {
+      required: true,
+    })
+    .action((opts: CellCliFlags & { manifest: string }) =>
+      fail(async () =>
+        void await harnessQualify({
+          ...cliOpts(opts),
+          manifest: resolve(opts.manifest),
         })
       )
     );

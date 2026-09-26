@@ -14,7 +14,10 @@ import {
   harnessCell,
   harnessImagesBuild,
   harnessJudgeFixture,
+  harnessQualify,
+  harnessRejudge,
   harnessReport,
+  harnessRun,
   harnessSymbolsLock,
   registerHarnessCommand,
   validateHarness,
@@ -23,15 +26,19 @@ import {
   EGRESS_MARKER,
   type EnvDeps,
   openHarnessEnv,
+  openPlanEnv,
   resolveEgress,
 } from "../../../../cli/commands/harness-env.ts";
 import { claudeCodeAdapter } from "../../../../src/harness/adapters/claude-code.ts";
 import { loadSymbolsLock } from "../../../../src/harness/identity.ts";
 import { BASE_IMAGE } from "../../../../src/harness/images.ts";
+import { runCampaign } from "../../../../src/harness/campaign.ts";
+import { scorerFingerprint } from "../../../../src/harness/records.ts";
 import { BenchLockHeldError } from "../../../../src/utils/bench-lock.ts";
 import { FakeBc } from "../../harness/fake-bc.ts";
 import { FakeDocker } from "../../harness/fake-docker.ts";
 import {
+  CATALOG,
   ccBehavior,
   makeEnv,
   mockImageBehavior,
@@ -1042,4 +1049,313 @@ Deno.test("harnessImagesBuild: a base tag that moves between inspect and build c
   assertStringIncludes(args, `BASE=${baseId}`);
   assertEquals(args.includes(`BASE=${BASE_IMAGE}`), false);
   assertEquals(f.base_digest, baseId);
+});
+
+// ---- M1-24b: run, rejudge, qualify ----
+
+async function mockExperiment(t: TestEnv, id = "contract") {
+  await write(
+    t.harnessRoot,
+    `experiments/${id}.yml`,
+    `id: ${id}
+hypothesis: Mock contract.
+primary_metric: pass_rate
+baseline: mock-positive
+variants: [mock-naive-a]
+vary: [settings]
+tasks: "harness-tasks/tasks/*"
+repeats: 1
+`,
+  );
+}
+
+const runOpts = (t: TestEnv, over: Record<string, unknown> = {}) => ({
+  ...cellOpts(t, { supervised: false }),
+  dryRun: false,
+  concurrency: 1,
+  maxPauseMin: 0,
+  yes: true,
+  ...over,
+});
+
+function planDeps(
+  t: TestEnv,
+  order: string[],
+  verify?: () => Promise<string[]>,
+) {
+  return { ...deps(order, undefined, verify), docker: () => t.docker };
+}
+
+Deno.test("run --dry-run prints the plan without a lock", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const order: string[] = [];
+  const lines: string[] = [];
+  const log = stub(console, "log", (...a: unknown[]) => {
+    lines.push(a.join(" "));
+  });
+  try {
+    const s = await harnessRun(
+      "contract",
+      runOpts(t, { dryRun: true }),
+      () => Promise.reject(new Error("a dry run opens no environment")),
+      (eo) => openPlanEnv(eo, planDeps(t, order)),
+    );
+    assertEquals([s.planned, s.ran], [2, 0]);
+  } finally {
+    log.restore();
+  }
+  assertEquals(order.includes("lock"), false);
+  assertStringIncludes(stripAnsiCode(lines.join("\n")), "HX-001#1:");
+  assertEquals(t.docker.runs.length, 0);
+});
+
+Deno.test("run refuses a credential-bearing arm unless the verified state is authorized; a marker failing verification stops", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await write(
+    t.harnessRoot,
+    "configs/cc-sonnet-effort.yml",
+    `id: cc-sonnet-effort
+harness: claude-code
+harness_version: "2.1.282"
+models: { main: anthropic/claude-sonnet-5 }
+settings: { effort: high }
+components: { instructions: bundles/env/instructions }
+limits: { timeout_min: 30, max_budget_usd: 5 }
+`,
+  );
+  await write(
+    t.harnessRoot,
+    "experiments/cc.yml",
+    `id: cc
+hypothesis: Effort.
+primary_metric: pass_rate
+baseline: cc-sonnet-plain
+variants: [cc-sonnet-effort]
+vary: [settings]
+tasks: "harness-tasks/tasks/*"
+repeats: 1
+`,
+  );
+  const o = runOpts(t, { dryRun: true });
+  const noEnv = () => Promise.reject(new Error("no environment"));
+  const shared = join(t.repo.root, "results", "harness");
+  await assertRejects(
+    () => harnessRun("cc", o, noEnv, (eo) => openPlanEnv(eo, planDeps(t, []))),
+    ConfigurationError,
+    "egress",
+  );
+  await Deno.writeTextFile(
+    join(shared, EGRESS_MARKER),
+    JSON.stringify({ v: 1, state: "authorized" }),
+  );
+  await assertRejects(
+    () =>
+      harnessRun(
+        "cc",
+        o,
+        noEnv,
+        (eo) =>
+          openPlanEnv(
+            eo,
+            planDeps(t, [], () => Promise.resolve(["proxy not running"])),
+          ),
+      ),
+    ConfigurationError,
+    "proxy not running",
+  );
+  const s = await harnessRun(
+    "cc",
+    o,
+    noEnv,
+    (eo) => openPlanEnv(eo, planDeps(t, [], () => Promise.resolve([]))),
+  );
+  assertEquals(s.planned, 2);
+});
+
+Deno.test("qualify judges every manifest variant at its rev and indexes judgment, provenance, expected and actual verdicts", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await git(t.repo.root, "add", ".");
+  await git(t.repo.root, "commit", "-q", "-m", "tasks");
+  await git(t.repo.root, "tag", "refapp-v1-rc1");
+  const manifest = join(t.env.privateRoot, "qualify-manifest.json");
+  await Deno.writeTextFile(
+    manifest,
+    JSON.stringify({
+      v: 1,
+      refapp_version: "refapp-v1",
+      tasks: {
+        "HX-001": { rev: "refapp-v1-rc1", positive: "correct", naive: ["a"] },
+      },
+    }),
+  );
+  const index = await harnessQualify(
+    { ...cellOpts(t, { supervised: false }), manifest },
+    opener(t),
+  );
+  const saved = JSON.parse(await Deno.readTextFile(index.path));
+  assertEquals(saved, index.data);
+  const bytes = await Deno.readFile(manifest);
+  const sha = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+  ).map((b) => b.toString(16).padStart(2, "0")).join("");
+  assertEquals(
+    index.path,
+    join(t.env.resultsRoot, "qualify", sha, "index.json"),
+  );
+  const rows = saved.entries.map((
+    e: {
+      task: string;
+      variant: string;
+      verdict: string;
+      expected: string;
+      mock_cell: { verdict: string };
+    },
+  ) => [e.task, e.variant, e.verdict, e.expected, e.mock_cell.verdict]);
+  assertEquals(rows, [
+    ["HX-001", "correct", "pass", "pass", "pass"],
+    ["HX-001", "naive/a", "fail", "fail", "fail"],
+  ]);
+  const naive = saved.entries[1];
+  assertStringIncludes(naive.reasons.join(" "), "FixWorks");
+  assertEquals(naive.targets, ["candidate"]);
+  for (const e of saved.entries) {
+    const j = JSON.parse(
+      await Deno.readTextFile(join(t.repo.root, e.judgment_path)),
+    );
+    const p = JSON.parse(
+      await Deno.readTextFile(join(t.repo.root, e.provenance_path)),
+    );
+    assertEquals([j.verdict, p.rev, p.variant], [
+      e.verdict,
+      "refapp-v1-rc1",
+      e.variant,
+    ]);
+  }
+});
+
+async function staleJudgment(t: TestEnv, executionId: string) {
+  const [j] = await t.env.store.judgments(executionId);
+  const versions = { ...j!.scorer_versions, build: "0-stale" };
+  await t.env.store.writeJudgment({
+    ...j!,
+    id: crypto.randomUUID(),
+    scorer_versions: versions,
+    scorer_fingerprint: await scorerFingerprint(versions),
+    // Newer than the original judgment, older than any rejudge that follows.
+    started_at: new Date().toISOString(),
+    ended_at: new Date().toISOString(),
+  });
+}
+
+async function campaignWithStaleJudgment(t: TestEnv) {
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const es = await t.env.store.executions(c.id);
+  await staleJudgment(t, es[0]!.id);
+  return { c, es };
+}
+
+Deno.test("rejudge adds one judgment per execution whose scorer fingerprint is not current, and none on a second call", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  const count = async () =>
+    (await Promise.all(es.map((e) => t.env.store.judgments(e.id)))).map((
+      js,
+    ) => js.length);
+  assertEquals(await count(), [2, 1]);
+  const first = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(first.rejudged, 1);
+  assertEquals(await count(), [3, 1]);
+  const again = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals([again.rejudged, await count()], [0, [3, 1]]);
+});
+
+Deno.test("rejudge refuses when the restaged visible inputs differ", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  await Deno.writeTextFile(
+    join(t.repo.tasksDir, "HX-001", "prompt.md"),
+    "An edited prompt.",
+  );
+  await assertRejects(
+    () => harnessRejudge("contract", runOpts(t), opener(t)),
+    ConfigurationError,
+    "visible",
+  );
+  assertEquals((await t.env.store.judgments(es[0]!.id)).length, 2);
+});
+
+Deno.test("rejudge asks for confirmation unless --yes", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  const asked: string[] = [];
+  const no = (q: string) => {
+    asked.push(q);
+    return false;
+  };
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t, { yes: false }),
+    opener(t),
+    no,
+  );
+  assertEquals([r.rejudged, asked.length], [0, 1]);
+  assertStringIncludes(asked[0]!, "current oracle");
+  assertEquals((await t.env.store.judgments(es[0]!.id)).length, 2);
+  const yes = await harnessRejudge(
+    "contract",
+    runOpts(t, { yes: true }),
+    opener(t),
+    () => {
+      throw new Error("--yes must not ask");
+    },
+  );
+  assertEquals(yes.rejudged, 1);
+});
+
+Deno.test("images build lists the resulting digest and labels", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+  docker.addImage(
+    "centralgauge/harness-mock:1",
+    `sha256:${"c".repeat(64)}`,
+    {
+      "centralgauge.harness": "mock",
+      "centralgauge.harness.version": "1",
+      "centralgauge.harness.base_digest": baseId,
+    },
+    ["l1", "l2"],
+  );
+  const lines: string[] = [];
+  const log = stub(console, "log", (...a: unknown[]) => {
+    lines.push(a.join(" "));
+  });
+  try {
+    await harnessImagesBuild("mock", { root, version: "1" }, docker);
+  } finally {
+    log.restore();
+  }
+  const out = stripAnsiCode(lines.join("\n"));
+  assertStringIncludes(out, `sha256:${"c".repeat(64)}`);
+  assertStringIncludes(out, "centralgauge.harness=mock");
+  assertStringIncludes(out, "centralgauge.harness.version=1");
+  assertStringIncludes(out, `centralgauge.harness.base_digest=${baseId}`);
 });

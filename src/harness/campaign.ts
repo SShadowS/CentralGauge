@@ -184,6 +184,36 @@ function laterReset(a: string | null, b: string): string {
   return compareInstant(a, b) >= 0 ? a : b;
 }
 
+/** What a dry run reads: no lane, backend or container is opened. */
+export type PlanEnv =
+  & Pick<
+    HarnessEnv,
+    | "repoRoot"
+    | "harnessRoot"
+    | "resultsRoot"
+    | "store"
+    | "docker"
+    | "symbols"
+    | "egressEnforced"
+  >
+  & Pick<Partial<HarnessEnv>, "now">;
+
+/** A dry run: the plan and the egress refusal, without a lock or containers. */
+export function planCampaign(
+  env: PlanEnv,
+  experimentId: string,
+  o: Omit<RunOptions, "dryRun">,
+  io: RunIO,
+): Promise<CampaignSummary> {
+  // runCampaign returns before any field outside PlanEnv is read when dryRun is set.
+  return runCampaign(
+    env as HarnessEnv,
+    experimentId,
+    { ...o, dryRun: true },
+    io,
+  );
+}
+
 export async function runCampaign(
   env: HarnessEnv,
   experimentId: string,
