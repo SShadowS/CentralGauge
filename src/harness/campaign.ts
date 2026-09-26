@@ -14,11 +14,13 @@ import { join, relative } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
 import type { Catalog } from "../ingest/catalog/read.ts";
 import type { AttemptRef, CellRef, HarnessEnv } from "./execution.ts";
+import type { PriorExecution } from "./estimate.ts";
 import type { CampaignRecords } from "./integrity.ts";
 import type { RefappRef } from "./identity.ts";
 import type { LoadedTask } from "./task.ts";
 import { ConfigurationError } from "../errors.ts";
 import { adapterFor } from "./adapters/mod.ts";
+import { estimateArms, renderEstimate } from "./estimate.ts";
 import { loadExperiment } from "./config.ts";
 import { recoverInterrupted, runCell } from "./execution.ts";
 import { resolveRefapp, taskSetIdentity } from "./identity.ts";
@@ -30,6 +32,7 @@ import {
 } from "./images.ts";
 import { validateCampaignRecords } from "./integrity.ts";
 import { manifestHash, resolveManifest } from "./manifest.ts";
+import { cellsFromRecords } from "./outcome.ts";
 import {
   type ArtifactRecord,
   type Block,
@@ -226,6 +229,67 @@ export function planCampaign(
 export const PLACED_CONCURRENCY_REFUSAL =
   "--concurrency > 1 is refused while the egress marker places sandboxes: every placed cell uses the one egress proxy on the sandbox gateway, which has no per-execution isolation yet (M1-33c); run with --concurrency 1";
 
+/**
+ * Estimate lines for a dry run: outstanding cells (unrun or pending) of the
+ * selected blocks per arm, priced from every stored execution of the same
+ * arm manifest. verdict_ms is the first judgment's own ended_at - started_at.
+ */
+async function dryRunEstimate(
+  store: RecordStore,
+  c: CampaignRecord,
+  data: CampaignRecords | null,
+  blocks: Block[],
+): Promise<string[]> {
+  const selected = new Set(blocks.map((b) => `${b.task_id}#${b.repeat}`));
+  const outstanding = new Map<string, number>();
+  if (data) {
+    const byExecution = new Map<string, JudgmentRecord[]>();
+    for (const j of data.judgments) {
+      byExecution.set(j.execution_id, [
+        ...(byExecution.get(j.execution_id) ?? []),
+        j,
+      ]);
+    }
+    for (const cell of cellsFromRecords(c, data.executions, byExecution)) {
+      if (
+        selected.has(`${cell.task}#${cell.repeat}`) &&
+        (cell.status === "unrun" || cell.status === "pending")
+      ) outstanding.set(cell.arm, (outstanding.get(cell.arm) ?? 0) + 1);
+    }
+  } else {
+    for (const b of blocks) {
+      for (const arm of b.order) {
+        outstanding.set(arm, (outstanding.get(arm) ?? 0) + 1);
+      }
+    }
+  }
+  const ms = (from: string, to: string) => Date.parse(to) - Date.parse(from);
+  const prior: PriorExecution[] = [];
+  for (const e of await store.allExecutions()) {
+    const first = (await store.judgments(e.id))[0];
+    prior.push({
+      arm_manifest_hash: e.arm_manifest_hash,
+      cell: `${e.campaign_id}:${e.task_id}#${e.repeat}`,
+      exec_ms: ms(e.started_at, e.ended_at),
+      verdict_ms: first ? ms(first.started_at, first.ended_at) : null,
+      list_cost_usd: e.telemetry.cost_usd,
+      paid_cost_usd: e.telemetry.reported_cost_usd,
+    });
+  }
+  return renderEstimate(estimateArms(
+    c.arms.map((a) => ({
+      arm: a.config_id,
+      manifest_hash: a.manifest_hash,
+      // ponytail: provider prefix as the paid flag; add a config field if a paid non-OpenRouter route appears
+      paid: Object.values(a.manifest.models).some((m) =>
+        m.startsWith("openrouter/")
+      ),
+      outstanding_cells: outstanding.get(a.config_id) ?? 0,
+    })),
+    prior,
+  ));
+}
+
 export async function runCampaign(
   env: HarnessEnv,
   experimentId: string,
@@ -318,6 +382,7 @@ export async function runCampaign(
     )
   );
   let created = false;
+  let data: CampaignRecords | null = null;
   if (!c) {
     if (campaigns.length > 0) {
       io.log(
@@ -364,7 +429,8 @@ export async function runCampaign(
       created = true;
     }
   } else {
-    await validateCampaignRecords(await loadCampaignData(env.store, c));
+    data = await loadCampaignData(env.store, c);
+    await validateCampaignRecords(data);
   }
   const maxRepeat = o.repeats ?? experiment.repeats;
   const blocks = c.blocks.filter((b) => b.repeat <= maxRepeat)
@@ -382,6 +448,9 @@ export async function runCampaign(
   if (o.dryRun) {
     for (const b of blocks) {
       io.log(`${b.task_id}#${b.repeat}: ${b.order.join(" -> ")}`);
+    }
+    for (const line of await dryRunEstimate(env.store, c, data, blocks)) {
+      io.log(line);
     }
     return summary;
   }

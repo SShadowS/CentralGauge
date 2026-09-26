@@ -774,6 +774,33 @@ export class RecordStore {
     )).sort(byInstant((e) => e.started_at));
   }
 
+  /**
+   * Executions of every campaign (estimates borrow samples across
+   * experiments by arm manifest hash), by started_at then id.
+   */
+  async allExecutions(): Promise<ExecutionRecord[]> {
+    const dir = join(this.root, "executions");
+    try {
+      if (!(await lstatNoLinks(this.root, dir)).isDirectory) {
+        throw new ValidationError(`not a record folder: ${dir}`, [dir]);
+      }
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return [];
+      throw err;
+    }
+    const out: ExecutionRecord[] = [];
+    for await (const e of Deno.readDir(dir)) {
+      if (!e.isDirectory) {
+        throw new ValidationError(
+          `unexpected entry in executions folder: ${join(dir, e.name)}`,
+          [e.name],
+        );
+      }
+      out.push(...await this.executions(e.name));
+    }
+    return out.sort(byInstant((e) => e.started_at));
+  }
+
   /** The artifact association of one execution, or null. */
   async artifact(executionId: string): Promise<ArtifactRecord | null> {
     const execution_id = safeId(executionId, "execution");
