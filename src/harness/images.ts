@@ -26,6 +26,8 @@ export const MCP_LABEL_PREFIX = "centralgauge.mcp.";
 /** The MCP components an image label may name (run.ps1 refuses any other). */
 const MCP_COMPONENTS: readonly string[] = ["al-tools"];
 export const AL_TOOLS_DEF = "harness/images/base/al-tools-tools.json";
+/** Where the base Dockerfile puts the definition al-tools-mcp.mjs reads. */
+export const AL_TOOLS_SHIPPED = "C:\\al-tools-tools.json";
 
 export const imageTag = (harness: string, version: string) =>
   `centralgauge/harness-${harness}:${version}`;
@@ -79,6 +81,29 @@ export async function imageFacts(
     );
   }
   const mcp = mcpFacts(ref, l);
+  // The label is trusted at build time only: the bytes the image ships must
+  // hash to it (same names with another schema would pass a name check).
+  if (mcp["al-tools"]) {
+    const text = await docker.readImageFile(img.Id, AL_TOOLS_SHIPPED);
+    let hash: string;
+    try {
+      if (text === null) throw new Error("not found");
+      hash = await hashJson(JSON.parse(text));
+    } catch (e) {
+      throw new ConfigurationError(
+        `image ${ref}: cannot read the shipped ${AL_TOOLS_SHIPPED} (${
+          e instanceof Error ? e.message : String(e)
+        })`,
+      );
+    }
+    if (hash !== mcp["al-tools"].tool_schema_hash) {
+      throw new ConfigurationError(
+        `image ${ref}: shipped ${AL_TOOLS_SHIPPED} hashes to ${hash}, which differs from its label ${
+          mcp["al-tools"].tool_schema_hash
+        }: rebuild the base image`,
+      );
+    }
+  }
   return {
     digest: img.Id,
     base_digest: l[IMAGE_LABELS.base]!,
