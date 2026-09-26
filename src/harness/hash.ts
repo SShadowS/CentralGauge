@@ -26,7 +26,7 @@ import { canonicalJSON } from "../../shared/canonical.ts";
 import { ValidationError } from "../errors.ts";
 import { TEXT_EXTENSIONS } from "../ingest/catalog/task-set-hash.ts";
 
-export const HASH_RULES_VERSION = "hr2";
+export const HASH_RULES_VERSION = "hr3";
 
 export type TreeDomain = "bundle" | "task";
 
@@ -129,12 +129,13 @@ export function hashContent(
 
 /**
  * True when a `task`-domain file path is a spec 1b section 7 build artifact:
- * under a `.alpackages/` or `output/` directory, or a `*.app` file. A regular
+ * under a `.alpackages/` or `output/` directory (any case: Windows and BCH
+ * treat `.ALPACKAGES` as the same folder, hr3), or a `*.app` file. A regular
  * file named `output` is content.
  */
 export function isTaskBuildArtifact(rel: string): boolean {
   const segs = rel.split("/");
-  const dirs = segs.slice(0, -1);
+  const dirs = segs.slice(0, -1).map((s) => s.toLowerCase());
   return dirs.some((s) => s === ".alpackages" || s === "output") ||
     /\.app$/i.test(segs[segs.length - 1]!);
 }

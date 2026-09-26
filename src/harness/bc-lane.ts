@@ -414,6 +414,7 @@ export function dirBuildCache(dir: string): BuildCache {
 /** What makes a build reusable: the app's source, its version, its dependencies' files, the compiler and the lock. */
 async function buildKey(
   container: string,
+  compiler: string,
   app: StagedApp,
   srcDir: string,
   version: string,
@@ -431,6 +432,7 @@ async function buildKey(
     source: await hashTree(join(srcDir, app.folder), "task"),
     deps,
     container,
+    compiler,
     lock: lockDigest,
   });
 }
@@ -472,12 +474,12 @@ async function seedAppInfo(
   }
 }
 
+/** `verified`: lower-cased names of the locked packages that hash-verified in this build. */
 async function harvestAppInfo(
   pk: string,
   store: string,
   lockDigest: string,
-  locked: ReadonlySet<string>,
-  exclude: ReadonlySet<string>,
+  verified: ReadonlySet<string>,
 ): Promise<void> {
   let fresh: Record<string, unknown>;
   try {
@@ -491,7 +493,7 @@ async function harvestAppInfo(
     () => ({}),
   );
   const add = Object.entries(fresh).filter(([k]) =>
-    locked.has(cachedName(k)) && !exclude.has(cachedName(k)) && !(k in saved)
+    verified.has(cachedName(k).toLowerCase()) && !(k in saved)
   );
   if (add.length === 0) return;
   await Deno.mkdir(join(store, "appinfo"), { recursive: true });
@@ -529,6 +531,8 @@ export async function buildApps(
     o.lock.packages.map((p) => [p.file.toLowerCase(), p]),
   );
   const lockedNames = new Set(o.lock.packages.map((p) => p.file));
+  // A recreated or upgraded container is a different compiler: a cache miss.
+  const compiler = o.cache ? await bc.harnessCompilerIdentity(container) : null;
   const collision = (file: string) =>
     lockedByName.get(basename(file).toLowerCase());
   // A workspace app is the agent's (publisher, name, version, id): one that
@@ -607,7 +611,15 @@ export async function buildApps(
       continue;
     }
     const key = o.cache
-      ? await buildKey(container, app, o.srcDir, version, files, lockDigest)
+      ? await buildKey(
+        container,
+        compiler!,
+        app,
+        o.srcDir,
+        version,
+        files,
+        lockDigest,
+      )
       : null;
     const hit = key ? await o.cache!.get(key) : null;
     const hitTaken = hit ? collision(hit) : undefined;
@@ -652,6 +664,8 @@ export async function buildApps(
       JSON.stringify(appJson, null, 2),
     );
     const pk = join(dir, ".alpackages");
+    // Only what the harness restores and seeds (the copy skips any case of it too).
+    await Deno.remove(pk, { recursive: true }).catch(() => {});
     await restoreSymbols(o.lock.store, o.lock.packages, pk);
     const workspaceFiles = new Set([...files.values()].map((f) => basename(f)));
     const workspaceLower = new Set(
@@ -683,6 +697,7 @@ export async function buildApps(
       testFiles: [],
     });
     const compile_ms = performance.now() - t0;
+    const verified = new Set<string>();
     for await (const e of Deno.readDir(pk)) {
       // Only packages are checked: BCH writes its own index
       // (cache_AppInfo.json) into .alpackages during the compile.
@@ -698,15 +713,10 @@ export async function buildApps(
           [e.name],
         );
       }
+      verified.add(e.name.toLowerCase());
     }
-    // Every package BCH saw passed the lock check: its app info may be kept.
-    await harvestAppInfo(
-      pk,
-      o.lock.store,
-      lockDigest,
-      lockedNames,
-      workspaceFiles,
-    );
+    // Only the locked packages that hash-verified in this build keep their app info.
+    await harvestAppInfo(pk, o.lock.store, lockDigest, verified);
     const outTaken = r.success && r.artifactPath
       ? collision(r.artifactPath)
       : undefined;

@@ -530,7 +530,7 @@ Deno.test("BcLane: compiles are admitted at most compileSlots at a time per cont
   const lane = new BcLane(bc, ["C1"], { compileSlots: 1 });
   const lk = await lock();
   await Promise.all(
-    [1, 2, 3].map(async () =>
+    [1, 2, 3].map(() =>
       lane.compile(async (c) =>
         buildApps(bc, c, {
           srcDir: ws,
@@ -649,7 +649,7 @@ Deno.test("deployAndTest: a cleanup refused before any change is loud and quaran
   const lane = new BcLane(bc, ["C1", "C2"]);
   const p = await prep(bc, lane);
   const untrusted = "00000000-0000-4000-8000-00000000eeee";
-  const err = await assertRejects(async () =>
+  const err = await assertRejects(() =>
     lane.exclusive(
       { taskId: "t", variantId: "v", attemptNumber: 1 },
       async (c) =>
@@ -1145,4 +1145,111 @@ Deno.test("buildApps: a prebuilt workspace file named as a locked package is ref
     "Microsoft_Library Assert_28.0.0.0.app",
   );
   assertEquals(bc.compiles, []);
+});
+
+const ASSERT_FILE = "Microsoft_Library Assert_28.0.0.0.app";
+const appInfoStore = async (lk: LockedSymbols) => {
+  const dir = join(lk.store, "appinfo");
+  const out: Record<string, unknown> = {};
+  try {
+    for await (const e of Deno.readDir(dir)) {
+      Object.assign(
+        out,
+        JSON.parse(await Deno.readTextFile(join(dir, e.name))),
+      );
+    }
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  return out;
+};
+
+Deno.test("buildApps: an agent-planted .ALPACKAGES app info cache (any case) is dropped and never harvested", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  for (const folder of [".ALPACKAGES", ".alpackages"]) {
+    await write(
+      ws,
+      `Core/${folder}/cache_AppInfo.json`,
+      JSON.stringify({ [`.\\${ASSERT_FILE}`]: { name: "FORGED" } }),
+    );
+  }
+  const bc = new FakeBc();
+  const seen = new Map<string, string[] | null>();
+  bc.onCompile = async (dir) => {
+    seen.set(
+      basename(dir),
+      await Deno.readTextFile(join(dir, ".alpackages", "cache_AppInfo.json"))
+        .then((t) => Object.keys(JSON.parse(t)), () => null),
+    );
+  };
+  await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  assertEquals(seen.get("Core"), null, "no planted cache reaches the compile");
+  assertEquals(await appInfoStore(lk), {}, "nothing forged is harvested");
+});
+
+Deno.test("buildApps: a harvest keeps only locked packages that hash-verified in this build", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const bc = new FakeBc();
+  let n = 0;
+  bc.onCompile = async (dir) => {
+    const pk = join(dir, ".alpackages");
+    const entries: Record<string, unknown> = {
+      [`.\\${ASSERT_FILE}`]: { name: "assert" },
+      ".\\Not_Locked_1.0.0.0.app": { name: "other" },
+    };
+    // First compile: the locked package is gone from the folder (not verified).
+    if (++n === 1) await Deno.remove(join(pk, ASSERT_FILE));
+    await Deno.writeTextFile(
+      join(pk, "cache_AppInfo.json"),
+      JSON.stringify(entries),
+    );
+  };
+  const o = async () => ({
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  await buildApps(bc, "C1", await o());
+  assertEquals(
+    await appInfoStore(lk),
+    {},
+    "an unverified locked entry is not kept",
+  );
+  await buildApps(bc, "C1", await o());
+  assertEquals(Object.keys(await appInfoStore(lk)), [`.\\${ASSERT_FILE}`]);
+});
+
+Deno.test("buildApps: the build cache key holds the compiler identity, not only the container name", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const cache = dirBuildCache(await tmp());
+  const bc = new FakeBc();
+  const o = async () => ({
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+    cache,
+  });
+  await buildApps(bc, "C1", await o());
+  await buildApps(bc, "C1", await o());
+  assertEquals(bc.compiles, ["Core"]);
+  bc.compilerId = "fake-artifact-29|bccontainerhelper 6.1.14";
+  await buildApps(bc, "C1", await o());
+  assertEquals(
+    bc.compiles,
+    ["Core", "Core"],
+    "a recreated or upgraded container misses",
+  );
 });
