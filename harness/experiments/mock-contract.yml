@@ -1,0 +1,10 @@
+# M1-30 mock contract: a correct mock must pass and a naive one must fail, through the full campaign
+# pipeline (plan 2026-09-30-harness-core-part2, Task M1-30 Step 1). HX-001 only: the naive arm is per task.
+id: mock-contract
+hypothesis: "The pipeline scores the correct mock variant as pass and the naive lock-table variant as fail on HX-001."
+primary_metric: pass_rate
+baseline: mock-naive-lock-table
+variants: [mock-positive]
+vary: [settings]
+tasks: "harness-tasks/tasks/HX-001"
+repeats: 2
