@@ -15,8 +15,10 @@ $userHome = $env:USERPROFILE
 New-Item -ItemType Directory -Force -Path "$userHome\.claude" | Out-Null
 # MCP components (settings.mcp, set only from components.mcp): validated before
 # anything runs. mcp.json holds the non-secret backend env only; the server
-# reads the backend token from C:\cg-secrets itself.
-$mcpArgs = @()
+# reads the backend token from C:\cg-secrets itself. Every arm runs with a
+# strict MCP config (M2-09): an arm without MCP gets {"mcpServers": {}}, so no
+# user or project MCP server can load.
+$servers = @{}
 if ($null -ne $cfg.settings.PSObject.Properties['mcp']) {
   $mcp = $cfg.settings.mcp
   if (-not ($mcp -is [array]) -or $mcp.Count -eq 0 -or @($mcp | Select-Object -Unique).Count -ne $mcp.Count -or @($mcp | Where-Object { $_ -cne 'al-tools' }).Count -gt 0) {
@@ -27,15 +29,14 @@ if ($null -ne $cfg.settings.PSObject.Properties['mcp']) {
     [Console]::Error.WriteLine('[FAIL] MCP components need CG_BACKEND_URL and CG_EXECUTION_ID')
     exit 4
   }
-  $servers = @{}
   foreach ($name in $mcp) {
     $servers[$name] = @{ type = 'stdio'; command = 'node'; args = @('C:\al-tools-mcp.mjs');
       env = @{ CG_BACKEND_URL = $env:CG_BACKEND_URL; CG_EXECUTION_ID = $env:CG_EXECUTION_ID } }
   }
-  $mcpPath = "$userHome\mcp.json"
-  [IO.File]::WriteAllText($mcpPath, (ConvertTo-Json -InputObject @{ mcpServers = $servers } -Depth 6), $utf8)
-  $mcpArgs = @('--mcp-config', $mcpPath, '--strict-mcp-config')
 }
+$mcpPath = "$userHome\mcp.json"
+[IO.File]::WriteAllText($mcpPath, (ConvertTo-Json -InputObject @{ mcpServers = $servers } -Depth 6), $utf8)
+$mcpArgs = @('--mcp-config', $mcpPath, '--strict-mcp-config')
 if (Test-Path 'C:\config\bundle\instructions') {
   $dir = 'C:\config\bundle\instructions'
   $names = @(Get-ChildItem $dir -File | ForEach-Object { $_.Name })

@@ -7,6 +7,7 @@ import {
   assertThrows,
 } from "@std/assert";
 import { join } from "@std/path";
+import { stub } from "@std/testing/mock";
 import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import { incompleteTelemetry } from "../../../src/harness/adapter.ts";
 import {
@@ -40,7 +41,12 @@ const BOOK: PricingBook = {
   },
 };
 
-async function parse(text: string, exitCode: number | null = 0, over = {}) {
+/** Parses with the probe's own arm by default (al-tools with the probe's tool inventory, M2-09). */
+async function parse(
+  text: string,
+  exitCode: number | null = 0,
+  over: Record<string, unknown> = mcpManifest(PROBE_TOOLS),
+) {
   const dir = await Deno.realPath(await Deno.makeTempDir());
   await Deno.writeTextFile(join(dir, "raw.jsonl"), text);
   return {
@@ -220,8 +226,13 @@ Deno.test("claude-code parse: skills and MCP are confirmed from init; instructio
     claude_code_version: "2.1.282",
     skills: ["objid"],
     mcp_servers: [{ name: "al-tools", status: "connected" }],
+    tools: ["mcp__al-tools__al_compile"],
   });
   const { r } = await parse(init + "\n", 0, {
+    settings: {
+      requested: {},
+      native: { mcp: ["al-tools"], mcp_tools: { "al-tools": ["al_compile"] } },
+    },
     skills: {
       path: "bundles/s/skills",
       hash: "a".repeat(64),
@@ -1550,4 +1561,101 @@ Deno.test("metrics: a non-JSON line names the nested requests reason", async () 
       "",
     "non-JSON",
   );
+});
+
+// M2-09: fail-closed MCP inventory from the persisted manifest.
+const AL = { name: "al-tools", version: "v", tool_schema_hash: "h" };
+const PROBE_TOOLS = [
+  "al_compile",
+  "al_container_status",
+  "al_test",
+  "al_verify",
+  "al_verify_task",
+];
+const mcpManifest = (tools?: string[]) => ({
+  mcp: [AL],
+  settings: {
+    requested: {},
+    native: tools
+      ? { mcp: ["al-tools"], mcp_tools: { "al-tools": tools } }
+      : { mcp: ["al-tools"] },
+  },
+});
+
+Deno.test("mcp inventory: exact match loads, even though the run loaded tools through ToolSearch", async () => {
+  const text = await Deno.readTextFile(FIXTURE);
+  assert(text.includes('"name":"ToolSearch"'), "the probe uses ToolSearch");
+  const { r } = await parse(text, 0, mcpManifest(PROBE_TOOLS));
+  assert(r.observed.loaded_components!.includes("mcp:al-tools"));
+  assertEquals(r.termination, "completed");
+});
+
+Deno.test("mcp inventory: no expected list, missing tool, extra tool: never loaded, reason named", async () => {
+  for (
+    const [tools, why] of [
+      [undefined, "no expected tool inventory"],
+      [PROBE_TOOLS.slice(1), "tools differ"],
+      [[...PROBE_TOOLS, "al_x"], "tools differ"],
+    ] as const
+  ) {
+    const { r } = await parse(
+      await Deno.readTextFile(FIXTURE),
+      0,
+      mcpManifest(tools as string[] | undefined),
+    );
+    assert(!r.observed.loaded_components!.includes("mcp:al-tools"));
+    assertStringIncludes(JSON.stringify(r.telemetry.raw_usage), why);
+  }
+});
+
+Deno.test("mcp inventory: a disconnected server is not loaded; an unexpected server fails setup", async () => {
+  const text = await Deno.readTextFile(FIXTURE);
+  const down = text.replace('"status":"connected"', '"status":"failed"');
+  assert(
+    !(await parse(down, 0, mcpManifest(PROBE_TOOLS))).r.observed
+      .loaded_components!.includes("mcp:al-tools"),
+  );
+  const { r } = await parse(text, 0, {}); // the manifest requests no MCP, the stream shows al-tools connected
+  assertEquals(r.termination, "setup_failed");
+  assertStringIncludes(
+    JSON.stringify(r.telemetry.raw_usage),
+    "unexpected MCP server al-tools",
+  );
+});
+
+Deno.test("mcp inventory: recovery reads the persisted manifest, never the current definition file", async () => {
+  const reads: string[] = [];
+  const original = Deno.readTextFile;
+  const spy = stub(
+    Deno,
+    "readTextFile",
+    (p: string | URL, o?: Deno.ReadFileOptions) => {
+      reads.push(String(p));
+      return original(p, o);
+    },
+  );
+  let r;
+  try {
+    r = (await parse(
+      await original(FIXTURE),
+      0,
+      mcpManifest(PROBE_TOOLS),
+    )).r;
+  } finally {
+    spy.restore();
+  }
+  assertEquals(reads.filter((p) => p.includes("al-tools-tools")), []);
+  assert(r.observed.loaded_components!.includes("mcp:al-tools"));
+});
+
+Deno.test("run.ps1: strict MCP config on every arm, empty servers when none; token only in the config file", async () => {
+  const ps = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  assertStringIncludes(ps, "'--strict-mcp-config'");
+  assertStringIncludes(ps, "mcpServers");
+  assert(!/claudeArgs[^\n]*backend-token/.test(ps));
+  // The strict flag is set outside the MCP branch: a plain arm gets it too.
+  const strictLine = ps.split("\n").find((l) =>
+    l.includes("'--strict-mcp-config'")
+  )!;
+  assert(!/^\s/.test(strictLine), `top level: ${strictLine}`);
 });

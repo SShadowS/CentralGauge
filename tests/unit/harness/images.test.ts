@@ -7,6 +7,7 @@ import {
   hasBaseLayers,
   imageFacts,
   imageTag,
+  mcpDefinitions,
   mcpLabel,
   runtimeFacts,
 } from "../../../src/harness/images.ts";
@@ -102,8 +103,10 @@ Deno.test("runtimeFacts: MCP facts come from the image label; LSP and missing MC
   const mcp = {
     "al-tools": { version: "al-tools-mcp@1", tool_schema_hash: "h".repeat(64) },
   };
+  // M2-09: an MCP arm also needs the repo definition whose hash the label names.
+  const defs = { "al-tools": { hash: "h".repeat(64), tools: ["al_compile"] } };
   assertEquals(
-    runtimeFacts(withMcp, { ...image, mcp }, claudeCodeAdapter, catalog)
+    runtimeFacts(withMcp, { ...image, mcp }, claudeCodeAdapter, catalog, defs)
       .servers,
     mcp,
   );
@@ -186,4 +189,72 @@ Deno.test("mcpLabel: the value is the tool file's version and its hashJson; imag
     );
     assert(err.message.includes(k!), err.message);
   }
+});
+
+Deno.test("runtimeFacts: expected MCP tool names persisted in native settings; definition drift refused before launch", async () => {
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc-mcp",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings: {},
+    components: { mcp: ["al-tools"] },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const [key, value] = await mcpLabel(".");
+  const d = new FakeDocker();
+  d.addImage("x", ID, { ...LABELS, [key]: value });
+  const image = await imageFacts(d, "x");
+  const defs = await mcpDefinitions(".");
+  const def = JSON.parse(
+    await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
+  );
+  const names = def.tools.map((t: { name: string }) => t.name).sort();
+  const f = runtimeFacts(cfg, image, claudeCodeAdapter, catalog, defs);
+  assertEquals(f.native_settings["mcp"], ["al-tools"]);
+  assertEquals(f.native_settings["mcp_tools"], { "al-tools": names });
+  // Definition drift: the image label names another hash.
+  const [version] = value.split(" ");
+  const drifted = {
+    ...image,
+    mcp: {
+      "al-tools": { version: version!, tool_schema_hash: "0".repeat(64) },
+    },
+  };
+  assertThrows(
+    () => runtimeFacts(cfg, drifted, claudeCodeAdapter, catalog, defs),
+    ConfigurationError,
+    "differs from image",
+  );
+  // No definition loaded for a requested server: refused, never guessed.
+  assertThrows(
+    () => runtimeFacts(cfg, image, claudeCodeAdapter, catalog),
+    ConfigurationError,
+    "definition",
+  );
+});
+
+Deno.test("runtimeFacts: a plain arm's native settings carry neither mcp nor mcp_tools", async () => {
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings: {},
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const image = {
+    digest: ID,
+    base_digest: BASE,
+    harness: "claude-code",
+    version: "2.1.282",
+  };
+  const f = runtimeFacts(
+    cfg,
+    image,
+    claudeCodeAdapter,
+    catalog,
+    await mcpDefinitions("."),
+  );
+  assert(!("mcp" in f.native_settings) && !("mcp_tools" in f.native_settings));
 });

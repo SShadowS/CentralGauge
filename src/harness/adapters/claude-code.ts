@@ -226,6 +226,69 @@ export const CLAUDE_CAPABILITIES = {
   trace_types: ["tool_call", "model_request", "subagent_spawn", "skill_invoke"],
 } as const;
 
+/**
+ * Fail-closed MCP inventory (M2-09): a requested server is loaded only when
+ * system/init shows it connected and its mcp__<name>__* tools equal the
+ * expected list persisted in the manifest (settings.native.mcp_tools, set
+ * before release), never read from current files. The init tool list is the
+ * available inventory, deferred tools included, so ToolSearch use does not
+ * matter. A connected server that was not requested fails setup.
+ */
+function mcpInventory(
+  init: J | undefined,
+  manifest: ParseInput["manifest"],
+): { loaded: string[]; problems: string[]; unexpected: boolean } {
+  const problems: string[] = [];
+  if (!init) return { loaded: [], problems, unexpected: false };
+  const requested = manifest.mcp.map((s) => s.name);
+  const native = manifest.settings.native as Record<string, unknown>;
+  const expected = obj(native["mcp_tools"]);
+  const tools = list(init["tools"]).filter((t): t is string =>
+    typeof t === "string"
+  );
+  const connected = list(init.mcp_servers).map(obj)
+    .filter((s) => s.status === "connected" && typeof s.name === "string")
+    .map((s) => s.name as string);
+  let unexpected = false;
+  for (const n of [...new Set(connected)].sort()) {
+    if (!requested.includes(n)) {
+      unexpected = true;
+      problems.push(`unexpected MCP server ${n}`);
+    }
+  }
+  const loaded: string[] = [];
+  for (const n of [...requested].sort()) {
+    if (!connected.includes(n)) {
+      problems.push(`mcp:${n} not connected`);
+      continue;
+    }
+    const want = expected[n];
+    if (!Array.isArray(want)) {
+      problems.push(`no expected tool inventory for mcp:${n}`);
+      continue;
+    }
+    const prefix = `mcp__${n}__`;
+    const got = [
+      ...new Set(
+        tools.filter((t) => t.startsWith(prefix)).map((t) =>
+          t.slice(prefix.length)
+        ),
+      ),
+    ].sort();
+    const exp = [...new Set(want.map(String))].sort();
+    if (got.join("\n") !== exp.join("\n")) {
+      problems.push(
+        `mcp:${n} tools differ: expected [${exp.join(", ")}], loaded [${
+          got.join(", ")
+        }]`,
+      );
+      continue;
+    }
+    loaded.push(`mcp:${n}`);
+  }
+  return { loaded, problems, unexpected };
+}
+
 export function parseClaudeStream(
   text: string,
   input: Omit<ParseInput, "traceOut">,
@@ -495,8 +558,9 @@ export function parseClaudeStream(
       (input.manifest.skills?.files ?? []).map((f) => f.path.split("/")[0]!),
     ),
   ];
-  const connected = list(init?.mcp_servers).map(obj)
-    .filter((s) => s.status === "connected").map((s) => `mcp:${s.name}`);
+  const mcp = mcpInventory(init, input.manifest);
+  if (mcp.unexpected) termination = "setup_failed";
+  const connected = mcp.loaded;
   const loaded = init
     ? [
       ...(input.manifest.skills && wantSkills.length > 0 &&
@@ -583,6 +647,9 @@ export function parseClaudeStream(
       (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
     stream_problems: streamProblems,
     ...(unproven.trace.length > 0 ? { trace_incomplete: unproven.trace } : {}),
+    // Kept apart from stream_problems: an MCP inventory mismatch is a setup
+    // fact (not loaded / setup_failed), never a reason to doubt the cost.
+    mcp_inventory: mcp.problems,
     capabilities: CLAUDE_CAPABILITIES,
     trace_complete: traceComplete,
     incomplete_reasons: reasons,

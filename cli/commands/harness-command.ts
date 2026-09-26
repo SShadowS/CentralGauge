@@ -82,6 +82,7 @@ import {
   IMAGE_LABELS,
   imageFacts,
   imageTag,
+  mcpDefinitions,
   mcpFacts,
   mcpLabel,
   runtimeFacts,
@@ -511,6 +512,7 @@ export async function harnessCell(
       ),
       adapter,
       catalog,
+      config.components.mcp.length > 0 ? await mcpDefinitions(o.root) : {},
     );
     const armManifest = await resolveManifest(env.harnessRoot, config, facts);
     const at = await loadTaskAt(
