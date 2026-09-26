@@ -328,11 +328,64 @@ export async function mcpDerivedSettingsOnly(
     await hashJson({ settings: strip(b) });
 }
 
+/**
+ * Per harness, the native settings its adapter derives from the harness alone
+ * (M5-01a). The caller passes the adapters' own derivations: this module is
+ * below the adapters in the import graph.
+ */
+export type HarnessNative = Readonly<
+  Record<string, () => Record<string, unknown>>
+>;
+
+/**
+ * True when two manifests' settings differ only by what each side's adapter
+ * derives (M5-01a): its harness keys, with exactly the derived values, and
+ * under vary [models] native.api_models (one model id per slot). Removing
+ * those makes the settings hash-equal.
+ */
+async function harnessDerivedSettingsOnly(
+  a: ResolvedManifest,
+  b: ResolvedManifest,
+  vary: readonly VaryKey[],
+  harnessNative: HarnessNative,
+): Promise<boolean> {
+  const rest = async (m: ResolvedManifest): Promise<string | null> => {
+    const native = { ...m.settings.native };
+    const own = Object.hasOwn(harnessNative, m.harness)
+      ? harnessNative[m.harness]!()
+      : {};
+    for (const [k, v] of Object.entries(own)) {
+      if (
+        !Object.hasOwn(native, k) ||
+        await hashJson({ v: native[k] }) !== await hashJson({ v })
+      ) return null;
+      delete native[k];
+    }
+    if (vary.includes("models")) {
+      // ponytail: shape only; the catalog id per slug is not in the manifest.
+      const ids = native["api_models"];
+      if (
+        ids === null || typeof ids !== "object" || Array.isArray(ids) ||
+        JSON.stringify(Object.keys(ids).sort()) !==
+          JSON.stringify(Object.keys(m.models).sort()) ||
+        !Object.values(ids).every((x) => typeof x === "string" && x !== "")
+      ) return null;
+      delete native["api_models"];
+    }
+    return await hashJson({
+      settings: { requested: m.settings.requested, native },
+    });
+  };
+  const ra = await rest(a);
+  return ra !== null && ra === await rest(b);
+}
+
 /** Refuse a variant whose template differs from the baseline outside `vary`. */
 export async function assertVaryHolds(
   baseline: ResolvedManifest,
   variant: ResolvedManifest,
   vary: readonly VaryKey[],
+  harnessNative?: HarnessNative,
 ): Promise<void> {
   const allowed = allowedDiffs(vary);
   let bad = (await diffManifests(baseline, variant)).filter((k) =>
@@ -347,6 +400,22 @@ export async function assertVaryHolds(
     } else if (!mcpKeysDerived(baseline) || !mcpKeysDerived(variant)) {
       // Equal settings still must have the MCP key shape on each side
       // (a variant with servers and neither key equals a no-server baseline).
+      bad = [...bad, "settings"];
+    }
+  }
+  // Under vary [harness], native settings follow each side's adapter; with no
+  // derivations given, a settings difference stays refused.
+  if (vary.includes("harness") && !vary.includes("settings") && harnessNative) {
+    const ok = await harnessDerivedSettingsOnly(
+      baseline,
+      variant,
+      vary,
+      harnessNative,
+    );
+    if (bad.includes("settings")) {
+      if (ok) bad = bad.filter((k) => k !== "settings");
+    } else if (!ok) {
+      // Equal settings still must carry each side's derived values.
       bad = [...bad, "settings"];
     }
   }
