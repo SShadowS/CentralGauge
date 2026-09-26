@@ -38,7 +38,7 @@ const Action = {
   experiment: Id,
   campaign: Id,
   task: Id,
-  repeat: z.number().int(),
+  repeat: z.number().int().positive(), // >= 1, like an execution record (M6-02b)
   arm: Id,
   execution: Id,
 };
