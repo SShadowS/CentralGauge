@@ -118,14 +118,12 @@ Deno.test("stub: usage states the TTL split; bad scenarios refused; every commit
   }
 });
 
-Deno.test("stub scenarios script no Agent call: Claude Code 2.1.282 runs it async and the stub cell hangs to its timeout (M3-07a)", async () => {
-  for await (const f of Deno.readDir("scripts/harness/stub-scenarios")) {
-    const s = JSON.parse(
-      await Deno.readTextFile(`scripts/harness/stub-scenarios/${f.name}`),
-    ) as { steps: { content?: { type: string; name?: string }[] }[] };
-    const agents = s.steps.flatMap((st) => st.content ?? []).filter((c) =>
-      c.type === "tool_use" && (c.name === "Agent" || c.name === "Task")
-    );
-    assertEquals(agents, [], f.name);
-  }
+Deno.test("the arm-mcp smoke scenario scripts no Agent call: Claude Code 2.1.282 runs it async, so the stub cell would run to its timeout (M3-07a; subagent scenarios elsewhere stay allowed)", async () => {
+  const s = JSON.parse(
+    await Deno.readTextFile("scripts/harness/stub-scenarios/arm-mcp.json"),
+  ) as { steps: { content?: { type: string; name?: string }[] }[] };
+  const agents = s.steps.flatMap((st) => st.content ?? []).filter((c) =>
+    c.type === "tool_use" && (c.name === "Agent" || c.name === "Task")
+  );
+  assertEquals(agents, []);
 });
