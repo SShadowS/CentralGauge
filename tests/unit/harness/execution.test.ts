@@ -45,6 +45,7 @@ import {
   loadRecordedHosts,
   preflightExpect,
   type ProbeLine,
+  PROXY_ENV,
   realEgressRuntime,
   RECORDED_HOSTS_PATH,
   recordedHostsJson,
@@ -2107,7 +2108,7 @@ Deno.test("enforced run without an egress runtime is refused before anything (fa
   assertEquals(t.docker.runs, []);
 });
 
-Deno.test("stub cell with a placed marker: egress not consulted (M2-08); default network, no proxy or preflight, dummy and ready before the start", async () => {
+Deno.test("stub cell with a placed marker: egress not consulted (M2-08); internal network (backend on the gateway), no proxy or preflight, dummy and ready before the start", async () => {
   const t = await makeEnv();
   await stubEnv(t);
   const eg = enforce(t);
@@ -2123,8 +2124,10 @@ Deno.test("stub cell with a placed marker: egress not consulted (M2-08); default
   const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
   assertEquals(eg.events, []);
   const call = t.docker.runs[0]!;
-  assertEquals(call.network, null);
-  assertEquals(call.env.get("HTTPS_PROXY"), undefined);
+  assertEquals(call.network, SANDBOX_NETWORK.name);
+  for (const k of Object.keys(PROXY_ENV)) {
+    assertEquals(call.env.get(k), undefined);
+  }
   assert(readyAtStart);
   assertEquals(oauth.length, 40);
   assert(oauth !== SECRET_OAUTH);
@@ -2271,6 +2274,13 @@ Deno.test("record mode is refused for a stub cell (never placed, no credential)"
   );
   assertEquals(t.docker.runs, []);
   assertEquals(eg.events, []);
+});
+
+Deno.test("stub cell without an egress runtime (mode off) stays on the default network", async () => {
+  const t = await makeEnv();
+  await stubEnv(t);
+  await runCell(t.env, await cellFor(t));
+  assertEquals(t.docker.runs[0]!.network, null);
 });
 
 // Run 003 fix A: the authorized evidence is rechecked, by content, at every credential release.

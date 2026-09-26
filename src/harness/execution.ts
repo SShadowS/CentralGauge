@@ -1329,7 +1329,8 @@ export async function runExecution(
   // M1-33: placed runs (qualified or authorized marker) sit on the internal
   // network behind this execution's proxy; secrets and ready follow the
   // preflight. A stub cell is never placed (M2-08: egress not consulted; its
-  // dummy credential and ready are written before the start, M3-10).
+  // dummy credential and ready are written before the start, M3-10), though
+  // it still joins the internal network when an egress runtime exists.
   const eg = stub ? null : env.egress ?? null;
   /** Set for any egress failure: recorded as setup_failed, then the campaign stops. */
   let egressFailure: string | null = null;
@@ -1548,7 +1549,10 @@ export async function runExecution(
             ...(eg ? PROXY_ENV : {}),
             ...(stub ? STUB_ENV : {}),
           },
-          ...(eg ? { network: SANDBOX_NETWORK.name } : {}),
+          // A stub is never placed, but with an egress runtime the backend
+          // sits on the sandbox gateway, so it joins the internal network
+          // (no outbound route) without proxy, preflight or record mode.
+          ...(env.egress ? { network: SANDBOX_NETWORK.name } : {}),
           ...(stub ? { command: STUB_COMMAND } : {}),
           timeoutMs,
           killGraceMs: env.killGraceMs ?? 60_000,
