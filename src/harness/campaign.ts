@@ -269,6 +269,7 @@ export async function runCampaign(
       await imageFacts(
         env.docker,
         imageTag(config.harness, config.harness_version),
+        env.owner,
       ),
       adapterFor(config.harness),
       io.catalog,

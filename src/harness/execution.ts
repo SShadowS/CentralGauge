@@ -177,7 +177,7 @@ async function overrideImage(
 ): Promise<{ digest: string; base_digest: string }> {
   // imageFacts: labels, immutable id and the shipped MCP definition (M2-09).
   const f = await bounded(
-    imageFacts(env.docker, id),
+    imageFacts(env.docker, id, env.owner),
     env.opTimeoutMs ?? OP_TIMEOUT_MS,
     "docker image inspect",
   );

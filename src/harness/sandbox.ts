@@ -54,7 +54,11 @@ export interface DockerCli {
    * A file the image ships, read without starting it (docker create, then
    * docker cp from the stopped container); null when it cannot be read.
    */
-  readImageFile(image: string, path: string): Promise<string | null>;
+  readImageFile(
+    image: string,
+    path: string,
+    owner: string,
+  ): Promise<string | null>;
 }
 
 /** Inherited variables the docker CLI (and icacls) may see; nothing else is passed. */
@@ -289,11 +293,12 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
         ? (JSON.parse(r.stdout) as unknown[])[0] ?? null
         : null;
     },
-    readImageFile: async (image, path) => {
-      const name = `cg-read-${crypto.randomUUID().slice(0, 12)}`;
+    readImageFile: async (image, path, owner) => {
+      const args = imageReadCreateArgs(image, owner);
+      const name = args[args.indexOf("--name") + 1]!;
       const dir = await Deno.makeTempDir({ prefix: "cg-read-" });
       try {
-        if ((await out(["create", "--name", name, image])).code !== 0) {
+        if ((await out(args)).code !== 0) {
           return null;
         }
         if ((await out(["cp", `${name}:${path}`, dir])).code !== 0) {
@@ -319,6 +324,22 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
       }).output())
         .code,
   };
+}
+
+/**
+ * The throwaway container that reads a file from an image (never started):
+ * named cg-harness-read-* and owner-labelled like a sandbox, so a crash
+ * between create and rm is removed by sweepOwnedSandboxes (launch contract).
+ */
+export function imageReadCreateArgs(image: string, owner: string): string[] {
+  return [
+    "create",
+    "--name",
+    `${SANDBOX_PREFIX}read-${crypto.randomUUID().slice(0, 12)}`,
+    "--label",
+    `${OWNER_LABEL}=${owner}`,
+    image,
+  ];
 }
 
 /** The full execution id keeps names collision-free; the campaign prefix is a hint. */

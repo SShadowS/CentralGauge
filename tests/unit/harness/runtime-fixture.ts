@@ -305,6 +305,7 @@ export async function cellFor(
     await imageFacts(
       t.docker,
       imageTag(config.harness, config.harness_version),
+      "HOST1",
     ),
     adapterFor(config.harness),
     CATALOG,

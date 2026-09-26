@@ -54,6 +54,8 @@ const MCP_VERSION = /^\S+$/;
 export async function imageFacts(
   docker: DockerCli,
   ref: string,
+  /** Owner label of the throwaway container that reads the shipped MCP definition. */
+  owner: string,
 ): Promise<ImageFacts> {
   const img = await docker.inspectImage(ref) as Inspect;
   if (!img?.Id) {
@@ -84,7 +86,7 @@ export async function imageFacts(
   // The label is trusted at build time only: the bytes the image ships must
   // hash to it (same names with another schema would pass a name check).
   if (mcp["al-tools"]) {
-    const text = await docker.readImageFile(img.Id, AL_TOOLS_SHIPPED);
+    const text = await docker.readImageFile(img.Id, AL_TOOLS_SHIPPED, owner);
     let hash: string;
     try {
       if (text === null) throw new Error("not found");
