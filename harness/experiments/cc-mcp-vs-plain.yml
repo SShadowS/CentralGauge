@@ -1,0 +1,10 @@
+# O-1: Claude Code al-tools MCP arm against the plain baseline; only the mcp component differs
+# (native.mcp and native.mcp_tools pass only through the M2-14 rule).
+id: cc-mcp-vs-plain
+hypothesis: "The al-tools MCP server lowers Claude Code's cost per solved task on the HX tasks compared with the plain configuration."
+primary_metric: cost_per_solved_task
+baseline: cc-sonnet-plain
+variants: [cc-sonnet-mcp]
+vary: [mcp]
+tasks: "harness-tasks/tasks/*"
+repeats: 3
