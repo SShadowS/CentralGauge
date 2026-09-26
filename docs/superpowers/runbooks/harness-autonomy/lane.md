@@ -108,10 +108,17 @@ another lane elevated (owner decision 2026-09-26).
   - egress (M1-33/M1-34): the generated `egress-scripts.ts` apply and revert scripts,
     `harness egress verify`, and the M1-34 revert and re-apply drills;
   - read-only elevated diagnostics that a task names (`Get-NetFirewallRule`,
-    `Get-HnsNetwork`, `Get-NetFirewallProfile`).
-- Never: write or commit code; run BC container, benchmark or sandbox jobs (those stay with
-  lane-ops); start, stop or restart any container; change firewall rules, profiles or services
-  other than through the named scripts; run a request that arrived without an exact command.
+    `Get-HnsNetwork`, `Get-NetFirewallProfile`);
+  - restart of the network services `SharedAccess` (ICS, the WSL NAT) and `WinNat`, with the
+    service status recorded before and after, followed by the internet check (below);
+  - any other elevated job whose `task.md` is marked `OWNER-APPROVED` by cg-orchestrator
+    (owner decision 2026-09-26). Run it as written without asking; the marker is the owner's
+    approval.
+- Run every task on this list without asking the owner. Ask only when a task is off the list
+  and not marked `OWNER-APPROVED`, or when a check below fails.
+- Never, even when marked: write or commit code; run BC container, benchmark or sandbox jobs
+  (those stay with lane-ops); start, stop or restart any container, Docker, or HNS; run in
+  bypass mode; run a request that arrived without an exact command.
 - Before any firewall change, quote the "before" state (profiles and the cg-harness rule group).
   After it, quote the "after" state and check that other containers, especially the Linux
   ones, still have internet (egress decision addendum). If they do not: revert immediately and
