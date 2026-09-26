@@ -3,7 +3,9 @@
  * D14; findings section 4). Pure. Stream order: a model_request at the first
  * record of each assistant message id, a tool_call per tool_use block, plus a
  * subagent_spawn (Agent/Task) or skill_invoke (Skill) marker for the same
- * call. Retry and compaction records are added by M2-12 from recorded shapes.
+ * call. A retry per system/api_retry and a compaction per
+ * system/compact_boundary, the shapes Claude Code 2.1.282 recorded in M2-11
+ * (system/status "compacting" is not a compaction).
  */
 
 import type { TraceEvent } from "../trace.ts";
@@ -15,6 +17,8 @@ import { isObj, list, obj, refuse } from "./jsonl.ts";
 
 const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
 const SPAWN_TOOLS = new Set(["Agent", "Task"]);
+export const API_RETRY_SUBTYPE = "api_retry";
+export const COMPACT_BOUNDARY_SUBTYPE = "compact_boundary";
 const utf8 = new TextEncoder();
 
 export function transportOf(tool: string): string {
@@ -195,6 +199,25 @@ export function claudeTrace(
   const requests = new Map<string, number>();
   let unidentified = 0;
   for (const { rec, line } of lines) {
+    if (
+      rec.type === "system" &&
+      (rec.subtype === API_RETRY_SUBTYPE ||
+        rec.subtype === COMPACT_BOUNDARY_SUBTYPE)
+    ) {
+      const compaction = rec.subtype === COMPACT_BOUNDARY_SUBTYPE;
+      const d = obj(rec["compact_metadata"])["duration_ms"];
+      push({
+        ...BASE,
+        type: compaction ? "compaction" : "retry",
+        t_ms: rel(ms(rec.timestamp)),
+        session: str(rec.session_id),
+        duration_ms: compaction && typeof d === "number" && d >= 0 &&
+            Number.isFinite(d)
+          ? d
+          : null,
+      });
+      continue;
+    }
     if (rec.type !== "assistant") continue;
     const parent = typeof rec.parent_tool_use_id === "string"
       ? rec.parent_tool_use_id

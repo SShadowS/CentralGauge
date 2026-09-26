@@ -595,3 +595,55 @@ Deno.test("claudeTrace: only a single cg-al command is a backend call; request i
     ],
   );
 });
+
+// M2-11 recordings (Claude Code 2.1.282, H:\cg-coord\tasks\M2-11\runs\001\evidence.md):
+// one retry event per system/api_retry, one compaction event per
+// system/compact_boundary; system/status "compacting" records are not compactions.
+const RECORDED = "tests/fixtures/harness/claude-code";
+const recordedCount = (ls: Line<J>[], subtype: string) =>
+  ls.filter(({ rec }) => rec.type === "system" && rec.subtype === subtype)
+    .length;
+
+for (
+  const [name, subtype, type, expected] of [
+    ["retry", "api_retry", "retry", 2],
+    ["fatal", "api_retry", "retry", 2],
+    ["compaction", "compact_boundary", "compaction", 1],
+  ] as const
+) {
+  Deno.test(`claudeTrace: ${name}.jsonl gives one ${type} event per system/${subtype} (recorded: ${expected})`, async () => {
+    const file = `${RECORDED}/${name}.jsonl`;
+    const ls = lines(await Deno.readTextFile(file));
+    const n = recordedCount(ls, subtype);
+    assertEquals(n, expected, "the count quoted in the M2-11 evidence");
+    const t = claudeTrace(ls, file, new Set());
+    assertEquals(t.events.filter((e) => e.type === type).length, n);
+  });
+}
+
+Deno.test("claudeTrace: retry and compaction events carry session and stream order; compaction carries its duration", async () => {
+  const file = `${RECORDED}/compaction.jsonl`;
+  const t = claudeTrace(lines(await Deno.readTextFile(file)), file, new Set());
+  const c = t.events.find((e) => e.type === "compaction")!;
+  assertEquals(
+    [c.session, c.duration_ms, c.agent],
+    ["6b64fa4a-7f5c-4169-97c9-62e012ea0217", 14, "main"],
+  );
+  assertEquals(t.events.map((e) => e.seq), t.events.map((_, i) => i + 1));
+  const r = claudeTrace(
+    [
+      rec({ type: "system", subtype: "api_retry", session_id: "s" }, 1),
+      rec(asst("a", []), 2),
+      rec({ type: "system", subtype: "status", status: "compacting" }, 3),
+      rec({ type: "system", subtype: "compact_boundary" }, 4),
+    ],
+    "x",
+    new Set(),
+  );
+  assertEquals(r.events.map((e) => e.type), [
+    "retry",
+    "model_request",
+    "compaction",
+  ]);
+  assertEquals(r.events[0]!.session, "s");
+});
