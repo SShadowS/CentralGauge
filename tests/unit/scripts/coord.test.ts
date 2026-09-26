@@ -268,6 +268,26 @@ Deno.test("coord: stale reports a claimed run with no recent checkpoint", async 
   assert(report.some((r) => r.includes("M0-01")));
 });
 
+Deno.test("coord: a run waiting on something gets the longer stale threshold", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const run = await claim(root, "M0-01", "content");
+  await checkpoint(root, "M0-01", run.runId, run.token, "skeleton", {
+    wait: "process",
+  });
+  const at = (min: number) => stale(root, { now: Date.now() + min * 60000 });
+  assertEquals(await at(20), [], "a waiting run at 20 min is not stale");
+  assert(
+    (await at(250)).some((r) => r.includes("M0-01")),
+    "a waiting run at 250 min is stale",
+  );
+  await checkpoint(root, "M0-01", run.runId, run.token, "green");
+  assert(
+    (await at(20)).some((r) => r.includes("M0-01")),
+    "a run that stopped waiting is stale at 20 min again",
+  );
+});
+
 Deno.test("coord: claim race across separate processes has one winner", async () => {
   const root = await freshRoot();
   await seed(root);
@@ -461,10 +481,11 @@ Deno.test("coord: init refuses a machine root that does not exist", async () => 
 
 Deno.test("coord: lease race across separate processes has one holder", async () => {
   const root = await freshRoot();
-  const script = new URL("../../../scripts/coord/coord.ts", import.meta.url).pathname.replace(
-    /^\/([A-Za-z]:)/,
-    "$1",
-  );
+  const script = new URL("../../../scripts/coord/coord.ts", import.meta.url)
+    .pathname.replace(
+      /^\/([A-Za-z]:)/,
+      "$1",
+    );
   const procs = Array.from(
     { length: 6 },
     (_, i) =>

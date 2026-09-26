@@ -60,7 +60,8 @@ todo --claim--> doing --submit--> review --accept--> accepted
   at once. The token is required for every later mutation of that run.
 - `coord checkpoint <id> <runId> <token> <phase> [--wait container|review|owner|usage|process] [--note "..."]`:
   call it right after claiming (phase `started`), at every phase change, and at least every
-  15 minutes of work. No checkpoint for 15 minutes shows up in `coord stale`.
+  15 minutes of work. No checkpoint for 15 minutes shows up in `coord stale`; a run whose
+  latest checkpoint set `--wait` shows up only after 240 minutes.
 - `coord submit <id> <runId> <token> <commit> <branch>` when the work is committed on your
   branch and its tests pass. Then send the orchestrator a doorbell message.
 - `coord fail <id> <runId> <token> "<reason>"` when you give up on this attempt.
