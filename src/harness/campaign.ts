@@ -22,7 +22,12 @@ import { adapterFor } from "./adapters/mod.ts";
 import { loadExperiment } from "./config.ts";
 import { recoverInterrupted, runCell } from "./execution.ts";
 import { resolveRefapp, taskSetIdentity } from "./identity.ts";
-import { imageFacts, imageTag, runtimeFacts } from "./images.ts";
+import {
+  imageFacts,
+  imageTag,
+  mcpDefinitions,
+  runtimeFacts,
+} from "./images.ts";
 import { validateCampaignRecords } from "./integrity.ts";
 import { manifestHash, resolveManifest } from "./manifest.ts";
 import {
@@ -273,6 +278,9 @@ export async function runCampaign(
       ),
       adapterFor(config.harness),
       io.catalog,
+      config.components.mcp.length > 0
+        ? await mcpDefinitions(env.repoRoot)
+        : {},
     );
     const manifest = await resolveManifest(env.harnessRoot, config, facts);
     arms.push({
