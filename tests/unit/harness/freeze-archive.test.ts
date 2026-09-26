@@ -1,6 +1,11 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { join } from "@std/path";
-import { bind, pack, verify } from "../../../scripts/harness/freeze-archive.ts";
+import { fromFileUrl, join } from "@std/path";
+import {
+  bind,
+  OperationalError,
+  pack,
+  verify,
+} from "../../../scripts/harness/freeze-archive.ts";
 
 async function tree() {
   const root = await Deno.makeTempDir();
@@ -150,4 +155,52 @@ Deno.test({
       "link",
     );
   },
+});
+
+Deno.test("a REPLACE_ME placeholder secret file is an operational failure, not a clean scan", async () => {
+  const root = await tree();
+  const e = await assertRejects(
+    async () =>
+      pack(root, await out(), {
+        meta: {},
+        secretFiles: [await secret("REPLACE_ME with the token")],
+      }),
+    OperationalError,
+    "placeholder secret file",
+  );
+  assert(e.message.includes("claude-oauth-token"));
+});
+
+Deno.test("a secret value with a trailing LF or CRLF is still found", async () => {
+  for (const v of ["tok-123\n", "tok-123\r\n"]) {
+    const root = await tree();
+    await Deno.writeTextFile(join(root, "leak.txt"), "x tok-123 y");
+    await assertRejects(
+      async () =>
+        pack(root, await out(), { meta: {}, secretFiles: [await secret(v)] }),
+      Error,
+      "leak.txt",
+    );
+  }
+});
+
+Deno.test("the CLI pack without --secret-file exits 2 and writes nothing", async () => {
+  const o = await out();
+  const r = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--allow-all",
+      fromFileUrl(
+        new URL("../../../scripts/harness/freeze-archive.ts", import.meta.url),
+      ),
+      "pack",
+      await tree(),
+      o,
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assertEquals(r.code, 2);
+  assert(new TextDecoder().decode(r.stdout).includes("--secret-file"));
+  await assertRejects(() => Deno.lstat(o), Deno.errors.NotFound);
 });

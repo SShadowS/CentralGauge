@@ -80,6 +80,9 @@ async function readSecrets(secretFiles: string[]) {
     if (value === "") {
       throw new OperationalError(`empty secret file: ${basename(f)}`);
     }
+    if (value.startsWith("REPLACE_ME")) {
+      throw new OperationalError(`placeholder secret file: ${basename(f)}`);
+    }
     out.push({ name: basename(f), value: new TextEncoder().encode(value) });
   }
   return out;
