@@ -1,4 +1,10 @@
-import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from "@std/assert";
 import { join } from "@std/path";
 import type { HarnessReport } from "../../../src/harness/report.ts";
 import {
@@ -1103,6 +1109,44 @@ Deno.test("charts (M6-02a F12): a ledger action with a placeholder or ambiguous 
       `manual_rerun,${r.experiment.id},other,HX-001#1:mock-positive,e,not_reported,d`,
     ),
     csv,
+  );
+});
+
+Deno.test("charts (M6-02b): a ledger action's repeat must be a positive integer, like an execution record's", async () => {
+  const r = await base();
+  const act = {
+    experiment: r.experiment.id,
+    campaign: "other",
+    task: "HX-001",
+    repeat: 1,
+    arm: "mock-positive",
+    execution: "e",
+    decision: "d",
+  };
+  for (const repeat of [0, -1, -3]) {
+    const res = Ledger.safeParse(
+      ledgerOf(r, { manual_reruns: [{ ...act, repeat }] }),
+    );
+    assert(!res.success, `repeat ${repeat}`);
+    assertStringIncludes(
+      JSON.stringify(res.error.issues),
+      "repeat",
+      `repeat ${repeat}`,
+    );
+    assertThrows(
+      () =>
+        renderCharts(
+          [r],
+          ledgerOf(r, { rejudges: [{ ...act, judgment: "j", repeat }] }),
+        ),
+      Error,
+      "schema",
+      `repeat ${repeat}`,
+    );
+  }
+  assert(
+    Ledger.safeParse(ledgerOf(r, { manual_reruns: [act] })).success,
+    "repeat 1 is accepted",
   );
 });
 
