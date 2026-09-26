@@ -6,7 +6,7 @@
  * container absent) before anyone may touch the workspace.
  */
 
-import { dirname, join } from "@std/path";
+import { basename, dirname, join } from "@std/path";
 import { dockerContextEnv } from "../container/docker-context.ts";
 import {
   CentralGaugeError,
@@ -50,6 +50,11 @@ export interface DockerCli {
   listOwned(owner: string): Promise<string[]>;
   inspectImage(ref: string): Promise<unknown | null>;
   build(args: string[]): Promise<number>;
+  /**
+   * A file the image ships, read without starting it (docker create, then
+   * docker cp from the stopped container); null when it cannot be read.
+   */
+  readImageFile(image: string, path: string): Promise<string | null>;
 }
 
 /** Inherited variables the docker CLI (and icacls) may see; nothing else is passed. */
@@ -283,6 +288,26 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
       return r.code === 0
         ? (JSON.parse(r.stdout) as unknown[])[0] ?? null
         : null;
+    },
+    readImageFile: async (image, path) => {
+      const name = `cg-read-${crypto.randomUUID().slice(0, 12)}`;
+      const dir = await Deno.makeTempDir({ prefix: "cg-read-" });
+      try {
+        if ((await out(["create", "--name", name, image])).code !== 0) {
+          return null;
+        }
+        if ((await out(["cp", `${name}:${path}`, dir])).code !== 0) {
+          return null;
+        }
+        return await Deno.readTextFile(
+          join(dir, basename(path.replace(/\\/g, "/"))),
+        );
+      } catch {
+        return null;
+      } finally {
+        await out(["rm", "-f", name]);
+        await Deno.remove(dir, { recursive: true }).catch(() => {});
+      }
     },
     build: async (args) =>
       (await new Deno.Command("docker", {

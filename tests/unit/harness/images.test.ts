@@ -4,6 +4,7 @@ import { claudeCodeAdapter } from "../../../src/harness/adapters/claude-code.ts"
 import { HarnessConfigSchema } from "../../../src/harness/config.ts";
 import { hashJson } from "../../../src/harness/hash.ts";
 import {
+  AL_TOOLS_SHIPPED,
   hasBaseLayers,
   imageFacts,
   imageTag,
@@ -136,6 +137,11 @@ Deno.test("runtimeFacts: MCP facts come from the image label; LSP and missing MC
   const [key, value] = await mcpLabel(".");
   assertEquals(key, "centralgauge.mcp.al-tools");
   d.addImage("x", ID, { ...LABELS, [key]: value });
+  d.shipFile(
+    ID,
+    AL_TOOLS_SHIPPED,
+    await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
+  );
   assertEquals(Object.keys((await imageFacts(d, "x")).mcp ?? {}), [
     "al-tools",
   ]);
@@ -163,6 +169,11 @@ Deno.test("mcpLabel: the value is the tool file's version and its hashJson; imag
   d.addImage("none", ID, LABELS);
   assertEquals((await imageFacts(d, "none")).mcp, {});
   d.addImage("ok", ID, { ...LABELS, "centralgauge.mcp.al-tools": value });
+  d.shipFile(
+    ID,
+    AL_TOOLS_SHIPPED,
+    await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
+  );
   assertEquals((await imageFacts(d, "ok")).mcp, {
     "al-tools": { version: def.version, tool_schema_hash: hash },
   });
@@ -204,6 +215,11 @@ Deno.test("runtimeFacts: expected MCP tool names persisted in native settings; d
   const [key, value] = await mcpLabel(".");
   const d = new FakeDocker();
   d.addImage("x", ID, { ...LABELS, [key]: value });
+  d.shipFile(
+    ID,
+    AL_TOOLS_SHIPPED,
+    await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
+  );
   const image = await imageFacts(d, "x");
   const defs = await mcpDefinitions(".");
   const def = JSON.parse(
@@ -283,4 +299,38 @@ Deno.test("mcpDefinitions: a definition without tools, with a nameless or duplic
       "tools",
     );
   }
+});
+
+Deno.test("imageFacts: the tool file the image ships must hash to its al-tools label; refused before launch otherwise", async () => {
+  const [key, value] = await mcpLabel(".");
+  const shipped = await Deno.readTextFile(
+    "harness/images/base/al-tools-tools.json",
+  );
+  const d = new FakeDocker();
+  d.addImage("ok", ID, { ...LABELS, [key]: value });
+  d.shipFile(ID, AL_TOOLS_SHIPPED, shipped);
+  assertEquals(Object.keys((await imageFacts(d, "ok")).mcp ?? {}), [
+    "al-tools",
+  ]);
+  // Same names, another schema: the label says X, the shipped bytes hash to Y.
+  const other = `sha256:${"e".repeat(64)}`;
+  const def = JSON.parse(shipped);
+  def.tools[0].inputSchema = { type: "object", properties: {} };
+  d.addImage("drift", other, { ...LABELS, [key]: value });
+  d.shipFile(other, AL_TOOLS_SHIPPED, JSON.stringify(def));
+  const e = await assertRejects(
+    () => imageFacts(d, "drift"),
+    ConfigurationError,
+    "differs from its label",
+  );
+  assertEquals(e.message.includes(value.split(" ")[1]!), true);
+  assertEquals(e.message.includes(await hashJson(def)), true);
+  // Unreadable shipped file: refused, never assumed.
+  const none = `sha256:${"f".repeat(64)}`;
+  d.addImage("none-shipped", none, { ...LABELS, [key]: value });
+  await assertRejects(
+    () => imageFacts(d, "none-shipped"),
+    ConfigurationError,
+    "cannot read",
+  );
 });

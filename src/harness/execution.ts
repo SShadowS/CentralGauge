@@ -46,6 +46,7 @@ import {
   validatedDir,
 } from "./fsutil.ts";
 import { hashFile, hashJson, hashTree } from "./hash.ts";
+import { imageFacts } from "./images.ts";
 import { taskSetIdentity } from "./identity.ts";
 import { forTask } from "./manifest.ts";
 import {
@@ -174,27 +175,21 @@ async function overrideImage(
   id: string,
   harness: string,
 ): Promise<{ digest: string; base_digest: string }> {
-  const img = await bounded(
-    env.docker.inspectImage(id),
+  // imageFacts: labels, immutable id and the shipped MCP definition (M2-09).
+  const f = await bounded(
+    imageFacts(env.docker, id),
     env.opTimeoutMs ?? OP_TIMEOUT_MS,
     "docker image inspect",
-  ) as { Id?: string; Config?: { Labels?: Record<string, string> } } | null;
-  const labels = img?.Config?.Labels ?? {};
-  if (img?.Id !== id) {
-    throw new ConfigurationError(`--image ${id} is not present`);
+  );
+  if (f.digest !== id) {
+    throw new ConfigurationError(`--image ${id} resolves to ${f.digest}`);
   }
-  if (labels["centralgauge.harness"] !== harness) {
+  if (f.harness !== harness) {
     throw new ConfigurationError(
-      `--image ${id} is a ${
-        labels["centralgauge.harness"] ?? "unlabelled"
-      } image, not ${harness}`,
+      `--image ${id} is a ${f.harness} image, not ${harness}`,
     );
   }
-  const base = labels["centralgauge.harness.base_digest"];
-  if (!base) {
-    throw new ConfigurationError(`--image ${id} has no base_digest label`);
-  }
-  return { digest: id, base_digest: base };
+  return { digest: f.digest, base_digest: f.base_digest };
 }
 
 /** Stub cells publish only under results/harness/stub-cells (never beside real campaigns). */

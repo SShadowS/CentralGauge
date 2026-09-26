@@ -194,6 +194,17 @@ export class FakeDocker implements DockerCli {
   listOwned(_owner: string): Promise<string[]> {
     return Promise.resolve([...this.owned]);
   }
+  /** Files the images ship (by image id and in-image path), for readImageFile. */
+  shipped = new Map<string, Map<string, string>>();
+  shipFile(id: string, path: string, text: string): void {
+    const m = this.shipped.get(id) ?? new Map<string, string>();
+    m.set(path, text);
+    this.shipped.set(id, m);
+  }
+  readImageFile(image: string, path: string): Promise<string | null> {
+    const id = this.tags.get(image) ?? image;
+    return Promise.resolve(this.shipped.get(id)?.get(path) ?? null);
+  }
   inspectImage(ref: string): Promise<unknown | null> {
     return Promise.resolve(
       this.images.get(this.tags.get(ref) ?? ref) ?? null,

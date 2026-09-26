@@ -1458,7 +1458,11 @@ Deno.test("stub provider: --image runs that id and the manifest records it", asy
 Deno.test("stub provider: an --image of another harness is refused", async () => {
   const t = await makeEnv();
   const other = `sha256:${"e".repeat(64)}`;
-  t.docker.addImage("x:1", other, { "centralgauge.harness": "pi" });
+  t.docker.addImage("x:1", other, {
+    "centralgauge.harness": "pi",
+    "centralgauge.harness.version": "1",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+  });
   await stubEnv(t, other);
   const cell = await cellFor(t);
   await assertRejects(
