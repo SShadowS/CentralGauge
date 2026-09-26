@@ -1270,3 +1270,57 @@ Deno.test({
     }
   },
 });
+
+Deno.test("backend: revoke removes the execution's empty backend folder after a normal request (M2-13a)", async () => {
+  const s = await setup();
+  const r = await s.backend.handle(
+    req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
+  );
+  assertEquals(r.status, 200);
+  await r.body?.cancel();
+  const dir = join(s.root, "backend", EXEC_A);
+  assert(await exists(dir), "the request made the per-execution folder");
+  assertEquals(await s.backend.revoke(EXEC_A), true);
+  assert(!await exists(dir), "an empty folder is removed at revoke");
+});
+
+Deno.test("backend: revoke removes the empty folder after a failed or aborted request (M2-13a)", async () => {
+  const s = await setup();
+  s.failWith.err = new Error("op crashed");
+  const r = await s.backend.handle(
+    req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
+  );
+  assertEquals(r.status, 500);
+  await r.body?.cancel();
+  assertEquals(await s.backend.revoke(EXEC_A), true);
+  assert(!await exists(join(s.root, "backend", EXEC_A)), "failed request");
+
+  s.failWith.err = null;
+  s.gate.wait = new Promise<void>(() => {}); // only the revoke's abort ends it
+  const first = s.backend.handle(
+    req("/v1/compile", s.tokenB, '{"apps":["Core"]}', EXEC_B),
+  );
+  await s.entered;
+  assertEquals(await s.backend.revoke(EXEC_B), true);
+  await (await first).body?.cancel();
+  assert(!await exists(join(s.root, "backend", EXEC_B)), "aborted request");
+});
+
+Deno.test("backend: revoke keeps a non-empty execution folder and its contents (M2-13a)", async () => {
+  const s = await setup();
+  const r = await s.backend.handle(
+    req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
+  );
+  await r.body?.cancel();
+  const dir = join(s.root, "backend", EXEC_A);
+  await Deno.writeTextFile(join(dir, "evidence.txt"), "keep me");
+  const warn = stub(console, "warn");
+  try {
+    assertEquals(await s.backend.revoke(EXEC_A), true);
+  } finally {
+    warn.restore();
+  }
+  assertEquals(warn.calls.length, 1, "a kept folder is reported");
+  assertStringIncludes(String(warn.calls[0]!.args[0]), "kept");
+  assertEquals(await Deno.readTextFile(join(dir, "evidence.txt")), "keep me");
+});
