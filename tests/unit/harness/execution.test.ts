@@ -38,12 +38,18 @@ import {
 } from "../../../src/harness/sandbox.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
+  authorizedAllowlist,
+  type EgressRun,
   type EgressState,
   firewallPlan,
   loadRecordedHosts,
+  preflightExpect,
+  type ProbeLine,
+  realEgressRuntime,
   RECORDED_HOSTS_PATH,
   recordedHostsJson,
   SANDBOX_NETWORK,
+  sha256File,
   verifyEgressState,
 } from "../../../src/harness/egress.ts";
 import {
@@ -2207,6 +2213,20 @@ Deno.test("record mode: the supervised qualified Claude cell records every CONNE
       `record mode execution ${e.id}`,
     ),
   );
+  const facts = JSON.parse(
+    await Deno.readTextFile(
+      join(t.env.resultsRoot, "runs", e.id, "record-mode.json"),
+    ),
+  );
+  assertEquals(
+    [
+      facts.record_mode,
+      facts.supervised,
+      facts.credential_bearing,
+      facts.harness,
+    ],
+    [true, true, true, "claude-code"],
+  );
   assertEquals(await loadRecordedHosts(t.env.repoRoot), {
     "anthropic:first-party-oauth": [
       "api.anthropic.com",
@@ -2251,4 +2271,199 @@ Deno.test("record mode is refused for a stub cell (never placed, no credential)"
   );
   assertEquals(t.docker.runs, []);
   assertEquals(eg.events, []);
+});
+
+// Run 003 fix A: the authorized evidence is rechecked, by content, at every credential release.
+
+/** One host observation as the real collector prints it, with the marker read from disk now. */
+function rawObservation(markerPath: string): EgressRun {
+  return async () => {
+    let marker: unknown = null;
+    try {
+      marker = JSON.parse(await Deno.readTextFile(markerPath));
+    } catch { /* none */ }
+    const m = marker as Record<string, unknown> | null;
+    return {
+      code: 0,
+      stdout: JSON.stringify({
+        network: {
+          Id: "net1",
+          Driver: "internal",
+          Subnet: SANDBOX_NETWORK.subnet,
+          Gateway: SANDBOX_NETWORK.gateway,
+          HnsId: "hns1",
+        },
+        hns: {
+          Id: "hns1",
+          Name: "x",
+          Type: "Internal",
+          Subnet: SANDBOX_NETWORK.subnet,
+        },
+        gatewayAdapter: { Index: 42, Alias: "vEthernet (x)", Prefix: 24 },
+        profiles: ["Domain", "Private", "Public"].map((Name) => ({
+          Name,
+          Enabled: "True",
+          DefaultInboundAction: "Allow",
+          DefaultOutboundAction: "Allow",
+        })),
+        groupRules: firewallPlan(42).map((r) => ({
+          Name: r.name,
+          Enabled: "True",
+          Direction: "Inbound",
+          Action: "Block",
+          Profile: "Any",
+          Protocol: String(r.protocol),
+          LocalPort: r.localPorts,
+          RemoteAddress: "Any",
+          LocalAddress: "Any",
+          Program: "Any",
+          Service: "Any",
+          InterfaceIndex: [42],
+        })),
+        foreignBlockRules: [],
+        marker: m && {
+          v: 1,
+          state: m["state"],
+          network_id: m["network_id"],
+          interface_index: m["interface_index"],
+        },
+      }),
+    };
+  };
+}
+
+/** A complete, self-consistent authorized layout under the fixture's repo root. */
+async function authorizedLayout(
+  t: TestEnv,
+  o: { lines?: (l: ProbeLine[]) => ProbeLine[]; supervised?: boolean } = {},
+): Promise<{ markerPath: string; marker: Record<string, unknown> }> {
+  const root = t.env.repoRoot;
+  const shared = join(root, "results", "harness");
+  const probe = join(root, "probe-evidence.json");
+  const lines = Object.entries(preflightExpect(["api.anthropic.com"])).map((
+    [probe, ok],
+  ) => ({ probe, ok }));
+  await Deno.writeTextFile(
+    probe,
+    JSON.stringify({
+      v: 1,
+      at: new Date().toISOString(),
+      network_id: "net1",
+      interface_index: 42,
+      hosts: ["api.anthropic.com"],
+      lines: (o.lines ?? ((l) => l))(lines),
+    }),
+  );
+  const recorded = join(root, ...RECORDED_HOSTS_PATH.split("/"));
+  await Deno.mkdir(join(recorded, ".."), { recursive: true });
+  await Deno.writeTextFile(
+    recorded,
+    recordedHostsJson([RECORDED_OAUTH], "record mode execution cell-1"),
+  );
+  const cells = join(shared, "cells");
+  await Deno.mkdir(join(cells, "executions", "camp1"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "executions", "camp1", "cell-1.json"),
+    JSON.stringify({
+      id: "cell-1",
+      manifest: { harness: "claude-code" },
+      termination: "completed",
+      started_at: new Date().toISOString(),
+    }),
+  );
+  await Deno.mkdir(join(cells, "runs", "cell-1"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "runs", "cell-1", "record-mode.json"),
+    JSON.stringify({
+      v: 1,
+      execution_id: "cell-1",
+      record_mode: true,
+      supervised: o.supervised ?? true,
+      credential_bearing: true,
+      harness: "claude-code",
+      termination: "completed",
+    }),
+  );
+  const a = await authorizedAllowlist(root);
+  const marker = {
+    v: 1,
+    state: "authorized",
+    network: SANDBOX_NETWORK.name,
+    network_id: "net1",
+    interface_index: 42,
+    probe_evidence: probe,
+    probe_evidence_sha256: await sha256File(probe),
+    recorded_hosts_sha256: await sha256File(recorded),
+    cell: "cell-1",
+    rotation_done: true,
+    proxy_allowlist: a.allowlist,
+    allowlist_sha256: a.sha256,
+  };
+  const markerPath = join(shared, "egress-verified.json");
+  await Deno.writeTextFile(markerPath, JSON.stringify(marker));
+  return { markerPath, marker };
+}
+
+async function releaseWith(t: TestEnv, markerPath: string) {
+  const real = await realEgressRuntime({
+    repoRoot: t.env.repoRoot,
+    markerPath,
+    collect: rawObservation(markerPath),
+  });
+  const eg = enforce(t);
+  eg.verify = real.verify;
+  eg.recordedHosts = real.recordedHosts;
+  return eg;
+}
+
+Deno.test("fix A: authorized evidence is valid content, rechecked at every release", async () => {
+  const t = await makeEnv();
+  const { markerPath } = await authorizedLayout(t);
+  await releaseWith(t, markerPath);
+  const r = await runCell(t.env, await cellFor(t));
+  assertEquals(r.executions[0]!.termination, "completed");
+});
+
+Deno.test("fix A: a self-consistent marker pointing at a failing probe, or at an unsupervised cell, is refused at release", async () => {
+  for (
+    const [word, o] of [
+      ["gw-smb-445", {
+        lines: (ls: ProbeLine[]) =>
+          ls.map((l) => l.probe === "gw-smb-445" ? { ...l, ok: true } : l),
+      }],
+      ["supervised", { supervised: false }],
+    ] as const
+  ) {
+    const t = await makeEnv();
+    const { markerPath } = await authorizedLayout(t, o);
+    await releaseWith(t, markerPath);
+    await assertRejects(
+      async () => runCell(t.env, await cellFor(t)),
+      ContainerError,
+      word,
+    );
+    assertEquals(t.docker.runs, [], word);
+    assertEquals(secretDirs(t), [], word);
+  }
+});
+
+Deno.test("fix A: a marker edited after startup is refused at the next release", async () => {
+  const t = await makeEnv();
+  const { markerPath, marker } = await authorizedLayout(t);
+  await releaseWith(t, markerPath);
+  assertEquals(
+    (await runCell(t.env, await cellFor(t))).executions[0]!.termination,
+    "completed",
+  );
+  await Deno.writeTextFile(
+    markerPath,
+    JSON.stringify({ ...marker, rotation_done: false }),
+  );
+  const runs = t.docker.runs.length;
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t)),
+    ContainerError,
+    "rotation_done",
+  );
+  assertEquals(t.docker.runs.length, runs, "no sandbox after the edit");
 });

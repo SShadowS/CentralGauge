@@ -94,6 +94,7 @@ import {
   preflightExpect,
   ProbeEvidenceSchema,
   realEgressCollector,
+  recordCellProblems,
   RECORDED_HOSTS_PATH,
   ROUTE_HOSTS,
   SANDBOX_NETWORK,
@@ -1452,6 +1453,7 @@ async function authorizationProblems(
     return { problems: p, allowlist };
   }
   const e = cell.data;
+  p.push(...await recordCellProblems(root, o.cell));
   if (e.manifest.harness !== "claude-code") {
     p.push(`cell ${o.cell} ran ${e.manifest.harness}, not claude-code`);
   }

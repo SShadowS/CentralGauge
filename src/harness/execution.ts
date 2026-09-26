@@ -46,6 +46,7 @@ import {
   preflightExpect,
   PROXY_ENV,
   PROXY_PORT,
+  RECORD_MODE_FILE,
   RECORDED_HOSTS_PATH,
   recordedHostsJson,
   SANDBOX_NETWORK,
@@ -1673,6 +1674,22 @@ export async function runExecution(
         "setup",
       );
     }
+    await writeAtomic(
+      join(env.resultsRoot, "runs", id, RECORD_MODE_FILE),
+      JSON.stringify(
+        {
+          v: 1,
+          execution_id: id,
+          record_mode: true,
+          supervised: env.supervised,
+          credential_bearing: adapter.credentialBearing,
+          harness: adapter.harness,
+          termination: draft.execution.termination,
+        },
+        null,
+        2,
+      ) + "\n",
+    );
     await writeAtomic(
       recordedPath,
       recordedHostsJson([...recordedHosts], `record mode execution ${id}`),

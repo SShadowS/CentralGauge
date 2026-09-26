@@ -1909,6 +1909,18 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
       }),
     );
     await Deno.mkdir(join(cells, "runs", id), { recursive: true });
+    await Deno.writeTextFile(
+      join(cells, "runs", id, "record-mode.json"),
+      JSON.stringify({
+        v: 1,
+        execution_id: id,
+        record_mode: true,
+        supervised: true,
+        credential_bearing: true,
+        harness: o.harness ?? "claude-code",
+        termination: o.termination ?? "completed",
+      }),
+    );
     if (o.log !== undefined) {
       await Deno.writeTextFile(join(cells, "runs", id, "egress.jsonl"), o.log);
     }
@@ -1936,7 +1948,7 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
     join(root, ...RECORDED_HOSTS_PATH.split("/")),
     JSON.stringify({
       v: 1,
-      source: "M1-34/001 step 11",
+      source: "record mode execution cell-ok",
       routes: { "anthropic:first-party-oauth": ["oauth.example.test"] },
     }),
   );
@@ -2142,6 +2154,18 @@ async function authorizedRoot(at?: string): Promise<string> {
     }),
   );
   await Deno.mkdir(join(cells, "runs", "cell-ok"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "runs", "cell-ok", "record-mode.json"),
+    JSON.stringify({
+      v: 1,
+      execution_id: "cell-ok",
+      record_mode: true,
+      supervised: true,
+      credential_bearing: true,
+      harness: "claude-code",
+      termination: "completed",
+    }),
+  );
   await Deno.writeTextFile(
     join(cells, "runs", "cell-ok", "egress.jsonl"),
     JSON.stringify({ decision: "allow", target: "api.anthropic.com:443" }) +

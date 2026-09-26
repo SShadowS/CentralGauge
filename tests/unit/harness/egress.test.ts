@@ -10,6 +10,7 @@ import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import {
   applyScript,
   blockedTcpRanges,
+  COLLECT_PS,
   collectEgressState,
   type EgressState,
   evaluatePreflight,
@@ -850,9 +851,9 @@ Deno.test("apply/revert (review item 5): the apply record with the profile snaps
   };
   const s = applyScript(firewallPlan(IDX), o);
   const at = (x: string) => s.indexOf(x);
-  assert(at("Save-Json $applied $record") > 0);
+  assert(at("Save-JsonAtomic $applied $record") > 0);
   assert(
-    at("Save-Json $applied $record") < at("Set-NetFirewallProfile"),
+    at("Save-JsonAtomic $applied $record") < at("Set-NetFirewallProfile"),
     "the record (with the snapshot) is written before the first profile change",
   );
   assertStringIncludes(s, "snapshot = $snapshot");
@@ -864,10 +865,7 @@ Deno.test("apply/revert (review item 5): the apply record with the profile snaps
   );
   const r = revertScript("C:\\fw");
   assertStringIncludes(r, "$record.snapshot");
-  assert(
-    !r.includes("fw-snapshot-$inv"),
-    "profiles come from the apply record",
-  );
+  assertStringIncludes(r, "fw-snapshot-$inv.json");
 });
 
 // Review item 2: the OAuth host record mode (M1-34 Step 11).
@@ -963,4 +961,71 @@ Deno.test("proxy record mode: any DNS name on 443 is allowed and logged; IP lite
       } catch { /* closed */ }
     }
   }
+});
+
+Deno.test("fix B: the apply script derives the HNS id from the Docker sandbox network and refuses a differing caller id before any change", () => {
+  const s = applyScript(firewallPlan(IDX), {
+    invocation: "inv1",
+    dir: "C:\\fw",
+    interfaceAlias: "vEthernet (a1b2c3)",
+    hnsId: "hns1",
+  });
+  const at = (x: string) => s.indexOf(x);
+  assert(at("& docker") > 0, "docker is called");
+  assertStringIncludes(s, `network inspect ${SANDBOX_NETWORK.name}`);
+  assertStringIncludes(s, "com.docker.network.windowsshim.hnsid");
+  assertStringIncludes(s, "differs from");
+  for (
+    const later of [
+      "Get-HnsNetwork",
+      "Set-NetFirewallProfile",
+      "New-NetFirewallRule",
+      "fw-snapshot-inv1.json",
+    ]
+  ) {
+    assert(at("& docker") < at(later), later);
+  }
+  // PS 5.1 passes embedded double quotes badly to native programs: no --format template.
+  assert(!/& docker[^\r\n]*--format/.test(s));
+});
+
+Deno.test("fix C: every apply-record write is atomic; the snapshot is its own file before the first change; revert falls back to it", () => {
+  const s = applyScript(firewallPlan(IDX), {
+    invocation: "inv1",
+    dir: "C:\\fw",
+    interfaceAlias: "vEthernet (a1b2c3)",
+    hnsId: "hns1",
+  });
+  const at = (x: string) => s.indexOf(x);
+  assert(!/Save-Json \$applied/.test(s), "no plain write of the apply record");
+  assertEquals(
+    s.match(/Save-JsonAtomic \$applied \$record/g)!.length,
+    257,
+    "the first write plus one per rule",
+  );
+  assert(at("Save-JsonAtomic (Join-Path $dir 'fw-snapshot-inv1.json')") > 0);
+  assert(
+    at("Save-JsonAtomic (Join-Path $dir 'fw-snapshot-inv1.json')") <
+      at("Set-NetFirewallProfile"),
+  );
+  assertStringIncludes(s, "function Save-JsonAtomic");
+  assertStringIncludes(s, "[IO.File]::Replace(");
+  const r = revertScript("C:\\fw");
+  assertStringIncludes(r, "fw-snapshot-");
+  assert(
+    r.indexOf("catch") > 0 &&
+      r.indexOf("$record.snapshot") < r.lastIndexOf("fw-snapshot-$inv.json"),
+    "an unparseable record falls back to the snapshot file",
+  );
+});
+
+Deno.test("egress scripts (PS 5.1): no $name: inside a string (parsed as a scope-qualified variable)", () => {
+  const both = applyScript(firewallPlan(IDX), {
+    invocation: "inv1",
+    dir: "C:\\fw",
+    interfaceAlias: "vEthernet (a1b2c3)",
+    hnsId: "hns1",
+  }) + revertScript("C:\\fw") + COLLECT_PS;
+  const bad = both.match(/\$(?!env:|global:|script:)[A-Za-z_][A-Za-z0-9_]*:/g);
+  assertEquals(bad, null, String(bad));
 });

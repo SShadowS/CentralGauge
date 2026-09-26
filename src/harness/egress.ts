@@ -243,6 +243,8 @@ const PS_HEAD = [
   "$me = New-Object Security.Principal.WindowsPrincipal ([Security.Principal.WindowsIdentity]::GetCurrent())",
   "if (-not $me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'run this script elevated' }",
   "function Save-Json($path, $value) { [IO.File]::WriteAllText($path, (ConvertTo-Json -InputObject $value -Depth 4), $utf8) }",
+  "# Temp file then replace: a crash leaves the old file or the new one, never a truncated one.",
+  'function Save-JsonAtomic($path, $value) { $tmp = "$path.tmp"; [IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject $value -Depth 4), $utf8); if (Test-Path -LiteralPath $path) { [IO.File]::Replace($tmp, $path, [NullString]::Value) } else { [IO.File]::Move($tmp, $path) } }',
   "# A lookup that finds nothing reports ObjectNotFound; any other error stops the script.",
   "function Assert-NotFoundOnly($errs, $what) { $bad = @($errs | Where-Object { $_.CategoryInfo.Category -ne 'ObjectNotFound' }); if ($bad.Count -gt 0) { throw \"cannot read $($what): $($bad[0])\" } }",
 ];
@@ -292,10 +294,20 @@ export function applyScript(
     `$existing = @(Get-NetFirewallRule -Group '${RULE_GROUP}' -ErrorAction SilentlyContinue -ErrorVariable e)`,
     `Assert-NotFoundOnly $e 'the ${RULE_GROUP} group'`,
     `if ($existing.Count -gt 0) { throw 'group ${RULE_GROUP} exists: revert first' }`,
+    "# The HNS network is the Docker sandbox network's own; the caller's id must agree.",
+    "$dockerContext = if ($env:DOCKER_CONTEXT) { $env:DOCKER_CONTEXT } else { 'desktop-windows' }",
+    `$inspect = & docker --context $dockerContext network inspect ${SANDBOX_NETWORK.name}`,
+    `if ($LASTEXITCODE -ne 0) { throw "docker network inspect ${SANDBOX_NETWORK.name} failed (exit $LASTEXITCODE)" }`,
+    '$net = ConvertFrom-Json ($inspect -join "`n")',
+    "$net = @($net)",
+    `if ($net.Count -ne 1) { throw "docker network inspect ${SANDBOX_NETWORK.name} returned $($net.Count) networks" }`,
+    "$dockerHns = [string]$net[0].Options.'com.docker.network.windowsshim.hnsid'",
+    `if (-not $dockerHns) { throw "docker network ${SANDBOX_NETWORK.name} has no com.docker.network.windowsshim.hnsid" }`,
+    `if ($dockerHns -ne '${o.hnsId}') { throw "caller hns id ${o.hnsId} differs from the docker network's $($dockerHns): refusing" }`,
     `$ip = Get-NetIPAddress -IPAddress '${SANDBOX_NETWORK.gateway}' -ErrorAction Stop`,
     `if (@($ip).Count -ne 1 -or $ip.InterfaceAlias -ne $alias -or $ip.InterfaceIndex -ne ${idx}) { throw "gateway ${SANDBOX_NETWORK.gateway} is on '$($ip.InterfaceAlias)' (index $($ip.InterfaceIndex)), not the planned $alias (index ${idx}): regenerate the scripts" }`,
     "# The adapter must be the vEthernet of the inspected HNS network (by name or id).",
-    `$hns = @(Get-HnsNetwork | Where-Object { [string]$_.Id -eq '${o.hnsId}' })`,
+    "$hns = @(Get-HnsNetwork | Where-Object { [string]$_.Id -eq $dockerHns })",
     `if ($hns.Count -ne 1) { throw "HNS network ${o.hnsId} not found (found $($hns.Count)): regenerate the scripts" }`,
     '$vEthernet = @("vEthernet ($([string]$hns[0].Name))", "vEthernet ($([string]$hns[0].Id))")',
     `if ($vEthernet -notcontains [string]$ip.InterfaceAlias) { throw "adapter '$($ip.InterfaceAlias)' is not the vEthernet of HNS network ${o.hnsId} ($($hns[0].Name)): refusing" }`,
@@ -306,12 +318,12 @@ export function applyScript(
     `if ($foreign.Count -gt 0) { throw "owner decision required: $($foreign.Count) effective block rules exist outside ${RULE_GROUP}; see ${`fw-block-inventory-${o.invocation}.json`}" }`,
     `$snapshot = @(Get-NetFirewallProfile | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Enabled = [string]$_.Enabled; DefaultInboundAction = [string]$_.DefaultInboundAction; DefaultOutboundAction = [string]$_.DefaultOutboundAction } })`,
     'if ($snapshot.Count -ne 3) { throw "expected 3 firewall profiles, found $($snapshot.Count)" }',
-    `Save-Json ${f("snapshot")} $snapshot`,
+    `Save-JsonAtomic ${f("snapshot")} $snapshot`,
     "# The apply record carries the snapshot and exists before any change: an interrupted apply is revertible.",
     "$created = @()",
     `$record = [ordered]@{ invocation = '${o.invocation}'; snapshot = $snapshot; created = $created }`,
     `$applied = ${f("apply")}`,
-    "Save-Json $applied $record",
+    "Save-JsonAtomic $applied $record",
     "$changedProfiles = $false",
     "try {",
     "  $changedProfiles = $true",
@@ -323,7 +335,7 @@ export function applyScript(
       ? ""
       : ` -LocalPort @(${r.localPorts.map((p) => `'${p}'`).join(", ")})`;
     lines.push(
-      `  New-NetFirewallRule -Group '${RULE_GROUP}' -Name '${r.name}' -DisplayName '${r.name}' -Enabled True -Direction Inbound -Action Block -Profile Any -Protocol ${r.protocol}${ports} -InterfaceAlias $alias | Out-Null; $created += '${r.name}'; $record.created = $created; Save-Json $applied $record`,
+      `  New-NetFirewallRule -Group '${RULE_GROUP}' -Name '${r.name}' -DisplayName '${r.name}' -Enabled True -Direction Inbound -Action Block -Profile Any -Protocol ${r.protocol}${ports} -InterfaceAlias $alias | Out-Null; $created += '${r.name}'; $record.created = $created; Save-JsonAtomic $applied $record`,
     );
   }
   lines.push(
@@ -363,14 +375,21 @@ export function revertScript(dir: string): string {
     `Assert-NotFoundOnly $e 'the ${RULE_GROUP} group'`,
     `$foreign = @($rules | Where-Object { $_.Name -notlike '${RULE_GROUP}-*' })`,
     `if ($foreign.Count -gt 0) { throw "group ${RULE_GROUP} holds rules this harness did not create: $(($foreign | ForEach-Object { $_.Name }) -join ', '); refusing" }`,
-    "$applied = @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^fw-apply-([A-Za-z0-9-]+)\\.json$' } | Sort-Object LastWriteTimeUtc -Descending)",
-    `if ($applied.Count -eq 0) { if ($rules.Count -gt 0) { throw 'group ${RULE_GROUP} exists but no applied invocation is recorded in the dir; refusing' }; Write-Output '[OK] nothing to revert'; exit 0 }`,
-    "$inv = [regex]::Match($applied[0].Name, '^fw-apply-([A-Za-z0-9-]+)\\.json$').Groups[1].Value",
+    "# The newest unarchived apply record or snapshot names the invocation (a crash may leave only the snapshot).",
+    "$found = @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^fw-(apply|snapshot)-([A-Za-z0-9-]+)\\.json$' } | Sort-Object LastWriteTimeUtc -Descending)",
+    `if ($found.Count -eq 0) { if ($rules.Count -gt 0) { throw 'group ${RULE_GROUP} exists but no applied invocation is recorded in the dir; refusing' }; Write-Output '[OK] nothing to revert'; exit 0 }`,
+    "$inv = [regex]::Match($found[0].Name, '^fw-(apply|snapshot)-([A-Za-z0-9-]+)\\.json$').Groups[2].Value",
     "# Windows PowerShell 5.1: assign ConvertFrom-Json first, then enumerate.",
-    "$record = ConvertFrom-Json (Get-Content -LiteralPath $applied[0].FullName -Raw -Encoding UTF8)",
-    "$profiles = $record.snapshot",
-    "$profiles = @($profiles)",
-    'if ($profiles.Count -ne 3) { throw "apply record $($applied[0].Name) does not hold a 3-profile snapshot" }',
+    "$profiles = $null",
+    '$recordPath = Join-Path $dir "fw-apply-$inv.json"',
+    "if (Test-Path -LiteralPath $recordPath) { try { $record = ConvertFrom-Json (Get-Content -LiteralPath $recordPath -Raw -Encoding UTF8); $profiles = @($record.snapshot); if ($profiles.Count -ne 3) { $profiles = $null } } catch { $profiles = $null } }",
+    "if ($null -eq $profiles) {",
+    '  $snap = Join-Path $dir "fw-snapshot-$inv.json"',
+    "  $v = ConvertFrom-Json (Get-Content -LiteralPath $snap -Raw -Encoding UTF8)",
+    "  $profiles = @($v)",
+    '  if ($profiles.Count -ne 3) { throw "snapshot $snap does not hold 3 profiles" }',
+    '  Write-Output "[WARN] apply record for $inv missing or unreadable: profiles from $snap"',
+    "}",
     `if ($rules.Count -gt 0) { Remove-NetFirewallRule -Group '${RULE_GROUP}' }`,
     "foreach ($p in $profiles) { Set-NetFirewallProfile -Name $p.Name -Enabled $p.Enabled -DefaultInboundAction $p.DefaultInboundAction -DefaultOutboundAction $p.DefaultOutboundAction }",
     "$stamp = Get-Date -Format 'yyyyMMddHHmmss'",
@@ -1015,13 +1034,23 @@ const PROBE_TIMEOUT_MS = 180_000;
 
 /** The production runtime (Windows host, Docker Desktop Windows containers). */
 export async function realEgressRuntime(
-  o: { repoRoot: string; markerPath: string; acceptCandidate?: boolean },
+  o: {
+    repoRoot: string;
+    markerPath: string;
+    acceptCandidate?: boolean;
+    /** Test seam for the host observation (default: the real collector). */
+    collect?: EgressRun;
+  },
 ): Promise<EgressRuntime> {
   const recordedHosts = await loadRecordedHosts(o.repoRoot);
   return {
     recordedHosts,
+    // Runs before every credential release (execution.ts): the marker and its
+    // authorized evidence are read and rechecked now, never trusted from startup.
     async verify() {
-      const s = await collectEgressState(realEgressCollector(o.markerPath));
+      const s = await collectEgressState(
+        o.collect ?? realEgressCollector(o.markerPath),
+      );
       const p = verifyEgressState(s);
       const placing = o.acceptCandidate
         ? ["candidate", "qualified", "authorized"]
@@ -1031,6 +1060,24 @@ export async function realEgressRuntime(
           `egress marker ${o.markerPath} is ${
             s.marker?.state ?? "missing"
           }: placement needs ${placing.join(" or ")}`,
+        );
+      }
+      if (s.marker?.state === "authorized") {
+        let m: Record<string, unknown>;
+        try {
+          m = JSON.parse(await Deno.readTextFile(o.markerPath));
+        } catch (err) {
+          return [
+            ...p,
+            `egress marker ${o.markerPath} is unreadable: ${
+              (err as Error).message
+            }`,
+          ];
+        }
+        p.push(
+          ...(await authorizedMarkerProblems(o.repoRoot, m)).map((x) =>
+            `not authorized: ${x}`
+          ),
         );
       }
       return p;
@@ -1183,6 +1230,7 @@ export async function authorizedMarkerProblems(
   };
   if (probe) {
     await same("probe_evidence_sha256", probeSha, () => sha256File(probe));
+    p.push(...await probeEvidenceProblems(probe, m));
   }
   await same(
     "recorded_hosts_sha256",
@@ -1204,24 +1252,142 @@ export async function authorizedMarkerProblems(
       p.push(`allowlist_sha256: cannot recompute (${(err as Error).message})`);
     }
   }
-  if (cell) {
-    const executions = join(
-      repoRoot,
-      "results",
-      "harness",
-      "cells",
-      "executions",
-    );
-    let found = false;
-    try {
-      for (const d of Deno.readDirSync(executions)) {
-        try {
-          Deno.statSync(join(executions, d.name, `${cell}.json`));
-          found = true;
-        } catch { /* not in this campaign */ }
-      }
-    } catch { /* no cells */ }
-    if (!found) p.push(`cell ${cell} is not in ${executions}`);
+  if (cell) p.push(...await recordCellProblems(repoRoot, cell));
+  return p;
+}
+
+/** The qualification evidence by content: its schema, this marker's network, a passing result. */
+async function probeEvidenceProblems(
+  path: string,
+  m: Record<string, unknown>,
+): Promise<string[]> {
+  let v: unknown;
+  try {
+    v = JSON.parse(await Deno.readTextFile(path));
+  } catch (err) {
+    return [`probe evidence ${path} does not parse: ${(err as Error).message}`];
   }
+  const r = ProbeEvidenceSchema.safeParse(v);
+  if (!r.success) {
+    return [`probe evidence ${path} is invalid: ${r.error.issues[0]?.message}`];
+  }
+  const e = r.data;
+  const p: string[] = [];
+  if (
+    e.network_id !== m["network_id"] ||
+    e.interface_index !== m["interface_index"]
+  ) {
+    p.push(`probe evidence ${path} is for another network or interface`);
+  }
+  if (!e.hosts.includes("api.anthropic.com")) {
+    p.push(`probe evidence ${path} lacks the api.anthropic.com probe`);
+  }
+  const lines = e.lines.map((l) => ({
+    probe: l.probe,
+    ok: l.ok,
+    ...(l.error ? { error: l.error } : {}),
+  }));
+  p.push(
+    ...evaluatePreflight(lines, preflightExpect(e.hosts)).map((x) =>
+      `probe evidence ${path} did not pass: ${x}`
+    ),
+  );
+  return p;
+}
+
+/** Written beside a record-mode cell's run (execution.ts): the facts authorization checks. */
+export const RECORD_MODE_FILE = "record-mode.json";
+const RecordModeSchema = z.object({
+  v: z.literal(1),
+  execution_id: z.string().min(1),
+  record_mode: z.literal(true),
+  supervised: z.boolean(),
+  credential_bearing: z.boolean(),
+  harness: z.string(),
+  termination: z.string(),
+}).strict();
+const NON_TERMINAL_OR_CRASH = [
+  "harness_crash",
+  "setup_failed",
+  "usage_limited",
+];
+
+/**
+ * The Step 11 cell by content: its execution record exists and ended in a
+ * terminal non-crash outcome; its record-mode facts say supervised,
+ * credential-bearing Claude Code; the recording names it as its source.
+ */
+export async function recordCellProblems(
+  repoRoot: string,
+  cell: string,
+): Promise<string[]> {
+  const cells = join(repoRoot, "results", "harness", "cells");
+  const p: string[] = [];
+  let record: Record<string, unknown> | null = null;
+  try {
+    for (const d of Deno.readDirSync(join(cells, "executions"))) {
+      try {
+        record = JSON.parse(
+          Deno.readTextFileSync(
+            join(cells, "executions", d.name, `${cell}.json`),
+          ),
+        );
+      } catch { /* not in this campaign */ }
+    }
+  } catch { /* no cells */ }
+  if (!record || record["id"] !== cell) {
+    return [`cell ${cell}: no execution record under ${cells}`];
+  }
+  const termination = String(record["termination"]);
+  if (NON_TERMINAL_OR_CRASH.includes(termination)) {
+    p.push(
+      `cell ${cell} ended ${termination}, not a terminal non-crash outcome`,
+    );
+  }
+  let facts: unknown;
+  try {
+    facts = JSON.parse(
+      await Deno.readTextFile(join(cells, "runs", cell, RECORD_MODE_FILE)),
+    );
+  } catch {
+    return [
+      ...p,
+      `cell ${cell} has no readable ${RECORD_MODE_FILE}: not a record-mode cell`,
+    ];
+  }
+  const r = RecordModeSchema.safeParse(facts);
+  if (!r.success) {
+    return [
+      ...p,
+      `cell ${cell} ${RECORD_MODE_FILE} is invalid: ${
+        r.error.issues[0]?.message
+      }`,
+    ];
+  }
+  const f = r.data;
+  if (f.execution_id !== cell) {
+    p.push(`cell ${cell} ${RECORD_MODE_FILE} names ${f.execution_id}`);
+  }
+  if (!f.supervised) p.push(`cell ${cell} was not supervised`);
+  if (!f.credential_bearing || f.harness !== "claude-code") {
+    p.push(
+      `cell ${cell} was not a credential-bearing Claude Code arm (${f.harness})`,
+    );
+  }
+  if (f.termination !== termination) {
+    p.push(
+      `cell ${cell} ${RECORD_MODE_FILE} termination differs from its record`,
+    );
+  }
+  try {
+    const rec = JSON.parse(
+      await Deno.readTextFile(
+        join(repoRoot, ...RECORDED_HOSTS_PATH.split("/")),
+      ),
+    );
+    if (rec?.source !== `record mode execution ${cell}`) {
+      p.push(`${RECORDED_HOSTS_PATH} was not recorded by cell ${cell}`);
+    }
+  } catch { /* the recorded-hosts hash check names a missing file */ }
   return p;
 }
