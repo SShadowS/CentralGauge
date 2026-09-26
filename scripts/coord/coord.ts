@@ -23,6 +23,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 
 export const PROTOCOL = 1;
 export const RUN_STALE_MIN = 15;
+/** A run whose latest checkpoint waits on something (--wait) is legitimately idle; still reported after 4 h. */
+export const WAIT_STALE_MIN = 240;
 export const LEASE_STALE_MIN = 10;
 
 const ID_RE = /^[A-Z][A-Z0-9]*-[0-9]{2,3}[a-z]?$/;
@@ -881,7 +883,8 @@ export async function stale(
     if (paused || st.state !== "doing") continue;
     const last = st.checkpoint?.at ?? st.claimedAt ?? 0;
     const min = Math.floor((now - last) / 60000);
-    if (min >= RUN_STALE_MIN) {
+    const limit = st.checkpoint?.wait ? WAIT_STALE_MIN : RUN_STALE_MIN;
+    if (min >= limit) {
       out.push(
         `${st.id} run ${st.runId} (${st.runLane}): no checkpoint for ${min} min`,
       );
