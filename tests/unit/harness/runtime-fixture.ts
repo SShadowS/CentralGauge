@@ -31,6 +31,7 @@ import { loadTask } from "../../../src/harness/task.ts";
 import { deployedSource, FakeBc, result } from "./fake-bc.ts";
 import { FakeDocker, type RunBehavior } from "./fake-docker.ts";
 import { makeRefappRepo, type RefappRepo, write } from "./refapp-fixture.ts";
+import { tempDir } from "./temp-dirs.ts";
 
 export const SECRET_OAUTH = "sk-ant-oat01-fixture-0123456789abcdefXYZ";
 const PROBE = "tests/fixtures/harness/claude-code/probe.jsonl";
@@ -246,10 +247,10 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
   const resultsRoot = join(repo.root, "results", "harness");
   await Deno.mkdir(resultsRoot, { recursive: true });
   const privateRoot = await Deno.realPath(
-    await Deno.makeTempDir({ prefix: "cg-private-" }),
+    await tempDir({ prefix: "cg-private-" }),
   );
   await Deno.mkdir(join(privateRoot, "work"), { recursive: true });
-  const secretsSource = await Deno.realPath(await Deno.makeTempDir());
+  const secretsSource = await Deno.realPath(await tempDir());
   await Deno.writeTextFile(
     join(secretsSource, "claude-oauth-token"),
     SECRET_OAUTH,
