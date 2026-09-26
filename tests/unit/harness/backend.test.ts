@@ -21,7 +21,12 @@ import {
   timingSafeEqual,
 } from "../../../src/harness/backend.ts";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
-import { exists } from "../../../src/harness/fsutil.ts";
+import {
+  type CopyLimits,
+  DEFAULT_COPY_LIMITS,
+  exists,
+} from "../../../src/harness/fsutil.ts";
+import { stub } from "@std/testing/mock";
 import { FakeDocker } from "./fake-docker.ts";
 import { readAppGraph } from "../../../src/harness/staging.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
@@ -150,8 +155,6 @@ async function setup(
     ops,
     allowedHosts: ["127.0.0.1"],
     now: () => clock.t,
-    docker,
-    opTimeoutMs: 100,
     bodyTimeoutMs: 100,
     revokeGraceMs: opts.revokeGraceMs ?? 50,
   });
@@ -390,7 +393,6 @@ Deno.test("production ops: a revoke past the grace cancels before any further BC
     workRoot: join(s.root, "backend4"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
     revokeGraceMs: 100,
   });
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl4.jsonl"));
@@ -423,7 +425,6 @@ Deno.test("production ops: a request past its deadline is refused before any pub
     workRoot: join(s.root, "backend5"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
     requestDeadlineMs: 40,
   });
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl5.jsonl"));
@@ -556,7 +557,6 @@ Deno.test("defaultBackendOps: a fixture-band codeunit is refused before any BC c
     workRoot: join(s.root, "backend2"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
   });
   const exec = "00000000-0000-4000-8000-00000000e003";
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl3.jsonl"));
@@ -682,7 +682,6 @@ Deno.test("defaultBackendOps: discovery skips test codeunits without [Test] proc
     workRoot: join(s.root, "backend6"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
   });
   const exec = "00000000-0000-4000-8000-00000000e006";
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl6.jsonl"));
@@ -833,7 +832,6 @@ Deno.test("backend: the snapshot runs the reparse attribute scan; a scanned repa
       test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
     },
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
     scanReparsePoints: () =>
       Promise.resolve({
         ancestors: [],
@@ -1029,7 +1027,10 @@ Deno.test("backend: a revoke that lands during the snapshot cancels before the o
 });
 
 /** A backend over one granted workspace whose reparse-scan seam runs `during` before each copy. */
-async function snapshotBackend(during: (ws: string) => Promise<void>) {
+async function snapshotBackend(
+  during: (ws: string, ctl: { revoke(): Promise<boolean> }) => Promise<void>,
+  opts: { copyLimits?: CopyLimits; revokeGraceMs?: number } = {},
+) {
   const s = await setup();
   let scans = 0;
   const seen: string[] = [];
@@ -1045,10 +1046,15 @@ async function snapshotBackend(during: (ws: string) => Promise<void>) {
       test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
     },
     allowedHosts: ["127.0.0.1"],
-    docker: s.docker,
+    ...(opts.copyLimits ? { copyLimits: opts.copyLimits } : {}),
+    ...(opts.revokeGraceMs !== undefined
+      ? { revokeGraceMs: opts.revokeGraceMs }
+      : {}),
     scanReparsePoints: async () => {
       scans++;
-      await during(join(s.root, "work", exec, "workspace"));
+      await during(join(s.root, "work", exec, "workspace"), {
+        revoke: () => b.revoke(exec),
+      });
       return { ancestors: [], entries: [], seen: 1, capped: false };
     },
   });
@@ -1056,7 +1062,8 @@ async function snapshotBackend(during: (ws: string) => Promise<void>) {
   const tok = await grantFor(b, s.root, exec, hostLog);
   const send = () =>
     b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
-  return { s, b, send, seen, hostLog, scans: () => scans };
+  const ws = join(s.root, "work", exec, "workspace");
+  return { s, b, send, seen, hostLog, ws, scans: () => scans };
 }
 
 Deno.test("backend: a stable workspace compiles from a snapshot with no pause call made", async () => {
@@ -1106,4 +1113,41 @@ Deno.test("backend: an I/O error during the snapshot is infra (503), not the age
   const r = await t.send();
   assertEquals(r.status, 503);
   assertEquals(t.seen.length, 0);
+});
+
+Deno.test("backend: a revoke during the last attempt is a cancellation (503), never the churn 409", async () => {
+  let n = 0;
+  let revoking: Promise<boolean> | null = null;
+  const t = await snapshotBackend(async (ws, ctl) => {
+    await Deno.writeTextFile(join(ws, "Core", "src", "Churn.al"), `// ${++n}`);
+    if (n === 3) {
+      revoking = ctl.revoke();
+      await new Promise((r) => setTimeout(r, 60)); // past the 10 ms grace: aborted
+    }
+  }, { revokeGraceMs: 10 });
+  const r = await t.send();
+  assertEquals([r.status, t.scans()], [503, 3]);
+  await revoking;
+});
+
+Deno.test("backend: the snapshot digest enforces the copy limits while reading: an oversized file is 422, never read whole", async () => {
+  const limits = { ...DEFAULT_COPY_LIMITS, maxBytes: 4096 };
+  const t = await snapshotBackend(() => Promise.resolve(), {
+    copyLimits: limits,
+  });
+  const big = join(t.ws, "Core", "src", "Big.al");
+  await Deno.writeTextFile(big, "x".repeat(64 * 1024));
+  const whole: string[] = [];
+  const readFile = Deno.readFile;
+  const spy = stub(Deno, "readFile", (path, o) => {
+    whole.push(String(path));
+    return readFile(path, o);
+  });
+  try {
+    const r = await t.send();
+    assertEquals(r.status, 422);
+  } finally {
+    spy.restore();
+  }
+  assertEquals(whole.filter((p) => p.endsWith("Big.al")), []);
 });

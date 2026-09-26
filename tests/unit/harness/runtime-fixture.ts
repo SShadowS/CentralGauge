@@ -266,8 +266,6 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
       workRoot: join(privateRoot, "backend"),
       ops: defaultBackendOps(lane),
       allowedHosts: ["127.0.0.1"],
-      docker,
-      opTimeoutMs: 100,
       revokeGraceMs: 100,
       scanReparsePoints: NO_SCAN,
     }),

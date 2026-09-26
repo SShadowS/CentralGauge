@@ -749,8 +749,6 @@ interface DraftInput {
   interrupted: boolean;
   /** The exact secrets released to this attempt ([] only when nothing was released). */
   secrets: SecretValue[];
-  /** Set when the backend reported a fault (failed unpause). */
-  fault: string | null;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -820,9 +818,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const check = started
     ? observedMismatch(f.manifest, parsed.observed, parsed.unobservable)
     : { mismatch: null, unverified: [] };
-  const stopReason = f.fault
-    ? "backend_fault"
-    : f.sandbox.interrupted
+  const stopReason = f.sandbox.interrupted
     ? "operator_interrupt"
     : f.sandbox.overflow
     ? "capture_overflow"
@@ -859,7 +855,6 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     setup_error: f.setupError ?? check.mismatch,
     unverified: check.unverified,
     stop_reason: stopReason,
-    fault: f.fault,
     infra_reason: infraReasons.length > 0 ? infraReasons.join("; ") : null,
     stream_problems: problems,
     usage_reset_at: parsed.usageResetAt,
@@ -901,8 +896,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       incomplete_observed: check.unverified.length > 0
         ? ["loaded_components"]
         : [],
-      infra_exposed: f.fault !== null ||
-        host.lines.some((l) => l.outcome === "infra") ||
+      infra_exposed: host.lines.some((l) => l.outcome === "infra") ||
         infraReasons.length > 0,
     },
     image_attachments: imageAttachments(
@@ -1122,11 +1116,6 @@ export async function runExecution(
   };
   let secrets: SecretValue[] = [];
   let drained = true;
-  let fault: string | null = null;
-  const faultStop = new AbortController();
-  const stop = env.stop
-    ? AbortSignal.any([env.stop, faultStop.signal])
-    : faultStop.signal;
   let refusal: unknown = null;
   try {
     // By immutable id: retagging never substitutes or invalidates the pinned image.
@@ -1172,10 +1161,6 @@ export async function runExecution(
         trustedRoots: [staged.pristine],
       },
       hostLog: p.host,
-      onFault: (reason) => {
-        fault = reason;
-        faultStop.abort(new Error(reason));
-      },
     }, timeoutMs + 5 * 60_000);
     let secretsDir: string | null = null;
     try {
@@ -1240,7 +1225,7 @@ export async function runExecution(
           stderrLog: p.stderr,
         },
         s.values.map((v) => v.value),
-        stop,
+        env.stop,
       );
     } finally {
       drained = await env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
@@ -1281,7 +1266,6 @@ export async function runExecution(
     pricing,
     interrupted: false,
     secrets,
-    fault,
   });
   await publishDraft(env, cell, draft, staged.pristine, true);
   return { execution: draft.execution, usageResetAt: draft.usage_reset_at };
@@ -1624,7 +1608,6 @@ export async function recoverInterrupted(
         pricing: intent.pricing,
         interrupted: true,
         secrets,
-        fault: null,
       });
     }
     await publishDraft(own, cell, draft, null, taskUnchanged);

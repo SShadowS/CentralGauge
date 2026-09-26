@@ -41,8 +41,8 @@ import {
   scanReparsePoints,
   validatedDir,
 } from "./fsutil.ts";
-import type { DockerCli } from "./sandbox.ts";
-import { hashTree, isTaskBuildArtifact, sha256Hex } from "./hash.ts";
+import { createHash } from "node:crypto";
+import { hashTree, isTaskBuildArtifact } from "./hash.ts";
 import { readAppGraph, readAppJson, type StagedApp } from "./staging.ts";
 import { TEST_APP, testCodeunits, validateApps } from "./verdict-workspace.ts";
 
@@ -53,8 +53,6 @@ export interface BackendGrant {
   executionId: string;
   /** The execution's sandbox container (named in infra faults); null only in unit tests without a sandbox. */
   sandbox: string | null;
-  /** Stops the execution on a sandbox fault. Unused since M1-19b dropped the pause; kept for the pause-and-extract redesign. */
-  onFault?(reason: string): void;
   workspace: string;
   pristine: string;
   /** The staged workspace's app identities: the only apps the backend builds. */
@@ -308,12 +306,34 @@ function isChurn(err: unknown): boolean {
 /**
  * Exact relative paths and raw bytes (no text normalization, unlike the task
  * hash) of what a snapshot copies: build artifacts skipped as the copy skips
- * them; links and special entries recorded by kind, never followed.
+ * them; links and special entries recorded by kind, never followed. The copy
+ * limits hold while reading (CopyLimitError, 422, before a large read) and
+ * each file is hashed in chunks, never read whole.
  */
-async function treeDigest(root: string): Promise<Map<string, string>> {
+async function treeDigest(
+  root: string,
+  limits: CopyLimits,
+): Promise<Map<string, string>> {
   const out = new Map<string, string>();
-  const walk = async (dir: string, rel: string): Promise<void> => {
+  let entries = 0;
+  let files = 0;
+  let dirs = 0;
+  let bytes = 0;
+  const over = (what: string) =>
+    new CopyLimitError(`${root}: more than ${what}`);
+  const buf = new Uint8Array(64 * 1024);
+  const walk = async (
+    dir: string,
+    rel: string,
+    depth: number,
+  ): Promise<void> => {
+    if (depth > limits.maxDepth) {
+      throw new CopyLimitError(`${root}: deeper than ${limits.maxDepth}`);
+    }
     for await (const e of Deno.readDir(dir)) {
+      if (++entries > limits.maxEntries) {
+        throw over(`${limits.maxEntries} entries`);
+      }
       const r1 = rel ? `${rel}/${e.name}` : e.name;
       const p = join(dir, e.name);
       const st = await Deno.lstat(p);
@@ -323,14 +343,35 @@ async function treeDigest(root: string): Promise<Map<string, string>> {
       }
       if (isTaskBuildArtifact(st.isDirectory ? `${r1}/` : r1)) continue;
       if (st.isDirectory) {
+        if (++dirs > limits.maxDirs) {
+          throw over(`${limits.maxDirs} directories`);
+        }
         out.set(r1, "dir");
-        await walk(p, r1);
-      } else {
-        out.set(r1, `file:${await sha256Hex(await Deno.readFile(p))}`);
+        await walk(p, r1, depth + 1);
+        continue;
       }
+      if (++files > limits.maxFiles) throw over(`${limits.maxFiles} files`);
+      if (bytes + st.size > limits.maxBytes) {
+        throw over(`${limits.maxBytes} bytes`);
+      }
+      const h = createHash("sha256");
+      const f = await Deno.open(p, { read: true });
+      try {
+        for (;;) {
+          const n = await f.read(buf);
+          if (n === null) break;
+          bytes += n;
+          // A file that grows while it is read is capped too.
+          if (bytes > limits.maxBytes) throw over(`${limits.maxBytes} bytes`);
+          h.update(buf.subarray(0, n));
+        }
+      } finally {
+        f.close();
+      }
+      out.set(r1, `file:${h.digest("hex")}`);
     }
   };
-  await walk(root, "");
+  await walk(root, "", 0);
   return out;
 }
 
@@ -372,9 +413,6 @@ export class Backend {
       ops: BackendOps;
       /** Container-facing addresses the server may bind (the nat gateway; loopback in tests). */
       allowedHosts: string[];
-      /** Unused since M1-19b (no pause: Hyper-V cannot pause with a RW mount); kept for the redesign. */
-      docker?: DockerCli;
-      opTimeoutMs?: number;
       bodyTimeoutMs?: number;
       revokeGraceMs?: number;
       /** End-to-end deadline of one request (compile admission, compiles, publish and tests). */
@@ -823,10 +861,11 @@ export class Backend {
     for (let attempt = 0;; attempt++) {
       if (signal.aborted) throw new LaneCancelledError(signal.reason);
       try {
-        const before = await treeDigest(st.canonical);
+        const limits = this.o.copyLimits ?? DEFAULT_COPY_LIMITS;
+        const before = await treeDigest(st.canonical, limits);
         const copy = await this.scannedCopy(st, snapshot);
-        const after = await treeDigest(st.canonical);
-        const copied = await treeDigest(copy.dst);
+        const after = await treeDigest(st.canonical, limits);
+        const copied = await treeDigest(copy.dst, limits);
         if (
           sameSnapshot(before, after, copied, [
             ...copy.refused,
@@ -848,6 +887,8 @@ export class Backend {
         }
       }
       await Deno.remove(snapshot, { recursive: true }).catch(() => {});
+      // A revocation or deadline during the last attempt is a cancellation, never churn.
+      if (signal.aborted) throw new LaneCancelledError(signal.reason);
       if (attempt >= SNAPSHOT_RETRIES) {
         throw new SnapshotChurnError(SNAPSHOT_CHURN);
       }

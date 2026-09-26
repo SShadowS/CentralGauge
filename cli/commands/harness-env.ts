@@ -223,7 +223,6 @@ export async function openHarnessEnv(
       workRoot: join(o.privateRoot, "backend"),
       ops: defaultBackendOps(lane),
       allowedHosts: [host],
-      docker,
     });
     const server = backend.serve(host, o.backendPort);
     closers.unshift(async () => {
