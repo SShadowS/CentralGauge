@@ -7,6 +7,7 @@ import {
   resolveVariant,
 } from "../../../src/harness/adapters/mock.ts";
 import { HarnessConfigSchema } from "../../../src/harness/config.ts";
+import { parse as parseYaml } from "@std/yaml";
 import { runCell } from "../../../src/harness/execution.ts";
 import { safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { loadSymbolsLock } from "../../../src/harness/identity.ts";
@@ -289,5 +290,35 @@ Deno.test({
       e.name
     ).sort();
     assertEquals(names, ["A.txt", "a.txt"]);
+  },
+});
+
+Deno.test("hostile edit-tests and app rows use a naive variant, so a fail proves the defense", async () => {
+  const root = fromFileUrl(new URL("../../../", import.meta.url));
+  for (const id of ["mock-hostile-edit-tests", "mock-hostile-app"]) {
+    const c = HarnessConfigSchema.parse(
+      parseYaml(
+        await Deno.readTextFile(join(root, "harness", "configs", `${id}.yml`)),
+      ),
+    );
+    assertEquals(c.settings["variant"], "naive:lock-table", id);
+    assertEquals(c.settings["mode"], id.replace("mock-", ""), id);
+  }
+});
+
+Deno.test({
+  name:
+    "mock.ps1 hostile-junction: a junction readable in container and host is created and verified; a failure is mock_error",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const ok = await runMockPs1({ mode: "hostile-junction" });
+    assertEquals([ok.code, ok.types.includes("mock_junction")], [0, true]);
+    assertEquals((await Deno.lstat(join(ok.ws, "host-link"))).isSymlink, true);
+    const bad = await runMockPs1({ mode: "hostile-junction" }, {
+      CG_MOCK_JUNCTION_TARGET: "C:\\cg-no-such-target-dir",
+    });
+    assertEquals(bad.code !== 0, true);
+    assertEquals(bad.types.includes("mock_error"), true);
+    assertEquals(bad.types.includes("mock_done"), false);
   },
 });

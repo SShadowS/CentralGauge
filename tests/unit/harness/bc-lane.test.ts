@@ -1390,3 +1390,19 @@ Deno.test("buildApps: a package the app uses but does not declare fails its comp
   const [core] = await buildApps(bc, "C1", await o());
   assertEquals(core!.ok, false, "Core does not declare Library Assert");
 });
+
+Deno.test("buildApps: a BOM app.json builds like one without", async () => {
+  const ws = await workspace();
+  const p = join(ws, "Core", "app.json");
+  await Deno.writeTextFile(p, "\uFEFF" + await Deno.readTextFile(p));
+  const bc = new FakeBc();
+  const built = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map([["Core", "1.0.7.7"]]),
+    outDir: await tmp(),
+    lock: await lock(),
+  });
+  assert(built.every((b) => b.ok));
+  assertEquals((await readApp(built[0]!.file!)).version, "1.0.7.7");
+});

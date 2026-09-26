@@ -1176,3 +1176,22 @@ Deno.test("production ops: a test after a compile of the same workspace rebuilds
   const lines = await readHostLog(join(s.root, "hl-reuse.jsonl"));
   assertEquals(lines.at(-1)!.per_app_compiles, 0);
 });
+
+Deno.test("backend: a BOM app.json in the workspace compiles (no violation, no invalid JSON)", async () => {
+  const s = await setup();
+  const bc = new FakeBc(() => result({ A: true }));
+  const exec = "00000000-0000-4000-8000-00000000e0d1";
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend-bom"),
+    ops: defaultBackendOps(new BcLane(bc, ["C1"])),
+    allowedHosts: ["127.0.0.1"],
+  });
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hl-bom.jsonl"));
+  const p = join(s.root, "work", exec, "workspace", "Core", "app.json");
+  await Deno.writeTextFile(p, "\uFEFF" + await Deno.readTextFile(p));
+  const r = await b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
+  const body = await r.json();
+  assertEquals([r.status, body.ok, body.violations], [200, true, undefined]);
+});

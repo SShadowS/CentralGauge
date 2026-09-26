@@ -10,7 +10,11 @@ import { allocatedContainer } from "../../src/harness/allocation.ts";
 import { buildApps } from "../../src/harness/bc-lane.ts";
 import { hashFile } from "../../src/harness/hash.ts";
 import { loadSymbolsLock, REFAPP_PATH } from "../../src/harness/identity.ts";
-import { readAppGraph, TAR_BINARY } from "../../src/harness/staging.ts";
+import {
+  readAppGraph,
+  readAppJsonRaw,
+  TAR_BINARY,
+} from "../../src/harness/staging.ts";
 import { restoreSymbols } from "../../src/harness/symbols.ts";
 import { acquireBenchLock } from "../../src/utils/bench-lock.ts";
 
@@ -99,7 +103,10 @@ try {
   const [, restore_ms] = await ms(() =>
     restoreSymbols(lock.store, lock.packages, pk)
   );
-  const appJson = JSON.parse(await Deno.readTextFile(join(dir, "app.json")));
+  const appJson = await readAppJsonRaw(join(dir, "app.json")) as Record<
+    string,
+    unknown
+  >;
   for (const pass of ["cold", "warm"]) {
     const [r, compile_ms] = await ms(() =>
       bc!.compileProject(container, {

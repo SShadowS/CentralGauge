@@ -19,7 +19,7 @@ import type { ContainerOutcome } from "../health/types.ts";
 import type { InfraRetryRecord } from "../tasks/interfaces.ts";
 import type { SymbolPackage } from "./identity.ts";
 import type { TestResultSchema } from "./records.ts";
-import type { StagedApp } from "./staging.ts";
+import { readAppJsonRaw, type StagedApp } from "./staging.ts";
 import { ContainerError, ValidationError } from "../errors.ts";
 import {
   classifyPublishFailure,
@@ -748,7 +748,12 @@ export async function buildApps(
     await safeCopyTree(join(o.srcDir, app.folder), dir, {
       skip: isTaskBuildArtifact,
     });
-    const appJson = JSON.parse(await Deno.readTextFile(join(dir, "app.json")));
+    const appJson = await readAppJsonRaw(join(dir, "app.json")) as {
+      version?: string;
+      application?: unknown;
+      platform?: unknown;
+      [k: string]: unknown;
+    };
     appJson.version = version;
     await Deno.writeTextFile(
       join(dir, "app.json"),

@@ -547,3 +547,17 @@ Deno.test("judge: the oracle build gets its workspace dependencies' declared sym
   );
   assertEquals(judgment.verdict, "pass");
 });
+
+Deno.test("judge: a BOM app.json in the artifact judges the same as one without", async () => {
+  const bc = script();
+  const { input } = await setup("correct", {
+    "Rental/app.json": "\uFEFF" +
+      appJson(IDS.rental, "CGR Rental", [70200, 70299], [{
+        id: IDS.core,
+        name: "CGR Core",
+      }]),
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(log.violations, []);
+  assertEquals(judgment.verdict, "pass");
+});

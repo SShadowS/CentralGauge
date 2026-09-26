@@ -20,7 +20,7 @@ import {
   safeCopyTree,
   validatedDest,
 } from "./fsutil.ts";
-import { readAppGraph, type StagedApp } from "./staging.ts";
+import { readAppGraph, readAppJsonRaw, type StagedApp } from "./staging.ts";
 
 export const TEST_APP = "Test";
 export const SOURCE_EXTENSIONS = [
@@ -68,7 +68,7 @@ const IDENTITY = ["id", "name", "publisher"] as const;
 
 async function readJson(path: string): Promise<Record<string, unknown> | null> {
   try {
-    return JSON.parse(await Deno.readTextFile(path)) as Record<string, unknown>;
+    return await readAppJsonRaw(path) as Record<string, unknown>;
   } catch {
     return null;
   }

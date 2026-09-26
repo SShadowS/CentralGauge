@@ -17,6 +17,7 @@ import {
   resolveSoapTimeoutMs,
   runTestsViaSoap,
 } from "../../src/container/soap-test-client.ts";
+import { readAppJsonRaw } from "../../src/harness/staging.ts";
 import { loadTask } from "../../src/harness/task.ts";
 import {
   allPass,
@@ -95,7 +96,10 @@ export async function containerBc(
 }
 
 async function loadProject(dir: string): Promise<ALProject> {
-  const appJson = JSON.parse(await Deno.readTextFile(join(dir, "app.json")));
+  const appJson = await readAppJsonRaw(join(dir, "app.json")) as Record<
+    string,
+    unknown
+  >;
   const sourceFiles: string[] = [];
   for await (const e of walk(dir, { exts: [".al"], followSymlinks: false })) {
     if (e.isFile && !e.path.includes(".alpackages")) sourceFiles.push(e.path);
