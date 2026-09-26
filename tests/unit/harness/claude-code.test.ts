@@ -744,14 +744,27 @@ Deno.test("run.ps1 review: UTF-8 reads, byte copy of instructions, prompt on std
   assert(code.some((l) => l.includes("$global:OutputEncoding = $utf8")));
 });
 
-const SHIM = "harness/images/claude-code/cg-al";
+const SHIM = "harness/images/base/cg-al";
 
-Deno.test("cg-al bash shim: pinned in the image on Git Bash's PATH, LF only, one implementation", async () => {
-  const cc = await Deno.readTextFile(
-    "harness/images/claude-code/Dockerfile.windows",
+Deno.test("cg-al bash shim: pinned in the BASE image on Git Bash's PATH, LF only, one implementation", async () => {
+  // Every harness image's Git Bash finds `cg-al` (M1-28d: pi's bash tool is
+  // Git Bash too): C:\Git\usr\bin is bash's /usr/bin, and only the base copies it.
+  const base = await Deno.readTextFile(
+    "harness/images/base/Dockerfile.windows",
   );
-  // C:\Git\usr\bin is bash's /usr/bin (base image PATH), so the agent's Bash tool finds `cg-al`.
-  assert(/^COPY cg-al C:\/Git\/usr\/bin\/cg-al\s*$/m.test(cc), cc);
+  const copy = /^COPY cg-al C:\/Git\/usr\/bin\/cg-al\s*$/m;
+  assert(copy.test(base), base);
+  assert(
+    base.search(copy) > base.indexOf("PortableGit"),
+    "the shim is copied after Git is installed",
+  );
+  for (const h of ["claude-code", "pi", "mock"]) {
+    const df = await Deno.readTextFile(
+      `harness/images/${h}/Dockerfile.windows`,
+    );
+    assert(!/cg-al/.test(df.replace(/^#.*$/gm, "")), `${h} copies no cg-al`);
+  }
+  await assertRejects(() => Deno.stat("harness/images/claude-code/cg-al"));
   const shim = await Deno.readTextFile(SHIM);
   assert(!shim.includes("\r"), "bash refuses CRLF: the shim must stay LF");
   assert(shim.startsWith("#!/usr/bin/env bash\n"));
