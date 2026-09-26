@@ -563,37 +563,6 @@ Deno.test("recovery: an interruption inside cleanup only repeats the cleanup", a
   assertEquals([...Deno.readDirSync(join(t.env.privateRoot, "intents"))], []);
 });
 
-Deno.test("a backend fault (failed unpause) stops the execution as infra", async () => {
-  const t = await makeEnv();
-  t.docker.unpause = () => Promise.resolve(1);
-  t.docker.behavior = async (call, io) => {
-    await ccBehavior(
-      join(t.repo.tasksDir, "HX-001"),
-      "correct",
-      (await probeLines()).slice(0, 12),
-    )(call, io);
-    const token = await tokenOf(call);
-    await t.env.backend.handle(
-      new Request("http://b/v1/compile", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${token}`,
-          "x-cg-execution": call.env.get("CG_EXECUTION_ID")!,
-        },
-        body: '{"apps":["Core"]}',
-      }),
-    );
-    await io.killed;
-    return 137;
-  };
-  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
-  assertEquals([e.termination, e.validity.infra_exposed], [
-    "harness_crash",
-    true,
-  ]);
-  assertEquals((await sideOf(t, e.id)).stop_reason, "backend_fault");
-});
-
 for (
   const step of [
     "draft",

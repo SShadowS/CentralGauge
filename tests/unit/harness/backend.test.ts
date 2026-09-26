@@ -372,45 +372,6 @@ Deno.test("backend: a stalled body is 408 within the deadline", async () => {
   assert(performance.now() - t0 < 1_000);
 });
 
-Deno.test("backend: a failed unpause is a 503 infra fault and stops the execution through onFault", async () => {
-  const root = await tmp();
-  await Deno.mkdir(join(root, "work"), { recursive: true });
-  const docker = new FakeDocker();
-  docker.unpause = () => Promise.resolve(1);
-  const faults: string[] = [];
-  const ops: BackendOps = {
-    compile: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
-    test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
-  };
-  const b = new Backend({
-    scanReparsePoints: NO_SCAN,
-    approvedRoots: [join(root, "work")],
-    workRoot: join(root, "backend"),
-    ops,
-    allowedHosts: ["127.0.0.1"],
-    docker,
-    opTimeoutMs: 100,
-  });
-  const ws = await workspace(root, EXEC_A);
-  const tok = await b.grant({
-    executionId: EXEC_A,
-    sandbox: "cg-harness-x",
-    onFault: (r) => faults.push(r),
-    workspace: ws,
-    pristine: ws,
-    trusted: await readAppGraph(ws),
-    symbols: [],
-    lock: { store: root, packages: [] },
-    deploy: { ledgerRoot: root, trustedRoots: [ws] },
-    hostLog: join(root, "hl.jsonl"),
-  }, 60_000);
-  assertEquals(
-    (await b.handle(req("/v1/compile", tok, '{"apps":["Core"]}'))).status,
-    503,
-  );
-  assertStringIncludes(faults.join("\n"), "unpause");
-});
-
 Deno.test("production ops: a revoke past the grace cancels before any further BC mutation", async () => {
   const s = await setup();
   let releaseCompile!: () => void;
@@ -468,23 +429,6 @@ Deno.test("production ops: a request past its deadline is refused before any pub
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl5.jsonl"));
   assertEquals((await b.handle(req("/v1/test", tok, "{}", exec))).status, 503);
   assertEquals(bc.syncs, []);
-});
-
-Deno.test("backend: the snapshot is taken with the sandbox paused; a failed pause is 503 and copies nothing", async () => {
-  const s = await setup();
-  assertEquals(
-    (await s.backend.handle(req("/v1/compile", s.tokenA, '{"apps":["Core"]}')))
-      .status,
-    200,
-  );
-  assertEquals(s.docker.paused, [`cg-harness-test-e001`]);
-  s.docker.pause = () => Promise.resolve(1);
-  assertEquals(
-    (await s.backend.handle(req("/v1/compile", s.tokenA, '{"apps":["Core"]}')))
-      .status,
-    503,
-  );
-  assertEquals(s.seen.length, 1);
 });
 
 Deno.test("backend: compile runs on a snapshot, logs monotonic spans, cleans up", async () => {
@@ -984,7 +928,7 @@ Deno.test("backend: UNC paths, backend roots and host paths in any agent-facing 
 });
 
 Deno.test(
-  "cg-al.ps1: exit code per response status (agent-caused 4xx are 1, infra is 2, 401 is 3)",
+  "cg-al.ps1: exit code per response status (agent-caused 4xx and the retryable 409 are 1, infra is 2, 401 is 3)",
   {
     ignore: Deno.build.os !== "windows",
   },
@@ -1010,6 +954,7 @@ Deno.test(
         [413, '{"error":"x"}', 1],
         [422, '{"error":"x"}', 1],
         [429, '{"error":"x"}', 1],
+        [409, '{"error":"workspace changed during snapshot; retry"}', 1],
         [401, '{"error":"x"}', 3],
         [408, '{"error":"x"}', 2],
         [500, '{"error":"x"}', 2],
@@ -1081,4 +1026,84 @@ Deno.test("backend: a revoke that lands during the snapshot cancels before the o
   await revoking; // whether it drained depends on the grace; the ordering is what is pinned
   assertEquals((await pending).status, 503);
   assertEquals(opRan, false);
+});
+
+/** A backend over one granted workspace whose reparse-scan seam runs `during` before each copy. */
+async function snapshotBackend(during: (ws: string) => Promise<void>) {
+  const s = await setup();
+  let scans = 0;
+  const seen: string[] = [];
+  const exec = "00000000-0000-4000-8000-00000000e0b1";
+  const b = new Backend({
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend-snap"),
+    ops: {
+      compile: (ctx) => {
+        seen.push(ctx.snapshot);
+        return Promise.resolve({ body: {}, log: { outcome: "ok" } });
+      },
+      test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
+    },
+    allowedHosts: ["127.0.0.1"],
+    docker: s.docker,
+    scanReparsePoints: async () => {
+      scans++;
+      await during(join(s.root, "work", exec, "workspace"));
+      return { ancestors: [], entries: [], seen: 1, capped: false };
+    },
+  });
+  const hostLog = join(s.root, "hl-snap.jsonl");
+  const tok = await grantFor(b, s.root, exec, hostLog);
+  const send = () =>
+    b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
+  return { s, b, send, seen, hostLog, scans: () => scans };
+}
+
+Deno.test("backend: a stable workspace compiles from a snapshot with no pause call made", async () => {
+  const t = await snapshotBackend(() => Promise.resolve());
+  assertEquals((await t.send()).status, 200);
+  assertEquals([t.seen.length, t.scans()], [1, 1]);
+  assertEquals(
+    t.s.docker.paused,
+    [],
+    "no docker pause (Hyper-V cannot pause with a RW mount)",
+  );
+});
+
+Deno.test("backend: a writer changing a file during the copy gives a retryable 409 after 2 internal retries", async () => {
+  let n = 0;
+  const t = await snapshotBackend(async (ws) => {
+    await Deno.writeTextFile(join(ws, "Core", "src", "Churn.al"), `// ${++n}`);
+  });
+  const r = await t.send();
+  const body = await r.json();
+  assertEquals(r.status, 409);
+  assertStringIncludes(body.error, "workspace changed during snapshot");
+  assertEquals(body.retryable, true);
+  assertEquals(t.scans(), 3, "one attempt and two internal retries");
+  assertEquals(t.seen.length, 0, "no build from an unstable snapshot");
+  const [line] = await readHostLog(t.hostLog);
+  assertEquals([line!.status, line!.outcome], [409, "rejected"]);
+});
+
+Deno.test("backend: churn that settles within the retries still compiles", async () => {
+  let n = 0;
+  const t = await snapshotBackend(async (ws) => {
+    if (++n === 1) {
+      await Deno.writeTextFile(join(ws, "Core", "src", "Once.al"), "// x");
+    }
+  });
+  assertEquals((await t.send()).status, 200);
+  assertEquals([t.scans(), t.seen.length], [2, 1]);
+});
+
+Deno.test("backend: an I/O error during the snapshot is infra (503), not the agent's fault", async () => {
+  const t = await snapshotBackend(() =>
+    Promise.reject(
+      new Deno.errors.PermissionDenied("Access is denied. (os error 5)"),
+    )
+  );
+  const r = await t.send();
+  assertEquals(r.status, 503);
+  assertEquals(t.seen.length, 0);
 });

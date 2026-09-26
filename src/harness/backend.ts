@@ -41,8 +41,8 @@ import {
   scanReparsePoints,
   validatedDir,
 } from "./fsutil.ts";
-import { bounded, type DockerCli, OP_TIMEOUT_MS } from "./sandbox.ts";
-import { hashTree, isTaskBuildArtifact } from "./hash.ts";
+import type { DockerCli } from "./sandbox.ts";
+import { hashTree, isTaskBuildArtifact, sha256Hex } from "./hash.ts";
 import { readAppGraph, readAppJson, type StagedApp } from "./staging.ts";
 import { TEST_APP, testCodeunits, validateApps } from "./verdict-workspace.ts";
 
@@ -51,9 +51,9 @@ export const MAX_BODY_BYTES = 64 * 1024;
 
 export interface BackendGrant {
   executionId: string;
-  /** Sandbox container paused for each snapshot; null only in unit tests without a sandbox. */
+  /** The execution's sandbox container (named in infra faults); null only in unit tests without a sandbox. */
   sandbox: string | null;
-  /** Called when the sandbox cannot be unpaused: the runner stops the execution. */
+  /** Stops the execution on a sandbox fault. Unused since M1-19b dropped the pause; kept for the pause-and-extract redesign. */
   onFault?(reason: string): void;
   workspace: string;
   pristine: string;
@@ -288,6 +288,67 @@ function scrubDeep(v: unknown, roots: readonly string[]): unknown {
   return v;
 }
 
+/** Internal retakes of a snapshot whose workspace changed during the copy. */
+const SNAPSHOT_RETRIES = 2;
+const SNAPSHOT_CHURN = "workspace changed during snapshot; retry";
+
+/** The workspace kept changing while its snapshot was taken (409, retryable). */
+export class SnapshotChurnError extends Error {
+  override name = "SnapshotChurnError";
+}
+
+/** A file vanished or changed identity under the copy: the workspace is changing. */
+function isChurn(err: unknown): boolean {
+  return err instanceof SnapshotChurnError ||
+    err instanceof Deno.errors.NotFound ||
+    (err instanceof ValidationError &&
+      err.message.includes("changed identity between check and open"));
+}
+
+/**
+ * Exact relative paths and raw bytes (no text normalization, unlike the task
+ * hash) of what a snapshot copies: build artifacts skipped as the copy skips
+ * them; links and special entries recorded by kind, never followed.
+ */
+async function treeDigest(root: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    for await (const e of Deno.readDir(dir)) {
+      const r1 = rel ? `${rel}/${e.name}` : e.name;
+      const p = join(dir, e.name);
+      const st = await Deno.lstat(p);
+      if (st.isSymlink || (!st.isFile && !st.isDirectory)) {
+        out.set(r1, "link");
+        continue;
+      }
+      if (isTaskBuildArtifact(st.isDirectory ? `${r1}/` : r1)) continue;
+      if (st.isDirectory) {
+        out.set(r1, "dir");
+        await walk(p, r1);
+      } else {
+        out.set(r1, `file:${await sha256Hex(await Deno.readFile(p))}`);
+      }
+    }
+  };
+  await walk(root, "");
+  return out;
+}
+
+/** Source unchanged over the copy, and the copy equal to it minus what the copy refused. */
+function sameSnapshot(
+  before: Map<string, string>,
+  after: Map<string, string>,
+  copied: Map<string, string>,
+  excluded: string[],
+): boolean {
+  const same = (a: Map<string, string>, b: Map<string, string>) =>
+    a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
+  const out = (k: string) =>
+    excluded.some((x) => k === x || k.startsWith(`${x}/`));
+  return same(before, after) &&
+    same(new Map([...after].filter(([k]) => !out(k))), copied);
+}
+
 export class Backend {
   private readonly grants = new Map<string, GrantState>();
   /** Revoked executions whose request did not drain: their id cannot be granted again yet. */
@@ -311,7 +372,7 @@ export class Backend {
       ops: BackendOps;
       /** Container-facing addresses the server may bind (the nat gateway; loopback in tests). */
       allowedHosts: string[];
-      /** Pauses the sandbox for each snapshot (quiescence, review round 2 item 1). */
+      /** Unused since M1-19b (no pause: Hyper-V cannot pause with a RW mount); kept for the redesign. */
       docker?: DockerCli;
       opTimeoutMs?: number;
       bodyTimeoutMs?: number;
@@ -576,7 +637,7 @@ export class Backend {
     ]);
     try {
       const ts = performance.now();
-      const copy = await this.quiescentCopy(st, snapshot);
+      const copy = await this.stableCopy(st, snapshot, signal);
       const snapshot_ms = performance.now() - ts;
       const violations = [
         ...copy.ambiguous.map((p) => `case-ambiguous name: ${p}`),
@@ -659,6 +720,21 @@ export class Backend {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof SnapshotChurnError) {
+        // Retryable and the agent's own doing (its workspace kept changing): cg-al exit 1.
+        await this.append(
+          st.g,
+          this.line(st, op, 409, "rejected", t0, {
+            request: requestId,
+            message,
+          }),
+        );
+        return this.reply(409, {
+          request: requestId,
+          retryable: true,
+          error: SNAPSHOT_CHURN,
+        });
+      }
       if (err instanceof CopyLimitError) {
         // The agent's own workspace is too large: its fault (4xx), no host path in the answer.
         await this.append(
@@ -731,34 +807,51 @@ export class Backend {
     });
   }
 
-  /** Pause the sandbox, copy, unpause (all bounded). A failed pause is infra: nothing is copied. */
-  private async quiescentCopy(st: GrantState, snapshot: string) {
-    const d = this.o.docker;
-    const name = st.g.sandbox;
-    const ms = this.o.opTimeoutMs ?? OP_TIMEOUT_MS;
-    if (!d || !name) return await this.scannedCopy(st, snapshot);
-    if (await bounded(d.pause(name), ms, `docker pause ${name}`) !== 0) {
-      throw new ContainerError(
-        `docker pause ${name} failed: snapshot refused`,
-        name,
-        "test",
-      );
-    }
-    let copy;
-    try {
-      copy = await this.scannedCopy(st, snapshot);
-    } finally {
-      const code = await bounded(d.unpause(name), ms, `docker unpause ${name}`)
-        .catch((e) => String(e));
-      if (code !== 0) {
-        const reason =
-          `docker unpause ${name} failed (${code}): the sandbox may still be paused`;
-        st.g.onFault?.(reason);
-        // deno-lint-ignore no-unsafe-finally
-        throw new ContainerError(reason, name, "test");
+  /**
+   * The snapshot without pausing the sandbox (owner decision 2026-09-26:
+   * Hyper-V cannot pause a container with a RW mount). The exact relative
+   * paths and bytes of the source are digested before and after the copy and
+   * compared with the copy; on a change the copy is retaken, at most twice,
+   * then the request is a retryable 409. Any other failure of the snapshot
+   * (I/O, a reparse point above the workspace, anything ambiguous) is infra.
+   */
+  private async stableCopy(
+    st: GrantState,
+    snapshot: string,
+    signal: AbortSignal,
+  ) {
+    for (let attempt = 0;; attempt++) {
+      if (signal.aborted) throw new LaneCancelledError(signal.reason);
+      try {
+        const before = await treeDigest(st.canonical);
+        const copy = await this.scannedCopy(st, snapshot);
+        const after = await treeDigest(st.canonical);
+        const copied = await treeDigest(copy.dst);
+        if (
+          sameSnapshot(before, after, copied, [
+            ...copy.refused,
+            ...copy.ambiguous,
+          ])
+        ) {
+          return copy;
+        }
+      } catch (err) {
+        if (err instanceof CopyLimitError) throw err;
+        if (!isChurn(err)) {
+          throw new ContainerError(
+            `snapshot of the workspace failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+            st.g.sandbox ?? "backend",
+            "test",
+          );
+        }
+      }
+      await Deno.remove(snapshot, { recursive: true }).catch(() => {});
+      if (attempt >= SNAPSHOT_RETRIES) {
+        throw new SnapshotChurnError(SNAPSHOT_CHURN);
       }
     }
-    return copy;
   }
 
   serve(
