@@ -747,12 +747,20 @@ Deno.test("backend: a live or still-draining execution id cannot be granted agai
     "already",
   );
   s.gate.wait = new Promise<void>(() => {});
+  // The op is really running before the revoke, never a fixed sleep: under
+  // load the request can still be before admission (its token digest), and a
+  // revoke then finds nothing in flight and drains at once (M1-19c).
+  let entered!: () => void;
+  const running = new Promise<void>((r) => (entered = r));
   const b = new Backend({
     scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
     workRoot: join(s.root, "backend8"),
     ops: {
-      compile: () => new Promise(() => {}),
+      compile: () => {
+        entered();
+        return new Promise(() => {});
+      },
       test: () => new Promise(() => {}),
     },
     allowedHosts: ["127.0.0.1"],
@@ -761,7 +769,7 @@ Deno.test("backend: a live or still-draining execution id cannot be granted agai
   const exec = "00000000-0000-4000-8000-00000000e008";
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl8.jsonl"));
   void b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
-  await new Promise((r) => setTimeout(r, 20));
+  await running;
   assertEquals(await b.revoke(exec), false, "never drains");
   await assertRejects(
     () => grantFor(b, s.root, exec, join(s.root, "hl8.jsonl")),
