@@ -24,7 +24,7 @@ import { RULES_VERSION } from "../classify.ts";
 import { estimateCost } from "../pricing.ts";
 import { writeTrace } from "../trace.ts";
 import type { J, Line as JsonlLine } from "./jsonl.ts";
-import { claudeTrace, SYNTHETIC_MODEL } from "./claude-trace.ts";
+import { claudeTrace, isApiErrorSynthetic } from "./claude-trace.ts";
 import { list, nonJsonReason, obj, readRecords, refuse } from "./jsonl.ts";
 
 type Line = JsonlLine<J>;
@@ -380,11 +380,11 @@ export function parseClaudeStream(
   const perMessage = new Map<string, { model: string; usage: J }>();
   let didWork = false;
   for (const { rec } of of("assistant")) {
+    // Claude Code's own API-error record (after the retries) is no work.
+    if (isApiErrorSynthetic(rec, obj(result?.modelUsage))) continue;
+    didWork = true;
     const msg = obj(rec.message);
     const model = typeof msg.model === "string" ? msg.model : "";
-    // Claude Code's own record (an API error after the retries) is no work.
-    if (model === SYNTHETIC_MODEL) continue;
-    didWork = true;
     if (typeof msg.id === "string") {
       perMessage.set(msg.id, { model, usage: obj(msg.usage) });
     }
@@ -394,7 +394,7 @@ export function parseClaudeStream(
     list(result?.permission_denials).map(obj).map((d) => d.tool_use_id)
       .filter((x): x is string => typeof x === "string"),
   );
-  const built = claudeTrace(lines, file, denied);
+  const built = claudeTrace(lines, file, denied, obj(result?.modelUsage));
   streamProblems.push(...built.problems, ...built.structural);
   const trace = built.events;
   // Three notions, never merged (M2-05): capture, trace and per-metric completeness.

@@ -1844,7 +1844,7 @@ for (const name of ["retry", "compaction"]) {
   });
 }
 
-Deno.test("metrics: a <synthetic> record does not hide a real model missing from modelUsage", async () => {
+Deno.test("metrics: a <synthetic> record that is no API error keeps its request and its modelUsage stream problem", async () => {
   const recs = await probeRecords();
   const a = recs.find((j) => j.type === "assistant");
   const synth = structuredClone(a);
@@ -1854,5 +1854,38 @@ Deno.test("metrics: a <synthetic> record does not hide a real model missing from
   recs.splice(recs.indexOf(a), 0, synth);
   const { r } = await parse(toText(recs));
   assert(problems(r).some((p) => p.includes("claude-other-1")));
-  assert(!problems(r).some((p) => p.includes("<synthetic>")));
+  assert(
+    problems(r).some((p) =>
+      p.includes("<synthetic>") && p.includes("modelUsage")
+    ),
+    problems(r).join("\n"),
+  );
+});
+
+Deno.test("fatal.jsonl with a tool_use in the <synthetic> record: work, the tool call counted, the request kept", async () => {
+  const recs = (await Deno.readTextFile(
+    "tests/fixtures/harness/claude-code/fatal.jsonl",
+  )).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const synth = recs.find((j) => j.type === "assistant");
+  synth.message.content.push({
+    type: "tool_use",
+    id: "toolu_synthetic_1",
+    name: "Read",
+    input: { file_path: "C:/workspace/app.json" },
+  });
+  const { r, dir } = await parse(toText(recs), 1, {});
+  assertEquals(r.didWork, true);
+  const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+    .split("\n").map((l) => JSON.parse(l));
+  assertEquals(
+    trace.filter((e) => e.type === "tool_call").map((e) => e.tool),
+    ["Read"],
+  );
+  assertEquals(trace.filter((e) => e.type === "model_request").length, 1);
+  assert(
+    problems(r).some((p) =>
+      p.includes("<synthetic>") && p.includes("modelUsage")
+    ),
+    problems(r).join("\n"),
+  );
 });
