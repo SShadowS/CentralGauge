@@ -3,6 +3,8 @@ import { join } from "@std/path";
 import { claudeTrace } from "../../../src/harness/adapters/claude-trace.ts";
 import type { J, Line } from "../../../src/harness/adapters/jsonl.ts";
 import type { TraceEvent } from "../../../src/harness/trace.ts";
+import { piAdapter } from "../../../src/harness/adapters/pi.ts";
+import { manifest } from "./fixtures.ts";
 import type { ExecutionRecord } from "../../../src/harness/records.ts";
 import {
   loadTraces,
@@ -209,4 +211,68 @@ Deno.test("loadTraces: a trace reached through a junction or symlink outside the
   assertStringIncludes(invalid[0]!.error, "outside the results root");
   assertEquals(invalid[0]!.error.includes(outside), false);
   assertEquals(traces.get("inner")?.events.length, 1);
+});
+
+/** The runner's entry line and the armed budget guard, as the pi entrypoint writes them (pi.test.ts HEAD). */
+const PI_HEAD = [
+  JSON.stringify({
+    type: "cg_entry",
+    pi_version: "0.87.1",
+    max_budget_usd: 5,
+    ready: true,
+  }),
+  JSON.stringify({
+    type: "entry_appended",
+    entry: {
+      type: "custom",
+      id: "e1",
+      parentId: null,
+      customType: "cg-budget",
+      data: { event: "armed", limit_usd: 5 },
+    },
+  }),
+  "",
+].join("\n");
+
+Deno.test("pi trace: parse, write and load round trip", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const run = join(root, "runs", "pi1");
+  await Deno.mkdir(run, { recursive: true });
+  const fixture = await Deno.readTextFile(
+    "tests/fixtures/harness/pi/probe.jsonl",
+  );
+  await Deno.writeTextFile(join(run, "raw.jsonl"), PI_HEAD + fixture);
+  const parsed = await piAdapter.parse({
+    rawLog: join(run, "raw.jsonl"),
+    exitCode: 0,
+    manifest: manifest("pi", {
+      harness: "pi",
+      harness_version: "0.87.1",
+      models: { main: "openrouter/google/gemini-3.8-flash" },
+      provider_routes: { main: "openrouter:api-key" },
+    }),
+    pricing: { at: "2026-10-05T00:00:00.000Z", models: {} },
+    traceOut: join(run, "trace.jsonl"),
+  });
+  const e = {
+    id: "pi1",
+    trace_path: "runs/pi1/trace.jsonl",
+    telemetry: parsed.telemetry,
+  } as unknown as ExecutionRecord;
+  const { traces, invalid } = await loadTraces(root, [e]);
+  assertEquals(invalid, []);
+  const lt = traces.get("pi1")!;
+  assertEquals(lt.trace_types, ["tool_call", "retry", "skill_invoke"]);
+  assertEquals(lt.complete, true);
+  const m = traceMetrics(lt.events, lt);
+  assertEquals(
+    m.tool_calls,
+    fixture.split("\n").filter((l) => l.includes('"tool_execution_start"'))
+      .length,
+  );
+  assertEquals([m.skill_invocations, m.model_requests, m.retries], [
+    { "fleet-notes": 1 },
+    null,
+    0,
+  ]);
 });
