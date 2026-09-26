@@ -19,6 +19,7 @@ import {
   recoverInterrupted,
   rejudgeExecution,
   runCell,
+  STUB_COMMAND,
 } from "../../../src/harness/execution.ts";
 import { taskSetIdentity } from "../../../src/harness/identity.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
@@ -2508,4 +2509,67 @@ Deno.test("fix A: a marker edited after startup is refused at the next release",
     "rotation_done",
   );
   assertEquals(t.docker.runs.length, runs, "no sandbox after the edit");
+});
+
+Deno.test("STUB_COMMAND: the stub process is captured and stopped in the finally, before the exit code is returned (M3-07b)", () => {
+  const script = STUB_COMMAND[5]!;
+  assertStringIncludes(script, "$stub = Start-Process -PassThru -NoNewWindow");
+  const fin = script.slice(script.indexOf("finally"));
+  assertStringIncludes(fin, "Stop-Process -Id $stub.Id -Force");
+  assert(
+    fin.indexOf("CG_STUB ") < fin.indexOf("Stop-Process"),
+    "the stub log is dumped before the stub stops",
+  );
+  assert(script.trimEnd().endsWith("exit $rc"), script);
+  // A stub that never listens is stopped too, never left holding docker run.
+  assert(
+    script.indexOf("did not listen") > script.indexOf("try {"),
+    "the listen wait is inside the try",
+  );
+});
+
+Deno.test({
+  name:
+    "STUB_COMMAND on the host: the entry returns at once with run.ps1's exit code and the stub is gone (M3-07b)",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await Deno.realPath(await Deno.makeTempDir());
+    const l = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+    const port = (l.addr as Deno.NetAddr).port;
+    l.close();
+    // Stands in for node stub-anthropic.mjs: a server that would live for 30 s.
+    await Deno.writeTextFile(
+      join(dir, "srv.ts"),
+      `const [, log, port] = Deno.args;
+Deno.writeTextFileSync(log, '{"stub":"up"}\\n');
+Deno.serve({ hostname: "127.0.0.1", port: Number(port), onListen() {} }, () => new Response("x"));
+setTimeout(() => Deno.exit(0), 30_000);
+`,
+    );
+    await Deno.writeTextFile(join(dir, "run.ps1"), "exit 5\n");
+    const script = STUB_COMMAND[5]!
+      .replace(
+        "'C:\\Program Files\\nodejs\\node.exe' -ArgumentList 'C:\\cg-stub\\stub-anthropic.mjs'",
+        `'${Deno.execPath()}' -ArgumentList 'run','--allow-all','${
+          join(dir, "srv.ts")
+        }'`,
+      )
+      .replaceAll("3400", String(port))
+      .replace("& C:\\run.ps1", `& '${join(dir, "run.ps1")}'`);
+    assert(script.includes("srv.ts") && script.includes(join(dir, "run.ps1")));
+    const t0 = performance.now();
+    const o = await new Deno.Command("powershell", {
+      args: [...STUB_COMMAND.slice(1, 5), script],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    const secs = (performance.now() - t0) / 1000;
+    const err = new TextDecoder().decode(o.stderr);
+    assertEquals(o.code, 5, err);
+    assertStringIncludes(err, 'CG_STUB {"stub":"up"}');
+    assert(secs < 20, `the entry held on for ${secs} s`);
+    await assertRejects(() =>
+      Deno.connect({ hostname: "127.0.0.1", port }).then((c) => c.close())
+    );
+  },
 });

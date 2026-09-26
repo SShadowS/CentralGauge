@@ -183,18 +183,20 @@ const STUB_ENV: Record<string, string> = {
   CLAUDE_CODE_MAX_RETRIES: "2",
   ENABLE_TOOL_SEARCH: "true",
 };
-const STUB_COMMAND = [
+export const STUB_COMMAND = [
   "powershell",
   "-NoProfile",
   "-ExecutionPolicy",
   "Bypass",
   "-Command",
+  // The stub server outlives the entry and keeps `docker run` attached, so the
+  // finally stops it on every path, the listen failure included (M3-07b).
   [
-    `Start-Process -NoNewWindow 'C:\\Program Files\\nodejs\\node.exe' -ArgumentList 'C:\\cg-stub\\stub-anthropic.mjs','C:\\cg-stub\\scenario.json',(Join-Path $env:TEMP 'cg-stub.jsonl'),'${STUB_PORT}'`,
-    `$up = $false; for ($i = 0; $i -lt 100 -and -not $up; $i++) { try { (New-Object Net.Sockets.TcpClient('127.0.0.1', ${STUB_PORT})).Close(); $up = $true } catch { Start-Sleep -Milliseconds 200 } }`,
-    "if (-not $up) { [Console]::Error.WriteLine('CG_STUB stub did not listen'); exit 2 }",
+    `$stub = Start-Process -PassThru -NoNewWindow 'C:\\Program Files\\nodejs\\node.exe' -ArgumentList 'C:\\cg-stub\\stub-anthropic.mjs','C:\\cg-stub\\scenario.json',(Join-Path $env:TEMP 'cg-stub.jsonl'),'${STUB_PORT}'`,
     "$rc = 1",
-    "try { & C:\\run.ps1; $rc = $LASTEXITCODE } finally { Get-Content (Join-Path $env:TEMP 'cg-stub.jsonl') -ErrorAction SilentlyContinue | ForEach-Object { [Console]::Error.WriteLine('CG_STUB ' + $_) } }",
+    `try { $up = $false; for ($i = 0; $i -lt 100 -and -not $up; $i++) { try { (New-Object Net.Sockets.TcpClient('127.0.0.1', ${STUB_PORT})).Close(); $up = $true } catch { Start-Sleep -Milliseconds 200 } }; ` +
+    "if (-not $up) { [Console]::Error.WriteLine('CG_STUB stub did not listen'); $rc = 2 } else { & C:\\run.ps1; $rc = $LASTEXITCODE } } " +
+    "finally { Get-Content (Join-Path $env:TEMP 'cg-stub.jsonl') -ErrorAction SilentlyContinue | ForEach-Object { [Console]::Error.WriteLine('CG_STUB ' + $_) }; Stop-Process -Id $stub.Id -Force -ErrorAction SilentlyContinue }",
     "exit $rc",
   ].join("; "),
 ];
