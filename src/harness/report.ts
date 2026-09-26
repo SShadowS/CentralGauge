@@ -59,6 +59,12 @@ export interface ArmCoverage {
    * are counted, never mixed in. Category totals never rank harnesses.
    */
   trace: TraceCoverage | null;
+  /** Cells of repeats above the reported N (M5-05); 0 without a cut. */
+  excluded_cells: number;
+  /** Known spend of every attempt in those cells. */
+  excluded_known_spend_usd: number;
+  /** Known spend of every attempt in every cell, all repeats. */
+  campaign_raw_spend_usd: number;
 }
 
 export interface TraceCoverage {
@@ -100,6 +106,11 @@ export interface HarnessReport {
     tasks_with_other_oracle: string[];
   };
   provisional: boolean;
+  /**
+   * Planned repeats and the N reported (M5-05). Every metric and the rest
+   * of `coverage` use repeats 1..N only.
+   */
+  repeats: { planned: number; reported: number };
   /**
    * Label of every metric the report shows, from the experiment's declared
    * primary metric; pass^k is never primary. Applies to `arms`, `flips`
@@ -187,6 +198,8 @@ export interface ReportOptions extends BootstrapOptions {
     traces: Map<string, LoadedTrace | null>;
     invalid: { execution: string; error: string }[];
   };
+  /** Report repeats 1..N only (1 <= N <= planned); default all planned. */
+  repeats?: number;
 }
 
 function traceCoverage(
@@ -336,9 +349,15 @@ export async function buildReport(
   opts: ReportOptions = {},
 ): Promise<HarnessReport> {
   await validateCampaignRecords(records);
-  const { campaign, executions } = records;
+  const { campaign } = records;
   const exp = campaign.experiment;
   const arms = [exp.baseline, ...exp.variants];
+  const reported = opts.repeats ?? exp.repeats;
+  if (!Number.isInteger(reported) || reported < 1 || reported > exp.repeats) {
+    const msg =
+      `repeats must be an integer from 1 to the planned ${exp.repeats}, got ${reported}`;
+    throw new ValidationError(msg, [msg]);
+  }
   const judging = opts.judging ?? campaignJudging(campaign);
   checkJudging(campaign, judging);
   const byExecution = new Map<string, JudgmentRecord[]>();
@@ -348,7 +367,17 @@ export async function buildReport(
       j,
     ]);
   }
-  const cells = cellsFromRecords(campaign, executions, byExecution, judging);
+  const allCells = cellsFromRecords(
+    campaign,
+    records.executions,
+    byExecution,
+    judging,
+  );
+  // Metrics and coverage over repeats 1..N; the rest is disclosed as excluded.
+  const cells = allCells.filter((c) => c.repeat <= reported);
+  const executions = records.executions.filter((e) => e.repeat <= reported);
+  const knownSpend = (cs: CellRecord[]) =>
+    cs.reduce((s, c) => s + c.known_spend_usd, 0);
   // Refuse before any number: bad bootstrap options, mixed scorers.
   checkBootstrapOptions(opts);
   const fingerprint = oneScorerFingerprint(cells);
@@ -387,7 +416,7 @@ export async function buildReport(
       scorer_fingerprint: fingerprint,
     }));
   });
-  const summaries = arms.map((arm) => armSummary(cells, arm, exp.repeats));
+  const summaries = arms.map((arm) => armSummary(cells, arm, reported));
   const rate = (task: string, arm: string) => {
     const ps = cells.filter((c) =>
       c.task === task && c.arm === arm && c.status === "scored"
@@ -490,6 +519,7 @@ export async function buildReport(
         .map((t) => t.id),
     },
     provisional: summaries.some((s) => s.provisional),
+    repeats: { planned: exp.repeats, reported },
     metric_labels: {
       cost_per_solved_task: labelOf("cost_per_solved_task"),
       pass_rate: labelOf("pass_rate"),
@@ -497,6 +527,9 @@ export async function buildReport(
     },
     coverage: arms.map((arm) => {
       const es = executions.filter((e) => e.arm === arm);
+      const excluded = allCells.filter((c) =>
+        c.arm === arm && c.repeat > reported
+      );
       const fields: Record<string, number> = {};
       for (const e of es) {
         for (const f of e.validity.incomplete_telemetry) {
@@ -536,6 +569,11 @@ export async function buildReport(
           ),
         ),
         trace: opts.traces ? traceCoverage(es, opts.traces) : null,
+        excluded_cells: excluded.length,
+        excluded_known_spend_usd: knownSpend(excluded),
+        campaign_raw_spend_usd: knownSpend(
+          allCells.filter((c) => c.arm === arm),
+        ),
       };
     }),
     trace_invalid: opts.traces?.invalid ?? [],
@@ -586,6 +624,20 @@ export function renderReport(r: HarnessReport): string {
   out.push(colors.bold(`Harness report: ${r.experiment.id}`));
   if (r.provisional) {
     out.push(colors.yellow("PROVISIONAL: cells are still pending or unrun"));
+  }
+  if (r.repeats.reported < r.repeats.planned) {
+    const cells = r.coverage.reduce((s, c) => s + c.excluded_cells, 0);
+    const spend = r.coverage.reduce(
+      (s, c) => s + c.excluded_known_spend_usd,
+      0,
+    );
+    out.push(
+      colors.yellow(
+        `Repeats reported: ${r.repeats.reported} of ${r.repeats.planned}; excluded ${cells} cells, ${
+          usd(spend)
+        } spend`,
+      ),
+    );
   }
   out.push(`Hypothesis: ${r.experiment.hypothesis}`);
   out.push(`Primary metric: ${r.experiment.primary_metric}`);

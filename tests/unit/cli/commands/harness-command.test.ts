@@ -286,6 +286,49 @@ Deno.test("CLI: `harness report --json` parses through cliffy and prints the JSO
   assertEquals(report.comparisons[0].resamples, 25);
   assertEquals(report.comparisons[0].seed, 4);
   assertEquals(report.judging.source, "campaign");
+  assertEquals(report.repeats, { planned: 1, reported: 1 });
+});
+
+Deno.test("CLI: `harness report --repeats` reaches buildReport; above the plan is refused", async () => {
+  const dir = await storeWithOneCell();
+  await assertRejects(
+    () =>
+      harnessReport("skills-vs-plain", {
+        resultsDir: dir,
+        ...OPTS,
+        repeats: 2,
+      }),
+    ValidationError,
+    "repeats",
+  );
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const printed: string[] = [];
+  const log = stub(console, "log", (...args: unknown[]) => {
+    printed.push(args.join(" "));
+  });
+  try {
+    await cli.parse([
+      "harness",
+      "report",
+      "skills-vs-plain",
+      "--results-dir",
+      dir,
+      "--json",
+      "--resamples",
+      "25",
+      "--repeats",
+      "1",
+      "--judging",
+      "campaign",
+    ]);
+  } finally {
+    log.restore();
+  }
+  assertEquals(JSON.parse(printed.join("\n")).repeats, {
+    planned: 1,
+    reported: 1,
+  });
 });
 
 Deno.test("CLI: `harness --help` lists validate and report", async () => {

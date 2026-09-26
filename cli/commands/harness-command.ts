@@ -341,6 +341,8 @@ export interface ReportOptions {
   /** "current" judges with the oracles of the working tree under `root`. */
   judging: "campaign" | "current";
   root: string;
+  /** Report repeats 1..N only (M5-05); default all planned. */
+  repeats?: number | undefined;
 }
 
 async function currentJudging(root: string): Promise<JudgingContext> {
@@ -386,6 +388,7 @@ export async function harnessReport(
   return buildReport(records, {
     resamples: opts.resamples,
     seed: opts.seed,
+    ...(opts.repeats !== undefined ? { repeats: opts.repeats } : {}),
     logs: await loadReportLogs(opts.resultsDir, records),
     traces: await loadTraces(opts.resultsDir, executions),
     ...(opts.judging === "current"
@@ -1727,6 +1730,10 @@ export function registerHarnessCommand(
     })
     .option("--seed <n:integer>", "Bootstrap seed", { default: 1 })
     .option(
+      "--repeats <n:integer>",
+      "Report repeats 1..N only, excluded work disclosed (default: all planned)",
+    )
+    .option(
       "--judging <source:judging>",
       "Oracles to judge with, named explicitly: the campaign's, or the working tree's (after an oracle fix and rejudge)",
       { required: true },
@@ -1741,6 +1748,7 @@ export function registerHarnessCommand(
           campaign: opts.campaign,
           resamples: opts.resamples,
           seed: opts.seed,
+          repeats: opts.repeats,
           judging: opts.judging,
           root: opts.root,
         });
