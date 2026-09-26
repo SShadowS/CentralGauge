@@ -493,6 +493,8 @@ export interface FreezeInput {
   maxScanBytes?: number;
   /** Test seam: the reparse attribute scan (default: the real pwsh scan). */
   scanReparsePoints?: typeof scanReparsePoints;
+  /** Test seam: runs after the reuse check, before the publish rename. */
+  beforePublish?: () => Promise<void>;
 }
 
 export interface Frozen {
@@ -670,6 +672,45 @@ export async function scanReparsePoints(
   return s;
 }
 
+/**
+ * An existing workspaces/<hash> is reused only when it is a plain directory
+ * (no link or junction at it or inside: lstat, canonical path, reparse scan)
+ * whose content re-hashes to the hash its name claims.
+ */
+async function verifyStored(
+  dest: string,
+  hash: string,
+  scan: typeof scanReparsePoints,
+  maxEntries: number,
+): Promise<void> {
+  const refuse = (why: string) =>
+    new ValidationError(`stored workspace ${hash} refused: ${why}`, [dest]);
+  const st = await Deno.lstat(dest);
+  if (st.isSymlink || !st.isDirectory) {
+    throw refuse("not a plain directory (link, junction or file)");
+  }
+  try {
+    await validatedDir(dest);
+  } catch {
+    throw refuse("not a plain directory (link, junction or file)");
+  }
+  const r = await scan(dest, maxEntries);
+  if (r.ancestors.length + r.entries.length > 0 || r.capped) {
+    throw refuse(
+      `reparse points: ${
+        [...r.ancestors, ...r.entries].join(", ") || "capped"
+      }`,
+    );
+  }
+  let now: string;
+  try {
+    now = await hashTree(dest, "task");
+  } catch (err) {
+    throw refuse(err instanceof Error ? err.message : String(err));
+  }
+  if (now !== hash) throw refuse(`its content hashes to ${now}`);
+}
+
 async function freezeInner(i: FreezeInput): Promise<Frozen> {
   const limits = i.limits ?? DEFAULT_COPY_LIMITS;
   const scratch = join(
@@ -731,15 +772,21 @@ async function freezeInner(i: FreezeInput): Promise<Frozen> {
     const workspace_hash = await hashTree(scratch, "task");
     const stored_path = `workspaces/${workspace_hash}`;
     // Content-addressed: a concurrent freeze of the same content (parallel
-    // blocks, M1-23) may publish first; its copy is this one.
-    if (!await exists(join(base, workspace_hash))) {
+    // blocks, M1-23) may publish first. A reused copy is verified, never trusted.
+    const dest = join(base, workspace_hash);
+    const scanStored = i.scanReparsePoints ?? scanReparsePoints;
+    if (await Deno.lstat(dest).then(() => true, () => false)) {
+      await verifyStored(dest, workspace_hash, scanStored, limits.maxEntries);
+    } else {
       await safeCopyTree(scratch, tmpDir, {
         limits: publishLimits(limits, i.secrets, red.count),
       });
+      await i.beforePublish?.();
       try {
-        await Deno.rename(tmpDir, join(base, workspace_hash));
+        await Deno.rename(tmpDir, dest);
       } catch (err) {
-        if (!await exists(join(base, workspace_hash))) throw err;
+        if (!await Deno.lstat(dest).then(() => true, () => false)) throw err;
+        await verifyStored(dest, workspace_hash, scanStored, limits.maxEntries);
       }
     }
     return {
