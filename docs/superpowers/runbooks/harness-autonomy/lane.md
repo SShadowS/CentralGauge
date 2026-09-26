@@ -97,9 +97,10 @@ nothing in flight. After a clear, run your start procedure again.
 lane-admin exists so that jobs needing Windows administrator rights do not require restarting
 another lane elevated (owner decision 2026-09-26).
 
-- Runs ELEVATED and in the normal permission mode, never bypass: the owner approves every
-  command. If the session is not elevated (`net session` fails) or runs in bypass mode, stop
-  and `coord ask`.
+- Runs ELEVATED, in auto mode or the normal permission mode, never bypass (owner decision
+  2026-09-26: auto mode is allowed; the job list below is the limit, not per-command
+  approval). If the session is not elevated (`net session` fails) or runs in bypass mode,
+  stop and `coord ask`. Do not ask the owner to leave auto mode.
 - It runs only these jobs, each on request from lane-ops or the orchestrator, with the exact
   command in the request:
   - packet capture: `pktmon` start, stop and convert for the sandbox subnet during a
