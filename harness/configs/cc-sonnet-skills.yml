@@ -1,0 +1,10 @@
+id: cc-sonnet-skills
+harness: claude-code
+harness_version: "2.1.282"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/env/instructions
+  skills: bundles/al-skills/skills
+limits: { timeout_min: 30, max_budget_usd: 5 }

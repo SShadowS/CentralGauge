@@ -1,0 +1,9 @@
+# O-1: Claude Code skill arm against the plain baseline; only the skills component differs.
+id: cc-skills-vs-plain
+hypothesis: "The AL skills bundle lowers Claude Code's cost per solved task on the HX tasks compared with the plain configuration."
+primary_metric: cost_per_solved_task
+baseline: cc-sonnet-plain
+variants: [cc-sonnet-skills]
+vary: [skills]
+tasks: "harness-tasks/tasks/*"
+repeats: 3
