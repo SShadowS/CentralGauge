@@ -75,6 +75,12 @@ Check the launch contract gates each morning (first sweep after 07:00). A gate t
 slip by more than a day: `coord ask` with the options and a recommendation. Apply the cut
 order yourself only in the listed order.
 
+## Owner-approved admin tasks
+
+lane-admin runs any elevated job in an `admin` task marked `OWNER-APPROVED` without asking
+the owner. Write that marker only when the owner approved that exact job, and put the owner's
+words and the time next to it in `task.md`. Never mark a task on a lane's request alone.
+
 ## Context hygiene
 
 You cannot run `/clear` or `/compact` yourself; only the owner can. Every turn re-sends your
