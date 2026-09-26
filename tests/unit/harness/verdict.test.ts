@@ -19,7 +19,8 @@ import {
   writeVerdictLog,
 } from "../../../src/harness/verdict.ts";
 import { deployedSource, FakeBc, result } from "./fake-bc.ts";
-import { IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
+import { appJson, IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
+import { hashFile, hashJson } from "../../../src/harness/hash.ts";
 
 /** Shipped test passes unless Rental carries BREAK_P2P; the oracle passes iff Rental returns 10. */
 function script() {
@@ -454,4 +455,95 @@ Deno.test("judge: an agent-added failing test written as [ Test ] is discovered 
       t.failure === "assertion"
     ),
   );
+});
+
+/**
+ * A lock of System, Base Application, Application and Library Assert, with
+ * this lock's app info already harvested (M1-40b): builds restore only the
+ * declared dependency closure.
+ */
+async function harvestedLock() {
+  const store = await Deno.realPath(await Deno.makeTempDir());
+  const SYSTEM = "8874ed3a-0643-4247-9ced-7a7002f7135d";
+  const APPLICATION = "c1335042-3002-4257-bf8a-75c898ccb1b8";
+  const BASE = "437dbf0e-84ff-417a-965d-ed2bb9650972";
+  const pkgs: Array<[string, string, string[]]> = [
+    [SYSTEM, "System", []],
+    [BASE, "Base Application", [SYSTEM]],
+    [APPLICATION, "Application", [BASE]],
+    [IDS.assert, "Library Assert", [SYSTEM]],
+  ];
+  const packages = [];
+  const info: Record<string, unknown> = {};
+  for (const [id, name, deps] of pkgs) {
+    const file = `Microsoft_${name}_28.0.0.0.app`;
+    await Deno.writeTextFile(join(store, "staging.app"), `symbols of ${name}`);
+    const sha256 = await hashFile(store, join(store, "staging.app"));
+    await Deno.rename(join(store, "staging.app"), join(store, `${sha256}.app`));
+    packages.push({
+      app_id: id,
+      name,
+      publisher: "Microsoft",
+      version: "28.0.0.0",
+      file,
+      sha256,
+    });
+    info[`.\\${file}`] = {
+      appId: id,
+      name,
+      publisher: "Microsoft",
+      version: "28.0.0.0",
+      application: "",
+      platform: "28.0.0.0",
+      propagateDependencies: false,
+      dependencies: deps.map((d) => ({
+        id: d,
+        name: d,
+        publisher: "Microsoft",
+        version: "28.0.0.0",
+      })),
+    };
+  }
+  const digest = await hashJson({
+    lock: packages.map((p) => [p.file, p.sha256]),
+  });
+  await Deno.mkdir(join(store, "appinfo"), { recursive: true });
+  await Deno.writeTextFile(
+    join(store, "appinfo", `${digest}.json`),
+    JSON.stringify(info),
+  );
+  return { store, packages };
+}
+
+Deno.test("judge: the oracle build gets its workspace dependencies' declared symbols in the closure (M1-40b)", async () => {
+  const bc = script();
+  // Rental (a workspace dependency of the oracle) declares Library Assert; the
+  // oracle itself does not, yet uses it through Rental's surface.
+  const { input } = await setup("correct", {
+    "Rental/app.json": appJson(IDS.rental, "CGR Rental", [70200, 70299], [
+      { id: IDS.core, name: "CGR Core" },
+      { id: IDS.assert, name: "Library Assert" },
+    ]),
+  });
+  const oracle = join(input.task.dir, "oracle");
+  const aj = JSON.parse(await Deno.readTextFile(join(oracle, "app.json")));
+  aj.dependencies = aj.dependencies.filter((d: { id: string }) =>
+    d.id.toLowerCase() !== IDS.assert
+  );
+  await Deno.writeTextFile(join(oracle, "app.json"), JSON.stringify(aj));
+  const src = join(oracle, "src", "Oracle.Test.al");
+  await Deno.writeTextFile(
+    src,
+    (await Deno.readTextFile(src)) +
+      "\n// needs Microsoft_Library Assert_28.0.0.0.app\n",
+  );
+  const { judgment } = await judge(new BcLane(bc, ["C1"]), {
+    ...input,
+    lock: await harvestedLock(),
+  });
+  assertEquals(
+    judgment.scorers.find((x) => x.name === "fail_to_pass")!.passed,
+    true,
+  );
+  assertEquals(judgment.verdict, "pass");
 });
