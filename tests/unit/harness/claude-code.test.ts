@@ -912,13 +912,23 @@ Deno.test("claude-code resume: a same-session resume parses; cost from the last 
       ) => ({ id: c.id, line: i + 1 }))
       : []
   );
-  assertEquals(r.traceEvents, calls.length);
   const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
     .split("\n").map((l) => JSON.parse(l));
+  // Trace v2 (M2-03): one model_request per assistant message id, the
+  // Task spawn marker, and every tool call of both segments in order.
+  const byType: Record<string, number> = {};
+  for (const e of trace) byType[e.type] = (byType[e.type] ?? 0) + 1;
+  assertEquals(byType, {
+    model_request: 29,
+    subagent_spawn: 1,
+    tool_call: calls.length,
+  });
+  assertEquals(r.traceEvents, trace.length);
   // The trace spans both segments.
   assert(calls.some((c) => c.line < 113) && calls.some((c) => c.line > 113));
-  assertEquals(trace.map((e) => e.call_id), calls.map((c) => c.id));
-  assertEquals(trace.map((e) => e.seq), calls.map((_, i) => i + 1));
+  const toolCalls = trace.filter((e) => e.type === "tool_call");
+  assertEquals(toolCalls.map((e) => e.call_id), calls.map((c) => c.id));
+  assertEquals(trace.map((e) => e.seq), trace.map((_, i) => i + 1));
 });
 
 Deno.test("claude-code resume: an init with another session id stays refused, naming the file and lines", async () => {
@@ -1050,10 +1060,15 @@ Deno.test("claude-code resume provenance: a result without session_id gives a nu
   const { r, dir } = await parse(l.join("\n"));
   assertUnproven(r, "line 144: result without session_id");
   assertEquals(r.telemetry.turns, 20);
-  assertEquals(r.traceEvents, 36);
+  // Trace v2 (M2-03): 36 tool calls, 29 model requests, 1 spawn marker.
+  assertEquals(r.traceEvents, 66);
   const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
     .split("\n");
-  assertEquals(trace.length, 36);
+  assertEquals(trace.length, 66);
+  assertEquals(
+    trace.filter((x) => JSON.parse(x).type === "tool_call").length,
+    36,
+  );
   const raw = r.telemetry.raw_usage as { trace_incomplete: string[] };
   assert(
     raw.trace_incomplete.some((m) => m.includes("line 144")),
