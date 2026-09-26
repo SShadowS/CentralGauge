@@ -1889,3 +1889,27 @@ Deno.test("fatal.jsonl with a tool_use in the <synthetic> record: work, the tool
     problems(r).join("\n"),
   );
 });
+
+Deno.test("run.ps1 (M1-33d): after ready, the proxy credential file sets HTTPS_PROXY and HTTP_PROXY in-process; never before ready, never docker -e", async () => {
+  const run = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  const ready = run.indexOf("while (-not (Test-Path 'C:\\cg-secrets\\ready'))");
+  const read = run.indexOf(
+    "if (Test-Path 'C:\\cg-secrets\\proxy-credential') {",
+  );
+  const start = run.indexOf("| & claude @claudeArgs");
+  assert(
+    ready > 0 && read > ready && start > read,
+    `${ready} ${read} ${start}`,
+  );
+  assertStringIncludes(
+    run,
+    "$proxyCred = (Get-Content 'C:\\cg-secrets\\proxy-credential' -Raw -Encoding UTF8).Trim()",
+  );
+  assertStringIncludes(
+    run,
+    '$env:HTTPS_PROXY = "http://$proxyCred@172.30.60.1:3128"',
+  );
+  assertStringIncludes(run, "$env:HTTP_PROXY = $env:HTTPS_PROXY");
+  assertStringIncludes(run, "Remove-Variable proxyCred");
+  assert(!/WriteLine\([^)]*proxyCred/i.test(run));
+});

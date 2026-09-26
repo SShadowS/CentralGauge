@@ -205,6 +205,23 @@ export class FakeDocker implements DockerCli {
     }
     return Promise.resolve(null);
   }
+  /** Per-container network answers (docker inspect); the default is the run's network and one address. */
+  addresses = new Map<string, { network: string; ip: string }[] | null>();
+  networksCalls: string[] = [];
+  networks(
+    name: string,
+  ): Promise<{ network: string; ip: string }[] | null> {
+    this.networksCalls.push(name);
+    if (this.addresses.has(name)) {
+      return Promise.resolve(this.addresses.get(name)!);
+    }
+    const at = this.runs.findIndex((r) => r.name === name);
+    if (at < 0 || !this.containers.has(name)) return Promise.resolve(null);
+    return Promise.resolve([{
+      network: this.runs[at]!.network ?? "nat",
+      ip: `172.30.60.${10 + at}`,
+    }]);
+  }
   listOwned(_owner: string): Promise<string[]> {
     return Promise.resolve([...this.owned]);
   }

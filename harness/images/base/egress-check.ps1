@@ -7,6 +7,14 @@
 # bounded here: 3 s connects, 3 s receives, 3 s pings, 10 s proxy answers.
 # -Allow: comma-separated proxy-allow-<host> probes (the execution's route
 # hosts). -LanRouter: the host's default gateway (the runner passes it).
+# A placed cell (M1-33d): the runner has written only the proxy credential
+# (user:pass) to C:\cg-secrets\proxy-credential. This script reads it itself
+# (never a parameter, so never in the docker exec argv), sends it as
+# Proxy-Authorization: Basic on every CONNECT probe, reports each CONNECT's
+# status (200, 403 or 407), and adds proxy-no-auth, one CONNECT without the
+# credential that must get 407. No credential file (the credentialless
+# qualification probe): no header, no proxy-no-auth. The credential never
+# reaches an output line or an error message.
 param(
   [string]$Allow = 'proxy-allow-api.anthropic.com',
   [string]$LanRouter = ''
@@ -16,6 +24,14 @@ $utf8 = New-Object System.Text.UTF8Encoding $false
 [Console]::OutputEncoding = $utf8
 $gw = '172.30.60.1'
 $proxyPort = 3128
+$credPath = 'C:\cg-secrets\proxy-credential'
+$proxyAuth = $null
+if (Test-Path -LiteralPath $credPath) {
+  $cred = [IO.File]::ReadAllText($credPath, $utf8).Trim()
+  if ($cred -notmatch '^[^\s:]+:\S+$') { throw 'the proxy credential file is not user:pass' }
+  $proxyAuth = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($cred))
+  Remove-Variable cred
+}
 
 # A socket-level failure anywhere in the exception chain means the attempt was refused or dropped.
 function Get-SocketFailure($e) {
@@ -57,9 +73,10 @@ function Test-Icmp([string]$target) {
   } finally { $ping.Dispose() }
 }
 
-# CONNECT through the proxy: true only for its 200 (it dialed the target).
-# An unreachable proxy or no status line is an error: the proxy was not tested.
-function Test-Connect([string]$target) {
+# CONNECT through the proxy: its status (200 only when it dialed the target),
+# with the credential unless $auth is false. An unreachable proxy or no
+# status line is an error: the proxy was not tested.
+function Test-Connect([string]$target, [bool]$auth = $true) {
   $c = New-Object System.Net.Sockets.TcpClient
   try {
     $t = $c.ConnectAsync($gw, $proxyPort)
@@ -68,13 +85,16 @@ function Test-Connect([string]$target) {
     $s = $c.GetStream()
     $s.ReadTimeout = 10000
     $s.WriteTimeout = 3000
-    $req = [Text.Encoding]::ASCII.GetBytes("CONNECT $target HTTP/1.1`r`nHost: $target`r`n`r`n")
+    $h = "CONNECT $target HTTP/1.1`r`nHost: $target`r`n"
+    if ($auth -and $null -ne $proxyAuth) { $h += 'Proxy-Authorization: ' + $proxyAuth + "`r`n" }
+    $req = [Text.Encoding]::ASCII.GetBytes($h + "`r`n")
+    Remove-Variable h
     $s.Write($req, 0, $req.Length)
     $buf = New-Object byte[] 64
     $n = $s.Read($buf, 0, 64)
     $head = [Text.Encoding]::ASCII.GetString($buf, 0, $n)
     if ($head -notmatch '^HTTP/1\.[01] (\d{3})') { throw "proxy sent no status line for $target" }
-    return ($Matches[1] -eq '200')
+    return [int]$Matches[1]
   } finally { $c.Close() }
 }
 
@@ -101,6 +121,7 @@ $probes = [ordered]@{
   'proxy-ip-literal' = { Test-Connect '1.1.1.1:443' }
   'backend-3210' = { Test-Tcp $gw 3210 }
 }
+if ($null -ne $proxyAuth) { $probes['proxy-no-auth'] = { Test-Connect 'example.com:443' $false } }
 $allowHosts = [ordered]@{}
 if ($Allow -ne 'none') {
   foreach ($name in $Allow.Split(',')) {
@@ -110,10 +131,11 @@ if ($Allow -ne 'none') {
 }
 
 foreach ($name in @($probes.Keys) + @($allowHosts.Keys)) {
-  $line = [ordered]@{ probe = $name; ok = $false; error = $null }
+  $line = [ordered]@{ probe = $name; ok = $false; status = $null; error = $null }
   try {
     if ($allowHosts.Contains($name)) { $r = Test-Connect "$($allowHosts[$name]):443" }
     else { $r = & $probes[$name] }
+    if (@($r).Count -eq 1 -and $r -is [int]) { $line.status = $r; $r = ($r -eq 200) }
     if (@($r).Count -ne 1 -or $r -isnot [bool]) { throw "probe returned $(@($r).Count) values" }
     $line.ok = $r
   } catch {

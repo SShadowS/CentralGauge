@@ -47,6 +47,11 @@ export interface DockerCli {
   state(
     name: string,
   ): Promise<{ running: boolean; execution: string | null } | null>;
+  /**
+   * The container's networks and their IPv4 addresses (docker inspect
+   * .NetworkSettings.Networks); null when no such container exists.
+   */
+  networks(name: string): Promise<{ network: string; ip: string }[] | null>;
   listOwned(owner: string): Promise<string[]>;
   inspectImage(ref: string): Promise<unknown | null>;
   build(args: string[]): Promise<number>;
@@ -265,6 +270,45 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
         `docker inspect ${name}: ${r.stderr.trim()}`,
         name,
         "stop",
+      );
+    },
+    networks: async (name) => {
+      const r = await out([
+        "inspect",
+        "--format",
+        "{{json .NetworkSettings.Networks}}",
+        name,
+      ]);
+      if (r.code === 0) {
+        let v: unknown;
+        try {
+          v = JSON.parse(r.stdout.trim());
+        } catch {
+          throw new ContainerError(
+            `docker inspect ${name}: networks are not JSON`,
+            name,
+            "setup",
+          );
+        }
+        if (v === null) return [];
+        if (typeof v !== "object" || Array.isArray(v)) {
+          throw new ContainerError(
+            `docker inspect ${name}: networks are not an object`,
+            name,
+            "setup",
+          );
+        }
+        return Object.entries(v as Record<string, { IPAddress?: unknown }>)
+          .map(([network, n]) => ({
+            network,
+            ip: typeof n?.IPAddress === "string" ? n.IPAddress : "",
+          }));
+      }
+      if (/no such (object|container)/i.test(r.stderr)) return null;
+      throw new ContainerError(
+        `docker inspect ${name}: ${r.stderr.trim()}`,
+        name,
+        "setup",
       );
     },
     listOwned: async (owner) => {

@@ -106,6 +106,7 @@ import {
   sha256Text,
   verifyEgressState,
 } from "../../src/harness/egress.ts";
+import { PROXY_ISOLATION } from "../../src/harness/egress-proxy.ts";
 import {
   BASE_IMAGE,
   hasBaseLayers,
@@ -940,10 +941,10 @@ export interface RunCliOptions extends CellCliOptions {
 
 type RerunCell = NonNullable<RunOptions["rerun"]>;
 
-/** `--rerun <task:repeat:arm>`: a positive integer repeat, non-empty task and arm. */
+/** `--rerun <task:repeat:arm>`: a positive safe-integer repeat, non-empty task and arm. */
 export function parseRerunCell(value: string): RerunCell {
   const m = /^([^:]+):([1-9][0-9]*):([^:]+)$/.exec(value);
-  if (!m) {
+  if (!m || !Number.isSafeInteger(Number(m[2]))) {
     throw new ValidationError(
       `--rerun expects <task:repeat:arm>, got ${value}`,
       [value],
@@ -1673,6 +1674,8 @@ export async function harnessEgressVerify(
         network: SANDBOX_NETWORK.name,
         network_id: s.network.id,
         interface_index: s.gatewayAdapter.index,
+        // The proxy isolation model this marker was verified for (M1-33d).
+        proxy_isolation: PROXY_ISOLATION,
         marked_at: new Date().toISOString(),
         ...extra,
       },

@@ -17,6 +17,11 @@ import type {
   EgressRuntime,
   ProbeLine,
 } from "../../../src/harness/egress.ts";
+import type {
+  ProxyCredential,
+  RegisterOptions,
+  RegistrationFailure,
+} from "../../../src/harness/egress-proxy.ts";
 import {
   preflightExpect,
   SANDBOX_NETWORK,
@@ -351,6 +356,36 @@ export interface FakeEgress extends EgressRuntime {
   lines: (ok: ProbeLine[]) => ProbeLine[];
   /** Runs inside the probe (the sandbox is up, nothing released yet). */
   onProbe: (sandbox: string) => Promise<void>;
+  /** The live registration (M1-33d shared proxy); null before and after. */
+  registered: RegisterOptions | null;
+  /** The last registration's credential. */
+  credential: ProxyCredential | null;
+  /** Every source ever registered. */
+  sources: string[];
+  /** The registration's failure (reg.failed / reg.failure). */
+  regFailure: RegistrationFailure | null;
+  /** Thrown by register (a duplicate source, a failed proxy). */
+  registerError: Error | null;
+  proxyFailed: boolean;
+  /** Fail the live registration like the proxy does: set it, then its onFailure. */
+  failReg(f: RegistrationFailure): void;
+}
+
+const hex = (n: number) =>
+  [...crypto.getRandomValues(new Uint8Array(n))].map((b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("");
+
+/** Passing probe lines; with auth, every CONNECT probe carries its status. */
+export function passingLines(
+  hosts: string[],
+  o: { record?: boolean; auth?: boolean } = {},
+): ProbeLine[] {
+  return Object.entries(preflightExpect(hosts, o)).map(([probe, ok]) =>
+    o.auth && probe.startsWith("proxy-")
+      ? { probe, ok, status: probe === "proxy-no-auth" ? 407 : ok ? 200 : 403 }
+      : { probe, ok }
+  );
 }
 
 export const RECORDED_OAUTH = "oauth.example.test";
@@ -366,6 +401,61 @@ export function fakeEgress(): FakeEgress {
     probedHosts: null,
     lines: (ok) => ok,
     onProbe: () => Promise.resolve(),
+    registered: null,
+    credential: null,
+    sources: [],
+    regFailure: null,
+    registerError: null,
+    proxyFailed: false,
+    failReg(f) {
+      if (eg.regFailure) return;
+      eg.regFailure = f;
+      eg.registered?.onFailure?.(f);
+    },
+    register(o) {
+      eg.events.push("register");
+      if (eg.registerError) throw eg.registerError;
+      eg.registered = o;
+      eg.sources.push(o.source);
+      eg.proxyHosts = o.allow;
+      eg.proxyRecord = o.record === true;
+      // Like the proxy: a log that throws or rejects fails the registration.
+      eg.log = (l) => {
+        try {
+          const r = o.log(l);
+          if (r instanceof Promise) {
+            r.catch(() => eg.failReg("egress_log_failed"));
+          }
+        } catch {
+          eg.failReg("egress_log_failed");
+        }
+      };
+      const credential = {
+        user: hex(16),
+        pass: btoa(String.fromCharCode(
+          ...crypto.getRandomValues(new Uint8Array(32)),
+        )).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""),
+      };
+      eg.credential = credential;
+      return {
+        credential,
+        reg: {
+          source: o.source,
+          get failed() {
+            return eg.regFailure !== null;
+          },
+          get failure() {
+            return eg.regFailure;
+          },
+          unregister: () => {
+            eg.events.push("unregister");
+            eg.registered = null;
+            return Promise.resolve();
+          },
+        },
+      };
+    },
+    shutdown: () => Promise.resolve(),
     recordedHosts: { "anthropic:first-party-oauth": [RECORDED_OAUTH] },
     verify() {
       eg.events.push("verify");
@@ -398,13 +488,13 @@ export function fakeEgress(): FakeEgress {
         reason: "host not allowed",
       });
       await eg.onProbe(sandbox);
+      // A registered cell runs the authenticated preflight; the
+      // qualification probe (startProxy) the credentialless one.
       return eg.lines(
-        Object.entries(preflightExpect(hosts, { record: eg.proxyRecord })).map((
-          [probe, ok],
-        ) => ({
-          probe,
-          ok,
-        })),
+        passingLines(hosts, {
+          record: eg.proxyRecord,
+          auth: eg.registered !== null,
+        }),
       );
     },
   };

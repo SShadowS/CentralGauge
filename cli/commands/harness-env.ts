@@ -99,7 +99,12 @@ export interface EnvDeps {
   verifyEgress: EgressVerifier;
   /** The run-time egress seam for placed sandboxes (default: the real one). */
   egressRuntime?: (
-    o: { repoRoot: string; markerPath: string },
+    o: {
+      repoRoot: string;
+      markerPath: string;
+      acceptCandidate?: boolean;
+      concurrency?: number;
+    },
   ) => Promise<EgressRuntime>;
 }
 
@@ -356,7 +361,11 @@ export async function openHarnessEnv(
         repoRoot: o.repoRoot,
         markerPath: join(sharedResults, EGRESS_MARKER),
         ...(o.probe ? { acceptCandidate: true } : {}),
+        // verify() gates concurrency > 1 on the marker's proxy_isolation (M1-33d review).
+        concurrency: o.concurrency ?? 1,
       });
+    // The runtime owns the environment's one shared proxy (M1-33d): it goes with the env.
+    if (egress) closers.unshift(() => egress.shutdown());
     const backend = new Backend({
       approvedRoots: [join(o.privateRoot, "work")],
       workRoot: join(o.privateRoot, "backend"),
