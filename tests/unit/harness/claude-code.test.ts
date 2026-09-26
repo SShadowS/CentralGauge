@@ -1447,7 +1447,7 @@ Deno.test("metrics: final result plus a non-JSON line: capture incomplete, reque
   assertStringIncludes(raw(r).incomplete_reasons.cost_usd, "non-JSON");
 });
 
-Deno.test("metrics: a killed stream: every declared field null has a reason; compactions undeclared stays null", async () => {
+Deno.test("metrics: a killed stream: every declared field null has a reason; compactions stays null with one", async () => {
   const lines = (await Deno.readTextFile(FIXTURE)).split("\n").filter(Boolean)
     .slice(0, 20);
   const { r } = await parse(lines.join("\n") + "\n", null);
@@ -1464,6 +1464,7 @@ Deno.test("metrics: a killed stream: every declared field null has a reason; com
   assertStringIncludes(reasons.per_model, "no result record");
   assertStringIncludes(reasons.cost_usd, "no result record");
   assertEquals(r.telemetry.compactions, null);
+  assertStringIncludes(reasons["compactions"] ?? "", "no result record");
 });
 
 const probeRecords = async () =>
@@ -1477,7 +1478,7 @@ Deno.test("metrics: capabilities are the literal provenance of this parser", asy
   const { r } = await parse(await Deno.readTextFile(FIXTURE));
   assertEquals(raw(r).capabilities, {
     v: 1,
-    parser: "claude-code-trace@2",
+    parser: "claude-code-trace@3",
     rules: "rules@1",
     telemetry: [...claudeCodeAdapter.declared],
     nested: ["per_model.requests"],
@@ -1486,6 +1487,8 @@ Deno.test("metrics: capabilities are the literal provenance of this parser", asy
       "model_request",
       "subagent_spawn",
       "skill_invoke",
+      "retry",
+      "compaction",
     ],
   });
   assert(Object.isFrozen(claudeCodeAdapter.declared), "declared is frozen");
@@ -1737,4 +1740,52 @@ Deno.test("run.ps1: strict MCP config on every arm, empty servers when none; tok
     l.includes("'--strict-mcp-config'")
   )!;
   assert(!/^\s/.test(strictLine), `top level: ${strictLine}`);
+});
+
+Deno.test("capabilities: retry and compaction declared from the M2-11 recordings; parser claude-code-trace@3", () => {
+  assertEquals(CLAUDE_CAPABILITIES.parser, "claude-code-trace@3");
+  assert(CLAUDE_CAPABILITIES.trace_types.includes("retry" as never));
+  assert(CLAUDE_CAPABILITIES.trace_types.includes("compaction" as never));
+  assert(claudeCodeAdapter.declared.includes("compactions"));
+});
+
+Deno.test("metrics: compaction.jsonl counts its one compact_boundary as compactions", async () => {
+  const { r } = await parse(
+    await Deno.readTextFile(
+      "tests/fixtures/harness/claude-code/compaction.jsonl",
+    ),
+    0,
+    {},
+  );
+  assertEquals(r.telemetry.compactions, 1);
+  assertEquals(raw(r).incomplete_reasons["compactions"], undefined);
+});
+
+Deno.test("metrics: retry.jsonl has no compaction: compactions 0, not null", async () => {
+  const { r } = await parse(
+    await Deno.readTextFile("tests/fixtures/harness/claude-code/retry.jsonl"),
+    0,
+    {},
+  );
+  assertEquals(r.telemetry.compactions, 0);
+});
+
+// fatal.jsonl (H:\cg-coord\tasks\M2-11\runs\001\evidence.md): two api_retry
+// records (error_status 500), then result is_error true, terminal_reason
+// api_error, modelUsage {}. Termination and didWork are left to M2-11a, so
+// they are not asserted here.
+Deno.test("metrics: fatal.jsonl gives two retry events and a null cost with reason no model usage reported", async () => {
+  const { r, dir } = await parse(
+    await Deno.readTextFile("tests/fixtures/harness/claude-code/fatal.jsonl"),
+    1,
+    {},
+  );
+  const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+    .split("\n").map((l) => JSON.parse(l));
+  assertEquals(trace.filter((e) => e.type === "retry").length, 2);
+  assertEquals(r.telemetry.cost_usd, null);
+  assertStringIncludes(
+    raw(r).incomplete_reasons.cost_usd,
+    "no model usage reported",
+  );
 });

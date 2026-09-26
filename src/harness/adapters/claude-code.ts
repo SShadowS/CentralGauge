@@ -211,6 +211,7 @@ const DECLARED: readonly (keyof Telemetry)[] = Object.freeze([
   "reported_cost_usd",
   "per_model",
   "turns",
+  "compactions",
   "wall_ms",
   "exit_code",
   "stop_reason",
@@ -219,11 +220,18 @@ const DECLARED: readonly (keyof Telemetry)[] = Object.freeze([
 /** Per-run provenance persisted in raw_usage.capabilities; the report reads it, never the installed adapter. */
 export const CLAUDE_CAPABILITIES = {
   v: 1,
-  parser: "claude-code-trace@2",
+  parser: "claude-code-trace@3",
   rules: `rules@${RULES_VERSION}`,
   telemetry: DECLARED,
   nested: ["per_model.requests"],
-  trace_types: ["tool_call", "model_request", "subagent_spawn", "skill_invoke"],
+  trace_types: [
+    "tool_call",
+    "model_request",
+    "subagent_spawn",
+    "skill_invoke",
+    "retry",
+    "compaction",
+  ],
 } as const;
 
 /**
@@ -590,7 +598,9 @@ export function parseClaudeStream(
     per_model: est?.per_model ?? [],
     // Per segment in 2.1.282 (fixture proof: 13 then 7): summed.
     turns: sumOf(results, "num_turns"),
-    compactions: null,
+    compactions: captureComplete
+      ? trace.filter((e) => e.type === "compaction").length
+      : null,
     wall_ms: sumOf(results, "duration_ms"),
     exit_code: input.exitCode,
     stop_reason: stop,
