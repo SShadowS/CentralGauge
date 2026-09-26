@@ -95,7 +95,11 @@ export function checkCells(cells: Cell[]): void {
 }
 
 /** Why a cell cannot enter a metric; null = eligible. */
-function ineligible(c: Cell, metric: PrimaryMetric): ExclusionReason | null {
+/** Why a cell is outside a metric's cohort, or null when it is in. */
+export function ineligible(
+  c: Cell,
+  metric: PrimaryMetric,
+): ExclusionReason | null {
   if (c.status === "unrun" || c.status === "pending") return c.status;
   if (metric === "pass_rate") return c.status === "scored" ? null : "unscored";
   return c.spend_usd === null ? "unknown_spend" : null;

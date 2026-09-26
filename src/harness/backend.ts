@@ -24,10 +24,14 @@ import {
 import { isInfraError } from "../health/is-infra-error.ts";
 import { InfraRetriesExhaustedError } from "../parallel/errors.ts";
 import {
+  appVersions,
   type BcLane,
   buildApps,
+  type BuildCache,
+  changedApps,
   deployAndTest,
   type DeployContext,
+  dirBuildCache,
   LaneCancelledError,
   type LockedSymbols,
   prepareApps,
@@ -36,13 +40,12 @@ import {
   CopyLimitError,
   type CopyLimits,
   DEFAULT_COPY_LIMITS,
-  exists,
   safeCopyTree,
   scanReparsePoints,
   validatedDir,
 } from "./fsutil.ts";
-import { bounded, type DockerCli, OP_TIMEOUT_MS } from "./sandbox.ts";
-import { hashTree, isTaskBuildArtifact } from "./hash.ts";
+import { createHash } from "node:crypto";
+import { isTaskBuildArtifact } from "./hash.ts";
 import { readAppGraph, readAppJson, type StagedApp } from "./staging.ts";
 import { TEST_APP, testCodeunits, validateApps } from "./verdict-workspace.ts";
 
@@ -51,10 +54,8 @@ export const MAX_BODY_BYTES = 64 * 1024;
 
 export interface BackendGrant {
   executionId: string;
-  /** Sandbox container paused for each snapshot; null only in unit tests without a sandbox. */
+  /** The execution's sandbox container (named in infra faults); null only in unit tests without a sandbox. */
   sandbox: string | null;
-  /** Called when the sandbox cannot be unpaused: the runner stops the execution. */
-  onFault?(reason: string): void;
   workspace: string;
   pristine: string;
   /** The staged workspace's app identities: the only apps the backend builds. */
@@ -92,6 +93,8 @@ export interface OpContext {
   workDir: string;
   /** Aborted when the grant is revoked past its grace. */
   signal: AbortSignal;
+  /** This execution's builds, reused while their inputs are unchanged (M1-40). */
+  buildCache: BuildCache;
 }
 
 export interface OpResult {
@@ -288,6 +291,110 @@ function scrubDeep(v: unknown, roots: readonly string[]): unknown {
   return v;
 }
 
+/** Internal retakes of a snapshot whose workspace changed during the copy. */
+const SNAPSHOT_RETRIES = 2;
+const SNAPSHOT_CHURN = "workspace changed during snapshot; retry";
+
+/** The workspace kept changing while its snapshot was taken (409, retryable). */
+export class SnapshotChurnError extends Error {
+  override name = "SnapshotChurnError";
+}
+
+/** A file vanished or changed identity under the copy: the workspace is changing. */
+function isChurn(err: unknown): boolean {
+  return err instanceof SnapshotChurnError ||
+    err instanceof Deno.errors.NotFound ||
+    (err instanceof ValidationError &&
+      err.message.includes("changed identity between check and open"));
+}
+
+/**
+ * Exact relative paths and raw bytes (no text normalization, unlike the task
+ * hash) of what a snapshot copies: build artifacts skipped as the copy skips
+ * them; links and special entries recorded by kind, never followed. The copy
+ * limits hold while reading (CopyLimitError, 422, before a large read) and
+ * each file is hashed in chunks, never read whole.
+ */
+async function treeDigest(
+  root: string,
+  limits: CopyLimits,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  let entries = 0;
+  let files = 0;
+  let dirs = 0;
+  let bytes = 0;
+  const over = (what: string) =>
+    new CopyLimitError(`${root}: more than ${what}`);
+  const buf = new Uint8Array(64 * 1024);
+  const walk = async (
+    dir: string,
+    rel: string,
+    depth: number,
+  ): Promise<void> => {
+    if (depth > limits.maxDepth) {
+      throw new CopyLimitError(`${root}: deeper than ${limits.maxDepth}`);
+    }
+    for await (const e of Deno.readDir(dir)) {
+      if (++entries > limits.maxEntries) {
+        throw over(`${limits.maxEntries} entries`);
+      }
+      const r1 = rel ? `${rel}/${e.name}` : e.name;
+      const p = join(dir, e.name);
+      const st = await Deno.lstat(p);
+      if (st.isSymlink || (!st.isFile && !st.isDirectory)) {
+        out.set(r1, "link");
+        continue;
+      }
+      if (isTaskBuildArtifact(st.isDirectory ? `${r1}/` : r1)) continue;
+      if (st.isDirectory) {
+        if (++dirs > limits.maxDirs) {
+          throw over(`${limits.maxDirs} directories`);
+        }
+        out.set(r1, "dir");
+        await walk(p, r1, depth + 1);
+        continue;
+      }
+      if (++files > limits.maxFiles) throw over(`${limits.maxFiles} files`);
+      if (bytes + st.size > limits.maxBytes) {
+        throw over(`${limits.maxBytes} bytes`);
+      }
+      const h = createHash("sha256");
+      const f = await Deno.open(p, { read: true });
+      try {
+        for (;;) {
+          const n = await f.read(buf);
+          if (n === null) break;
+          bytes += n;
+          // A file that grows while it is read is capped too.
+          if (bytes > limits.maxBytes) throw over(`${limits.maxBytes} bytes`);
+          h.update(buf.subarray(0, n));
+        }
+      } finally {
+        f.close();
+      }
+      out.set(r1, `file:${h.digest("hex")}`);
+    }
+  };
+  await walk(root, "", 0);
+  return out;
+}
+
+/** Source unchanged over the copy, and the copy equal to it minus what the copy refused. */
+function sameSnapshot(
+  before: Map<string, string>,
+  after: Map<string, string>,
+  copied: Map<string, string>,
+  excluded: string[],
+): boolean {
+  const same = (a: Map<string, string>, b: Map<string, string>) =>
+    a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
+  const out = (k: string) =>
+    excluded.some((x) => k === x || k.startsWith(`${x}/`));
+  return same(before, after) &&
+    same(new Map([...after].filter(([k]) => !out(k))), copied);
+}
+
 export class Backend {
   private readonly grants = new Map<string, GrantState>();
   /** Revoked executions whose request did not drain: their id cannot be granted again yet. */
@@ -311,9 +418,6 @@ export class Backend {
       ops: BackendOps;
       /** Container-facing addresses the server may bind (the nat gateway; loopback in tests). */
       allowedHosts: string[];
-      /** Pauses the sandbox for each snapshot (quiescence, review round 2 item 1). */
-      docker?: DockerCli;
-      opTimeoutMs?: number;
       bodyTimeoutMs?: number;
       revokeGraceMs?: number;
       /** End-to-end deadline of one request (compile admission, compiles, publish and tests). */
@@ -391,14 +495,25 @@ export class Backend {
       void inflight.finally(() => this.draining.delete(executionId));
     }
     this.grants.delete(executionId);
-    if (!inflight) return true;
+    if (!inflight) {
+      await this.dropBuildCache(executionId);
+      return true;
+    }
     const grace = this.o.revokeGraceMs ?? 30_000;
     if (!await drainedWithin(inflight, grace)) {
       st.abort.abort(new Error("grant revoked"));
       if (!await drainedWithin(inflight, grace)) return false;
     }
     this.draining.delete(executionId);
+    await this.dropBuildCache(executionId);
     return true;
+  }
+
+  /** The execution's build cache ends with its grant (nothing in flight). */
+  private async dropBuildCache(executionId: string): Promise<void> {
+    await Deno.remove(join(this.o.workRoot, executionId, "build-cache"), {
+      recursive: true,
+    }).catch(() => {});
   }
 
   private async append(g: BackendGrant, line: HostLogLine) {
@@ -576,7 +691,7 @@ export class Backend {
     ]);
     try {
       const ts = performance.now();
-      const copy = await this.quiescentCopy(st, snapshot);
+      const copy = await this.stableCopy(st, snapshot, signal);
       const snapshot_ms = performance.now() - ts;
       const violations = [
         ...copy.ambiguous.map((p) => `case-ambiguous name: ${p}`),
@@ -636,6 +751,9 @@ export class Backend {
         requestId,
         workDir,
         signal,
+        buildCache: dirBuildCache(
+          join(this.o.workRoot, st.g.executionId, "build-cache"),
+        ),
       };
       const r = op === "compile"
         ? await this.o.ops.compile(ctx, apps)
@@ -659,6 +777,21 @@ export class Backend {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof SnapshotChurnError) {
+        // Retryable and the agent's own doing (its workspace kept changing): cg-al exit 1.
+        await this.append(
+          st.g,
+          this.line(st, op, 409, "rejected", t0, {
+            request: requestId,
+            message,
+          }),
+        );
+        return this.reply(409, {
+          request: requestId,
+          retryable: true,
+          error: SNAPSHOT_CHURN,
+        });
+      }
       if (err instanceof CopyLimitError) {
         // The agent's own workspace is too large: its fault (4xx), no host path in the answer.
         await this.append(
@@ -731,34 +864,54 @@ export class Backend {
     });
   }
 
-  /** Pause the sandbox, copy, unpause (all bounded). A failed pause is infra: nothing is copied. */
-  private async quiescentCopy(st: GrantState, snapshot: string) {
-    const d = this.o.docker;
-    const name = st.g.sandbox;
-    const ms = this.o.opTimeoutMs ?? OP_TIMEOUT_MS;
-    if (!d || !name) return await this.scannedCopy(st, snapshot);
-    if (await bounded(d.pause(name), ms, `docker pause ${name}`) !== 0) {
-      throw new ContainerError(
-        `docker pause ${name} failed: snapshot refused`,
-        name,
-        "test",
-      );
-    }
-    let copy;
-    try {
-      copy = await this.scannedCopy(st, snapshot);
-    } finally {
-      const code = await bounded(d.unpause(name), ms, `docker unpause ${name}`)
-        .catch((e) => String(e));
-      if (code !== 0) {
-        const reason =
-          `docker unpause ${name} failed (${code}): the sandbox may still be paused`;
-        st.g.onFault?.(reason);
-        // deno-lint-ignore no-unsafe-finally
-        throw new ContainerError(reason, name, "test");
+  /**
+   * The snapshot without pausing the sandbox (owner decision 2026-09-26:
+   * Hyper-V cannot pause a container with a RW mount). The exact relative
+   * paths and bytes of the source are digested before and after the copy and
+   * compared with the copy; on a change the copy is retaken, at most twice,
+   * then the request is a retryable 409. Any other failure of the snapshot
+   * (I/O, a reparse point above the workspace, anything ambiguous) is infra.
+   */
+  private async stableCopy(
+    st: GrantState,
+    snapshot: string,
+    signal: AbortSignal,
+  ) {
+    for (let attempt = 0;; attempt++) {
+      if (signal.aborted) throw new LaneCancelledError(signal.reason);
+      try {
+        const limits = this.o.copyLimits ?? DEFAULT_COPY_LIMITS;
+        const before = await treeDigest(st.canonical, limits);
+        const copy = await this.scannedCopy(st, snapshot);
+        const after = await treeDigest(st.canonical, limits);
+        const copied = await treeDigest(copy.dst, limits);
+        if (
+          sameSnapshot(before, after, copied, [
+            ...copy.refused,
+            ...copy.ambiguous,
+          ])
+        ) {
+          return copy;
+        }
+      } catch (err) {
+        if (err instanceof CopyLimitError) throw err;
+        if (!isChurn(err)) {
+          throw new ContainerError(
+            `snapshot of the workspace failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+            st.g.sandbox ?? "backend",
+            "test",
+          );
+        }
+      }
+      await Deno.remove(snapshot, { recursive: true }).catch(() => {});
+      // A revocation or deadline during the last attempt is a cancellation, never churn.
+      if (signal.aborted) throw new LaneCancelledError(signal.reason);
+      if (attempt >= SNAPSHOT_RETRIES) {
+        throw new SnapshotChurnError(SNAPSHOT_CHURN);
       }
     }
-    return copy;
   }
 
   serve(
@@ -801,19 +954,33 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
       const selected = apps.length === 0
         ? ctx.apps
         : withDependencies(ctx.apps, apps);
-      const versions = new Map(
-        ctx.grant.trusted.map((a) => [a.folder, a.version]),
+      const changed = await changedApps(
+        ctx.grant.pristine,
+        ctx.grant.trusted,
+        ctx.snapshot,
       );
       const t0 = performance.now();
-      const built = await lane.compile((c) =>
-        buildApps(lane.bc, c, {
+      const built = await lane.compile(async (c) => {
+        // The test path's versions, so its builds are reused by a later test.
+        const { versions } = await appVersions(lane.bc, c, {
+          pristine: ctx.grant.pristine,
+          pristineApps: ctx.grant.trusted,
+          candidateDir: ctx.snapshot,
+          candidateApps: ctx.apps,
+          changed,
+          lock: ctx.grant.lock,
+        });
+        return await buildApps(lane.bc, c, {
           srcDir: ctx.snapshot,
           apps: selected,
           versions,
           outDir: ctx.workDir,
           lock: ctx.grant.lock,
           signal: ctx.signal,
-        }), ctx.signal);
+          cache: ctx.buildCache,
+          graph: ctx.apps,
+        });
+      }, ctx.signal);
       const ok = built.every((b) => b.ok);
       return {
         body: {
@@ -833,15 +1000,11 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
       };
     },
     async test(ctx, codeunits) {
-      const changed: string[] = [];
-      for (const a of ctx.grant.trusted) {
-        const now = join(ctx.snapshot, a.folder);
-        if (
-          !await exists(now) ||
-          await hashTree(join(ctx.grant.pristine, a.folder), "task") !==
-            await hashTree(now, "task")
-        ) changed.push(a.folder);
-      }
+      const changed = await changedApps(
+        ctx.grant.pristine,
+        ctx.grant.trusted,
+        ctx.snapshot,
+      );
       const prep = await prepareApps(lane, {
         pristine: ctx.grant.pristine,
         pristineApps: ctx.grant.trusted,
@@ -851,6 +1014,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
         workDir: ctx.workDir,
         lock: ctx.grant.lock,
         signal: ctx.signal,
+        cache: ctx.buildCache,
       });
       const compiled = prep.built.filter((b) => b.attempted).map((b) =>
         b.folder

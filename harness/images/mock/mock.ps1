@@ -2,8 +2,8 @@
 # Reads C:\config\settings.json (settings.mode, settings.variant, settings.cg_al) and
 # C:\config\variant\ (the runner copies the resolved variant there; C:\task never holds
 # solutions), applies it to C:\workspace with .delete semantics, optionally calls cg-al,
-# and prints JSON lines: mock_init, mock_apply, mock_cg_al, mock_usage_limit, mock_error, mock_done.
-# Windows PowerShell 5.1 and pwsh 7. CG_MOCK_CONFIG, CG_MOCK_WORKSPACE, CG_MOCK_CG_AL and CG_MOCK_FSUTIL
+# and prints JSON lines: mock_init, mock_apply, mock_cg_al, mock_usage_limit, mock_junction, mock_error, mock_done.
+# Windows PowerShell 5.1 and pwsh 7. CG_MOCK_CONFIG, CG_MOCK_WORKSPACE, CG_MOCK_CG_AL, CG_MOCK_FSUTIL and CG_MOCK_JUNCTION_TARGET
 # override the container paths (unit tests run this script on the host).
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding $false
@@ -12,6 +12,7 @@ $Config = if ($env:CG_MOCK_CONFIG) { $env:CG_MOCK_CONFIG } else { 'C:\config' }
 $Workspace = if ($env:CG_MOCK_WORKSPACE) { $env:CG_MOCK_WORKSPACE } else { 'C:\workspace' }
 $CgAl = if ($env:CG_MOCK_CG_AL) { $env:CG_MOCK_CG_AL } else { 'C:\cg-al.ps1' }
 $Fsutil = if ($env:CG_MOCK_FSUTIL) { $env:CG_MOCK_FSUTIL } else { 'fsutil.exe' }
+$JunctionTarget = if ($env:CG_MOCK_JUNCTION_TARGET) { $env:CG_MOCK_JUNCTION_TARGET } else { 'C:\Users\Public' }
 $Version = '1'
 
 function Emit([string]$type, [hashtable]$data) {
@@ -103,7 +104,20 @@ switch ($mode) {
   }
   'hostile-junction' {
     Apply-Variant
-    New-Item -ItemType Junction -Path (Join-Path $Workspace 'host-link') -Target 'C:\Windows\System32\drivers\etc' | Out-Null
+    # A directory that exists and is readable both in the Hyper-V sandbox and
+    # on the host, so the freeze meets a live junction (System32\drivers\etc
+    # is refused in the sandbox). Never a silent success.
+    $link = Join-Path $Workspace 'host-link'
+    try {
+      New-Item -ItemType Junction -Path $link -Target $JunctionTarget -ErrorAction Stop | Out-Null
+    } catch {
+      Fail "junction to $JunctionTarget not created: $($_.Exception.Message)"
+    }
+    $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
+    if (-not $item -or "$($item.LinkType)" -ne 'Junction') {
+      Fail "host-link is not a junction to $JunctionTarget"
+    }
+    Emit 'mock_junction' @{ target = $JunctionTarget }
   }
   'hostile-case-alias' {
     Apply-Variant

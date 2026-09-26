@@ -223,7 +223,6 @@ export async function openHarnessEnv(
       workRoot: join(o.privateRoot, "backend"),
       ops: defaultBackendOps(lane),
       allowedHosts: [host],
-      docker,
     });
     const server = backend.serve(host, o.backendPort);
     closers.unshift(async () => {
@@ -257,7 +256,8 @@ export async function openHarnessEnv(
       supervised: o.supervised,
       egressEnforced: await resolveEgress(sharedResults, deps.verifyEgress),
       credentialLedger: o.credentialLedger,
-      lane_id: Deno.env.get("CG_LANE") ?? "unknown-lane",
+      // No placeholder: an unset lane is refused at the credential reservation (M1-28b).
+      lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",
     };
     const recovered = await recoverInterrupted(env, loadTask);
     for (const e of recovered) {

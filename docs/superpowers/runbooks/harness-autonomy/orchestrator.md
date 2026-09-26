@@ -25,7 +25,9 @@ Run as `/loop` without an interval (self-paced). Each sweep:
    that lane `resume: continue from your handoff`, then sweep normally. (This works after
    your own restart too; it reads state, not memory.)
 
-1. Handle doorbell messages first: submitted tasks go to review (below).
+1. Handle doorbell messages first: submitted tasks go to review (below). An `online: <lane>`
+   message means that lane is a fresh session (after a `/clear` or a restart): send it the
+   protocol line, check `coord status --lane <lane>`, and dispatch it again if it is idle.
 2. For each lane with no `doing` task and a non-empty `coord next <lane>`, send the lane:
    `next: <id>`. For a lane with nothing ready, look at `coord why` for its blocked tasks and
    unblock what you can (write a missing plan, answer from the specs, ask the owner).
@@ -75,5 +77,12 @@ order yourself only in the listed order.
 
 ## Context hygiene
 
-After each milestone is accepted, rewrite your handoff file completely and run `/clear`,
-then do the start procedure again. Never keep a two-week conversation.
+You cannot run `/clear` or `/compact` yourself; only the owner can. Every turn re-sends your
+whole context, so a big context makes every sweep expensive. Keep your handoff file complete
+enough that a fresh session loses nothing: rewrite it fully after each accepted task and
+whenever your context passes about 400k tokens. The owner's dashboard flags a session with
+over 400k context and nothing in flight as "ready to /clear" and clears it at that point.
+After a clear you are a fresh session: run the start procedure again.
+
+Keep your own context small: delegate reading, drafting and investigation to subagents and
+keep only their conclusions.

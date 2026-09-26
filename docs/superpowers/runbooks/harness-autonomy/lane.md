@@ -1,7 +1,8 @@
-# Role: lane session (lane-infra, lane-infra2, lane-content, lane-ops)
+# Role: lane session (lane-infra, lane-infra2, lane-content, lane-ops, lane-admin)
 
 You implement tasks for one lane. Your lane name is the part after `lane-` in your session
-name (`infra`, `infra2`, `content`, `ops`).
+name (`infra`, `infra2`, `content`, `ops`, `admin`). lane-admin follows only "On every start"
+and "lane-admin specifics" below; it does no coding tasks.
 
 ## On every start (and after every resume)
 
@@ -17,6 +18,9 @@ name (`infra`, `infra2`, `content`, `ops`).
 5. `coord status --lane <lane>`. A `doing` run of yours: continue it with the token from your
    handoff file. Otherwise wait for a `next: <id>` message, or take the first of
    `coord next <lane>`.
+6. Tell the orchestrator you are alive, always, also after a `/clear` or a resume:
+   send `cg-orchestrator` the message `online: lane-<lane> (fresh session), state: <doing
+   <id> run <runId> | idle>`. Without it the orchestrator keeps waiting on your old session.
 
 ## Doing a task
 
@@ -38,7 +42,21 @@ name (`infra`, `infra2`, `content`, `ops`).
 9. Rewrite your handoff file. Wait for `accepted` or `rejected`, or take the next task if one
    is ready and does not depend on the submitted one.
 
+## Context size
+
+You cannot run `/clear` or `/compact` yourself; only the owner can. Every turn re-sends your
+whole context, so keep it small: let subagents do the reading and implementing and keep only
+their conclusions. After you submit a task and rewrite your handoff file, you are ready to be
+cleared; the owner's dashboard shows "ready to /clear" for a session with over 400k context and
+nothing in flight. After a clear, run your start procedure again.
+
 ## Rules
+
+- Context hygiene: only the owner can run `/clear`. At a safe point (your task accepted or
+  submitted, handoff file rewritten, no container job or lease open), if your context use is
+  above about 60%, message cg-orchestrator `ready to clear: <session>, context <n>%`. After the
+  owner clears you, re-run your start procedure (`/harness-join`, then continue from the handoff
+  file and coord). Never ask for a clear mid-task.
 
 - A checkpoint answering `"paused": true`, or a `pause:` message: follow README "Global
   pause" at once (finish the running container job, release leases, commit, checkpoint
@@ -73,3 +91,37 @@ name (`infra`, `infra2`, `content`, `ops`).
   Cronus284/285 unallocated). `coord lease` refuses any other container.
 - Sandbox containers you create are named `cg-harness-<id>-<runId>-...` so cleanup targets
   only your own run.
+
+## lane-admin specifics
+
+lane-admin exists so that jobs needing Windows administrator rights do not require restarting
+another lane elevated (owner decision 2026-09-26).
+
+- Runs ELEVATED and in the normal permission mode, never bypass: the owner approves every
+  command. If the session is not elevated (`net session` fails) or runs in bypass mode, stop
+  and `coord ask`.
+- It runs only these jobs, each on request from lane-ops or the orchestrator, with the exact
+  command in the request:
+  - packet capture: `pktmon` start, stop and convert for the sandbox subnet during a
+    supervised run, and always `pktmon stop` plus filter removal afterwards;
+  - egress (M1-33/M1-34): the generated `egress-scripts.ts` apply and revert scripts,
+    `harness egress verify`, and the M1-34 revert and re-apply drills;
+  - read-only elevated diagnostics that a task names (`Get-NetFirewallRule`,
+    `Get-HnsNetwork`, `Get-NetFirewallProfile`).
+- Never: write or commit code; run BC container, benchmark or sandbox jobs (those stay with
+  lane-ops); start, stop or restart any container; change firewall rules, profiles or services
+  other than through the named scripts; run a request that arrived without an exact command.
+- Before any firewall change, quote the "before" state (profiles and the cg-harness rule group).
+  After it, quote the "after" state and check that other containers, especially the Linux
+  ones, still have internet (egress decision addendum). If they do not: revert immediately and
+  `coord ask`.
+- Record every job and its output under `H:\cg-coord\tasks\<id>\admin\` and reply to the
+  requester with the file path.
+- Messaging is one-way: lane-admin can message other sessions, but messages TO lane-admin fail
+  (the elevated session's pipe refuses non-elevated callers; verified 2026-09-26). Every
+  request to lane-admin is therefore a coord task in lane `admin`, with the exact command in its
+  `task.md`. lane-admin runs a self-paced `/loop` that checks `coord next admin`, claims and
+  runs a ready task exactly as written, then `coord submit`s it and messages the requester and
+  the orchestrator with the result path. For a time-critical job (a pktmon capture around a
+  supervised run), the requester files the task first and then asks the owner to nudge
+  lane-admin.

@@ -16,6 +16,8 @@ import {
 import {
   applyOverlay,
   readAppGraph,
+  readAppJson,
+  readAppJsonRaw,
   stageRefappTask,
   TAR_BINARY,
   TASK_SOURCES,
@@ -495,5 +497,20 @@ Deno.test("lockMicrosoftSymbols: locks Microsoft apps only, reports the rest, re
       ),
     ValidationError,
     "Microsoft",
+  );
+});
+
+Deno.test("readAppJson and readAppGraph accept a UTF-8 BOM app.json (PowerShell 5 Set-Content -Encoding UTF8)", async () => {
+  const ws = await Deno.realPath(await Deno.makeTempDir());
+  await write(
+    ws,
+    "Core/app.json",
+    "\uFEFF" + appJson(IDS.core, "CGR Core", [70000, 70099], []),
+  );
+  assertEquals((await readAppJson(join(ws, "Core", "app.json"))).id, IDS.core);
+  assertEquals((await readAppGraph(ws)).map((a) => a.id), [IDS.core]);
+  assertEquals(
+    ((await readAppJsonRaw(join(ws, "Core", "app.json"))) as { id: string }).id,
+    IDS.core,
   );
 });

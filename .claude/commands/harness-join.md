@@ -15,6 +15,7 @@ Run `git rev-parse --show-toplevel` and map it:
 | `U:/Git/CentralGauge-wt/lane-content` | lane content | `lane-content` |
 | `U:/Git/CentralGauge-wt/lane-ops` | lane ops | `lane-ops` |
 | `U:/Git/CentralGauge-wt/lane-infra2` | lane infra2 | `lane-infra2` |
+| `U:/Git/CentralGauge-wt/lane-admin` | lane admin (must run elevated, normal permission mode) | `lane-admin` |
 
 Anything else: say that this directory has no role and stop.
 
@@ -46,4 +47,5 @@ Also report which of the other three roles are still missing, with their directo
   `/loop You are cg-orchestrator. Follow docs/superpowers/runbooks/harness-autonomy/orchestrator.md: run its start procedure if you have not done so in this session, then do one sweep.`
   and stop until they do.
 - lane: read `docs/superpowers/runbooks/harness-autonomy/lane.md` and follow it, starting with
-  its "On every start" section.
+  its "On every start" section. Its last step messages `cg-orchestrator` that you are online;
+  never skip it, the orchestrator waits for it after a `/clear`.

@@ -26,10 +26,11 @@ import {
 } from "../../../src/harness/sandbox.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 import { FakeDocker, parseRunArgs } from "./fake-docker.ts";
+import { tempDir } from "./temp-dirs.ts";
 
 const TOKEN = "tok-0123456789abcdef";
 const tmp = async () =>
-  await validatedDir(await Deno.realPath(await Deno.makeTempDir()));
+  await validatedDir(await Deno.realPath(await tempDir()));
 
 async function spec(over: Partial<SandboxSpec> = {}): Promise<SandboxSpec> {
   const q = await tmp();

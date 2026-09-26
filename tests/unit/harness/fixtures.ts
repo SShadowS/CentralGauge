@@ -36,7 +36,7 @@ export function manifest(
 ): ResolvedManifest {
   return ResolvedManifestSchema.parse({
     v: 1,
-    rules: "hr2",
+    rules: "hr3",
     config_id,
     harness: "claude-code",
     harness_version: "2.1.282",

@@ -12,6 +12,7 @@ import {
   hashFile,
   hashJson,
   hashTree,
+  isTaskBuildArtifact,
   listTree,
   posixRel,
   TEXT_FILE_NAMES,
@@ -32,12 +33,13 @@ async function linkDir(target: string, path: string) {
   });
 }
 
-Deno.test("hashJson: golden value pins rules hr2", async () => {
+Deno.test("hashJson: golden value pins rules hr3", async () => {
   // hr2 (M1-24 run 002): extensionless overlay control files hash as text.
-  assertEquals(HASH_RULES_VERSION, "hr2");
+  // hr3 (M1-40 run 002): .alpackages/output are build artifacts in any case.
+  assertEquals(HASH_RULES_VERSION, "hr3");
   assertEquals(
     await hashJson({ b: [true, null, "x"], a: 1 }),
-    "1a554637537d70908ed52703ece84e8d93a6c510b7644c3d5b4bb4d77a0fd278",
+    "989828ed78ae9308805ba95161f899362faba3bba15f303c91c118f6bbd63af0",
   );
 });
 
@@ -69,7 +71,7 @@ Deno.test("hashTree task domain: golden, CRLF-invariant, drops only build artifa
   assertEquals(await hashTree(crlf, "task"), await hashTree(lf, "task"));
   assertEquals(
     await hashTree(lf, "task"),
-    "fcdaaaa3300c949abd32a9d7f1492966758d04a806e43d5921ac972c7320ac8c",
+    "51105c2c3ebf0256bfe98ec4054d054e439d0cd35051e2059568ea3bfec00ddb",
   );
 });
 
@@ -117,6 +119,16 @@ Deno.test("hashFile: the overlay .delete list hashes as text (LF and CRLF agree)
     await hashFile(crlf, join(crlf, DELETE_LIST)),
   );
   assertEquals(await hashTree(lf, "task"), await hashTree(crlf, "task"));
+});
+
+Deno.test("isTaskBuildArtifact: .alpackages and output directories in any case (hr3)", () => {
+  assertEquals(
+    isTaskBuildArtifact("Core/.ALPACKAGES/cache_AppInfo.json"),
+    true,
+  );
+  assertEquals(isTaskBuildArtifact("Core/.AlPackages/x.app"), true);
+  assertEquals(isTaskBuildArtifact("Core/Output/x.txt"), true);
+  assertEquals(isTaskBuildArtifact("Core/src/output.al"), false);
 });
 
 Deno.test("hashTree: missing dir throws unless optional", async () => {

@@ -45,10 +45,20 @@ export interface StagedApp {
   external: string[];
 }
 
+/**
+ * The one app.json reader (M1-35a): the parsed JSON with a single leading
+ * U+FEFF stripped. PowerShell 5 `Set-Content -Encoding UTF8` writes a BOM,
+ * which Deno keeps and JSON.parse rejects.
+ */
+export async function readAppJsonRaw(path: string): Promise<unknown> {
+  const text = await Deno.readTextFile(path);
+  return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+}
+
 export async function readAppJson(path: string): Promise<AppJson> {
   let raw: unknown;
   try {
-    raw = JSON.parse(await Deno.readTextFile(path));
+    raw = await readAppJsonRaw(path);
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) throw err;
     const msg = err instanceof Error ? err.message : String(err);

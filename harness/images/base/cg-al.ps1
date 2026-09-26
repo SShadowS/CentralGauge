@@ -7,14 +7,17 @@
 #   1  the agent's fault: 200 not ok (compile/test failed, violations), or a
 #      request the agent caused to be refused: 400 (bad JSON, unknown app,
 #      non-runnable codeunit), 404, 413 (body too large), 422 (workspace over
-#      the limits), 429 (a second concurrent request)
+#      the limits), 429 (a second concurrent request), 409 (the workspace
+#      changed while it was snapshotted: retry)
 #   2  environment/infra: no response, 408, 5xx, backend token unavailable
 #   3  401 unauthorized
 #   64 usage
-param(
-  [Parameter(Position = 0)][string]$Op,
-  [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
-)
+# No param block (M1-28c): under `powershell -File`, PS 5.1 never binds a
+# dash-prefixed word (--version) to a positional parameter, and a bare `--`
+# breaks binding outright. $args arrives raw from every caller.
+$argv = @($args | ForEach-Object { "$_" })
+$Op = if ($argv.Count -gt 0) { $argv[0] } else { '' }
+$Rest = @($argv | Select-Object -Skip 1)
 $ErrorActionPreference = 'Stop'
 $sw = [Diagnostics.Stopwatch]::StartNew()
 if ($Op -eq '--version') { Write-Output '{"cg_al":"1"}'; exit 0 }
@@ -72,5 +75,5 @@ Write-Output (ConvertTo-Json -InputObject $out -Compress -Depth 12)
 if ($status -eq 200 -and $result.ok) { exit 0 }
 if ($status -eq 200) { exit 1 }
 if ($status -eq 401) { exit 3 }
-if ($status -in @(400, 404, 413, 422, 429)) { exit 1 }
+if ($status -in @(400, 404, 409, 413, 422, 429)) { exit 1 }
 exit 2

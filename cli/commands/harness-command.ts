@@ -57,7 +57,11 @@ import {
   outcomePolicy,
   RecordStore,
 } from "../../src/harness/records.ts";
-import { buildReport, renderReport } from "../../src/harness/report.ts";
+import {
+  buildReport,
+  loadReportLogs,
+  renderReport,
+} from "../../src/harness/report.ts";
 import { loadTraces } from "../../src/harness/trace-metrics.ts";
 import { checkScenario } from "../../scripts/harness/stub-anthropic.mjs";
 import { loadTaskSet } from "../../src/harness/task.ts";
@@ -348,9 +352,11 @@ export async function harnessReport(
     if (a) artifacts.push(a);
     judgments.push(...await store.judgments(e.id));
   }
-  return buildReport({ campaign, executions, artifacts, judgments }, {
+  const records = { campaign, executions, artifacts, judgments };
+  return buildReport(records, {
     resamples: opts.resamples,
     seed: opts.seed,
+    logs: await loadReportLogs(opts.resultsDir, records),
     traces: await loadTraces(opts.resultsDir, executions),
     ...(opts.judging === "current"
       ? { judging: await currentJudging(opts.root) }
@@ -371,12 +377,12 @@ export interface CellCliOptions {
   supervised: boolean;
   repeat: number;
   rev: string | null;
+  /** Qualification manifest naming the variants mock arms apply (M1-35). */
+  qualifyManifest?: string | null;
   /** Stub-provider scenario (M2-08): no credential, records under <results>/stub-cells, never judged. */
   stubProvider?: string | null;
   /** Another image of the same harness (sha256 id); only with stubProvider. */
   image?: string | null;
-  /** Qualification manifest naming the variants mock arms apply (M1-35). */
-  qualifyManifest?: string | null;
 }
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
@@ -837,9 +843,9 @@ interface CellCliFlags {
   supervised?: boolean;
   repeat?: number;
   rev?: string;
+  qualifyManifest?: string;
   stubProvider?: string;
   image?: string;
-  qualifyManifest?: string;
 }
 
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
@@ -868,9 +874,9 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     supervised: f.supervised === true,
     repeat: f.repeat ?? 1,
     rev: f.rev ?? null,
+    qualifyManifest: f.qualifyManifest ? abs(f.qualifyManifest) : null,
     stubProvider: f.stubProvider ? abs(f.stubProvider) : null,
     image: f.image ?? null,
-    qualifyManifest: f.qualifyManifest ? abs(f.qualifyManifest) : null,
   };
 }
 
@@ -1157,7 +1163,6 @@ async function qualifyMockCell(
     ),
     adapterFor(config.harness),
     await readCatalog(join(root, "site", "catalog")),
-    config.components.mcp.length > 0 ? await mcpDefinitions(root) : {},
   );
   const armManifest = await resolveManifest(env.harnessRoot, config, facts);
   const at = await loadTaskAt(
@@ -1386,16 +1391,16 @@ export function registerHarnessCommand(cli: Command): void {
     )
     .option("--repeat <n:integer>", "Repeat index", { default: 1 })
     .option(
+      "--qualify-manifest <path:string>",
+      "Qualification manifest naming the variants mock arms apply",
+    )
+    .option(
       "--stub-provider <scenario:string>",
       "Scripted in-container Messages API (no credential; records under <results-dir>/stub-cells; never judged)",
     )
     .option(
       "--image <id:string>",
       "Run this image id of the same harness (only with --stub-provider)",
-    )
-    .option(
-      "--qualify-manifest <path:string>",
-      "Qualification manifest naming the variants mock arms apply",
     )
     .action((opts: CellCliFlags, config: string, task: string) =>
       fail(async () => void await harnessCell(config, task, cliOpts(opts)))

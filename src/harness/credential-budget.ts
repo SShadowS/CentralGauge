@@ -46,6 +46,17 @@ export async function reserveCredentialRun(
       "no shared credential-run ledger configured (CG_CREDENTIAL_LEDGER): refusing a credential-bearing run",
     );
   }
+  // The ledger names who spent each run: never a blank or placeholder lane (M1-28b).
+  if (r.lane.trim() === "") {
+    throw new ConfigurationError(
+      "credential-run reservation needs a lane: set CG_LANE (harness cell) or pass --lane",
+    );
+  }
+  if (/^unknown\b/i.test(r.lane.trim())) {
+    throw new ConfigurationError(
+      `credential-run reservation refuses the placeholder lane "${r.lane}": set CG_LANE or pass --lane`,
+    );
+  }
   for (const k of ["lane", "task", "config", "purpose"] as const) {
     if (r[k].trim() === "") {
       throw new ConfigurationError(

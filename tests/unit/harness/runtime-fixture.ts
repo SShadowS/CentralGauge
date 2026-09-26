@@ -31,12 +31,15 @@ import { loadTask } from "../../../src/harness/task.ts";
 import { deployedSource, FakeBc, result } from "./fake-bc.ts";
 import { FakeDocker, type RunBehavior } from "./fake-docker.ts";
 import { makeRefappRepo, type RefappRepo, write } from "./refapp-fixture.ts";
+import { tempDir } from "./temp-dirs.ts";
 
 export const SECRET_OAUTH = "sk-ant-oat01-fixture-0123456789abcdefXYZ";
 const PROBE = "tests/fixtures/harness/claude-code/probe.jsonl";
+/** Stands in for the probe's own init: same session (M1-32b run 002 prices only a session-proven log). */
 export const INIT = JSON.stringify({
   type: "system",
   subtype: "init",
+  session_id: "1ae7bb8f-04b6-4431-b315-c3a36ef73f35",
   claude_code_version: "2.1.282",
   skills: [],
   mcp_servers: [],
@@ -246,10 +249,10 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
   const resultsRoot = join(repo.root, "results", "harness");
   await Deno.mkdir(resultsRoot, { recursive: true });
   const privateRoot = await Deno.realPath(
-    await Deno.makeTempDir({ prefix: "cg-private-" }),
+    await tempDir({ prefix: "cg-private-" }),
   );
   await Deno.mkdir(join(privateRoot, "work"), { recursive: true });
-  const secretsSource = await Deno.realPath(await Deno.makeTempDir());
+  const secretsSource = await Deno.realPath(await tempDir());
   await Deno.writeTextFile(
     join(secretsSource, "claude-oauth-token"),
     SECRET_OAUTH,
@@ -266,8 +269,6 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
       workRoot: join(privateRoot, "backend"),
       ops: defaultBackendOps(lane),
       allowedHosts: ["127.0.0.1"],
-      docker,
-      opTimeoutMs: 100,
       revokeGraceMs: 100,
       scanReparsePoints: NO_SCAN,
     }),

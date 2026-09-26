@@ -56,7 +56,7 @@ function config(
 
 const GOLDEN = {
   v: 1,
-  rules: "hr2",
+  rules: "hr3",
   config_id: "golden",
   harness: "claude-code",
   harness_version: "2.1.282",
@@ -80,7 +80,7 @@ Deno.test("manifestHash: golden resolved manifest", async () => {
   const m = ResolvedManifestSchema.parse(GOLDEN);
   assertEquals(
     await manifestHash(m),
-    "5b624b35bf7a41bf9c8b77bb27ec0c7960da11aab4e393f7ae6906e38eab8fb3",
+    "7d97b11d0ab99682dd3888115db6a648fe9a7fabe5cef295aa173addb68a4f23",
   );
 });
 

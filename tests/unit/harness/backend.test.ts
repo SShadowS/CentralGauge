@@ -21,7 +21,12 @@ import {
   timingSafeEqual,
 } from "../../../src/harness/backend.ts";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
-import { exists } from "../../../src/harness/fsutil.ts";
+import {
+  type CopyLimits,
+  DEFAULT_COPY_LIMITS,
+  exists,
+} from "../../../src/harness/fsutil.ts";
+import { stub } from "@std/testing/mock";
 import { FakeDocker } from "./fake-docker.ts";
 import { readAppGraph } from "../../../src/harness/staging.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
@@ -150,8 +155,6 @@ async function setup(
     ops,
     allowedHosts: ["127.0.0.1"],
     now: () => clock.t,
-    docker,
-    opTimeoutMs: 100,
     bodyTimeoutMs: 100,
     revokeGraceMs: opts.revokeGraceMs ?? 50,
   });
@@ -372,45 +375,6 @@ Deno.test("backend: a stalled body is 408 within the deadline", async () => {
   assert(performance.now() - t0 < 1_000);
 });
 
-Deno.test("backend: a failed unpause is a 503 infra fault and stops the execution through onFault", async () => {
-  const root = await tmp();
-  await Deno.mkdir(join(root, "work"), { recursive: true });
-  const docker = new FakeDocker();
-  docker.unpause = () => Promise.resolve(1);
-  const faults: string[] = [];
-  const ops: BackendOps = {
-    compile: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
-    test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
-  };
-  const b = new Backend({
-    scanReparsePoints: NO_SCAN,
-    approvedRoots: [join(root, "work")],
-    workRoot: join(root, "backend"),
-    ops,
-    allowedHosts: ["127.0.0.1"],
-    docker,
-    opTimeoutMs: 100,
-  });
-  const ws = await workspace(root, EXEC_A);
-  const tok = await b.grant({
-    executionId: EXEC_A,
-    sandbox: "cg-harness-x",
-    onFault: (r) => faults.push(r),
-    workspace: ws,
-    pristine: ws,
-    trusted: await readAppGraph(ws),
-    symbols: [],
-    lock: { store: root, packages: [] },
-    deploy: { ledgerRoot: root, trustedRoots: [ws] },
-    hostLog: join(root, "hl.jsonl"),
-  }, 60_000);
-  assertEquals(
-    (await b.handle(req("/v1/compile", tok, '{"apps":["Core"]}'))).status,
-    503,
-  );
-  assertStringIncludes(faults.join("\n"), "unpause");
-});
-
 Deno.test("production ops: a revoke past the grace cancels before any further BC mutation", async () => {
   const s = await setup();
   let releaseCompile!: () => void;
@@ -429,7 +393,6 @@ Deno.test("production ops: a revoke past the grace cancels before any further BC
     workRoot: join(s.root, "backend4"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
     revokeGraceMs: 100,
   });
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl4.jsonl"));
@@ -462,29 +425,11 @@ Deno.test("production ops: a request past its deadline is refused before any pub
     workRoot: join(s.root, "backend5"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
     requestDeadlineMs: 40,
   });
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl5.jsonl"));
   assertEquals((await b.handle(req("/v1/test", tok, "{}", exec))).status, 503);
   assertEquals(bc.syncs, []);
-});
-
-Deno.test("backend: the snapshot is taken with the sandbox paused; a failed pause is 503 and copies nothing", async () => {
-  const s = await setup();
-  assertEquals(
-    (await s.backend.handle(req("/v1/compile", s.tokenA, '{"apps":["Core"]}')))
-      .status,
-    200,
-  );
-  assertEquals(s.docker.paused, [`cg-harness-test-e001`]);
-  s.docker.pause = () => Promise.resolve(1);
-  assertEquals(
-    (await s.backend.handle(req("/v1/compile", s.tokenA, '{"apps":["Core"]}')))
-      .status,
-    503,
-  );
-  assertEquals(s.seen.length, 1);
 });
 
 Deno.test("backend: compile runs on a snapshot, logs monotonic spans, cleans up", async () => {
@@ -612,7 +557,6 @@ Deno.test("defaultBackendOps: a fixture-band codeunit is refused before any BC c
     workRoot: join(s.root, "backend2"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
   });
   const exec = "00000000-0000-4000-8000-00000000e003";
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl3.jsonl"));
@@ -738,7 +682,6 @@ Deno.test("defaultBackendOps: discovery skips test codeunits without [Test] proc
     workRoot: join(s.root, "backend6"),
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
   });
   const exec = "00000000-0000-4000-8000-00000000e006";
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl6.jsonl"));
@@ -804,12 +747,20 @@ Deno.test("backend: a live or still-draining execution id cannot be granted agai
     "already",
   );
   s.gate.wait = new Promise<void>(() => {});
+  // The op is really running before the revoke, never a fixed sleep: under
+  // load the request can still be before admission (its token digest), and a
+  // revoke then finds nothing in flight and drains at once (M1-19c).
+  let entered!: () => void;
+  const running = new Promise<void>((r) => (entered = r));
   const b = new Backend({
     scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
     workRoot: join(s.root, "backend8"),
     ops: {
-      compile: () => new Promise(() => {}),
+      compile: () => {
+        entered();
+        return new Promise(() => {});
+      },
       test: () => new Promise(() => {}),
     },
     allowedHosts: ["127.0.0.1"],
@@ -818,7 +769,7 @@ Deno.test("backend: a live or still-draining execution id cannot be granted agai
   const exec = "00000000-0000-4000-8000-00000000e008";
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl8.jsonl"));
   void b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
-  await new Promise((r) => setTimeout(r, 20));
+  await running;
   assertEquals(await b.revoke(exec), false, "never drains");
   await assertRejects(
     () => grantFor(b, s.root, exec, join(s.root, "hl8.jsonl")),
@@ -889,7 +840,6 @@ Deno.test("backend: the snapshot runs the reparse attribute scan; a scanned repa
       test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
     },
     allowedHosts: ["127.0.0.1"],
-    docker: new FakeDocker(),
     scanReparsePoints: () =>
       Promise.resolve({
         ancestors: [],
@@ -984,7 +934,7 @@ Deno.test("backend: UNC paths, backend roots and host paths in any agent-facing 
 });
 
 Deno.test(
-  "cg-al.ps1: exit code per response status (agent-caused 4xx are 1, infra is 2, 401 is 3)",
+  "cg-al.ps1: exit code per response status (agent-caused 4xx and the retryable 409 are 1, infra is 2, 401 is 3)",
   {
     ignore: Deno.build.os !== "windows",
   },
@@ -1010,6 +960,7 @@ Deno.test(
         [413, '{"error":"x"}', 1],
         [422, '{"error":"x"}', 1],
         [429, '{"error":"x"}', 1],
+        [409, '{"error":"workspace changed during snapshot; retry"}', 1],
         [401, '{"error":"x"}', 3],
         [408, '{"error":"x"}', 2],
         [500, '{"error":"x"}', 2],
@@ -1081,4 +1032,241 @@ Deno.test("backend: a revoke that lands during the snapshot cancels before the o
   await revoking; // whether it drained depends on the grace; the ordering is what is pinned
   assertEquals((await pending).status, 503);
   assertEquals(opRan, false);
+});
+
+/** A backend over one granted workspace whose reparse-scan seam runs `during` before each copy. */
+async function snapshotBackend(
+  during: (ws: string, ctl: { revoke(): Promise<boolean> }) => Promise<void>,
+  opts: { copyLimits?: CopyLimits; revokeGraceMs?: number } = {},
+) {
+  const s = await setup();
+  let scans = 0;
+  const seen: string[] = [];
+  const exec = "00000000-0000-4000-8000-00000000e0b1";
+  const b = new Backend({
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend-snap"),
+    ops: {
+      compile: (ctx) => {
+        seen.push(ctx.snapshot);
+        return Promise.resolve({ body: {}, log: { outcome: "ok" } });
+      },
+      test: () => Promise.resolve({ body: {}, log: { outcome: "ok" } }),
+    },
+    allowedHosts: ["127.0.0.1"],
+    ...(opts.copyLimits ? { copyLimits: opts.copyLimits } : {}),
+    ...(opts.revokeGraceMs !== undefined
+      ? { revokeGraceMs: opts.revokeGraceMs }
+      : {}),
+    scanReparsePoints: async () => {
+      scans++;
+      await during(join(s.root, "work", exec, "workspace"), {
+        revoke: () => b.revoke(exec),
+      });
+      return { ancestors: [], entries: [], seen: 1, capped: false };
+    },
+  });
+  const hostLog = join(s.root, "hl-snap.jsonl");
+  const tok = await grantFor(b, s.root, exec, hostLog);
+  const send = () =>
+    b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
+  const ws = join(s.root, "work", exec, "workspace");
+  return { s, b, send, seen, hostLog, ws, scans: () => scans };
+}
+
+Deno.test("backend: a stable workspace compiles from a snapshot with no pause call made", async () => {
+  const t = await snapshotBackend(() => Promise.resolve());
+  assertEquals((await t.send()).status, 200);
+  assertEquals([t.seen.length, t.scans()], [1, 1]);
+  assertEquals(
+    t.s.docker.paused,
+    [],
+    "no docker pause (Hyper-V cannot pause with a RW mount)",
+  );
+});
+
+Deno.test("backend: a writer changing a file during the copy gives a retryable 409 after 2 internal retries", async () => {
+  let n = 0;
+  const t = await snapshotBackend(async (ws) => {
+    await Deno.writeTextFile(join(ws, "Core", "src", "Churn.al"), `// ${++n}`);
+  });
+  const r = await t.send();
+  const body = await r.json();
+  assertEquals(r.status, 409);
+  assertStringIncludes(body.error, "workspace changed during snapshot");
+  assertEquals(body.retryable, true);
+  assertEquals(t.scans(), 3, "one attempt and two internal retries");
+  assertEquals(t.seen.length, 0, "no build from an unstable snapshot");
+  const [line] = await readHostLog(t.hostLog);
+  assertEquals([line!.status, line!.outcome], [409, "rejected"]);
+});
+
+Deno.test("backend: churn that settles within the retries still compiles", async () => {
+  let n = 0;
+  const t = await snapshotBackend(async (ws) => {
+    if (++n === 1) {
+      await Deno.writeTextFile(join(ws, "Core", "src", "Once.al"), "// x");
+    }
+  });
+  assertEquals((await t.send()).status, 200);
+  assertEquals([t.scans(), t.seen.length], [2, 1]);
+});
+
+Deno.test("backend: an I/O error during the snapshot is infra (503), not the agent's fault", async () => {
+  const t = await snapshotBackend(() =>
+    Promise.reject(
+      new Deno.errors.PermissionDenied("Access is denied. (os error 5)"),
+    )
+  );
+  const r = await t.send();
+  assertEquals(r.status, 503);
+  assertEquals(t.seen.length, 0);
+});
+
+Deno.test("backend: a revoke during the last attempt is a cancellation (503), never the churn 409", async () => {
+  let n = 0;
+  let revoking: Promise<boolean> | null = null;
+  const t = await snapshotBackend(async (ws, ctl) => {
+    await Deno.writeTextFile(join(ws, "Core", "src", "Churn.al"), `// ${++n}`);
+    if (n === 3) {
+      revoking = ctl.revoke();
+      await new Promise((r) => setTimeout(r, 60)); // past the 10 ms grace: aborted
+    }
+  }, { revokeGraceMs: 10 });
+  const r = await t.send();
+  assertEquals([r.status, t.scans()], [503, 3]);
+  await revoking;
+});
+
+Deno.test("backend: the snapshot digest enforces the copy limits while reading: an oversized file is 422, never read whole", async () => {
+  const limits = { ...DEFAULT_COPY_LIMITS, maxBytes: 4096 };
+  const t = await snapshotBackend(() => Promise.resolve(), {
+    copyLimits: limits,
+  });
+  const big = join(t.ws, "Core", "src", "Big.al");
+  await Deno.writeTextFile(big, "x".repeat(64 * 1024));
+  const whole: string[] = [];
+  const readFile = Deno.readFile;
+  const spy = stub(Deno, "readFile", (path, o) => {
+    whole.push(String(path));
+    return readFile(path, o);
+  });
+  try {
+    const r = await t.send();
+    assertEquals(r.status, 422);
+  } finally {
+    spy.restore();
+  }
+  assertEquals(whole.filter((p) => p.endsWith("Big.al")), []);
+});
+
+Deno.test("production ops: a test after a compile of the same workspace rebuilds nothing", async () => {
+  const s = await setup();
+  const bc = new FakeBc(() => result({ A: true }));
+  const exec = "00000000-0000-4000-8000-00000000e0c1";
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend-reuse"),
+    ops: defaultBackendOps(new BcLane(bc, ["C1"])),
+    allowedHosts: ["127.0.0.1"],
+  });
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hl-reuse.jsonl"));
+  assertEquals(
+    (await b.handle(req("/v1/compile", tok, '{"apps":[]}', exec))).status,
+    200,
+  );
+  const compiled = bc.compiles.length;
+  assert(compiled > 0);
+  const r = await b.handle(req("/v1/test", tok, "{}", exec));
+  assertEquals(r.status, 200);
+  assertEquals(bc.compiles.length, compiled, "test reused the unchanged build");
+  const lines = await readHostLog(join(s.root, "hl-reuse.jsonl"));
+  assertEquals(lines.at(-1)!.per_app_compiles, 0);
+});
+
+Deno.test("backend: a BOM app.json in the workspace compiles (no violation, no invalid JSON)", async () => {
+  const s = await setup();
+  const bc = new FakeBc(() => result({ A: true }));
+  const exec = "00000000-0000-4000-8000-00000000e0d1";
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend-bom"),
+    ops: defaultBackendOps(new BcLane(bc, ["C1"])),
+    allowedHosts: ["127.0.0.1"],
+  });
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hl-bom.jsonl"));
+  const p = join(s.root, "work", exec, "workspace", "Core", "app.json");
+  await Deno.writeTextFile(p, "\uFEFF" + await Deno.readTextFile(p));
+  const r = await b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
+  const body = await r.json();
+  assertEquals([r.status, body.ok, body.violations], [200, true, undefined]);
+});
+
+Deno.test({
+  name:
+    "cg-al.ps1 via powershell -File: --version is 0 with the version line; operations send the same requests; usage stays 64 (M1-28c)",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const seen: [string, unknown][] = [];
+    const server = Deno.serve(
+      { hostname: "127.0.0.1", port: 0, onListen: () => {} },
+      async (r) => {
+        seen.push([new URL(r.url).pathname, await r.json()]);
+        return new Response('{"ok":true}', {
+          headers: { "content-type": "application/json" },
+        });
+      },
+    );
+    const secrets = await tmp();
+    await Deno.writeTextFile(join(secrets, "backend-token"), "t".repeat(32));
+    const run = async (...args: string[]) => {
+      const o = await new Deno.Command("powershell", {
+        args: [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "harness/images/base/cg-al.ps1",
+          ...args,
+        ],
+        env: {
+          CG_BACKEND_URL: `http://127.0.0.1:${
+            (server.addr as Deno.NetAddr).port
+          }`,
+          CG_EXECUTION_ID: EXEC_A,
+          CG_SECRETS_DIR: secrets,
+        },
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      return { code: o.code, out: new TextDecoder().decode(o.stdout).trim() };
+    };
+    try {
+      assertEquals(await run("--version"), {
+        code: 0,
+        out: '{"cg_al":"1"}',
+      });
+      assertEquals(seen, [], "--version sends no request");
+      for (
+        const bad of [[], ["--"], ["-version"], ["bogus"], ["test", "abc"]]
+      ) {
+        assertEquals((await run(...bad)).code, 64, JSON.stringify(bad));
+      }
+      assertEquals(seen, []);
+      assertEquals((await run("compile", "Fleet Rental Core", "Test")).code, 0);
+      assertEquals((await run("compile")).code, 0);
+      assertEquals((await run("test", "80010", "80011")).code, 0);
+      assertEquals((await run("symbols")).code, 0);
+      assertEquals(seen, [
+        ["/v1/compile", { apps: ["Fleet Rental Core", "Test"] }],
+        ["/v1/compile", { apps: [] }],
+        ["/v1/test", { codeunits: [80010, 80011] }],
+        ["/v1/symbols", {}],
+      ]);
+    } finally {
+      await server.shutdown();
+    }
+  },
 });

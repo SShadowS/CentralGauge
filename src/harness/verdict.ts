@@ -367,11 +367,13 @@ function accountHeld(
 async function buildOracle(
   ctx: JudgeContext,
   prep: Prepared,
+  graph: StagedApp[],
 ): Promise<WantedApp | null> {
   const dir = join(ctx.i.task.dir, "oracle");
   const aj = await readAppJson(join(dir, "app.json"));
   const workspaceIds = new Set(prep.wanted.map((w) => w.id));
   const deps = aj.dependencies.map((d) => d.id.toLowerCase());
+  const folderOf = new Map(graph.map((a) => [a.id.toLowerCase(), a.folder]));
   const app: StagedApp = {
     folder: "oracle",
     id: aj.id.toLowerCase(),
@@ -379,7 +381,11 @@ async function buildOracle(
     publisher: aj.publisher,
     version: aj.version,
     idRanges: aj.idRanges,
-    depends: [],
+    // Workspace dependencies by folder, like a candidate: their declared
+    // symbols join the oracle's restore closure (M1-40b).
+    depends: deps.filter((id) => workspaceIds.has(id)).map((id) =>
+      folderOf.get(id)!
+    ),
     // Checked against the lock by buildApps, so BCH never fills a gap from its cache.
     external: deps.filter((id) => !workspaceIds.has(id)).sort(),
   };
@@ -393,7 +399,10 @@ async function buildOracle(
         versions: new Map([["oracle", aj.version]]),
         outDir: join(ctx.i.workDir, "oracle-build"),
         lock: ctx.i.lock,
-        prebuilt: new Map(prep.wanted.map((w) => [w.id, w.file])),
+        prebuilt: new Map(
+          prep.wanted.map((w) => [folderOf.get(w.id.toLowerCase())!, w.file]),
+        ),
+        graph,
       }),
   );
   if (!b) throw new Error("oracle build returned no result");
@@ -515,7 +524,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   const cleanup = [...prep.candidateIds];
   const f2p: TestSpec[] = [];
   if (t.fail_to_pass) {
-    const oracle = await buildOracle(ctx, prep);
+    const oracle = await buildOracle(ctx, prep, vw.apps);
     if (oracle === null) {
       scores.set(
         "fail_to_pass",

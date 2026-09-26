@@ -162,3 +162,25 @@ Deno.test("reserveCredentialRun: the stop signal aborts the wait; an aborted sig
     "nothing written",
   );
 });
+
+Deno.test("reserveCredentialRun: an unknown or placeholder lane is refused and nothing is recorded", async () => {
+  const ledger = join(
+    await Deno.realPath(await Deno.makeTempDir()),
+    "credential-runs.jsonl",
+  );
+  for (const lane of ["unknown-lane", "unknown", "Unknown", " "]) {
+    await assertRejects(
+      () => reserveCredentialRun(ledger, { ...r, lane }),
+      ConfigurationError,
+      "lane",
+    );
+  }
+  await assertRejects(
+    () => reserveCredentialRun(ledger, { ...r, lane: "" }),
+    ConfigurationError,
+    "CG_LANE",
+  );
+  await assertRejects(() => Deno.stat(ledger), Deno.errors.NotFound);
+  assertEquals(await reserveCredentialRun(ledger, r), 1);
+  assertEquals(JSON.parse(await Deno.readTextFile(ledger)).lane, "lane-ops");
+});

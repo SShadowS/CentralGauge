@@ -16,6 +16,7 @@ import {
   classifyTestFailure,
   deploy,
   deployAndTest,
+  dirBuildCache,
   type LockedSymbols,
   prepareApps,
   runTests,
@@ -529,7 +530,7 @@ Deno.test("BcLane: compiles are admitted at most compileSlots at a time per cont
   const lane = new BcLane(bc, ["C1"], { compileSlots: 1 });
   const lk = await lock();
   await Promise.all(
-    [1, 2, 3].map(async () =>
+    [1, 2, 3].map(() =>
       lane.compile(async (c) =>
         buildApps(bc, c, {
           srcDir: ws,
@@ -648,7 +649,7 @@ Deno.test("deployAndTest: a cleanup refused before any change is loud and quaran
   const lane = new BcLane(bc, ["C1", "C2"]);
   const p = await prep(bc, lane);
   const untrusted = "00000000-0000-4000-8000-00000000eeee";
-  const err = await assertRejects(async () =>
+  const err = await assertRejects(() =>
     lane.exclusive(
       { taskId: "t", variantId: "v", attemptNumber: 1 },
       async (c) =>
@@ -923,4 +924,485 @@ Deno.test("deploy: owned apps with kept tenant data at a higher version are clea
     ["Continia Core"],
     "a foreign app's data is never touched",
   );
+});
+
+/** A BCH stand-in: after each compile, the app info cache lists every package in .alpackages. */
+function appInfoWriter(bc: FakeBc, seen: Map<string, string[] | null>) {
+  bc.onCompile = async (dir) => {
+    const pk = join(dir, ".alpackages");
+    const file = join(pk, "cache_AppInfo.json");
+    const before = await Deno.readTextFile(file).then(
+      (t) => Object.keys(JSON.parse(t)).sort(),
+      () => null,
+    );
+    seen.set(basename(dir), before);
+    const cache: Record<string, unknown> = {};
+    for await (const e of Deno.readDir(pk)) {
+      if (e.name.endsWith(".app")) cache[`.\\${e.name}`] = { name: e.name };
+    }
+    await Deno.writeTextFile(file, JSON.stringify(cache));
+  };
+}
+
+Deno.test("buildApps: the locked packages' app info cache is harvested once and seeded into later compiles, never a workspace app", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const bc = new FakeBc();
+  const first = new Map<string, string[] | null>();
+  appInfoWriter(bc, first);
+  const o = async () => ({
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  await buildApps(bc, "C1", await o());
+  assertEquals(
+    first.get("Core"),
+    null,
+    "nothing harvested before the first compile",
+  );
+  const second = new Map<string, string[] | null>();
+  appInfoWriter(bc, second);
+  await buildApps(bc, "C1", await o());
+  const locked = [".\\Microsoft_Library Assert_28.0.0.0.app"];
+  assertEquals(second.get("Core"), locked);
+  assertEquals(
+    second.get("Test"),
+    locked,
+    "the workspace-built Core and Rental are never seeded",
+  );
+});
+
+Deno.test("buildApps: a build cache reuses an unchanged app; a changed source rebuilds it and its dependents", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const cache = dirBuildCache(await tmp());
+  const bc = new FakeBc();
+  const o = async () => ({
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+    cache,
+  });
+  await buildApps(bc, "C1", await o());
+  assertEquals(bc.compiles, ["Core", "Rental", "Test"]);
+  const again = await buildApps(bc, "C1", await o());
+  assertEquals(bc.compiles.length, 3, "an unchanged build is reused");
+  assert(again.every((b) => b.ok && !b.attempted && b.file !== null));
+  for (const b of again) await Deno.stat(b.file!);
+  await write(
+    ws,
+    "Rental/src/R.al",
+    `codeunit 70200 "CGR Rental"\n{\n    // changed\n}\n`,
+  );
+  await buildApps(bc, "C1", await o());
+  assertEquals(bc.compiles.slice(3), ["Rental", "Test"]);
+});
+
+/** The lock plus a second package that the workspace's Core collides with. */
+async function lockWith(
+  extra: { app_id: string; file: string },
+): Promise<LockedSymbols> {
+  const lk = await lock();
+  await Deno.writeTextFile(join(lk.store, "staging.app"), "microsoft-symbols");
+  const sha256 = await hashFile(lk.store, join(lk.store, "staging.app"));
+  await Deno.rename(
+    join(lk.store, "staging.app"),
+    join(lk.store, `${sha256}.app`),
+  );
+  lk.packages.push({
+    ...extra,
+    name: "Base Application",
+    publisher: "Microsoft",
+    version: "28.0.0.0",
+    sha256,
+  });
+  return lk;
+}
+
+const BASE_ID = "437dbf0e-84ff-417a-965d-ed2bb9650972";
+
+for (
+  const file of [
+    "CentralGauge_CGR Core_1.0.7.7.app",
+    "centralgauge_cgr core_1.0.7.7.APP",
+  ]
+) {
+  Deno.test(`buildApps: a workspace app whose output file is a locked package's (${file}) is the app's build failure; the locked package is never overwritten`, async () => {
+    const ws = await workspace();
+    const lk = await lockWith({ app_id: BASE_ID, file });
+    const bc = new FakeBc();
+    const outDir = await tmp();
+    const built = await buildApps(bc, "C1", {
+      srcDir: ws,
+      apps: await readAppGraph(ws),
+      versions: new Map([["Core", "1.0.7.7"]]),
+      outDir,
+      lock: lk,
+    });
+    assertEquals(bc.compiles, ["Core"], "no dependent compiles against it");
+    const core = built.find((b) => b.folder === "Core")!;
+    assertEquals([core.ok, core.attempted, core.file], [false, true, null]);
+    const msg = core.diagnostics.map((d) => d.message).join("\n");
+    assertStringIncludes(msg, "CentralGauge_CGR Core_1.0.7.7.app");
+    assertStringIncludes(msg, file);
+    assert(built.every((b) => !b.ok));
+    const kept: string[] = [];
+    for await (const e of Deno.readDir(join(outDir, ".apps"))) {
+      kept.push(e.name);
+    }
+    assertEquals(kept, [], "the colliding build is not kept");
+  });
+}
+
+Deno.test("buildApps: a workspace app whose id is a locked package's is the app's build failure, never compiled", async () => {
+  const ws = await workspace();
+  const lk = await lockWith({
+    app_id: IDS.core.toUpperCase(),
+    file: "Microsoft_Base Application_28.0.0.0.app",
+  });
+  const bc = new FakeBc();
+  const built = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  assertEquals(bc.compiles, []);
+  const core = built.find((b) => b.folder === "Core")!;
+  assertEquals([core.ok, core.attempted], [false, false]);
+  assertStringIncludes(core.diagnostics[0]!.message, IDS.core);
+  assertStringIncludes(
+    core.diagnostics[0]!.message,
+    "Microsoft_Base Application_28.0.0.0.app",
+  );
+});
+
+Deno.test("buildApps: a reused build is refused on an id or file name collision, never reused past the check", async () => {
+  const ws = await workspace();
+  const stash = await tmp();
+  const colliding = join(stash, "Microsoft_Base Application_28.0.0.0.app");
+  await Deno.writeTextFile(colliding, "agent build");
+  const cache = {
+    get: () => Promise.resolve(colliding),
+    put: () => Promise.resolve(),
+  };
+  const bc = new FakeBc();
+  const byName = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lockWith({
+      app_id: BASE_ID,
+      file: "microsoft_base application_28.0.0.0.app",
+    }),
+    cache,
+  });
+  const core = byName.find((b) => b.folder === "Core")!;
+  assertEquals([core.ok, core.file], [false, null]);
+  assertStringIncludes(
+    core.diagnostics[0]!.message,
+    "microsoft_base application_28.0.0.0.app",
+  );
+  assert(byName.every((b) => !b.ok));
+  const byId = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lockWith({ app_id: IDS.core, file: "Other.app" }),
+    cache,
+  });
+  assertEquals(byId.find((b) => b.folder === "Core")!.ok, false);
+  assertStringIncludes(byId[0]!.diagnostics[0]!.message, IDS.core);
+  assertEquals(bc.compiles, []);
+});
+
+Deno.test("buildApps: a prebuilt workspace file named as a locked package is refused, never copied over it", async () => {
+  const ws = await workspace();
+  const stash = await tmp();
+  const pre = join(stash, "Microsoft_Library Assert_28.0.0.0.app");
+  await Deno.writeTextFile(pre, "agent build");
+  const bc = new FakeBc();
+  const apps = (await readAppGraph(ws)).filter((a) => a.folder === "Rental");
+  await assertRejects(
+    async () =>
+      buildApps(bc, "C1", {
+        srcDir: ws,
+        apps,
+        versions: new Map(),
+        outDir: stash,
+        lock: await lock(),
+        prebuilt: new Map([["Core", pre]]),
+      }),
+    ValidationError,
+    "Microsoft_Library Assert_28.0.0.0.app",
+  );
+  assertEquals(bc.compiles, []);
+});
+
+const ASSERT_FILE = "Microsoft_Library Assert_28.0.0.0.app";
+const appInfoStore = async (lk: LockedSymbols) => {
+  const dir = join(lk.store, "appinfo");
+  const out: Record<string, unknown> = {};
+  try {
+    for await (const e of Deno.readDir(dir)) {
+      Object.assign(
+        out,
+        JSON.parse(await Deno.readTextFile(join(dir, e.name))),
+      );
+    }
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  return out;
+};
+
+Deno.test("buildApps: an agent-planted .ALPACKAGES app info cache (any case) is dropped and never harvested", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  for (const folder of [".ALPACKAGES", ".alpackages"]) {
+    await write(
+      ws,
+      `Core/${folder}/cache_AppInfo.json`,
+      JSON.stringify({ [`.\\${ASSERT_FILE}`]: { name: "FORGED" } }),
+    );
+  }
+  const bc = new FakeBc();
+  const seen = new Map<string, string[] | null>();
+  bc.onCompile = async (dir) => {
+    seen.set(
+      basename(dir),
+      await Deno.readTextFile(join(dir, ".alpackages", "cache_AppInfo.json"))
+        .then((t) => Object.keys(JSON.parse(t)), () => null),
+    );
+  };
+  await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  assertEquals(seen.get("Core"), null, "no planted cache reaches the compile");
+  assertEquals(await appInfoStore(lk), {}, "nothing forged is harvested");
+});
+
+Deno.test("buildApps: a harvest keeps only locked packages that hash-verified in this build", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const bc = new FakeBc();
+  let n = 0;
+  bc.onCompile = async (dir) => {
+    const pk = join(dir, ".alpackages");
+    const entries: Record<string, unknown> = {
+      [`.\\${ASSERT_FILE}`]: { name: "assert" },
+      ".\\Not_Locked_1.0.0.0.app": { name: "other" },
+    };
+    // First compile: the locked package is gone from the folder (not verified).
+    if (++n === 1) await Deno.remove(join(pk, ASSERT_FILE));
+    await Deno.writeTextFile(
+      join(pk, "cache_AppInfo.json"),
+      JSON.stringify(entries),
+    );
+  };
+  const o = async () => ({
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  await buildApps(bc, "C1", await o());
+  assertEquals(
+    await appInfoStore(lk),
+    {},
+    "an unverified locked entry is not kept",
+  );
+  await buildApps(bc, "C1", await o());
+  assertEquals(Object.keys(await appInfoStore(lk)), [`.\\${ASSERT_FILE}`]);
+});
+
+Deno.test("buildApps: the build cache key holds the compiler identity, not only the container name", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const cache = dirBuildCache(await tmp());
+  const bc = new FakeBc();
+  const o = async () => ({
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+    cache,
+  });
+  await buildApps(bc, "C1", await o());
+  await buildApps(bc, "C1", await o());
+  assertEquals(bc.compiles, ["Core"]);
+  bc.compilerId = "fake-artifact-29|bccontainerhelper 6.1.14";
+  await buildApps(bc, "C1", await o());
+  assertEquals(
+    bc.compiles,
+    ["Core", "Core"],
+    "a recreated or upgraded container misses",
+  );
+});
+
+// ---- M1-40b: restore only each app's declared dependency closure ----
+
+const SYSTEM_ID = "8874ed3a-0643-4247-9ced-7a7002f7135d";
+const APPLICATION_ID = "c1335042-3002-4257-bf8a-75c898ccb1b8";
+const UNRELATED_ID = "11111111-2222-4333-8444-555555555555";
+
+/** A lock of five Microsoft packages with their app info (as BCH reports it). */
+async function closureLock() {
+  const store = await tmp();
+  const pkgs: Array<[string, string, string, string[]]> = [
+    [SYSTEM_ID, "System", "Microsoft_System_28.0.0.0.app", []],
+    [BASE_ID, "Base Application", "Microsoft_Base Application_28.0.0.0.app", [
+      SYSTEM_ID,
+    ]],
+    [APPLICATION_ID, "Application", "Microsoft_Application_28.0.0.0.app", [
+      BASE_ID,
+    ]],
+    [IDS.assert, "Library Assert", "Microsoft_Library Assert_28.0.0.0.app", [
+      SYSTEM_ID,
+    ]],
+    [UNRELATED_ID, "Unrelated", "Microsoft_Unrelated_28.0.0.0.app", [
+      SYSTEM_ID,
+    ]],
+  ];
+  const packages = [];
+  const info: Record<string, { appId: string; deps: string[] }> = {};
+  for (const [id, name, file, deps] of pkgs) {
+    await Deno.writeTextFile(join(store, "staging.app"), `symbols of ${name}`);
+    const sha256 = await hashFile(store, join(store, "staging.app"));
+    await Deno.rename(join(store, "staging.app"), join(store, `${sha256}.app`));
+    packages.push({
+      app_id: id,
+      name,
+      publisher: "Microsoft",
+      version: "28.0.0.0",
+      file,
+      sha256,
+    });
+    info[file] = { appId: id, deps };
+  }
+  return { lock: { store, packages } as LockedSymbols, info };
+}
+
+/** A BCH stand-in writing its app info cache (appId and dependencies) for every package present. */
+function bchAppInfo(
+  bc: FakeBc,
+  info: Record<string, { appId: string; deps: string[] }>,
+) {
+  bc.onCompile = async (dir) => {
+    const pk = join(dir, ".alpackages");
+    const cache: Record<string, unknown> = {};
+    for await (const e of Deno.readDir(pk)) {
+      const i = info[e.name];
+      if (!i) continue;
+      cache[`.\\${e.name}`] = {
+        appId: i.appId,
+        publisher: "Microsoft",
+        name: e.name,
+        version: "28.0.0.0",
+        application: "",
+        platform: "28.0.0.0",
+        propagateDependencies: false,
+        dependencies: i.deps.map((id) => ({
+          id,
+          name: id,
+          publisher: "Microsoft",
+          version: "28.0.0.0",
+        })),
+      };
+    }
+    await Deno.writeTextFile(
+      join(pk, "cache_AppInfo.json"),
+      JSON.stringify(cache),
+    );
+  };
+}
+
+Deno.test("buildApps: once the app info is harvested, the restore holds exactly the declared dependency closure", async () => {
+  const ws = await workspace();
+  const { lock: lk, info } = await closureLock();
+  const bc = new FakeBc();
+  bchAppInfo(bc, info);
+  const o = async () => ({
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  // First build: no harvest yet, so the whole lock is restored (and harvested).
+  await buildApps(bc, "C1", await o());
+  assertEquals(
+    bc.compileSeen.get("Core")!.filter((f) => f.startsWith("Microsoft_"))
+      .length,
+    5,
+  );
+  const second = await buildApps(bc, "C1", await o());
+  assert(second.every((b) => b.ok));
+  const ms = (folder: string) =>
+    bc.compileSeen.get(folder)!.filter((f) => f.startsWith("Microsoft_"));
+  // Core: application and platform only (Application -> Base -> System).
+  assertEquals(ms("Core"), [
+    "Microsoft_Application_28.0.0.0.app",
+    "Microsoft_Base Application_28.0.0.0.app",
+    "Microsoft_System_28.0.0.0.app",
+  ]);
+  // Test also declares Library Assert; nothing unrelated is ever restored.
+  assertEquals(ms("Test"), [
+    "Microsoft_Application_28.0.0.0.app",
+    "Microsoft_Base Application_28.0.0.0.app",
+    "Microsoft_Library Assert_28.0.0.0.app",
+    "Microsoft_System_28.0.0.0.app",
+  ]);
+});
+
+Deno.test("buildApps: a package the app uses but does not declare fails its compile", async () => {
+  const ws = await workspace();
+  await write(
+    ws,
+    "Core/src/C.al",
+    `codeunit 70000 "CGR Core"\n{\n    // needs Microsoft_Library Assert_28.0.0.0.app\n}\n`,
+  );
+  const { lock: lk, info } = await closureLock();
+  const bc = new FakeBc();
+  bchAppInfo(bc, info);
+  const o = async () => ({
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  await buildApps(bc, "C1", await o()); // harvest (full restore)
+  const [core] = await buildApps(bc, "C1", await o());
+  assertEquals(core!.ok, false, "Core does not declare Library Assert");
+});
+
+Deno.test("buildApps: a BOM app.json builds like one without", async () => {
+  const ws = await workspace();
+  const p = join(ws, "Core", "app.json");
+  await Deno.writeTextFile(p, "\uFEFF" + await Deno.readTextFile(p));
+  const bc = new FakeBc();
+  const built = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map([["Core", "1.0.7.7"]]),
+    outDir: await tmp(),
+    lock: await lock(),
+  });
+  assert(built.every((b) => b.ok));
+  assertEquals((await readApp(built[0]!.file!)).version, "1.0.7.7");
 });

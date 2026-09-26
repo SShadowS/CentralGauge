@@ -1109,109 +1109,6 @@ Deno.test("harnessImagesBuild: a base tag that moves between inspect and build c
   assertEquals(f.base_digest, baseId);
 });
 
-// M2-08: stub-provider cells from the CLI.
-
-/** An opener that honours the command's records root (the stub cell picks <results>/stub-cells). */
-const rootedOpener = (t: TestEnv) => (o: { resultsDir: string }) =>
-  Promise.resolve({
-    env: {
-      ...t.env,
-      resultsRoot: o.resultsDir,
-      store: new RecordStore(o.resultsDir),
-    },
-    close: () => Promise.resolve(),
-  });
-
-async function scenarioFile(t: TestEnv): Promise<string> {
-  const p = join(t.env.privateRoot, "scenario.json");
-  await Deno.writeTextFile(p, JSON.stringify({ steps: [] }));
-  return p;
-}
-
-Deno.test("harnessCell: --image is refused without --stub-provider", async () => {
-  const t = await makeEnv();
-  await writeCatalog(t);
-  await assertRejects(
-    () =>
-      harnessCell(
-        "cc-sonnet-plain",
-        "HX-001",
-        cellOpts(t, { image: `sha256:${"d".repeat(64)}` }),
-        opener(t),
-        () => true,
-        noInterrupt,
-      ),
-    ConfigurationError,
-    "--stub-provider",
-  );
-  assertEquals(t.docker.runs, []);
-});
-
-Deno.test("harnessCell: a stub cell needs no supervision, records under <results>/stub-cells, is never judged", async () => {
-  const t = await makeEnv();
-  await writeCatalog(t);
-  const results = join(t.repo.root, "results", "harness");
-  const mounted: string[] = [];
-  const inner = t.docker.behavior;
-  t.docker.behavior = async (call, io) => {
-    const dir = call.mounts.get("C:\\cg-stub")!.src;
-    mounted.push(
-      await Deno.readTextFile(join(dir, "scenario.json")),
-      String((await Deno.stat(join(dir, "stub-anthropic.mjs"))).isFile),
-    );
-    return await inner(call, io);
-  };
-  const r = await harnessCell(
-    "cc-sonnet-plain",
-    "HX-001",
-    cellOpts(t, {
-      resultsDir: results,
-      supervised: false,
-      stubProvider: await scenarioFile(t),
-    }),
-    rootedOpener(t),
-    () => false,
-    noInterrupt,
-  );
-  const e = r.executions[0]!;
-  const store = new RecordStore(join(results, "stub-cells"));
-  assertEquals((await store.executions(e.campaign_id)).length, 1);
-  assertEquals(await store.judgments(e.id), []);
-  const call = t.docker.runs.at(-1)!;
-  assertEquals(call.env.get("ANTHROPIC_BASE_URL"), "http://127.0.0.1:3400");
-  assertEquals(mounted, [JSON.stringify({ steps: [] }), "true"]);
-  // The stub dir is removed after the cell; the attempt persisted its mode.
-  const gone = await Deno.stat(call.mounts.get("C:\\cg-stub")!.src).then(
-    () => false,
-    () => true,
-  );
-  assertEquals(gone, true);
-});
-
-Deno.test("harnessCell: a malformed stub scenario is refused before anything runs", async () => {
-  const t = await makeEnv();
-  await writeCatalog(t);
-  const bad = join(t.env.privateRoot, "bad.json");
-  await Deno.writeTextFile(bad, JSON.stringify({ steps: "no" }));
-  await assertRejects(
-    () =>
-      harnessCell(
-        "cc-sonnet-plain",
-        "HX-001",
-        cellOpts(t, {
-          resultsDir: join(t.repo.root, "results", "harness"),
-          stubProvider: bad,
-        }),
-        rootedOpener(t),
-        () => true,
-        noInterrupt,
-      ),
-    ConfigurationError,
-    "scenario",
-  );
-  assertEquals(t.docker.runs, []);
-});
-
 // ---- M1-24b: run, rejudge, qualify ----
 
 async function mockExperiment(t: TestEnv, id = "contract") {
@@ -1564,4 +1461,169 @@ Deno.test("rejudge: an oracle-only change makes every judged execution due, judg
     (await harnessRejudge("contract", runOpts(t), opener(t))).rejudged,
     0,
   );
+});
+
+Deno.test("harnessReport: efficiency and slices read the store's published host and verdict logs", async () => {
+  const dir = await storeWithOneCell();
+  const store = new RecordStore(dir);
+  const c = (await store.campaigns("skills-vs-plain"))[0]!;
+  const [e] = await store.executions(c.id);
+  const [j] = await store.judgments(e!.id);
+  await write(
+    dir,
+    `runs/${e!.id}/host-log.jsonl`,
+    JSON.stringify({
+      v: 1,
+      request: crypto.randomUUID(),
+      execution: e!.id,
+      op: "compile",
+      status: 200,
+      outcome: "ok",
+      at: "2026-10-01T10:00:00.000Z",
+      spans: {},
+      apps_compiled: ["Core"],
+      per_app_compiles: 1,
+      diagnostics: 0,
+      tests_run: 0,
+      tests_failed: 0,
+      container: "C1",
+      retries: 0,
+    }) + "\n",
+  );
+  await write(
+    dir,
+    `verdicts/${j!.id}.json`,
+    JSON.stringify({ spans: { total_ms: 42, queue_ms: 7 } }),
+  );
+  const r = await harnessReport("skills-vs-plain", {
+    resultsDir: dir,
+    ...OPTS,
+  });
+  const eff = r.efficiency.find((x) => x.arm === e!.arm)!;
+  assertEquals(
+    [eff.backend_requests, eff.logical_builds, eff.verdict_ms_median],
+    [1, 1, 42],
+  );
+  assert(r.slices.length > 0);
+});
+
+Deno.test("openHarnessEnv: the lane comes from CG_LANE, never a placeholder", async () => {
+  const t = await makeEnv();
+  const prev = Deno.env.get("CG_LANE");
+  try {
+    Deno.env.set("CG_LANE", "lane-ops");
+    const h = await openHarnessEnv(envOpts(t), deps([]));
+    assertEquals(h.env.lane_id, "lane-ops");
+    await h.close();
+    Deno.env.delete("CG_LANE");
+    const u = await openHarnessEnv(envOpts(t), deps([]));
+    assertEquals(u.env.lane_id, "", "unset: the reservation refuses it");
+    await u.close();
+  } finally {
+    if (prev === undefined) Deno.env.delete("CG_LANE");
+    else Deno.env.set("CG_LANE", prev);
+  }
+});
+
+// M2-08: stub-provider cells from the CLI.
+
+/** An opener that honours the command's records root (the stub cell picks <results>/stub-cells). */
+const rootedOpener = (t: TestEnv) => (o: { resultsDir: string }) =>
+  Promise.resolve({
+    env: {
+      ...t.env,
+      resultsRoot: o.resultsDir,
+      store: new RecordStore(o.resultsDir),
+    },
+    close: () => Promise.resolve(),
+  });
+
+async function scenarioFile(t: TestEnv): Promise<string> {
+  const p = join(t.env.privateRoot, "scenario.json");
+  await Deno.writeTextFile(p, JSON.stringify({ steps: [] }));
+  return p;
+}
+
+Deno.test("harnessCell: --image is refused without --stub-provider", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await assertRejects(
+    () =>
+      harnessCell(
+        "cc-sonnet-plain",
+        "HX-001",
+        cellOpts(t, { image: `sha256:${"d".repeat(64)}` }),
+        opener(t),
+        () => true,
+        noInterrupt,
+      ),
+    ConfigurationError,
+    "--stub-provider",
+  );
+  assertEquals(t.docker.runs, []);
+});
+
+Deno.test("harnessCell: a stub cell needs no supervision, records under <results>/stub-cells, is never judged", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const results = join(t.repo.root, "results", "harness");
+  const mounted: string[] = [];
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    const dir = call.mounts.get("C:\\cg-stub")!.src;
+    mounted.push(
+      await Deno.readTextFile(join(dir, "scenario.json")),
+      String((await Deno.stat(join(dir, "stub-anthropic.mjs"))).isFile),
+    );
+    return await inner(call, io);
+  };
+  const r = await harnessCell(
+    "cc-sonnet-plain",
+    "HX-001",
+    cellOpts(t, {
+      resultsDir: results,
+      supervised: false,
+      stubProvider: await scenarioFile(t),
+    }),
+    rootedOpener(t),
+    () => false,
+    noInterrupt,
+  );
+  const e = r.executions[0]!;
+  const store = new RecordStore(join(results, "stub-cells"));
+  assertEquals((await store.executions(e.campaign_id)).length, 1);
+  assertEquals(await store.judgments(e.id), []);
+  const call = t.docker.runs.at(-1)!;
+  assertEquals(call.env.get("ANTHROPIC_BASE_URL"), "http://127.0.0.1:3400");
+  assertEquals(mounted, [JSON.stringify({ steps: [] }), "true"]);
+  // The stub dir is removed after the cell; the attempt persisted its mode.
+  const gone = await Deno.stat(call.mounts.get("C:\\cg-stub")!.src).then(
+    () => false,
+    () => true,
+  );
+  assertEquals(gone, true);
+});
+
+Deno.test("harnessCell: a malformed stub scenario is refused before anything runs", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const bad = join(t.env.privateRoot, "bad.json");
+  await Deno.writeTextFile(bad, JSON.stringify({ steps: "no" }));
+  await assertRejects(
+    () =>
+      harnessCell(
+        "cc-sonnet-plain",
+        "HX-001",
+        cellOpts(t, {
+          resultsDir: join(t.repo.root, "results", "harness"),
+          stubProvider: bad,
+        }),
+        rootedOpener(t),
+        () => true,
+        noInterrupt,
+      ),
+    ConfigurationError,
+    "scenario",
+  );
+  assertEquals(t.docker.runs, []);
 });
