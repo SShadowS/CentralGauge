@@ -24,10 +24,14 @@ import {
 import { isInfraError } from "../health/is-infra-error.ts";
 import { InfraRetriesExhaustedError } from "../parallel/errors.ts";
 import {
+  appVersions,
   type BcLane,
   buildApps,
+  type BuildCache,
+  changedApps,
   deployAndTest,
   type DeployContext,
+  dirBuildCache,
   LaneCancelledError,
   type LockedSymbols,
   prepareApps,
@@ -36,13 +40,12 @@ import {
   CopyLimitError,
   type CopyLimits,
   DEFAULT_COPY_LIMITS,
-  exists,
   safeCopyTree,
   scanReparsePoints,
   validatedDir,
 } from "./fsutil.ts";
 import { createHash } from "node:crypto";
-import { hashTree, isTaskBuildArtifact } from "./hash.ts";
+import { isTaskBuildArtifact } from "./hash.ts";
 import { readAppGraph, readAppJson, type StagedApp } from "./staging.ts";
 import { TEST_APP, testCodeunits, validateApps } from "./verdict-workspace.ts";
 
@@ -90,6 +93,8 @@ export interface OpContext {
   workDir: string;
   /** Aborted when the grant is revoked past its grace. */
   signal: AbortSignal;
+  /** This execution's builds, reused while their inputs are unchanged (M1-40). */
+  buildCache: BuildCache;
 }
 
 export interface OpResult {
@@ -490,14 +495,25 @@ export class Backend {
       void inflight.finally(() => this.draining.delete(executionId));
     }
     this.grants.delete(executionId);
-    if (!inflight) return true;
+    if (!inflight) {
+      await this.dropBuildCache(executionId);
+      return true;
+    }
     const grace = this.o.revokeGraceMs ?? 30_000;
     if (!await drainedWithin(inflight, grace)) {
       st.abort.abort(new Error("grant revoked"));
       if (!await drainedWithin(inflight, grace)) return false;
     }
     this.draining.delete(executionId);
+    await this.dropBuildCache(executionId);
     return true;
+  }
+
+  /** The execution's build cache ends with its grant (nothing in flight). */
+  private async dropBuildCache(executionId: string): Promise<void> {
+    await Deno.remove(join(this.o.workRoot, executionId, "build-cache"), {
+      recursive: true,
+    }).catch(() => {});
   }
 
   private async append(g: BackendGrant, line: HostLogLine) {
@@ -735,6 +751,9 @@ export class Backend {
         requestId,
         workDir,
         signal,
+        buildCache: dirBuildCache(
+          join(this.o.workRoot, st.g.executionId, "build-cache"),
+        ),
       };
       const r = op === "compile"
         ? await this.o.ops.compile(ctx, apps)
@@ -935,19 +954,32 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
       const selected = apps.length === 0
         ? ctx.apps
         : withDependencies(ctx.apps, apps);
-      const versions = new Map(
-        ctx.grant.trusted.map((a) => [a.folder, a.version]),
+      const changed = await changedApps(
+        ctx.grant.pristine,
+        ctx.grant.trusted,
+        ctx.snapshot,
       );
       const t0 = performance.now();
-      const built = await lane.compile((c) =>
-        buildApps(lane.bc, c, {
+      const built = await lane.compile(async (c) => {
+        // The test path's versions, so its builds are reused by a later test.
+        const { versions } = await appVersions(lane.bc, c, {
+          pristine: ctx.grant.pristine,
+          pristineApps: ctx.grant.trusted,
+          candidateDir: ctx.snapshot,
+          candidateApps: ctx.apps,
+          changed,
+          lock: ctx.grant.lock,
+        });
+        return await buildApps(lane.bc, c, {
           srcDir: ctx.snapshot,
           apps: selected,
           versions,
           outDir: ctx.workDir,
           lock: ctx.grant.lock,
           signal: ctx.signal,
-        }), ctx.signal);
+          cache: ctx.buildCache,
+        });
+      }, ctx.signal);
       const ok = built.every((b) => b.ok);
       return {
         body: {
@@ -967,15 +999,11 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
       };
     },
     async test(ctx, codeunits) {
-      const changed: string[] = [];
-      for (const a of ctx.grant.trusted) {
-        const now = join(ctx.snapshot, a.folder);
-        if (
-          !await exists(now) ||
-          await hashTree(join(ctx.grant.pristine, a.folder), "task") !==
-            await hashTree(now, "task")
-        ) changed.push(a.folder);
-      }
+      const changed = await changedApps(
+        ctx.grant.pristine,
+        ctx.grant.trusted,
+        ctx.snapshot,
+      );
       const prep = await prepareApps(lane, {
         pristine: ctx.grant.pristine,
         pristineApps: ctx.grant.trusted,
@@ -985,6 +1013,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
         workDir: ctx.workDir,
         lock: ctx.grant.lock,
         signal: ctx.signal,
+        cache: ctx.buildCache,
       });
       const compiled = prep.built.filter((b) => b.attempted).map((b) =>
         b.folder

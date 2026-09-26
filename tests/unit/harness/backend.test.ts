@@ -1151,3 +1151,28 @@ Deno.test("backend: the snapshot digest enforces the copy limits while reading: 
   }
   assertEquals(whole.filter((p) => p.endsWith("Big.al")), []);
 });
+
+Deno.test("production ops: a test after a compile of the same workspace rebuilds nothing", async () => {
+  const s = await setup();
+  const bc = new FakeBc(() => result({ A: true }));
+  const exec = "00000000-0000-4000-8000-00000000e0c1";
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend-reuse"),
+    ops: defaultBackendOps(new BcLane(bc, ["C1"])),
+    allowedHosts: ["127.0.0.1"],
+  });
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hl-reuse.jsonl"));
+  assertEquals(
+    (await b.handle(req("/v1/compile", tok, '{"apps":[]}', exec))).status,
+    200,
+  );
+  const compiled = bc.compiles.length;
+  assert(compiled > 0);
+  const r = await b.handle(req("/v1/test", tok, "{}", exec));
+  assertEquals(r.status, 200);
+  assertEquals(bc.compiles.length, compiled, "test reused the unchanged build");
+  const lines = await readHostLog(join(s.root, "hl-reuse.jsonl"));
+  assertEquals(lines.at(-1)!.per_app_compiles, 0);
+});

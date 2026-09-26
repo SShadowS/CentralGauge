@@ -16,6 +16,7 @@ import {
   classifyTestFailure,
   deploy,
   deployAndTest,
+  dirBuildCache,
   type LockedSymbols,
   prepareApps,
   runTests,
@@ -923,4 +924,81 @@ Deno.test("deploy: owned apps with kept tenant data at a higher version are clea
     ["Continia Core"],
     "a foreign app's data is never touched",
   );
+});
+
+/** A BCH stand-in: after each compile, the app info cache lists every package in .alpackages. */
+function appInfoWriter(bc: FakeBc, seen: Map<string, string[] | null>) {
+  bc.onCompile = async (dir) => {
+    const pk = join(dir, ".alpackages");
+    const file = join(pk, "cache_AppInfo.json");
+    const before = await Deno.readTextFile(file).then(
+      (t) => Object.keys(JSON.parse(t)).sort(),
+      () => null,
+    );
+    seen.set(basename(dir), before);
+    const cache: Record<string, unknown> = {};
+    for await (const e of Deno.readDir(pk)) {
+      if (e.name.endsWith(".app")) cache[`.\\${e.name}`] = { name: e.name };
+    }
+    await Deno.writeTextFile(file, JSON.stringify(cache));
+  };
+}
+
+Deno.test("buildApps: the locked packages' app info cache is harvested once and seeded into later compiles, never a workspace app", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const bc = new FakeBc();
+  const first = new Map<string, string[] | null>();
+  appInfoWriter(bc, first);
+  const o = async () => ({
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  await buildApps(bc, "C1", await o());
+  assertEquals(
+    first.get("Core"),
+    null,
+    "nothing harvested before the first compile",
+  );
+  const second = new Map<string, string[] | null>();
+  appInfoWriter(bc, second);
+  await buildApps(bc, "C1", await o());
+  const locked = [".\\Microsoft_Library Assert_28.0.0.0.app"];
+  assertEquals(second.get("Core"), locked);
+  assertEquals(
+    second.get("Test"),
+    locked,
+    "the workspace-built Core and Rental are never seeded",
+  );
+});
+
+Deno.test("buildApps: a build cache reuses an unchanged app; a changed source rebuilds it and its dependents", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const cache = dirBuildCache(await tmp());
+  const bc = new FakeBc();
+  const o = async () => ({
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+    cache,
+  });
+  await buildApps(bc, "C1", await o());
+  assertEquals(bc.compiles, ["Core", "Rental", "Test"]);
+  const again = await buildApps(bc, "C1", await o());
+  assertEquals(bc.compiles.length, 3, "an unchanged build is reused");
+  assert(again.every((b) => b.ok && !b.attempted && b.file !== null));
+  for (const b of again) await Deno.stat(b.file!);
+  await write(
+    ws,
+    "Rental/src/R.al",
+    `codeunit 70200 "CGR Rental"\n{\n    // changed\n}\n`,
+  );
+  await buildApps(bc, "C1", await o());
+  assertEquals(bc.compiles.slice(3), ["Rental", "Test"]);
 });

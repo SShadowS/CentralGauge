@@ -5,7 +5,7 @@
  * withInfraRetry; alerted containers are never selected.
  */
 
-import { basename, join } from "@std/path";
+import { basename, dirname, join } from "@std/path";
 import type { z } from "zod";
 import type {
   ALProject,
@@ -41,8 +41,8 @@ import {
   trustedHarnessAppIds,
   type WantedApp,
 } from "./bc-apps.ts";
-import { safeCopyTree } from "./fsutil.ts";
-import { hashFile, hashJson, isTaskBuildArtifact } from "./hash.ts";
+import { exists, safeCopyTree } from "./fsutil.ts";
+import { hashFile, hashJson, hashTree, isTaskBuildArtifact } from "./hash.ts";
 import { restoreSymbols } from "./symbols.ts";
 
 export interface HarnessBc {
@@ -372,6 +372,137 @@ const synthetic = (message: string): CompilationError => ({
  * packages plus every earlier (or prebuilt) workspace app; after the
  * compile nothing else may be there (BCH filled a gap from its cache).
  */
+/**
+ * Built .app files of one execution, keyed by the exact build inputs
+ * (buildKey): an unchanged app is never compiled twice (M1-40). Failures are
+ * never cached.
+ */
+export interface BuildCache {
+  get(key: string): Promise<string | null>;
+  put(key: string, file: string): Promise<void>;
+}
+
+/** A BuildCache in a private directory: <dir>/<key>/<the .app file name>. */
+export function dirBuildCache(dir: string): BuildCache {
+  return {
+    async get(key) {
+      try {
+        for await (const e of Deno.readDir(join(dir, key))) {
+          if (e.isFile && e.name.endsWith(".app")) {
+            return join(dir, key, e.name);
+          }
+        }
+      } catch (err) {
+        if (!(err instanceof Deno.errors.NotFound)) throw err;
+      }
+      return null;
+    },
+    async put(key, file) {
+      const tmp = join(dir, `.tmp-${crypto.randomUUID()}`);
+      await Deno.mkdir(tmp, { recursive: true });
+      await Deno.copyFile(file, join(tmp, basename(file)));
+      try {
+        await Deno.rename(tmp, join(dir, key));
+      } catch {
+        // A concurrent put of the same key won; its file is the same build.
+        await Deno.remove(tmp, { recursive: true }).catch(() => {});
+      }
+    },
+  };
+}
+
+/** What makes a build reusable: the app's source, its version, its dependencies' files, the compiler and the lock. */
+async function buildKey(
+  container: string,
+  app: StagedApp,
+  srcDir: string,
+  version: string,
+  files: ReadonlyMap<string, string>,
+  lockDigest: string,
+): Promise<string> {
+  const deps: [string, string][] = [];
+  for (const d of app.depends) {
+    const f = files.get(d)!;
+    deps.push([d, await hashFile(dirname(f), f)]);
+  }
+  return await hashJson({
+    folder: app.folder,
+    version,
+    source: await hashTree(join(srcDir, app.folder), "task"),
+    deps,
+    container,
+    lock: lockDigest,
+  });
+}
+
+/**
+ * BCH reads the manifest of every package in the project's .alpackages with
+ * one altool process each, caching the result in cache_AppInfo.json keyed by
+ * the relative file name. Each build has a fresh .alpackages, so without a
+ * seed every compile rereads all ~200 locked packages. The locked packages'
+ * entries are harvested once per lock (from a compile whose packages passed
+ * the lock check) and seeded into every later compile; a workspace-built
+ * package is never harvested or seeded.
+ */
+const APPINFO_CACHE = "cache_AppInfo.json";
+const cachedName = (key: string) => key.replace(/^\.[\\/]/, "");
+
+async function seedAppInfo(
+  pk: string,
+  store: string,
+  lockDigest: string,
+  locked: ReadonlySet<string>,
+  exclude: ReadonlySet<string>,
+): Promise<void> {
+  let saved: Record<string, unknown>;
+  try {
+    saved = JSON.parse(
+      await Deno.readTextFile(join(store, "appinfo", `${lockDigest}.json`)),
+    );
+  } catch {
+    return; // none yet, or unreadable: BCH rebuilds it
+  }
+  const seed = Object.fromEntries(
+    Object.entries(saved).filter(([k]) =>
+      locked.has(cachedName(k)) && !exclude.has(cachedName(k))
+    ),
+  );
+  if (Object.keys(seed).length > 0) {
+    await Deno.writeTextFile(join(pk, APPINFO_CACHE), JSON.stringify(seed));
+  }
+}
+
+async function harvestAppInfo(
+  pk: string,
+  store: string,
+  lockDigest: string,
+  locked: ReadonlySet<string>,
+  exclude: ReadonlySet<string>,
+): Promise<void> {
+  let fresh: Record<string, unknown>;
+  try {
+    fresh = JSON.parse(await Deno.readTextFile(join(pk, APPINFO_CACHE)));
+  } catch {
+    return;
+  }
+  const path = join(store, "appinfo", `${lockDigest}.json`);
+  const saved: Record<string, unknown> = await Deno.readTextFile(path).then(
+    (t) => JSON.parse(t),
+    () => ({}),
+  );
+  const add = Object.entries(fresh).filter(([k]) =>
+    locked.has(cachedName(k)) && !exclude.has(cachedName(k)) && !(k in saved)
+  );
+  if (add.length === 0) return;
+  await Deno.mkdir(join(store, "appinfo"), { recursive: true });
+  const tmp = `${path}.tmp-${crypto.randomUUID()}`;
+  await Deno.writeTextFile(
+    tmp,
+    JSON.stringify({ ...saved, ...Object.fromEntries(add) }),
+  );
+  await Deno.rename(tmp, path);
+}
+
 export async function buildApps(
   bc: HarnessBc,
   container: string,
@@ -384,6 +515,8 @@ export async function buildApps(
     prebuilt?: Map<string, string>;
     /** Cancellation: checked before every compile, so no further app is built after an abort. */
     signal?: AbortSignal;
+    /** Reuse of unchanged builds (per execution, M1-40). */
+    cache?: BuildCache;
   },
 ): Promise<BuiltApp[]> {
   const files = new Map(o.prebuilt ?? []);
@@ -391,6 +524,10 @@ export async function buildApps(
   await Deno.mkdir(join(o.outDir, ".apps"), { recursive: true });
   const lockedIds = new Set(o.lock.packages.map((p) => p.app_id.toLowerCase()));
   const lockedByName = new Map(o.lock.packages.map((p) => [p.file, p.sha256]));
+  const lockedNames = new Set(lockedByName.keys());
+  const lockDigest = await hashJson({
+    lock: o.lock.packages.map((p) => [p.file, p.sha256]),
+  });
   for (const app of o.apps) {
     checkCancel(o.signal);
     const version = o.versions.get(app.folder) ?? app.version;
@@ -429,6 +566,26 @@ export async function buildApps(
       });
       continue;
     }
+    const key = o.cache
+      ? await buildKey(container, app, o.srcDir, version, files, lockDigest)
+      : null;
+    const hit = key ? await o.cache!.get(key) : null;
+    if (hit) {
+      const file = join(o.outDir, ".apps", basename(hit));
+      await Deno.copyFile(hit, file);
+      files.set(app.folder, file);
+      out.push({
+        folder: app.folder,
+        id: app.id,
+        version,
+        ok: true,
+        attempted: false,
+        file,
+        diagnostics: [],
+        compile_ms: 0,
+      });
+      continue;
+    }
     const dir = join(o.outDir, app.folder);
     await Deno.remove(dir, { recursive: true }).catch(() => {});
     await safeCopyTree(join(o.srcDir, app.folder), dir, {
@@ -442,10 +599,16 @@ export async function buildApps(
     );
     const pk = join(dir, ".alpackages");
     await restoreSymbols(o.lock.store, o.lock.packages, pk);
-    const workspaceFiles = new Set<string>();
+    const workspaceFiles = new Set([...files.values()].map((f) => basename(f)));
+    await seedAppInfo(
+      pk,
+      o.lock.store,
+      lockDigest,
+      lockedNames,
+      workspaceFiles,
+    );
     for (const f of files.values()) {
       await Deno.copyFile(f, join(pk, basename(f)));
-      workspaceFiles.add(basename(f));
     }
     const t0 = performance.now();
     const r = await bc.compileProject(container, {
@@ -468,11 +631,20 @@ export async function buildApps(
         );
       }
     }
+    // Every package BCH saw passed the lock check: its app info may be kept.
+    await harvestAppInfo(
+      pk,
+      o.lock.store,
+      lockDigest,
+      lockedNames,
+      workspaceFiles,
+    );
     let file: string | null = null;
     if (r.success && r.artifactPath) {
       file = join(o.outDir, ".apps", basename(r.artifactPath));
       await Deno.copyFile(r.artifactPath, file);
       files.set(app.folder, file);
+      if (key) await o.cache!.put(key, file);
     }
     out.push({
       folder: app.folder,
@@ -497,6 +669,7 @@ export interface PrepareInput {
   workDir: string;
   lock: LockedSymbols;
   signal?: AbortSignal;
+  cache?: BuildCache;
 }
 
 export interface Prepared {
@@ -513,11 +686,25 @@ export function prepareApps(lane: BcLane, o: PrepareInput): Promise<Prepared> {
   return lane.compile((container) => prepareOn(lane, container, o), o.signal);
 }
 
-async function prepareOn(
-  lane: BcLane,
+/**
+ * Versions of a candidate workspace's apps, shared by the test path and the
+ * compile op (so a test reuses the compile's builds, M1-40): candidates (the
+ * changed apps and their dependents) keep the pristine version, unchanged
+ * apps get the stamped prerequisite version.
+ */
+export async function appVersions(
+  bc: HarnessBc,
   container: string,
-  o: PrepareInput,
-): Promise<Prepared> {
+  o: Pick<
+    PrepareInput,
+    | "pristine"
+    | "pristineApps"
+    | "candidateDir"
+    | "candidateApps"
+    | "changed"
+    | "lock"
+  >,
+) {
   const graph = o.candidateApps;
   const pristineVersion = new Map(
     o.pristineApps.map((a) => [a.folder, a.version]),
@@ -525,7 +712,7 @@ async function prepareOn(
   const cands = new Set(candidateFolders(graph, o.changed));
   const buildId = await hashJson({
     symbols: o.lock.packages.map((p) => [p.app_id, p.version, p.sha256]),
-    compiler: await lane.bc.harnessCompilerIdentity(container),
+    compiler: await bc.harnessCompilerIdentity(container),
   });
   const stamps = await appStamps(o.pristine, o.pristineApps, buildId);
   const candStamps = await appStamps(o.candidateDir, graph, buildId);
@@ -536,6 +723,38 @@ async function prepareOn(
       cands.has(a.folder) ? base : prereqVersion(base, stamps.get(a.folder)!),
     ];
   }));
+  return { cands, stamps, candStamps, versions };
+}
+
+/** Apps of the snapshot whose tree differs from the pristine staging (or is gone). */
+export async function changedApps(
+  pristine: string,
+  trusted: readonly StagedApp[],
+  snapshot: string,
+): Promise<string[]> {
+  const changed: string[] = [];
+  for (const a of trusted) {
+    const now = join(snapshot, a.folder);
+    if (
+      !await exists(now) ||
+      await hashTree(join(pristine, a.folder), "task") !==
+        await hashTree(now, "task")
+    ) changed.push(a.folder);
+  }
+  return changed;
+}
+
+async function prepareOn(
+  lane: BcLane,
+  container: string,
+  o: PrepareInput,
+): Promise<Prepared> {
+  const graph = o.candidateApps;
+  const { cands, stamps, candStamps, versions } = await appVersions(
+    lane.bc,
+    container,
+    o,
+  );
   const prereqs = graph.filter((a) => !cands.has(a.folder));
   const pre = await buildApps(lane.bc, container, {
     srcDir: o.pristine,
@@ -544,6 +763,7 @@ async function prepareOn(
     outDir: join(o.workDir, "prereq"),
     lock: o.lock,
     ...(o.signal ? { signal: o.signal } : {}),
+    ...(o.cache ? { cache: o.cache } : {}),
   });
   const failedPre = pre.find((b) => !b.ok);
   if (failedPre) {
@@ -565,6 +785,7 @@ async function prepareOn(
     lock: o.lock,
     prebuilt,
     ...(o.signal ? { signal: o.signal } : {}),
+    ...(o.cache ? { cache: o.cache } : {}),
   });
   const all = [...pre, ...built];
   const buildOk = built.every((b) => b.ok);
