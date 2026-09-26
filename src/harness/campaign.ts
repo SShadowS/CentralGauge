@@ -219,6 +219,13 @@ export function planCampaign(
   );
 }
 
+/**
+ * Placed cells share the one proxy on the sandbox gateway, which has no
+ * per-execution isolation yet (M1-33c): refused until it does.
+ */
+export const PLACED_CONCURRENCY_REFUSAL =
+  "--concurrency > 1 is refused while the egress marker places sandboxes: every placed cell uses the one egress proxy on the sandbox gateway, which has no per-execution isolation yet (M1-33c); run with --concurrency 1";
+
 export async function runCampaign(
   env: HarnessEnv,
   experimentId: string,
@@ -229,6 +236,9 @@ export async function runCampaign(
     throw new ConfigurationError(
       `concurrency must be a positive integer: ${o.concurrency}`,
     );
+  }
+  if (o.concurrency > 1 && (env.egress !== undefined || env.egressEnforced)) {
+    throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
   }
   const { experiment, configs } = await loadExperiment(
     env.harnessRoot,

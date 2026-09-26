@@ -1,7 +1,10 @@
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
-import { claudeTrace } from "../../../src/harness/adapters/claude-trace.ts";
+import {
+  claudeTrace,
+  isApiErrorSynthetic,
+} from "../../../src/harness/adapters/claude-trace.ts";
 import type { J, Line } from "../../../src/harness/adapters/jsonl.ts";
 import {
   callFields,
@@ -647,3 +650,62 @@ Deno.test("claudeTrace: retry and compaction events carry session and stream ord
   ]);
   assertEquals(r.events[0]!.session, "s");
 });
+
+// M2-11a run 002: fatal.jsonl's API-error record is excluded from model
+// accounting only when every condition holds; each failing alone keeps it.
+const fatalSynthetic = async () =>
+  lines(await Deno.readTextFile(`${RECORDED}/fatal.jsonl`)).find(({ rec }) =>
+    rec.type === "assistant"
+  )!.rec;
+
+Deno.test("isApiErrorSynthetic: the recorded fatal.jsonl error record qualifies", async () => {
+  assertEquals(isApiErrorSynthetic(await fatalSynthetic(), {}), true);
+});
+
+for (
+  const [what, change, modelUsage] of [
+    ["model not <synthetic>", (r: J) => (r.message as J).model = "m", {}],
+    [
+      "is_api_error_message missing",
+      (r: J) => delete r["is_api_error_message"],
+      {},
+    ],
+    [
+      "is_api_error_message not true",
+      (r: J) => r["is_api_error_message"] = "true",
+      {},
+    ],
+    [
+      "a tool_use block",
+      (r: J) =>
+        ((r.message as J).content as unknown[]).push({
+          type: "tool_use",
+          id: "t1",
+          name: "Read",
+          input: {},
+        }),
+      {},
+    ],
+    ["no content", (r: J) => (r.message as J).content = [], {}],
+    [
+      "a nonzero top-level usage count",
+      (r: J) => ((r.message as J).usage as J).output_tokens = 5,
+      {},
+    ],
+    [
+      "a nonzero nested usage count",
+      (r: J) =>
+        (((r.message as J).usage as J).cache_creation as J)
+          .ephemeral_5m_input_tokens = 7,
+      {},
+    ],
+    ["no usage", (r: J) => delete (r.message as J).usage, {}],
+    ["<synthetic> in modelUsage", (_: J) => {}, { "<synthetic>": {} }],
+  ] as const
+) {
+  Deno.test(`isApiErrorSynthetic: false with ${what}`, async () => {
+    const r = await fatalSynthetic();
+    change(r);
+    assertEquals(isApiErrorSynthetic(r, modelUsage), false);
+  });
+}

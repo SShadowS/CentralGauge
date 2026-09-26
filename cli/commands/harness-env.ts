@@ -24,6 +24,7 @@ import {
   resolveBackendHost,
 } from "../../src/harness/backend.ts";
 import { BcLane } from "../../src/harness/bc-lane.ts";
+import { PLACED_CONCURRENCY_REFUSAL } from "../../src/harness/campaign.ts";
 import {
   authorizedMarkerProblems,
   BACKEND_PORT,
@@ -80,6 +81,8 @@ export interface EnvOptions {
   supervised: boolean;
   /** The qualification probe (backend-probe --enforced): a candidate marker places it. */
   probe?: boolean;
+  /** Campaign blocks at once (harness run); above 1 the marker is rechecked under the lock (M1-33c). */
+  concurrency?: number;
 }
 
 export interface EnvDeps {
@@ -194,6 +197,27 @@ export async function egressMode(
   return marker.state === "candidate" && o.probe ? "placed" : "off";
 }
 
+/**
+ * Whether the marker would place campaign cells (qualified or authorized),
+ * read without verification: a marker present but unreadable counts as
+ * placing (fail closed). No marker places nothing.
+ */
+export async function markerPlaces(sharedResults: string): Promise<boolean> {
+  let text: string;
+  try {
+    text = await Deno.readTextFile(join(sharedResults, EGRESS_MARKER));
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return false;
+    return true;
+  }
+  try {
+    const state = JSON.parse(text)?.state;
+    return state !== "candidate";
+  } catch {
+    return true;
+  }
+}
+
 /** Enforcement counts only when the marker says authorized AND the host verifies now; a failing marker stops. */
 export async function resolveEgress(
   sharedResults: string,
@@ -292,6 +316,20 @@ export async function openHarnessEnv(
     for (const c of closers) await c().catch(() => {});
   };
   try {
+    // M1-33c review (TOCTOU): the marker may have become placing since
+    // harness run's up-front check; recheck under the lock, before any write.
+    if ((o.concurrency ?? 1) > 1 && await markerPlaces(sharedResults)) {
+      throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+    }
+    // The effective mode (marker plus host verification) is fixed here, under
+    // the lock and before any sweep, and gates concurrency again (M1-33c r2).
+    const mode = await egressMode(sharedResults, deps.verifyEgress, {
+      repoRoot: o.repoRoot,
+      ...(o.probe ? { probe: true } : {}),
+    });
+    if ((o.concurrency ?? 1) > 1 && mode !== "off") {
+      throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+    }
     const store = new RecordStore(o.resultsDir);
     await Deno.mkdir(join(o.privateRoot, "work"), { recursive: true });
     await store.sweepTemp();
@@ -306,10 +344,6 @@ export async function openHarnessEnv(
         } removed ${swept.length} leftover sandbox(es): ${swept.join(", ")}`,
       );
     }
-    const mode = await egressMode(sharedResults, deps.verifyEgress, {
-      repoRoot: o.repoRoot,
-      ...(o.probe ? { probe: true } : {}),
-    });
     const ready = await deps.setup(containers);
     closers.unshift(ready.dispose);
     const lane = new BcLane(ready.bc, ready.names, {
