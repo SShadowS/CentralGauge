@@ -24,7 +24,7 @@ import { adapterFor } from "./adapters/mod.ts";
 import { estimateArms, renderEstimate } from "./estimate.ts";
 import { loadExperiment } from "./config.ts";
 import { recoverInterrupted, runCell } from "./execution.ts";
-import { resolveRefapp, taskSetIdentity } from "./identity.ts";
+import { loadSymbolsLock, resolveRefapp, taskSetIdentity } from "./identity.ts";
 import {
   imageFacts,
   imageTag,
@@ -297,6 +297,109 @@ async function dryRunEstimate(
   ));
 }
 
+/** The tasks an experiment's pattern selects; none is refused. */
+async function experimentTasks(
+  repoRoot: string,
+  experimentId: string,
+  experiment: CampaignRecord["experiment"],
+): Promise<LoadedTask[]> {
+  const pattern = globToRegExp(experiment.tasks, { globstar: true });
+  const tasks = (await loadTaskSet(join(repoRoot, "harness-tasks", "tasks")))
+    .filter((t) =>
+      pattern.test(relative(repoRoot, t.dir).replaceAll("\\", "/"))
+    );
+  if (tasks.length === 0) {
+    throw new ConfigurationError(
+      `experiment ${experimentId}: tasks pattern ${experiment.tasks} matches no task`,
+    );
+  }
+  return tasks;
+}
+
+/** The fields of a stored campaign that differ from the current ones; arms omitted are not compared. */
+function campaignDrift(
+  x: CampaignRecord,
+  cur: {
+    expHash: string;
+    identity: string;
+    arms?: { config_id: string; manifest_hash: string }[];
+  },
+): string[] {
+  return [
+    ...(x.experiment_hash === cur.expHash ? [] : ["experiment_hash"]),
+    ...(x.task_set.identity === cur.identity ? [] : ["task_set.identity"]),
+    ...(!cur.arms ||
+        cur.arms.every((a) =>
+          x.arms.find((y) => y.config_id === a.config_id)?.manifest_hash ===
+            a.manifest_hash
+        )
+      ? []
+      : ["arms[].manifest_hash"]),
+  ];
+}
+
+function pinned(
+  campaigns: CampaignRecord[],
+  experimentId: string,
+  id: string,
+): CampaignRecord {
+  const named = campaigns.find((x) => x.id === id);
+  if (!named) {
+    throw new ConfigurationError(
+      `no campaign ${id} for experiment ${experimentId}`,
+    );
+  }
+  return named;
+}
+
+function refuseDrift(c: CampaignRecord, differs: string[]): void {
+  if (differs.length > 0) {
+    throw new ConfigurationError(
+      `campaign ${c.id} does not match the current experiment: ${
+        differs.join(", ")
+      } differ`,
+    );
+  }
+}
+
+/**
+ * The `--campaign` pin checked read-only, before any lock, sweep, recovery
+ * or docker call: the campaign exists, and its experiment_hash and
+ * task_set.identity match the repo's (with the symbols lock; without one the
+ * open refuses anyway). arms[].manifest_hash needs image facts (docker), so
+ * only runCampaign checks it, together with all of this again, under the env.
+ */
+export async function precheckCampaignPin(
+  repoRoot: string,
+  store: RecordStore,
+  experimentId: string,
+  campaignId: string,
+): Promise<void> {
+  const named = pinned(
+    await store.campaigns(experimentId),
+    experimentId,
+    campaignId,
+  );
+  const symbols = await loadSymbolsLock(repoRoot);
+  if (!symbols) return;
+  const { experiment } = await loadExperiment(
+    join(repoRoot, "harness"),
+    experimentId,
+  );
+  const ids = await taskSetIdentity(
+    repoRoot,
+    await experimentTasks(repoRoot, experimentId, experiment),
+    symbols,
+  );
+  refuseDrift(
+    named,
+    campaignDrift(named, {
+      expHash: await experimentHash(experiment),
+      identity: ids.identity,
+    }),
+  );
+}
+
 export async function runCampaign(
   env: HarnessEnv,
   experimentId: string,
@@ -336,17 +439,7 @@ export async function runCampaign(
     }
   }
 
-  const pattern = globToRegExp(experiment.tasks, { globstar: true });
-  const tasks = (await loadTaskSet(
-    join(env.repoRoot, "harness-tasks", "tasks"),
-  )).filter((t) =>
-    pattern.test(relative(env.repoRoot, t.dir).replaceAll("\\", "/"))
-  );
-  if (tasks.length === 0) {
-    throw new ConfigurationError(
-      `experiment ${experimentId}: tasks pattern ${experiment.tasks} matches no task`,
-    );
-  }
+  const tasks = await experimentTasks(env.repoRoot, experimentId, experiment);
   const ids = await taskSetIdentity(env.repoRoot, tasks, env.symbols);
   const arms: CampaignRecord["arms"] = [];
   for (const config of configs) {
@@ -381,33 +474,13 @@ export async function runCampaign(
   }
   const expHash = await experimentHash(experiment);
   const campaigns = await env.store.campaigns(experimentId);
-  const drift = (x: CampaignRecord) => [
-    ...(x.experiment_hash === expHash ? [] : ["experiment_hash"]),
-    ...(x.task_set.identity === ids.identity ? [] : ["task_set.identity"]),
-    ...(arms.every((a) =>
-        x.arms.find((y) => y.config_id === a.config_id)?.manifest_hash ===
-          a.manifest_hash
-      )
-      ? []
-      : ["arms[].manifest_hash"]),
-  ];
+  const drift = (x: CampaignRecord) =>
+    campaignDrift(x, { expHash, identity: ids.identity, arms });
   let c = campaigns.find((x) => drift(x).length === 0);
   if (o.campaign !== undefined) {
     // The pin: exactly the named campaign, unchanged; never a new one.
-    const named = campaigns.find((x) => x.id === o.campaign);
-    if (!named) {
-      throw new ConfigurationError(
-        `no campaign ${o.campaign} for experiment ${experimentId}`,
-      );
-    }
-    const differs = drift(named);
-    if (differs.length > 0) {
-      throw new ConfigurationError(
-        `campaign ${o.campaign} does not match the current experiment: ${
-          differs.join(", ")
-        } differ`,
-      );
-    }
+    const named = pinned(campaigns, experimentId, o.campaign);
+    refuseDrift(named, drift(named));
     c = named;
   }
   let created = false;

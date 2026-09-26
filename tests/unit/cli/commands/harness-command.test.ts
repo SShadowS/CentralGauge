@@ -2552,3 +2552,71 @@ Deno.test("CLI: `harness run` collects repeated --stop-file and --campaign; `har
   assertStringIncludes(out, `[OK] ${olderExec}:`);
   assertStringIncludes(err, `no campaign ${UNKNOWN_CAMPAIGN}`);
 });
+
+Deno.test("--campaign refusals come before the environment opens: no lock, sweep, recovery or docker call (M5-03 review)", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { older, olderExec, newerExec } = await twoCampaigns(t);
+  const order: string[] = [];
+  const recording = (eo: Parameters<typeof openHarnessEnv>[0]) => {
+    order.push("open");
+    return openHarnessEnv(eo, deps(order));
+  };
+  const runs = t.docker.runs.length;
+  const executions = (await t.env.store.executions(older.id)).length;
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { campaign: UNKNOWN_CAMPAIGN }),
+        recording,
+      ),
+    ConfigurationError,
+    `no campaign ${UNKNOWN_CAMPAIGN} for experiment contract`,
+  );
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { campaign: older.id, execution: newerExec }),
+        recording,
+      ),
+    ConfigurationError,
+    `execution ${newerExec} is not in campaign ${older.id}`,
+  );
+  // Without --campaign, --execution is checked against the newest campaign.
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { execution: olderExec }),
+        recording,
+      ),
+    ConfigurationError,
+    "is not in campaign",
+  );
+  await assertRejects(
+    () =>
+      harnessRun(
+        "contract",
+        runOpts(t, { campaign: UNKNOWN_CAMPAIGN }),
+        recording,
+      ),
+    ConfigurationError,
+    `no campaign ${UNKNOWN_CAMPAIGN} for experiment contract`,
+  );
+  // The older campaign's experiment_hash differs from the current experiment.
+  await assertRejects(
+    () =>
+      harnessRun(
+        "contract",
+        runOpts(t, { campaign: older.id }),
+        recording,
+      ),
+    ConfigurationError,
+    `campaign ${older.id} does not match the current experiment: experiment_hash differ`,
+  );
+  assertEquals(order, []);
+  assertEquals(t.docker.runs.length, runs);
+  assertEquals((await t.env.store.executions(older.id)).length, executions);
+});

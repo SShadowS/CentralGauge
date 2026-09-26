@@ -586,6 +586,12 @@ Deno.test("a stop file stops between cells; present at start runs nothing; resum
     io(),
   );
   const after = (await t.env.store.campaigns("contract"))[0]!;
+  // The campaign the stopped-at-start call created is the one resumed.
+  assertEquals([s.campaignId, before.id, again.campaignId], [
+    idle.campaignId,
+    idle.campaignId,
+    idle.campaignId,
+  ]);
   assertEquals([again.stopped, after.id, after.seed, after.blocks], [
     false,
     before.id,

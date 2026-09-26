@@ -19,6 +19,7 @@ import type {
 import type { JudgingContext } from "../../src/harness/outcome.ts";
 import type {
   ArtifactRecord,
+  CampaignRecord,
   JudgmentRecord,
 } from "../../src/harness/records.ts";
 import type { HarnessReport } from "../../src/harness/report.ts";
@@ -75,6 +76,7 @@ import {
   loadCampaignData,
   PLACED_CONCURRENCY_REFUSAL,
   planCampaign,
+  precheckCampaignPin,
   runCampaign,
 } from "../../src/harness/campaign.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
@@ -970,6 +972,15 @@ export async function harnessRun(
   ) {
     throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
   }
+  // M5-03 review: the pin, read-only, before any lock, sweep or recovery (runCampaign rechecks, with the arm manifests).
+  if (o.campaign !== undefined) {
+    await precheckCampaignPin(
+      o.root,
+      new RecordStore(o.resultsDir),
+      experimentId,
+      o.campaign,
+    );
+  }
   if (o.dryRun) {
     const s = await planCampaign(
       await plan(envOptions(o, o.resultsDir, `${command} --dry-run`)),
@@ -1023,6 +1034,34 @@ function latestJudgment(js: JudgmentRecord[]): JudgmentRecord | undefined {
 
 const askUser = (q: string) => confirm(q);
 
+/** The campaign rejudge works on (named, else newest), with --execution in it. */
+async function rejudgeTarget(
+  store: RecordStore,
+  experimentId: string,
+  o: RunCliOptions,
+): Promise<CampaignRecord> {
+  const campaigns = await store.campaigns(experimentId);
+  const c = o.campaign
+    ? campaigns.find((x) => x.id === o.campaign)
+    : campaigns[0];
+  if (!c) {
+    throw new ConfigurationError(
+      `no campaign${
+        o.campaign ? ` ${o.campaign}` : ""
+      } for experiment ${experimentId} in ${o.resultsDir}`,
+    );
+  }
+  if (
+    o.execution &&
+    !(await store.executions(c.id)).some((e) => e.id === o.execution)
+  ) {
+    throw new ConfigurationError(
+      `execution ${o.execution} is not in campaign ${c.id}`,
+    );
+  }
+  return c;
+}
+
 /**
  * `harness rejudge` (answer 15): judge stored executions again with the
  * current scorer suite and the current oracle (recorded as such in the
@@ -1036,22 +1075,14 @@ export async function harnessRejudge(
   open: Opener = openHarnessEnv,
   ask: (question: string) => boolean = askUser,
 ): Promise<{ campaignId: string; rejudged: number }> {
+  // M5-03 review: read-only, before any lock, sweep or recovery; again under the env.
+  await rejudgeTarget(new RecordStore(o.resultsDir), experimentId, o);
   const h = await open(
     envOptions(o, o.resultsDir, `harness rejudge ${experimentId}`),
   );
   try {
     const env = h.env;
-    const campaigns = await env.store.campaigns(experimentId);
-    const c = o.campaign
-      ? campaigns.find((x) => x.id === o.campaign)
-      : campaigns[0];
-    if (!c) {
-      throw new ConfigurationError(
-        `no campaign${
-          o.campaign ? ` ${o.campaign}` : ""
-        } for experiment ${experimentId} in ${o.resultsDir}`,
-      );
-    }
+    const c = await rejudgeTarget(env.store, experimentId, o);
     const data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data);
     const tasks = new Map(
@@ -1065,11 +1096,6 @@ export async function harnessRejudge(
         `rejudge needs every campaign task; missing: ${
           missing.map((t) => t.id).join(", ")
         }`,
-      );
-    }
-    if (o.execution && !data.executions.some((e) => e.id === o.execution)) {
-      throw new ConfigurationError(
-        `execution ${o.execution} is not in campaign ${c.id}`,
       );
     }
     const current = await currentScorerFingerprint();
