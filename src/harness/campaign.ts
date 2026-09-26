@@ -159,6 +159,24 @@ export function nextAttempt(prior: ExecutionRecord[]): AttemptRef | null {
   return retryProblem(tail, candidate, newest.at(-2)) ? null : next;
 }
 
+/**
+ * The persisted reset of a usage-limited execution (its published
+ * sandbox.json), or null: not usage-limited, or the reset is unknown (a
+ * restart is then the operator's retry, as before M1-23 run 002).
+ */
+async function pendingReset(
+  env: HarnessEnv,
+  e: ExecutionRecord,
+): Promise<string | null> {
+  if (e.termination !== "usage_limited") return null;
+  const side = JSON.parse(
+    await Deno.readTextFile(
+      join(env.resultsRoot, "runs", e.id, "sandbox.json"),
+    ),
+  ) as { usage_reset_at?: string | null };
+  return side.usage_reset_at ?? null;
+}
+
 /** The later of two resets; "unknown" wins (it cannot be waited out). */
 function laterReset(a: string | null, b: string): string {
   if (a === null) return b;
@@ -276,6 +294,13 @@ export async function runCampaign(
         seed,
       ),
     });
+    // The checks a resume runs, before any record or execution (dry run too).
+    await validateCampaignRecords({
+      campaign: c,
+      executions: [],
+      artifacts: [],
+      judgments: [],
+    });
     if (!o.dryRun) {
       await env.store.writeCampaign(c);
       created = true;
@@ -314,41 +339,51 @@ export async function runCampaign(
     }
   }
   const campaign = c;
-  const cells = blocks.flatMap((b) =>
-    b.order.map((arm, i) => ({ block: b, arm, i }))
-  );
+  const now = () => (env.now ?? (() => new Date()))().getTime();
   for (;;) {
     let paused: string | null = null;
     let next = 0;
+    // Workers take whole blocks: the arms of one block run one after another
+    // in its recorded order (the matched pair), blocks run in parallel.
     const worker = async () => {
-      while (paused === null && next < cells.length) {
-        const { block, arm, i } = cells[next++]!;
-        const prior = (await env.store.executions(campaign.id)).filter((e) =>
-          e.block === block.index && e.arm === arm
-        );
-        const at = nextAttempt(prior);
-        if (!at) continue;
-        const r = await runCell(
-          runEnv,
-          cellRefFor(campaign, opened, block, arm, i),
-          at,
-          prior,
-        );
-        for (const e of r.executions) {
-          summary.ran++;
-          const j = (await env.store.judgments(e.id))[0];
-          if (j && j.verdict !== "unscored") summary.judged++;
-          else summary.unscored++;
+      while (paused === null && next < blocks.length) {
+        const block = blocks[next++]!;
+        for (const [i, arm] of block.order.entries()) {
+          if (paused !== null) break;
+          const prior = (await env.store.executions(campaign.id)).filter((
+            e,
+          ) => e.block === block.index && e.arm === arm);
+          const at = nextAttempt(prior);
+          if (!at) continue;
+          // A usage limit survives a restart: no retry before its reset.
+          const waitFor = at.runKind === "auto_retry"
+            ? await pendingReset(env, prior.find((e) => e.id === at.retryOf)!)
+            : null;
+          if (waitFor !== null && Date.parse(waitFor) > now()) {
+            paused = laterReset(paused, waitFor);
+            break;
+          }
+          const r = await runCell(
+            runEnv,
+            cellRefFor(campaign, opened, block, arm, i),
+            at,
+            prior,
+          );
+          for (const e of r.executions) {
+            summary.ran++;
+            const j = (await env.store.judgments(e.id))[0];
+            if (j && j.verdict !== "unscored") summary.judged++;
+            else summary.unscored++;
+          }
+          if (r.pause) paused = laterReset(paused, r.pause);
         }
-        if (r.pause) paused = laterReset(paused, r.pause);
       }
     };
     await Promise.all(
-      Array.from({ length: Math.min(o.concurrency, cells.length) }, worker),
+      Array.from({ length: Math.min(o.concurrency, blocks.length) }, worker),
     );
     if (paused === null) return summary;
-    const now = (env.now ?? (() => new Date()))().getTime();
-    const wait = paused === "unknown" ? Infinity : Date.parse(paused) - now;
+    const wait = paused === "unknown" ? Infinity : Date.parse(paused) - now();
     if (wait > o.maxPauseMs) {
       summary.paused = paused;
       io.log(

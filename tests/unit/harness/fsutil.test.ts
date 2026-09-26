@@ -779,3 +779,42 @@ Deno.test({
   });
   assertStringIncludes(f.violations.join(" | "), "Core/hostlink");
 });
+
+Deno.test("validatedDest: concurrent callers creating the same missing ancestor both succeed", async () => {
+  for (let i = 0; i < 5; i++) {
+    const root = await Deno.realPath(await Deno.makeTempDir());
+    const dirs = await Promise.all(
+      ["x", "y", "z"].map((leaf) =>
+        validatedDest(join(root, "shared", "deep", leaf))
+      ),
+    );
+    assertEquals(dirs.length, 3);
+  }
+});
+
+Deno.test("freezeWorkspace: concurrent freezes of identical workspaces publish one content-addressed copy", async () => {
+  const results = await tmp();
+  const make = async () => {
+    const ws = await tmp();
+    await Deno.mkdir(join(ws, "Core", "src"), { recursive: true });
+    await Deno.writeTextFile(join(ws, "Core", "src", "A.al"), "same");
+    return ws;
+  };
+  const [a, b] = await Promise.all([make(), make()]);
+  const [fa, fb] = await Promise.all(
+    [a, b].map(async (workspace) =>
+      freezeWorkspace({
+        resultsRoot: results,
+        privateRoot: await tmp(),
+        workspace,
+        secrets: SECRETS,
+        scanReparsePoints: NO_SCAN,
+      })
+    ),
+  );
+  assertEquals(fa!.workspace_hash, fb!.workspace_hash);
+  assertEquals(
+    [...Deno.readDirSync(join(results, "workspaces"))].map((e) => e.name),
+    [fa!.workspace_hash],
+  );
+});

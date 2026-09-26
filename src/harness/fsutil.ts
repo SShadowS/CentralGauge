@@ -101,7 +101,12 @@ export async function validatedDest(p: string): Promise<string> {
   const parent = dirname(abs);
   if (parent === abs) throw new ValidationError(`no such root: ${abs}`, [abs]);
   const created = join(await validatedDest(parent), basename(abs));
-  await Deno.mkdir(created);
+  try {
+    await Deno.mkdir(created);
+  } catch (err) {
+    // A concurrent caller created it first; validatedDir still refuses a link.
+    if (!(err instanceof Deno.errors.AlreadyExists)) throw err;
+  }
   return await validatedDir(created);
 }
 
@@ -725,12 +730,17 @@ async function freezeInner(i: FreezeInput): Promise<Frozen> {
     }
     const workspace_hash = await hashTree(scratch, "task");
     const stored_path = `workspaces/${workspace_hash}`;
-    // ponytail: exists-then-rename; the bench lock makes the runner the only writer.
+    // Content-addressed: a concurrent freeze of the same content (parallel
+    // blocks, M1-23) may publish first; its copy is this one.
     if (!await exists(join(base, workspace_hash))) {
       await safeCopyTree(scratch, tmpDir, {
         limits: publishLimits(limits, i.secrets, red.count),
       });
-      await Deno.rename(tmpDir, join(base, workspace_hash));
+      try {
+        await Deno.rename(tmpDir, join(base, workspace_hash));
+      } catch (err) {
+        if (!await exists(join(base, workspace_hash))) throw err;
+      }
     }
     return {
       workspace_hash,
