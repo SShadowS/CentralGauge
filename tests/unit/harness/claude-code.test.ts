@@ -9,7 +9,10 @@ import {
 import { join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
-import { incompleteTelemetry } from "../../../src/harness/adapter.ts";
+import {
+  incompleteTelemetry,
+  observedMismatch,
+} from "../../../src/harness/adapter.ts";
 import {
   CLAUDE_CAPABILITIES,
   claudeCodeAdapter,
@@ -1615,12 +1618,75 @@ Deno.test("mcp inventory: a disconnected server is not loaded; an unexpected ser
     !(await parse(down, 0, mcpManifest(PROBE_TOOLS))).r.observed
       .loaded_components!.includes("mcp:al-tools"),
   );
+  const plain = manifest("cc", { harness_version: "2.1.282" });
   const { r } = await parse(text, 0, {}); // the manifest requests no MCP, the stream shows al-tools connected
-  assertEquals(r.termination, "setup_failed");
+  // setup_failed comes from the mismatch (ranked first by execution), never
+  // from overwriting the adapter's termination (usage limit, timeout stay visible).
+  assertEquals(r.termination, "completed");
   assertStringIncludes(
     JSON.stringify(r.telemetry.raw_usage),
     "unexpected MCP server al-tools",
   );
+  assertStringIncludes(
+    observedMismatch(plain, r.observed, r.unobservable).mismatch!,
+    "mcp:al-tools",
+  );
+});
+
+Deno.test("mcp inventory: an unrequested server in any status, or a stray mcp__ tool, is a mismatch", async () => {
+  const lines = (await Deno.readTextFile(FIXTURE)).split("\n").filter(Boolean)
+    .map((l) => JSON.parse(l));
+  const init = lines.find((j) => j.type === "system" && j.subtype === "init");
+  const plain = manifest("cc", { harness_version: "2.1.282" });
+  for (
+    const edit of [
+      // pending: may connect later and expose tools during the run
+      (i: typeof init) => {
+        i.mcp_servers = [{ name: "al-tools", status: "pending" }];
+      },
+      // no server entry at all, but tools under an mcp__ prefix
+      (i: typeof init) => {
+        i.mcp_servers = [];
+        i.tools = [...i.tools, "mcp__other__x"];
+      },
+    ]
+  ) {
+    const copy = structuredClone(lines);
+    edit(copy.find((j) => j.type === "system" && j.subtype === "init"));
+    const { r } = await parse(
+      copy.map((j) => JSON.stringify(j)).join("\n") + "\n",
+      0,
+      {},
+    );
+    assert(
+      observedMismatch(plain, r.observed, r.unobservable).mismatch !== null,
+      JSON.stringify(r.observed),
+    );
+  }
+});
+
+Deno.test("mcp inventory: duplicate tools in init or a missing init tool list never match", async () => {
+  const lines = (await Deno.readTextFile(FIXTURE)).split("\n").filter(Boolean)
+    .map((l) => JSON.parse(l));
+  for (
+    const edit of [
+      (i: { tools: string[] }) => {
+        i.tools = [...i.tools, "mcp__al-tools__al_compile"];
+      },
+      (i: { tools?: string[] }) => {
+        delete i.tools;
+      },
+    ]
+  ) {
+    const copy = structuredClone(lines);
+    edit(copy.find((j) => j.type === "system" && j.subtype === "init"));
+    const { r } = await parse(
+      copy.map((j) => JSON.stringify(j)).join("\n") + "\n",
+      0,
+      mcpManifest(PROBE_TOOLS),
+    );
+    assert(!r.observed.loaded_components!.includes("mcp:al-tools"));
+  }
 });
 
 Deno.test("mcp inventory: recovery reads the persisted manifest, never the current definition file", async () => {

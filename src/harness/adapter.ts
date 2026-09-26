@@ -122,9 +122,15 @@ export function observedMismatch(
   const missing = requested.filter((c) =>
     !loaded.includes(c) && !unobservable.includes(c)
   );
+  // An MCP server nobody requested is a different arm (M2-09): never silent.
+  const extra = loaded.filter((c) =>
+    c.startsWith("mcp:") && !requested.includes(c)
+  );
   return {
     mismatch: missing.length > 0
       ? `requested components did not load: ${missing.join(", ")}`
+      : extra.length > 0
+      ? `unrequested components loaded: ${extra.join(", ")}`
       : null,
     unverified,
   };

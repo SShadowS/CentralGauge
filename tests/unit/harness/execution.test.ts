@@ -1661,3 +1661,21 @@ for (const point of ["beforeDraft", "draft"] as const) {
     assertEquals("stub_provider" in side, false);
   });
 }
+
+Deno.test("mcp inventory: a plain arm that connects an unrequested MCP server is setup_failed, even after a timeout", async () => {
+  const t = await makeEnv();
+  t.env.timeoutMsFor = () => 50;
+  t.docker.behavior = async (_call, io) => {
+    const init = JSON.parse(INIT);
+    init.mcp_servers = [{ name: "al-tools", status: "connected" }];
+    await io.stdout(JSON.stringify(init));
+    await io.killed; // the run hangs until the timeout kills it
+    return 137;
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes(
+    (await sideOf(t, e.id)).setup_error,
+    "unrequested components loaded: mcp:al-tools",
+  );
+});

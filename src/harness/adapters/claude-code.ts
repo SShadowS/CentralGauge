@@ -232,50 +232,55 @@ export const CLAUDE_CAPABILITIES = {
  * expected list persisted in the manifest (settings.native.mcp_tools, set
  * before release), never read from current files. The init tool list is the
  * available inventory, deferred tools included, so ToolSearch use does not
- * matter. A connected server that was not requested fails setup.
+ * matter. An unrequested server (any status) fails setup via observedMismatch.
  */
 function mcpInventory(
   init: J | undefined,
   manifest: ParseInput["manifest"],
-): { loaded: string[]; problems: string[]; unexpected: boolean } {
+): { loaded: string[]; problems: string[] } {
   const problems: string[] = [];
-  if (!init) return { loaded: [], problems, unexpected: false };
+  if (!init) return { loaded: [], problems };
   const requested = manifest.mcp.map((s) => s.name);
   const native = manifest.settings.native as Record<string, unknown>;
   const expected = obj(native["mcp_tools"]);
   const tools = list(init["tools"]).filter((t): t is string =>
     typeof t === "string"
   );
-  const connected = list(init.mcp_servers).map(obj)
-    .filter((s) => s.status === "connected" && typeof s.name === "string")
+  const servers = list(init.mcp_servers).map(obj)
+    .filter((s) => typeof s.name === "string");
+  const connected = servers.filter((s) => s.status === "connected")
     .map((s) => s.name as string);
-  let unexpected = false;
-  for (const n of [...new Set(connected)].sort()) {
-    if (!requested.includes(n)) {
-      unexpected = true;
-      problems.push(`unexpected MCP server ${n}`);
-    }
+  // Unrequested MCP is observed whatever its status (a pending server can
+  // connect later) and wherever its tools show: a server entry, or an
+  // mcp__<name>__ tool. It is reported as a loaded component, so
+  // observedMismatch fails setup (ranked before every other termination).
+  const seen = new Set<string>(servers.map((s) => s.name as string));
+  for (const t of tools) {
+    const m = /^mcp__(.+?)__/.exec(t);
+    if (m) seen.add(m[1]!);
   }
   const loaded: string[] = [];
+  for (const n of [...seen].sort()) {
+    if (!requested.includes(n)) {
+      problems.push(`unexpected MCP server ${n}`);
+      loaded.push(`mcp:${n}`);
+    }
+  }
   for (const n of [...requested].sort()) {
     if (!connected.includes(n)) {
       problems.push(`mcp:${n} not connected`);
       continue;
     }
     const want = expected[n];
-    if (!Array.isArray(want)) {
+    if (!Array.isArray(want) || want.length === 0) {
       problems.push(`no expected tool inventory for mcp:${n}`);
       continue;
     }
     const prefix = `mcp__${n}__`;
-    const got = [
-      ...new Set(
-        tools.filter((t) => t.startsWith(prefix)).map((t) =>
-          t.slice(prefix.length)
-        ),
-      ),
-    ].sort();
-    const exp = [...new Set(want.map(String))].sort();
+    // As listed: a duplicate is a difference, never folded away.
+    const got = tools.filter((t) => t.startsWith(prefix))
+      .map((t) => t.slice(prefix.length)).sort();
+    const exp = want.map(String).sort();
     if (got.join("\n") !== exp.join("\n")) {
       problems.push(
         `mcp:${n} tools differ: expected [${exp.join(", ")}], loaded [${
@@ -286,7 +291,7 @@ function mcpInventory(
     }
     loaded.push(`mcp:${n}`);
   }
-  return { loaded, problems, unexpected };
+  return { loaded, problems };
 }
 
 export function parseClaudeStream(
@@ -559,7 +564,6 @@ export function parseClaudeStream(
     ),
   ];
   const mcp = mcpInventory(init, input.manifest);
-  if (mcp.unexpected) termination = "setup_failed";
   const connected = mcp.loaded;
   const loaded = init
     ? [

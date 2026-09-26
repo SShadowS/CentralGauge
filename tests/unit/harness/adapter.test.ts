@@ -185,3 +185,16 @@ Deno.test("adapterFor: unknown harness is loud", () => {
     "no adapter",
   );
 });
+
+Deno.test("observedMismatch: an unrequested MCP server is a mismatch (M2-09)", () => {
+  const m = manifest("x");
+  const o = {
+    harness_version: m.harness_version,
+    models: null,
+    loaded_components: ["mcp:al-tools"],
+  };
+  assertStringIncludes(
+    observedMismatch(m, o, []).mismatch!,
+    "unrequested components loaded: mcp:al-tools",
+  );
+});
