@@ -24,6 +24,7 @@ import {
   resolveBackendHost,
 } from "../../src/harness/backend.ts";
 import { BcLane } from "../../src/harness/bc-lane.ts";
+import { PLACED_CONCURRENCY_REFUSAL } from "../../src/harness/campaign.ts";
 import {
   authorizedMarkerProblems,
   BACKEND_PORT,
@@ -80,6 +81,8 @@ export interface EnvOptions {
   supervised: boolean;
   /** The qualification probe (backend-probe --enforced): a candidate marker places it. */
   probe?: boolean;
+  /** Campaign blocks at once (harness run); above 1 the marker is rechecked under the lock (M1-33c). */
+  concurrency?: number;
 }
 
 export interface EnvDeps {
@@ -313,6 +316,11 @@ export async function openHarnessEnv(
     for (const c of closers) await c().catch(() => {});
   };
   try {
+    // M1-33c review (TOCTOU): the marker may have become placing since
+    // harness run's up-front check; recheck under the lock, before any write.
+    if ((o.concurrency ?? 1) > 1 && await markerPlaces(sharedResults)) {
+      throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+    }
     const store = new RecordStore(o.resultsDir);
     await Deno.mkdir(join(o.privateRoot, "work"), { recursive: true });
     await store.sweepTemp();

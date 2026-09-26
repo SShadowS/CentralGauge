@@ -978,7 +978,10 @@ export async function harnessRun(
     );
     return s;
   }
-  const h = await open(envOptions(o, o.resultsDir, command));
+  const h = await open({
+    ...envOptions(o, o.resultsDir, command),
+    concurrency: o.concurrency,
+  });
   try {
     const env = o.qualifyManifest
       ? {

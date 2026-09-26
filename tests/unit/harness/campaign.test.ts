@@ -436,3 +436,19 @@ Deno.test("runCampaign: concurrency > 1 with placed sandboxes is refused before 
   assertEquals(await files(), before);
   assertEquals(t.docker.runs.length, 0);
 });
+
+Deno.test("runCampaign: concurrency > 1 with enforced egress (no placement object) is refused too (M1-33c review)", async () => {
+  const t = await mockEnv();
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, egressEnforced: true },
+        "contract",
+        opts({ concurrency: 2 }),
+        io(),
+      ),
+    ConfigurationError,
+    "--concurrency",
+  );
+  assertEquals(t.docker.runs.length, 0);
+});

@@ -2303,3 +2303,51 @@ Deno.test("run --concurrency > 1 is refused before any environment opens while t
     2,
   );
 });
+
+Deno.test("run --concurrency > 1: an unknown, malformed or unreadable marker is refused as placing (fail closed; M1-33c review)", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  const marker = join(shared, EGRESS_MARKER);
+  const never = () => Promise.reject(new Error("no environment may open"));
+  const refused = async (what: string) =>
+    await assertRejects(
+      () =>
+        harnessRun(
+          "contract",
+          runOpts(t, { concurrency: 2, dryRun: true }),
+          never,
+          never,
+        ),
+      ConfigurationError,
+      "--concurrency",
+      what,
+    );
+  await Deno.writeTextFile(marker, JSON.stringify({ v: 1, state: "bogus" }));
+  await refused("unknown state");
+  await Deno.writeTextFile(marker, "{not json");
+  await refused("malformed");
+  await Deno.remove(marker);
+  await Deno.mkdir(marker); // present but unreadable as a file
+  await refused("unreadable");
+});
+
+Deno.test("openHarnessEnv: with concurrency > 1 the marker is rechecked under the lock, before any sweep (M1-33c review: TOCTOU)", async () => {
+  const t = await makeEnv();
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  // The marker became placing after harness run's up-front check.
+  await Deno.writeTextFile(
+    join(shared, EGRESS_MARKER),
+    JSON.stringify({ v: 1, state: "qualified" }),
+  );
+  const order: string[] = [];
+  await assertRejects(
+    () => openHarnessEnv({ ...envOpts(t), concurrency: 2 }, deps(order)),
+    ConfigurationError,
+    "--concurrency",
+  );
+  assertEquals(order, ["lock", "release"]);
+});
