@@ -19,6 +19,12 @@ const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
 const SPAWN_TOOLS = new Set(["Agent", "Task"]);
 export const API_RETRY_SUBTYPE = "api_retry";
 export const COMPACT_BOUNDARY_SUBTYPE = "compact_boundary";
+/**
+ * The model Claude Code writes on assistant records it makes itself, not a
+ * model call: M2-11 fatal.jsonl, the API error text after the retries
+ * (is_api_error_message true, zero usage, not in modelUsage).
+ */
+export const SYNTHETIC_MODEL = "<synthetic>";
 const utf8 = new TextEncoder();
 
 export function transportOf(tool: string): string {
@@ -243,7 +249,7 @@ export function claudeTrace(
       structural.push(
         `${file}:${line}: assistant record without a message id or model`,
       );
-    } else if (!seenMsg.has(requestId)) {
+    } else if (model !== SYNTHETIC_MODEL && !seenMsg.has(requestId)) {
       seenMsg.add(requestId);
       requests.set(model, (requests.get(model) ?? 0) + 1);
       push({

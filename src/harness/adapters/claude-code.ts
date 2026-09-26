@@ -24,7 +24,7 @@ import { RULES_VERSION } from "../classify.ts";
 import { estimateCost } from "../pricing.ts";
 import { writeTrace } from "../trace.ts";
 import type { J, Line as JsonlLine } from "./jsonl.ts";
-import { claudeTrace } from "./claude-trace.ts";
+import { claudeTrace, SYNTHETIC_MODEL } from "./claude-trace.ts";
 import { list, nonJsonReason, obj, readRecords, refuse } from "./jsonl.ts";
 
 type Line = JsonlLine<J>;
@@ -380,9 +380,11 @@ export function parseClaudeStream(
   const perMessage = new Map<string, { model: string; usage: J }>();
   let didWork = false;
   for (const { rec } of of("assistant")) {
-    didWork = true;
     const msg = obj(rec.message);
     const model = typeof msg.model === "string" ? msg.model : "";
+    // Claude Code's own record (an API error after the retries) is no work.
+    if (model === SYNTHETIC_MODEL) continue;
+    didWork = true;
     if (typeof msg.id === "string") {
       perMessage.set(msg.id, { model, usage: obj(msg.usage) });
     }

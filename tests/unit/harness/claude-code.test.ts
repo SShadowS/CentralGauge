@@ -25,6 +25,7 @@ import {
 } from "../../../src/harness/config.ts";
 import type { PricingBook } from "../../../src/harness/pricing.ts";
 import type { Telemetry } from "../../../src/harness/records.ts";
+import { outcomePolicy } from "../../../src/harness/records.ts";
 import { manifest } from "./fixtures.ts";
 
 const FIXTURE = "tests/fixtures/harness/claude-code/probe.jsonl";
@@ -1772,8 +1773,7 @@ Deno.test("metrics: retry.jsonl has no compaction: compactions 0, not null", asy
 
 // fatal.jsonl (H:\cg-coord\tasks\M2-11\runs\001\evidence.md): two api_retry
 // records (error_status 500), then result is_error true, terminal_reason
-// api_error, modelUsage {}. Termination and didWork are left to M2-11a, so
-// they are not asserted here.
+// api_error, modelUsage {}. Termination and didWork: the M2-11a tests below.
 Deno.test("metrics: fatal.jsonl gives two retry events and a null cost with reason no model usage reported", async () => {
   const { r, dir } = await parse(
     await Deno.readTextFile("tests/fixtures/harness/claude-code/fatal.jsonl"),
@@ -1788,4 +1788,71 @@ Deno.test("metrics: fatal.jsonl gives two retry events and a null cost with reas
     raw(r).incomplete_reasons.cost_usd,
     "no model usage reported",
   );
+});
+
+// M2-11a. fatal.jsonl: provider 500 on every try (stub request log 404 + 500x3,
+// exit 1), two system/api_retry, one assistant record with model <synthetic>
+// and is_api_error_message true (Claude Code's own error text, no model call),
+// then result is_error true, api_error_status 500, modelUsage {}. Spec 1a
+// section 8 has no provider termination: harness_crash, and since no model
+// call answered, before any work: unscored, one automatic retry.
+Deno.test("fatal.jsonl: provider 500 after retries is harness_crash with didWork false (unscored, retried once)", async () => {
+  const { r } = await parse(
+    await Deno.readTextFile("tests/fixtures/harness/claude-code/fatal.jsonl"),
+    1,
+    {},
+  );
+  assertEquals(r.termination, "harness_crash");
+  assertEquals(r.didWork, false);
+  assertEquals(outcomePolicy(r.termination!, r.didWork), {
+    judge: false,
+    retry: "once",
+  });
+});
+
+Deno.test("fatal.jsonl: the <synthetic> error record is no model request and no stream problem; reported cost 0, estimate null", async () => {
+  const { r, dir } = await parse(
+    await Deno.readTextFile("tests/fixtures/harness/claude-code/fatal.jsonl"),
+    1,
+    {},
+  );
+  assertEquals(problems(r), []);
+  const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+    .split("\n").map((l) => JSON.parse(l));
+  assertEquals(trace.filter((e) => e.type === "model_request"), []);
+  assertEquals(r.telemetry.per_model, []);
+  assertEquals(r.telemetry.cost_usd, null);
+  assertEquals(r.telemetry.reported_cost_usd, 0);
+  assertEquals(
+    (r.telemetry.raw_usage as { partial: unknown }).partial,
+    {},
+  );
+});
+
+for (const name of ["retry", "compaction"]) {
+  Deno.test(`${name}.jsonl parses with no stream problems (M2-11a)`, async () => {
+    const { r } = await parse(
+      await Deno.readTextFile(
+        `tests/fixtures/harness/claude-code/${name}.jsonl`,
+      ),
+      0,
+      {},
+    );
+    assertEquals(problems(r), []);
+    assertEquals(r.termination, "completed");
+    assertEquals(r.didWork, true);
+  });
+}
+
+Deno.test("metrics: a <synthetic> record does not hide a real model missing from modelUsage", async () => {
+  const recs = await probeRecords();
+  const a = recs.find((j) => j.type === "assistant");
+  const synth = structuredClone(a);
+  synth.message.model = "<synthetic>";
+  synth.message.id = "synthetic-1";
+  a.message.model = "claude-other-1";
+  recs.splice(recs.indexOf(a), 0, synth);
+  const { r } = await parse(toText(recs));
+  assert(problems(r).some((p) => p.includes("claude-other-1")));
+  assert(!problems(r).some((p) => p.includes("<synthetic>")));
 });
