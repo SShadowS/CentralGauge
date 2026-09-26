@@ -7,6 +7,4 @@ RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
     npm install -g @anthropic-ai/claude-code@2.1.282; \
     [Environment]::SetEnvironmentVariable('PATH', (npm config get prefix) + ';' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
 COPY run.ps1 C:/run.ps1
-# Git Bash's /usr/bin: the agent's Bash tool runs `cg-al` through this shim (M1-28b).
-COPY cg-al C:/Git/usr/bin/cg-al
 CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\run.ps1"]

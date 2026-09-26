@@ -17,5 +17,8 @@ RUN New-Item -ItemType Directory -Force -Path C:\workspace, C:\task, C:\config |
 WORKDIR C:/workspace
 COPY cg-al.ps1 C:/cg-al.ps1
 RUN Set-Content -Path C:\Windows\System32\cg-al.cmd -Value '@powershell -NoProfile -ExecutionPolicy Bypass -File C:\cg-al.ps1 %*'
+# Git Bash's /usr/bin: every harness's bash tool (Claude Code's Bash, pi's bash, which is
+# C:\Git\bin\bash.exe via PATH) runs `cg-al` through this shim (M1-28b, M1-28d).
+COPY cg-al C:/Git/usr/bin/cg-al
 COPY al-tools-mcp.mjs C:/al-tools-mcp.mjs
 COPY al-tools-tools.json C:/al-tools-tools.json

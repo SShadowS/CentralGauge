@@ -1,4 +1,4 @@
 # Recorded harness logs must stay byte-exact (no CRLF conversion on checkout)
 tests/fixtures/harness/** -text
-# Bash refuses CRLF: the image's cg-al shim stays LF on every checkout
-harness/images/claude-code/cg-al text eol=lf
+# Bash refuses CRLF: the base image's cg-al shim stays LF on every checkout
+harness/images/base/cg-al text eol=lf
