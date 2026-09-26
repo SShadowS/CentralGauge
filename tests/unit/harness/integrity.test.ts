@@ -2,7 +2,9 @@ import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
 import { readCatalog } from "../../../src/ingest/catalog/read.ts";
+import { claudeCodeHarnessNative } from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
+import { piHarnessNative } from "../../../src/harness/adapters/pi.ts";
 import { loadExperiment, type VaryKey } from "../../../src/harness/config.ts";
 import { runtimeFacts } from "../../../src/harness/images.ts";
 import {
@@ -642,5 +644,117 @@ Deno.test("validateCampaignRecords: without harness in vary the native differenc
   assertStringIncludes(
     (await ccVsPi(undefined, ["harness", "harness_version"])).join("\n"),
     "settings",
+  );
+});
+
+/** A fixture campaign with its arms replaced by baseline `a`, variant `b`. */
+async function pair(
+  vary: VaryKey[],
+  a: ResolvedManifest,
+  b: ResolvedManifest,
+): Promise<string[]> {
+  const c = await campaign();
+  const experiment = {
+    ...c.experiment,
+    baseline: a.config_id,
+    variants: [b.config_id],
+    vary,
+  };
+  return await problems({
+    campaign: {
+      ...c,
+      experiment,
+      experiment_hash: await experimentHash(experiment),
+      arms: await Promise.all([a, b].map(async (m) => ({
+        config_id: m.config_id,
+        manifest_hash: await manifestHash(m),
+        manifest: m,
+      }))),
+      blocks: planBlocks(
+        c.task_set.tasks.map((t) => t.id),
+        experiment.repeats,
+        [a.config_id, b.config_id],
+        c.seed,
+      ),
+    },
+    executions: [],
+    artifacts: [],
+    judgments: [],
+  });
+}
+
+Deno.test("validateCampaignRecords: vary [harness, models] refuses a model id that is not its slug's", async () => {
+  // Same label on both sides; only the api model id behind it differs.
+  const models = { main: "anthropic/model-a" };
+  const cc = manifest("cc", {
+    models,
+    settings: {
+      requested: {},
+      native: { ...claudeCodeHarnessNative(), api_models: { main: "model-a" } },
+    },
+  });
+  const pi = manifest("pi", {
+    harness: "pi",
+    models,
+    settings: {
+      requested: {},
+      native: { ...piHarnessNative(), api_models: { main: "claude-opus-5" } },
+    },
+  });
+  assertStringIncludes(
+    (await pair(["harness", "models"], cc, pi)).join("\n"),
+    "outside vary [harness, models]: settings",
+  );
+  const ok = manifest("pi", {
+    ...pi,
+    settings: {
+      requested: {},
+      native: { ...piHarnessNative(), api_models: { main: "model-a" } },
+    },
+  });
+  assertEquals(await pair(["harness", "models"], cc, ok), []);
+  // The real pair's baseline is checked against its slug the same way.
+  assertStringIncludes(
+    (await ccVsPi(
+      (m) =>
+        native(m, (n) => ({ ...n, api_models: { main: "claude-opus-5" } })),
+      undefined,
+      true,
+    )).join("\n"),
+    ": settings",
+  );
+});
+
+Deno.test("validateCampaignRecords: vary [harness, mcp] keeps the MCP rule", async () => {
+  const server = { name: "al-tools", version: "1", tool_schema_hash: "s" };
+  const cc = (
+    id: string,
+    extra: Record<string, unknown> = {},
+    mcp = [server],
+  ) =>
+    manifest(id, {
+      mcp: extra["mcp"] ? mcp : [],
+      settings: {
+        requested: {},
+        native: { ...claudeCodeHarnessNative(), ...extra },
+      },
+    });
+  const tools = (t: string[]) => ({
+    mcp: ["al-tools"],
+    mcp_tools: { "al-tools": t },
+  });
+  // Same harness, MCP-only difference: passes as under vary [mcp].
+  assertEquals(
+    await pair(["harness", "mcp"], cc("plain"), cc("mcp", tools(["a"]))),
+    [],
+  );
+  // A tool list changed on a server identical on both sides is not MCP-derived.
+  assertStringIncludes(
+    (await pair(
+      ["harness", "mcp"],
+      cc("a", tools(["a"])),
+      cc("b", tools(["a", "b"])),
+    )).join("\n"),
+    "outside vary [harness, mcp]: settings",
   );
 });
