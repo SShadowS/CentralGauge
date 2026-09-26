@@ -1,0 +1,336 @@
+{
+  "v": 1,
+  "experiment": {
+    "id": "mock-contract",
+    "hypothesis": "The pipeline scores the correct mock variant as pass and the naive lock-table variant as fail on HX-001.",
+    "primary_metric": "pass_rate",
+    "baseline": "mock-naive-lock-table",
+    "variants": [
+      "mock-positive"
+    ]
+  },
+  "campaign": {
+    "id": "87129b95-fd8c-4904-ab84-95e1579eacf7",
+    "created_at": "2026-09-26T08:44:33.375Z",
+    "task_set_identity": "966d4fe851245e8e3350dd77fcaab591783bb19b877a6886ee44cf2872176643",
+    "tasks": 1
+  },
+  "judging": {
+    "source": "campaign",
+    "identity": "966d4fe851245e8e3350dd77fcaab591783bb19b877a6886ee44cf2872176643",
+    "tasks_with_other_oracle": []
+  },
+  "provisional": true,
+  "repeats": {
+    "planned": 2,
+    "reported": 2
+  },
+  "partial": {
+    "reasons": [
+      "provisional"
+    ]
+  },
+  "metric_labels": {
+    "cost_per_solved_task": "exploratory",
+    "pass_rate": "primary",
+    "pass_k": "exploratory"
+  },
+  "coverage": [
+    {
+      "arm": "mock-naive-lock-table",
+      "executions": 2,
+      "manual_reruns": 0,
+      "infra_exposed": 0,
+      "incomplete_telemetry": {},
+      "unverified_components": [],
+      "cost_assumptions": {},
+      "trace": {
+        "executions": 2,
+        "with_trace": 0,
+        "complete": 0,
+        "invalid": 0,
+        "tool_calls": 0,
+        "rule_classified": 0,
+        "unclassified": 0,
+        "unreplayable": 0,
+        "rules": "rules@1"
+      },
+      "excluded_cells": 0,
+      "excluded_known_spend_usd": 0,
+      "excluded_trace_invalid": 0,
+      "campaign_raw_spend_usd": 0
+    },
+    {
+      "arm": "mock-positive",
+      "executions": 1,
+      "manual_reruns": 0,
+      "infra_exposed": 0,
+      "incomplete_telemetry": {},
+      "unverified_components": [],
+      "cost_assumptions": {},
+      "trace": {
+        "executions": 1,
+        "with_trace": 0,
+        "complete": 0,
+        "invalid": 0,
+        "tool_calls": 0,
+        "rule_classified": 0,
+        "unclassified": 0,
+        "unreplayable": 0,
+        "rules": "rules@1"
+      },
+      "excluded_cells": 0,
+      "excluded_known_spend_usd": 0,
+      "excluded_trace_invalid": 0,
+      "campaign_raw_spend_usd": 0
+    }
+  ],
+  "trace_invalid": [],
+  "diffs": [
+    {
+      "variant": "mock-positive",
+      "differing": [
+        "settings"
+      ]
+    }
+  ],
+  "arms": [
+    {
+      "arm": "mock-naive-lock-table",
+      "planned_cells": 2,
+      "attempted_cells": 2,
+      "scored_cells": 2,
+      "unscored_cells": 0,
+      "pending_cells": 0,
+      "unrun_cells": 0,
+      "unknown_spend_cells": 0,
+      "unknown_spend_terminal_cells": 0,
+      "total_spend_usd": 0,
+      "pending_spend_usd": 0,
+      "cost_per_solved_task": null,
+      "pass_rate": 0,
+      "pass_k": 0,
+      "pass_k_tasks": 1,
+      "provisional": false
+    },
+    {
+      "arm": "mock-positive",
+      "planned_cells": 2,
+      "attempted_cells": 1,
+      "scored_cells": 1,
+      "unscored_cells": 0,
+      "pending_cells": 0,
+      "unrun_cells": 1,
+      "unknown_spend_cells": 0,
+      "unknown_spend_terminal_cells": 0,
+      "total_spend_usd": 0,
+      "pending_spend_usd": 0,
+      "cost_per_solved_task": 0,
+      "pass_rate": 1,
+      "pass_k": null,
+      "pass_k_tasks": 0,
+      "provisional": true
+    }
+  ],
+  "comparisons": [
+    {
+      "metric": "pass_rate",
+      "baseline": "mock-naive-lock-table",
+      "variant": "mock-positive",
+      "pairs": 1,
+      "tasks": 1,
+      "tasks_dropped": 0,
+      "excluded": {
+        "baseline": {},
+        "variant": {
+          "unrun": 1
+        }
+      },
+      "level": 0.95,
+      "resamples": 2000,
+      "seed": 1,
+      "provisional": true,
+      "delta": 1,
+      "ci": [
+        1,
+        1
+      ],
+      "undefined_share": 0,
+      "distinguishable": true,
+      "primary": true,
+      "label": "primary",
+      "scorer_fingerprint": "e5a1589ec1252dff5f0187da8ff17351fccccd1c847a2320b95593985d6799bf"
+    },
+    {
+      "metric": "cost_per_solved_task",
+      "baseline": "mock-naive-lock-table",
+      "variant": "mock-positive",
+      "pairs": 1,
+      "tasks": 1,
+      "tasks_dropped": 0,
+      "excluded": {
+        "baseline": {},
+        "variant": {
+          "unrun": 1
+        }
+      },
+      "level": 0.95,
+      "resamples": 2000,
+      "seed": 1,
+      "provisional": true,
+      "delta": null,
+      "ci": null,
+      "undefined_share": 1,
+      "distinguishable": null,
+      "primary": false,
+      "label": "exploratory",
+      "scorer_fingerprint": "e5a1589ec1252dff5f0187da8ff17351fccccd1c847a2320b95593985d6799bf"
+    }
+  ],
+  "flips": [
+    {
+      "task": "HX-001",
+      "kind": "bugfix",
+      "coupling": [
+        "core-facade",
+        "events"
+      ],
+      "pass_rate": {
+        "mock-naive-lock-table": 0,
+        "mock-positive": 1
+      }
+    }
+  ],
+  "efficiency": [
+    {
+      "arm": "mock-naive-lock-table",
+      "host_logs": 0,
+      "backend_requests": 0,
+      "logical_builds": 0,
+      "per_app_compiles": 0,
+      "test_runs": 0,
+      "diagnostics_per_build": null,
+      "verdict_ms_median": 123928.55075000001,
+      "verdict_queue_ms_median": 0.005199999999604188,
+      "backend_queue_ms_median": null
+    },
+    {
+      "arm": "mock-positive",
+      "host_logs": 0,
+      "backend_requests": 0,
+      "logical_builds": 0,
+      "per_app_compiles": 0,
+      "test_runs": 0,
+      "diagnostics_per_build": null,
+      "verdict_ms_median": 93253.43570000003,
+      "verdict_queue_ms_median": 0.010399999999208376,
+      "backend_queue_ms_median": null
+    }
+  ],
+  "slices": [
+    {
+      "by": "kind",
+      "value": "bugfix",
+      "tasks": 1,
+      "pass_rate": {
+        "mock-naive-lock-table": 0,
+        "mock-positive": 1
+      }
+    },
+    {
+      "by": "coupling",
+      "value": "core-facade",
+      "tasks": 1,
+      "pass_rate": {
+        "mock-naive-lock-table": 0,
+        "mock-positive": 1
+      }
+    },
+    {
+      "by": "coupling",
+      "value": "events",
+      "tasks": 1,
+      "pass_rate": {
+        "mock-naive-lock-table": 0,
+        "mock-positive": 1
+      }
+    }
+  ],
+  "both_pass": [
+    {
+      "baseline": "mock-naive-lock-table",
+      "variant": "mock-positive",
+      "pairs": 1,
+      "both_pass": 0,
+      "baseline_only": 0,
+      "variant_only": 1,
+      "neither": 0
+    }
+  ],
+  "cells": [
+    {
+      "task": "HX-001",
+      "arm": "mock-naive-lock-table",
+      "repeat": 1,
+      "status": "scored",
+      "pass": false,
+      "spend_usd": 0,
+      "known_spend_usd": 0,
+      "attempts": 1,
+      "used_execution": "ee1293c6-4adc-4f24-9a0b-d457fd51d4f2",
+      "used_kind": "planned",
+      "judgment_id": "611014b1-a9e0-478f-ba34-1b385370fd8f",
+      "oracle_hash": "b2a26e60cab7e6a842f1bfdcc9fe4278510c4810bde79acaee3bed1a96b64025",
+      "scorer_fingerprint": "e5a1589ec1252dff5f0187da8ff17351fccccd1c847a2320b95593985d6799bf",
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "mock-positive",
+      "repeat": 1,
+      "status": "scored",
+      "pass": true,
+      "spend_usd": 0,
+      "known_spend_usd": 0,
+      "attempts": 1,
+      "used_execution": "548e2358-bf13-4401-9eb5-aad5fe7ba4c7",
+      "used_kind": "planned",
+      "judgment_id": "b6f7391e-cc1a-47ba-bec5-ebe6abecc4e5",
+      "oracle_hash": "b2a26e60cab7e6a842f1bfdcc9fe4278510c4810bde79acaee3bed1a96b64025",
+      "scorer_fingerprint": "e5a1589ec1252dff5f0187da8ff17351fccccd1c847a2320b95593985d6799bf",
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "mock-positive",
+      "repeat": 2,
+      "status": "unrun",
+      "pass": null,
+      "spend_usd": 0,
+      "known_spend_usd": 0,
+      "attempts": 0,
+      "used_execution": null,
+      "used_kind": null,
+      "judgment_id": null,
+      "oracle_hash": null,
+      "scorer_fingerprint": null,
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "mock-naive-lock-table",
+      "repeat": 2,
+      "status": "scored",
+      "pass": false,
+      "spend_usd": 0,
+      "known_spend_usd": 0,
+      "attempts": 1,
+      "used_execution": "5b1cf8aa-dc52-4839-b414-8811f3b64847",
+      "used_kind": "planned",
+      "judgment_id": "f2a1907a-b079-4bdb-9cd9-363feaa29594",
+      "oracle_hash": "b2a26e60cab7e6a842f1bfdcc9fe4278510c4810bde79acaee3bed1a96b64025",
+      "scorer_fingerprint": "e5a1589ec1252dff5f0187da8ff17351fccccd1c847a2320b95593985d6799bf",
+      "manual_reruns": 0
+    }
+  ]
+}

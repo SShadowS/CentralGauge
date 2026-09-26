@@ -16,7 +16,11 @@ import {
   planBlocks,
   scorerFingerprint,
 } from "../../../src/harness/records.ts";
-import { buildReport, renderReport } from "../../../src/harness/report.ts";
+import {
+  buildReport,
+  partialText,
+  renderReport,
+} from "../../../src/harness/report.ts";
 import { loadTraces } from "../../../src/harness/trace-metrics.ts";
 import { type TraceEvent, writeTrace } from "../../../src/harness/trace.ts";
 import {
@@ -862,4 +866,42 @@ Deno.test("buildReport --repeats: 0, above the plan or fractional is refused", a
       "repeats",
     );
   }
+});
+
+Deno.test("buildReport partial marker (M6-02a F3): null when complete; provisional, repeat_cut or both, in JSON and text", async () => {
+  const full = await buildReport(await records(), { resamples: 50 });
+  assertEquals(full.partial, null);
+  assertStringIncludes(
+    stripAnsiCode(renderReport(full)),
+    "Partial: no (repeats 1 of 1 reported, no cell pending or unrun)",
+  );
+  const unrun = await buildReport(await cutRecords(), { resamples: 50 });
+  assertEquals(unrun.partial, { reasons: ["provisional"] });
+  const cut = await buildReport(await cutRecords(), {
+    resamples: 50,
+    repeats: 2,
+  });
+  assertEquals(cut.partial, { reasons: ["repeat_cut"] });
+  assertStringIncludes(
+    stripAnsiCode(renderReport(unrun)),
+    "PARTIAL (provisional: cells pending or unrun)",
+  );
+  assertStringIncludes(
+    stripAnsiCode(renderReport(cut)),
+    "PARTIAL (repeat cut: 2 of 3 repeats reported)",
+  );
+  // Both reasons at once, in a fixed order.
+  const c = await cutRecords();
+  const kept = c.executions.filter((e) => e.repeat !== 1 || e.arm !== "skills");
+  const ids = new Set(kept.map((e) => e.id));
+  const both = await buildReport({
+    ...c,
+    executions: kept,
+    judgments: c.judgments.filter((j) => ids.has(j.execution_id)),
+  }, { resamples: 50, repeats: 2 });
+  assertEquals(both.partial, { reasons: ["provisional", "repeat_cut"] });
+  assertEquals(
+    partialText(both),
+    "PARTIAL (provisional: cells pending or unrun; repeat cut: 2 of 3 repeats reported)",
+  );
 });
