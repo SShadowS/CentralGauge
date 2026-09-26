@@ -1284,3 +1284,53 @@ Deno.test("pi trace: capabilities and trace_complete are written", async () => {
     );
   }
 });
+
+Deno.test("pi trace: a started tool call without an end makes the trace incomplete", async () => {
+  const lines = (HEAD + await Deno.readTextFile(FIXTURE)).split("\n");
+  const cut = lines.filter((l) =>
+    !(l.includes('"tool_execution_end"') && l.includes("call_4054099"))
+  ).join("\n");
+  const r = run(cut);
+  const rw = r.telemetry.raw_usage as unknown as {
+    trace_complete: boolean;
+    stream_problems: string[];
+  };
+  assertEquals(rw.trace_complete, false);
+  assertStringIncludes(
+    rw.stream_problems.join("\n"),
+    "call_4054099 has no tool_execution_end",
+  );
+});
+
+Deno.test("pi trace: a problem that is not structural leaves a settled trace complete", async () => {
+  const lines = (HEAD + await Deno.readTextFile(FIXTURE)).split("\n");
+  const text = [
+    lines[0],
+    JSON.stringify({ type: "some_new_record" }),
+    ...lines.slice(1),
+  ]
+    .join("\n");
+  const rw = run(text).telemetry.raw_usage as unknown as {
+    trace_complete: boolean;
+    stream_problems: string[];
+  };
+  assert(rw.stream_problems.some((p) => p.includes("some_new_record")));
+  assertEquals(rw.trace_complete, true);
+});
+
+Deno.test("pi trace: every stored string is pattern-redacted; a relative skills path is a skill", async () => {
+  const key = `sk-ant-oat01-${"Q".repeat(40)}`;
+  const text = (HEAD + await Deno.readTextFile(FIXTURE))
+    .replaceAll('"command":"cg-al --version"', `"command":"echo ${key}"`)
+    .replaceAll("call_1169776", `call_${key}`)
+    .replaceAll(
+      '"path":"src/FleetMgt.Codeunit.al"',
+      '"path":"skills/fleet-rules/SKILL.md"',
+    );
+  const r = run(text);
+  assertEquals(JSON.stringify(r.trace).includes(key), false);
+  assertEquals(
+    r.trace.filter((e) => e.type === "skill_invoke").map((e) => e.skill),
+    ["fleet-notes", "fleet-rules"],
+  );
+});
