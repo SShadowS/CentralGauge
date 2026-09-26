@@ -1002,3 +1002,147 @@ Deno.test("buildApps: a build cache reuses an unchanged app; a changed source re
   await buildApps(bc, "C1", await o());
   assertEquals(bc.compiles.slice(3), ["Rental", "Test"]);
 });
+
+/** The lock plus a second package that the workspace's Core collides with. */
+async function lockWith(
+  extra: { app_id: string; file: string },
+): Promise<LockedSymbols> {
+  const lk = await lock();
+  await Deno.writeTextFile(join(lk.store, "staging.app"), "microsoft-symbols");
+  const sha256 = await hashFile(lk.store, join(lk.store, "staging.app"));
+  await Deno.rename(
+    join(lk.store, "staging.app"),
+    join(lk.store, `${sha256}.app`),
+  );
+  lk.packages.push({
+    ...extra,
+    name: "Base Application",
+    publisher: "Microsoft",
+    version: "28.0.0.0",
+    sha256,
+  });
+  return lk;
+}
+
+const BASE_ID = "437dbf0e-84ff-417a-965d-ed2bb9650972";
+
+for (
+  const file of [
+    "CentralGauge_CGR Core_1.0.7.7.app",
+    "centralgauge_cgr core_1.0.7.7.APP",
+  ]
+) {
+  Deno.test(`buildApps: a workspace app whose output file is a locked package's (${file}) is the app's build failure; the locked package is never overwritten`, async () => {
+    const ws = await workspace();
+    const lk = await lockWith({ app_id: BASE_ID, file });
+    const bc = new FakeBc();
+    const outDir = await tmp();
+    const built = await buildApps(bc, "C1", {
+      srcDir: ws,
+      apps: await readAppGraph(ws),
+      versions: new Map([["Core", "1.0.7.7"]]),
+      outDir,
+      lock: lk,
+    });
+    assertEquals(bc.compiles, ["Core"], "no dependent compiles against it");
+    const core = built.find((b) => b.folder === "Core")!;
+    assertEquals([core.ok, core.attempted, core.file], [false, true, null]);
+    const msg = core.diagnostics.map((d) => d.message).join("\n");
+    assertStringIncludes(msg, "CentralGauge_CGR Core_1.0.7.7.app");
+    assertStringIncludes(msg, file);
+    assert(built.every((b) => !b.ok));
+    const kept: string[] = [];
+    for await (const e of Deno.readDir(join(outDir, ".apps"))) {
+      kept.push(e.name);
+    }
+    assertEquals(kept, [], "the colliding build is not kept");
+  });
+}
+
+Deno.test("buildApps: a workspace app whose id is a locked package's is the app's build failure, never compiled", async () => {
+  const ws = await workspace();
+  const lk = await lockWith({
+    app_id: IDS.core.toUpperCase(),
+    file: "Microsoft_Base Application_28.0.0.0.app",
+  });
+  const bc = new FakeBc();
+  const built = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+  });
+  assertEquals(bc.compiles, []);
+  const core = built.find((b) => b.folder === "Core")!;
+  assertEquals([core.ok, core.attempted], [false, false]);
+  assertStringIncludes(core.diagnostics[0]!.message, IDS.core);
+  assertStringIncludes(
+    core.diagnostics[0]!.message,
+    "Microsoft_Base Application_28.0.0.0.app",
+  );
+});
+
+Deno.test("buildApps: a reused build is refused on an id or file name collision, never reused past the check", async () => {
+  const ws = await workspace();
+  const stash = await tmp();
+  const colliding = join(stash, "Microsoft_Base Application_28.0.0.0.app");
+  await Deno.writeTextFile(colliding, "agent build");
+  const cache = {
+    get: () => Promise.resolve(colliding),
+    put: () => Promise.resolve(),
+  };
+  const bc = new FakeBc();
+  const byName = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lockWith({
+      app_id: BASE_ID,
+      file: "microsoft_base application_28.0.0.0.app",
+    }),
+    cache,
+  });
+  const core = byName.find((b) => b.folder === "Core")!;
+  assertEquals([core.ok, core.file], [false, null]);
+  assertStringIncludes(
+    core.diagnostics[0]!.message,
+    "microsoft_base application_28.0.0.0.app",
+  );
+  assert(byName.every((b) => !b.ok));
+  const byId = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lockWith({ app_id: IDS.core, file: "Other.app" }),
+    cache,
+  });
+  assertEquals(byId.find((b) => b.folder === "Core")!.ok, false);
+  assertStringIncludes(byId[0]!.diagnostics[0]!.message, IDS.core);
+  assertEquals(bc.compiles, []);
+});
+
+Deno.test("buildApps: a prebuilt workspace file named as a locked package is refused, never copied over it", async () => {
+  const ws = await workspace();
+  const stash = await tmp();
+  const pre = join(stash, "Microsoft_Library Assert_28.0.0.0.app");
+  await Deno.writeTextFile(pre, "agent build");
+  const bc = new FakeBc();
+  const apps = (await readAppGraph(ws)).filter((a) => a.folder === "Rental");
+  await assertRejects(
+    async () =>
+      buildApps(bc, "C1", {
+        srcDir: ws,
+        apps,
+        versions: new Map(),
+        outDir: stash,
+        lock: await lock(),
+        prebuilt: new Map([["Core", pre]]),
+      }),
+    ValidationError,
+    "Microsoft_Library Assert_28.0.0.0.app",
+  );
+  assertEquals(bc.compiles, []);
+});

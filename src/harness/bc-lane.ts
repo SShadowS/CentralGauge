@@ -523,8 +523,34 @@ export async function buildApps(
   const out: BuiltApp[] = [];
   await Deno.mkdir(join(o.outDir, ".apps"), { recursive: true });
   const lockedIds = new Set(o.lock.packages.map((p) => p.app_id.toLowerCase()));
-  const lockedByName = new Map(o.lock.packages.map((p) => [p.file, p.sha256]));
-  const lockedNames = new Set(lockedByName.keys());
+  // Keyed case-insensitively: .alpackages is on an NTFS volume, so a file
+  // named like a locked package in another case would still overwrite it.
+  const lockedByName = new Map(
+    o.lock.packages.map((p) => [p.file.toLowerCase(), p]),
+  );
+  const lockedNames = new Set(o.lock.packages.map((p) => p.file));
+  const collision = (file: string) =>
+    lockedByName.get(basename(file).toLowerCase());
+  // A workspace app is the agent's (publisher, name, version, id): one that
+  // is a locked package by id or file name would replace a symbol package
+  // (e.g. Base Application) for its dependents. Its own build failure.
+  const refuse = (
+    app: StagedApp,
+    version: string,
+    attempted: boolean,
+    message: string,
+    diagnostics: CompilationError[] = [],
+    compile_ms = 0,
+  ): BuiltApp => ({
+    folder: app.folder,
+    id: app.id,
+    version,
+    ok: false,
+    attempted,
+    file: null,
+    diagnostics: [...diagnostics, synthetic(message)],
+    compile_ms,
+  });
   const lockDigest = await hashJson({
     lock: o.lock.packages.map((p) => [p.file, p.sha256]),
   });
@@ -566,10 +592,38 @@ export async function buildApps(
       });
       continue;
     }
+    const idTaken = o.lock.packages.find((p) =>
+      p.app_id.toLowerCase() === app.id.toLowerCase()
+    );
+    if (idTaken) {
+      out.push(
+        refuse(
+          app,
+          version,
+          false,
+          `app id ${app.id} is the id of the locked symbol package ${idTaken.file}`,
+        ),
+      );
+      continue;
+    }
     const key = o.cache
       ? await buildKey(container, app, o.srcDir, version, files, lockDigest)
       : null;
     const hit = key ? await o.cache!.get(key) : null;
+    const hitTaken = hit ? collision(hit) : undefined;
+    if (hit && hitTaken) {
+      out.push(
+        refuse(
+          app,
+          version,
+          false,
+          `reused build ${
+            basename(hit)
+          } has the file name of the locked symbol package ${hitTaken.file}`,
+        ),
+      );
+      continue;
+    }
     if (hit) {
       const file = join(o.outDir, ".apps", basename(hit));
       await Deno.copyFile(hit, file);
@@ -600,6 +654,9 @@ export async function buildApps(
     const pk = join(dir, ".alpackages");
     await restoreSymbols(o.lock.store, o.lock.packages, pk);
     const workspaceFiles = new Set([...files.values()].map((f) => basename(f)));
+    const workspaceLower = new Set(
+      [...workspaceFiles].map((f) => f.toLowerCase()),
+    );
     await seedAppInfo(
       pk,
       o.lock.store,
@@ -608,6 +665,14 @@ export async function buildApps(
       workspaceFiles,
     );
     for (const f of files.values()) {
+      // Every workspace file here passed the collision check when built.
+      const taken = collision(f);
+      if (taken) {
+        throw new ValidationError(
+          `workspace package ${f} has the file name of the locked symbol package ${taken.file}`,
+          [basename(f)],
+        );
+      }
       await Deno.copyFile(f, join(pk, basename(f)));
     }
     const t0 = performance.now();
@@ -622,8 +687,11 @@ export async function buildApps(
       // Only packages are checked: BCH writes its own index
       // (cache_AppInfo.json) into .alpackages during the compile.
       if (!e.name.toLowerCase().endsWith(".app")) continue;
-      if (workspaceFiles.has(e.name)) continue;
-      const sha = lockedByName.get(e.name);
+      // A locked package is always verified, never skipped as a workspace file.
+      const sha = lockedByName.get(e.name.toLowerCase())?.sha256;
+      if (sha === undefined && workspaceLower.has(e.name.toLowerCase())) {
+        continue;
+      }
       if (sha === undefined || await hashFile(pk, join(pk, e.name)) !== sha) {
         throw new ValidationError(
           `compile of ${app.folder} used an unlocked symbol package: ${e.name} (the symbols lock does not match the compiler cache)`,
@@ -639,6 +707,24 @@ export async function buildApps(
       lockedNames,
       workspaceFiles,
     );
+    const outTaken = r.success && r.artifactPath
+      ? collision(r.artifactPath)
+      : undefined;
+    if (r.artifactPath && outTaken) {
+      out.push(
+        refuse(
+          app,
+          version,
+          true,
+          `output ${
+            basename(r.artifactPath)
+          } has the file name of the locked symbol package ${outTaken.file}`,
+          r.errors,
+          compile_ms,
+        ),
+      );
+      continue;
+    }
     let file: string | null = null;
     if (r.success && r.artifactPath) {
       file = join(o.outDir, ".apps", basename(r.artifactPath));
