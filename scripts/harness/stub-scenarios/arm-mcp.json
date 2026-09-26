@@ -44,21 +44,6 @@
       "content": [
         {
           "type": "tool_use",
-          "id": "toolu_stub_04",
-          "name": "Agent",
-          "input": {
-            "subagent_type": "general-purpose",
-            "description": "list",
-            "prompt": "List C:\\workspace."
-          }
-        }
-      ],
-      "stop_reason": "tool_use"
-    },
-    {
-      "content": [
-        {
-          "type": "tool_use",
           "id": "toolu_stub_05",
           "name": "Glob",
           "input": {
@@ -67,15 +52,6 @@
         }
       ],
       "stop_reason": "tool_use"
-    },
-    {
-      "content": [
-        {
-          "type": "text",
-          "text": "listed"
-        }
-      ],
-      "stop_reason": "end_turn"
     },
     {
       "content": [

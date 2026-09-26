@@ -2134,6 +2134,38 @@ Deno.test("stub cell with a placed marker: egress not consulted (M2-08); interna
   assertEquals(await t.env.store.judgments(e.id), []);
 });
 
+Deno.test("stub cell with a qualified marker (M1-33s): runs on the internal network, no proxy env, no egress events or record, ready before the start, not judged", async () => {
+  const t = await makeEnv();
+  await stubEnv(t);
+  const eg = enforce(t);
+  t.env.egressEnforced = false; // qualified: placed, not authorized
+  let readyAtStart = false;
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    const dir = call.mounts.get("C:\\cg-secrets")!.src;
+    readyAtStart = (await Deno.stat(join(dir, READY_FILE))).size === 0;
+    return await inner(call, io);
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  assertEquals(eg.events, []);
+  assertEquals(eg.proxyHosts, null);
+  const call = t.docker.runs[0]!;
+  assertEquals(call.network, SANDBOX_NETWORK.name);
+  for (const k of Object.keys(PROXY_ENV)) {
+    assertEquals(call.env.get(k), undefined);
+  }
+  assert(readyAtStart);
+  const run = join(stubRoot(t).resultsRoot, "runs", e.id);
+  assert(await exists(join(run, "sandbox.json"))); // the right run dir
+  assert(!await exists(join(run, "egress.jsonl")));
+  assert(!await exists(join(run, "record-mode.json")));
+  assert(
+    !await exists(join(t.env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"))),
+  );
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
 // Review item 2: OAuth host record mode (M1-34 Step 11).
 
 Deno.test("record mode is refused outside qualified + supervised + a credential-bearing Claude arm + the ledger, and when a recording exists", async () => {

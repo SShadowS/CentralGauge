@@ -309,7 +309,12 @@ async function handle(msg) {
 
 const pending = new Set();
 const rl = createInterface({ input: process.stdin });
-rl.on("line", (line) => {
+// PowerShell 5.1 pipes prepend one UTF-8 BOM to the stream (M3-07a): tolerate
+// exactly one, on the first line only; anything else stays a parse error.
+let firstLine = true;
+rl.on("line", (raw) => {
+  const line = firstLine && raw.startsWith("﻿") ? raw.slice(1) : raw;
+  firstLine = false;
   if (line.trim() === "") return;
   let msg;
   try {

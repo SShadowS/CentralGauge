@@ -62,7 +62,7 @@ export const EGRESS_MARKER = MARKER_FILE;
 
 /** Host egress verification (M1-33) against the marker at markerPath. Returns problems; empty means verified. */
 export type EgressVerifier = (markerPath: string) => Promise<string[]>;
-/** off: nat network, no proxy; placed: internal network, proxy, preflight; enforced: placed and authorized. */
+/** off: nat network, no proxy; placed: internal network, plus proxy and preflight for normal (not stub) cells; enforced: placed and authorized. */
 export type EgressMode = "off" | "placed" | "enforced";
 
 export interface EnvOptions {

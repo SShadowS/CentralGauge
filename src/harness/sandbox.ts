@@ -360,7 +360,7 @@ export interface SandboxSpec {
   extraMounts: { src: string; dst: string }[];
   /** Non-secret env only. */
   env: Record<string, string>;
-  /** Docker network (M1-33's internal network when egress is enforced). */
+  /** Docker network (M1-33's internal network when the egress marker places sandboxes). */
   network?: string;
   /** Overrides the image's CMD (ops probes only). */
   command?: string[];
