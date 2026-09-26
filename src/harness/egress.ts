@@ -467,8 +467,11 @@ export function verifyEgressState(s: EgressState): string[] {
       );
     }
   }
+  // HNS reports its type as "internal" (M1-34 AD-04), and the HNS id and
+  // docker's hnsid are GUIDs: both compared case-insensitively (M1-34a).
   if (
-    !s.hns || s.hns.id !== n?.hnsId || s.hns.type !== "Internal" ||
+    !s.hns || !n || s.hns.id.toLowerCase() !== n.hnsId.toLowerCase() ||
+    s.hns.type.toLowerCase() !== "internal" ||
     s.hns.subnet !== SANDBOX_NETWORK.subnet
   ) {
     p.push(
