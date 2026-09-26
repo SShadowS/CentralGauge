@@ -1,7 +1,8 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { fromFileUrl, join } from "@std/path";
+import { dirname, fromFileUrl, join } from "@std/path";
 import {
   bind,
+  FindingError,
   OperationalError,
   pack,
   verify,
@@ -28,7 +29,7 @@ Deno.test("pack then verify is clean; freeze.json holds meta, sums hash and scan
   const o = await out();
   const r = await pack(await tree(), o, {
     meta: { git: "abc" },
-    secretFiles: [await secret("tok-123")],
+    secretFiles: [await secret("tok-12345")],
   });
   assertEquals([r.files, await verify(o)], [2, []]);
   const f = JSON.parse(await Deno.readTextFile(join(o, "freeze.json")));
@@ -42,17 +43,17 @@ Deno.test("pack then verify is clean; freeze.json holds meta, sums hash and scan
 
 Deno.test("a secret hit fails without printing the value; missing or empty secret files are operational failures", async () => {
   const root = await tree();
-  await Deno.writeTextFile(join(root, "leak.txt"), "x tok-123 y");
+  await Deno.writeTextFile(join(root, "leak.txt"), "x tok-12345 y");
   const hit = await assertRejects(
     async () =>
       pack(root, await out(), {
         meta: {},
-        secretFiles: [await secret("tok-123")],
+        secretFiles: [await secret("tok-12345")],
       }),
     Error,
     "leak.txt",
   );
-  assert(!hit.message.includes("tok-123"));
+  assert(!hit.message.includes("tok-12345"));
   await assertRejects(
     async () =>
       pack(root, await out(), {
@@ -75,7 +76,10 @@ Deno.test("a secret hit fails without printing the value; missing or empty secre
 
 Deno.test("verify names changed, missing, extra files, an edited SHA256SUMS and a changed bound file", async () => {
   const o = await out();
-  await pack(await tree(), o, { meta: {}, secretFiles: [await secret("tok")] });
+  await pack(await tree(), o, {
+    meta: {},
+    secretFiles: [await secret("tok-12345")],
+  });
   const report = join(await Deno.makeTempDir(), "r.json");
   await Deno.writeTextFile(report, "{}");
   await bind(o, [report]);
@@ -105,7 +109,10 @@ Deno.test("verify names changed, missing, extra files, an edited SHA256SUMS and 
 
 Deno.test("bind is cumulative: reports, then documents; a later call keeps earlier entries; a changed report is caught", async () => {
   const o = await out();
-  await pack(await tree(), o, { meta: {}, secretFiles: [await secret("tok")] });
+  await pack(await tree(), o, {
+    meta: {},
+    secretFiles: [await secret("tok-12345")],
+  });
   const dir = await Deno.makeTempDir();
   const report = join(dir, "r.json"), doc = join(dir, "handoff.md");
   await Deno.writeTextFile(report, "{}");
@@ -149,7 +156,7 @@ Deno.test({
       async () =>
         pack(root, await out(), {
           meta: {},
-          secretFiles: [await secret("tok")],
+          secretFiles: [await secret("tok-12345")],
         }),
       Error,
       "link",
@@ -172,9 +179,9 @@ Deno.test("a REPLACE_ME placeholder secret file is an operational failure, not a
 });
 
 Deno.test("a secret value with a trailing LF or CRLF is still found", async () => {
-  for (const v of ["tok-123\n", "tok-123\r\n"]) {
+  for (const v of ["tok-12345\n", "tok-12345\r\n"]) {
     const root = await tree();
-    await Deno.writeTextFile(join(root, "leak.txt"), "x tok-123 y");
+    await Deno.writeTextFile(join(root, "leak.txt"), "x tok-12345 y");
     await assertRejects(
       async () =>
         pack(root, await out(), { meta: {}, secretFiles: [await secret(v)] }),
@@ -203,4 +210,198 @@ Deno.test("the CLI pack without --secret-file exits 2 and writes nothing", async
   assertEquals(r.code, 2);
   assert(new TextDecoder().decode(r.stdout).includes("--secret-file"));
   await assertRejects(() => Deno.lstat(o), Deno.errors.NotFound);
+});
+
+const SCRIPT = fromFileUrl(
+  new URL("../../../scripts/harness/freeze-archive.ts", import.meta.url),
+);
+async function cli(...args: string[]) {
+  const r = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "--allow-all", SCRIPT, ...args],
+    stdout: "piped",
+    stderr: "piped",
+    env: { NO_COLOR: "1" },
+  }).output();
+  const dec = new TextDecoder();
+  return {
+    code: r.code,
+    text: dec.decode(r.stdout) + dec.decode(r.stderr),
+  };
+}
+async function leakRoot(name: string, content: string | Uint8Array) {
+  const root = await tree();
+  const p = join(root, name);
+  await Deno.mkdir(dirname(p), { recursive: true });
+  if (typeof content === "string") await Deno.writeTextFile(p, content);
+  else await Deno.writeFile(p, content);
+  return root;
+}
+const utf16 = (s: string) =>
+  new Uint8Array([...s].flatMap((c) => [c.charCodeAt(0), 0]));
+const b64 = (s: string) => btoa(s);
+const b64url = (s: string) => btoa(s).replaceAll("+", "-").replaceAll("/", "_");
+
+Deno.test("secret files hold one value per line; each line is searched on its own", async () => {
+  const f = await secret("first-secret-1\n\n  second-secret-2  \r\n");
+  for (const v of ["first-secret-1", "second-secret-2"]) {
+    const e = await assertRejects(
+      async () =>
+        pack(await leakRoot("leak.txt", `a ${v} b`), await out(), {
+          meta: {},
+          secretFiles: [f],
+        }),
+      FindingError,
+      "leak.txt",
+    );
+    assert(!e.message.includes(v));
+  }
+});
+
+Deno.test("a value shorter than 8 characters and a file with no values are refused as operational failures", async () => {
+  const short = await assertRejects(
+    async () =>
+      pack(await tree(), await out(), {
+        meta: {},
+        secretFiles: [await secret("long-enough-1\nabc1234\n")],
+      }),
+    OperationalError,
+    "shorter than 8",
+  );
+  assert(!short.message.includes("abc1234"));
+  await assertRejects(
+    async () =>
+      pack(await tree(), await out(), {
+        meta: {},
+        secretFiles: [await secret("\n   \r\n\n")],
+      }),
+    OperationalError,
+    "empty secret file",
+  );
+});
+
+Deno.test("each encoding of a value is found: UTF-16LE, base64 and URL-safe base64 at every alignment, percent-encoding", async () => {
+  const v = "tok/se?cr+et=9~>>";
+  const f = await secret(v);
+  const cases: [string, string | Uint8Array][] = [
+    ["utf8", `x${v}y`],
+    ["utf16le", utf16(`x${v}y`)],
+    ["percent", `q=${encodeURIComponent(v)}&`],
+    ["percent-lower", `q=${encodeURIComponent(v).toLowerCase()}&`],
+  ];
+  for (const pad of ["", "a", "ab"]) {
+    cases.push([`b64-${pad.length}`, `h: ${b64(pad + v + "zz")}`]);
+    cases.push([`b64url-${pad.length}`, `h: ${b64url(pad + v + "zz")}`]);
+  }
+  for (const [name, content] of cases) {
+    const e = await assertRejects(
+      async () =>
+        pack(await leakRoot("leak.bin", content), await out(), {
+          meta: {},
+          secretFiles: [f],
+        }),
+      FindingError,
+      "leak.bin",
+      name,
+    );
+    assert(!e.message.includes(v), name);
+  }
+});
+
+Deno.test("a value in a file or directory name is a hit and the path is withheld; so is a value in --meta", async () => {
+  const v = "pathsecret99";
+  const f = await secret(v);
+  const e = await assertRejects(
+    async () =>
+      pack(await leakRoot(join(`d-${v}`, "x.txt"), "clean"), await out(), {
+        meta: {},
+        secretFiles: [f],
+      }),
+    FindingError,
+    "<path withheld>",
+  );
+  assert(!e.message.includes(v));
+  const m = await assertRejects(
+    async () =>
+      pack(await tree(), await out(), { meta: { note: v }, secretFiles: [f] }),
+    FindingError,
+    "--meta",
+  );
+  assert(!m.message.includes(v));
+});
+
+Deno.test("files are scanned in chunks; a value straddling a chunk boundary is found and hashes still verify", async () => {
+  const v = "straddle-secret-7";
+  const f = await secret(v);
+  await assertRejects(
+    async () =>
+      pack(
+        await leakRoot("big.txt", "x".repeat(10) + v + "y".repeat(40)),
+        await out(),
+        { meta: {}, secretFiles: [f], chunkSize: 16 },
+      ),
+    FindingError,
+    "big.txt",
+  );
+  const o = await out();
+  await pack(await leakRoot("big.txt", "z".repeat(100)), o, {
+    meta: {},
+    secretFiles: [f],
+    chunkSize: 3,
+  });
+  assertEquals(await verify(o), []);
+});
+
+Deno.test("an interrupted publish leaves no outDir and no temp dir", async () => {
+  const o = await out();
+  await assertRejects(
+    async () =>
+      pack(await tree(), o, {
+        meta: {},
+        secretFiles: [await secret("tok-12345")],
+        onBeforeRename: () => {
+          throw new Error("killed");
+        },
+      }),
+    Error,
+    "killed",
+  );
+  await assertRejects(() => Deno.lstat(o), Deno.errors.NotFound);
+  assertEquals(await Array.fromAsync(Deno.readDir(dirname(o))), []);
+});
+
+Deno.test("verify refuses a dir whose freeze.json is incomplete", async () => {
+  const o = await out();
+  await pack(await tree(), o, {
+    meta: {},
+    secretFiles: [await secret("tok-12345")],
+  });
+  const t = await Deno.readTextFile(join(o, "freeze.json"));
+  await Deno.writeTextFile(join(o, "freeze.json"), t.slice(0, 40));
+  assert((await verify(o)).some((x) => x.includes("incomplete freeze.json")));
+  await Deno.writeTextFile(join(o, "freeze.json"), '{"v":1}');
+  assert((await verify(o)).some((x) => x.includes("incomplete freeze.json")));
+});
+
+Deno.test("CLI: a secret hit exits 1 without the value; I/O errors in bind and verify exit 2", async () => {
+  const v = "cli-secret-42";
+  const hit = await cli(
+    "pack",
+    await leakRoot("leak.txt", v),
+    await out(),
+    "--secret-file",
+    await secret(v),
+  );
+  assertEquals(hit.code, 1, hit.text);
+  assert(!hit.text.includes(v));
+  const o = await out();
+  await pack(await tree(), o, {
+    meta: {},
+    secretFiles: [await secret("tok-12345")],
+  });
+  const b = await cli("bind", o, join(await Deno.makeTempDir(), "gone.json"));
+  assertEquals(b.code, 2, b.text);
+  const o2 = await out();
+  await Deno.mkdir(join(o2, "freeze.json"), { recursive: true });
+  const vr = await cli("verify", o2);
+  assertEquals(vr.code, 2, vr.text);
 });

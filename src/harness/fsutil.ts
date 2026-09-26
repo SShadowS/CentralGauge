@@ -342,7 +342,8 @@ export async function safeCopyTree(
   return { ...r, src: root, dst: out };
 }
 
-const utf16le = (s: string) => {
+/** UTF-16LE bytes of a string (code units, no BOM). */
+export const utf16le = (s: string) => {
   const out = new Uint8Array(s.length * 2);
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
