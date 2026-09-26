@@ -1019,6 +1019,38 @@ async function command(
 }
 
 /** The real observation: docker network inspect, one Windows PowerShell read, the marker. */
+/** The only top-level keys COLLECT_PS prints. */
+const HOST_KEYS = new Set([
+  "hns",
+  "gatewayAdapter",
+  "profiles",
+  "groupRules",
+  "filters",
+  "foreignBlockRules",
+]);
+
+/**
+ * One observation from the host read plus docker's network and the marker.
+ * Docker and the marker are authoritative: a PowerShell key outside
+ * HOST_KEYS (a forged `network` or `marker` included) refuses.
+ */
+export function combineObservation(
+  network: unknown,
+  psStdout: string,
+  marker: unknown,
+): string {
+  const host: unknown = JSON.parse(psStdout);
+  if (typeof host !== "object" || host === null || Array.isArray(host)) {
+    throw new Error("host read is not an object");
+  }
+  for (const key of Object.keys(host)) {
+    if (!HOST_KEYS.has(key)) {
+      throw new Error(`host read has an unexpected key ${key}`);
+    }
+  }
+  return JSON.stringify({ ...host, network, marker });
+}
+
 export function realEgressCollector(markerPath: string): EgressRun {
   return async () => {
     try {
@@ -1074,10 +1106,9 @@ export function realEgressCollector(markerPath: string): EgressRun {
           throw new Error(`marker ${markerPath}: ${(err as Error).message}`);
         }
       }
-      const host = JSON.parse(ps.stdout);
       return {
         code: 0,
-        stdout: JSON.stringify({ network, ...host, marker }),
+        stdout: combineObservation(network, ps.stdout, marker),
       };
     } catch (err) {
       return { code: 1, stdout: (err as Error).message };

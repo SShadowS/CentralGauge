@@ -12,6 +12,7 @@ import {
   blockedTcpRanges,
   COLLECT_PS,
   collectEgressState,
+  combineObservation,
   decodeHnsBlob,
   type EgressState,
   evaluatePreflight,
@@ -1389,5 +1390,43 @@ Deno.test("COLLECT_PS (M1-34c): non-elevated reads only; filters by association 
   );
   for (const w of ["Set-", "New-", "Remove-", "Enable-", "Disable-"]) {
     assert(!COLLECT_PS.includes(w), `read-only: no ${w}`);
+  }
+});
+
+Deno.test("combineObservation (M1-34c run 002): docker's network and the marker are authoritative; unexpected PowerShell keys refuse", () => {
+  const network = { Id: "docker-id", HnsId: "docker-hns" };
+  const marker = { state: "candidate" };
+  const host = {
+    hns: [],
+    gatewayAdapter: null,
+    profiles: [],
+    groupRules: [],
+    filters: {},
+    foreignBlockRules: [],
+  };
+  const ok = JSON.parse(
+    combineObservation(network, JSON.stringify(host), marker),
+  );
+  assertEquals(ok.network, network);
+  assertEquals(ok.marker, marker);
+  assertEquals(ok.groupRules, []);
+  for (const key of ["network", "marker", "extra"]) {
+    assertThrows(
+      () =>
+        combineObservation(
+          network,
+          JSON.stringify({ ...host, [key]: { Id: "forged" } }),
+          marker,
+        ),
+      Error,
+      `unexpected key ${key}`,
+    );
+  }
+  for (const bad of ["[]", "null", "1", '"x"']) {
+    assertThrows(
+      () => combineObservation(network, bad, marker),
+      Error,
+      "not an object",
+    );
   }
 });
