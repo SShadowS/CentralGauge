@@ -701,3 +701,188 @@ Deno.test("charts CLI: writes 3 SVGs and 3 CSVs, 4 with a ledger; refuses a non-
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+// --- Run 002 (reject H:\cg-coord\reviews\M6-02-001\reject-reason.md) ---
+
+/** Estimated width: 0.6 em per character, entities counted as one. */
+const overflowing = (svg: string) => {
+  const width = Number(/<svg[^>]* width="(\d+)"/.exec(svg)![1]);
+  const bad: string[] = [];
+  for (
+    const m of svg.matchAll(
+      /<text x="([\d.]+)"[^>]* font-size="(\d+)"[^>]*>([^<]*)<\/text>/g,
+    )
+  ) {
+    const chars = m[3]!.replace(/&[a-z]+;/g, "_").length;
+    if (Number(m[1]) + chars * 0.6 * Number(m[2]) > width) bad.push(m[3]!);
+  }
+  return bad;
+};
+const texts = (svg: string) =>
+  [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]!);
+
+Deno.test("charts (run 002, fix 1): long arm names and comparison lines are wrapped inside the chart width; the qualifier stays whole", async () => {
+  const r = await base();
+  const long =
+    "a-very-long-arm-name-that-goes-on-and-on-with-model-and-harness-settings-v2";
+  const rename = (a: string) => a === "mock-positive" ? long : a;
+  const odd = {
+    ...r,
+    experiment: {
+      ...r.experiment,
+      variants: [long],
+      hypothesis: "word ".repeat(80) + "end",
+    },
+    arms: r.arms.map((a) => ({ ...a, arm: rename(a.arm) })),
+    coverage: r.coverage.map((c) => ({ ...c, arm: rename(c.arm) })),
+    cells: r.cells.map((c) => ({ ...c, arm: rename(c.arm) })),
+    comparisons: r.comparisons.map((c) => ({
+      ...c,
+      variant: long,
+      excluded: {
+        baseline: { pending: 3, unknown_spend: 2, missing: 1 },
+        variant: { unscored: 4 },
+      },
+    })),
+    repeats: { planned: 3, reported: 2 },
+    provisional: true,
+  };
+  const fs = renderCharts([odd]);
+  for (const f of fs.filter((x) => x.name.endsWith(".svg"))) {
+    assertEquals(overflowing(f.content), [], f.name);
+  }
+  // Wrapping splits lines, never words of the qualifier away: joined text still has it.
+  const joined = texts(get(fs, "-primary.svg")).join(" ");
+  assert(
+    joined.includes("bars are per-arm, the delta is over matched pairs"),
+    joined,
+  );
+  assert(
+    joined.includes(long) || joined.replaceAll(" ", "").includes(long),
+    "arm name kept",
+  );
+  // The old one-line layout overflowed the fixture's own delta line; so does any line > budget.
+  assert(
+    texts(get(fs, "-primary.svg")).length >
+      texts(get(renderCharts([r]), "-primary.svg")).length,
+  );
+});
+
+Deno.test("charts (run 002, fix 2): every $ on a chart is labelled est. (list price) or cash", async () => {
+  const r = await base();
+  const cost = {
+    ...r,
+    experiment: {
+      ...r.experiment,
+      primary_metric: "cost_per_solved_task" as const,
+    },
+    metric_labels: {
+      ...r.metric_labels,
+      cost_per_solved_task: "primary" as const,
+      pass_rate: "exploratory" as const,
+    },
+    arms: r.arms.map((a) => ({ ...a, cost_per_solved_task: 0.412 })),
+    comparisons: r.comparisons.map((c) => ({
+      ...c,
+      primary: c.metric === "cost_per_solved_task",
+      delta: -0.12,
+      ci: [-0.3, 0.1] as [number, number],
+      distinguishable: false,
+    })),
+    repeats: { planned: 3, reported: 2 },
+    coverage: r.coverage.map((c) => ({
+      ...c,
+      excluded_cells: 1,
+      excluded_known_spend_usd: 0.25,
+    })),
+  };
+  const ledger = ledgerOf(r, {
+    paid_total_usd: 3,
+    openrouter_actual_usd: 3,
+    openrouter_balance_readings: [{
+      at: "2026-10-12T10:00:00.000Z",
+      balance_usd: 57,
+    }],
+    experiments: [{
+      id: "mock-contract",
+      attempted_cells: 4,
+      executions: 4,
+      paid_usd: 2.5,
+    }],
+  });
+  const fs = renderCharts([cost], ledger);
+  const joined = fs.filter((f) => f.name.endsWith(".svg"))
+    .map((f) => texts(f.content).join(" ")).join("\n");
+  const amounts = [
+    ...joined.matchAll(/-?\$[\d.]+( est\. \(list price\)| cash)?/g),
+  ];
+  assert(amounts.length >= 5, joined);
+  for (const m of amounts) {
+    assert(m[1] !== undefined, `unlabelled ${m[0]} in ${joined}`);
+  }
+  assert(joined.includes("$0.412 est. (list price)"));
+  assert(joined.includes("$0.50 est. (list price)")); // excluded spend
+  assert(joined.includes("$2.50 cash")); // ledger paid_usd for this experiment
+});
+
+Deno.test("charts (run 002, fix 3): the primary chart names why pairs were excluded and how many tasks dropped", async () => {
+  const r = await base();
+  const c = {
+    ...r.comparisons.find((x) => x.primary)!,
+    tasks_dropped: 2,
+    excluded: { baseline: { pending: 1, unknown_spend: 2 }, variant: {} },
+  };
+  const joined = texts(
+    get(renderCharts([{ ...r, comparisons: [c] }]), "-primary.svg"),
+  ).join(" ");
+  assert(
+    joined.includes(
+      "unmatched pairs: mock-naive-lock-table pending 1, unknown_spend 2; mock-positive none",
+    ),
+    joined,
+  );
+  assert(joined.includes("(2 dropped)"), joined);
+});
+
+Deno.test("charts (run 002, fix 4): a ledger whose paid total is below its OpenRouter actual is refused", async () => {
+  const r = await base();
+  const l = ledgerOf(r, {
+    paid_total_usd: 2,
+    openrouter_actual_usd: 3,
+    openrouter_balance_readings: [{
+      at: "2026-10-12T10:00:00.000Z",
+      balance_usd: 57,
+    }],
+  });
+  assertThrows(
+    () => renderCharts([r], l),
+    Error,
+    "paid_total_usd 2 is below openrouter_actual_usd 3",
+  );
+  renderCharts([r], { ...l, paid_total_usd: 3 });
+});
+
+Deno.test("charts (run 002, fix 4): ledger experiment totals below a given report's attempted cells or executions are refused", async () => {
+  const r = await base(); // 4 attempted cells, 4 executions over both arms
+  const with_ = (attempted_cells: number, executions: number) =>
+    ledgerOf(r, {
+      experiments: [{
+        id: "mock-contract",
+        attempted_cells,
+        executions,
+        paid_usd: null,
+      }],
+    });
+  assertThrows(
+    () => renderCharts([r], with_(0, 4)),
+    Error,
+    "attempted_cells 0 is below the report's 4",
+  );
+  assertThrows(
+    () => renderCharts([r], with_(4, 3)),
+    Error,
+    "executions 3 is below the report's 4",
+  );
+  renderCharts([r], with_(4, 4));
+  renderCharts([r], with_(6, 9)); // the ledger covers all repeats; more is consistent
+});

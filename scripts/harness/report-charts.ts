@@ -86,7 +86,11 @@ const csv = (head: string[], rows: (string | number | boolean | null)[][]) =>
 
 const pct = (x: number | null) =>
   x === null ? "n/a" : `${(x * 100).toFixed(1)}%`;
-const usd = (x: number | null) => x === null ? "n/a" : `$${x.toFixed(3)}`;
+/** List-price dollars are estimates, never cash (run 002 fix 2). */
+const EST = "est. (list price)";
+const money = (x: number) =>
+  `${x < 0 ? "-" : ""}$${Math.abs(x).toFixed(3)} ${EST}`;
+const usd = (x: number | null) => x === null ? "n/a" : money(x);
 const share = (x: number) =>
   x > 0 && x < 0.01 ? "<1%" : `${Math.round(x * 100)}%`;
 const METRIC = {
@@ -98,7 +102,7 @@ const METRIC = {
   cost_per_solved_task: {
     title: "Cost per solved task",
     value: usd,
-    num: (x: number) => x.toFixed(3),
+    num: money,
   },
 } as const;
 
@@ -205,6 +209,11 @@ function checkLedger(reports: Report[], raw: unknown) {
       `openrouter_actual_usd ${l.openrouter_actual_usd} is not ${OPENROUTER_TOPUP_USD} minus the latest balance ${latest.balance_usd} (${latest.at})`,
     );
   }
+  if (l.paid_total_usd < l.openrouter_actual_usd) {
+    fail(
+      `ledger paid_total_usd ${l.paid_total_usd} is below openrouter_actual_usd ${l.openrouter_actual_usd}`,
+    );
+  }
   const s = l.pi_stop;
   if (s.fired) {
     if (s.experiment === null || s.at === null || s.decision === null) {
@@ -231,8 +240,20 @@ function checkLedger(reports: Report[], raw: unknown) {
   const dup = ids.find((id, i) => ids.indexOf(id) !== i);
   if (dup !== undefined) fail(`ledger lists duplicate experiment ${dup}`);
   for (const r of reports) {
-    if (!ids.includes(r.experiment.id)) {
-      fail(`ledger has no totals for experiment ${r.experiment.id}`);
+    const e = l.experiments.find((e) => e.id === r.experiment.id);
+    if (!e) fail(`ledger has no totals for experiment ${r.experiment.id}`);
+    // The ledger covers every repeat; a report never holds more (run 002 fix 4).
+    const attempted = r.arms.reduce((s, a) => s + a.attempted_cells, 0);
+    const executions = r.coverage.reduce((s, c) => s + c.executions, 0);
+    if (e.attempted_cells < attempted) {
+      fail(
+        `ledger ${e.id}.attempted_cells ${e.attempted_cells} is below the report's ${attempted}`,
+      );
+    }
+    if (e.executions < executions) {
+      fail(
+        `ledger ${e.id}.executions ${e.executions} is below the report's ${executions}`,
+      );
     }
   }
   return { l, actions, reportedCount };
@@ -309,10 +330,34 @@ function header(r: Report, title: string): Line[] {
       text:
         `Repeats reported ${r.repeats.reported} of ${r.repeats.planned}; excluded ${cells} cells, $${
           spend.toFixed(2)
-        }`,
+        } ${EST}`,
       fill: "#C0392B",
     });
   }
+  return lines;
+}
+
+const BAR_X = 480;
+/** Conservative width estimate: 0.6 em per character (run 002 fix 1). */
+const EM_PER_CHAR = 0.6;
+const charsFit = (px: number, size: number) =>
+  Math.floor(px / (size * EM_PER_CHAR));
+
+/** Greedy word wrap; a word longer than the budget is split. */
+export function wrap(text: string, max: number): string[] {
+  const lines: string[] = [];
+  let cur = "";
+  for (let word of text.split(" ")) {
+    while (word.length > max) {
+      if (cur) lines.push(cur), cur = "";
+      lines.push(word.slice(0, max));
+      word = word.slice(max);
+    }
+    if (!cur) cur = word;
+    else if (cur.length + 1 + word.length <= max) cur += " " + word;
+    else lines.push(cur), cur = word;
+  }
+  if (cur || lines.length === 0) lines.push(cur);
   return lines;
 }
 
@@ -327,14 +372,18 @@ interface Bar {
 function svg(top: Line[], bars: Bar[], bottom: Line[]): string {
   const out: string[] = [];
   let y = 0;
+  const line = (l: Line, t: string, x: number) =>
+    out.push(
+      `<text x="${x}" y="${y}" font-size="${l.size ?? 13}"${
+        l.bold ? ' font-weight="bold"' : ""
+      } fill="${l.fill ?? "#222"}">${esc(t)}</text>`,
+    );
   const text = (l: Line, x = 24) => {
     const size = l.size ?? 13;
-    y += size + 8;
-    out.push(
-      `<text x="${x}" y="${y}" font-size="${size}"${
-        l.bold ? ' font-weight="bold"' : ""
-      } fill="${l.fill ?? "#222"}">${esc(l.text)}</text>`,
-    );
+    for (const t of wrap(l.text, charsFit(W - x - 24, size))) {
+      y += size + 8;
+      line(l, t, x);
+    }
   };
   top.forEach((l) => text(l));
   y += 8;
@@ -345,11 +394,15 @@ function svg(top: Line[], bars: Bar[], bottom: Line[]): string {
       ? 0
       : Math.max(0, Math.min(1, b.value / b.max)) * 420;
     out.push(
-      `<rect x="480" y="${y - 14}" width="${
+      `<rect x="${BAR_X}" y="${y - 14}" width="${
         len.toFixed(1)
       }" height="16" fill="${b.color}"/>`,
-      `<text x="24" y="${y}" font-size="13" fill="#222">${esc(b.label)}</text>`,
     );
+    // The label stays left of the bar; extra lines push the next row down.
+    wrap(b.label, charsFit(BAR_X - 24 - 8, 13)).forEach((t, i) => {
+      if (i > 0) y += 17;
+      line({ text: t }, t, 24);
+    });
   }
   y += 8;
   bottom.forEach((l) => text(l));
@@ -377,7 +430,14 @@ function deltaLine(c: Comparison): string {
   return `${who} delta ${f(c.delta)} ${ci} ${cohort}${tail}`;
 }
 
-function primaryChart(r: Report, excludedActions: number | null): string {
+const reasonsOf = (e: Partial<Record<string, number>>) =>
+  Object.entries(e).sort(([a], [b]) => a < b ? -1 : 1)
+    .map(([k, v]) => `${k} ${v}`).join(", ") || "none";
+
+function primaryChart(
+  r: Report,
+  ledger: { excludedActions: number; paid: number | null } | null,
+): string {
   const m = r.experiment.primary_metric;
   const other = m === "pass_rate" ? "cost_per_solved_task" : "pass_rate";
   const arms = r.arms;
@@ -398,10 +458,15 @@ function primaryChart(r: Report, excludedActions: number | null): string {
     };
   });
   const bottom: Line[] = [
-    ...r.comparisons.filter((c) => c.metric === m).map((c) => ({
-      text: deltaLine(c),
-      size: 12,
-    })),
+    ...r.comparisons.filter((c) => c.metric === m).flatMap((c) => [
+      { text: deltaLine(c), size: 12 },
+      {
+        text: `  unmatched pairs: ${c.baseline} ${
+          reasonsOf(c.excluded.baseline)
+        }; ${c.variant} ${reasonsOf(c.excluded.variant)}`,
+        size: 12,
+      },
+    ]),
     ...arms.map((a) => {
       const cov = r.coverage.find((c) => c.arm === a.arm);
       return {
@@ -413,9 +478,19 @@ function primaryChart(r: Report, excludedActions: number | null): string {
       };
     }),
   ];
-  if (excludedActions !== null && excludedActions > 0) {
+  if (ledger !== null) {
     bottom.push({
-      text: `${excludedActions} excluded action(s) (ledger.csv)`,
+      text: `Paid for ${r.experiment.id}: ${
+        ledger.paid === null
+          ? "n/a (not paid)"
+          : `$${ledger.paid.toFixed(2)} cash`
+      } (ledger.csv)`,
+      size: 12,
+    });
+  }
+  if (ledger !== null && ledger.excludedActions > 0) {
+    bottom.push({
+      text: `${ledger.excludedActions} excluded action(s) (ledger.csv)`,
       size: 12,
     });
   }
@@ -501,11 +576,14 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
   const files: OutFile[] = [];
   for (const r of reports) {
     const p = prefix(r);
-    const excluded = lg === null
-      ? null
-      : lg.actions.filter((x) =>
+    const excluded = lg === null ? null : {
+      excludedActions: lg.actions.filter((x) =>
         x.a.experiment === r.experiment.id && x.scope !== "reported"
-      ).length;
+      ).length,
+      paid: lg.l.experiments.find((e) =>
+        e.id === r.experiment.id
+      )!.paid_usd,
+    };
     files.push(
       { name: `${p}-primary.svg`, content: primaryChart(r, excluded) },
       { name: `${p}-outcome.svg`, content: outcomeChart(r) },
