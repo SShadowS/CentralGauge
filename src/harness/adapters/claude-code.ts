@@ -7,7 +7,10 @@
  * discard the attempt: they are counted (no content stored). Contradictory
  * records (a second result or init, a reused tool id) are refused with the
  * file and line; anything unexpected but harmless is listed in
- * raw_usage.stream_problems.
+ * raw_usage.stream_problems. A same-session resume (M1-32b) is one
+ * system/init and one result per segment, all with one session id: turns and
+ * duration are summed, cost is the last result's cumulative modelUsage once
+ * proven cumulative (else null, with the reason).
  */
 
 import { basename } from "@std/path";
@@ -155,15 +158,87 @@ function nonJsonReason(n: NonJson): string {
   }${n.count > n.first.length ? ", ..." : ""})`;
 }
 
-function only(recs: Line[], what: string, file: string): Line | undefined {
-  if (recs.length > 1) {
-    refuse(
-      `${file}: ${recs.length} ${what} records (lines ${
-        recs.map((r) => r.line).join(", ")
-      })`,
-    );
+const linesOf = (recs: Line[]) => `lines ${recs.map((r) => r.line).join(", ")}`;
+
+/** The sum of a per-segment result field; null when absent or not a number in any result. */
+function sumOf(results: Line[], k: "num_turns" | "duration_ms"): number | null {
+  if (results.length === 0) return null;
+  let n = 0;
+  for (const { rec } of results) {
+    const v = rec[k];
+    if (typeof v !== "number" || !Number.isFinite(v)) return null;
+    n += v;
   }
-  return recs[0];
+  return n;
+}
+
+const CUMULATIVE = [
+  "inputTokens",
+  "outputTokens",
+  "cacheReadInputTokens",
+  "cacheCreationInputTokens",
+] as const;
+
+/**
+ * Several results (a same-session resume): 2.1.282 repeats the session's
+ * cumulative modelUsage and total_cost_usd in every result, so the last one
+ * is the run (M1-32b fixture proof in claude-code.test.ts). Returns why that
+ * is not proven for this log, or null. Proven: totals never fall from one
+ * result to the next, and the last modelUsage covers the input and cache
+ * tokens of every assistant message in every segment, which a per-segment
+ * figure cannot. Output is not checked: message chunks carry a partial count.
+ */
+function notCumulative(
+  results: Line[],
+  perMessage: Map<string, { model: string; usage: J }>,
+): string | null {
+  for (const [i, b] of results.entries()) {
+    if (typeof b.rec.total_cost_usd !== "number") {
+      return `line ${b.line}: total_cost_usd missing`;
+    }
+    const a = results[i - 1];
+    if (!a) continue;
+    if (b.rec.total_cost_usd < (a.rec.total_cost_usd as number)) {
+      return `total_cost_usd falls from line ${a.line} to line ${b.line}`;
+    }
+    const am = obj(a.rec.modelUsage);
+    const bm = obj(b.rec.modelUsage);
+    for (const m of Object.keys(am).sort()) {
+      for (const k of CUMULATIVE) {
+        const x = obj(am[m])[k];
+        const y = obj(bm[m])[k];
+        if (!isCount(x) || !isCount(y) || y < x) {
+          return `${m} ${k} falls or is missing from line ${a.line} to line ${b.line}`;
+        }
+      }
+    }
+  }
+  const seen = new Map<string, Record<(typeof CUMULATIVE)[number], number>>();
+  for (const { model, usage: u } of perMessage.values()) {
+    const s = seen.get(model) ?? {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    };
+    s.inputTokens += num(u.input_tokens);
+    s.cacheReadInputTokens += num(u.cache_read_input_tokens);
+    s.cacheCreationInputTokens += num(u.cache_creation_input_tokens);
+    seen.set(model, s);
+  }
+  const last = obj(results.at(-1)!.rec.modelUsage);
+  for (const [m, s] of [...seen].sort(([a], [b]) => a < b ? -1 : 1)) {
+    for (const k of CUMULATIVE) {
+      if (k === "outputTokens") continue;
+      const x = obj(last[m])[k];
+      if (!isCount(x) || x < s[k]) {
+        return `last modelUsage ${m || "(no model)"} ${k} ${
+          isCount(x) ? x : "missing"
+        } is below the ${s[k]} its assistant messages report`;
+      }
+    }
+  }
+  return null;
 }
 
 export function parseClaudeStream(
@@ -194,22 +269,48 @@ export function parseClaudeStream(
     streamProblems.push(`unknown record type ${t} (${n})`);
   }
 
-  const init = only(
-    of("system").filter((x) => x.rec.subtype === "init"),
-    "system/init",
-    file,
-  )?.rec;
-  const resultLine = only(of("result"), "result", file);
-  const result = resultLine?.rec;
-  if (
-    resultLine &&
-    (typeof result?.is_error !== "boolean" ||
-      typeof result?.subtype !== "string")
-  ) {
+  // A same-session resume (M1-32b: a background task wakes the session) adds
+  // one system/init and one result per segment; another session is refused.
+  const inits = of("system").filter((x) => x.rec.subtype === "init");
+  const allResults = of("result");
+  if (inits.length > 1) {
+    const sid = inits[0]!.rec.session_id;
+    const other = (x: Line) => x.rec.session_id !== sid;
+    if (
+      typeof sid !== "string" || inits.some(other) ||
+      allResults.some((x) => x.rec.session_id !== undefined && other(x))
+    ) {
+      refuse(
+        `${file}: ${inits.length} system/init records (${
+          linesOf(inits)
+        }) without one shared session id`,
+      );
+    }
+  }
+  if (allResults.length > Math.max(inits.length, 1)) {
     refuse(
-      `${file}:${resultLine.line}: result record needs a boolean is_error and a string subtype`,
+      `${file}: ${allResults.length} result records (${linesOf(allResults)})`,
     );
   }
+  for (const { rec, line } of allResults) {
+    if (typeof rec.is_error !== "boolean" || typeof rec.subtype !== "string") {
+      refuse(
+        `${file}:${line}: result record needs a boolean is_error and a string subtype`,
+      );
+    }
+  }
+  // A resumed run missing a segment's result has no final result (a hard kill).
+  const short = inits.length > 1 && allResults.length < inits.length;
+  const results = short ? [] : allResults;
+  if (short) {
+    streamProblems.push(
+      `${file}: ${inits.length} system/init records but ${allResults.length} result record${
+        allResults.length === 1 ? "" : "s"
+      }${allResults.length > 0 ? ` (${linesOf(allResults)})` : ""}`,
+    );
+  }
+  const init = inits[0]?.rec;
+  const result = results.at(-1)?.rec;
   const version = typeof init?.claude_code_version === "string"
     ? init.claude_code_version
     : null;
@@ -362,10 +463,25 @@ export function parseClaudeStream(
       problems,
     };
   });
-  const priced = result ? estimateCost(usage, input.pricing) : null;
+  const why = results.length > 1 ? notCumulative(results, perMessage) : null;
+  const unproven = why === null
+    ? null
+    : `${file}: ${results.length} result records (${
+      linesOf(results)
+    }): modelUsage not provably cumulative (${why})`;
+  const priced = result && unproven === null
+    ? estimateCost(usage, input.pricing)
+    : null;
   // A lost line may have been a second result or a usage record the TTL
   // check needed, so the cost is not provable: null, with the lines named.
-  const est = priced && nonJson.count > 0
+  const est = unproven !== null
+    ? {
+      cost_usd: null,
+      pricing_snapshot: null,
+      per_model: [],
+      missing: [unproven],
+    }
+    : priced && nonJson.count > 0
     ? {
       ...priced,
       cost_usd: null,
@@ -453,21 +569,32 @@ export function parseClaudeStream(
       cost_usd: est?.cost_usd ?? null,
       cost_source: est?.cost_usd != null ? "estimated" : null,
       pricing_snapshot: est?.cost_usd != null ? est.pricing_snapshot : null,
-      reported_cost_usd: typeof result?.total_cost_usd === "number"
-        ? result.total_cost_usd
-        : null,
+      reported_cost_usd:
+        unproven === null && typeof result?.total_cost_usd === "number"
+          ? result.total_cost_usd
+          : null,
       per_model: est?.per_model ?? [],
-      turns: typeof result?.num_turns === "number" ? result.num_turns : null,
+      // Per segment in 2.1.282 (fixture proof: 13 then 7): summed.
+      turns: sumOf(results, "num_turns"),
       compactions: null,
-      wall_ms: typeof result?.duration_ms === "number"
-        ? result.duration_ms
-        : null,
+      wall_ms: sumOf(results, "duration_ms"),
       exit_code: input.exitCode,
       stop_reason: stop,
       refusal_detected: result ? stop === "refusal" : null,
       raw_usage: toJson({
         usage: result?.usage ?? null,
         modelUsage: result?.modelUsage ?? null,
+        ...(results.length > 1
+          ? {
+            results: results.map(({ rec, line }) => ({
+              line,
+              num_turns: rec.num_turns ?? null,
+              duration_ms: rec.duration_ms ?? null,
+              total_cost_usd: rec.total_cost_usd ?? null,
+              usage: rec.usage ?? null,
+            })),
+          }
+          : {}),
         partial,
         missing: est?.missing ??
           (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
@@ -491,6 +618,23 @@ export function parseClaudeStream(
   };
 }
 
+/**
+ * Session-control and cross-session tools a benchmark cell has no use for
+ * (M1-32b), sorted: those of ScheduleWakeup, ListAgents, SendMessage, Monitor,
+ * CronCreate, CronDelete and RemoteTrigger that 2.1.282's system/init lists
+ * (Monitor is not listed). Background Task/Agent use stays allowed. Passed as
+ * --disallowedTools by run.ps1 and recorded in settings.native, so they are
+ * identity inputs.
+ */
+const DISALLOWED_TOOLS = [
+  "CronCreate",
+  "CronDelete",
+  "ListAgents",
+  "RemoteTrigger",
+  "ScheduleWakeup",
+  "SendMessage",
+] as const;
+
 export const claudeCodeAdapter: HarnessAdapter = {
   harness: "claude-code",
   declared: [
@@ -507,6 +651,11 @@ export const claudeCodeAdapter: HarnessAdapter = {
   credentialBearing: true,
   enforcesBudget: true,
   nativeSettings(config, catalog) {
+    if (Object.hasOwn(config.settings, "disallowed_tools")) {
+      throw new ConfigurationError(
+        `${config.id}: settings.disallowed_tools is set by the claude-code adapter`,
+      );
+    }
     const api_models: Record<string, string> = {};
     for (const [slot, slug] of Object.entries(config.models)) {
       const m = catalog.models.find((x) => x.slug === slug);
@@ -517,7 +666,11 @@ export const claudeCodeAdapter: HarnessAdapter = {
       }
       api_models[slot] = m.api_model_id;
     }
-    return { ...config.settings, api_models };
+    return {
+      ...config.settings,
+      api_models,
+      disallowed_tools: [...DISALLOWED_TOOLS],
+    };
   },
   providerRoutes(config) {
     return Object.fromEntries(

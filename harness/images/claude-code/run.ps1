@@ -27,7 +27,9 @@ $env:DISABLE_TELEMETRY = '1'
 $env:DISABLE_ERROR_REPORTING = '1'
 $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
 $prompt = Get-Content 'C:\task\prompt.md' -Raw -Encoding UTF8
-$claudeArgs = @('-p', '--output-format', 'stream-json', '--verbose', '--model', $cfg.settings.api_models.main, '--dangerously-skip-permissions', '--max-budget-usd', $cfg.limits.max_budget_usd)
+# Session-control tools the manifest disallows (settings.native.disallowed_tools, M1-32b).
+if (-not $cfg.settings.disallowed_tools) { throw 'settings.disallowed_tools missing from C:\config\settings.json' }
+$claudeArgs = @('-p', '--output-format', 'stream-json', '--verbose', '--model', $cfg.settings.api_models.main, '--dangerously-skip-permissions', '--max-budget-usd', $cfg.limits.max_budget_usd, '--disallowedTools', ($cfg.settings.disallowed_tools -join ','))
 Set-Location C:\workspace
 $prompt | & claude @claudeArgs
 exit $LASTEXITCODE

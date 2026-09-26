@@ -773,3 +773,302 @@ Deno.test({
     assertEquals(o.code, 0);
   },
 });
+
+// M1-32b: Claude Code 2.1.282 resumes its own session after a background task
+// (M1-29 run 001, execution 4b6764b7-ab76-42be-a363-348be387fea5). The published,
+// redacted raw.jsonl is the fixture: 148 lines, system/init at lines 1 and 113
+// (same session 8cd5ebe9-...), both result records at lines 144 and 145.
+
+const RESUME = "tests/fixtures/harness/claude-code/m129-resume.jsonl";
+// deno-lint-ignore no-explicit-any
+type Rec = any;
+const resumeLines = async () =>
+  (await Deno.readTextFile(RESUME)).split("\n").filter(Boolean);
+const resumeRecs = async (): Promise<Rec[]> =>
+  (await resumeLines()).map((l) => JSON.parse(l));
+
+Deno.test("claude-code resume: the fixture proves modelUsage and total_cost_usd are cumulative, num_turns and duration_ms per segment", async () => {
+  const recs = await resumeRecs();
+  const inits = recs.flatMap((r, i) =>
+    r.type === "system" && r.subtype === "init" ? [i + 1] : []
+  );
+  assertEquals(inits, [1, 113]);
+  const [r1, r2] = recs.filter((r) => r.type === "result");
+  // Per-message usage, deduplicated by message id (last chunk), by segment:
+  //   segment 1 main agent (13 msgs): input 26, cache_read 403963, cache_write 13737 (1h)
+  //   segment 1 sub-agent  (9 msgs):  input 18, cache_read 162617, cache_write 26379 (5m)
+  //   segment 2 main agent (7 msgs):  input 14, cache_read 272622, cache_write 7038 (1h)
+  const byId = new Map<string, { line: number; rec: Rec }>();
+  recs.forEach((rec, i) => {
+    if (rec.type === "assistant") {
+      byId.set(rec.message.id, { line: i + 1, rec });
+    }
+  });
+  const sum = (f: (x: { line: number; rec: Rec }) => boolean) => {
+    const s = { n: 0, input: 0, read: 0, write: 0 };
+    for (const x of byId.values()) {
+      if (!f(x)) continue;
+      const u = x.rec.message.usage;
+      s.n++;
+      s.input += u.input_tokens;
+      s.read += u.cache_read_input_tokens;
+      s.write += u.cache_creation_input_tokens;
+    }
+    return s;
+  };
+  const sub = (x: { rec: Rec }) => typeof x.rec.parent_tool_use_id === "string";
+  assertEquals(sum((x) => x.line < 113 && !sub(x)), {
+    n: 13,
+    input: 26,
+    read: 403963,
+    write: 13737,
+  });
+  assertEquals(sum((x) => x.line < 113 && sub(x)), {
+    n: 9,
+    input: 18,
+    read: 162617,
+    write: 26379,
+  });
+  assertEquals(sum((x) => x.line > 113 && !sub(x)), {
+    n: 7,
+    input: 14,
+    read: 272622,
+    write: 7038,
+  });
+  assertEquals(sum((x) => x.line > 113 && sub(x)).n, 0);
+  // result.usage is per segment, main agent only: r1.usage is segment 1's
+  // main agent, r2.usage segment 2's.
+  const u = (r: Rec) => [
+    r.usage.input_tokens,
+    r.usage.cache_read_input_tokens,
+    r.usage.cache_creation_input_tokens,
+  ];
+  assertEquals(u(r1), [26, 403963, 13737]);
+  assertEquals(u(r2), [14, 272622, 7038]);
+  // modelUsage is cumulative over the whole session (both segments and the
+  // sub-agent): 58 = 26+18+14, 839202 = 403963+162617+272622,
+  // 47154 = 13737+26379+7038; both results carry the identical figure, and
+  // total_cost_usd equals modelUsage.costUSD (0.42686389999999996) in both.
+  // Summing per result would double count (2 x 0.4268639 = 0.8537278 USD):
+  // the last result is the run's cost.
+  const mu = r2.modelUsage["claude-sonnet-5"];
+  assertEquals(r1.modelUsage, r2.modelUsage);
+  assertEquals(
+    [mu.inputTokens, mu.cacheReadInputTokens, mu.cacheCreationInputTokens],
+    [58, 839202, 47154],
+  );
+  assertEquals(
+    [r1.total_cost_usd, r2.total_cost_usd, mu.costUSD],
+    [0.42686389999999996, 0.42686389999999996, 0.42686389999999996],
+  );
+  // num_turns is per segment: 13 then 7 (a cumulative count cannot fall).
+  assertEquals([r1.num_turns, r2.num_turns], [13, 7]);
+  // duration_ms is per segment: 26550 ~ segment 1's main turn (timestamps
+  // 12:10:29.414 at line 2 to 12:10:54.891 at line 104), 135053 ~ segment 2
+  // (12:11:38.566 at line 116 to 12:13:51.745 at line 143); a figure
+  // cumulative from line 2 would be at least 202 s.
+  assertEquals([r1.duration_ms, r2.duration_ms], [26550, 135053]);
+  assertEquals(recs[1]!.timestamp, "2026-09-26T12:10:29.414Z");
+  assertEquals(recs[142]!.timestamp, "2026-09-26T12:13:51.745Z");
+});
+
+Deno.test("claude-code resume: a same-session resume parses; cost from the last (cumulative) result, turns and duration summed", async () => {
+  const text = await Deno.readTextFile(RESUME);
+  const { r, dir } = await parse(text);
+  assertEquals(r.telemetry.harness_version, "2.1.282");
+  // Cumulative modelUsage priced once: TTL split from every segment's
+  // messages, 1h = 13737 + 7038 = 20775, 5m = 26379 (the sub-agent).
+  assertAlmostEquals(
+    r.telemetry.cost_usd!,
+    (58 * 2 + 10986 * 10 + 839202 * 0.2 + 26379 * 2.5 + 20775 * 4) / 1e6,
+    1e-12,
+  );
+  assertAlmostEquals(r.telemetry.cost_usd!, 0.4268639, 1e-12);
+  assertEquals(r.telemetry.cost_source, "estimated");
+  assertEquals(r.telemetry.reported_cost_usd, 0.42686389999999996);
+  assertEquals(r.telemetry.turns, 13 + 7);
+  assertEquals(r.telemetry.wall_ms, 26550 + 135053);
+  assertEquals(r.telemetry.stop_reason, "end_turn");
+  assertEquals(r.termination, "completed");
+  assertEquals(r.observed.models, ["anthropic/claude-sonnet-5"]);
+  assertEquals(
+    incompleteTelemetry(claudeCodeAdapter.declared, r.telemetry),
+    [],
+  );
+  const calls = (await resumeRecs()).flatMap((j, i) =>
+    j.type === "assistant"
+      ? j.message.content.filter((c: Rec) => c.type === "tool_use").map((
+        c: Rec,
+      ) => ({ id: c.id, line: i + 1 }))
+      : []
+  );
+  assertEquals(r.traceEvents, calls.length);
+  const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+    .split("\n").map((l) => JSON.parse(l));
+  // The trace spans both segments.
+  assert(calls.some((c) => c.line < 113) && calls.some((c) => c.line > 113));
+  assertEquals(trace.map((e) => e.call_id), calls.map((c) => c.id));
+  assertEquals(trace.map((e) => e.seq), calls.map((_, i) => i + 1));
+});
+
+Deno.test("claude-code resume: an init with another session id stays refused, naming the file and lines", async () => {
+  const l = await resumeLines();
+  l[112] = l[112]!.replaceAll(
+    "8cd5ebe9-5df9-4b19-96c7-edc02b97a73f",
+    "00000000-0000-0000-0000-000000000000",
+  );
+  const err = await assertRejects(() => parse(l.join("\n")), ValidationError);
+  assertStringIncludes(err.message, "raw.jsonl");
+  assertStringIncludes(err.message, "2 system/init records (lines 1, 113)");
+  assertStringIncludes(err.message, "session");
+  // An init without a session id cannot prove the same session either.
+  await assertRejects(
+    () => parse([INIT, INIT, RESULT].join("\n")),
+    ValidationError,
+  );
+});
+
+Deno.test("claude-code resume: per-segment or falling modelUsage is not provably cumulative, so cost is null with the reason", async () => {
+  const l = await resumeLines();
+  const setLast = (f: (r: Rec) => void) => {
+    const x = [...l];
+    const r = JSON.parse(x[144]!);
+    f(r);
+    x[144] = JSON.stringify(r);
+    return x.join("\n");
+  };
+  // Per segment: the last result holds only segment 2's main-agent usage.
+  const perSegment = setLast((r) => {
+    Object.assign(r.modelUsage["claude-sonnet-5"], {
+      inputTokens: 14,
+      cacheReadInputTokens: 272622,
+      cacheCreationInputTokens: 7038,
+      outputTokens: 1298,
+    });
+    r.total_cost_usd = 0.1;
+  });
+  // A total that falls between results.
+  const falling = setLast((r) => {
+    r.total_cost_usd = 0.2;
+  });
+  // Monotone but short of the messages: both results claim 500000 cache
+  // reads, below the 839202 the assistant messages of both segments report.
+  const x = [...l];
+  for (const i of [143, 144]) {
+    const r = JSON.parse(x[i]!);
+    r.modelUsage["claude-sonnet-5"].cacheReadInputTokens = 500000;
+    x[i] = JSON.stringify(r);
+  }
+  const short = x.join("\n");
+  for (const text of [perSegment, falling, short]) {
+    const { r } = await parse(text);
+    assertEquals(r.telemetry.cost_usd, null);
+    assertEquals(r.telemetry.reported_cost_usd, null);
+    assertEquals(r.telemetry.per_model, []);
+    const missing = (r.telemetry.raw_usage as { missing: string[] }).missing;
+    assert(
+      missing.some((m) =>
+        m.includes("raw.jsonl") && m.includes("not provably cumulative")
+      ),
+      JSON.stringify(missing),
+    );
+    assertEquals(r.telemetry.turns, 20);
+    assertEquals(r.termination, "completed");
+  }
+});
+
+Deno.test("claude-code resume: more results than inits is refused; fewer leaves the run without a final result", async () => {
+  const l = await resumeLines();
+  const err = await assertRejects(
+    () => parse([...l, l[144]!].join("\n")),
+    ValidationError,
+  );
+  assertStringIncludes(err.message, "raw.jsonl");
+  assertStringIncludes(err.message, "3 result records (lines 144, 145, 149)");
+  const { r } = await parse(l.filter((_, i) => i !== 144).join("\n"), -1);
+  assertEquals(r.telemetry.cost_usd, null);
+  assertEquals(r.telemetry.reported_cost_usd, null);
+  assertEquals(r.telemetry.turns, null);
+  assertEquals(r.termination, null);
+  assert(
+    problems(r).some((p) =>
+      p.includes("raw.jsonl: 2 system/init records but 1 result record")
+    ),
+    JSON.stringify(problems(r)),
+  );
+});
+
+// Session-control and cross-session tools a benchmark cell has no use for.
+// 2.1.282's recorded tool list (fixture init, 24 tools) holds ScheduleWakeup,
+// ListAgents, SendMessage, CronCreate, CronDelete and RemoteTrigger; Monitor is
+// not in it. Task (background Agent) stays allowed.
+const SESSION_CONTROL = [
+  "ScheduleWakeup",
+  "ListAgents",
+  "SendMessage",
+  "Monitor",
+  "CronCreate",
+  "CronDelete",
+  "RemoteTrigger",
+];
+
+Deno.test("claude-code settings: session-control tools present in 2.1.282 are disallowed for every arm", async () => {
+  const recs = await resumeRecs();
+  const inits = recs.filter((r) => r.subtype === "init");
+  assertEquals(inits[0]!.tools, inits[1]!.tools);
+  const tools: string[] = inits[0]!.tools;
+  assertEquals(tools.length, 24);
+  assert(!tools.includes("Monitor"));
+  assert(tools.includes("Task"));
+  const expected = SESSION_CONTROL.filter((t) => tools.includes(t)).sort();
+  assertEquals(expected, [
+    "CronCreate",
+    "CronDelete",
+    "ListAgents",
+    "RemoteTrigger",
+    "ScheduleWakeup",
+    "SendMessage",
+  ]);
+  const catalog = {
+    models: [{
+      slug: "anthropic/claude-sonnet-5",
+      api_model_id: "claude-sonnet-5",
+      family: "claude",
+      display_name: "S5",
+    }],
+    pricing: [],
+    families: [],
+  };
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings: { thinking: "high" },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const native = claudeCodeAdapter.nativeSettings(cfg, catalog);
+  assertEquals(native["disallowed_tools"], expected);
+  assertEquals(native["thinking"], "high");
+  // An arm cannot re-enable them by setting the key itself.
+  assertThrows(
+    () =>
+      claudeCodeAdapter.nativeSettings({
+        ...cfg,
+        settings: { disallowed_tools: [] },
+      }, catalog),
+    ConfigurationError,
+    "disallowed_tools",
+  );
+  const run = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  const code = run.split("\n").filter((l) => !l.trimStart().startsWith("#"));
+  const argsLine = code.find((l) => l.includes("$claudeArgs = @("))!;
+  assertStringIncludes(
+    argsLine,
+    "'--disallowedTools', ($cfg.settings.disallowed_tools -join ',')",
+  );
+  assert(
+    code.some((l) => l.includes("if (-not $cfg.settings.disallowed_tools)")),
+    "run.ps1 refuses a config without the list",
+  );
+});
