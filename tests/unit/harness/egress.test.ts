@@ -25,17 +25,26 @@ import {
   parseProbeLines,
   PREFLIGHT_EXPECT,
   preflightExpect,
+  PROXY_PORT,
+  proxyCredentialForms,
+  realEgressRuntime,
   RECORDED_HOSTS_PATH,
   recordedHostsJson,
   revertScript,
   ROUTE_HOSTS,
   RULE_GROUP,
   SANDBOX_NETWORK,
+  sandboxSource,
   verifyEgressState,
 } from "../../../src/harness/egress.ts";
 import {
   isPrivateAddress,
+  PROXY_ISOLATION,
+  type RegisterOptions,
+  type SharedEgressProxy,
+  type SharedProxyOptions,
   startEgressProxy,
+  startSharedEgressProxy,
 } from "../../../src/harness/egress-proxy.ts";
 import { blobB64, hns, networkBlob, REAL_HNS } from "../../utils/hns-blob.ts";
 
@@ -1101,6 +1110,378 @@ Deno.test("verifyEgressState: the HNS id and docker's hnsid are GUIDs, equal reg
   assertEquals(verifyEgressState(s), [
     `hns network behind ${SANDBOX_NETWORK.name} is not the internal network of the plan`,
   ]);
+});
+
+// M1-33d G2/G3: the authenticated preflight, the credential forms, the sandbox source address.
+
+/** Passing authenticated lines: CONNECT probes carry their status (200 allow, 403 deny, 407 no credential). */
+function authLines(
+  e: Record<string, boolean>,
+): { probe: string; ok: boolean; status?: number }[] {
+  return Object.entries(e).map(([probe, ok]) =>
+    probe.startsWith("proxy-")
+      ? {
+        probe,
+        ok,
+        status: probe === "proxy-no-auth" ? 407 : ok ? 200 : 403,
+      }
+      : { probe, ok }
+  );
+}
+
+Deno.test("evaluatePreflight (auth): 200 with the credential, 403 for a deny, 407 only without it", () => {
+  const e = preflightExpect(["api.anthropic.com"], { auth: true });
+  assertEquals(e["proxy-no-auth"], false);
+  assert(!("proxy-no-auth" in preflightExpect(["api.anthropic.com"])));
+  const good = authLines(e);
+  assertEquals(evaluatePreflight(good, e), []);
+  const set = (probe: string, v: { ok: boolean; status?: number }) =>
+    good.map((l) => {
+      if (l.probe !== probe) return l;
+      const { status: _s, ...rest } = l;
+      return { ...rest, ...v };
+    });
+  // A 407 on an authenticated probe is never a blocked negative.
+  for (const p of ["proxy-deny-example.com", "proxy-ip-literal"]) {
+    assertStringIncludes(
+      evaluatePreflight(set(p, { ok: false, status: 407 }), e).join("\n"),
+      `${p}: 407`,
+    );
+  }
+  assertStringIncludes(
+    evaluatePreflight(
+      set("proxy-allow-api.anthropic.com", { ok: false, status: 407 }),
+      e,
+    ).join("\n"),
+    "407",
+  );
+  // The no-credential probe must be refused with 407: 403 or 200 fails.
+  for (const [ok, status] of [[false, 403], [true, 200]] as const) {
+    assertStringIncludes(
+      evaluatePreflight(set("proxy-no-auth", { ok, status }), e).join("\n"),
+      "proxy-no-auth",
+    );
+  }
+  // Blocked means the policy deny: a 502 or a missing status is not proof.
+  assertStringIncludes(
+    evaluatePreflight(
+      set("proxy-deny-example.com", { ok: false, status: 502 }),
+      e,
+    ).join("\n"),
+    "expected 403",
+  );
+  assertStringIncludes(
+    evaluatePreflight(set("proxy-ip-literal", { ok: false }), e).join("\n"),
+    "no status",
+  );
+  assertStringIncludes(
+    evaluatePreflight(
+      good.filter((l) => l.probe !== "proxy-no-auth"),
+      e,
+    ).join("\n"),
+    "proxy-no-auth: missing",
+  );
+  // Record mode: example.com is open with the credential, IP literals still denied.
+  const rec = preflightExpect(["api.anthropic.com"], {
+    record: true,
+    auth: true,
+  });
+  assertEquals(evaluatePreflight(authLines(rec), rec), []);
+  // Without auth the lines need no status (the credentialless qualification probe).
+  assertEquals(
+    evaluatePreflight(
+      Object.entries(PREFLIGHT_EXPECT).map(([probe, ok]) => ({ probe, ok })),
+    ),
+    [],
+  );
+});
+
+Deno.test("parseProbeLines: a CONNECT probe's status is kept", () => {
+  assertEquals(
+    parseProbeLines(
+      '{"probe":"proxy-no-auth","ok":false,"status":407,"error":null}',
+    ),
+    [{ probe: "proxy-no-auth", ok: false, status: 407 }],
+  );
+  assertEquals(
+    parseProbeLines(
+      '{"probe":"gw-icmp","ok":false,"status":null,"error":null}',
+    ),
+    [{ probe: "gw-icmp", ok: false }],
+  );
+  assertThrows(
+    () =>
+      parseProbeLines('{"probe":"proxy-no-auth","ok":false,"status":"407"}'),
+    ValidationError,
+  );
+});
+
+Deno.test("proxyCredentialForms: every form of the credential is a redaction value; the file value first", () => {
+  const user = "0123456789abcdef0123456789abcdef";
+  const pass = "Ab-_cdEFghIJklMNopQRstUVwxYZ0123456789abcde";
+  const forms = proxyCredentialForms({ user, pass });
+  assertEquals(forms[0], {
+    name: "proxy-credential",
+    value: `${user}:${pass}`,
+  });
+  const values = forms.map((f) => f.value);
+  const url = `http://${user}:${pass}@${SANDBOX_NETWORK.gateway}:${PROXY_PORT}`;
+  for (
+    const v of [
+      pass,
+      `${user}:${pass}`,
+      btoa(`${user}:${pass}`),
+      `${encodeURIComponent(user)}%3A${encodeURIComponent(pass)}`,
+      url,
+      encodeURIComponent(url),
+    ]
+  ) assert(values.includes(v), v);
+  assertEquals(new Set(forms.map((f) => f.name)).size, forms.length);
+});
+
+Deno.test("sandboxSource: exactly one IPv4 on the internal network, inside its subnet, never the gateway", () => {
+  const net = SANDBOX_NETWORK.name;
+  assertEquals(
+    sandboxSource([{ network: net, ip: "172.30.60.17" }]),
+    "172.30.60.17",
+  );
+  const bad: [string, { network: string; ip: string }[] | null][] = [
+    ["no such container", null],
+    ["no address", []],
+    ["no address", [{ network: net, ip: "" }]],
+    ["2 network", [{ network: net, ip: "172.30.60.17" }, {
+      network: "nat",
+      ip: "172.20.0.5",
+    }]],
+    ["not on", [{ network: "nat", ip: "172.30.60.17" }]],
+    ["outside", [{ network: net, ip: "172.30.61.17" }]],
+    ["outside", [{ network: net, ip: "fe80::1" }]],
+    ["gateway", [{ network: net, ip: SANDBOX_NETWORK.gateway }]],
+    ["outside", [{ network: net, ip: "172.30.60.255" }]],
+    ["outside", [{ network: net, ip: "172.30.60.0" }]],
+    ["outside", [{ network: net, ip: "172.30.60.256" }]],
+  ];
+  for (const [word, b] of bad) {
+    assertThrows(() => sandboxSource(b), ValidationError, word, word);
+  }
+});
+
+Deno.test("egress-check.ps1: reads the proxy credential file itself, sends it as Basic auth, reports each CONNECT status, adds the no-credential probe", async () => {
+  const ps = await Deno.readTextFile("harness/images/base/egress-check.ps1");
+  // Never a parameter: the credential is not in the docker exec argv.
+  const param = ps.slice(
+    ps.indexOf("param("),
+    ps.indexOf(")", ps.indexOf("param(")),
+  );
+  assert(!/cred|auth|user|pass/i.test(param), param);
+  assertStringIncludes(ps, "'C:\\cg-secrets\\proxy-credential'");
+  assertStringIncludes(ps, "Proxy-Authorization: ");
+  assertStringIncludes(ps, "'Basic ' + [Convert]::ToBase64String(");
+  assertStringIncludes(ps, "status = $null");
+  assertStringIncludes(ps, "$line.status = $r");
+  assertStringIncludes(ps, "'proxy-no-auth'");
+  assertStringIncludes(ps, "Test-Connect 'example.com:443' $false");
+  // The credential never reaches an output line or an error message.
+  assert(!/WriteLine\([^)]*\$(cred|proxyAuth)/i.test(ps));
+  assert(!/throw[^\n]*\$(cred|proxyAuth)/i.test(ps));
+  // No credential file (the credentialless qualification probe): no Basic
+  // header and no no-credential probe.
+  assertStringIncludes(
+    ps,
+    "if ($null -ne $proxyAuth) { $probes['proxy-no-auth']",
+  );
+});
+
+Deno.test("realEgressRuntime (M1-33d): one shared proxy on the gateway, started with the runtime; register goes to it; no per-execution proxy; its failure and shutdown are the runtime's", async () => {
+  const root = await Deno.makeTempDir();
+  const started: SharedProxyOptions[] = [];
+  const regs: RegisterOptions[] = [];
+  let failed = false;
+  let down = 0;
+  const shared = (o: SharedProxyOptions): SharedEgressProxy => {
+    started.push(o);
+    return {
+      port: o.port,
+      get failed() {
+        return failed;
+      },
+      register(r) {
+        regs.push(r);
+        return {
+          credential: { user: "u".repeat(32), pass: "p".repeat(43) },
+          reg: {
+            source: r.source,
+            failed: false,
+            failure: null,
+            unregister: () => Promise.resolve(),
+          },
+        };
+      },
+      shutdown() {
+        down++;
+        return Promise.resolve();
+      },
+    };
+  };
+  const markerPath = join(root, "egress-verified.json");
+  const rt = await realEgressRuntime({ repoRoot: root, markerPath, shared });
+  assertEquals(started.length, 1, "started with the runtime, once");
+  assertEquals(
+    [started[0]!.hostname, started[0]!.port, started[0]!.allowedHosts],
+    [SANDBOX_NETWORK.gateway, PROXY_PORT, [SANDBOX_NETWORK.gateway]],
+  );
+  const r = rt.register({
+    allow: ["api.anthropic.com"],
+    log() {},
+    source: "172.30.60.5",
+  });
+  assertEquals(r.reg.source, "172.30.60.5");
+  assertEquals(regs.map((x) => x.allow), [["api.anthropic.com"]]);
+  assertEquals(started.length, 1, "a registration starts no proxy");
+  assertEquals(rt.proxyFailed, false);
+  failed = true;
+  assertEquals(rt.proxyFailed, true);
+  // The per-execution proxy would bind the same address: refused.
+  await assertRejects(
+    () => rt.startProxy({ allowedHosts: [], log() {} }),
+    ConfigurationError,
+    "shared",
+  );
+  // Pre-auth reasons go to the host log (reason and source, never a header).
+  await started[0]!.hostLog({
+    at: "2026-09-26T00:00:00.000Z",
+    reason: "missing credential",
+    source: "172.30.60.5",
+  });
+  assertStringIncludes(
+    await Deno.readTextFile(join(root, "egress-host.jsonl")),
+    '"reason":"missing credential"',
+  );
+  await rt.shutdown();
+  assertEquals(down, 1);
+  // The credentialless qualification probe keeps its own per-execution proxy.
+  const probe = await realEgressRuntime({
+    repoRoot: root,
+    markerPath,
+    acceptCandidate: true,
+    shared,
+  });
+  assertEquals(started.length, 1, "no shared proxy for the probe");
+  assertThrows(
+    () => probe.register({ allow: [], log() {}, source: "172.30.60.5" }),
+    ConfigurationError,
+    "qualification",
+  );
+  assertEquals(probe.proxyFailed, false);
+  await probe.shutdown();
+});
+
+/** A shared proxy that binds nothing (M1-33d review tests). */
+const inertShared = (o: SharedProxyOptions): SharedEgressProxy => ({
+  port: o.port,
+  failed: false,
+  register: () => {
+    throw new Error("not used");
+  },
+  shutdown: () => Promise.resolve(),
+});
+
+Deno.test("realEgressRuntime verify (M1-33d review): above concurrency 1 the marker's proxy_isolation must equal PROXY_ISOLATION; the value read is recorded; concurrency 1 ignores it", async () => {
+  const root = await Deno.makeTempDir();
+  const markerPath = join(root, "egress-verified.json");
+  const runtime = async (concurrency: number, value: unknown) => {
+    const raw = rawObservation();
+    if (value !== undefined) {
+      (raw.marker as Record<string, unknown>)["proxy_isolation"] = value;
+    }
+    const collect = () =>
+      Promise.resolve({ code: 0, stdout: JSON.stringify(raw) });
+    return await realEgressRuntime({
+      repoRoot: root,
+      markerPath,
+      collect,
+      shared: inertShared,
+      concurrency,
+    });
+  };
+  assertEquals(PROXY_ISOLATION, 2);
+  const cases: [string, unknown][] = [
+    ["missing", undefined],
+    ["lower", 1],
+    ["higher", 3],
+    ["non-integer", 2.5],
+    ["a string", "2"],
+  ];
+  for (const [word, value] of cases) {
+    const rt = await runtime(2, value);
+    assertEquals(
+      rt.markerProxyIsolation,
+      undefined,
+      `${word}: nothing read yet`,
+    );
+    const p = await rt.verify();
+    assertEquals(p.length, 1, word);
+    assertStringIncludes(p[0]!, "proxy_isolation", word);
+    assertStringIncludes(p[0]!, "concurrency 2", word);
+    assertEquals(rt.markerProxyIsolation, value, word);
+    // Concurrency 1 is unaffected by the field.
+    const one = await runtime(1, value);
+    assertEquals(await one.verify(), [], `${word}: concurrency 1`);
+    assertEquals(one.markerProxyIsolation, value, `${word}: recorded at 1`);
+  }
+  const equal = await runtime(2, PROXY_ISOLATION);
+  assertEquals(await equal.verify(), []);
+  assertEquals(equal.markerProxyIsolation, PROXY_ISOLATION);
+});
+
+Deno.test("realEgressRuntime (M1-33d review): a shared proxy that cannot bind fails the runtime start, naming the gateway and port", async () => {
+  const root = await Deno.makeTempDir();
+  let listened = 0;
+  await assertRejects(
+    () =>
+      realEgressRuntime({
+        repoRoot: root,
+        markerPath: join(root, "egress-verified.json"),
+        shared: (o) =>
+          startSharedEgressProxy({
+            ...o,
+            listen: () => {
+              listened++;
+              throw new Deno.errors.AddrInUse("Address already in use");
+            },
+          }),
+      }),
+    ConfigurationError,
+    `${SANDBOX_NETWORK.gateway}:${PROXY_PORT}`,
+  );
+  assertEquals(listened, 1);
+});
+
+Deno.test("realEgressRuntime (M1-33d review): shutdown closes the shared proxy's listener", async () => {
+  const root = await Deno.makeTempDir();
+  const events: string[] = [];
+  let stop = (_e: Error) => {};
+  const rt = await realEgressRuntime({
+    repoRoot: root,
+    markerPath: join(root, "egress-verified.json"),
+    shared: (o) =>
+      startSharedEgressProxy({
+        ...o,
+        listen: (a) =>
+          ({
+            addr: { transport: "tcp", hostname: a.hostname, port: a.port },
+            accept: () => new Promise<Deno.Conn>((_, rej) => stop = rej),
+            close: () => {
+              events.push("listener closed");
+              stop(new Deno.errors.BadResource("closed"));
+            },
+          }) as unknown as Deno.Listener,
+      }),
+  });
+  assertEquals(events, []);
+  await rt.shutdown();
+  assertEquals(events, ["listener closed"]);
+  assertEquals(rt.proxyFailed, false, "a shutdown is not a failure");
 });
 
 // ---------------------------------------------------------------------------

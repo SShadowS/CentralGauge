@@ -106,6 +106,7 @@ import {
   sha256Text,
   verifyEgressState,
 } from "../../src/harness/egress.ts";
+import { PROXY_ISOLATION } from "../../src/harness/egress-proxy.ts";
 import {
   BASE_IMAGE,
   hasBaseLayers,
@@ -1673,6 +1674,8 @@ export async function harnessEgressVerify(
         network: SANDBOX_NETWORK.name,
         network_id: s.network.id,
         interface_index: s.gatewayAdapter.index,
+        // The proxy isolation model this marker was verified for (M1-33d).
+        proxy_isolation: PROXY_ISOLATION,
         marked_at: new Date().toISOString(),
         ...extra,
       },

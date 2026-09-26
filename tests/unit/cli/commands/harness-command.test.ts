@@ -34,12 +34,19 @@ import {
   resolveEgress,
 } from "../../../../cli/commands/harness-env.ts";
 import {
+  BACKEND_PORT,
   type EgressState,
   firewallPlan,
   preflightExpect,
+  PROXY_PORT,
+  realEgressRuntime,
   RECORDED_HOSTS_PATH,
   SANDBOX_NETWORK,
 } from "../../../../src/harness/egress.ts";
+import {
+  PROXY_ISOLATION,
+  startSharedEgressProxy,
+} from "../../../../src/harness/egress-proxy.ts";
 import { claudeCodeAdapter } from "../../../../src/harness/adapters/claude-code.ts";
 import { loadSymbolsLock } from "../../../../src/harness/identity.ts";
 import {
@@ -1836,6 +1843,21 @@ Deno.test("harness egress verify --mark: ordered states, no skip, no downgrade, 
   await refused({ root, mark: "authorized" }, "qualified first");
 });
 
+Deno.test("harness egress verify --mark (M1-33d review): the marker carries proxy_isolation = PROXY_ISOLATION", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  assertEquals(
+    await harnessEgressVerify(
+      { root, mark: "candidate" },
+      markerAwareCollector(),
+    ),
+    [],
+  );
+  const m = JSON.parse(
+    await Deno.readTextFile(join(root, "results", "harness", EGRESS_MARKER)),
+  );
+  assertEquals(m.proxy_isolation, PROXY_ISOLATION);
+});
+
 async function probeEvidence(
   root: string,
   over: Record<string, unknown> = {},
@@ -2415,6 +2437,42 @@ Deno.test("openHarnessEnv: the effective egress mode is computed under the lock,
     "verification failed",
   );
   assertEquals(order, ["lock", "verify", "release"]);
+});
+
+Deno.test("openHarnessEnv (M1-33d review): a shared proxy that cannot bind stops the start naming the gateway and port, before the backend and any cell; the runtime gets the concurrency", async () => {
+  const t = await makeEnv();
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  await Deno.writeTextFile(
+    join(shared, EGRESS_MARKER),
+    JSON.stringify({ v: 1, state: "qualified" }),
+  );
+  const order: string[] = [];
+  const seen: { concurrency?: number }[] = [];
+  const d: EnvDeps = {
+    ...deps(order, undefined, () => Promise.resolve([])),
+    egressRuntime: (eo) => {
+      order.push("egress runtime");
+      seen.push(eo);
+      return realEgressRuntime({
+        ...eo,
+        shared: (so) =>
+          startSharedEgressProxy({
+            ...so,
+            listen: () => {
+              throw new Deno.errors.AddrInUse("Address already in use");
+            },
+          }),
+      });
+    },
+  };
+  await assertRejects(
+    () => openHarnessEnv({ ...envOpts(t), backendPort: BACKEND_PORT }, d),
+    ConfigurationError,
+    `${SANDBOX_NETWORK.gateway}:${PROXY_PORT}`,
+  );
+  assertEquals(seen.map((x) => x.concurrency), [1]);
+  assertEquals(order.slice(-2), ["egress runtime", "release"]);
 });
 
 // ---- M5-03: --stop-file and --campaign on run and rejudge ----

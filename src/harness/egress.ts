@@ -10,12 +10,24 @@
  * (M1-34) and only reads the host state.
  */
 
-import { join } from "@std/path";
+import { dirname, join } from "@std/path";
 import { z } from "zod";
 import { dockerContextEnv } from "../container/docker-context.ts";
 import { ConfigurationError, ValidationError } from "../errors.ts";
-import { startEgressProxy } from "./egress-proxy.ts";
-import type { EgressLogLine } from "./egress-proxy.ts";
+import {
+  PROXY_ISOLATION,
+  startEgressProxy,
+  startSharedEgressProxy,
+} from "./egress-proxy.ts";
+import type {
+  EgressLogLine,
+  ProxyCredential,
+  RegisterOptions,
+  Registration,
+  SharedEgressProxy,
+  SharedProxyOptions,
+} from "./egress-proxy.ts";
+import type { SecretValue } from "./fsutil.ts";
 import { dockerChildEnv } from "./sandbox.ts";
 
 export type { EgressLogLine } from "./egress-proxy.ts";
@@ -31,12 +43,98 @@ export const RULE_GROUP = "cg-harness-egress";
 export const MARKER_FILE = "egress-verified.json";
 export const MARKER_STATES = ["candidate", "qualified", "authorized"] as const;
 export type MarkerState = (typeof MARKER_STATES)[number];
-/** The proxy env of a placed sandbox (the backend is reached directly on the gateway). */
+/** The credentialless qualification probe's proxy env (the backend is reached directly on the gateway). */
 export const PROXY_ENV: Record<string, string> = {
   HTTPS_PROXY: `http://${SANDBOX_NETWORK.gateway}:${PROXY_PORT}`,
   HTTP_PROXY: `http://${SANDBOX_NETWORK.gateway}:${PROXY_PORT}`,
   NO_PROXY: SANDBOX_NETWORK.gateway,
 };
+/**
+ * A placed cell's docker env (M1-33d): NO_PROXY only. The proxy URL carries
+ * the execution's credential, so run.ps1 sets HTTPS_PROXY and HTTP_PROXY in
+ * its own process from C:\cg-secrets\proxy-credential after ready; neither
+ * the docker argv nor `docker inspect` ever holds it.
+ */
+export const PLACED_ENV: Record<string, string> = {
+  NO_PROXY: SANDBOX_NETWORK.gateway,
+};
+
+/**
+ * Every form the proxy credential can take in output (design section 7), as
+ * redaction values; the first is the `user:pass` the credential file holds.
+ */
+export function proxyCredentialForms(c: ProxyCredential): SecretValue[] {
+  const userPass = `${c.user}:${c.pass}`;
+  const pct = `${encodeURIComponent(c.user)}%3A${encodeURIComponent(c.pass)}`;
+  const at = `@${SANDBOX_NETWORK.gateway}:${PROXY_PORT}`;
+  const url = `http://${userPass}${at}`;
+  const forms: SecretValue[] = [
+    { name: "proxy-credential", value: userPass },
+    { name: "proxy-credential-pass", value: c.pass },
+    { name: "proxy-credential-basic", value: btoa(userPass) },
+    { name: "proxy-credential-userinfo-pct", value: pct },
+    { name: "proxy-url", value: url },
+    { name: "proxy-url-pct-userinfo", value: `http://${pct}${at}` },
+    { name: "proxy-url-pct", value: encodeURIComponent(url) },
+  ];
+  // Identical spellings (never for a real credential) would only repeat a key.
+  return forms.filter((f, i) =>
+    forms.findIndex((g) => g.value === f.value) === i
+  );
+}
+
+const ipv4Octets = (ip: string): number[] | null => {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return null;
+  const o = ip.split(".").map(Number);
+  return o.every((x) => x <= 255) ? o : null;
+};
+const ipv4Int = (o: number[]) =>
+  ((o[0]! << 24) | (o[1]! << 16) | (o[2]! << 8) | o[3]!) >>> 0;
+
+/**
+ * A placed sandbox's source address (design section 4, review Part B): from
+ * `docker inspect`, exactly one network, the internal one, one IPv4 inside
+ * its subnet that is a host address and not the gateway. Anything else is
+ * refused; there is no fallback address.
+ */
+export function sandboxSource(
+  nets: { network: string; ip: string }[] | null,
+): string {
+  const refuse = (why: string) => {
+    throw new ValidationError(`sandbox source address: ${why}`, [
+      "docker inspect",
+    ]);
+  };
+  if (nets === null) return refuse("no such container");
+  if (nets.length === 0) return refuse("no address on any network");
+  if (nets.length > 1) {
+    return refuse(
+      `the sandbox is on ${nets.length} networks (${
+        nets.map((n) => n.network).join(", ")
+      }), exactly one expected`,
+    );
+  }
+  const { network, ip } = nets[0]!;
+  if (network !== SANDBOX_NETWORK.name) {
+    return refuse(`the sandbox is not on ${SANDBOX_NETWORK.name} (${network})`);
+  }
+  if (ip === "") return refuse(`no address on ${network}`);
+  if (ip === SANDBOX_NETWORK.gateway) return refuse(`${ip} is the gateway`);
+  const [base, bits] = SANDBOX_NETWORK.subnet.split("/");
+  const mask = bits === "0" ? 0 : (0xffffffff << (32 - Number(bits))) >>> 0;
+  const o = ipv4Octets(ip);
+  const net = ipv4Int(ipv4Octets(base!)!);
+  const n = o ? ipv4Int(o) : -1;
+  if (
+    !o || ((n & mask) >>> 0) !== net || (n & ~mask) === 0 ||
+    ((n & ~mask) >>> 0) === (~mask >>> 0)
+  ) {
+    return refuse(
+      `${ip} is outside ${SANDBOX_NETWORK.subnet} or not a host address`,
+    );
+  }
+  return ip;
+}
 
 const HOSTNAME =
   /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
@@ -424,7 +522,13 @@ export interface EgressState {
   }[];
   groupRules: FirewallRule[];
   foreignBlockRules: string[];
-  marker: { state: string; networkId: string; interfaceIndex: number } | null;
+  marker: {
+    state: string;
+    networkId: string;
+    interfaceIndex: number;
+    /** The proxy isolation model the marker was written for (absent on older markers). */
+    proxyIsolation?: unknown;
+  } | null;
 }
 
 const FIELDS = [
@@ -789,6 +893,7 @@ const RawSchema = z.object({
     state: z.enum(MARKER_STATES),
     network_id: z.string().min(1),
     interface_index: z.number().int(),
+    proxy_isolation: z.unknown().optional(),
   }).nullable(),
 }).strict();
 
@@ -947,6 +1052,9 @@ export async function collectEgressState(
       state: d.marker.state,
       networkId: d.marker.network_id,
       interfaceIndex: d.marker.interface_index,
+      ...(d.marker.proxy_isolation !== undefined
+        ? { proxyIsolation: d.marker.proxy_isolation }
+        : {}),
     },
   };
 }
@@ -1157,19 +1265,25 @@ const NEGATIVE_PROBES = [
   "proxy-ip-literal",
 ];
 
+/** The CONNECT probe without a credential (authenticated preflight only): must get 407. */
+export const NO_AUTH_PROBE = "proxy-no-auth";
+
 /**
  * A2: every negative, the backend, and one positive proxy probe per route
  * host of this execution. In record mode the proxy allows any DNS name, so
  * the example.com probe must be open (proof the record proxy is the one
- * answering); IP literals stay refused.
+ * answering); IP literals stay refused. With auth (a placed cell behind the
+ * shared proxy, M1-33d) the CONNECT probes carry the credential and one
+ * more probe goes without it.
  */
 export function preflightExpect(
   hosts: string[],
-  o: { record?: boolean } = {},
+  o: { record?: boolean; auth?: boolean } = {},
 ): Record<string, boolean> {
   const out: Record<string, boolean> = {};
   for (const n of NEGATIVE_PROBES) out[n] = false;
   if (o.record) out["proxy-deny-example.com"] = true;
+  if (o.auth) out[NO_AUTH_PROBE] = false;
   out["backend-3210"] = true;
   for (const h of hosts) {
     if (!isAllowableHost(h) || h === "example.com") {
@@ -1189,7 +1303,39 @@ export const PREFLIGHT_EXPECT: Record<string, boolean> = preflightExpect([
 export interface ProbeLine {
   probe: string;
   ok: boolean;
+  /** A CONNECT probe's proxy status (200 dialed, 403 policy deny, 407 no or bad credential). */
+  status?: number;
   error?: string;
+}
+
+/**
+ * An authenticated CONNECT probe's status against the expectation (design
+ * section 3): open needs 200, blocked needs the policy deny 403, the
+ * no-credential probe needs 407, and a 407 with the credential is never a
+ * blocked negative.
+ */
+function connectProblem(l: ProbeLine, want: boolean): string | null {
+  const s = l.status;
+  if (s === undefined) {
+    return `${l.probe}: no status (a CONNECT probe reports one)`;
+  }
+  if (l.ok !== (s === 200)) {
+    return `${l.probe}: ok ${l.ok} disagrees with status ${s}`;
+  }
+  if (l.probe === NO_AUTH_PROBE) {
+    return s === 407
+      ? null
+      : `${l.probe}: expected 407 without a credential, observed ${s}`;
+  }
+  if (s === 407) {
+    return `${l.probe}: 407 with the credential (the proxy did not accept it)`;
+  }
+  const need = want ? 200 : 403;
+  return s === need
+    ? null
+    : `${l.probe}: expected ${need}${
+      want ? "" : " (policy deny)"
+    }, observed ${s}`;
 }
 
 /** Problems with the preflight lines against the expectation; [] means it passed. */
@@ -1198,6 +1344,7 @@ export function evaluatePreflight(
   expect: Record<string, boolean> = PREFLIGHT_EXPECT,
 ): string[] {
   const p: string[] = [];
+  const auth = Object.hasOwn(expect, NO_AUTH_PROBE);
   for (const [probe, want] of Object.entries(expect)) {
     const got = lines.filter((l) => l.probe === probe);
     if (got.length === 0) {
@@ -1210,7 +1357,10 @@ export function evaluatePreflight(
     }
     const l = got[0]!;
     if (l.error) p.push(`${probe} could not run: ${l.error}`);
-    else if (l.ok !== want) {
+    else if (auth && probe.startsWith("proxy-")) {
+      const c = connectProblem(l, want);
+      if (c) p.push(c);
+    } else if (l.ok !== want) {
       p.push(
         `${probe}: expected ${want ? "open" : "blocked"}, observed ${
           l.ok ? "open" : "blocked"
@@ -1227,6 +1377,7 @@ export function evaluatePreflight(
 const ProbeLineSchema = z.object({
   probe: z.string().min(1),
   ok: z.boolean(),
+  status: z.number().int().min(100).max(599).nullable().optional(),
   error: z.string().nullable().optional(),
 }).strict();
 
@@ -1265,6 +1416,7 @@ export function parseProbeLines(text: string): ProbeLine[] {
     out.push({
       probe: r.data.probe,
       ok: r.data.ok,
+      ...(typeof r.data.status === "number" ? { status: r.data.status } : {}),
       ...(r.data.error ? { error: r.data.error } : {}),
     });
   }
@@ -1286,12 +1438,36 @@ export interface EgressRuntime {
   verify(): Promise<string[]>;
   /** Proxy and backend listening on the gateway only: problems. */
   listeners(): Promise<string[]>;
-  /** The execution's proxy: exactly these hosts (record: any DNS name on 443); every decision goes to log. */
+  /**
+   * The credentialless qualification probe's own proxy (candidate marker,
+   * M1-34 Step 6): exactly these hosts; every decision goes to log. Refused
+   * while the shared proxy owns the address.
+   */
   startProxy(o: {
     allowedHosts: string[];
     log(l: EgressLogLine): void;
     record?: boolean;
   }): Promise<{ shutdown(): Promise<void> }>;
+  /**
+   * A placed cell's registration with the environment's shared proxy
+   * (M1-33d): its credential, allowlist, log and source address. Throws when
+   * the shared proxy has failed, the source is already registered or there
+   * is no shared proxy.
+   */
+  register(o: RegisterOptions): {
+    credential: ProxyCredential;
+    reg: Registration;
+  };
+  /** The shared proxy entered its failed state (every registration is revoked). */
+  readonly proxyFailed: boolean;
+  /**
+   * The marker's proxy_isolation as the last verify() read it (undefined
+   * before a read or when absent); the step that lifts the M1-33c
+   * concurrency refusal reads it.
+   */
+  readonly markerProxyIsolation?: unknown;
+  /** Shuts the shared proxy down (with the environment). */
+  shutdown(): Promise<void>;
   /** Run C:\egress-check.ps1 inside the running sandbox. */
   probe(sandbox: string, hosts: string[]): Promise<ProbeLine[]>;
 }
@@ -1310,11 +1486,50 @@ export async function realEgressRuntime(
     acceptCandidate?: boolean;
     /** Test seam for the host observation (default: the real collector). */
     collect?: EgressRun;
+    /** Test seam for the shared proxy (default: startSharedEgressProxy). */
+    shared?: (o: SharedProxyOptions) => SharedEgressProxy;
+    /** Pre-auth reasons and sources (default: egress-host.jsonl beside the marker). */
+    hostLogPath?: string;
+    /** Campaign blocks at once (EnvOptions.concurrency); above 1 verify() needs the marker's proxy_isolation to be PROXY_ISOLATION. */
+    concurrency?: number;
   },
 ): Promise<EgressRuntime> {
   const recordedHosts = await loadRecordedHosts(o.repoRoot);
+  const hostLogPath = o.hostLogPath ??
+    join(dirname(o.markerPath), "egress-host.jsonl");
+  // One shared proxy per placed environment (design section 1). The
+  // candidate qualification probe (acceptCandidate) is credentialless and
+  // keeps its per-execution proxy, so it starts none.
+  const shared = o.acceptCandidate
+    ? null
+    : (o.shared ?? startSharedEgressProxy)({
+      hostname: SANDBOX_NETWORK.gateway,
+      port: PROXY_PORT,
+      allowedHosts: [SANDBOX_NETWORK.gateway],
+      // A rejection fails the whole proxy (and every running placed cell).
+      hostLog: (l) =>
+        Deno.writeTextFile(hostLogPath, JSON.stringify(l) + "\n", {
+          append: true,
+        }),
+    });
+  let markerProxyIsolation: unknown;
   return {
     recordedHosts,
+    get proxyFailed() {
+      return shared?.failed ?? false;
+    },
+    get markerProxyIsolation() {
+      return markerProxyIsolation;
+    },
+    register(r) {
+      if (!shared) {
+        throw new ConfigurationError(
+          "no shared egress proxy: the candidate qualification probe runs credentialless",
+        );
+      }
+      return shared.register(r);
+    },
+    shutdown: () => shared?.shutdown() ?? Promise.resolve(),
     // Runs before every credential release (execution.ts): the marker and its
     // authorized evidence are read and rechecked now, never trusted from startup.
     async verify() {
@@ -1322,6 +1537,17 @@ export async function realEgressRuntime(
         o.collect ?? realEgressCollector(o.markerPath),
       );
       const p = verifyEgressState(s);
+      markerProxyIsolation = s.marker?.proxyIsolation;
+      // Exact equality: a missing, older, newer or non-integer value is not this proxy.
+      if (
+        (o.concurrency ?? 1) > 1 && markerProxyIsolation !== PROXY_ISOLATION
+      ) {
+        p.push(
+          `egress marker ${o.markerPath} has proxy_isolation ${
+            JSON.stringify(markerProxyIsolation) ?? "missing"
+          }: concurrency ${o.concurrency} needs ${PROXY_ISOLATION}`,
+        );
+      }
       const placing = o.acceptCandidate
         ? ["candidate", "qualified", "authorized"]
         : ["qualified", "authorized"];
@@ -1369,6 +1595,13 @@ export async function realEgressRuntime(
       );
     },
     startProxy(p) {
+      if (shared) {
+        return Promise.reject(
+          new ConfigurationError(
+            `the shared egress proxy owns ${SANDBOX_NETWORK.gateway}:${PROXY_PORT}: no per-execution proxy`,
+          ),
+        );
+      }
       const proxy = startEgressProxy({
         hostname: SANDBOX_NETWORK.gateway,
         port: PROXY_PORT,

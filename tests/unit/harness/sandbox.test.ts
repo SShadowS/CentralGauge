@@ -1092,3 +1092,42 @@ Deno.test("redactText redacts token patterns after exact secrets", () => {
     "e: Bearer [REDACTED:bearer]",
   );
 });
+
+Deno.test("realDocker.networks (M1-33d): each network with its IPv4; no such container is null; a failed inspect throws", async () => {
+  const mock = createCommandMock();
+  mock.mockCommandOnce({
+    command: "docker",
+    argsContain: ["{{json .NetworkSettings.Networks}}"],
+  }, {
+    code: 0,
+    stdout:
+      '{"cg-harness-sandbox":{"IPAddress":"172.30.60.17","Gateway":"172.30.60.1"},"nat":{"IPAddress":""}}\n',
+    stderr: "",
+  });
+  mock.mockCommandOnce({ command: "docker", argsContain: ["inspect"] }, {
+    code: 1,
+    stdout: "",
+    stderr: "Error: No such object: cg-harness-x",
+  });
+  mock.mockCommandOnce({ command: "docker", argsContain: ["inspect"] }, {
+    code: 1,
+    stdout: "",
+    stderr: "error during connect",
+  });
+  mock.install();
+  try {
+    const d = realDocker();
+    assertEquals(await d.networks("cg-harness-x"), [
+      { network: "cg-harness-sandbox", ip: "172.30.60.17" },
+      { network: "nat", ip: "" },
+    ]);
+    assertEquals(await d.networks("cg-harness-x"), null);
+    await assertRejects(
+      () => d.networks("cg-harness-x"),
+      ContainerError,
+      "error during connect",
+    );
+  } finally {
+    mock.restore();
+  }
+});

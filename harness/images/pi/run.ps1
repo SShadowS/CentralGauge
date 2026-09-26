@@ -35,6 +35,15 @@ while (-not (Test-Path 'C:\cg-secrets\ready')) {
   if ($sw.Elapsed.TotalSeconds -ge $timeout) { Write-NotReady }
   Start-Sleep -Milliseconds 500
 }
+# A placed cell (M1-33d): the proxy URL carries this execution's credential,
+# so it is set here, in this process only, never by docker -e (the argv and
+# docker inspect never hold it). No file (not placed): no proxy.
+if (Test-Path 'C:\cg-secrets\proxy-credential') {
+  $proxyCred = (Get-Content 'C:\cg-secrets\proxy-credential' -Raw -Encoding UTF8).Trim()
+  $env:HTTPS_PROXY = "http://$proxyCred@172.30.60.1:3128"
+  $env:HTTP_PROXY = $env:HTTPS_PROXY
+  Remove-Variable proxyCred
+}
 $env:PI_CODING_AGENT_DIR = 'C:\pi-agent'
 New-Item -ItemType Directory -Force -Path $env:PI_CODING_AGENT_DIR | Out-Null
 [IO.File]::WriteAllText("$env:PI_CODING_AGENT_DIR\settings.json", (ConvertTo-Json -InputObject $ps -Depth 8), $utf8)

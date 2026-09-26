@@ -69,6 +69,15 @@ while (-not (Test-Path 'C:\cg-secrets\ready')) {
   }
   Start-Sleep -Milliseconds 500
 }
+# A placed cell (M1-33d): the proxy URL carries this execution's credential,
+# so it is set here, in this process only, never by docker -e (the argv and
+# docker inspect never hold it). No file (not placed): no proxy.
+if (Test-Path 'C:\cg-secrets\proxy-credential') {
+  $proxyCred = (Get-Content 'C:\cg-secrets\proxy-credential' -Raw -Encoding UTF8).Trim()
+  $env:HTTPS_PROXY = "http://$proxyCred@172.30.60.1:3128"
+  $env:HTTP_PROXY = $env:HTTPS_PROXY
+  Remove-Variable proxyCred
+}
 $env:CLAUDE_CODE_OAUTH_TOKEN = (Get-Content 'C:\cg-secrets\claude-oauth-token' -Raw -Encoding UTF8).Trim()
 $env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Git\bin\bash.exe'
 $env:DISABLE_TELEMETRY = '1'

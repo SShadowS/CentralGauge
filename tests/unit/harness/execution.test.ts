@@ -47,6 +47,7 @@ import {
   preflightExpect,
   type ProbeLine,
   PROXY_ENV,
+  proxyCredentialForms,
   realEgressRuntime,
   RECORDED_HOSTS_PATH,
   recordedHostsJson,
@@ -1867,19 +1868,23 @@ Deno.test("enforced run: listeners checked, preflight run, then secrets and read
     return await inner(call, io);
   };
   const r = await runCell(t.env, await cellFor(t));
+  // M1-33d: the shared proxy's registration replaces the per-cell proxy; the
+  // probe sees only the proxy credential; the entrypoint sees it too.
   assertEquals(eg.events, [
     "verify",
-    "proxy",
     "listeners",
+    "register",
     "probe",
-    "probe sees 0 files",
-    `entrypoint: backend-token,claude-oauth-token,${READY_FILE}`,
-    "proxy down",
+    "probe sees 1 files",
+    "verify",
+    `entrypoint: backend-token,claude-oauth-token,proxy-credential,${READY_FILE}`,
+    "unregister",
   ]);
   const call = t.docker.runs[0]!;
   assertEquals(call.network, SANDBOX_NETWORK.name);
-  assertEquals(call.env.get("HTTPS_PROXY"), "http://172.30.60.1:3128");
-  assertEquals(call.env.get("HTTP_PROXY"), "http://172.30.60.1:3128");
+  // M1-33d: docker -e holds NO_PROXY only; run.ps1 sets the credentialed proxy.
+  assertEquals(call.env.get("HTTPS_PROXY"), undefined);
+  assertEquals(call.env.get("HTTP_PROXY"), undefined);
   assertEquals(call.env.get("NO_PROXY"), "172.30.60.1");
   // A1/A2: the proxy allowlist and the positive probes are exactly this execution's route hosts.
   assertEquals(eg.proxyHosts, ["api.anthropic.com", RECORDED_OAUTH]);
@@ -1949,7 +1954,14 @@ Deno.test("enforced run: a proxy not listening, a failed host verification or a 
     assertEquals(e!.termination, "setup_failed", word);
     assertStringIncludes((await sideOf(t, e!.id)).setup_error, word);
     assertEquals(t.docker.runs.length, sandboxStarted ? 1 : 0, word);
-    if (sandboxStarted) assertEquals(probeListing, [], `${word}: empty mount`);
+    // M1-33d: the probe runs with the proxy credential only, no provider secret.
+    if (sandboxStarted) {
+      assertEquals(
+        probeListing,
+        ["proxy-credential"],
+        `${word}: only the proxy credential`,
+      );
+    }
     assertEquals(t.docker.readySeen, false, `${word}: no ready`);
     assertEquals(secretDirs(t), [], word);
     assert(!await exists(privatePaths(t.env, e!.id).custody), word);
@@ -2022,13 +2034,10 @@ Deno.test("enforced run: a deny line during the run kills the sandbox (egress_vi
   }
 });
 
-Deno.test("enforced run: a proxy that cannot start is setup_failed naming the proxy address", async () => {
+Deno.test("enforced run: a failed shared proxy is setup_failed naming the proxy address (egress_proxy_failed)", async () => {
   const t = await makeEnv();
   const eg = enforce(t);
-  eg.startProxy = () =>
-    Promise.reject(
-      new Deno.errors.AddrInUse("Only one usage of each socket address"),
-    );
+  eg.proxyFailed = true;
   const cell = await cellFor(t);
   await assertRejects(
     () => runCell(t.env, cell),
@@ -2037,7 +2046,7 @@ Deno.test("enforced run: a proxy that cannot start is setup_failed naming the pr
   );
   const [e] = await t.env.store.executions(cell.campaignId);
   assertEquals(e!.termination, "setup_failed");
-  assertStringIncludes((await sideOf(t, e!.id)).setup_error, "AddrInUse");
+  assertEquals((await sideOf(t, e!.id)).stop_reason, "egress_proxy_failed");
   assertEquals(t.docker.runs, []);
   assertEquals(secretDirs(t), []);
 });
@@ -2476,6 +2485,15 @@ async function releaseWith(t: TestEnv, markerPath: string) {
     repoRoot: t.env.repoRoot,
     markerPath,
     collect: rawObservation(markerPath),
+    // Only verify and the recording are taken; no proxy binds the gateway here.
+    shared: () => ({
+      port: 0,
+      failed: false,
+      register: () => {
+        throw new Error("unused");
+      },
+      shutdown: () => Promise.resolve(),
+    }),
   });
   const eg = enforce(t);
   eg.verify = real.verify;
@@ -2596,4 +2614,426 @@ setTimeout(() => Deno.exit(0), 30_000);
       Deno.connect({ hostname: "127.0.0.1", port }).then((c) => c.close())
     );
   },
+});
+
+// ---------------------------------------------------------------------------
+// M1-33d G2/G3: start with an empty mount, verify the address, register with
+// the shared proxy, the proxy credential only, the authenticated preflight,
+// then provider secrets and ready.
+
+/** Lists the secrets mount of the only sandbox at each kill (what was released before it stopped). */
+function mountAtKill(t: TestEnv): string[][] {
+  const seen: string[][] = [];
+  const kill = t.docker.kill.bind(t.docker);
+  t.docker.kill = (name) => {
+    const dir = t.docker.runs.find((r) => r.name === name)?.mounts.get(
+      "C:\\cg-secrets",
+    )?.src;
+    if (dir) {
+      seen.push([...Deno.readDirSync(dir)].map((e) => e.name).sort());
+    }
+    return kill(name);
+  };
+  return seen;
+}
+
+async function egressSetupFailed(
+  t: TestEnv,
+  word: string,
+  stop: string,
+): Promise<ExecutionRecord> {
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), ContainerError, word);
+  const [e, ...more] = await t.env.store.executions(cell.campaignId);
+  assertEquals(more, [], `${word}: one execution`);
+  assertEquals(e!.termination, "setup_failed", word);
+  const side = await sideOf(t, e!.id);
+  assertEquals(side.stop_reason, stop, word);
+  assertStringIncludes(side.setup_error, word);
+  assertEquals(await t.env.store.judgments(e!.id), [], `${word}: never scored`);
+  assertEquals(secretDirs(t), [], word);
+  return e!;
+}
+
+Deno.test("placed run (M1-33d): empty mount at the address check, the verified address registered, only the proxy credential before the authenticated preflight, rechecked, unregistered", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  const nets = t.docker.networks.bind(t.docker);
+  const mount = (name: string) =>
+    t.docker.runs.find((r) => r.name === name)!.mounts.get("C:\\cg-secrets")!
+      .src;
+  t.docker.networks = async (name) => {
+    eg.events.push(
+      `inspect: ${[...Deno.readDirSync(mount(name))].length} files`,
+    );
+    return await nets(name);
+  };
+  const atProbe: Record<string, string> = {};
+  eg.onProbe = async (sandbox) => {
+    for (const e of Deno.readDirSync(mount(sandbox))) {
+      atProbe[e.name] = await Deno.readTextFile(join(mount(sandbox), e.name));
+    }
+    assertEquals(eg.registered?.source, "172.30.60.10");
+  };
+  const r = await runCell(t.env, await cellFor(t));
+  assertEquals(r.executions[0]!.termination, "completed");
+  assertEquals(eg.events, [
+    "verify",
+    "listeners",
+    "inspect: 0 files",
+    "register",
+    "probe",
+    "inspect: 1 files",
+    "verify",
+    "unregister",
+  ]);
+  assertEquals(eg.sources, ["172.30.60.10"]);
+  const c = eg.credential!;
+  assertEquals(atProbe, { "proxy-credential": `${c.user}:${c.pass}` });
+  assertEquals(eg.registered, null, "unregistered");
+  // The docker argv (env included) never holds any form of the credential.
+  const call = t.docker.runs[0]!;
+  for (const f of proxyCredentialForms(c)) {
+    assert(!call.args.some((a) => a.includes(f.value)), f.name);
+  }
+  assertEquals(
+    [...call.env.keys()].filter((k) => /proxy/i.test(k)),
+    ["NO_PROXY"],
+  );
+});
+
+Deno.test("placed run (M1-33d): a missing, foreign or out-of-subnet address is setup_failed (egress_preflight_failed) before any registration or credential", async () => {
+  const net = SANDBOX_NETWORK.name;
+  const cases: [string, (t: TestEnv) => void][] = [
+    [
+      "no such container",
+      (t) => (t.docker.networks = () => Promise.resolve(null)),
+    ],
+    ["no address", (t) => (t.docker.networks = () => Promise.resolve([]))],
+    [
+      "2 networks",
+      (
+        t,
+      ) => (t.docker.networks = () =>
+        Promise.resolve([{ network: net, ip: "172.30.60.10" }, {
+          network: "nat",
+          ip: "172.20.0.4",
+        }])),
+    ],
+    [
+      "not on",
+      (
+        t,
+      ) => (t.docker.networks = () =>
+        Promise.resolve([{ network: "nat", ip: "172.30.60.10" }])),
+    ],
+    [
+      "outside",
+      (
+        t,
+      ) => (t.docker.networks = () =>
+        Promise.resolve([{ network: net, ip: "172.30.61.10" }])),
+    ],
+    [
+      "gateway",
+      (
+        t,
+      ) => (t.docker.networks = () =>
+        Promise.resolve([{ network: net, ip: SANDBOX_NETWORK.gateway }])),
+    ],
+    ["belongs to execution", (t) => {
+      // The identity check (the inspect right after the wait saw it running)
+      // answers with another execution's label.
+      const state = t.docker.state.bind(t.docker);
+      let phase = 0;
+      t.docker.state = async (n) => {
+        const s = await state(n);
+        if (phase === 1) {
+          phase = 2;
+          return s && { ...s, execution: "someone-else" };
+        }
+        if (phase === 0 && s?.running) phase = 1;
+        return s;
+      };
+    }],
+  ];
+  for (const [word, breakIt] of cases) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    breakIt(t);
+    const killed = mountAtKill(t);
+    await egressSetupFailed(t, word, "egress_preflight_failed");
+    assert(!eg.events.includes("register"), `${word}: never registered`);
+    assertEquals(eg.credential, null, word);
+    assertEquals(killed, [[]], `${word}: the mount stayed empty`);
+    assertEquals(t.docker.readySeen, false, word);
+  }
+});
+
+Deno.test("placed run (M1-33d): a duplicate source or an address changed after the preflight is setup_failed (egress_preflight_failed); no provider secret, no ready", async () => {
+  {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    eg.registerError = new ConfigurationError(
+      "egress proxy source 172.30.60.10 is already registered",
+    );
+    const killed = mountAtKill(t);
+    await egressSetupFailed(t, "already registered", "egress_preflight_failed");
+    assertEquals(killed, [[]], "no credential without a registration");
+  }
+  {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    let n = 0;
+    t.docker.networks = () =>
+      Promise.resolve([{
+        network: SANDBOX_NETWORK.name,
+        ip: n++ === 0 ? "172.30.60.10" : "172.30.60.11",
+      }]);
+    const killed = mountAtKill(t);
+    await egressSetupFailed(t, "changed", "egress_preflight_failed");
+    assertEquals(killed, [["proxy-credential"]]);
+    assertEquals(t.docker.readySeen, false);
+    assertEquals(eg.events.at(-1), "unregister");
+  }
+});
+
+Deno.test("placed run (M1-33d review): the host is verified again right before the release; a change after the preflight is setup_failed (egress_preflight_failed), no provider secret, no ready", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  let calls = 0;
+  eg.verify = () => {
+    eg.events.push("verify");
+    return Promise.resolve(
+      ++calls === 1 ? [] : ["rule cg-harness-egress-tcp: disabled is false"],
+    );
+  };
+  const killed = mountAtKill(t);
+  await egressSetupFailed(
+    t,
+    "cg-harness-egress-tcp",
+    "egress_preflight_failed",
+  );
+  assertEquals(calls, 2);
+  assertEquals(eg.events, [
+    "verify",
+    "listeners",
+    "register",
+    "probe",
+    "verify",
+    "unregister",
+  ]);
+  assertEquals(killed, [["proxy-credential"]]);
+  assertEquals(t.docker.readySeen, false);
+});
+
+Deno.test("placed run (M1-33d): the authenticated preflight fails on a 407 with the credential, a no-credential probe that is not refused, or a deny that is not 403; nothing else is released", async () => {
+  const cases: [string, (l: ProbeLine) => ProbeLine][] = [
+    [
+      "407",
+      (l) =>
+        l.probe === "proxy-allow-api.anthropic.com"
+          ? { ...l, ok: false, status: 407 }
+          : l,
+    ],
+    [
+      "proxy-no-auth",
+      (l) => l.probe === "proxy-no-auth" ? { ...l, ok: true, status: 200 } : l,
+    ],
+    [
+      "expected 403",
+      (l) => l.probe === "proxy-deny-example.com" ? { ...l, status: 502 } : l,
+    ],
+  ];
+  for (const [word, mut] of cases) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    eg.lines = (ls) => ls.map(mut);
+    const killed = mountAtKill(t);
+    await egressSetupFailed(t, word, "egress_preflight_failed");
+    assertEquals(killed, [["proxy-credential"]], word);
+    assertEquals(t.docker.readySeen, false, word);
+    const published = await allBytes(t.env.resultsRoot);
+    for (const f of proxyCredentialForms(eg.credential!)) {
+      assert(!leaks(published, f.value), `${word}: ${f.name}`);
+    }
+  }
+});
+
+Deno.test("placed run (M1-33d): a registration log failure is setup_failed (egress_log_failed), during the preflight or the run", async () => {
+  // During the preflight: nothing is released.
+  {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    eg.onProbe = () => {
+      eg.failReg("egress_log_failed");
+      return Promise.resolve();
+    };
+    await egressSetupFailed(t, "egress log", "egress_log_failed");
+    assertEquals(t.docker.readySeen, false);
+  }
+  // During the run: the log write throws, the proxy fails the registration, the sandbox stops.
+  {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    t.docker.behavior = async (call, io) => {
+      const id = call.labels.get("centralgauge.harness.execution")!;
+      const log = privatePaths(t.env, id).egress;
+      await Deno.remove(log).catch(() => {});
+      await Deno.mkdir(log);
+      eg.log!({
+        at: new Date().toISOString(),
+        decision: "allow",
+        target: "api.anthropic.com:443",
+        reason: "allowed",
+      });
+      await Deno.remove(log);
+      await io.killed;
+      return 137;
+    };
+    await egressSetupFailed(t, "egress log", "egress_log_failed");
+    assertEquals(t.docker.kills.length, 1);
+  }
+});
+
+Deno.test("placed run (M1-33d): a failed shared proxy ends a running cell setup_failed (egress_proxy_failed); a late proxy or registration failure is never recorded as a result", async () => {
+  {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    t.docker.behavior = async (_call, io) => {
+      eg.proxyFailed = true;
+      eg.failReg("egress_proxy_failed");
+      await io.killed;
+      return 137;
+    };
+    await egressSetupFailed(t, "proxy", "egress_proxy_failed");
+    assertEquals(t.docker.kills.length, 1);
+  }
+  for (
+    const [late, stop] of [
+      [(eg: FakeEgress) => (eg.proxyFailed = true), "egress_proxy_failed"],
+      [
+        (eg: FakeEgress) => (eg.regFailure = "egress_log_failed"),
+        "egress_log_failed",
+      ],
+    ] as const
+  ) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    const work = ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", []);
+    t.docker.behavior = async (call, io) => {
+      const code = await work(call, io);
+      late(eg); // no callback: only the check before recording sees it
+      return code;
+    };
+    const e = await egressSetupFailed(t, "egress", stop);
+    assertEquals(e.did_work, true);
+  }
+});
+
+Deno.test("placed run (M1-33d): every form of the proxy credential is redacted from every published surface (logs, stderr, trace, side file, egress log, workspace, judge output)", async () => {
+  let forms: string[] = [];
+  const t = await makeEnv({ bc: leakingBc(() => forms) });
+  const eg = enforce(t);
+  const work = ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", []);
+  t.docker.behavior = async (call, io) => {
+    const dir = call.mounts.get("C:\\cg-secrets")!.src;
+    const cred = (await Deno.readTextFile(join(dir, "proxy-credential")))
+      .trim();
+    const i = cred.indexOf(":");
+    forms = proxyCredentialForms({
+      user: cred.slice(0, i),
+      pass: cred.slice(i + 1),
+    }).map((f) => f.value);
+    const all = forms.join(" | ");
+    const id = call.labels.get("centralgauge.harness.execution")!;
+    const code = await work(call, io);
+    const ws = call.mounts.get("C:\\workspace")!.src;
+    await Deno.writeTextFile(join(ws, "proxy-leak.txt"), all);
+    await Deno.writeFile(
+      join(ws, "proxy-leak16.txt"),
+      new Uint8Array(
+        new Uint16Array([...all].map((c) => c.charCodeAt(0))).buffer,
+      ),
+    );
+    await io.stdout(
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: all }] },
+      }),
+    );
+    await Deno.writeTextFile(privatePaths(t.env, id).stderr, all, {
+      append: true,
+    });
+    eg.log!({
+      at: new Date().toISOString(),
+      decision: "allow",
+      target: "api.anthropic.com:443",
+      reason: all,
+    });
+    return code;
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(forms.length, 7);
+  const published = await allBytes(t.env.resultsRoot);
+  for (const f of forms) assert(!leaks(published, f), f);
+  assertStringIncludes(published, "[REDACTED:proxy-credential]");
+  assertStringIncludes(published, "[REDACTED:proxy-url]");
+  assert((await t.env.store.judgments(e.id)).length > 0, "judged");
+});
+
+Deno.test("recovery (M1-33d): an attempt interrupted after the proxy credential is published clean from its custody", async () => {
+  for (const phase of ["credential", "released"] as const) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    let forms: string[] = [];
+    const leak = async (id: string) => {
+      const c = eg.credential!;
+      forms = proxyCredentialForms(c).map((f) => f.value);
+      await Deno.writeTextFile(
+        privatePaths(t.env, id).raw,
+        JSON.stringify({ type: "system", subtype: "leak", v: forms }) + "\n",
+        { append: true },
+      );
+      await Deno.writeTextFile(
+        privatePaths(t.env, id).stderr,
+        forms.join(" "),
+        {
+          append: true,
+        },
+      );
+    };
+    if (phase === "credential") {
+      // The preflight fails with the credential out and no provider secret;
+      // the runner dies before the draft.
+      eg.onProbe = async (sandbox) => {
+        await leak(
+          t.docker.runs.find((r) => r.name === sandbox)!.labels.get(
+            "centralgauge.harness.execution",
+          )!,
+        );
+      };
+      eg.lines = (ls) =>
+        ls.map((l) => l.probe === "gw-smb-445" ? { ...l, ok: true } : l);
+    } else {
+      t.docker.behavior = async (call, io) => {
+        await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(call, io);
+        await leak(call.labels.get("centralgauge.harness.execution")!);
+        return 0;
+      };
+    }
+    t.env.hooks = {
+      beforeDraft: () => Promise.reject(new Error("runner killed")),
+    };
+    const cell = await cellFor(t);
+    await assertRejects(() => runCell(t.env, cell), Error, "runner killed");
+    assertEquals(await t.env.store.executions(cell.campaignId), [], phase);
+    t.env.hooks = {};
+    const [e] = await recoverInterrupted(t.env, loadTask);
+    assert(e, phase);
+    const published = await allBytes(t.env.resultsRoot);
+    assertEquals(forms.length, 7, phase);
+    for (const f of forms) assert(!leaks(published, f), `${phase}: ${f}`);
+    assert(!await exists(privatePaths(t.env, e.id).custody), phase);
+  }
 });

@@ -43,14 +43,17 @@ import {
   type EgressRuntime,
   evaluatePreflight,
   hostsForRoutes,
+  PLACED_ENV,
   preflightExpect,
-  PROXY_ENV,
   PROXY_PORT,
+  proxyCredentialForms,
   RECORD_MODE_FILE,
   RECORDED_HOSTS_PATH,
   recordedHostsJson,
   SANDBOX_NETWORK,
+  sandboxSource,
 } from "./egress.ts";
+import type { Registration, RegistrationFailure } from "./egress-proxy.ts";
 import {
   exists,
   freezeWorkspace,
@@ -893,7 +896,7 @@ interface DraftInput {
   /** The attempt's persisted mode (intent), never the current command's. */
   mode: AttemptMode;
   stub: StubProvenance | null;
-  /** egress_preflight_failed or egress_violation (M1-33). */
+  /** egress_preflight_failed, egress_violation, egress_log_failed or egress_proxy_failed (M1-33, M1-33d). */
   egressStop?: string | null;
 }
 
@@ -1331,8 +1334,8 @@ export async function runExecution(
   let drained = true;
   let refusal: unknown = null;
   // M1-33: placed runs (qualified or authorized marker) sit on the internal
-  // network behind this execution's proxy; secrets and ready follow the
-  // preflight. A stub cell is never placed (M2-08: egress not consulted; its
+  // network behind the environment's shared proxy, registered per execution
+  // (M1-33d); secrets and ready follow the authenticated preflight. A stub cell is never placed (M2-08: egress not consulted; its
   // dummy credential and ready are written before the start, M3-10), though
   // it still joins the internal network when an egress runtime exists.
   const eg = stub ? null : env.egress ?? null;
@@ -1371,8 +1374,19 @@ export async function runExecution(
       });
     } catch (err) {
       egressLogError ??= msg(err);
+      // The proxy awaits this sink: the throw fails the registration
+      // (egress_log_failed) and the decision is never answered unlogged.
+      throw err;
     }
   };
+  /** The shared proxy failed this registration (its log, or the whole proxy): stop the sandbox. */
+  const onRegFailure = (f: RegistrationFailure) => {
+    if (egressStop !== null) return;
+    egressStop = f;
+    egressAbort.abort(new Error(`egress registration failed: ${f}`));
+  };
+  const proxyAt = `${SANDBOX_NETWORK.gateway}:${PROXY_PORT}`;
+  let reg: Registration | null = null;
   try {
     // By immutable id: retagging never substitutes or invalidates the pinned image.
     const img = await bounded(
@@ -1415,7 +1429,7 @@ export async function runExecution(
           eg.recordedHosts,
           { record },
         );
-        expect = preflightExpect(hosts, { record });
+        expect = preflightExpect(hosts, { record, auth: true });
       } catch (err) {
         throw egressFail(`egress route policy: ${msg(err)}`);
       }
@@ -1436,6 +1450,12 @@ export async function runExecution(
       if (hp.length > 0) {
         throw egressFail(`egress host verification failed: ${hp.join("; ")}`);
       }
+      if (eg.proxyFailed) {
+        egressStop = "egress_proxy_failed";
+        throw egressFail(
+          `egress proxy on ${proxyAt} has failed (every registration is revoked)`,
+        );
+      }
     }
     // Both restricted before the reservation: an ACL failure is predictable.
     const custodyTmp = await restrictedTemp(env, p.custody);
@@ -1455,7 +1475,6 @@ export async function runExecution(
       hostLog: p.host,
     }, timeoutMs + 5 * 60_000);
     let secretsDir: string | null = null;
-    let proxy: { shutdown(): Promise<void> } | null = null;
     try {
       const values = await readSecretValues(
         secretsSource,
@@ -1463,19 +1482,8 @@ export async function runExecution(
         token,
       );
       if (eg) {
-        try {
-          proxy = await eg.startProxy({
-            allowedHosts: hosts,
-            log: onEgressLog,
-            ...(record ? { record: true } : {}),
-          });
-        } catch (err) {
-          throw egressFail(
-            `egress proxy could not start on ${SANDBOX_NETWORK.gateway}:${PROXY_PORT}: ${
-              err instanceof Error ? `${err.name}: ${err.message}` : err
-            }`,
-          );
-        }
+        // The environment's shared proxy (M1-33d) and the backend listen on
+        // the gateway only.
         let lp: string[];
         try {
           lp = await bounded(eg.listeners(), opMs, "egress listener check");
@@ -1514,16 +1522,30 @@ export async function runExecution(
         ...(env.secretAcl ?? {}),
       });
       secretsDir = dir;
+      let custodyNext: string | null = custodyTmp;
+      let keysNext: string | null = keysTmp;
+      /** Custody and its redaction keys hold exactly these secrets (restricted temp, sync, rename). */
+      const commitCustody = async (s: SecretValue[]) => {
+        secrets = s;
+        await commitTemp(
+          custodyNext ?? await restrictedTemp(env, p.custody),
+          p.custody,
+          JSON.stringify(s),
+        );
+        custodyNext = null;
+        await commitTemp(
+          keysNext ?? await restrictedTemp(env, p.keys),
+          p.keys,
+          JSON.stringify(redactionKeys(s)),
+        );
+        keysNext = null;
+      };
+      /** Placed: every form of the proxy credential, in custody before the file is written. */
+      let credForms: SecretValue[] = [];
       /** Secret files, custody, keys, the released phase, then ready (empty, never custody) last. */
       const release = async () => {
         await writeSecretFiles(dir, values);
-        secrets = values;
-        await commitTemp(custodyTmp, p.custody, JSON.stringify(values));
-        await commitTemp(
-          keysTmp,
-          p.keys,
-          JSON.stringify(redactionKeys(values)),
-        );
+        await commitCustody([...values, ...credForms]);
         await writeAtomic(
           p.intent,
           JSON.stringify({ ...intent, phase: "released" }, null, 2),
@@ -1550,7 +1572,7 @@ export async function runExecution(
           env: {
             CG_BACKEND_URL: env.backendUrl,
             CG_EXECUTION_ID: id,
-            ...(eg ? PROXY_ENV : {}),
+            ...(eg ? PLACED_ENV : {}),
             ...(stub ? STUB_ENV : {}),
           },
           // A stub is never placed, but with an egress runtime the backend
@@ -1571,8 +1593,27 @@ export async function runExecution(
       let preflightError: string | null = null;
       let releaseError: unknown = null;
       if (eg) {
+        // M1-33d (review M1-33c-003 Part B): the sandbox runs with an empty
+        // mount; its verified address is registered; only the proxy
+        // credential is written; the authenticated preflight; then the
+        // provider secrets and ready.
         try {
           await waitRunning(env.docker, name, running, opMs);
+          const source = await sandboxAddress(env.docker, name, id, opMs);
+          if (eg.proxyFailed) {
+            throw new Error(`egress proxy on ${proxyAt} has failed`);
+          }
+          const r = eg.register({
+            allow: hosts,
+            log: onEgressLog,
+            source,
+            onFailure: onRegFailure,
+            ...(record ? { record: true } : {}),
+          });
+          reg = r.reg;
+          credForms = proxyCredentialForms(r.credential);
+          await commitCustody(credForms);
+          await writeSecretFiles(dir, [credForms[0]!]);
           const lines = await bounded(
             eg.probe(name, hosts),
             PREFLIGHT_TIMEOUT_MS,
@@ -1580,12 +1621,35 @@ export async function runExecution(
           );
           const problems = evaluatePreflight(lines, expect);
           if (problems.length > 0) throw new Error(problems.join("; "));
+          const now = await sandboxAddress(env.docker, name, id, opMs);
+          if (now !== source) {
+            throw new Error(
+              `${name} changed its address from ${source} to ${now} after the registration`,
+            );
+          }
+          // M1-33d review: the host and marker are read again right before
+          // provider secrets and ready; any change since the first read refuses.
+          const again = await bounded(
+            eg.verify(),
+            3 * opMs,
+            "egress host verification before release",
+          );
+          if (again.length > 0) {
+            throw new Error(
+              `egress host verification before release failed: ${
+                again.join("; ")
+              }`,
+            );
+          }
         } catch (err) {
           // An operator interrupt already stops the run; nothing was
           // released and it is not an egress failure.
           if (!stop.aborted) preflightError = msg(err);
         }
-        if (preflightError !== null) {
+        const failed = reg?.failure ??
+          (eg.proxyFailed ? "egress_proxy_failed" : null);
+        if (failed !== null) onRegFailure(failed);
+        else if (preflightError !== null) {
           egressStop = "egress_preflight_failed";
           egressAbort.abort(
             new Error(`egress preflight failed: ${preflightError}`),
@@ -1602,6 +1666,12 @@ export async function runExecution(
       }
       sandbox = await running;
       if (releaseError !== null) throw releaseError;
+      // I4 (design section 5): a placed execution is recorded as anything
+      // but setup_failed only while its registration and the proxy are intact.
+      if (eg && egressStop === null) {
+        egressStop = reg?.failure ??
+          (eg.proxyFailed ? "egress_proxy_failed" : null);
+      }
       // A violation is infra (setup_failed: never judged, never retried) and stops the campaign.
       const logNote = egressLogError === null
         ? ""
@@ -1609,16 +1679,24 @@ export async function runExecution(
       if (egressStop === "egress_violation") {
         throw egressFail(`egress violation: ${violation}${logNote}`);
       }
-      if (egressLogError !== null) {
-        throw egressFail(`egress log write failed: ${egressLogError}`);
+      if (egressStop === "egress_proxy_failed") {
+        throw egressFail(`egress proxy on ${proxyAt} failed${logNote}`);
+      }
+      if (egressStop === "egress_log_failed" || egressLogError !== null) {
+        egressStop = "egress_log_failed";
+        throw egressFail(
+          `egress log write failed: ${
+            egressLogError ?? "the registration's log failed"
+          }`,
+        );
       }
       if (preflightError !== null) {
         throw egressFail(`egress preflight failed: ${preflightError}`);
       }
     } finally {
       drained = await env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
-      if (proxy) {
-        await bounded(proxy.shutdown(), opMs, "egress proxy shutdown").catch(
+      if (reg) {
+        await bounded(reg.unregister(), opMs, "egress unregister").catch(
           (err) => console.warn(`[WARN] ${msg(err)}`),
         );
       }
@@ -1708,6 +1786,24 @@ export async function runExecution(
 
 /** Covers waiting for the sandbox to run plus the in-sandbox probe script. */
 const PREFLIGHT_TIMEOUT_MS = 180_000;
+
+/** The running sandbox is this execution's, and its one internal-network address (M1-33d). */
+async function sandboxAddress(
+  docker: DockerCli,
+  name: string,
+  id: string,
+  opMs: number,
+): Promise<string> {
+  const st = await bounded(docker.state(name), opMs, `docker inspect ${name}`);
+  if (st?.execution !== id) {
+    throw new Error(
+      `${name} belongs to execution ${st?.execution ?? "(none)"}, not ${id}`,
+    );
+  }
+  return sandboxSource(
+    await bounded(docker.networks(name), opMs, `docker inspect ${name}`),
+  );
+}
 
 /** Wait (bounded) until the sandbox runs; a run that settles first fails the wait. */
 export async function waitRunning(
@@ -2047,7 +2143,9 @@ export async function recoverInterrupted(
       }
       const released = intent.phase === "released";
       let secrets: SecretValue[] = [];
-      if (released) {
+      // M1-33d: a placed attempt holds the proxy credential in custody
+      // before its provider secrets (still phase prepared).
+      if (released || await exists(p.custody)) {
         const c = await readCustody(p.custody);
         if (c === "corrupt") {
           // Nothing can be redacted, so nothing is published; the attempt waits for the operator.
