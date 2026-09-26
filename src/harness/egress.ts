@@ -179,6 +179,7 @@ export interface FirewallRule {
   program: string;
   service: string;
   interfaceIndex: number;
+  interfaceType: string;
 }
 
 export function blockedTcpRanges(allowed: number[]): string[] {
@@ -209,6 +210,7 @@ export function firewallPlan(interfaceIndex: number): FirewallRule[] {
     program: "Any",
     service: "Any",
     interfaceIndex,
+    interfaceType: "Any",
   };
   const rules: FirewallRule[] = [{
     ...base,
@@ -409,6 +411,8 @@ export interface EgressState {
     subnet: string;
     gateway: string;
     hnsId: string;
+    /** docker's com.docker.network.windowsshim.networkname: the HNS network's name. */
+    networkName: string;
   } | null;
   hns: { id: string; name: string; type: string; subnet: string } | null;
   gatewayAdapter: { index: number; alias: string; prefix: number } | null;
@@ -435,6 +439,7 @@ const FIELDS = [
   "program",
   "service",
   "interfaceIndex",
+  "interfaceType",
 ] as const;
 const LABEL: Record<(typeof FIELDS)[number], string> = {
   enabled: "disabled",
@@ -448,6 +453,7 @@ const LABEL: Record<(typeof FIELDS)[number], string> = {
   program: "program",
   service: "service",
   interfaceIndex: "interface",
+  interfaceType: "interface type",
 };
 
 export function verifyEgressState(s: EgressState): string[] {
@@ -468,9 +474,12 @@ export function verifyEgressState(s: EgressState): string[] {
     }
   }
   // HNS reports its type as "internal" (M1-34 AD-04), and the HNS id and
-  // docker's hnsid are GUIDs: both compared case-insensitively (M1-34a).
+  // docker's hnsid are GUIDs: both compared case-insensitively (M1-34a). The
+  // HNS name is docker's windowsshim.networkname (M1-34c).
   if (
     !s.hns || !n || s.hns.id.toLowerCase() !== n.hnsId.toLowerCase() ||
+    !n.networkName ||
+    s.hns.name.toLowerCase() !== n.networkName.toLowerCase() ||
     s.hns.type.toLowerCase() !== "internal" ||
     s.hns.subnet !== SANDBOX_NETWORK.subnet
   ) {
@@ -575,6 +584,155 @@ const PROTOCOLS: Record<string, number> = {
 };
 const one = (v: string[]) => v.length === 1 ? v[0]! : JSON.stringify(v);
 const portKey = (s: string) => Number(s.split("-")[0]);
+/** A GUID value of the HNS store (kept apart from strings so a field's type is checked). */
+export class HnsGuid {
+  constructor(readonly value: string) {}
+}
+export type HnsValue =
+  | boolean
+  | number
+  | bigint
+  | string
+  | HnsGuid
+  | HnsValue[]
+  | Map<string, HnsValue>;
+/** Key flags seen on every value of this host's store; another one is format drift. */
+const HNS_KEY_FLAGS = new Set([0x10, 0x12, 0x22, 0x32]);
+
+/**
+ * Decode an HNS VolatileStore value (undocumented, M1-34b t06): an object is
+ * FFFE, entries, FFFD; an entry is u16 type, u32 flags, key, value; a string
+ * is a u32 UTF-16 length with its NUL, then the text; an array is a u32 count
+ * of objects. Anything else (an unknown type or flag, a duplicate key, a
+ * truncated or longer value) throws: drift never yields a partial network.
+ */
+export function decodeHnsBlob(b: Uint8Array): Map<string, HnsValue> {
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let o = 0;
+  const fail = (m: string): never => {
+    throw new Error(`hns blob format drift at byte ${o}: ${m}`);
+  };
+  const need = (n: number) => {
+    if (o + n > b.length) fail("truncated");
+  };
+  const u16 = () => (need(2), o += 2, v.getUint16(o - 2, true));
+  const u32 = () => (need(4), o += 4, v.getUint32(o - 4, true));
+  const str = () => {
+    const n = u32();
+    if (n < 1) fail("string without its NUL");
+    need(n * 2);
+    const end = o + n * 2 - 2;
+    if (v.getUint16(end, true) !== 0) fail("string not NUL-terminated");
+    let s = "";
+    try {
+      s = new TextDecoder("utf-16le", { fatal: true }).decode(
+        b.subarray(o, end),
+      );
+    } catch {
+      fail("string not UTF-16");
+    }
+    if (s.includes("\0")) fail("string with an inner NUL");
+    o = end + 2;
+    return s;
+  };
+  const hex = (at: number, n: number) =>
+    [...b.subarray(at, at + n)].map((x) => x.toString(16).padStart(2, "0"))
+      .join("");
+  const value = (t: number): HnsValue => {
+    switch (t) {
+      case 1: {
+        const x = u32();
+        if (x > 1) fail(`bool value ${x}`);
+        return x === 1;
+      }
+      case 2:
+        return u32();
+      case 3:
+        need(8);
+        o += 8;
+        return v.getBigUint64(o - 8, true);
+      case 4: {
+        need(16);
+        const g = [
+          v.getUint32(o, true).toString(16).padStart(8, "0"),
+          v.getUint16(o + 4, true).toString(16).padStart(4, "0"),
+          v.getUint16(o + 6, true).toString(16).padStart(4, "0"),
+          hex(o + 8, 2),
+          hex(o + 10, 6),
+        ].join("-").toUpperCase();
+        o += 16;
+        return new HnsGuid(g);
+      }
+      case 5:
+        return str();
+      case 7:
+        return object();
+      case 8: {
+        const n = u32();
+        const a: HnsValue[] = [];
+        for (let i = 0; i < n; i++) a.push(object());
+        return a;
+      }
+      default:
+        return fail(`value type ${t}`);
+    }
+  };
+  const object = (): Map<string, HnsValue> => {
+    if (u16() !== 0xfffe) fail("expected an object start");
+    const m = new Map<string, HnsValue>();
+    for (;;) {
+      need(2);
+      if (v.getUint16(o, true) === 0xfffd) {
+        o += 2;
+        return m;
+      }
+      const t = u16();
+      const flags = u32();
+      if (!HNS_KEY_FLAGS.has(flags)) fail(`key flags ${flags}`);
+      const k = str();
+      if (m.has(k)) fail(`duplicate key ${k}`);
+      m.set(k, value(t));
+    }
+  };
+  const root = object();
+  if (o !== b.length) fail(`trailing ${b.length - o} bytes`);
+  return root;
+}
+
+/**
+ * The HNS network in one VolatileStore value named `valueName` (docker's
+ * hnsid): its own ID must be that name, with exactly one Name, Type and
+ * subnet. Throws on any drift or disagreement.
+ */
+export function parseHnsNetwork(
+  valueName: string,
+  blob: Uint8Array,
+): NonNullable<EgressState["hns"]> {
+  const root = decodeHnsBlob(blob);
+  const text = (m: Map<string, HnsValue>, k: string) => {
+    const x = m.get(k);
+    if (typeof x !== "string") throw new Error(`hns ${k} is not a string`);
+    return x;
+  };
+  const id = root.get("ID");
+  if (!(id instanceof HnsGuid)) throw new Error("hns ID is not a GUID");
+  if (id.value.toLowerCase() !== valueName.toLowerCase()) {
+    throw new Error(`hns ID ${id.value} is not the value's name ${valueName}`);
+  }
+  const subnets = root.get("Subnets");
+  if (!Array.isArray(subnets) || subnets.length !== 1) {
+    throw new Error("hns Subnets is not exactly one subnet");
+  }
+  return {
+    id: valueName,
+    name: text(root, "Name"),
+    type: text(root, "Type"),
+    subnet: text(subnets[0] as Map<string, HnsValue>, "AddressPrefix"),
+  };
+}
+
+const filterList = <T extends z.ZodRawShape>(shape: T) =>
+  z.array(z.object({ InstanceID: z.string().min(1), ...shape }).strict());
 
 const RawSchema = z.object({
   network: z.object({
@@ -583,13 +741,16 @@ const RawSchema = z.object({
     Subnet: z.string(),
     Gateway: z.string(),
     HnsId: z.string(),
+    NetworkName: z.string(),
   }).nullable(),
-  hns: z.object({
-    Id: z.string(),
-    Name: z.string(),
-    Type: z.string(),
-    Subnet: z.string(),
-  }).nullable(),
+  /** Every HNS VolatileStore network value named like docker's hnsid. */
+  hns: z.array(
+    z.object({
+      Name: z.string(),
+      Kind: z.string(),
+      Blob: z.string(),
+    }).strict(),
+  ),
   gatewayAdapter: z.object({
     Index: z.number().int(),
     Alias: z.string(),
@@ -601,20 +762,27 @@ const RawSchema = z.object({
     DefaultInboundAction: z.string(),
     DefaultOutboundAction: z.string(),
   })),
-  groupRules: z.array(z.object({
-    Name: z.string().min(1),
-    Enabled: z.string(),
-    Direction: z.string(),
-    Action: z.string(),
-    Profile: z.string(),
-    Protocol: z.string(),
-    LocalPort: strOrList,
-    RemoteAddress: strOrList,
-    LocalAddress: strOrList,
-    Program: z.string(),
-    Service: z.string(),
-    InterfaceIndex: z.array(z.number().int().nullable()),
-  })),
+  groupRules: z.array(
+    z.object({
+      InstanceID: z.string().min(1),
+      Name: z.string().min(1),
+      Enabled: z.string(),
+      Direction: z.string(),
+      Action: z.string(),
+      Profile: z.string(),
+    }).strict(),
+  ),
+  /** The group rules' filters, read by association from those rules (M1-34c). */
+  filters: z.object({
+    port: filterList({ Protocol: z.string(), LocalPort: strOrList }),
+    address: filterList({ RemoteAddress: strOrList, LocalAddress: strOrList }),
+    application: filterList({ Program: z.string() }),
+    service: filterList({ Service: z.string() }),
+    interface: filterList({
+      InterfaceIndex: z.array(z.number().int().nullable()),
+    }),
+    interfaceType: filterList({ InterfaceType: z.string() }),
+  }).strict(),
   foreignBlockRules: z.array(z.string()),
   marker: z.object({
     v: z.literal(1),
@@ -670,6 +838,63 @@ export async function collectEgressState(
     );
   }
   const d = parsed.data;
+  const bad = (m: string): never => {
+    throw new ValidationError(`egress observation: ${m}`, ["egress"]);
+  };
+  // Each group rule has each filter exactly once, and every filter read
+  // belongs to a group rule: a partial or ambiguous association refuses.
+  const ruleIds = new Map<string, string>();
+  for (const r of d.groupRules) {
+    if (ruleIds.has(r.InstanceID)) {
+      bad(`group rule ${r.InstanceID} (${r.Name}) was read twice`);
+    }
+    ruleIds.set(r.InstanceID, r.Name);
+  }
+  const byRule = <T extends { InstanceID: string }>(kind: string, xs: T[]) => {
+    const m = new Map<string, T>();
+    for (const f of xs) {
+      if (!ruleIds.has(f.InstanceID)) {
+        bad(
+          `a ${kind} filter belongs to no ${RULE_GROUP} rule (${f.InstanceID})`,
+        );
+      }
+      if (m.has(f.InstanceID)) {
+        bad(`rule ${ruleIds.get(f.InstanceID)}: more than one ${kind} filter`);
+      }
+      m.set(f.InstanceID, f);
+    }
+    for (const [id, name] of ruleIds) {
+      if (!m.has(id)) bad(`rule ${name}: no ${kind} filter`);
+    }
+    return (id: string) => m.get(id)!;
+  };
+  const f = d.filters;
+  const pf = byRule("port", f.port);
+  const af = byRule("address", f.address);
+  const apf = byRule("application", f.application);
+  const sf = byRule("service", f.service);
+  const inf = byRule("interface", f.interface);
+  const itf = byRule("interfaceType", f.interfaceType);
+  // The HNS network: exactly one VolatileStore value, named docker's hnsid, strictly parsed.
+  let hns: EgressState["hns"] = null;
+  if (d.hns.length > 1) {
+    bad(`${d.hns.length} hns values are named ${d.network?.HnsId}`);
+  }
+  const v = d.hns[0];
+  if (v) {
+    try {
+      if (v.Name.toLowerCase() !== (d.network?.HnsId ?? "").toLowerCase()) {
+        throw new Error("not docker's hnsid");
+      }
+      if (v.Kind !== "Binary") throw new Error(`kind ${v.Kind}, not Binary`);
+      hns = parseHnsNetwork(
+        v.Name,
+        Uint8Array.from(atob(v.Blob), (c) => c.charCodeAt(0)),
+      );
+    } catch (err) {
+      bad(`hns value ${v.Name}: ${(err as Error).message}`);
+    }
+  }
   return {
     network: d.network && {
       id: d.network.Id,
@@ -677,13 +902,9 @@ export async function collectEgressState(
       subnet: d.network.Subnet,
       gateway: d.network.Gateway,
       hnsId: d.network.HnsId,
+      networkName: d.network.NetworkName,
     },
-    hns: d.hns && {
-      id: d.hns.Id,
-      name: d.hns.Name,
-      type: d.hns.Type,
-      subnet: d.hns.Subnet,
-    },
+    hns,
     gatewayAdapter: d.gatewayAdapter && {
       index: d.gatewayAdapter.Index,
       alias: d.gatewayAdapter.Alias,
@@ -696,8 +917,11 @@ export async function collectEgressState(
       outbound: x.DefaultOutboundAction,
     })),
     groupRules: d.groupRules.map((x) => {
-      const proto = x.Protocol.toUpperCase();
-      const idx = x.InterfaceIndex;
+      const id = x.InstanceID;
+      const port = pf(id);
+      const addr = af(id);
+      const proto = port.Protocol.toUpperCase();
+      const idx = inf(id).InterfaceIndex;
       return {
         name: x.Name,
         enabled: x.Enabled === "True",
@@ -706,15 +930,16 @@ export async function collectEgressState(
         profile: x.Profile,
         protocol: PROTOCOLS[proto] ??
           (/^\d{1,3}$/.test(proto) ? Number(proto) : -1),
-        localPorts: x.LocalPort.length === 1 && x.LocalPort[0] === "Any"
+        localPorts: port.LocalPort.length === 1 && port.LocalPort[0] === "Any"
           ? "Any"
-          : [...x.LocalPort].sort((a, b) => portKey(a) - portKey(b)),
-        remoteAddress: one(x.RemoteAddress),
-        localAddress: one(x.LocalAddress),
-        program: x.Program,
-        service: x.Service,
+          : [...port.LocalPort].sort((a, b) => portKey(a) - portKey(b)),
+        remoteAddress: one(addr.RemoteAddress),
+        localAddress: one(addr.LocalAddress),
+        program: apf(id).Program,
+        service: sf(id).Service,
         // Any other shape than one known interface never equals a planned index.
         interfaceIndex: idx.length === 1 && idx[0] !== null ? idx[0]! : -1,
+        interfaceType: itf(id).InterfaceType,
       };
     }),
     foreignBlockRules: d.foreignBlockRules,
@@ -731,6 +956,8 @@ const POWERSHELL = () =>
     Deno.env.get("SystemRoot") ?? "C:\\Windows"
   }\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
 const COLLECT_TIMEOUT_MS = 120_000;
+const HNS_STORE_KEY =
+  "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\hns\\State\\HostComputeNetwork\\VolatileStore\\Network";
 
 /** Read-only host observation (Windows PowerShell 5.1, never elevated); prints one JSON object. */
 export const COLLECT_PS = [
@@ -741,17 +968,17 @@ export const COLLECT_PS = [
   "$e = $null",
   `$rules = @(Get-NetFirewallRule -PolicyStore ActiveStore -Group '${RULE_GROUP}' -ErrorAction SilentlyContinue -ErrorVariable e)`,
   "Assert-NotFoundOnly $e 'the group rules'",
-  "function By-Id($filters) { $m = @{}; foreach ($f in $filters) { $m[[string]$f.InstanceID] = $f }; $m }",
-  "$pf = By-Id (Get-NetFirewallPortFilter -All -PolicyStore ActiveStore)",
-  "$af = By-Id (Get-NetFirewallAddressFilter -All -PolicyStore ActiveStore)",
-  "$apf = By-Id (Get-NetFirewallApplicationFilter -All -PolicyStore ActiveStore)",
-  "$sf = By-Id (Get-NetFirewallServiceFilter -All -PolicyStore ActiveStore)",
-  "$inf = By-Id (Get-NetFirewallInterfaceFilter -All -PolicyStore ActiveStore)",
-  '$groupRules = @(foreach ($r in $rules) { $id = [string]$r.InstanceID; if (-not ($pf[$id] -and $af[$id] -and $apf[$id] -and $sf[$id] -and $inf[$id])) { throw "rule $($r.Name): a filter is missing" }',
-  "  [ordered]@{ Name = [string]$r.Name; Enabled = [string]$r.Enabled; Direction = [string]$r.Direction; Action = [string]$r.Action; Profile = [string]$r.Profile;",
-  "    Protocol = [string]$pf[$id].Protocol; LocalPort = @($pf[$id].LocalPort | ForEach-Object { [string]$_ }); RemoteAddress = @($af[$id].RemoteAddress | ForEach-Object { [string]$_ }); LocalAddress = @($af[$id].LocalAddress | ForEach-Object { [string]$_ });",
-  "    Program = [string]$apf[$id].Program; Service = [string]$sf[$id].Service;",
-  "    InterfaceIndex = @($inf[$id].InterfaceAlias | ForEach-Object { if ([string]$_ -eq 'Any') { 0 } elseif ($ifIndex.ContainsKey([string]$_)) { $ifIndex[[string]$_] } else { $null } }) } })",
+  "$groupRules = @($rules | ForEach-Object { [ordered]@{ InstanceID = [string]$_.InstanceID; Name = [string]$_.Name; Enabled = [string]$_.Enabled; Direction = [string]$_.Direction; Action = [string]$_.Action; Profile = [string]$_.Profile } })",
+  "# Filters by association from the group's rules: class-wide filter enumerations are denied non-elevated (M1-34b); the collector checks exactly one of each per rule.",
+  "$filters = [ordered]@{ port = @(); address = @(); application = @(); service = @(); interface = @(); interfaceType = @() }",
+  "if ($rules.Count -gt 0) {",
+  "  $filters.port = @($rules | Get-NetFirewallPortFilter -ErrorAction Stop | ForEach-Object { [ordered]@{ InstanceID = [string]$_.InstanceID; Protocol = [string]$_.Protocol; LocalPort = @($_.LocalPort | ForEach-Object { [string]$_ }) } })",
+  "  $filters.address = @($rules | Get-NetFirewallAddressFilter -ErrorAction Stop | ForEach-Object { [ordered]@{ InstanceID = [string]$_.InstanceID; RemoteAddress = @($_.RemoteAddress | ForEach-Object { [string]$_ }); LocalAddress = @($_.LocalAddress | ForEach-Object { [string]$_ }) } })",
+  "  $filters.application = @($rules | Get-NetFirewallApplicationFilter -ErrorAction Stop | ForEach-Object { [ordered]@{ InstanceID = [string]$_.InstanceID; Program = [string]$_.Program } })",
+  "  $filters.service = @($rules | Get-NetFirewallServiceFilter -ErrorAction Stop | ForEach-Object { [ordered]@{ InstanceID = [string]$_.InstanceID; Service = [string]$_.Service } })",
+  "  $filters.interface = @($rules | Get-NetFirewallInterfaceFilter -ErrorAction Stop | ForEach-Object { [ordered]@{ InstanceID = [string]$_.InstanceID; InterfaceIndex = @($_.InterfaceAlias | ForEach-Object { if ([string]$_ -eq 'Any') { 0 } elseif ($ifIndex.ContainsKey([string]$_)) { $ifIndex[[string]$_] } else { $null } }) } })",
+  "  $filters.interfaceType = @($rules | Get-NetFirewallInterfaceTypeFilter -ErrorAction Stop | ForEach-Object { [ordered]@{ InstanceID = [string]$_.InstanceID; InterfaceType = [string]$_.InterfaceType } })",
+  "}",
   "$e = $null",
   `$foreign = @(Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -Action Block -ErrorAction SilentlyContinue -ErrorVariable e | Where-Object { $_.Group -ne '${RULE_GROUP}' } | ForEach-Object { \"$($_.DisplayName) [$($_.Name), $($_.Direction), $($_.PolicyStoreSource)]\" })`,
   "Assert-NotFoundOnly $e 'the effective block rules'",
@@ -761,9 +988,10 @@ export const COLLECT_PS = [
   "Assert-NotFoundOnly $e 'the gateway address'",
   'if ($ip.Count -gt 1) { throw "gateway $gw is on $($ip.Count) adapters" }',
   "$adapter = $null; if ($ip.Count -eq 1) { $adapter = [ordered]@{ Index = [int]$ip[0].InterfaceIndex; Alias = [string]$ip[0].InterfaceAlias; Prefix = [int]$ip[0].PrefixLength } }",
-  "$hns = $null",
-  "if ($env:CG_HNS_ID) { $h = @(Get-HnsNetwork | Where-Object { [string]$_.Id -eq $env:CG_HNS_ID }); if ($h.Count -gt 1) { throw 'hns id is ambiguous' }; if ($h.Count -eq 1) { $hns = [ordered]@{ Id = [string]$h[0].Id; Name = [string]$h[0].Name; Type = [string]$h[0].Type; Subnet = [string]@($h[0].Subnets)[0].AddressPrefix } } }",
-  "$out = [ordered]@{ hns = $hns; gatewayAdapter = $adapter; profiles = $profiles; groupRules = $groupRules; foreignBlockRules = $foreign }",
+  "# HNS from its own VolatileStore value (the HNS service query is denied non-elevated, M1-34b); the collector parses it strictly.",
+  "$hns = @()",
+  `if ($env:CG_HNS_ID) { $k = Get-Item -LiteralPath '${HNS_STORE_KEY}' -ErrorAction Stop; $hns = @($k.GetValueNames() | Where-Object { $_ -eq $env:CG_HNS_ID } | ForEach-Object { [ordered]@{ Name = [string]$_; Kind = [string]$k.GetValueKind($_); Blob = [Convert]::ToBase64String([byte[]]$k.GetValue($_)) } }) }`,
+  "$out = [ordered]@{ hns = $hns; gatewayAdapter = $adapter; profiles = $profiles; groupRules = $groupRules; filters = $filters; foreignBlockRules = $foreign }",
   "[Console]::Out.Write((ConvertTo-Json -InputObject $out -Depth 6 -Compress))",
 ].join("\n");
 
@@ -816,6 +1044,9 @@ export function realEgressCollector(markerPath: string): EgressRun {
           HnsId: String(
             n?.Options?.["com.docker.network.windowsshim.hnsid"] ?? "",
           ),
+          NetworkName: String(
+            n?.Options?.["com.docker.network.windowsshim.networkname"] ?? "",
+          ),
         };
       }
       const hnsId = (network as { HnsId?: string } | null)?.HnsId ?? "";
@@ -824,7 +1055,12 @@ export function realEgressCollector(markerPath: string): EgressRun {
         "-NonInteractive",
         "-Command",
         COLLECT_PS,
-      ], { CG_GATEWAY: SANDBOX_NETWORK.gateway, CG_HNS_ID: hnsId });
+      ], {
+        CG_GATEWAY: SANDBOX_NETWORK.gateway,
+        CG_HNS_ID: hnsId,
+        // Without SystemDrive the NetSecurity cmdlets take ~3x longer (M1-34c: 20 s vs 6 s).
+        SystemDrive: Deno.env.get("SystemDrive") ?? "C:",
+      });
       if (ps.code !== 0) {
         throw new Error(
           `host read failed: ${ps.stderr.trim() || ps.stdout.trim()}`,

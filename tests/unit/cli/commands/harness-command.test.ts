@@ -1716,6 +1716,7 @@ function egressState(): EgressState {
       subnet: SANDBOX_NETWORK.subnet,
       gateway: SANDBOX_NETWORK.gateway,
       hnsId: "hns9",
+      networkName: "x",
     },
     hns: {
       id: "hns9",

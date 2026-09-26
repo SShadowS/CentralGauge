@@ -12,12 +12,15 @@ import {
   blockedTcpRanges,
   COLLECT_PS,
   collectEgressState,
+  decodeHnsBlob,
   type EgressState,
   evaluatePreflight,
   firewallPlan,
+  type FirewallRule,
   hostsForRoutes,
   listenerProblems,
   loadRecordedHosts,
+  parseHnsNetwork,
   parseProbeLines,
   PREFLIGHT_EXPECT,
   preflightExpect,
@@ -33,8 +36,10 @@ import {
   isPrivateAddress,
   startEgressProxy,
 } from "../../../src/harness/egress-proxy.ts";
+import { blobB64, hns, networkBlob, REAL_HNS } from "../../utils/hns-blob.ts";
 
 const IDX = 42;
+const HNS_ID = "5F2A9C31-0B7E-4D12-9A3B-6C4D5E6F7A8B";
 
 function goodState(): EgressState {
   return {
@@ -43,10 +48,11 @@ function goodState(): EgressState {
       driver: "internal",
       subnet: SANDBOX_NETWORK.subnet,
       gateway: SANDBOX_NETWORK.gateway,
-      hnsId: "hns1",
+      hnsId: HNS_ID,
+      networkName: "a1b2c3",
     },
     hns: {
-      id: "hns1",
+      id: HNS_ID,
       name: "a1b2c3",
       type: "Internal",
       subnet: SANDBOX_NETWORK.subnet,
@@ -547,40 +553,32 @@ Deno.test("egress scripts are generated deterministically; revert touches only p
   );
 });
 
-/** The collector's raw observation of goodState(). */
+/** The HNS VolatileStore values the collector prints for docker's hnsid. */
+function hnsValues(o: Partial<Parameters<typeof networkBlob>[0]> = {}) {
+  return [{
+    Name: HNS_ID,
+    Kind: "Binary",
+    Blob: blobB64(
+      networkBlob({ id: HNS_ID, name: "a1b2c3", type: "Internal", ...o }),
+    ),
+  }];
+}
+
+/** The collector's raw observation of goodState(): rules and their filters read separately, in any order. */
 function rawObservation() {
-  const rules = firewallPlan(IDX).map((r) => ({
-    Name: r.name,
-    Enabled: "True",
-    Direction: "Inbound",
-    Action: "Block",
-    Profile: "Any",
-    Protocol: r.protocol === 6
-      ? "TCP"
-      : r.protocol === 17
-      ? "UDP"
-      : String(r.protocol),
-    LocalPort: r.localPorts === "Any" ? "Any" : [...r.localPorts].reverse(),
-    RemoteAddress: "Any",
-    LocalAddress: "Any",
-    Program: "Any",
-    Service: "Any",
-    InterfaceIndex: [IDX],
-  }));
+  const plan = firewallPlan(IDX);
+  const each = <T extends object>(f: (r: FirewallRule) => T) =>
+    plan.map((r) => ({ InstanceID: `{${r.name}}`, ...f(r) })).reverse();
   const raw = {
     network: {
       Id: "net1",
       Driver: "internal",
       Subnet: SANDBOX_NETWORK.subnet,
       Gateway: SANDBOX_NETWORK.gateway,
-      HnsId: "hns1",
+      HnsId: HNS_ID,
+      NetworkName: "a1b2c3",
     },
-    hns: {
-      Id: "hns1",
-      Name: "a1b2c3",
-      Type: "Internal",
-      Subnet: SANDBOX_NETWORK.subnet,
-    },
+    hns: hnsValues(),
     gatewayAdapter: { Index: IDX, Alias: "vEthernet (a1b2c3)", Prefix: 24 },
     profiles: ["Domain", "Private", "Public"].map((Name) => ({
       Name,
@@ -588,8 +586,32 @@ function rawObservation() {
       DefaultInboundAction: "Allow",
       DefaultOutboundAction: "Allow",
     })),
-    groupRules: rules,
-    foreignBlockRules: [],
+    groupRules: plan.map((r) => ({
+      InstanceID: `{${r.name}}`,
+      Name: r.name,
+      Enabled: "True",
+      Direction: "Inbound",
+      Action: "Block",
+      Profile: "Any",
+    })),
+    filters: {
+      port: each((r) => ({
+        Protocol: r.protocol === 6
+          ? "TCP"
+          : r.protocol === 17
+          ? "UDP"
+          : String(r.protocol),
+        LocalPort: r.localPorts === "Any"
+          ? "Any" as string | string[]
+          : [...r.localPorts].reverse(),
+      })),
+      address: each(() => ({ RemoteAddress: "Any", LocalAddress: "Any" })),
+      application: each(() => ({ Program: "Any" })),
+      service: each(() => ({ Service: "Any" })),
+      interface: each(() => ({ InterfaceIndex: [IDX] as (number | null)[] })),
+      interfaceType: each(() => ({ InterfaceType: "Any" })),
+    },
+    foreignBlockRules: [] as string[],
     marker: {
       v: 1,
       state: "qualified",
@@ -1048,11 +1070,17 @@ Deno.test("verifyEgressState: HNS reports its type in lowercase ('internal', M1-
       ),
     );
   };
-  assertEquals(await observe((r) => (r.hns.Type = "internal")), []);
-  assertEquals(await observe((r) => (r.hns.Type = "INTERNAL")), []);
+  assertEquals(
+    await observe((r) => (r.hns = hnsValues({ type: "internal" }))),
+    [],
+  );
+  assertEquals(
+    await observe((r) => (r.hns = hnsValues({ type: "INTERNAL" }))),
+    [],
+  );
   for (const t of ["nat", "transparent", "l2bridge", ""]) {
     assertEquals(
-      await observe((r) => (r.hns.Type = t)),
+      await observe((r) => (r.hns = hnsValues({ type: t }))),
       [
         `hns network behind ${SANDBOX_NETWORK.name} is not the internal network of the plan`,
       ],
@@ -1072,4 +1100,294 @@ Deno.test("verifyEgressState: the HNS id and docker's hnsid are GUIDs, equal reg
   assertEquals(verifyEgressState(s), [
     `hns network behind ${SANDBOX_NETWORK.name} is not the internal network of the plan`,
   ]);
+});
+
+// ---------------------------------------------------------------------------
+// M1-34c: the non-elevated collector's contract (filters read per group rule,
+// HNS from its VolatileStore value), review M1-34b-001 items 2 and 4.
+
+type Raw = ReturnType<typeof rawObservation>;
+const collectRaw = (raw: unknown) =>
+  collectEgressState(() =>
+    Promise.resolve({ code: 0, stdout: JSON.stringify(raw) })
+  );
+const verifyRaw = async (mut: (r: Raw) => void) => {
+  const raw = rawObservation();
+  mut(raw);
+  return verifyEgressState(await collectRaw(raw));
+};
+const rejectsRaw = (mut: (r: Raw) => void, msg: string) => {
+  const raw = rawObservation();
+  mut(raw);
+  return assertRejects(() => collectRaw(raw), ValidationError, msg);
+};
+const KINDS = [
+  "port",
+  "address",
+  "application",
+  "service",
+  "interface",
+  "interfaceType",
+] as const;
+// deno-lint-ignore no-explicit-any
+const list = (r: Raw, k: (typeof KINDS)[number]) => r.filters[k] as any[];
+
+Deno.test("collectEgressState (M1-34c): every group rule has each filter exactly once; a missing, duplicate or unowned filter refuses", async () => {
+  for (const k of KINDS) {
+    await rejectsRaw((r) => list(r, k).splice(7, 1), `no ${k} filter`);
+    await rejectsRaw(
+      (r) => list(r, k).push({ ...list(r, k)[3] }),
+      `more than one ${k} filter`,
+    );
+    await rejectsRaw(
+      (r) => list(r, k).push({ ...list(r, k)[0], InstanceID: "{other}" }),
+      "belongs to no",
+    );
+    // A missing section is an incomplete observation, never an empty one.
+    await rejectsRaw(
+      // deno-lint-ignore no-explicit-any
+      (r) => delete (r.filters as any)[k],
+      `filters.${k}`,
+    );
+  }
+  await rejectsRaw((r) => r.groupRules.push({ ...r.groupRules[5]! }), "twice");
+});
+
+Deno.test("collectEgressState (M1-34c): an empty group is never a pass; filters without a rule refuse", async () => {
+  const p = await verifyRaw((r) => {
+    r.groupRules = [];
+    for (const k of KINDS) list(r, k).length = 0;
+  });
+  assertEquals(p.filter((x) => x.startsWith("missing rule")).length, 256);
+  await rejectsRaw((r) => (r.groupRules = []), "belongs to no");
+});
+
+Deno.test("collectEgressState (M1-34c): a denied, errored or partial read refuses", async () => {
+  for (
+    const msg of [
+      "host read failed: cannot read the group rules: Access is denied.",
+      "host read failed: Get-NetFirewallPortFilter : Access is denied.",
+      "host read failed: Requested registry access is not allowed.",
+      "host read failed: Cannot find path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\hns\\State\\HostComputeNetwork\\VolatileStore\\Network' because it does not exist.",
+    ]
+  ) {
+    await assertRejects(
+      () => collectEgressState(() => Promise.resolve({ code: 1, stdout: msg })),
+      ValidationError,
+      "egress observation failed",
+    );
+  }
+  const full = JSON.stringify(rawObservation());
+  const cut = full.slice(0, full.indexOf('"interfaceType"') + 40);
+  await assertRejects(
+    () => collectEgressState(() => Promise.resolve({ code: 0, stdout: cut })),
+    ValidationError,
+    "egress",
+  );
+  // A filter list shorter than the group (a read that stopped early) is a missing filter.
+  await rejectsRaw((r) => r.filters.port.splice(100), "no port filter");
+});
+
+Deno.test("collectEgressState (M1-34c): changed group rules and a foreign block rule are problems", async () => {
+  const cases: [string, (r: Raw) => void][] = [
+    ["ports", (r) => (r.filters.port[0]!.LocalPort = ["1-65535"])],
+    ["protocol", (r) => (r.filters.port[1]!.Protocol = "UDP")],
+    [
+      "remote address",
+      (r) => (r.filters.address[2]!.RemoteAddress = "10.0.0.0/8"),
+    ],
+    [
+      "local address",
+      (r) => (r.filters.address[2]!.LocalAddress = "172.30.60.1"),
+    ],
+    ["program", (r) => (r.filters.application[3]!.Program = "C:\\x.exe")],
+    ["service", (r) => (r.filters.service[4]!.Service = "dnscache")],
+    ["interface", (r) => (r.filters.interface[5]!.InterfaceIndex = [7])],
+    ["interface", (r) => (r.filters.interface[5]!.InterfaceIndex = [null])],
+    [
+      "interface",
+      (r) => (r.filters.interface[5]!.InterfaceIndex = [IDX, 7]),
+    ],
+    [
+      "interface type",
+      (r) => (r.filters.interfaceType[6]!.InterfaceType = "Wireless"),
+    ],
+    ["disabled", (r) => (r.groupRules[7]!.Enabled = "False")],
+    ["action", (r) => (r.groupRules[8]!.Action = "Allow")],
+    ["missing rule", (r) => {
+      const id = r.groupRules.pop()!.InstanceID;
+      for (const k of KINDS) {
+        const kept = list(r, k).filter((f) => f.InstanceID !== id);
+        list(r, k).splice(0, Infinity, ...kept);
+      }
+    }],
+    ["extra rule", (r) => {
+      r.groupRules.push({ ...r.groupRules[0]!, InstanceID: "{x}", Name: "x" });
+      for (const k of KINDS) {
+        list(r, k).push({ ...list(r, k)[0], InstanceID: "{x}" });
+      }
+    }],
+    [
+      "foreign block rule is effective",
+      (r) => (r.foreignBlockRules = ["Block all [x, Inbound, GroupPolicy]"]),
+    ],
+  ];
+  for (const [word, mut] of cases) {
+    const p = await verifyRaw(mut);
+    assert(
+      p.length > 0 && p.join("\n").toLowerCase().includes(word),
+      `${word}: ${p.join("; ")}`,
+    );
+  }
+});
+
+Deno.test("decodeHnsBlob / parseHnsNetwork (M1-34c): the real VolatileStore value decodes exactly", () => {
+  const root = decodeHnsBlob(REAL_HNS.blob);
+  assertEquals(root.get("Name"), REAL_HNS.name);
+  assertEquals(parseHnsNetwork(REAL_HNS.id, REAL_HNS.blob), {
+    id: REAL_HNS.id,
+    name: REAL_HNS.name,
+    type: "internal",
+    subnet: "172.30.60.0/24",
+  });
+  // The value name is docker's hnsid (any case); the blob's own ID must agree.
+  assertEquals(
+    parseHnsNetwork(REAL_HNS.id.toLowerCase(), REAL_HNS.blob).id,
+    REAL_HNS.id.toLowerCase(),
+  );
+  assertThrows(() => parseHnsNetwork(HNS_ID, REAL_HNS.blob), Error, "ID");
+});
+
+Deno.test("parseHnsNetwork (M1-34c): format drift refuses, never a partial network", () => {
+  const n = (o: Partial<Parameters<typeof networkBlob>[0]>) =>
+    networkBlob({ id: HNS_ID, name: "a", ...o });
+  const good = n({});
+  assertEquals(parseHnsNetwork(HNS_ID, good).name, "a");
+  const drift: [string, Uint8Array][] = [
+    ["truncated", good.subarray(0, good.length - 3)],
+    ["trailing", new Uint8Array([...good, 0, 0])],
+    ["object start", good.subarray(2)],
+    ["value type", n({ extra: [["New", hns.raw(9, new Uint8Array(4))]] })],
+    ["flags", hns.obj([["ID", hns.guid(HNS_ID)]], 0x40).b],
+    ["duplicate", n({ extra: [["Name", hns.str("b")]] })],
+    ["bool", n({ extra: [["X", hns.raw(1, new Uint8Array([2, 0, 0, 0]))]] })],
+    ["Name", n({ drop: ["Name"] })],
+    ["Type", n({ drop: ["Type"] })],
+    ["ID", n({ drop: ["ID"] })],
+    ["Subnets", n({ drop: ["Subnets"] })],
+    ["Subnets", n({ subnets: [] })],
+    ["Subnets", n({ subnets: ["172.30.60.0/24", "10.0.0.0/8"] })],
+    ["Name", n({ drop: ["Name"], extra: [["Name", hns.u32(1)]] })],
+    ["ID", n({ drop: ["ID"], extra: [["ID", hns.str(HNS_ID)]] })],
+    [
+      "object start",
+      n({ extra: [["Dns", hns.raw(8, new Uint8Array([1, 0, 0, 0, 5, 0]))]] }),
+    ],
+    [
+      "string",
+      n({
+        extra: [[
+          "S",
+          hns.raw(5, new Uint8Array([2, 0, 0, 0, 65, 0, 66, 0])),
+        ]],
+      }),
+    ],
+  ];
+  for (const [word, b] of drift) {
+    assertThrows(() => parseHnsNetwork(HNS_ID, b), Error, word, word);
+  }
+});
+
+Deno.test("collectEgressState (M1-34c): the HNS value must be one Binary value that parses; missing is a problem, never a pass", async () => {
+  await rejectsRaw(
+    (r) => r.hns.push({ ...r.hns[0]!, Name: HNS_ID.toLowerCase() }),
+    "values",
+  );
+  await rejectsRaw((r) => (r.hns[0]!.Kind = "String"), "Binary");
+  await rejectsRaw((r) => (r.hns[0]!.Blob = "not base64!"), "hns");
+  await rejectsRaw((r) => (r.hns[0]!.Blob = ""), "hns");
+  await rejectsRaw(
+    (r) => (r.hns[0]!.Blob = blobB64(n40())),
+    "hns",
+  );
+  // A value under another name than docker's hnsid is not this network.
+  await rejectsRaw((r) => (r.hns[0]!.Name = REAL_HNS.id), "hns");
+  const missing = await verifyRaw((r) => (r.hns = []));
+  assert(
+    missing.includes(
+      `hns network behind ${SANDBOX_NETWORK.name} is not the internal network of the plan`,
+    ),
+    missing.join("; "),
+  );
+});
+const n40 = () => networkBlob({ id: HNS_ID, name: "a1b2c3" }).subarray(0, 40);
+
+Deno.test("verifyEgressState (M1-34c): HNS id, name, type and subnet must match docker, the plan and the gateway adapter", async () => {
+  const HNS_PROBLEM =
+    `hns network behind ${SANDBOX_NETWORK.name} is not the internal network of the plan`;
+  const has = async (mut: (r: Raw) => void) =>
+    (await verifyRaw(mut)).includes(HNS_PROBLEM);
+  assertEquals(await verifyRaw(() => {}), []);
+  // id: docker's hnsid differs from the value (and blob) read: refused as an
+  // observation; with no value under docker's hnsid, a problem.
+  await rejectsRaw((r) => (r.network.HnsId = REAL_HNS.id), "docker's hnsid");
+  assert(
+    await has((r) => {
+      r.network.HnsId = REAL_HNS.id;
+      r.hns = [];
+    }),
+  );
+  // name: docker's windowsshim.networkname differs from the HNS name.
+  assert(await has((r) => (r.network.NetworkName = "other")));
+  assert(await has((r) => (r.network.NetworkName = "")));
+  // type and subnet come from the blob.
+  assert(await has((r) => (r.hns = hnsValues({ type: "nat" }))));
+  assert(
+    await has((r) => (r.hns = hnsValues({ subnets: ["172.30.61.0/24"] }))),
+  );
+  // The gateway adapter: its alias must be the vEthernet of that HNS network,
+  // its index the rules' and the marker's.
+  const alias = await verifyRaw((
+    r,
+  ) => (r.gatewayAdapter.Alias = "vEthernet (other)"));
+  assert(
+    alias.some((x) => x.includes("is not the vEthernet of HNS network")),
+    alias.join("; "),
+  );
+  const renamed = await verifyRaw((r) => (r.hns = hnsValues({ name: "zzz" })));
+  assert(
+    renamed.includes(HNS_PROBLEM) &&
+      renamed.some((x) => x.includes("vEthernet")),
+    renamed.join("; "),
+  );
+  const index = await verifyRaw((r) => (r.gatewayAdapter.Index = IDX + 1));
+  assert(
+    index.some((x) => x.includes("recreated")) &&
+      index.some((x) => x.includes("interface is")),
+    index.join("; "),
+  );
+});
+
+Deno.test("COLLECT_PS (M1-34c): non-elevated reads only; filters by association from the group's rules; HNS from its VolatileStore value", () => {
+  assert(!/\s-All\b/.test(COLLECT_PS), "no class-wide -All enumeration");
+  assert(!COLLECT_PS.includes("Get-HnsNetwork"), "no HNS service query");
+  for (
+    const c of [
+      "Get-NetFirewallPortFilter",
+      "Get-NetFirewallAddressFilter",
+      "Get-NetFirewallApplicationFilter",
+      "Get-NetFirewallServiceFilter",
+      "Get-NetFirewallInterfaceFilter",
+      "Get-NetFirewallInterfaceTypeFilter",
+    ]
+  ) {
+    assertStringIncludes(COLLECT_PS, `$rules | ${c} -ErrorAction Stop`);
+  }
+  assertStringIncludes(
+    COLLECT_PS,
+    "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\hns\\State\\HostComputeNetwork\\VolatileStore\\Network",
+  );
+  for (const w of ["Set-", "New-", "Remove-", "Enable-", "Disable-"]) {
+    assert(!COLLECT_PS.includes(w), `read-only: no ${w}`);
+  }
 });

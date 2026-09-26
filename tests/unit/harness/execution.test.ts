@@ -68,6 +68,7 @@ import {
   SECRET_OAUTH,
   type TestEnv,
 } from "./runtime-fixture.ts";
+import { blobB64, networkBlob } from "../../utils/hns-blob.ts";
 import { write } from "./refapp-fixture.ts";
 import { FakeBc, result } from "./fake-bc.ts";
 import type { RunBehavior } from "./fake-docker.ts";
@@ -2049,6 +2050,7 @@ Deno.test("enforced run: a recreated network (new id or interface index) fails u
       subnet: SANDBOX_NETWORK.subnet,
       gateway: SANDBOX_NETWORK.gateway,
       hnsId: "hns1",
+      networkName: "x",
     },
     hns: {
       id: "hns1",
@@ -2318,8 +2320,11 @@ Deno.test("stub cell without an egress runtime (mode off) stays on the default n
 
 // Run 003 fix A: the authorized evidence is rechecked, by content, at every credential release.
 
+const RAW_HNS_ID = "5F2A9C31-0B7E-4D12-9A3B-6C4D5E6F7A8B";
+
 /** One host observation as the real collector prints it, with the marker read from disk now. */
 function rawObservation(markerPath: string): EgressRun {
+  const plan = firewallPlan(42);
   return async () => {
     let marker: unknown = null;
     try {
@@ -2334,14 +2339,14 @@ function rawObservation(markerPath: string): EgressRun {
           Driver: "internal",
           Subnet: SANDBOX_NETWORK.subnet,
           Gateway: SANDBOX_NETWORK.gateway,
-          HnsId: "hns1",
+          HnsId: RAW_HNS_ID,
+          NetworkName: "x",
         },
-        hns: {
-          Id: "hns1",
-          Name: "x",
-          Type: "Internal",
-          Subnet: SANDBOX_NETWORK.subnet,
-        },
+        hns: [{
+          Name: RAW_HNS_ID,
+          Kind: "Binary",
+          Blob: blobB64(networkBlob({ id: RAW_HNS_ID, name: "x" })),
+        }],
         gatewayAdapter: { Index: 42, Alias: "vEthernet (x)", Prefix: 24 },
         profiles: ["Domain", "Private", "Public"].map((Name) => ({
           Name,
@@ -2349,20 +2354,39 @@ function rawObservation(markerPath: string): EgressRun {
           DefaultInboundAction: "Allow",
           DefaultOutboundAction: "Allow",
         })),
-        groupRules: firewallPlan(42).map((r) => ({
+        groupRules: plan.map((r) => ({
+          InstanceID: r.name,
           Name: r.name,
           Enabled: "True",
           Direction: "Inbound",
           Action: "Block",
           Profile: "Any",
-          Protocol: String(r.protocol),
-          LocalPort: r.localPorts,
-          RemoteAddress: "Any",
-          LocalAddress: "Any",
-          Program: "Any",
-          Service: "Any",
-          InterfaceIndex: [42],
         })),
+        filters: {
+          port: plan.map((r) => ({
+            InstanceID: r.name,
+            Protocol: String(r.protocol),
+            LocalPort: r.localPorts,
+          })),
+          address: plan.map((r) => ({
+            InstanceID: r.name,
+            RemoteAddress: "Any",
+            LocalAddress: "Any",
+          })),
+          application: plan.map((r) => ({
+            InstanceID: r.name,
+            Program: "Any",
+          })),
+          service: plan.map((r) => ({ InstanceID: r.name, Service: "Any" })),
+          interface: plan.map((r) => ({
+            InstanceID: r.name,
+            InterfaceIndex: [42],
+          })),
+          interfaceType: plan.map((r) => ({
+            InstanceID: r.name,
+            InterfaceType: "Any",
+          })),
+        },
         foreignBlockRules: [],
         marker: m && {
           v: 1,
