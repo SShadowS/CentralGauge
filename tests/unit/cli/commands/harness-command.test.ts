@@ -2620,3 +2620,72 @@ Deno.test("--campaign refusals come before the environment opens: no lock, sweep
   assertEquals(t.docker.runs.length, runs);
   assertEquals((await t.env.store.executions(older.id)).length, executions);
 });
+
+// ---- M5-04: --rerun on run ----
+
+Deno.test("CLI: `harness run --rerun HX-001:1:mock-crash` reruns that cell; HX-001:x:arm and HX-001:1 are refused by the parser", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await write(
+    t.harnessRoot,
+    "experiments/crashy.yml",
+    `id: crashy
+hypothesis: Mock contract.
+primary_metric: pass_rate
+baseline: mock-positive
+variants: [mock-crash]
+vary: [settings]
+tasks: "harness-tasks/tasks/*"
+repeats: 1
+`,
+  );
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, opener(t));
+  const flags = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+  ];
+  const cwd = Deno.cwd();
+  const c = capture();
+  const codes: (number | undefined)[] = [];
+  try {
+    Deno.chdir(t.repo.root);
+    for (const args of [[], ["--rerun", "HX-001:1:mock-crash"]]) {
+      await cli.parse(["harness", "run", "crashy", ...args, ...flags]);
+      codes.push(Deno.exitCode);
+      Deno.exitCode = 0;
+    }
+    const runs = t.docker.runs.length;
+    for (const bad of ["HX-001:x:arm", "HX-001:1"]) {
+      await assertRejects(
+        () => cli.parse(["harness", "run", "crashy", "--rerun", bad, ...flags]),
+        Error,
+        "<task:repeat:arm>",
+      );
+    }
+    assertEquals(
+      t.docker.runs.length,
+      runs,
+      "the parser refused before any run",
+    );
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  assertEquals(codes, [0, 0]);
+  const camp = (await t.env.store.campaigns("crashy"))[0]!;
+  const crash = (await t.env.store.executions(camp.id))
+    .filter((e) => e.arm === "mock-crash")
+    .sort((a, b) => a.attempt - b.attempt);
+  assertEquals(crash.map((e) => [e.attempt, e.run_kind]), [
+    [1, "planned"],
+    [2, "auto_retry"],
+    [3, "manual_rerun"],
+    [4, "auto_retry"],
+  ]);
+});

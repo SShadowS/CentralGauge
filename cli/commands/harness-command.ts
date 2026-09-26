@@ -29,6 +29,7 @@ import type {
   CampaignSummary,
   OpenedTasks,
   PlanEnv,
+  RunOptions,
 } from "../../src/harness/campaign.ts";
 import type { CellResult, HarnessEnv } from "../../src/harness/execution.ts";
 import type { QualifyManifest } from "../../src/harness/qualify.ts";
@@ -930,6 +931,22 @@ export interface RunCliOptions extends CellCliOptions {
   stopFiles?: string[];
   /** run: resume exactly this campaign; rejudge: this campaign, not the newest. */
   campaign?: string;
+  /** run: rerun only this unscored cell as a manual_rerun. */
+  rerun?: RerunCell;
+}
+
+type RerunCell = NonNullable<RunOptions["rerun"]>;
+
+/** `--rerun <task:repeat:arm>`: a positive integer repeat, non-empty task and arm. */
+export function parseRerunCell(value: string): RerunCell {
+  const m = /^([^:]+):([1-9][0-9]*):([^:]+)$/.exec(value);
+  if (!m) {
+    throw new ValidationError(
+      `--rerun expects <task:repeat:arm>, got ${value}`,
+      [value],
+    );
+  }
+  return { task: m[1]!, repeat: Number(m[2]), arm: m[3]! };
 }
 
 type Planner = (o: EnvOptions) => Promise<PlanEnv>;
@@ -963,6 +980,7 @@ export async function harnessRun(
     ...(o.seed !== undefined ? { seed: o.seed } : {}),
     ...(o.stopFiles !== undefined ? { stopFiles: o.stopFiles } : {}),
     ...(o.campaign !== undefined ? { campaign: o.campaign } : {}),
+    ...(o.rerun !== undefined ? { rerun: o.rerun } : {}),
   };
   const command = `harness run ${experimentId}`;
   // M1-33c: before any lock, sweep or recovery writes (runCampaign rechecks).
@@ -1837,6 +1855,7 @@ export function registerHarnessCommand(
     execution?: string;
     stopFile?: string[];
     campaign?: string;
+    rerun?: RerunCell;
   };
   const runOpts = (f: RunFlags): RunCliOptions => ({
     ...cliOpts(f),
@@ -1850,6 +1869,7 @@ export function registerHarnessCommand(
     ...(f.execution ? { execution: f.execution } : {}),
     ...(f.stopFile ? { stopFiles: f.stopFile.map((p) => resolve(p)) } : {}),
     ...(f.campaign ? { campaign: f.campaign } : {}),
+    ...(f.rerun ? { rerun: f.rerun } : {}),
   });
 
   shared(
@@ -1883,6 +1903,11 @@ export function registerHarnessCommand(
     .option(
       "--campaign <id:string>",
       "Resume exactly this campaign; refused if it no longer matches",
+    )
+    .type("cell", ({ value }) => parseRerunCell(value))
+    .option(
+      "--rerun <cell:cell>",
+      "Rerun only this unscored cell (<task:repeat:arm>) as a manual rerun",
     )
     .action((opts: RunFlags, experiment: string) =>
       fail(async () => void await harnessRun(experiment, runOpts(opts), open))

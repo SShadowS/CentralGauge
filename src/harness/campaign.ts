@@ -67,6 +67,8 @@ export interface RunOptions {
   stopFiles?: string[];
   /** Resume exactly this campaign; refused when it no longer matches, never created. */
   campaign?: string;
+  /** Run exactly this unscored cell again as a manual_rerun; nothing else runs. */
+  rerun?: { task: string; repeat: number; arm: string };
 }
 
 export interface CampaignSummary {
@@ -236,6 +238,59 @@ export function planCampaign(
 export const PLACED_CONCURRENCY_REFUSAL =
   "--concurrency > 1 is refused while the egress marker places sandboxes: every placed cell uses the one egress proxy on the sandbox gateway, which has no per-execution isolation yet (M1-33c); run with --concurrency 1";
 
+function judgmentsByExecution(
+  data: CampaignRecords,
+): Map<string, JudgmentRecord[]> {
+  const byExecution = new Map<string, JudgmentRecord[]>();
+  for (const j of data.judgments) {
+    byExecution.set(j.execution_id, [
+      ...(byExecution.get(j.execution_id) ?? []),
+      j,
+    ]);
+  }
+  return byExecution;
+}
+
+/**
+ * A manual rerun's cell and attempt: only an unscored cell is rerun (a
+ * manual rerun never replaces a scored result, and a pending or unrun cell
+ * is owed its planned or automatic attempt, not a manual one).
+ */
+function rerunTarget(
+  c: CampaignRecord,
+  data: CampaignRecords,
+  r: NonNullable<RunOptions["rerun"]>,
+): { block: Block; at: AttemptRef; prior: ExecutionRecord[] } {
+  const label = `${r.task}:${r.repeat}:${r.arm}`;
+  const block = c.blocks.find((b) =>
+    b.task_id === r.task && b.repeat === r.repeat && b.order.includes(r.arm)
+  );
+  if (!block) {
+    throw new ConfigurationError(`no such cell ${label} in campaign ${c.id}`);
+  }
+  const cell = cellsFromRecords(c, data.executions, judgmentsByExecution(data))
+    .find((x) =>
+      x.task === r.task && x.repeat === r.repeat && x.arm === r.arm
+    )!;
+  if (cell.status !== "unscored") {
+    throw new ConfigurationError(
+      `cell ${label} is ${cell.status}: only an unscored cell is rerun (a manual rerun never replaces a scored result)`,
+    );
+  }
+  const prior = data.executions.filter((e) =>
+    e.block === block.index && e.arm === r.arm
+  );
+  return {
+    block,
+    at: {
+      attempt: Math.max(...prior.map((e) => e.attempt)) + 1,
+      runKind: "manual_rerun",
+      retryOf: null,
+    },
+    prior,
+  };
+}
+
 /**
  * Estimate lines for a dry run: outstanding cells (unrun or pending) of the
  * selected blocks per arm, priced from every stored execution of the same
@@ -250,13 +305,7 @@ async function dryRunEstimate(
   const selected = new Set(blocks.map((b) => `${b.task_id}#${b.repeat}`));
   const outstanding = new Map<string, number>();
   if (data) {
-    const byExecution = new Map<string, JudgmentRecord[]>();
-    for (const j of data.judgments) {
-      byExecution.set(j.execution_id, [
-        ...(byExecution.get(j.execution_id) ?? []),
-        j,
-      ]);
-    }
+    const byExecution = judgmentsByExecution(data);
     for (const cell of cellsFromRecords(c, data.executions, byExecution)) {
       if (
         selected.has(`${cell.task}#${cell.repeat}`) &&
@@ -414,6 +463,11 @@ export async function runCampaign(
   if (o.concurrency > 1 && (env.egress !== undefined || env.egressEnforced)) {
     throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
   }
+  if (o.rerun && (o.sample !== undefined || o.repeats !== undefined)) {
+    throw new ConfigurationError(
+      "--rerun runs one cell: --sample and --repeats do not apply",
+    );
+  }
   const { experiment, configs } = await loadExperiment(
     env.harnessRoot,
     experimentId,
@@ -485,6 +539,11 @@ export async function runCampaign(
   }
   let created = false;
   let data: CampaignRecords | null = null;
+  if (!c && o.rerun) {
+    throw new ConfigurationError(
+      `no campaign of experiment ${experimentId} matches the current experiment, task set and arm manifests: --rerun targets an existing campaign`,
+    );
+  }
   if (!c) {
     if (campaigns.length > 0) {
       io.log(
@@ -534,6 +593,8 @@ export async function runCampaign(
     data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data);
   }
+  // Refused before any container run (and in a dry run).
+  const rerun = o.rerun && data ? rerunTarget(c, data, o.rerun) : null;
   const maxRepeat = o.repeats ?? experiment.repeats;
   const blocks = c.blocks.filter((b) => b.repeat <= maxRepeat)
     .slice(0, o.sample ?? Infinity);
@@ -541,13 +602,21 @@ export async function runCampaign(
     // A dry run of a campaign that does not exist yet has no id.
     campaignId: created || campaigns.includes(c) ? c.id : null,
     created,
-    planned: blocks.reduce((n, b) => n + b.order.length, 0),
+    planned: rerun ? 1 : blocks.reduce((n, b) => n + b.order.length, 0),
     ran: 0,
     judged: 0,
     unscored: 0,
     paused: null,
     stopped: false,
   };
+  if (o.dryRun && rerun) {
+    io.log(
+      `[DRY] rerun ${rerun.block.task_id}#${rerun.block.repeat} ${
+        o.rerun!.arm
+      } as attempt ${rerun.at.attempt} (manual_rerun)`,
+    );
+    return summary;
+  }
   if (o.dryRun) {
     for (const b of blocks) {
       io.log(`${b.task_id}#${b.repeat}: ${b.order.join(" -> ")}`);
@@ -585,6 +654,35 @@ export async function runCampaign(
     return false;
   };
   if (await stopRequested()) return summary;
+  if (rerun) {
+    const arm = o.rerun!.arm;
+    const r = await runCell(
+      runEnv,
+      cellRefFor(
+        campaign,
+        opened,
+        rerun.block,
+        arm,
+        rerun.block.order.indexOf(arm),
+      ),
+      rerun.at,
+      rerun.prior,
+    );
+    for (const e of r.executions) {
+      summary.ran++;
+      const j = (await env.store.judgments(e.id))[0];
+      if (j && j.verdict !== "unscored") summary.judged++;
+      else summary.unscored++;
+    }
+    if (r.pause) {
+      // Its owed retry waits for the reset; a plain resume runs it.
+      summary.paused = r.pause;
+      io.log(
+        `[PAUSE] usage limit until ${r.pause}; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+      );
+    }
+    return summary;
+  }
   for (;;) {
     let paused: string | null = null;
     let next = 0;
