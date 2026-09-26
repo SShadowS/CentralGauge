@@ -10,6 +10,7 @@
  * the next run recovers it before planning).
  */
 
+import { exists } from "@std/fs";
 import { join, relative } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
 import type { Catalog } from "../ingest/catalog/read.ts";
@@ -62,6 +63,10 @@ export interface RunOptions {
   seed?: number;
   /** Longest usage-limit pause to wait out; 0 stops with a resume line. */
   maxPauseMs: number;
+  /** Any of these present stops the campaign before its next cell. */
+  stopFiles?: string[];
+  /** Resume exactly this campaign; refused when it no longer matches, never created. */
+  campaign?: string;
 }
 
 export interface CampaignSummary {
@@ -78,6 +83,8 @@ export interface CampaignSummary {
   unscored: number;
   /** Usage-limit reset (or "unknown") when the campaign stopped paused. */
   paused: string | null;
+  /** A stop file stopped the campaign before its next cell. */
+  stopped: boolean;
 }
 
 export interface RunIO {
@@ -374,13 +381,35 @@ export async function runCampaign(
   }
   const expHash = await experimentHash(experiment);
   const campaigns = await env.store.campaigns(experimentId);
-  let c = campaigns.find((x) =>
-    x.experiment_hash === expHash && x.task_set.identity === ids.identity &&
-    arms.every((a) =>
-      x.arms.find((y) => y.config_id === a.config_id)?.manifest_hash ===
-        a.manifest_hash
-    )
-  );
+  const drift = (x: CampaignRecord) => [
+    ...(x.experiment_hash === expHash ? [] : ["experiment_hash"]),
+    ...(x.task_set.identity === ids.identity ? [] : ["task_set.identity"]),
+    ...(arms.every((a) =>
+        x.arms.find((y) => y.config_id === a.config_id)?.manifest_hash ===
+          a.manifest_hash
+      )
+      ? []
+      : ["arms[].manifest_hash"]),
+  ];
+  let c = campaigns.find((x) => drift(x).length === 0);
+  if (o.campaign !== undefined) {
+    // The pin: exactly the named campaign, unchanged; never a new one.
+    const named = campaigns.find((x) => x.id === o.campaign);
+    if (!named) {
+      throw new ConfigurationError(
+        `no campaign ${o.campaign} for experiment ${experimentId}`,
+      );
+    }
+    const differs = drift(named);
+    if (differs.length > 0) {
+      throw new ConfigurationError(
+        `campaign ${o.campaign} does not match the current experiment: ${
+          differs.join(", ")
+        } differ`,
+      );
+    }
+    c = named;
+  }
   let created = false;
   let data: CampaignRecords | null = null;
   if (!c) {
@@ -444,6 +473,7 @@ export async function runCampaign(
     judged: 0,
     unscored: 0,
     paused: null,
+    stopped: false,
   };
   if (o.dryRun) {
     for (const b of blocks) {
@@ -467,16 +497,31 @@ export async function runCampaign(
   }
   const campaign = c;
   const now = () => (env.now ?? (() => new Date()))().getTime();
+  // A stop file is checked before the first block and before each cell.
+  const stopRequested = async () => {
+    for (const path of o.stopFiles ?? []) {
+      if (!await exists(path)) continue;
+      if (!summary.stopped) {
+        summary.stopped = true;
+        io.log(
+          `[PAUSE] stop file ${path} present; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+        );
+      }
+      return true;
+    }
+    return false;
+  };
+  if (await stopRequested()) return summary;
   for (;;) {
     let paused: string | null = null;
     let next = 0;
     // Workers take whole blocks: the arms of one block run one after another
     // in its recorded order (the matched pair), blocks run in parallel.
     const worker = async () => {
-      while (paused === null && next < blocks.length) {
+      while (paused === null && !summary.stopped && next < blocks.length) {
         const block = blocks[next++]!;
         for (const [i, arm] of block.order.entries()) {
-          if (paused !== null) break;
+          if (paused !== null || summary.stopped) break;
           const prior = (await env.store.executions(campaign.id)).filter((
             e,
           ) => e.block === block.index && e.arm === arm);
@@ -490,6 +535,7 @@ export async function runCampaign(
             paused = laterReset(paused, waitFor);
             break;
           }
+          if (await stopRequested()) break;
           const r = await runCell(
             runEnv,
             cellRefFor(campaign, opened, block, arm, i),
@@ -509,7 +555,7 @@ export async function runCampaign(
     await Promise.all(
       Array.from({ length: Math.min(o.concurrency, blocks.length) }, worker),
     );
-    if (paused === null) return summary;
+    if (paused === null || summary.stopped) return summary;
     const wait = paused === "unknown" ? Infinity : Date.parse(paused) - now();
     if (wait > o.maxPauseMs) {
       summary.paused = paused;

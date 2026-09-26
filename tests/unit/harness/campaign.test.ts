@@ -529,3 +529,99 @@ Deno.test("dry-run estimate: a second experiment sharing the baseline manifest b
   );
   assert(out.lines.some((l) => l.startsWith("[DRY] total ")), text);
 });
+
+// ---- M5-03: stop files and the campaign pin ----
+
+Deno.test("a stop file stops between cells; present at start runs nothing; resume keeps id, seed and order", async () => {
+  const t = await mockEnv();
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  );
+  const pause = join(t.repo.root, "pause.json"); // never created: the global pause is only checked
+  const stop = join(t.repo.root, "stop-contract.json");
+  await Deno.writeTextFile(stop, "{}");
+  const idle = await runCampaign(
+    t.env,
+    "contract",
+    opts({ stopFiles: [pause, stop] }),
+    io(),
+  );
+  assertEquals([idle.ran, idle.stopped, t.docker.runs.length], [0, true, 0]);
+  await Deno.remove(stop);
+  let n = 0;
+  t.env.hooks = {
+    beforeDraft: async () => {
+      if (++n === 1) await Deno.writeTextFile(stop, "{}");
+    },
+  };
+  const out = io();
+  const s = await runCampaign(
+    t.env,
+    "contract",
+    opts({ stopFiles: [pause, stop] }),
+    out,
+  );
+  assertEquals(
+    [s.ran, s.stopped],
+    [1, true],
+    "the running cell finished, no new one started",
+  );
+  assert(
+    out.lines.some((l) =>
+      l.includes("resume with: centralgauge harness run contract")
+    ),
+  );
+  const before = (await t.env.store.campaigns("contract"))[0]!;
+  await Deno.remove(stop);
+  t.env.hooks = {};
+  const again = await runCampaign(
+    t.env,
+    "contract",
+    opts({ stopFiles: [pause, stop], campaign: before.id }),
+    io(),
+  );
+  const after = (await t.env.store.campaigns("contract"))[0]!;
+  assertEquals([again.stopped, after.id, after.seed, after.blocks], [
+    false,
+    before.id,
+    before.seed,
+    before.blocks,
+  ]);
+});
+
+Deno.test("--campaign refuses drift and unknown ids before any write", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "contract", opts(), io());
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  ); // experiment hash changes
+  await assertRejects(
+    () => runCampaign(t.env, "contract", opts({ campaign: c.id }), io()),
+    ConfigurationError,
+    "experiment_hash",
+  );
+  await assertRejects(
+    () =>
+      runCampaign(
+        t.env,
+        "contract",
+        opts({ campaign: "00000000-0000-0000-0000-000000000000" }),
+        io(),
+      ),
+    ConfigurationError,
+    "no campaign",
+  );
+  assertEquals((await t.env.store.campaigns("contract")).length, 1);
+});

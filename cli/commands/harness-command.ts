@@ -924,6 +924,10 @@ export interface RunCliOptions extends CellCliOptions {
   yes?: boolean;
   /** rejudge: only this execution. */
   execution?: string;
+  /** run: any of these present stops the campaign before its next cell. */
+  stopFiles?: string[];
+  /** run: resume exactly this campaign; rejudge: this campaign, not the newest. */
+  campaign?: string;
 }
 
 type Planner = (o: EnvOptions) => Promise<PlanEnv>;
@@ -955,6 +959,8 @@ export async function harnessRun(
     ...(o.sample !== undefined ? { sample: o.sample } : {}),
     ...(o.repeats !== undefined ? { repeats: o.repeats } : {}),
     ...(o.seed !== undefined ? { seed: o.seed } : {}),
+    ...(o.stopFiles !== undefined ? { stopFiles: o.stopFiles } : {}),
+    ...(o.campaign !== undefined ? { campaign: o.campaign } : {}),
   };
   const command = `harness run ${experimentId}`;
   // M1-33c: before any lock, sweep or recovery writes (runCampaign rechecks).
@@ -1000,7 +1006,7 @@ export async function harnessRun(
         s.created ? " (new)" : ""
       }: ${s.ran} executions, ${s.judged} judged, ${s.unscored} unscored${
         s.paused ? `, paused until ${s.paused}` : ""
-      }`,
+      }${s.stopped ? ", stopped by a stop file" : ""}`,
     );
     return s;
   } finally {
@@ -1035,10 +1041,15 @@ export async function harnessRejudge(
   );
   try {
     const env = h.env;
-    const c = (await env.store.campaigns(experimentId))[0];
+    const campaigns = await env.store.campaigns(experimentId);
+    const c = o.campaign
+      ? campaigns.find((x) => x.id === o.campaign)
+      : campaigns[0];
     if (!c) {
       throw new ConfigurationError(
-        `no campaign for experiment ${experimentId} in ${o.resultsDir}`,
+        `no campaign${
+          o.campaign ? ` ${o.campaign}` : ""
+        } for experiment ${experimentId} in ${o.resultsDir}`,
       );
     }
     const data = await loadCampaignData(env.store, c);
@@ -1636,7 +1647,10 @@ async function fail(action: () => Promise<void>): Promise<void> {
   }
 }
 
-export function registerHarnessCommand(cli: Command): void {
+export function registerHarnessCommand(
+  cli: Command,
+  open: Opener = openHarnessEnv,
+): void {
   const parent = new Command().description(
     "Harness Bench: benchmark agent harness configs (spec 1a).",
   );
@@ -1795,6 +1809,8 @@ export function registerHarnessCommand(cli: Command): void {
     maxPauseMin: number;
     yes?: boolean;
     execution?: string;
+    stopFile?: string[];
+    campaign?: string;
   };
   const runOpts = (f: RunFlags): RunCliOptions => ({
     ...cliOpts(f),
@@ -1806,6 +1822,8 @@ export function registerHarnessCommand(cli: Command): void {
     ...(f.seed !== undefined ? { seed: f.seed } : {}),
     ...(f.yes ? { yes: true } : {}),
     ...(f.execution ? { execution: f.execution } : {}),
+    ...(f.stopFile ? { stopFiles: f.stopFile.map((p) => resolve(p)) } : {}),
+    ...(f.campaign ? { campaign: f.campaign } : {}),
   });
 
   shared(
@@ -1831,8 +1849,17 @@ export function registerHarnessCommand(cli: Command): void {
       "--qualify-manifest <path:string>",
       "Qualification manifest naming the variants mock arms apply",
     )
+    .option(
+      "--stop-file <path:string>",
+      "Stop before the next cell while this file exists (repeatable)",
+      { collect: true },
+    )
+    .option(
+      "--campaign <id:string>",
+      "Resume exactly this campaign; refused if it no longer matches",
+    )
     .action((opts: RunFlags, experiment: string) =>
-      fail(async () => void await harnessRun(experiment, runOpts(opts)))
+      fail(async () => void await harnessRun(experiment, runOpts(opts), open))
     );
 
   shared(
@@ -1842,6 +1869,7 @@ export function registerHarnessCommand(cli: Command): void {
     ),
   )
     .option("--execution <id:string>", "Only this execution")
+    .option("--campaign <id:string>", "This campaign (default: newest)")
     .option("--yes", "Do not ask for confirmation")
     .action((
       opts: Omit<RunFlags, "concurrency" | "maxPauseMin">,
@@ -1851,6 +1879,7 @@ export function registerHarnessCommand(cli: Command): void {
         void await harnessRejudge(
           experiment,
           runOpts({ ...opts, concurrency: 1, maxPauseMin: 0 }),
+          open,
         )
       )
     );

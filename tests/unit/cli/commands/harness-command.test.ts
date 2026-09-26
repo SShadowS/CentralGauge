@@ -2373,3 +2373,182 @@ Deno.test("openHarnessEnv: the effective egress mode is computed under the lock,
   );
   assertEquals(order, ["lock", "verify", "release"]);
 });
+
+// ---- M5-03: --stop-file and --campaign on run and rejudge ----
+
+const UNKNOWN_CAMPAIGN = "00000000-0000-0000-0000-000000000000";
+
+Deno.test("harnessRun forwards two --stop-file values and --campaign into runCampaign", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  const absent = join(t.repo.root, "pause.json");
+  const stop = join(t.repo.root, "stop-contract.json");
+  await Deno.writeTextFile(stop, "{}");
+  const c = capture();
+  try {
+    const s = await harnessRun(
+      "contract",
+      runOpts(t, { stopFiles: [absent, stop] }),
+      opener(t),
+    );
+    assertEquals([s.ran, s.stopped, t.docker.runs.length], [0, true, 0]);
+    assertStringIncludes(
+      stripAnsiCode(c.out.join("\n")),
+      `[PAUSE] stop file ${stop} present; resume with: centralgauge harness run contract --campaign ${s.campaignId}`,
+    );
+    await assertRejects(
+      () =>
+        harnessRun(
+          "contract",
+          runOpts(t, { campaign: UNKNOWN_CAMPAIGN }),
+          opener(t),
+        ),
+      ConfigurationError,
+      `no campaign ${UNKNOWN_CAMPAIGN}`,
+    );
+    await Deno.remove(stop);
+    const r = await harnessRun(
+      "contract",
+      runOpts(t, { stopFiles: [absent, stop], campaign: s.campaignId }),
+      opener(t),
+    );
+    assertEquals([r.campaignId, r.stopped, r.ran], [s.campaignId, false, 2]);
+  } finally {
+    c.restore();
+  }
+});
+
+/** Two campaigns of one experiment: the older one holds a stale judgment. */
+async function twoCampaigns(t: TestEnv) {
+  const { c: older, es } = await campaignWithStaleJudgment(t);
+  const file = join(t.harnessRoot, "experiments", "contract.yml");
+  await Deno.writeTextFile(
+    file,
+    (await Deno.readTextFile(file)).replace(
+      "Mock contract.",
+      "Mock contract, second campaign.",
+    ),
+  );
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const newer = (await t.env.store.campaigns("contract"))[0]!;
+  assert(newer.id !== older.id, "a second campaign is the newest");
+  const newerExec = (await t.env.store.executions(newer.id))[0]!.id;
+  return { older, olderExec: es[0]!.id, newer, newerExec };
+}
+
+Deno.test("rejudge --campaign: the named campaign although a newer one exists; an execution outside it or an unknown id is refused", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { older, olderExec, newerExec } = await twoCampaigns(t);
+  // Without --campaign the newest campaign is used.
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { execution: olderExec }),
+        opener(t),
+      ),
+    ConfigurationError,
+    "is not in campaign",
+  );
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t, { campaign: older.id, execution: olderExec }),
+    opener(t),
+  );
+  assertEquals([r.campaignId, r.rejudged], [older.id, 1]);
+  const judgments = (await t.env.store.judgments(olderExec)).length;
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { campaign: older.id, execution: newerExec }),
+        opener(t),
+      ),
+    ConfigurationError,
+    `execution ${newerExec} is not in campaign ${older.id}`,
+  );
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { campaign: UNKNOWN_CAMPAIGN }),
+        opener(t),
+      ),
+    ConfigurationError,
+    `no campaign ${UNKNOWN_CAMPAIGN}`,
+  );
+  assertEquals((await t.env.store.judgments(olderExec)).length, judgments);
+  assertEquals((await t.env.store.judgments(newerExec)).length, 1);
+});
+
+Deno.test("CLI: `harness run` collects repeated --stop-file and --campaign; `harness rejudge` parses and forwards --campaign", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { older, olderExec, newer } = await twoCampaigns(t);
+  const absent = join(t.repo.root, "pause.json");
+  const stop = join(t.repo.root, "stop-contract.json");
+  await Deno.writeTextFile(stop, "{}");
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, opener(t));
+  const flags = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+  ];
+  const codes: (number | undefined)[] = [];
+  const parse = async (args: string[]) => {
+    await cli.parse(["harness", ...args, ...flags]);
+    codes.push(Deno.exitCode);
+    Deno.exitCode = 0;
+  };
+  const runs = t.docker.runs.length;
+  const cwd = Deno.cwd();
+  const c = capture();
+  try {
+    Deno.chdir(t.repo.root);
+    const run = ["run", "contract", "--stop-file", absent, "--stop-file", stop];
+    await parse([...run, "--campaign", newer.id]);
+    // The older campaign no longer matches the experiment: the pin refuses it.
+    await parse([...run, "--campaign", older.id]);
+    await parse([
+      "rejudge",
+      "contract",
+      "--campaign",
+      older.id,
+      "--execution",
+      olderExec,
+      "--yes",
+    ]);
+    await parse([
+      "rejudge",
+      "contract",
+      "--campaign",
+      UNKNOWN_CAMPAIGN,
+      "--yes",
+    ]);
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  const out = stripAnsiCode(c.out.join("\n"));
+  const err = stripAnsiCode(c.err.join("\n"));
+  assertEquals(codes, [0, 1, 0, 1]);
+  assertEquals(t.docker.runs.length, runs, "the stop file ran no cell");
+  assertStringIncludes(
+    out,
+    `[PAUSE] stop file ${stop} present; resume with: centralgauge harness run contract --campaign ${newer.id}`,
+  );
+  assertStringIncludes(err, "experiment_hash");
+  assertStringIncludes(out, `[OK] ${olderExec}:`);
+  assertStringIncludes(err, `no campaign ${UNKNOWN_CAMPAIGN}`);
+});
