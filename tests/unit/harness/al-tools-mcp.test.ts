@@ -467,3 +467,30 @@ Deno.test("al-tools MCP: bad ids and non-object tools/call params are JSON-RPC e
     [9, -32602],
   ]);
 });
+
+Deno.test("al-tools MCP: one leading BOM on the first line is tolerated (PowerShell 5.1 pipes), nowhere else (M3-07a)", async () => {
+  const ping = (id: number) =>
+    JSON.stringify({ jsonrpc: "2.0", id, method: "ping" });
+  const first = await converse([], () => new Response("{}"), {
+    raw: "﻿" + ping(1) + "\n" + ping(2) + "\n",
+  });
+  assertEquals(first.list.map((r) => [r.id, r.error?.code ?? "ok"]), [
+    [1, "ok"],
+    [2, "ok"],
+  ]);
+  const later = await converse([], () => new Response("{}"), {
+    raw: ping(1) + "\n﻿" + ping(2) + "\n﻿﻿" + ping(3) + "\n",
+  });
+  assertEquals(later.list.map((r) => [r.id, r.error?.code ?? "ok"]), [
+    [1, "ok"],
+    [null, -32700],
+    [null, -32700],
+  ]);
+  const double = await converse([], () => new Response("{}"), {
+    raw: "﻿﻿" + ping(1) + "\n" + ping(2) + "\n",
+  });
+  assertEquals(double.list.map((r) => [r.id, r.error?.code ?? "ok"]), [
+    [null, -32700],
+    [2, "ok"],
+  ]);
+});
