@@ -509,11 +509,26 @@ export class Backend {
     return true;
   }
 
-  /** The execution's build cache ends with its grant (nothing in flight). */
+  /**
+   * The execution's build cache ends with its grant (nothing in flight), and
+   * so does its folder once empty. Non-recursive: anything left in it is kept.
+   */
   private async dropBuildCache(executionId: string): Promise<void> {
-    await Deno.remove(join(this.o.workRoot, executionId, "build-cache"), {
+    const dir = join(this.o.workRoot, executionId);
+    await Deno.remove(join(dir, "build-cache"), {
       recursive: true,
     }).catch(() => {});
+    try {
+      await Deno.remove(dir);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) {
+        console.warn(
+          `[WARN] backend folder ${dir} kept: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
   }
 
   private async append(g: BackendGrant, line: HostLogLine) {

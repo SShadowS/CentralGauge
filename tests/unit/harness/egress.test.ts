@@ -547,7 +547,8 @@ Deno.test("egress scripts are generated deterministically; revert touches only p
   );
 });
 
-Deno.test("collectEgressState: a complete observation is normalized; protocol names and port order do not matter", async () => {
+/** The collector's raw observation of goodState(). */
+function rawObservation() {
   const rules = firewallPlan(IDX).map((r) => ({
     Name: r.name,
     Enabled: "True",
@@ -596,6 +597,11 @@ Deno.test("collectEgressState: a complete observation is normalized; protocol na
       interface_index: IDX,
     },
   };
+  return raw;
+}
+
+Deno.test("collectEgressState: a complete observation is normalized; protocol names and port order do not matter", async () => {
+  const raw = rawObservation();
   const s = await collectEgressState(() =>
     Promise.resolve({ code: 0, stdout: JSON.stringify(raw) })
   );
@@ -1028,4 +1034,42 @@ Deno.test("egress scripts (PS 5.1): no $name: inside a string (parsed as a scope
   }) + revertScript("C:\\fw") + COLLECT_PS;
   const bad = both.match(/\$(?!env:|global:|script:)[A-Za-z_][A-Za-z0-9_]*:/g);
   assertEquals(bad, null, String(bad));
+});
+
+Deno.test("verifyEgressState: HNS reports its type in lowercase ('internal', M1-34 AD-04); the type is compared case-insensitively, another type still fails (M1-34a)", async () => {
+  const observe = async (
+    mut: (r: ReturnType<typeof rawObservation>) => void,
+  ) => {
+    const raw = rawObservation();
+    mut(raw);
+    return verifyEgressState(
+      await collectEgressState(() =>
+        Promise.resolve({ code: 0, stdout: JSON.stringify(raw) })
+      ),
+    );
+  };
+  assertEquals(await observe((r) => (r.hns.Type = "internal")), []);
+  assertEquals(await observe((r) => (r.hns.Type = "INTERNAL")), []);
+  for (const t of ["nat", "transparent", "l2bridge", ""]) {
+    assertEquals(
+      await observe((r) => (r.hns.Type = t)),
+      [
+        `hns network behind ${SANDBOX_NETWORK.name} is not the internal network of the plan`,
+      ],
+      t,
+    );
+  }
+});
+
+Deno.test("verifyEgressState: the HNS id and docker's hnsid are GUIDs, equal regardless of case; a different id still fails (M1-34a)", () => {
+  const guid = "d9198b5b-3abb-475a-874e-2b052f37ccd6";
+  const s = goodState();
+  s.network!.hnsId = guid;
+  s.hns!.id = guid.toUpperCase();
+  s.gatewayAdapter!.alias = `vEthernet (${s.hns!.name})`;
+  assertEquals(verifyEgressState(s), []);
+  s.hns!.id = "00000000-0000-4000-8000-000000000000";
+  assertEquals(verifyEgressState(s), [
+    `hns network behind ${SANDBOX_NETWORK.name} is not the internal network of the plan`,
+  ]);
 });

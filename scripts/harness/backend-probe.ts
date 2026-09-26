@@ -14,6 +14,7 @@
 // backend token and ready): runQualificationProbe. It writes probe-evidence.json
 // for `harness egress verify --mark qualified --probe-evidence <path>`.
 import { join } from "@std/path";
+import type { SandboxResult } from "../../src/harness/sandbox.ts";
 import { openHarnessEnv } from "../../cli/commands/harness-env.ts";
 import {
   collectEgressState,
@@ -72,14 +73,26 @@ export async function parseProbeArgs(args: string[]): Promise<{
   return { container, secretsDir, enforced, command, withholdToken };
 }
 
-/** Non-zero on any preflight problem or a sandbox that did not run to exit 0. */
+/**
+ * Non-zero on any preflight problem or a sandbox that did not run to exit 0,
+ * timed out, is not confirmed gone, or left a cleanup problem (M3-07c).
+ */
 export function probeExitCode(
   r: {
     problems: readonly string[];
-    sandbox: { exitCode: number | null } | null;
+    sandbox:
+      | Pick<
+        SandboxResult,
+        "exitCode" | "timedOut" | "confirmedGone" | "cleanup"
+      >
+      | null;
   },
 ): number {
-  return r.problems.length === 0 && r.sandbox?.exitCode === 0 ? 0 : 1;
+  const s = r.sandbox;
+  return r.problems.length === 0 && s !== null && s.exitCode === 0 &&
+      !s.timedOut && s.confirmedGone && s.cleanup === "ok"
+    ? 0
+    : 1;
 }
 
 if (import.meta.main) await main();
