@@ -20,6 +20,7 @@ import { requestedComponents } from "../adapter.ts";
 import { callFields } from "../call-fields.ts";
 import { RULES_VERSION } from "../classify.ts";
 import { estimateCost } from "../pricing.ts";
+import { redactPatternText } from "../redact-patterns.ts";
 import { TRACE_VERSION, writeTrace } from "../trace.ts";
 import {
   type Line,
@@ -80,7 +81,7 @@ const NON_BILLING_ENTRIES = new Set([
 const BILLABLE = /^(compaction_|summarization_)/;
 const SHELL_TOOLS = new Set(["bash", "powershell"]);
 /** A skill is loaded by reading its SKILL.md (pi has no Skill tool): <...>/skills/<name>/SKILL.md. */
-const SKILL_MD = /[\\/]skills[\\/]([^\\/]+)[\\/]SKILL\.md$/i;
+const SKILL_MD = /(?:^|[\\/])skills[\\/]([^\\/]+)[\\/]SKILL\.md$/i;
 
 const PI_DECLARED: readonly (keyof Telemetry)[] = Object.freeze([
   "harness_version",
@@ -219,33 +220,37 @@ export function parsePiStream(
   }
 
   const trace: TraceEvent[] = [];
-  const ev = (o: Partial<TraceEvent>): TraceEvent => ({
-    v: TRACE_VERSION,
-    seq: trace.length + 1,
-    t_ms: null,
-    type: "tool_call",
-    session: sessionId,
-    agent: "main",
-    parent: null,
-    call_id: null,
-    request_id: null,
-    tool: null,
-    transport: null,
-    skill: null,
-    backend_request: null,
-    outcome: null,
-    error_class: null,
-    result_bytes: null,
-    truncated: null,
-    duration_ms: null,
-    model: null,
-    command: null,
-    command_cut: null,
-    target: null,
-    category: null,
-    classifier: null,
-    ...o,
-  });
+  // One place redacts every stored string of an event (as claude-trace.ts).
+  const ev = (o: Partial<TraceEvent>): TraceEvent =>
+    redactEvent({
+      v: TRACE_VERSION,
+      seq: trace.length + 1,
+      t_ms: null,
+      type: "tool_call",
+      session: sessionId,
+      agent: "main",
+      parent: null,
+      call_id: null,
+      request_id: null,
+      tool: null,
+      transport: null,
+      skill: null,
+      backend_request: null,
+      outcome: null,
+      error_class: null,
+      result_bytes: null,
+      truncated: null,
+      duration_ms: null,
+      model: null,
+      command: null,
+      command_cut: null,
+      target: null,
+      category: null,
+      classifier: null,
+      ...o,
+    });
+  /** Problems that make the trace incomplete (as Claude's structural list); cost and termination problems do not. */
+  const structural: string[] = [];
   const started = new Map<string, number>();
   const usage = new Map<string, Agg>();
   let reported: number | null = 0;
@@ -377,8 +382,11 @@ export function parsePiStream(
         model,
         ...callFields(name, command, target),
       }));
-      const skill = name === "read" && target !== null
-        ? SKILL_MD.exec(target)?.[1] ?? null
+      const safeTarget = target === null
+        ? null
+        : redactPatternText(target).text;
+      const skill = name === "read" && safeTarget !== null
+        ? SKILL_MD.exec(safeTarget)?.[1] ?? null
         : null;
       if (skill !== null) {
         trace.push(ev({ type: "skill_invoke", skill, call_id: id, model }));
@@ -393,7 +401,16 @@ export function parsePiStream(
   if (openRequest !== null) unclosed(openRequest);
   for (const id of [...outcomes.keys()].sort()) {
     if (!started.has(id)) {
-      streamProblems.push(`tool_execution_end for unknown ${id}`);
+      const why = `tool_execution_end for unknown ${id}`;
+      streamProblems.push(why);
+      structural.push(why);
+    }
+  }
+  for (const id of [...started.keys()].sort()) {
+    if (!outcomes.has(id)) {
+      const why = `tool_execution_start ${id} has no tool_execution_end`;
+      streamProblems.push(why);
+      structural.push(why);
     }
   }
 
@@ -541,7 +558,7 @@ export function parsePiStream(
         stream_problems: streamProblems,
         capabilities: PI_CAPABILITIES,
         trace_complete: settled && nonJson.count === 0 &&
-          streamProblems.length === 0,
+          structural.length === 0,
       }),
     },
     observed: {
@@ -557,6 +574,14 @@ export function parsePiStream(
     traceEvents: trace.length,
     trace,
   };
+}
+
+function redactEvent(e: TraceEvent): TraceEvent {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(e)) {
+    out[k] = typeof v === "string" ? redactPatternText(v).text : v;
+  }
+  return out as TraceEvent;
 }
 
 /** pi agent settings written into the isolated agent directory (recorded in the manifest). */
