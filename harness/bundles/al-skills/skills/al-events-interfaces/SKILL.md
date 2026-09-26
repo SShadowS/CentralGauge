@@ -38,35 +38,20 @@ end;
 
 ## Interfaces
 
-```al
-interface "Label Printer"
-{
-    procedure Print(LabelText: Text): Boolean;
-}
-
-codeunit 50110 "Plain Label Printer" implements "Label Printer"
-{
-    procedure Print(LabelText: Text): Boolean
-    begin
-        exit(LabelText <> '');
-    end;
-}
-```
-
-- An interface has no ID. A codeunit implements it by declaring `implements` and every
-  procedure with the exact signature.
-- Combine with an extensible enum so other apps can add implementations:
-
-```al
-enum 50110 "Printer Kind" implements "Label Printer"
-{
-    Extensible = true;
-    value(0; Plain) { Implementation = "Label Printer" = "Plain Label Printer"; }
-}
-```
-
-Then `Printer := Setup."Printer Kind";` picks the implementation, and another app adds
-a value in an `enumextension` with its own codeunit.
+- An interface declares procedure signatures only. It has no ID, no variables and no
+  code.
+- A codeunit implements an interface by naming it after `implements` in its declaration
+  and defining every procedure of the interface with exactly the same signature. One
+  codeunit can implement several interfaces.
+- A variable of an interface type can hold any codeunit that implements it; a call through
+  the variable runs the procedure of the codeunit it currently holds.
+- An enum can also declare that it implements an interface. Each of its values then names,
+  in its `Implementation` property, the codeunit that implements the interface for that
+  value, and assigning an enum value to an interface variable selects that codeunit.
+  `DefaultImplementation` covers values that name none.
+- When the enum is extensible, another app can add values in an enum extension, each with
+  its own implementing codeunit, without changing the app that owns the enum or the
+  interface.
 
 - Use an interface when callers need one of several interchangeable behaviors; use an event
   when other apps react to, or veto, something that happens.
