@@ -100,3 +100,11 @@ another lane elevated (owner decision 2026-09-26).
   `coord ask`.
 - Record every job and its output under `H:\cg-coord\tasks\<id>\admin\` and reply to the
   requester with the file path.
+- Messaging is one-way: lane-admin can message other sessions, but messages TO lane-admin fail
+  (the elevated session's pipe refuses non-elevated callers; verified 2026-09-26). Every
+  request to lane-admin is therefore a coord task in lane `admin`, with the exact command in its
+  `task.md`. lane-admin runs a self-paced `/loop` that checks `coord next admin`, claims and
+  runs a ready task exactly as written, then `coord submit`s it and messages the requester and
+  the orchestrator with the result path. For a time-critical job (a pktmon capture around a
+  supervised run), the requester files the task first and then asks the owner to nudge
+  lane-admin.
