@@ -43,6 +43,8 @@ const toBin = (d: Uint8Array) => {
   return s;
 };
 const fromBin = (s: string) => Uint8Array.from(s, (ch) => ch.charCodeAt(0));
+// UTF-16LE text: printable ASCII each followed by a NUL byte.
+// deno-lint-ignore no-control-regex
 const U16_RUN = /(?:[\x09\x0a\x0d\x20-\x7e]\x00){16,}/g;
 
 export function redactPatterns(
@@ -52,6 +54,7 @@ export function redactPatterns(
   const r8 = redactPatternText(toBin(data));
   count += r8.count;
   const s16 = r8.text.replace(U16_RUN, (run) => {
+    // deno-lint-ignore no-control-regex
     const r = redactPatternText(run.replace(/\x00/g, ""));
     if (r.count === 0) return run;
     count += r.count;
