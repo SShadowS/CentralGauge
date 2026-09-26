@@ -1,4 +1,5 @@
 import {
+  assert,
   assertEquals,
   assertRejects,
   assertStringIncludes,
@@ -34,6 +35,8 @@ import { loadSymbolsLock } from "../../../../src/harness/identity.ts";
 import { BASE_IMAGE } from "../../../../src/harness/images.ts";
 import { runCampaign } from "../../../../src/harness/campaign.ts";
 import { scorerFingerprint } from "../../../../src/harness/records.ts";
+import { oracleHash } from "../../../../src/harness/identity.ts";
+import { loadTask } from "../../../../src/harness/task.ts";
 import { BenchLockHeldError } from "../../../../src/utils/bench-lock.ts";
 import { FakeBc } from "../../harness/fake-bc.ts";
 import { FakeDocker } from "../../harness/fake-docker.ts";
@@ -1358,4 +1361,49 @@ Deno.test("images build lists the resulting digest and labels", async () => {
   assertStringIncludes(out, "centralgauge.harness=mock");
   assertStringIncludes(out, "centralgauge.harness.version=1");
   assertStringIncludes(out, `centralgauge.harness.base_digest=${baseId}`);
+});
+
+Deno.test("rejudge: an oracle-only change makes every judged execution due, judged against the new oracle", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const es = await t.env.store.executions(c.id);
+  assertEquals(
+    (await harnessRejudge("contract", runOpts(t), opener(t))).rejudged,
+    0,
+    "current scorers and oracle: nothing due",
+  );
+  const oracle = join(
+    t.repo.tasksDir,
+    "HX-001",
+    "oracle",
+    "src",
+    "Oracle.Test.al",
+  );
+  await Deno.writeTextFile(
+    oracle,
+    (await Deno.readTextFile(oracle)) + "// oracle fix\n",
+  );
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 2);
+  const now = await oracleHash(
+    await loadTask(join(t.repo.tasksDir, "HX-001")),
+  );
+  for (const e of es) {
+    const js = await t.env.store.judgments(e.id);
+    assertEquals(js.length, 2);
+    assert(js.some((j) => j.task_oracle_hash === now), e.id);
+  }
+  assertEquals(
+    (await harnessRejudge("contract", runOpts(t), opener(t))).rejudged,
+    0,
+  );
 });

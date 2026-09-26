@@ -916,19 +916,28 @@ export async function harnessRejudge(
       );
     }
     const current = await currentScorerFingerprint();
+    // Current identities of every campaign task: the oracle decides what is due.
+    const ids = await taskSetIdentity(
+      o.root,
+      c.task_set.tasks.map((t) => tasks.get(t.id)!),
+      env.symbols,
+    );
+    const byTask = new Map(ids.tasks.map((t) => [t.id, t]));
+    // Due: never judged, unscored, an old scorer suite, or an old oracle (so
+    // a planned result never stays on an oracle a manual rerun has left).
     const due = data.executions.filter((e) => {
       if (o.execution && e.id !== o.execution) return false;
       if (!outcomePolicy(e.termination, e.did_work).judge) return false;
       const j = latestJudgment(
         data.judgments.filter((x) => x.execution_id === e.id),
       );
-      return !j || j.verdict === "unscored" || j.scorer_fingerprint !== current;
+      return !j || j.verdict === "unscored" ||
+        j.scorer_fingerprint !== current ||
+        j.task_oracle_hash !== byTask.get(e.task_id)!.oracle;
     });
     const used = [...new Set(due.map((e) => e.task_id))].map((id) =>
       tasks.get(id)!
     );
-    const ids = await taskSetIdentity(o.root, used, env.symbols);
-    const byTask = new Map(ids.tasks.map((t) => [t.id, t]));
     const changed = due.filter((e) =>
       byTask.get(e.task_id)!.visible !== e.task_visible_hash
     );
