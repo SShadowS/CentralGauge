@@ -137,9 +137,11 @@ export interface HarnessEnv {
   recordOAuthHosts?: boolean;
   /**
    * Set when the verified marker is qualified or authorized (M1-33): every
-   * sandbox goes on the internal network behind the execution's proxy, and
-   * secrets and ready are written only after the in-sandbox preflight.
-   * Required when egressEnforced.
+   * sandbox goes on the internal network. A normal cell also runs behind the
+   * execution's proxy, and its secrets and ready are written only after the
+   * in-sandbox preflight. A stub cell gets no proxy, preflight or egress
+   * record (it joins only to reach the gateway-bound backend). Unset: the
+   * default network. Required when egressEnforced.
    */
   egress?: EgressRuntime;
   /** Shared cross-lane reservation ledger for supervised credential-bearing runs. */
