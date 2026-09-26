@@ -595,6 +595,11 @@ export const PI_SETTINGS = {
     provider: { maxRetries: 0 },
   },
 } as const;
+/** Native settings this adapter derives from its harness alone (M5-01a). */
+export const piHarnessNative = () => ({
+  provider: PI_PROVIDER,
+  pi_settings: PI_SETTINGS,
+});
 const THINKING = new Set([
   "off",
   "minimal",
@@ -662,9 +667,8 @@ export const piAdapter: HarnessAdapter = {
     }
     return {
       ...config.settings,
-      provider: PI_PROVIDER,
+      ...piHarnessNative(),
       api_models: { main: m.api_model_id },
-      pi_settings: PI_SETTINGS,
     };
   },
   providerRoutes(config) {

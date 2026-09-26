@@ -10,6 +10,7 @@
  * the next run recovers it before planning).
  */
 
+import { exists } from "@std/fs";
 import { join, relative } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
 import type { Catalog } from "../ingest/catalog/read.ts";
@@ -23,7 +24,7 @@ import { adapterFor } from "./adapters/mod.ts";
 import { estimateArms, renderEstimate } from "./estimate.ts";
 import { loadExperiment } from "./config.ts";
 import { recoverInterrupted, runCell } from "./execution.ts";
-import { resolveRefapp, taskSetIdentity } from "./identity.ts";
+import { loadSymbolsLock, resolveRefapp, taskSetIdentity } from "./identity.ts";
 import {
   imageFacts,
   imageTag,
@@ -62,6 +63,12 @@ export interface RunOptions {
   seed?: number;
   /** Longest usage-limit pause to wait out; 0 stops with a resume line. */
   maxPauseMs: number;
+  /** Any of these present stops the campaign before its next cell. */
+  stopFiles?: string[];
+  /** Resume exactly this campaign; refused when it no longer matches, never created. */
+  campaign?: string;
+  /** Run exactly this unscored cell again as a manual_rerun; nothing else runs. */
+  rerun?: { task: string; repeat: number; arm: string };
 }
 
 export interface CampaignSummary {
@@ -78,6 +85,8 @@ export interface CampaignSummary {
   unscored: number;
   /** Usage-limit reset (or "unknown") when the campaign stopped paused. */
   paused: string | null;
+  /** A stop file stopped the campaign before its next cell. */
+  stopped: boolean;
 }
 
 export interface RunIO {
@@ -229,6 +238,59 @@ export function planCampaign(
 export const PLACED_CONCURRENCY_REFUSAL =
   "--concurrency > 1 is refused while the egress marker places sandboxes: every placed cell uses the one egress proxy on the sandbox gateway, which has no per-execution isolation yet (M1-33c); run with --concurrency 1";
 
+function judgmentsByExecution(
+  data: CampaignRecords,
+): Map<string, JudgmentRecord[]> {
+  const byExecution = new Map<string, JudgmentRecord[]>();
+  for (const j of data.judgments) {
+    byExecution.set(j.execution_id, [
+      ...(byExecution.get(j.execution_id) ?? []),
+      j,
+    ]);
+  }
+  return byExecution;
+}
+
+/**
+ * A manual rerun's cell and attempt: only an unscored cell is rerun (a
+ * manual rerun never replaces a scored result, and a pending or unrun cell
+ * is owed its planned or automatic attempt, not a manual one).
+ */
+function rerunTarget(
+  c: CampaignRecord,
+  data: CampaignRecords,
+  r: NonNullable<RunOptions["rerun"]>,
+): { block: Block; at: AttemptRef; prior: ExecutionRecord[] } {
+  const label = `${r.task}:${r.repeat}:${r.arm}`;
+  const block = c.blocks.find((b) =>
+    b.task_id === r.task && b.repeat === r.repeat && b.order.includes(r.arm)
+  );
+  if (!block) {
+    throw new ConfigurationError(`no such cell ${label} in campaign ${c.id}`);
+  }
+  const cell = cellsFromRecords(c, data.executions, judgmentsByExecution(data))
+    .find((x) =>
+      x.task === r.task && x.repeat === r.repeat && x.arm === r.arm
+    )!;
+  if (cell.status !== "unscored") {
+    throw new ConfigurationError(
+      `cell ${label} is ${cell.status}: only an unscored cell is rerun (a manual rerun never replaces a scored result)`,
+    );
+  }
+  const prior = data.executions.filter((e) =>
+    e.block === block.index && e.arm === r.arm
+  );
+  return {
+    block,
+    at: {
+      attempt: Math.max(...prior.map((e) => e.attempt)) + 1,
+      runKind: "manual_rerun",
+      retryOf: null,
+    },
+    prior,
+  };
+}
+
 /**
  * Estimate lines for a dry run: outstanding cells (unrun or pending) of the
  * selected blocks per arm, priced from every stored execution of the same
@@ -243,13 +305,7 @@ async function dryRunEstimate(
   const selected = new Set(blocks.map((b) => `${b.task_id}#${b.repeat}`));
   const outstanding = new Map<string, number>();
   if (data) {
-    const byExecution = new Map<string, JudgmentRecord[]>();
-    for (const j of data.judgments) {
-      byExecution.set(j.execution_id, [
-        ...(byExecution.get(j.execution_id) ?? []),
-        j,
-      ]);
-    }
+    const byExecution = judgmentsByExecution(data);
     for (const cell of cellsFromRecords(c, data.executions, byExecution)) {
       if (
         selected.has(`${cell.task}#${cell.repeat}`) &&
@@ -290,6 +346,109 @@ async function dryRunEstimate(
   ));
 }
 
+/** The tasks an experiment's pattern selects; none is refused. */
+async function experimentTasks(
+  repoRoot: string,
+  experimentId: string,
+  experiment: CampaignRecord["experiment"],
+): Promise<LoadedTask[]> {
+  const pattern = globToRegExp(experiment.tasks, { globstar: true });
+  const tasks = (await loadTaskSet(join(repoRoot, "harness-tasks", "tasks")))
+    .filter((t) =>
+      pattern.test(relative(repoRoot, t.dir).replaceAll("\\", "/"))
+    );
+  if (tasks.length === 0) {
+    throw new ConfigurationError(
+      `experiment ${experimentId}: tasks pattern ${experiment.tasks} matches no task`,
+    );
+  }
+  return tasks;
+}
+
+/** The fields of a stored campaign that differ from the current ones; arms omitted are not compared. */
+function campaignDrift(
+  x: CampaignRecord,
+  cur: {
+    expHash: string;
+    identity: string;
+    arms?: { config_id: string; manifest_hash: string }[];
+  },
+): string[] {
+  return [
+    ...(x.experiment_hash === cur.expHash ? [] : ["experiment_hash"]),
+    ...(x.task_set.identity === cur.identity ? [] : ["task_set.identity"]),
+    ...(!cur.arms ||
+        cur.arms.every((a) =>
+          x.arms.find((y) => y.config_id === a.config_id)?.manifest_hash ===
+            a.manifest_hash
+        )
+      ? []
+      : ["arms[].manifest_hash"]),
+  ];
+}
+
+function pinned(
+  campaigns: CampaignRecord[],
+  experimentId: string,
+  id: string,
+): CampaignRecord {
+  const named = campaigns.find((x) => x.id === id);
+  if (!named) {
+    throw new ConfigurationError(
+      `no campaign ${id} for experiment ${experimentId}`,
+    );
+  }
+  return named;
+}
+
+function refuseDrift(c: CampaignRecord, differs: string[]): void {
+  if (differs.length > 0) {
+    throw new ConfigurationError(
+      `campaign ${c.id} does not match the current experiment: ${
+        differs.join(", ")
+      } differ`,
+    );
+  }
+}
+
+/**
+ * The `--campaign` pin checked read-only, before any lock, sweep, recovery
+ * or docker call: the campaign exists, and its experiment_hash and
+ * task_set.identity match the repo's (with the symbols lock; without one the
+ * open refuses anyway). arms[].manifest_hash needs image facts (docker), so
+ * only runCampaign checks it, together with all of this again, under the env.
+ */
+export async function precheckCampaignPin(
+  repoRoot: string,
+  store: RecordStore,
+  experimentId: string,
+  campaignId: string,
+): Promise<void> {
+  const named = pinned(
+    await store.campaigns(experimentId),
+    experimentId,
+    campaignId,
+  );
+  const symbols = await loadSymbolsLock(repoRoot);
+  if (!symbols) return;
+  const { experiment } = await loadExperiment(
+    join(repoRoot, "harness"),
+    experimentId,
+  );
+  const ids = await taskSetIdentity(
+    repoRoot,
+    await experimentTasks(repoRoot, experimentId, experiment),
+    symbols,
+  );
+  refuseDrift(
+    named,
+    campaignDrift(named, {
+      expHash: await experimentHash(experiment),
+      identity: ids.identity,
+    }),
+  );
+}
+
 export async function runCampaign(
   env: HarnessEnv,
   experimentId: string,
@@ -303,6 +462,11 @@ export async function runCampaign(
   }
   if (o.concurrency > 1 && (env.egress !== undefined || env.egressEnforced)) {
     throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+  }
+  if (o.rerun && (o.sample !== undefined || o.repeats !== undefined)) {
+    throw new ConfigurationError(
+      "--rerun runs one cell: --sample and --repeats do not apply",
+    );
   }
   const { experiment, configs } = await loadExperiment(
     env.harnessRoot,
@@ -329,17 +493,7 @@ export async function runCampaign(
     }
   }
 
-  const pattern = globToRegExp(experiment.tasks, { globstar: true });
-  const tasks = (await loadTaskSet(
-    join(env.repoRoot, "harness-tasks", "tasks"),
-  )).filter((t) =>
-    pattern.test(relative(env.repoRoot, t.dir).replaceAll("\\", "/"))
-  );
-  if (tasks.length === 0) {
-    throw new ConfigurationError(
-      `experiment ${experimentId}: tasks pattern ${experiment.tasks} matches no task`,
-    );
-  }
+  const tasks = await experimentTasks(env.repoRoot, experimentId, experiment);
   const ids = await taskSetIdentity(env.repoRoot, tasks, env.symbols);
   const arms: CampaignRecord["arms"] = [];
   for (const config of configs) {
@@ -374,15 +528,22 @@ export async function runCampaign(
   }
   const expHash = await experimentHash(experiment);
   const campaigns = await env.store.campaigns(experimentId);
-  let c = campaigns.find((x) =>
-    x.experiment_hash === expHash && x.task_set.identity === ids.identity &&
-    arms.every((a) =>
-      x.arms.find((y) => y.config_id === a.config_id)?.manifest_hash ===
-        a.manifest_hash
-    )
-  );
+  const drift = (x: CampaignRecord) =>
+    campaignDrift(x, { expHash, identity: ids.identity, arms });
+  let c = campaigns.find((x) => drift(x).length === 0);
+  if (o.campaign !== undefined) {
+    // The pin: exactly the named campaign, unchanged; never a new one.
+    const named = pinned(campaigns, experimentId, o.campaign);
+    refuseDrift(named, drift(named));
+    c = named;
+  }
   let created = false;
   let data: CampaignRecords | null = null;
+  if (!c && o.rerun) {
+    throw new ConfigurationError(
+      `no campaign of experiment ${experimentId} matches the current experiment, task set and arm manifests: --rerun targets an existing campaign`,
+    );
+  }
   if (!c) {
     if (campaigns.length > 0) {
       io.log(
@@ -432,6 +593,8 @@ export async function runCampaign(
     data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data);
   }
+  // Refused before any container run (and in a dry run).
+  const rerun = o.rerun && data ? rerunTarget(c, data, o.rerun) : null;
   const maxRepeat = o.repeats ?? experiment.repeats;
   const blocks = c.blocks.filter((b) => b.repeat <= maxRepeat)
     .slice(0, o.sample ?? Infinity);
@@ -439,12 +602,21 @@ export async function runCampaign(
     // A dry run of a campaign that does not exist yet has no id.
     campaignId: created || campaigns.includes(c) ? c.id : null,
     created,
-    planned: blocks.reduce((n, b) => n + b.order.length, 0),
+    planned: rerun ? 1 : blocks.reduce((n, b) => n + b.order.length, 0),
     ran: 0,
     judged: 0,
     unscored: 0,
     paused: null,
+    stopped: false,
   };
+  if (o.dryRun && rerun) {
+    io.log(
+      `[DRY] rerun ${rerun.block.task_id}#${rerun.block.repeat} ${
+        o.rerun!.arm
+      } as attempt ${rerun.at.attempt} (manual_rerun)`,
+    );
+    return summary;
+  }
   if (o.dryRun) {
     for (const b of blocks) {
       io.log(`${b.task_id}#${b.repeat}: ${b.order.join(" -> ")}`);
@@ -467,16 +639,60 @@ export async function runCampaign(
   }
   const campaign = c;
   const now = () => (env.now ?? (() => new Date()))().getTime();
+  // A stop file is checked before the first block and before each cell.
+  const stopRequested = async () => {
+    for (const path of o.stopFiles ?? []) {
+      if (!await exists(path)) continue;
+      if (!summary.stopped) {
+        summary.stopped = true;
+        io.log(
+          `[PAUSE] stop file ${path} present; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+        );
+      }
+      return true;
+    }
+    return false;
+  };
+  if (await stopRequested()) return summary;
+  if (rerun) {
+    const arm = o.rerun!.arm;
+    const r = await runCell(
+      runEnv,
+      cellRefFor(
+        campaign,
+        opened,
+        rerun.block,
+        arm,
+        rerun.block.order.indexOf(arm),
+      ),
+      rerun.at,
+      rerun.prior,
+    );
+    for (const e of r.executions) {
+      summary.ran++;
+      const j = (await env.store.judgments(e.id))[0];
+      if (j && j.verdict !== "unscored") summary.judged++;
+      else summary.unscored++;
+    }
+    if (r.pause) {
+      // Its owed retry waits for the reset; a plain resume runs it.
+      summary.paused = r.pause;
+      io.log(
+        `[PAUSE] usage limit until ${r.pause}; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+      );
+    }
+    return summary;
+  }
   for (;;) {
     let paused: string | null = null;
     let next = 0;
     // Workers take whole blocks: the arms of one block run one after another
     // in its recorded order (the matched pair), blocks run in parallel.
     const worker = async () => {
-      while (paused === null && next < blocks.length) {
+      while (paused === null && !summary.stopped && next < blocks.length) {
         const block = blocks[next++]!;
         for (const [i, arm] of block.order.entries()) {
-          if (paused !== null) break;
+          if (paused !== null || summary.stopped) break;
           const prior = (await env.store.executions(campaign.id)).filter((
             e,
           ) => e.block === block.index && e.arm === arm);
@@ -490,6 +706,7 @@ export async function runCampaign(
             paused = laterReset(paused, waitFor);
             break;
           }
+          if (await stopRequested()) break;
           const r = await runCell(
             runEnv,
             cellRefFor(campaign, opened, block, arm, i),
@@ -509,7 +726,7 @@ export async function runCampaign(
     await Promise.all(
       Array.from({ length: Math.min(o.concurrency, blocks.length) }, worker),
     );
-    if (paused === null) return summary;
+    if (paused === null || summary.stopped) return summary;
     const wait = paused === "unknown" ? Infinity : Date.parse(paused) - now();
     if (wait > o.maxPauseMs) {
       summary.paused = paused;

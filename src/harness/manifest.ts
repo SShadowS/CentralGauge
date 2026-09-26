@@ -297,6 +297,19 @@ const toolsOf = (m: ResolvedManifest, server: string): string => {
 };
 
 /**
+ * A server identical on both sides (name, version, schema hash) explains no
+ * difference in its tool list: such a difference is not MCP-derived.
+ */
+function sharedServerToolsDiffer(a: ResolvedManifest, b: ResolvedManifest) {
+  return a.mcp.some((s) =>
+    b.mcp.some((x) =>
+      x.name === s.name && x.version === s.version &&
+      x.tool_schema_hash === s.tool_schema_hash
+    ) && toolsOf(a, s.name) !== toolsOf(b, s.name)
+  );
+}
+
+/**
  * True when two manifests' settings differ only by MCP-derived native keys
  * (M2-14): removing exactly native.mcp and native.mcp_tools makes the settings
  * hash-equal, and on each side those keys follow its own mcp component.
@@ -307,15 +320,7 @@ export async function mcpDerivedSettingsOnly(
   b: ResolvedManifest,
 ): Promise<boolean> {
   if (!mcpKeysDerived(a) || !mcpKeysDerived(b)) return false;
-  // A server identical on both sides (name, version, schema hash) explains no
-  // difference in its tool list: that difference is not MCP-derived.
-  for (const s of a.mcp) {
-    const t = b.mcp.find((x) =>
-      x.name === s.name && x.version === s.version &&
-      x.tool_schema_hash === s.tool_schema_hash
-    );
-    if (t && toolsOf(a, s.name) !== toolsOf(b, s.name)) return false;
-  }
+  if (sharedServerToolsDiffer(a, b)) return false;
   const strip = (m: ResolvedManifest) => ({
     requested: m.settings.requested,
     native: Object.fromEntries(
@@ -328,11 +333,79 @@ export async function mcpDerivedSettingsOnly(
     await hashJson({ settings: strip(b) });
 }
 
+/**
+ * Per harness, the native settings its adapter derives from the harness alone
+ * (M5-01a). The caller passes the adapters' own derivations: this module is
+ * below the adapters in the import graph.
+ */
+export type HarnessNative = Readonly<
+  Record<string, () => Record<string, unknown>>
+>;
+
+/**
+ * True when two manifests' settings differ only by what each side's adapter
+ * derives (M5-01a): its harness keys, with exactly the derived values, and
+ * under vary [models] native.api_models (one model id per slot). Removing
+ * those makes the settings hash-equal.
+ */
+async function harnessDerivedSettingsOnly(
+  a: ResolvedManifest,
+  b: ResolvedManifest,
+  vary: readonly VaryKey[],
+  harnessNative: HarnessNative,
+): Promise<boolean> {
+  const rest = async (m: ResolvedManifest): Promise<string | null> => {
+    const native = { ...m.settings.native };
+    const own = Object.hasOwn(harnessNative, m.harness)
+      ? harnessNative[m.harness]!()
+      : {};
+    // ponytail: checked against today's derivation, so changing DISALLOWED_TOOLS
+    // or PI_SETTINGS invalidates older campaigns' reports; upgrade: key the
+    // derivation by harness_version or record it in the manifest.
+    for (const [k, v] of Object.entries(own)) {
+      if (
+        !Object.hasOwn(native, k) ||
+        await hashJson({ v: native[k] }) !== await hashJson({ v })
+      ) return null;
+      delete native[k];
+    }
+    if (vary.includes("models")) {
+      // Each slot's id is its slug minus the first segment: the catalog
+      // convention (src/catalog/seed/inference.ts apiModelId), so no catalog
+      // lookup. ponytail: a catalog row breaking that convention is refused.
+      const ids = native["api_models"];
+      if (
+        ids === null || typeof ids !== "object" || Array.isArray(ids) ||
+        JSON.stringify(Object.keys(ids).sort()) !==
+          JSON.stringify(Object.keys(m.models).sort()) ||
+        !Object.entries(m.models).every(([slot, slug]) => {
+          const i = slug.indexOf("/");
+          return i > 0 &&
+            (ids as Record<string, unknown>)[slot] === slug.slice(i + 1);
+        })
+      ) return null;
+      delete native["api_models"];
+    }
+    if (vary.includes("mcp")) {
+      // The M2-14 rule applies here too: MCP keys follow the mcp component.
+      if (!mcpKeysDerived(m)) return null;
+      for (const k of MCP_NATIVE_KEYS) delete native[k];
+    }
+    return await hashJson({
+      settings: { requested: m.settings.requested, native },
+    });
+  };
+  if (vary.includes("mcp") && sharedServerToolsDiffer(a, b)) return false;
+  const ra = await rest(a);
+  return ra !== null && ra === await rest(b);
+}
+
 /** Refuse a variant whose template differs from the baseline outside `vary`. */
 export async function assertVaryHolds(
   baseline: ResolvedManifest,
   variant: ResolvedManifest,
   vary: readonly VaryKey[],
+  harnessNative?: HarnessNative,
 ): Promise<void> {
   const allowed = allowedDiffs(vary);
   let bad = (await diffManifests(baseline, variant)).filter((k) =>
@@ -347,6 +420,22 @@ export async function assertVaryHolds(
     } else if (!mcpKeysDerived(baseline) || !mcpKeysDerived(variant)) {
       // Equal settings still must have the MCP key shape on each side
       // (a variant with servers and neither key equals a no-server baseline).
+      bad = [...bad, "settings"];
+    }
+  }
+  // Under vary [harness], native settings follow each side's adapter; with no
+  // derivations given, a settings difference stays refused.
+  if (vary.includes("harness") && !vary.includes("settings") && harnessNative) {
+    const ok = await harnessDerivedSettingsOnly(
+      baseline,
+      variant,
+      vary,
+      harnessNative,
+    );
+    if (bad.includes("settings")) {
+      if (ok) bad = bad.filter((k) => k !== "settings");
+    } else if (!ok) {
+      // Equal settings still must carry each side's derived values.
       bad = [...bad, "settings"];
     }
   }

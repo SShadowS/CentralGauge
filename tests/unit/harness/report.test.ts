@@ -727,3 +727,106 @@ Deno.test("report: per_model in incomplete_telemetry never invalidates the prima
     2,
   ]);
 });
+
+/**
+ * M5-05: six tasks, three planned repeats. plain has repeats 1 to 3 scored
+ * (its repeat-3 attempts cost $2 in all) and fails HX-002 in repeat 3;
+ * skills has repeats 1 and 2 scored, repeat 3 unrun.
+ */
+async function cutRecords(): Promise<CampaignRecords> {
+  const c = await campaign({ repeats: 3, tasks: 6 });
+  const executions = [];
+  const judgments = [];
+  const plan = [["plain", [1, 2, 3]], ["skills", [1, 2]]] as const;
+  for (const t of c.task_set.tasks) {
+    for (const [arm, repeats] of plan) {
+      for (const repeat of repeats) {
+        const cost = repeat < 3 ? 1 : t.id === "HX-001" ? 2 : 0;
+        const e = execution(c, { arm, task: t.id, repeat }, {
+          telemetry: telemetry(cost),
+        });
+        executions.push(e);
+        judgments.push(
+          judgment(c, e, !(repeat === 3 && t.id === "HX-002")),
+        );
+      }
+    }
+  }
+  return { campaign: c, executions, artifacts: [], judgments };
+}
+
+Deno.test("buildReport --repeats: metrics over repeats 1..N, excluded work disclosed per arm", async () => {
+  const r = await buildReport(await cutRecords(), {
+    resamples: 50,
+    repeats: 2,
+  });
+  assertEquals(r.provisional, false);
+  assertEquals(r.repeats, { planned: 3, reported: 2 });
+  assertEquals(
+    r.coverage.map((c) => [
+      c.arm,
+      c.executions,
+      c.excluded_cells,
+      c.excluded_known_spend_usd,
+      c.campaign_raw_spend_usd,
+    ]),
+    [["plain", 12, 6, 2, 14], ["skills", 12, 6, 0, 12]],
+  );
+  for (const a of r.arms) {
+    const c = r.coverage.find((x) => x.arm === a.arm)!;
+    assertEquals(
+      c.campaign_raw_spend_usd,
+      a.total_spend_usd + c.excluded_known_spend_usd,
+    );
+  }
+  assertEquals(r.arms.map((a) => [a.planned_cells, a.unrun_cells]), [
+    [12, 0],
+    [12, 0],
+  ]);
+  // pass^k over k = 2: plain's repeat-3 failure does not count.
+  assertEquals(r.arms.map((a) => [a.pass_k, a.pass_k_tasks]), [[1, 6], [
+    1,
+    6,
+  ]]);
+  assert(r.cells.every((c) => c.repeat <= 2));
+  assertEquals(r.cells.length, 24);
+  assertEquals(r.comparisons[0]!.pairs, 12);
+  assertEquals(r.both_pass[0]!.pairs, 12);
+  assertEquals(r.flips, []);
+  assertEquals(r.efficiency.map((e) => e.arm), ["plain", "skills"]);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text,
+    "Repeats reported: 2 of 3; excluded 12 cells, $2.000 spend",
+  );
+  assert(!text.includes("PROVISIONAL"));
+});
+
+Deno.test("buildReport without --repeats: every planned repeat, provisional while one is unrun", async () => {
+  const r = await buildReport(await cutRecords(), { resamples: 50 });
+  assertEquals(r.provisional, true);
+  assertEquals(r.repeats, { planned: 3, reported: 3 });
+  assertEquals(
+    r.coverage.map((c) => [
+      c.executions,
+      c.excluded_cells,
+      c.excluded_known_spend_usd,
+      c.campaign_raw_spend_usd,
+    ]),
+    [[18, 0, 0, 14], [12, 0, 0, 12]],
+  );
+  // plain fails HX-002 in repeat 3: 5 of 6 tasks pass all three.
+  assertEquals(r.arms[0]!.pass_k, 5 / 6);
+  assert(!stripAnsiCode(renderReport(r)).includes("Repeats reported"));
+});
+
+Deno.test("buildReport --repeats: 0, above the plan or fractional is refused", async () => {
+  const base = await cutRecords();
+  for (const repeats of [0, 4, 1.5]) {
+    await assertRejects(
+      () => buildReport(base, { resamples: 50, repeats }),
+      ValidationError,
+      "repeats",
+    );
+  }
+});

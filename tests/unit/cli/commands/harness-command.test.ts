@@ -286,6 +286,49 @@ Deno.test("CLI: `harness report --json` parses through cliffy and prints the JSO
   assertEquals(report.comparisons[0].resamples, 25);
   assertEquals(report.comparisons[0].seed, 4);
   assertEquals(report.judging.source, "campaign");
+  assertEquals(report.repeats, { planned: 1, reported: 1 });
+});
+
+Deno.test("CLI: `harness report --repeats` reaches buildReport; above the plan is refused", async () => {
+  const dir = await storeWithOneCell();
+  await assertRejects(
+    () =>
+      harnessReport("skills-vs-plain", {
+        resultsDir: dir,
+        ...OPTS,
+        repeats: 2,
+      }),
+    ValidationError,
+    "repeats",
+  );
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const printed: string[] = [];
+  const log = stub(console, "log", (...args: unknown[]) => {
+    printed.push(args.join(" "));
+  });
+  try {
+    await cli.parse([
+      "harness",
+      "report",
+      "skills-vs-plain",
+      "--results-dir",
+      dir,
+      "--json",
+      "--resamples",
+      "25",
+      "--repeats",
+      "1",
+      "--judging",
+      "campaign",
+    ]);
+  } finally {
+    log.restore();
+  }
+  assertEquals(JSON.parse(printed.join("\n")).repeats, {
+    planned: 1,
+    reported: 1,
+  });
 });
 
 Deno.test("CLI: `harness --help` lists validate and report", async () => {
@@ -2372,4 +2415,320 @@ Deno.test("openHarnessEnv: the effective egress mode is computed under the lock,
     "verification failed",
   );
   assertEquals(order, ["lock", "verify", "release"]);
+});
+
+// ---- M5-03: --stop-file and --campaign on run and rejudge ----
+
+const UNKNOWN_CAMPAIGN = "00000000-0000-0000-0000-000000000000";
+
+Deno.test("harnessRun forwards two --stop-file values and --campaign into runCampaign", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  const absent = join(t.repo.root, "pause.json");
+  const stop = join(t.repo.root, "stop-contract.json");
+  await Deno.writeTextFile(stop, "{}");
+  const c = capture();
+  try {
+    const s = await harnessRun(
+      "contract",
+      runOpts(t, { stopFiles: [absent, stop] }),
+      opener(t),
+    );
+    assertEquals([s.ran, s.stopped, t.docker.runs.length], [0, true, 0]);
+    assertStringIncludes(
+      stripAnsiCode(c.out.join("\n")),
+      `[PAUSE] stop file ${stop} present; resume with: centralgauge harness run contract --campaign ${s.campaignId}`,
+    );
+    await assertRejects(
+      () =>
+        harnessRun(
+          "contract",
+          runOpts(t, { campaign: UNKNOWN_CAMPAIGN }),
+          opener(t),
+        ),
+      ConfigurationError,
+      `no campaign ${UNKNOWN_CAMPAIGN}`,
+    );
+    await Deno.remove(stop);
+    const r = await harnessRun(
+      "contract",
+      runOpts(t, { stopFiles: [absent, stop], campaign: s.campaignId }),
+      opener(t),
+    );
+    assertEquals([r.campaignId, r.stopped, r.ran], [s.campaignId, false, 2]);
+  } finally {
+    c.restore();
+  }
+});
+
+/** Two campaigns of one experiment: the older one holds a stale judgment. */
+async function twoCampaigns(t: TestEnv) {
+  const { c: older, es } = await campaignWithStaleJudgment(t);
+  const file = join(t.harnessRoot, "experiments", "contract.yml");
+  await Deno.writeTextFile(
+    file,
+    (await Deno.readTextFile(file)).replace(
+      "Mock contract.",
+      "Mock contract, second campaign.",
+    ),
+  );
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const newer = (await t.env.store.campaigns("contract"))[0]!;
+  assert(newer.id !== older.id, "a second campaign is the newest");
+  const newerExec = (await t.env.store.executions(newer.id))[0]!.id;
+  return { older, olderExec: es[0]!.id, newer, newerExec };
+}
+
+Deno.test("rejudge --campaign: the named campaign although a newer one exists; an execution outside it or an unknown id is refused", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { older, olderExec, newerExec } = await twoCampaigns(t);
+  // Without --campaign the newest campaign is used.
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { execution: olderExec }),
+        opener(t),
+      ),
+    ConfigurationError,
+    "is not in campaign",
+  );
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t, { campaign: older.id, execution: olderExec }),
+    opener(t),
+  );
+  assertEquals([r.campaignId, r.rejudged], [older.id, 1]);
+  const judgments = (await t.env.store.judgments(olderExec)).length;
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { campaign: older.id, execution: newerExec }),
+        opener(t),
+      ),
+    ConfigurationError,
+    `execution ${newerExec} is not in campaign ${older.id}`,
+  );
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { campaign: UNKNOWN_CAMPAIGN }),
+        opener(t),
+      ),
+    ConfigurationError,
+    `no campaign ${UNKNOWN_CAMPAIGN}`,
+  );
+  assertEquals((await t.env.store.judgments(olderExec)).length, judgments);
+  assertEquals((await t.env.store.judgments(newerExec)).length, 1);
+});
+
+Deno.test("CLI: `harness run` collects repeated --stop-file and --campaign; `harness rejudge` parses and forwards --campaign", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { older, olderExec, newer } = await twoCampaigns(t);
+  const absent = join(t.repo.root, "pause.json");
+  const stop = join(t.repo.root, "stop-contract.json");
+  await Deno.writeTextFile(stop, "{}");
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, opener(t));
+  const flags = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+  ];
+  const codes: (number | undefined)[] = [];
+  const parse = async (args: string[]) => {
+    await cli.parse(["harness", ...args, ...flags]);
+    codes.push(Deno.exitCode);
+    Deno.exitCode = 0;
+  };
+  const runs = t.docker.runs.length;
+  const cwd = Deno.cwd();
+  const c = capture();
+  try {
+    Deno.chdir(t.repo.root);
+    const run = ["run", "contract", "--stop-file", absent, "--stop-file", stop];
+    await parse([...run, "--campaign", newer.id]);
+    // The older campaign no longer matches the experiment: the pin refuses it.
+    await parse([...run, "--campaign", older.id]);
+    await parse([
+      "rejudge",
+      "contract",
+      "--campaign",
+      older.id,
+      "--execution",
+      olderExec,
+      "--yes",
+    ]);
+    await parse([
+      "rejudge",
+      "contract",
+      "--campaign",
+      UNKNOWN_CAMPAIGN,
+      "--yes",
+    ]);
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  const out = stripAnsiCode(c.out.join("\n"));
+  const err = stripAnsiCode(c.err.join("\n"));
+  assertEquals(codes, [0, 1, 0, 1]);
+  assertEquals(t.docker.runs.length, runs, "the stop file ran no cell");
+  assertStringIncludes(
+    out,
+    `[PAUSE] stop file ${stop} present; resume with: centralgauge harness run contract --campaign ${newer.id}`,
+  );
+  assertStringIncludes(err, "experiment_hash");
+  assertStringIncludes(out, `[OK] ${olderExec}:`);
+  assertStringIncludes(err, `no campaign ${UNKNOWN_CAMPAIGN}`);
+});
+
+Deno.test("--campaign refusals come before the environment opens: no lock, sweep, recovery or docker call (M5-03 review)", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { older, olderExec, newerExec } = await twoCampaigns(t);
+  const order: string[] = [];
+  const recording = (eo: Parameters<typeof openHarnessEnv>[0]) => {
+    order.push("open");
+    return openHarnessEnv(eo, deps(order));
+  };
+  const runs = t.docker.runs.length;
+  const executions = (await t.env.store.executions(older.id)).length;
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { campaign: UNKNOWN_CAMPAIGN }),
+        recording,
+      ),
+    ConfigurationError,
+    `no campaign ${UNKNOWN_CAMPAIGN} for experiment contract`,
+  );
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { campaign: older.id, execution: newerExec }),
+        recording,
+      ),
+    ConfigurationError,
+    `execution ${newerExec} is not in campaign ${older.id}`,
+  );
+  // Without --campaign, --execution is checked against the newest campaign.
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, { execution: olderExec }),
+        recording,
+      ),
+    ConfigurationError,
+    "is not in campaign",
+  );
+  await assertRejects(
+    () =>
+      harnessRun(
+        "contract",
+        runOpts(t, { campaign: UNKNOWN_CAMPAIGN }),
+        recording,
+      ),
+    ConfigurationError,
+    `no campaign ${UNKNOWN_CAMPAIGN} for experiment contract`,
+  );
+  // The older campaign's experiment_hash differs from the current experiment.
+  await assertRejects(
+    () =>
+      harnessRun(
+        "contract",
+        runOpts(t, { campaign: older.id }),
+        recording,
+      ),
+    ConfigurationError,
+    `campaign ${older.id} does not match the current experiment: experiment_hash differ`,
+  );
+  assertEquals(order, []);
+  assertEquals(t.docker.runs.length, runs);
+  assertEquals((await t.env.store.executions(older.id)).length, executions);
+});
+
+// ---- M5-04: --rerun on run ----
+
+Deno.test("CLI: `harness run --rerun HX-001:1:mock-crash` reruns that cell; HX-001:x:arm and HX-001:1 are refused by the parser", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await write(
+    t.harnessRoot,
+    "experiments/crashy.yml",
+    `id: crashy
+hypothesis: Mock contract.
+primary_metric: pass_rate
+baseline: mock-positive
+variants: [mock-crash]
+vary: [settings]
+tasks: "harness-tasks/tasks/*"
+repeats: 1
+`,
+  );
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, opener(t));
+  const flags = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+  ];
+  const cwd = Deno.cwd();
+  const c = capture();
+  const codes: (number | undefined)[] = [];
+  try {
+    Deno.chdir(t.repo.root);
+    for (const args of [[], ["--rerun", "HX-001:1:mock-crash"]]) {
+      await cli.parse(["harness", "run", "crashy", ...args, ...flags]);
+      codes.push(Deno.exitCode);
+      Deno.exitCode = 0;
+    }
+    const runs = t.docker.runs.length;
+    for (const bad of ["HX-001:x:arm", "HX-001:1"]) {
+      await assertRejects(
+        () => cli.parse(["harness", "run", "crashy", "--rerun", bad, ...flags]),
+        Error,
+        "<task:repeat:arm>",
+      );
+    }
+    assertEquals(
+      t.docker.runs.length,
+      runs,
+      "the parser refused before any run",
+    );
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  assertEquals(codes, [0, 0]);
+  const camp = (await t.env.store.campaigns("crashy"))[0]!;
+  const crash = (await t.env.store.executions(camp.id))
+    .filter((e) => e.arm === "mock-crash")
+    .sort((a, b) => a.attempt - b.attempt);
+  assertEquals(crash.map((e) => [e.attempt, e.run_kind]), [
+    [1, "planned"],
+    [2, "auto_retry"],
+    [3, "manual_rerun"],
+    [4, "auto_retry"],
+  ]);
 });

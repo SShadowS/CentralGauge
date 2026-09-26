@@ -1,11 +1,26 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import { fromFileUrl, join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
+import { readCatalog } from "../../../src/ingest/catalog/read.ts";
+import { claudeCodeHarnessNative } from "../../../src/harness/adapters/claude-code.ts";
+import { adapterFor } from "../../../src/harness/adapters/mod.ts";
+import { piHarnessNative } from "../../../src/harness/adapters/pi.ts";
+import { loadExperiment, type VaryKey } from "../../../src/harness/config.ts";
+import { runtimeFacts } from "../../../src/harness/images.ts";
 import {
   type CampaignRecords,
   validateCampaignRecords,
 } from "../../../src/harness/integrity.ts";
-import { manifestHash } from "../../../src/harness/manifest.ts";
-import { planBlocks } from "../../../src/harness/records.ts";
+import {
+  manifestHash,
+  type ResolvedManifest,
+  resolveManifest,
+} from "../../../src/harness/manifest.ts";
+import {
+  type CampaignRecord,
+  experimentHash,
+  planBlocks,
+} from "../../../src/harness/records.ts";
 import { campaign, execution, H, judgment, manifest } from "./fixtures.ts";
 
 async function scenario(): Promise<CampaignRecords> {
@@ -481,4 +496,265 @@ Deno.test("validateCampaignRecords: a campaign mixing execution record versions 
     validity: { incomplete_telemetry: [], infra_exposed: false },
   }));
   assertEquals(await problems({ ...r, executions: v1 }), []);
+});
+
+// M5-01a: under vary [harness], each side's native settings may differ only
+// by the keys its own adapter derives, with exactly the derived values.
+const REPO = fromFileUrl(new URL("../../../", import.meta.url));
+
+/** The real cc-vs-pi arms, resolved the way `harness run` resolves them. */
+async function ccVsPi(
+  edit: (m: ResolvedManifest) => ResolvedManifest = (m) => m,
+  vary?: VaryKey[],
+  /** Edit the baseline arm instead of the variant. */
+  baseline = false,
+): Promise<string[]> {
+  const harnessRoot = join(REPO, "harness");
+  const { experiment: exp, configs } = await loadExperiment(
+    harnessRoot,
+    "cc-vs-pi",
+  );
+  const experiment = vary ? { ...exp, vary } : exp;
+  const catalog = await readCatalog(join(REPO, "site", "catalog"));
+  const arms: CampaignRecord["arms"] = [];
+  for (const config of configs) {
+    const image = {
+      digest: `sha256:${config.harness}`,
+      base_digest: "sha256:base",
+      harness: config.harness,
+      version: config.harness_version,
+    };
+    const facts = runtimeFacts(
+      config,
+      image,
+      adapterFor(config.harness),
+      catalog,
+    );
+    let m = await resolveManifest(harnessRoot, config, facts);
+    if ((config.id === experiment.baseline) === baseline) m = edit(m);
+    arms.push({
+      config_id: config.id,
+      manifest_hash: await manifestHash(m),
+      manifest: m,
+    });
+  }
+  const c = await campaign();
+  return await problems({
+    campaign: {
+      ...c,
+      experiment,
+      experiment_hash: await experimentHash(experiment),
+      arms,
+      blocks: planBlocks(
+        c.task_set.tasks.map((t) => t.id),
+        experiment.repeats,
+        [experiment.baseline, ...experiment.variants],
+        c.seed,
+      ),
+    },
+    executions: [],
+    artifacts: [],
+    judgments: [],
+  });
+}
+
+const native = (
+  m: ResolvedManifest,
+  f: (n: Record<string, unknown>) => Record<string, unknown>,
+): ResolvedManifest => ({
+  ...m,
+  settings: { ...m.settings, native: f({ ...m.settings.native }) },
+});
+
+Deno.test("validateCampaignRecords: cc-vs-pi admits only adapter-derived native keys", async () => {
+  // The real pair passes: disallowed_tools vs provider + pi_settings.
+  assertEquals(await ccVsPi(), []);
+});
+
+Deno.test("validateCampaignRecords: cc-vs-pi refuses an extra native key", async () => {
+  for (
+    const f of [
+      (n: Record<string, unknown>) => ({ ...n, extra: 1 }),
+      // Another adapter's derived key is not this adapter's.
+      (n: Record<string, unknown>) => ({ ...n, disallowed_tools: [] }),
+    ]
+  ) {
+    assertStringIncludes(
+      (await ccVsPi((m) => native(m, f))).join("\n"),
+      "outside vary [harness, harness_version, models]: settings",
+    );
+  }
+});
+
+Deno.test("validateCampaignRecords: cc-vs-pi refuses a changed derived value", async () => {
+  for (
+    const f of [
+      (n: Record<string, unknown>) => ({ ...n, provider: "anthropic" }),
+      (n: Record<string, unknown>) => ({ ...n, pi_settings: {} }),
+      (n: Record<string, unknown>) => {
+        delete n["provider"];
+        return n;
+      },
+      (n: Record<string, unknown>) => ({ ...n, api_models: { main: 1 } }),
+      (n: Record<string, unknown>) => ({ ...n, api_models: {} }),
+    ]
+  ) {
+    assertStringIncludes(
+      (await ccVsPi((m) => native(m, f))).join("\n"),
+      ": settings",
+    );
+  }
+  // The baseline's derived value is checked too, not only the variant's.
+  const text = (await ccVsPi(
+    (m) => native(m, (n) => ({ ...n, disallowed_tools: ["X"] })),
+    undefined,
+    true,
+  )).join(" ");
+  assertStringIncludes(text, ": settings");
+});
+
+Deno.test("validateCampaignRecords: cc-vs-pi refuses a changed shared setting", async () => {
+  const cases: [(m: ResolvedManifest) => ResolvedManifest, string][] = [
+    [(m) => ({ ...m, limits: { ...m.limits, timeout_min: 60 } }), "limits"],
+    [(m) => ({ ...m, instructions: null }), "instructions"],
+    [
+      (m) => ({
+        ...m,
+        settings: {
+          requested: { thinking: "high" },
+          native: m.settings.native,
+        },
+      }),
+      "settings",
+    ],
+    [(m) => native(m, (n) => ({ ...n, thinking: "high" })), "settings"],
+  ];
+  for (const [edit, key] of cases) {
+    assertStringIncludes((await ccVsPi(edit)).join("\n"), `models]: ${key}`);
+  }
+});
+
+Deno.test("validateCampaignRecords: without harness in vary the native differences refuse", async () => {
+  const text = (await ccVsPi(undefined, ["harness_version", "models"])).join(
+    "\n",
+  );
+  assertStringIncludes(text, "outside vary [harness_version, models]");
+  assertStringIncludes(text, "settings");
+  // vary [harness] alone: api_models follows models, so settings still refuse.
+  assertStringIncludes(
+    (await ccVsPi(undefined, ["harness", "harness_version"])).join("\n"),
+    "settings",
+  );
+});
+
+/** A fixture campaign with its arms replaced by baseline `a`, variant `b`. */
+async function pair(
+  vary: VaryKey[],
+  a: ResolvedManifest,
+  b: ResolvedManifest,
+): Promise<string[]> {
+  const c = await campaign();
+  const experiment = {
+    ...c.experiment,
+    baseline: a.config_id,
+    variants: [b.config_id],
+    vary,
+  };
+  return await problems({
+    campaign: {
+      ...c,
+      experiment,
+      experiment_hash: await experimentHash(experiment),
+      arms: await Promise.all([a, b].map(async (m) => ({
+        config_id: m.config_id,
+        manifest_hash: await manifestHash(m),
+        manifest: m,
+      }))),
+      blocks: planBlocks(
+        c.task_set.tasks.map((t) => t.id),
+        experiment.repeats,
+        [a.config_id, b.config_id],
+        c.seed,
+      ),
+    },
+    executions: [],
+    artifacts: [],
+    judgments: [],
+  });
+}
+
+Deno.test("validateCampaignRecords: vary [harness, models] refuses a model id that is not its slug's", async () => {
+  // Same label on both sides; only the api model id behind it differs.
+  const models = { main: "anthropic/model-a" };
+  const cc = manifest("cc", {
+    models,
+    settings: {
+      requested: {},
+      native: { ...claudeCodeHarnessNative(), api_models: { main: "model-a" } },
+    },
+  });
+  const pi = manifest("pi", {
+    harness: "pi",
+    models,
+    settings: {
+      requested: {},
+      native: { ...piHarnessNative(), api_models: { main: "claude-opus-5" } },
+    },
+  });
+  assertStringIncludes(
+    (await pair(["harness", "models"], cc, pi)).join("\n"),
+    "outside vary [harness, models]: settings",
+  );
+  const ok = manifest("pi", {
+    ...pi,
+    settings: {
+      requested: {},
+      native: { ...piHarnessNative(), api_models: { main: "model-a" } },
+    },
+  });
+  assertEquals(await pair(["harness", "models"], cc, ok), []);
+  // The real pair's baseline is checked against its slug the same way.
+  assertStringIncludes(
+    (await ccVsPi(
+      (m) =>
+        native(m, (n) => ({ ...n, api_models: { main: "claude-opus-5" } })),
+      undefined,
+      true,
+    )).join("\n"),
+    ": settings",
+  );
+});
+
+Deno.test("validateCampaignRecords: vary [harness, mcp] keeps the MCP rule", async () => {
+  const server = { name: "al-tools", version: "1", tool_schema_hash: "s" };
+  const cc = (
+    id: string,
+    extra: Record<string, unknown> = {},
+    mcp = [server],
+  ) =>
+    manifest(id, {
+      mcp: extra["mcp"] ? mcp : [],
+      settings: {
+        requested: {},
+        native: { ...claudeCodeHarnessNative(), ...extra },
+      },
+    });
+  const tools = (t: string[]) => ({
+    mcp: ["al-tools"],
+    mcp_tools: { "al-tools": t },
+  });
+  // Same harness, MCP-only difference: passes as under vary [mcp].
+  assertEquals(
+    await pair(["harness", "mcp"], cc("plain"), cc("mcp", tools(["a"]))),
+    [],
+  );
+  // A tool list changed on a server identical on both sides is not MCP-derived.
+  assertStringIncludes(
+    (await pair(
+      ["harness", "mcp"],
+      cc("a", tools(["a"])),
+      cc("b", tools(["a", "b"])),
+    )).join("\n"),
+    "outside vary [harness, mcp]: settings",
+  );
 });

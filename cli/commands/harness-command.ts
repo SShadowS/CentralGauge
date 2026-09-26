@@ -19,6 +19,7 @@ import type {
 import type { JudgingContext } from "../../src/harness/outcome.ts";
 import type {
   ArtifactRecord,
+  CampaignRecord,
   JudgmentRecord,
 } from "../../src/harness/records.ts";
 import type { HarnessReport } from "../../src/harness/report.ts";
@@ -28,6 +29,7 @@ import type {
   CampaignSummary,
   OpenedTasks,
   PlanEnv,
+  RunOptions,
 } from "../../src/harness/campaign.ts";
 import type { CellResult, HarnessEnv } from "../../src/harness/execution.ts";
 import type { QualifyManifest } from "../../src/harness/qualify.ts";
@@ -75,6 +77,7 @@ import {
   loadCampaignData,
   PLACED_CONCURRENCY_REFUSAL,
   planCampaign,
+  precheckCampaignPin,
   runCampaign,
 } from "../../src/harness/campaign.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
@@ -338,6 +341,8 @@ export interface ReportOptions {
   /** "current" judges with the oracles of the working tree under `root`. */
   judging: "campaign" | "current";
   root: string;
+  /** Report repeats 1..N only (M5-05); default all planned. */
+  repeats?: number | undefined;
 }
 
 async function currentJudging(root: string): Promise<JudgingContext> {
@@ -383,6 +388,7 @@ export async function harnessReport(
   return buildReport(records, {
     resamples: opts.resamples,
     seed: opts.seed,
+    ...(opts.repeats !== undefined ? { repeats: opts.repeats } : {}),
     logs: await loadReportLogs(opts.resultsDir, records),
     traces: await loadTraces(opts.resultsDir, executions),
     ...(opts.judging === "current"
@@ -924,6 +930,26 @@ export interface RunCliOptions extends CellCliOptions {
   yes?: boolean;
   /** rejudge: only this execution. */
   execution?: string;
+  /** run: any of these present stops the campaign before its next cell. */
+  stopFiles?: string[];
+  /** run: resume exactly this campaign; rejudge: this campaign, not the newest. */
+  campaign?: string;
+  /** run: rerun only this unscored cell as a manual_rerun. */
+  rerun?: RerunCell;
+}
+
+type RerunCell = NonNullable<RunOptions["rerun"]>;
+
+/** `--rerun <task:repeat:arm>`: a positive integer repeat, non-empty task and arm. */
+export function parseRerunCell(value: string): RerunCell {
+  const m = /^([^:]+):([1-9][0-9]*):([^:]+)$/.exec(value);
+  if (!m) {
+    throw new ValidationError(
+      `--rerun expects <task:repeat:arm>, got ${value}`,
+      [value],
+    );
+  }
+  return { task: m[1]!, repeat: Number(m[2]), arm: m[3]! };
 }
 
 type Planner = (o: EnvOptions) => Promise<PlanEnv>;
@@ -955,6 +981,9 @@ export async function harnessRun(
     ...(o.sample !== undefined ? { sample: o.sample } : {}),
     ...(o.repeats !== undefined ? { repeats: o.repeats } : {}),
     ...(o.seed !== undefined ? { seed: o.seed } : {}),
+    ...(o.stopFiles !== undefined ? { stopFiles: o.stopFiles } : {}),
+    ...(o.campaign !== undefined ? { campaign: o.campaign } : {}),
+    ...(o.rerun !== undefined ? { rerun: o.rerun } : {}),
   };
   const command = `harness run ${experimentId}`;
   // M1-33c: before any lock, sweep or recovery writes (runCampaign rechecks).
@@ -963,6 +992,15 @@ export async function harnessRun(
     await markerPlaces(join(o.root, "results", "harness"))
   ) {
     throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+  }
+  // M5-03 review: the pin, read-only, before any lock, sweep or recovery (runCampaign rechecks, with the arm manifests).
+  if (o.campaign !== undefined) {
+    await precheckCampaignPin(
+      o.root,
+      new RecordStore(o.resultsDir),
+      experimentId,
+      o.campaign,
+    );
   }
   if (o.dryRun) {
     const s = await planCampaign(
@@ -1000,7 +1038,7 @@ export async function harnessRun(
         s.created ? " (new)" : ""
       }: ${s.ran} executions, ${s.judged} judged, ${s.unscored} unscored${
         s.paused ? `, paused until ${s.paused}` : ""
-      }`,
+      }${s.stopped ? ", stopped by a stop file" : ""}`,
     );
     return s;
   } finally {
@@ -1017,6 +1055,34 @@ function latestJudgment(js: JudgmentRecord[]): JudgmentRecord | undefined {
 
 const askUser = (q: string) => confirm(q);
 
+/** The campaign rejudge works on (named, else newest), with --execution in it. */
+async function rejudgeTarget(
+  store: RecordStore,
+  experimentId: string,
+  o: RunCliOptions,
+): Promise<CampaignRecord> {
+  const campaigns = await store.campaigns(experimentId);
+  const c = o.campaign
+    ? campaigns.find((x) => x.id === o.campaign)
+    : campaigns[0];
+  if (!c) {
+    throw new ConfigurationError(
+      `no campaign${
+        o.campaign ? ` ${o.campaign}` : ""
+      } for experiment ${experimentId} in ${o.resultsDir}`,
+    );
+  }
+  if (
+    o.execution &&
+    !(await store.executions(c.id)).some((e) => e.id === o.execution)
+  ) {
+    throw new ConfigurationError(
+      `execution ${o.execution} is not in campaign ${c.id}`,
+    );
+  }
+  return c;
+}
+
 /**
  * `harness rejudge` (answer 15): judge stored executions again with the
  * current scorer suite and the current oracle (recorded as such in the
@@ -1030,17 +1096,14 @@ export async function harnessRejudge(
   open: Opener = openHarnessEnv,
   ask: (question: string) => boolean = askUser,
 ): Promise<{ campaignId: string; rejudged: number }> {
+  // M5-03 review: read-only, before any lock, sweep or recovery; again under the env.
+  await rejudgeTarget(new RecordStore(o.resultsDir), experimentId, o);
   const h = await open(
     envOptions(o, o.resultsDir, `harness rejudge ${experimentId}`),
   );
   try {
     const env = h.env;
-    const c = (await env.store.campaigns(experimentId))[0];
-    if (!c) {
-      throw new ConfigurationError(
-        `no campaign for experiment ${experimentId} in ${o.resultsDir}`,
-      );
-    }
+    const c = await rejudgeTarget(env.store, experimentId, o);
     const data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data);
     const tasks = new Map(
@@ -1054,11 +1117,6 @@ export async function harnessRejudge(
         `rejudge needs every campaign task; missing: ${
           missing.map((t) => t.id).join(", ")
         }`,
-      );
-    }
-    if (o.execution && !data.executions.some((e) => e.id === o.execution)) {
-      throw new ConfigurationError(
-        `execution ${o.execution} is not in campaign ${c.id}`,
       );
     }
     const current = await currentScorerFingerprint();
@@ -1636,7 +1694,10 @@ async function fail(action: () => Promise<void>): Promise<void> {
   }
 }
 
-export function registerHarnessCommand(cli: Command): void {
+export function registerHarnessCommand(
+  cli: Command,
+  open: Opener = openHarnessEnv,
+): void {
   const parent = new Command().description(
     "Harness Bench: benchmark agent harness configs (spec 1a).",
   );
@@ -1669,6 +1730,10 @@ export function registerHarnessCommand(cli: Command): void {
     })
     .option("--seed <n:integer>", "Bootstrap seed", { default: 1 })
     .option(
+      "--repeats <n:integer>",
+      "Report repeats 1..N only, excluded work disclosed (default: all planned)",
+    )
+    .option(
       "--judging <source:judging>",
       "Oracles to judge with, named explicitly: the campaign's, or the working tree's (after an oracle fix and rejudge)",
       { required: true },
@@ -1683,6 +1748,7 @@ export function registerHarnessCommand(cli: Command): void {
           campaign: opts.campaign,
           resamples: opts.resamples,
           seed: opts.seed,
+          repeats: opts.repeats,
           judging: opts.judging,
           root: opts.root,
         });
@@ -1795,6 +1861,9 @@ export function registerHarnessCommand(cli: Command): void {
     maxPauseMin: number;
     yes?: boolean;
     execution?: string;
+    stopFile?: string[];
+    campaign?: string;
+    rerun?: RerunCell;
   };
   const runOpts = (f: RunFlags): RunCliOptions => ({
     ...cliOpts(f),
@@ -1806,6 +1875,9 @@ export function registerHarnessCommand(cli: Command): void {
     ...(f.seed !== undefined ? { seed: f.seed } : {}),
     ...(f.yes ? { yes: true } : {}),
     ...(f.execution ? { execution: f.execution } : {}),
+    ...(f.stopFile ? { stopFiles: f.stopFile.map((p) => resolve(p)) } : {}),
+    ...(f.campaign ? { campaign: f.campaign } : {}),
+    ...(f.rerun ? { rerun: f.rerun } : {}),
   });
 
   shared(
@@ -1831,8 +1903,22 @@ export function registerHarnessCommand(cli: Command): void {
       "--qualify-manifest <path:string>",
       "Qualification manifest naming the variants mock arms apply",
     )
+    .option(
+      "--stop-file <path:string>",
+      "Stop before the next cell while this file exists (repeatable)",
+      { collect: true },
+    )
+    .option(
+      "--campaign <id:string>",
+      "Resume exactly this campaign; refused if it no longer matches",
+    )
+    .type("cell", ({ value }) => parseRerunCell(value))
+    .option(
+      "--rerun <cell:cell>",
+      "Rerun only this unscored cell (<task:repeat:arm>) as a manual rerun",
+    )
     .action((opts: RunFlags, experiment: string) =>
-      fail(async () => void await harnessRun(experiment, runOpts(opts)))
+      fail(async () => void await harnessRun(experiment, runOpts(opts), open))
     );
 
   shared(
@@ -1842,6 +1928,7 @@ export function registerHarnessCommand(cli: Command): void {
     ),
   )
     .option("--execution <id:string>", "Only this execution")
+    .option("--campaign <id:string>", "This campaign (default: newest)")
     .option("--yes", "Do not ask for confirmation")
     .action((
       opts: Omit<RunFlags, "concurrency" | "maxPauseMin">,
@@ -1851,6 +1938,7 @@ export function registerHarnessCommand(cli: Command): void {
         void await harnessRejudge(
           experiment,
           runOpts({ ...opts, concurrency: 1, maxPauseMin: 0 }),
+          open,
         )
       )
     );

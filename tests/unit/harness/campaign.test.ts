@@ -13,6 +13,7 @@ import {
 } from "../../../src/harness/campaign.ts";
 import { imageTag, mcpLabel } from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
+import { buildReport } from "../../../src/harness/report.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
 import { EXECUTION_LABEL } from "../../../src/harness/sandbox.ts";
 import { write } from "./refapp-fixture.ts";
@@ -528,4 +529,280 @@ Deno.test("dry-run estimate: a second experiment sharing the baseline manifest b
     text,
   );
   assert(out.lines.some((l) => l.startsWith("[DRY] total ")), text);
+});
+
+// ---- M5-03: stop files and the campaign pin ----
+
+Deno.test("a stop file stops between cells; present at start runs nothing; resume keeps id, seed and order", async () => {
+  const t = await mockEnv();
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  );
+  const pause = join(t.repo.root, "pause.json"); // never created: the global pause is only checked
+  const stop = join(t.repo.root, "stop-contract.json");
+  await Deno.writeTextFile(stop, "{}");
+  const idle = await runCampaign(
+    t.env,
+    "contract",
+    opts({ stopFiles: [pause, stop] }),
+    io(),
+  );
+  assertEquals([idle.ran, idle.stopped, t.docker.runs.length], [0, true, 0]);
+  await Deno.remove(stop);
+  let n = 0;
+  t.env.hooks = {
+    beforeDraft: async () => {
+      if (++n === 1) await Deno.writeTextFile(stop, "{}");
+    },
+  };
+  const out = io();
+  const s = await runCampaign(
+    t.env,
+    "contract",
+    opts({ stopFiles: [pause, stop] }),
+    out,
+  );
+  assertEquals(
+    [s.ran, s.stopped],
+    [1, true],
+    "the running cell finished, no new one started",
+  );
+  assert(
+    out.lines.some((l) =>
+      l.includes("resume with: centralgauge harness run contract")
+    ),
+  );
+  const before = (await t.env.store.campaigns("contract"))[0]!;
+  await Deno.remove(stop);
+  t.env.hooks = {};
+  const again = await runCampaign(
+    t.env,
+    "contract",
+    opts({ stopFiles: [pause, stop], campaign: before.id }),
+    io(),
+  );
+  const after = (await t.env.store.campaigns("contract"))[0]!;
+  // The campaign the stopped-at-start call created is the one resumed.
+  assertEquals([s.campaignId, before.id, again.campaignId], [
+    idle.campaignId,
+    idle.campaignId,
+    idle.campaignId,
+  ]);
+  assertEquals([again.stopped, after.id, after.seed, after.blocks], [
+    false,
+    before.id,
+    before.seed,
+    before.blocks,
+  ]);
+});
+
+Deno.test("--campaign refuses drift and unknown ids before any write", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "contract", opts(), io());
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  ); // experiment hash changes
+  await assertRejects(
+    () => runCampaign(t.env, "contract", opts({ campaign: c.id }), io()),
+    ConfigurationError,
+    "experiment_hash",
+  );
+  await assertRejects(
+    () =>
+      runCampaign(
+        t.env,
+        "contract",
+        opts({ campaign: "00000000-0000-0000-0000-000000000000" }),
+        io(),
+      ),
+    ConfigurationError,
+    "no campaign",
+  );
+  assertEquals((await t.env.store.campaigns("contract")).length, 1);
+});
+
+// ---- M5-04: manual rerun of an unscored cell ----
+
+Deno.test("--rerun of an exhausted mock-crash cell writes one manual_rerun root plus its owed retry only; the report keeps both attempts' spend", async () => {
+  const t = await mockEnv();
+  await experiment(t, "crashy", "mock-positive", ["mock-crash"]);
+  await runCampaign(t.env, "crashy", opts(), io());
+  const c = (await t.env.store.campaigns("crashy"))[0]!;
+  const before = await t.env.store.executions(c.id);
+  const s = await runCampaign(
+    t.env,
+    "crashy",
+    opts({ rerun: { task: "HX-001", repeat: 1, arm: "mock-crash" } }),
+    io(),
+  );
+  const after = await t.env.store.executions(c.id);
+  const fresh = after.filter((e) => !before.some((b) => b.id === e.id))
+    .sort((a, b) => a.attempt - b.attempt);
+  assertEquals(
+    fresh.map((e) => [e.arm, e.attempt, e.run_kind, e.retry_of === null]),
+    [["mock-crash", 3, "manual_rerun", true], [
+      "mock-crash",
+      4,
+      "auto_retry",
+      false,
+    ]],
+  );
+  assertEquals([s.campaignId, s.created, s.ran], [c.id, false, 2]);
+  const data = await loadCampaignData(t.env.store, c);
+  await validateCampaignRecords(data);
+  const rep = await buildReport(data, { resamples: 50, seed: 1 });
+  const cell = rep.cells.find((x) => x.arm === "mock-crash")!;
+  const crash = after.filter((e) => e.arm === "mock-crash");
+  assertEquals([cell.attempts, cell.manual_reruns], [4, 1]);
+  assertEquals(
+    cell.known_spend_usd,
+    [...crash].sort((a, b) => a.attempt - b.attempt)
+      .reduce((n, e) => n + (e.telemetry.cost_usd ?? 0), 0),
+  );
+  assert(
+    crash.some((e) => e.id === cell.used_execution),
+    `used execution ${cell.used_execution} is one of the cell's`,
+  );
+});
+
+Deno.test("--rerun refuses scored (pass and fail), pending, unrun and unknown cells before any container run", async () => {
+  const t = await mockEnv();
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  );
+  const rerun = (task: string, repeat: number, arm: string) =>
+    opts({ rerun: { task, repeat, arm } });
+  // No campaign yet: a rerun never creates one.
+  await assertRejects(
+    () =>
+      runCampaign(t.env, "contract", rerun("HX-001", 1, "mock-positive"), io()),
+    ConfigurationError,
+    "no campaign",
+  );
+  assertEquals(await t.env.store.campaigns("contract"), []);
+  await runCampaign(t.env, "contract", opts({ sample: 1 }), io());
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const first = c.blocks[0]!;
+  const second = c.blocks[1]!;
+  const runs = t.docker.runs.length;
+  const refused = async (r: RunOptions, message: string) => {
+    await assertRejects(
+      () => runCampaign(t.env, "contract", r, io()),
+      ConfigurationError,
+      message,
+    );
+    assertEquals(t.docker.runs.length, runs, message);
+  };
+  await refused(
+    rerun(first.task_id, first.repeat, "mock-positive"),
+    "is scored",
+  );
+  await refused(
+    rerun(first.task_id, first.repeat, "mock-naive-a"),
+    "is scored",
+  );
+  await refused(
+    rerun(second.task_id, second.repeat, "mock-positive"),
+    "is unrun",
+  );
+  await refused(rerun("HX-999", 1, "mock-positive"), "no such cell");
+  await refused(rerun(first.task_id, 9, "mock-positive"), "no such cell");
+  await refused(rerun(first.task_id, 1, "mock-nope"), "no such cell");
+
+  const u = await mockEnv();
+  u.env.now = () => new Date(Date.now());
+  await experiment(u, "limits", "mock-positive", ["mock-usage"]);
+  const paused = await runCampaign(u.env, "limits", opts(), io());
+  assert(paused.paused !== null && paused.paused !== "unknown");
+  const uRuns = u.docker.runs.length;
+  await assertRejects(
+    () =>
+      runCampaign(
+        u.env,
+        "limits",
+        opts({ rerun: { task: "HX-001", repeat: 1, arm: "mock-usage" } }),
+        io(),
+      ),
+    ConfigurationError,
+    "is pending",
+  );
+  assertEquals(u.docker.runs.length, uRuns);
+});
+
+Deno.test("--rerun composes with --campaign, --dry-run and --stop-file; refuses --sample and --repeats", async () => {
+  const t = await mockEnv();
+  await experiment(t, "crashy", "mock-positive", ["mock-crash"]);
+  await runCampaign(t.env, "crashy", opts(), io());
+  const c = (await t.env.store.campaigns("crashy"))[0]!;
+  const rerun = { task: "HX-001", repeat: 1, arm: "mock-crash" };
+  const count = async () => (await t.env.store.executions(c.id)).length;
+  const n = await count();
+  const runs = t.docker.runs.length;
+  for (const over of [{ sample: 1 }, { repeats: 1 }]) {
+    await assertRejects(
+      () => runCampaign(t.env, "crashy", opts({ rerun, ...over }), io()),
+      ConfigurationError,
+      "--rerun runs one cell",
+    );
+  }
+  await assertRejects(
+    () =>
+      runCampaign(
+        t.env,
+        "crashy",
+        opts({ rerun, campaign: "00000000-0000-0000-0000-000000000000" }),
+        io(),
+      ),
+    ConfigurationError,
+    "no campaign",
+  );
+  const dry = io();
+  const d = await runCampaign(
+    t.env,
+    "crashy",
+    opts({ rerun, dryRun: true }),
+    dry,
+  );
+  assertEquals([d.campaignId, d.planned, d.ran], [c.id, 1, 0]);
+  assert(
+    dry.lines.some((l) =>
+      l.includes("[DRY] rerun HX-001#1 mock-crash as attempt 3")
+    ),
+    dry.lines.join("\n"),
+  );
+  const stop = join(t.repo.root, "stop-crashy.json");
+  await Deno.writeTextFile(stop, "{}");
+  const stopped = await runCampaign(
+    t.env,
+    "crashy",
+    opts({ rerun, campaign: c.id, stopFiles: [stop] }),
+    io(),
+  );
+  assertEquals([stopped.stopped, stopped.ran], [true, 0]);
+  assertEquals([await count(), t.docker.runs.length], [n, runs]);
+  await Deno.remove(stop);
+  const s = await runCampaign(
+    t.env,
+    "crashy",
+    opts({ rerun, campaign: c.id, stopFiles: [stop] }),
+    io(),
+  );
+  assertEquals([s.campaignId, s.ran, await count()], [c.id, 2, n + 2]);
 });

@@ -76,11 +76,27 @@ export function telemetry(cost_usd: number | null): Telemetry {
   };
 }
 
-/** plain vs skills over HX-001 and HX-002. */
+/**
+ * plain vs skills over HX-001 and HX-002, or over HX-001 to HX-00n with
+ * `tasks: n` (n <= 7; the first two keep their default hashes).
+ */
 export async function campaign(
-  opts: { repeats?: number; id?: string; created_at?: string } = {},
+  opts: {
+    repeats?: number;
+    id?: string;
+    created_at?: string;
+    tasks?: number;
+  } = {},
 ): Promise<CampaignRecord> {
   const repeats = opts.repeats ?? 1;
+  const taskHashes: Record<string, [string, string]> = opts.tasks === undefined
+    ? TASK_HASHES
+    : Object.fromEntries(
+      Array.from({ length: opts.tasks }, (_, i) => [
+        `HX-00${i + 1}`,
+        [H((2 * i + 1).toString(16)), H((2 * i + 2).toString(16))],
+      ]),
+    );
   const experiment = ExperimentSchema.parse({
     id: "skills-vs-plain",
     hypothesis: "Skills cut cost per solved task.",
@@ -91,7 +107,7 @@ export async function campaign(
     tasks: "harness-tasks/tasks/*",
     repeats,
   });
-  const tasks = Object.entries(TASK_HASHES).map(([id, [visible, oracle]]) => ({
+  const tasks = Object.entries(taskHashes).map(([id, [visible, oracle]]) => ({
     id,
     refapp_commit: "c".repeat(40),
     visible,
@@ -133,7 +149,7 @@ export async function campaign(
       },
     ],
     blocks: planBlocks(
-      Object.keys(TASK_HASHES),
+      Object.keys(taskHashes),
       repeats,
       ["plain", "skills"],
       1,

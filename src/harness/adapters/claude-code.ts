@@ -706,6 +706,11 @@ const DISALLOWED_TOOLS = [
   "SendMessage",
 ] as const;
 
+/** Native settings this adapter derives from its harness alone (M5-01a). */
+export const claudeCodeHarnessNative = () => ({
+  disallowed_tools: [...DISALLOWED_TOOLS],
+});
+
 export const claudeCodeAdapter: HarnessAdapter = {
   harness: "claude-code",
   declared: DECLARED,
@@ -744,7 +749,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
     return {
       ...config.settings,
       api_models,
-      disallowed_tools: [...DISALLOWED_TOOLS],
+      ...claudeCodeHarnessNative(),
       ...(config.components.mcp.length > 0
         ? { mcp: [...config.components.mcp].sort() }
         : {}),
