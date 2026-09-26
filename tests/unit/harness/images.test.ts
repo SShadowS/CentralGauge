@@ -12,6 +12,11 @@ import {
   mcpLabel,
   runtimeFacts,
 } from "../../../src/harness/images.ts";
+import {
+  imageReadCreateArgs,
+  OWNER_LABEL,
+  SANDBOX_PREFIX,
+} from "../../../src/harness/sandbox.ts";
 import { FakeDocker } from "./fake-docker.ts";
 
 const ID = `sha256:${"a".repeat(64)}`;
@@ -35,20 +40,21 @@ const catalog = {
 Deno.test("imageFacts: immutable id and labelled base digest; wrong labels refused", async () => {
   const d = new FakeDocker();
   await assertRejects(
-    () => imageFacts(d, imageTag("claude-code", "2.1.282")),
+    () => imageFacts(d, imageTag("claude-code", "2.1.282"), "HOST1"),
     ConfigurationError,
     "images build",
   );
   d.addImage("centralgauge/harness-claude-code:2.1.282", ID, LABELS);
   assertEquals(
-    (await imageFacts(d, "centralgauge/harness-claude-code:2.1.282")).digest,
+    (await imageFacts(d, "centralgauge/harness-claude-code:2.1.282", "HOST1"))
+      .digest,
     ID,
   );
   d.addImage("centralgauge/harness-claude-code:9", `sha256:${"9".repeat(64)}`, {
     "centralgauge.harness": "claude-code",
   });
   await assertRejects(
-    () => imageFacts(d, "centralgauge/harness-claude-code:9"),
+    () => imageFacts(d, "centralgauge/harness-claude-code:9", "HOST1"),
     ConfigurationError,
     "label",
   );
@@ -57,7 +63,7 @@ Deno.test("imageFacts: immutable id and labelled base digest; wrong labels refus
     "centralgauge.harness.base_digest": "sha256:img",
   });
   await assertRejects(
-    () => imageFacts(d, "centralgauge/harness-claude-code:8"),
+    () => imageFacts(d, "centralgauge/harness-claude-code:8", "HOST1"),
     ConfigurationError,
     "base_digest",
   );
@@ -142,7 +148,7 @@ Deno.test("runtimeFacts: MCP facts come from the image label; LSP and missing MC
     AL_TOOLS_SHIPPED,
     await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
   );
-  assertEquals(Object.keys((await imageFacts(d, "x")).mcp ?? {}), [
+  assertEquals(Object.keys((await imageFacts(d, "x", "HOST1")).mcp ?? {}), [
     "al-tools",
   ]);
   d.addImage("y", `sha256:${"d".repeat(64)}`, {
@@ -150,7 +156,7 @@ Deno.test("runtimeFacts: MCP facts come from the image label; LSP and missing MC
     "centralgauge.mcp.al-tools": "only-one-part",
   });
   await assertRejects(
-    () => imageFacts(d, "y"),
+    () => imageFacts(d, "y", "HOST1"),
     ConfigurationError,
     "centralgauge.mcp.al-tools",
   );
@@ -167,14 +173,14 @@ Deno.test("mcpLabel: the value is the tool file's version and its hashJson; imag
   assert(/^[0-9a-f]{64}$/.test(hash));
   const d = new FakeDocker();
   d.addImage("none", ID, LABELS);
-  assertEquals((await imageFacts(d, "none")).mcp, {});
+  assertEquals((await imageFacts(d, "none", "HOST1")).mcp, {});
   d.addImage("ok", ID, { ...LABELS, "centralgauge.mcp.al-tools": value });
   d.shipFile(
     ID,
     AL_TOOLS_SHIPPED,
     await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
   );
-  assertEquals((await imageFacts(d, "ok")).mcp, {
+  assertEquals((await imageFacts(d, "ok", "HOST1")).mcp, {
     "al-tools": { version: def.version, tool_schema_hash: hash },
   });
   for (
@@ -194,7 +200,7 @@ Deno.test("mcpLabel: the value is the tool file's version and its hashJson; imag
   ) {
     d.addImage(ref!, ID, { ...LABELS, [k!]: v! });
     const err = await assertRejects(
-      () => imageFacts(d, ref!),
+      () => imageFacts(d, ref!, "HOST1"),
       ConfigurationError,
       `image ${ref}`,
     );
@@ -220,7 +226,7 @@ Deno.test("runtimeFacts: expected MCP tool names persisted in native settings; d
     AL_TOOLS_SHIPPED,
     await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
   );
-  const image = await imageFacts(d, "x");
+  const image = await imageFacts(d, "x", "HOST1");
   const defs = await mcpDefinitions(".");
   const def = JSON.parse(
     await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
@@ -309,7 +315,7 @@ Deno.test("imageFacts: the tool file the image ships must hash to its al-tools l
   const d = new FakeDocker();
   d.addImage("ok", ID, { ...LABELS, [key]: value });
   d.shipFile(ID, AL_TOOLS_SHIPPED, shipped);
-  assertEquals(Object.keys((await imageFacts(d, "ok")).mcp ?? {}), [
+  assertEquals(Object.keys((await imageFacts(d, "ok", "HOST1")).mcp ?? {}), [
     "al-tools",
   ]);
   // Same names, another schema: the label says X, the shipped bytes hash to Y.
@@ -319,7 +325,7 @@ Deno.test("imageFacts: the tool file the image ships must hash to its al-tools l
   d.addImage("drift", other, { ...LABELS, [key]: value });
   d.shipFile(other, AL_TOOLS_SHIPPED, JSON.stringify(def));
   const e = await assertRejects(
-    () => imageFacts(d, "drift"),
+    () => imageFacts(d, "drift", "HOST1"),
     ConfigurationError,
     "differs from its label",
   );
@@ -329,8 +335,32 @@ Deno.test("imageFacts: the tool file the image ships must hash to its al-tools l
   const none = `sha256:${"f".repeat(64)}`;
   d.addImage("none-shipped", none, { ...LABELS, [key]: value });
   await assertRejects(
-    () => imageFacts(d, "none-shipped"),
+    () => imageFacts(d, "none-shipped", "HOST1"),
     ConfigurationError,
     "cannot read",
   );
+});
+
+Deno.test("readImageFile: the throwaway container is cg-harness-read-* with the owner label, so a crash leftover is swept", async () => {
+  const args = imageReadCreateArgs(ID, "HOST1");
+  const name = args[args.indexOf("--name") + 1]!;
+  assert(name.startsWith(`${SANDBOX_PREFIX}read-`), name);
+  assertEquals(args.slice(-1), [ID]);
+  assert(args.includes(`${OWNER_LABEL}=HOST1`));
+  assertEquals(args[0], "create");
+  // imageFacts passes the owner through to the read.
+  const [key, value] = await mcpLabel(".");
+  const d = new FakeDocker();
+  d.addImage("x", ID, { ...LABELS, [key]: value });
+  d.shipFile(
+    ID,
+    AL_TOOLS_SHIPPED,
+    await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
+  );
+  await imageFacts(d, "x", "HOST1");
+  assertEquals(d.reads, [{
+    image: ID,
+    path: AL_TOOLS_SHIPPED,
+    owner: "HOST1",
+  }]);
 });

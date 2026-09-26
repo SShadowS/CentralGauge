@@ -475,6 +475,7 @@ export async function harnessCell(
       await imageFacts(
         env.docker,
         imageTag(config.harness, config.harness_version),
+        env.owner,
       ),
       adapter,
       catalog,
@@ -778,7 +779,8 @@ export async function harnessImagesBuild(
       `${tag} was not built on base ${base.Id}: the layers do not start with the base's layers`,
     );
   }
-  const f = await imageFacts(docker, tag);
+  // Same owner as a harness env (the hostname): a leftover read container is swept.
+  const f = await imageFacts(docker, tag, Deno.hostname());
   console.log(`${colors.green("[OK]")} ${tag} = ${f.digest} (base ${base.Id})`);
   return f;
 }

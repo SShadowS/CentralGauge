@@ -225,7 +225,7 @@ export async function cellFor(
   const config = await loadConfig(t.harnessRoot, configId);
   const facts = runtimeFacts(
     config,
-    await imageFacts(t.docker, imageTag("claude-code", "2.1.282")),
+    await imageFacts(t.docker, imageTag("claude-code", "2.1.282"), "HOST1"),
     claudeCodeAdapter,
     catalog,
   );

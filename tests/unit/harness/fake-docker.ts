@@ -201,8 +201,14 @@ export class FakeDocker implements DockerCli {
     m.set(path, text);
     this.shipped.set(id, m);
   }
-  readImageFile(image: string, path: string): Promise<string | null> {
+  reads: { image: string; path: string; owner: string }[] = [];
+  readImageFile(
+    image: string,
+    path: string,
+    owner: string,
+  ): Promise<string | null> {
     const id = this.tags.get(image) ?? image;
+    this.reads.push({ image: id, path, owner });
     return Promise.resolve(this.shipped.get(id)?.get(path) ?? null);
   }
   inspectImage(ref: string): Promise<unknown | null> {
