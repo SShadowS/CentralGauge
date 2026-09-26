@@ -17,6 +17,8 @@ import type { Telemetry, Termination } from "../records.ts";
 import type { TraceEvent } from "../trace.ts";
 import { ConfigurationError } from "../../errors.ts";
 import { requestedComponents } from "../adapter.ts";
+import { callFields } from "../call-fields.ts";
+import { RULES_VERSION } from "../classify.ts";
 import { estimateCost } from "../pricing.ts";
 import { TRACE_VERSION, writeTrace } from "../trace.ts";
 import {
@@ -77,6 +79,28 @@ const NON_BILLING_ENTRIES = new Set([
 /** Billable outside message_end; disabled by the recorded agent settings (M3-02). */
 const BILLABLE = /^(compaction_|summarization_)/;
 const SHELL_TOOLS = new Set(["bash", "powershell"]);
+/** A skill is loaded by reading its SKILL.md (pi has no Skill tool): <...>/skills/<name>/SKILL.md. */
+const SKILL_MD = /[\\/]skills[\\/]([^\\/]+)[\\/]SKILL\.md$/i;
+
+const PI_DECLARED: readonly (keyof Telemetry)[] = Object.freeze([
+  "harness_version",
+  "cost_usd",
+  "reported_cost_usd",
+  "per_model",
+  "turns",
+  "exit_code",
+  "stop_reason",
+]);
+
+/** Per-run provenance persisted in raw_usage.capabilities (M2-15); the report reads it, never the installed adapter. */
+export const PI_CAPABILITIES = {
+  v: 1,
+  parser: "pi-trace@1",
+  rules: `rules@${RULES_VERSION}`,
+  telemetry: PI_DECLARED,
+  nested: [],
+  trace_types: ["tool_call", "retry", "skill_invoke"],
+} as const;
 const WORK_STOPS = new Set(["stop", "length", "toolUse"]);
 const LIMIT_TEXT = /\b(402|429)\b|rate.?limit|insufficient credits|quota/i;
 
@@ -215,7 +239,6 @@ export function parsePiStream(
     truncated: null,
     duration_ms: null,
     model: null,
-    // ponytail: v2 call fields left null until M2-15 fills them (callFields).
     command: null,
     command_cut: null,
     target: null,
@@ -340,6 +363,10 @@ export function parsePiStream(
       }
       started.set(id, line);
       const out = outcomes.get(id);
+      // Captured shape (M3-05 fixtures): args.command for bash, args.path for read.
+      const args = obj(rec["args"]);
+      const command = SHELL_TOOLS.has(name) ? str(args["command"]) : null;
+      const target = str(args["path"]);
       trace.push(ev({
         call_id: id,
         request_id: requestId,
@@ -348,7 +375,14 @@ export function parsePiStream(
         outcome: out ? (out.error ? "error" : "ok") : null,
         result_bytes: out?.bytes ?? null,
         model,
+        ...callFields(name, command, target),
       }));
+      const skill = name === "read" && target !== null
+        ? SKILL_MD.exec(target)?.[1] ?? null
+        : null;
+      if (skill !== null) {
+        trace.push(ev({ type: "skill_invoke", skill, call_id: id, model }));
+      }
     } else if (t === "auto_retry_start") {
       trace.push(ev({ type: "retry", request_id: requestId, model }));
     } else if (t === "agent_settled" && openRequest !== null) {
@@ -505,6 +539,9 @@ export function parsePiStream(
         assumptions,
         missing: est.missing,
         stream_problems: streamProblems,
+        capabilities: PI_CAPABILITIES,
+        trace_complete: settled && nonJson.count === 0 &&
+          streamProblems.length === 0,
       }),
     },
     observed: {
@@ -545,15 +582,7 @@ const THINKING = new Set([
 
 export const piAdapter: HarnessAdapter = {
   harness: "pi",
-  declared: [
-    "harness_version",
-    "cost_usd",
-    "reported_cost_usd",
-    "per_model",
-    "turns",
-    "exit_code",
-    "stop_reason",
-  ],
+  declared: PI_DECLARED,
   secretFiles: ["openrouter-api-key"],
   credentialBearing: true,
   enforcesBudget: true,

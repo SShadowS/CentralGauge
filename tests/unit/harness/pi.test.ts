@@ -12,9 +12,11 @@ import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import {
   parsePiStream,
+  PI_CAPABILITIES,
   PI_SETTINGS,
   piAdapter,
 } from "../../../src/harness/adapters/pi.ts";
+import { callFields } from "../../../src/harness/call-fields.ts";
 import {
   checkModelsInCatalog,
   HarnessConfigSchema,
@@ -166,7 +168,10 @@ Deno.test("pi parse: the M0-04 probe gives calls, outcomes, estimated and report
     loaded_components: ["skills"],
   });
   assertEquals(
-    r.trace.map((e) => [e.tool, e.transport, e.outcome, e.result_bytes]),
+    // M2-15: the SKILL.md read adds a skill_invoke marker; the calls are unchanged.
+    r.trace.filter((e) => e.type === "tool_call").map((
+      e,
+    ) => [e.tool, e.transport, e.outcome, e.result_bytes]),
     [
       ["read", "builtin", "ok", 191],
       ["read", "builtin", "ok", 1309],
@@ -174,12 +179,15 @@ Deno.test("pi parse: the M0-04 probe gives calls, outcomes, estimated and report
       ["bash", "shell", "ok", 114],
     ],
   );
-  assertEquals(r.trace.map((e) => e.request_id), [
-    "gen-1790337684-4yFOxDaLsiEetl7SFlSd",
-    "gen-1790337692-FMVYrPlIFfx1b7MxkAHD",
-    "gen-1790337701-8CKiSkNCCCusBQdrudlX",
-    "gen-1790337704-kM82l3iIWRO7njJHjTFb",
-  ]);
+  assertEquals(
+    r.trace.filter((e) => e.type === "tool_call").map((e) => e.request_id),
+    [
+      "gen-1790337684-4yFOxDaLsiEetl7SFlSd",
+      "gen-1790337692-FMVYrPlIFfx1b7MxkAHD",
+      "gen-1790337701-8CKiSkNCCCusBQdrudlX",
+      "gen-1790337704-kM82l3iIWRO7njJHjTFb",
+    ],
+  );
   assert(
     r.trace.every((e) =>
       e.session === "01a0d871-168a-71a7-aca7-ade97274c0e8" &&
@@ -785,11 +793,12 @@ Deno.test("pi adapter: registered; contract fields; parse writes the trace; a mi
     pricing: BOOK,
     traceOut: join(dir, "trace.jsonl"),
   });
-  assertEquals(r.traceEvents, 4);
+  // M2-15: 4 tool calls plus the skill_invoke of the SKILL.md read.
+  assertEquals(r.traceEvents, 5);
   assertEquals(
     (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim().split("\n")
       .length,
-    4,
+    5,
   );
   const missing = await piAdapter.parse({
     rawLog: join(dir, "absent.jsonl"),
@@ -1191,5 +1200,87 @@ Deno.test("cg-budget: armed only once the record is written; a failed arm retrie
       if (v === undefined) Deno.env.delete(k);
       else Deno.env.set(k, v);
     }
+  }
+});
+
+// ---- M2-15: the pi producer on trace v2 ----
+// Evidence (tests/fixtures/harness/pi/probe.jsonl, captured):
+//   {"type":"tool_execution_start","toolCallId":"call_4054099","toolName":"bash","args":{"timeout":30,"command":"cg-al --version"}}
+//   {"type":"tool_execution_start","toolCallId":"call_153932","toolName":"read","args":{"offset":1,"limit":100,"path":"C:\\workspace\\.pi\\skills\\fleet-notes\\SKILL.md"}}
+// pi docs/json.md: tool_execution_start carries toolName and its args.
+
+const probeRun = async () => run(HEAD + await Deno.readTextFile(FIXTURE));
+
+Deno.test("pi trace: events are v2 through callFields", async () => {
+  const r = await probeRun();
+  assert(r.trace.length > 0);
+  assert(r.trace.every((e) => e.v === 2));
+  const bash = r.trace.find((e) => e.call_id === "call_4054099")!;
+  const f = callFields("bash", "cg-al --version", null);
+  assertEquals(
+    [bash.command, bash.command_cut, bash.category, bash.classifier],
+    [f.command, f.command_cut, f.category, f.classifier],
+  );
+  assertEquals(bash.classifier, "shell.cg-al.meta@1");
+  const read = r.trace.find((e) =>
+    e.type === "tool_call" && e.call_id === "call_1169776"
+  )!;
+  assertEquals([read.target, read.category], [
+    "src/FleetMgt.Codeunit.al",
+    "read",
+  ]);
+});
+
+Deno.test("pi trace: SKILL.md read gives skill_invoke", async () => {
+  const r = await probeRun();
+  const i = r.trace.findIndex((e) =>
+    e.type === "tool_call" && e.call_id === "call_153932"
+  );
+  assertEquals(r.trace[i + 1]!.type, "skill_invoke");
+  assertEquals(
+    [r.trace[i + 1]!.skill, r.trace[i + 1]!.call_id],
+    ["fleet-notes", "call_153932"],
+  );
+  assertEquals(r.trace.filter((e) => e.type === "skill_invoke").length, 1);
+  // Derived from the captured read line, only the path changed: a non-SKILL.md file in a skill dir.
+  // (The path also appears in the system prompt text, so every occurrence is rewritten.)
+  const text = (HEAD + await Deno.readTextFile(FIXTURE)).replaceAll(
+    "fleet-notes\\\\SKILL.md",
+    "fleet-notes\\\\notes.md",
+  );
+  assert(
+    text.includes(
+      '"toolName":"read","args":{"offset":1,"limit":100,"path":"C:\\\\workspace\\\\.pi\\\\skills\\\\fleet-notes\\\\notes.md"',
+    ),
+    "the captured read line was rewritten",
+  );
+  assertEquals(run(text).trace.filter((e) => e.type === "skill_invoke"), []);
+});
+
+Deno.test("pi trace: capabilities and trace_complete are written", async () => {
+  const r = await probeRun();
+  const rw = r.telemetry.raw_usage as unknown as {
+    capabilities: unknown;
+    trace_complete: boolean;
+  };
+  assertEquals(rw.capabilities, {
+    v: 1,
+    parser: "pi-trace@1",
+    rules: "rules@1",
+    telemetry: [...piAdapter.declared],
+    nested: [],
+    trace_types: ["tool_call", "retry", "skill_invoke"],
+  });
+  assertEquals(PI_CAPABILITIES, rw.capabilities);
+  assertEquals(rw.trace_complete, true);
+  const lines = (HEAD + await Deno.readTextFile(FIXTURE)).split("\n");
+  const cut = lines.filter((l) => !l.includes('"agent_settled"')).join("\n");
+  const nonJson = [lines[0], "WARNING stray", ...lines.slice(1)].join("\n");
+  for (const t of [cut, nonJson]) {
+    assertEquals(
+      (run(t).telemetry.raw_usage as unknown as { trace_complete: boolean })
+        .trace_complete,
+      false,
+    );
   }
 });
