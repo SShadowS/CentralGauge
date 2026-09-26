@@ -22,3 +22,4 @@ RUN Set-Content -Path C:\Windows\System32\cg-al.cmd -Value '@powershell -NoProfi
 COPY cg-al C:/Git/usr/bin/cg-al
 COPY al-tools-mcp.mjs C:/al-tools-mcp.mjs
 COPY al-tools-tools.json C:/al-tools-tools.json
+COPY egress-check.ps1 C:/egress-check.ps1

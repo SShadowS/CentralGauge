@@ -51,6 +51,24 @@ if (Test-Path 'C:\config\bundle\instructions') {
 if (Test-Path 'C:\config\bundle\skills') {
   Copy-Item 'C:\config\bundle\skills' "$userHome\.claude\skills" -Recurse -Force
 }
+# The runner writes C:\cg-secrets\ready after the secret files (M1-33 A3); in an
+# enforced run only after the egress preflight. No credential is read before it.
+$timeout = 600
+if ($null -ne $env:CG_READY_TIMEOUT_S) {
+  $timeout = 0
+  if (-not [int]::TryParse($env:CG_READY_TIMEOUT_S, [ref]$timeout) -or $timeout -le 0) {
+    [Console]::Error.WriteLine('[FAIL] CG_READY_TIMEOUT_S must be a positive integer')
+    exit 3
+  }
+}
+$sw = [Diagnostics.Stopwatch]::StartNew()
+while (-not (Test-Path 'C:\cg-secrets\ready')) {
+  if ($sw.Elapsed.TotalSeconds -ge $timeout) {
+    [Console]::Error.WriteLine("[FAIL] C:\cg-secrets\ready not written within $timeout s: no credential released")
+    exit 3
+  }
+  Start-Sleep -Milliseconds 500
+}
 $env:CLAUDE_CODE_OAUTH_TOKEN = (Get-Content 'C:\cg-secrets\claude-oauth-token' -Raw -Encoding UTF8).Trim()
 $env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Git\bin\bash.exe'
 $env:DISABLE_TELEMETRY = '1'
