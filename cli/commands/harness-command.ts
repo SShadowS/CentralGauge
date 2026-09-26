@@ -1,6 +1,7 @@
 /**
  * `centralgauge harness` (spec 1a section 10): `validate`, `report`,
- * `cell`, `judge-fixture`, `images build` and `symbols lock`. `run`,
+ * `cell`, `judge-fixture`, `images build`, `symbols lock` and
+ * `egress verify` (M1-33). `run`,
  * `rejudge` and `qualify` come in M1-24b.
  *
  * @module cli/commands/harness
@@ -9,6 +10,7 @@ import * as colors from "@std/fmt/colors";
 import { fromFileUrl, join, relative, resolve } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
 import { Command, EnumType } from "@cliffy/command";
+import { z } from "zod";
 import type {
   HarnessConfig,
   LoadedExperiment,
@@ -33,6 +35,7 @@ import type { ImageFacts } from "../../src/harness/images.ts";
 import type { ManifestReader } from "../../src/harness/symbols.ts";
 import type { DockerCli } from "../../src/harness/sandbox.ts";
 import type { EnvOptions, OpenEnv } from "./harness-env.ts";
+import type { EgressState, MarkerState } from "../../src/harness/egress.ts";
 import { canonicalJSON } from "../../shared/canonical.ts";
 import {
   CentralGaugeError,
@@ -74,8 +77,26 @@ import {
   runCampaign,
 } from "../../src/harness/campaign.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
-import { freezeWorkspace, safeCopyTree } from "../../src/harness/fsutil.ts";
+import {
+  exists,
+  freezeWorkspace,
+  safeCopyTree,
+} from "../../src/harness/fsutil.ts";
 import { hashTree } from "../../src/harness/hash.ts";
+import {
+  collectEgressState,
+  evaluatePreflight,
+  hostsForRoutes,
+  loadRecordedHosts,
+  MARKER_FILE,
+  MARKER_STATES,
+  preflightExpect,
+  ProbeEvidenceSchema,
+  realEgressCollector,
+  ROUTE_HOSTS,
+  SANDBOX_NETWORK,
+  verifyEgressState,
+} from "../../src/harness/egress.ts";
 import {
   BASE_IMAGE,
   hasBaseLayers,
@@ -1272,6 +1293,294 @@ export async function harnessQualify(
   }
 }
 
+/** Credentials M1-34 Step 10 rotates before authorization (names in the rotation record). */
+export const ROTATED_CREDENTIALS = ["claude-oauth", "openrouter"] as const;
+
+export interface EgressVerifyOptions {
+  root: string;
+  mark?: MarkerState;
+  /** qualified: the in-sandbox probe record (`backend-probe.ts --enforced`). */
+  probeEvidence?: string;
+  /** authorized: the rotation record (Step 10: names and times, never values). */
+  rotation?: string;
+  /** authorized: the enforced supervised Claude Code cell's execution id (Step 11). */
+  cell?: string;
+  /** authorized: the evidence reference, e.g. M1-34/003. */
+  evidence?: string;
+}
+
+const RotationSchema = z.object({
+  v: z.literal(1),
+  credentials: z.array(z.object({
+    name: z.string().min(1),
+    revoked_at: z.iso.datetime(),
+    created_at: z.iso.datetime(),
+  })),
+}).strict();
+
+const CellSchema = z.object({
+  id: z.string(),
+  manifest: z.object({ harness: z.string() }),
+  termination: z.string(),
+  started_at: z.iso.datetime(),
+});
+
+async function readJsonFile(path: string, what: string): Promise<unknown> {
+  try {
+    return JSON.parse(await Deno.readTextFile(path));
+  } catch (err) {
+    throw new ConfigurationError(
+      `cannot read the ${what} ${path}: ${(err as Error).message}`,
+    );
+  }
+}
+
+/** qualified: passing probe lines recorded on this network and interface. */
+async function probeProblems(
+  s: EgressState,
+  path: string | undefined,
+): Promise<string[]> {
+  if (!path) {
+    return [
+      "qualified needs --probe-evidence: the in-sandbox probe evidence written by backend-probe.ts --enforced",
+    ];
+  }
+  const r = ProbeEvidenceSchema.safeParse(
+    await readJsonFile(path, "probe evidence"),
+  );
+  if (!r.success) {
+    return [`probe evidence ${path} is invalid: ${r.error.issues[0]?.message}`];
+  }
+  const e = r.data;
+  const p: string[] = [];
+  if (
+    e.network_id !== s.network?.id ||
+    e.interface_index !== s.gatewayAdapter?.index
+  ) {
+    p.push(
+      `probe evidence is for network ${e.network_id} on interface ${e.interface_index}, not the current network ${s.network?.id} on ${s.gatewayAdapter?.index}`,
+    );
+  }
+  if (!e.hosts.includes("api.anthropic.com")) {
+    p.push(
+      "probe evidence must include the positive probe for api.anthropic.com",
+    );
+  }
+  const lines = e.lines.map((l) => ({
+    probe: l.probe,
+    ok: l.ok,
+    ...(l.error ? { error: l.error } : {}),
+  }));
+  p.push(
+    ...evaluatePreflight(lines, preflightExpect(e.hosts)).map((x) =>
+      `probe evidence: ${x}`
+    ),
+  );
+  return p;
+}
+
+/** authorized: recorded rotation, recorded OAuth hosts, and a later clean enforced Claude cell. */
+async function authorizationProblems(
+  root: string,
+  o: EgressVerifyOptions,
+  qualifiedAt: string,
+): Promise<{ problems: string[]; allowlist: string[] }> {
+  const p: string[] = [];
+  let allowlist: string[] = [];
+  try {
+    allowlist = hostsForRoutes(
+      Object.keys(ROUTE_HOSTS),
+      await loadRecordedHosts(root),
+    );
+  } catch (err) {
+    p.push((err as Error).message);
+  }
+  if (!o.evidence?.trim()) {
+    p.push("authorized needs --evidence <M1-34/nnn>");
+  }
+  if (!o.rotation) p.push("authorized needs --rotation <rotation record>");
+  if (!o.cell) p.push("authorized needs --cell <execution id>");
+  if (!o.rotation || !o.cell) return { problems: p, allowlist };
+  const rot = RotationSchema.safeParse(
+    await readJsonFile(o.rotation, "rotation record"),
+  );
+  let rotatedAt = "";
+  if (!rot.success) {
+    p.push(
+      `rotation record ${o.rotation} is invalid: ${
+        rot.error.issues[0]?.message
+      }`,
+    );
+  } else {
+    for (const name of ROTATED_CREDENTIALS) {
+      if (!rot.data.credentials.some((c) => c.name === name)) {
+        p.push(`rotation record lacks ${name}`);
+      }
+    }
+    for (const c of rot.data.credentials) {
+      for (const t of [c.revoked_at, c.created_at]) {
+        if (t > rotatedAt) rotatedAt = t;
+      }
+    }
+  }
+  const cells = join(root, "results", "harness", "cells");
+  let cellPath: string | null = null;
+  try {
+    for (const d of Deno.readDirSync(join(cells, "executions"))) {
+      const f = join(cells, "executions", d.name, `${o.cell}.json`);
+      if (d.isDirectory && await exists(f)) cellPath = f;
+    }
+  } catch { /* no cells yet */ }
+  if (!cellPath) {
+    p.push(`cell ${o.cell} not found under ${cells}`);
+    return { problems: p, allowlist };
+  }
+  const cell = CellSchema.safeParse(await readJsonFile(cellPath, "execution"));
+  if (!cell.success) {
+    p.push(
+      `execution ${cellPath} is invalid: ${cell.error.issues[0]?.message}`,
+    );
+    return { problems: p, allowlist };
+  }
+  const e = cell.data;
+  if (e.manifest.harness !== "claude-code") {
+    p.push(`cell ${o.cell} ran ${e.manifest.harness}, not claude-code`);
+  }
+  if (e.termination !== "completed") {
+    p.push(
+      `cell ${o.cell} ended ${e.termination}; authorization needs a completed cell`,
+    );
+  }
+  const started = new Date(e.started_at).getTime();
+  if (started < new Date(qualifiedAt).getTime()) {
+    p.push(
+      `cell ${o.cell} started before the qualified marker (${qualifiedAt}): not an enforced cell`,
+    );
+  }
+  if (rotatedAt && started < new Date(rotatedAt).getTime()) {
+    p.push(
+      `cell ${o.cell} started before the rotation (${rotatedAt}); it must start after the rotation`,
+    );
+  }
+  let log: string;
+  try {
+    log = await Deno.readTextFile(join(cells, "runs", o.cell, "egress.jsonl"));
+  } catch {
+    p.push(`cell ${o.cell} has no egress.jsonl: not an enforced run`);
+    return { problems: p, allowlist };
+  }
+  const decisions = log.split(/\r?\n/).filter((l) => l.trim()).map((l) => {
+    try {
+      return String(JSON.parse(l).decision);
+    } catch {
+      return "unreadable";
+    }
+  });
+  if (decisions.includes("deny")) {
+    p.push(`cell ${o.cell} egress.jsonl has a deny line`);
+  }
+  if (decisions.includes("unreadable")) {
+    p.push(`cell ${o.cell} egress.jsonl has an unreadable line`);
+  }
+  if (!decisions.includes("allow")) {
+    p.push(`cell ${o.cell} egress.jsonl has no allowed connection`);
+  }
+  return { problems: p, allowlist };
+}
+
+/**
+ * Verify the effective egress policy (read-only, never elevated). With
+ * mark, the marker moves one state forward (candidate, qualified,
+ * authorized), each with its evidence (M1-34 Steps 3, 6, 12); a skip, a
+ * downgrade or an overwrite is refused (the plan names no override: after
+ * a revert, remove the marker file explicitly). Returns problems.
+ */
+export async function harnessEgressVerify(
+  o: EgressVerifyOptions,
+  collect: (markerPath: string) => Promise<EgressState> = (m) =>
+    collectEgressState(realEgressCollector(m)),
+): Promise<string[]> {
+  const markerPath = join(o.root, "results", "harness", MARKER_FILE);
+  const s = await collect(markerPath);
+  if (!o.mark) return verifyEgressState(s);
+  type Marker = { state?: string; marked_at?: string };
+  const current = await exists(markerPath)
+    ? await readJsonFile(markerPath, "egress marker") as Marker
+    : null;
+  const order: readonly string[] = MARKER_STATES;
+  const at = current ? order.indexOf(String(current.state)) : -1;
+  if (current && at < 0) {
+    return [
+      `egress marker ${markerPath} has an unknown state ${
+        JSON.stringify(current.state)
+      }`,
+    ];
+  }
+  const want = order.indexOf(o.mark);
+  if (want === at) {
+    return [
+      `marker is already ${o.mark}: refusing to overwrite (remove ${markerPath} explicitly to start over)`,
+    ];
+  }
+  if (want < at) {
+    return [
+      `marker is ${
+        current!.state
+      }: refusing to downgrade to ${o.mark} (remove ${markerPath} explicitly to start over)`,
+    ];
+  }
+  if (want > at + 1) {
+    return [
+      `marker is ${current?.state ?? "absent"}: mark ${order[at + 1]} first`,
+    ];
+  }
+  const problems = verifyEgressState(
+    o.mark === "candidate" ? { ...s, marker: null } : s,
+  );
+  if (problems.length > 0) return problems;
+  if (!s.network || !s.gatewayAdapter) return ["nothing to mark"];
+  const extra: Record<string, unknown> = {};
+  if (o.mark === "qualified") {
+    const p = await probeProblems(s, o.probeEvidence);
+    if (p.length > 0) return p;
+    extra["probe_evidence"] = o.probeEvidence;
+  }
+  if (o.mark === "authorized") {
+    const a = await authorizationProblems(
+      o.root,
+      o,
+      current?.marked_at ?? "",
+    );
+    if (a.problems.length > 0) return a.problems;
+    const now = new Date().toISOString();
+    Object.assign(extra, {
+      verified_at: now,
+      evidence: o.evidence,
+      proxy_allowlist: a.allowlist,
+      rotation: o.rotation,
+      cell: o.cell,
+    });
+  }
+  await Deno.mkdir(join(markerPath, ".."), { recursive: true });
+  await Deno.writeTextFile(
+    markerPath,
+    JSON.stringify(
+      {
+        v: 1,
+        state: o.mark,
+        network: SANDBOX_NETWORK.name,
+        network_id: s.network.id,
+        interface_index: s.gatewayAdapter.index,
+        marked_at: new Date().toISOString(),
+        ...extra,
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  return [];
+}
+
 /** Print a known failure as [FAIL] and set exit code 1; rethrow bugs. */
 async function fail(action: () => Promise<void>): Promise<void> {
   try {
@@ -1532,6 +1841,63 @@ export function registerHarnessCommand(cli: Command): void {
             ...(opts.version ? { version: opts.version } : {}),
           })
         )
+      ),
+  );
+
+  parent.command(
+    "egress",
+    new Command()
+      .description("Egress enforcement (M1-33)")
+      .command(
+        "verify",
+        "Verify the effective firewall, network and marker (read-only; ops apply the rules elevated)",
+      )
+      .type("marker", new EnumType([...MARKER_STATES]))
+      .option(
+        "--mark <state:marker>",
+        "Move the marker one state forward (candidate, qualified, authorized) with its evidence",
+      )
+      .option(
+        "--probe-evidence <path:string>",
+        "qualified: the probe record from backend-probe.ts --enforced",
+      )
+      .option(
+        "--rotation <path:string>",
+        "authorized: the credential rotation record (names and times only)",
+      )
+      .option(
+        "--cell <id:string>",
+        "authorized: the enforced supervised Claude Code cell's execution id",
+      )
+      .option(
+        "--evidence <ref:string>",
+        "authorized: evidence reference (M1-34/nnn)",
+      )
+      .action((opts) =>
+        fail(async () => {
+          const problems = await harnessEgressVerify({
+            root: Deno.cwd(),
+            ...(opts.mark ? { mark: opts.mark as MarkerState } : {}),
+            ...(opts.probeEvidence
+              ? { probeEvidence: resolve(opts.probeEvidence) }
+              : {}),
+            ...(opts.rotation ? { rotation: resolve(opts.rotation) } : {}),
+            ...(opts.cell ? { cell: opts.cell } : {}),
+            ...(opts.evidence ? { evidence: opts.evidence } : {}),
+          });
+          for (const p of problems) {
+            console.error(`${colors.red("[FAIL]")} ${p}`);
+          }
+          if (problems.length > 0) {
+            Deno.exitCode = 1;
+            return;
+          }
+          console.log(
+            `${colors.green("[OK]")} egress policy verified${
+              opts.mark ? `; marker ${opts.mark} written` : ""
+            }`,
+          );
+        })
       ),
   );
 

@@ -78,7 +78,7 @@ export const DOCKER_ENV_ALLOWLIST = [
 ] as const;
 
 /** A cleared-env replacement: the allowlist plus the pinned Docker context. */
-function dockerEnv(): Record<string, string> {
+export function dockerChildEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const k of DOCKER_ENV_ALLOWLIST) {
     const v = Deno.env.get(k);
@@ -124,7 +124,7 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
       const r = await new Deno.Command("docker", {
         args,
         clearEnv: true,
-        env: dockerEnv(),
+        env: dockerChildEnv(),
         stdout: "piped",
         stderr: "piped",
         signal: AbortSignal.timeout(opTimeoutMs),
@@ -160,7 +160,7 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
         child = new Deno.Command("docker", {
           args,
           clearEnv: true,
-          env: dockerEnv(),
+          env: dockerChildEnv(),
           stdin: "null",
           stdout: "piped",
           stderr: "piped",
@@ -318,7 +318,7 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
       (await new Deno.Command("docker", {
         args,
         clearEnv: true,
-        env: dockerEnv(),
+        env: dockerChildEnv(),
         stdout: "inherit",
         stderr: "inherit",
       }).output())
@@ -645,7 +645,7 @@ async function runTool(exe: string, args: string[]) {
   const r = await new Deno.Command(system32(exe), {
     args,
     clearEnv: true,
-    env: dockerEnv(),
+    env: dockerChildEnv(),
     stdout: "piped",
     stderr: "piped",
     signal: AbortSignal.timeout(OP_TIMEOUT_MS),
@@ -758,63 +758,104 @@ const ownerPrefix = (owner: string) => {
   return `${SECRETS_DIR_PREFIX}${owner}.`;
 };
 
+/** Operator secret values the adapter declares plus the backend token, read and checked in memory (nothing written). */
+export async function readSecretValues(
+  source: string,
+  files: readonly string[],
+  backendToken: string,
+): Promise<SecretValue[]> {
+  const values: SecretValue[] = [];
+  const add = (name: string, value: string) => {
+    if (value.length < MIN_SECRET_LENGTH) {
+      throw new ConfigurationError(
+        `secret ${name} is shorter than ${MIN_SECRET_LENGTH} characters`,
+      );
+    }
+    values.push({ name, value });
+  };
+  for (const f of files) {
+    if (!/^[A-Za-z0-9._-]+$/.test(f) || f.startsWith(".")) {
+      throw new ConfigurationError(`bad secret file name: ${f}`);
+    }
+    let v: string;
+    try {
+      v = (await Deno.readTextFile(join(source, f))).trim();
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) {
+        throw new ConfigurationError(
+          `harness secret ${f} not found in ${source}`,
+        );
+      }
+      throw err;
+    }
+    add(f, v);
+  }
+  add("backend-token", backendToken);
+  return values;
+}
+
+/** A new custody dir, restricted and verified, still empty (the enforced mount before the preflight). */
+export async function createSecretsDir(
+  custody: SecretCustody,
+): Promise<string> {
+  const base = await validatedDest(join(custody.privateRoot, "secrets"));
+  const dir = join(base, `${ownerPrefix(custody.owner)}${crypto.randomUUID()}`);
+  await Deno.mkdir(dir, { mode: 0o700 });
+  try {
+    await restrictDir(dir, custody);
+  } catch (err) {
+    await cleanupAfter(err, dir);
+  }
+  return dir;
+}
+
+/** Write the values as new files into a custody dir; a failure removes the dir. */
+export async function writeSecretFiles(
+  dir: string,
+  values: SecretValue[],
+): Promise<void> {
+  try {
+    for (const v of values) {
+      await Deno.writeTextFile(join(dir, v.name), v.value, {
+        createNew: true,
+        mode: 0o600,
+      });
+    }
+  } catch (err) {
+    await cleanupAfter(err, dir);
+  }
+}
+
+async function cleanupAfter(err: unknown, dir: string): Promise<never> {
+  try {
+    await removeSecrets(dir);
+  } catch (rmErr) {
+    throw new CentralGaugeError(
+      `${err instanceof Error ? err.message : err}; and then: ${
+        (rmErr as Error).message
+      }`,
+      "SECRETS_CLEANUP_ERROR",
+      { dir },
+    );
+  }
+  throw err;
+}
+
 export async function prepareSecrets(
   source: string,
   files: readonly string[],
   backendToken: string,
   custody: SecretCustody,
 ): Promise<{ dir: string; values: SecretValue[] }> {
-  const base = await validatedDest(join(custody.privateRoot, "secrets"));
-  const dir = join(base, `${ownerPrefix(custody.owner)}${crypto.randomUUID()}`);
-  await Deno.mkdir(dir, { mode: 0o700 });
+  const dir = await createSecretsDir(custody);
+  let values: SecretValue[];
   try {
-    await restrictDir(dir, custody);
-    const values: SecretValue[] = [];
-    const add = async (name: string, value: string) => {
-      if (value.length < MIN_SECRET_LENGTH) {
-        throw new ConfigurationError(
-          `secret ${name} is shorter than ${MIN_SECRET_LENGTH} characters`,
-        );
-      }
-      await Deno.writeTextFile(join(dir, name), value, {
-        createNew: true,
-        mode: 0o600,
-      });
-      values.push({ name, value });
-    };
-    for (const f of files) {
-      if (!/^[A-Za-z0-9._-]+$/.test(f) || f.startsWith(".")) {
-        throw new ConfigurationError(`bad secret file name: ${f}`);
-      }
-      let v: string;
-      try {
-        v = (await Deno.readTextFile(join(source, f))).trim();
-      } catch (err) {
-        if (err instanceof Deno.errors.NotFound) {
-          throw new ConfigurationError(
-            `harness secret ${f} not found in ${source}`,
-          );
-        }
-        throw err;
-      }
-      await add(f, v);
-    }
-    await add("backend-token", backendToken);
-    return { dir, values };
+    values = await readSecretValues(source, files, backendToken);
   } catch (err) {
-    try {
-      await removeSecrets(dir);
-    } catch (rmErr) {
-      throw new CentralGaugeError(
-        `${err instanceof Error ? err.message : err}; and then: ${
-          (rmErr as Error).message
-        }`,
-        "SECRETS_CLEANUP_ERROR",
-        { dir },
-      );
-    }
-    throw err;
+    return await cleanupAfter(err, dir);
   }
+  await writeSecretFiles(dir, values);
+  return { dir, values };
 }
 
 /**

@@ -1,9 +1,10 @@
 /**
  * Real Harness Bench environment for the CLI. Order: refused and
  * unallocated containers, the bench lock, temp and sandbox sweeps (M0-03 b),
- * containers with a health monitor, lane, backend on the container-facing
- * address (M0-05), egress state (fail closed), then recovery of interrupted
- * executions.
+ * egress state (fail closed; M1-33), containers with a health monitor, lane,
+ * backend on the container-facing address (M0-05; the sandbox gateway when
+ * sandboxes are placed on the internal network), then recovery of
+ * interrupted executions.
  */
 
 import * as colors from "@std/fmt/colors";
@@ -13,6 +14,7 @@ import type { HarnessBc, HealthView } from "../../src/harness/bc-lane.ts";
 import type { PlanEnv } from "../../src/harness/campaign.ts";
 import type { HarnessEnv } from "../../src/harness/execution.ts";
 import type { DockerCli } from "../../src/harness/sandbox.ts";
+import type { EgressRuntime } from "../../src/harness/egress.ts";
 import { ConfigManager } from "../../src/config/config.ts";
 import { ConfigurationError, ValidationError } from "../../src/errors.ts";
 import { allocatedContainer } from "../../src/harness/allocation.ts";
@@ -22,6 +24,16 @@ import {
   resolveBackendHost,
 } from "../../src/harness/backend.ts";
 import { BcLane } from "../../src/harness/bc-lane.ts";
+import {
+  BACKEND_PORT,
+  collectEgressState,
+  MARKER_FILE,
+  MARKER_STATES,
+  realEgressCollector,
+  realEgressRuntime,
+  SANDBOX_NETWORK,
+  verifyEgressState,
+} from "../../src/harness/egress.ts";
 import { recoverInterrupted } from "../../src/harness/execution.ts";
 import { sweepWorkspaceTemp } from "../../src/harness/fsutil.ts";
 import {
@@ -45,10 +57,12 @@ import { setupContainers } from "./bench/container-setup.ts";
 
 /** Cronus28 hosts a foreign app on codeunit 80013; Cronus284 is untouched pending the owner. */
 export const REFUSED_CONTAINERS = ["Cronus28", "Cronus284"];
-export const EGRESS_MARKER = "egress-verified.json";
+export const EGRESS_MARKER = MARKER_FILE;
 
-/** Host egress verification; M1-33 supplies the real one. Returns problems; empty means verified. */
-export type EgressVerifier = () => Promise<string[]>;
+/** Host egress verification (M1-33) against the marker at markerPath. Returns problems; empty means verified. */
+export type EgressVerifier = (markerPath: string) => Promise<string[]>;
+/** off: nat network, no proxy; placed: internal network, proxy, preflight; enforced: placed and authorized. */
+export type EgressMode = "off" | "placed" | "enforced";
 
 export interface EnvOptions {
   repoRoot: string;
@@ -77,6 +91,10 @@ export interface EnvDeps {
   owner(): string;
   health(names: string[]): HealthView;
   verifyEgress: EgressVerifier;
+  /** The run-time egress seam for placed sandboxes (default: the real one). */
+  egressRuntime?: (
+    o: { repoRoot: string; markerPath: string },
+  ) => Promise<EgressRuntime>;
 }
 
 export const REAL_DEPS: EnvDeps = {
@@ -96,9 +114,11 @@ export const REAL_DEPS: EnvDeps = {
       windowSize: 20,
       expectedContainerNames: names,
     }),
-  // Replaced by M1-33 with verifyEgressState(await collectEgressState()).
-  verifyEgress: () =>
-    Promise.resolve(["egress verification is not implemented yet (M1-33)"]),
+  verifyEgress: async (markerPath) =>
+    verifyEgressState(
+      await collectEgressState(realEgressCollector(markerPath)),
+    ),
+  egressRuntime: realEgressRuntime,
 };
 
 export interface OpenEnv {
@@ -106,21 +126,43 @@ export interface OpenEnv {
   close(): Promise<void>;
 }
 
-/** Enforcement counts only when the marker says authorized AND the host verifies now; a failing marker stops. */
-export async function resolveEgress(
+/**
+ * The egress mode from the marker and a verification now: no marker is off;
+ * any marker whose verification fails stops the command; qualified places
+ * sandboxes on the internal network; authorized also enforces.
+ */
+export async function egressMode(
   sharedResults: string,
   verify: EgressVerifier,
-): Promise<boolean> {
-  let marker: { state?: string } | null = null;
+): Promise<EgressMode> {
+  const path = join(sharedResults, EGRESS_MARKER);
+  let text: string;
   try {
-    marker = JSON.parse(
-      await Deno.readTextFile(join(sharedResults, EGRESS_MARKER)),
-    );
+    text = await Deno.readTextFile(path);
   } catch (err) {
-    if (!(err instanceof Deno.errors.NotFound)) throw err;
+    if (err instanceof Deno.errors.NotFound) return "off";
+    throw new ConfigurationError(
+      `cannot read the egress marker ${path}: ${(err as Error).message}`,
+    );
   }
-  if (marker === null) return false;
-  const problems = await verify();
+  let marker: { state?: unknown };
+  try {
+    marker = JSON.parse(text);
+  } catch (err) {
+    throw new ConfigurationError(
+      `egress marker ${path} is not JSON, refusing to run: ${
+        (err as Error).message
+      }`,
+    );
+  }
+  if (!(MARKER_STATES as readonly unknown[]).includes(marker?.state)) {
+    throw new ConfigurationError(
+      `egress marker ${path} has an unknown state ${
+        JSON.stringify(marker?.state)
+      }, refusing to run`,
+    );
+  }
+  const problems = await verify(path);
   if (problems.length > 0) {
     throw new ConfigurationError(
       `egress marker present but verification failed, refusing to run: ${
@@ -128,7 +170,42 @@ export async function resolveEgress(
       }`,
     );
   }
-  return marker.state === "authorized";
+  return marker.state === "authorized"
+    ? "enforced"
+    : marker.state === "qualified"
+    ? "placed"
+    : "off";
+}
+
+/** Enforcement counts only when the marker says authorized AND the host verifies now; a failing marker stops. */
+export async function resolveEgress(
+  sharedResults: string,
+  verify: EgressVerifier,
+): Promise<boolean> {
+  return (await egressMode(sharedResults, verify)) === "enforced";
+}
+
+/** Where the backend binds: the sandbox gateway (fixed port) when placed, else the nat gateway. */
+export async function backendAddress(
+  mode: EgressMode,
+  o: { backendHost?: string | undefined; backendPort: number },
+  resolveHost: () => Promise<string>,
+): Promise<{ host: string; port: number }> {
+  if (mode === "off") {
+    return { host: o.backendHost ?? await resolveHost(), port: o.backendPort };
+  }
+  if (
+    (o.backendHost !== undefined &&
+      o.backendHost !== SANDBOX_NETWORK.gateway) ||
+    o.backendPort !== BACKEND_PORT
+  ) {
+    throw new ConfigurationError(
+      `egress is ${mode}: the backend binds ${SANDBOX_NETWORK.gateway}:${BACKEND_PORT} only (got ${
+        o.backendHost ?? "(default)"
+      }:${o.backendPort})`,
+    );
+  }
+  return { host: SANDBOX_NETWORK.gateway, port: BACKEND_PORT };
 }
 
 /**
@@ -212,19 +289,26 @@ export async function openHarnessEnv(
         } removed ${swept.length} leftover sandbox(es): ${swept.join(", ")}`,
       );
     }
+    const mode = await egressMode(sharedResults, deps.verifyEgress);
     const ready = await deps.setup(containers);
     closers.unshift(ready.dispose);
     const lane = new BcLane(ready.bc, ready.names, {
       health: deps.health(ready.names),
     });
-    const host = o.backendHost ?? await deps.resolveHost();
+    const { host, port } = await backendAddress(mode, o, deps.resolveHost);
+    const egress = mode === "off"
+      ? undefined
+      : await (deps.egressRuntime ?? realEgressRuntime)({
+        repoRoot: o.repoRoot,
+        markerPath: join(sharedResults, EGRESS_MARKER),
+      });
     const backend = new Backend({
       approvedRoots: [join(o.privateRoot, "work")],
       workRoot: join(o.privateRoot, "backend"),
       ops: defaultBackendOps(lane),
       allowedHosts: [host],
     });
-    const server = backend.serve(host, o.backendPort);
+    const server = backend.serve(host, port);
     closers.unshift(async () => {
       try {
         await bounded(server.shutdown(), 10_000, "backend server shutdown");
@@ -254,7 +338,8 @@ export async function openHarnessEnv(
       deploy: { ledgerRoot: join(sharedResults, "bc-ledger") },
       pricing: (at) => loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
       supervised: o.supervised,
-      egressEnforced: await resolveEgress(sharedResults, deps.verifyEgress),
+      egressEnforced: mode === "enforced",
+      ...(egress ? { egress } : {}),
       credentialLedger: o.credentialLedger,
       // No placeholder: an unset lane is refused at the credential reservation (M1-28b).
       lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",

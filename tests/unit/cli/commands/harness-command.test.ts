@@ -13,6 +13,7 @@ import {
   type CellCliOptions,
   cellGate,
   harnessCell,
+  harnessEgressVerify,
   harnessImagesBuild,
   harnessJudgeFixture,
   harnessQualify,
@@ -24,12 +25,21 @@ import {
   validateHarness,
 } from "../../../../cli/commands/harness-command.ts";
 import {
+  backendAddress,
   EGRESS_MARKER,
+  egressMode,
   type EnvDeps,
   openHarnessEnv,
   openPlanEnv,
   resolveEgress,
 } from "../../../../cli/commands/harness-env.ts";
+import {
+  type EgressState,
+  firewallPlan,
+  preflightExpect,
+  RECORDED_HOSTS_PATH,
+  SANDBOX_NETWORK,
+} from "../../../../src/harness/egress.ts";
 import { claudeCodeAdapter } from "../../../../src/harness/adapters/claude-code.ts";
 import { loadSymbolsLock } from "../../../../src/harness/identity.ts";
 import {
@@ -1626,4 +1636,356 @@ Deno.test("harnessCell: a malformed stub scenario is refused before anything run
     "scenario",
   );
   assertEquals(t.docker.runs, []);
+});
+
+// M1-33: egress mode, backend placement and `harness egress verify`.
+
+Deno.test("egressMode: qualified places, authorized enforces; an unknown or unreadable marker stops", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const ok = () => Promise.resolve([]);
+  const mark = (v: unknown) =>
+    Deno.writeTextFile(join(root, EGRESS_MARKER), JSON.stringify(v));
+  assertEquals(await egressMode(root, ok), "off");
+  await mark({ v: 1, state: "candidate" });
+  assertEquals(await egressMode(root, ok), "off");
+  await mark({ v: 1, state: "qualified" });
+  assertEquals(await egressMode(root, ok), "placed");
+  await mark({ v: 1, state: "authorized" });
+  assertEquals(await egressMode(root, ok), "enforced");
+  let seen = "";
+  await egressMode(root, (p) => {
+    seen = p;
+    return ok();
+  });
+  assertEquals(seen, join(root, EGRESS_MARKER));
+  await mark({ v: 1, state: "authorised" });
+  await assertRejects(
+    () => egressMode(root, ok),
+    ConfigurationError,
+    "authorised",
+  );
+  await Deno.writeTextFile(join(root, EGRESS_MARKER), "{");
+  await assertRejects(
+    () => egressMode(root, ok),
+    ConfigurationError,
+    EGRESS_MARKER,
+  );
+});
+
+Deno.test("backendAddress: placed sandboxes reach the backend on the gateway only", async () => {
+  const nat = () => Promise.resolve("172.20.0.1");
+  assertEquals(
+    await backendAddress("off", { backendPort: 3210 }, nat),
+    { host: "172.20.0.1", port: 3210 },
+  );
+  for (const mode of ["placed", "enforced"] as const) {
+    assertEquals(
+      await backendAddress(mode, { backendPort: 3210 }, nat),
+      { host: SANDBOX_NETWORK.gateway, port: 3210 },
+    );
+    await assertRejects(
+      () =>
+        backendAddress(
+          mode,
+          { backendHost: "0.0.0.0", backendPort: 3210 },
+          nat,
+        ),
+      ConfigurationError,
+      "0.0.0.0",
+    );
+    await assertRejects(
+      () => backendAddress(mode, { backendPort: 3211 }, nat),
+      ConfigurationError,
+      "3211",
+    );
+  }
+});
+
+function egressState(): EgressState {
+  return {
+    network: {
+      id: "net9",
+      driver: "internal",
+      subnet: SANDBOX_NETWORK.subnet,
+      gateway: SANDBOX_NETWORK.gateway,
+      hnsId: "hns9",
+    },
+    hns: { id: "hns9", type: "Internal", subnet: SANDBOX_NETWORK.subnet },
+    gatewayAdapter: { index: 42, alias: "vEthernet (x)", prefix: 24 },
+    profiles: ["Domain", "Private", "Public"].map((name) => ({
+      name,
+      enabled: true,
+      inbound: "Allow",
+      outbound: "Allow",
+    })),
+    groupRules: firewallPlan(42),
+    foreignBlockRules: [],
+    marker: null,
+  };
+}
+
+/** A collector over egressState() that reads the marker file like the real one. */
+function markerAwareCollector(mutate: (s: EgressState) => void = () => {}) {
+  return async (markerPath: string): Promise<EgressState> => {
+    const s = egressState();
+    mutate(s);
+    try {
+      const m = JSON.parse(await Deno.readTextFile(markerPath));
+      s.marker = {
+        state: m.state,
+        networkId: m.network_id,
+        interfaceIndex: m.interface_index,
+      };
+    } catch { /* no marker */ }
+    return s;
+  };
+}
+
+Deno.test("harness egress verify: problems fail; without --mark the marker is part of the verification", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const marker = join(root, "results", "harness", EGRESS_MARKER);
+  const p = await harnessEgressVerify(
+    { root, mark: "candidate" },
+    markerAwareCollector((s) => (s.foreignBlockRules = ["x"])),
+  );
+  assertStringIncludes(p.join("\n"), "foreign block");
+  await assertRejects(() => Deno.stat(marker), Deno.errors.NotFound);
+  assertEquals(
+    await harnessEgressVerify(
+      { root, mark: "candidate" },
+      markerAwareCollector(),
+    ),
+    [],
+  );
+  assertStringIncludes(
+    (await harnessEgressVerify(
+      { root },
+      markerAwareCollector((s) => (s.network!.id = "net10")),
+    )).join("\n"),
+    "recreated",
+  );
+});
+
+Deno.test("harness egress verify --mark: ordered states, no skip, no downgrade, no overwrite", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const c = markerAwareCollector();
+  const refused = async (
+    o: Parameters<typeof harnessEgressVerify>[0],
+    word: string,
+  ) => assertStringIncludes((await harnessEgressVerify(o, c)).join("\n"), word);
+  await refused({ root, mark: "qualified" }, "candidate first");
+  await refused({ root, mark: "authorized" }, "candidate first");
+  assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
+  await refused({ root, mark: "candidate" }, "already candidate");
+  await refused({ root, mark: "authorized" }, "qualified first");
+});
+
+async function probeEvidence(
+  root: string,
+  over: Record<string, unknown> = {},
+  lines = Object.entries(preflightExpect(["api.anthropic.com"])).map((
+    [probe, ok],
+  ) => ({ probe, ok })),
+): Promise<string> {
+  const path = join(root, `probe-${crypto.randomUUID()}.json`);
+  await Deno.writeTextFile(
+    path,
+    JSON.stringify({
+      v: 1,
+      at: new Date().toISOString(),
+      network_id: "net9",
+      interface_index: 42,
+      hosts: ["api.anthropic.com"],
+      lines,
+      ...over,
+    }),
+  );
+  return path;
+}
+
+Deno.test("harness egress verify --mark qualified: needs passing in-sandbox probe evidence for the current network", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const c = markerAwareCollector();
+  assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
+  const q = (probe?: string) =>
+    harnessEgressVerify({
+      root,
+      mark: "qualified",
+      ...(probe ? { probeEvidence: probe } : {}),
+    }, c);
+  assertStringIncludes((await q()).join("\n"), "probe evidence");
+  assertStringIncludes(
+    (await q(await probeEvidence(root, { network_id: "net8" }))).join("\n"),
+    "network",
+  );
+  assertStringIncludes(
+    (await q(
+      await probeEvidence(
+        root,
+        {},
+        Object.entries(preflightExpect(["api.anthropic.com"])).map((
+          [probe, ok],
+        ) => ({ probe, ok: probe === "gw-smb-445" ? true : ok })),
+      ),
+    )).join("\n"),
+    "gw-smb-445",
+  );
+  assertStringIncludes(
+    (await q(await probeEvidence(root, { hosts: [] }))).join("\n"),
+    "api.anthropic.com",
+  );
+  assertEquals(await q(await probeEvidence(root)), []);
+  const m = JSON.parse(
+    await Deno.readTextFile(join(root, "results", "harness", EGRESS_MARKER)),
+  );
+  assertEquals([m.state, m.network_id, m.interface_index], [
+    "qualified",
+    "net9",
+    42,
+  ]);
+  assertStringIncludes(
+    (await harnessEgressVerify({ root, mark: "candidate" }, c)).join("\n"),
+    "downgrade",
+  );
+});
+
+Deno.test("harness egress verify --mark authorized: needs recorded rotation, recorded OAuth hosts and a later enforced supervised Claude cell", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const c = markerAwareCollector();
+  assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
+  assertEquals(
+    await harnessEgressVerify({
+      root,
+      mark: "qualified",
+      probeEvidence: await probeEvidence(root),
+    }, c),
+    [],
+  );
+  const past = (min: number) =>
+    new Date(Date.now() + min * 60_000).toISOString();
+  const rotation = join(root, "rotation.json");
+  const writeRotation = (names: string[], at = past(1)) =>
+    Deno.writeTextFile(
+      rotation,
+      JSON.stringify({
+        v: 1,
+        credentials: names.map((name) => ({
+          name,
+          revoked_at: at,
+          created_at: at,
+        })),
+      }),
+    );
+  const cells = join(root, "results", "harness", "cells");
+  const writeCell = async (
+    id: string,
+    o: {
+      harness?: string;
+      termination?: string;
+      started?: string;
+      log?: string;
+    },
+  ) => {
+    await Deno.mkdir(join(cells, "executions", "camp1"), { recursive: true });
+    await Deno.writeTextFile(
+      join(cells, "executions", "camp1", `${id}.json`),
+      JSON.stringify({
+        id,
+        manifest: { harness: o.harness ?? "claude-code" },
+        termination: o.termination ?? "completed",
+        started_at: o.started ?? past(2),
+      }),
+    );
+    await Deno.mkdir(join(cells, "runs", id), { recursive: true });
+    if (o.log !== undefined) {
+      await Deno.writeTextFile(join(cells, "runs", id, "egress.jsonl"), o.log);
+    }
+  };
+  const allow =
+    JSON.stringify({ decision: "allow", target: "api.anthropic.com:443" }) +
+    "\n";
+  const deny = JSON.stringify({ decision: "deny", target: "evil.test:443" }) +
+    "\n";
+  const a = (o: { rotation?: string; cell?: string; evidence?: string }) =>
+    harnessEgressVerify({ root, mark: "authorized", ...o }, c);
+  const full = { rotation, cell: "cell-ok", evidence: "M1-34/001" };
+  await writeCell("cell-ok", { log: allow });
+  await writeRotation(["claude-oauth", "openrouter"]);
+  const { rotation: _r, ...noRotation } = full;
+  assertStringIncludes((await a(noRotation)).join("\n"), "rotation");
+  assertStringIncludes(
+    (await a({ ...full, evidence: "" })).join("\n"),
+    "evidence",
+  );
+  // Step 11 records the OAuth hosts before authorization.
+  assertStringIncludes((await a(full)).join("\n"), RECORDED_HOSTS_PATH);
+  await Deno.mkdir(join(root, "harness", "egress"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, ...RECORDED_HOSTS_PATH.split("/")),
+    JSON.stringify({
+      v: 1,
+      source: "M1-34/001 step 11",
+      routes: { "anthropic:first-party-oauth": ["oauth.example.test"] },
+    }),
+  );
+  await writeRotation(["claude-oauth"]);
+  assertStringIncludes((await a(full)).join("\n"), "openrouter");
+  await writeRotation(["claude-oauth", "openrouter"], past(3));
+  assertStringIncludes((await a(full)).join("\n"), "after the rotation");
+  await writeRotation(["claude-oauth", "openrouter"]);
+  assertStringIncludes((await a({ ...full, cell: "nope" })).join("\n"), "nope");
+  await writeCell("cell-pi", { harness: "pi", log: allow });
+  assertStringIncludes(
+    (await a({ ...full, cell: "cell-pi" })).join("\n"),
+    "claude-code",
+  );
+  await writeCell("cell-deny", { log: allow + deny });
+  assertStringIncludes(
+    (await a({ ...full, cell: "cell-deny" })).join("\n"),
+    "deny",
+  );
+  await writeCell("cell-nolog", {});
+  assertStringIncludes(
+    (await a({ ...full, cell: "cell-nolog" })).join("\n"),
+    "egress.jsonl",
+  );
+  await writeCell("cell-crash", { termination: "harness_crash", log: allow });
+  assertStringIncludes(
+    (await a({ ...full, cell: "cell-crash" })).join("\n"),
+    "completed",
+  );
+  await writeCell("cell-early", { started: past(-60), log: allow });
+  assertStringIncludes(
+    (await a({ ...full, cell: "cell-early" })).join("\n"),
+    "qualified",
+  );
+  assertEquals(await a(full), []);
+  const m = JSON.parse(
+    await Deno.readTextFile(join(root, "results", "harness", EGRESS_MARKER)),
+  );
+  assertEquals(
+    [
+      m.state,
+      m.evidence,
+      m.network,
+      m.network_id,
+      m.interface_index,
+      m.proxy_allowlist,
+    ],
+    ["authorized", "M1-34/001", SANDBOX_NETWORK.name, "net9", 42, [
+      "api.anthropic.com",
+      "oauth.example.test",
+      "openrouter.ai",
+    ]],
+  );
+  assert(typeof m.verified_at === "string");
+  assertStringIncludes((await a(full)).join("\n"), "already authorized");
+  assertStringIncludes(
+    (await harnessEgressVerify({
+      root,
+      mark: "qualified",
+      probeEvidence: await probeEvidence(root),
+    }, c)).join("\n"),
+    "downgrade",
+  );
 });

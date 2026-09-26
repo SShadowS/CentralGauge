@@ -38,13 +38,23 @@ import {
 } from "../../../src/harness/sandbox.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
+  type EgressState,
+  firewallPlan,
+  RECORDED_HOSTS_PATH,
+  SANDBOX_NETWORK,
+  verifyEgressState,
+} from "../../../src/harness/egress.ts";
+import {
   ccBehavior,
   cellFor,
+  enforce,
+  type FakeEgress,
   IMAGE_ID,
   INIT,
   makeEnv,
   PROBE_COST,
   probeLines,
+  RECORDED_OAUTH,
   SECRET_OAUTH,
   type TestEnv,
 } from "./runtime-fixture.ts";
@@ -191,7 +201,7 @@ Deno.test("credential gate: refused without supervision or enforcement; supervis
     "5 supervised",
   );
   assertEquals(t.docker.runs, [], "no docker call before the reservation");
-  t.env.egressEnforced = true;
+  enforce(t);
   assertEquals(
     (await runCell(t.env, await cellFor(t))).executions.length,
     1,
@@ -235,7 +245,7 @@ Deno.test("retries follow ancestry: supervised withholds; usage-limit then setup
   ]]);
   assertStringIncludes(s.withheld!, "supervised");
   t.env.supervised = false;
-  t.env.egressEnforced = true;
+  enforce(t);
   const u = await runCell(t.env, cell);
   assertEquals(u.executions.map((e) => [e.run_kind, e.attempt]), [[
     "planned",
@@ -653,7 +663,7 @@ Deno.test("operator interrupt stops the sandbox; the attempt is recorded and jud
 Deno.test("operator interrupt: no automatic retry starts after it", async () => {
   const t = await makeEnv();
   t.env.supervised = false;
-  t.env.egressEnforced = true;
+  enforce(t);
   const stop = new AbortController();
   t.env.stop = stop.signal;
   t.docker.behavior = async (_c, io) => {
@@ -815,7 +825,7 @@ Deno.test("records of a campaign pass ExecutionRecordSchema and validateCampaign
   };
   await t.env.store.writeCampaign(campaign);
   t.env.supervised = false;
-  t.env.egressEnforced = true;
+  enforce(t);
   const place = (c: CellRef): CellRef => ({
     ...c,
     block: blocks[0]!,
@@ -1020,7 +1030,7 @@ Deno.test("an operator stop before the start reserves no credential run and star
 Deno.test("runCell: an automatic retry needs its parent in prior, at attempt parent + 1", async () => {
   const t = await makeEnv();
   t.env.supervised = false;
-  t.env.egressEnforced = true;
+  enforce(t);
   const cell = await cellFor(t);
   await assertRejects(
     () =>
@@ -1811,4 +1821,299 @@ Deno.test("record and error strings are pattern-redacted", async () => {
     !all.includes("z".repeat(30)),
     "the header value reaches no published byte",
   );
+});
+
+// M1-33: egress enforcement at run time (fake collector, FakeDocker, in-memory preflight lines).
+
+/** Names in the private secrets root (custody dirs), [] when absent. */
+function secretDirs(t: TestEnv): string[] {
+  try {
+    return [...Deno.readDirSync(join(t.env.privateRoot, "secrets"))].map((e) =>
+      e.name
+    );
+  } catch {
+    return [];
+  }
+}
+
+Deno.test("enforced run: listeners checked, preflight run, then secrets and ready; nothing earlier", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  eg.onProbe = (sandbox) => {
+    const call = t.docker.runs.find((r) => r.name === sandbox)!;
+    const dir = call.mounts.get("C:\\cg-secrets")!.src;
+    eg.events.push(`probe sees ${[...Deno.readDirSync(dir)].length} files`);
+    return Promise.resolve();
+  };
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    const dir = call.mounts.get("C:\\cg-secrets")!.src;
+    eg.events.push(
+      `entrypoint: ${
+        [...Deno.readDirSync(dir)].map((e) => e.name).sort().join(",")
+      }`,
+    );
+    return await inner(call, io);
+  };
+  const r = await runCell(t.env, await cellFor(t));
+  assertEquals(eg.events, [
+    "verify",
+    "proxy",
+    "listeners",
+    "probe",
+    "probe sees 0 files",
+    `entrypoint: backend-token,claude-oauth-token,${READY_FILE}`,
+    "proxy down",
+  ]);
+  const call = t.docker.runs[0]!;
+  assertEquals(call.network, SANDBOX_NETWORK.name);
+  assertEquals(call.env.get("HTTPS_PROXY"), "http://172.30.60.1:3128");
+  assertEquals(call.env.get("HTTP_PROXY"), "http://172.30.60.1:3128");
+  assertEquals(call.env.get("NO_PROXY"), "172.30.60.1");
+  // A1/A2: the proxy allowlist and the positive probes are exactly this execution's route hosts.
+  assertEquals(eg.proxyHosts, ["api.anthropic.com", RECORDED_OAUTH]);
+  assertEquals(eg.probedHosts, eg.proxyHosts);
+  // The preflight's own deny (before release) is not a violation.
+  const e = r.executions[0]!;
+  assertEquals(e.termination, "completed");
+  assert(!await exists(t.env.credentialLedger!), "enforced: no ledger slot");
+  const log = await Deno.readTextFile(
+    join(t.env.resultsRoot, "runs", e.id, "egress.jsonl"),
+  );
+  assertStringIncludes(log, '"decision":"deny"');
+});
+
+Deno.test("enforced run: a proxy not listening, a failed host verification or a failed preflight aborts before any secret file exists", async () => {
+  const cases: [string, (eg: FakeEgress) => void, boolean][] = [
+    [
+      "listening",
+      (eg) => (eg.listenerProblems = [
+        "port 3128: nothing listening on 172.30.60.1",
+      ]),
+      false,
+    ],
+    [
+      "host verification",
+      (eg) => (eg.verifyProblems = [
+        "rule cg-harness-egress-tcp: disabled is false",
+      ]),
+      false,
+    ],
+    [
+      "gw-smb-445",
+      (
+        eg,
+      ) => (eg.lines = (ls) =>
+        ls.map((l) => l.probe === "gw-smb-445" ? { ...l, ok: true } : l)),
+      true,
+    ],
+    [
+      "could not run",
+      (
+        eg,
+      ) => (eg.lines = (ls) =>
+        ls.map((l) =>
+          l.probe === "gw-icmp" ? { ...l, error: "no Ping class" } : l
+        )),
+      true,
+    ],
+    [RECORDED_HOSTS_PATH, (eg) => (eg.recordedHosts = {}), false],
+  ];
+  for (const [word, breakIt, sandboxStarted] of cases) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    breakIt(eg);
+    let probeListing: string[] | null = null;
+    eg.onProbe = (sandbox) => {
+      const dir = t.docker.runs.find((r) => r.name === sandbox)!.mounts.get(
+        "C:\\cg-secrets",
+      )!.src;
+      probeListing = [...Deno.readDirSync(dir)].map((e) => e.name);
+      return Promise.resolve();
+    };
+    const cell = await cellFor(t);
+    await assertRejects(() => runCell(t.env, cell), ContainerError, word);
+    const [e, ...more] = await t.env.store.executions(cell.campaignId);
+    assertEquals(more, [], `${word}: one execution, no retry`);
+    assertEquals(e!.termination, "setup_failed", word);
+    assertStringIncludes((await sideOf(t, e!.id)).setup_error, word);
+    assertEquals(t.docker.runs.length, sandboxStarted ? 1 : 0, word);
+    if (sandboxStarted) assertEquals(probeListing, [], `${word}: empty mount`);
+    assertEquals(t.docker.readySeen, false, `${word}: no ready`);
+    assertEquals(secretDirs(t), [], word);
+    assert(!await exists(privatePaths(t.env, e!.id).custody), word);
+    assertEquals(
+      await t.env.store.judgments(e!.id),
+      [],
+      `${word}: never scored`,
+    );
+  }
+});
+
+Deno.test("placed (qualified) run: a failed host verification reserves no ledger slot", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  t.env.egressEnforced = false; // qualified: placed, still supervised and budgeted
+  eg.verifyProblems = ["foreign block rule is effective: x"];
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t)),
+    ContainerError,
+    "foreign block",
+  );
+  assert(!await exists(t.env.credentialLedger!), "no slot reserved");
+  assertEquals(t.docker.runs, []);
+});
+
+Deno.test("enforced run: a deny line during the run kills the sandbox (egress_violation); infra, never judged, no retry, the campaign stops", async () => {
+  for (const brokenLog of [false, true]) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    t.env.supervised = false; // automatic retries would be allowed
+    const work = ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", []);
+    t.docker.behavior = async (call, io) => {
+      await work(call, io); // real work: did_work is true
+      if (brokenLog) {
+        // The egress log cannot be written: the violation must still stop the run.
+        const id = call.labels.get("centralgauge.harness.execution")!;
+        const log = privatePaths(t.env, id).egress;
+        await Deno.remove(log).catch(() => {});
+        await Deno.mkdir(log);
+      }
+      eg.log!({
+        at: new Date().toISOString(),
+        decision: "deny",
+        target: "evil.test:443",
+        reason: "host not allowed",
+      });
+      if (brokenLog) {
+        // A transient failure: the log is writable again for publication.
+        const id = call.labels.get("centralgauge.harness.execution")!;
+        await Deno.remove(privatePaths(t.env, id).egress);
+      }
+      await io.killed;
+      return 137;
+    };
+    const cell = await cellFor(t);
+    const err = await assertRejects(
+      () => runCell(t.env, cell),
+      ContainerError,
+      "egress violation",
+    );
+    if (brokenLog) assertStringIncludes(err.message, "egress log");
+    const [e, ...more] = await t.env.store.executions(cell.campaignId);
+    assertEquals(more, [], "no automatic retry, no second release");
+    assertEquals(e!.termination, "setup_failed", "infra, never scored");
+    assertEquals(e!.did_work, true);
+    assertEquals(await t.env.store.judgments(e!.id), []);
+    assertEquals((await sideOf(t, e!.id)).stop_reason, "egress_violation");
+    assertEquals(t.docker.kills.length, 1);
+    assertEquals(t.docker.runs.length, 1);
+  }
+});
+
+Deno.test("enforced run: a proxy that cannot start is setup_failed naming the proxy address", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  eg.startProxy = () =>
+    Promise.reject(
+      new Deno.errors.AddrInUse("Only one usage of each socket address"),
+    );
+  const cell = await cellFor(t);
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ContainerError,
+    "172.30.60.1:3128",
+  );
+  const [e] = await t.env.store.executions(cell.campaignId);
+  assertEquals(e!.termination, "setup_failed");
+  assertStringIncludes((await sideOf(t, e!.id)).setup_error, "AddrInUse");
+  assertEquals(t.docker.runs, []);
+  assertEquals(secretDirs(t), []);
+});
+
+Deno.test("enforced run: a recreated network (new id or interface index) fails until the rules are regenerated", async () => {
+  const state = (): EgressState => ({
+    network: {
+      id: "net1",
+      driver: "internal",
+      subnet: SANDBOX_NETWORK.subnet,
+      gateway: SANDBOX_NETWORK.gateway,
+      hnsId: "hns1",
+    },
+    hns: { id: "hns1", type: "Internal", subnet: SANDBOX_NETWORK.subnet },
+    gatewayAdapter: { index: 42, alias: "vEthernet (x)", prefix: 24 },
+    profiles: ["Domain", "Private", "Public"].map((name) => ({
+      name,
+      enabled: true,
+      inbound: "Allow",
+      outbound: "Allow",
+    })),
+    groupRules: firewallPlan(42),
+    foreignBlockRules: [],
+    marker: { state: "authorized", networkId: "net1", interfaceIndex: 42 },
+  });
+  const recreations = [
+    (s: EgressState) => (s.network!.id = "net2"),
+    (s: EgressState) => (s.gatewayAdapter!.index = 43),
+  ];
+  for (const recreate of recreations) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    const s = state();
+    recreate(s);
+    eg.verify = () => Promise.resolve(verifyEgressState(s));
+    await assertRejects(
+      async () => runCell(t.env, await cellFor(t)),
+      ContainerError,
+      "recreated",
+    );
+    assertEquals(t.docker.runs, []);
+    // Regenerated and reapplied: rules on the new index, marker on the new ids.
+    const fixed = state();
+    recreate(fixed);
+    fixed.groupRules = firewallPlan(fixed.gatewayAdapter!.index);
+    fixed.marker = {
+      state: "authorized",
+      networkId: fixed.network!.id,
+      interfaceIndex: fixed.gatewayAdapter!.index,
+    };
+    eg.verify = () => Promise.resolve(verifyEgressState(fixed));
+    const r = await runCell(t.env, await cellFor(t));
+    assertEquals(r.executions[0]!.termination, "completed");
+  }
+});
+
+Deno.test("enforced run without an egress runtime is refused before anything (fail closed)", async () => {
+  const t = await makeEnv();
+  t.env.egressEnforced = true;
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t)),
+    ConfigurationError,
+    "egress",
+  );
+  assertEquals(t.docker.runs, []);
+});
+
+Deno.test("stub cell with a placed marker: egress not consulted (M2-08); default network, no proxy or preflight, dummy and ready before the start", async () => {
+  const t = await makeEnv();
+  await stubEnv(t);
+  const eg = enforce(t);
+  let readyAtStart = false;
+  let oauth = "";
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    const dir = call.mounts.get("C:\\cg-secrets")!.src;
+    readyAtStart = (await Deno.stat(join(dir, READY_FILE))).size === 0;
+    oauth = await Deno.readTextFile(join(dir, "claude-oauth-token"));
+    return await inner(call, io);
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(eg.events, []);
+  const call = t.docker.runs[0]!;
+  assertEquals(call.network, null);
+  assertEquals(call.env.get("HTTPS_PROXY"), undefined);
+  assert(readyAtStart);
+  assertEquals(oauth.length, 40);
+  assert(oauth !== SECRET_OAUTH);
+  assertEquals(await t.env.store.judgments(e.id), []);
 });

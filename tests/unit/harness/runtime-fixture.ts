@@ -12,6 +12,15 @@ import { Backend, defaultBackendOps } from "../../../src/harness/backend.ts";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
 import { loadConfig } from "../../../src/harness/config.ts";
 import type { CellRef, HarnessEnv } from "../../../src/harness/execution.ts";
+import type {
+  EgressLogLine,
+  EgressRuntime,
+  ProbeLine,
+} from "../../../src/harness/egress.ts";
+import {
+  preflightExpect,
+  SANDBOX_NETWORK,
+} from "../../../src/harness/egress.ts";
 import {
   resolveRefapp,
   taskSetIdentity,
@@ -325,4 +334,83 @@ export async function cellFor(
     oracleHash: ids.tasks[0]!.oracle,
     refapp: await resolveRefapp(t.repo.root, task.task.refapp_version),
   };
+}
+
+/** An in-memory egress runtime (M1-33): every call is an event; the probe passes unless told otherwise. */
+export interface FakeEgress extends EgressRuntime {
+  events: string[];
+  verifyProblems: string[];
+  listenerProblems: string[];
+  /** The proxy allowlist and log of the last execution. */
+  proxyHosts: string[] | null;
+  log: ((l: EgressLogLine) => void) | null;
+  /** Probe hosts of the last execution. */
+  probedHosts: string[] | null;
+  /** Rewrites the (passing) probe lines. */
+  lines: (ok: ProbeLine[]) => ProbeLine[];
+  /** Runs inside the probe (the sandbox is up, nothing released yet). */
+  onProbe: (sandbox: string) => Promise<void>;
+}
+
+export const RECORDED_OAUTH = "oauth.example.test";
+
+export function fakeEgress(): FakeEgress {
+  const eg: FakeEgress = {
+    events: [],
+    verifyProblems: [],
+    listenerProblems: [],
+    proxyHosts: null,
+    log: null,
+    probedHosts: null,
+    lines: (ok) => ok,
+    onProbe: () => Promise.resolve(),
+    recordedHosts: { "anthropic:first-party-oauth": [RECORDED_OAUTH] },
+    verify() {
+      eg.events.push("verify");
+      return Promise.resolve([...eg.verifyProblems]);
+    },
+    listeners() {
+      eg.events.push("listeners");
+      return Promise.resolve([...eg.listenerProblems]);
+    },
+    startProxy(o) {
+      eg.events.push("proxy");
+      eg.proxyHosts = o.allowedHosts;
+      eg.log = o.log;
+      return Promise.resolve({
+        shutdown: () => {
+          eg.events.push("proxy down");
+          return Promise.resolve();
+        },
+      });
+    },
+    async probe(sandbox, hosts) {
+      eg.events.push("probe");
+      eg.probedHosts = hosts;
+      // The real preflight's deny probes produce proxy denies: never a violation.
+      eg.log?.({
+        at: new Date().toISOString(),
+        decision: "deny",
+        target: "example.com:443",
+        reason: "host not allowed",
+      });
+      await eg.onProbe(sandbox);
+      return eg.lines(
+        Object.entries(preflightExpect(hosts)).map(([probe, ok]) => ({
+          probe,
+          ok,
+        })),
+      );
+    },
+  };
+  return eg;
+}
+
+/** Verified enforcement: the internal network, the proxy and the preflight (entrypoints wait for ready). */
+export function enforce(t: TestEnv, eg: FakeEgress = fakeEgress()): FakeEgress {
+  t.env.egressEnforced = true;
+  t.env.egress = eg;
+  t.env.backendUrl = `http://${SANDBOX_NETWORK.gateway}:3210`;
+  t.docker.waitForReady = true;
+  return eg;
 }

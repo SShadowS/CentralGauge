@@ -18,6 +18,7 @@ import { write } from "./refapp-fixture.ts";
 import {
   CATALOG,
   cellFor,
+  enforce,
   makeEnv,
   MOCK_IMAGE_ID,
   mockImageBehavior,
@@ -240,7 +241,7 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
     "egress",
   );
   assertEquals(await t.env.store.campaigns("cc"), []);
-  t.env.egressEnforced = true;
+  enforce(t); // M1-33: verified enforcement comes with its egress runtime
   const s = await runCampaign(t.env, "cc", opts(), io());
   assertEquals([s.ran, s.judged], [2, 2]);
 });

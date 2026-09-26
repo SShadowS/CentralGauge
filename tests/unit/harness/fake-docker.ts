@@ -94,6 +94,10 @@ export class FakeDocker implements DockerCli {
   containers = new Map<string, string | null>();
   /** The last capture handed to run (its abort signal is observable). */
   lastCapture: Capture | null = null;
+  /** Like the entrypoints: hold the behavior until the secrets mount holds ready (or a kill). */
+  waitForReady = false;
+  /** Whether a run ever saw ready in its secrets mount. */
+  readySeen = false;
   private deleted = new Set<string>();
   private stoppers = new Map<string, () => void>();
 
@@ -129,6 +133,16 @@ export class FakeDocker implements DockerCli {
     let written = 0;
     try {
       if (this.failAfterStart) throw this.failAfterStart;
+      if (this.waitForReady) {
+        const ready = `${call.mounts.get("C:\\cg-secrets")!.src}/ready`;
+        let stop = false;
+        killed.then(() => (stop = true));
+        while (!stop && !await Deno.stat(ready).then(() => true, () => false)) {
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        if (stop) return 137;
+        this.readySeen = true;
+      }
       const code = await this.behavior(call, {
         stdout: async (line) => {
           const bytes = new TextEncoder().encode(line + "\n");

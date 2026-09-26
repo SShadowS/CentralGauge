@@ -39,6 +39,16 @@ import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, DeployContext } from "./bc-lane.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
+  type EgressLogLine,
+  type EgressRuntime,
+  evaluatePreflight,
+  hostsForRoutes,
+  preflightExpect,
+  PROXY_ENV,
+  PROXY_PORT,
+  SANDBOX_NETWORK,
+} from "./egress.ts";
+import {
   exists,
   freezeWorkspace,
   safeCopyTree,
@@ -58,12 +68,13 @@ import {
 } from "./records.ts";
 import {
   bounded,
+  createSecretsDir,
   type DockerCli,
   type IcaclsRunner,
   MIN_SECRET_LENGTH,
   OP_TIMEOUT_MS,
-  prepareSecrets,
   publishRedacted,
+  readSecretValues,
   READY_FILE,
   redactText,
   removeSecrets,
@@ -74,6 +85,7 @@ import {
   type SecretValue,
   sweepOwnedSandboxes,
   sweepStaleSecrets,
+  writeSecretFiles,
 } from "./sandbox.ts";
 import { type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
 import { currentScorerFingerprint, judge, writeVerdictLog } from "./verdict.ts";
@@ -114,6 +126,13 @@ export interface HarnessEnv {
   supervised: boolean;
   /** True only when M1-24 confirmed the verified enforcement state at start (M1-33, M1-34). */
   egressEnforced: boolean;
+  /**
+   * Set when the verified marker is qualified or authorized (M1-33): every
+   * sandbox goes on the internal network behind the execution's proxy, and
+   * secrets and ready are written only after the in-sandbox preflight.
+   * Required when egressEnforced.
+   */
+  egress?: EgressRuntime;
   /** Shared cross-lane reservation ledger for supervised credential-bearing runs. */
   credentialLedger: string | null;
   /** Coordination lane name recorded with a reservation. */
@@ -302,6 +321,8 @@ export function privatePaths(env: HarnessEnv, id: string) {
     stderr: join(p, "quarantine", id, "stderr.txt"),
     host: join(p, "quarantine", id, "host-log.jsonl"),
     trace: join(p, "quarantine", id, "trace.jsonl"),
+    /** Every proxy decision of this execution (M1-33). */
+    egress: join(p, "quarantine", id, "egress.jsonl"),
   };
 }
 
@@ -859,6 +880,8 @@ interface DraftInput {
   /** The attempt's persisted mode (intent), never the current command's. */
   mode: AttemptMode;
   stub: StubProvenance | null;
+  /** egress_preflight_failed or egress_violation (M1-33). */
+  egressStop?: string | null;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -928,7 +951,9 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const check = started
     ? observedMismatch(f.manifest, parsed.observed, parsed.unobservable)
     : { mismatch: null, unverified: [] };
-  const stopReason = f.sandbox.interrupted
+  const stopReason = f.egressStop
+    ? f.egressStop
+    : f.sandbox.interrupted
     ? "operator_interrupt"
     : f.sandbox.overflow
     ? "capture_overflow"
@@ -958,6 +983,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     { src: p.stderr, dest: join(runDir, "stderr.txt") },
     { src: p.host, dest: join(runDir, "host-log.jsonl") },
     { src: p.trace, dest: join(runDir, "trace.jsonl") },
+    { src: p.egress, dest: join(runDir, "egress.jsonl") },
   ], scrub);
   const side = redactDeep({
     v: 1,
@@ -1171,6 +1197,13 @@ export async function runExecution(
   const stubProvider = env.stubProvider ?? null;
   const mode: AttemptMode = stubProvider ? "stub" : "normal";
   if (stubProvider) checkStubRoot(env.resultsRoot);
+  // A stub cell does not consult the egress state (M2-08): it releases no
+  // credential and its Messages API runs inside the sandbox.
+  if (mode === "normal" && env.egressEnforced && !env.egress) {
+    throw new ConfigurationError(
+      `${cell.arm}: egress enforcement is set but no egress runtime is configured; refusing (fail closed)`,
+    );
+  }
   if (mode === "normal" && adapter.credentialBearing && !env.egressEnforced) {
     if (!env.supervised) {
       throw new ConfigurationError(
@@ -1262,6 +1295,43 @@ export async function runExecution(
   let secrets: SecretValue[] = [];
   let drained = true;
   let refusal: unknown = null;
+  // M1-33: placed runs (qualified or authorized marker) sit on the internal
+  // network behind this execution's proxy; secrets and ready follow the
+  // preflight. A stub cell is never placed (M2-08: egress not consulted; its
+  // dummy credential and ready are written before the start, M3-10).
+  const eg = stub ? null : env.egress ?? null;
+  /** Set for any egress failure: recorded as setup_failed, then the campaign stops. */
+  let egressFailure: string | null = null;
+  let egressStop: string | null = null;
+  const egressFail = (m: string) => {
+    egressFailure = m;
+    return new ConfigurationError(m);
+  };
+  /** Preflight passed and credentials released: a proxy deny from now on is a violation. */
+  let armed = false;
+  let violation: string | null = null;
+  let egressLogError: string | null = null;
+  // Egress stops (preflight failure, violation, failed release) end the
+  // sandbox like an operator interrupt, recorded under their own stop reason.
+  const egressAbort = new AbortController();
+  const stop = env.stop
+    ? AbortSignal.any([env.stop, egressAbort.signal])
+    : egressAbort.signal;
+  const onEgressLog = (l: EgressLogLine) => {
+    // Stop first: a failing log write never delays or swallows a violation.
+    if (armed && l.decision === "deny" && egressStop === null) {
+      egressStop = "egress_violation";
+      violation = `${l.target} (${l.reason})`;
+      egressAbort.abort(new Error(`egress violation: ${violation}`));
+    }
+    try {
+      Deno.writeTextFileSync(p.egress, JSON.stringify(l) + "\n", {
+        append: true,
+      });
+    } catch (err) {
+      egressLogError ??= msg(err);
+    }
+  };
   try {
     // By immutable id: retagging never substitutes or invalidates the pinned image.
     const img = await bounded(
@@ -1294,6 +1364,37 @@ export async function runExecution(
       ? await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles)
       : env.secretsSource;
     await checkOperatorSecrets(secretsSource, adapter.secretFiles);
+    // Predictable egress checks come before the grant and the reservation.
+    let hosts: string[] = [];
+    let expect: Record<string, boolean> = {};
+    if (eg) {
+      try {
+        hosts = hostsForRoutes(
+          Object.values(manifest.provider_routes),
+          eg.recordedHosts,
+        );
+        expect = preflightExpect(hosts);
+      } catch (err) {
+        throw egressFail(`egress route policy: ${msg(err)}`);
+      }
+      const backendHost = URL.canParse(env.backendUrl)
+        ? new URL(env.backendUrl).hostname
+        : env.backendUrl;
+      if (backendHost !== SANDBOX_NETWORK.gateway) {
+        throw egressFail(
+          `egress: the backend (${env.backendUrl}) must be on the sandbox gateway ${SANDBOX_NETWORK.gateway}`,
+        );
+      }
+      let hp: string[];
+      try {
+        hp = await bounded(eg.verify(), 3 * opMs, "egress host verification");
+      } catch (err) {
+        throw egressFail(`egress host verification failed: ${msg(err)}`);
+      }
+      if (hp.length > 0) {
+        throw egressFail(`egress host verification failed: ${hp.join("; ")}`);
+      }
+    }
     // Both restricted before the reservation: an ACL failure is predictable.
     const custodyTmp = await restrictedTemp(env, p.custody);
     const keysTmp = await restrictedTemp(env, p.keys);
@@ -1312,7 +1413,40 @@ export async function runExecution(
       hostLog: p.host,
     }, timeoutMs + 5 * 60_000);
     let secretsDir: string | null = null;
+    let proxy: { shutdown(): Promise<void> } | null = null;
     try {
+      const values = await readSecretValues(
+        secretsSource,
+        adapter.secretFiles,
+        token,
+      );
+      if (eg) {
+        try {
+          proxy = await eg.startProxy({
+            allowedHosts: hosts,
+            log: onEgressLog,
+          });
+        } catch (err) {
+          throw egressFail(
+            `egress proxy could not start on ${SANDBOX_NETWORK.gateway}:${PROXY_PORT}: ${
+              err instanceof Error ? `${err.name}: ${err.message}` : err
+            }`,
+          );
+        }
+        let lp: string[];
+        try {
+          lp = await bounded(eg.listeners(), opMs, "egress listener check");
+        } catch (err) {
+          throw egressFail(`egress listener check failed: ${msg(err)}`);
+        }
+        if (lp.length > 0) {
+          throw egressFail(
+            `egress: proxy or backend not listening on the gateway only: ${
+              lp.join("; ")
+            }`,
+          );
+        }
+      }
       if (needsSlot) {
         try {
           await reserveCredentialRun(
@@ -1331,35 +1465,32 @@ export async function runExecution(
           throw err;
         }
       }
-      const s = await prepareSecrets(
-        secretsSource,
-        adapter.secretFiles,
-        token,
-        {
-          privateRoot: env.privateRoot,
-          owner: env.owner,
-          ...(env.secretAcl ?? {}),
-        },
-      );
-      secretsDir = s.dir;
-      secrets = s.values;
-      // Non-enforced runs: the entrypoint waits for ready (M1-33 writes it
-      // after the egress preflight in enforced runs). Empty, never custody.
-      // Stub cells keep the release shape (egress state is not consulted).
-      if (stub || !env.egressEnforced) {
-        await Deno.writeTextFile(join(s.dir, READY_FILE), "");
-      }
-      await commitTemp(custodyTmp, p.custody, JSON.stringify(s.values));
-      await commitTemp(
-        keysTmp,
-        p.keys,
-        JSON.stringify(redactionKeys(s.values)),
-      );
-      await writeAtomic(
-        p.intent,
-        JSON.stringify({ ...intent, phase: "released" }, null, 2),
-      );
-      sandbox = await runSandbox(
+      const dir = await createSecretsDir({
+        privateRoot: env.privateRoot,
+        owner: env.owner,
+        ...(env.secretAcl ?? {}),
+      });
+      secretsDir = dir;
+      /** Secret files, custody, keys, the released phase, then ready (empty, never custody) last. */
+      const release = async () => {
+        await writeSecretFiles(dir, values);
+        secrets = values;
+        await commitTemp(custodyTmp, p.custody, JSON.stringify(values));
+        await commitTemp(
+          keysTmp,
+          p.keys,
+          JSON.stringify(redactionKeys(values)),
+        );
+        await writeAtomic(
+          p.intent,
+          JSON.stringify({ ...intent, phase: "released" }, null, 2),
+        );
+        await Deno.writeTextFile(join(dir, READY_FILE), "");
+      };
+      // Not placed: released before the start (M3-10). Placed: the mount
+      // stays empty until the preflight passes (M1-33 A3).
+      if (!eg) await release();
+      const running = runSandbox(
         env.docker,
         {
           name,
@@ -1369,15 +1500,17 @@ export async function runExecution(
           workspace: staged.workspace,
           taskDir: staged.taskDir,
           configDir,
-          secretsDir: s.dir,
+          secretsDir: dir,
           extraMounts: stubProvider
             ? [...extraMounts, { src: stubProvider.dir, dst: "C:\\cg-stub" }]
             : extraMounts,
           env: {
             CG_BACKEND_URL: env.backendUrl,
             CG_EXECUTION_ID: id,
+            ...(eg ? PROXY_ENV : {}),
             ...(stub ? STUB_ENV : {}),
           },
+          ...(eg ? { network: SANDBOX_NETWORK.name } : {}),
           ...(stub ? { command: STUB_COMMAND } : {}),
           timeoutMs,
           killGraceMs: env.killGraceMs ?? 60_000,
@@ -1386,11 +1519,63 @@ export async function runExecution(
           rawLog: p.raw,
           stderrLog: p.stderr,
         },
-        s.values.map((v) => v.value),
-        env.stop,
+        values.map((v) => v.value),
+        stop,
       );
+      let preflightError: string | null = null;
+      let releaseError: unknown = null;
+      if (eg) {
+        try {
+          await waitRunning(env.docker, name, running, opMs);
+          const lines = await bounded(
+            eg.probe(name, hosts),
+            PREFLIGHT_TIMEOUT_MS,
+            "egress preflight",
+          );
+          const problems = evaluatePreflight(lines, expect);
+          if (problems.length > 0) throw new Error(problems.join("; "));
+        } catch (err) {
+          // An operator interrupt already stops the run; nothing was
+          // released and it is not an egress failure.
+          if (!stop.aborted) preflightError = msg(err);
+        }
+        if (preflightError !== null) {
+          egressStop = "egress_preflight_failed";
+          egressAbort.abort(
+            new Error(`egress preflight failed: ${preflightError}`),
+          );
+        } else if (!stop.aborted) {
+          try {
+            await release();
+            armed = true;
+          } catch (err) {
+            releaseError = err;
+            egressAbort.abort(new Error(`release failed: ${msg(err)}`));
+          }
+        }
+      }
+      sandbox = await running;
+      if (releaseError !== null) throw releaseError;
+      // A violation is infra (setup_failed: never judged, never retried) and stops the campaign.
+      const logNote = egressLogError === null
+        ? ""
+        : `; egress log write failed: ${egressLogError}`;
+      if (egressStop === "egress_violation") {
+        throw egressFail(`egress violation: ${violation}${logNote}`);
+      }
+      if (egressLogError !== null) {
+        throw egressFail(`egress log write failed: ${egressLogError}`);
+      }
+      if (preflightError !== null) {
+        throw egressFail(`egress preflight failed: ${preflightError}`);
+      }
     } finally {
       drained = await env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
+      if (proxy) {
+        await bounded(proxy.shutdown(), opMs, "egress proxy shutdown").catch(
+          (err) => console.warn(`[WARN] ${msg(err)}`),
+        );
+      }
       if (secretsDir) await removeSecrets(secretsDir);
     }
   } catch (err) {
@@ -1430,9 +1615,48 @@ export async function runExecution(
     secrets,
     mode,
     stub,
+    egressStop,
   });
   await publishDraft(env, cell, draft, staged.pristine, true);
+  if (egressFailure !== null) {
+    // Infra, never scored; no retry repeats it: the campaign stops here.
+    throw new ContainerError(
+      `${egressFailure}; execution ${id} recorded as setup_failed (no credential released); stopping`,
+      name,
+      "setup",
+    );
+  }
   return { execution: draft.execution, usageResetAt: draft.usage_reset_at };
+}
+
+/** Covers waiting for the sandbox to run plus the in-sandbox probe script. */
+const PREFLIGHT_TIMEOUT_MS = 180_000;
+
+/** Wait (bounded) until the sandbox runs; a run that settles first fails the wait. */
+export async function waitRunning(
+  docker: DockerCli,
+  name: string,
+  running: Promise<unknown>,
+  opMs: number,
+): Promise<void> {
+  let settled = false;
+  running.then(() => (settled = true), () => (settled = true));
+  const deadline = performance.now() + PREFLIGHT_TIMEOUT_MS;
+  for (;;) {
+    if (settled) throw new Error(`${name} ended before the egress preflight`);
+    const st = await bounded(
+      docker.state(name),
+      opMs,
+      `docker inspect ${name}`,
+    );
+    if (st?.running) return;
+    if (performance.now() > deadline) {
+      throw new Error(
+        `${name} not running ${PREFLIGHT_TIMEOUT_MS} ms after the start`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
 }
 
 export async function judgeExecution(
