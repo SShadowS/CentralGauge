@@ -1,4 +1,5 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
+import { walk } from "@std/fs";
 import { join } from "@std/path";
 import {
   ConfigurationError,
@@ -411,4 +412,27 @@ Deno.test("concurrency runs whole blocks in parallel; the arms of one block run 
       Math.max(...first.map((x) => x.end)),
     "the two blocks ran in parallel",
   );
+});
+
+Deno.test("runCampaign: concurrency > 1 with placed sandboxes is refused before any write (M1-33c)", async () => {
+  const t = await mockEnv();
+  const files = async () => {
+    const out: string[] = [];
+    for await (const e of walk(t.env.resultsRoot)) out.push(e.path);
+    return out.sort();
+  };
+  const before = await files();
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, egress: {} as NonNullable<typeof t.env.egress> },
+        "contract",
+        opts({ concurrency: 2 }),
+        io(),
+      ),
+    ConfigurationError,
+    "--concurrency",
+  );
+  assertEquals(await files(), before);
+  assertEquals(t.docker.runs.length, 0);
 });

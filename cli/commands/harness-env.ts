@@ -194,6 +194,27 @@ export async function egressMode(
   return marker.state === "candidate" && o.probe ? "placed" : "off";
 }
 
+/**
+ * Whether the marker would place campaign cells (qualified or authorized),
+ * read without verification: a marker present but unreadable counts as
+ * placing (fail closed). No marker places nothing.
+ */
+export async function markerPlaces(sharedResults: string): Promise<boolean> {
+  let text: string;
+  try {
+    text = await Deno.readTextFile(join(sharedResults, EGRESS_MARKER));
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return false;
+    return true;
+  }
+  try {
+    const state = JSON.parse(text)?.state;
+    return state !== "candidate";
+  } catch {
+    return true;
+  }
+}
+
 /** Enforcement counts only when the marker says authorized AND the host verifies now; a failing marker stops. */
 export async function resolveEgress(
   sharedResults: string,

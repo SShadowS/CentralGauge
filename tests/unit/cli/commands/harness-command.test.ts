@@ -2252,3 +2252,54 @@ Deno.test("authorized marker (review item 3): carries the evidence; a minimal or
     "probe_evidence_sha256",
   );
 });
+
+Deno.test("run --concurrency > 1 is refused before any environment opens while the egress marker places sandboxes (M1-33c)", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  const never = () => Promise.reject(new Error("no environment may open"));
+  for (const state of ["qualified", "authorized"]) {
+    await Deno.writeTextFile(
+      join(shared, EGRESS_MARKER),
+      JSON.stringify({ v: 1, state }),
+    );
+    for (const dryRun of [false, true]) {
+      await assertRejects(
+        () =>
+          harnessRun(
+            "contract",
+            runOpts(t, { concurrency: 2, dryRun }),
+            never,
+            never,
+          ),
+        ConfigurationError,
+        "--concurrency",
+        `${state} dryRun=${dryRun}`,
+      );
+    }
+  }
+  // Concurrency 1 on a placing marker, and concurrency 2 with no marker, still plan.
+  const planner = (eo: Parameters<typeof openPlanEnv>[0]) =>
+    openPlanEnv(eo, planDeps(t, [], () => Promise.resolve([])));
+  await Deno.writeTextFile(
+    join(shared, EGRESS_MARKER),
+    JSON.stringify({ v: 1, state: "qualified" }),
+  );
+  assertEquals(
+    (await harnessRun("contract", runOpts(t, { dryRun: true }), never, planner))
+      .planned,
+    2,
+  );
+  await Deno.remove(join(shared, EGRESS_MARKER));
+  assertEquals(
+    (await harnessRun(
+      "contract",
+      runOpts(t, { dryRun: true, concurrency: 2 }),
+      never,
+      planner,
+    )).planned,
+    2,
+  );
+});
