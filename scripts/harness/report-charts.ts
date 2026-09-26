@@ -1,25 +1,46 @@
 // Usage: deno run --allow-read --allow-write scripts/harness/report-charts.ts --out <dir>
-//          --report <path> [--report <path> ...] [--ledger <path>]
+//          [--report <path> ...] [--ledger <path>]
 // Turns the explicitly selected `harness report --json` outputs into slide
 // charts (SVG) and typed CSVs (arms, comparisons, provenance; ledger with a
 // ledger). Adds no metric: every number comes from the report or the ledger.
-// Refuses an existing non-empty --out, duplicate reports and a ledger that
-// disagrees with the reports.
+// A ledger with no report (no experiment has a headline) writes ledger.csv
+// only, every action scoped not_reported. Refuses a run with neither, an
+// existing non-empty --out, duplicate reports, a report whose partial marker
+// contradicts it and a ledger that disagrees with the reports.
 
 import * as colors from "@std/fmt/colors";
 import { parseArgs } from "@std/cli/parse-args";
 import { join } from "@std/path";
 import { z } from "zod";
-import type { HarnessReport } from "../../src/harness/report.ts";
 import { ValidationError } from "../../src/errors.ts";
+import {
+  type HarnessReport,
+  partialOf,
+  partialText,
+} from "../../src/harness/report.ts";
+
+/**
+ * A real id, never a template placeholder (M6-02a F12: `<task#repeat:arm>`
+ * came from the handoff template): no space, `<>{}`, and no `#` or `:`,
+ * which delimit the ledger.csv key `task#repeat:arm`.
+ */
+const Id = z.string().regex(
+  /^[^\s<>{}#:]+$/,
+  "must be a real id: non-empty, no whitespace, <, >, {, }, # or :",
+);
+/** Free text (a decision path), but never empty or a placeholder. */
+const Text = z.string().regex(
+  /^[^<>{}]+$/,
+  "must be non-empty with no <, >, { or } (placeholder)",
+);
 
 const Action = {
-  experiment: z.string(),
-  campaign: z.string(),
-  task: z.string(),
+  experiment: Id,
+  campaign: Id,
+  task: Id,
   repeat: z.number().int(),
-  arm: z.string(),
-  execution: z.string(),
+  arm: Id,
+  execution: Id,
 };
 
 /** Typed source for cash and actions (plan B10; schema rulings 2026-09-27). */
@@ -33,21 +54,21 @@ export const Ledger = z.strictObject({
   claude_code_cash_usd: z.literal(0),
   /** Ruling 3: totals of every experiment, headline or not. */
   experiments: z.array(z.strictObject({
-    id: z.string(),
+    id: Id,
     attempted_cells: z.number().int().nonnegative(),
     executions: z.number().int().nonnegative(),
     paid_usd: z.number().nonnegative().nullable(),
   })),
-  manual_reruns: z.array(z.strictObject({ ...Action, decision: z.string() })),
+  manual_reruns: z.array(z.strictObject({ ...Action, decision: Text })),
   rejudges: z.array(
-    z.strictObject({ ...Action, judgment: z.string(), decision: z.string() }),
+    z.strictObject({ ...Action, judgment: Id, decision: Text }),
   ),
   pi_stop: z.strictObject({
     fired: z.boolean(),
-    experiment: z.string().nullable(),
+    experiment: Id.nullable(),
     at: z.iso.datetime().nullable(),
     last_complete_repeat: z.number().int().positive().nullable(),
-    decision: z.string().nullable(),
+    decision: Text.nullable(),
   }),
 });
 export type Ledger = z.infer<typeof Ledger>;
@@ -317,20 +338,25 @@ function header(r: Report, title: string): Line[] {
         } | ${r.campaign.tasks} tasks`,
     },
   ];
+  if (partialOf(r) !== null) {
+    lines.push({ text: partialText(r), bold: true, fill: "#C0392B" });
+  }
   if (r.provisional) {
     lines.push({ text: "PROVISIONAL", bold: true, fill: "#C0392B" });
   }
   if (r.repeats.reported < r.repeats.planned) {
-    const cells = r.coverage.reduce((s, c) => s + c.excluded_cells, 0);
-    const spend = r.coverage.reduce(
-      (s, c) => s + c.excluded_known_spend_usd,
-      0,
-    );
+    const sum = (f: (c: Report["coverage"][number]) => number) =>
+      r.coverage.reduce((s, c) => s + f(c), 0);
+    const invalid = sum((c) => c.excluded_trace_invalid);
     lines.push({
       text:
-        `Repeats reported ${r.repeats.reported} of ${r.repeats.planned}; excluded ${cells} cells, $${
-          spend.toFixed(2)
-        } ${EST}`,
+        `Repeats reported ${r.repeats.reported} of ${r.repeats.planned}; excluded ${
+          sum((c) => c.excluded_cells)
+        } cells, $${sum((c) => c.excluded_known_spend_usd).toFixed(2)} ${EST}${
+          invalid > 0
+            ? `, ${invalid} invalid trace${invalid === 1 ? "" : "s"}`
+            : ""
+        }`,
       fill: "#C0392B",
     });
   }
@@ -523,10 +549,8 @@ function outcomeChart(r: Report): string {
     ];
   });
   return svg(
-    header(
-      r,
-      `Outcome: pass rate (${r.metric_labels.pass_rate}) and pass^k (exploratory)`,
-    ),
+    // Exploratory as a chart (plan M6-02); only the primary chart says primary.
+    header(r, "Outcome: pass rate and pass^k (exploratory)"),
     bars,
     [],
   );
@@ -567,12 +591,26 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
       );
     }
     seen.add(key);
+    // `partial` is absent from reports made before M6-02a; present, it must agree.
+    const want = JSON.stringify(partialOf(r));
+    if (r.partial !== undefined && JSON.stringify(r.partial) !== want) {
+      fail(
+        `report ${key} has partial ${
+          JSON.stringify(r.partial)
+        }, its provisional and repeats give ${want}`,
+      );
+    }
   }
   const names = reports.map(prefix);
   if (new Set(names).size !== names.length) {
     fail(`duplicate output name among ${names.join(", ")}`);
   }
   const lg = ledger === undefined ? null : checkLedger(reports, ledger);
+  // No headline at all (F1): the ledger alone, every action not_reported.
+  if (reports.length === 0) {
+    if (lg === null) fail("at least one --report or a --ledger is required");
+    return [{ name: "ledger.csv", content: ledgerCsv(lg.l, lg.actions) }];
+  }
   const files: OutFile[] = [];
   for (const r of reports) {
     const p = prefix(r);
@@ -753,8 +791,8 @@ export async function main(args: string[]): Promise<number> {
   });
   const reports = (a.report as string[] | undefined) ?? [];
   if (!a.out) throw new Error("--out <dir> is required");
-  if (reports.length === 0) {
-    throw new Error("at least one --report is required");
+  if (reports.length === 0 && !a.ledger) {
+    throw new Error("at least one --report or a --ledger is required");
   }
   try {
     for await (const _ of Deno.readDir(a.out)) {

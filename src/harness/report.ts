@@ -114,6 +114,15 @@ export interface HarnessReport {
    */
   repeats: { planned: number; reported: number };
   /**
+   * Explicit partial marker (M6-02a): null when every planned repeat is
+   * reported and no cell is pending or unrun. Otherwise the reasons, in this
+   * order: "provisional" (`provisional` is true: cells pending or unrun,
+   * e.g. a pi stop before any complete repeat), "repeat_cut"
+   * (`repeats.reported` < `repeats.planned`: a capacity cut, or a pi stop
+   * reported at its last complete repeat). Derived from those two fields only.
+   */
+  partial: ReportPartial | null;
+  /**
    * Label of every metric the report shows, from the experiment's declared
    * primary metric; pass^k is never primary. Applies to `arms`, `flips`
    * (per-task pass rate) and, per row, `comparisons[].label`.
@@ -148,6 +157,39 @@ export interface HarnessReport {
   /** Per variant: matched scored pairs against the baseline (descriptive, no winner). */
   both_pass: BothPass[];
   cells: CellRecord[];
+}
+
+export type PartialReason = "provisional" | "repeat_cut";
+export interface ReportPartial {
+  reasons: PartialReason[];
+}
+
+/** The partial marker of a report, from `provisional` and `repeats`. */
+export function partialOf(
+  r: Pick<HarnessReport, "provisional" | "repeats">,
+): ReportPartial | null {
+  const reasons: PartialReason[] = [
+    ...(r.provisional ? ["provisional" as const] : []),
+    ...(r.repeats.reported < r.repeats.planned ? ["repeat_cut" as const] : []),
+  ];
+  return reasons.length === 0 ? null : { reasons };
+}
+
+/** One line for the text report and every chart. */
+export function partialText(
+  r: Pick<HarnessReport, "provisional" | "repeats">,
+): string {
+  const p = partialOf(r);
+  const { reported, planned } = r.repeats;
+  if (p === null) {
+    return `Partial: no (repeats ${reported} of ${planned} reported, no cell pending or unrun)`;
+  }
+  const why = p.reasons.map((x) =>
+    x === "provisional"
+      ? "provisional: cells pending or unrun"
+      : `repeat cut: ${reported} of ${planned} repeats reported`
+  );
+  return `PARTIAL (${why.join("; ")})`;
 }
 
 export interface ArmEfficiency {
@@ -504,6 +546,8 @@ export async function buildReport(
     executions.filter((e) =>
       e.task_id === c.task && e.repeat === c.repeat && e.arm === c.arm
     );
+  const provisional = summaries.some((s) => s.provisional);
+  const repeats = { planned: exp.repeats, reported };
   return {
     v: 1,
     experiment: {
@@ -526,8 +570,9 @@ export async function buildReport(
         .filter((t, i) => t.oracle !== campaign.task_set.tasks[i]!.oracle)
         .map((t) => t.id),
     },
-    provisional: summaries.some((s) => s.provisional),
-    repeats: { planned: exp.repeats, reported },
+    provisional,
+    repeats,
+    partial: partialOf({ provisional, repeats }),
     metric_labels: {
       cost_per_solved_task: labelOf("cost_per_solved_task"),
       pass_rate: labelOf("pass_rate"),
@@ -633,6 +678,8 @@ export function renderReport(r: HarnessReport): string {
     r.metric_labels[m] === "primary" ? "" : colors.dim(" [exploratory]");
   const h = (s: string) => out.push("", colors.bold(s));
   out.push(colors.bold(`Harness report: ${r.experiment.id}`));
+  const part = partialText(r);
+  out.push(r.partial === null ? part : colors.yellow(part));
   if (r.provisional) {
     out.push(colors.yellow("PROVISIONAL: cells are still pending or unrun"));
   }

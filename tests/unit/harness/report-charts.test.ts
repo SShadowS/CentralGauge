@@ -1,7 +1,11 @@
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { join } from "@std/path";
 import type { HarnessReport } from "../../../src/harness/report.ts";
-import { main, renderCharts } from "../../../scripts/harness/report-charts.ts";
+import {
+  Ledger,
+  main,
+  renderCharts,
+} from "../../../scripts/harness/report-charts.ts";
 
 const base = async (): Promise<HarnessReport> =>
   JSON.parse(
@@ -885,4 +889,245 @@ Deno.test("charts (run 002, fix 4): ledger experiment totals below a given repor
   );
   renderCharts([r], with_(4, 4));
   renderCharts([r], with_(6, 9)); // the ledger covers all repeats; more is consistent
+});
+
+// --- M6-02a (rehearsal H:\cg-coord\tasks\M6-05\runs\001\notes.md F1 F2 F3 F10 F12) ---
+
+/**
+ * F2: the M1-30 mock-contract records (H:\cg-coord\jobs\M1-30-1\results\harness,
+ * read-only) copied without mock-positive's repeat-2 execution
+ * 592a41a0-c8d3-44a9-ac75-a36d19559eff (its execution, judgment, artifact,
+ * run and verdict files), then `harness report mock-contract --campaign
+ * 87129b95-fd8c-4904-ab84-95e1579eacf7 --judging campaign --results-dir <copy>
+ * --json`. The same command on the full records reproduces
+ * report-mock-contract.json exactly, apart from the new `partial` field.
+ */
+const partialReport = async (): Promise<HarnessReport> =>
+  JSON.parse(
+    await Deno.readTextFile(
+      "tests/fixtures/harness/report-mock-contract-partial.json",
+    ),
+  );
+
+Deno.test("charts (M6-02a F2): the incomplete-repeat fixture is provisional with one unrun cell", async () => {
+  const p = await partialReport();
+  assertEquals(p.provisional, true);
+  assertEquals(p.repeats, { planned: 2, reported: 2 });
+  assertEquals(p.partial, { reasons: ["provisional"] });
+  assertEquals(
+    p.arms.map((a) => [a.arm, a.attempted_cells, a.unrun_cells]),
+    [["mock-naive-lock-table", 2, 0], ["mock-positive", 1, 1]],
+  );
+});
+
+Deno.test("charts (M6-02a F3): a partial report is marked on every chart, inside the width; a contradicting marker is refused", async () => {
+  const p = await partialReport();
+  const one = renderCharts([p]).filter((f) => f.name.endsWith(".svg"));
+  assertEquals(one.length, 3);
+  for (const f of one) {
+    assert(
+      texts(f.content).join(" ").includes(
+        "PARTIAL (provisional: cells pending or unrun)",
+      ),
+      f.name,
+    );
+    assertEquals(overflowing(f.content), [], f.name);
+  }
+  const both = {
+    ...p,
+    repeats: { planned: 3, reported: 2 },
+    partial: { reasons: ["provisional" as const, "repeat_cut" as const] },
+  };
+  const svgs = renderCharts([both]).filter((f) => f.name.endsWith(".svg"));
+  for (const f of svgs) {
+    assert(
+      texts(f.content).join(" ").includes(
+        "PARTIAL (provisional: cells pending or unrun; repeat cut: 2 of 3 repeats reported)",
+      ),
+      f.name,
+    );
+    assertEquals(overflowing(f.content), [], f.name);
+  }
+  for (const f of renderCharts([await base()])) {
+    assert(!f.content.includes("PARTIAL"), f.name);
+  }
+  assertThrows(() => renderCharts([{ ...p, partial: null }]), Error, "partial");
+  assertThrows(
+    () => renderCharts([{ ...p, provisional: false }]),
+    Error,
+    "partial",
+  );
+});
+
+Deno.test("charts (M6-02a F1): a ledger with no report writes only ledger.csv, every action not_reported, with the experiment totals", async () => {
+  const r = await base();
+  const act = {
+    experiment: "cc-vs-pi",
+    campaign: "c-pi",
+    task: "HX-001",
+    repeat: 1,
+    arm: "pi-sonnet",
+    execution: "e1",
+    decision: "decisions/rerun.md",
+  };
+  const ledger = ledgerOf(r, {
+    paid_total_usd: 3,
+    openrouter_actual_usd: 3,
+    openrouter_balance_readings: [{
+      at: "2026-10-12T10:00:00.000Z",
+      balance_usd: 57,
+    }],
+    experiments: [{
+      id: "cc-vs-pi",
+      attempted_cells: 2,
+      executions: 3,
+      paid_usd: 3,
+    }],
+    manual_reruns: [act],
+    rejudges: [{ ...act, execution: "e2", judgment: "j2" }],
+    pi_stop: {
+      fired: true,
+      experiment: "cc-vs-pi",
+      at: "2026-10-12T09:00:00.000Z",
+      last_complete_repeat: null,
+      decision: "decisions/od-1.md",
+    },
+  });
+  const fs = renderCharts([], ledger);
+  assertEquals(fs.map((f) => f.name), ["ledger.csv"]);
+  const rows = csvRows(fs[0]!.content);
+  assertEquals(
+    rows.filter((x) => x.kind !== "scalar").map((x) => [
+      x.kind,
+      x.key,
+      x.value,
+      x.scope,
+    ]),
+    [
+      ["manual_rerun", "HX-001#1:pi-sonnet", "e1", "not_reported"],
+      ["rejudge", "HX-001#1:pi-sonnet", "e2/j2", "not_reported"],
+    ],
+  );
+  for (
+    const line of [
+      "scalar,cc-vs-pi,,cc-vs-pi.attempted_cells,2,all,",
+      "scalar,cc-vs-pi,,cc-vs-pi.executions,3,all,",
+      "scalar,cc-vs-pi,,cc-vs-pi.paid_usd,3,all,",
+      "scalar,,,pi_stop.last_complete_repeat,n/a,all,",
+    ]
+  ) assert(fs[0]!.content.includes(line), line);
+
+  const dir = await Deno.makeTempDir();
+  try {
+    const path = join(dir, "ledger.json");
+    await Deno.writeTextFile(path, JSON.stringify(ledger));
+    const out = join(dir, "charts");
+    assertEquals(await main(["--out", out, "--ledger", path]), 0);
+    const names = [];
+    for await (const e of Deno.readDir(out)) names.push(e.name);
+    assertEquals(names, ["ledger.csv"]);
+    await assertRejects(
+      () => main(["--out", join(dir, "none")]),
+      Error,
+      "--report or a --ledger",
+    );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("charts (M6-02a F10): only the primary chart says primary; outcome and tasks are exploratory", async () => {
+  const r = await base();
+  assertEquals(r.experiment.primary_metric, "pass_rate");
+  const fs = renderCharts([r]);
+  assert(get(fs, "-primary.svg").includes("Pass rate (primary)"));
+  for (const s of ["-outcome.svg", "-tasks.svg"]) {
+    assert(!get(fs, s).includes("primary"), s);
+    assert(get(fs, s).includes("exploratory"), s);
+  }
+});
+
+Deno.test("charts (M6-02a F12): a ledger action with a placeholder or ambiguous key part is refused by the schema", async () => {
+  const r = await base();
+  const act = {
+    experiment: r.experiment.id,
+    campaign: "other",
+    task: "HX-001",
+    repeat: 1,
+    arm: "mock-positive",
+    execution: "e",
+    decision: "d",
+  };
+  const bad: Record<string, string>[] = [
+    { task: "<task#repeat:arm>" },
+    { task: "<task>" },
+    { arm: "<arm>" },
+    { experiment: "<exp>" },
+    { campaign: "{{campaign}}" },
+    { execution: "" },
+    { task: "HX#1" },
+    { arm: "a:b" },
+    { task: "HX 001" },
+    { decision: "<decision>" },
+    { decision: "" },
+  ];
+  for (const over of bad) {
+    const why = JSON.stringify(over);
+    assert(
+      !Ledger.safeParse(ledgerOf(r, { manual_reruns: [{ ...act, ...over }] }))
+        .success,
+      why,
+    );
+    assertThrows(
+      () =>
+        renderCharts(
+          [r],
+          ledgerOf(r, { rejudges: [{ ...act, judgment: "j", ...over }] }),
+        ),
+      Error,
+      "schema",
+      why,
+    );
+  }
+  assert(
+    !Ledger.safeParse(
+      ledgerOf(r, { rejudges: [{ ...act, judgment: "<judgment>" }] }),
+    ).success,
+  );
+  const csv = get(
+    renderCharts([r], ledgerOf(r, { manual_reruns: [act] })),
+    "ledger.csv",
+  );
+  assert(
+    csv.includes(
+      `manual_rerun,${r.experiment.id},other,HX-001#1:mock-positive,e,not_reported,d`,
+    ),
+    csv,
+  );
+});
+
+Deno.test("charts (M5-04a): the header's excluded line counts invalid traces of excluded executions when non-zero", async () => {
+  const r = await base();
+  const cut = (n: number) => ({
+    ...r,
+    repeats: { planned: 3, reported: 2 },
+    coverage: r.coverage.map((c) => ({
+      ...c,
+      excluded_cells: 1,
+      excluded_known_spend_usd: 0.25,
+      excluded_trace_invalid: n,
+    })),
+  });
+  const svgs = renderCharts([cut(1)]).filter((f) => f.name.endsWith(".svg"));
+  for (const f of svgs) {
+    assert(
+      f.content.includes(
+        "Repeats reported 2 of 3; excluded 2 cells, $0.50 est. (list price), 2 invalid traces",
+      ),
+      f.name,
+    );
+  }
+  assert(
+    !get(renderCharts([cut(0)]), "-primary.svg").includes("invalid trace"),
+  );
 });
