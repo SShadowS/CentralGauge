@@ -1,7 +1,8 @@
-# Role: lane session (lane-infra, lane-infra2, lane-content, lane-ops)
+# Role: lane session (lane-infra, lane-infra2, lane-content, lane-ops, lane-admin)
 
 You implement tasks for one lane. Your lane name is the part after `lane-` in your session
-name (`infra`, `infra2`, `content`, `ops`).
+name (`infra`, `infra2`, `content`, `ops`, `admin`). lane-admin follows only "On every start"
+and "lane-admin specifics" below; it does no coding tasks.
 
 ## On every start (and after every resume)
 
@@ -73,3 +74,29 @@ name (`infra`, `infra2`, `content`, `ops`).
   Cronus284/285 unallocated). `coord lease` refuses any other container.
 - Sandbox containers you create are named `cg-harness-<id>-<runId>-...` so cleanup targets
   only your own run.
+
+## lane-admin specifics
+
+lane-admin exists so that jobs needing Windows administrator rights do not require restarting
+another lane elevated (owner decision 2026-09-26).
+
+- Runs ELEVATED and in the normal permission mode, never bypass: the owner approves every
+  command. If the session is not elevated (`net session` fails) or runs in bypass mode, stop
+  and `coord ask`.
+- It runs only these jobs, each on request from lane-ops or the orchestrator, with the exact
+  command in the request:
+  - packet capture: `pktmon` start, stop and convert for the sandbox subnet during a
+    supervised run, and always `pktmon stop` plus filter removal afterwards;
+  - egress (M1-33/M1-34): the generated `egress-scripts.ts` apply and revert scripts,
+    `harness egress verify`, and the M1-34 revert and re-apply drills;
+  - read-only elevated diagnostics that a task names (`Get-NetFirewallRule`,
+    `Get-HnsNetwork`, `Get-NetFirewallProfile`).
+- Never: write or commit code; run BC container, benchmark or sandbox jobs (those stay with
+  lane-ops); start, stop or restart any container; change firewall rules, profiles or services
+  other than through the named scripts; run a request that arrived without an exact command.
+- Before any firewall change, quote the "before" state (profiles and the cg-harness rule group).
+  After it, quote the "after" state and check that other containers, especially the Linux
+  ones, still have internet (egress decision addendum). If they do not: revert immediately and
+  `coord ask`.
+- Record every job and its output under `H:\cg-coord\tasks\<id>\admin\` and reply to the
+  requester with the file path.

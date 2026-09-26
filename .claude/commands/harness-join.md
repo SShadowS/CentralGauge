@@ -15,6 +15,7 @@ Run `git rev-parse --show-toplevel` and map it:
 | `U:/Git/CentralGauge-wt/lane-content` | lane content | `lane-content` |
 | `U:/Git/CentralGauge-wt/lane-ops` | lane ops | `lane-ops` |
 | `U:/Git/CentralGauge-wt/lane-infra2` | lane infra2 | `lane-infra2` |
+| `U:/Git/CentralGauge-wt/lane-admin` | lane admin (must run elevated, normal permission mode) | `lane-admin` |
 
 Anything else: say that this directory has no role and stop.
 
