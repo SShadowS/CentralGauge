@@ -1407,3 +1407,47 @@ Deno.test("rejudge: an oracle-only change makes every judged execution due, judg
     0,
   );
 });
+
+Deno.test("harnessReport: efficiency and slices read the store's published host and verdict logs", async () => {
+  const dir = await storeWithOneCell();
+  const store = new RecordStore(dir);
+  const c = (await store.campaigns("skills-vs-plain"))[0]!;
+  const [e] = await store.executions(c.id);
+  const [j] = await store.judgments(e!.id);
+  await write(
+    dir,
+    `runs/${e!.id}/host-log.jsonl`,
+    JSON.stringify({
+      v: 1,
+      request: crypto.randomUUID(),
+      execution: e!.id,
+      op: "compile",
+      status: 200,
+      outcome: "ok",
+      at: "2026-10-01T10:00:00.000Z",
+      spans: {},
+      apps_compiled: ["Core"],
+      per_app_compiles: 1,
+      diagnostics: 0,
+      tests_run: 0,
+      tests_failed: 0,
+      container: "C1",
+      retries: 0,
+    }) + "\n",
+  );
+  await write(
+    dir,
+    `verdicts/${j!.id}.json`,
+    JSON.stringify({ spans: { total_ms: 42, queue_ms: 7 } }),
+  );
+  const r = await harnessReport("skills-vs-plain", {
+    resultsDir: dir,
+    ...OPTS,
+  });
+  const eff = r.efficiency.find((x) => x.arm === e!.arm)!;
+  assertEquals(
+    [eff.backend_requests, eff.logical_builds, eff.verdict_ms_median],
+    [1, 1, 42],
+  );
+  assert(r.slices.length > 0);
+});

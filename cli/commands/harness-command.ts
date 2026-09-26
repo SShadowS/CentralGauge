@@ -57,7 +57,11 @@ import {
   outcomePolicy,
   RecordStore,
 } from "../../src/harness/records.ts";
-import { buildReport, renderReport } from "../../src/harness/report.ts";
+import {
+  buildReport,
+  loadReportLogs,
+  renderReport,
+} from "../../src/harness/report.ts";
 import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
 import { rejudgeExecution, runCell } from "../../src/harness/execution.ts";
@@ -343,9 +347,11 @@ export async function harnessReport(
     if (a) artifacts.push(a);
     judgments.push(...await store.judgments(e.id));
   }
-  return buildReport({ campaign, executions, artifacts, judgments }, {
+  const records = { campaign, executions, artifacts, judgments };
+  return buildReport(records, {
     resamples: opts.resamples,
     seed: opts.seed,
+    logs: await loadReportLogs(opts.resultsDir, records),
     ...(opts.judging === "current"
       ? { judging: await currentJudging(opts.root) }
       : {}),

@@ -1,6 +1,7 @@
 /**
- * Harness report skeleton (spec 1a section 9): header, primary, outcome.
- * Efficiency and slices come in Part 2 with telemetry and traces.
+ * Harness report (spec 1a section 9): header, primary, outcome, and the
+ * descriptive extras (M1-25): efficiency from host and verdict logs, slices
+ * by task kind and coupling, and a both-pass table (never a winner).
  *
  * The report runs only on records that pass validateCampaignRecords, states
  * the judging context (which oracle per task), shows planned / attempted /
@@ -9,6 +10,9 @@
  */
 
 import * as colors from "@std/fmt/colors";
+import { join } from "@std/path";
+import type { HostLogLine } from "./backend.ts";
+import type { VerdictLog } from "./verdict.ts";
 import { ValidationError } from "../errors.ts";
 import type { PrimaryMetric } from "./config.ts";
 import { taskSetHash } from "./identity.ts";
@@ -94,11 +98,134 @@ export interface HarnessReport {
     coupling: string[];
     pass_rate: Record<string, number | null>;
   }>;
+  /** Per arm, over the executions the cells use (descriptive). */
+  efficiency: ArmEfficiency[];
+  /** Pass rate per arm by task kind, then by coupling tag (descriptive). */
+  slices: Slice[];
+  /** Per variant: matched scored pairs against the baseline (descriptive, no winner). */
+  both_pass: BothPass[];
   cells: CellRecord[];
+}
+
+export interface ArmEfficiency {
+  arm: string;
+  /** Used executions whose host log was found. */
+  host_logs: number;
+  backend_requests: number;
+  /** Compile requests the backend accepted (not rejected). */
+  logical_builds: number;
+  per_app_compiles: number;
+  /** Test requests the backend accepted. */
+  test_runs: number;
+  diagnostics_per_build: number | null;
+  verdict_ms_median: number | null;
+  verdict_queue_ms_median: number | null;
+}
+
+export interface Slice {
+  by: "kind" | "coupling";
+  value: string;
+  tasks: number;
+  pass_rate: Record<string, number | null>;
+}
+
+export interface BothPass {
+  baseline: string;
+  variant: string;
+  pairs: number;
+  both_pass: number;
+  baseline_only: number;
+  variant_only: number;
+  neither: number;
+}
+
+/** Published side files the extras read; absent entries count as missing. */
+export interface ReportLogs {
+  /** Execution id -> host log lines. */
+  host: ReadonlyMap<string, readonly HostLogLine[]>;
+  /** Judgment id -> verdict log. */
+  verdict: ReadonlyMap<string, VerdictLog>;
 }
 
 export interface ReportOptions extends BootstrapOptions {
   judging?: JudgingContext;
+  logs?: ReportLogs;
+}
+
+/**
+ * Host logs (runs/<execution>/host-log.jsonl; a line cut by a crash is
+ * skipped) and verdict logs (verdicts/<judgment>.json) of a campaign's
+ * records under the results root. A missing file is absent from the map.
+ */
+export async function loadReportLogs(
+  resultsRoot: string,
+  records: CampaignRecords,
+): Promise<ReportLogs> {
+  const read = async (path: string): Promise<string | null> => {
+    try {
+      return await Deno.readTextFile(path);
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return null;
+      throw err;
+    }
+  };
+  const host = new Map<string, HostLogLine[]>();
+  for (const e of records.executions) {
+    const text = await read(join(resultsRoot, "runs", e.id, "host-log.jsonl"));
+    if (text === null) continue;
+    const lines: HostLogLine[] = [];
+    for (const l of text.split(/\r?\n/)) {
+      if (l.trim() === "") continue;
+      try {
+        lines.push(JSON.parse(l) as HostLogLine);
+      } catch { /* cut by a crash: not counted */ }
+    }
+    host.set(e.id, lines);
+  }
+  const verdict = new Map<string, VerdictLog>();
+  for (const j of records.judgments) {
+    const text = await read(join(resultsRoot, "verdicts", `${j.id}.json`));
+    if (text !== null) verdict.set(j.id, JSON.parse(text) as VerdictLog);
+  }
+  return { host, verdict };
+}
+
+function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+}
+
+function efficiencyOf(
+  cells: CellRecord[],
+  arm: string,
+  logs: ReportLogs,
+): ArmEfficiency {
+  const mine = cells.filter((c) => c.arm === arm);
+  const lines = mine.flatMap((c) =>
+    c.used_execution ? [logs.host.get(c.used_execution)] : []
+  ).filter((x): x is readonly HostLogLine[] => x !== undefined);
+  const flat = lines.flat();
+  const accepted = (op: string) =>
+    flat.filter((l) => l.op === op && l.outcome !== "rejected");
+  const builds = accepted("compile");
+  const verdicts = mine.flatMap((c) =>
+    c.judgment_id ? [logs.verdict.get(c.judgment_id)] : []
+  ).filter((v): v is VerdictLog => v !== undefined);
+  return {
+    arm,
+    host_logs: lines.length,
+    backend_requests: flat.length,
+    logical_builds: builds.length,
+    per_app_compiles: flat.reduce((n, l) => n + l.per_app_compiles, 0),
+    test_runs: accepted("test").length,
+    diagnostics_per_build: builds.length === 0
+      ? null
+      : builds.reduce((n, l) => n + l.diagnostics, 0) / builds.length,
+    verdict_ms_median: median(verdicts.map((v) => v.spans.total_ms)),
+    verdict_queue_ms_median: median(verdicts.map((v) => v.spans.queue_ms)),
+  };
 }
 
 /**
@@ -197,6 +324,62 @@ export async function buildReport(
       pass_rate: Object.fromEntries(arms.map((a) => [a, rate(t.id, a)])),
     }))
     .filter((f) => new Set(Object.values(f.pass_rate)).size > 1);
+  const scored = (task: string, arm: string) =>
+    cells.filter((c) =>
+      c.task === task && c.arm === arm && c.status === "scored"
+    );
+  const sliceRate = (tasks: string[], arm: string) => {
+    const ps = tasks.flatMap((t) => scored(t, arm));
+    return ps.length === 0 ? null : ps.filter((c) => c.pass).length / ps.length;
+  };
+  const slices: Slice[] = [];
+  for (const by of ["kind", "coupling"] as const) {
+    const groups = new Map<string, string[]>();
+    for (const t of campaign.tasks_meta) {
+      for (const value of by === "kind" ? [t.kind] : t.coupling) {
+        groups.set(value, [...(groups.get(value) ?? []), t.id]);
+      }
+    }
+    const sorted = [...groups].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+    for (const [value, tasks] of sorted) {
+      slices.push({
+        by,
+        value,
+        tasks: tasks.length,
+        pass_rate: Object.fromEntries(
+          arms.map((a) => [a, sliceRate(tasks, a)]),
+        ),
+      });
+    }
+  }
+  const scoredCell = (task: string, repeat: number, arm: string) =>
+    cells.find((c) =>
+      c.task === task && c.repeat === repeat && c.arm === arm &&
+      c.status === "scored"
+    );
+  const both_pass: BothPass[] = exp.variants.map((variant) => {
+    const t: BothPass = {
+      baseline: exp.baseline,
+      variant,
+      pairs: 0,
+      both_pass: 0,
+      baseline_only: 0,
+      variant_only: 0,
+      neither: 0,
+    };
+    for (const b of cells.filter((c) => c.arm === exp.baseline)) {
+      const x = scoredCell(b.task, b.repeat, exp.baseline);
+      const y = scoredCell(b.task, b.repeat, variant);
+      if (!x || !y) continue;
+      t.pairs++;
+      if (x.pass && y.pass) t.both_pass++;
+      else if (x.pass) t.baseline_only++;
+      else if (y.pass) t.variant_only++;
+      else t.neither++;
+    }
+    return t;
+  });
+  const logs = opts.logs ?? { host: new Map(), verdict: new Map() };
   return {
     v: 1,
     experiment: {
@@ -251,6 +434,9 @@ export async function buildReport(
     arms: summaries,
     comparisons,
     flips,
+    efficiency: arms.map((a) => efficiencyOf(cells, a, logs)),
+    slices,
+    both_pass,
     cells,
   };
 }
@@ -390,6 +576,32 @@ export function renderReport(r: HarnessReport): string {
         }, used ${c.used_kind ?? "no"} execution ${c.used_execution ?? "n/a"}`,
       );
     }
+  }
+  const ms = (x: number | null) => (x === null ? "n/a" : `${Math.round(x)} ms`);
+  h("Efficiency (descriptive)");
+  for (const e of r.efficiency) {
+    out.push(
+      `  ${e.arm}: ${e.backend_requests} backend requests, ${e.logical_builds} builds (${e.per_app_compiles} per-app compiles, ${
+        e.diagnostics_per_build === null
+          ? "n/a"
+          : e.diagnostics_per_build.toFixed(1)
+      } diagnostics/build), ${e.test_runs} test runs; verdict median ${
+        ms(e.verdict_ms_median)
+      } (queue ${ms(e.verdict_queue_ms_median)}); host logs ${e.host_logs}`,
+    );
+  }
+  h("Slices (descriptive)");
+  for (const s of r.slices) {
+    out.push(
+      `  ${s.by} ${s.value} (${s.tasks} tasks): ${
+        Object.entries(s.pass_rate).map(([a, v]) => `${a} ${pct(v)}`).join(", ")
+      }`,
+    );
+  }
+  for (const b of r.both_pass) {
+    out.push(
+      `  ${b.baseline} vs ${b.variant} over ${b.pairs} matched scored pairs: both pass ${b.both_pass}, ${b.baseline} only ${b.baseline_only}, ${b.variant} only ${b.variant_only}, neither ${b.neither}`,
+    );
   }
   return out.join("\n");
 }
