@@ -10,6 +10,7 @@ import {
   runCampaign,
   type RunOptions,
 } from "../../../src/harness/campaign.ts";
+import { imageTag, mcpLabel } from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
 import { EXECUTION_LABEL } from "../../../src/harness/sandbox.ts";
@@ -18,6 +19,7 @@ import {
   CATALOG,
   cellFor,
   makeEnv,
+  MOCK_IMAGE_ID,
   mockImageBehavior,
   type TestEnv,
 } from "./runtime-fixture.ts";
@@ -78,6 +80,37 @@ Deno.test("dry run plans blocks x arms with the recorded order and writes nothin
   assertEquals([s.planned, s.ran, s.created], [2, 0, false]);
   assert(out.lines.some((l) => l.includes("HX-001#1")), out.lines.join("\n"));
   assertEquals(await t.env.store.campaigns("contract"), []);
+  assertEquals(t.docker.runs.length, 0);
+});
+
+Deno.test("dry run opens no container, even for an al-tools image; a real run still verifies the shipped definition", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  // The mock image claims al-tools but ships no definition (a lying label).
+  const [key, value] = await mcpLabel(".");
+  t.docker.addImage(imageTag("mock", "1"), MOCK_IMAGE_ID, {
+    "centralgauge.harness": "mock",
+    "centralgauge.harness.version": "1",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+    [key]: value,
+  });
+  const out = io();
+  const s = await runCampaign(t.env, "contract", opts({ dryRun: true }), out);
+  assertEquals(s.planned, 2);
+  assertEquals(t.docker.reads, [], "no read container: no create, cp or rm");
+  assertEquals(t.docker.runs.length, 0);
+  assert(
+    out.lines.some((l) =>
+      l.includes(imageTag("mock", "1")) && l.includes("not verified")
+    ),
+    out.lines.join("\n"),
+  );
+  await assertRejects(
+    () => runCampaign(t.env, "contract", opts(), io()),
+    ConfigurationError,
+    "cannot read the shipped",
+  );
+  assertEquals(t.docker.reads.length, 1, "the real run read the definition");
   assertEquals(t.docker.runs.length, 0);
 });
 
