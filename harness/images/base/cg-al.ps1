@@ -12,10 +12,12 @@
 #   2  environment/infra: no response, 408, 5xx, backend token unavailable
 #   3  401 unauthorized
 #   64 usage
-param(
-  [Parameter(Position = 0)][string]$Op,
-  [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
-)
+# No param block (M1-28c): under `powershell -File`, PS 5.1 never binds a
+# dash-prefixed word (--version) to a positional parameter, and a bare `--`
+# breaks binding outright. $args arrives raw from every caller.
+$argv = @($args | ForEach-Object { "$_" })
+$Op = if ($argv.Count -gt 0) { $argv[0] } else { '' }
+$Rest = @($argv | Select-Object -Skip 1)
 $ErrorActionPreference = 'Stop'
 $sw = [Diagnostics.Stopwatch]::StartNew()
 if ($Op -eq '--version') { Write-Output '{"cg_al":"1"}'; exit 0 }

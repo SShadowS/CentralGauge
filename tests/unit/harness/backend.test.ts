@@ -1195,3 +1195,70 @@ Deno.test("backend: a BOM app.json in the workspace compiles (no violation, no i
   const body = await r.json();
   assertEquals([r.status, body.ok, body.violations], [200, true, undefined]);
 });
+
+Deno.test({
+  name:
+    "cg-al.ps1 via powershell -File: --version is 0 with the version line; operations send the same requests; usage stays 64 (M1-28c)",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const seen: [string, unknown][] = [];
+    const server = Deno.serve(
+      { hostname: "127.0.0.1", port: 0, onListen: () => {} },
+      async (r) => {
+        seen.push([new URL(r.url).pathname, await r.json()]);
+        return new Response('{"ok":true}', {
+          headers: { "content-type": "application/json" },
+        });
+      },
+    );
+    const secrets = await tmp();
+    await Deno.writeTextFile(join(secrets, "backend-token"), "t".repeat(32));
+    const run = async (...args: string[]) => {
+      const o = await new Deno.Command("powershell", {
+        args: [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "harness/images/base/cg-al.ps1",
+          ...args,
+        ],
+        env: {
+          CG_BACKEND_URL: `http://127.0.0.1:${
+            (server.addr as Deno.NetAddr).port
+          }`,
+          CG_EXECUTION_ID: EXEC_A,
+          CG_SECRETS_DIR: secrets,
+        },
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      return { code: o.code, out: new TextDecoder().decode(o.stdout).trim() };
+    };
+    try {
+      assertEquals(await run("--version"), {
+        code: 0,
+        out: '{"cg_al":"1"}',
+      });
+      assertEquals(seen, [], "--version sends no request");
+      for (
+        const bad of [[], ["--"], ["-version"], ["bogus"], ["test", "abc"]]
+      ) {
+        assertEquals((await run(...bad)).code, 64, JSON.stringify(bad));
+      }
+      assertEquals(seen, []);
+      assertEquals((await run("compile", "Fleet Rental Core", "Test")).code, 0);
+      assertEquals((await run("compile")).code, 0);
+      assertEquals((await run("test", "80010", "80011")).code, 0);
+      assertEquals((await run("symbols")).code, 0);
+      assertEquals(seen, [
+        ["/v1/compile", { apps: ["Fleet Rental Core", "Test"] }],
+        ["/v1/compile", { apps: [] }],
+        ["/v1/test", { codeunits: [80010, 80011] }],
+        ["/v1/symbols", {}],
+      ]);
+    } finally {
+      await server.shutdown();
+    }
+  },
+});
