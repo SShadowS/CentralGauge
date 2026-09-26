@@ -1,0 +1,3682 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/reasoning-suite/backfill-results/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Backfill results - phases 1, 2, and part of 3 - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#backfill-results-phases-1-2-and-part-of-3" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Backfill results - phases 1, 2, and part of 3
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#headline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-scope-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The scope problem
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The scope problem">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#it-is-recoverable-and-cheaply" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        It is recoverable, and cheaply
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-container-problem-and-the-bug-behind-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The container problem, and the bug behind it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-determinism-b2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 - determinism (B2)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1 - determinism (B2)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Result
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-correction-worth-stating-plainly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One correction worth stating plainly
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-survivor-triage-b7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 - survivor triage (B7)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2 - survivor triage (B7)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dispositions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dispositions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#four-corrections-to-the-existing-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Four corrections to the existing record
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#two-findings-outside-the-survivor-lists" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two findings outside the survivor lists
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-kill-test-is-blocked-on-an-unmeasured-premise" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One kill test is blocked on an unmeasured premise
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-still-pending-and-why" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is still PENDING, and why
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ledger-state-after-phases-1-and-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ledger state after phases 1 and 2
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-partial-closing-the-reference-solution-gap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 (partial) - closing the reference-solution gap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3 (partial) - closing the reference-solution gap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#seeding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seeding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-this-moved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this moved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-hardcode-removed-along-the-way" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A hardcode removed along the way
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#not-done-in-phase-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not done in phase 3
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-continued-the-attribution-repair-and-four-false-passes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 (continued) - the attribution repair, and four false passes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3 (continued) - the attribution repair, and four false passes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-was-actually-wrong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What was actually wrong
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#it-moved-scores-in-both-directions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        It moved scores in both directions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#detecting-it-in-future-three-independent-ways-a-report-lies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detecting it in future: three independent ways a report lies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#four-false-passes-in-the-b7-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Four false passes in the B7 gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b7-has-a-permanent-ceiling-and-it-is-not-203" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B7 has a permanent ceiling, and it is not 203
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-lethal-defect-reported-not-fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A LethAL defect, reported not fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cronus28s-bc-license-expired" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cronus28's BC license expired
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#re-triage-against-the-corrected-data-phase-2c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Re-triage against the corrected data (phase 2c)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-b7-stands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where B7 stands
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-over-strictness-b4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 - Over-strictness (B4)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4 - Over-strictness (B4)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-budget-was-mostly-already-spent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The budget was mostly already spent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-103-calls-bought" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the 103 calls bought
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-headline-result-no-over-strictness-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The headline result: no over-strictness found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-b4-cannot-establish-and-why" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What B4 cannot establish, and why
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#closing-out-b7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Closing out B7
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Closing out B7">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-it-landed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where it landed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-object-mix-blocker-was-ours-not-lethals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The object-mix blocker was ours, not LethAL's
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#two-seeded-reference-solutions-were-wrong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two seeded reference solutions were wrong
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-lethal-quarantine-defect-is-still-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The LethAL quarantine defect is still open
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#late-finds-worth-keeping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Late finds worth keeping
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/reasoning-suite/backfill-results.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="backfill-results-phases-1-2-and-part-of-3">Backfill results - phases 1, 2, and part of 3<a class="headerlink" href="#backfill-results-phases-1-2-and-part-of-3" title="Permanent link">&para;</a></h1>
+<p>Execution record for <code>backfill-plan.md</code>. Phase 3 is partially done - it closed
+the reference-solution gap that blocked it, but did not run the mutation sweep
+it was scoped for. Phases 4 and 5 have not been run.</p>
+<p>The queryable artifacts are the point of this exercise; this file is the
+narrative that explains them.</p>
+<table>
+<thead>
+<tr>
+<th>artifact</th>
+<th>holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gate-records.json</code></td>
+<td>one row per promoted task, every loop-B and loop-C gate, with status and date</td>
+</tr>
+<tr>
+<td><code>gate-records.md</code></td>
+<td>generated rollup of the above</td>
+</tr>
+<tr>
+<td><code>survivor-dispositions.json</code></td>
+<td>per-mutant triage disposition for every LethAL survivor</td>
+</tr>
+<tr>
+<td><code>probe-baselines-prebackfill.json</code></td>
+<td>the <code>.probe.json</code> verdict each task carried BEFORE this backfill</td>
+</tr>
+<tr>
+<td><code>seed-verification-findings.md</code></td>
+<td>what verifying the 123 seeded reference solutions turned up</td>
+</tr>
+</tbody>
+</table>
+<p>Rebuild the first two with <code>deno run -A scripts/gate-records.ts</code>.</p>
+<h2 id="headline">Headline<a class="headerlink" href="#headline" title="Permanent link">&para;</a></h2>
+<p>Phase 1 passed cleanly on everything it could reach: <strong>76 of 76 tasks
+deterministic</strong>, on two different containers each, with identical assertion
+counts and identical assertion identities.</p>
+<p>But it could only reach 76 of 203, and the reason is the most important finding
+of the session. It is not that the suite is flaky. It is that <strong>most of the
+suite cannot be measured at all</strong>, and three separate gates are blocked behind
+one missing artifact.</p>
+<h2 id="the-scope-problem">The scope problem<a class="headerlink" href="#the-scope-problem" title="Permanent link">&para;</a></h2>
+<p><code>task probe</code> compares a program that PASSES the oracle against one that FAILS
+it. The passing program - the reference solution - exists on disk for only
+<strong>77 of the 203</strong> promoted hard and medium tasks.</p>
+<table>
+<thead>
+<tr>
+<th>set</th>
+<th>count</th>
+<th>reference solution on disk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hard, X055+</td>
+<td>77</td>
+<td>yes (<code>reference/solutions/&lt;id&gt;/</code>)</td>
+</tr>
+<tr>
+<td>hard, H series</td>
+<td>51</td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td>hard, X002-X052</td>
+<td>22</td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td>medium, M series</td>
+<td>37</td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td>medium, X002-X052</td>
+<td>16</td>
+<td><strong>no</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>reference/solutions/</code> was introduced with the X055+ workbench era. Everything
+older predates it, and <code>task promote</code> leaves <code>correct/</code> behind in the gitignored
+<code>scratch/</code> workspace, so for those 126 tasks no passing program was ever
+committed anywhere.</p>
+<p><strong>This blocks three gates, not one.</strong> All three need a program that passes the
+oracle:</p>
+<ul>
+<li><strong>B2 determinism</strong> re-runs the passing path and compares verdicts and
+  assertion counts. No passing program, nothing to re-run.</li>
+<li><strong>B7 mutation</strong> needs <code>baselineGreen</code> before it can call a mutant killed or
+  survived. Confirmed in the LethAL report schema.</li>
+<li><strong>B4 over-strictness</strong> needs something to compare an independent second
+  solution against.</li>
+</ul>
+<p>So the plan's phase-3 estimate ("roughly 156 tasks have no mutation evidence
+... a few hours of container time") is optimistic by a wide margin: of those
+156, only <strong>30</strong> can be swept today. The other 126 are blocked on the same
+missing artifact as phase 1.</p>
+<h3 id="it-is-recoverable-and-cheaply">It is recoverable, and cheaply<a class="headerlink" href="#it-is-recoverable-and-cheaply" title="Permanent link">&para;</a></h3>
+<p>Every bench attempt records its <code>extractedCode</code>. For any task some model has
+ever solved, a passing program already exists in
+<code>results/benchmark-results-*.json</code>. Measured across 237 stored run files:</p>
+<ul>
+<li><strong>123 of the 126</strong> have at least one stored PASSING submission.</li>
+<li><strong>3 do not</strong>: <code>CG-AL-M034</code>, <code>CG-AL-M040</code>, <code>CG-AL-X044</code>. (M034 is expected -
+  its oracle was fixed under GH #13, so no model has passed the fixed version.)</li>
+</ul>
+<p><code>scripts/seed-reference-solution.ts</code> lifts the newest passing submission into
+<code>reference/solutions/&lt;id&gt;/</code>, reproducing the manifest the bench itself writes so
+the project compiles the same way. A seeded solution is a CANDIDATE rather than a
+verified reference - it passed the oracle as it stood at the time of that run,
+and oracles have moved since - so each one needs a <code>trap-probe</code> pass before any
+gate verdict rests on it. That seeding and verification is what phase 3 below
+actually did, and the verification step turned out to be load-bearing rather
+than ceremonial: see <code>seed-verification-findings.md</code>.</p>
+<h2 id="the-container-problem-and-the-bug-behind-it">The container problem, and the bug behind it<a class="headerlink" href="#the-container-problem-and-the-bug-behind-it" title="Permanent link">&para;</a></h2>
+<p>The plan asks for each task to be re-probed "at least once on a different
+container", across six containers in parallel. That was impossible when the
+session started, and the reason was a real bug rather than an environmental
+limit.</p>
+<p><code>scripts/trap-probe.ts</code>, <code>src/workbench/probe.ts</code> and the <code>task probe</code> CLI all
+documented Cronus28 as "the only local container with credentials wired (others
+401)". That was a misdiagnosis of a one-line defect:</p>
+<p><code>mcp/al-tools-server.ts:88</code> registers container credentials for its own
+<code>DEFAULT_CONTAINER</code> (Cronus28) and nothing else. <code>getCredentials</code> falls back to
+<code>admin</code>/<code>admin</code> for any container nobody registered. The Cronus containers
+reject that, the dev-endpoint publish returns <code>Status Code Unauthorized</code>, and
+<code>BcContainerProvider</code> surfaces it only as <code>prepareCandidateApp failed</code>. Nothing
+in that chain mentions credentials, which is why the conclusion drawn was that
+the other five containers were unusable.</p>
+<p>The module already had the right remedy - <code>prepareContainerForVerification</code>,
+whose own comment names this exact failure - and <code>trap-probe</code> simply never
+called it. It does now, which also publishes the SOAP harness on the target
+(Cronus284 and Cronus285 did not have it).</p>
+<p>Evidence, in order:</p>
+<ol>
+<li>All six containers answered <code>302</code> on their web endpoint.</li>
+<li>A manual <code>Publish-BcContainerApp -useDevEndpoint</code> with explicit
+   <code>sshadows</code>/<code>1234</code> succeeded on Cronus281.</li>
+<li>The exact generated prepare-candidate script, run through plain <code>pwsh</code> on
+   Cronus281, printed <code>PREPARE_PUBLISH_OK</code> in 7 s.</li>
+<li>The same call through the provider's session layer failed in 10 s with
+   <code>PREPARE_PUBLISH_FAILED:Status Code Unauthorized</code>.</li>
+<li>After the fix, <code>CG-AL-X066</code> on Cronus281 returned <code>correct=pass 13/13,
+   naive=fail 10/13+3</code> - identical to Cronus28.</li>
+<li>Across the full phase-1 run: <strong>zero</strong> inconclusive probes, evenly distributed
+   over all six containers.</li>
+</ol>
+<p>Regression tests are in <code>tests/unit/scripts/trap-probe.test.ts</code>
+(<code>resolveContainerCredentials</code>), including one that asserts the resolution can
+never yield <code>admin</code>/<code>admin</code>.</p>
+<h2 id="phase-1-determinism-b2">Phase 1 - determinism (B2)<a class="headerlink" href="#phase-1-determinism-b2" title="Permanent link">&para;</a></h2>
+<p>Method, per task: re-probe twice beyond the original run, on two DIFFERENT
+containers, and require the verdict AND the assertion counts to be identical.
+Assertion identities are compared too, as a separate pass over the saved logs
+(<code>scratch/phase1-identities.ts</code>) - two runs at 2/5 with different failing tests
+are not the same result, and a count-only comparison would call them identical.</p>
+<p>Six containers, one job per container at a time, two probes per task run
+sequentially so nothing races on that task's <code>.probe.json</code>.</p>
+<p>Reconstruction was needed first: <code>task promote</code> MOVES the oracle to
+<code>tests/al/&lt;tier&gt;/</code> and the starter to <code>tasks/starter/&lt;id&gt;/</code>, so a promoted draft
+cannot be probed where it sits. The promoted artifacts were copied back - they
+are the authoritative ones the bench grades with.</p>
+<h3 id="result">Result<a class="headerlink" href="#result" title="Permanent link">&para;</a></h3>
+<p><strong>76 of 76 deterministic.</strong> Zero quarantined.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tasks probed</td>
+<td>76 (all hard tier)</td>
+</tr>
+<tr>
+<td>probes run</td>
+<td>152</td>
+</tr>
+<tr>
+<td>inconclusive probes</td>
+<td>0</td>
+</tr>
+<tr>
+<td>assertion-identity mismatches</td>
+<td>0</td>
+</tr>
+<tr>
+<td>container work</td>
+<td>157 min, mean 62 s per probe</td>
+</tr>
+<tr>
+<td>wall clock</td>
+<td>~2 h, six containers in parallel</td>
+</tr>
+<tr>
+<td>container load</td>
+<td>Cronus28 25, 281 26, 282 26, 283 26, 284 25, 285 24</td>
+</tr>
+</tbody>
+</table>
+<p>No container misbehaved. The even spread and the zero inconclusive count are
+themselves the evidence that the credential fix is sound - before it, five of
+the six failed every probe.</p>
+<p>Reconstruction touched 50 oracles, 46 starters, and 2 oracle-side companions
+(<code>CG-AL-X080.LateCarrierStatus.EnumExt.al</code> and one <code>OtherRule.Codeunit.al</code>).
+Those two are why the companion-copy step exists: companions are injected into
+BOTH sides at verify time, so a missing one makes the failing side fail to
+COMPILE rather than fail its assertions, which reads as a broken trap.</p>
+<h3 id="one-correction-worth-stating-plainly">One correction worth stating plainly<a class="headerlink" href="#one-correction-worth-stating-plainly" title="Permanent link">&para;</a></h3>
+<p><code>.probe.json</code> is written in place, so the diagnostic probes run while chasing the
+credential bug overwrote two tasks' baselines with <code>inconclusive</code>. That produced
+one baseline-disagreement quarantine (X067) for a task whose two clean runs
+agreed exactly at 7/7 and 5/7+2. <code>scratch/phase1-correct.ts</code> re-evaluates the
+baseline leg against the archived pre-backfill baselines and discards
+uninformative ones. It never touches a run-vs-run disagreement - that is real
+nondeterminism and stays quarantined.</p>
+<h2 id="phase-2-survivor-triage-b7">Phase 2 - survivor triage (B7)<a class="headerlink" href="#phase-2-survivor-triage-b7" title="Permanent link">&para;</a></h2>
+<p>113 survivors across 34 tasks, from <code>scratch/lethal-t1/*/report.json</code>.</p>
+<p>A staleness check was run first, comparing each report's date against the last
+commit date of the oracle it describes. <strong>15 of the 34 reports predate their own
+oracle's most recent edit.</strong> Those survivor lists describe an oracle that no
+longer exists: the 2026-08-24 fix round added 12 kill tests, and
+<code>lethal-sweep-results.md</code> records that the changed tasks were re-PROBED but
+mostly not re-SWEPT.</p>
+<h3 id="dispositions">Dispositions<a class="headerlink" href="#dispositions" title="Permanent link">&para;</a></h3>
+<p>All 34 tasks triaged, 124 mutant dispositions recorded.</p>
+<table>
+<thead>
+<tr>
+<th>disposition</th>
+<th>n</th>
+<th>acceptable?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>equivalent</td>
+<td>63</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>already_killed (by a test added after the sweep)</td>
+<td>26</td>
+<td>yes, pending a confirming re-sweep</td>
+</tr>
+<tr>
+<td>out_of_scope_proved</td>
+<td>11</td>
+<td>yes, proof recorded</td>
+</tr>
+<tr>
+<td>accepted_unscorable (runaway loops)</td>
+<td>11</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><strong>unreached</strong></td>
+<td><strong>10</strong></td>
+<td><strong>no - coverage holes</strong></td>
+</tr>
+<tr>
+<td>deliberately_open</td>
+<td>3</td>
+<td>yes, X074 page glue, proof recorded</td>
+</tr>
+</tbody>
+</table>
+<p><strong>10 unreached mutants across 8 tasks</strong>, closable by <strong>6 distinct kill tests</strong> -
+two holes are shared between a donor and its composite:</p>
+<table>
+<thead>
+<tr>
+<th>hole</th>
+<th>tasks</th>
+<th>kill test</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cross-item FIFO layer consumption</td>
+<td>X066 + X097</td>
+<td><code>ShipmentNeverDrawsOnAnotherItemsReceipts</code></td>
+</tr>
+<tr>
+<td>caller-filtered buffer total</td>
+<td>X084 + X099</td>
+<td><code>TheRunningTotalCoversEveryAppliedEntryWhateverTheCallerWasReading</code></td>
+</tr>
+<tr>
+<td>fully-contained merge window</td>
+<td>X077</td>
+<td><code>MergeKeepsTheOuterEndingDateWhenAWindowSitsFullyInsideAnother</code></td>
+</tr>
+<tr>
+<td>stale buffer lines after build</td>
+<td>X078</td>
+<td><code>BuildStatementLeavesTheBufferHoldingOnlyTheStatementJustBuilt</code></td>
+</tr>
+<tr>
+<td>caller filter hides approved entry</td>
+<td>X105</td>
+<td><code>ApprovedEntryIsFoundWhateverTheCallerWasViewing</code></td>
+</tr>
+<tr>
+<td>notification never sent (3 mutants)</td>
+<td>X088</td>
+<td><code>FlagOnWithAnIncompleteRuleActuallyWarnsTheUser</code> - <strong>BLOCKED</strong>, below</td>
+</tr>
+</tbody>
+</table>
+<h3 id="four-corrections-to-the-existing-record">Four corrections to the existing record<a class="headerlink" href="#four-corrections-to-the-existing-record" title="Permanent link">&para;</a></h3>
+<p>Triage was told to CHECK the prior dispositions rather than reproduce them, and
+four did not survive that.</p>
+<ol>
+<li><strong>X077 M0013 was recorded as equivalent, and is not.</strong> The pilot triage
+   (<code>scratch/lethal-t1/CG-AL-X077/TRIAGE.md:84-89</code>) analysed only the
+   <code>CurrOpenEnded=true</code> direction, where the write is dead. The other direction
+   executes an assignment the original skips and shrinks the merged end. The
+   stale verdict is still on disk.</li>
+</ol>
+<p>This one has consequences beyond mutation scoring: <strong>the classic
+   merge-intervals slip of assigning <code>CurrEnd</code> unconditionally instead of
+   keeping the later end passes today's 21-test oracle.</strong> A benched model
+   carrying that bug is being scored as a pass right now.</p>
+<ol>
+<li>
+<p><strong>X088's acceptance rested on a false premise.</strong> It was accepted as a
+   "notification wrapper" on the grounds that AL has no notification handler.
+   AL does: <code>[SendNotificationHandler]</code>. So three mutants are real holes.</p>
+</li>
+<li>
+<p><strong>X105's "deliberately left open" survivor is a real hole.</strong> The recorded
+   rationale - the starter already contains the <code>Reset()</code>, so a model's fix
+   keeps it - is a probability argument, not the proof B7 demands. Cheap to
+   close, and closing it forbids no legitimate fix.</p>
+</li>
+<li>
+<p><strong>X095's kill test closed nothing.</strong> <code>lethal-sweep-results.md:74</code> claims the
+   <code>OnAfterModifyEvent</code> observer kills both <code>Modify(false)</code> survivors. It does
+   not: the observer ignores its <code>RunTrigger</code> parameter and the event fires
+   under <code>Modify(false)</code> anyway (measured in <code>spikes/xrec</code>). The mutants that
+   deleted the whole <code>Modify</code> call were already killed by the value asserts, so
+   the added test plus companion codeunit <strong>moved <code>task_sets.hash</code> for no
+   coverage gain</strong>. Recommendation: fix the doc line, keep the test - it asserts
+   a true property and forbids nothing, so removing it would move the hash
+   again.</p>
+</li>
+</ol>
+<p>Five prior claims were CONFIRMED and now carry the proof they lacked: X105's
+<code>SetCurrentKey</code>, X107's <code>OnAfterPostedDealInsert</code>, X108's <code>Clear(IsActive)</code>,
+X074's page glue, and X089's statements-only design.</p>
+<h3 id="two-findings-outside-the-survivor-lists">Two findings outside the survivor lists<a class="headerlink" href="#two-findings-outside-the-survivor-lists" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>X088 <code>SearchSetup.GetSetup</code> is dead code</strong> - zero call sites anywhere. That
+  is why its four no-coverage mutants are out-of-scope. The pipeline's own
+  loop-A note says unused procedures are dead filler and should be pruned.</li>
+<li><strong>X073 <code>UpdateProductAssignments</code> is dead code</strong> in the reference solution:
+  the platform <code>TableRelation</code> rename cascade already did the work. Four of its
+  survivors are unkillable for that reason, confirmed three independent ways in
+  the report. Recorded as an accepted-equivalent cluster so a later round does
+  not re-chase it.</li>
+</ul>
+<h3 id="one-kill-test-is-blocked-on-an-unmeasured-premise">One kill test is blocked on an unmeasured premise<a class="headerlink" href="#one-kill-test-is-blocked-on-an-unmeasured-premise" title="Permanent link">&para;</a></h3>
+<p>X088's test needs <code>Notification.Send()</code> to engage a <code>[SendNotificationHandler]</code>
+in a headless session. <code>[ConfirmHandler]</code> is measured to do so (<code>decisions.md</code>
+22, 27), but <code>Send()</code> is fire-and-forget and may be short-circuited when no
+client exists - which would fail a CORRECT solution. One throwaway probe settles
+it. If it fails, the original acceptance becomes correct for the first time on a
+measured basis; either way the task's NOTES.md wording needs fixing, because it
+asserts no such AL handler exists.</p>
+<h2 id="what-is-still-pending-and-why">What is still PENDING, and why<a class="headerlink" href="#what-is-still-pending-and-why" title="Permanent link">&para;</a></h2>
+<p>Recorded per task in <code>gate-records.json</code> rather than asserted here.</p>
+<table>
+<thead>
+<tr>
+<th>gate</th>
+<th>state</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B3 regression preservation</td>
+<td>no tooling; reviewer instruction only</td>
+</tr>
+<tr>
+<td>B5 input/state amplification</td>
+<td>no tooling</td>
+</tr>
+<tr>
+<td>B6 blind prompt audit</td>
+<td>not recorded per task in queryable form</td>
+</tr>
+<tr>
+<td>C1 clean-room solver</td>
+<td>unbuilt</td>
+</tr>
+</tbody>
+</table>
+<p>Two gaps in phase 1 specifically, against the full B2 spec in
+<code>hardening-pipeline.md</code>:</p>
+<ul>
+<li><strong>Execution order was not varied.</strong> B2 asks for both orders (reference to
+  negative and negative to reference); <code>probeDraft</code> always runs correct then
+  naive. Order dependence is one of the two failure modes B2 exists to catch, so
+  this is a real gap, not a technicality.</li>
+<li><strong>Tenant state was not reset</strong> between runs. Container diversity was achieved,
+  fresh tenant state was not.</li>
+</ul>
+<h2 id="ledger-state-after-phases-1-and-2">Ledger state after phases 1 and 2<a class="headerlink" href="#ledger-state-after-phases-1-and-2" title="Permanent link">&para;</a></h2>
+<p>Over all 225 promoted tasks (203 in scope, plus the 22 easy tasks slated for
+deletion).</p>
+<table>
+<thead>
+<tr>
+<th>gate</th>
+<th>pass</th>
+<th>quarantine</th>
+<th>stale</th>
+<th>inconclusive</th>
+<th>never ran</th>
+<th>not runnable</th>
+<th>no tooling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B1 probe</td>
+<td>196</td>
+<td>3</td>
+<td>-</td>
+<td>-</td>
+<td>1</td>
+<td>25</td>
+<td>-</td>
+</tr>
+<tr>
+<td>B2 determinism</td>
+<td>196</td>
+<td>0</td>
+<td>-</td>
+<td>3</td>
+<td>22</td>
+<td>4</td>
+<td>-</td>
+</tr>
+<tr>
+<td>B7 mutation</td>
+<td>29</td>
+<td>8</td>
+<td>10</td>
+<td>-</td>
+<td>178</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>B3, B5</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>225</td>
+</tr>
+<tr>
+<td>B4, B6, C1</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>225</td>
+<td>-</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>never ran</code> counts on B1 and B2 are the 22 easy-tier tasks, which are out of
+scope and slated for deletion. Numbers here cover all 225 promoted tasks; the
+in-scope 203 are broken out in the phase-3 section above.</p>
+<p>B7's eight quarantines are exactly the eight tasks with an unreached mutant. Its
+ten <code>stale</code> rows are tasks whose every survivor is accounted for but whose score
+predates the current oracle, so the number itself needs a confirming re-sweep.</p>
+<h2 id="phase-3-partial-closing-the-reference-solution-gap">Phase 3 (partial) - closing the reference-solution gap<a class="headerlink" href="#phase-3-partial-closing-the-reference-solution-gap" title="Permanent link">&para;</a></h2>
+<p>Phase 3's stated scope was mutation on the never-swept remainder. That is not
+where it started, because the phase-1 finding said it could not: of the 156
+in-scope tasks with no mutation evidence, only 30 could be swept at all. The
+other 126 had no program that passes their oracle, and B7 needs <code>baselineGreen</code>.</p>
+<p>So phase 3 began by closing that gap instead.</p>
+<h3 id="seeding">Seeding<a class="headerlink" href="#seeding" title="Permanent link">&para;</a></h3>
+<p><code>scripts/seed-reference-solution.ts</code> lifted the newest stored PASSING bench
+submission for each of the 123 recoverable tasks into <code>reference/solutions/&lt;id&gt;/</code>
+(3 had none: <code>M034</code>, <code>M040</code>, <code>X044</code>). Then every seed was verified with two
+single-side probes on two different containers, which settles B1's correct leg
+and B2's passing path in one measurement.</p>
+<p><strong>Result: 120 of 123 verified on both.</strong> The three that did not, and the several
+false failures on the way there, are written up in
+<code>seed-verification-findings.md</code> - the failures were more informative than the
+passes, and two of them are real findings about the suite rather than about the
+seeds.</p>
+<p>Two of my own defects are recorded there rather than quietly fixed: a hardcoded
+<code>runtime "16.0"</code> in the seeder (which is what led to removing the version
+hardcode everywhere - see below), and a harness that never unpublished a task's
+prereq app, which accumulated 127 stale prereqs across six containers and then
+produced two false failures through prereq id collisions.</p>
+<h3 id="what-this-moved">What this moved<a class="headerlink" href="#what-this-moved" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>gate, in-scope (203)</th>
+<th>before phase 3</th>
+<th>after</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B1 discrimination probe</td>
+<td>76 pass, 127 unrunnable</td>
+<td><strong>196 pass</strong>, 3 quarantine, 3 unrunnable, 1 absent</td>
+</tr>
+<tr>
+<td>B2 determinism</td>
+<td>76 pass, 127 unrunnable</td>
+<td><strong>196 pass</strong>, 3 inconclusive, 4 unrunnable</td>
+</tr>
+<tr>
+<td>B7 mutation</td>
+<td>29 pass, 8 quarantine, 10 stale, 156 absent</td>
+<td>unchanged</td>
+</tr>
+</tbody>
+</table>
+<p>B2 is the one that matters: determinism was the gate the plan called out as
+"corrupting data now", and it went from measurable on 37% of the suite to
+measured on 97%, with every measured task passing. The 4 still unrunnable are
+the 3 tasks with no stored submission plus <code>X001</code>.</p>
+<p>Two honest qualifications on those 196:</p>
+<ul>
+<li>For the 120 seeded tasks, B1 is the <strong>correct leg only</strong>. There is no negative
+  side to probe, because none was ever authored for a code-gen task. The ledger
+  records this as <code>legs: "correct-only"</code> rather than treating it as equivalent to
+  a diagnose task's two-sided discrimination probe.</li>
+<li>Likewise their B2 covers the <strong>passing path only</strong> (<code>scope:
+  "passing-path-only"</code>). Execution order still was not varied, for the same
+  reason it was not varied in phase 1.</li>
+</ul>
+<h3 id="a-hardcode-removed-along-the-way">A hardcode removed along the way<a class="headerlink" href="#a-hardcode-removed-along-the-way" title="Permanent link">&para;</a></h3>
+<p>Chasing the seeder's runtime bug surfaced a larger one. <code>BC_PLATFORM_VERSION</code>,
+<code>BC_APPLICATION_VERSION</code> and <code>BC_RUNTIME_VERSION</code> in <code>src/constants.ts</code> were the
+source for every generated <code>app.json</code>, which freezes whichever BC version the
+containers were on when the file was last edited. The policy is "newest platform
+and runtime the supplied containers support", and a constant cannot express
+that: point the bench at a BC29 container and it would keep emitting
+<code>platform 28.0.0.0 / runtime 17.0</code>, forbidding every API added since.</p>
+<p><code>src/container/bc-platform-version.ts</code> now reads both from the container. The
+authoritative source is the container's own Microsoft symbol packages - BCH's
+compiler cache holds <code>Microsoft_*.app</code> files downloaded from that container's
+artifact, and each manifest states <code>platform</code> and <code>runtime</code> outright - read with
+the <code>altool.exe</code> that ships in the same cache, so the reader always matches what
+it reads. A BC29 container reports <code>29.0.0.0</code> / <code>18.0</code> by itself, with no version
+table to maintain. The artifact URL from <code>docker inspect</code> is the cold-machine
+fallback for <code>platform</code>; it deliberately does NOT guess the runtime, because the
+major-to-runtime relationship is Microsoft's mapping and hardcoding <code>major - 11</code>
+would be the same defect with extra steps.</p>
+<p>Wired into all three app.json writers (<code>compile-queue.ts</code>, <code>executor-v2.ts</code>, the
+seeder), each logging when the answer is not fully container-derived. The
+constants remain as documented last-resort fallbacks. Verified live: all six
+containers resolve <code>28.0.0.0</code> / <code>17.0</code> from their own symbols - the same values
+the constants held, which is exactly why the defect was invisible and would have
+surfaced only on the first newer container.</p>
+<h3 id="not-done-in-phase-3">Not done in phase 3<a class="headerlink" href="#not-done-in-phase-3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Mutation on the remainder. 156 in-scope tasks still have no B7 evidence. 120
+  of them are now unblocked for it, which was the point of doing this first.</li>
+<li>The 10 <code>stale</code> B7 reports still need their confirming re-sweep.</li>
+<li>The 7 written kill tests are unverified: they need a re-probe plus a LethAL
+  re-sweep before any B7 verdict moves.</li>
+</ul>
+<h2 id="phase-3-continued-the-attribution-repair-and-four-false-passes">Phase 3 (continued) - the attribution repair, and four false passes<a class="headerlink" href="#phase-3-continued-the-attribution-repair-and-four-false-passes" title="Permanent link">&para;</a></h2>
+<h3 id="what-was-actually-wrong">What was actually wrong<a class="headerlink" href="#what-was-actually-wrong" title="Permanent link">&para;</a></h3>
+<p>LethAL resolves each mutant's <code>methodId</code> against <code>SymbolReference.json</code> to
+decide which tests cover it. When that resolution failed, the mutant was not
+run at all - it was recorded as <code>no-coverage</code>, which is the same verdict a
+mutant gets when it runs and no test reaches it. The two are indistinguishable
+by verdict.</p>
+<p>Scale, stated at two confidence levels. During the live investigation the count
+was 223 mutants across 17 tasks. What is still <strong>provable from disk</strong> is
+narrower - 179 of the 241 mutants in 10 tasks - because the re-sweep harness
+archived with <code>-Force</code> at first and destroyed four original reports before that
+was fixed. The provable set is what the table below uses.</p>
+<p>The tell was an internal contradiction, not a suspicion: in
+<code>SetFieldFromJsonToken</code>, mutants M0027 and M0030 were <em>killed</em> by
+<code>TestDeserializeFromJson_ValidData</code>, while <code>DeserializeFromJson</code> - their only
+caller - reported <code>no-coverage</code> with zero covering tests. A test cannot kill a
+mutant inside a procedure it never reaches. All 94 affected mutants in that task
+had <code>durationMs == 0</code>.</p>
+<p>The fix is <code>coverageMode: "none"</code> in the <strong><code>bcdev</code></strong> section of
+<code>lethal.config.json</code>, which skips attribution and runs every mutant against
+every test. Putting it at the top level does nothing - the field has no config
+surface there, and a run so configured looks identical to an unconfigured one.</p>
+<h3 id="it-moved-scores-in-both-directions">It moved scores in both directions<a class="headerlink" href="#it-moved-scores-in-both-directions" title="Permanent link">&para;</a></h3>
+<p>Read from the archived pre-fix reports on disk
+(<code>report.pre-resweep.json</code>, <code>report.prior-N.json</code>) against the current
+<code>report.json</code>, for the tasks that actually had never-executed mutants:</p>
+<table>
+<thead>
+<tr>
+<th>task</th>
+<th>pre-fix score</th>
+<th>post-fix score</th>
+<th>never-executed pre-fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CG-AL-H023</td>
+<td>0.600</td>
+<td><strong>0.754</strong></td>
+<td>94 of 114</td>
+</tr>
+<tr>
+<td>CG-AL-X088</td>
+<td>0.737</td>
+<td><strong>0.609</strong></td>
+<td>4 of 23</td>
+</tr>
+<tr>
+<td>CG-AL-X074</td>
+<td>0.909 -&gt; 0.727</td>
+<td><strong>0.588</strong></td>
+<td>6 of 17</td>
+</tr>
+</tbody>
+</table>
+<p>H023 gained 0.15 and X074 lost 0.32: the bug was not biased in one direction, it
+was noise that happened to be large. X074 is the clearest case - it was read at
+0.909 twice, then 0.727, and is actually 0.588. A weak oracle was being reported
+as one of the suite's stronger ones.</p>
+<p>Three others in the re-attribution set (X075 at 1.000, X072 at 0.909, X100) had
+<strong>zero</strong> never-executed mutants in their archived reports, so their scores were
+already sound; X100's mutant count changed (49 to 58) because it was re-prepped,
+which makes its two scores not directly comparable.</p>
+<p><strong>Suite-wide: 154 reports, zero with never-executed mutants</strong> - and
+<code>mutation-sweeps.json</code> now carries <code>attributionTrusted</code> per task so the
+condition cannot recur silently.</p>
+<p>That figure needs one honest qualification. Five of the ten provably-affected
+tasks (H025, H037, M009, M032, M033) currently hold all-error reports from the
+LethAL quarantine defect described below. A report with no verdicts at all has
+no <code>no-coverage</code> verdicts either, so it satisfies <code>attributionTrusted</code>
+vacuously. Those five are re-measured only once the quarantine is fixed;
+<code>state: "no-measurement"</code> is what actually tracks them, not
+<code>attributionTrusted</code>. The five whose repair IS confirmed are H016, H019, H023,
+X074 and X088.</p>
+<h3 id="detecting-it-in-future-three-independent-ways-a-report-lies">Detecting it in future: three independent ways a report lies<a class="headerlink" href="#detecting-it-in-future-three-independent-ways-a-report-lies" title="Permanent link">&para;</a></h3>
+<p>The partial-run trap found earlier was not the only way a LethAL report can
+carry a plausible number that measures nothing. <code>aggregate-sweeps.py</code> and
+<code>gate-records.ts</code> now check all four, because each one is invisible in the
+others' terms:</p>
+<table>
+<thead>
+<tr>
+<th>failure</th>
+<th>how it presents</th>
+<th>detection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>stranded run</td>
+<td>score over a subset, reads HIGHER the earlier it died</td>
+<td>log <code>N deployed</code> vs report mutant count</td>
+</tr>
+<tr>
+<td>never-executed mutants</td>
+<td><code>no-coverage</code> with no test having run</td>
+<td><code>durationMs == 0</code></td>
+</tr>
+<tr>
+<td>discarded verdicts</td>
+<td>every mutant <code>error</code>, <code>mutationScore: null</code></td>
+<td>all verdicts <code>error</code></td>
+</tr>
+<tr>
+<td>red baseline</td>
+<td>populated score measured against a solution that fails the oracle</td>
+<td><code>baselineGreen: false</code></td>
+</tr>
+<tr>
+<td>no mutable sites</td>
+<td>zero mutants, zero survivors</td>
+<td>empty mutant list</td>
+</tr>
+</tbody>
+</table>
+<h3 id="four-false-passes-in-the-b7-gate">Four false passes in the B7 gate<a class="headerlink" href="#four-false-passes-in-the-b7-gate" title="Permanent link">&para;</a></h3>
+<p>Three of those five conditions produce a report with <strong>zero survivors</strong>, and the
+gate read zero survivors as its strongest pass. Corrected:</p>
+<p><strong>B7 went from 105 pass to 87.</strong> 18 of the previous passes - better than one in
+six - were not measurements:</p>
+<ul>
+<li>9 tasks with zero mutable sites (<code>0 sites -&gt; 0 deployed</code>). Purely declarative
+  tasks; mutation testing has nothing to say about them. Now <code>not_runnable</code>.</li>
+<li>5 tasks whose verdicts were all discarded by LethAL's quarantine. Now
+  <code>quarantine</code>.</li>
+<li>4 tasks measured against a red baseline, one of which (<code>CG-AL-H016</code>) carried a
+  plausible 0.556. Now <code>not_runnable</code> or <code>quarantine</code> by cause.</li>
+</ul>
+<p>The general lesson is that "no survivors" and "no measurement" are the same
+observation, and the gate has to distinguish them from something other than the
+survivor count.</p>
+<h3 id="b7-has-a-permanent-ceiling-and-it-is-not-203">B7 has a permanent ceiling, and it is not 203<a class="headerlink" href="#b7-has-a-permanent-ceiling-and-it-is-not-203" title="Permanent link">&para;</a></h3>
+<p>LethAL runs the solution and the oracle as two SEPARATE apps
+(<code>--project app --tests tests</code>) in a fenced <code>GuiAllowed=No</code> /
+<code>ClientType=ODataV4</code> session with test isolation on. Three kinds of oracle
+cannot execute there at all, however good the oracle is:</p>
+<table>
+<thead>
+<tr>
+<th>limit</th>
+<th>in-scope tasks</th>
+<th>why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>opens a TestPage</td>
+<td>9 (H033, H057, M001, M004, M010, M028, M029, M039, M044)</td>
+<td>BC refuses to create a test service in the fenced session - a refusal at 87 ms, not a hang</td>
+</tr>
+<tr>
+<td>starts a background session</td>
+<td>1 (X008)</td>
+<td>needs a TestRunner with <code>TestIsolation</code> disabled</td>
+</tr>
+<tr>
+<td>asserts on <code>DataScope::Module</code> isolated storage</td>
+<td>1 (H016)</td>
+<td>Module scope resolves to the TEST app, not the solution, so the assertion can never observe what was stored</td>
+</tr>
+</tbody>
+</table>
+<p><strong>So B7's maximum achievable coverage is 192 in-scope tasks, not 203.</strong> These 11
+are recorded as <code>not_runnable</code> with the reason, which keeps them out of the
+failure count - nothing about the suite can be changed to make them pass.</p>
+<p>H016 is worth a note of its own: its oracle passes in the bench, where the
+candidate and the oracle compile into ONE app and Module scope therefore
+matches. It is not a broken oracle. It is an oracle that only one of the two
+harnesses can run.</p>
+<h3 id="a-lethal-defect-reported-not-fixed">A LethAL defect, reported not fixed<a class="headerlink" href="#a-lethal-defect-reported-not-fixed" title="Permanent link">&para;</a></h3>
+<p>Five tasks (H025, H037, M009, M032, M033 - 73 mutants) hit this on every attempt:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>QUARANTINED: unattested artifact: no covered run observed the deployed binary's
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>selector (artifactId 2c4bc2a87801d0a5789afa018d65e9aa) - verdicts discarded,
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>container quarantined (design 7G)
+</code></pre></div>
+<p>Green baseline, successful deploy, <code>mutants 0.0s</code>, every verdict <code>error</code>. It
+survives <code>force-reset-lease</code> + <code>clear-quarantine</code> and a full re-run, with a
+different artifactId each time, and it hit all three containers - so it is
+neither a stale lease nor container-specific. Every affected task ran with
+<code>coverageMode: "none"</code>; so did the nine that scored fine, so the mode alone does
+not predict it.</p>
+<p>Reported upstream rather than worked around. Those five need a re-sweep once it
+is fixed.</p>
+<h3 id="cronus28s-bc-license-expired">Cronus28's BC license expired<a class="headerlink" href="#cronus28s-bc-license-expired" title="Permanent link">&para;</a></h3>
+<p><code>Your program license has expired.</code> on any <code>Get-NAVAppInfo</code>. The container is
+running and reachable; every app operation fails. It was dropped from the lane
+set and its tasks redistributed. Cronus282/284/285 are healthy. Cronus281/283
+remain excluded for LethAL's own resident fixtures at 79xxx.</p>
+<h3 id="re-triage-against-the-corrected-data-phase-2c">Re-triage against the corrected data (phase 2c)<a class="headerlink" href="#re-triage-against-the-corrected-data-phase-2c" title="Permanent link">&para;</a></h3>
+<p>The attribution repair invalidated the triage that depended on it: 15 tasks had
+survivors with no disposition, because the survivor set itself had changed. 14
+were re-triaged (H016 was skipped - triaging against a red baseline decides
+nothing), 70 mutants across four parallel triagers.</p>
+<table>
+<thead>
+<tr>
+<th>task</th>
+<th>mutants</th>
+<th>outcome</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CG-AL-H023</td>
+<td>28</td>
+<td>22 unreached, 5 equivalent, 1 out of scope</td>
+</tr>
+<tr>
+<td>CG-AL-H018</td>
+<td>10</td>
+<td>8 unreached, 2 out of scope</td>
+</tr>
+<tr>
+<td>CG-AL-M002</td>
+<td>6</td>
+<td>5 unreached, 1 out of scope</td>
+</tr>
+<tr>
+<td>CG-AL-H030</td>
+<td>6</td>
+<td>4 equivalent, 2 unreached</td>
+</tr>
+<tr>
+<td>CG-AL-X100</td>
+<td>6</td>
+<td>5 equivalent, 1 out of scope</td>
+</tr>
+<tr>
+<td>CG-AL-M038</td>
+<td>4</td>
+<td>2 unreached, 2 equivalent</td>
+</tr>
+<tr>
+<td>CG-AL-H006, H028, X004, X051, H054, X003, X025, X046</td>
+<td>10</td>
+<td>6 unreached, 6 equivalent, 2 out of scope</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Suite total: 101 tasks, 548 mutants dispositioned. No survivor anywhere in the
+suite is now untriaged.</strong></p>
+<table>
+<thead>
+<tr>
+<th>disposition</th>
+<th>count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>unreached (coverage hole, kill test written)</td>
+<td>216</td>
+</tr>
+<tr>
+<td>equivalent</td>
+<td>156</td>
+</tr>
+<tr>
+<td>deliberately_open</td>
+<td>52</td>
+</tr>
+<tr>
+<td>out_of_scope_proved</td>
+<td>51</td>
+</tr>
+<tr>
+<td>accepted_unscorable</td>
+<td>47</td>
+</tr>
+<tr>
+<td>already_killed</td>
+<td>26</td>
+</tr>
+</tbody>
+</table>
+<p>Three findings from this batch are worth keeping separate from the counts.</p>
+<p><strong>One hole can be six mutants.</strong> H018's <code>Create()</code> is specified to return a
+cleared instance, and the codeunit is <code>SingleInstance</code>, so "cleared" means its
+five <code>Clear()</code> calls must actually run. The oracle calls <code>Create()</code>, immediately
+re-sets URL and method, and asserts only on those - so removing any <code>Clear()</code> is
+invisible. M0018 through M0023 are one test: build a stale request, call
+<code>Create()</code>, then assert on <code>Build()</code> with no setters in between.</p>
+<p><strong>Not every survivor should be killed.</strong> M002's M0008 and M0010 are the
+reference solution rejecting out-of-range discounts, which the task spec never
+asks for - its error contract is exhaustive and names only negative quantity and
+negative price. X051's two survivors are FlowFilter state persisting across
+blocks, separable only by an input the YAML rules out ("Three accounts, A, B,
+and C, already exist"). Tightening the oracle for either would enshrine one
+implementation's invented rule as the benchmark's answer.</p>
+<p><strong><code>Close()</code> removal is systematically unkillable.</strong> H030 (4), H028 (2), H023 (2)
+and X025/X046-style <code>Init()</code> removals all reduce to the same thing: AL gives a
+test no channel to observe a procedure-local <code>RecordRef</code>'s open state, because
+the runtime releases it at scope exit either way. The <code>Open()</code> removals on the
+same procedures <em>are</em> killed, which is what proves this is unobservability
+rather than a coverage gap.</p>
+<h3 id="where-b7-stands">Where B7 stands<a class="headerlink" href="#where-b7-stands" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>status</th>
+<th>count</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pass</td>
+<td>91</td>
+<td>measured, and every survivor accounted for</td>
+</tr>
+<tr>
+<td>quarantine</td>
+<td>50</td>
+<td>45 confirmed coverage holes with kill tests written, 5 blocked on the LethAL defect</td>
+</tr>
+<tr>
+<td>not measurable</td>
+<td>13</td>
+<td>9 with no mutable sites, 4 structurally unrunnable under LethAL</td>
+</tr>
+<tr>
+<td>never run</td>
+<td>71</td>
+<td>no sweep yet (22 of them easy tier, out of scope)</td>
+</tr>
+</tbody>
+</table>
+<p>The 45 is the actionable number: those are oracles with a named, written test
+that would close them.</p>
+<h2 id="phase-4-over-strictness-b4">Phase 4 - Over-strictness (B4)<a class="headerlink" href="#phase-4-over-strictness-b4" title="Permanent link">&para;</a></h2>
+<h3 id="the-budget-was-mostly-already-spent">The budget was mostly already spent<a class="headerlink" href="#the-budget-was-mostly-already-spent" title="Permanent link">&para;</a></h3>
+<p>The plan sized this at ~400 model calls and called it "the largest line item in
+the backfill". It cost <strong>$0.27 and 103 calls</strong>, because the question B4 asks was
+already answered for a third of the suite by data on disk.</p>
+<p>B4 asks whether an oracle accepts a SECOND valid implementation or has silently
+pinned one. The evidence for that is two independent solutions, from families
+other than the authoring family, both passing prompt-only. 240 stored bench runs
+contain exactly those solutions. <code>scripts/b4-evidence.ts</code> recovers them.</p>
+<p>Two rules keep the recovered evidence honest, and both cost coverage:</p>
+<ul>
+<li><strong>Attempt 1 only.</strong> An attempt-2 pass followed a repair prompt carrying the
+  oracle's own failure output, so that solution is not independent of the
+  oracle - which is the one thing B4 measures.</li>
+<li><strong>Evidence expires.</strong> A pass proves the oracle accepted that solution as it
+  stood THEN. One task (M004) had two qualifying families and was still marked
+  stale because its oracle moved on 2026-06-13, after the newest pass.</li>
+</ul>
+<p>Anthropic is treated as the authoring family for every task, since the whole
+suite was authored with Claude. That is the conservative reading: a task that
+turns out to be human-authored only gains evidence.</p>
+<h3 id="what-the-103-calls-bought">What the 103 calls bought<a class="headerlink" href="#what-the-103-calls-bought" title="Permanent link">&para;</a></h3>
+<p>Direct OpenAI and Gemini keys are dead (<code>401 Incorrect API key provided</code> and
+<code>API key not valid</code>), so the pair became <strong>deepseek-v4-pro</strong> and <strong>grok-4.3</strong>
+via OpenRouter - two distinct non-Anthropic frontier families.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>calls</th>
+<th>passed</th>
+<th>cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>deepseek-v4-pro</td>
+<td>55</td>
+<td>18</td>
+<td>$0.1316</td>
+</tr>
+<tr>
+<td>grok-4.3</td>
+<td>47</td>
+<td>24</td>
+<td>$0.1325</td>
+</tr>
+<tr>
+<td>pilot + retry</td>
+<td>2</td>
+<td>0</td>
+<td>~$0.01</td>
+</tr>
+</tbody>
+</table>
+<p>B4 went from <strong>69 to 86 pass</strong>.</p>
+<h3 id="the-headline-result-no-over-strictness-found">The headline result: no over-strictness found<a class="headerlink" href="#the-headline-result-no-over-strictness-found" title="Permanent link">&para;</a></h3>
+<p>Of 103 independent solutions, <strong>not one case of an oracle rejecting a valid
+alternative implementation</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>outcome</th>
+<th>n</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>passed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>compile error - the model never produced valid AL</td>
+<td>48</td>
+</tr>
+<tr>
+<td>compiled, then failed assertions</td>
+<td>12</td>
+</tr>
+<tr>
+<td>returned no extractable code</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>The 12 that reached assertions are the only ones that could show
+over-strictness, and every one is a planted trap catching the model, with the
+oracle's expected value derivable from the task spec:</p>
+<table>
+<thead>
+<tr>
+<th>task</th>
+<th>what the model returned</th>
+<th>what the spec requires</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>X034</td>
+<td><code>In Progress</code> (the enum caption)</td>
+<td><code>InProgress</code> (the declared name)</td>
+</tr>
+<tr>
+<td>X045</td>
+<td>quantity 14, unnormalised</td>
+<td>16, the next multiple of 4</td>
+</tr>
+<tr>
+<td>X046</td>
+<td>archive amount 500, the stale pre-update payload</td>
+<td>847, the row's current amount</td>
+</tr>
+<tr>
+<td>X019</td>
+<td>10, the pre-recalculation amount</td>
+<td>72, the current amount</td>
+</tr>
+<tr>
+<td>X022</td>
+<td>delta 0</td>
+<td>160, the true balance change</td>
+</tr>
+<tr>
+<td>X017</td>
+<td>48 / 127 from a mishandled var parameter</td>
+<td>34</td>
+</tr>
+<tr>
+<td>X052</td>
+<td>111</td>
+<td>1832, the sealed tariff</td>
+</tr>
+<tr>
+<td>X008</td>
+<td>runtime error, duplicate signal row</td>
+<td>the worker-computed value</td>
+</tr>
+</tbody>
+</table>
+<p>Both models failed X045 and X046 <em>identically</em>. Two independent frontier models
+converging on the same wrong answer is the trap working as designed, not an
+oracle refusing a legitimate variant.</p>
+<h3 id="what-b4-cannot-establish-and-why">What B4 cannot establish, and why<a class="headerlink" href="#what-b4-cannot-establish-and-why" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>status</th>
+<th>n</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pass</td>
+<td>86</td>
+<td>two independent non-authoring families passed prompt-only</td>
+</tr>
+<tr>
+<td>absent</td>
+<td>38</td>
+<td>short of two solutions</td>
+</tr>
+<tr>
+<td>not measurable</td>
+<td>79</td>
+<td>never solved by any model on any attempt</td>
+</tr>
+</tbody>
+</table>
+<p>The 79 are the plan's hard-tier exception (77 hard, 2 medium): a model failure
+there cannot distinguish an over-strict oracle from a task the model could not
+do, so <strong>no amount of model spend substitutes for an author-written second
+implementation.</strong></p>
+<p>The same logic now extends to most of the 38. Splitting them by how the models
+failed:</p>
+<ul>
+<li><strong>30 where every failure was a compile error.</strong> No model produced valid AL at
+  all, so a model can no more establish B4 here than for the never-solved 79.
+  These belong with the author-written set in practice.</li>
+<li><strong>8 where a model reached the assertions</strong> - the trap table above. Buying a
+  third and fourth family would plausibly close these.</li>
+</ul>
+<p><strong>So the real remaining B4 work is 109 author-written second implementations
+(79 + 30), not 38 more model calls.</strong> That is the actual cost of phase 4, and it
+was never dollars.</p>
+<h2 id="closing-out-b7">Closing out B7<a class="headerlink" href="#closing-out-b7" title="Permanent link">&para;</a></h2>
+<h3 id="where-it-landed">Where it landed<a class="headerlink" href="#where-it-landed" title="Permanent link">&para;</a></h3>
+<p><strong>B7 in-scope: 123 pass, 56 quarantine, 17 not measurable, 6 absent, 1 stale.</strong>
+Suite dispositions: <strong>119 tasks, 588 mutants, none untriaged.</strong></p>
+<p>The 56 quarantines are 50 confirmed coverage holes each carrying a written kill
+test, 5 blocked on the LethAL quarantine defect, and 1 red baseline (M023, whose
+reference solution fails 1 of its own 11 tests with no execution-path excuse).</p>
+<h3 id="the-object-mix-blocker-was-ours-not-lethals">The object-mix blocker was ours, not LethAL's<a class="headerlink" href="#the-object-mix-blocker-was-ours-not-lethals" title="Permanent link">&para;</a></h3>
+<p>Ten tasks were refused with <code>assertNoUnsupportedObjectMix</code> and a bare <code>Error</code>
+carrying no message. That reads like an object-type blocklist and is not - enum,
+page, query, report and tableextension all appear in projects LethAL instruments
+happily. The discriminator is per FILE: every refused project had one <code>.al</code> file
+declaring two or more objects, every accepted one had exactly one.</p>
+<p>The seeded solutions tripped it only because they were lifted verbatim from
+model output, and a model asked for one solution writes one file.
+<code>scripts/split-al-objects.py</code> distributes them one object per file, which AL is
+indifferent to. Nine of the ten then swept.</p>
+<p>Four of those nine came back looking terrible - M044 16.7%, M001 20%, M010 46.5%
+- and none of them is a weak oracle. All four are TestPage oracles, and LethAL
+drops TestPage tests from the green set and scores the remainder, so the number
+describes whatever assertions survived that filter. They are recorded
+<code>not_runnable</code>, the same treatment the other TestPage tasks get.</p>
+<h3 id="two-seeded-reference-solutions-were-wrong">Two seeded reference solutions were wrong<a class="headerlink" href="#two-seeded-reference-solutions-were-wrong" title="Permanent link">&para;</a></h3>
+<p>X001 and X052 failed test compile because of their solutions, not their oracles:</p>
+<ul>
+<li><strong>X001</strong> held the TEST codeunit (80290, byte-identical to
+  <code>tests/al/hard/CG-AL-X001.Test.al</code>) and no solution at all.</li>
+<li><strong>X052</strong> captured <code>CG X052 Clerk</code> where the oracle needs <code>CG X052 Agent</code>.</li>
+</ul>
+<p>Both were recoverable from the B4 run's passing submissions. X001's duplicated
+oracle copy is deleted - it would collide at compile time. An audit for the
+general case now confirms no reference solution contains an object in the
+80000-89999 test band, and the audit also has to tolerate solutions that
+legitimately name base-application objects (Sales Header, G/L Entry, Upgrade
+Tag), which is most of what a naive version of it flags.</p>
+<p>Three tasks (M034, M040, X044) still have no reference solution and no passing
+submission has ever been recorded for them, so nothing can be recovered.</p>
+<h3 id="the-lethal-quarantine-defect-is-still-open">The LethAL quarantine defect is still open<a class="headerlink" href="#the-lethal-quarantine-defect-is-still-open" title="Permanent link">&para;</a></h3>
+<p>Re-tested at app version 11.0.0.0 on a fresh container (Cronus284) after the
+first report: <code>CG-AL-M033</code> and <code>CG-AL-H025</code> both quarantine identically. Green
+baseline, successful deploy, every verdict discarded. Neither a version zombie
+nor a container-specific fault.</p>
+<h3 id="late-finds-worth-keeping">Late finds worth keeping<a class="headerlink" href="#late-finds-worth-keeping" title="Permanent link">&para;</a></h3>
+<p>Two of the last three single-survivor triages found real holes, and both are the
+kind a benchmark exists to catch:</p>
+<ul>
+<li><strong>H007 M0012</strong> swaps the arguments of
+  <code>StrSubstNo('Value must be between %1 and %2', MinValue, MaxValue)</code>, so the
+  message renders "between 100 and 10". The task YAML pins that exact message
+  shape, but the oracle asserts only the substring <code>'Value must be between'</code>,
+  which stops short of the substituted values. A model emitting the bounds
+  backwards passes.</li>
+<li><strong>M088 M0004</strong> flips <code>DaysUsed &lt; 0</code> to <code>&lt;= 0</code>, so a same-day cancellation
+  refunds 0 instead of the full amount. The oracle passes 15, 10 and -5, never
+  zero.</li>
+</ul>
+<p>And <strong>X122</strong> is the sharpest structural finding: its cancellation-side numbering
+mutants survive only because the oracle never creates two cancellation entries
+in one run, while the byte-identical release-side mutation IS killed. The
+canonical fix splits one starter notifier into two codeunits, so a model can
+hand-write broken numbering in the new one and still pass.</p>
+<h2 id="cost">Cost<a class="headerlink" href="#cost" title="Permanent link">&para;</a></h2>
+<p>Zero model spend through the repo's own adapters: <code>results/model-costs.jsonl</code>
+does not exist, so <code>ledgerTotal()</code> has nothing to sum. Both phases were
+container work and read-only triage. Triage ran through Claude Code subagents,
+which that ledger does not track by design.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,2600 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/plans/2026-10-14-harness-analysis/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Harness Bench M6: analysis, data freeze and owner handoff - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#harness-bench-m6-analysis-data-freeze-and-owner-handoff" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Harness Bench M6: analysis, data freeze and owner handoff
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-exists-today-checked-2026-09-26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What exists today (checked 2026-09-26)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#global-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Constraints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-focus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review Focus
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Review Focus">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-m6-01-caveats-register" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M6-01: caveats register
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m6-02-charts-and-typed-csvs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M6-02: charts and typed CSVs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m6-03-snapshot-archive-with-fail-closed-scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M6-03: snapshot archive with fail-closed scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m6-04-handoff-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M6-04: handoff template
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m6-05-rehearsal-on-existing-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M6-05: rehearsal on existing records
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m6-06-ops-quiesce-and-snapshot-b12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M6-06 (ops): quiesce and snapshot (B12)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m6-07-ops-final-reports-and-charts-from-the-snapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M6-07 (ops): final reports and charts from the snapshot
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m6-08-handoff-and-data-freeze" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M6-08: handoff and data freeze
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#startable-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startable now
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#findings-addressed-round-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Findings addressed (round 1)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-round-1-not-adopted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review round 1: not adopted
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-round-2-changes-rev-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review round 2: changes (rev 3)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-round-2-not-adopted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review round 2: not adopted
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-round-3-changes-rev-4-owner-directed-no-further-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review round 3: changes (rev 4, owner-directed, no further review)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/plans/2026-10-14-harness-analysis.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="harness-bench-m6-analysis-data-freeze-and-owner-handoff">Harness Bench M6: analysis, data freeze and owner handoff<a class="headerlink" href="#harness-bench-m6-analysis-data-freeze-and-owner-handoff" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Revision 4</strong> applies the round-3 corrections of gpt-6-astra (<code>H:\cg-coord\reviews\M5-M6-plans\review3-gpt6astra.md</code>) as the owner directed: accepted with findings, no further review round. Earlier rounds: <code>review-gpt6astra.md</code>, <code>review2-gpt6astra.md</code>. Changes per round are listed at the end.</p>
+<p><strong>Goal:</strong> On 2026-10-16 hand the owner, for each talk experiment, the primary metric (cost per solved task with its delta, CI and cohort) next to pass rate, slide-ready charts, a sourced caveats register, and a hashed snapshot of the raw records that every number is bound to, then freeze the data.</p>
+<p><strong>Architecture:</strong> <code>harness report &lt;exp&gt; --json</code> already computes the metrics; M6 adds no metric code. Two scripts: <code>report-charts.ts</code> turns selected report JSON into SVG charts and three typed CSVs; <code>freeze-archive.ts</code> snapshots a results root with a fail-closed secret scan, SHA256SUMS and a binding manifest for derived files. Two documents (caveats register, handoff) are written by content. Scripts and templates are built and rehearsed this week on existing records.</p>
+<p><strong>Tech Stack:</strong> Deno + TypeScript, <code>@std/fs</code>, <code>@std/path</code>, <code>@std/assert</code>, Web Crypto SHA-256; SVG written as text.</p>
+<p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-09-24-harness-bench-design.md</code> (1a sections 1, 6, 8, 9). Binding: launch contract (dates, cut order item 3); <code>H:\cg-coord\decisions\2026-09-25-m1-metric-rules.md</code>; <code>2026-09-25-m3-rulings.md</code>; M5 plan <code>docs/superpowers/plans/2026-10-10-harness-campaigns.md</code> (report <code>--campaign</code>, <code>--repeats</code> fields from M5-05).</p>
+<h2 id="what-exists-today-checked-2026-09-26">What exists today (checked 2026-09-26)<a class="headerlink" href="#what-exists-today-checked-2026-09-26" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>harness report &lt;exp&gt; --judging campaign|current [--json] [--campaign id] [--results-dir dir] [--resamples 2000] [--seed 1]</code> (<code>cli/commands/harness-command.ts:1657</code>); <code>HarnessReport</code> (<code>src/harness/report.ts:81</code>): experiment, campaign, judging identity, <code>provisional</code>, <code>metric_labels</code>, <code>coverage</code>, <code>diffs</code>, <code>arms</code> (<code>ArmSummary</code>), <code>comparisons</code> (matched-pair delta, CI, <code>distinguishable</code>, <code>undefined_share</code>, exclusions, <code>tasks_dropped</code>), <code>flips</code> (only tasks whose arm pass rates differ, <code>report.ts:398-405</code>), <code>efficiency</code>, <code>slices</code>, <code>both_pass</code>, <code>cells</code>.</li>
+<li>It runs on existing records: <code>harness report mock-contract --results-dir H:\cg-coord\jobs\M1-30-1\results\harness --judging campaign --json</code> exits 0 (declared primary <code>pass_rate</code>, delta 1, CI [1, 1]; <code>cost_per_solved_task</code> null for the arm with no solves).</li>
+<li>Missing: charts, archive, caveats register, handoff.</li>
+</ul>
+<h2 id="global-constraints">Global Constraints<a class="headerlink" href="#global-constraints" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Primary metric: cost per solved task, list price from reported tokens for every harness; pass rate beside it; everything else labelled exploratory. A CI including zero shows the delta and interval <strong>and</strong> "not distinguishable", never "equal". A suppressed CI shows "CI suppressed" with the undefined share.</li>
+<li>The primary bars are per-arm figures over each arm's eligible cells; the delta is over matched pairs. Every primary chart and the handoff say so, with the pair and task counts.</li>
+<li><code>provisional: false</code> does not mean complete coverage: unscored, unknown-cost and excluded cells are always shown.</li>
+<li>Secondary sections (efficiency, slices, both-pass) are cut order item 3: optional.</li>
+<li>Outputs only in the repo, <code>H:\cg-coord\</code> and <code>H:\Temp3\harness-spike\</code>; M6 deliverables in <code>H:\cg-coord\m6\</code>. No ingest, site, deploy or <code>sync-catalog --apply</code>.</li>
+<li><code>--judging current</code> only after an oracle fix accepted in a decision that quotes the owner's approval (launch contract: oracles are never edited without the owner).</li>
+<li>Code: TDD, <code>deno test --allow-all &lt;file&gt;</code>, check/lint/fmt on touched files, <code>[OK]</code>/<code>[FAIL]</code> tags, no emoji, no em dash.</li>
+</ul>
+<h2 id="review-focus">Review Focus<a class="headerlink" href="#review-focus" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Two reports of one experiment</strong> (campaign and current judging). Expected: distinct output names, no silent overwrite, duplicates refused. M6-02.</li>
+<li><strong>Null or suppressed metrics.</strong> Expected: "n/a" with the reason (no solves, no scored cells, no eligible cost cohort), never 0 or NaN. M6-02.</li>
+<li><strong>Repeat cut.</strong> Expected: reported vs planned repeats and excluded cells and spend on every chart and in the CSVs. M6-02.</li>
+<li><strong>Secret scan cannot run</strong> (secret file missing, unreadable, empty). Expected: operational failure, not clean. M6-03.</li>
+<li><strong>Records change after the numbers were taken.</strong> Expected: reports are generated from the verified snapshot and bound to its hash. M6-03, M6-06.</li>
+</ol>
+<hr />
+<h3 id="task-m6-01-caveats-register">Task M6-01: caveats register<a class="headerlink" href="#task-m6-01-caveats-register" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> content. <strong>Deps:</strong> none. <strong>Date:</strong> first version 10-02, final 10-15. <strong>Startable now.</strong></p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m6\caveats.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Inventory, not only keywords.</strong> Read, whatever words they use: every decision file on metric rules (<code>m1-metric-rules</code>), provider pricing and routing (<code>pi-cache-ttl</code>, <code>m3-rulings</code>, the M5-01 arm decision), task selection, pilot and hardening (<code>m4-coverage-pilot</code>, <code>m4-freeze-loaded</code>, M4-14/M4-15 decisions), qualification (<code>m1-38-accepted</code>, <code>m2-13-*</code>, M3-09), egress and credentials (<code>egress</code>, <code>secrets-accepted-risk</code>, <code>m1-34-rulings</code>, M5-00 credential generations, <code>openrouter-backstop</code>), telemetry limits (<code>m2-15-accepted</code>, <code>m3-02-accepted</code>, <code>accept-M0-07</code>), snapshot and redaction (<code>snapshot-no-pause</code>, <code>redaction-scope</code>), and every M5 decision (go, quota stops, reruns, repeat cut, concurrency switch). Then <code>grep -il "caveat\|accepted risk\|owner-accepted\|residual risk\|limit\|disclos" H:\cg-coord\decisions\*.md</code> for anything missed.</li>
+<li>[ ] <strong>Step 2: One table:</strong> <code>id | caveat (one slide-ready sentence) | applies to (all, claude-code, pi, experiment id) | status (open, reduced, closed, dropped) | source path | owner action</code>. Closed and dropped rows stay, marked.</li>
+<li>[ ] <strong>Step 3:</strong> "Owner follow-ups after the freeze": post-campaign rotation of generation-2 credentials (separate from M1-34's pre-authorization rotation), firewall keep or revert, marker removal, OpenRouter balance.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> every source path exists (<code>test -f</code> loop quoted); every decision file under <code>H:\cg-coord\decisions\</code> is either cited or listed under "checked, no caveat".</p>
+<hr />
+<h3 id="task-m6-02-charts-and-typed-csvs">Task M6-02: charts and typed CSVs<a class="headerlink" href="#task-m6-02-charts-and-typed-csvs" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> infra, strictly after M1-34c and M5-05 (same lane; reads M5-05's <code>repeats</code> fields). <strong>Deps:</strong> M5-05 for the repeat fields. <strong>Date:</strong> 10-05 to 10-08. <strong>Startable now</strong> for Steps 1 to 3 without the repeat fields; Step 4 after M5-05.</p>
+<p><strong>Files:</strong> Create <code>scripts/harness/report-charts.ts</code>, <code>tests/unit/harness/report-charts.test.ts</code>, <code>tests/fixtures/harness/report-mock-contract.json</code>.</p>
+<p><strong>Interfaces:</strong>
+- <code>renderCharts(reports: HarnessReport[], ledger?: Ledger): { name: string; content: string }[]</code> (pure). Throws <code>ValidationError</code> on two reports with the same <code>(experiment.id, campaign.id, judging.source)</code>, and on a ledger that disagrees with the reports (below).
+- Output names: prefix <code>&lt;experiment&gt;__&lt;campaign id first 8&gt;__&lt;judging source&gt;</code>; per report <code>&lt;prefix&gt;-primary.svg</code>, <code>&lt;prefix&gt;-outcome.svg</code>, <code>&lt;prefix&gt;-tasks.svg</code>; once for all reports <code>arms.csv</code>, <code>comparisons.csv</code>, <code>provenance.csv</code>, and <code>ledger.csv</code> when a ledger is given.
+- CLI: <code>deno run --allow-read --allow-write scripts/harness/report-charts.ts --out &lt;dir&gt; --report &lt;path&gt; [--report &lt;path&gt; ...] [--ledger &lt;path&gt;]</code> (only the explicitly selected reports; refuses an existing non-empty <code>--out</code>).
+- <code>arms.csv</code>: <code>experiment,campaign,judging,arm,planned_cells,attempted_cells,scored_cells,unscored_cells,pending_cells,unrun_cells,unknown_spend_cells,unknown_spend_terminal_cells,total_spend_usd,pending_spend_usd,campaign_raw_spend_usd,excluded_cells,excluded_known_spend_usd,cost_per_solved_task,cost_null_reason,pass_rate,pass_k,pass_k_tasks,infra_exposed,manual_reruns,provisional</code> (<code>total_spend_usd</code> and the other <code>*_spend_usd</code> are list-price estimates from the report, never cash; <code>manual_reruns</code> from <code>coverage[].manual_reruns</code>).
+- <code>comparisons.csv</code>: <code>experiment,campaign,judging,metric,label,baseline,variant,pairs,tasks,tasks_dropped,excluded_baseline,excluded_variant,delta,ci_lo,ci_hi,level,undefined_share,distinguishable,verdict_text</code>.
+- <code>provenance.csv</code>: <code>experiment,campaign,judging,judging_identity,task_set_identity,tasks,repeats_planned,repeats_reported,resamples,seed,provisional</code>.
+- <code>cost_null_reason</code>: <code>no scored cells</code> when <code>scored_cells</code> is 0; <code>no solves</code> when <code>pass_rate</code> is 0; else <code>no eligible cost cohort</code>. <code>verdict_text</code>: <code>distinguishable</code>, <code>not distinguishable</code>, or <code>CI suppressed</code>. Null prints <code>n/a</code>. Fields with <code>,</code> or <code>"</code> are quoted CSV; SVG text escapes <code>&amp; &lt; &gt; "</code>. Before M5-05 lands, repeat and excluded columns print <code>n/a</code>.
+- <strong>Ledger (typed source for cash and actions, B10).</strong> <code>H:\cg-coord\m6\ledger.json</code>, written by the orchestrator from <code>spend.md</code> (P1 readings) and the M5-10 evidence, validated with Zod (<code>strictObject</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kd">const</span><span class="w"> </span><span class="nx">Ledger</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">z</span><span class="p">.</span><span class="nx">strictObject</span><span class="p">({</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nx">v</span><span class="o">:</span><span class="w"> </span><span class="kt">z.literal</span><span class="p">(</span><span class="mf">1</span><span class="p">),</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nx">paid_total_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">z.number</span><span class="p">().</span><span class="nx">nonnegative</span><span class="p">(),</span><span class="w">          </span><span class="c1">// actual cash, every provider (spend.md)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nx">openrouter_actual_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">z.number</span><span class="p">().</span><span class="nx">nonnegative</span><span class="p">(),</span><span class="w">   </span><span class="c1">// USD 60 minus the last console balance</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nx">openrouter_balance_readings</span><span class="o">:</span><span class="w"> </span><span class="kt">z.array</span><span class="p">(</span><span class="nx">z</span><span class="p">.</span><span class="nx">strictObject</span><span class="p">({</span><span class="w"> </span><span class="nx">at</span><span class="o">:</span><span class="w"> </span><span class="kt">z.iso.datetime</span><span class="p">(),</span><span class="w"> </span><span class="nx">balance_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">z.number</span><span class="p">()</span><span class="w"> </span><span class="p">})).</span><span class="nx">min</span><span class="p">(</span><span class="mf">1</span><span class="p">),</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nx">claude_code_cash_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">z.literal</span><span class="p">(</span><span class="mf">0</span><span class="p">),</span><span class="w">                </span><span class="c1">// Team OAuth: no money spent</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nx">manual_reruns</span><span class="o">:</span><span class="w"> </span><span class="kt">z.array</span><span class="p">(</span><span class="nx">z</span><span class="p">.</span><span class="nx">strictObject</span><span class="p">({</span><span class="w"> </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">campaign</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">task</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">repeat</span><span class="o">:</span><span class="w"> </span><span class="kt">z.number</span><span class="p">().</span><span class="kr">int</span><span class="p">(),</span><span class="w"> </span><span class="nx">arm</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">execution</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">decision</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">()</span><span class="w"> </span><span class="p">})),</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nx">rejudges</span><span class="o">:</span><span class="w"> </span><span class="kt">z.array</span><span class="p">(</span><span class="nx">z</span><span class="p">.</span><span class="nx">strictObject</span><span class="p">({</span><span class="w"> </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">campaign</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">task</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">repeat</span><span class="o">:</span><span class="w"> </span><span class="kt">z.number</span><span class="p">().</span><span class="kr">int</span><span class="p">(),</span><span class="w"> </span><span class="nx">arm</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">execution</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">judgment</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">(),</span><span class="w"> </span><span class="nx">decision</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">()</span><span class="w"> </span><span class="p">})),</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nx">pi_stop</span><span class="o">:</span><span class="w"> </span><span class="kt">z.strictObject</span><span class="p">({</span><span class="w"> </span><span class="nx">fired</span><span class="o">:</span><span class="w"> </span><span class="kt">z.boolean</span><span class="p">(),</span><span class="w"> </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">().</span><span class="nx">nullable</span><span class="p">(),</span><span class="w"> </span><span class="nx">at</span><span class="o">:</span><span class="w"> </span><span class="kt">z.iso.datetime</span><span class="p">().</span><span class="nx">nullable</span><span class="p">(),</span><span class="w"> </span><span class="nx">last_complete_repeat</span><span class="o">:</span><span class="w"> </span><span class="kt">z.number</span><span class="p">().</span><span class="kr">int</span><span class="p">().</span><span class="nx">positive</span><span class="p">().</span><span class="nx">nullable</span><span class="p">(),</span><span class="w"> </span><span class="nx">decision</span><span class="o">:</span><span class="w"> </span><span class="kt">z.string</span><span class="p">().</span><span class="nx">nullable</span><span class="p">()</span><span class="w"> </span><span class="p">}),</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">});</span>
+</code></pre></div>
+<p>The ledger is the <strong>full</strong> action history: nothing is dropped because a report is scoped. <code>ledger.csv</code> columns: <code>kind,experiment,campaign,key,value,scope,decision</code> with one row per scalar (<code>paid_total_usd</code>, <code>openrouter_actual_usd</code>, <code>claude_code_cash_usd</code>, <code>pi_stop</code>; scope <code>all</code>), per manual rerun (<code>key</code> = <code>task#repeat:arm</code>, <code>value</code> = execution) and per rejudge (<code>key</code> = <code>task#repeat:arm</code>, <code>value</code> = <code>execution/judgment</code>). Action scope: <code>reported</code> when its campaign is one of the given reports' campaigns and its repeat &lt;= that report's <code>repeats.reported</code> (or <code>repeats.planned</code> without a cut); <code>excluded_repeat</code> when the campaign is reported but the repeat is above the cut; <code>not_reported</code> when no given report covers the campaign (for example cc-vs-pi stopped before a complete repeat). Cross-checks (refuse on mismatch): per (experiment, campaign, arm), the ledger's manual reruns with scope <code>reported</code> = that report's scoped <code>coverage[].manual_reruns</code>; <code>excluded_repeat</code> and <code>not_reported</code> actions are never compared, only disclosed (on that experiment's primary chart as <code>&lt;n&gt; excluded action(s) (ledger.csv)</code> and as rows in <code>ledger.csv</code>); <code>openrouter_actual_usd</code> = 60 minus the latest balance reading; when <code>pi_stop.fired</code>, <code>pi_stop.experiment</code> is set, and a given report of that experiment has <code>repeats.reported</code> = <code>last_complete_repeat</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Fixture</strong> from the real M1-30 campaign (no container): <code>deno task start harness report mock-contract --results-dir 'H:\cg-coord\jobs\M1-30-1\results\harness' --judging campaign --json &gt; tests/fixtures/harness/report-mock-contract.json</code>.</li>
+<li>[ ] <strong>Step 2: Failing tests:</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">assert</span><span class="p">,</span><span class="w"> </span><span class="nx">assertEquals</span><span class="p">,</span><span class="w"> </span><span class="nx">assertThrows</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">"@std/assert"</span><span class="p">;</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">HarnessReport</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">"../../../src/harness/report.ts"</span><span class="p">;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">renderCharts</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">"../../../scripts/harness/report-charts.ts"</span><span class="p">;</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="kd">const</span><span class="w"> </span><span class="nx">base</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">HarnessReport</span><span class="o">&gt;</span><span class="w"> </span><span class="p">=&gt;</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nb">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">readTextFile</span><span class="p">(</span><span class="s2">"tests/fixtures/harness/report-mock-contract.json"</span><span class="p">));</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="kd">const</span><span class="w"> </span><span class="nx">get</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="nx">fs</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">content</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">}[],</span><span class="w"> </span><span class="nx">suffix</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">fs</span><span class="p">.</span><span class="nx">find</span><span class="p">((</span><span class="nx">f</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nx">name</span><span class="p">.</span><span class="nx">endsWith</span><span class="p">(</span><span class="nx">suffix</span><span class="p">))</span><span class="o">!</span><span class="p">.</span><span class="nx">content</span><span class="p">;</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: campaign and current reports of one experiment get distinct names; an exact duplicate is refused"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">a</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">();</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">b</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">a</span><span class="p">,</span><span class="w"> </span><span class="nx">judging</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">a</span><span class="p">.</span><span class="nx">judging</span><span class="p">,</span><span class="w"> </span><span class="nx">source</span><span class="o">:</span><span class="w"> </span><span class="s2">"current"</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">names</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([</span><span class="nx">a</span><span class="p">,</span><span class="w"> </span><span class="nx">b</span><span class="p">]).</span><span class="nx">map</span><span class="p">((</span><span class="nx">f</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nx">name</span><span class="p">);</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">(</span><span class="ow">new</span><span class="w"> </span><span class="nb">Set</span><span class="p">(</span><span class="nx">names</span><span class="p">).</span><span class="nx">size</span><span class="p">,</span><span class="w"> </span><span class="nx">names</span><span class="p">.</span><span class="nx">length</span><span class="p">);</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="nx">assertThrows</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([</span><span class="nx">a</span><span class="p">,</span><span class="w"> </span><span class="nx">a</span><span class="p">]),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"duplicate report"</span><span class="p">);</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="p">});</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: exact arm values and the null reason, no NaN anywhere"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">fs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([</span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">()]);</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">row</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">get</span><span class="p">(</span><span class="nx">fs</span><span class="p">,</span><span class="w"> </span><span class="s2">"arms.csv"</span><span class="p">).</span><span class="nx">split</span><span class="p">(</span><span class="s2">"\n"</span><span class="p">).</span><span class="nx">find</span><span class="p">((</span><span class="nx">l</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">l</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">",mock-naive-lock-table,"</span><span class="p">))</span><span class="o">!</span><span class="p">;</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="nx">row</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">",n/a,no solves,0,0,"</span><span class="p">),</span><span class="w"> </span><span class="nx">row</span><span class="p">);</span><span class="w"> </span><span class="c1">// cost, reason, pass_rate, pass_k</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">f</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">fs</span><span class="p">)</span><span class="w"> </span><span class="nx">assert</span><span class="p">(</span><span class="o">!</span><span class="nx">f</span><span class="p">.</span><span class="nx">content</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"NaN"</span><span class="p">),</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nx">name</span><span class="p">);</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="p">});</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: every CI branch keeps delta and interval next to the verdict text"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">();</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">primary</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">comparisons</span><span class="p">.</span><span class="nx">find</span><span class="p">((</span><span class="nx">c</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">primary</span><span class="p">)</span><span class="o">!</span><span class="p">;</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">variants</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">primary</span><span class="p">,</span><span class="w"> </span><span class="nx">delta</span><span class="o">:</span><span class="w"> </span><span class="o">-</span><span class="mf">0.5</span><span class="p">,</span><span class="w"> </span><span class="nx">ci</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="o">-</span><span class="mf">0.9</span><span class="p">,</span><span class="w"> </span><span class="o">-</span><span class="mf">0.1</span><span class="p">]</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="p">[</span><span class="kt">number</span><span class="p">,</span><span class="w"> </span><span class="kt">number</span><span class="p">],</span><span class="w"> </span><span class="nx">distinguishable</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">primary</span><span class="p">,</span><span class="w"> </span><span class="nx">delta</span><span class="o">:</span><span class="w"> </span><span class="o">-</span><span class="mf">0.2</span><span class="p">,</span><span class="w"> </span><span class="nx">ci</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="o">-</span><span class="mf">0.6</span><span class="p">,</span><span class="w"> </span><span class="mf">0.3</span><span class="p">]</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="p">[</span><span class="kt">number</span><span class="p">,</span><span class="w"> </span><span class="kt">number</span><span class="p">],</span><span class="w"> </span><span class="nx">distinguishable</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">primary</span><span class="p">,</span><span class="w"> </span><span class="nx">delta</span><span class="o">:</span><span class="w"> </span><span class="o">-</span><span class="mf">0.2</span><span class="p">,</span><span class="w"> </span><span class="nx">ci</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="p">,</span><span class="w"> </span><span class="nx">distinguishable</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="p">,</span><span class="w"> </span><span class="nx">undefined_share</span><span class="o">:</span><span class="w"> </span><span class="kt">0.12</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">  </span><span class="p">];</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">texts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"distinguishable"</span><span class="p">,</span><span class="w"> </span><span class="s2">"not distinguishable"</span><span class="p">,</span><span class="w"> </span><span class="s2">"CI suppressed (12% undefined)"</span><span class="p">];</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">  </span><span class="nx">variants</span><span class="p">.</span><span class="nx">forEach</span><span class="p">((</span><span class="nx">c</span><span class="p">,</span><span class="w"> </span><span class="nx">i</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">svg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">get</span><span class="p">(</span><span class="nx">renderCharts</span><span class="p">([{</span><span class="w"> </span><span class="p">...</span><span class="nx">r</span><span class="p">,</span><span class="w"> </span><span class="nx">comparisons</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="nx">c</span><span class="p">]</span><span class="w"> </span><span class="p">}]),</span><span class="w"> </span><span class="s2">"-primary.svg"</span><span class="p">);</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="w">    </span><span class="nx">assert</span><span class="p">(</span><span class="nx">svg</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="nx">texts</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span><span class="o">!</span><span class="p">),</span><span class="w"> </span><span class="nx">texts</span><span class="p">[</span><span class="nx">i</span><span class="p">]);</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">i</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="mf">0</span><span class="p">)</span><span class="w"> </span><span class="nx">assert</span><span class="p">(</span><span class="o">!</span><span class="nx">svg</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"not distinguishable"</span><span class="p">));</span>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="p">.</span><span class="nx">ci</span><span class="p">)</span><span class="w"> </span><span class="nx">assert</span><span class="p">(</span><span class="nx">svg</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="sb">`[</span><span class="si">${</span><span class="nx">c</span><span class="p">.</span><span class="nx">ci</span><span class="p">[</span><span class="mf">0</span><span class="p">].</span><span class="nx">toFixed</span><span class="p">(</span><span class="mf">2</span><span class="p">)</span><span class="si">}</span><span class="sb">, </span><span class="si">${</span><span class="nx">c</span><span class="p">.</span><span class="nx">ci</span><span class="p">[</span><span class="mf">1</span><span class="p">].</span><span class="nx">toFixed</span><span class="p">(</span><span class="mf">2</span><span class="p">)</span><span class="si">}</span><span class="sb">]`</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">svg</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="nx">c</span><span class="p">.</span><span class="nx">delta</span><span class="o">!</span><span class="p">.</span><span class="nx">toFixed</span><span class="p">(</span><span class="mf">2</span><span class="p">)));</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a><span class="w">    </span><span class="nx">assert</span><span class="p">(</span><span class="nx">svg</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="sb">`</span><span class="si">${</span><span class="nx">c</span><span class="p">.</span><span class="nx">pairs</span><span class="si">}</span><span class="sb"> matched pairs`</span><span class="p">));</span>
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="w">  </span><span class="p">});</span>
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="p">});</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>
+<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: cost-primary report leads with cost; outcome and task charts are labelled exploratory"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">();</span>
+<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a><span class="w">  </span><span class="c1">// A coherent cost-primary report: declaration, labels and comparison flags all switched.</span>
+<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">cost</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a><span class="w">    </span><span class="p">...</span><span class="nx">r</span><span class="p">,</span>
+<a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a><span class="w">    </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">r</span><span class="p">.</span><span class="nx">experiment</span><span class="p">,</span><span class="w"> </span><span class="nx">primary_metric</span><span class="o">:</span><span class="w"> </span><span class="s2">"cost_per_solved_task"</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a><span class="w">    </span><span class="nx">metric_labels</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">r</span><span class="p">.</span><span class="nx">metric_labels</span><span class="p">,</span><span class="w"> </span><span class="nx">cost_per_solved_task</span><span class="o">:</span><span class="w"> </span><span class="s2">"primary"</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">,</span><span class="w"> </span><span class="nx">pass_rate</span><span class="o">:</span><span class="w"> </span><span class="s2">"exploratory"</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-1-49" name="__codelineno-1-49" href="#__codelineno-1-49"></a><span class="w">    </span><span class="nx">comparisons</span><span class="o">:</span><span class="w"> </span><span class="kt">r.comparisons.map</span><span class="p">((</span><span class="nx">c</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">({</span><span class="w"> </span><span class="p">...</span><span class="nx">c</span><span class="p">,</span><span class="w"> </span><span class="nx">primary</span><span class="o">:</span><span class="w"> </span><span class="kt">c.metric</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">"cost_per_solved_task"</span><span class="p">,</span><span class="w"> </span><span class="nx">label</span><span class="o">:</span><span class="w"> </span><span class="kt">c.metric</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">"cost_per_solved_task"</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s2">"primary"</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="s2">"exploratory"</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="p">})),</span>
+<a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a><span class="w">  </span><span class="p">};</span>
+<a id="__codelineno-1-51" name="__codelineno-1-51" href="#__codelineno-1-51"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">fs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([</span><span class="nx">cost</span><span class="p">]);</span>
+<a id="__codelineno-1-52" name="__codelineno-1-52" href="#__codelineno-1-52"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="nx">get</span><span class="p">(</span><span class="nx">fs</span><span class="p">,</span><span class="w"> </span><span class="s2">"-primary.svg"</span><span class="p">).</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"Cost per solved task"</span><span class="p">));</span>
+<a id="__codelineno-1-53" name="__codelineno-1-53" href="#__codelineno-1-53"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="nx">get</span><span class="p">(</span><span class="nx">fs</span><span class="p">,</span><span class="w"> </span><span class="s2">"-outcome.svg"</span><span class="p">).</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"exploratory"</span><span class="p">));</span>
+<a id="__codelineno-1-54" name="__codelineno-1-54" href="#__codelineno-1-54"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="nx">get</span><span class="p">(</span><span class="nx">fs</span><span class="p">,</span><span class="w"> </span><span class="s2">"-tasks.svg"</span><span class="p">).</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"exploratory"</span><span class="p">));</span>
+<a id="__codelineno-1-55" name="__codelineno-1-55" href="#__codelineno-1-55"></a><span class="p">});</span>
+<a id="__codelineno-1-56" name="__codelineno-1-56" href="#__codelineno-1-56"></a>
+<a id="__codelineno-1-57" name="__codelineno-1-57" href="#__codelineno-1-57"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: provisional marks every chart and the provisional column of arms.csv and provenance.csv"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-58" name="__codelineno-1-58" href="#__codelineno-1-58"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">fs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([{</span><span class="w"> </span><span class="p">...(</span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">()),</span><span class="w"> </span><span class="nx">provisional</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="w"> </span><span class="p">}]);</span>
+<a id="__codelineno-1-59" name="__codelineno-1-59" href="#__codelineno-1-59"></a><span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">f</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">fs</span><span class="p">.</span><span class="nx">filter</span><span class="p">((</span><span class="nx">x</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">x</span><span class="p">.</span><span class="nx">name</span><span class="p">.</span><span class="nx">endsWith</span><span class="p">(</span><span class="s2">".svg"</span><span class="p">)))</span><span class="w"> </span><span class="nx">assert</span><span class="p">(</span><span class="nx">f</span><span class="p">.</span><span class="nx">content</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"PROVISIONAL"</span><span class="p">),</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nx">name</span><span class="p">);</span>
+<a id="__codelineno-1-60" name="__codelineno-1-60" href="#__codelineno-1-60"></a><span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">name</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="p">[</span><span class="s2">"arms.csv"</span><span class="p">,</span><span class="w"> </span><span class="s2">"provenance.csv"</span><span class="p">])</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-61" name="__codelineno-1-61" href="#__codelineno-1-61"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">head</span><span class="p">,</span><span class="w"> </span><span class="p">...</span><span class="nx">rows</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">get</span><span class="p">(</span><span class="nx">fs</span><span class="p">,</span><span class="w"> </span><span class="nx">name</span><span class="p">).</span><span class="nx">trim</span><span class="p">().</span><span class="nx">split</span><span class="p">(</span><span class="s2">"\n"</span><span class="p">).</span><span class="nx">map</span><span class="p">((</span><span class="nx">l</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">l</span><span class="p">.</span><span class="nx">split</span><span class="p">(</span><span class="s2">","</span><span class="p">));</span>
+<a id="__codelineno-1-62" name="__codelineno-1-62" href="#__codelineno-1-62"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">col</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">head</span><span class="o">!</span><span class="p">.</span><span class="nx">indexOf</span><span class="p">(</span><span class="s2">"provisional"</span><span class="p">);</span>
+<a id="__codelineno-1-63" name="__codelineno-1-63" href="#__codelineno-1-63"></a><span class="w">    </span><span class="nx">assert</span><span class="p">(</span><span class="nx">col</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mf">0</span><span class="p">,</span><span class="w"> </span><span class="nx">name</span><span class="p">);</span>
+<a id="__codelineno-1-64" name="__codelineno-1-64" href="#__codelineno-1-64"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">row</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">rows</span><span class="p">)</span><span class="w"> </span><span class="nx">assertEquals</span><span class="p">(</span><span class="nx">row</span><span class="p">[</span><span class="nx">col</span><span class="p">],</span><span class="w"> </span><span class="s2">"true"</span><span class="p">,</span><span class="w"> </span><span class="nx">name</span><span class="p">);</span>
+<a id="__codelineno-1-65" name="__codelineno-1-65" href="#__codelineno-1-65"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-1-66" name="__codelineno-1-66" href="#__codelineno-1-66"></a><span class="p">});</span>
+<a id="__codelineno-1-67" name="__codelineno-1-67" href="#__codelineno-1-67"></a>
+<a id="__codelineno-1-68" name="__codelineno-1-68" href="#__codelineno-1-68"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: the ledger becomes ledger.csv and must agree with the reports"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-69" name="__codelineno-1-69" href="#__codelineno-1-69"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">();</span>
+<a id="__codelineno-1-70" name="__codelineno-1-70" href="#__codelineno-1-70"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">ledger</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-71" name="__codelineno-1-71" href="#__codelineno-1-71"></a><span class="w">    </span><span class="nx">v</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">,</span><span class="w"> </span><span class="nx">paid_total_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">12.5</span><span class="p">,</span><span class="w"> </span><span class="nx">openrouter_actual_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">12.5</span><span class="p">,</span><span class="w"> </span><span class="nx">claude_code_cash_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">0</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">,</span>
+<a id="__codelineno-1-72" name="__codelineno-1-72" href="#__codelineno-1-72"></a><span class="w">    </span><span class="nx">openrouter_balance_readings</span><span class="o">:</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nx">at</span><span class="o">:</span><span class="w"> </span><span class="s2">"2026-10-15T10:00:00.000Z"</span><span class="p">,</span><span class="w"> </span><span class="nx">balance_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">47.5</span><span class="w"> </span><span class="p">}],</span>
+<a id="__codelineno-1-73" name="__codelineno-1-73" href="#__codelineno-1-73"></a><span class="w">    </span><span class="nx">manual_reruns</span><span class="o">:</span><span class="w"> </span><span class="p">[],</span><span class="w"> </span><span class="nx">rejudges</span><span class="o">:</span><span class="w"> </span><span class="p">[],</span>
+<a id="__codelineno-1-74" name="__codelineno-1-74" href="#__codelineno-1-74"></a><span class="w">    </span><span class="nx">pi_stop</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">fired</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="p">,</span><span class="w"> </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="p">,</span><span class="w"> </span><span class="nx">at</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="p">,</span><span class="w"> </span><span class="nx">last_complete_repeat</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="p">,</span><span class="w"> </span><span class="nx">decision</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-1-75" name="__codelineno-1-75" href="#__codelineno-1-75"></a><span class="w">  </span><span class="p">};</span>
+<a id="__codelineno-1-76" name="__codelineno-1-76" href="#__codelineno-1-76"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">csv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">get</span><span class="p">(</span><span class="nx">renderCharts</span><span class="p">([</span><span class="nx">r</span><span class="p">],</span><span class="w"> </span><span class="nx">ledger</span><span class="p">),</span><span class="w"> </span><span class="s2">"ledger.csv"</span><span class="p">);</span>
+<a id="__codelineno-1-77" name="__codelineno-1-77" href="#__codelineno-1-77"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="nx">csv</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"scalar,,,paid_total_usd,12.5,all,"</span><span class="p">));</span>
+<a id="__codelineno-1-78" name="__codelineno-1-78" href="#__codelineno-1-78"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="nx">csv</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"scalar,,,claude_code_cash_usd,0,all,"</span><span class="p">));</span>
+<a id="__codelineno-1-79" name="__codelineno-1-79" href="#__codelineno-1-79"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">wrongRerun</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">ledger</span><span class="p">,</span><span class="w"> </span><span class="nx">manual_reruns</span><span class="o">:</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="kt">r.experiment.id</span><span class="p">,</span><span class="w"> </span><span class="nx">campaign</span><span class="o">:</span><span class="w"> </span><span class="kt">r.campaign.id</span><span class="p">,</span><span class="w"> </span><span class="nx">task</span><span class="o">:</span><span class="w"> </span><span class="s2">"HX-001"</span><span class="p">,</span><span class="w"> </span><span class="nx">repeat</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="p">,</span><span class="w"> </span><span class="nx">arm</span><span class="o">:</span><span class="w"> </span><span class="kt">r.arms</span><span class="p">[</span><span class="mf">0</span><span class="p">]</span><span class="o">!</span><span class="p">.</span><span class="nx">arm</span><span class="p">,</span><span class="w"> </span><span class="nx">execution</span><span class="o">:</span><span class="w"> </span><span class="s2">"x"</span><span class="p">,</span><span class="w"> </span><span class="nx">decision</span><span class="o">:</span><span class="w"> </span><span class="s2">"d"</span><span class="w"> </span><span class="p">}]</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-1-80" name="__codelineno-1-80" href="#__codelineno-1-80"></a><span class="w">  </span><span class="nx">assertThrows</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([</span><span class="nx">r</span><span class="p">],</span><span class="w"> </span><span class="nx">wrongRerun</span><span class="p">),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"manual reruns"</span><span class="p">);</span>
+<a id="__codelineno-1-81" name="__codelineno-1-81" href="#__codelineno-1-81"></a><span class="w">  </span><span class="nx">assertThrows</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([</span><span class="nx">r</span><span class="p">],</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">ledger</span><span class="p">,</span><span class="w"> </span><span class="nx">openrouter_actual_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">10</span><span class="w"> </span><span class="p">}),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"balance"</span><span class="p">);</span>
+<a id="__codelineno-1-82" name="__codelineno-1-82" href="#__codelineno-1-82"></a><span class="p">});</span>
+<a id="__codelineno-1-83" name="__codelineno-1-83" href="#__codelineno-1-83"></a>
+<a id="__codelineno-1-84" name="__codelineno-1-84" href="#__codelineno-1-84"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: a manual rerun in a cut repeat is kept in the ledger, disclosed as excluded, and not compared"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-85" name="__codelineno-1-85" href="#__codelineno-1-85"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">();</span>
+<a id="__codelineno-1-86" name="__codelineno-1-86" href="#__codelineno-1-86"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">cut</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">r</span><span class="p">,</span><span class="w"> </span><span class="nx">repeats</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">planned</span><span class="o">:</span><span class="w"> </span><span class="kt">3</span><span class="p">,</span><span class="w"> </span><span class="nx">reported</span><span class="o">:</span><span class="w"> </span><span class="kt">2</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">};</span><span class="w"> </span><span class="c1">// scoped coverage: manual_reruns 0 in the fixture</span>
+<a id="__codelineno-1-87" name="__codelineno-1-87" href="#__codelineno-1-87"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">arm</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">arms</span><span class="p">[</span><span class="mf">0</span><span class="p">]</span><span class="o">!</span><span class="p">.</span><span class="nx">arm</span><span class="p">;</span>
+<a id="__codelineno-1-88" name="__codelineno-1-88" href="#__codelineno-1-88"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">rerun</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="nx">repeat</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">({</span><span class="w"> </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="kt">r.experiment.id</span><span class="p">,</span><span class="w"> </span><span class="nx">campaign</span><span class="o">:</span><span class="w"> </span><span class="kt">r.campaign.id</span><span class="p">,</span><span class="w"> </span><span class="nx">task</span><span class="o">:</span><span class="w"> </span><span class="s2">"HX-001"</span><span class="p">,</span><span class="w"> </span><span class="nx">repeat</span><span class="p">,</span><span class="w"> </span><span class="nx">arm</span><span class="p">,</span><span class="w"> </span><span class="nx">execution</span><span class="o">:</span><span class="w"> </span><span class="sb">`x</span><span class="si">${</span><span class="nx">repeat</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span><span class="w"> </span><span class="nx">decision</span><span class="o">:</span><span class="w"> </span><span class="s2">"d"</span><span class="w"> </span><span class="p">});</span>
+<a id="__codelineno-1-89" name="__codelineno-1-89" href="#__codelineno-1-89"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">ledger</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-90" name="__codelineno-1-90" href="#__codelineno-1-90"></a><span class="w">    </span><span class="nx">v</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">,</span><span class="w"> </span><span class="nx">paid_total_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">0</span><span class="p">,</span><span class="w"> </span><span class="nx">openrouter_actual_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">0</span><span class="p">,</span><span class="w"> </span><span class="nx">claude_code_cash_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">0</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">,</span>
+<a id="__codelineno-1-91" name="__codelineno-1-91" href="#__codelineno-1-91"></a><span class="w">    </span><span class="nx">openrouter_balance_readings</span><span class="o">:</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nx">at</span><span class="o">:</span><span class="w"> </span><span class="s2">"2026-10-15T10:00:00.000Z"</span><span class="p">,</span><span class="w"> </span><span class="nx">balance_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">60</span><span class="w"> </span><span class="p">}],</span>
+<a id="__codelineno-1-92" name="__codelineno-1-92" href="#__codelineno-1-92"></a><span class="w">    </span><span class="nx">manual_reruns</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="nx">rerun</span><span class="p">(</span><span class="mf">3</span><span class="p">)],</span><span class="w"> </span><span class="nx">rejudges</span><span class="o">:</span><span class="w"> </span><span class="p">[],</span>
+<a id="__codelineno-1-93" name="__codelineno-1-93" href="#__codelineno-1-93"></a><span class="w">    </span><span class="nx">pi_stop</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">fired</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="p">,</span><span class="w"> </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="p">,</span><span class="w"> </span><span class="nx">at</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="p">,</span><span class="w"> </span><span class="nx">last_complete_repeat</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="p">,</span><span class="w"> </span><span class="nx">decision</span><span class="o">:</span><span class="w"> </span><span class="kt">null</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-1-94" name="__codelineno-1-94" href="#__codelineno-1-94"></a><span class="w">  </span><span class="p">};</span>
+<a id="__codelineno-1-95" name="__codelineno-1-95" href="#__codelineno-1-95"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">fs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([</span><span class="nx">cut</span><span class="p">],</span><span class="w"> </span><span class="nx">ledger</span><span class="p">);</span>
+<a id="__codelineno-1-96" name="__codelineno-1-96" href="#__codelineno-1-96"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="nx">get</span><span class="p">(</span><span class="nx">fs</span><span class="p">,</span><span class="w"> </span><span class="s2">"ledger.csv"</span><span class="p">).</span><span class="nx">includes</span><span class="p">(</span><span class="sb">`manual_rerun,</span><span class="si">${</span><span class="nx">r</span><span class="p">.</span><span class="nx">experiment</span><span class="p">.</span><span class="nx">id</span><span class="si">}</span><span class="sb">,</span><span class="si">${</span><span class="nx">r</span><span class="p">.</span><span class="nx">campaign</span><span class="p">.</span><span class="nx">id</span><span class="si">}</span><span class="sb">,HX-001#3:</span><span class="si">${</span><span class="nx">arm</span><span class="si">}</span><span class="sb">,x3,excluded_repeat,`</span><span class="p">));</span>
+<a id="__codelineno-1-97" name="__codelineno-1-97" href="#__codelineno-1-97"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="nx">get</span><span class="p">(</span><span class="nx">fs</span><span class="p">,</span><span class="w"> </span><span class="s2">"-primary.svg"</span><span class="p">).</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"1 excluded action"</span><span class="p">));</span>
+<a id="__codelineno-1-98" name="__codelineno-1-98" href="#__codelineno-1-98"></a><span class="w">  </span><span class="c1">// The same rerun inside the reported repeats must match scoped coverage, which is 0 here.</span>
+<a id="__codelineno-1-99" name="__codelineno-1-99" href="#__codelineno-1-99"></a><span class="w">  </span><span class="nx">assertThrows</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([</span><span class="nx">cut</span><span class="p">],</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">ledger</span><span class="p">,</span><span class="w"> </span><span class="nx">manual_reruns</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="nx">rerun</span><span class="p">(</span><span class="mf">1</span><span class="p">)]</span><span class="w"> </span><span class="p">}),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"manual reruns"</span><span class="p">);</span>
+<a id="__codelineno-1-100" name="__codelineno-1-100" href="#__codelineno-1-100"></a><span class="p">});</span>
+<a id="__codelineno-1-101" name="__codelineno-1-101" href="#__codelineno-1-101"></a>
+<a id="__codelineno-1-102" name="__codelineno-1-102" href="#__codelineno-1-102"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: a fired pi stop needs its report at the last complete repeat"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-103" name="__codelineno-1-103" href="#__codelineno-1-103"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">();</span>
+<a id="__codelineno-1-104" name="__codelineno-1-104" href="#__codelineno-1-104"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">stop</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="nx">n</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">({</span>
+<a id="__codelineno-1-105" name="__codelineno-1-105" href="#__codelineno-1-105"></a><span class="w">    </span><span class="nx">v</span><span class="o">:</span><span class="w"> </span><span class="kt">1</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">,</span><span class="w"> </span><span class="nx">paid_total_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">3</span><span class="p">,</span><span class="w"> </span><span class="nx">openrouter_actual_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">3</span><span class="p">,</span><span class="w"> </span><span class="nx">claude_code_cash_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">0</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">,</span>
+<a id="__codelineno-1-106" name="__codelineno-1-106" href="#__codelineno-1-106"></a><span class="w">    </span><span class="nx">openrouter_balance_readings</span><span class="o">:</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nx">at</span><span class="o">:</span><span class="w"> </span><span class="s2">"2026-10-12T10:00:00.000Z"</span><span class="p">,</span><span class="w"> </span><span class="nx">balance_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">57</span><span class="w"> </span><span class="p">}],</span>
+<a id="__codelineno-1-107" name="__codelineno-1-107" href="#__codelineno-1-107"></a><span class="w">    </span><span class="nx">manual_reruns</span><span class="o">:</span><span class="w"> </span><span class="p">[],</span><span class="w"> </span><span class="nx">rejudges</span><span class="o">:</span><span class="w"> </span><span class="p">[],</span>
+<a id="__codelineno-1-108" name="__codelineno-1-108" href="#__codelineno-1-108"></a><span class="w">    </span><span class="nx">pi_stop</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">fired</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span><span class="w"> </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="kt">r.experiment.id</span><span class="p">,</span><span class="w"> </span><span class="nx">at</span><span class="o">:</span><span class="w"> </span><span class="s2">"2026-10-12T09:00:00.000Z"</span><span class="p">,</span><span class="w"> </span><span class="nx">last_complete_repeat</span><span class="o">:</span><span class="w"> </span><span class="kt">n</span><span class="p">,</span><span class="w"> </span><span class="nx">decision</span><span class="o">:</span><span class="w"> </span><span class="s2">"od-1"</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-1-109" name="__codelineno-1-109" href="#__codelineno-1-109"></a><span class="w">  </span><span class="p">});</span>
+<a id="__codelineno-1-110" name="__codelineno-1-110" href="#__codelineno-1-110"></a><span class="w">  </span><span class="nx">renderCharts</span><span class="p">([{</span><span class="w"> </span><span class="p">...</span><span class="nx">r</span><span class="p">,</span><span class="w"> </span><span class="nx">repeats</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">planned</span><span class="o">:</span><span class="w"> </span><span class="kt">3</span><span class="p">,</span><span class="w"> </span><span class="nx">reported</span><span class="o">:</span><span class="w"> </span><span class="kt">2</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}],</span><span class="w"> </span><span class="nx">stop</span><span class="p">(</span><span class="mf">2</span><span class="p">));</span>
+<a id="__codelineno-1-111" name="__codelineno-1-111" href="#__codelineno-1-111"></a><span class="w">  </span><span class="nx">assertThrows</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([{</span><span class="w"> </span><span class="p">...</span><span class="nx">r</span><span class="p">,</span><span class="w"> </span><span class="nx">repeats</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">planned</span><span class="o">:</span><span class="w"> </span><span class="kt">3</span><span class="p">,</span><span class="w"> </span><span class="nx">reported</span><span class="o">:</span><span class="w"> </span><span class="kt">3</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}],</span><span class="w"> </span><span class="nx">stop</span><span class="p">(</span><span class="mf">2</span><span class="p">)),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"last complete repeat"</span><span class="p">);</span>
+<a id="__codelineno-1-112" name="__codelineno-1-112" href="#__codelineno-1-112"></a><span class="p">});</span>
+<a id="__codelineno-1-113" name="__codelineno-1-113" href="#__codelineno-1-113"></a>
+<a id="__codelineno-1-114" name="__codelineno-1-114" href="#__codelineno-1-114"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: the task chart lists every campaign task, from cells, not only flips"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-115" name="__codelineno-1-115" href="#__codelineno-1-115"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">();</span>
+<a id="__codelineno-1-116" name="__codelineno-1-116" href="#__codelineno-1-116"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">svg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">get</span><span class="p">(</span><span class="nx">renderCharts</span><span class="p">([{</span><span class="w"> </span><span class="p">...</span><span class="nx">r</span><span class="p">,</span><span class="w"> </span><span class="nx">flips</span><span class="o">:</span><span class="w"> </span><span class="p">[]</span><span class="w"> </span><span class="p">}]),</span><span class="w"> </span><span class="s2">"-tasks.svg"</span><span class="p">);</span>
+<a id="__codelineno-1-117" name="__codelineno-1-117" href="#__codelineno-1-117"></a><span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">t</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Set</span><span class="p">(</span><span class="nx">r</span><span class="p">.</span><span class="nx">cells</span><span class="p">.</span><span class="nx">map</span><span class="p">((</span><span class="nx">c</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">task</span><span class="p">)))</span><span class="w"> </span><span class="nx">assert</span><span class="p">(</span><span class="nx">svg</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="nx">t</span><span class="p">),</span><span class="w"> </span><span class="nx">t</span><span class="p">);</span>
+<a id="__codelineno-1-118" name="__codelineno-1-118" href="#__codelineno-1-118"></a><span class="p">});</span>
+<a id="__codelineno-1-119" name="__codelineno-1-119" href="#__codelineno-1-119"></a>
+<a id="__codelineno-1-120" name="__codelineno-1-120" href="#__codelineno-1-120"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"charts: CSV quoting and SVG escaping"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-121" name="__codelineno-1-121" href="#__codelineno-1-121"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">base</span><span class="p">();</span>
+<a id="__codelineno-1-122" name="__codelineno-1-122" href="#__codelineno-1-122"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">odd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">r</span><span class="p">,</span><span class="w"> </span><span class="nx">experiment</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="nx">r</span><span class="p">.</span><span class="nx">experiment</span><span class="p">,</span><span class="w"> </span><span class="nx">hypothesis</span><span class="o">:</span><span class="w"> </span><span class="s1">'a, "b" &lt;c&gt; &amp; d'</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-1-123" name="__codelineno-1-123" href="#__codelineno-1-123"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">fs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">renderCharts</span><span class="p">([</span><span class="nx">odd</span><span class="p">]);</span>
+<a id="__codelineno-1-124" name="__codelineno-1-124" href="#__codelineno-1-124"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="nx">get</span><span class="p">(</span><span class="nx">fs</span><span class="p">,</span><span class="w"> </span><span class="s2">"-primary.svg"</span><span class="p">).</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"&amp;lt;c&amp;gt; &amp;amp; d"</span><span class="p">));</span>
+<a id="__codelineno-1-125" name="__codelineno-1-125" href="#__codelineno-1-125"></a><span class="p">});</span>
+</code></pre></div>
+<p>Run: FAIL (module missing).
+- [ ] <strong>Step 3: Implement.</strong> Ledger: parse with the Zod schema above, run the cross-checks, write <code>ledger.csv</code>. Charts: 960x540 SVG, one colour per arm in <code>r.arms</code> order (baseline first). Header on every chart: experiment, campaign id, judging source and identity (12 chars), task count, <code>PROVISIONAL</code> when set. <code>primary</code>: bars of the declared primary metric per arm (other metric as a label), then per comparison of that metric: <code>delta &lt;d&gt; [&lt;lo&gt;, &lt;hi&gt;] &lt;verdict_text&gt; over &lt;pairs&gt; matched pairs, &lt;tasks&gt; tasks (&lt;tasks_dropped&gt; dropped); bars are per-arm, the delta is over matched pairs</code>; per arm a line with scored/planned, unscored, unknown-cost cells. <code>outcome</code> (exploratory): pass rate and pass^k per arm. <code>tasks</code> (exploratory): all tasks from <code>cells</code> x arms, per-task pass rate over scored cells, <code>n/a</code> where none.
+- [ ] <strong>Step 4 (after M5-05):</strong> consume <code>repeats</code> and the excluded fields; when <code>reported &lt; planned</code>, every chart shows <code>Repeats reported N of P; excluded &lt;cells&gt; cells, $&lt;spend&gt;</code>. Test: a report with <code>repeats: {planned: 3, reported: 2}</code> shows that line on all three charts and the values in <code>arms.csv</code> and <code>provenance.csv</code>.
+- [ ] <strong>Step 5:</strong> Tests pass; check/lint/fmt; commit <code>feat(harness): report charts and typed CSVs for the talk slides</code>.
+- [ ] <strong>Step 6 (cut item 3, optional):</strong> <code>&lt;prefix&gt;-efficiency.svg</code> from <code>r.efficiency</code>, labelled exploratory, <code>n/a</code> for nulls, same test pattern.</p>
+<p><strong>Acceptance (orchestrator):</strong> tests green; the CLI on the fixture writes 3 SVGs and 3 CSVs (4 with a ledger); SVGs open and render (one screenshot path attached).</p>
+<hr />
+<h3 id="task-m6-03-snapshot-archive-with-fail-closed-scan">Task M6-03: snapshot archive with fail-closed scan<a class="headerlink" href="#task-m6-03-snapshot-archive-with-fail-closed-scan" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> infra, strictly after M1-34c. <strong>Deps:</strong> none. <strong>Date:</strong> 10-03 to 10-08. <strong>Startable now.</strong></p>
+<p><strong>Files:</strong> Create <code>scripts/harness/freeze-archive.ts</code>, <code>tests/unit/harness/freeze-archive.test.ts</code>.</p>
+<p><strong>Interfaces:</strong>
+- <code>pack(resultsRoot, outDir, opts: { meta: Record&lt;string, string&gt;; secretFiles: string[] }): Promise&lt;{ files: number; sumsSha256: string }&gt;</code>; <code>verify(outDir): Promise&lt;string[]&gt;</code> (problems, empty = OK); <code>bind(outDir, files: string[]): Promise&lt;void&gt;</code> maintains <code>&lt;outDir&gt;/derived.json</code> <code>{ v: 1, sums_sha256, files: [{ path, sha256, bound_at }] }</code>.
+- <strong>Cumulative binding contract.</strong> <code>bind</code> is append-only: it reads the existing <code>derived.json</code> (refusing it if its <code>sums_sha256</code> differs from <code>freeze.json</code>), keeps every earlier entry, adds new paths with their hash and time, accepts a path already bound with the same hash as a no-op, and refuses a path already bound with a different hash (<code>already bound with another hash</code>: a changed derived file is an error, never an update). <code>verify</code> checks every entry of every bind call. Order in M6: reports, then charts and CSVs, then <code>ledger.json</code>, then <code>caveats.md</code> and <code>handoff.md</code>.
+- Layout: <code>&lt;outDir&gt;/results/...</code> (byte copy), <code>SHA256SUMS</code> (<code>&lt;sha256&gt;  &lt;posix path&gt;</code>, raw bytes, sorted), <code>freeze.json</code> <code>{ v: 1, created_at, files, sums_sha256, meta, scan: { secret_files: &lt;count&gt;, patterns: [...], hits: 0 } }</code>.
+- Scan (inside <code>pack</code>, on the copied bytes; it covers the secret values available on disk plus the patterns, and is not proof that every historical credential value is absent): every secret file must exist, be readable and non-empty, else <strong>operational failure</strong>; each value is searched as bytes in every copied file; patterns <code>sk-or-v1-[A-Za-z0-9]{20,}</code> and <code>sk-ant-oat01-[A-Za-z0-9_-]{20,}</code>. A hit names the archived path and the secret file's basename, never the value, and removes <code>outDir</code>.
+- CLI exit codes: <code>0</code> clean and packed, <code>1</code> secret hit or verify problem, <code>2</code> operational failure (unreadable secret file or tree, existing <code>outDir</code>, a link or reparse point). Links policy: any symlink or junction in the tree refuses the pack.</p>
+<ul>
+<li>[ ] <strong>Step 1: Failing tests:</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">assert</span><span class="p">,</span><span class="w"> </span><span class="nx">assertEquals</span><span class="p">,</span><span class="w"> </span><span class="nx">assertRejects</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">"@std/assert"</span><span class="p">;</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">join</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">"@std/path"</span><span class="p">;</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">bind</span><span class="p">,</span><span class="w"> </span><span class="nx">pack</span><span class="p">,</span><span class="w"> </span><span class="nx">verify</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">"../../../scripts/harness/freeze-archive.ts"</span><span class="p">;</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">tree</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">makeTempDir</span><span class="p">();</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">mkdir</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">root</span><span class="p">,</span><span class="w"> </span><span class="s2">"executions"</span><span class="p">,</span><span class="w"> </span><span class="s2">"c1"</span><span class="p">),</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">recursive</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="w"> </span><span class="p">});</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">root</span><span class="p">,</span><span class="w"> </span><span class="s2">"executions"</span><span class="p">,</span><span class="w"> </span><span class="s2">"c1"</span><span class="p">,</span><span class="w"> </span><span class="s2">"e1.json"</span><span class="p">),</span><span class="w"> </span><span class="s1">'{"a":1}\r\n'</span><span class="p">);</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">root</span><span class="p">,</span><span class="w"> </span><span class="s2">"campaigns.json"</span><span class="p">),</span><span class="w"> </span><span class="s2">"{}"</span><span class="p">);</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">root</span><span class="p">;</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">}</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">secret</span><span class="p">(</span><span class="nx">value</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">join</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">makeTempDir</span><span class="p">(),</span><span class="w"> </span><span class="s2">"claude-oauth-token"</span><span class="p">);</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">f</span><span class="p">,</span><span class="w"> </span><span class="nx">value</span><span class="p">);</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">f</span><span class="p">;</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="p">}</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="kd">const</span><span class="w"> </span><span class="nx">out</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">join</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">makeTempDir</span><span class="p">(),</span><span class="w"> </span><span class="s2">"a"</span><span class="p">);</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"pack then verify is clean; freeze.json holds meta, sums hash and scan count"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">o</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">out</span><span class="p">();</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">pack</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">tree</span><span class="p">(),</span><span class="w"> </span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">meta</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">git</span><span class="o">:</span><span class="w"> </span><span class="s2">"abc"</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="nx">secretFiles</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="k">await</span><span class="w"> </span><span class="nx">secret</span><span class="p">(</span><span class="s2">"tok-123"</span><span class="p">)]</span><span class="w"> </span><span class="p">});</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">([</span><span class="nx">r</span><span class="p">.</span><span class="nx">files</span><span class="p">,</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">verify</span><span class="p">(</span><span class="nx">o</span><span class="p">)],</span><span class="w"> </span><span class="p">[</span><span class="mf">2</span><span class="p">,</span><span class="w"> </span><span class="p">[]]);</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">readTextFile</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="s2">"freeze.json"</span><span class="p">)));</span>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">([</span><span class="nx">f</span><span class="p">.</span><span class="nx">meta</span><span class="p">.</span><span class="nx">git</span><span class="p">,</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nx">sums_sha256</span><span class="p">,</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nx">scan</span><span class="p">.</span><span class="nx">secret_files</span><span class="p">,</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nx">scan</span><span class="p">.</span><span class="nx">hits</span><span class="p">],</span><span class="w"> </span><span class="p">[</span><span class="s2">"abc"</span><span class="p">,</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">sumsSha256</span><span class="p">,</span><span class="w"> </span><span class="mf">1</span><span class="p">,</span><span class="w"> </span><span class="mf">0</span><span class="p">]);</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="p">});</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"a secret hit fails without printing the value; missing or empty secret files are operational failures"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">tree</span><span class="p">();</span>
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">root</span><span class="p">,</span><span class="w"> </span><span class="s2">"leak.txt"</span><span class="p">),</span><span class="w"> </span><span class="s2">"x tok-123 y"</span><span class="p">);</span>
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">hit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">assertRejects</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">pack</span><span class="p">(</span><span class="nx">root</span><span class="p">,</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">out</span><span class="p">(),</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">meta</span><span class="o">:</span><span class="w"> </span><span class="p">{},</span><span class="w"> </span><span class="nx">secretFiles</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="k">await</span><span class="w"> </span><span class="nx">secret</span><span class="p">(</span><span class="s2">"tok-123"</span><span class="p">)]</span><span class="w"> </span><span class="p">}),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"leak.txt"</span><span class="p">);</span>
+<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a><span class="w">  </span><span class="nx">assert</span><span class="p">(</span><span class="o">!</span><span class="nx">hit</span><span class="p">.</span><span class="nx">message</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"tok-123"</span><span class="p">));</span>
+<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">assertRejects</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">pack</span><span class="p">(</span><span class="nx">root</span><span class="p">,</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">out</span><span class="p">(),</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">meta</span><span class="o">:</span><span class="w"> </span><span class="p">{},</span><span class="w"> </span><span class="nx">secretFiles</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">makeTempFile</span><span class="p">()]</span><span class="w"> </span><span class="p">}),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"empty secret file"</span><span class="p">);</span>
+<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">assertRejects</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">pack</span><span class="p">(</span><span class="nx">root</span><span class="p">,</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">out</span><span class="p">(),</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">meta</span><span class="o">:</span><span class="w"> </span><span class="p">{},</span><span class="w"> </span><span class="nx">secretFiles</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="nx">join</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">makeTempDir</span><span class="p">(),</span><span class="w"> </span><span class="s2">"gone"</span><span class="p">)]</span><span class="w"> </span><span class="p">}),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"cannot read secret file"</span><span class="p">);</span>
+<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a><span class="p">});</span>
+<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a>
+<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"verify names changed, missing, extra files, an edited SHA256SUMS and a changed bound file"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">o</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">out</span><span class="p">();</span>
+<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">pack</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">tree</span><span class="p">(),</span><span class="w"> </span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">meta</span><span class="o">:</span><span class="w"> </span><span class="p">{},</span><span class="w"> </span><span class="nx">secretFiles</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="k">await</span><span class="w"> </span><span class="nx">secret</span><span class="p">(</span><span class="s2">"tok"</span><span class="p">)]</span><span class="w"> </span><span class="p">});</span>
+<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">report</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">join</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">makeTempDir</span><span class="p">(),</span><span class="w"> </span><span class="s2">"r.json"</span><span class="p">);</span>
+<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">report</span><span class="p">,</span><span class="w"> </span><span class="s2">"{}"</span><span class="p">);</span>
+<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">bind</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="nx">report</span><span class="p">]);</span>
+<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="s2">"results"</span><span class="p">,</span><span class="w"> </span><span class="s2">"executions"</span><span class="p">,</span><span class="w"> </span><span class="s2">"c1"</span><span class="p">,</span><span class="w"> </span><span class="s2">"e1.json"</span><span class="p">),</span><span class="w"> </span><span class="s1">'{"a":1}\n'</span><span class="p">);</span>
+<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">remove</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="s2">"results"</span><span class="p">,</span><span class="w"> </span><span class="s2">"campaigns.json"</span><span class="p">));</span>
+<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="s2">"results"</span><span class="p">,</span><span class="w"> </span><span class="s2">"extra.txt"</span><span class="p">),</span><span class="w"> </span><span class="s2">"x"</span><span class="p">);</span>
+<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">report</span><span class="p">,</span><span class="w"> </span><span class="s2">"{ }"</span><span class="p">);</span>
+<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">p</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">verify</span><span class="p">(</span><span class="nx">o</span><span class="p">)).</span><span class="nx">join</span><span class="p">(</span><span class="s2">"\n"</span><span class="p">);</span>
+<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a><span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">s</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="p">[</span><span class="s2">"changed: executions/c1/e1.json"</span><span class="p">,</span><span class="w"> </span><span class="s2">"missing: campaigns.json"</span><span class="p">,</span><span class="w"> </span><span class="s2">"extra: extra.txt"</span><span class="p">,</span><span class="w"> </span><span class="s2">"bound file changed"</span><span class="p">])</span><span class="w"> </span><span class="nx">assert</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="nx">s</span><span class="p">),</span><span class="w"> </span><span class="nx">s</span><span class="p">);</span>
+<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="s2">"SHA256SUMS"</span><span class="p">),</span><span class="w"> </span><span class="s2">"tampered\n"</span><span class="p">);</span>
+<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a><span class="w">  </span><span class="nx">assert</span><span class="p">((</span><span class="k">await</span><span class="w"> </span><span class="nx">verify</span><span class="p">(</span><span class="nx">o</span><span class="p">)).</span><span class="nx">some</span><span class="p">((</span><span class="nx">x</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">x</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"SHA256SUMS does not match freeze.json"</span><span class="p">)));</span>
+<a id="__codelineno-2-50" name="__codelineno-2-50" href="#__codelineno-2-50"></a><span class="p">});</span>
+<a id="__codelineno-2-51" name="__codelineno-2-51" href="#__codelineno-2-51"></a>
+<a id="__codelineno-2-52" name="__codelineno-2-52" href="#__codelineno-2-52"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"bind is cumulative: reports, then documents; a later call keeps earlier entries; a changed report is caught"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-53" name="__codelineno-2-53" href="#__codelineno-2-53"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">o</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">out</span><span class="p">();</span>
+<a id="__codelineno-2-54" name="__codelineno-2-54" href="#__codelineno-2-54"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">pack</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">tree</span><span class="p">(),</span><span class="w"> </span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">meta</span><span class="o">:</span><span class="w"> </span><span class="p">{},</span><span class="w"> </span><span class="nx">secretFiles</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="k">await</span><span class="w"> </span><span class="nx">secret</span><span class="p">(</span><span class="s2">"tok"</span><span class="p">)]</span><span class="w"> </span><span class="p">});</span>
+<a id="__codelineno-2-55" name="__codelineno-2-55" href="#__codelineno-2-55"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">dir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">makeTempDir</span><span class="p">();</span>
+<a id="__codelineno-2-56" name="__codelineno-2-56" href="#__codelineno-2-56"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">report</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">join</span><span class="p">(</span><span class="nx">dir</span><span class="p">,</span><span class="w"> </span><span class="s2">"r.json"</span><span class="p">),</span><span class="w"> </span><span class="nx">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">join</span><span class="p">(</span><span class="nx">dir</span><span class="p">,</span><span class="w"> </span><span class="s2">"handoff.md"</span><span class="p">);</span>
+<a id="__codelineno-2-57" name="__codelineno-2-57" href="#__codelineno-2-57"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">report</span><span class="p">,</span><span class="w"> </span><span class="s2">"{}"</span><span class="p">);</span>
+<a id="__codelineno-2-58" name="__codelineno-2-58" href="#__codelineno-2-58"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">doc</span><span class="p">,</span><span class="w"> </span><span class="s2">"# h"</span><span class="p">);</span>
+<a id="__codelineno-2-59" name="__codelineno-2-59" href="#__codelineno-2-59"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">bind</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="nx">report</span><span class="p">]);</span>
+<a id="__codelineno-2-60" name="__codelineno-2-60" href="#__codelineno-2-60"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">bind</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="nx">doc</span><span class="p">]);</span>
+<a id="__codelineno-2-61" name="__codelineno-2-61" href="#__codelineno-2-61"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">bind</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="nx">report</span><span class="p">]);</span><span class="w"> </span><span class="c1">// same hash: no-op</span>
+<a id="__codelineno-2-62" name="__codelineno-2-62" href="#__codelineno-2-62"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">readTextFile</span><span class="p">(</span><span class="nx">join</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="s2">"derived.json"</span><span class="p">)));</span>
+<a id="__codelineno-2-63" name="__codelineno-2-63" href="#__codelineno-2-63"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">(</span><span class="nx">d</span><span class="p">.</span><span class="nx">files</span><span class="p">.</span><span class="nx">map</span><span class="p">((</span><span class="nx">f</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">path</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">})</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nx">path</span><span class="p">).</span><span class="nx">sort</span><span class="p">(),</span><span class="w"> </span><span class="p">[</span><span class="nx">doc</span><span class="p">,</span><span class="w"> </span><span class="nx">report</span><span class="p">].</span><span class="nx">sort</span><span class="p">());</span>
+<a id="__codelineno-2-64" name="__codelineno-2-64" href="#__codelineno-2-64"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">verify</span><span class="p">(</span><span class="nx">o</span><span class="p">),</span><span class="w"> </span><span class="p">[]);</span>
+<a id="__codelineno-2-65" name="__codelineno-2-65" href="#__codelineno-2-65"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">writeTextFile</span><span class="p">(</span><span class="nx">report</span><span class="p">,</span><span class="w"> </span><span class="s2">"{ }"</span><span class="p">);</span>
+<a id="__codelineno-2-66" name="__codelineno-2-66" href="#__codelineno-2-66"></a><span class="w">  </span><span class="nx">assert</span><span class="p">((</span><span class="k">await</span><span class="w"> </span><span class="nx">verify</span><span class="p">(</span><span class="nx">o</span><span class="p">)).</span><span class="nx">some</span><span class="p">((</span><span class="nx">x</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">x</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"bound file changed"</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">x</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s2">"r.json"</span><span class="p">)));</span>
+<a id="__codelineno-2-67" name="__codelineno-2-67" href="#__codelineno-2-67"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">assertRejects</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">bind</span><span class="p">(</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="nx">report</span><span class="p">]),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"already bound with another hash"</span><span class="p">);</span>
+<a id="__codelineno-2-68" name="__codelineno-2-68" href="#__codelineno-2-68"></a><span class="p">});</span>
+<a id="__codelineno-2-69" name="__codelineno-2-69" href="#__codelineno-2-69"></a>
+<a id="__codelineno-2-70" name="__codelineno-2-70" href="#__codelineno-2-70"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">({</span>
+<a id="__codelineno-2-71" name="__codelineno-2-71" href="#__codelineno-2-71"></a><span class="w">  </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s2">"a junction in the tree refuses the pack (Windows)"</span><span class="p">,</span>
+<a id="__codelineno-2-72" name="__codelineno-2-72" href="#__codelineno-2-72"></a><span class="w">  </span><span class="nx">ignore</span><span class="o">:</span><span class="w"> </span><span class="kt">Deno.build.os</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="s2">"windows"</span><span class="p">,</span>
+<a id="__codelineno-2-73" name="__codelineno-2-73" href="#__codelineno-2-73"></a><span class="w">  </span><span class="nx">fn</span><span class="o">:</span><span class="w"> </span><span class="kt">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-74" name="__codelineno-2-74" href="#__codelineno-2-74"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">tree</span><span class="p">();</span>
+<a id="__codelineno-2-75" name="__codelineno-2-75" href="#__codelineno-2-75"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">target</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">makeTempDir</span><span class="p">();</span>
+<a id="__codelineno-2-76" name="__codelineno-2-76" href="#__codelineno-2-76"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">Command</span><span class="p">(</span><span class="s2">"cmd"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">args</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"/c"</span><span class="p">,</span><span class="w"> </span><span class="s2">"mklink"</span><span class="p">,</span><span class="w"> </span><span class="s2">"/J"</span><span class="p">,</span><span class="w"> </span><span class="nx">join</span><span class="p">(</span><span class="nx">root</span><span class="p">,</span><span class="w"> </span><span class="s2">"j"</span><span class="p">),</span><span class="w"> </span><span class="nx">target</span><span class="p">]</span><span class="w"> </span><span class="p">}).</span><span class="nx">output</span><span class="p">();</span>
+<a id="__codelineno-2-77" name="__codelineno-2-77" href="#__codelineno-2-77"></a><span class="w">    </span><span class="nx">assert</span><span class="p">(</span><span class="nx">r</span><span class="p">.</span><span class="nx">success</span><span class="p">,</span><span class="w"> </span><span class="s2">"mklink /J needs no privilege; failing to create it is a test failure, not a skip"</span><span class="p">);</span>
+<a id="__codelineno-2-78" name="__codelineno-2-78" href="#__codelineno-2-78"></a><span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">assertRejects</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">pack</span><span class="p">(</span><span class="nx">root</span><span class="p">,</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">out</span><span class="p">(),</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">meta</span><span class="o">:</span><span class="w"> </span><span class="p">{},</span><span class="w"> </span><span class="nx">secretFiles</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="k">await</span><span class="w"> </span><span class="nx">secret</span><span class="p">(</span><span class="s2">"tok"</span><span class="p">)]</span><span class="w"> </span><span class="p">}),</span><span class="w"> </span><span class="ne">Error</span><span class="p">,</span><span class="w"> </span><span class="s2">"link"</span><span class="p">);</span>
+<a id="__codelineno-2-79" name="__codelineno-2-79" href="#__codelineno-2-79"></a><span class="w">  </span><span class="p">},</span>
+<a id="__codelineno-2-80" name="__codelineno-2-80" href="#__codelineno-2-80"></a><span class="p">});</span>
+</code></pre></div>
+<p>Run: FAIL (module missing).
+- [ ] <strong>Step 2: Implement:</strong> <code>walk</code> with <code>followSymlinks: false</code>; refuse <code>isSymlink</code> (Deno reports junctions as symlinks on Windows; the junction test proves it); byte copy; scan the copies; SHA-256 via <code>crypto.subtle.digest</code>; remove <code>outDir</code> on any failure after creating it.
+- [ ] <strong>Step 3:</strong> Tests pass; check/lint/fmt; commit <code>feat(harness): freeze archive with fail-closed secret scan and bound derived files</code>.</p>
+<p><strong>Acceptance (orchestrator):</strong> tests green with the junction test run (not ignored) on this host; <code>pack</code> then <code>verify</code> on <code>H:\cg-coord\jobs\M1-30-1\results\harness</code> into <code>H:\Temp3\harness-spike\M6-03\</code> prints <code>[OK]</code>, with the secret files of the secrets dir.</p>
+<hr />
+<h3 id="task-m6-04-handoff-template">Task M6-04: handoff template<a class="headerlink" href="#task-m6-04-handoff-template" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> content. <strong>Deps:</strong> skeleton none; placeholders after M6-02's CSV schema is accepted. <strong>Date:</strong> skeleton 10-03, placeholders 10-08. <strong>Startable now (skeleton).</strong></p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m6\handoff-template.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Skeleton sections:</strong> (1) per experiment: hypothesis; answer as delta, CI and verdict text over N matched pairs; cost per solved task and pass rate per arm, stating bars are per-arm and the delta is matched-pair; (2) coverage: task-set hash, campaign ids, judging source, repeats planned and reported, scored/planned per arm, unscored, pending, unknown-cost and excluded cells and spend, infra-exposed, manual reruns and rejudges (from M5-10); (3) charts with captions; (4) top five caveats, link to <code>caveats.md</code>; (5) spend: paid total, OpenRouter, Claude Code list-price estimate (not money); (6) reproducibility: master SHA, image ids, archive <code>sums_sha256</code>, <code>derived.json</code>; (7) owner follow-ups; (8) exploratory extras.</li>
+<li>[ ] <strong>Step 2 (after M6-02):</strong> every number is <code>{{&lt;csv&gt;:&lt;key columns&gt;:&lt;column&gt;}}</code> naming one of <code>arms.csv</code>, <code>comparisons.csv</code>, <code>provenance.csv</code>, <code>ledger.csv</code>. Sources by section: (1) and (2) <code>arms.csv</code>, <code>comparisons.csv</code>, <code>provenance.csv</code>; manual reruns <code>arms.csv:manual_reruns</code> and <code>ledger.csv</code> rows <code>manual_rerun</code>; rejudges <code>ledger.csv</code> rows <code>rejudge</code>; (5) paid total <code>ledger.csv:paid_total_usd</code>, OpenRouter actual <code>ledger.csv:openrouter_actual_usd</code>, Claude Code cash <code>ledger.csv:claude_code_cash_usd</code> (0) next to its list-price estimate <code>arms.csv:total_spend_usd</code> labelled as an estimate; the pi stop <code>ledger.csv:pi_stop</code>. The list-price <code>total_spend_usd</code> is never shown as money.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> sections 1 to 8 present; every placeholder names an existing CSV column or <code>ledger.csv</code> key.</p>
+<hr />
+<h3 id="task-m6-05-rehearsal-on-existing-records">Task M6-05: rehearsal on existing records<a class="headerlink" href="#task-m6-05-rehearsal-on-existing-records" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> content. <strong>Deps:</strong> M6-01 first version, M6-02, M6-03, M6-04 accepted. <strong>Date:</strong> by 10-09.</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> Follow M6-06 and M6-07 in their final order on <code>H:\cg-coord\jobs\M1-30-1\results\harness</code> (experiment <code>mock-contract</code>), into <code>H:\cg-coord\m6\rehearsal\</code>.</li>
+<li>[ ] <strong>Step 2:</strong> With a rehearsal <code>ledger.json</code> (zero spend, no reruns, marked REHEARSAL), fill the template into <code>rehearsal\handoff.md</code>, marked REHEARSAL (mock data, not results). Then walk the M5 "Acceptance case: P3 fires right after stage A" on the mock records: a second rehearsal ledger with <code>pi_stop</code> fired for <code>mock-contract</code> and <code>last_complete_repeat: null</code>; Step 1 of M6-07 produces a partial, provisional report without <code>--repeats</code>; M6-07 Step 4 leaves it out of <code>charts\</code>; the handoff shows no headline for it. Quote the outputs.</li>
+<li>[ ] <strong>Step 3:</strong> Times per step and friction in <code>H:\cg-coord\tasks\M6-05\runs\&lt;nnn&gt;\notes.md</code>; fixes become new tasks.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> snapshot <code>verify</code> <code>[OK]</code>, <code>derived.json</code> present, filled handoff, notes.</p>
+<hr />
+<h3 id="task-m6-06-ops-quiesce-and-snapshot-b12">Task M6-06 (ops): quiesce and snapshot (B12)<a class="headerlink" href="#task-m6-06-ops-quiesce-and-snapshot-b12" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops. <strong>Deps:</strong> M5-10 accepted. <strong>Date:</strong> 10-15 from 12:00.</p>
+<ul>
+<li>[ ] <strong>Step 1: Quiesce (campaign freeze, not a global pause).</strong> The orchestrator creates <code>H:\cg-coord\m5\stop-all.json</code> (M5 "Stop files"): every campaign invocation stops at its next cell boundary and none can start, while every lane, including M6 work, continues. <code>H:\cg-coord\pause.json</code> is never created for this; if the owner's global pause is active, the README rules apply first and this task waits for <code>resume</code>. Then quote: no <code>harness</code> process running (process list), no <code>results/.bench-running.json</code> younger than 2 min, <code>coord holder</code> free for Cronus281-283. Record the selected campaign ids from the M5 decisions. <code>stop-all.json</code> stays in place after the freeze; reopening needs an orchestrator decision.</li>
+<li>[ ] <strong>Step 2: Pack</strong> (secret files = every file M5-00 lists for generations 1 and 2 that still exists on disk; a listed file that is gone is written in the evidence with its revocation time):</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>deno<span class="w"> </span>run<span class="w"> </span>--allow-all<span class="w"> </span>scripts/harness/freeze-archive.ts<span class="w"> </span>pack<span class="w"> </span>results/harness<span class="w"> </span><span class="s1">'H:\cg-coord\m6\archive'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--secret-file<span class="w"> </span>&lt;each<span class="w"> </span>file&gt;<span class="w"> </span>--meta<span class="w"> </span><span class="nv">git</span><span class="o">=</span>&lt;sha&gt;<span class="w"> </span>--meta<span class="w"> </span><span class="nv">task_set</span><span class="o">=</span>&lt;hash&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--meta<span class="w"> </span><span class="nv">images</span><span class="o">=</span>&lt;base,claude-code,pi<span class="w"> </span>ids&gt;<span class="w"> </span>--meta<span class="w"> </span><span class="nv">campaigns</span><span class="o">=</span>&lt;ids&gt;
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>deno<span class="w"> </span>run<span class="w"> </span>--allow-all<span class="w"> </span>scripts/harness/freeze-archive.ts<span class="w"> </span>verify<span class="w"> </span><span class="s1">'H:\cg-coord\m6\archive'</span>
+</code></pre></div>
+<p>Exit 1 or 2: stop, <code>coord ask</code>, no reports.</p>
+<p><strong>Acceptance (orchestrator):</strong> exit codes 0 quoted, <code>sums_sha256</code> quoted, scan count equals the secret files listed.</p>
+<hr />
+<h3 id="task-m6-07-ops-final-reports-and-charts-from-the-snapshot">Task M6-07 (ops): final reports and charts from the snapshot<a class="headerlink" href="#task-m6-07-ops-final-reports-and-charts-from-the-snapshot" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops. <strong>Deps:</strong> M6-06. <strong>Date:</strong> 10-15.</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> For each experiment, from the snapshot: <code>deno task start harness report &lt;exp&gt; --campaign &lt;id&gt; --judging campaign --results-dir 'H:\cg-coord\m6\archive\results' --json &gt; H:\cg-coord\m6\reports\&lt;exp&gt;.campaign.json</code> and the text form. <code>--repeats &lt;n&gt;</code>: for a capacity cut the owner decided (all experiments alike, decision path in the evidence); for cc-vs-pi after a <strong>stopped (OD-1)</strong> disposition, <code>--repeats &lt;last complete repeat&gt;</code> when it is 1 or more (a balanced cc-vs-pi-only subset, excluded work disclosed by M5-05), and no <code>--repeats</code> when there is no complete repeat (the report stays provisional and is marked partial). <code>--repeats 0</code> is never used. <code>--judging current</code> (to <code>&lt;exp&gt;.current.json</code>) only under the Global Constraints rule; the orchestrator names which one is the headline.</li>
+<li>[ ] <strong>Step 2:</strong> <code>jq</code> per report: <code>.provisional</code>, and per arm <code>unscored_cells</code>, <code>pending_cells</code>, <code>unknown_spend_terminal_cells</code>; any non-zero value is listed in the evidence for the handoff (not hidden, not blocking).</li>
+<li>[ ] <strong>Step 3 (orchestrator):</strong> Write <code>H:\cg-coord\m6\ledger.json</code> (M6-02 schema) from <code>spend.md</code> and the M5-10 evidence, with every action of every campaign (the full history). If the OD-1 stop fired: <code>pi_stop</code> with <code>experiment: "cc-vs-pi"</code>, the stop time from the M5 decision, <code>last_complete_repeat</code> (null when none) and the decision path.</li>
+<li>[ ] <strong>Step 4:</strong> <code>report-charts.ts --out H:\cg-coord\m6\charts --ledger H:\cg-coord\m6\ledger.json --report &lt;headline report&gt; ...</code> with exactly one report per experiment that has a headline. cc-vs-pi stopped with no complete repeat has no headline: its report is not passed here (its ledger actions then show as <code>not_reported</code>), and it is bound in Step 5 as a partial report. A second judging goes to <code>H:\cg-coord\m6\charts-current\</code> if the orchestrator wants it shown. A ledger mismatch stops the task.</li>
+<li>[ ] <strong>Step 5:</strong> <code>freeze-archive.ts bind 'H:\cg-coord\m6\archive' &lt;every report&gt;</code>, then <code>bind ... &lt;every SVG and CSV&gt; H:\cg-coord\m6\ledger.json</code>; <code>verify</code> <code>[OK]</code>.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> reports, charts, <code>ledger.csv</code>, <code>derived.json</code> listing every file, verify <code>[OK]</code>.</p>
+<hr />
+<h3 id="task-m6-08-handoff-and-data-freeze">Task M6-08: handoff and data freeze<a class="headerlink" href="#task-m6-08-handoff-and-data-freeze" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> content (document), orchestrator (freeze). <strong>Deps:</strong> M6-01 final, M6-07. <strong>Date:</strong> 10-15 draft, 10-16 freeze.</p>
+<ul>
+<li>[ ] <strong>Step 1 (content):</strong> Fill <code>H:\cg-coord\m6\handoff.md</code> from the template and the CSVs; finalize <code>caveats.md</code> with the M5 decisions; <code>bind</code> both documents into <code>derived.json</code>.</li>
+<li>[ ] <strong>Step 2 (orchestrator):</strong> Diff every number in <code>handoff.md</code> against the CSVs and report JSON (<code>jq</code>); freeze inputs per README; gpt-6-sol review: does every claim follow from the bound reports, is every caveat sourced.</li>
+<li>[ ] <strong>Step 3 (orchestrator):</strong> <code>verify</code> <code>[OK]</code> on the day; decision <code>2026-10-16-data-freeze.md</code> (master SHA, <code>sums_sha256</code>, <code>derived.json</code> hash, review path); local tag <code>harness-data-freeze-2026-10-16</code> on master, pushed; <code>coord ask</code> plus push notification with the handoff path.</li>
+</ul>
+<p><strong>Acceptance:</strong> review verdict recorded; owner notified.</p>
+<hr />
+<h2 id="startable-now">Startable now<a class="headerlink" href="#startable-now" title="Permanent link">&para;</a></h2>
+<ul>
+<li>M6-01 (content).</li>
+<li>M6-02 Steps 1 to 3 (infra, only behind M1-34c; Step 4 after M5-05 on the same lane).</li>
+<li>M6-03 (infra, only behind M1-34c).</li>
+<li>M6-04 skeleton (content); placeholders after M6-02's schema.</li>
+<li>M6-05 (content) once M6-01 to M6-04 are accepted, target 10-09.</li>
+</ul>
+<h2 id="findings-addressed-round-1">Findings addressed (round 1)<a class="headerlink" href="#findings-addressed-round-1" title="Permanent link">&para;</a></h2>
+<p>B9: namespaced outputs, duplicate refusal, explicit <code>--report</code> selection (M6-02, M6-07 Step 3). B10: three typed CSVs, null reasons, delta and CI kept beside the verdict text, cohort disclosure, exploratory labels (M6-02). B11: repeat and excluded fields consumed and shown (M6-02 Step 4, M6-07 Step 1; fields from M5-05). B12: quiesce, fail-closed scan inside the pack, verify, reports from the snapshot, <code>bind</code> (M6-03, M6-06, M6-07). N1: startable-now qualifiers. N2: tests for every CI branch, cost-primary, escaping, duplicates, exact CSV values; a real junction test instead of a silent skip. N3: task chart from cells. N4: M6-01 inventory.</p>
+<h2 id="review-round-1-not-adopted">Review round 1: not adopted<a class="headerlink" href="#review-round-1-not-adopted" title="Permanent link">&para;</a></h2>
+<ul>
+<li>B12, "cover rotated credential generations": adopted with one limit. A generation-1 secret file that was deleted after revocation cannot be scanned; the evidence then records its revocation time (a revoked value in the archive is no longer a live credential). Keeping revoked values on disk only for scanning would add a secret to protect. The scan is described as covering the available values plus patterns, not as proof that every historical value is absent (round 2).</li>
+</ul>
+<h2 id="review-round-2-changes-rev-3">Review round 2: changes (rev 3)<a class="headerlink" href="#review-round-2-changes-rev-3" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Blocker 4 / B10 (placeholder sources): typed <code>ledger.json</code> (Zod) and <code>ledger.csv</code> for paid total, OpenRouter actual, Claude Code cash (0), manual reruns, rejudges and the pi stop, cross-checked against the reports; <code>arms.csv</code> gains <code>manual_reruns</code>; M6-04 maps every section to a CSV column or ledger key; list-price spend is never shown as money.</li>
+<li>B12 (quiescence): campaign freeze via <code>H:\cg-coord\m5\stop-all.json</code>, never the global <code>pause.json</code>; other lanes keep working; an active owner pause is honoured first.</li>
+<li>B12 (binding): cumulative, append-only <code>bind</code> contract (same hash no-op, different hash refused, every entry verified) with a reports-then-documents test; fixed bind order in M6-07 and M6-08.</li>
+<li>Non-blocking: provisional test parses the <code>provisional</code> column of <code>arms.csv</code> and <code>provenance.csv</code>; the cost-primary test uses a coherent report (labels and comparison flags switched); the scan wording no longer claims completeness.</li>
+<li>M6-01 (loaded task): unchanged.</li>
+</ul>
+<h2 id="review-round-2-not-adopted">Review round 2: not adopted<a class="headerlink" href="#review-round-2-not-adopted" title="Permanent link">&para;</a></h2>
+<p>None.</p>
+<h2 id="review-round-3-changes-rev-4-owner-directed-no-further-review">Review round 3: changes (rev 4, owner-directed, no further review)<a class="headerlink" href="#review-round-3-changes-rev-4-owner-directed-no-further-review" title="Permanent link">&para;</a></h2>
+<ul>
+<li>OD-1 stop path: M6-07 Steps 1, 3 and 4 handle cc-vs-pi stopped (OD-1): N &gt;= 1 complete repeats gives a balanced <code>--repeats N</code> subset; none gives a partial, provisional report with no headline and no chart, never <code>--repeats 0</code>. <code>pi_stop</code> gains <code>experiment</code>; the charts refuse a report whose <code>repeats.reported</code> differs from <code>last_complete_repeat</code>. M6-05 rehearses the stop-after-stage-A case.</li>
+<li>Ledger scope: the ledger keeps the full action history; actions are scoped <code>reported</code>, <code>excluded_repeat</code> or <code>not_reported</code>; only <code>reported</code> manual reruns are compared with scoped coverage; excluded actions are disclosed in <code>ledger.csv</code> and on the charts. Rejudges carry task, repeat and arm for scoping. New test with an excluded manual rerun in a cut repeat.</li>
+<li>M6-01 (loaded task): unchanged.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,3238 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/reasoning-suite/wave2-brief/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Wave 2 authoring brief - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#wave-2-authoring-brief" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Wave 2 authoring brief
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-target-precisely" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The target, precisely
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-actually-defeats-a-first-attempt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What actually defeats a first attempt
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-three-sub-families-in-yield-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The three sub-families, in yield order
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The three sub-families, in yield order">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-open-world-extensibility-x080-77-the-strongest-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A. Open-world extensibility (X080 - 7/7, the strongest measured)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-scaling-contracts-measured-by-sql-counters-x133-x169-x173-x165" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B. Scaling contracts measured by SQL counters (X133, X169, X173, X165)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c-invariance-over-orderings-and-partitions-x140" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C. Invariance over orderings and partitions (X140)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hard-authoring-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hard authoring constraints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-each-candidate-must-pass" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification each candidate must pass
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#open-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pilot-result-sub-family-a-did-not-transfer-2026-08-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pilot result: sub-family A did NOT transfer (2026-08-30)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pilot result: sub-family A did NOT transfer (2026-08-30)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-explanation-i-reached-for-and-the-data-that-rejects-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The explanation I reached for, and the data that rejects it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-left-as-a-hypothesis-and-labelled-as-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is left, as a hypothesis and labelled as one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consequence-for-this-brief" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consequence for this brief
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pilot-2-sub-family-b-failed-on-my-own-measurement-harness-2026-08-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pilot 2: sub-family B, failed on my own measurement harness (2026-08-30)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pilot 2: sub-family B, failed on my own measurement harness (2026-08-30)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#standing-of-the-brief-after-two-pilots" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standing of the brief after two pilots
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pilot-2-re-run-on-the-banked-recipe-also-solved-first-try-2026-08-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pilot 2, re-run on the banked recipe: ALSO solved first try (2026-08-30)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conclusion-after-two-completed-pilots-the-brief-does-not-transfer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conclusion after two completed pilots: the brief does not transfer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-diagnostic-resistant-tasks-have-one-attractor-and-my-pilots-had-none" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The diagnostic: resistant tasks have ONE attractor, and my pilots had none
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The diagnostic: resistant tasks have ONE attractor, and my pilots had none">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-both-pilots-failed-stated-precisely" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why both pilots failed, stated precisely
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-corrected-authoring-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The corrected authoring rule
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-attractor-screen-made-empirical-and-cheap-2026-08-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The attractor screen, made empirical and cheap (2026-08-30)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The attractor screen, made empirical and cheap (2026-08-30)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-this-says-about-the-remaining-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this says about the remaining work
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-measured-hit-rate-0-convergent-attractors-in-11-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The measured hit rate: 0 convergent attractors in 11 candidates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#panel-note-operator-2026-08-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Panel note (operator, 2026-08-30)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-undocumented-behaviour-screen-also-zero-2026-08-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The undocumented-behaviour screen: also zero (2026-08-30)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#correction-the-attractor-claim-does-not-survive-a-chance-corrected-null" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CORRECTION: the attractor claim does not survive a chance-corrected null
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CORRECTION: the attractor claim does not survive a chance-corrected null">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reconciling-that-with-the-85" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reconciling that with the 85%
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-this-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#method-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Method note
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/reasoning-suite/wave2-brief.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="wave-2-authoring-brief">Wave 2 authoring brief<a class="headerlink" href="#wave-2-authoring-brief" title="Permanent link">&para;</a></h1>
+<p>Derived from measured seven-model behaviour, not from intuition. Everything
+here is grounded in <code>hardening-levers-evidence.md</code>; this document is the
+executable form of its conclusion.</p>
+<h2 id="the-target-precisely">The target, precisely<a class="headerlink" href="#the-target-precisely" title="Permanent link">&para;</a></h2>
+<p>The <code>&lt;=50%</code> launch bar binds the STRONGEST model, and selection cannot create
+failures - a model failing <code>k</code> of the suite scores at or below 50% on a
+retained set of size <code>n</code> only when <code>n &lt;= 2k</code>. On pass@1 (the contract-robust
+metric) Opus 5 fails 7 of 109, so the current ceiling is n=14.</p>
+<table>
+<thead>
+<tr>
+<th>target n</th>
+<th>tasks the strongest model must fail at pass@1</th>
+<th>needed beyond today's 7</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>20</td>
+<td>10</td>
+<td>3</td>
+</tr>
+<tr>
+<td>40</td>
+<td>20</td>
+<td><strong>13</strong></td>
+</tr>
+<tr>
+<td>60</td>
+<td>30</td>
+<td>23</td>
+</tr>
+</tbody>
+</table>
+<p>At wave 1's measured rate of 2-in-10, n=40 costs roughly <strong>65 builds</strong>. The
+brief exists to raise that rate.</p>
+<h2 id="what-actually-defeats-a-first-attempt">What actually defeats a first attempt<a class="headerlink" href="#what-actually-defeats-a-first-attempt" title="Permanent link">&para;</a></h2>
+<p>Attempt-1 failing assertions across all seven panel models, for every task
+where the majority failed:</p>
+<table>
+<thead>
+<tr>
+<th>task</th>
+<th>assertion</th>
+<th>models failing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>X080</td>
+<td><code>AStatusCodeAddedAfterThisReleaseAlsoResolvesCorrectly</code></td>
+<td><strong>7/7</strong></td>
+</tr>
+<tr>
+<td>X074</td>
+<td><code>PositionedRecordWithNoActiveRangeUsesItsOwnKey</code></td>
+<td><strong>7/7</strong></td>
+</tr>
+<tr>
+<td>X133</td>
+<td><code>BuildingALargeTeamsListCostsTheSameAsASmallOnes</code></td>
+<td>6/7</td>
+</tr>
+<tr>
+<td>X169</td>
+<td><code>PricingALargeBatchCostsTheSameAsASmallOneAt{High,Low}DistinctItemRatio</code></td>
+<td>5/7</td>
+</tr>
+<tr>
+<td>X140</td>
+<td><code>DeterministicSweepMatchesTheReferenceAllocationAcrossManyPartitions</code></td>
+<td>5/7</td>
+</tr>
+<tr>
+<td>X173</td>
+<td><code>Posting{ALargeRunCostsNoMoreThanASmallOne,AnEvenLargerRun...StaysJustAsFlat}</code></td>
+<td>4/7</td>
+</tr>
+<tr>
+<td>X165</td>
+<td><code>BuildingALargeCarriersManifestCostsTheSameAsASmallOne</code></td>
+<td>4/7</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The single property they share:</strong> the graded contract QUANTIFIES OVER INPUTS
+THE MODEL'S OWN CODE CANNOT ENUMERATE. The model writes something that
+satisfies every case visible in the starter, and the oracle asserts over a
+case that is not.</p>
+<p>That is a sharper rule than "measured SQL budgets", which is only one of its
+three expressions. It also explains the tasks that do NOT resist: an absent
+branch, a wrong field sourced, a missing <code>ChangeCompany</code>, a stale cache, an
+interface stub - every defect a competent reader can settle by inspection -
+is fixed first try by nearly every model.</p>
+<h2 id="the-three-sub-families-in-yield-order">The three sub-families, in yield order<a class="headerlink" href="#the-three-sub-families-in-yield-order" title="Permanent link">&para;</a></h2>
+<h3 id="a-open-world-extensibility-x080-77-the-strongest-measured">A. Open-world extensibility (X080 - 7/7, the strongest measured)<a class="headerlink" href="#a-open-world-extensibility-x080-77-the-strongest-measured" title="Permanent link">&para;</a></h3>
+<p>The fix must work for an input that does not exist in the starter at all.
+X080's oracle asserts that wire code <code>50</code> resolves to <code>Held At Customs</code>; that
+code appears nowhere in the visible mapping. A model that hardcodes the cases
+it can see fails, however carefully it reads.</p>
+<ul>
+<li>Grade a value, key, code or enum member the starter never mentions.</li>
+<li>The correct fix is a general mechanism (extensible enum lookup, data-driven
+  map, <code>Enum::X.Names</code>/<code>Ordinals</code>, a table-driven resolve), not an enlarged
+  literal map.</li>
+<li><strong>This sub-family is under-used: one task in 110.</strong> It defeated every model
+  and needs no SQL counters, no performance harness, no volume fixtures.
+  Highest expected yield per build.</li>
+</ul>
+<h3 id="b-scaling-contracts-measured-by-sql-counters-x133-x169-x173-x165">B. Scaling contracts measured by SQL counters (X133, X169, X173, X165)<a class="headerlink" href="#b-scaling-contracts-measured-by-sql-counters-x133-x169-x173-x165" title="Permanent link">&para;</a></h3>
+<p><code>SessionInformation.SqlStatementsExecuted</code> / <code>SqlRowsRead</code> around a measured
+window, asserting the cost at a large size equals the cost at a small one.
+The model cannot verify this by reading its own code; it must reason about
+asymptotics.</p>
+<ul>
+<li>Dual-margin budget rule: budget &gt;= 10x correct AND &lt;= naive/10.</li>
+<li><strong>Put the contract in a SMALL app.</strong> <code>decisions.md</code> entry 39 and the
+  omission analysis both bite here: N persisted <code>Insert()</code> calls inside a
+  measured window cost ~0.25-0.3 statements per row, so use the
+  X133/X153/X169 temp-buffer output pattern; and omission scales with app size
+  (2.9% of attempts at 1-4 starter objects, 18.2% at 13+). Wave 1's recycled
+  filler composites bought omission, not difficulty.</li>
+<li>Vary a SECOND dimension so a model cannot pass by memorising one shape -
+  X169 grades both a high and a low distinct-item ratio, X173 both a larger
+  run and one with fewer distinct vendors.</li>
+</ul>
+<h3 id="c-invariance-over-orderings-and-partitions-x140">C. Invariance over orderings and partitions (X140)<a class="headerlink" href="#c-invariance-over-orderings-and-partitions-x140" title="Permanent link">&para;</a></h3>
+<p>The result must not depend on input order, partition count, or entry
+sequence. X140 grades a deterministic cent sweep across many partitions plus
+order-independence of the same lines.</p>
+<ul>
+<li>Assert the invariant over MANY generated cases, not one worked example.</li>
+<li>Naturally resistant because the model cannot enumerate the orderings it
+  would need to check.</li>
+</ul>
+<h2 id="hard-authoring-constraints">Hard authoring constraints<a class="headerlink" href="#hard-authoring-constraints" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Small app.</strong> Three objects is enough - X140 defeats five models with
+   three. Size buys omission, not difficulty.</li>
+<li><strong>Frozen/donor tables for the graded contract.</strong> Three of four wave-1
+   resisters failed attempt 2 by editing the ORACLE's schema (deleting a
+   field the test references) rather than fixing behaviour. Put the graded
+   contract on a table the fix has no reason to reshape.</li>
+<li><strong>No composition.</strong> Measured and dead: X176 (two parents plus glue) was
+   solved first try 11/11. EvoEval's COMBINE joins two independent algorithmic
+   PROBLEMS; ours handed the model the glue.</li>
+<li><strong>Author against the frontier PAIR, not one model.</strong> Opus and gpt-5.5 fail
+   almost disjoint sets (union 9, intersection 1). A task tuned to one
+   model's weakness is passed by the other two, and the bar binds whoever is
+   strongest on the retained set.</li>
+<li><strong>The B4 over-strictness gate matters more than any other.</strong> SWE-bench
+   Verified's dominant discard reason was test unfairness (61.2%), ahead of
+   underspecification (38.3%), and it removed 93.6% of "&gt;4 hours" tasks
+   against 53.5% of "&lt;15 min" ones. <strong>A fairness gate preferentially destroys
+   hard tasks</strong>, so expect to lose some of what wave 2 builds, and price that
+   into the count.</li>
+</ol>
+<h2 id="verification-each-candidate-must-pass">Verification each candidate must pass<a class="headerlink" href="#verification-each-candidate-must-pass" title="Permanent link">&para;</a></h2>
+<p>Beyond the standard gates in <code>hardening-pipeline.md</code>:</p>
+<ul>
+<li><strong>Attempt-1 behavioural failure on at least two frontier models</strong> from
+  different vendors. Not a compile failure - that is the weak-evidence class
+  and, under the current contract, may be omission.</li>
+<li>Run <code>scripts/failure-causes.py</code> on the gate output and confirm the failures
+  are <code>behavioural</code>, not <code>omission</code> / <code>mixed</code> / <code>al_knowledge</code>.</li>
+<li>Re-check with <code>scripts/panel-select.py</code> that the new task lowers the
+  strongest model's score on the retained set - that, not "is it hard", is the
+  quantity the bar depends on.</li>
+</ul>
+<h2 id="open-dependencies">Open dependencies<a class="headerlink" href="#open-dependencies" title="Permanent link">&para;</a></h2>
+<ul>
+<li>The changed-objects contract (<code>templates/diagnose-objects.md</code>) is measured
+  and significant (+22pp best-of-2, p = 0.0215) but NOT adopted. Wave 2 should
+  be authored so it resists under either contract - i.e. attempt-1
+  behavioural, which is contract-robust (pass@1 delta p = 0.7266).</li>
+<li>OpenRouter credits are exhausted, so grok-4.3 and deepseek-v4-pro cannot
+  currently be run.</li>
+</ul>
+<hr />
+<h2 id="pilot-result-sub-family-a-did-not-transfer-2026-08-30">Pilot result: sub-family A did NOT transfer (2026-08-30)<a class="headerlink" href="#pilot-result-sub-family-a-did-not-transfer-2026-08-30" title="Permanent link">&para;</a></h2>
+<p>Before committing ~65 builds to this brief, one task was authored to test its
+top-ranked claim.</p>
+<p><strong>CG-AL-X178</strong> (<code>scratch/CG-AL-X178/</code>, not promoted): outbound enumeration.
+Four objects. <code>BuildTotals</code> emits one summary row per charge type; the starter
+loops over the three literal values it can see; the oracle's companion
+<code>enumextension</code> adds ordinal 30 after the fact. Structurally the same
+open-world shape as X080, with a different mechanism (outbound enumeration via
+<code>Ordinals()</code> rather than inbound wire-code mapping).</p>
+<p>It passed every validity gate - <code>oracle-audit.py</code> exit 0, and <code>task probe</code>
+reported <code>correct=pass naive=fail</code> with the starter failing REACHING the
+assertions, on exactly the two open-world tests.</p>
+<p><strong>And both frontier models solved it.</strong> Opus 5 first try; gpt-5.5 compile-fail
+then pass on attempt 2. Resistance 0 of 2, against X080's 7 of 7.</p>
+<h3 id="the-explanation-i-reached-for-and-the-data-that-rejects-it">The explanation I reached for, and the data that rejects it<a class="headerlink" href="#the-explanation-i-reached-for-and-the-data-that-rejects-it" title="Permanent link">&para;</a></h3>
+<p>My first read was that X178's description telegraphed the fix. X080's fix
+sentence is 13 words and states an outcome ("so every status code the
+carrier's API sends resolves to its correct status"); X178's is 45+ and
+enumerates every graded property, including the phrase "whatever they are",
+which points at reflection.</p>
+<p>Tested across the 103 X-series tasks that carry a "Fix the application..."
+sentence, against measured attempt-1 failure rate on the seven-model panel:</p>
+<table>
+<thead>
+<tr>
+<th>fix sentence</th>
+<th>n</th>
+<th>mean attempt-1 failure rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>short (&lt;=25 words)</td>
+<td>58</td>
+<td>13.8%</td>
+</tr>
+<tr>
+<td>long (&gt;=45 words)</td>
+<td>12</td>
+<td><strong>32.1%</strong></td>
+</tr>
+<tr>
+<td>all</td>
+<td>103</td>
+<td>20.5%</td>
+</tr>
+</tbody>
+</table>
+<p>Pearson r(words, attempt-1 failure rate) = <strong>+0.319</strong>.</p>
+<p><strong>Longer fix sentences go with HARDER tasks, not easier ones</strong> - the opposite
+of the hypothesis. Presumably a harder contract simply needs more
+specification. The hardest tasks sit at 13-36 words and the easiest at 7-8.
+So verbosity is not the explanation for X178, and brevity is not a difficulty
+lever.</p>
+<h3 id="what-is-left-as-a-hypothesis-and-labelled-as-one">What is left, as a hypothesis and labelled as one<a class="headerlink" href="#what-is-left-as-a-hypothesis-and-labelled-as-one" title="Permanent link">&para;</a></h3>
+<p>The structural difference that survives: <strong>X080 contains a misdirection and
+X178 does not.</strong> X080's symptom names "a new status code", so the obvious fix
+is to special-case that one code - and the oracle then asserts on a DIFFERENT
+ordinal (50) introduced by the extension. The model that does the obvious
+thing fails. X178's requirement has one obvious correct implementation and no
+wrong-but-plausible one.</p>
+<p>If that is right, the lever is not "open-world" as a category but <strong>a naive
+fix that is both obvious and wrong</strong>, with the open-world assertion as the
+thing that catches it. That is consistent with the X-series' original
+trap-task framing and with <code>decisions.md</code>'s round-4 ruling that knowledge-gap
+depth is the lever. <strong>It is untested.</strong></p>
+<h3 id="consequence-for-this-brief">Consequence for this brief<a class="headerlink" href="#consequence-for-this-brief" title="Permanent link">&para;</a></h3>
+<p><strong>Sub-family A's ranking is withdrawn.</strong> It rested on a single task (X080,
+7/7) and the one attempt to reproduce it produced 0/2. Sub-families B
+(SQL-counter scaling, 4 tasks, 4-6 of 7) and C (ordering/partition invariance,
+1 task, 5/7) still rest on their own measured tasks, but note B is the only
+one with more than one instance and is therefore the only one with any
+evidence of transfer at all.</p>
+<p>Anyone resuming this should treat the ~65-build estimate as unvalidated: the
+2-in-10 rate it derives from came from wave 1, whose levers this document has
+already shown were partly mis-attributed. Pilot each sub-family on ONE task
+before funding a wave. That cost one task here and saved the alternative.</p>
+<h2 id="pilot-2-sub-family-b-failed-on-my-own-measurement-harness-2026-08-30">Pilot 2: sub-family B, failed on my own measurement harness (2026-08-30)<a class="headerlink" href="#pilot-2-sub-family-b-failed-on-my-own-measurement-harness-2026-08-30" title="Permanent link">&para;</a></h2>
+<p><strong>CG-AL-X179</strong> (<code>scratch/CG-AL-X179/</code>, not promoted): per-depot filtered reads
+that should be one ordered pass, with the misdirection that a <code>Dictionary</code>
+cache is ALREADY present and correct so a model pattern-matching
+"hoist the lookup" changes nothing that matters. Four objects.</p>
+<p>It never reached a model. Two defects, both mine:</p>
+<ol>
+<li><strong>Oracle seeding.</strong> <code>Insert(true)</code> on an <code>AutoIncrement</code> key across repeated
+   <code>Seed()</code> calls collides - the counter is not reset by <code>DeleteAll</code> and does
+   not roll back with the test transaction. This repo already recorded that
+   trap (X166). Fixed by assigning entry numbers explicitly.</li>
+<li><strong>The measurement is void.</strong> <code>StatementsToBuild</code> did a warm-up call, then
+   measured a second IDENTICAL call. <code>decisions.md</code> entries 8 and 11 say
+   repeat identical reads are served free from the NST cache and that
+   <code>SelectLatestVersion()</code> is what flushes it. Measured result: <strong>correct 0
+   statements, starter 0 statements, delta 0</strong> - the harness charges nothing
+   to either side, so the probe correctly reported <code>naive=pass</code> and refused
+   the task.</li>
+</ol>
+<p><strong>The process failure is the one worth recording.</strong> <code>hardening-pipeline.md</code>
+gate A3 requires ANY platform-semantics premise to go through <code>premise-probe</code>
+BEFORE a build slot is spent, and <code>decisions.md</code> entry 13 exists because two
+batch-4 slots died exactly this way. I authored the task first and probed
+after. The gate ordering is not ceremony.</p>
+<h3 id="standing-of-the-brief-after-two-pilots">Standing of the brief after two pilots<a class="headerlink" href="#standing-of-the-brief-after-two-pilots" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>sub-family</th>
+<th>evidence</th>
+<th>pilot</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A. open-world extensibility</td>
+<td>1 task (X080, 7/7)</td>
+<td><strong>failed</strong> - X178 solved 0/2</td>
+</tr>
+<tr>
+<td>B. SQL-counter scaling</td>
+<td>4 tasks (4-6 of 7)</td>
+<td><strong>not tested</strong> - X179 never reached a model</td>
+</tr>
+<tr>
+<td>C. ordering/partition invariance</td>
+<td>1 task (X140, 5/7)</td>
+<td>not attempted</td>
+</tr>
+</tbody>
+</table>
+<p>Two pilots, zero validations. Nothing here has been shown to transfer. Before
+any wave is funded:</p>
+<ol>
+<li><strong>Bank the counter-measurement recipe as a premise probe first.</strong> The
+   existing X133/X169/X173/X165 oracles measure scaling successfully, so a
+   working pattern exists in the tree - read one and copy it rather than
+   re-deriving. Whatever they do about cache flushing is the fact to bank.</li>
+<li>Re-pilot B with that recipe, then C.</li>
+<li>Treat the 2-in-10 rate and the ~65-build estimate as unvalidated until a
+   pilot lands.</li>
+</ol>
+<h2 id="pilot-2-re-run-on-the-banked-recipe-also-solved-first-try-2026-08-30">Pilot 2, re-run on the banked recipe: ALSO solved first try (2026-08-30)<a class="headerlink" href="#pilot-2-re-run-on-the-banked-recipe-also-solved-first-try-2026-08-30" title="Permanent link">&para;</a></h2>
+<p>The measurement defect above was fixed by reading a working oracle instead of
+re-deriving one. <code>CG-AL-X169.Test.al</code> carries the recipe, and six oracles use
+it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>local procedure FlushDataCache()
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>begin
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    // The warm-up call and the fixture-seeding loop leave the session's data
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    // cache warm, and a cache-served read costs zero in the counters below -
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    // the graded call would then measure nothing. A write to an unrelated
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    // row, followed by SelectLatestVersion, forces real statements again.
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    SeedItem('PI-DECOY', 1, 'PG-DECOY');
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    SelectLatestVersion();
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>end;
+</code></pre></div>
+<p>Also copied: an ABSOLUTE budget (<code>MaxStatements()</code>) rather than a delta
+between two sizes, and correctness assertions before the cost assertion.</p>
+<p>Rebuilt on that, X179 discriminates cleanly: correct passes 7/7, and the
+starter burns <strong>243 statements against a 35 budget across 120 depots</strong>.</p>
+<p><strong>Both frontier models then solved it first try.</strong> Opus 5 PASS (100),
+gpt-5.5 PASS (100).</p>
+<h2 id="conclusion-after-two-completed-pilots-the-brief-does-not-transfer">Conclusion after two completed pilots: the brief does not transfer<a class="headerlink" href="#conclusion-after-two-completed-pilots-the-brief-does-not-transfer" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>sub-family</th>
+<th>existing evidence</th>
+<th>pilot outcome</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A. open-world extensibility</td>
+<td>X080, 7/7</td>
+<td>X178 - solved by <strong>both</strong>, first try</td>
+</tr>
+<tr>
+<td>B. SQL-counter scaling</td>
+<td>X133/X165/X169/X173, 4-6 of 7</td>
+<td>X179 - solved by <strong>both</strong>, first try</td>
+</tr>
+<tr>
+<td>C. ordering/partition invariance</td>
+<td>X140, 5/7</td>
+<td>not attempted</td>
+</tr>
+</tbody>
+</table>
+<p>Two tasks, deliberately designed to the measured recipe, both valid (probe
+discriminates, <code>oracle-audit</code> clean), both solved first try by the two
+strongest models available. <strong>The recipe derived from the resistant tasks does
+not reproduce their resistance.</strong></p>
+<p>That is the most decision-relevant result in this document, and it argues
+against funding a wave on this brief at all:</p>
+<ul>
+<li>The <code>~65 builds</code> estimate assumes wave 1's 2-in-10 rate is a property of
+  the DESIGN. Two designed-to-spec tasks scoring 0-in-2 is weak evidence that
+  it is not - that wave 1's two hits owed more to incidental properties than
+  to the family they were later assigned to.</li>
+<li>The seven tasks that DO resist share a description ("quantifies over inputs
+  the model's code cannot enumerate") which is apparently necessary but
+  clearly not sufficient. X179 quantifies over depot count and is solved;
+  X169 quantifies over batch size and is not. <strong>What separates them is not
+  captured by anything measured so far.</strong></li>
+<li>Publishing a bar that needs ~20 such tasks, when the current method
+  produces them at an unmeasured and possibly very low rate, is a schedule
+  risk that should be surfaced before any wave is funded rather than after.</li>
+</ul>
+<p><strong>Recommended: do not fund wave 2 on this brief.</strong> The cheaper next
+experiment is diagnostic rather than productive - take the seven resistant
+tasks and the two pilots, and find what actually differs. One candidate
+already noted: the resistant ones may all contain a naive fix that is
+<em>obvious and wrong</em>, whereas both pilots had an obvious fix that was simply
+right. That is testable by inspection, costs no builds, and would replace a
+recipe that has now failed twice.</p>
+<hr />
+<h2 id="the-diagnostic-resistant-tasks-have-one-attractor-and-my-pilots-had-none">The diagnostic: resistant tasks have ONE attractor, and my pilots had none<a class="headerlink" href="#the-diagnostic-resistant-tasks-have-one-attractor-and-my-pilots-had-none" title="Permanent link">&para;</a></h2>
+<p>If a task were merely "hard", independent models would fail it in different
+ways. If it induces one specific wrong answer, they would fail identically.
+Measured over attempt-1 behavioural failures on the seven-model panel, per
+task, counting distinct sets of failing assertions:</p>
+<table>
+<thead>
+<tr>
+<th>task</th>
+<th>models failing a1</th>
+<th>distinct failure sets</th>
+<th>modal share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>X080</td>
+<td>7</td>
+<td><strong>1</strong></td>
+<td>100%</td>
+</tr>
+<tr>
+<td>X133</td>
+<td>6</td>
+<td><strong>1</strong></td>
+<td>100%</td>
+</tr>
+<tr>
+<td>X169</td>
+<td>5</td>
+<td><strong>1</strong></td>
+<td>100%</td>
+</tr>
+<tr>
+<td>X165</td>
+<td>4</td>
+<td><strong>1</strong></td>
+<td>100%</td>
+</tr>
+<tr>
+<td>X173</td>
+<td>4</td>
+<td><strong>1</strong></td>
+<td>100%</td>
+</tr>
+<tr>
+<td>X067</td>
+<td>4</td>
+<td><strong>1</strong></td>
+<td>100%</td>
+</tr>
+<tr>
+<td>X168</td>
+<td>4</td>
+<td><strong>1</strong></td>
+<td>100%</td>
+</tr>
+<tr>
+<td>X142</td>
+<td>4</td>
+<td>2</td>
+<td>75%</td>
+</tr>
+<tr>
+<td>X167</td>
+<td>4</td>
+<td>2</td>
+<td>75%</td>
+</tr>
+<tr>
+<td>X140</td>
+<td>5</td>
+<td>3</td>
+<td>60%</td>
+</tr>
+<tr>
+<td>X074</td>
+<td>7</td>
+<td>2</td>
+<td>57%</td>
+</tr>
+<tr>
+<td>X090</td>
+<td>4</td>
+<td>3</td>
+<td>50%</td>
+</tr>
+</tbody>
+</table>
+<p>Across the 12 tasks with at least four attempt-1 behavioural failures: <strong>mean
+modal share 85%, mean 1.6 distinct failure sets.</strong> Seven of twelve are at
+100%. Seven independent models from four vendors converge on the SAME wrong
+answer.</p>
+<p><strong>These tasks are not broadly difficult. They are attractors.</strong> Each one
+induces a specific wrong fix that nearly every model writes, and the oracle
+grades exactly that.</p>
+<h3 id="why-both-pilots-failed-stated-precisely">Why both pilots failed, stated precisely<a class="headerlink" href="#why-both-pilots-failed-stated-precisely" title="Permanent link">&para;</a></h3>
+<p>Neither pilot had an attractor.</p>
+<ul>
+<li><strong>X178</strong>: the obvious fix is to iterate <code>Enum::X.Ordinals()</code>. That is also
+  the correct fix.</li>
+<li><strong>X179</strong>: the obvious fix is a single ordered pass accumulating into the
+  buffer. That is also the correct fix.</li>
+</ul>
+<p>In both, the starter's defect was something a frontier model would not write
+if asked to produce the code fresh - per-depot <code>Count()</code> inside a loop is a
+<em>bad developer's</em> mistake, not a <em>frontier model's</em> mistake. So there was
+nothing for the oracle to catch.</p>
+<p><strong>This is the repo's own A1 screening gate</strong>, <code>hardening-pipeline.md</code>:
+<em>"Drop any candidate whose wrong form a model would not plausibly write
+fresh."</em> I derived a recipe that quietly dropped that criterion and replaced
+it with "grade a contract the model cannot verify by inspection". That
+property is real - every resistant task has it - but it is a property of the
+ORACLE, and I mistook it for the source of the difficulty. The difficulty
+lives in the STARTER.</p>
+<h3 id="the-corrected-authoring-rule">The corrected authoring rule<a class="headerlink" href="#the-corrected-authoring-rule" title="Permanent link">&para;</a></h3>
+<p>Design the wrong answer first, then the assertion that catches it:</p>
+<ol>
+<li><strong>Pick a defect a frontier model would write itself.</strong> The test is
+   literal: ask a model to implement the requirement from scratch and see
+   what it produces. If it produces the correct form, there is no task here.</li>
+<li><strong>Then build the oracle to catch exactly that</strong>, using the
+   unverifiable-by-inspection contract as the <em>mechanism</em> of catching - open
+   world, counter budget, invariance sweep - rather than as the source of
+   difficulty.</li>
+<li>Screen candidates on convergence: a good candidate should make several
+   models fail the SAME assertion. A scattered failure profile means broadly
+   hard, which is worth less and correlates with over-strictness.</li>
+</ol>
+<p>This inverts the method the brief above prescribes, and it restores the
+X-series' original trap framing that the brief drifted away from.</p>
+<p><strong>The n=13-more estimate is unaffected</strong> - the arithmetic (<code>n &lt;= 2k</code>) still
+holds - but the yield rate should now be re-estimated against this rule
+rather than against the three sub-families, and one pilot built to the
+corrected rule should precede any wave.</p>
+<hr />
+<h2 id="the-attractor-screen-made-empirical-and-cheap-2026-08-30">The attractor screen, made empirical and cheap (2026-08-30)<a class="headerlink" href="#the-attractor-screen-made-empirical-and-cheap-2026-08-30" title="Permanent link">&para;</a></h2>
+<p><code>scripts/attractor-probe.ts</code> turns gate A1 from a judgement call into a
+measurement: state a requirement, ask real models to implement it from
+scratch, and see whether they write the wrong form. Cents per candidate,
+seconds, no container. A candidate models implement CORRECTLY has no task in
+it and dies here rather than after a build slot and a gate run - which is what
+X178 and X179 cost.</p>
+<p>First three candidates, against Opus 5 and gpt-5.5:</p>
+<table>
+<thead>
+<tr>
+<th>candidate</th>
+<th>Opus 5</th>
+<th>gpt-5.5</th>
+<th>verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A. total a FlowField across a filtered parent list</td>
+<td><strong>WRONG</strong> - per-customer <code>CalcSums</code> in a loop</td>
+<td>correct - a <code>query</code> object with <code>Method = Sum</code></td>
+<td>no convergence</td>
+</tr>
+<tr>
+<td>B. proportional split that must sum to the total</td>
+<td>correct - cumulative/running allocation</td>
+<td>not run</td>
+<td>dead</td>
+</tr>
+<tr>
+<td>C. count within a caller's filters without clobbering them</td>
+<td>not run</td>
+<td>correct - <code>Copy()</code></td>
+<td>dead</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Candidate A is the instructive one.</strong> Opus wrote the per-customer loop
+while commenting that its cost "is bound to the number of entries, not
+re-evaluated per customer via a FlowField CALCFIELDS in a loop". It wrote the
+defect and asserted it had avoided it - textbook attractor behaviour, and
+exactly the shape the X133/X169/X173 family grades.</p>
+<p><strong>But gpt-5.5 reached for a <code>query</code> object and got it right.</strong> So A defeats
+one frontier model and not the other, and the bar binds whichever model is
+strongest on the retained set.</p>
+<h3 id="what-this-says-about-the-remaining-work">What this says about the remaining work<a class="headerlink" href="#what-this-says-about-the-remaining-work" title="Permanent link">&para;</a></h3>
+<p>Three candidates, two vendors, <strong>zero convergent attractors</strong>. That is a small
+sample, but it is consistent with the panel data: across the whole 110-task
+suite, Opus and gpt-5.5 fail near-disjoint sets (union 9, intersection 1), and
+only X173 defeats all three frontier models.</p>
+<p>So the binding difficulty is not "write a hard task" - it is <strong>find a defect
+that MORE THAN ONE frontier model writes</strong>. Vendors have different blind
+spots, and a task built on one vendor's blind spot is passed by the others.</p>
+<p>That reframes the cost estimate honestly: the <code>n &lt;= 2k</code> arithmetic still says
+~13 more tasks that defeat the strongest model, but the screen above suggests
+the per-candidate hit rate for a CONVERGENT attractor is low, and it is now
+measurable before any build. <strong>Run the screen over a batch of candidates and
+report the hit rate before committing a wave</strong> - that is a cents-scale
+experiment that would replace the unvalidated 2-in-10 assumption with a number.</p>
+<h3 id="the-measured-hit-rate-0-convergent-attractors-in-11-candidates">The measured hit rate: 0 convergent attractors in 11 candidates<a class="headerlink" href="#the-measured-hit-rate-0-convergent-attractors-in-11-candidates" title="Permanent link">&para;</a></h3>
+<p>Eight further candidates, chosen from AL-specific semantics in
+<code>decisions.md</code> rather than general programming - the areas most likely to
+catch a model that knows software but not Business Central:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>candidate</th>
+<th>wrong form sought</th>
+<th>Opus 5</th>
+<th>gpt-5.5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>guard on a row that may not exist</td>
+<td>AL's <code>and</code>/<code>or</code> do not short-circuit</td>
+<td>correct (<code>if not Get then exit</code>)</td>
+<td>correct</td>
+</tr>
+<tr>
+<td>2</td>
+<td>filter a <code>List of [Text]</code> without touching the caller's</td>
+<td>List is a reference type</td>
+<td>correct (new list)</td>
+<td>correct</td>
+</tr>
+<tr>
+<td>3</td>
+<td>earliest row by a non-primary field</td>
+<td><code>FindFirst</code> follows the current key</td>
+<td>correct (<code>SetCurrentKey</code>)</td>
+<td>correct (manual scan)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>audit must survive a failed parse</td>
+<td>a write inside a failed <code>[TryFunction]</code> rolls back</td>
+<td>correct (<code>Commit()</code> first)</td>
+<td>(empty response)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>two changes to one row</td>
+<td>same-session lost update</td>
+<td>correct</td>
+<td>correct</td>
+</tr>
+<tr>
+<td>6</td>
+<td>store the first 50 chars</td>
+<td>assignment errors rather than truncating</td>
+<td>correct (<code>CopyStr</code>)</td>
+<td>correct</td>
+</tr>
+<tr>
+<td>7</td>
+<td>delete matching lines</td>
+<td><code>Delete()</code> inside <code>FindSet</code>/<code>Next</code> skips rows</td>
+<td>correct (filter + delete-all)</td>
+<td>correct</td>
+</tr>
+<tr>
+<td>8</td>
+<td>count customers with a positive FlowField</td>
+<td><code>SetRange</code> on an uncalculated FlowField</td>
+<td>correct (<code>SetAutoCalcFields</code>)</td>
+<td>correct</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Zero wrong forms in either model across all eight</strong>, and the earlier three
+produced one non-convergent hit (Opus on the FlowField-total loop). So the
+measured rate is <strong>0 convergent attractors in 11 candidates</strong>.</p>
+<p>This is the number the wave decision needed, and it is worse than the
+unvalidated 2-in-10 assumption by a wide margin. It also explains the
+mechanism: <strong>the AL semantic traps this suite was built on are now known to
+frontier models.</strong> The eight above are exactly the kind of platform-knowledge
+gap the X-series exploited, and both models handled every one, several with
+an explicit comment naming the trap they were avoiding.</p>
+<p>That is consistent with everything else measured this session - three
+saturated frontier models, only 4-7 whole-suite failures each, near-disjoint
+failure sets - and it means the honest estimate for reaching n=40 is not
+"~65 builds at a known rate" but "unknown, and the cheap screen currently
+finds nothing".</p>
+<p><strong>Recommendation stands and hardens: do not fund a wave.</strong> Run the screen
+over a much wider candidate pool first, and if the convergent-hit rate stays
+near zero, the ≤50% bar is not reachable by authoring at any affordable
+scale, and the launch claim should change instead.</p>
+<h3 id="panel-note-operator-2026-08-30">Panel note (operator, 2026-08-30)<a class="headerlink" href="#panel-note-operator-2026-08-30" title="Permanent link">&para;</a></h3>
+<p><code>gemini-3.1-pro-preview</code> is dropped from the panel - too old and too
+expensive for its contribution. OpenRouter credits have been restored, so
+grok-4.3 and deepseek-v4-pro are available again.</p>
+<h3 id="the-undocumented-behaviour-screen-also-zero-2026-08-30">The undocumented-behaviour screen: also zero (2026-08-30)<a class="headerlink" href="#the-undocumented-behaviour-screen-also-zero-2026-08-30" title="Permanent link">&para;</a></h3>
+<p>A research review made a good objection to the 0-in-11 result: <strong>every one of
+those candidates is documented on Microsoft Learn</strong>, which is heavily crawled.
+The corpus scarcity that held COBOL, ABAP and BFCL-Java flat for 17-24 months
+is in AL <em>code</em> (BC-Bench counts 338 MIT-licensed AL repos against 581K for
+C#) and in behaviour discoverable only by RUNNING it - which is precisely what
+<code>decisions.md</code> records and what the screen had never touched.</p>
+<p>So the screen was re-run on six candidates drawn from measured facts in
+<code>decisions.md</code>, none of which are documented behaviour:</p>
+<table>
+<thead>
+<tr>
+<th>candidate</th>
+<th>fact</th>
+<th>Opus 5</th>
+<th>gpt-5.5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>U1 cache per-company data in a SingleInstance codeunit</td>
+<td>34: SingleInstance state has NO company dimension</td>
+<td>correct - keyed by company</td>
+<td>correct - keyed by company</td>
+</tr>
+<tr>
+<td>U2 read another company's rows plus a related table</td>
+<td>36: ChangeCompany is per-record-INSTANCE</td>
+<td>correct - both records changed</td>
+<td>correct</td>
+</tr>
+<tr>
+<td>U3 date-ranged FlowField total</td>
+<td>38: a CalcFormula with no date term silently ignores the Date Filter</td>
+<td>correct - date term included</td>
+<td>correct</td>
+</tr>
+<tr>
+<td>U4 count failures across trapped errors</td>
+<td>20: codeunit in-memory state SURVIVES asserterror</td>
+<td>correct - keyed Dictionary</td>
+<td>(no output)</td>
+</tr>
+<tr>
+<td>U5 fast per-branch total</td>
+<td>31: CalcSums with NO SIFT key succeeds silently</td>
+<td>correct - SIFT key added</td>
+<td>correct - SIFT key added</td>
+</tr>
+<tr>
+<td>U6 two callers observing one event</td>
+<td>28: two manual subscribers both fire, unbinding one does not affect the other</td>
+<td>correct, <strong>and commented the fact verbatim</strong></td>
+<td>(no output)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Zero wrong forms again.</strong> U6 is the sharpest: Opus wrote <em>"Binding/unbinding
+is per instance, so two callers can observe at the same time and one calling
+StopObserving does not unbind the other"</em> - our own measured fact 28, stated
+unprompted.</p>
+<p>Running total across both screens: <strong>~17 candidates, two vendors, one
+non-convergent hit (Opus looping per-customer <code>CalcSums</code>), zero convergent
+attractors.</strong></p>
+<p>So the objection was reasonable and the data does not support it. The gap is
+not documented-versus-measured; frontier models write the correct form for
+behaviour we had to run a container to establish. One caveat kept explicit:
+writing code consistent with a fact is not the same as knowing it, and a
+screen of this size cannot separate the two.</p>
+<p><strong>Screen defect found and fixed.</strong> Three of twelve cells came back empty
+because the adapter's extractor returns <code>""</code> when a model answers without a
+code fence; <code>attractor-probe.ts</code> now falls back to the raw response. All
+three recovered cells were correct, so the conclusion is unchanged - but the
+first run's numbers were quietly missing data, and any future screen should
+check for empty cells before being believed.</p>
+<hr />
+<h2 id="correction-the-attractor-claim-does-not-survive-a-chance-corrected-null">CORRECTION: the attractor claim does not survive a chance-corrected null<a class="headerlink" href="#correction-the-attractor-claim-does-not-survive-a-chance-corrected-null" title="Permanent link">&para;</a></h2>
+<p>I reported that "seven models from four vendors converge on the SAME wrong
+answer" (mean modal share 85%, seven of twelve at 100%) and built a corrected
+authoring rule on it. <strong>A research review pointed out the statistic had no
+null</strong>, that convergent frontier failure is a measured base rate rather than a
+discovery, and that the twelve items were SELECTED on being the hardest -
+which is exactly the confound. Both objections are correct and the claim does
+not survive them.</p>
+<p>BC-Bench publishes a complete per-instance boolean matrix, 85 runs across 15
+model/agent combinations on 101 tasks, MIT. That is a real external reference
+for an AL benchmark, so the null can be computed rather than argued.</p>
+<p>Chance-corrected pairwise agreement on correctness (CAPA reduces to Cohen's
+kappa for binary outcomes):</p>
+<table>
+<thead>
+<tr>
+<th>set</th>
+<th>models</th>
+<th>mean accuracy</th>
+<th>mean pairwise kappa</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>BC-Bench bug-fix, 101 tasks</strong></td>
+<td>15 combos</td>
+<td>59.9%</td>
+<td><strong>+0.558</strong></td>
+</tr>
+<tr>
+<td><strong>CentralGauge, 110 tasks, pass@1</strong></td>
+<td>7</td>
+<td>80.2%</td>
+<td><strong>+0.368</strong></td>
+</tr>
+<tr>
+<td>CentralGauge, the 12 "attractors"</td>
+<td>7</td>
+<td>-</td>
+<td><strong>+0.025</strong></td>
+</tr>
+<tr>
+<td>random 12-task subsets of ours</td>
+<td>7</td>
+<td>-</td>
+<td>+0.295 (5-95pct +0.06 to +0.60)</td>
+</tr>
+<tr>
+<td>difficulty-matched 12 from our hardest 25</td>
+<td>7</td>
+<td>-</td>
+<td>+0.067 (5-95pct -0.01 to +0.15)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>On the twelve, chance-corrected model agreement is +0.025 - essentially
+independent - and they sit at the 19th percentile of difficulty-matched
+subsets.</strong> Models agree LESS about who fails those twelve than about
+comparable-difficulty tasks.</p>
+<h3 id="reconciling-that-with-the-85">Reconciling that with the 85%<a class="headerlink" href="#reconciling-that-with-the-85" title="Permanent link">&para;</a></h3>
+<p>The two statistics measure different things and both are true. The 85% modal
+share was computed over WHICH ASSERTION SET fails, conditional on failing: a
+task whose defect is graded by two SQL-flatness assertions produces the same
+failing set from anyone who fails it. Kappa is computed over WHO fails. So:</p>
+<blockquote>
+<p>When a model fails these tasks it fails in the same place. But which models
+fail is close to independent.</p>
+</blockquote>
+<p>Only the second is evidence for an "attractor" - a specific wrong answer that
+nearly every model writes. <strong>The first is largely a property of how many
+gradeable assertions the oracle has, not of the task's pull on models.</strong> I
+conflated them.</p>
+<h3 id="what-this-changes">What this changes<a class="headerlink" href="#what-this-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>The "attractor" framing is withdrawn as an established finding</strong> and
+  demoted to an unsupported hypothesis. The corrected authoring rule built on
+  it - "design the wrong answer first, screen for convergence" - loses its
+  evidential base, though the A1 screen it produced (<code>attractor-probe.ts</code>)
+  remains independently useful as an empirical version of a gate the pipeline
+  already required.</li>
+<li><strong>It explains the pilot failures better than the attractor story did.</strong> If
+  the resistant tasks are not convergent attractors, designing for
+  convergence would not reproduce them - which is exactly what X178 and X179
+  measured.</li>
+<li><strong>The suite-level result is genuinely good news and was not sought.</strong> Our
+  chance-corrected inter-model agreement is <strong>+0.368 against BC-Bench's
+  +0.558</strong> - on our tasks, models disagree substantially more about what they
+  can do. For a leaderboard that is the property you want, and it is
+  consistent with the near-disjoint frontier failure sets (union 9,
+  intersection 1) measured independently.</li>
+</ul>
+<h3 id="method-note">Method note<a class="headerlink" href="#method-note" title="Permanent link">&para;</a></h3>
+<p>Kappa here uses each model's own accuracy as the marginal, so it is corrected
+for the fact that two strong models agree often simply by both being right.
+BC-Bench runs were collapsed to one vector per model/agent combination by
+majority over that combination's runs; ours are single uncapped trials at
+pass@1. The comparison is therefore approximate in the direction of
+UNDERSTATING our agreement (a majority vote is less noisy than a single
+trial), which makes the +0.19 gap a conservative reading rather than a
+flattering one.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

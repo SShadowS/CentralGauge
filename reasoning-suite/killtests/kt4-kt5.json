@@ -1,0 +1,339 @@
+{
+  "_note": "Lanes 4 and 5. Full AL bodies and companion-file sources are in the kt4 / kt5 subagent transcripts.",
+  "CG-AL-H009": {
+    "keyFact": "AL Round(x, 0) is IDENTICAL to Round(x, 0.01) - proven by the mutation run itself: M0009 removes GetCurrency in RoundAmount yet the existing 10.567->10.56 / 10.561->10.57 tests still pass. So a blank CurrencyCode can NEVER distinguish 'Amount Rounding Precision' = 0.01 from a blank Currency record. Every Amount-precision mutant needs a real Currency row whose precision is NOT 0.01. Only the Unit-Amount path (default 0.00001) is killable with a blank code.",
+    "helpers": "SetupCurrency(CurrencyCode; AmountPrecision; UnitAmountPrecision) - Get-or-Insert a Currency row and set both precisions.",
+    "killTests": [
+      {
+        "name": "TestCalculateLineAmount_CurrencyAmountRoundingPrecision",
+        "closes": ["M0002", "M0014", "M0016", "M0018"],
+        "setup": "SetupCurrency('CGX', 1, 0.001); CalculateLineAmount(10.4, 1, 0, 'CGX').",
+        "assertion": "Assert.AreEqual(10, Result, 'Line amount must be rounded with the currency''s own amount rounding precision');",
+        "referenceValue": "10 - Amount Rounding Precision 1, Round(10.4, 1) = 10.",
+        "mutantValue": "10.4 for all four: M0002 (GetCurrency call gone), M0014 (GetCurrency body emptied), M0016 (CurrencyCode <> '' true so InitRoundingPrecision runs), M0018 (precision 1 <> 0 so overwritten with 0.01).",
+        "whyRobust": "Asserts the spec line 'Round using Currency.\"Amount Rounding Precision\"' plus 'Must use Currency.Get()'. 10.4 is not a rounding tie, so nearest/truncate/away-from-zero all give 10; an implementation omitting the redundant zero-precision guard still passes."
+      },
+      {
+        "name": "TestCalculateUnitPriceFromAmount_CurrencyUnitAmountRoundingPrecision",
+        "closes": ["M0006", "M0014", "M0016", "M0019"],
+        "setup": "SetupCurrency('CGX', 1, 0.001); CalculateUnitPriceFromAmount(100, 3, 'CGX').",
+        "assertion": "Assert.AreEqual(33.333, Result, 'Unit price must be rounded with the currency''s own unit-amount rounding precision');",
+        "referenceValue": "33.333.",
+        "mutantValue": "M0006/M0014 give 33.33 (precision 0 == 0.01); M0016/M0019 give 33.33333 (both force the 0.00001 default over the currency's 0.001).",
+        "whyRobust": "100/3 is non-terminating so every distinct precision yields a distinct value - one assertion discriminates all three candidate precisions (0.01 / 0.001 / 0.00001) at once."
+      },
+      {
+        "name": "TestCalculateUnitPriceFromAmount_BlankCurrencyUsesFiveDecimals",
+        "closes": ["M0006", "M0014"],
+        "setup": "CalculateUnitPriceFromAmount(100, 3, '') - needs no Currency row.",
+        "assertion": "Assert.AreEqual(33.33333, Result, 'Blank currency code must round the unit price to five decimals');",
+        "referenceValue": "33.33333.",
+        "mutantValue": "33.33 for both (blank/absent Currency record -> precision 0, which AL Round treats as 0.01).",
+        "whyRobust": "The spec verbatim ('If CurrencyCode is empty, use 0.00001 as default precision'), and it closes M0006/M0014 even if a future run cannot write to the Currency table. Depends on the container's General Ledger Setup Unit-Amount Rounding Precision being 0.00001 - the same demo-data dependency the existing TestRoundAmount_Down already has for 0.01."
+      },
+      {
+        "name": "TestRoundAmount_CurrencyAmountRoundingPrecision",
+        "closes": ["M0009", "M0014", "M0016", "M0018"],
+        "setup": "SetupCurrency('CGX', 1, 0.001); RoundAmount(10.4, 'CGX', '=').",
+        "assertion": "Assert.AreEqual(10, Result, 'RoundAmount must use the currency''s own amount rounding precision');",
+        "referenceValue": "10.",
+        "mutantValue": "10.4 for all four - each lands the call on precision 0.01 instead of 1.",
+        "whyRobust": "Keeps the existing tests' three-direction contract intact and only adds the precision source. 10.4 is not a tie so '=' is unambiguous."
+      },
+      {
+        "name": "TestGetVATAmount_CurrencyAmountRoundingPrecision",
+        "closes": ["M0012", "M0014", "M0016", "M0018"],
+        "setup": "SetupCurrency('CGX', 1, 0.001); GetVATAmount(101.35, 25, 'CGX').",
+        "assertion": "Assert.AreEqual(25, Result, 'VAT amount must be rounded with the currency''s own amount rounding precision');",
+        "referenceValue": "25 - 101.35 * 25 / 100 = 25.3375, Round(25.3375, 1) = 25.",
+        "mutantValue": "25.34 for all four (precision falls back to 0.01).",
+        "whyRobust": "25.3375 is not a tie at precision 1 (nearest and truncate both give 25) and is well clear of 25.34, so the assert survives any correct rounding mode."
+      }
+    ]
+  },
+  "CG-AL-H205": {
+    "killTests": [
+      {
+        "name": "TestEachNegativeInputErrorsOnItsOwn",
+        "closes": ["M0002", "M0003"],
+        "setup": "Three asserterror calls, each making ONE input negative by itself: Quantity -1, DiscountPercent -5, RoundingPrecision -0.01. The existing oracle only ever passes UnitPrice = -1.",
+        "assertion": "Assert.AreEqual('Inputs cannot be negative', GetLastErrorText(), '<per-input message>') after each.",
+        "referenceValue": "all three raise exactly 'Inputs cannot be negative'.",
+        "mutantValue": "M0002 (last `or` -> `and`; AL binds `and` tighter than `or`, so the condition becomes A or B or (C and D)): the DiscountPercent -5 call raises nothing (returns 1.05) and the RoundingPrecision -0.01 call either returns a value or raises the runtime Round error. M0003 (A or (B and C) or D): the Quantity -1 call returns 0 and the DiscountPercent -5 call returns 1.05.",
+        "whyRobust": "Literal restatement of the spec bullet, one case per named input, exact text already the house convention. Any correct implementation of the or-chain passes; every and-collapse fails."
+      },
+      {
+        "name": "TestZeroUnitPriceReturnsZeroAndEventRaised",
+        "closes": ["M0005"],
+        "setup": "Spy.Reset(); CalculateLineAmount(0, 5, 10, 0.01). Mirrors the existing TestZeroQuantityReturnsZeroAndEventRaised on the OTHER operand of the spec'd 'UnitPrice = 0 OR Quantity = 0' rule.",
+        "assertion": "Assert.AreEqual(0, Result, 'Unit price 0 should return 0'); Assert.IsTrue(Spy.WasInvoked(), 'Event must be raised when result is 0 and no error is thrown');",
+        "referenceValue": "0, event raised.",
+        "mutantValue": "M0005 (UnitPrice < 0 -> <= 0) raises 'Inputs cannot be negative', so the test aborts on an unexpected error.",
+        "whyRobust": "Quantity 5 and DiscountPercent 10 keep it clear of both subscriber rules."
+      },
+      {
+        "name": "TestZeroInputPathReturnsPostEventResult",
+        "closes": ["M0014", "M0016"],
+        "setup": "SPEC-GAP GATED - see specGaps. Requires a companion change: add a second, distinctly-keyed adjustment rule to tests/al/hard/CG-AL-H205.Subscriber.al ('if (UnitPrice = 0) and (Quantity = 7) then Result := Result + RoundingPrecision'), because the current subscriber's rule needs UnitPrice = 10 AND Quantity = 1, which the zero branch can never satisfy. No existing test uses Quantity = 7. Then CalculateLineAmount(0, 7, 0, 0.25).",
+        "assertion": "Assert.AreEqual(0.25, Result, 'Subscriber should add RoundingPrecision (0.25) on the zero-input path too'); Assert.IsTrue(Spy.WasInvoked(), 'Event must be raised');",
+        "referenceValue": "0.25.",
+        "mutantValue": "M0014 (line 20 args swapped to (UnitPrice, Result, ...)): the subscriber's write lands in the caller's UnitPrice, so 0 is returned. M0016 (exit(Result) -> exit(0.0)): the subscriber's 0.25 is computed then discarded.",
+        "whyRobust": "Uses the same var-Result channel the oracle already established for the main path. It is the ONLY channel available: both mutants sit inside the zero branch and are behaviourally invisible unless a subscriber actually changes Result there."
+      }
+    ],
+    "specGaps": [
+      {
+        "mutants": ["M0014", "M0016"],
+        "why": "The spec says 'If UnitPrice = 0 OR Quantity = 0 then return 0 (no error)' and separately 'The event must be raised for every call where no error is thrown'. It never says whether the value returned on that zero path is Result AFTER the event or a literal 0. A model writing `Result := 0; OnAfterCalculateLineAmount(Result, ...); exit(0);` is spec-conformant today and passes the whole current oracle - which is exactly why both mutants are invisible. Adding the kill test without the spec sentence would fail a defensible correct implementation.",
+        "suggestedSpecText": "Add to the event bullet: 'CalculateLineAmount returns the value of Result after the event has been raised, on every path that returns a value - including the UnitPrice = 0 / Quantity = 0 path.'"
+      }
+    ]
+  },
+  "CG-AL-H029": {
+    "killTests": [
+      {
+        "name": "TestIsBlobField_Missing",
+        "closes": ["M0010", "M0012"],
+        "setup": "IsBinaryField has this test (TestIsBinaryField_Missing); IsBlobField does not. Field 9999 does not exist in table 69290 under any implementation.",
+        "assertion": "Assert.IsFalse(Detector.IsBlobField(69290, 9999), 'Missing field is not Blob');",
+        "referenceValue": "false - the FieldExist guard returns false and closes the RecordRef.",
+        "mutantValue": "M0010 (guard block emptied) falls through to RecRef.Field(9999) and the test dies on the runtime 'field does not exist' error; M0012 (exit(false) -> exit(not (false))) returns true.",
+        "whyRobust": "Copies the wording and field number of the existing TestIsBinaryField_Missing and asserts spec bullet 2 verbatim."
+      },
+      {
+        "name": "TestBlobHasContent_RejectsNonBlob",
+        "closes": ["M0042"],
+        "setup": "Insert a 'CG H029 Asset' with a Title, RecRef.GetTable, then BlobHasContent(RecRef, 10) where field 10 is Text.",
+        "assertion": "Assert.IsFalse(Detector.BlobHasContent(RecRef, 10), 'Title is Text, not Blob - BlobHasContent must return false');",
+        "referenceValue": "false - FldRef.Type = Text <> Blob so it exits before any CalcField.",
+        "mutantValue": "M0042 (exit(false) -> exit(not (false))) returns true.",
+        "whyRobust": "Structurally identical to the existing TestWriteBlobText_RejectsNonBlob / TestReadBlobText_RejectsNonBlob, on the third procedure carrying the same spec'd non-Blob guard. The Title field CARRIES content, so the false verdict is about the field TYPE and cannot be satisfied by accident."
+      }
+    ]
+  },
+  "CG-AL-X047": {
+    "helpers": "AssertSetIsExactlyTwo(SetId; DimCode1; DimValueCode1; DimCode2; DimValueCode2; ErrCtx) - DimMgt.GetDimensionSet into a temporary Dimension Set Entry, assert Count = 2, then Get and value-check each dimension.",
+    "killTests": [
+      {
+        "name": "TagRetagsDimensionTheEntryAlreadyCarries",
+        "closes": ["M0007", "M0008"],
+        "setup": "Two ledger entries SHARING one dimension set that ALREADY contains CGDEPT=SALES, so Tag has to land on the UPDATE path rather than the insert path. Then Tag(5, 'CGDEPT', 'ADMIN') and check entry 5 and the decoy entry 6.",
+        "assertion": "AssertSetIsExactlyTwo(entry 5's set, 'CGDEPT','ADMIN', 'CGAUDIT','STAMPED', 'Entry 5 (target)'); then Assert.AreEqual(SharedSetId, entry 6's \"Dimension Set ID\", 'Decoy entry 6 Dimension Set ID must be unchanged') and AssertSetIsExactlyOne(..., 'CGDEPT','SALES', 'Entry 6 (decoy)');",
+        "referenceValue": "entry 5's set = exactly {CGDEPT=ADMIN, CGAUDIT=STAMPED}; entry 6 still on SharedSetId = {CGDEPT=SALES}.",
+        "mutantValue": "M0007 (then-block emptied) and M0008 (TempDimensionSetEntry.Modify() removed) both leave the temporary buffer holding CGDEPT=SALES, so entry 5's derived set is {CGDEPT=SALES, CGAUDIT=STAMPED} and the 'wrong value for CGDEPT' assert fails.",
+        "whyRobust": "Asserts the spec's primary clause plus the shared-set immutability clause, keeping the oracle's existing decoy discipline. Count = 2 also catches a solution that DROPS CGDEPT instead of updating it. Insensitive to HOW the set is derived - in-place Modify, delete+insert, or rebuilding the buffer - only the final derived set is observed."
+      }
+    ],
+    "specGaps": [
+      {
+        "mutants": ["M0007", "M0008"],
+        "why": "Informational, not required for the kill: the spec's phrase 'IN ADDITION TO every dimension it already carries' is contradictory when DimCode is a dimension the entry already carries at a different value, since Dimension Set Entry's key is Set ID + Dimension Code and both values cannot coexist. The primary clause settles it in favour of the new value, which is what the kill test asserts, but a model could read 'in addition to' as 'leave the existing value alone'.",
+        "suggestedSpecText": "Append to the Tag paragraph: 'If the entry already carries DimCode at a different value, that value is replaced by DimValueCode; every other dimension it carries is preserved.'"
+      }
+    ]
+  },
+  "CG-AL-M043": {
+    "killTests": [
+      {
+        "name": "TestRenameDoesNotStealAnotherParentsFirstChild",
+        "closes": ["M0002"],
+        "setup": "The renamed parent's code sorts AFTER an unrelated parent's, so the first row in child-table primary-key order does NOT belong to the parent being renamed - every existing test happens to put the target parent's child first. Insert group AAA with child K1, group ZZZ with children M1/M2, then Group.Get('ZZZ'); Group.Rename('ZZZ2').",
+        "assertion": "AAA must still have exactly 1 child and AAA/K1 must remain reachable; ZZZ2 must own exactly 2; no lines may remain under ZZZ.",
+        "referenceValue": "AAA keeps 1 child, ZZZ2 has 2, ZZZ empty.",
+        "mutantValue": "M0002 (initial SetRange by xRec.\"Code\" removed, line 31): the first FindSet runs UNFILTERED, lands on AAA/K1 - the alphabetically first row in the WHOLE child table - and renames it to ZZZ2/K1. AAA count = 0 and ZZZ2 count = 3.",
+        "whyRobust": "Asserts the spec sentence 'Children that belong to other parent codes must not be touched' and says nothing about iteration technique - ModifyAll, a temp-buffer collect-then-rename, or the reference's re-find loop all pass. Line codes K1/M1/M2 are distinct, so the mutant fails on a clean count assertion rather than an incidental duplicate-key runtime error."
+      }
+    ]
+  },
+  "CG-AL-X019": {
+    "killTests": [
+      {
+        "name": "RecalcAndGetAmountIgnoresRowSortingFirstInTheTable",
+        "closes": ["M0002"],
+        "setup": "The usual two documents plus a THIRD ('AAA-DECOY', Amount 999) whose \"No.\" sorts before every value the Refresher can produce, so 'whichever row comes first in the table' is never the right answer. Both existing tests pass by that accident: 'DOC-41' and 'DOC-71' both sort ahead of 'DOC-A'/'DOC-B'.",
+        "assertion": "Assert.AreEqual(72, Processor.RecalcAndGetAmount(RefId1), 'Must return the current amount of the recalculated document'); then assert the decoy is still locatable by its Ref ID with primary key 'AAA-DECOY' and Amount 999 unchanged.",
+        "referenceValue": "72 - the row is re-found by its stable Ref ID after the Refresher renamed its primary key.",
+        "mutantValue": "999. M0002 (SetRange(\"Ref ID\", RefID) removed) leaves the record unfiltered, so both FindFirst calls land on 'AAA-DECOY'.",
+        "whyRobust": "Asserts only the spec clause 'locate the CG X019 Doc record for RefID ... and supply THAT document's current Amount'. Indifferent to the relocation technique, and the decoy's Amount 999 is far from any value the Refresher's formulas can produce."
+      }
+    ],
+    "specGaps": [
+      {
+        "mutants": ["M0002"],
+        "why": "Informational, not needed for the kill: M0002 also suppresses the not-found path, since an unfiltered FindFirst succeeds whenever the table is non-empty, so a RefID with no row returns some other row's Amount instead of failing. That channel is unusable today because the spec never states what RecalcAndGetAmount does when no row matches - the reference errors, but returning 0 would be equally conformant.",
+        "suggestedSpecText": "Add: 'If no CG X019 Doc record carries that RefID, RecalcAndGetAmount must raise an error rather than return a value.'"
+      }
+    ]
+  },
+  "CG-AL-H010": {
+    "companionFile": "NEW tests/al/hard/CG-AL-H010.OrderHook.al, codeunit 80211 (free in tests/al/hard), EventSubscriberInstance = Manual so the 8 existing tests are untouched. Subscribes to OnBeforeProcessOrder / OnAfterProcessOrder / OnBeforeValidateOrder on Codeunit::\"CG Order Processor\", each gated on an instance flag, and exposes TakeOverProcessing / OverrideValidationWith / CompletionCount / OrderNoSeen / OriginalAmountSeen / ProcessedAmountSeen. Precedent: tests/al/hard/CG-AL-X067.Test.al and CG-AL-X122.CancelSpy.Codeunit.al.",
+    "STRICTNESS_NOTE": "The companion references Codeunit::\"CG Order Processor\" and the three event names, so a model that renames an event or drops a publisher now fails to COMPILE instead of passing an oracle that never looked at the events. That is exactly what the spec pins, but it is a real difficulty increase - the task owner should sign off.",
+    "killTests": [
+      {
+        "name": "TestProcessOrder_SubscriberSuppliedAmountIsKept",
+        "closes": ["M0002", "M0003"],
+        "setup": "Hook.TakeOverProcessing(2); BindSubscription; ProcessOrder('ORD100', 100, ProcessedAmount, IsHandled); UnbindSubscription.",
+        "assertion": "Assert.AreEqual(200, ProcessedAmount, 'The amount downstream code supplied for ORD100 must be the amount reported back'); Assert.IsTrue(IsHandled, 'ORD100 must be reported as already handled');",
+        "referenceValue": "200 and true - the hook writes 100*2 into the caller's ProcessedAmount and sets IsHandled, so ProcessOrder exits before the 1.1 fee.",
+        "mutantValue": "M0002 (args swapped): the hook's Amount binds to the caller's ProcessedAmount (0) and its var-write lands in ProcessOrder's local Amount, so the caller's ProcessedAmount stays 0. M0003 (call removed): IsHandled stays false and ProcessedAmount = 110.",
+        "whyRobust": "Asserts what the spec dictates verbatim (all four params passed as var; exit without further processing when IsHandled is true)."
+      },
+      {
+        "name": "TestProcessOrder_ReportsOriginalAndProcessedAmountsAfterProcessing",
+        "closes": ["M0004", "M0005"],
+        "setup": "Bind the hook WITHOUT calling TakeOverProcessing, then ProcessOrder('ORD200', 100, ...).",
+        "assertion": "ProcessedAmount 110; CompletionCount 1; OrderNoSeen 'ORD200'; OriginalAmountSeen 100; ProcessedAmountSeen 110 - each with its own message.",
+        "referenceValue": "110 / 1 / 'ORD200' / 100 / 110.",
+        "mutantValue": "M0004 (args swapped): OriginalAmountSeen = 110 and ProcessedAmountSeen = 100. M0005 (call removed): CompletionCount 0, OrderNoSeen '', both amounts 0.",
+        "whyRobust": "The publisher signature in the spec NAMES the parameters OriginalAmount and ProcessedAmount, so asserting which value each carries is spec text, not an implementation detail. Both hooks are gated on instance flags, so this binding does not disturb the OnBefore path."
+      },
+      {
+        "name": "TestValidateOrder_VerdictFromDownstreamCodeWins",
+        "closes": ["M0007", "M0008", "M0009"],
+        "setup": "Two calls whose override and fallback verdicts DISAGREE: override false on ValidateOrder('ORD300', 100) which would otherwise pass, then override true on ValidateOrder('', 0) which would otherwise fail.",
+        "assertion": "Assert.IsFalse(RejectedResult, 'An order downstream code rejects must come back invalid even though it would otherwise pass on its own merits'); Assert.IsTrue(AcceptedResult, '... accepts must come back valid even though it would otherwise fail ...');",
+        "referenceValue": "false then true.",
+        "mutantValue": "M0007 (args swapped): the hook's IsValid write lands in the local Handled and vice versa, so call 1's override is dropped and the fallback returns true. M0008 (call removed) and M0009 (exit(not IsValid)): RejectedResult true and AcceptedResult false.",
+        "whyRobust": "The disagreeing verdicts are what make the argument swap observable at all - with IsValid and Handled both true the swap is invisible. The subscriber omits the IncludeSender parameter, proven to compile against an [IntegrationEvent(true, false)] publisher by the committed tests/al/hard/CG-AL-H034.Subscriber.al."
+      }
+    ]
+  },
+  "CG-AL-H032": {
+    "companionFile": "NEW tests/al/hard/CG-AL-H032.ProbeTable.al, table 80233 (free in tests/al/hard). It exists so the metadata the spec talks about - a Normal relation, an obsolete relation, a non-Normal relation - is GUARANTEED to exist rather than scavenged out of whatever the platform version ships. Fields: 1 'Entry Code'; 80500 and 80505 Code[20] TableRelation = Customer.\"No.\"; 80510 same but ObsoleteState = Pending; 80520 same but FieldClass = FlowFilter. Field numbers are deliberately far above any base-table field number so no coincidence can rescue a mutant.",
+    "killTests": [
+      {
+        "name": "TestGetNthRelationField_WalksOnlyTheFilteredSet",
+        "closes": ["M0007", "M0008"],
+        "setup": "Read All := GetAllRelationFieldNumbers(probe, Customer) and assert All.Count >= 2 as a precondition, then probe positions 1, 2 and All.Count + 1.",
+        "assertion": "AreEqual(80500, GetNthRelationField(probe, Customer, 1)); AreEqual(80505, ... 2); AreEqual(0, ... All.Count + 1, 'One position past the last ... there is nothing to report');",
+        "referenceValue": "80500, 80505, 0.",
+        "mutantValue": "M0007 (SetRange(TableNo) removed): the walk covers every field in the DATABASE pointing at Customer, so position 1 is a low-numbered field of a low-numbered base table and position All.Count+1 is non-zero. M0008 (SetRange(RelationTableNo) removed): the walk covers every field of the probe table, so position 1 is field 1 (Entry Code).",
+        "whyRobust": "No base-app field numbers are hardcoded; the only constants are the probe table's own, which the oracle ships. The out-of-range assertion is derived from GetAllRelationFieldNumbers rather than a literal, so it survives any platform change. The spec says the codeunit must operate against ANY pair of tables the caller passes, so a purpose-built table is squarely in scope."
+      },
+      {
+        "name": "TestFirstRelationFieldName_NamesTheFirstMatchOnTheGivenTable",
+        "closes": ["M0018"],
+        "setup": "FirstRelationFieldName(probe, Customer).",
+        "assertion": "Assert.AreEqual('Probe Current Customer', ..., 'The name reported must be the name of the probe table field 80500');",
+        "referenceValue": "'Probe Current Customer'.",
+        "mutantValue": "M0018 (SetRange(TableNo) removed): FindFirst lands on the lowest (TableNo, No.) field in the whole database pointing at Customer - a base-app name such as 'Customer No.' on Cust. Ledger Entry.",
+        "whyRobust": "The expected string is a name this oracle itself DEFINES, so no base-app naming can coincide with it and no platform version can change it."
+      },
+      {
+        "name": "TestGetNormalRelationFields_ListsEveryNormalMatch",
+        "closes": ["M0025"],
+        "setup": "Compute Expected from live Field metadata (TableNo = probe, RelationTableNo = Customer, Class = Normal) and assert Expected >= 2, then compare against GetNormalRelationFields.",
+        "assertion": "AreEqual(Expected, Normal.Count, StrSubstNo('All %1 Normal Customer-related fields of the probe table must be listed', Expected)); AreEqual(80500, Normal.Get(1)); AreEqual(80505, Normal.Get(2));",
+        "referenceValue": "Normal.Count = Expected (3 where the platform surfaces obsolete-pending fields, 2 otherwise), first two 80500 and 80505.",
+        "mutantValue": "M0025 (until Next() = 0 -> <> 0): the loop leaves after the first record, so Normal.Count = 1.",
+        "whyRobust": "The expected count is read from live metadata rather than hardcoded, so it holds whether or not the platform surfaces obsolete-pending fields. This is the missing 'returns the whole set' assertion - every existing GetNormal assertion is relative (<= All.Count, > 0, ascending) and a one-element answer satisfies all of them."
+      },
+      {
+        "name": "TestGetNormalRelationFields_ExcludesTheNonNormalMatch",
+        "closes": ["M0023"],
+        "setup": "Assert All.Contains(80520) as a PRECONDITION, then check Normal.",
+        "assertion": "Assert.IsFalse(Normal.Contains(80520), 'Probe field 80520 is not a Normal field and must be left out of the Normal-only answer'); Assert.IsTrue(Normal.Contains(80500), ...);",
+        "referenceValue": "All contains the FlowFilter field 80520; Normal does not.",
+        "mutantValue": "M0023 (SetRange(Class, Normal) removed): Normal is identical to All, so it contains 80520.",
+        "whyRobust": "Asserts spec requirement 5 verbatim. ONE DEPENDENCY TO VERIFY ON A PROBE RUN: the leading precondition assumes the platform reports RelationTableNo for a FlowFilter field. If that precondition fails against the REFERENCE solution, the FieldClass filter is unobservable through the Field virtual table on this image and M0023 is EQUIVALENT rather than a hole - drop this test in that case, do not weaken it."
+      },
+      {
+        "name": "TestExcludeObsoleteCount_LeavesOutTheObsoleteMatch",
+        "closes": ["M0029"],
+        "setup": "Compute Total and ExpectedNonObsolete from live Field metadata and assert ExpectedNonObsolete < Total as a precondition.",
+        "assertion": "Assert.AreEqual(ExpectedNonObsolete, ExcludeObsoleteCount(probe, Customer), StrSubstNo('Only %1 of the %2 Customer-related fields of the probe table may be counted', ExpectedNonObsolete, Total));",
+        "referenceValue": "Total - 1 (probe field 80510 is the one obsolete match).",
+        "mutantValue": "M0029 (SetRange(ObsoleteState, No) removed): the count equals Total.",
+        "whyRobust": "Both counts are read from live metadata, so the assertion is a strict-subset statement rather than a magic number. Same caveat shape as M0023: if the precondition fails against the reference, the ObsoleteState filter is unobservable on this image and M0029 is EQUIVALENT, not a hole."
+      }
+    ]
+  },
+  "CG-AL-M003": {
+    "killTests": [
+      {
+        "name": "TestEndDateEqualToStartDateRejected",
+        "closes": ["M0012"],
+        "setup": "Init a Sales Contract with a customer and Start Date := WorkDate(), then asserterror Validate(\"End Date\", WorkDate()). The value change (0D -> WorkDate) is real, so the OnValidate trigger runs regardless of any same-value short-circuit.",
+        "assertion": "asserterror ...; Assert.ExpectedError('End Date must be after Start Date');",
+        "referenceValue": "errors - the guard is \"End Date\" <= \"Start Date\" and WorkDate <= WorkDate is true.",
+        "mutantValue": "M0012 (<= -> <): WorkDate < WorkDate is false, no error, asserterror fails with 'no error occurred'.",
+        "whyRobust": "The spec's own wording is 'End Date must be after Start Date' and the required error text is quoted verbatim in the task, so the equality boundary is spec text. NOTE: the symmetric test - set End Date first, then asserterror Validate(\"Start Date\", that same date) - kills the identical boundary mutant M0007 in the Start Date trigger. M0007 is outside this lane so it is not claimed, but it is one free test if still open."
+      },
+      {
+        "name": "TestContractValueZeroRejected",
+        "closes": ["M0014"],
+        "setup": "Accept a positive value first (Validate(\"Contract Value\", 1000)) so dropping to zero is a genuine value change, then asserterror Validate(\"Contract Value\", 0).",
+        "assertion": "asserterror ...; Assert.ExpectedError('Contract Value must be positive');",
+        "referenceValue": "errors - the guard is \"Contract Value\" <= 0.",
+        "mutantValue": "M0014 (<= 0 -> < 0): 0 < 0 is false, no error.",
+        "whyRobust": "The spec says 'Must be positive (greater than 0)' and pins the error text. The 1000-then-0 sequence means the test cannot be defeated by unchanged-value handling in Validate, and it proves in passing that a legitimate positive value is accepted."
+      },
+      {
+        "name": "TestEndDateCanBeClearedWhileStartDateIsSet",
+        "closes": ["M0009"],
+        "setup": "SPEC-GAP GATED - do not adopt until the task YAML says what a blank End Date means. Set both dates, then Validate(\"End Date\", 0D).",
+        "assertion": "Assert.AreEqual(0D, SalesContract.\"End Date\", 'A contract with a Start Date and no End Date must be accepted');",
+        "referenceValue": "no error, End Date 0D - the guard (\"End Date\" <> 0D) and (\"Start Date\" <> 0D) is false so the comparison is skipped.",
+        "mutantValue": "M0009 (and -> or): the guard becomes true because Start Date is set, 0D <= WorkDate is true, and the trigger errors - the test fails on an unexpected error.",
+        "whyRobust": "This is the ONLY input that separates and from or here: with Start Date blank and End Date set, 0D sorts below every real date so the inner comparison is false under both operators. Blank-End-Date behaviour is therefore the only channel - which is precisely why it is a spec gap."
+      }
+    ],
+    "specGaps": [
+      {
+        "mutant": "M0009",
+        "why": "Closing it requires asserting that clearing End Date while Start Date is set is ALLOWED. The task only says 'OnValidate for End Date: Must validate that End Date is after Start Date'. Under a literal reading 0D is not after Start Date, so an implementation that REJECTS a blank End Date is arguably compliant, and the reference's 'blank means not specified, skip validation' reading is unstated.",
+        "suggestedSpecText": "Add to the End Date bullet: 'A blank End Date is accepted and not validated; the comparison applies only when both dates are set.'"
+      }
+    ]
+  },
+  "CG-AL-H034": {
+    "dispatchQuestionAnswered": "The CommitBehavior channel IS reachable from a test body - the existing FAIL1 test exercises it - so neither H034 survivor is a spec gap.",
+    "killTests": [
+      {
+        "name": "TestSuccessPath_DownstreamCodeReceivesTheItemBeforeFinalizing",
+        "closes": ["M0003"],
+        "setup": "NEW companion tests/al/hard/CG-AL-H034.FinalizeSpy.al, codeunit 80236, EventSubscriberInstance = Manual, subscribing to OnBeforeFinalize and recording HitCount / SeenStatus / SeenCode. Signature copied from the committed CG-AL-H034.Subscriber.al, which proves the shape compiles against the [IntegrationEvent(true, false)] publisher. Bound independently of the existing auto-bound Commit-attempting subscriber (precedent for two separately bound subscribers both firing: CG-AL-X122.CancelSpy). Test is AutoCommit: insert 'OK3' with Status false, Commit, bind, ProcessItem, unbind.",
+        "assertion": "AreEqual(1, Spy.FinalizeCount(), 'Downstream code must be handed the item exactly once while OK3 is processed'); AreEqual('OK3', Spy.CodeSeen(), '... the very item being processed'); IsTrue(Spy.StatusSeen(), 'The item handed to downstream code must already carry Status = TRUE');",
+        "referenceValue": "1 / 'OK3' / true.",
+        "mutantValue": "M0003 (OnBeforeFinalize(Item) call removed): 0 / '' / false - all three fail.",
+        "whyRobust": "The spec NUMBERS the body: step 1 sets Status and Modifies, step 2 raises the event. Asserting the handler runs once and sees Status = TRUE is exactly steps 1-2. The spy never Commits, so it cannot interfere with the CommitBehavior::Ignore behaviour the existing FAIL1 test measures."
+      },
+      {
+        "name": "TestSuccessPath_StatusSurvivesLaterDiscardOfUnpersistedWork",
+        "closes": ["M0005"],
+        "setup": "No companion needed. Add a local DiscardUnpersistedWork() that raises, because there is no precedent in this tree for asserterror on a bare Error statement. AutoCommit test: insert 'OK2' Status false, Commit, ProcessItem, then asserterror DiscardUnpersistedWork(), then SelectLatestVersion() and Get back.",
+        "assertion": "Assert.IsTrue(Item.Status, 'Status must still be TRUE for OK2 after work that was never persisted is thrown away - a ProcessItem that returned normally must have made it durable');",
+        "referenceValue": "true - step 4 persisted it before ProcessItem returned, so the later discard cannot touch it.",
+        "mutantValue": "M0005 (Commit() removed): Status := true is still unpersisted when the discard happens, so it is reverted and the read-back sees false.",
+        "whyRobust": "The spec states it outright: 'The success path must persist Item.Status = true via the explicit Commit at step 4'. The assertion is about DURABILITY - a symptom the caller can observe - not about which statement produced it. The oracle's own FAIL1 test already proves this rollback semantics works on these containers, and SelectLatestVersion() before the read-back follows the convention in CG-AL-X108 and X091."
+      }
+    ]
+  },
+  "CG-AL-M112": {
+    "dispatchQuestionAnswered": "The shared test codeunit id 80012 is NOT a blocker. It collides with tests/al/medium/CG-AL-M002.Test.al only inside the medium AL project (the already-documented AL0264 duplicate); at bench time only this task's file is copied into the candidate app, so the assertion channel is fully reachable and this is not a spec gap.",
+    "killTests": [
+      {
+        "name": "TestProjectDeleteAllowedWhileAnotherProjectHasTimeEntries",
+        "closes": ["M0002"],
+        "setup": "Local helper NewProjectNo() deriving a Code[20] from CreateGuid (matching the file's convention). Insert a BUSY project with one time entry and an IDLE project with none, then IdleProject.Delete(true).",
+        "assertion": "Assert.IsFalse(IdleProject.Get(IdleProjectNo), 'A project that has no time entries of its own must be gone after being deleted, even while another project still has entries');",
+        "referenceValue": "Delete(true) succeeds - the OnDelete check is scoped to this project's own entries, which is empty.",
+        "mutantValue": "M0002 (SetRange(\"Project No.\", \"No.\") removed): IsEmpty() looks at the WHOLE table, the busy project's entry is found, and Delete(true) errors with 'Cannot delete project with time entries'.",
+        "whyRobust": "The spec scopes the trigger explicitly. The test asserts only the PERMITTED direction of that rule, which the existing oracle never exercises (every test empties its own entries first, and the one delete test asserts the blocked direction). It seeds its own foreign entry, so it kills the mutant regardless of leftover rows."
+      }
+    ]
+  },
+  "CG-AL-X006": {
+    "killTests": [
+      {
+        "name": "StaleContentAndFiltersInTheSuppliedBufferDoNotSurviveCollection",
+        "closes": ["M0003", "M0002"],
+        "setup": "One qualifying doc in the database, then have the CALLER reuse a buffer that still holds a non-qualifying row ('DOC-STALE', Closed) under a filter that does not match it (SetRange(\"No.\", 'ZZZ-NO-SUCH-DOC')). Both existing tests pass a freshly declared buffer, which is why both mutants survive today.",
+        "assertion": "AreEqual(1, Collected, 'One doc should be collected'); AreEqual(1, Result.Count(), 'The result must hold exactly the collected docs and nothing else'); IsFalse(Result.Get('DOC-STALE'), 'A closed doc of an unblocked customer must not be present in the result'); IsTrue(Result.Get('DOC-OPEN'), ...);",
+        "referenceValue": "1 / 1 / false / true.",
+        "mutantValue": "M0003 (Result.DeleteAll() removed): DOC-STALE survives, Count = 2. M0002 (Result.Reset() removed): DeleteAll runs under the caller's 'ZZZ-NO-SUCH-DOC' filter and deletes nothing, same result. Collected is still 1 either way, which is why the row-count assertion is the killer.",
+        "whyRobust": "The spec's contract is absolute about the output set: 'A doc that matches neither condition must not appear in Result.' DOC-STALE matches neither, so its presence is a direct spec violation under either mutant, however it got there. M0002 was outside the assigned list but this one test closes it at zero extra cost."
+      }
+    ]
+  }
+}

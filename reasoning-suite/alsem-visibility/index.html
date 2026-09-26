@@ -1,0 +1,2686 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/reasoning-suite/alsem-visibility/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>alsem defect-visibility classification (T2) - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#alsem-defect-visibility-classification-t2" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              alsem defect-visibility classification (T2)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#singles-cg-al-x065-cg-al-x095" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Singles (CG-AL-X065 - CG-AL-X095)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#composites-cg-al-x096-cg-al-x100" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composites (CG-AL-X096 - CG-AL-X100)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary-counts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary counts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#anomalies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anomalies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-batch-5-cg-al-x111-cg-al-x120-scored-2026-08-25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build batch 5 (CG-AL-X111 - CG-AL-X120), scored 2026-08-25
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-batch-4-cg-al-x101-cg-al-x110-scored-2026-08-25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build batch 4 (CG-AL-X101 - CG-AL-X110), scored 2026-08-25
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/reasoning-suite/alsem-visibility.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="alsem-defect-visibility-classification-t2">alsem defect-visibility classification (T2)<a class="headerlink" href="#alsem-defect-visibility-classification-t2" title="Permanent link">&para;</a></h1>
+<p>Produced 2026-08-24 per tooling-plan.md T2. Method: defect site = diff
+of tasks/starter/<id>/ vs reference/solutions/<id>/; verdict = does an
+<code>alsem analyze</code> finding land in the changed procedure and target the
+defect's construct. Verdicts feed hard-tier candidate selection:
+visible = pattern-class (mid-field tier), invisible = semantic /
+knowledge-gap (hard-tier material). Regenerate: run alsem analyze on
+the starters and re-run the procedure in tooling-plan.md.</p>
+<p>Method: <code>diff</code> each <code>tasks/starter/&lt;id&gt;/*.al</code> file against the same-named file in
+<code>reference/solutions/&lt;id&gt;/</code> to find the defect site (changed procedure), then
+cross-reference <code>scratch/alsem-t2/&lt;id&gt;.json</code> findings whose <code>primaryLocation</code>
+falls in that file/procedure. Verdict is <code>visible</code> only when a finding both
+lands in the changed procedure AND its detector semantically targets the same
+defect construct (not just the same code location). <code>partial</code> = right
+location, different/indirect construct. <code>invisible</code> = no finding in the
+changed procedure at all.</p>
+<h2 id="singles-cg-al-x065-cg-al-x095">Singles (CG-AL-X065 - CG-AL-X095)<a class="headerlink" href="#singles-cg-al-x065-cg-al-x095" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>File / procedure</th>
+<th>Δ lines</th>
+<th>Defect construct</th>
+<th>Verdict</th>
+<th>Matching detector(s)</th>
+<th>Ambient detectors (file, off-target)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>X065</td>
+<td>CGX065PriceSvc.Codeunit.al / <code>UnitPriceFor</code></td>
+<td>~7</td>
+<td>Reuses outer loop var <code>Line</code> as inner FindSet/Next cursor - aliasing corrupts caller <code>RepriceCategory</code>'s own iteration</td>
+<td><strong>partial</strong></td>
+<td>d1-db-op-in-loop (right line, flags perf "runs once per iteration", not aliasing)</td>
+<td>d10-self-modifying-loop, d3-missing-setloadfields (elsewhere in file)</td>
+</tr>
+<tr>
+<td>X066</td>
+<td>CGX066CostingEngine.Codeunit.al / <code>CalculateShipmentCosts</code></td>
+<td>2</td>
+<td>Rounds each per-layer cost increment instead of rounding the final total once - compounding rounding drift</td>
+<td><strong>partial</strong></td>
+<td>d1-db-op-in-loop, d3-missing-setloadfields (same routine, perf constructs, not rounding)</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X067</td>
+<td>CGX067FreeFreightPromotion.Codeunit.al</td>
+<td>2</td>
+<td>Missing <code>EventSubscriberInstance = Manual;</code></td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d19-unused-parameter (elsewhere)</td>
+</tr>
+<tr>
+<td>X068</td>
+<td>CGX068ContactSearch.Codeunit.al / <code>ApplyCrossColumnSearch</code></td>
+<td>2</td>
+<td>Missing <code>FilterGroup(-1)</code>/<code>FilterGroup(0)</code> bracket around SetFilter calls</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X069</td>
+<td>CGX069ReferenceProcess.Codeunit.al / <code>HasPendingReferenceUpToPeriodEnd</code></td>
+<td>~20 (+ table field/key)</td>
+<td>Fragile per-row <code>RecordRef</code>/hardcoded-field-index lookup replaced by a proper <code>Reference Date</code> field + key + range filter</td>
+<td><strong>partial</strong></td>
+<td>d3-missing-setloadfields (same routine, flags SetLoadFields, not the RecordRef redesign)</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X070</td>
+<td>CGX070ImportBatch.Codeunit.al / <code>ImportBatch</code></td>
+<td>1 (moved)</td>
+<td><code>Commit()</code> placement - missing per-iteration commit for partial-import resilience</td>
+<td><strong>partial</strong></td>
+<td>d1-db-op-in-loop, d10-self-modifying-loop, d3-missing-setloadfields (same routine, none target Commit/transaction semantics)</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X071</td>
+<td>CGX071OrderCapEnforcement.Codeunit.al / <code>EnforceOrderCapOnBeforeReleaseOrder</code></td>
+<td>1</td>
+<td>Missing <code>Order.CalcFields(Amount)</code> before reading FlowField</td>
+<td><strong>partial</strong></td>
+<td>d3-missing-setloadfields (same routine, targets <code>Customer.Get</code> SetLoadFields, not the missing CalcFields)</td>
+<td>d19-unused-parameter (elsewhere)</td>
+</tr>
+<tr>
+<td>X072</td>
+<td>CGX072LoyaltyRuleVip.Codeunit.al / <code>CheckManualOverride</code></td>
+<td>2</td>
+<td>Unconditional <code>Eligible := flag</code> clobbers a prior <code>true</code> set by another subscriber in the chain</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d1-db-op-in-loop, d19-unused-parameter, d3-missing-setloadfields (elsewhere)</td>
+</tr>
+<tr>
+<td>X073</td>
+<td>CGX073CategoryRenameMgt.Codeunit.al / <code>RenameCategory</code> (+ new <code>UpdateReportFilterAssignments</code>)</td>
+<td>13</td>
+<td>Rename doesn't cascade to Category Report Filter records - missing call/whole missing behavior</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d1/d3/d5/d10 all anchored to unrelated pre-existing <code>UpdateProductAssignments</code>/<code>CountMatchingProducts</code></td>
+</tr>
+<tr>
+<td>X074</td>
+<td>CGX074CommentMgt.Codeunit.al</td>
+<td>2</td>
+<td><code>Evaluate(GetFilter())</code> instead of direct field read; <code>SetFilter</code> instead of <code>SetRange</code></td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>none fired in project</td>
+</tr>
+<tr>
+<td>X075</td>
+<td>CGX075CampaignCallList.Codeunit.al</td>
+<td>1</td>
+<td><code>Contact.Reset()</code> wipes caller-established filters instead of surgical <code>SetRange(City)</code></td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d3-missing-setloadfields (elsewhere)</td>
+</tr>
+<tr>
+<td>X076</td>
+<td>CGX076Importer.Codeunit.al / <code>DoImportLine</code> (removed)</td>
+<td>~15</td>
+<td>TryFunction bundles parse+insert under one exception boundary - error-handling/insert-ordering defect</td>
+<td><strong>partial</strong></td>
+<td>d1-db-op-in-loop (same routine, flags perf of Insert-in-loop, not the TryFunction boundary)</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X077</td>
+<td>CGX077PriceValidityAnalyzer.Codeunit.al / <code>PeriodsOverlap</code></td>
+<td>1</td>
+<td><code>and</code>/<code>or</code> swap in boolean guard</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d1-db-op-in-loop anchored to unrelated <code>EmitPeriod</code></td>
+</tr>
+<tr>
+<td>X078</td>
+<td>CGX078Statement.Codeunit.al / <code>BuildStatement</code></td>
+<td>2</td>
+<td>Missing <code>TotalAmount</code>/<code>TotalCredits</code> reset - stale accumulator across calls</td>
+<td><strong>partial</strong></td>
+<td>d1-db-op-in-loop, d3-missing-setloadfields (same routine, perf constructs, not the missing reset)</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X079</td>
+<td>CGX079ChargeAllocator.Codeunit.al / <code>AllocateCharge</code></td>
+<td>~8</td>
+<td>Naive per-line <code>Round()</code> vs running-exact allocation - rounding doesn't close on total</td>
+<td><strong>partial</strong></td>
+<td>d1-db-op-in-loop, d3-missing-setloadfields x2, d10-self-modifying-loop (same routine, none target rounding exactness)</td>
+<td>d21-read-without-load anchored to unrelated <code>GetAllocatedTotal</code></td>
+</tr>
+<tr>
+<td>X080</td>
+<td>CGX080CarrierStatusMapper.Codeunit.al / <code>FromWire</code></td>
+<td>~13</td>
+<td>Hardcoded case-statement mapping vs dynamic enum-ordinal mapping - stale on new enum values</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X081</td>
+<td>CGX081LineQualityDefaults.Codeunit.al / <code>PullQualityGradeFromItem</code></td>
+<td>2</td>
+<td>Removed blank-guard - unconditional overwrite clobbers a prior default</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d19-unused-parameter (elsewhere)</td>
+</tr>
+<tr>
+<td>X082</td>
+<td>CGX082ResilientHttpClient.Codeunit.al / <code>IsTransient</code></td>
+<td>1</td>
+<td>Narrow status-code check (missing 429 + full 5xx range)</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X083</td>
+<td>CGX083ShipmentStatusParser.Codeunit.al</td>
+<td>1</td>
+<td>XPath missing namespace prefix (<code>//Package</code> vs <code>//sh:Package</code>)</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d3-missing-setloadfields (elsewhere)</td>
+</tr>
+<tr>
+<td>X084</td>
+<td>CGX084TotalMgt.Codeunit.al / <code>AddAppliedEntry</code></td>
+<td>~14</td>
+<td>Full-rebuild-every-call loop (repeated <code>Get</code>+<code>CalcFields</code> per known entry) vs incremental single-entry update</td>
+<td><strong>visible</strong></td>
+<td><strong>d1-db-op-in-loop</strong> (directly targets the redundant per-iteration Get/CalcFields the fix eliminates)</td>
+<td>d3-missing-setloadfields (same routine, complementary)</td>
+</tr>
+<tr>
+<td>X085</td>
+<td>CGX085BatchReissueMgt.Codeunit.al / <code>Reissue</code></td>
+<td>1 (removed)</td>
+<td><code>Commit()</code> misplaced - breaks atomicity between <code>DeleteAll</code> and <code>BuildReplacementBatch</code></td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d3-missing-setloadfields anchored to different routine (<code>BuildReplacementBatch</code>), not <code>Reissue</code></td>
+</tr>
+<tr>
+<td>X086</td>
+<td>CGX086ContactSync.Codeunit.al / <code>RenameContact</code></td>
+<td>2</td>
+<td>Silent <code>exit</code> on id-collision instead of raising <code>Error</code></td>
+<td><strong>partial</strong></td>
+<td>d1-db-op-in-loop (same routine, flags perf of the <code>Get()</code> call, not the missing-error branch)</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X087</td>
+<td>CGX087CopyAuditMgt.Codeunit.al / <code>MarkDocumentAudited</code></td>
+<td>1</td>
+<td>Missing <code>DocHeader.Get()</code> re-read before <code>Modify</code></td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d19-unused-parameter, d3-missing-setloadfields, d45-event-transitive-table-exposure (elsewhere)</td>
+</tr>
+<tr>
+<td>X088</td>
+<td>CGX088SearchRuleMgt.Codeunit.al / <code>FilterIncompleteRules</code></td>
+<td>~4</td>
+<td>Fail-open: guard-exit paths leave <code>SearchRule</code> filter unset instead of fail-closed <code>SetRange(Entry No.,0)</code></td>
+<td><strong>partial</strong></td>
+<td>d3-missing-setloadfields (same routine, targets Get's SetLoadFields, not the fail-open gap)</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X089</td>
+<td>CGX089BatchValuation.Codeunit.al / <code>ValueByItem</code></td>
+<td>~17</td>
+<td>Repeated per-line <code>Item.Get()</code> vs batched single query</td>
+<td><strong>visible</strong></td>
+<td><strong>d1-db-op-in-loop</strong> (directly targets the Get-in-loop the fix eliminates)</td>
+<td>d3-missing-setloadfields x2 (same routine, complementary)</td>
+</tr>
+<tr>
+<td>X090</td>
+<td>CGX090TotalsReport.Codeunit.al / <code>TotalsByTeam</code></td>
+<td>~12 (+ new Query object)</td>
+<td>Nested FindSet-in-FindSet manual aggregation vs single <code>Query</code> object</td>
+<td><strong>visible</strong></td>
+<td><strong>d1-db-op-in-loop</strong> (directly targets the nested FindSet the fix eliminates)</td>
+<td>d3-missing-setloadfields x2 (same routine, complementary)</td>
+</tr>
+<tr>
+<td>X091</td>
+<td>CGX091SetupMgt.Codeunit.al</td>
+<td>2</td>
+<td>Missing <code>SingleInstance = true</code> - cache never actually persists</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>(property-level, outside alsem's statement detectors)</td>
+</tr>
+<tr>
+<td>X092</td>
+<td>CGX092WireFormat.Codeunit.al / <code>ToWireDecimal</code></td>
+<td>1</td>
+<td><code>Format(Value)</code> locale-dependent vs <code>Format(Value,0,9)</code> invariant</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X093</td>
+<td>CGX093OrderExport.Codeunit.al / <code>ExportOrder</code> (line 12) + <code>BuildLine</code> (lines 27/33-34)</td>
+<td>~9</td>
+<td>(a) locale-dependent date Format; (b) <code>Unit Price</code> exported as Text instead of numeric Decimal</td>
+<td><strong>partial</strong></td>
+<td>d3-missing-setloadfields (in <code>ExportOrder</code>, line 15 - near defect (a) but wrong construct; zero findings anywhere in <code>BuildLine</code>, defect (b) fully invisible)</td>
+<td>-</td>
+</tr>
+<tr>
+<td>X094</td>
+<td>CGX094ReferenceEngine.Codeunit.al / caller of <code>OnBeforeResolveReference</code></td>
+<td>3</td>
+<td><code>AppendFiscalSegment</code> skipped when <code>IsHandled=true</code> (inside if-block instead of after it)</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d19-unused-parameter x5, all anchored to the unrelated <code>OnBeforeResolveReference</code> event declaration (normal/expected noise for event params)</td>
+</tr>
+<tr>
+<td>X095</td>
+<td>CGX095DocUser.PermissionSet.al</td>
+<td>1</td>
+<td>PermissionSet missing RIMD grant on <code>CG X095 Doc Archive</code> table</td>
+<td><strong>invisible</strong></td>
+<td>-</td>
+<td>d3-missing-setloadfields (elsewhere) - (permission-set level, outside alsem's scope)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="composites-cg-al-x096-cg-al-x100">Composites (CG-AL-X096 - CG-AL-X100)<a class="headerlink" href="#composites-cg-al-x096-cg-al-x100" title="Permanent link">&para;</a></h2>
+<p>Each composite bundles 3-4 single-task modules; only the module(s) still
+differing from <code>reference/solutions/</code> carry a <em>live</em> defect - the rest are
+distractors (already fixed, present verbatim). Composite verdict = the
+most-visible verdict among its live defects.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Constituent modules (source task)</th>
+<th>Live defect(s)</th>
+<th>Distractor modules</th>
+<th>Composite verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>X096</td>
+<td>X082, X083, X092, X093</td>
+<td>X093's (ExportOrder/BuildLine, format+type bug)</td>
+<td>X082, X083, X092 (fixed)</td>
+<td><strong>partial</strong> (= X093)</td>
+</tr>
+<tr>
+<td>X097</td>
+<td>X066, X077, X079</td>
+<td>X077's (PeriodsOverlap and/or swap)</td>
+<td>X066, X079 (fixed)</td>
+<td><strong>invisible</strong> (= X077)</td>
+</tr>
+<tr>
+<td>X098</td>
+<td>X067, X072, X081, X094</td>
+<td>X072's (Eligible clobber) + X094's (fiscal segment skip)</td>
+<td>X067, X081 (fixed)</td>
+<td><strong>invisible</strong> (both live defects individually invisible)</td>
+</tr>
+<tr>
+<td>X099</td>
+<td>X069, X084, X089, X090</td>
+<td>X089's (ValueByItem Get-in-loop)</td>
+<td>X069, X084, X090 (fixed)</td>
+<td><strong>visible</strong> (= X089, detector <strong>d1-db-op-in-loop</strong>)</td>
+</tr>
+<tr>
+<td>X100</td>
+<td>X065, X075, X078, X086</td>
+<td>X078's (missing accumulator reset) + X086's (silent exit vs Error)</td>
+<td>X065, X075 (fixed)</td>
+<td><strong>partial</strong> (both live defects individually partial)</td>
+</tr>
+</tbody>
+</table>
+<p>Per-defect detail for composites: X096 = X093's row above; X097 = X077's row;
+X098 = X072's row + X094's row; X099 = X089's row; X100 = X078's row +
+X086's row.</p>
+<h2 id="summary-counts">Summary counts<a class="headerlink" href="#summary-counts" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>visible</strong>: 4 - X084, X089, X090, X099</li>
+<li><strong>partial</strong>: 13 - X065, X066, X069, X070, X071, X076, X078, X079, X086, X088, X093, X096, X100</li>
+<li><strong>invisible</strong>: 19 - X067, X068, X072, X073, X074, X075, X077, X080, X081, X082, X083, X085, X087, X091, X092, X094, X095, X097, X098</li>
+</ul>
+<p>Total: 36.</p>
+<h2 id="anomalies">Anomalies<a class="headerlink" href="#anomalies" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>X090</strong>: <code>reference/solutions/CG-AL-X090/CGX090TeamTotals.Query.al</code> exists
+   only in the reference solution, not the starter. Not a data-integrity
+   problem - the fix's mechanism IS adding a new <code>Query</code> object (replacing a
+   manual nested-loop aggregation), so the file is legitimately new
+   infrastructure introduced by the fix rather than a pre-existing file
+   that mysteriously diverged. Confirmed by reading both <code>TotalsByTeam</code>
+   bodies. The same query file is folded into the X099 composite's starter
+   already in fixed form (a distractor, not live there).</li>
+<li><strong>X099</strong>: <code>scratch/alsem-t2/CG-AL-X099.err</code> carries a non-fatal alsem
+   warning - "analysis coverage degraded — 3 unknown resolution edge(s)".
+   Didn't visibly affect the finding used for classification (the
+   <code>d1-db-op-in-loop</code> hit on <code>ValueByItem</code> is byte-identical to the one in
+   the standalone X089 report), but flagging since it's the only non-empty
+   <code>.err</code> file in the batch.</li>
+<li><strong>X094 / X098's X094-defect</strong>: the only findings in the file
+   (5x d19-unused-parameter) are attached to the <code>[IntegrationEvent]</code>
+   declaration <code>OnBeforeResolveReference</code> itself, not to the routine holding
+   the actual defect. This is expected/benign noise (event declarations
+   routinely have unused formal parameters) rather than a near-miss on the
+   real defect, so it does not push the verdict to "partial".</li>
+<li>No file-presence anomalies beyond X090's (checked every task for a file
+   on one side only; only X090 flagged).</li>
+</ol>
+<h2 id="build-batch-5-cg-al-x111-cg-al-x120-scored-2026-08-25">Build batch 5 (CG-AL-X111 - CG-AL-X120), scored 2026-08-25<a class="headerlink" href="#build-batch-5-cg-al-x111-cg-al-x120-scored-2026-08-25" title="Permanent link">&para;</a></h2>
+<p>Same method, run against the DRAFT starters at <code>scratch/CG-AL-X1NN/starter/</code>
+before promotion (the defect site is the diff of <code>starter/</code> against the
+draft's own <code>correct/</code>, which is what <code>reference/solutions/</code> will mirror).
+Raw findings in <code>scratch/alsem-t2/CG-AL-X1NN.json</code>; every <code>.err</code> was empty.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>File / procedure</th>
+<th>Defect construct</th>
+<th>Verdict</th>
+<th>Matching detector(s)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>X111</td>
+<td>CGX111WorkItemReport.Codeunit.al / <code>OpenSubItemHoursAcrossChecklist</code></td>
+<td><code>CalcFields</code> on a FlowField inside the per-item loop instead of computing from already-loaded fields</td>
+<td><strong>visible</strong></td>
+<td>d1-db-op-in-loop, on the exact CalcFields line</td>
+</tr>
+<tr>
+<td>X112</td>
+<td>CGX112SummaryBuilder.Codeunit.al / <code>BuildSummaries</code></td>
+<td>Per-row filtered lookup against a shared status table instead of one bulk pre-load into a Dictionary</td>
+<td><strong>visible</strong></td>
+<td>d18-constant-filter-in-loop (targets the construct almost exactly), d1-db-op-in-loop</td>
+</tr>
+<tr>
+<td>X113</td>
+<td>CGX113DispatchCheck.Codeunit.al / <code>IsUnassigned</code></td>
+<td>Walks the whole set with FindSet/repeat to answer a yes/no question instead of <code>IsEmpty()</code></td>
+<td><strong>invisible</strong></td>
+<td>none anywhere in the project</td>
+</tr>
+<tr>
+<td>X114</td>
+<td>CGX114AllowanceCalc.Codeunit.al / <code>CalculateAllowance</code></td>
+<td><code>&gt;=</code> where the statutory rule needs strict <code>&gt;</code> on a tier boundary</td>
+<td><strong>invisible</strong></td>
+<td>none</td>
+</tr>
+<tr>
+<td>X115</td>
+<td>CGX115ChangeDetector.Codeunit.al / <code>IsSameMoment</code>, <code>ShouldResync</code></td>
+<td>Strict DateTime equality where the rule is a tolerance, plus missing 0DT guards</td>
+<td><strong>invisible</strong></td>
+<td>none</td>
+</tr>
+<tr>
+<td>X116</td>
+<td>CGX116RemittanceComposer.Codeunit.al / <code>AddInvoice</code>, <code>GetRemittanceText</code></td>
+<td>Bare <code>Format(Decimal)</code> in a wire payload, and an overflow trim that ignores the suffix's own capacity</td>
+<td><strong>invisible</strong></td>
+<td>none</td>
+</tr>
+<tr>
+<td>X117</td>
+<td>CGX117OrderXmlExport.Codeunit.al / <code>ExportOrder</code></td>
+<td><code>Format(Date)</code> without the <code>,0,9</code> argument in an XML attribute</td>
+<td><strong>partial</strong></td>
+<td>d3-missing-setloadfields lands in the changed procedure but targets an unrelated construct</td>
+</tr>
+<tr>
+<td>X118</td>
+<td>CGX118JournalLineMgt.Codeunit.al / <code>AssignCounterAccount</code></td>
+<td>Rounds the balancing amount to the counter account's currency precision during a temporary field state, dropping the remainder</td>
+<td><strong>partial</strong></td>
+<td>d3-missing-setloadfields in the changed procedure, construct unrelated</td>
+</tr>
+<tr>
+<td>X119</td>
+<td>CGX119Exporter.Codeunit.al / the absent <code>Charge</code> branch</td>
+<td>OMISSION: a per-line-type dispatch has no branch for one line type</td>
+<td><strong>invisible</strong></td>
+<td>the file carries ambient d1/d3 findings, but the defect has no changed line for one to land on and no detector targets a missing case branch</td>
+</tr>
+<tr>
+<td>X120</td>
+<td>CGX120ApprovalReconciler.Codeunit.al / <code>SetContactName</code>, <code>SetCreditLimit</code></td>
+<td>No path detecting "current value == originally approved value", so a change-then-revert leaves a stale pending entry</td>
+<td><strong>partial</strong></td>
+<td>d3-missing-setloadfields in both changed procedures, construct unrelated</td>
+</tr>
+</tbody>
+</table>
+<p>Batch 5 totals: <strong>visible 2, partial 3, invisible 5.</strong></p>
+<p>Running totals across all scored diagnose tasks: <strong>visible 6, partial 20,
+invisible 30</strong> (56 tasks) - see the batch-4 section below, scored in the
+same sitting.</p>
+<p>Two observations worth carrying forward:</p>
+<ol>
+<li><strong>The visible/perf correlation held again.</strong> Both visible verdicts are
+   the two perf tasks whose defect is literally a database operation inside
+   a loop, which is what d1 and d18 are built to find. That is the expected
+   price of the perf category, not a defect in those tasks.</li>
+<li><strong>X113 is the interesting negative.</strong> It is also a perf task, and alsem
+   found NOTHING anywhere in the project - walking a set with FindSet/repeat
+   purely to answer a yes/no question is not flagged by any of the 54
+   detectors, because the loop body contains no database operation. A perf
+   defect that is lint-invisible is unusual and makes X113 hard-tier
+   material by the T2 prior, unlike its two batch-mates.</li>
+</ol>
+<h2 id="build-batch-4-cg-al-x101-cg-al-x110-scored-2026-08-25">Build batch 4 (CG-AL-X101 - CG-AL-X110), scored 2026-08-25<a class="headerlink" href="#build-batch-4-cg-al-x101-cg-al-x110-scored-2026-08-25" title="Permanent link">&para;</a></h2>
+<p>Batch 4 promoted without a T2 pass; scored here from the committed
+<code>tasks/starter/CG-AL-X10N/</code> against <code>reference/solutions/CG-AL-X10N/</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>File / procedure</th>
+<th>Defect construct</th>
+<th>Verdict</th>
+<th>Matching detector(s)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>X101</td>
+<td>CGX101StatementBuilder.Codeunit.al / <code>BuildStatement</code></td>
+<td>OMISSION: the <code>SetCurrentKey</code> that ordered the running-balance scan is absent</td>
+<td><strong>invisible</strong></td>
+<td>file carries d1/d3 findings, neither at the defect; no detector targets a missing SetCurrentKey</td>
+</tr>
+<tr>
+<td>X102</td>
+<td>CGX102BufferService.Codeunit.al / <code>TakeSnapshot</code></td>
+<td>One <code>Copy(Source, true)</code> one-liner used for both a deep copy and a shared view</td>
+<td><strong>invisible</strong></td>
+<td>none</td>
+</tr>
+<tr>
+<td>X103</td>
+<td>CGX103Submitter.Codeunit.al / <code>Guard</code></td>
+<td>Pre-post guard tests a field the downstream serializer never reads</td>
+<td><strong>invisible</strong></td>
+<td>only finding is in a different procedure</td>
+</tr>
+<tr>
+<td>X104</td>
+<td>CGX104PriceSync.Codeunit.al / <code>SyncPriceList</code></td>
+<td><code>DeleteAll()</code> across related tables sequenced BEFORE the nested payload is parsed and validated</td>
+<td><strong>partial</strong></td>
+<td>d1-db-op-in-loop in the changed procedure, construct unrelated</td>
+</tr>
+<tr>
+<td>X105</td>
+<td>CGX105ApprovalLookup.Codeunit.al / <code>GetApprovalLimit</code></td>
+<td>OMISSION: no Status filter, so a key ordering an enum field returns the lowest-ordinal (rejected) row first</td>
+<td><strong>invisible</strong></td>
+<td>none anywhere in the project</td>
+</tr>
+<tr>
+<td>X106</td>
+<td>CGX106FinalizeMgt.Codeunit.al / <code>StampArchiveTag</code></td>
+<td>A defensive full re-read into a shared <code>var</code> Record wipes an earlier subscriber's not-yet-persisted field</td>
+<td><strong>partial</strong></td>
+<td>d3-missing-setloadfields in the changed procedure, construct unrelated</td>
+</tr>
+<tr>
+<td>X107</td>
+<td>CGX107DealStamp.Codeunit.al / the <code>[EventSubscriber]</code> attribute</td>
+<td>Subscriber re-pointed from a Before-Insert to an After-Insert event, so a <code>var</code> record field write never persists</td>
+<td><strong>partial</strong></td>
+<td>d12-dead-integration-event fires on the now-unsubscribed publisher in the OTHER file - different location, but it is genuinely pointing at this defect's fingerprint rather than at ambient noise, which is why this is partial and not invisible</td>
+</tr>
+<tr>
+<td>X108</td>
+<td>CGX108FeatureGate.Codeunit.al / <code>IsFeatureActive</code></td>
+<td>A SingleInstance cache flag set only on the success path, so a failed first check re-runs forever</td>
+<td><strong>invisible</strong></td>
+<td>findings sit in a different procedure</td>
+</tr>
+<tr>
+<td>X109</td>
+<td>CGX109EntryFinder.Codeunit.al / <code>FindLatest</code></td>
+<td>Manual max-tracking loop instead of <code>FindLast()</code> in key order</td>
+<td><strong>invisible</strong></td>
+<td>none</td>
+</tr>
+<tr>
+<td>X110</td>
+<td>CGX110PostBatch.Codeunit.al / <code>PostBatch</code></td>
+<td>Second (write) pass gets a fresh record variable that forgets to copy the Status filter, re-posting already-posted lines</td>
+<td><strong>partial</strong></td>
+<td>d1-db-op-in-loop, d3-missing-setloadfields and d10-self-modifying-loop all land in the changed procedure; d10 is the closest but targets in-loop modification, not the dropped filter</td>
+</tr>
+</tbody>
+</table>
+<p>Batch 4 totals: <strong>visible 0, partial 4, invisible 6.</strong></p>
+<p>The strongest T2 result of the program so far: not one batch-4 defect is
+lint-visible, and half of them are invisible outright. Three of the six
+invisible ones are OMISSION faults (X101, X105, and, in batch 5, X119),
+which is the class the mutation literature calls uncoupled from mutation
+operators and which no detector in a 54-detector suite is built to find.
+That matches hardness-strategy.md's reading and makes omission faults a
+deliberate lever rather than an accident.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

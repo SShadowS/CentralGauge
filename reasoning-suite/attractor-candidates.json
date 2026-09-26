@@ -1,0 +1,17 @@
+[
+  {
+    "name": "A. FlowField total inside a loop (SetAutoCalcFields attractor)",
+    "expectedWrongForm": "CalcFields or SetAutoCalcFields per row rather than a single CalcSums over a SIFT key",
+    "requirement": "Table \"CG Probe Customer\" has a Code[20] \"No.\" and a FlowField \"Balance\" summing the Amount of \"CG Probe Entry\" rows whose \"Customer No.\" matches. Write a codeunit procedure TotalOutstanding() that returns the summed Balance across every customer whose \"Blocked\" boolean is false. It runs on a list with tens of thousands of customers and must not get slower as customers are added."
+  },
+  {
+    "name": "B. Rounding a proportional split (per-line round attractor)",
+    "expectedWrongForm": "rounding each line independently, so the parts do not sum to the total",
+    "requirement": "Write a codeunit procedure that splits a document's total Amount across its lines in proportion to each line's Weight, writing the result into each line's Share field. Shares are money and carry two decimals. The lines' Share values must add up to exactly the document total."
+  },
+  {
+    "name": "C. Reading a filtered set after a caller set filters (filter-clobber attractor)",
+    "expectedWrongForm": "calling Reset() or SetRange on the passed-in record, destroying the caller's filters",
+    "requirement": "Write a codeunit procedure CountHighValue(var SalesLine: Record \"CG Probe Line\") that returns how many of the lines the CALLER has already filtered to have an Amount above 1000. The caller's own filters and current position on the record must be exactly as they were when the procedure returns."
+  }
+]
