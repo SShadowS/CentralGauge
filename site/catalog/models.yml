@@ -48,6 +48,18 @@
   max_output_tokens: 65536
   capabilities: ["thinking", "image", "pdf", "structured", "batch"]
 
+# Harness Bench M5-01 (cc-vs-pi head-to-head): OpenRouter route of Claude Sonnet 5.
+# Slug and limits read from the public GET https://openrouter.ai/api/v1/models on 2026-09-26.
+- slug: openrouter/anthropic/claude-sonnet-5
+  api_model_id: anthropic/claude-sonnet-5
+  family: claude
+  display_name: Claude Sonnet 5 (OpenRouter)
+  generation: 5
+  released_at: "2026-06-09"
+  max_input_tokens: 1000000
+  max_output_tokens: 128000
+  capabilities: [thinking, image, pdf, structured, batch]
+
 - slug: anthropic/claude-fable-5-1
   api_model_id: claude-fable-5-1
   family: claude

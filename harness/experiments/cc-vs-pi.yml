@@ -1,0 +1,9 @@
+# Talk head-to-head: same model, same instructions bundle, same limits; harness differs.
+id: cc-vs-pi
+hypothesis: "On the HX tasks with the same model and instructions, pi and Claude Code differ in cost per solved task."
+primary_metric: cost_per_solved_task
+baseline: cc-sonnet-plain
+variants: [pi-sonnet-plain]
+vary: [harness, harness_version, models]
+tasks: "harness-tasks/tasks/*"
+repeats: 3
