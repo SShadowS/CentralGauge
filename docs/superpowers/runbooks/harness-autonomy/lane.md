@@ -41,6 +41,12 @@ and "lane-admin specifics" below; it does no coding tasks.
 
 ## Rules
 
+- Context hygiene: only the owner can run `/clear`. At a safe point (your task accepted or
+  submitted, handoff file rewritten, no container job or lease open), if your context use is
+  above about 60%, message cg-orchestrator `ready to clear: <session>, context <n>%`. After the
+  owner clears you, re-run your start procedure (`/harness-join`, then continue from the handoff
+  file and coord). Never ask for a clear mid-task.
+
 - A checkpoint answering `"paused": true`, or a `pause:` message: follow README "Global
   pause" at once (finish the running container job, release leases, commit, checkpoint
   `--wait paused`, idle). On `resume:`, re-run your start procedure and continue.
