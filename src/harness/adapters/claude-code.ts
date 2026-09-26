@@ -241,6 +241,75 @@ function notCumulative(
   return null;
 }
 
+/**
+ * Noise may follow the last result: rate_limit_event and system records other
+ * than init (M1-29: background_tasks_changed, task_updated,
+ * task_notification after both results).
+ */
+const isNoise = (r: J) =>
+  r.type === "rate_limit_event" ||
+  (r.type === "system" && r.subtype !== "init");
+const SESSION_BOUND = new Set(["assistant", "user", "result"]);
+const SHOWN = 3;
+
+/**
+ * Provenance and placement (M1-32b run 002). The cost is proven only when
+ * there are as many results as inits, none before the first init, nothing but
+ * noise after the last result, and every assistant, user and result record
+ * carries the inits' session_id. Segment 1's result may come after init 2
+ * (M1-29: inits at lines 1 and 113, results at 144 and 145). `trace` lists
+ * the provenance failures: the trace holds records not proven to be the run's.
+ */
+function provenanceAndPlacement(
+  file: string,
+  lines: Line[],
+  inits: Line[],
+  results: Line[],
+): { costs: string[]; trace: string[] } {
+  const costs: string[] = [];
+  if (results.length !== inits.length) {
+    costs.push(
+      `${file}: ${inits.length} system/init records but ${results.length} result record${
+        results.length === 1 ? "" : "s"
+      }${results.length > 0 ? ` (${linesOf(results)})` : ""}`,
+    );
+  }
+  const first = inits[0];
+  const early = results.find((r) => !first || r.line < first.line);
+  if (early && first) {
+    costs.push(
+      `${file}: result at line ${early.line} before the first system/init (line ${first.line})`,
+    );
+  }
+  const last = results.at(-1);
+  const late = last &&
+    lines.find((x) => x.line > last.line && !isNoise(x.rec));
+  if (late) {
+    costs.push(
+      `${file}: ${late.rec.type} at line ${late.line} after the last result (line ${last.line})`,
+    );
+  }
+  const sid = first?.rec.session_id;
+  const bad: string[] = [];
+  for (const { rec, line } of lines) {
+    if (!SESSION_BOUND.has(rec.type as string)) continue;
+    if (typeof rec.session_id !== "string") {
+      bad.push(`line ${line}: ${rec.type} without session_id`);
+    } else if (typeof sid === "string" && rec.session_id !== sid) {
+      bad.push(`line ${line}: ${rec.type} from another session`);
+    }
+  }
+  if (first && typeof sid !== "string") {
+    bad.unshift(`line ${first.line}: system/init without session_id`);
+  }
+  const trace = bad.length === 0 ? [] : [
+    `${file}: session provenance: ${bad.slice(0, SHOWN).join(", ")}${
+      bad.length > SHOWN ? `, ${bad.length - SHOWN} more` : ""
+    }`,
+  ];
+  return { costs: [...costs, ...trace], trace };
+}
+
 export function parseClaudeStream(
   text: string,
   input: Omit<ParseInput, "traceOut">,
@@ -275,10 +344,8 @@ export function parseClaudeStream(
   const allResults = of("result");
   if (inits.length > 1) {
     const sid = inits[0]!.rec.session_id;
-    const other = (x: Line) => x.rec.session_id !== sid;
     if (
-      typeof sid !== "string" || inits.some(other) ||
-      allResults.some((x) => x.rec.session_id !== undefined && other(x))
+      typeof sid !== "string" || inits.some((x) => x.rec.session_id !== sid)
     ) {
       refuse(
         `${file}: ${inits.length} system/init records (${
@@ -309,6 +376,7 @@ export function parseClaudeStream(
       }${allResults.length > 0 ? ` (${linesOf(allResults)})` : ""}`,
     );
   }
+  const unproven = provenanceAndPlacement(file, lines, inits, allResults);
   const init = inits[0]?.rec;
   const result = results.at(-1)?.rec;
   const version = typeof init?.claude_code_version === "string"
@@ -464,22 +532,27 @@ export function parseClaudeStream(
     };
   });
   const why = results.length > 1 ? notCumulative(results, perMessage) : null;
-  const unproven = why === null
-    ? null
-    : `${file}: ${results.length} result records (${
-      linesOf(results)
-    }): modelUsage not provably cumulative (${why})`;
-  const priced = result && unproven === null
-    ? estimateCost(usage, input.pricing)
-    : null;
+  if (why !== null) {
+    unproven.costs.push(
+      `${file}: ${results.length} result records (${
+        linesOf(results)
+      }): modelUsage not provably cumulative (${why})`,
+    );
+  }
+  const proven = unproven.costs.length === 0;
+  const priced = result ? estimateCost(usage, input.pricing) : null;
   // A lost line may have been a second result or a usage record the TTL
   // check needed, so the cost is not provable: null, with the lines named.
-  const est = unproven !== null
+  const est = !proven
     ? {
       cost_usd: null,
       pricing_snapshot: null,
       per_model: [],
-      missing: [unproven],
+      missing: [
+        ...(nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
+        ...unproven.costs,
+        ...(priced?.missing ?? []),
+      ],
     }
     : priced && nonJson.count > 0
     ? {
@@ -569,10 +642,9 @@ export function parseClaudeStream(
       cost_usd: est?.cost_usd ?? null,
       cost_source: est?.cost_usd != null ? "estimated" : null,
       pricing_snapshot: est?.cost_usd != null ? est.pricing_snapshot : null,
-      reported_cost_usd:
-        unproven === null && typeof result?.total_cost_usd === "number"
-          ? result.total_cost_usd
-          : null,
+      reported_cost_usd: proven && typeof result?.total_cost_usd === "number"
+        ? result.total_cost_usd
+        : null,
       per_model: est?.per_model ?? [],
       // Per segment in 2.1.282 (fixture proof: 13 then 7): summed.
       turns: sumOf(results, "num_turns"),
@@ -599,6 +671,9 @@ export function parseClaudeStream(
         missing: est?.missing ??
           (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
         stream_problems: streamProblems,
+        ...(unproven.trace.length > 0
+          ? { trace_incomplete: unproven.trace }
+          : {}),
       }),
     },
     observed: {

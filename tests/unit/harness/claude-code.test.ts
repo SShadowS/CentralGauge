@@ -591,6 +591,7 @@ Deno.test("claude-code review: a sub-agent on another model is priced from resol
   ) =>
     JSON.stringify({
       type: "assistant",
+      session_id: "s1",
       ...(parent ? { parent_tool_use_id: parent } : {}),
       message: {
         id,
@@ -606,6 +607,7 @@ Deno.test("claude-code review: a sub-agent on another model is priced from resol
     });
   const agentResult = JSON.stringify({
     type: "user",
+    session_id: "s1",
     parent_tool_use_id: null,
     message: { content: [{ type: "text", text: "done" }] },
     tool_use_result: {
@@ -627,10 +629,11 @@ Deno.test("claude-code review: a sub-agent on another model is priced from resol
   });
   const result = JSON.stringify({
     ...JSON.parse(RESULT),
+    session_id: "s1", // M1-32b run 002: priced only with session provenance
     modelUsage: { "claude-sonnet-5": mu(100), "claude-haiku-9": mu(70) },
   });
   const text = [
-    INIT,
+    JSON.stringify({ ...JSON.parse(INIT), session_id: "s1" }),
     msg("m1", "claude-sonnet-5", 0, 100),
     msg("m2", "claude-haiku-9", 50, 0, "toolu_x"),
     agentResult,
@@ -995,6 +998,121 @@ Deno.test("claude-code resume: more results than inits is refused; fewer leaves 
       p.includes("raw.jsonl: 2 system/init records but 1 result record")
     ),
     JSON.stringify(problems(r)),
+  );
+  assert(
+    missingOf(r).some((m) =>
+      m.includes("raw.jsonl: 2 system/init records but 1 result record")
+    ),
+    JSON.stringify(missingOf(r)),
+  );
+});
+
+// M1-32b run 002: provenance and placement fail closed. Evidence: fixture
+// m129-resume.jsonl has its inits at lines 1 and 113 and its results at lines
+// 144 (num_turns 13) and 145 (num_turns 7): segment 1's result is emitted
+// late, after init 2, so a result is not required inside its own segment.
+// The rule: as many results as inits, none before the first init, every
+// result and every aggregated record carrying the inits' session_id, and
+// nothing but noise (rate_limit_event, system records other than init) after
+// the last result. Anything else: cost null with a named reason.
+
+const missingOf = (r: { telemetry: { raw_usage: unknown } }) =>
+  (r.telemetry.raw_usage as { missing: string[] }).missing;
+
+/** Cost, reported cost and per-model are null or empty, and a reason names the file and `what`. */
+function assertUnproven(
+  r: { telemetry: Telemetry },
+  what: string,
+) {
+  assertEquals(r.telemetry.cost_usd, null);
+  assertEquals(r.telemetry.reported_cost_usd, null);
+  assertEquals(r.telemetry.per_model, []);
+  assert(
+    missingOf(r).some((m) => m.includes("raw.jsonl") && m.includes(what)),
+    JSON.stringify(missingOf(r)),
+  );
+}
+
+const SID = "8cd5ebe9-5df9-4b19-96c7-edc02b97a73f";
+
+Deno.test("claude-code resume provenance: a result without session_id gives a null cost; the trace is written, marked incomplete", async () => {
+  const l = await resumeLines();
+  const r0 = JSON.parse(l[143]!);
+  delete r0.session_id;
+  l[143] = JSON.stringify(r0);
+  const { r, dir } = await parse(l.join("\n"));
+  assertUnproven(r, "line 144: result without session_id");
+  assertEquals(r.telemetry.turns, 20);
+  assertEquals(r.traceEvents, 36);
+  const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+    .split("\n");
+  assertEquals(trace.length, 36);
+  const raw = r.telemetry.raw_usage as { trace_incomplete: string[] };
+  assert(
+    raw.trace_incomplete.some((m) => m.includes("line 144")),
+    JSON.stringify(raw.trace_incomplete),
+  );
+});
+
+Deno.test("claude-code resume provenance: an assistant record from another session gives a null cost", async () => {
+  const l = await resumeLines();
+  assertStringIncludes(l[119]!, SID); // line 120, segment 2 assistant
+  l[119] = l[119]!.replaceAll(SID, "00000000-0000-0000-0000-000000000000");
+  const { r } = await parse(l.join("\n"));
+  assertUnproven(r, "line 120: assistant from another session");
+  assert(
+    (r.telemetry.raw_usage as { trace_incomplete: string[] })
+      .trace_incomplete.some((m) => m.includes("line 120")),
+  );
+  // The same record without a session_id is not proven either.
+  const m = await resumeLines();
+  const a = JSON.parse(m[119]!);
+  delete a.session_id;
+  m[119] = JSON.stringify(a);
+  assertUnproven(
+    (await parse(m.join("\n"))).r,
+    "line 120: assistant without session_id",
+  );
+});
+
+Deno.test("claude-code resume placement: a result before the first init gives a null cost", async () => {
+  const l = await resumeLines();
+  const moved = [l[143]!, ...l.filter((_, i) => i !== 143)];
+  const { r } = await parse(moved.join("\n"));
+  assertUnproven(r, "result at line 1 before the first system/init (line 2)");
+});
+
+Deno.test("claude-code resume placement: more results than inits is refused, never priced", async () => {
+  const l = await resumeLines();
+  // A third result after both: refused (the existing duplicate-result rule).
+  const err = await assertRejects(
+    () => parse([...l.slice(0, 145), l[144]!, ...l.slice(145)].join("\n")),
+    ValidationError,
+  );
+  assertStringIncludes(
+    err.message,
+    "raw.jsonl: 3 result records (lines 144, 145, 146)",
+  );
+});
+
+Deno.test("claude-code resume placement: an assistant record after the last result gives a null cost; noise after it does not", async () => {
+  const l = await resumeLines();
+  // Lines 146-148 are system background_tasks_changed, task_updated and
+  // task_notification: noise, so the unmodified fixture is priced (above).
+  assertEquals(
+    l.slice(145).map((x) => JSON.parse(x).subtype),
+    ["background_tasks_changed", "task_updated", "task_notification"],
+  );
+  const after = [...l.filter((_, i) => i !== 142), l[142]!]; // line 143 to the end
+  const { r } = await parse(after.join("\n"));
+  assertUnproven(r, "assistant at line 148 after the last result (line 144)");
+  const tool = [
+    ...l,
+    JSON.stringify({ type: "tool_progress", session_id: SID }),
+  ];
+  assertUnproven(
+    (await parse(tool.join("\n"))).r,
+    "tool_progress at line 149 after the last result (line 145)",
   );
 });
 

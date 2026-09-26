@@ -35,9 +35,11 @@ import { tempDir } from "./temp-dirs.ts";
 
 export const SECRET_OAUTH = "sk-ant-oat01-fixture-0123456789abcdefXYZ";
 const PROBE = "tests/fixtures/harness/claude-code/probe.jsonl";
+/** Stands in for the probe's own init: same session (M1-32b run 002 prices only a session-proven log). */
 export const INIT = JSON.stringify({
   type: "system",
   subtype: "init",
+  session_id: "1ae7bb8f-04b6-4431-b315-c3a36ef73f35",
   claude_code_version: "2.1.282",
   skills: [],
   mcp_servers: [],
