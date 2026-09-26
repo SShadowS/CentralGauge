@@ -978,6 +978,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           lock: ctx.grant.lock,
           signal: ctx.signal,
           cache: ctx.buildCache,
+          graph: ctx.apps,
         });
       }, ctx.signal);
       const ok = built.every((b) => b.ok);

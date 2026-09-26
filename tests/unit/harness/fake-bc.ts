@@ -134,7 +134,10 @@ export class FakeBc implements HarnessBc {
         version: string;
       };
       const source = await sources(project.path);
-      if (source.includes("COMPILE_ERROR")) {
+      // alc: a symbol package the source needs must be in the package cache.
+      const missing = [...source.matchAll(/\/\/ needs (.+?\.app)/g)]
+        .map((m) => m[1]!).find((f) => !pk.includes(f));
+      if (source.includes("COMPILE_ERROR") || missing) {
         return {
           success: false,
           errors: [{

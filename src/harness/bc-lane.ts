@@ -474,6 +474,95 @@ async function seedAppInfo(
   }
 }
 
+/** BCH's implicit dependencies of `application` and `platform` (Compile-AppWithBcCompilerFolder). */
+const APPLICATION_APP_ID = "c1335042-3002-4257-bf8a-75c898ccb1b8";
+const SYSTEM_APP_ID = "8874ed3a-0643-4247-9ced-7a7002f7135d";
+
+/**
+ * The locked packages an app may compile against (M1-40b): Application
+ * (its `application`) and System (its `platform`), its declared symbol
+ * dependencies and those of its workspace dependencies, then every locked
+ * package's own dependencies, transitively, from the harvested app info of
+ * this lock. Declared dependencies only, so an undeclared package is absent
+ * and its use fails the compile as in BC. Null when the harvested info does
+ * not cover the closure (the whole lock is restored, as before).
+ */
+async function dependencyClosure(
+  store: string,
+  lockDigest: string,
+  packages: readonly SymbolPackage[],
+  roots: readonly string[],
+): Promise<SymbolPackage[] | null> {
+  let saved: Record<string, unknown>;
+  try {
+    saved = JSON.parse(
+      await Deno.readTextFile(join(store, "appinfo", `${lockDigest}.json`)),
+    );
+  } catch {
+    return null;
+  }
+  const byFile = new Map(packages.map((p) => [p.file.toLowerCase(), p]));
+  const info = new Map<string, { deps: string[]; application: boolean }>();
+  for (const [k, v] of Object.entries(saved)) {
+    const p = byFile.get(cachedName(k).toLowerCase());
+    if (!p || v === null || typeof v !== "object") continue;
+    const ai = v as {
+      appId?: unknown;
+      application?: unknown;
+      dependencies?: unknown;
+    };
+    // Info that names another app than the lock does is not trusted: restore all.
+    if (String(ai.appId).toLowerCase() !== p.app_id.toLowerCase()) return null;
+    const deps = Array.isArray(ai.dependencies) ? ai.dependencies : [];
+    info.set(p.app_id.toLowerCase(), {
+      deps: deps.map((d: { id?: unknown; appId?: unknown }) =>
+        String(d?.id ?? d?.appId).toLowerCase()
+      ),
+      application: typeof ai.application === "string" && ai.application !== "",
+    });
+  }
+  const want = new Set<string>();
+  const queue = [...roots];
+  while (queue.length > 0) {
+    const id = queue.pop()!;
+    if (want.has(id)) continue;
+    const i = info.get(id);
+    if (!i) return null;
+    want.add(id);
+    queue.push(...i.deps, SYSTEM_APP_ID);
+    if (i.application) queue.push(APPLICATION_APP_ID);
+  }
+  return packages.filter((p) => want.has(p.app_id.toLowerCase()));
+}
+
+/** Symbol roots of an app: application, platform and the declared externals of it and its workspace dependencies; null when a workspace dependency is not in the graph. */
+function symbolRoots(
+  app: StagedApp,
+  appJson: { application?: unknown; platform?: unknown },
+  graph: readonly StagedApp[],
+): string[] | null {
+  const roots = new Set<string>();
+  if (typeof appJson.application === "string" && appJson.application !== "") {
+    roots.add(APPLICATION_APP_ID);
+  }
+  if (typeof appJson.platform === "string" && appJson.platform !== "") {
+    roots.add(SYSTEM_APP_ID);
+  }
+  const byFolder = new Map(graph.map((a) => [a.folder, a]));
+  const seen = new Set<string>();
+  const walk = (a: StagedApp): boolean => {
+    if (seen.has(a.folder)) return true;
+    seen.add(a.folder);
+    for (const id of a.external) roots.add(id.toLowerCase());
+    for (const d of a.depends) {
+      const dep = byFolder.get(d);
+      if (!dep || !walk(dep)) return false;
+    }
+    return true;
+  };
+  return walk(app) ? [...roots] : null;
+}
+
 /** `verified`: lower-cased names of the locked packages that hash-verified in this build. */
 async function harvestAppInfo(
   pk: string,
@@ -519,6 +608,8 @@ export async function buildApps(
     signal?: AbortSignal;
     /** Reuse of unchanged builds (per execution, M1-40). */
     cache?: BuildCache;
+    /** The whole workspace graph (workspace dependencies' declared symbols); default `apps`. */
+    graph?: StagedApp[];
   },
 ): Promise<BuiltApp[]> {
   const files = new Map(o.prebuilt ?? []);
@@ -666,7 +757,16 @@ export async function buildApps(
     const pk = join(dir, ".alpackages");
     // Only what the harness restores and seeds (the copy skips any case of it too).
     await Deno.remove(pk, { recursive: true }).catch(() => {});
-    await restoreSymbols(o.lock.store, o.lock.packages, pk);
+    const roots = symbolRoots(app, appJson, o.graph ?? o.apps);
+    const closure = roots
+      ? await dependencyClosure(
+        o.lock.store,
+        lockDigest,
+        o.lock.packages,
+        roots,
+      )
+      : null;
+    await restoreSymbols(o.lock.store, closure ?? o.lock.packages, pk);
     const workspaceFiles = new Set([...files.values()].map((f) => basename(f)));
     const workspaceLower = new Set(
       [...workspaceFiles].map((f) => f.toLowerCase()),
@@ -858,6 +958,7 @@ async function prepareOn(
     versions,
     outDir: join(o.workDir, "prereq"),
     lock: o.lock,
+    graph,
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.cache ? { cache: o.cache } : {}),
   });
@@ -879,6 +980,7 @@ async function prepareOn(
     versions,
     outDir: join(o.workDir, "candidate"),
     lock: o.lock,
+    graph,
     prebuilt,
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.cache ? { cache: o.cache } : {}),
