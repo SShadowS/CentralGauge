@@ -1334,3 +1334,57 @@ Deno.test("pi trace: every stored string is pattern-redacted; a relative skills 
     ["fleet-notes", "fleet-rules"],
   );
 });
+
+// ---- M3-05: the parser pinned to the captured sandbox fixtures (M3-04) ----
+
+const FX = (n: string) =>
+  Deno.readTextFile(`tests/fixtures/harness/pi/${n}.jsonl`);
+const probe = (over: Partial<ResolvedManifest> = {}) =>
+  pm({ limits: { timeout_min: 5, max_budget_usd: 0.05 }, ...over });
+const parseFx = async (
+  n: string,
+  exitCode: number,
+  over: Partial<ResolvedManifest> = {},
+) =>
+  parsePiStream(await FX(n), {
+    rawLog: n,
+    exitCode,
+    manifest: probe(over),
+    pricing: BOOK,
+  });
+
+Deno.test("pi fixture not-ready: setup_failed, pi never started", async () => {
+  const r = await parseFx("not-ready", 3);
+  assertEquals([r.termination, r.didWork, r.observed.models], [
+    "setup_failed",
+    false,
+    null,
+  ]);
+});
+
+Deno.test("pi fixture auth-fail: exit 0 is still a crash; guard armed before the request; zero cost", async () => {
+  const r = await parseFx("auth-fail", 0);
+  assertEquals([
+    r.termination,
+    r.didWork,
+    r.telemetry.cost_usd,
+    r.observed.harness_version,
+  ], ["harness_crash", false, 0, "0.87.1"]);
+  assertEquals(raw(r).stream_problems, []);
+});
+
+Deno.test("pi fixture proxy-refused: the proxy error is a crash, not a usage limit", async () => {
+  const r = await parseFx("proxy-refused", 0);
+  assertEquals([r.termination, r.didWork], ["harness_crash", false]);
+});
+
+Deno.test("pi fixture components: skills observed from the system message", async () => {
+  const r = await parseFx("components", 0, {
+    skills: {
+      path: "bundles/s/skills",
+      hash: "a".repeat(64),
+      files: [{ path: "fleet-notes/SKILL.md", sha256: "b".repeat(64) }],
+    },
+  });
+  assertEquals(r.observed.loaded_components, ["skills"]);
+});
