@@ -25,7 +25,11 @@ import {
   checkJudging,
   type JudgingContext,
 } from "./outcome.ts";
-import { incompleteObserved, type JudgmentRecord } from "./records.ts";
+import {
+  type ExecutionRecord,
+  incompleteObserved,
+  type JudgmentRecord,
+} from "./records.ts";
 import {
   type ArmSummary,
   armSummary,
@@ -33,6 +37,7 @@ import {
   checkBootstrapOptions,
   compareArms,
   type Comparison,
+  ineligible,
 } from "./stats.ts";
 
 export interface ArmCoverage {
@@ -98,7 +103,7 @@ export interface HarnessReport {
     coupling: string[];
     pass_rate: Record<string, number | null>;
   }>;
-  /** Per arm, over the executions the cells use (descriptive). */
+  /** Per arm, over the primary metric's cohort: every attempt of each counted cell (descriptive). */
   efficiency: ArmEfficiency[];
   /** Pass rate per arm by task kind, then by coupling tag (descriptive). */
   slices: Slice[];
@@ -109,17 +114,19 @@ export interface HarnessReport {
 
 export interface ArmEfficiency {
   arm: string;
-  /** Used executions whose host log was found. */
+  /** Cohort executions whose host log was found. */
   host_logs: number;
   backend_requests: number;
   /** Compile requests the backend accepted (not rejected). */
   logical_builds: number;
   per_app_compiles: number;
-  /** Test requests the backend accepted. */
+  /** Tests the backend ran (host log tests_run). */
   test_runs: number;
   diagnostics_per_build: number | null;
   verdict_ms_median: number | null;
   verdict_queue_ms_median: number | null;
+  /** Median wait of a backend request for a container (host log spans.queue_ms). */
+  backend_queue_ms_median: number | null;
 }
 
 export interface Slice {
@@ -201,15 +208,21 @@ function efficiencyOf(
   cells: CellRecord[],
   arm: string,
   logs: ReportLogs,
+  attemptsOf: (c: CellRecord) => readonly ExecutionRecord[],
+  primary: PrimaryMetric,
 ): ArmEfficiency {
-  const mine = cells.filter((c) => c.arm === arm);
+  // The primary metric's cohort: counted cells only (no pending or unrun),
+  // with every attempt whose spend the primary counts.
+  const mine = cells.filter((c) =>
+    c.arm === arm && ineligible(c, primary) === null
+  );
   const lines = mine.flatMap((c) =>
-    c.used_execution ? [logs.host.get(c.used_execution)] : []
+    attemptsOf(c).map((e) => logs.host.get(e.id))
   ).filter((x): x is readonly HostLogLine[] => x !== undefined);
   const flat = lines.flat();
-  const accepted = (op: string) =>
-    flat.filter((l) => l.op === op && l.outcome !== "rejected");
-  const builds = accepted("compile");
+  const builds = flat.filter((l) =>
+    l.op === "compile" && l.outcome !== "rejected"
+  );
   const verdicts = mine.flatMap((c) =>
     c.judgment_id ? [logs.verdict.get(c.judgment_id)] : []
   ).filter((v): v is VerdictLog => v !== undefined);
@@ -219,12 +232,17 @@ function efficiencyOf(
     backend_requests: flat.length,
     logical_builds: builds.length,
     per_app_compiles: flat.reduce((n, l) => n + l.per_app_compiles, 0),
-    test_runs: accepted("test").length,
+    test_runs: flat.reduce((n, l) => n + l.tests_run, 0),
     diagnostics_per_build: builds.length === 0
       ? null
       : builds.reduce((n, l) => n + l.diagnostics, 0) / builds.length,
     verdict_ms_median: median(verdicts.map((v) => v.spans.total_ms)),
     verdict_queue_ms_median: median(verdicts.map((v) => v.spans.queue_ms)),
+    backend_queue_ms_median: median(
+      flat.map((l) => l.spans["queue_ms"]).filter((x): x is number =>
+        typeof x === "number"
+      ),
+    ),
   };
 }
 
@@ -328,9 +346,13 @@ export async function buildReport(
     cells.filter((c) =>
       c.task === task && c.arm === arm && c.status === "scored"
     );
+  // Each task weighs the same, as in the primary pass rate (never pooled cells).
   const sliceRate = (tasks: string[], arm: string) => {
-    const ps = tasks.flatMap((t) => scored(t, arm));
-    return ps.length === 0 ? null : ps.filter((c) => c.pass).length / ps.length;
+    const rates = tasks.map((t) => scored(t, arm)).filter((ps) => ps.length > 0)
+      .map((ps) => ps.filter((c) => c.pass).length / ps.length);
+    return rates.length === 0
+      ? null
+      : rates.reduce((a, b) => a + b, 0) / rates.length;
   };
   const slices: Slice[] = [];
   for (const by of ["kind", "coupling"] as const) {
@@ -380,6 +402,10 @@ export async function buildReport(
     return t;
   });
   const logs = opts.logs ?? { host: new Map(), verdict: new Map() };
+  const attemptsOf = (c: CellRecord) =>
+    executions.filter((e) =>
+      e.task_id === c.task && e.repeat === c.repeat && e.arm === c.arm
+    );
   return {
     v: 1,
     experiment: {
@@ -434,7 +460,9 @@ export async function buildReport(
     arms: summaries,
     comparisons,
     flips,
-    efficiency: arms.map((a) => efficiencyOf(cells, a, logs)),
+    efficiency: arms.map((a) =>
+      efficiencyOf(cells, a, logs, attemptsOf, exp.primary_metric)
+    ),
     slices,
     both_pass,
     cells,
@@ -587,7 +615,9 @@ export function renderReport(r: HarnessReport): string {
           : e.diagnostics_per_build.toFixed(1)
       } diagnostics/build), ${e.test_runs} test runs; verdict median ${
         ms(e.verdict_ms_median)
-      } (queue ${ms(e.verdict_queue_ms_median)}); host logs ${e.host_logs}`,
+      } (queue ${ms(e.verdict_queue_ms_median)}); backend queue median ${
+        ms(e.backend_queue_ms_median)
+      }; host logs ${e.host_logs}`,
     );
   }
   h("Slices (descriptive)");

@@ -132,7 +132,7 @@ Deno.test("efficiency counts backend requests, logical builds and per-app compil
       plain!.per_app_compiles,
       plain!.test_runs,
     ],
-    ["plain", 5, 2, 3, 1],
+    ["plain", 5, 2, 3, 4],
   );
   assertEquals(plain!.diagnostics_per_build, 2);
   assertEquals(
@@ -236,4 +236,128 @@ Deno.test("loadReportLogs reads the published host logs and verdict logs; missin
   assertEquals(logs.host.has(r.executions[1]!.id), false);
   assertEquals(logs.verdict.get(j.id)!.spans.total_ms, 5);
   assertEquals(logs.verdict.size, 1);
+});
+
+Deno.test("efficiency uses the primary cohort: every attempt of a counted chain, no pending cell", async () => {
+  const c = await campaign();
+  const crash = execution(c, { arm: "plain", task: "HX-001" }, {
+    termination: "harness_crash",
+    did_work: false,
+    telemetry: telemetry(0.5),
+  });
+  const retry = execution(c, {
+    arm: "plain",
+    task: "HX-001",
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: crash.id,
+  }, { telemetry: telemetry(1) });
+  // HX-002 plain: ran, no judgment yet: pending, outside the cohort.
+  const pending = execution(c, { arm: "plain", task: "HX-002" });
+  const s1 = execution(c, { arm: "skills", task: "HX-001" });
+  const s2 = execution(c, { arm: "skills", task: "HX-002" });
+  const r: CampaignRecords = {
+    campaign: c,
+    executions: [crash, retry, pending, s1, s2],
+    artifacts: [],
+    judgments: [
+      judgment(c, retry, true),
+      judgment(c, s1, true),
+      judgment(c, s2, true),
+    ],
+  };
+  const logs: ReportLogs = {
+    host: new Map([
+      [crash.id, [line(crash.id, "compile", { per_app_compiles: 1 })]],
+      [retry.id, [line(retry.id, "compile", { per_app_compiles: 2 })]],
+      [
+        pending.id,
+        Array.from({ length: 5 }, () => line(pending.id, "compile")),
+      ],
+    ]),
+    verdict: new Map(),
+  };
+  const rep = await buildReport(r, { resamples: 50, seed: 1, logs });
+  const plain = rep.efficiency[0]!;
+  assertEquals(
+    [
+      plain.host_logs,
+      plain.backend_requests,
+      plain.logical_builds,
+      plain.per_app_compiles,
+    ],
+    [2, 2, 2, 3],
+  );
+});
+
+Deno.test("test_runs counts the tests the backend ran, not requests", async () => {
+  const r = await records();
+  const [p1, , s1] = r.executions;
+  const logs: ReportLogs = {
+    host: new Map([
+      [p1!.id, [line(p1!.id, "test", { tests_run: 4 })]],
+      [s1!.id, [line(s1!.id, "test", { tests_run: 0 })]],
+    ]),
+    verdict: new Map(),
+  };
+  const rep = await buildReport(r, { resamples: 50, seed: 1, logs });
+  assertEquals(rep.efficiency.map((e) => e.test_runs), [4, 0]);
+});
+
+Deno.test("slices weight each task equally, as the primary pass rate does (never pooled cells)", async () => {
+  const c = await campaign({ repeats: 3 });
+  const rows: Array<[string, string, number, boolean]> = [
+    ["plain", "HX-001", 1, true],
+    ["plain", "HX-001", 2, true],
+    ["plain", "HX-001", 3, true],
+    ["plain", "HX-002", 1, false],
+    ["skills", "HX-001", 1, true],
+    ["skills", "HX-001", 2, false],
+    ["skills", "HX-001", 3, false],
+    ["skills", "HX-002", 1, true],
+  ];
+  const executions = [];
+  const judgments = [];
+  for (const [arm, task, repeat, pass] of rows) {
+    const e = execution(c, { arm, task, repeat });
+    executions.push(e);
+    judgments.push(judgment(c, e, pass));
+  }
+  const rep = await buildReport(
+    { campaign: c, executions, artifacts: [], judgments },
+    { resamples: 50, seed: 1 },
+  );
+  const kind = rep.slices.find((x) => x.by === "kind")!;
+  // Pooled would be plain 3/4 > skills 2/4; per task: plain 0.5 < skills 2/3.
+  assertEquals(kind.pass_rate["plain"], rep.arms[0]!.pass_rate);
+  assertEquals(kind.pass_rate["skills"], rep.arms[1]!.pass_rate);
+  assertEquals(kind.pass_rate["plain"], 0.5);
+  assertEquals(
+    (kind.pass_rate["plain"] ?? 0) < (kind.pass_rate["skills"] ?? 0),
+    true,
+  );
+});
+
+Deno.test("backend queue wait: median of the host log's per-request queue_ms, separate from the verdict queue", async () => {
+  const r = await records();
+  const [p1, p2] = r.executions;
+  const logs: ReportLogs = {
+    host: new Map([
+      [p1!.id, [
+        line(p1!.id, "test", { spans: { queue_ms: 30, test_ms: 5 } }),
+        line(p1!.id, "compile", { spans: { compile_ms: 7 } }),
+      ]],
+      [p2!.id, [line(p2!.id, "test", { spans: { queue_ms: 10 } })]],
+    ]),
+    verdict: new Map(),
+  };
+  const rep = await buildReport(r, { resamples: 50, seed: 1, logs });
+  assertEquals(
+    [
+      rep.efficiency[0]!.backend_queue_ms_median,
+      rep.efficiency[0]!.verdict_queue_ms_median,
+    ],
+    [20, null],
+  );
+  assertEquals(rep.efficiency[1]!.backend_queue_ms_median, null);
 });
