@@ -2,7 +2,7 @@
  * Generate the elevated firewall scripts ops run in M1-34 (M1-33). This
  * script only writes files; it never runs PowerShell or touches the host.
  * Usage:
- *   deno run --allow-all scripts/harness/egress-scripts.ts apply --invocation <id> --dir <dir> --interface-index <n> --interface-alias <alias> --out <apply.ps1>
+ *   deno run --allow-all scripts/harness/egress-scripts.ts apply --invocation <id> --dir <dir> --interface-index <n> --interface-alias <alias> --hns-id <id> --out <apply.ps1>
  *   deno run --allow-all scripts/harness/egress-scripts.ts revert --dir <dir> --out <revert.ps1>
  * The interface index and alias are the adapter that owns 172.30.60.1
  * (`harness egress verify` prints problems naming it). The same inputs always
@@ -18,7 +18,14 @@ import {
 } from "../../src/harness/egress.ts";
 
 const a = parseArgs(Deno.args, {
-  string: ["invocation", "dir", "interface-index", "interface-alias", "out"],
+  string: [
+    "invocation",
+    "dir",
+    "interface-index",
+    "interface-alias",
+    "hns-id",
+    "out",
+  ],
 });
 try {
   const [verb] = a._;
@@ -26,13 +33,16 @@ try {
   let text: string;
   if (verb === "apply") {
     const index = Number(a["interface-index"]);
-    if (!a.invocation || !a["interface-alias"]) {
-      throw new Error("apply needs --invocation and --interface-alias");
+    if (!a.invocation || !a["interface-alias"] || !a["hns-id"]) {
+      throw new Error(
+        "apply needs --invocation, --interface-alias and --hns-id",
+      );
     }
     text = applyScript(firewallPlan(index), {
       invocation: a.invocation,
       dir: a.dir,
       interfaceAlias: a["interface-alias"],
+      hnsId: a["hns-id"],
     });
   } else if (verb === "revert") {
     text = revertScript(a.dir);

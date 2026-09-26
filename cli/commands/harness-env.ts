@@ -8,7 +8,7 @@
  */
 
 import * as colors from "@std/fmt/colors";
-import { join } from "@std/path";
+import { join, resolve } from "@std/path";
 import type { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 import type { HarnessBc, HealthView } from "../../src/harness/bc-lane.ts";
 import type { PlanEnv } from "../../src/harness/campaign.ts";
@@ -25,6 +25,7 @@ import {
 } from "../../src/harness/backend.ts";
 import { BcLane } from "../../src/harness/bc-lane.ts";
 import {
+  authorizedMarkerProblems,
   BACKEND_PORT,
   collectEgressState,
   MARKER_FILE,
@@ -77,6 +78,8 @@ export interface EnvOptions {
   credentialLedger: string | null;
   command: string;
   supervised: boolean;
+  /** The qualification probe (backend-probe --enforced): a candidate marker places it. */
+  probe?: boolean;
 }
 
 export interface EnvDeps {
@@ -134,6 +137,7 @@ export interface OpenEnv {
 export async function egressMode(
   sharedResults: string,
   verify: EgressVerifier,
+  o: { probe?: boolean; repoRoot?: string } = {},
 ): Promise<EgressMode> {
   const path = join(sharedResults, EGRESS_MARKER);
   let text: string;
@@ -145,7 +149,7 @@ export async function egressMode(
       `cannot read the egress marker ${path}: ${(err as Error).message}`,
     );
   }
-  let marker: { state?: unknown };
+  let marker: Record<string, unknown> & { state?: unknown };
   try {
     marker = JSON.parse(text);
   } catch (err) {
@@ -170,11 +174,24 @@ export async function egressMode(
       }`,
     );
   }
-  return marker.state === "authorized"
-    ? "enforced"
-    : marker.state === "qualified"
-    ? "placed"
-    : "off";
+  if (marker.state === "authorized") {
+    // Review item 3: the marker's evidence is rechecked on every read.
+    const bad = await authorizedMarkerProblems(
+      o.repoRoot ?? resolve(sharedResults, "..", ".."),
+      marker,
+    );
+    if (bad.length > 0) {
+      throw new ConfigurationError(
+        `egress marker ${path} is not authorized, refusing to run: ${
+          bad.join("; ")
+        }`,
+      );
+    }
+    return "enforced";
+  }
+  if (marker.state === "qualified") return "placed";
+  // Review item 1: a candidate places only the credentialless qualification probe.
+  return marker.state === "candidate" && o.probe ? "placed" : "off";
 }
 
 /** Enforcement counts only when the marker says authorized AND the host verifies now; a failing marker stops. */
@@ -289,7 +306,10 @@ export async function openHarnessEnv(
         } removed ${swept.length} leftover sandbox(es): ${swept.join(", ")}`,
       );
     }
-    const mode = await egressMode(sharedResults, deps.verifyEgress);
+    const mode = await egressMode(sharedResults, deps.verifyEgress, {
+      repoRoot: o.repoRoot,
+      ...(o.probe ? { probe: true } : {}),
+    });
     const ready = await deps.setup(containers);
     closers.unshift(ready.dispose);
     const lane = new BcLane(ready.bc, ready.names, {
@@ -301,6 +321,7 @@ export async function openHarnessEnv(
       : await (deps.egressRuntime ?? realEgressRuntime)({
         repoRoot: o.repoRoot,
         markerPath: join(sharedResults, EGRESS_MARKER),
+        ...(o.probe ? { acceptCandidate: true } : {}),
       });
     const backend = new Backend({
       approvedRoots: [join(o.privateRoot, "work")],

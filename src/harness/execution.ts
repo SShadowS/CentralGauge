@@ -46,6 +46,8 @@ import {
   preflightExpect,
   PROXY_ENV,
   PROXY_PORT,
+  RECORDED_HOSTS_PATH,
+  recordedHostsJson,
   SANDBOX_NETWORK,
 } from "./egress.ts";
 import {
@@ -126,6 +128,12 @@ export interface HarnessEnv {
   supervised: boolean;
   /** True only when M1-24 confirmed the verified enforcement state at start (M1-33, M1-34). */
   egressEnforced: boolean;
+  /**
+   * OAuth host record mode (M1-34 Step 11): the supervised Claude Code cell
+   * in the qualified state whose proxy allows any DNS name on 443 and whose
+   * allowed CONNECT hosts become harness/egress/recorded-hosts.json.
+   */
+  recordOAuthHosts?: boolean;
   /**
    * Set when the verified marker is qualified or authorized (M1-33): every
    * sandbox goes on the internal network behind the execution's proxy, and
@@ -1204,6 +1212,28 @@ export async function runExecution(
       `${cell.arm}: egress enforcement is set but no egress runtime is configured; refusing (fail closed)`,
     );
   }
+  const record = env.recordOAuthHosts === true;
+  const recordedPath = join(env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
+  if (record) {
+    const why = mode === "stub"
+      ? "a stub cell releases no credential and is never placed"
+      : !env.egress
+      ? "the egress marker must be qualified (sandboxes placed)"
+      : env.egressEnforced
+      ? "the marker is already authorized"
+      : !env.supervised
+      ? "it runs only supervised (harness cell --supervised)"
+      : adapter.harness !== "claude-code" || !adapter.credentialBearing
+      ? `it needs a credential-bearing Claude Code arm, not ${adapter.harness}`
+      : !env.credentialLedger
+      ? "it runs inside the shared credential ledger (CG_CREDENTIAL_LEDGER)"
+      : await exists(recordedPath)
+      ? `${RECORDED_HOSTS_PATH} exists (remove it explicitly to record again)`
+      : null;
+    if (why) {
+      throw new ConfigurationError(`${cell.arm}: record mode refused: ${why}`);
+    }
+  }
   if (mode === "normal" && adapter.credentialBearing && !env.egressEnforced) {
     if (!env.supervised) {
       throw new ConfigurationError(
@@ -1317,7 +1347,12 @@ export async function runExecution(
   const stop = env.stop
     ? AbortSignal.any([env.stop, egressAbort.signal])
     : egressAbort.signal;
+  /** Record mode: the hosts of allowed CONNECTs after the release (never the preflight's). */
+  const recordedHosts = new Set<string>();
   const onEgressLog = (l: EgressLogLine) => {
+    if (record && armed && l.decision === "allow") {
+      recordedHosts.add(l.target.replace(/:443$/, ""));
+    }
     // Stop first: a failing log write never delays or swallows a violation.
     if (armed && l.decision === "deny" && egressStop === null) {
       egressStop = "egress_violation";
@@ -1372,8 +1407,9 @@ export async function runExecution(
         hosts = hostsForRoutes(
           Object.values(manifest.provider_routes),
           eg.recordedHosts,
+          { record },
         );
-        expect = preflightExpect(hosts);
+        expect = preflightExpect(hosts, { record });
       } catch (err) {
         throw egressFail(`egress route policy: ${msg(err)}`);
       }
@@ -1425,6 +1461,7 @@ export async function runExecution(
           proxy = await eg.startProxy({
             allowedHosts: hosts,
             log: onEgressLog,
+            ...(record ? { record: true } : {}),
           });
         } catch (err) {
           throw egressFail(
@@ -1624,6 +1661,21 @@ export async function runExecution(
       `${egressFailure}; execution ${id} recorded as setup_failed (no credential released); stopping`,
       name,
       "setup",
+    );
+  }
+  if (record) {
+    if (
+      draft.execution.termination !== "completed" || recordedHosts.size === 0
+    ) {
+      throw new ContainerError(
+        `record mode: execution ${id} ended ${draft.execution.termination} with ${recordedHosts.size} recorded hosts; ${RECORDED_HOSTS_PATH} not written`,
+        name,
+        "setup",
+      );
+    }
+    await writeAtomic(
+      recordedPath,
+      recordedHostsJson([...recordedHosts], `record mode execution ${id}`),
     );
   }
   return { execution: draft.execution, usageResetAt: draft.usage_reset_at };

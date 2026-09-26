@@ -21,6 +21,7 @@ import {
   PREFLIGHT_EXPECT,
   preflightExpect,
   RECORDED_HOSTS_PATH,
+  recordedHostsJson,
   revertScript,
   ROUTE_HOSTS,
   RULE_GROUP,
@@ -43,7 +44,12 @@ function goodState(): EgressState {
       gateway: SANDBOX_NETWORK.gateway,
       hnsId: "hns1",
     },
-    hns: { id: "hns1", type: "Internal", subnet: SANDBOX_NETWORK.subnet },
+    hns: {
+      id: "hns1",
+      name: "a1b2c3",
+      type: "Internal",
+      subnet: SANDBOX_NETWORK.subnet,
+    },
     gatewayAdapter: { index: IDX, alias: "vEthernet (a1b2c3)", prefix: 24 },
     profiles: ["Domain", "Private", "Public"].map((name) => ({
       name,
@@ -97,6 +103,7 @@ Deno.test("applyScript: refuses before any change, inventories effective foreign
     invocation: "inv1",
     dir: "C:\\cg\\fw",
     interfaceAlias: "vEthernet (a1b2c3)",
+    hnsId: "hns1",
   });
   const at = (x: string) => s.indexOf(x);
   assert(
@@ -139,6 +146,8 @@ Deno.test("verifyEgressState: effective-policy mutations are each a named proble
     ["internal", (s) => (s.network!.driver = "nat")],
     ["hns", (s) => (s.hns!.type = "NAT")],
     ["prefix", (s) => (s.gatewayAdapter!.prefix = 16)],
+    ["vethernet", (s) => (s.gatewayAdapter!.alias = "Ethernet 2")],
+    ["vethernet", (s) => (s.hns!.name = "other")],
     ["disabled", (s) => (s.groupRules[0]!.enabled = false)],
     ["direction", (s) => (s.groupRules[1]!.direction = "Outbound")],
     ["action", (s) => (s.groupRules[2]!.action = "Allow")],
@@ -504,6 +513,7 @@ Deno.test("egress scripts are generated deterministically; revert touches only p
     invocation: "inv1",
     dir: "C:\\cg\\fw",
     interfaceAlias: "vEthernet (a1b2c3)",
+    hnsId: "hns1",
   };
   assertEquals(
     applyScript(firewallPlan(IDX), o),
@@ -563,7 +573,12 @@ Deno.test("collectEgressState: a complete observation is normalized; protocol na
       Gateway: SANDBOX_NETWORK.gateway,
       HnsId: "hns1",
     },
-    hns: { Id: "hns1", Type: "Internal", Subnet: SANDBOX_NETWORK.subnet },
+    hns: {
+      Id: "hns1",
+      Name: "a1b2c3",
+      Type: "Internal",
+      Subnet: SANDBOX_NETWORK.subnet,
+    },
     gatewayAdapter: { Index: IDX, Alias: "vEthernet (a1b2c3)", Prefix: 24 },
     profiles: ["Domain", "Private", "Public"].map((Name) => ({
       Name,
@@ -667,10 +682,11 @@ Deno.test("claude-code run.ps1 (A3) waits for ready, bounded, before reading the
 Deno.test("egress scripts (PS 5.1): JSON arrays are read by assignment, and a rollback problem never hides the failure", () => {
   const o = {
     invocation: "inv1",
-    dir: "C:\fw",
+    dir: "C:\\fw",
     interfaceAlias: "vEthernet (x)",
+    hnsId: "hns1",
   };
-  const both = applyScript(firewallPlan(IDX), o) + revertScript("C:\fw");
+  const both = applyScript(firewallPlan(IDX), o) + revertScript("C:\\fw");
   // Windows PowerShell 5.1 emits a JSON array from ConvertFrom-Json as one object.
   assert(
     !/@\([^)]*\| ConvertFrom-Json\)/.test(both),
@@ -798,5 +814,153 @@ Deno.test("proxy: a log sink that throws never turns a deny into an allow", asyn
     assertStringIncludes(new TextDecoder().decode(buf.subarray(0, n)), "403");
   } finally {
     await p.shutdown();
+  }
+});
+
+Deno.test("applyScript (review item 4): the gateway's adapter must be the vEthernet of the inspected HNS network, checked before any change", () => {
+  const o = {
+    invocation: "inv1",
+    dir: "C:\\fw",
+    interfaceAlias: "vEthernet (a1b2c3)",
+    hnsId: "hns1",
+  };
+  const s = applyScript(firewallPlan(IDX), o);
+  const at = (x: string) => s.indexOf(x);
+  assert(at("Get-HnsNetwork") > 0);
+  assertStringIncludes(s, "'hns1'");
+  assert(at("Get-HnsNetwork") < at("Set-NetFirewallProfile"));
+  assert(at("Get-HnsNetwork") < at("New-NetFirewallRule"));
+  assertStringIncludes(s, "not the vEthernet of HNS network");
+  assertThrows(
+    () => applyScript(firewallPlan(IDX), { ...o, hnsId: "" }),
+    ConfigurationError,
+  );
+  assertThrows(
+    () => applyScript(firewallPlan(IDX), { ...o, hnsId: "a'b" }),
+    ConfigurationError,
+  );
+});
+
+Deno.test("apply/revert (review item 5): the apply record with the profile snapshot exists before any profile change; revert restores from it even with no rule; an incomplete rollback keeps it", () => {
+  const o = {
+    invocation: "inv1",
+    dir: "C:\\fw",
+    interfaceAlias: "vEthernet (a1b2c3)",
+    hnsId: "hns1",
+  };
+  const s = applyScript(firewallPlan(IDX), o);
+  const at = (x: string) => s.indexOf(x);
+  assert(at("Save-Json $applied $record") > 0);
+  assert(
+    at("Save-Json $applied $record") < at("Set-NetFirewallProfile"),
+    "the record (with the snapshot) is written before the first profile change",
+  );
+  assertStringIncludes(s, "snapshot = $snapshot");
+  const rollback = s.slice(at("} catch {"));
+  assert(
+    rollback.indexOf("if ($rollback.Count -eq 0)") <
+      rollback.indexOf("Move-Item"),
+    "files are archived only after a complete rollback",
+  );
+  const r = revertScript("C:\\fw");
+  assertStringIncludes(r, "$record.snapshot");
+  assert(
+    !r.includes("fw-snapshot-$inv"),
+    "profiles come from the apply record",
+  );
+});
+
+// Review item 2: the OAuth host record mode (M1-34 Step 11).
+
+Deno.test("record mode: the route policy, the preflight expectation and the record file", async () => {
+  const oauth = "anthropic:first-party-oauth";
+  assertThrows(() => hostsForRoutes([oauth], {}), ConfigurationError);
+  assertEquals(hostsForRoutes([oauth], {}, { record: true }), [
+    "api.anthropic.com",
+  ]);
+  assertThrows(
+    () => hostsForRoutes(["openai:api-key"], {}, { record: true }),
+    ConfigurationError,
+  );
+  const rec = preflightExpect(["api.anthropic.com"], { record: true });
+  assertEquals(rec["proxy-deny-example.com"], true, "record mode allows it");
+  assertEquals(rec["proxy-ip-literal"], false);
+  assertEquals(
+    { ...rec, "proxy-deny-example.com": false },
+    preflightExpect(["api.anthropic.com"]),
+  );
+  const a = recordedHostsJson(
+    ["statsig.example.test", "api.anthropic.com", "statsig.example.test"],
+    "record mode execution x",
+  );
+  assertEquals(
+    a,
+    recordedHostsJson(
+      ["api.anthropic.com", "statsig.example.test"],
+      "record mode execution x",
+    ),
+  );
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const path = join(root, ...RECORDED_HOSTS_PATH.split("/"));
+  await Deno.mkdir(join(path, ".."), { recursive: true });
+  await Deno.writeTextFile(path, a);
+  assertEquals(await loadRecordedHosts(root), {
+    [oauth]: ["api.anthropic.com", "statsig.example.test"],
+  });
+  assertThrows(() => recordedHostsJson([], "s"), ConfigurationError);
+  assertThrows(() => recordedHostsJson(["1.2.3.4"], "s"), ConfigurationError);
+});
+
+Deno.test("proxy record mode: any DNS name on 443 is allowed and logged; IP literals, private resolutions and other ports are still refused", async () => {
+  const lines: { decision: string; target: string; reason: string }[] = [];
+  const upstream = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  const held: Deno.Conn[] = [];
+  (async () => {
+    for await (const c of upstream) held.push(c);
+  })();
+  const p = startEgressProxy({
+    hostname: "127.0.0.1",
+    port: 0,
+    allow: ["api.anthropic.com"],
+    recordMode: true,
+    log: (l) => lines.push(l),
+    resolve: (h) =>
+      Promise.resolve(h === "internal.test" ? ["10.0.0.5"] : ["93.184.216.34"]),
+    allowedHosts: ["127.0.0.1"],
+    dial: () =>
+      Deno.connect({
+        hostname: "127.0.0.1",
+        port: (upstream.addr as Deno.NetAddr).port,
+      }),
+  });
+  try {
+    const status = async (target: string) => {
+      const c = await Deno.connect({ hostname: "127.0.0.1", port: p.port });
+      await c.write(
+        new TextEncoder().encode(`CONNECT ${target} HTTP/1.1\r\n\r\n`),
+      );
+      const buf = new Uint8Array(64);
+      const n = (await c.read(buf)) ?? 0;
+      c.close();
+      return new TextDecoder().decode(buf.subarray(0, n)).split(" ")[1];
+    };
+    assertEquals(await status("statsig.example.test:443"), "200");
+    assertEquals(await status("1.1.1.1:443"), "403");
+    assertEquals(await status("internal.test:443"), "403");
+    assertEquals(await status("statsig.example.test:80"), "403");
+    assertEquals(lines.map((l) => [l.decision, l.target]), [
+      ["allow", "statsig.example.test:443"],
+      ["deny", "1.1.1.1:443"],
+      ["deny", "internal.test:443"],
+      ["deny", "statsig.example.test:80"],
+    ]);
+  } finally {
+    await p.shutdown();
+    upstream.close();
+    for (const c of held) {
+      try {
+        c.close();
+      } catch { /* closed */ }
+    }
   }
 });

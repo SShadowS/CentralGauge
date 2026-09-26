@@ -22,6 +22,11 @@ export interface ProxyOptions {
   port: number;
   /** Exact DNS names allowed (the execution's route hosts). */
   allow: string[];
+  /**
+   * Record mode (M1-34 Step 11, supervised): any DNS name on 443 is allowed
+   * and logged; IP literals and private resolutions are still refused.
+   */
+  recordMode?: boolean;
   log(l: EgressLogLine): void;
   /** Addresses the proxy may bind (the sandbox gateway). */
   allowedHosts: string[];
@@ -267,7 +272,10 @@ export function startEgressProxy(
       if (IPV4.test(host) || host.startsWith("[")) {
         return await deny(t, "ip literal");
       }
-      if (!allow.has(host)) return await deny(t, "host not allowed");
+      const dnsName = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host);
+      if (!allow.has(host) && !(o.recordMode && dnsName)) {
+        return await deny(t, "host not allowed");
+      }
       let addrs: string[];
       try {
         addrs = await within(resolve(host), dialMs);

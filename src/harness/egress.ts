@@ -64,6 +64,25 @@ export const RECORDED_ROUTES: readonly string[] = [
 export const RECORDED_HOSTS_PATH = "harness/egress/recorded-hosts.json";
 export type RecordedHosts = Record<string, string[]>;
 
+/** The recording file text (sorted, unique, strict schema, non-empty): deterministic for the same hosts and source. */
+export function recordedHostsJson(hosts: string[], source: string): string {
+  const list = [...new Set(hosts)].sort();
+  const v = {
+    v: 1,
+    source,
+    routes: { [RECORDED_ROUTES[0]!]: list },
+  };
+  const r = RecordedSchema.safeParse(v);
+  if (!r.success || list.length === 0) {
+    throw new ConfigurationError(
+      `cannot record ${JSON.stringify(list)} for ${RECORDED_HOSTS_PATH}: ${
+        r.success ? "no host" : r.error.issues[0]?.message
+      }`,
+    );
+  }
+  return JSON.stringify(v, null, 2) + "\n";
+}
+
 const RecordedSchema = z.object({
   v: z.literal(1),
   source: z.string().min(1),
@@ -111,10 +130,16 @@ export async function loadRecordedHosts(
   return r.data.routes;
 }
 
-/** The proxy allowlist of one execution: exactly its routes' hosts, sorted; unknown or unrecorded routes refuse. */
+/**
+ * The proxy allowlist of one execution: exactly its routes' hosts, sorted;
+ * unknown or unrecorded routes refuse. In record mode (M1-34 Step 11) the
+ * recorded routes contribute their fixed hosts only: the proxy then allows
+ * any DNS name and the run writes the recording.
+ */
 export function hostsForRoutes(
   routes: string[],
   recorded: RecordedHosts,
+  o: { record?: boolean } = {},
 ): string[] {
   const out = new Set<string>();
   for (const r of routes) {
@@ -125,7 +150,7 @@ export function hostsForRoutes(
       );
     }
     base.forEach((h) => out.add(h));
-    if (RECORDED_ROUTES.includes(r)) {
+    if (RECORDED_ROUTES.includes(r) && !o.record) {
       const rec = Object.hasOwn(recorded, r) ? recorded[r] : undefined;
       if (!rec || rec.length === 0) {
         throw new ConfigurationError(
@@ -220,23 +245,29 @@ const PS_HEAD = [
   "function Save-Json($path, $value) { [IO.File]::WriteAllText($path, (ConvertTo-Json -InputObject $value -Depth 4), $utf8) }",
   "# A lookup that finds nothing reports ObjectNotFound; any other error stops the script.",
   "function Assert-NotFoundOnly($errs, $what) { $bad = @($errs | Where-Object { $_.CategoryInfo.Category -ne 'ObjectNotFound' }); if ($bad.Count -gt 0) { throw \"cannot read $($what): $($bad[0])\" } }",
-  "# Windows PowerShell 5.1: ConvertFrom-Json emits a JSON array as one object; assign first, then enumerate.",
-  'function Read-Profiles($path) { $v = ConvertFrom-Json (Get-Content -LiteralPath $path -Raw -Encoding UTF8); $v = @($v); if ($v.Count -ne 3) { throw "snapshot $path does not hold 3 profiles" }; $v }',
 ];
 
 /**
  * Transactional apply (run elevated by ops, M1-34). Refuses before any
- * change; records every rule it creates; on any error removes only those
- * and restores the profiles only if it changed them. Deterministic: the
- * same inputs give the same script.
+ * change (existing group, wrong adapter, adapter not the vEthernet of the
+ * inspected HNS network, foreign effective blocks); writes the apply record
+ * with the profile snapshot before the first change; records every rule it
+ * creates; on any error removes only those and restores the profiles, and
+ * keeps the record for revert when that rollback is incomplete.
+ * Deterministic: the same inputs give the same script.
  */
 export function applyScript(
   plan: FirewallRule[],
-  o: { invocation: string; dir: string; interfaceAlias: string },
+  o: { invocation: string; dir: string; interfaceAlias: string; hnsId: string },
 ): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/.test(o.invocation)) {
     throw new ConfigurationError(
       `invocation id must be letters, digits and dashes (got ${o.invocation})`,
+    );
+  }
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(o.hnsId)) {
+    throw new ConfigurationError(
+      `hns network id must be the inspected id (letters, digits, dashes; got ${o.hnsId})`,
     );
   }
   const idx = plan[0]?.interfaceIndex;
@@ -263,6 +294,11 @@ export function applyScript(
     `if ($existing.Count -gt 0) { throw 'group ${RULE_GROUP} exists: revert first' }`,
     `$ip = Get-NetIPAddress -IPAddress '${SANDBOX_NETWORK.gateway}' -ErrorAction Stop`,
     `if (@($ip).Count -ne 1 -or $ip.InterfaceAlias -ne $alias -or $ip.InterfaceIndex -ne ${idx}) { throw "gateway ${SANDBOX_NETWORK.gateway} is on '$($ip.InterfaceAlias)' (index $($ip.InterfaceIndex)), not the planned $alias (index ${idx}): regenerate the scripts" }`,
+    "# The adapter must be the vEthernet of the inspected HNS network (by name or id).",
+    `$hns = @(Get-HnsNetwork | Where-Object { [string]$_.Id -eq '${o.hnsId}' })`,
+    `if ($hns.Count -ne 1) { throw "HNS network ${o.hnsId} not found (found $($hns.Count)): regenerate the scripts" }`,
+    '$vEthernet = @("vEthernet ($([string]$hns[0].Name))", "vEthernet ($([string]$hns[0].Id))")',
+    `if ($vEthernet -notcontains [string]$ip.InterfaceAlias) { throw "adapter '$($ip.InterfaceAlias)' is not the vEthernet of HNS network ${o.hnsId} ($($hns[0].Name)): refusing" }`,
     "$e = $null",
     `$foreign = @(Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -Action Block -ErrorAction SilentlyContinue -ErrorVariable e | Where-Object { $_.Group -ne '${RULE_GROUP}' } | ForEach-Object { [ordered]@{ Name = [string]$_.Name; DisplayName = [string]$_.DisplayName; Direction = [string]$_.Direction; Profile = [string]$_.Profile; Source = [string]$_.PolicyStoreSource } })`,
     "Assert-NotFoundOnly $e 'the effective block rules'",
@@ -271,9 +307,12 @@ export function applyScript(
     `$snapshot = @(Get-NetFirewallProfile | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Enabled = [string]$_.Enabled; DefaultInboundAction = [string]$_.DefaultInboundAction; DefaultOutboundAction = [string]$_.DefaultOutboundAction } })`,
     'if ($snapshot.Count -ne 3) { throw "expected 3 firewall profiles, found $($snapshot.Count)" }',
     `Save-Json ${f("snapshot")} $snapshot`,
+    "# The apply record carries the snapshot and exists before any change: an interrupted apply is revertible.",
     "$created = @()",
-    "$changedProfiles = $false",
+    `$record = [ordered]@{ invocation = '${o.invocation}'; snapshot = $snapshot; created = $created }`,
     `$applied = ${f("apply")}`,
+    "Save-Json $applied $record",
+    "$changedProfiles = $false",
     "try {",
     "  $changedProfiles = $true",
     "  Set-NetFirewallProfile -All -DefaultInboundAction Allow -DefaultOutboundAction Allow",
@@ -284,7 +323,7 @@ export function applyScript(
       ? ""
       : ` -LocalPort @(${r.localPorts.map((p) => `'${p}'`).join(", ")})`;
     lines.push(
-      `  New-NetFirewallRule -Group '${RULE_GROUP}' -Name '${r.name}' -DisplayName '${r.name}' -Enabled True -Direction Inbound -Action Block -Profile Any -Protocol ${r.protocol}${ports} -InterfaceAlias $alias | Out-Null; $created += '${r.name}'; Save-Json $applied $created`,
+      `  New-NetFirewallRule -Group '${RULE_GROUP}' -Name '${r.name}' -DisplayName '${r.name}' -Enabled True -Direction Inbound -Action Block -Profile Any -Protocol ${r.protocol}${ports} -InterfaceAlias $alias | Out-Null; $created += '${r.name}'; $record.created = $created; Save-Json $applied $record`,
     );
   }
   lines.push(
@@ -294,13 +333,14 @@ export function applyScript(
     "  # Roll back only what this invocation did; a rollback problem never hides the failure.",
     "  $rollback = @()",
     '  foreach ($n in $created) { try { Remove-NetFirewallRule -Name $n -ErrorAction Stop } catch { $rollback += "rule $($n): $($_.Exception.Message)" } }',
-    `  if ($changedProfiles) { try { foreach ($p in (Read-Profiles ${
-      f("snapshot")
-    })) { Set-NetFirewallProfile -Name $p.Name -Enabled $p.Enabled -DefaultInboundAction $p.DefaultInboundAction -DefaultOutboundAction $p.DefaultOutboundAction -ErrorAction Stop } } catch { $rollback += "profiles: $($_.Exception.Message)" } }`,
-    "  $stamp = Get-Date -Format 'yyyyMMddHHmmss'",
-    `  foreach ($k in 'apply', 'snapshot') { $x = Join-Path $dir "fw-$k-${o.invocation}.json"; if (Test-Path -LiteralPath $x) { Move-Item -LiteralPath $x -Destination "$x.rolledback-$stamp" } }`,
-    "  if ($rollback.Count -gt 0) { throw \"apply failed: $($failure.Exception.Message); rollback incomplete: $($rollback -join '; ')\" }",
-    "  throw $failure",
+    '  if ($changedProfiles) { try { foreach ($p in $snapshot) { Set-NetFirewallProfile -Name $p.Name -Enabled $p.Enabled -DefaultInboundAction $p.DefaultInboundAction -DefaultOutboundAction $p.DefaultOutboundAction -ErrorAction Stop } } catch { $rollback += "profiles: $($_.Exception.Message)" } }',
+    "  # A complete rollback archives the record; an incomplete one keeps it for revert.",
+    "  if ($rollback.Count -eq 0) {",
+    "    $stamp = Get-Date -Format 'yyyyMMddHHmmss'",
+    `    foreach ($k in 'apply', 'snapshot') { $x = Join-Path $dir "fw-$k-${o.invocation}.json"; if (Test-Path -LiteralPath $x) { Move-Item -LiteralPath $x -Destination "$x.rolledback-$stamp" } }`,
+    "    throw $failure",
+    "  }",
+    "  throw \"apply failed: $($failure.Exception.Message); rollback incomplete: $($rollback -join '; '); the apply record is kept: run the revert script\"",
     "}",
   );
   return lines.join("\r\n") + "\r\n";
@@ -308,9 +348,10 @@ export function applyScript(
 
 /**
  * Revert (run elevated by ops): removes the group (refusing if it holds a
- * rule without our prefix), restores the latest applied snapshot, and
- * archives that invocation's files so a later apply starts clean. Nothing
- * applied and no group is a no-op.
+ * rule without our prefix), restores the profiles from the latest apply
+ * record's snapshot (also when no rule was created), and archives that
+ * invocation's files so a later apply starts clean. Nothing applied and no
+ * group is a no-op.
  */
 export function revertScript(dir: string): string {
   const lines = [
@@ -325,8 +366,11 @@ export function revertScript(dir: string): string {
     "$applied = @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^fw-apply-([A-Za-z0-9-]+)\\.json$' } | Sort-Object LastWriteTimeUtc -Descending)",
     `if ($applied.Count -eq 0) { if ($rules.Count -gt 0) { throw 'group ${RULE_GROUP} exists but no applied invocation is recorded in the dir; refusing' }; Write-Output '[OK] nothing to revert'; exit 0 }`,
     "$inv = [regex]::Match($applied[0].Name, '^fw-apply-([A-Za-z0-9-]+)\\.json$').Groups[1].Value",
-    '$snap = Join-Path $dir "fw-snapshot-$inv.json"',
-    "$profiles = Read-Profiles $snap",
+    "# Windows PowerShell 5.1: assign ConvertFrom-Json first, then enumerate.",
+    "$record = ConvertFrom-Json (Get-Content -LiteralPath $applied[0].FullName -Raw -Encoding UTF8)",
+    "$profiles = $record.snapshot",
+    "$profiles = @($profiles)",
+    'if ($profiles.Count -ne 3) { throw "apply record $($applied[0].Name) does not hold a 3-profile snapshot" }',
     `if ($rules.Count -gt 0) { Remove-NetFirewallRule -Group '${RULE_GROUP}' }`,
     "foreach ($p in $profiles) { Set-NetFirewallProfile -Name $p.Name -Enabled $p.Enabled -DefaultInboundAction $p.DefaultInboundAction -DefaultOutboundAction $p.DefaultOutboundAction }",
     "$stamp = Get-Date -Format 'yyyyMMddHHmmss'",
@@ -347,7 +391,7 @@ export interface EgressState {
     gateway: string;
     hnsId: string;
   } | null;
-  hns: { id: string; type: string; subnet: string } | null;
+  hns: { id: string; name: string; type: string; subnet: string } | null;
   gatewayAdapter: { index: number; alias: string; prefix: number } | null;
   profiles: {
     name: string;
@@ -417,6 +461,22 @@ export function verifyEgressState(s: EgressState): string[] {
     s.gatewayAdapter.prefix !== Number(SANDBOX_NETWORK.subnet.split("/")[1])
   ) {
     p.push("gateway adapter prefix does not match the sandbox subnet");
+  }
+  // The rules bind to this adapter: it must be the vEthernet of that HNS network.
+  const vEthernet = s.hns
+    ? [`vEthernet (${s.hns.name})`, `vEthernet (${s.hns.id})`].map((x) =>
+      x.toLowerCase()
+    )
+    : [];
+  if (
+    s.gatewayAdapter &&
+    !vEthernet.includes(s.gatewayAdapter.alias.toLowerCase())
+  ) {
+    p.push(
+      `gateway adapter ${s.gatewayAdapter.alias} is not the vEthernet of HNS network ${
+        s.hns ? `${s.hns.id} (${s.hns.name})` : "(missing)"
+      }`,
+    );
   }
   if (
     s.marker &&
@@ -502,8 +562,12 @@ const RawSchema = z.object({
     Gateway: z.string(),
     HnsId: z.string(),
   }).nullable(),
-  hns: z.object({ Id: z.string(), Type: z.string(), Subnet: z.string() })
-    .nullable(),
+  hns: z.object({
+    Id: z.string(),
+    Name: z.string(),
+    Type: z.string(),
+    Subnet: z.string(),
+  }).nullable(),
   gatewayAdapter: z.object({
     Index: z.number().int(),
     Alias: z.string(),
@@ -592,7 +656,12 @@ export async function collectEgressState(
       gateway: d.network.Gateway,
       hnsId: d.network.HnsId,
     },
-    hns: d.hns && { id: d.hns.Id, type: d.hns.Type, subnet: d.hns.Subnet },
+    hns: d.hns && {
+      id: d.hns.Id,
+      name: d.hns.Name,
+      type: d.hns.Type,
+      subnet: d.hns.Subnet,
+    },
     gatewayAdapter: d.gatewayAdapter && {
       index: d.gatewayAdapter.Index,
       alias: d.gatewayAdapter.Alias,
@@ -671,7 +740,7 @@ export const COLLECT_PS = [
   'if ($ip.Count -gt 1) { throw "gateway $gw is on $($ip.Count) adapters" }',
   "$adapter = $null; if ($ip.Count -eq 1) { $adapter = [ordered]@{ Index = [int]$ip[0].InterfaceIndex; Alias = [string]$ip[0].InterfaceAlias; Prefix = [int]$ip[0].PrefixLength } }",
   "$hns = $null",
-  "if ($env:CG_HNS_ID) { $h = @(Get-HnsNetwork | Where-Object { [string]$_.Id -eq $env:CG_HNS_ID }); if ($h.Count -gt 1) { throw 'hns id is ambiguous' }; if ($h.Count -eq 1) { $hns = [ordered]@{ Id = [string]$h[0].Id; Type = [string]$h[0].Type; Subnet = [string]@($h[0].Subnets)[0].AddressPrefix } } }",
+  "if ($env:CG_HNS_ID) { $h = @(Get-HnsNetwork | Where-Object { [string]$_.Id -eq $env:CG_HNS_ID }); if ($h.Count -gt 1) { throw 'hns id is ambiguous' }; if ($h.Count -eq 1) { $hns = [ordered]@{ Id = [string]$h[0].Id; Name = [string]$h[0].Name; Type = [string]$h[0].Type; Subnet = [string]@($h[0].Subnets)[0].AddressPrefix } } }",
   "$out = [ordered]@{ hns = $hns; gatewayAdapter = $adapter; profiles = $profiles; groupRules = $groupRules; foreignBlockRules = $foreign }",
   "[Console]::Out.Write((ConvertTo-Json -InputObject $out -Depth 6 -Compress))",
 ].join("\n");
@@ -799,10 +868,19 @@ const NEGATIVE_PROBES = [
   "proxy-ip-literal",
 ];
 
-/** A2: every negative, the backend, and one positive proxy probe per route host of this execution. */
-export function preflightExpect(hosts: string[]): Record<string, boolean> {
+/**
+ * A2: every negative, the backend, and one positive proxy probe per route
+ * host of this execution. In record mode the proxy allows any DNS name, so
+ * the example.com probe must be open (proof the record proxy is the one
+ * answering); IP literals stay refused.
+ */
+export function preflightExpect(
+  hosts: string[],
+  o: { record?: boolean } = {},
+): Record<string, boolean> {
   const out: Record<string, boolean> = {};
   for (const n of NEGATIVE_PROBES) out[n] = false;
+  if (o.record) out["proxy-deny-example.com"] = true;
   out["backend-3210"] = true;
   for (const h of hosts) {
     if (!isAllowableHost(h) || h === "example.com") {
@@ -919,10 +997,11 @@ export interface EgressRuntime {
   verify(): Promise<string[]>;
   /** Proxy and backend listening on the gateway only: problems. */
   listeners(): Promise<string[]>;
-  /** The execution's proxy: exactly these hosts; every decision goes to log. */
+  /** The execution's proxy: exactly these hosts (record: any DNS name on 443); every decision goes to log. */
   startProxy(o: {
     allowedHosts: string[];
     log(l: EgressLogLine): void;
+    record?: boolean;
   }): Promise<{ shutdown(): Promise<void> }>;
   /** Run C:\egress-check.ps1 inside the running sandbox. */
   probe(sandbox: string, hosts: string[]): Promise<ProbeLine[]>;
@@ -936,7 +1015,7 @@ const PROBE_TIMEOUT_MS = 180_000;
 
 /** The production runtime (Windows host, Docker Desktop Windows containers). */
 export async function realEgressRuntime(
-  o: { repoRoot: string; markerPath: string },
+  o: { repoRoot: string; markerPath: string; acceptCandidate?: boolean },
 ): Promise<EgressRuntime> {
   const recordedHosts = await loadRecordedHosts(o.repoRoot);
   return {
@@ -944,11 +1023,14 @@ export async function realEgressRuntime(
     async verify() {
       const s = await collectEgressState(realEgressCollector(o.markerPath));
       const p = verifyEgressState(s);
-      if (!s.marker || !["qualified", "authorized"].includes(s.marker.state)) {
+      const placing = o.acceptCandidate
+        ? ["candidate", "qualified", "authorized"]
+        : ["qualified", "authorized"];
+      if (!s.marker || !placing.includes(s.marker.state)) {
         p.push(
           `egress marker ${o.markerPath} is ${
             s.marker?.state ?? "missing"
-          }: placement needs qualified or authorized`,
+          }: placement needs ${placing.join(" or ")}`,
         );
       }
       return p;
@@ -976,6 +1058,7 @@ export async function realEgressRuntime(
         allowedHosts: [SANDBOX_NETWORK.gateway],
         allow: p.allowedHosts,
         log: p.log,
+        recordMode: p.record === true,
       });
       return Promise.resolve({ shutdown: () => proxy.shutdown() });
     },
@@ -1027,4 +1110,118 @@ export async function realEgressRuntime(
       }
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Review item 3: an authorized marker carries its evidence; every read rechecks it.
+
+export async function sha256File(path: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", await Deno.readFile(path));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function sha256Text(text: string): Promise<string> {
+  const d = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(text),
+  );
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** The authorized allowlist and its hash, from the current recording. */
+export async function authorizedAllowlist(
+  repoRoot: string,
+): Promise<{ allowlist: string[]; sha256: string }> {
+  const allowlist = hostsForRoutes(
+    Object.keys(ROUTE_HOSTS),
+    await loadRecordedHosts(repoRoot),
+  );
+  return { allowlist, sha256: await sha256Text(JSON.stringify(allowlist)) };
+}
+
+/**
+ * Problems with an authorized marker's evidence: the qualification
+ * evidence reference and hash, the recorded-hosts hash, the supervised
+ * cell, the rotation flag and the allowlist hash, each present and equal to
+ * what is on disk now. Empty means authorized.
+ */
+export async function authorizedMarkerProblems(
+  repoRoot: string,
+  m: Record<string, unknown>,
+): Promise<string[]> {
+  const p: string[] = [];
+  const str = (k: string) => {
+    const v = m[k];
+    if (typeof v !== "string" || v === "") {
+      p.push(`${k} is missing`);
+      return null;
+    }
+    return v;
+  };
+  const probe = str("probe_evidence");
+  const probeSha = str("probe_evidence_sha256");
+  const recordedSha = str("recorded_hosts_sha256");
+  const cell = str("cell");
+  const allowSha = str("allowlist_sha256");
+  if (m["rotation_done"] !== true) p.push("rotation_done is not true");
+  const same = async (
+    k: string,
+    want: string | null,
+    got: () => Promise<string>,
+  ) => {
+    if (want === null) return;
+    let now: string;
+    try {
+      now = await got();
+    } catch (err) {
+      p.push(`${k}: cannot recompute (${(err as Error).message})`);
+      return;
+    }
+    if (now !== want) p.push(`${k} does not match the current file`);
+  };
+  if (probe) {
+    await same("probe_evidence_sha256", probeSha, () => sha256File(probe));
+  }
+  await same(
+    "recorded_hosts_sha256",
+    recordedSha,
+    () => sha256File(join(repoRoot, ...RECORDED_HOSTS_PATH.split("/"))),
+  );
+  if (allowSha !== null) {
+    try {
+      const a = await authorizedAllowlist(repoRoot);
+      if (a.sha256 !== allowSha) {
+        p.push("allowlist_sha256 does not match the current allowlist");
+      }
+      if (
+        JSON.stringify(m["proxy_allowlist"]) !== JSON.stringify(a.allowlist)
+      ) {
+        p.push("proxy_allowlist does not match the current allowlist");
+      }
+    } catch (err) {
+      p.push(`allowlist_sha256: cannot recompute (${(err as Error).message})`);
+    }
+  }
+  if (cell) {
+    const executions = join(
+      repoRoot,
+      "results",
+      "harness",
+      "cells",
+      "executions",
+    );
+    let found = false;
+    try {
+      for (const d of Deno.readDirSync(executions)) {
+        try {
+          Deno.statSync(join(executions, d.name, `${cell}.json`));
+          found = true;
+        } catch { /* not in this campaign */ }
+      }
+    } catch { /* no cells */ }
+    if (!found) p.push(`cell ${cell} is not in ${executions}`);
+  }
+  return p;
 }

@@ -84,6 +84,7 @@ import {
 } from "../../src/harness/fsutil.ts";
 import { hashTree } from "../../src/harness/hash.ts";
 import {
+  authorizedMarkerProblems,
   collectEgressState,
   evaluatePreflight,
   hostsForRoutes,
@@ -93,8 +94,11 @@ import {
   preflightExpect,
   ProbeEvidenceSchema,
   realEgressCollector,
+  RECORDED_HOSTS_PATH,
   ROUTE_HOSTS,
   SANDBOX_NETWORK,
+  sha256File,
+  sha256Text,
   verifyEgressState,
 } from "../../src/harness/egress.ts";
 import {
@@ -404,6 +408,8 @@ export interface CellCliOptions {
   stubProvider?: string | null;
   /** Another image of the same harness (sha256 id); only with stubProvider. */
   image?: string | null;
+  /** M1-34 Step 11: record the OAuth hosts (qualified marker, supervised Claude arm, ledger). */
+  recordOAuthHosts?: boolean;
 }
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
@@ -511,6 +517,7 @@ export async function harnessCell(
     const env = {
       ...h.env,
       stop: stop.signal,
+      ...(o.recordOAuthHosts ? { recordOAuthHosts: true } : {}),
       ...(o.qualifyManifest
         ? { qualifyManifest: await loadQualifyManifest(o.qualifyManifest) }
         : {}),
@@ -867,6 +874,7 @@ interface CellCliFlags {
   qualifyManifest?: string;
   stubProvider?: string;
   image?: string;
+  recordOauthHosts?: boolean;
 }
 
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
@@ -898,6 +906,7 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     qualifyManifest: f.qualifyManifest ? abs(f.qualifyManifest) : null,
     stubProvider: f.stubProvider ? abs(f.stubProvider) : null,
     image: f.image ?? null,
+    recordOAuthHosts: f.recordOauthHosts === true,
   };
 }
 
@@ -1502,7 +1511,17 @@ export async function harnessEgressVerify(
 ): Promise<string[]> {
   const markerPath = join(o.root, "results", "harness", MARKER_FILE);
   const s = await collect(markerPath);
-  if (!o.mark) return verifyEgressState(s);
+  if (!o.mark) {
+    const p = verifyEgressState(s);
+    if (s.marker?.state === "authorized" && await exists(markerPath)) {
+      const m = await readJsonFile(markerPath, "egress marker") as Record<
+        string,
+        unknown
+      >;
+      p.push(...await authorizedMarkerProblems(o.root, m));
+    }
+    return p;
+  }
   type Marker = { state?: string; marked_at?: string };
   const current = await exists(markerPath)
     ? await readJsonFile(markerPath, "egress marker") as Marker
@@ -1544,6 +1563,7 @@ export async function harnessEgressVerify(
     const p = await probeProblems(s, o.probeEvidence);
     if (p.length > 0) return p;
     extra["probe_evidence"] = o.probeEvidence;
+    extra["probe_evidence_sha256"] = await sha256File(o.probeEvidence!);
   }
   if (o.mark === "authorized") {
     const a = await authorizationProblems(
@@ -1553,11 +1573,22 @@ export async function harnessEgressVerify(
     );
     if (a.problems.length > 0) return a.problems;
     const now = new Date().toISOString();
+    const q = current as Record<string, unknown>;
+    if (typeof q["probe_evidence"] !== "string") {
+      return ["the qualified marker carries no probe_evidence reference"];
+    }
     Object.assign(extra, {
       verified_at: now,
       evidence: o.evidence,
+      probe_evidence: q["probe_evidence"],
+      probe_evidence_sha256: q["probe_evidence_sha256"],
+      recorded_hosts_sha256: await sha256File(
+        join(o.root, ...RECORDED_HOSTS_PATH.split("/")),
+      ),
       proxy_allowlist: a.allowlist,
+      allowlist_sha256: await sha256Text(JSON.stringify(a.allowlist)),
       rotation: o.rotation,
+      rotation_done: true,
       cell: o.cell,
     });
   }
@@ -1710,6 +1741,10 @@ export function registerHarnessCommand(cli: Command): void {
     .option(
       "--image <id:string>",
       "Run this image id of the same harness (only with --stub-provider)",
+    )
+    .option(
+      "--record-oauth-hosts",
+      "M1-34 Step 11: record the OAuth hosts into harness/egress/recorded-hosts.json (qualified marker, supervised Claude arm)",
     )
     .action((opts: CellCliFlags, config: string, task: string) =>
       fail(async () => void await harnessCell(config, task, cliOpts(opts)))

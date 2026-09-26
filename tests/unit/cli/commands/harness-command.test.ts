@@ -54,9 +54,12 @@ import { loadTask } from "../../../../src/harness/task.ts";
 import { BenchLockHeldError } from "../../../../src/utils/bench-lock.ts";
 import { FakeBc } from "../../harness/fake-bc.ts";
 import { FakeDocker } from "../../harness/fake-docker.ts";
+import { runQualificationProbe } from "../../../../src/harness/egress-probe.ts";
+import { READY_FILE } from "../../../../src/harness/sandbox.ts";
 import {
   CATALOG,
   ccBehavior,
+  fakeEgress,
   makeEnv,
   mockImageBehavior,
   probeLines,
@@ -727,12 +730,12 @@ Deno.test("openHarnessEnv: a held bench lock stops before any docker call", asyn
 });
 
 Deno.test("resolveEgress: no marker is not enforced; a marker that fails verification stops; only verified authorized counts", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  // Review item 3: an authorized marker counts only with its complete evidence.
+  const root = join(await authorizedRoot(), "results", "harness");
+  const authorized = await Deno.readTextFile(join(root, EGRESS_MARKER));
+  await Deno.remove(join(root, EGRESS_MARKER));
   assertEquals(await resolveEgress(root, () => Promise.resolve([])), false);
-  await Deno.writeTextFile(
-    join(root, EGRESS_MARKER),
-    JSON.stringify({ v: 1, state: "authorized" }),
-  );
+  await Deno.writeTextFile(join(root, EGRESS_MARKER), authorized);
   await assertRejects(
     () =>
       resolveEgress(
@@ -1215,10 +1218,9 @@ repeats: 1
     ConfigurationError,
     "egress",
   );
-  await Deno.writeTextFile(
-    join(shared, EGRESS_MARKER),
-    JSON.stringify({ v: 1, state: "authorized" }),
-  );
+  // M1-33 run 002: an authorized marker counts only with its complete evidence.
+  await authorizedRoot(t.repo.root);
+  assert((await Deno.stat(join(shared, EGRESS_MARKER))).isFile);
   await assertRejects(
     () =>
       harnessRun(
@@ -1650,14 +1652,19 @@ Deno.test("egressMode: qualified places, authorized enforces; an unknown or unre
   assertEquals(await egressMode(root, ok), "off");
   await mark({ v: 1, state: "qualified" });
   assertEquals(await egressMode(root, ok), "placed");
-  await mark({ v: 1, state: "authorized" });
-  assertEquals(await egressMode(root, ok), "enforced");
   let seen = "";
   await egressMode(root, (p) => {
     seen = p;
     return ok();
   });
   assertEquals(seen, join(root, EGRESS_MARKER));
+  // Review item 3: a bare authorized marker is not authorized (the complete one: see below).
+  await mark({ v: 1, state: "authorized" });
+  await assertRejects(
+    () => egressMode(root, ok),
+    ConfigurationError,
+    "not authorized",
+  );
   await mark({ v: 1, state: "authorised" });
   await assertRejects(
     () => egressMode(root, ok),
@@ -1710,7 +1717,12 @@ function egressState(): EgressState {
       gateway: SANDBOX_NETWORK.gateway,
       hnsId: "hns9",
     },
-    hns: { id: "hns9", type: "Internal", subnet: SANDBOX_NETWORK.subnet },
+    hns: {
+      id: "hns9",
+      name: "x",
+      type: "Internal",
+      subnet: SANDBOX_NETWORK.subnet,
+    },
     gatewayAdapter: { index: 42, alias: "vEthernet (x)", prefix: 24 },
     profiles: ["Domain", "Private", "Public"].map((name) => ({
       name,
@@ -1987,5 +1999,232 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
       probeEvidence: await probeEvidence(root),
     }, c)).join("\n"),
     "downgrade",
+  );
+});
+
+// Review item 1: the qualification bootstrap runs in the candidate state.
+
+Deno.test("qualification bootstrap: a candidate marker places the probe only; the probe's evidence allows marking qualified; nothing is released before it passes", async () => {
+  for (const passing of [true, false]) {
+    const t = await makeEnv();
+    const root = t.env.privateRoot; // any fresh dir works as the repo root here
+    const shared = join(root, "results", "harness");
+    const markerPath = join(shared, EGRESS_MARKER);
+    const collect = markerAwareCollector();
+    assertEquals(
+      await harnessEgressVerify({ root, mark: "candidate" }, collect),
+      [],
+    );
+    const ok = () => Promise.resolve([]);
+    assertEquals(await egressMode(shared, ok), "off", "cells stay off");
+    assertEquals(await egressMode(shared, ok, { probe: true }), "placed");
+    const eg = fakeEgress();
+    if (!passing) {
+      eg.lines = (ls) =>
+        ls.map((l) => l.probe === "gw-smb-445" ? { ...l, ok: true } : l);
+    }
+    let atProbe: string[] = [];
+    eg.onProbe = (sandbox) => {
+      const dir = t.docker.runs.find((r) => r.name === sandbox)!.mounts.get(
+        "C:\\cg-secrets",
+      )!.src;
+      atProbe = [...Deno.readDirSync(dir)].map((e) => e.name);
+      return Promise.resolve();
+    };
+    t.docker.waitForReady = true;
+    let atStart: string[] = [];
+    t.docker.behavior = (call) => {
+      atStart = [
+        ...Deno.readDirSync(call.mounts.get("C:\\cg-secrets")!.src),
+      ].map((e) => e.name).sort();
+      return Promise.resolve(0);
+    };
+    const out = join(root, "probe-out");
+    await Deno.mkdir(out, { recursive: true });
+    const r = await runQualificationProbe({
+      docker: t.docker,
+      egress: eg,
+      custody: {
+        privateRoot: t.env.privateRoot,
+        owner: t.env.owner,
+        ...(t.env.secretAcl ?? {}),
+      },
+      token: "backend-token-0123456789abcdef",
+      spec: {
+        name: "cg-harness-probe-1",
+        owner: t.env.owner,
+        executionId: "exec-probe-1",
+        imageId: `sha256:${"c".repeat(64)}`,
+        workspace: out,
+        taskDir: out,
+        configDir: out,
+        extraMounts: [],
+        env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+        timeoutMs: 60_000,
+        killGraceMs: 50,
+        opTimeoutMs: 100,
+        maxCaptureBytes: 1024 * 1024,
+        rawLog: join(out, "probe.jsonl"),
+        stderrLog: join(out, "stderr.txt"),
+      },
+      probeCommand: ["powershell", "-File", "C:\\config\\cg-al-probe.ps1"],
+      out,
+      collect: () => collect(markerPath),
+    });
+    assertEquals(atProbe, [], "empty mount during the preflight");
+    const call = t.docker.runs[0]!;
+    assertEquals(call.network, SANDBOX_NETWORK.name);
+    assertEquals(eg.proxyHosts, ["api.anthropic.com"]);
+    const q = await harnessEgressVerify({
+      root,
+      mark: "qualified",
+      probeEvidence: r.evidence,
+    }, collect);
+    if (passing) {
+      assertEquals(r.problems, []);
+      assertEquals(atStart, ["backend-token", READY_FILE]);
+      assertEquals(q, []);
+    } else {
+      assertStringIncludes(r.problems.join("\n"), "gw-smb-445");
+      assertEquals(t.docker.readySeen, false, "no token, no ready");
+      assertStringIncludes(q.join("\n"), "gw-smb-445");
+    }
+  }
+});
+
+// Review item 3: an authorized marker carries, and every read rechecks, its evidence.
+
+/** A repo root taken through candidate, qualified and authorized with complete evidence. */
+async function authorizedRoot(at?: string): Promise<string> {
+  const root = at ?? await Deno.realPath(await Deno.makeTempDir());
+  const c = markerAwareCollector();
+  assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
+  assertEquals(
+    await harnessEgressVerify({
+      root,
+      mark: "qualified",
+      probeEvidence: await probeEvidence(root),
+    }, c),
+    [],
+  );
+  const soon = new Date(Date.now() + 60_000).toISOString();
+  const later = new Date(Date.now() + 120_000).toISOString();
+  const rotation = join(root, "rotation.json");
+  await Deno.writeTextFile(
+    rotation,
+    JSON.stringify({
+      v: 1,
+      credentials: ["claude-oauth", "openrouter"].map((name) => ({
+        name,
+        revoked_at: soon,
+        created_at: soon,
+      })),
+    }),
+  );
+  await Deno.mkdir(join(root, "harness", "egress"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, ...RECORDED_HOSTS_PATH.split("/")),
+    JSON.stringify({
+      v: 1,
+      source: "record mode execution cell-ok",
+      routes: { "anthropic:first-party-oauth": ["oauth.example.test"] },
+    }),
+  );
+  const cells = join(root, "results", "harness", "cells");
+  await Deno.mkdir(join(cells, "executions", "camp1"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "executions", "camp1", "cell-ok.json"),
+    JSON.stringify({
+      id: "cell-ok",
+      manifest: { harness: "claude-code" },
+      termination: "completed",
+      started_at: later,
+    }),
+  );
+  await Deno.mkdir(join(cells, "runs", "cell-ok"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "runs", "cell-ok", "egress.jsonl"),
+    JSON.stringify({ decision: "allow", target: "api.anthropic.com:443" }) +
+      "\n",
+  );
+  assertEquals(
+    await harnessEgressVerify({
+      root,
+      mark: "authorized",
+      rotation,
+      cell: "cell-ok",
+      evidence: "M1-34/001",
+    }, c),
+    [],
+  );
+  return root;
+}
+
+Deno.test("authorized marker (review item 3): carries the evidence; a minimal or stale marker is not authorized (fail closed)", async () => {
+  const root = await authorizedRoot();
+  const shared = join(root, "results", "harness");
+  const markerPath = join(shared, EGRESS_MARKER);
+  const ok = () => Promise.resolve([]);
+  const m = JSON.parse(await Deno.readTextFile(markerPath));
+  for (
+    const k of [
+      "probe_evidence",
+      "probe_evidence_sha256",
+      "recorded_hosts_sha256",
+      "cell",
+      "allowlist_sha256",
+    ]
+  ) {
+    assert(typeof m[k] === "string" && m[k] !== "", k);
+  }
+  assertEquals(m.rotation_done, true);
+  assertEquals(await egressMode(shared, ok), "enforced");
+  assertEquals(await harnessEgressVerify({ root }, markerAwareCollector()), []);
+  const full = await Deno.readTextFile(markerPath);
+  // A minimal authorized marker enables nothing.
+  await Deno.writeTextFile(
+    markerPath,
+    JSON.stringify({
+      v: 1,
+      state: "authorized",
+      network_id: "net9",
+      interface_index: 42,
+    }),
+  );
+  await assertRejects(
+    () => egressMode(shared, ok),
+    ConfigurationError,
+    "not authorized",
+  );
+  for (const k of ["rotation_done", "cell", "allowlist_sha256"]) {
+    const partial = { ...m };
+    delete partial[k];
+    await Deno.writeTextFile(markerPath, JSON.stringify(partial));
+    await assertRejects(() => egressMode(shared, ok), ConfigurationError, k);
+  }
+  await Deno.writeTextFile(markerPath, full);
+  // A stale recorded-hosts file: its hash no longer matches.
+  const recorded = join(root, ...RECORDED_HOSTS_PATH.split("/"));
+  const text = await Deno.readTextFile(recorded);
+  await Deno.writeTextFile(
+    recorded,
+    text.replace("oauth.example.test", "other.example.test"),
+  );
+  await assertRejects(
+    () => egressMode(shared, ok),
+    ConfigurationError,
+    "recorded_hosts_sha256",
+  );
+  assertStringIncludes(
+    (await harnessEgressVerify({ root }, markerAwareCollector())).join("\n"),
+    "recorded_hosts_sha256",
+  );
+  await Deno.writeTextFile(recorded, text);
+  // Changed probe evidence, or a removed cell, is not authorized either.
+  await Deno.writeTextFile(m.probe_evidence, "{}");
+  await assertRejects(
+    () => egressMode(shared, ok),
+    ConfigurationError,
+    "probe_evidence_sha256",
   );
 });

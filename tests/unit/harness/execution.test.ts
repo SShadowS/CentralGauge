@@ -40,7 +40,9 @@ import { loadTask } from "../../../src/harness/task.ts";
 import {
   type EgressState,
   firewallPlan,
+  loadRecordedHosts,
   RECORDED_HOSTS_PATH,
+  recordedHostsJson,
   SANDBOX_NETWORK,
   verifyEgressState,
 } from "../../../src/harness/egress.ts";
@@ -2040,7 +2042,12 @@ Deno.test("enforced run: a recreated network (new id or interface index) fails u
       gateway: SANDBOX_NETWORK.gateway,
       hnsId: "hns1",
     },
-    hns: { id: "hns1", type: "Internal", subnet: SANDBOX_NETWORK.subnet },
+    hns: {
+      id: "hns1",
+      name: "x",
+      type: "Internal",
+      subnet: SANDBOX_NETWORK.subnet,
+    },
     gatewayAdapter: { index: 42, alias: "vEthernet (x)", prefix: 24 },
     profiles: ["Domain", "Private", "Public"].map((name) => ({
       name,
@@ -2116,4 +2123,132 @@ Deno.test("stub cell with a placed marker: egress not consulted (M2-08); default
   assertEquals(oauth.length, 40);
   assert(oauth !== SECRET_OAUTH);
   assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+// Review item 2: OAuth host record mode (M1-34 Step 11).
+
+Deno.test("record mode is refused outside qualified + supervised + a credential-bearing Claude arm + the ledger, and when a recording exists", async () => {
+  const cases: [string, (t: TestEnv) => Promise<string | void>][] = [
+    ["not placed", (t) => {
+      delete t.env.egress;
+      return Promise.resolve();
+    }],
+    ["authorized", (t) => {
+      t.env.egressEnforced = true;
+      return Promise.resolve();
+    }],
+    ["unsupervised", (t) => {
+      t.env.supervised = false;
+      return Promise.resolve();
+    }],
+    ["mock arm", () => Promise.resolve("mock-positive")],
+    ["no ledger", (t) => {
+      t.env.credentialLedger = null;
+      return Promise.resolve();
+    }],
+    ["recording exists", async (t) => {
+      const path = join(t.env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
+      await Deno.mkdir(join(path, ".."), { recursive: true });
+      await Deno.writeTextFile(path, "{}");
+    }],
+  ];
+  for (const [what, setup] of cases) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    t.env.egressEnforced = false; // qualified
+    eg.recordedHosts = {};
+    t.env.recordOAuthHosts = true;
+    const arm = await setup(t);
+    await assertRejects(
+      async () => runCell(t.env, await cellFor(t, arm ?? "cc-sonnet-plain")),
+      ConfigurationError,
+      "record mode",
+      what,
+    );
+    assertEquals(t.docker.runs, [], what);
+    assert(!await exists(t.env.credentialLedger ?? "/nonexistent"), what);
+  }
+});
+
+Deno.test("record mode: the supervised qualified Claude cell records every CONNECT host into recorded-hosts.json", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  t.env.egressEnforced = false; // qualified: supervised, budgeted
+  eg.recordedHosts = {};
+  t.env.recordOAuthHosts = true;
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    for (
+      const target of [
+        "statsig.example.test:443",
+        "api.anthropic.com:443",
+        "statsig.example.test:443",
+      ]
+    ) {
+      eg.log!({
+        at: new Date().toISOString(),
+        decision: "allow",
+        target,
+        reason: "allowed",
+      });
+    }
+    return await inner(call, io);
+  };
+  const r = await runCell(t.env, await cellFor(t));
+  const e = r.executions[0]!;
+  assertEquals(e.termination, "completed");
+  assertEquals(eg.proxyRecord, true);
+  assertEquals(eg.proxyHosts, ["api.anthropic.com"]);
+  const path = join(t.env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
+  assertEquals(
+    await Deno.readTextFile(path),
+    recordedHostsJson(
+      ["api.anthropic.com", "statsig.example.test"],
+      `record mode execution ${e.id}`,
+    ),
+  );
+  assertEquals(await loadRecordedHosts(t.env.repoRoot), {
+    "anthropic:first-party-oauth": [
+      "api.anthropic.com",
+      "statsig.example.test",
+    ],
+  });
+  // One supervised slot was reserved in the shared ledger.
+  assertEquals(
+    (await Deno.readTextFile(t.env.credentialLedger!)).trim().split("\n")
+      .length,
+    1,
+  );
+});
+
+Deno.test("record mode: a run that records nothing writes no file and stops", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  t.env.egressEnforced = false;
+  eg.recordedHosts = {};
+  t.env.recordOAuthHosts = true;
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t)),
+    ContainerError,
+    "record mode",
+  );
+  assert(
+    !await exists(join(t.env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"))),
+  );
+});
+
+Deno.test("record mode is refused for a stub cell (never placed, no credential)", async () => {
+  const t = await makeEnv();
+  await stubEnv(t);
+  const eg = enforce(t);
+  t.env.egressEnforced = false; // qualified
+  eg.recordedHosts = {};
+  t.env.recordOAuthHosts = true;
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t)),
+    ConfigurationError,
+    "record mode refused: a stub cell",
+  );
+  assertEquals(t.docker.runs, []);
+  assertEquals(eg.events, []);
 });

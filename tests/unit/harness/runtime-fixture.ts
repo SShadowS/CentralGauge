@@ -341,8 +341,9 @@ export interface FakeEgress extends EgressRuntime {
   events: string[];
   verifyProblems: string[];
   listenerProblems: string[];
-  /** The proxy allowlist and log of the last execution. */
+  /** The proxy allowlist, record flag and log of the last execution. */
   proxyHosts: string[] | null;
+  proxyRecord: boolean;
   log: ((l: EgressLogLine) => void) | null;
   /** Probe hosts of the last execution. */
   probedHosts: string[] | null;
@@ -360,6 +361,7 @@ export function fakeEgress(): FakeEgress {
     verifyProblems: [],
     listenerProblems: [],
     proxyHosts: null,
+    proxyRecord: false,
     log: null,
     probedHosts: null,
     lines: (ok) => ok,
@@ -376,6 +378,7 @@ export function fakeEgress(): FakeEgress {
     startProxy(o) {
       eg.events.push("proxy");
       eg.proxyHosts = o.allowedHosts;
+      eg.proxyRecord = o.record === true;
       eg.log = o.log;
       return Promise.resolve({
         shutdown: () => {
@@ -396,7 +399,9 @@ export function fakeEgress(): FakeEgress {
       });
       await eg.onProbe(sandbox);
       return eg.lines(
-        Object.entries(preflightExpect(hosts)).map(([probe, ok]) => ({
+        Object.entries(preflightExpect(hosts, { record: eg.proxyRecord })).map((
+          [probe, ok],
+        ) => ({
           probe,
           ok,
         })),
