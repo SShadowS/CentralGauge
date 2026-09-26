@@ -5,6 +5,7 @@ import {
   FindingError,
   OperationalError,
   pack,
+  TEMP_PREFIX,
   verify,
 } from "../../../scripts/harness/freeze-archive.ts";
 
@@ -175,7 +176,9 @@ Deno.test("a REPLACE_ME placeholder secret file is an operational failure, not a
     OperationalError,
     "placeholder secret file",
   );
-  assert(e.message.includes("claude-oauth-token"));
+  // run 003: secret files are named by position, never by basename
+  assert(e.message.includes("secret file #1"));
+  assert(!e.message.includes("claude-oauth-token"));
 });
 
 Deno.test("a secret value with a trailing LF or CRLF is still found", async () => {
@@ -404,4 +407,130 @@ Deno.test("CLI: a secret hit exits 1 without the value; I/O errors in bind and v
   await Deno.mkdir(join(o2, "freeze.json"), { recursive: true });
   const vr = await cli("verify", o2);
   assertEquals(vr.code, 2, vr.text);
+});
+
+Deno.test("percent-encoded values match with mixed-case escapes, in content and in --meta", async () => {
+  const v = "tok/se?cr+et=9~>>";
+  const f = await secret(v);
+  const mixed = encodeURIComponent(v).replace("%2F", "%2f").replace(
+    "%3E%3E",
+    "%3e%3E",
+  );
+  assert(mixed !== encodeURIComponent(v) && mixed !== mixed.toLowerCase());
+  await assertRejects(
+    async () =>
+      pack(await leakRoot("leak.bin", `q=${mixed}&`), await out(), {
+        meta: {},
+        secretFiles: [f],
+      }),
+    FindingError,
+    "leak.bin",
+  );
+  const m = await assertRejects(
+    async () =>
+      pack(await tree(), await out(), {
+        meta: { url: `https://x/?t=${mixed}` },
+        secretFiles: [f],
+      }),
+    FindingError,
+    "--meta",
+  );
+  assert(!m.message.includes(mixed));
+});
+
+Deno.test("verify: a dir where SHA256SUMS, the results tree or a bound file should be is an operational failure (exit 2)", async () => {
+  const packed = async () => {
+    const o = await out();
+    await pack(await tree(), o, {
+      meta: {},
+      secretFiles: [await secret("tok-12345")],
+    });
+    return o;
+  };
+  const o1 = await packed();
+  await Deno.remove(join(o1, "SHA256SUMS"));
+  await Deno.mkdir(join(o1, "SHA256SUMS"));
+  await assertRejects(() => verify(o1), OperationalError);
+  assertEquals((await cli("verify", o1)).code, 2);
+  const o2 = await packed();
+  await Deno.remove(join(o2, "results"), { recursive: true });
+  await Deno.writeTextFile(join(o2, "results"), "not a dir");
+  await assertRejects(() => verify(o2), OperationalError);
+  const o3 = await packed();
+  const report = join(await Deno.makeTempDir(), "r.json");
+  await Deno.writeTextFile(report, "{}");
+  await bind(o3, [report]);
+  await Deno.remove(report);
+  await Deno.mkdir(report);
+  await assertRejects(() => verify(o3), OperationalError);
+  assertEquals((await cli("verify", o3)).code, 2);
+});
+
+Deno.test("secret-file messages name the file by position, never by basename or path", async () => {
+  const good = await secret("good-secret-1");
+  const dir = await Deno.makeTempDir();
+  const named = async (content: string) => {
+    const p = join(dir, `named-${crypto.randomUUID()}`);
+    await Deno.writeTextFile(p, content);
+    return p;
+  };
+  const cases: [string, string][] = [
+    ["empty", await named("\n")],
+    ["short", await named("abc")],
+    ["placeholder", await named("REPLACE_ME")],
+    ["unreadable", join(dir, "named-gone")],
+  ];
+  for (const [label, p] of cases) {
+    const e = await assertRejects(
+      async () =>
+        pack(await tree(), await out(), { meta: {}, secretFiles: [good, p] }),
+      OperationalError,
+      "secret file #2",
+      label,
+    );
+    assert(!e.message.includes("named-"), label);
+    assert(!e.message.includes(dir), label);
+  }
+  const v = "second-file-secret";
+  const hit = await assertRejects(
+    async () =>
+      pack(await leakRoot("leak.txt", v), await out(), {
+        meta: {},
+        secretFiles: [good, await named(v)],
+      }),
+    FindingError,
+    "secret file #2",
+  );
+  assert(!hit.message.includes("named-"));
+});
+
+Deno.test("the pack temp dir carries a fixed prefix and verify refuses a dir whose name carries it", async () => {
+  let seen: string[] = [];
+  const o = await out();
+  await assertRejects(
+    async () =>
+      pack(await tree(), o, {
+        meta: {},
+        secretFiles: [await secret("tok-12345")],
+        onBeforeRename: async () => {
+          seen = (await Array.fromAsync(Deno.readDir(dirname(o)))).map((e) =>
+            e.name
+          );
+          throw new Error("stop");
+        },
+      }),
+    Error,
+    "stop",
+  );
+  assertEquals(seen.length, 1);
+  assert(seen[0]!.startsWith(TEMP_PREFIX), seen[0]);
+  const good = await out();
+  await pack(await tree(), good, {
+    meta: {},
+    secretFiles: [await secret("tok-12345")],
+  });
+  const left = join(dirname(good), `${TEMP_PREFIX}a-1234`);
+  await Deno.rename(good, left);
+  assert((await verify(left)).some((x) => x.includes("temp dir")));
+  assertEquals((await cli("verify", left)).code, 1);
 });

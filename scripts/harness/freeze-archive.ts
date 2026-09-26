@@ -27,6 +27,8 @@ import { utf16le } from "../../src/harness/fsutil.ts";
 
 /** Everything that is not a finding: I/O, bad input, a link. Exit 2. */
 export class OperationalError extends Error {}
+/** A link inside a tree: operational for pack, a finding for verify. */
+class LinkRefused extends OperationalError {}
 /** A secret hit or a bind conflict. Exit 1. */
 export class FindingError extends Error {}
 
@@ -38,6 +40,7 @@ const SUMS = "SHA256SUMS";
 const FREEZE = "freeze.json";
 const DERIVED = "derived.json";
 const MIN_SECRET = 8;
+export const TEMP_PREFIX = ".freeze-tmp-";
 const CHUNK = 1 << 20;
 
 async function sha256(bytes: Uint8Array): Promise<string> {
@@ -70,7 +73,7 @@ async function files(root: string): Promise<string[]> {
     for await (const e of walk(root, { followSymlinks: false })) {
       const rel = posix(relative(root, e.path));
       if (e.isSymlink) {
-        throw new OperationalError(`link or reparse point refused: ${rel}`);
+        throw new LinkRefused(`link or reparse point refused: ${rel}`);
       }
       if (e.isFile) out.push(rel);
     }
@@ -97,12 +100,18 @@ function base64Aligned(v: Uint8Array, k: number): string {
   );
 }
 
-type Secret = { name: string; forms: string[]; needles: Uint8Array[] };
+type Secret = {
+  name: string;
+  forms: string[];
+  needles: Uint8Array[];
+  /** Lowercased percent form, matched against a lowercased copy. */
+  pctLower: Uint8Array | undefined;
+};
 
 /** UTF-8, UTF-16LE, base64 (std and URL-safe, 3 alignments), percent-encoded. */
 function secretForms(
   value: string,
-): { forms: string[]; needles: Uint8Array[] } {
+): Omit<Secret, "name"> {
   const u8 = enc.encode(value);
   const forms = new Set<string>([value]);
   for (const k of [0, 1, 2]) {
@@ -111,16 +120,25 @@ function secretForms(
     forms.add(b.replaceAll("+", "-").replaceAll("/", "_"));
   }
   const pct = encodeURIComponent(value);
-  forms.add(pct);
-  forms.add(pct.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase()));
   return {
     forms: [...forms],
     needles: [...[...forms].map((f) => enc.encode(f)), utf16le(value)],
+    // ponytail: the whole needle is compared case-insensitively, so it can
+    // over-match a value that differs only in letter case; that fails closed.
+    pctLower: pct === value ? undefined : enc.encode(pct.toLowerCase()),
   };
 }
 
+/** ASCII-lowercased copy. */
+const lower = (b: Uint8Array) =>
+  b.map((x) => x >= 0x41 && x <= 0x5a ? x | 0x20 : x);
+
 function hitSecrets(bytes: Uint8Array, secrets: Secret[]): Secret[] {
-  return secrets.filter((s) => s.needles.some((n) => contains(bytes, n)));
+  let low: Uint8Array | undefined;
+  return secrets.filter((s) =>
+    s.needles.some((n) => contains(bytes, n)) ||
+    (s.pctLower !== undefined && contains(low ??= lower(bytes), s.pctLower))
+  );
 }
 
 function hitPatterns(bytes: Uint8Array): string[] {
@@ -130,15 +148,15 @@ function hitPatterns(bytes: Uint8Array): string[] {
 
 async function readSecrets(secretFiles: string[]): Promise<Secret[]> {
   const out: Secret[] = [];
-  for (const f of secretFiles) {
-    const name = basename(f);
+  for (const [i, f] of secretFiles.entries()) {
+    const name = `secret file #${i + 1}`;
     let text: string;
     try {
       text = new TextDecoder("utf-8", { fatal: true }).decode(
         await Deno.readFile(f),
       );
     } catch {
-      throw new OperationalError(`cannot read secret file: ${name}`);
+      throw new OperationalError(`cannot read ${name}`);
     }
     const values = text.split(/\r?\n/).map((l) => l.trim()).filter((l) =>
       l !== ""
@@ -146,25 +164,19 @@ async function readSecrets(secretFiles: string[]): Promise<Secret[]> {
     if (values.length === 0) {
       throw new OperationalError(`empty secret file (no values): ${name}`);
     }
-    values.forEach((v, i) => {
+    values.forEach((v, j) => {
       if (v.startsWith("REPLACE_ME")) {
         throw new OperationalError(`placeholder secret file: ${name}`);
       }
       if (v.length < MIN_SECRET) {
         throw new OperationalError(
           `value on non-blank line ${
-            i + 1
+            j + 1
           } of ${name} is shorter than ${MIN_SECRET} characters`,
         );
       }
     });
     for (const v of values) out.push({ name, ...secretForms(v) });
-  }
-  // A secret file name that holds a value is not printed either.
-  for (const s of out) {
-    if (hitSecrets(enc.encode(s.name), out).length > 0) {
-      s.name = "<secret file name withheld>";
-    }
   }
   return out;
 }
@@ -176,6 +188,14 @@ function scrub(msg: string, secrets: Secret[]): string {
     b.length - a.length
   );
   for (const f of forms) out = out.replaceAll(f, "<withheld>");
+  for (const s of secrets) {
+    if (!s.pctLower) continue;
+    const pct = new TextDecoder().decode(s.pctLower);
+    let k: number;
+    while ((k = out.toLowerCase().indexOf(pct)) !== -1) {
+      out = out.slice(0, k) + "<withheld>" + out.slice(k + pct.length);
+    }
+  }
   return out;
 }
 
@@ -262,6 +282,9 @@ async function packScanned(
   if (hitSecrets(meta, secrets).length > 0 || hitPatterns(meta).length > 0) {
     throw new FindingError("secret found in --meta (withheld)");
   }
+  if (basename(resolve(outDir)).startsWith(TEMP_PREFIX)) {
+    throw new OperationalError(`outDir name carries ${TEMP_PREFIX}`);
+  }
   try {
     await Deno.lstat(outDir);
     throw new OperationalError(`outDir exists: ${outDir}`);
@@ -277,7 +300,7 @@ async function packScanned(
   await Deno.mkdir(dirname(outDir), { recursive: true });
   const tmp = join(
     dirname(outDir),
-    `.${basename(outDir)}.tmp-${crypto.randomUUID().slice(0, 8)}`,
+    `${TEMP_PREFIX}${basename(outDir)}-${crypto.randomUUID().slice(0, 8)}`,
   );
   await Deno.mkdir(tmp);
   try {
@@ -357,6 +380,9 @@ async function readJson<T>(p: string): Promise<T | undefined> {
 async function readFreeze(
   outDir: string,
 ): Promise<{ sums_sha256: string; files: number } | string> {
+  if (basename(resolve(outDir)).startsWith(TEMP_PREFIX)) {
+    return `a pack temp dir (${TEMP_PREFIX}), never a published archive`;
+  }
   let text: string;
   try {
     text = await Deno.readTextFile(join(outDir, FREEZE));
@@ -382,8 +408,9 @@ export async function verify(outDir: string): Promise<string[]> {
   let sumsBytes: Uint8Array;
   try {
     sumsBytes = await Deno.readFile(join(outDir, SUMS));
-  } catch {
-    return [`missing: ${SUMS}`];
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return [`missing: ${SUMS}`];
+    throw new OperationalError(`cannot read ${SUMS}: ${(e as Error).message}`);
   }
   if (await sha256(sumsBytes) !== freeze.sums_sha256) {
     problems.push(`${SUMS} does not match freeze.json`);
@@ -399,7 +426,8 @@ export async function verify(outDir: string): Promise<string[]> {
   try {
     actual = await files(join(outDir, "results"));
   } catch (e) {
-    problems.push((e as Error).message);
+    if (!(e instanceof LinkRefused)) throw e;
+    problems.push(e.message);
   }
   for (const rel of actual) {
     const want = expected.get(rel);
@@ -421,7 +449,12 @@ export async function verify(outDir: string): Promise<string[]> {
       let bytes: Uint8Array;
       try {
         bytes = await Deno.readFile(f.path);
-      } catch {
+      } catch (e) {
+        if (!(e instanceof Deno.errors.NotFound)) {
+          throw new OperationalError(
+            `cannot read bound file ${f.path}: ${(e as Error).message}`,
+          );
+        }
         problems.push(`bound file missing: ${f.path}`);
         continue;
       }
