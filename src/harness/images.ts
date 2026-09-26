@@ -123,8 +123,19 @@ export function mcpFacts(
  * hashJson (canonical, so formatting of the file does not move it).
  */
 export async function mcpLabel(root: string): Promise<[string, string]> {
+  const def = await readAlToolsDef(root);
+  return [
+    `${MCP_LABEL_PREFIX}al-tools`,
+    `${def.version} ${await hashJson(def)}`,
+  ];
+}
+
+/** The al-tools definition, read once and version-checked. */
+async function readAlToolsDef(
+  root: string,
+): Promise<{ version: string; tools?: unknown }> {
   const path = join(root, AL_TOOLS_DEF);
-  let def: { version?: unknown };
+  let def: { version?: unknown; tools?: unknown };
   try {
     def = JSON.parse(await Deno.readTextFile(path));
   } catch (e) {
@@ -139,25 +150,33 @@ export async function mcpLabel(root: string): Promise<[string, string]> {
       `${path}: version missing or contains whitespace`,
     );
   }
-  return [
-    `${MCP_LABEL_PREFIX}al-tools`,
-    `${def.version} ${await hashJson(def)}`,
-  ];
+  return def as { version: string; tools?: unknown };
 }
 
 /** The repo's MCP definitions: per server, the definition hash (as in the image label) and its sorted tool names. */
 export type McpDefinitions = Record<string, { hash: string; tools: string[] }>;
 
 export async function mcpDefinitions(root: string): Promise<McpDefinitions> {
-  const [, value] = await mcpLabel(root);
-  const def = JSON.parse(await Deno.readTextFile(join(root, AL_TOOLS_DEF)));
-  const tools = (Array.isArray(def.tools) ? def.tools : [])
-    .map((t: { name?: unknown }) => t?.name)
-    .filter((n: unknown): n is string => typeof n === "string");
+  // One read: the hash and the tool names come from the same object.
+  const def = await readAlToolsDef(root);
+  const names = (Array.isArray(def.tools) ? def.tools : []).map((
+    t: { name?: unknown } | null,
+  ) => t?.name);
+  if (
+    names.length === 0 ||
+    names.some((n: unknown) => typeof n !== "string" || n === "") ||
+    new Set(names).size !== names.length
+  ) {
+    throw new ConfigurationError(
+      `${
+        join(root, AL_TOOLS_DEF)
+      }: tools must be a non-empty list of uniquely named tools`,
+    );
+  }
   return {
     "al-tools": {
-      hash: value.split(" ")[1]!,
-      tools: [...new Set<string>(tools)].sort(),
+      hash: await hashJson(def),
+      tools: (names as string[]).sort(),
     },
   };
 }

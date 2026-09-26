@@ -258,3 +258,29 @@ Deno.test("runtimeFacts: a plain arm's native settings carry neither mcp nor mcp
   );
   assert(!("mcp" in f.native_settings) && !("mcp_tools" in f.native_settings));
 });
+
+Deno.test("mcpDefinitions: a definition without tools, with a nameless or duplicate tool is refused", async () => {
+  for (
+    const tools of [
+      undefined,
+      [],
+      [{ description: "no name" }],
+      [{ name: "al_compile" }, { name: "al_compile" }],
+    ]
+  ) {
+    const root = await Deno.makeTempDir();
+    await Deno.mkdir(`${root}/harness/images/base`, { recursive: true });
+    await Deno.writeTextFile(
+      `${root}/harness/images/base/al-tools-tools.json`,
+      JSON.stringify({
+        version: "al-tools-mcp@1",
+        ...(tools ? { tools } : {}),
+      }),
+    );
+    await assertRejects(
+      () => mcpDefinitions(root),
+      ConfigurationError,
+      "tools",
+    );
+  }
+});
