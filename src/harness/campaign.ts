@@ -269,13 +269,22 @@ export async function runCampaign(
   const ids = await taskSetIdentity(env.repoRoot, tasks, env.symbols);
   const arms: CampaignRecord["arms"] = [];
   for (const config of configs) {
+    const tag = imageTag(config.harness, config.harness_version);
+    // A dry run opens no container: the shipped MCP definition is read (and
+    // checked against its label) only by a real run, before any cell.
+    const image = await imageFacts(
+      env.docker,
+      tag,
+      o.dryRun ? null : env.owner,
+    );
+    if (o.dryRun && image.mcp && Object.keys(image.mcp).length > 0) {
+      io.log(
+        `[DRY] ${tag}: shipped MCP definition not verified (a real run reads it)`,
+      );
+    }
     const facts = runtimeFacts(
       config,
-      await imageFacts(
-        env.docker,
-        imageTag(config.harness, config.harness_version),
-        env.owner,
-      ),
+      image,
       adapterFor(config.harness),
       io.catalog,
       config.components.mcp.length > 0
