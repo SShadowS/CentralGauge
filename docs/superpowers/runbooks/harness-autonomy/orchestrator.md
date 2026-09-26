@@ -75,5 +75,12 @@ order yourself only in the listed order.
 
 ## Context hygiene
 
-After each milestone is accepted, rewrite your handoff file completely and run `/clear`,
-then do the start procedure again. Never keep a two-week conversation.
+You cannot run `/clear` or `/compact` yourself; only the owner can. Every turn re-sends your
+whole context, so a big context makes every sweep expensive. Keep your handoff file complete
+enough that a fresh session loses nothing: rewrite it fully after each accepted task and
+whenever your context passes about 400k tokens. The owner's dashboard flags a session with
+over 400k context and nothing in flight as "ready to /clear" and clears it at that point.
+After a clear you are a fresh session: run the start procedure again.
+
+Keep your own context small: delegate reading, drafting and investigation to subagents and
+keep only their conclusions.

@@ -39,6 +39,14 @@ and "lane-admin specifics" below; it does no coding tasks.
 9. Rewrite your handoff file. Wait for `accepted` or `rejected`, or take the next task if one
    is ready and does not depend on the submitted one.
 
+## Context size
+
+You cannot run `/clear` or `/compact` yourself; only the owner can. Every turn re-sends your
+whole context, so keep it small: let subagents do the reading and implementing and keep only
+their conclusions. After you submit a task and rewrite your handoff file, you are ready to be
+cleared; the owner's dashboard shows "ready to /clear" for a session with over 400k context and
+nothing in flight. After a clear, run your start procedure again.
+
 ## Rules
 
 - Context hygiene: only the owner can run `/clear`. At a safe point (your task accepted or
