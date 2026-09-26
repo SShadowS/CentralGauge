@@ -1,0 +1,6 @@
+id: mock-hostile-junction
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: hostile-junction, variant: positive }
+limits: { timeout_min: 10, max_budget_usd: 1 }

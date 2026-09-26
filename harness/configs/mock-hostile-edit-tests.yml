@@ -1,0 +1,6 @@
+id: mock-hostile-edit-tests
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: hostile-edit-tests, variant: positive }
+limits: { timeout_min: 10, max_budget_usd: 1 }

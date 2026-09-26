@@ -182,3 +182,4 @@ docs/volotests/*
 !scripts/attractor-probe.ts
 !scripts/passk.py
 !scripts/composite-attempts.py
+scripts/spikes/**/.alpackages/

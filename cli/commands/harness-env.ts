@@ -10,6 +10,7 @@ import * as colors from "@std/fmt/colors";
 import { join } from "@std/path";
 import type { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 import type { HarnessBc, HealthView } from "../../src/harness/bc-lane.ts";
+import type { PlanEnv } from "../../src/harness/campaign.ts";
 import type { HarnessEnv } from "../../src/harness/execution.ts";
 import type { DockerCli } from "../../src/harness/sandbox.ts";
 import { ConfigManager } from "../../src/config/config.ts";
@@ -128,6 +129,35 @@ export async function resolveEgress(
     );
   }
   return marker.state === "authorized";
+}
+
+/**
+ * What `harness run --dry-run` needs: records, images, the symbols lock and
+ * the egress state (a failing marker still stops). No lock, no container.
+ */
+export async function openPlanEnv(
+  o: EnvOptions,
+  deps: EnvDeps = REAL_DEPS,
+): Promise<PlanEnv> {
+  const symbols = await loadSymbolsLock(o.repoRoot);
+  if (!symbols) {
+    throw new ValidationError(
+      "no symbols lock: run `centralgauge harness symbols lock --from <dir> --store <dir>`",
+      [SYMBOLS_LOCK_PATH],
+    );
+  }
+  return {
+    repoRoot: o.repoRoot,
+    harnessRoot: join(o.repoRoot, "harness"),
+    resultsRoot: o.resultsDir,
+    store: new RecordStore(o.resultsDir),
+    docker: deps.docker(),
+    symbols,
+    egressEnforced: await resolveEgress(
+      join(o.repoRoot, "results", "harness"),
+      deps.verifyEgress,
+    ),
+  };
 }
 
 export async function openHarnessEnv(

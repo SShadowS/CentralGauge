@@ -51,11 +51,15 @@ export const HarnessConfigSchema = z.strictObject({
   models: z.record(
     z.string().min(1),
     z.string().regex(/^[a-z0-9-]+\/\S+$/, "provider/model"),
-  ).refine((m) => Object.keys(m).length > 0, "at least one model"),
+  ),
   settings: z.record(z.string(), z.unknown()).default({}),
   components: ComponentsSchema.default(ComponentsSchema.parse({})),
   limits: LimitsSchema,
-});
+}).refine(
+  // Only the mock harness runs without a model (open question 8).
+  (c) => c.harness === "mock" || Object.keys(c.models).length > 0,
+  { message: "at least one model", path: ["models"] },
+);
 export type HarnessConfig = z.output<typeof HarnessConfigSchema>;
 export type Limits = z.output<typeof LimitsSchema>;
 

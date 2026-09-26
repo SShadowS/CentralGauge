@@ -8,6 +8,8 @@ import type { HarnessConfig } from "./config.ts";
 import type { ResolvedManifest } from "./manifest.ts";
 import type { PricingBook } from "./pricing.ts";
 import type { ExecutionRecord, Telemetry, Termination } from "./records.ts";
+import type { QualifyManifest } from "./qualify.ts";
+import type { LoadedTask } from "./task.ts";
 
 export interface ParseInput {
   /** Quarantined raw log (redaction happens on publication). */
@@ -56,6 +58,17 @@ export interface HarnessAdapter {
     repoRoot: string,
   ): Promise<MountSpec[]>;
   parse(input: ParseInput): Promise<ParsedRun>;
+  /**
+   * Files or folders the runner copies into C:\config (relative `dst`)
+   * before the start; resolved before anything is reserved or run, so a
+   * throw refuses the arm (M1-35: the mock's variant folder).
+   */
+  configCopies?(ctx: {
+    settings: Record<string, unknown>;
+    task: LoadedTask;
+    repoRoot: string;
+    qualify: QualifyManifest | null;
+  }): { src: string; dst: string }[];
 }
 
 /** Declared fields that came back null or empty (they go to validity.incomplete_telemetry). */

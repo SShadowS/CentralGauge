@@ -1,0 +1,6 @@
+id: mock-detect-state
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "fixture:detect-state", cg_al: true }
+limits: { timeout_min: 10, max_budget_usd: 1 }

@@ -323,7 +323,9 @@ Deno.test("harness-tasks: units, bands, reserved subranges, 80013", async (t) =>
     "harness-tasks/tasks/HX-002/naive/near-complete/Test/src/N.Codeunit.al";
   const mutant =
     "harness-tasks/tasks/HX-002/mutants/off-by-one/Leasing/src/M.Codeunit.al";
-  const fixture =
+  const fixture = "tests/fixtures/harness/probe/Test/src/H.Codeunit.al";
+  // Hostile fixtures stand in for agent output: the agent band (ruling 2026-09-26).
+  const hostile =
     "tests/fixtures/harness/hostile/leave-state/Test/src/H.Codeunit.al";
 
   await t.step("unitOf", () => {
@@ -333,6 +335,7 @@ Deno.test("harness-tasks: units, bands, reserved subranges, 80013", async (t) =>
     assertEquals(unitOf(naiveTests), "harness-naive:HX-002:near-complete:Test");
     assertEquals(unitOf(mutant), "harness-mutants:HX-002:off-by-one:Leasing");
     assertEquals(unitOf(fixture), "harness-fixture:Test");
+    assertEquals(unitOf(hostile), "harness-hostile:Test");
   });
 
   await t.step("in-band objects pass", () => {
@@ -345,6 +348,8 @@ Deno.test("harness-tasks: units, bands, reserved subranges, 80013", async (t) =>
         f(naiveTests, 80101),
         f(mutant, 70310),
         f(fixture, 84998),
+        f(hostile, 84890),
+        f(hostile, 80000),
       ]).problems,
       [],
     );
@@ -364,6 +369,27 @@ Deno.test("harness-tasks: units, bands, reserved subranges, 80013", async (t) =>
     assertStringIncludes(p[3]!, "task test suite band");
     assertStringIncludes(p[4]!, "harness fixture band");
   });
+
+  await t.step(
+    "hostile fixtures: the agent band, never the fixture band",
+    () => {
+      const p = auditObjects([
+        f(hostile, 84990),
+        f(hostile, 85001),
+        f(hostile, 79999),
+      ]).problems.filter((x) => x.includes("hostile fixture (agent) band"));
+      assertEquals(
+        p.map((x) => /codeunit (\d+)/.exec(x)![1]),
+        ["84990", "85001", "79999"],
+      );
+      assertEquals(
+        auditObjects([f(hostile, 80013)]).problems.filter((x) =>
+          x.includes("80013 is forbidden in harness content")
+        ).length,
+        1,
+      );
+    },
+  );
 
   await t.step("80013 is refused everywhere in harness content", () => {
     const p = auditObjects([f(shipped, 80013), f(refTests, 80013)]).problems;

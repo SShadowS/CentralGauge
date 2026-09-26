@@ -103,7 +103,9 @@ async function grantFor(
   return await b.grant(g, 60_000);
 }
 
-async function setup(): Promise<Setup> {
+async function setup(
+  opts: { revokeGraceMs?: number } = {},
+): Promise<Setup> {
   const root = await tmp();
   const seen: string[] = [];
   const gate: Setup["gate"] = { wait: null };
@@ -151,7 +153,7 @@ async function setup(): Promise<Setup> {
     docker,
     opTimeoutMs: 100,
     bodyTimeoutMs: 100,
-    revokeGraceMs: 50,
+    revokeGraceMs: opts.revokeGraceMs ?? 50,
   });
   await Deno.mkdir(join(root, "work"), { recursive: true });
   const tokenA = await grantFor(backend, root, EXEC_A, hostLog);
@@ -301,13 +303,15 @@ Deno.test("backend: a streamed oversize body without length is 413; a truncated 
 });
 
 Deno.test("backend: a second concurrent request is 429; revoke waits for the in-flight request", async () => {
-  const s = await setup();
+  // Pinned ordering (as M1-19a): the second request lands while the first op
+  // runs, and the grace outlasts any load, so the revoke can only drain.
+  const s = await setup({ revokeGraceMs: 60_000 });
   let open!: () => void;
   s.gate.wait = new Promise<void>((r) => (open = r));
   const first = s.backend.handle(
     req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
   );
-  await new Promise((r) => setTimeout(r, 20));
+  await s.entered;
   assertEquals(
     (await s.backend.handle(req("/v1/compile", s.tokenA, '{"apps":["Core"]}')))
       .status,

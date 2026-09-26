@@ -1,0 +1,6 @@
+id: mock-naive-lock-table
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:lock-table" }
+limits: { timeout_min: 10, max_budget_usd: 1 }

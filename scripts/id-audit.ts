@@ -37,6 +37,7 @@ import {
   HARNESS_ORACLE_RANGE,
   HARNESS_SHIPPED_TEST_RANGE,
   HARNESS_TASK_SUITE_RANGE,
+  HARNESS_TEST_APP_RANGE,
   PREREQ_APP_ID_RANGE,
   SPIKE_APP_ID_RANGE,
   TEST_CODEUNIT_ID_RANGE,
@@ -137,6 +138,11 @@ export function unitOf(file: string): string {
 
   const refapp = /^harness-tasks\/refapp\/([^/]+)\//.exec(file);
   if (refapp) return `refapp:${refapp[1]}`;
+  // Hostile fixtures stand in for agent output (ruling 2026-09-26): checked
+  // before the trusted-fixture rule.
+  if (/^tests\/fixtures\/harness\/hostile\/.*\/Test\//.test(file)) {
+    return "harness-hostile:Test";
+  }
   if (/^tests\/fixtures\/harness\/.*\/Test\//.test(file)) {
     return "harness-fixture:Test";
   }
@@ -201,6 +207,15 @@ function bandOf(unit: string): Band | null {
   if (unit.startsWith("refapp:")) return refappBand;
   if (unit === "harness-fixture:Test") {
     return { label: "harness fixture", ...HARNESS_FIXTURE_TEST_RANGE };
+  }
+  if (unit === "harness-hostile:Test") {
+    // The range an agent may add to the Test app (backend agentCodeunit):
+    // the Test app band below the fixture band; 80013 is refused separately.
+    return {
+      label: "hostile fixture (agent)",
+      start: HARNESS_TEST_APP_RANGE.start,
+      end: HARNESS_FIXTURE_TEST_RANGE.start - 1,
+    };
   }
   if (unit.startsWith("harness-oracle:")) return oracleBand(unit.slice(15));
   if (/^harness-(overlay|correct|naive|mutants|reference-tests):/.test(unit)) {
