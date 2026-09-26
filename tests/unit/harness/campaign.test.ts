@@ -452,3 +452,80 @@ Deno.test("runCampaign: concurrency > 1 with enforced egress (no placement objec
   );
   assertEquals(t.docker.runs.length, 0);
 });
+
+const estimateLine = (lines: string[], arm: string) =>
+  lines.find((l) => l.startsWith(`[DRY] estimate ${arm}:`));
+
+Deno.test("dry-run estimate: a late rejudge does not change the verdict time (first judgment only)", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "contract", opts(), io());
+  const before = io();
+  await runCampaign(t.env, "contract", opts({ dryRun: true }), before);
+  const line = estimateLine(before.lines, "mock-positive");
+  assert(line?.includes("0 cells x 1 attempts"), before.lines.join("\n"));
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const e = (await t.env.store.executions(c.id)).find((x) =>
+    x.arm === "mock-positive"
+  )!;
+  const [first] = await t.env.store.judgments(e.id);
+  const at = (h: number) =>
+    new Date(Date.parse(first!.ended_at) + h * 3600_000).toISOString();
+  await t.env.store.writeJudgment({
+    ...first!,
+    id: crypto.randomUUID(),
+    started_at: at(3),
+    ended_at: at(5),
+  });
+  const after = io();
+  await runCampaign(t.env, "contract", opts({ dryRun: true }), after);
+  assertEquals(estimateLine(after.lines, "mock-positive"), line);
+});
+
+Deno.test("dry-run estimate: a pending cell (automatic retry owed after mock-crash) counts as outstanding", async () => {
+  const t = await mockEnv();
+  await experiment(t, "crashy", "mock-positive", ["mock-crash"]);
+  t.env.hooks = {
+    after: async (step) => {
+      if (
+        step === "execution" &&
+        (await t.env.store.allExecutions()).some((e) => e.arm === "mock-crash")
+      ) throw new Error("runner killed");
+    },
+  };
+  await assertRejects(
+    () => runCampaign(t.env, "crashy", opts(), io()),
+    Error,
+    "runner killed",
+  );
+  t.env.hooks = {};
+  const out = io();
+  await runCampaign(t.env, "crashy", opts({ dryRun: true }), out);
+  assert(
+    estimateLine(out.lines, "mock-crash")?.startsWith(
+      "[DRY] estimate mock-crash: 1 cells",
+    ),
+    out.lines.join("\n"),
+  );
+});
+
+Deno.test("dry-run estimate: a second experiment sharing the baseline manifest borrows its samples", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  await experiment(t, "other", "mock-positive", ["mock-crash"]);
+  await runCampaign(t.env, "contract", opts(), io());
+  const out = io();
+  await runCampaign(t.env, "other", opts({ dryRun: true }), out);
+  const text = out.lines.join("\n");
+  assert(
+    estimateLine(out.lines, "mock-positive")?.includes(
+      "1 cells x 1 attempts",
+    ) && estimateLine(out.lines, "mock-positive")?.includes("(1 samples)"),
+    text,
+  );
+  assert(
+    estimateLine(out.lines, "mock-crash")?.includes("no prior executions"),
+    text,
+  );
+  assert(out.lines.some((l) => l.startsWith("[DRY] total ")), text);
+});
