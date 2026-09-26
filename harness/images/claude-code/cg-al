@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# cg-al for Git Bash (M1-28b): the agent's Bash tool cannot run cg-al.cmd, so this forwards
+# every argument to the one implementation, C:\cg-al.ps1, and exits with its code.
+exec powershell -NoProfile -ExecutionPolicy Bypass -File "${CG_AL_PS1:-C:\cg-al.ps1}" "$@"

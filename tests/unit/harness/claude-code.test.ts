@@ -716,3 +716,60 @@ Deno.test("run.ps1 review: UTF-8 reads, byte copy of instructions, prompt on std
   assert(code.some((l) => l.trim() === "$prompt | & claude @claudeArgs"));
   assert(code.some((l) => l.includes("$global:OutputEncoding = $utf8")));
 });
+
+const SHIM = "harness/images/claude-code/cg-al";
+
+Deno.test("cg-al bash shim: pinned in the image on Git Bash's PATH, LF only, one implementation", async () => {
+  const cc = await Deno.readTextFile(
+    "harness/images/claude-code/Dockerfile.windows",
+  );
+  // C:\Git\usr\bin is bash's /usr/bin (base image PATH), so the agent's Bash tool finds `cg-al`.
+  assert(/^COPY cg-al C:\/Git\/usr\/bin\/cg-al\s*$/m.test(cc), cc);
+  const shim = await Deno.readTextFile(SHIM);
+  assert(!shim.includes("\r"), "bash refuses CRLF: the shim must stay LF");
+  assert(shim.startsWith("#!/usr/bin/env bash\n"));
+  assertStringIncludes(
+    shim,
+    'exec powershell -NoProfile -ExecutionPolicy Bypass -File "${CG_AL_PS1:-C:\\cg-al.ps1}" "$@"',
+  );
+});
+
+Deno.test({
+  name:
+    "cg-al bash shim: passes every argument and the exit code through to cg-al.ps1",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await Deno.realPath(await Deno.makeTempDir());
+    const stub = join(dir, "stub.ps1");
+    await Deno.writeTextFile(
+      stub,
+      "[Console]::Out.WriteLine((ConvertTo-Json -Compress -InputObject @($args)))\nexit 7\n",
+    );
+    const bash = "C:\\Program Files\\Git\\bin\\bash.exe";
+    const run = async (args: string[], code: number) => {
+      const o = await new Deno.Command(bash, {
+        args: [SHIM, ...args],
+        env: { CG_AL_PS1: stub },
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assertEquals(
+        o.code,
+        code,
+        new TextDecoder().decode(o.stderr),
+      );
+      return JSON.parse(new TextDecoder().decode(o.stdout).trim());
+    };
+    assertEquals(await run(["compile", "Fleet Rental Core", "Test"], 7), [
+      "compile",
+      "Fleet Rental Core",
+      "Test",
+    ]);
+    await Deno.writeTextFile(stub, "exit 0\n");
+    const o = await new Deno.Command(bash, {
+      args: [SHIM, "--version"],
+      env: { CG_AL_PS1: stub },
+    }).output();
+    assertEquals(o.code, 0);
+  },
+});

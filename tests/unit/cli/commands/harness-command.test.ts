@@ -1451,3 +1451,21 @@ Deno.test("harnessReport: efficiency and slices read the store's published host 
   );
   assert(r.slices.length > 0);
 });
+
+Deno.test("openHarnessEnv: the lane comes from CG_LANE, never a placeholder", async () => {
+  const t = await makeEnv();
+  const prev = Deno.env.get("CG_LANE");
+  try {
+    Deno.env.set("CG_LANE", "lane-ops");
+    const h = await openHarnessEnv(envOpts(t), deps([]));
+    assertEquals(h.env.lane_id, "lane-ops");
+    await h.close();
+    Deno.env.delete("CG_LANE");
+    const u = await openHarnessEnv(envOpts(t), deps([]));
+    assertEquals(u.env.lane_id, "", "unset: the reservation refuses it");
+    await u.close();
+  } finally {
+    if (prev === undefined) Deno.env.delete("CG_LANE");
+    else Deno.env.set("CG_LANE", prev);
+  }
+});
