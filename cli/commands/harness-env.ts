@@ -321,6 +321,15 @@ export async function openHarnessEnv(
     if ((o.concurrency ?? 1) > 1 && await markerPlaces(sharedResults)) {
       throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
     }
+    // The effective mode (marker plus host verification) is fixed here, under
+    // the lock and before any sweep, and gates concurrency again (M1-33c r2).
+    const mode = await egressMode(sharedResults, deps.verifyEgress, {
+      repoRoot: o.repoRoot,
+      ...(o.probe ? { probe: true } : {}),
+    });
+    if ((o.concurrency ?? 1) > 1 && mode !== "off") {
+      throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+    }
     const store = new RecordStore(o.resultsDir);
     await Deno.mkdir(join(o.privateRoot, "work"), { recursive: true });
     await store.sweepTemp();
@@ -335,10 +344,6 @@ export async function openHarnessEnv(
         } removed ${swept.length} leftover sandbox(es): ${swept.join(", ")}`,
       );
     }
-    const mode = await egressMode(sharedResults, deps.verifyEgress, {
-      repoRoot: o.repoRoot,
-      ...(o.probe ? { probe: true } : {}),
-    });
     const ready = await deps.setup(containers);
     closers.unshift(ready.dispose);
     const lane = new BcLane(ready.bc, ready.names, {

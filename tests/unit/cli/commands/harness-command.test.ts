@@ -2351,3 +2351,24 @@ Deno.test("openHarnessEnv: with concurrency > 1 the marker is rechecked under th
   );
   assertEquals(order, ["lock", "release"]);
 });
+
+Deno.test("openHarnessEnv: the effective egress mode is computed under the lock, before any sweep (M1-33c review round 2)", async () => {
+  const t = await makeEnv();
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  await Deno.writeTextFile(
+    join(shared, EGRESS_MARKER),
+    JSON.stringify({ v: 1, state: "qualified" }),
+  );
+  const order: string[] = [];
+  const verify = () => {
+    order.push("verify");
+    return Promise.resolve(["rule cg-harness-egress-tcp missing"]);
+  };
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), deps(order, undefined, verify)),
+    ConfigurationError,
+    "verification failed",
+  );
+  assertEquals(order, ["lock", "verify", "release"]);
+});
