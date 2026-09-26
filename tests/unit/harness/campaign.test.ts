@@ -671,9 +671,13 @@ Deno.test("--rerun of an exhausted mock-crash cell writes one manual_rerun root 
     [...crash].sort((a, b) => a.attempt - b.attempt)
       .reduce((n, e) => n + (e.telemetry.cost_usd ?? 0), 0),
   );
-  assert(
-    crash.some((e) => e.id === cell.used_execution),
-    `used execution ${cell.used_execution} is one of the cell's`,
+  // Both chains end terminally unscored. A manual chain replaces the planned
+  // one only when scored or pending (outcome.ts cellsFromRecords), so the
+  // planned chain's last member, attempt 2, is the used execution.
+  const attempt2 = crash.find((e) => e.attempt === 2)!;
+  assertEquals(
+    [cell.status, cell.used_execution, cell.used_kind],
+    ["unscored", attempt2.id, "planned"],
   );
 });
 
@@ -702,13 +706,15 @@ Deno.test("--rerun refuses scored (pass and fail), pending, unrun and unknown ce
   const first = c.blocks[0]!;
   const second = c.blocks[1]!;
   const runs = t.docker.runs.length;
+  const count = async () => (await t.env.store.executions(c.id)).length;
+  const n = await count();
   const refused = async (r: RunOptions, message: string) => {
     await assertRejects(
       () => runCampaign(t.env, "contract", r, io()),
       ConfigurationError,
       message,
     );
-    assertEquals(t.docker.runs.length, runs, message);
+    assertEquals([t.docker.runs.length, await count()], [runs, n], message);
   };
   await refused(
     rerun(first.task_id, first.repeat, "mock-positive"),
@@ -732,6 +738,8 @@ Deno.test("--rerun refuses scored (pass and fail), pending, unrun and unknown ce
   const paused = await runCampaign(u.env, "limits", opts(), io());
   assert(paused.paused !== null && paused.paused !== "unknown");
   const uRuns = u.docker.runs.length;
+  const uCamp = (await u.env.store.campaigns("limits"))[0]!;
+  const uCount = (await u.env.store.executions(uCamp.id)).length;
   await assertRejects(
     () =>
       runCampaign(
@@ -743,7 +751,10 @@ Deno.test("--rerun refuses scored (pass and fail), pending, unrun and unknown ce
     ConfigurationError,
     "is pending",
   );
-  assertEquals(u.docker.runs.length, uRuns);
+  assertEquals(
+    [u.docker.runs.length, (await u.env.store.executions(uCamp.id)).length],
+    [uRuns, uCount],
+  );
 });
 
 Deno.test("--rerun composes with --campaign, --dry-run and --stop-file; refuses --sample and --repeats", async () => {

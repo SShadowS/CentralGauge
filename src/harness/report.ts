@@ -63,6 +63,8 @@ export interface ArmCoverage {
   excluded_cells: number;
   /** Known spend of every attempt in those cells. */
   excluded_known_spend_usd: number;
+  /** Invalid traces of executions in those cells (disclosed, never warned). */
+  excluded_trace_invalid: number;
   /** Known spend of every attempt in every cell, all repeats. */
   campaign_raw_spend_usd: number;
 }
@@ -376,6 +378,12 @@ export async function buildReport(
   // Metrics and coverage over repeats 1..N; the rest is disclosed as excluded.
   const cells = allCells.filter((c) => c.repeat <= reported);
   const executions = records.executions.filter((e) => e.repeat <= reported);
+  // Excluded execution id -> arm: their invalid traces are disclosed, not warned.
+  const excludedArm = new Map(
+    records.executions.filter((e) => e.repeat > reported)
+      .map((e) => [e.id, e.arm]),
+  );
+  const invalidTraces = opts.traces?.invalid ?? [];
   const knownSpend = (cs: CellRecord[]) =>
     cs.reduce((s, c) => s + c.known_spend_usd, 0);
   // Refuse before any number: bad bootstrap options, mixed scorers.
@@ -571,12 +579,15 @@ export async function buildReport(
         trace: opts.traces ? traceCoverage(es, opts.traces) : null,
         excluded_cells: excluded.length,
         excluded_known_spend_usd: knownSpend(excluded),
+        excluded_trace_invalid: invalidTraces.filter((w) =>
+          excludedArm.get(w.execution) === arm
+        ).length,
         campaign_raw_spend_usd: knownSpend(
           allCells.filter((c) => c.arm === arm),
         ),
       };
     }),
-    trace_invalid: opts.traces?.invalid ?? [],
+    trace_invalid: invalidTraces.filter((w) => !excludedArm.has(w.execution)),
     diffs,
     arms: summaries,
     comparisons,
@@ -631,11 +642,19 @@ export function renderReport(r: HarnessReport): string {
       (s, c) => s + c.excluded_known_spend_usd,
       0,
     );
+    const invalid = r.coverage.reduce(
+      (s, c) => s + c.excluded_trace_invalid,
+      0,
+    );
     out.push(
       colors.yellow(
         `Repeats reported: ${r.repeats.reported} of ${r.repeats.planned}; excluded ${cells} cells, ${
           usd(spend)
-        } spend`,
+        } spend${
+          invalid > 0
+            ? `, ${invalid} invalid trace${invalid === 1 ? "" : "s"}`
+            : ""
+        }`,
       ),
     );
   }

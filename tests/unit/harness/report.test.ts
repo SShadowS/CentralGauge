@@ -599,8 +599,9 @@ const CAPS = {
 /**
  * plain: two complete traces (3 calls, one unclassified; 2 calls).
  * skills: complete (2 calls), partial (9 calls), invalid, no trace.
+ * `invalidRepeat` 2 swaps the repeats of skills' invalid and no-trace rows.
  */
-async function tracedRecords() {
+async function tracedRecords(invalidRepeat = 1) {
   const root = await Deno.realPath(await Deno.makeTempDir());
   const c = await campaign({ repeats: 2 });
   type Kind = "complete" | "partial" | "invalid" | "none";
@@ -619,8 +620,8 @@ async function tracedRecords() {
       "partial",
       [...Array(9).keys()].map((i) => traceCall(i + 1)),
     ],
-    ["skills", "HX-002", 1, "invalid", []],
-    ["skills", "HX-002", 2, "none", []],
+    ["skills", "HX-002", invalidRepeat, "invalid", []],
+    ["skills", "HX-002", 3 - invalidRepeat, "none", []],
   ];
   const executions = [];
   const judgments = [];
@@ -684,6 +685,38 @@ Deno.test("report coverage: trace lines per arm; partial and invalid traces coun
     "traces complete 1/4, 1 invalid, 1 without a trace",
   );
   assertStringIncludes(text, "[WARN] invalid trace for");
+});
+
+Deno.test("report --repeats: an excluded repeat's invalid trace is disclosed with the excluded work, not warned", async () => {
+  const { records, traces } = await tracedRecords(2);
+  const invalidId = traces.invalid[0]!.execution;
+  assertEquals(
+    records.executions.find((e) => e.id === invalidId)!.repeat,
+    2,
+  );
+  const cut = await buildReport(records, { resamples: 50, traces, repeats: 1 });
+  assertEquals(cut.trace_invalid, []);
+  assertEquals(
+    cut.coverage.map((
+      c,
+    ) => [c.arm, c.excluded_trace_invalid, c.trace!.invalid]),
+    [["plain", 0, 0], ["skills", 1, 0]],
+  );
+  const text = stripAnsiCode(renderReport(cut));
+  assert(!text.includes("[WARN] invalid trace"), text);
+  assertStringIncludes(
+    text,
+    "Repeats reported: 1 of 2; excluded 4 cells, $2.000 spend, 1 invalid trace",
+  );
+
+  // Without --repeats nothing is excluded: the same trace is a warning.
+  const all = await buildReport(records, { resamples: 50, traces });
+  assertEquals(all.trace_invalid, traces.invalid);
+  assertEquals(all.coverage.map((c) => c.excluded_trace_invalid), [0, 0]);
+  assertStringIncludes(
+    stripAnsiCode(renderReport(all)),
+    `[WARN] invalid trace for ${invalidId}`,
+  );
 });
 
 Deno.test("report: an invalid trace never breaks the primary metric", async () => {

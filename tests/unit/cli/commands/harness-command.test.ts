@@ -21,6 +21,7 @@ import {
   harnessReport,
   harnessRun,
   harnessSymbolsLock,
+  parseRerunCell,
   registerHarnessCommand,
   validateHarness,
 } from "../../../../cli/commands/harness-command.ts";
@@ -2723,6 +2724,37 @@ Deno.test("--campaign refusals come before the environment opens: no lock, sweep
 });
 
 // ---- M5-04: --rerun on run ----
+
+Deno.test("parseRerunCell refuses a repeat that is not a safe positive integer", () => {
+  assertEquals(parseRerunCell("HX-001:3:mock-crash"), {
+    task: "HX-001",
+    repeat: 3,
+    arm: "mock-crash",
+  });
+  assertEquals(
+    parseRerunCell(`HX-001:${Number.MAX_SAFE_INTEGER}:a`).repeat,
+    Number.MAX_SAFE_INTEGER,
+  );
+  for (
+    const repeat of [
+      "0",
+      "-1",
+      "1.5",
+      "NaN",
+      "Infinity",
+      "1e3",
+      String(2 ** 53),
+      "9".repeat(400),
+    ]
+  ) {
+    assertThrows(
+      () => parseRerunCell(`HX-001:${repeat}:mock-crash`),
+      ValidationError,
+      "<task:repeat:arm>",
+      repeat,
+    );
+  }
+});
 
 Deno.test("CLI: `harness run --rerun HX-001:1:mock-crash` reruns that cell; HX-001:x:arm and HX-001:1 are refused by the parser", async () => {
   const t = await makeEnv();

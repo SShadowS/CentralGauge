@@ -941,10 +941,10 @@ export interface RunCliOptions extends CellCliOptions {
 
 type RerunCell = NonNullable<RunOptions["rerun"]>;
 
-/** `--rerun <task:repeat:arm>`: a positive integer repeat, non-empty task and arm. */
+/** `--rerun <task:repeat:arm>`: a positive safe-integer repeat, non-empty task and arm. */
 export function parseRerunCell(value: string): RerunCell {
   const m = /^([^:]+):([1-9][0-9]*):([^:]+)$/.exec(value);
-  if (!m) {
+  if (!m || !Number.isSafeInteger(Number(m[2]))) {
     throw new ValidationError(
       `--rerun expects <task:repeat:arm>, got ${value}`,
       [value],

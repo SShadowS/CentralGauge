@@ -52,6 +52,7 @@
       },
       "excluded_cells": 0,
       "excluded_known_spend_usd": 0,
+      "excluded_trace_invalid": 0,
       "campaign_raw_spend_usd": 0
     },
     {
@@ -75,6 +76,7 @@
       },
       "excluded_cells": 0,
       "excluded_known_spend_usd": 0,
+      "excluded_trace_invalid": 0,
       "campaign_raw_spend_usd": 0
     }
   ],
