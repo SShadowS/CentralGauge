@@ -2,8 +2,9 @@
  * The credentialless qualification probe (M1-33 review item 1; M1-34 Step 6).
  * Runs with the marker in `candidate`: the probe sandbox alone goes on the
  * internal network behind the proxy, in the order of an enforced cell
- * (proxy, listener check, empty mount, C:\egress-check.ps1). Only when the
- * preflight passes are the backend token and ready written. The probe lines
+ * (proxy, listener check, empty mount, the H-01 privilege check,
+ * C:\egress-check.ps1). Only when the preflight passes are the backend token
+ * and ready written. The probe lines
  * and the observed network ids are written as probe evidence for
  * `harness egress verify --mark qualified --probe-evidence <path>`.
  */
@@ -25,6 +26,7 @@ import {
 import { waitRunning } from "./execution.ts";
 import {
   bounded,
+  checkSandboxPrivilege,
   createSecretsDir,
   READY_FILE,
   removeSecrets,
@@ -118,6 +120,14 @@ export async function runQualificationProbe(
     let problems: string[];
     try {
       await waitRunning(o.docker, o.spec.name, running, opMs);
+      // H-01: before the preflight and the token, while only image code runs.
+      await checkSandboxPrivilege(o.docker, o.spec.name, opMs).catch((err) => {
+        throw new Error(
+          `sandbox privilege check failed: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      });
       const lines = await bounded(
         o.egress.probe(o.spec.name, hosts),
         PROBE_TIMEOUT_MS,

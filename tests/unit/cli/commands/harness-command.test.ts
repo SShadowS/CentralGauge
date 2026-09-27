@@ -62,7 +62,7 @@ import { oracleHash } from "../../../../src/harness/identity.ts";
 import { loadTask } from "../../../../src/harness/task.ts";
 import { BenchLockHeldError } from "../../../../src/utils/bench-lock.ts";
 import { FakeBc } from "../../harness/fake-bc.ts";
-import { FakeDocker } from "../../harness/fake-docker.ts";
+import { ADMIN_GROUPS_CSV, FakeDocker } from "../../harness/fake-docker.ts";
 import { runQualificationProbe } from "../../../../src/harness/egress-probe.ts";
 import { READY_FILE } from "../../../../src/harness/sandbox.ts";
 import {
@@ -2236,6 +2236,76 @@ Deno.test("qualification probe: hosts override the default route host (M3-08 --r
       l.probe.includes("api.anthropic.com")
     ),
   );
+});
+
+// H-01: the probe sandbox gets the harness privilege check before its preflight and token.
+
+Deno.test("qualification probe (H-01): the privilege check runs before the preflight; a failure releases nothing and is a problem", async () => {
+  for (const healthy of [true, false]) {
+    const t = await makeEnv();
+    const root = t.env.privateRoot;
+    const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+    const eg = fakeEgress();
+    t.docker.behavior = () => Promise.resolve(0);
+    if (!healthy) {
+      t.docker.execAnswer = { code: 0, stdout: ADMIN_GROUPS_CSV, stderr: "" };
+    }
+    const exec = t.docker.exec.bind(t.docker);
+    t.docker.exec = (name, user, argv) => {
+      eg.events.push("privilege");
+      return exec(name, user, argv);
+    };
+    const out = join(root, "probe-out");
+    await Deno.mkdir(out, { recursive: true });
+    const r = await runQualificationProbe({
+      docker: t.docker,
+      egress: eg,
+      custody: {
+        privateRoot: t.env.privateRoot,
+        owner: t.env.owner,
+        ...(t.env.secretAcl ?? {}),
+      },
+      token: "backend-token-0123456789abcdef",
+      spec: {
+        name: "cg-harness-probe-3",
+        owner: t.env.owner,
+        executionId: "exec-probe-3",
+        imageId: `sha256:${"c".repeat(64)}`,
+        workspace: out,
+        taskDir: out,
+        configDir: out,
+        extraMounts: [],
+        env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+        timeoutMs: 60_000,
+        killGraceMs: 50,
+        opTimeoutMs: 100,
+        maxCaptureBytes: 1024 * 1024,
+        rawLog: join(out, "probe.jsonl"),
+        stderrLog: join(out, "stderr.txt"),
+      },
+      probeCommand: ["powershell", "-File", "C:\\config\\cg-al-probe.ps1"],
+      out,
+      collect: () => markerAwareCollector()(markerPath),
+    });
+    assertEquals(t.docker.privilegeCalls[0]!.secrets, [], "empty mount");
+    if (healthy) {
+      assertEquals(r.problems, []);
+      assert(
+        eg.events.indexOf("privilege") < eg.events.indexOf("probe"),
+        eg.events.join(","),
+      );
+      assert(t.docker.readySeen);
+    } else {
+      assertStringIncludes(
+        r.problems.join("\n"),
+        "sandbox privilege check failed",
+      );
+      assertStringIncludes(r.problems.join("\n"), "S-1-5-32-544");
+      assert(!eg.events.includes("probe"), eg.events.join(","));
+      assertEquals(t.docker.readySeen, false, "no token, no ready");
+      assertEquals(t.docker.secretsAtKill, []);
+    }
+  }
 });
 
 // Review item 3: an authorized marker carries, and every read rechecks, its evidence.

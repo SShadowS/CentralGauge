@@ -36,6 +36,7 @@ import {
 import {
   ADMIN_REFUSAL_EXIT,
   ADMIN_REFUSAL_MARKER,
+  PRIVILEGE_ARGV,
   READY_FILE,
   SANDBOX_USER,
   SECRETS_DIR_PREFIX,
@@ -75,7 +76,11 @@ import {
 import { blobB64, networkBlob } from "../../utils/hns-blob.ts";
 import { write } from "./refapp-fixture.ts";
 import { FakeBc, result } from "./fake-bc.ts";
-import type { RunBehavior } from "./fake-docker.ts";
+import {
+  ADMIN_GROUPS_CSV,
+  type RunBehavior,
+  USER_GROUPS_CSV,
+} from "./fake-docker.ts";
 
 const U16 = (s: string) =>
   String.fromCharCode(
@@ -290,7 +295,8 @@ Deno.test("retries follow ancestry: supervised withholds; usage-limit then setup
 
 Deno.test("runCell: timeout kills the sandbox; the workspace is judged; cost is unknown, never a lower bound", async () => {
   const t = await makeEnv();
-  t.env.timeoutMsFor = () => 50;
+  // Past the pre-release privilege check (H-01); the run still times out.
+  t.env.timeoutMsFor = () => 2_000;
   const lines = (await probeLines()).slice(0, 12);
   t.docker.behavior = async (call, io) => {
     await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", lines)(
@@ -1730,7 +1736,8 @@ for (const point of ["beforeDraft", "draft"] as const) {
 
 Deno.test("mcp inventory: a plain arm that connects an unrequested MCP server is setup_failed, even after a timeout", async () => {
   const t = await makeEnv();
-  t.env.timeoutMsFor = () => 50;
+  // Past the pre-release privilege check (H-01); the run still times out.
+  t.env.timeoutMsFor = () => 2_000;
   t.docker.behavior = async (_call, io) => {
     const init = JSON.parse(INIT);
     init.mcp_servers = [{ name: "al-tools", status: "connected" }];
@@ -3182,51 +3189,177 @@ Deno.test("H-01: every docker run of a cell (placed agent run, stub cell) runs a
   for (const r of runs) assertEquals(r.user, "ContainerUser", r.name);
 });
 
-Deno.test("H-01: the entrypoint's admin refusal (exit 86 + marker) is setup_failed, never judged, and stops the campaign", async () => {
+// H-01 run 002: the harness decides by its own privilege check, never by
+// what the entrypoint printed. (Replaces run 001's two tests that mapped exit
+// 86 + marker to setup_failed.)
+
+type Kind = "unplaced" | "placed" | "stub";
+async function kindEnv(kind: Kind): Promise<TestEnv> {
   const t = await makeEnv();
-  t.env.supervised = false;
-  enforce(t);
-  t.docker.behavior = async () => {
-    await Deno.writeTextFile(
-      t.docker.lastCapture!.stderrPath,
-      `${ADMIN_REFUSAL_MARKER} (User Manager\\ContainerAdministrator)\r\n`,
-      { append: true },
+  if (kind === "placed") {
+    t.env.supervised = false;
+    enforce(t);
+  }
+  if (kind === "stub") await stubEnv(t);
+  return t;
+}
+
+Deno.test("H-01: a forged refusal (marker first on stderr, no stdout, exit 86) is an ordinary crash; the campaign goes on", async () => {
+  for (const kind of ["unplaced", "placed"] as const) {
+    const t = await kindEnv(kind);
+    t.docker.behavior = async () => {
+      await Deno.writeTextFile(
+        t.docker.lastCapture!.stderrPath,
+        `${ADMIN_REFUSAL_MARKER} (User Manager\\ContainerAdministrator)\r\n`,
+        { append: true },
+      );
+      return ADMIN_REFUSAL_EXIT;
+    };
+    const cell = await cellFor(t);
+    const e = (await runCell(t.env, cell)).executions[0]!;
+    assertEquals(e.termination, "harness_crash", kind);
+    const side = await sideOf(t, e.id);
+    assert(
+      !/privilege|administrator/i.test(String(side.setup_error)),
+      `${kind}: ${side.setup_error}`,
     );
-    return ADMIN_REFUSAL_EXIT;
-  };
-  const cell = await cellFor(t);
-  await assertRejects(
-    () => runCell(t.env, cell),
-    ContainerError,
-    "administrator",
-  );
-  assertEquals(t.docker.runs.length, 1, "no automatic retry");
-  const [e] = await t.env.store.executions(cell.campaignId);
-  assertEquals(e!.termination, "setup_failed");
-  assertStringIncludes(
-    (await sideOf(t, e!.id)).setup_error,
-    ADMIN_REFUSAL_MARKER,
-  );
-  assertEquals(await t.env.store.judgments(e!.id), []);
+    assert(t.docker.readySeen, kind);
+  }
 });
 
-Deno.test("H-01: only a genuine refusal counts: exit 86 without the marker, the marker with another code, or a run that printed (a forged refusal) is an ordinary crash", async () => {
-  const cases = [
-    [86, "boom", false],
-    [1, ADMIN_REFUSAL_MARKER, false],
-    [86, ADMIN_REFUSAL_MARKER, true],
-    [86, `noise\n${ADMIN_REFUSAL_MARKER}`, false],
-  ] as const;
-  for (const [code, text, printed] of cases) {
-    const t = await makeEnv();
-    t.docker.behavior = async (_c, io) => {
-      if (printed) await io.stdout(INIT);
-      await Deno.writeTextFile(t.docker.lastCapture!.stderrPath, text, {
-        append: true,
-      });
-      return code;
+Deno.test("H-01: a healthy sandbox is checked (Config.User, then whoami as ContainerUser) after the start and before anything is released", async () => {
+  for (const kind of ["unplaced", "placed", "stub"] as const) {
+    const t = await kindEnv(kind);
+    const eg = kind === "placed" ? t.env.egress as FakeEgress : null;
+    let registeredAtCheck: boolean | null = null;
+    const exec = t.docker.exec.bind(t.docker);
+    t.docker.exec = (name, user, argv) => {
+      registeredAtCheck = eg ? eg.events.includes("register") : null;
+      return exec(name, user, argv);
     };
     const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
-    assertEquals(e.termination, "harness_crash", `${code} ${text} ${printed}`);
+    assert(e.termination !== "setup_failed", `${kind}: ${e.termination}`);
+    const name = t.docker.runs[0]!.name;
+    assertEquals(
+      t.docker.privilegeCalls.map((c) => [c.op, c.name, c.user, c.secrets]),
+      [
+        ["configUser", name, undefined, []],
+        ["exec", name, SANDBOX_USER, []],
+      ],
+      kind,
+    );
+    assertEquals(t.docker.privilegeCalls[1]!.argv, PRIVILEGE_ARGV);
+    if (eg) {
+      assertEquals(registeredAtCheck, false, "before the proxy credential");
+    }
+    assert(t.docker.readySeen, kind);
+  }
+});
+
+Deno.test("H-01: a failed privilege check (wrong Config.User, admin groups, high label, exec error, timeout, unparseable, non-zero) is setup_failed, releases nothing, is never judged, and stops the campaign", async () => {
+  const cases: [string, (t: TestEnv, name: string) => void, string][] = [
+    [
+      "admin user",
+      (t, n) => t.docker.configUsers.set(n, "ContainerAdministrator"),
+      "ContainerAdministrator",
+    ],
+    [
+      "empty user",
+      (t, n) => t.docker.configUsers.set(n, ""),
+      "not ContainerUser",
+    ],
+    [
+      "admin groups",
+      (
+        t,
+      ) => (t.docker.execAnswer = {
+        code: 0,
+        stdout: ADMIN_GROUPS_CSV,
+        stderr: "",
+      }),
+      "S-1-5-32-544",
+    ],
+    [
+      "exec throws",
+      (t) => (t.docker.execAnswer = new Error("exec blew up")),
+      "exec blew up",
+    ],
+    ["exec hangs", (t) => (t.docker.execAnswer = "hang"), "timed out"],
+    [
+      "unparseable",
+      (
+        t,
+      ) => (t.docker.execAnswer = {
+        code: 0,
+        stdout: "INFO: nope\r\n",
+        stderr: "",
+      }),
+      "unparseable",
+    ],
+    [
+      "non-zero",
+      (
+        t,
+      ) => (t.docker.execAnswer = {
+        code: 5,
+        stdout: USER_GROUPS_CSV,
+        stderr: "denied",
+      }),
+      "exited 5",
+    ],
+  ];
+  const matrix: [Kind, typeof cases][] = [
+    ["unplaced", cases],
+    ["placed", [cases[0]!, cases[2]!, cases[4]!]],
+    ["stub", [cases[1]!, cases[2]!, cases[3]!]],
+  ];
+  for (const [kind, rows] of matrix) {
+    for (const [label, arrange, want] of rows) {
+      const what = `${kind} ${label}`;
+      const t = await kindEnv(kind);
+      let ran = 0;
+      const inner = t.docker.behavior;
+      t.docker.behavior = (c, io) => {
+        ran++;
+        return inner(c, io);
+      };
+      const cell = await cellFor(t);
+      // The sandbox name is known once the run starts: arrange at the check.
+      const configUser = t.docker.configUser.bind(t.docker);
+      t.docker.configUser = (name) => {
+        if (t.docker.privilegeCalls.length === 0) arrange(t, name);
+        return configUser(name);
+      };
+      const err = await assertRejects(
+        () => runCell(t.env, cell),
+        ContainerError,
+        "sandbox privilege check failed",
+      );
+      assertStringIncludes(err.message, want, what);
+      assertEquals(t.docker.runs.length, 1, `${what}: no automatic retry`);
+      const [e] = await t.env.store.executions(cell.campaignId);
+      assertEquals(e!.termination, "setup_failed", what);
+      const side = await sideOf(t, e!.id);
+      assertEquals(side.stop_reason, "privilege_check_failed", what);
+      assertEquals(secretDirs(t), [], what);
+      assertStringIncludes(
+        side.setup_error,
+        "sandbox privilege check failed",
+        what,
+      );
+      assertStringIncludes(side.setup_error, want, what);
+      assertEquals(await t.env.store.judgments(e!.id), [], what);
+      assertEquals(
+        ran,
+        0,
+        `${what}: the entrypoint never passed the ready wait`,
+      );
+      assert(!t.docker.readySeen, what);
+      assertEquals(t.docker.secretsAtKill, [], `${what}: nothing released`);
+      if (kind === "placed") {
+        const eg = t.env.egress as FakeEgress;
+        assert(!eg.events.includes("register"), what);
+      }
+    }
   }
 });

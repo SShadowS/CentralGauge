@@ -182,6 +182,7 @@ export function mockImageBehavior(): RunBehavior {
       env: {
         CG_MOCK_CONFIG: call.mounts.get("C:\\config")!.src,
         CG_MOCK_WORKSPACE: call.mounts.get("C:\\workspace")!.src,
+        CG_MOCK_SECRETS: call.mounts.get("C:\\cg-secrets")!.src,
       },
       stdout: "piped",
       stderr: "null",
@@ -247,6 +248,9 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     );
   }
   const docker = new FakeDocker();
+  // Every entrypoint waits for ready (the mock too): the harness releases
+  // only after its privilege check on the running sandbox (H-01).
+  docker.waitForReady = true;
   docker.addImage(imageTag("claude-code", "2.1.282"), IMAGE_ID, {
     "centralgauge.harness": "claude-code",
     "centralgauge.harness.version": "2.1.282",

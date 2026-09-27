@@ -52,6 +52,14 @@ export interface DockerCli {
    * .NetworkSettings.Networks); null when no such container exists.
    */
   networks(name: string): Promise<{ network: string; ip: string }[] | null>;
+  /** docker inspect .Config.User; null when no such container exists (H-01). */
+  configUser(name: string): Promise<string | null>;
+  /** docker exec -u user name argv, captured (H-01 privilege check). */
+  exec(
+    name: string,
+    user: string,
+    argv: string[],
+  ): Promise<{ code: number; stdout: string; stderr: string }>;
   listOwned(owner: string): Promise<string[]>;
   inspectImage(ref: string): Promise<unknown | null>;
   build(args: string[]): Promise<number>;
@@ -311,6 +319,17 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
         "setup",
       );
     },
+    configUser: async (name) => {
+      const r = await out(["inspect", "--format", "{{.Config.User}}", name]);
+      if (r.code === 0) return r.stdout.trim();
+      if (/no such (object|container)/i.test(r.stderr)) return null;
+      throw new ContainerError(
+        `docker inspect ${name}: ${r.stderr.trim()}`,
+        name,
+        "setup",
+      );
+    },
+    exec: (name, user, argv) => out(["exec", "-u", user, name, ...argv]),
     listOwned: async (owner) => {
       const r = await out([
         "ps",
@@ -425,10 +444,97 @@ export interface SandboxSpec {
  * IP). The images also end with USER ContainerUser; this run arg is the control.
  */
 export const SANDBOX_USER = "ContainerUser";
-/** An agent entrypoint that finds itself admin exits with this code and marker (harness/images/base/cg-nonadmin.ps1). */
+/**
+ * An agent entrypoint that finds itself admin exits with this code and marker
+ * (harness/images/base/cg-nonadmin.ps1). Diagnostic only: an agent can print
+ * anything, so the harness never classifies by it (checkSandboxPrivilege decides).
+ */
 export const ADMIN_REFUSAL_EXIT = 86;
 export const ADMIN_REFUSAL_MARKER =
   "cg-harness: refusing to run the agent as an administrator";
+
+/** The privilege check's in-sandbox command, run as SANDBOX_USER. */
+export const PRIVILEGE_ARGV = ["whoami", "/groups", "/fo", "csv", "/nh"];
+const ADMINISTRATORS_SID = "S-1-5-32-544";
+/** Mandatory labels: S-1-16-12288 High, S-1-16-16384 System and above refuse. */
+const HIGH_LABEL_RID = 12288;
+
+/**
+ * Problems in `whoami /groups /fo csv /nh` output; [] means no enabled
+ * Administrators group and exactly one mandatory label below High. Strict:
+ * every non-empty line must be four quoted fields (Group Name, Type, SID,
+ * Attributes) with a SID; anything else is a problem. Administrators counts
+ * unless it is deny-only (attributes are English in the server images; any
+ * other wording refuses).
+ */
+export function groupProblems(csv: string): string[] {
+  const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return ["whoami /groups: no output"];
+  const problems: string[] = [];
+  const labels: number[] = [];
+  for (const line of lines) {
+    const m = /^"([^"]*)","([^"]*)","(S-1(?:-\d+)+)","([^"]*)"$/.exec(line);
+    if (!m) {
+      problems.push(`whoami /groups: unparseable line ${JSON.stringify(line)}`);
+      continue;
+    }
+    const [, group, , sid, attrs] = m;
+    if (sid === ADMINISTRATORS_SID && !/deny only/i.test(attrs!)) {
+      problems.push(
+        `${group} (${ADMINISTRATORS_SID}) is in the token: ${attrs}`,
+      );
+    }
+    const label = /^S-1-16-(\d+)$/.exec(sid!);
+    if (label) {
+      labels.push(Number(label[1]));
+      if (Number(label[1]) >= HIGH_LABEL_RID) {
+        problems.push(`mandatory label ${group} (${sid}) is High or above`);
+      }
+    }
+  }
+  if (labels.length === 0) problems.push("whoami /groups: no mandatory label");
+  if (labels.length > 1) {
+    problems.push("whoami /groups: more than one mandatory label");
+  }
+  return problems;
+}
+
+/**
+ * H-01: the harness's own check that a running sandbox is not privileged,
+ * made before any credential is released (so only trusted image code has
+ * run). Config.User must be exactly SANDBOX_USER (docker stores the --user
+ * value verbatim; no case folding), and `whoami /groups` as that user must
+ * show no Administrators and no High or System label. Throws on any failure,
+ * error or timeout.
+ */
+export async function checkSandboxPrivilege(
+  docker: DockerCli,
+  name: string,
+  opMs: number,
+): Promise<void> {
+  const user = await bounded(
+    docker.configUser(name),
+    opMs,
+    `docker inspect ${name} Config.User`,
+  );
+  if (user !== SANDBOX_USER) {
+    throw new Error(
+      `${name} Config.User is ${JSON.stringify(user)}, not ${SANDBOX_USER}`,
+    );
+  }
+  const r = await bounded(
+    docker.exec(name, SANDBOX_USER, PRIVILEGE_ARGV),
+    opMs,
+    `docker exec ${name} whoami /groups`,
+  );
+  if (r.code !== 0) {
+    throw new Error(
+      `whoami /groups exited ${r.code}: ${r.stderr.trim().slice(0, 300)}`,
+    );
+  }
+  const problems = groupProblems(r.stdout);
+  if (problems.length > 0) throw new Error(problems.join("; "));
+}
 
 export function buildRunArgs(s: SandboxSpec): string[] {
   if (!/^sha256:[0-9a-f]{64}$/.test(s.imageId)) {

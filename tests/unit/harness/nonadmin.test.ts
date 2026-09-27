@@ -4,11 +4,25 @@
  * every agent entrypoint refuses to start as an administrator.
  */
 
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import {
   ADMIN_REFUSAL_EXIT,
   ADMIN_REFUSAL_MARKER,
+  checkSandboxPrivilege,
+  groupProblems,
+  PRIVILEGE_ARGV,
+  SANDBOX_USER,
 } from "../../../src/harness/sandbox.ts";
+import {
+  ADMIN_GROUPS_CSV,
+  FakeDocker,
+  USER_GROUPS_CSV,
+} from "./fake-docker.ts";
 
 const GUARD = "harness/images/base/cg-nonadmin.ps1";
 const ENTRYPOINTS = {
@@ -147,4 +161,160 @@ Deno.test({
     assert(r.stderr.startsWith(`${ADMIN_REFUSAL_MARKER} (`), r.stderr);
     assert(r.stderr.includes(Deno.env.get("USERNAME") ?? "?"), r.stderr);
   },
+});
+
+Deno.test({
+  name:
+    "H-01 guard: an exception inside the guard fails closed with 86 (constrained language mode makes the identity call throw)",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const out = await new Deno.Command("powershell", {
+      args: [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `$ExecutionContext.SessionState.LanguageMode = 'ConstrainedLanguage'; & '${GUARD}'; exit $LASTEXITCODE`,
+      ],
+      env: { CG_NONADMIN_FORCE_ADMIN: "" },
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(out.code, ADMIN_REFUSAL_EXIT);
+  },
+});
+
+// H-01 run 002: the harness's own privilege check (never the entrypoint's output).
+
+const row = (name: string, type: string, sid: string, attrs: string) =>
+  `"${name}","${type}","${sid}","${attrs}"`;
+const ENABLED = "Mandatory group, Enabled by default, Enabled group";
+
+Deno.test("groupProblems: ContainerUser's real-looking output is clean", () => {
+  assertEquals(groupProblems(USER_GROUPS_CSV), []);
+  assertEquals(PRIVILEGE_ARGV, ["whoami", "/groups", "/fo", "csv", "/nh"]);
+});
+
+Deno.test("groupProblems: ContainerAdministrator's output names the enabled Administrators group and the high label", () => {
+  const p = groupProblems(ADMIN_GROUPS_CSV);
+  assertEquals(p.length, 2, p.join("; "));
+  assertStringIncludes(p[0]!, "S-1-5-32-544");
+  assertStringIncludes(p[1]!, "S-1-16-12288");
+});
+
+Deno.test("groupProblems: strict; Administrators anywhere but deny-only, system or higher labels, a missing label, empty or unparseable output all fail", () => {
+  const label = row(
+    "Mandatory Label\\Medium Mandatory Level",
+    "Label",
+    "S-1-16-8192",
+    "",
+  );
+  const bad: [string, string][] = [
+    ["", "no output"],
+    ["  \r\n", "no output"],
+    ["garbage\r\n", "unparseable"],
+    [`${label}\r\nnot csv`, "unparseable"],
+    [`"a","b","c"\r\n${label}`, "unparseable"],
+    [`${row("x", "Alias", "not-a-sid", ENABLED)}\r\n${label}`, "unparseable"],
+    [
+      row("Everyone", "Well-known group", "S-1-1-0", ENABLED),
+      "no mandatory label",
+    ],
+    [
+      `${label}\r\n${row("Mandatory Label\\High", "Label", "S-1-16-8448", "")}`,
+      "more than one mandatory label",
+    ],
+    [
+      row(
+        "Mandatory Label\\System Mandatory Level",
+        "Label",
+        "S-1-16-16384",
+        "",
+      ),
+      "S-1-16-16384",
+    ],
+    [
+      `${
+        row(
+          "BUILTIN\\Administrators",
+          "Alias",
+          "S-1-5-32-544",
+          "Mandatory group, Enabled by default, Enabled group",
+        )
+      }\r\n${label}`,
+      "S-1-5-32-544",
+    ],
+    [
+      `${
+        row(
+          "BUILTIN\\Administratorer",
+          "Alias",
+          "S-1-5-32-544",
+          "Obligatorisk gruppe",
+        )
+      }\r\n${label}`,
+      "S-1-5-32-544",
+    ],
+  ];
+  for (const [text, want] of bad) {
+    const p = groupProblems(text);
+    assert(p.length > 0, JSON.stringify(text));
+    assertStringIncludes(p.join("; "), want, JSON.stringify(text));
+  }
+  // A filtered (UAC) token's deny-only Administrators is not an enabled group.
+  assertEquals(
+    groupProblems(
+      `${
+        row(
+          "BUILTIN\\Administrators",
+          "Alias",
+          "S-1-5-32-544",
+          "Group used for deny only",
+        )
+      }\r\n${label}`,
+    ),
+    [],
+  );
+});
+
+Deno.test("checkSandboxPrivilege: Config.User exactly ContainerUser, then whoami as ContainerUser; any failure, error or timeout throws", async () => {
+  const d = new FakeDocker();
+  d.configUsers.set("sb", SANDBOX_USER);
+  await checkSandboxPrivilege(d, "sb", 100);
+  assertEquals(d.privilegeCalls.map((c) => [c.op, c.user, c.argv]), [
+    ["configUser", undefined, undefined],
+    ["exec", SANDBOX_USER, PRIVILEGE_ARGV],
+  ]);
+  const fails: [(d: FakeDocker) => void, string][] = [
+    [
+      (d) => d.configUsers.set("sb", "ContainerAdministrator"),
+      "ContainerAdministrator",
+    ],
+    [(d) => d.configUsers.set("sb", "containeruser"), "containeruser"],
+    [(d) => d.configUsers.set("sb", ""), "not ContainerUser"],
+    [(d) => d.configUsers.set("sb", null), "not ContainerUser"],
+    [
+      (d) => (d.execAnswer = { code: 0, stdout: ADMIN_GROUPS_CSV, stderr: "" }),
+      "S-1-5-32-544",
+    ],
+    [
+      (
+        d,
+      ) => (d.execAnswer = {
+        code: 1,
+        stdout: USER_GROUPS_CSV,
+        stderr: "nope",
+      }),
+      "exited 1",
+    ],
+    [(d) => (d.execAnswer = { code: 0, stdout: "", stderr: "" }), "no output"],
+    [(d) => (d.execAnswer = new Error("exec blew up")), "exec blew up"],
+    [(d) => (d.execAnswer = "hang"), "timed out"],
+  ];
+  for (const [arrange, want] of fails) {
+    const d = new FakeDocker();
+    d.configUsers.set("sb", SANDBOX_USER);
+    arrange(d);
+    await assertRejects(() => checkSandboxPrivilege(d, "sb", 100), Error, want);
+  }
 });

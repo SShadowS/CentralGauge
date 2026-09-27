@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
 import {
@@ -192,6 +192,9 @@ async function runMockPs1(
     join(config, "settings.json"),
     JSON.stringify({ settings }),
   );
+  const secrets = join(root, "secrets");
+  await Deno.mkdir(secrets);
+  await Deno.writeTextFile(join(secrets, "ready"), "");
   const out = await new Deno.Command("pwsh", {
     args: [
       "-NoProfile",
@@ -201,7 +204,12 @@ async function runMockPs1(
         new URL("../../../harness/images/mock/mock.ps1", import.meta.url),
       ),
     ],
-    env: { CG_MOCK_CONFIG: config, CG_MOCK_WORKSPACE: ws, ...extraEnv },
+    env: {
+      CG_MOCK_CONFIG: config,
+      CG_MOCK_WORKSPACE: ws,
+      CG_MOCK_SECRETS: secrets,
+      ...extraEnv,
+    },
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -321,4 +329,19 @@ Deno.test({
     assertEquals(bad.types.includes("mock_error"), true);
     assertEquals(bad.types.includes("mock_done"), false);
   },
+});
+
+Deno.test("mock.ps1 (H-01): waits for the runner's ready before reading its config or emitting anything; no admin guard of its own", async () => {
+  const text = await Deno.readTextFile(
+    fromFileUrl(
+      new URL("../../../harness/images/mock/mock.ps1", import.meta.url),
+    ),
+  );
+  const wait = text.indexOf("(Join-Path $Secrets 'ready')");
+  assert(wait > 0);
+  assert(
+    wait < text.indexOf("Get-Content (Join-Path $Config 'settings.json')"),
+  );
+  assert(wait < text.indexOf("Emit 'mock_init'"));
+  assert(!text.includes("cg-nonadmin"));
 });
