@@ -2001,6 +2001,66 @@ Deno.test("enforced run: a proxy not listening, a failed host verification or a 
   }
 });
 
+// M3-09a: the parsed preflight probe lines are a published run file, pass or fail.
+
+const preflightOf = async (t: TestEnv, id: string) =>
+  (await Deno.readTextFile(
+    join(t.env.resultsRoot, "runs", id, "preflight.jsonl"),
+  )).trim().split("\n").map((l) => JSON.parse(l) as ProbeLine);
+
+Deno.test("enforced run (M3-09a): a passing preflight publishes its exact probe lines", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  let seen: ProbeLine[] = [];
+  eg.lines = (ls) => (seen = ls);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  assert(seen.length > 0);
+  assertEquals(await preflightOf(t, e.id), seen);
+});
+
+Deno.test("enforced run (M3-09a): a failing preflight publishes its lines through the redaction path", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  let cred = "";
+  eg.onProbe = async (sandbox) => {
+    const dir = t.docker.runs.find((r) => r.name === sandbox)!.mounts.get(
+      "C:\\cg-secrets",
+    )!.src;
+    cred = (await Deno.readTextFile(join(dir, "proxy-credential"))).trim();
+  };
+  let seen: ProbeLine[] = [];
+  eg.lines = (ls) =>
+    seen = ls.map((l) =>
+      l.probe === "gw-smb-445"
+        ? { ...l, ok: true }
+        : l.probe === "gw-icmp"
+        ? { ...l, error: `leaked ${cred}` }
+        : l
+    );
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), ContainerError, "gw-smb-445");
+  const [e] = await t.env.store.executions(cell.campaignId);
+  assertEquals(e!.termination, "setup_failed");
+  assert(cred.length >= 20, "the probe saw the proxy credential");
+  const text = await Deno.readTextFile(
+    join(t.env.resultsRoot, "runs", e!.id, "preflight.jsonl"),
+  );
+  assert(!text.includes(cred), "the credential is redacted");
+  const got = await preflightOf(t, e!.id);
+  assertEquals(got.map((l) => l.probe), seen.map((l) => l.probe));
+  for (const [i, l] of got.entries()) {
+    if (l.probe === "gw-icmp") {
+      assertEquals({ ...l, error: undefined }, {
+        ...seen[i]!,
+        error: undefined,
+      });
+      assertStringIncludes(l.error!, "leaked [REDACTED:");
+    } else assertEquals(l, seen[i]);
+  }
+  assertEquals(got.find((l) => l.probe === "gw-smb-445")!.ok, true);
+});
+
 Deno.test("placed (qualified) run: a failed host verification reserves no ledger slot", async () => {
   const t = await makeEnv();
   const eg = enforce(t);

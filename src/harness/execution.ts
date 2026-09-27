@@ -345,6 +345,8 @@ export function privatePaths(env: HarnessEnv, id: string) {
     trace: join(p, "quarantine", id, "trace.jsonl"),
     /** Every proxy decision of this execution (M1-33). */
     egress: join(p, "quarantine", id, "egress.jsonl"),
+    /** The parsed in-sandbox preflight probe lines, pass or fail (M3-09a). */
+    preflight: join(p, "quarantine", id, "preflight.jsonl"),
   };
 }
 
@@ -1006,6 +1008,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     { src: p.host, dest: join(runDir, "host-log.jsonl") },
     { src: p.trace, dest: join(runDir, "trace.jsonl") },
     { src: p.egress, dest: join(runDir, "egress.jsonl") },
+    { src: p.preflight, dest: join(runDir, "preflight.jsonl") },
   ], scrub);
   const side = redactDeep({
     v: 1,
@@ -1628,6 +1631,10 @@ export async function runExecution(
             eg.probe(name, hosts),
             PREFLIGHT_TIMEOUT_MS,
             "egress preflight",
+          );
+          await Deno.writeTextFile(
+            p.preflight,
+            lines.map((l) => JSON.stringify(l) + "\n").join(""),
           );
           const problems = evaluatePreflight(lines, expect);
           if (problems.length > 0) throw new Error(problems.join("; "));
