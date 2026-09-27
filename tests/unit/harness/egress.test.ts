@@ -22,6 +22,7 @@ import {
   hostsForRoutes,
   listenerProblems,
   loadRecordedHosts,
+  loadRecording,
   parseHnsNetwork,
   parseProbeLines,
   PREFLIGHT_EXPECT,
@@ -31,6 +32,7 @@ import {
   proxyIsolationProblem,
   realEgressRuntime,
   RECORDED_HOSTS_PATH,
+  RECORDED_ROUTES,
   recordedHostsJson,
   revertScript,
   ROUTE_HOSTS,
@@ -1161,6 +1163,87 @@ Deno.test("record mode: the route policy, the preflight expectation and the reco
   });
   assertThrows(() => recordedHostsJson([], "s"), ConfigurationError);
   assertThrows(() => recordedHostsJson(["1.2.3.4"], "s"), ConfigurationError);
+});
+
+Deno.test("openai-codex:oauth (H-02): no guessed host; refused until recorded; a recording merges beside the OAuth one", async () => {
+  const codex = "openai-codex:oauth";
+  const oauth = "anthropic:first-party-oauth";
+  assertEquals(ROUTE_HOSTS[codex], []);
+  assert(RECORDED_ROUTES.includes(codex));
+  assertThrows(
+    () => hostsForRoutes([codex], {}),
+    ConfigurationError,
+    RECORDED_HOSTS_PATH,
+  );
+  assertThrows(
+    () => hostsForRoutes([codex], { [codex]: [] }),
+    ConfigurationError,
+    RECORDED_HOSTS_PATH,
+  );
+  // Record mode contributes nothing fixed; the proxy then allows any DNS name.
+  assertEquals(hostsForRoutes([codex], {}, { record: true }), []);
+  assertEquals(
+    hostsForRoutes([codex, "openrouter:api-key"], {
+      [codex]: ["chatgpt.example.test"],
+    }),
+    ["chatgpt.example.test", "openrouter.ai"],
+  );
+  // A recording of another route leaves this one unrecorded.
+  assertThrows(
+    () => hostsForRoutes([codex], { [oauth]: ["x.example.test"] }),
+    ConfigurationError,
+    codex,
+  );
+
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  assertEquals(await loadRecording(root), null);
+  const path = join(root, ...RECORDED_HOSTS_PATH.split("/"));
+  await Deno.mkdir(join(path, ".."), { recursive: true });
+  await Deno.writeTextFile(
+    path,
+    recordedHostsJson(["api.anthropic.com"], "record mode execution a"),
+  );
+  const first = await loadRecording(root);
+  assertEquals(first, {
+    source: "record mode execution a",
+    routes: { [oauth]: ["api.anthropic.com"] },
+  });
+  const merged = recordedHostsJson(
+    ["chatgpt.example.test", "auth.example.test", "chatgpt.example.test"],
+    "record mode execution b",
+    { route: codex, existing: first },
+  );
+  await Deno.writeTextFile(path, merged);
+  assertEquals(await loadRecordedHosts(root), {
+    [oauth]: ["api.anthropic.com"],
+    [codex]: ["auth.example.test", "chatgpt.example.test"],
+  });
+  assertEquals(
+    JSON.parse(merged).source,
+    "record mode execution a; record mode execution b",
+  );
+  // Deterministic: the routes in sorted order, whatever order they were recorded in.
+  assertEquals(
+    Object.keys(JSON.parse(merged).routes),
+    [oauth, codex].sort(),
+  );
+  // A route is recorded once; re-recording needs the entry removed explicitly.
+  assertThrows(
+    () =>
+      recordedHostsJson(["y.example.test"], "s", {
+        route: codex,
+        existing: { source: "x", routes: { [codex]: ["z.example.test"] } },
+      }),
+    ConfigurationError,
+    "already recorded",
+  );
+  assertThrows(
+    () =>
+      recordedHostsJson(["y.example.test"], "s", {
+        route: "openrouter:api-key",
+      }),
+    ConfigurationError,
+  );
 });
 
 Deno.test("proxy record mode: any DNS name on 443 is allowed and logged; IP literals, private resolutions and other ports are still refused", async () => {

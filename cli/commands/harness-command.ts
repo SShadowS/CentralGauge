@@ -564,7 +564,7 @@ export interface CellCliOptions {
   stubProvider?: string | null;
   /** Another image of the same harness (sha256 id); only with stubProvider. */
   image?: string | null;
-  /** M1-34 Step 11: record the OAuth hosts (qualified marker, supervised Claude arm, ledger). */
+  /** M1-34 Step 11: record the hosts of the arm's recorded route (qualified marker, supervised credential-bearing arm, ledger; H-02: also openai-codex:oauth). */
   recordOAuthHosts?: boolean;
   /** H-09: record the cell unjudged; `harness judge-pending` judges it. */
   deferJudging?: boolean;
@@ -2958,7 +2958,11 @@ export async function harnessQualify(
 }
 
 /** Credentials M1-34 Step 10 rotates before authorization (names in the rotation record). */
-export const ROTATED_CREDENTIALS = ["claude-oauth", "openrouter"] as const;
+export const ROTATED_CREDENTIALS = [
+  "claude-oauth",
+  "openrouter",
+  "openai-codex",
+] as const;
 
 export interface EgressVerifyOptions {
   root: string;
@@ -3511,7 +3515,7 @@ export function registerHarnessCommand(
     )
     .option(
       "--record-oauth-hosts",
-      "M1-34 Step 11: record the OAuth hosts into harness/egress/recorded-hosts.json (qualified marker, supervised Claude arm)",
+      "M1-34 Step 11: record the hosts of the arm's recorded route (the Claude OAuth route, or pi's openai-codex:oauth) into harness/egress/recorded-hosts.json beside any route already recorded (qualified marker, supervised arm)",
     )
     .option(
       "--defer-judging",

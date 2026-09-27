@@ -3434,9 +3434,16 @@ async function authorizedLayout(
   );
   const recorded = join(root, ...RECORDED_HOSTS_PATH.split("/"));
   await Deno.mkdir(join(recorded, ".."), { recursive: true });
+  // Every recorded route has its recording (H-02: the openai-codex:oauth route too).
   await Deno.writeTextFile(
     recorded,
-    recordedHostsJson([RECORDED_OAUTH], "record mode execution cell-1"),
+    recordedHostsJson(["chatgpt.example.test"], "record mode execution cx-1", {
+      route: "openai-codex:oauth",
+      existing: {
+        source: "record mode execution cell-1",
+        routes: { "anthropic:first-party-oauth": [RECORDED_OAUTH] },
+      },
+    }),
   );
   const cells = join(shared, "cells");
   await Deno.mkdir(join(cells, "executions", "camp1"), { recursive: true });

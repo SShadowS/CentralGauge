@@ -149,32 +149,64 @@ export const isAllowableHost = (h: string) => HOSTNAME.test(h) && !IPV4.test(h);
 /**
  * Hosts each provider route needs. The first-party OAuth route's list is
  * incomplete until M1-34 Step 11 records the OAuth hosts Claude Code uses
- * (RECORDED_HOSTS_PATH); until then an enforced Claude run is refused.
+ * (RECORDED_HOSTS_PATH); until then an enforced Claude run is refused. The
+ * ChatGPT-subscription route (H-02: pi's openai-codex provider) has no
+ * fixed host at all: every one comes from its ops recording, none is guessed.
  */
 export const ROUTE_HOSTS: Record<string, string[]> = {
   "anthropic:first-party-oauth": ["api.anthropic.com"],
   "openrouter:api-key": ["openrouter.ai"],
+  "openai-codex:oauth": [],
 };
 /** Routes whose host list must be completed by an ops recording before any enforced run. */
 export const RECORDED_ROUTES: readonly string[] = [
   "anthropic:first-party-oauth",
+  "openai-codex:oauth",
 ];
 /** Written by M1-34 Step 11 (ops), committed with its evidence; never invented here. */
 export const RECORDED_HOSTS_PATH = "harness/egress/recorded-hosts.json";
 export type RecordedHosts = Record<string, string[]>;
+/** The recording file: one source line (each record-mode execution appends its own) and the hosts per route. */
+export interface Recording {
+  source: string;
+  routes: RecordedHosts;
+}
 
-/** The recording file text (sorted, unique, strict schema, non-empty): deterministic for the same hosts and source. */
-export function recordedHostsJson(hosts: string[], source: string): string {
+/**
+ * The recording file text for `route` (default: the first-party OAuth
+ * route), merged beside the routes an existing recording already holds.
+ * Sorted, unique, strict schema, non-empty: deterministic for the same
+ * hosts and sources. A route is recorded once; recording it again needs its
+ * entry removed explicitly.
+ */
+export function recordedHostsJson(
+  hosts: string[],
+  source: string,
+  o: { route?: string; existing?: Recording | null } = {},
+): string {
+  const route = o.route ?? RECORDED_ROUTES[0]!;
   const list = [...new Set(hosts)].sort();
+  const prior = o.existing?.routes ?? {};
+  if (Object.hasOwn(prior, route)) {
+    throw new ConfigurationError(
+      `${route} is already recorded in ${RECORDED_HOSTS_PATH}; remove its entry explicitly to record again`,
+    );
+  }
   const v = {
     v: 1,
-    source,
-    routes: { [RECORDED_ROUTES[0]!]: list },
+    source: o.existing ? `${o.existing.source}; ${source}` : source,
+    routes: Object.fromEntries(
+      Object.entries({ ...prior, [route]: list }).sort(([a], [b]) =>
+        a < b ? -1 : 1
+      ),
+    ),
   };
   const r = RecordedSchema.safeParse(v);
   if (!r.success || list.length === 0) {
     throw new ConfigurationError(
-      `cannot record ${JSON.stringify(list)} for ${RECORDED_HOSTS_PATH}: ${
+      `cannot record ${
+        JSON.stringify(list)
+      } for ${route} in ${RECORDED_HOSTS_PATH}: ${
         r.success ? "no host" : r.error.issues[0]?.message
       }`,
     );
@@ -194,16 +226,16 @@ const RecordedSchema = z.object({
   ),
 }).strict();
 
-/** The ops recording; a missing file is no recording (routes that need one then refuse). */
-export async function loadRecordedHosts(
+/** The ops recording; a missing file is no recording (null). */
+export async function loadRecording(
   repoRoot: string,
-): Promise<RecordedHosts> {
+): Promise<Recording | null> {
   const path = join(repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
   let text: string;
   try {
     text = await Deno.readTextFile(path);
   } catch (err) {
-    if (err instanceof Deno.errors.NotFound) return {};
+    if (err instanceof Deno.errors.NotFound) return null;
     throw new ConfigurationError(
       `cannot read ${RECORDED_HOSTS_PATH}: ${(err as Error).message}`,
     );
@@ -226,7 +258,14 @@ export async function loadRecordedHosts(
       }`,
     );
   }
-  return r.data.routes;
+  return { source: r.data.source, routes: r.data.routes };
+}
+
+/** The recorded hosts per route; a missing file is no recording (routes that need one then refuse). */
+export async function loadRecordedHosts(
+  repoRoot: string,
+): Promise<RecordedHosts> {
+  return (await loadRecording(repoRoot))?.routes ?? {};
 }
 
 /**
@@ -2127,7 +2166,11 @@ export async function recordCellProblems(
         join(repoRoot, ...RECORDED_HOSTS_PATH.split("/")),
       ),
     );
-    if (rec?.source !== `record mode execution ${cell}`) {
+    // One source per record-mode execution; a later route's recording (H-02) appends its own.
+    const sources = typeof rec?.source === "string"
+      ? rec.source.split("; ")
+      : [];
+    if (!sources.includes(`record mode execution ${cell}`)) {
       p.push(`${RECORDED_HOSTS_PATH} was not recorded by cell ${cell}`);
     }
   } catch { /* the recorded-hosts hash check names a missing file */ }

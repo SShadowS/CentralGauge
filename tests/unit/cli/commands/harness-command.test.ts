@@ -2737,7 +2737,7 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
     harnessEgressVerify({ root, mark: "authorized", ...o }, c);
   const full = { rotation, cell: "cell-ok", evidence: "M1-34/001" };
   await writeCell("cell-ok", { log: allow });
-  await writeRotation(["claude-oauth", "openrouter"]);
+  await writeRotation(["claude-oauth", "openrouter", "openai-codex"]);
   const { rotation: _r, ...noRotation } = full;
   assertStringIncludes((await a(noRotation)).join("\n"), "rotation");
   assertStringIncludes(
@@ -2755,11 +2755,26 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
       routes: { "anthropic:first-party-oauth": ["oauth.example.test"] },
     }),
   );
+  // H-02: the ChatGPT-subscription route has no fixed host; it too needs its recording.
+  assertStringIncludes((await a(full)).join("\n"), "openai-codex:oauth");
+  await Deno.writeTextFile(
+    join(root, ...RECORDED_HOSTS_PATH.split("/")),
+    JSON.stringify({
+      v: 1,
+      source: "record mode execution cell-ok; record mode execution cell-cx",
+      routes: {
+        "anthropic:first-party-oauth": ["oauth.example.test"],
+        "openai-codex:oauth": ["chatgpt.example.test"],
+      },
+    }),
+  );
   await writeRotation(["claude-oauth"]);
   assertStringIncludes((await a(full)).join("\n"), "openrouter");
-  await writeRotation(["claude-oauth", "openrouter"], past(3));
-  assertStringIncludes((await a(full)).join("\n"), "after the rotation");
   await writeRotation(["claude-oauth", "openrouter"]);
+  assertStringIncludes((await a(full)).join("\n"), "lacks openai-codex");
+  await writeRotation(["claude-oauth", "openrouter", "openai-codex"], past(3));
+  assertStringIncludes((await a(full)).join("\n"), "after the rotation");
+  await writeRotation(["claude-oauth", "openrouter", "openai-codex"]);
   assertStringIncludes((await a({ ...full, cell: "nope" })).join("\n"), "nope");
   await writeCell("cell-pi", { harness: "pi", log: allow });
   assertStringIncludes(
@@ -2801,6 +2816,7 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
     ],
     ["authorized", "M1-34/001", SANDBOX_NETWORK.name, "net9", 42, [
       "api.anthropic.com",
+      "chatgpt.example.test",
       "oauth.example.test",
       "openrouter.ai",
     ]],
@@ -3280,7 +3296,9 @@ async function authorizedRoot(at?: string): Promise<string> {
     rotation,
     JSON.stringify({
       v: 1,
-      credentials: ["claude-oauth", "openrouter"].map((name) => ({
+      credentials: ["claude-oauth", "openrouter", "openai-codex"].map((
+        name,
+      ) => ({
         name,
         revoked_at: soon,
         created_at: soon,
@@ -3293,7 +3311,10 @@ async function authorizedRoot(at?: string): Promise<string> {
     JSON.stringify({
       v: 1,
       source: "record mode execution cell-ok",
-      routes: { "anthropic:first-party-oauth": ["oauth.example.test"] },
+      routes: {
+        "anthropic:first-party-oauth": ["oauth.example.test"],
+        "openai-codex:oauth": ["chatgpt.example.test"],
+      },
     }),
   );
   const cells = join(root, "results", "harness", "cells");
