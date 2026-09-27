@@ -1632,6 +1632,11 @@ Deno.test("run.ps1 (H-02): never touches the codex credential; tells the guard w
     run,
     "$env:CG_PI_PROVIDER = [string]$cfg.settings.provider",
   );
+  // H-02 review: the guard checks the token outlives this run's timeout.
+  assertStringIncludes(
+    run,
+    "$env:CG_TIMEOUT_MIN = [string]$cfg.limits.timeout_min",
+  );
   assert(
     run.indexOf("$env:CG_PI_PROVIDER") > 0 &&
       run.indexOf("$env:CG_PI_PROVIDER") < run.indexOf("| & pi @piArgs"),
@@ -1652,12 +1657,14 @@ async function withGuardEnv(
     "CG_PI_AUTH_FILE",
     "CG_PI_KEY_FILE",
     "CG_MAX_BUDGET_USD",
+    "CG_TIMEOUT_MIN",
     "PI_CODING_AGENT_DIR",
   ];
   const prev = keys.map((k) => Deno.env.get(k));
   try {
     for (const k of keys) Deno.env.delete(k);
     Deno.env.set("CG_MAX_BUDGET_USD", "2");
+    Deno.env.set("CG_TIMEOUT_MIN", "30");
     Deno.env.set("PI_CODING_AGENT_DIR", join(dir, "agent"));
     for (const [k, v] of Object.entries(env)) Deno.env.set(k, v);
     await f(dir);
@@ -1670,34 +1677,47 @@ async function withGuardEnv(
   }
 }
 
-Deno.test("cg-budget (H-02): on the codex route it writes the agent auth.json from the secret file; openrouter is never registered", async () => {
+/** The released sandbox copy: the refresh token withheld (H-02 review). */
+const sandboxAuth = (expires: number, over: object = {}) =>
+  codexAuthText(expires, { refresh: "", ...over });
+
+Deno.test("cg-budget (H-02): on the codex route it writes the agent auth.json (refresh withheld) as its last step; openrouter is never registered", async () => {
   const { default: guard } = await import(
     "../../../harness/images/pi/cg-budget.ts"
   );
   const registered: string[] = [];
+  let dir = "";
+  const writtenAtRegistration: boolean[] = [];
   const api = {
     registerProvider: (n: string) => void registered.push(n),
     appendEntry: () => {},
-    on: () => {},
+    on: () => {
+      // H-02 review: every handler is registered before the credential exists.
+      const t = Deno.readTextFileSync(join(dir, "agent", "auth.json"));
+      writtenAtRegistration.push(t !== "{}");
+    },
   };
-  await withGuardEnv({ CG_PI_PROVIDER: "openai-codex" }, async (dir) => {
-    const src = join(dir, "openai-codex-auth");
+  await withGuardEnv({ CG_PI_PROVIDER: "openai-codex" }, async (d) => {
+    dir = d;
+    const src = join(d, "openai-codex-auth");
     Deno.env.set("CG_PI_AUTH_FILE", src);
-    await Deno.mkdir(join(dir, "agent"));
-    const text = codexAuthText(Date.now() + 2 * 3600_000);
+    await Deno.mkdir(join(d, "agent"));
+    const text = sandboxAuth(Date.now() + 2 * 3600_000);
     await Deno.writeTextFile(src, text + "\n");
     // pi's AuthStorage creates an empty "{}" before extensions load.
-    await Deno.writeTextFile(join(dir, "agent", "auth.json"), "{}");
+    await Deno.writeTextFile(join(d, "agent", "auth.json"), "{}");
     guard(api);
     assertEquals(registered, []);
-    assertEquals(
-      JSON.parse(await Deno.readTextFile(join(dir, "agent", "auth.json"))),
-      JSON.parse(text),
+    assertEquals(writtenAtRegistration, [false, false, false]);
+    const written = JSON.parse(
+      await Deno.readTextFile(join(d, "agent", "auth.json")),
     );
+    assertEquals(written, JSON.parse(text));
+    assertEquals(written["openai-codex"].refresh, "");
   });
 });
 
-Deno.test("cg-budget (H-02): refuses an expiring, malformed or missing codex credential, a prior auth.json and an unknown provider; no value in any error", async () => {
+Deno.test("cg-budget (H-02): refuses a token that does not outlive the timeout plus 5 minutes, a refresh token not withheld, a malformed or missing credential, a prior auth.json and an unknown provider; no value in any error", async () => {
   const { default: guard } = await import(
     "../../../harness/images/pi/cg-budget.ts"
   );
@@ -1708,19 +1728,25 @@ Deno.test("cg-budget (H-02): refuses an expiring, malformed or missing codex cre
   };
   const later = Date.now() + 2 * 3600_000;
   const extra = {
-    ...JSON.parse(codexAuthText(later)),
+    ...JSON.parse(sandboxAuth(later)),
     openrouter: { type: "api_key", key: "sk-or-v1-x" },
   };
-  const cases: [string, string | null, string | null][] = [
+  // CG_TIMEOUT_MIN 30: the token must last 35 minutes from now.
+  const cases: [string, string | null, string | null, string?][] = [
     ["missing file", null, null],
-    ["expiring", codexAuthText(Date.now() + 60_000), null],
+    ["expiring", sandboxAuth(Date.now() + 60_000), null],
+    ["timeout plus 5", sandboxAuth(Date.now() + 34 * 60_000), null],
+    ["no timeout", sandboxAuth(later), null, ""],
     ["extra entry", JSON.stringify(extra), null],
-    ["api key type", codexAuthText(later, { type: "api_key" }), null],
-    ["short refresh", codexAuthText(later, { refresh: "rt" }), null],
-    ["prior credential", codexAuthText(later), '{"x":{"type":"api_key"}}'],
+    ["api key type", sandboxAuth(later, { type: "api_key" }), null],
+    ["refresh not withheld", codexAuthText(later), null],
+    ["prior credential", sandboxAuth(later), '{"x":{"type":"api_key"}}'],
   ];
-  for (const [what, text, prior] of cases) {
-    await withGuardEnv({ CG_PI_PROVIDER: "openai-codex" }, async (dir) => {
+  for (const [what, text, prior, timeout] of cases) {
+    await withGuardEnv({
+      CG_PI_PROVIDER: "openai-codex",
+      CG_TIMEOUT_MIN: timeout ?? "30",
+    }, async (dir) => {
       const src = join(dir, "openai-codex-auth");
       Deno.env.set("CG_PI_AUTH_FILE", src);
       await Deno.mkdir(join(dir, "agent"));
@@ -1737,6 +1763,14 @@ Deno.test("cg-budget (H-02): refuses an expiring, malformed or missing codex cre
       assertEquals(written, prior, `${what}: nothing written`);
     });
   }
+  // 36 minutes of validity passes a 30-minute timeout.
+  await withGuardEnv({ CG_PI_PROVIDER: "openai-codex" }, async (dir) => {
+    const src = join(dir, "openai-codex-auth");
+    Deno.env.set("CG_PI_AUTH_FILE", src);
+    await Deno.mkdir(join(dir, "agent"));
+    await Deno.writeTextFile(src, sandboxAuth(Date.now() + 36 * 60_000));
+    guard(api);
+  });
   await withGuardEnv({ CG_PI_PROVIDER: "anthropic" }, () => {
     assertThrows(() => guard(api), Error, "provider");
     return Promise.resolve();

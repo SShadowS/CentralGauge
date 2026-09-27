@@ -112,3 +112,38 @@ export function codexExpiryProblem(
     `refresh it on the host (pi auth print-bearer-token --provider openai-codex --min-expiry ${need}m refreshes an expiring token; it prints the token, so discard stdout) ` +
     `and copy the ${CODEX_PROVIDER} entry into ${CODEX_AUTH_FILE} again. pi never refreshes inside the sandbox: auth.openai.com is not on the allowlist unless recorded, so an in-sandbox refresh fails closed`;
 }
+
+/**
+ * H-02 review: the sandbox copy of the codex file, the refresh token
+ * withheld (refresh ""). pi 0.87.1 authenticates with the access token
+ * alone while it is valid (pi-ai auth/resolve.js:62-99 refreshes only
+ * inside the 5-minute window; auth/oauth/openai-codex.js:445-448 derives
+ * the auth from `access`), and accepts a string refresh
+ * (pi-coding-agent core/auth-storage.js:195-199). So the agent never
+ * holds the long-lived token and cannot refresh inside the sandbox.
+ */
+export function releasedCodexAuth(text: string): string {
+  const a = parseCodexAuth(text);
+  return JSON.stringify(
+    {
+      [CODEX_PROVIDER]: {
+        type: "oauth",
+        access: a.access,
+        refresh: "",
+        expires: a.expires,
+        accountId: a.accountId,
+      },
+    },
+    null,
+    2,
+  );
+}
+
+/** The files as released into the sandbox: the codex file with its refresh token withheld. */
+export function releasedSecretFiles(values: SecretValue[]): SecretValue[] {
+  return values.map((v) =>
+    v.name === CODEX_AUTH_FILE
+      ? { name: v.name, value: releasedCodexAuth(v.value) }
+      : v
+  );
+}

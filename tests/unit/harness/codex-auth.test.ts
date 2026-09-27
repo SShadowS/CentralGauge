@@ -4,6 +4,7 @@ import {
   CODEX_AUTH_FILE,
   codexExpiryProblem,
   parseCodexAuth,
+  releasedCodexAuth,
   withCredentialForms,
 } from "../../../src/harness/codex-auth.ts";
 import { publishRedacted, redactText } from "../../../src/harness/sandbox.ts";
@@ -107,4 +108,15 @@ Deno.test("codexExpiryProblem: refuses a token that expires before the timeout p
     codexExpiryProblem(parseCodexAuth(codexAuthText(now - 1)), 0, now) !==
       null,
   );
+});
+
+Deno.test('releasedCodexAuth (H-02 review): the sandbox copy carries refresh ""; the rest unchanged', () => {
+  const text = codexAuthText(1_900_000_000_000);
+  const out = releasedCodexAuth(text);
+  assert(!out.includes(FAKE_CODEX.refresh));
+  assertEquals(
+    JSON.parse(out),
+    JSON.parse(codexAuthText(1_900_000_000_000, { refresh: "" })),
+  );
+  assertThrows(() => releasedCodexAuth("{}"), ConfigurationError);
 });

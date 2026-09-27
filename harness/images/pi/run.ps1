@@ -59,6 +59,8 @@ $env:PI_OFFLINE = '1'
 $env:CG_MAX_BUDGET_USD = [string]$budget
 # The guard releases this provider's credential (the OpenRouter key, or the openai-codex OAuth entry).
 $env:CG_PI_PROVIDER = [string]$cfg.settings.provider
+# The guard refuses a codex token that would not outlive this run (H-02 review).
+$env:CG_TIMEOUT_MIN = [string]$cfg.limits.timeout_min
 $version = (& pi --version | Out-String).Trim()
 $entry = @{ type = 'cg_entry'; pi_version = $version; max_budget_usd = $budget; ready = $true }
 [Console]::Out.WriteLine((ConvertTo-Json -InputObject $entry -Compress))

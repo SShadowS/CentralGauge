@@ -167,12 +167,20 @@ Deno.test("codex arm: only its own credential file is released, never in argv; e
   assertEquals(armSlugs, [["openai-codex/gpt-6-luna"]]);
   // The OpenRouter key is never released to this arm (nor this file to an OpenRouter arm).
   assertEquals(released, ["backend-token", "openai-codex-auth", "ready"]);
-  assertEquals(file.trim(), WHOLE(JSON.parse(file)["openai-codex"].expires));
+  // H-02 review: the sandbox copy withholds the refresh token.
+  const entry = JSON.parse(file)["openai-codex"];
+  assertEquals(entry.refresh, "");
+  assertEquals(
+    JSON.parse(file),
+    JSON.parse(codexAuthText(entry.expires, { refresh: "" })),
+  );
+  assert(!file.includes(FAKE_CODEX.refresh));
   for (const v of [...Object.values(FAKE_CODEX), file.trim()]) {
     assert(!args.includes(v), "argv");
   }
   const published = await allBytes(t.env.resultsRoot);
-  for (const v of Object.values(FAKE_CODEX)) {
+  // The host still redacts the real refresh token, and the released copy as a whole.
+  for (const v of [...Object.values(FAKE_CODEX), file.trim()]) {
     assert(!leaks(published, v), `published: ${v.slice(0, 6)}`);
   }
   const rawLog = await Deno.readTextFile(

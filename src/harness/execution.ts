@@ -55,6 +55,7 @@ import {
   CODEX_AUTH_FILE,
   codexExpiryProblem,
   parseCodexAuth,
+  releasedSecretFiles,
   withCredentialForms,
 } from "./codex-auth.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
@@ -2630,8 +2631,14 @@ export async function runExecution(
         secretFiles,
         token,
       );
-      // Redaction and the argv guard also cover the codex file's inner values (H-02).
-      const redact = withCredentialForms(values);
+      // H-02 review: the sandbox gets the codex file with its refresh token
+      // withheld; redaction and the argv guard cover the real inner values
+      // and the released copy as a whole.
+      const released = releasedSecretFiles(values);
+      const redact = [
+        ...withCredentialForms(values),
+        ...released.filter((r, i) => r.value !== values[i]!.value),
+      ];
       if (eg) {
         // The environment's shared proxy (M1-33d) and the backend listen on
         // the gateway only.
@@ -2697,7 +2704,7 @@ export async function runExecution(
       let credForms: SecretValue[] = [];
       /** Secret files, custody, keys, the released phase, then ready (empty, never custody) last. */
       const release = async () => {
-        await writeSecretFiles(dir, values);
+        await writeSecretFiles(dir, released);
         await commitCustody([...redact, ...credForms]);
         await writeAtomic(
           p.intent,
