@@ -2719,6 +2719,11 @@ Deno.test("placed run (M1-33d): empty mount at the address check, the verified a
   const c = eg.credential!;
   assertEquals(atProbe, { "proxy-credential": `${c.user}:${c.pass}` });
   assertEquals(eg.registered, null, "unregistered");
+  // M1-33e review: the proxy credential file is gone after the completed run.
+  assert(
+    !await exists(join(mount(t.docker.runs[0]!.name), "proxy-credential")),
+    "proxy credential removed after the run",
+  );
   // The docker argv (env included) never holds any form of the credential.
   const call = t.docker.runs[0]!;
   for (const f of proxyCredentialForms(c)) {
