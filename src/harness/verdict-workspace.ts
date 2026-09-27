@@ -792,13 +792,12 @@ async function shippedTests(testDir: string): Promise<ShippedTests | null> {
 }
 
 /**
- * Numeric codeunit references: `Codeunit.Run(n`, `Codeunit::n` and a
- * `Codeunit n` declaration. A computed id (`Codeunit.Run(X)`) is not seen:
- * a known limit.
+ * The shipped test codeunit a noise-stripped range names or numbers, or null.
+ * A number is any integer literal equal to a shipped test codeunit id
+ * (`Codeunit.Run(80010)`, `Codeunit 80010`, `Id := 80010`). An id reached by
+ * arithmetic (`80000 + 10`), from text (`Evaluate`) or by lookup (AllObj) is
+ * not seen: a known limit.
  */
-const CODEUNIT_ID_REF = /\bcodeunit\s*(?:\.\s*run\s*\(\s*|::\s*|\s+)(\d+)\b/gi;
-
-/** The shipped test codeunit a noise-stripped range names or numbers, or null. */
 function shippedUnitRef(
   text: string,
   from: number,
@@ -806,11 +805,11 @@ function shippedUnitRef(
   shipped: ShippedTests,
 ): string | null {
   for (const t of tokenize(text, from, to)) {
-    const u = t.id ? shipped.units.get(t.v) : undefined;
-    if (u) return u;
-  }
-  for (const m of text.slice(from, to).matchAll(CODEUNIT_ID_REF)) {
-    const u = shipped.ids.get(Number(m[1]));
+    const u = t.id
+      ? shipped.units.get(t.v)
+      : /^\d+$/.test(t.v)
+      ? shipped.ids.get(Number(t.v))
+      : undefined;
     if (u) return u;
   }
   return null;
@@ -1217,6 +1216,23 @@ async function applyCreditRules(
     [...fresh.map((f) => f.judged), ...shippedEdits.map((e) => e.judged)],
     shipped,
   );
+  // A rejected member that cannot be removed (a table or extension trigger,
+  // an unparsed codeunit) can fire from any test (an Insert(true), a
+  // RecordRef): fail closed, no agent test runs or counts.
+  const stuck = [...why].filter(([m]) => m.kind === "object");
+  if (stuck.length > 0) {
+    for (const f of fresh) {
+      for (const d of declarations(f.src).filter(isTestCodeunit)) {
+        if (!excluded.includes(d.id)) excluded.push(d.id);
+      }
+    }
+    notes.push(
+      `credit rules: ${
+        stuck.map(([m, w]) => `${m.displays[0]}: ${w}`).join("; ")
+      }; it cannot be removed, so no agent test is run or counted`,
+    );
+    return { notes, excluded };
+  }
 
   for (const f of fresh) {
     const cuts: Member[] = [];

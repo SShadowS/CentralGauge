@@ -837,9 +837,9 @@ Deno.test("extraction: every overload of an added procedure is carried", async (
   assertStringIncludes(gen!, "local procedure Check(T: Text)");
 });
 
-Deno.test("credit: an agent object (not a codeunit) that runs a shipped test codeunit taints what uses it", async () => {
+Deno.test("credit: an agent object (not a codeunit) that runs a shipped test codeunit excludes every agent test (round 2 N1: it cannot be removed)", async () => {
   const p = await pristineDir();
-  const { added, notes } = await rebuild(
+  const { v, added, notes } = await rebuild(
     p,
     await artifactFrom(p, {
       "Test/src/Evil.Table.al":
@@ -855,9 +855,62 @@ Deno.test("credit: an agent object (not a codeunit) that runs a shipped test cod
 ${GOOD}`),
     }),
   );
+  // Stricter than round 1 (which removed only InsertsEvil): a clean test can
+  // fire the trigger too (RecordRef.Open(80150)), so nothing runs.
+  assertEquals(added, []);
+  assertEquals(v.excluded, [80100]);
+  assertStringIncludes(
+    notes,
+    "Evil: uses shipped test codeunit 80010 CGR Shipped Tests; it cannot be removed, so no agent test is run or counted",
+  );
+});
+
+// ---- M4-17a review round 2 ----
+
+Deno.test("credit: a rejected member of an object the parser cannot remove (a tableextension trigger) excludes every agent test", async () => {
+  const p = await pristineDir();
+  const { v, gen, added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      "Test/src/LeaseExt.TableExt.al":
+        `tableextension 80160 "Lease Ext" extends "CGR Lease Contract"\n{\n    trigger OnInsert()\n    begin\n        Codeunit.Run(Codeunit::"CGR Shipped Tests");\n    end;\n}\n`,
+      [NEW]: newFile(GOOD),
+      "Test/src/Suite.Test.al": agentSuite(`
+    [Test]
+    procedure Mine()
+    begin
+        Assert.AreEqual(3, 1 + 2, 'sum');
+    end;
+`),
+    }),
+  );
+  assertEquals(added, []);
+  assertEquals(gen, null);
+  assert(v.excluded.includes(80100));
+  assertStringIncludes(notes, "Lease Ext");
+  assertStringIncludes(notes, "no agent test is run or counted");
+});
+
+Deno.test("credit: any integer literal equal to a shipped test codeunit id is a reference", async () => {
+  const p = await pristineDir();
+  const { added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      [NEW]: newFile(`
+    [Test]
+    procedure RunsViaVariable()
+    var
+        Id: Integer;
+    begin
+        Id := 80010;
+        Codeunit.Run(Id);
+    end;
+${GOOD}`),
+    }),
+  );
   assertEquals(added.map((x) => x.procedures), [["Good"]]);
   assertStringIncludes(
     notes,
-    "InsertsEvil: uses shipped test codeunit 80010 CGR Shipped Tests (via Evil)",
+    "RunsViaVariable: uses shipped test codeunit 80010",
   );
 });
