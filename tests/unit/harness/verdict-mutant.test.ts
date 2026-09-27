@@ -464,5 +464,150 @@ Deno.test("mutant_kill: no pass_to_pass means no trusted control: a thrown agent
 });
 
 Deno.test("mutant_kill: the scorer version is bumped for the agent-suite rules", () => {
-  assertEquals(SCORER_SUITE["mutant_kill"], "2");
+  // 2: agent-suite rules; 3: tests extracted from shipped codeunits (M4-17a).
+  assertEquals(SCORER_SUITE["mutant_kill"], "3");
+});
+
+// ---- M4-17a: tests added to a SHIPPED test codeunit (the HX-002 pilot shape) ----
+
+/** The fixture's shipped 80010 as the agent left it: shipped body edited, procedures appended. */
+const shippedEdited = (procs: string, shippedBody = "") =>
+  `codeunit 80010 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure ShippedPasses()\n    begin\n${shippedBody}    end;\n${procs}}\n`;
+const PRICE_TEST = `
+    [Test]
+    procedure PriceIsTen()
+    var
+        Rental: Codeunit "CGR Rental";
+    begin
+        if Rental.Price() <> 10 then
+            Error('price');
+    end;
+`;
+/** The generated codeunit's own text in a deployed Test app source. */
+const generatedPart = (src: string) => {
+  const at = src.indexOf("codeunit 84990");
+  const next = src.indexOf("codeunit ", at + 1);
+  return at < 0 ? "" : src.slice(at, next < 0 ? undefined : next);
+};
+
+Deno.test("mutant_kill (M4-17a): tests added to a shipped codeunit are extracted and only they run; a failing shipped procedure never executes", async () => {
+  const seen: string[] = [];
+  const fake = bc();
+  const inner = fake.script;
+  fake.script = (cu, deployed, c) => {
+    const test = deployedSource(deployed, "CGR Test");
+    if (cu === 84990) {
+      seen.push(generatedPart(test));
+      const ten = deployedSource(deployed, "CGR Rental").includes("exit(10);");
+      return result({
+        PriceIsTen: ten ? true : "Assert.AreEqual failed. Expected:<10>",
+      });
+    }
+    // The agent's edit would make the shipped test fail, were it ever deployed and run.
+    if (cu === 80010 && test.includes("SHIPPED RAN")) {
+      return result({ ShippedPasses: "SHIPPED RAN" });
+    }
+    return inner(cu, deployed, c);
+  };
+  const { judgment, log } = await judge(
+    new BcLane(fake, ["C1"]),
+    await setup({ "off-by-one": "exit(9);" }, {
+      edits: {
+        "Test/src/Shipped.Test.al": shippedEdited(
+          PRICE_TEST,
+          "        Error('SHIPPED RAN');\n",
+        ),
+      },
+    }),
+  );
+  assertEquals(log.notes, []);
+  assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
+    ["build", true],
+    ["pass_to_pass", true],
+    ["mutant_kill", true],
+  ]);
+  assertEquals(
+    sc(judgment, "mutant_kill").tests.map((t) => [t.target, t.procedure]),
+    [
+      ["reference", "PriceIsTen"],
+      ["mutant:0", "PriceIsTen"],
+      ["mutant:off-by-one", "PriceIsTen"],
+    ],
+  );
+  // Execution, not only scoring: the runner is asked for the generated
+  // codeunit on every target and for the shipped 80010 only once, in the
+  // trusted pass_to_pass hold.
+  assertEquals(fake.tests.map((t) => t.codeunit), [80010, 84990, 84990, 84990]);
+  assertEquals(seen.length, 3);
+  for (const g of seen) {
+    assertStringIncludes(g, "procedure PriceIsTen()");
+    assert(!g.includes("ShippedPasses"), "no shipped procedure is carried");
+    assert(!g.includes("SHIPPED RAN"));
+  }
+});
+
+Deno.test("mutant_kill (M4-17a): a TestPage in a procedure added to a shipped codeunit is refused", async () => {
+  const { judgment, log } = await judge(
+    new BcLane(bc(), ["C1"]),
+    await setup({ "off-by-one": "exit(9);" }, {
+      edits: {
+        "Test/src/Shipped.Test.al": shippedEdited(`
+    [Test]
+    procedure UsesPage()
+    var
+        P: TestPage "Customer Card";
+    begin
+        P.OpenView();
+    end;
+`),
+      },
+    }),
+  );
+  assertEquals(sc(judgment, "mutant_kill").passed, false);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(log.test_messages.map((m) => [m.codeunit, m.message]), [
+    [84990, "TestPage tests are not supported by the harness test runner"],
+  ]);
+});
+
+Deno.test("mutant_kill (M4-17a): only edits to shipped procedures, or only uncountable additions, still note no agent test and fail", async () => {
+  for (
+    const [edit, why] of [
+      [shippedEdited("", "        Error('edited');\n"), null],
+      [
+        shippedEdited(`
+    [Test]
+    procedure Wrapper()
+    begin
+        ShippedPasses();
+    end;
+`),
+        "Wrapper: calls shipped [Test] 80010 ShippedPasses",
+      ],
+    ] as const
+  ) {
+    const fake = bc();
+    const { judgment, log } = await judge(
+      new BcLane(fake, ["C1"]),
+      await setup({ "off-by-one": "exit(9);" }, {
+        edits: { "Test/src/Shipped.Test.al": edit },
+      }),
+    );
+    assertEquals(sc(judgment, "mutant_kill").passed, false);
+    assertEquals(judgment.verdict, "fail");
+    const notes = log.notes.join("\n");
+    assertStringIncludes(
+      notes,
+      "mutant_kill: no agent test codeunit discovered",
+    );
+    if (why) assertStringIncludes(notes, why);
+    assertEquals(fake.tests.map((t) => t.codeunit), [80010]);
+  }
+});
+
+Deno.test("scorer suite (M4-17a): mutant_kill and pass_to_pass are bumped for tests extracted from shipped codeunits", () => {
+  assertEquals([SCORER_SUITE["mutant_kill"], SCORER_SUITE["pass_to_pass"]], [
+    "3",
+    "2",
+  ]);
 });

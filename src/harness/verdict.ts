@@ -63,10 +63,14 @@ import {
  */
 export const SCORER_SUITE: Record<string, string> = {
   build: "1",
-  pass_to_pass: "1",
+  // 2: a change task's agent-added tests include those extracted from
+  // shipped test codeunits (M4-17a); the task's shipped rows are unchanged.
+  pass_to_pass: "2",
   fail_to_pass: "1",
   // 2: agent-suite rules (decision 2026-09-25-agent-suite-infra).
-  mutant_kill: "2",
+  // 3: [Test] procedures added to shipped test codeunits are extracted into
+  // a generated codeunit, with the credit rules (M4-17a).
+  mutant_kill: "3",
 };
 type ScorerName = "build" | "pass_to_pass" | "fail_to_pass" | "mutant_kill";
 
@@ -451,6 +455,9 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   });
   log.spans.reconstruct_ms = performance.now() - tr;
   log.violations = vw.violations;
+  // Tests the agent added to shipped codeunits are discovered below as the
+  // generated codeunit (addedTestCodeunits); why any were not is noted here.
+  log.notes.push(...vw.notes);
   if (vw.violations.length > 0) return scores.failRest();
 
   const prep = await prepareApps(ctx.lane, {
@@ -634,6 +641,9 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   });
   log.spans.reconstruct_ms = performance.now() - tr;
   log.violations = vw.violations;
+  // Tests the agent added to shipped codeunits are discovered below as the
+  // generated codeunit (addedTestCodeunits); why any were not is noted here.
+  log.notes.push(...vw.notes);
   if (vw.violations.length > 0) return scores.failRest();
 
   const pristineApps = await readAppGraph(i.pristine);
