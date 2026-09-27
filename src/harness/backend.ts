@@ -202,12 +202,15 @@ interface GrantState {
 async function drainedWithin(
   p: Promise<unknown>,
   ms: number,
+  elapsed?: () => Promise<void>,
 ): Promise<boolean> {
   let t: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       p.then(() => true, () => true),
-      new Promise<boolean>((r) => (t = setTimeout(() => r(false), ms))),
+      elapsed
+        ? elapsed().then(() => false)
+        : new Promise<boolean>((r) => (t = setTimeout(() => r(false), ms))),
     ]);
   } finally {
     clearTimeout(t);
@@ -427,6 +430,8 @@ export class Backend {
       /** Test seam: the reparse attribute scan (M1-12). */
       scanReparsePoints?: typeof scanReparsePoints;
       now?: () => number;
+      /** Test seam: settles when a revoke grace has elapsed (default: revokeGraceMs of wall clock). */
+      graceElapsed?: () => Promise<void>;
     },
   ) {
     this.now = o.now ?? (() => Date.now());
@@ -500,9 +505,10 @@ export class Backend {
       return true;
     }
     const grace = this.o.revokeGraceMs ?? 30_000;
-    if (!await drainedWithin(inflight, grace)) {
+    const elapsed = this.o.graceElapsed;
+    if (!await drainedWithin(inflight, grace, elapsed)) {
       st.abort.abort(new Error("grant revoked"));
-      if (!await drainedWithin(inflight, grace)) return false;
+      if (!await drainedWithin(inflight, grace, elapsed)) return false;
     }
     this.draining.delete(executionId);
     await this.dropBuildCache(executionId);
