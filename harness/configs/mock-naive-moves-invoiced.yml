@@ -1,0 +1,6 @@
+id: mock-naive-moves-invoiced
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:moves-invoiced" }
+limits: { timeout_min: 10, max_budget_usd: 1 }

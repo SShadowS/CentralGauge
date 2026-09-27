@@ -1,0 +1,6 @@
+id: mock-naive-default-not-unknown
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:default-not-unknown" }
+limits: { timeout_min: 10, max_budget_usd: 1 }

@@ -1,0 +1,6 @@
+id: mock-naive-reblock-in-handler
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:reblock-in-handler" }
+limits: { timeout_min: 10, max_budget_usd: 1 }
