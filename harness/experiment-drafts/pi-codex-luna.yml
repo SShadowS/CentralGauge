@@ -1,0 +1,17 @@
+# H-02 draft (post-freeze, owner follow-up): not an experiment yet. It lives outside
+# harness/experiments so no campaign, `harness validate` or loadExperiment picks it up;
+# tests/unit/harness/pi.test.ts validates it against ExperimentSchema. Move it into
+# harness/experiments only after ops has recorded the openai-codex:oauth hosts
+# (M1-34 Step 11 record mode) and re-authorized the egress marker.
+# The pi-gpt6-luna-codex cost is a list-price estimate; the subscription's cash cost is 0.
+id: pi-codex-luna
+hypothesis: "pi with GPT-6 Luna on the ChatGPT subscription solves a comparable share of the HX tasks as pi with Claude Sonnet 5 on OpenRouter, at near-zero marginal cash cost (its list-price estimate reported separately)."
+primary_metric: pass_rate
+baseline: pi-sonnet-plain
+variants: [pi-gpt6-luna-codex]
+# vary [models] alone is refused at campaign time (assertVaryHolds): the model also
+# changes native settings (provider openrouter -> openai-codex, api_models), and only
+# vary [harness] derives those. settings is listed for that reason; both arms request {}.
+vary: [models, settings]
+tasks: "harness-tasks/tasks/*"
+repeats: 3

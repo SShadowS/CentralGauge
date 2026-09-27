@@ -2,6 +2,7 @@ import {
   assert,
   assertAlmostEquals,
   assertEquals,
+  assertRejects,
   assertStringIncludes,
   assertThrows,
 } from "@std/assert";
@@ -15,10 +16,12 @@ import {
   PI_CAPABILITIES,
   PI_SETTINGS,
   piAdapter,
+  piHarnessNative,
 } from "../../../src/harness/adapters/pi.ts";
 import { callFields } from "../../../src/harness/call-fields.ts";
 import {
   checkModelsInCatalog,
+  ExperimentSchema,
   HarnessConfigSchema,
   loadConfig,
 } from "../../../src/harness/config.ts";
@@ -27,6 +30,13 @@ import { secretFilesOf } from "../../../src/harness/adapter.ts";
 import { codexAuthText, FAKE_CODEX } from "./codex-fixture.ts";
 import { manifest } from "./fixtures.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
+import { readCatalog } from "../../../src/ingest/catalog/read.ts";
+import { runtimeFacts } from "../../../src/harness/images.ts";
+import {
+  assertVaryHolds,
+  resolveManifest,
+} from "../../../src/harness/manifest.ts";
+import { readYaml } from "../../../src/harness/yaml.ts";
 
 const FIXTURE = "tests/fixtures/harness/pi/probe.jsonl";
 const BOOK: PricingBook = {
@@ -1731,4 +1741,65 @@ Deno.test("cg-budget (H-02): refuses an expiring, malformed or missing codex cre
     assertThrows(() => guard(api), Error, "provider");
     return Promise.resolve();
   });
+});
+
+Deno.test("pi-gpt6-luna-codex and the draft experiment pi-codex-luna (H-02): catalog slugs, schema, outside harness/experiments, arms differ only in models", async () => {
+  const cfg = await loadConfig("harness", "pi-gpt6-luna-codex");
+  const base = await loadConfig("harness", "pi-sonnet-plain");
+  assertEquals(cfg.models, { main: "openai-codex/gpt-6-luna" });
+  // Same as pi-sonnet-plain except id and model.
+  assertEquals({ ...cfg, id: base.id, models: base.models }, base);
+  await checkModelsInCatalog([cfg], "site/catalog");
+  const e = await readYaml(
+    "harness/experiment-drafts/pi-codex-luna.yml",
+    ExperimentSchema,
+  );
+  assertEquals(
+    [e.id, e.baseline, e.variants, e.vary, e.primary_metric, e.repeats],
+    [
+      "pi-codex-luna",
+      "pi-sonnet-plain",
+      ["pi-gpt6-luna-codex"],
+      ["models", "settings"],
+      "pass_rate",
+      3,
+    ],
+  );
+  assert(
+    !await Deno.stat("harness/experiments/pi-codex-luna.yml").then(
+      () => true,
+      () => false,
+    ),
+    "a draft is never picked up as an experiment",
+  );
+  const catalog = await readCatalog("site/catalog");
+  const resolved: ResolvedManifest[] = [];
+  for (const c of [base, cfg]) {
+    const facts = runtimeFacts(
+      c,
+      {
+        digest: `sha256:${"e".repeat(64)}`,
+        base_digest: `sha256:${"b".repeat(64)}`,
+        harness: "pi",
+        version: "0.87.1",
+      },
+      piAdapter,
+      catalog,
+    );
+    resolved.push(await resolveManifest("harness", c, facts));
+  }
+  await assertVaryHolds(resolved[0]!, resolved[1]!, e.vary, {
+    pi: piHarnessNative,
+  });
+  // Models alone does not hold: provider and api_models follow the model in native settings.
+  await assertRejects(
+    () =>
+      assertVaryHolds(resolved[0]!, resolved[1]!, ["models"], {
+        pi: piHarnessNative,
+      }),
+    ConfigurationError,
+    "settings",
+  );
+  assertEquals(resolved[1]!.settings.native["provider"], "openai-codex");
+  assertEquals(resolved[1]!.provider_routes, { main: "openai-codex:oauth" });
 });

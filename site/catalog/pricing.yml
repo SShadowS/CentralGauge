@@ -1220,3 +1220,17 @@
   batch_cache_write_per_mtoken: 1.25
   source: litellm-api
   fetched_at: '2026-09-29T00:00:00.000Z'
+# Harness Bench H-02: GPT-6 Luna through pi's openai-codex provider on the ChatGPT
+# subscription. LIST PRICE (the openai/gpt-6-luna standard rates) for the cost
+# estimate and the budget guard only; the subscription's cash cost is 0. No batch
+# rates: the subscription route has no batch API.
+- pricing_version: '2026-09-27'
+  model_slug: openai-codex/gpt-6-luna
+  effective_from: '2026-09-27T00:00:00.000Z'
+  effective_until: null
+  input_per_mtoken: 0.1
+  output_per_mtoken: 0.5
+  cache_read_per_mtoken: 0.01
+  cache_write_per_mtoken: 0.125
+  source: manual
+  fetched_at: '2026-09-27T00:00:00.000Z'
