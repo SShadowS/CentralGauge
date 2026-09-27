@@ -25,6 +25,7 @@ import type { HarnessConfig } from "./config.ts";
 import type { JudgeGate } from "./pool.ts";
 import { ConfigurationError } from "../errors.ts";
 import { PoolLostError } from "./bc-lane.ts";
+import { secretFilesOf } from "./adapter.ts";
 import { adapterFor } from "./adapters/mod.ts";
 import { proxyIsolationProblem } from "./egress.ts";
 import { PROXY_ISOLATION } from "./egress-proxy.ts";
@@ -913,10 +914,13 @@ async function campaignInvocation(
   }
   // Every account dir holds every secret the arms need, before any cell.
   if (!o.dryRun) {
+    // H-02: per arm route (a pi codex arm needs the codex file, not the OpenRouter key).
     for (const c of configs) {
+      const a = adapterFor(c.harness);
       await checkAccountsSecrets(
         env.secretAccounts,
-        adapterFor(c.harness).secretFiles,
+        secretFilesOf(a, { provider_routes: a.providerRoutes(c) }),
+        c.limits.timeout_min,
       );
     }
   }

@@ -35,6 +35,7 @@ import {
   observedMismatch,
   type ParsedRun,
   requestedComponents,
+  secretFilesOf,
 } from "./adapter.ts";
 import { adapterFor } from "./adapters/mod.ts";
 import {
@@ -50,19 +51,28 @@ import type { BcLane, BuildCache, DeployContext } from "./bc-lane.ts";
 import type { ResetMechanism } from "./reset.ts";
 import type { BcEgressRecord } from "./environment.ts";
 import type { JudgeGate } from "./pool.ts";
+import {
+  CODEX_AUTH_FILE,
+  codexExpiryProblem,
+  parseCodexAuth,
+  withCredentialForms,
+} from "./codex-auth.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
   type EgressLogLine,
   type EgressRuntime,
   evaluatePreflight,
   hostsForRoutes,
+  loadRecording,
   PLACED_ENV,
   preflightExpect,
   PROXY_PORT,
   proxyCredentialForms,
   RECORD_MODE_FILE,
   RECORDED_HOSTS_PATH,
+  RECORDED_ROUTES,
   recordedHostsJson,
+  type Recording,
   SANDBOX_NETWORK,
   sandboxSource,
 } from "./egress.ts";
@@ -224,7 +234,8 @@ export interface HarnessEnv {
     /** H-35 S3 L2b: the admitted NST egress state, recorded in every verdict. */
     bcEgress?: BcEgressRecord | null;
   };
-  pricing(at: Date): Promise<PricingBook>;
+  /** The book at `at`; the arm's slugs settle an id listed on several routes (H-02). */
+  pricing(at: Date, armSlugs?: readonly string[]): Promise<PricingBook>;
   /** Started by a human at a terminal; no automatic retries. */
   supervised: boolean;
   /** True only when M1-24 confirmed the verified enforcement state at start (M1-33, M1-34). */
@@ -426,10 +437,22 @@ async function dummySecrets(
   files: readonly string[],
 ): Promise<string> {
   await Deno.mkdir(dir, { recursive: true });
+  const dummy = "stub-dummy-credential-".padEnd(40, "0");
   for (const f of files) {
     await Deno.writeTextFile(
       join(dir, f),
-      "stub-dummy-credential-".padEnd(40, "0"),
+      // The codex file is a pi auth.json; its dummy keeps that shape (H-02).
+      f === CODEX_AUTH_FILE
+        ? JSON.stringify({
+          "openai-codex": {
+            type: "oauth",
+            access: dummy,
+            refresh: dummy,
+            expires: 8.64e15,
+            accountId: dummy,
+          },
+        })
+        : dummy,
     );
   }
   return dir;
@@ -1196,14 +1219,18 @@ export function pickAccount(
 export async function checkAccountsSecrets(
   accounts: readonly SecretAccount[],
   files: readonly string[],
+  timeoutMin: number,
 ): Promise<void> {
-  for (const a of accounts) await checkOperatorSecrets(a.dir, files);
+  for (const a of accounts) {
+    await checkOperatorSecrets(a.dir, files, timeoutMin);
+  }
 }
 
 /** Operator secret files as the adapter declares them: present and long enough (preflight, nothing released). */
 async function checkOperatorSecrets(
   source: string,
   files: readonly string[],
+  timeoutMin: number,
 ): Promise<void> {
   for (const f of files) {
     if (!/^[A-Za-z0-9._-]+$/.test(f) || f.startsWith(".")) {
@@ -1224,6 +1251,11 @@ async function checkOperatorSecrets(
       throw new ConfigurationError(
         `secret ${f} is shorter than ${MIN_SECRET_LENGTH} characters`,
       );
+    }
+    // H-02: never refreshed inside the sandbox, so it must outlive the run.
+    if (f === CODEX_AUTH_FILE) {
+      const why = codexExpiryProblem(parseCodexAuth(v), timeoutMin);
+      if (why) throw new ConfigurationError(why);
     }
   }
 }
@@ -2273,7 +2305,19 @@ export async function runExecution(
   }
   const record = env.recordOAuthHosts === true;
   const recordedPath = join(env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
+  /** Record mode records the one recorded route this arm runs on (H-02: not only the OAuth route). */
+  const recordRoutes = [
+    ...new Set(Object.values(cell.armManifest.provider_routes)),
+  ].filter((r) => RECORDED_ROUTES.includes(r));
+  const recordRoute = recordRoutes[0] ?? "";
   if (record) {
+    let existing: Recording | null = null;
+    let unreadable: string | null = null;
+    try {
+      existing = await loadRecording(env.repoRoot);
+    } catch (err) {
+      unreadable = msg(err);
+    }
     const why = mode === "stub"
       ? "a stub cell releases no credential and is never placed"
       : !env.egress
@@ -2282,12 +2326,18 @@ export async function runExecution(
       ? "the marker is already authorized"
       : !env.supervised
       ? "it runs only supervised (harness cell --supervised)"
-      : adapter.harness !== "claude-code" || !adapter.credentialBearing
-      ? `it needs a credential-bearing Claude Code arm, not ${adapter.harness}`
+      : !adapter.credentialBearing || recordRoutes.length !== 1
+      ? `it needs a credential-bearing arm on exactly one recorded route (${
+        RECORDED_ROUTES.join(", ")
+      }), not ${adapter.harness} on ${
+        Object.values(cell.armManifest.provider_routes).join(", ") || "none"
+      }`
       : !env.credentialLedger
       ? "it runs inside the shared credential ledger (CG_CREDENTIAL_LEDGER)"
-      : await exists(recordedPath)
-      ? `${RECORDED_HOSTS_PATH} exists (remove it explicitly to record again)`
+      : unreadable !== null
+      ? unreadable
+      : existing !== null && Object.hasOwn(existing.routes, recordRoute)
+      ? `${recordRoute} is already recorded in ${RECORDED_HOSTS_PATH} (remove its entry explicitly to record again)`
       : null;
     if (why) {
       throw new ConfigurationError(`${cell.arm}: record mode refused: ${why}`);
@@ -2326,7 +2376,11 @@ export async function runExecution(
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
   const started_at = now().toISOString();
-  const pricing = await env.pricing(now()); // loaded once; stored in the intent
+  // Loaded once; stored in the intent.
+  const pricing = await env.pricing(
+    now(),
+    Object.values(cell.armManifest.models),
+  );
   const base = forTask(cell.armManifest, cell.task.task.limits);
   // A drift drill runs another image of the same harness; the manifest
   // records the id and base digest of the image it ran.
@@ -2336,6 +2390,8 @@ export async function runExecution(
       image: await overrideImage(env, stub.image_override, base),
     }
     : base;
+  // Per manifest (H-02): a pi arm releases only its own route's credential.
+  const secretFiles = secretFilesOf(adapter, manifest);
   const p = privatePaths(env, id);
   await Deno.mkdir(p.quarantine, { recursive: true });
   // Immutable task snapshot for recovery; the folder keeps the task id (loadTask checks it).
@@ -2500,13 +2556,14 @@ export async function runExecution(
     // A stub cell releases no credential: every credential file is a dummy.
     const secretsSource = account
       ? account.dir
-      : await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles);
+      : await dummySecrets(join(p.work, "stub-secrets"), secretFiles);
     // R-02: a real cell checks every supplied account dir, not only its own (a
     // campaign checks at its start too; `harness cell` reaches only this).
     // Like any missing secret, a failure is this cell's setup_failed.
+    const timeoutMin = manifest.limits.timeout_min;
     if (account) {
-      await checkAccountsSecrets(env.secretAccounts, adapter.secretFiles);
-    } else await checkOperatorSecrets(secretsSource, adapter.secretFiles);
+      await checkAccountsSecrets(env.secretAccounts, secretFiles, timeoutMin);
+    } else await checkOperatorSecrets(secretsSource, secretFiles, timeoutMin);
     // Predictable egress checks come before the grant and the reservation.
     let hosts: string[] = [];
     let expect: Record<string, boolean> = {};
@@ -2570,9 +2627,11 @@ export async function runExecution(
     try {
       const values = await readSecretValues(
         secretsSource,
-        adapter.secretFiles,
+        secretFiles,
         token,
       );
+      // Redaction and the argv guard also cover the codex file's inner values (H-02).
+      const redact = withCredentialForms(values);
       if (eg) {
         // The environment's shared proxy (M1-33d) and the backend listen on
         // the gateway only.
@@ -2639,7 +2698,7 @@ export async function runExecution(
       /** Secret files, custody, keys, the released phase, then ready (empty, never custody) last. */
       const release = async () => {
         await writeSecretFiles(dir, values);
-        await commitCustody([...values, ...credForms]);
+        await commitCustody([...redact, ...credForms]);
         await writeAtomic(
           p.intent,
           JSON.stringify({ ...intent, phase: "released" }, null, 2),
@@ -2693,7 +2752,7 @@ export async function runExecution(
             env.streamEndGraceMs ?? STREAM_END_GRACE_MS,
           ),
         },
-        values.map((v) => v.value),
+        redact.map((v) => v.value),
         stop,
       );
       let preflightError: string | null = null;
@@ -3083,9 +3142,13 @@ export async function runExecution(
         2,
       ) + "\n",
     );
+    // Merged beside the routes already recorded (read again: the latest file).
     await writeAtomic(
       recordedPath,
-      recordedHostsJson([...recordedHosts], `record mode execution ${id}`),
+      recordedHostsJson([...recordedHosts], `record mode execution ${id}`, {
+        route: recordRoute,
+        existing: await loadRecording(env.repoRoot),
+      }),
     );
   }
   return { execution: draft.execution, usageResetAt: draft.usage_reset_at };

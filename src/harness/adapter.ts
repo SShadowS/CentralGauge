@@ -56,6 +56,10 @@ export interface HarnessAdapter {
   parser: string;
   declared: readonly (keyof Telemetry)[];
   secretFiles: readonly string[];
+  /** The secret files of one arm when they follow its manifest (H-02: pi's route); absent means secretFiles. */
+  secretFilesFor?(
+    manifest: Pick<ResolvedManifest, "provider_routes">,
+  ): readonly string[];
   /** Carries provider credentials: the egress rules apply. */
   credentialBearing: boolean;
   /** The entrypoint enforces the manifest's effective max_budget_usd (round 2 item 10). */
@@ -159,4 +163,12 @@ export function observedMismatch(
       : null,
     unverified,
   };
+}
+
+/** The secret files an arm releases: its adapter's, per manifest where the adapter derives them. */
+export function secretFilesOf(
+  adapter: HarnessAdapter,
+  manifest: Pick<ResolvedManifest, "provider_routes">,
+): readonly string[] {
+  return adapter.secretFilesFor?.(manifest) ?? adapter.secretFiles;
 }

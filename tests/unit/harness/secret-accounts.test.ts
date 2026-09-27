@@ -83,12 +83,14 @@ Deno.test("checkAccountsSecrets: a second account dir missing its token fails be
   await checkAccountsSecrets(
     [{ label: "work", dir: good }],
     ["claude-oauth-token"],
+    60,
   );
   await assertRejects(
     () =>
       checkAccountsSecrets(
         [{ label: "work", dir: good }, { label: "maxpriv2", dir: bad }],
         ["claude-oauth-token"],
+        60,
       ),
     ConfigurationError,
     "claude-oauth-token",
