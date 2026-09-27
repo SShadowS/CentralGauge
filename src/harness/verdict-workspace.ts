@@ -794,9 +794,9 @@ async function shippedTests(testDir: string): Promise<ShippedTests | null> {
 /**
  * The shipped test codeunit a noise-stripped range names or numbers, or null.
  * A number is any integer literal equal to a shipped test codeunit id
- * (`Codeunit.Run(80010)`, `Codeunit 80010`, `Id := 80010`). An id reached by
- * arithmetic (`80000 + 10`), from text (`Evaluate`) or by lookup (AllObj) is
- * not seen: a known limit.
+ * (`Codeunit.Run(80010)`, `Codeunit 80010`, `Id := 80010`). Ids that are not
+ * literals (arithmetic, Evaluate, a variable, an AllObj lookup) are rejected
+ * outright by dynamicDispatch.
  */
 function shippedUnitRef(
   text: string,
@@ -811,6 +811,68 @@ function shippedUnitRef(
       ? shipped.ids.get(Number(t.v))
       : undefined;
     if (u) return u;
+  }
+  return null;
+}
+
+/**
+ * Identifiers that can reach a codeunit chosen at run time, or run tests:
+ * object metadata, RecordRef/Variant dispatch, sessions and tasks, test
+ * runners and the test tool. Any use rejects the member (over-rejects on
+ * purpose: fail closed).
+ */
+const DISPATCH_IDS = new Set([
+  "allobj",
+  "allobjwithcaption",
+  "codeunit metadata",
+  "recordref",
+  "variant",
+  "startsession",
+  "createtask",
+  "enqueuebackgroundtask",
+  "runcodeunit",
+  "testrunner",
+  "test method line",
+  "al test suite",
+]);
+
+/**
+ * Why a noise-stripped range could run a codeunit by a non-literal id, or
+ * null: a DISPATCH_IDS identifier, or `Codeunit.Run(` whose first argument is
+ * not exactly an integer literal or `Codeunit::<name or literal>` (so
+ * `Codeunit.Run(80000 + 10)`, `Codeunit.Run(Id)` after an Evaluate, any
+ * computed argument). Literal ids and names are judged by shippedUnitRef.
+ */
+function dynamicDispatch(
+  text: string,
+  from: number,
+  to: number,
+): string | null {
+  const t = tokenize(text, from, to);
+  for (const [i, x] of t.entries()) {
+    if (x.id && DISPATCH_IDS.has(x.v)) {
+      return `may reach a codeunit dynamically (${x.raw})`;
+    }
+    if (
+      !(x.bare && x.v === "codeunit" && t[i + 1]?.v === "." &&
+        t[i + 2]?.v === "run" && t[i + 3]?.v === "(")
+    ) continue;
+    const arg: Tok[] = [];
+    let depth = 0;
+    for (let j = i + 4; j < t.length; j++) {
+      const v = t[j]!.id ? "" : t[j]!.v;
+      if (v === "(") depth++;
+      else if ((v === ")" && depth-- === 0) || (v === "," && depth === 0)) {
+        break;
+      }
+      arg.push(t[j]!);
+    }
+    const literal = (a: Tok | undefined) =>
+      a !== undefined && (a.id || /^\d+$/.test(a.v));
+    const ok = (arg.length === 1 && /^\d+$/.test(arg[0]!.v)) ||
+      (arg.length === 4 && arg[0]!.bare && arg[0]!.v === "codeunit" &&
+        arg[1]!.v === ":" && arg[2]!.v === ":" && literal(arg[3]));
+    if (!ok) return "runs a codeunit by a non-literal id";
   }
   return null;
 }
@@ -875,6 +937,8 @@ function creditViolations(
         }
         const unit = shippedUnitRef(u.text, m.start, m.end, shipped);
         if (unit) return `uses shipped test codeunit ${unit}`;
+        const dyn = dynamicDispatch(u.text, m.start, m.end);
+        if (dyn) return dyn;
         for (const r of refs) {
           const t = r.dotted ? undefined : tainted.get(r.v);
           if (t) return t;
@@ -1156,7 +1220,12 @@ async function applyCreditRules(
     };
     for (const d of declarations(src)) {
       if (d.end === 0) continue; // a header without a body
-      const ms = d.kind === "codeunit" ? codeunitMembers(text, d) : null;
+      // A TestRunner codeunit is not parsed: its pseudo member is rejected
+      // (DISPATCH_IDS) and cannot be removed, so no agent test runs.
+      const ms = d.kind === "codeunit" &&
+          !/\bSubtype\s*=\s*TestRunner\b/i.test(d.body)
+        ? codeunitMembers(text, d)
+        : null;
       if (ms === null) {
         f.judged.code.push(pseudoMember(text, d));
         if (isTestCodeunit(d)) {

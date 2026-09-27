@@ -914,3 +914,171 @@ ${GOOD}`),
     "RunsViaVariable: uses shipped test codeunit 80010",
   );
 });
+
+// ---- M4-17a run 002: dispatch by a non-literal codeunit id ----
+
+Deno.test("credit (run 002 regression): Codeunit.Run(80000 + 10) is rejected, in a new file and through a helper of an extracted test", async () => {
+  const p = await pristineDir();
+  const { gen, added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      [NEW]: newFile(`
+    [Test]
+    procedure RunsComputed()
+    begin
+        Codeunit.Run(80000 + 10);
+    end;
+${GOOD}`),
+      "Test/src/Suite.Test.al": agentSuite(`
+    [Test]
+    procedure ViaDispatch()
+    begin
+        Dispatch(80000 + 10);
+    end;
+
+    local procedure Dispatch(Id: Integer)
+    begin
+        Codeunit.Run(Id);
+    end;
+${GOOD}`),
+    }),
+  );
+  assertEquals(added.map((x) => [x.codeunit, x.procedures]), [
+    [80100, ["Good"]],
+    [84990, ["Good"]],
+  ]);
+  assert(!gen!.includes("Dispatch"));
+  assertStringIncludes(
+    notes,
+    "RunsComputed: runs a codeunit by a non-literal id",
+  );
+  assertStringIncludes(
+    notes,
+    "ViaDispatch: runs a codeunit by a non-literal id (via Dispatch)",
+  );
+});
+
+Deno.test("credit (run 002): every dynamic-dispatch pattern is rejected; literal ids and names of non-test codeunits stay allowed", async () => {
+  const p = await pristineDir();
+  const { added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      [NEW]: newFile(`
+    [Test]
+    procedure ViaVariable()
+    var
+        Id: Integer;
+    begin
+        Evaluate(Id, '80010');
+        Codeunit.Run(Id);
+    end;
+
+    [Test]
+    procedure ViaAllObj()
+    var
+        O: Record AllObj;
+    begin
+        O.FindFirst();
+    end;
+
+    [Test]
+    procedure ViaAllObjWithCaption()
+    var
+        O: Record AllObjWithCaption;
+    begin
+        O.FindFirst();
+    end;
+
+    [Test]
+    procedure ViaRecordRef()
+    var
+        R: RecordRef;
+    begin
+        R.Open(80150);
+    end;
+
+    [Test]
+    procedure ViaVariant()
+    var
+        V: Variant;
+    begin
+        V := 1;
+    end;
+
+    [Test]
+    procedure ViaSession()
+    var
+        S: Integer;
+    begin
+        StartSession(S, 80090);
+    end;
+
+    [Test]
+    procedure ViaTask()
+    begin
+        TaskScheduler.CreateTask(80090, 0);
+    end;
+
+    [Test]
+    procedure ViaRunCodeunit()
+    begin
+        Lib.RunCodeunit(80090);
+    end;
+
+    [Test]
+    procedure LiteralLibraryId()
+    begin
+        Codeunit.Run(80090);
+    end;
+
+    [Test]
+    procedure LibraryByName()
+    begin
+        Codeunit.Run(Codeunit::"CGR Test Library");
+    end;
+
+    [Test]
+    procedure OtherLiteral()
+    begin
+        Codeunit.Run(50100);
+    end;
+${GOOD}`),
+    }),
+  );
+  assertEquals(added.map((x) => x.procedures), [[
+    "LiteralLibraryId",
+    "LibraryByName",
+    "OtherLiteral",
+    "Good",
+  ]]);
+  for (
+    const t of [
+      "ViaVariable",
+      "ViaAllObj",
+      "ViaAllObjWithCaption",
+      "ViaRecordRef",
+      "ViaVariant",
+      "ViaSession",
+      "ViaTask",
+      "ViaRunCodeunit",
+    ]
+  ) {
+    assertStringIncludes(notes, `${t}: `);
+  }
+});
+
+Deno.test("credit (run 002): a TestRunner codeunit in agent code excludes every agent test", async () => {
+  const p = await pristineDir();
+  const { v, added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      "Test/src/Runner.Codeunit.al":
+        `codeunit 80170 "Agent Runner"\n{\n    Subtype = TestRunner;\n\n    trigger OnRun()\n    begin\n        Codeunit.Run(80090);\n    end;\n}\n`,
+      [NEW]: newFile(GOOD),
+    }),
+  );
+  assertEquals(added, []);
+  assertEquals(v.excluded, [80100]);
+  assertStringIncludes(notes, "Agent Runner: ");
+  assertStringIncludes(notes, "no agent test is run or counted");
+});
