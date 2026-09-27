@@ -5,6 +5,8 @@ codeunit 85400 "HX005 Pricing Oracle"
 
     var
         Assert: Codeunit "Library Assert";
+        CapturedAmount: Decimal;
+        PricedSignalTxt: Label 'HX5-PRICED', Locked = true;
 
     [Test]
     procedure DailyWeekdaysUnchanged()
@@ -111,6 +113,89 @@ codeunit 85400 "HX005 Pricing Oracle"
         Assert.AreEqual(1, Entry.Count(), 'Posting creates one ledger entry');
         Entry.FindFirst();
         Assert.AreEqual(180.00, Entry.Amount, 'Posting prices the contract with the partner method');
+    end;
+
+    [Test]
+    procedure UninstalledMethodPricesAsDaily()
+    begin
+        SetPricing(25, 1000, 0);
+        Assert.AreEqual(180.00, PriceUninstalled('HX5-N', 40, 50100, 20270305D, 20270308D, 0), 'Method of an uninstalled app: Fri-Mon priced as Daily, 4 x 40 plus 25 percent on Saturday and Sunday');
+    end;
+
+    [Test]
+    procedure UninstalledMethodExcessRoundedOnce()
+    begin
+        SetPricing(12.5, 100, 0.0025);
+        Assert.AreEqual(141.66, PriceUninstalled('HX5-O', 33.33, 85499, 20270305D, 20270308D, 401), 'Method of an uninstalled app: Daily 141.6525 plus 0.0025 excess, rounded once');
+    end;
+
+    [Test]
+    procedure PostingUninstalledMethodUsesDaily()
+    var
+        Entry: Record "CGR Rental Ledger Entry";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        SetPricing(25, 1000, 0);
+        MakeVehicle('HX5-P', 40);
+        ContractNo := RentalMgt.CreateContract('HX5-P', 'Oracle Customer', 20270305D, 20270308D);
+        SetUninstalledMethod(ContractNo, 85499);
+        RentalMgt.CheckOut(ContractNo);
+        RentalMgt.Return(ContractNo, 1000, '');
+        RentalMgt.Post(ContractNo);
+        Entry.SetRange("Contract No.", ContractNo);
+        Assert.AreEqual(1, Entry.Count(), 'Posting creates one ledger entry');
+        Entry.FindFirst();
+        Assert.AreEqual(180.00, Entry.Amount, 'Posting prices the contract of an uninstalled method as Daily');
+    end;
+
+    local procedure SetUninstalledMethod(ContractNo: Code[20]; Ordinal: Integer)
+    var
+        Contract: Record "CGR Rental Contract";
+        RecRef: RecordRef;
+        FldRef: FieldRef;
+    begin
+        // The value of a partner app that has been uninstalled: stored, but defined by no installed app.
+        Assert.IsFalse(Enum::"CGR Pricing Method".Ordinals().Contains(Ordinal), 'Setup: the ordinal must be undefined in the installed apps');
+        Contract.Get(ContractNo);
+        RecRef.GetTable(Contract);
+        FldRef := RecRef.Field(Contract.FieldNo("Pricing Method"));
+        FldRef.Value := Ordinal;
+        RecRef.Modify();
+        Contract.Get(ContractNo);
+        Assert.AreEqual(Ordinal, Contract."Pricing Method".AsInteger(), 'Setup: the contract keeps the method value of the uninstalled app');
+    end;
+
+    local procedure PriceUninstalled(VehicleNo: Code[20]; DailyRate: Decimal; Ordinal: Integer; StartDate: Date; EndDate: Date; KmDriven: Integer): Decimal
+    var
+        Contract: Record "CGR Rental Contract";
+    begin
+        MakeVehicle(VehicleNo, DailyRate);
+        Contract.Init();
+        Contract."No." := VehicleNo;
+        Contract."Vehicle No." := VehicleNo;
+        Contract."Start Date" := StartDate;
+        Contract."End Date" := EndDate;
+        Contract."Start Km" := 1000;
+        Contract."Return Km" := 1000 + KmDriven;
+        Contract.Status := Contract.Status::Returned;
+        Contract.Insert();
+        SetUninstalledMethod(VehicleNo, Ordinal);
+        Contract.Get(VehicleNo);
+        CapturedAmount := 0;
+        // The call runs inside asserterror so that a failure is reported as an assertion,
+        // and CalcAmount may write; the signal error proves the call itself returned.
+        asserterror PriceThenSignal(Contract);
+        Assert.AreEqual(Format(PricedSignalTxt), GetLastErrorText(), 'Pricing a contract whose pricing method app is uninstalled must not fail');
+        exit(CapturedAmount);
+    end;
+
+    local procedure PriceThenSignal(Contract: Record "CGR Rental Contract")
+    var
+        Pricing: Codeunit "CGR Rental Pricing";
+    begin
+        CapturedAmount := Pricing.CalcAmount(Contract);
+        Error(PricedSignalTxt);
     end;
 
     local procedure SetPricing(WeekendSurchargePct: Decimal; KmAllowancePerDay: Integer; ExcessKmRate: Decimal)

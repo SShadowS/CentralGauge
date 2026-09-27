@@ -1,7 +1,7 @@
 enum 70201 "CGR Pricing Method" implements "CGR Rental Price Method"
 {
     Extensible = true;
-    UnknownValueImplementation = "CGR Rental Price Method" = "CGR Daily Price";
+    DefaultImplementation = "CGR Rental Price Method" = "CGR Daily Price";
 
     value(0; Daily)
     {

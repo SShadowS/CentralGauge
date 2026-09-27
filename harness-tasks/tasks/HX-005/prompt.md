@@ -9,3 +9,4 @@ Change Rental so that:
 - The excess km charge stays common: it is added on top of the base price of every method, including methods added by other apps.
 - The total is rounded to 0.01 once, after the excess km charge is added.
 - `CGR Rental Pricing`, CalcAmount(Contract) keeps its signature and still returns the full price, and posting keeps using it.
+- A contract can still hold the pricing method of a partner app that has since been uninstalled. Such a contract is priced, and posts, as Daily, with the excess km charge and the rounding above.
