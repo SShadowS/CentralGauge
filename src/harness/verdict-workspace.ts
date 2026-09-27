@@ -65,6 +65,8 @@ export interface VerdictWorkspace {
   violations: string[];
   /** Why agent-added test procedures were not extracted or not counted (M4-17a). */
   notes: string[];
+  /** Agent test codeunits that must not run (the credit rules could not judge them). */
+  excluded: number[];
 }
 
 const IDENTITY = ["id", "name", "publisher"] as const;
@@ -162,6 +164,7 @@ export async function buildVerdictWorkspace(
 
   const testSrc = join(o.artifact, TEST_APP);
   const editedShipped = new Map<string, string>();
+  const newTestFiles: string[] = [];
   if (await exists(testSrc) && !await isPlainDir(testSrc)) {
     violations.push(`app folder ${TEST_APP} is missing`);
   } else if (await exists(testSrc)) {
@@ -203,6 +206,7 @@ export async function buildVerdictWorkspace(
         continue;
       }
       const dest = join(out, TEST_APP, ...e.path.split("/"));
+      if (e.path.toLowerCase().endsWith(".al")) newTestFiles.push(e.path);
       await validatedDest(join(dest, ".."));
       await Deno.writeFile(
         dest,
@@ -232,9 +236,16 @@ export async function buildVerdictWorkspace(
     violations.push(err.message);
   }
   violations.push(...await validateApps(out, pristineApps, apps, o.symbolIds));
-  const notes = violations.length === 0 && editedShipped.size > 0
-    ? await extractAddedTests(o.pristine, out, pristineApps, editedShipped)
-    : [];
+  const { notes, excluded } =
+    violations.length === 0 && (editedShipped.size + newTestFiles.length) > 0
+      ? await applyCreditRules(
+        o.pristine,
+        out,
+        pristineApps,
+        editedShipped,
+        newTestFiles,
+      )
+      : { notes: [], excluded: [] };
 
   const changed: string[] = [];
   for (const app of pristineApps) {
@@ -245,7 +256,7 @@ export async function buildVerdictWorkspace(
       changed.push(app.folder);
     }
   }
-  return { dir: out, apps, changed, violations, notes };
+  return { dir: out, apps, changed, violations, notes, excluded };
 }
 
 /**
@@ -493,12 +504,14 @@ export async function testCodeunits(dir: string): Promise<TestCodeunit[]> {
 export async function addedTestCodeunits(
   pristineTest: string,
   test: string,
+  /** VerdictWorkspace.excluded: codeunits the credit rules could not judge. */
+  exclude: ReadonlySet<number> = new Set(),
 ): Promise<TestCodeunit[]> {
   const shipped = new Set(
     (await listTree(pristineTest, "task")).map((e) => e.path.toLowerCase()),
   );
   return (await testCodeunits(test)).filter((t) =>
-    !shipped.has(t.file.toLowerCase())
+    !shipped.has(t.file.toLowerCase()) && !exclude.has(t.codeunit)
   );
 }
 
@@ -553,9 +566,12 @@ interface Tok {
 
 /** Tokens of the noise-stripped text (comments and strings already blank). */
 function tokenize(text: string, from: number, to: number): Tok[] {
-  const re = /"([^"\n]*)"|([A-Za-z_][A-Za-z0-9_]*)|([0-9][A-Za-z0-9_.]*)|(\S)/g;
+  // A directive line (#region, #pragma) is skipped; conditionals are refused elsewhere.
+  const re =
+    /^[ \t]*#[^\n]*|"([^"\n]*)"|([A-Za-z_][A-Za-z0-9_]*)|([0-9][A-Za-z0-9_.]*)|(\S)/gm;
   const out: Tok[] = [];
   for (const m of text.slice(from, to).matchAll(re)) {
+    if (m[0].trimStart().startsWith("#")) continue;
     const start = from + m.index!;
     const raw = m[1] ?? m[0];
     const id = m[1] !== undefined || m[2] !== undefined;
@@ -572,7 +588,8 @@ function tokenize(text: string, from: number, to: number): Tok[] {
 }
 
 interface Member {
-  kind: "procedure" | "trigger" | "var" | "property";
+  /** "object": a whole object the parser does not read (credit rules only). */
+  kind: "procedure" | "trigger" | "var" | "property" | "object";
   /** Lowercased names (a var statement can declare several). */
   names: string[];
   displays: string[];
@@ -726,6 +743,15 @@ const isCode = (m: Member) => m.kind === "procedure" || m.kind === "trigger";
 const isTestCodeunit = (d: AlDecl) =>
   d.kind === "codeunit" && /\bSubtype\s*=\s*Test\s*;/i.test(d.body);
 
+/** The declared name of an object (quoted or bare), from the noise-stripped text. */
+function objectName(text: string, d: AlDecl): string {
+  const m = new RegExp(
+    `${d.kind}\\s+${d.id}\\s+(?:"([^"\\n]+)"|([A-Za-z_][A-Za-z0-9_]*))`,
+    "i",
+  ).exec(text);
+  return m ? m[1] ?? m[2]! : `${d.kind} ${d.id}`;
+}
+
 interface ShippedTests {
   /** Lowercased [Test] name -> "<codeunit> <name>". */
   names: Map<string, string>;
@@ -733,13 +759,18 @@ interface ShippedTests {
   bodies: Map<string, string>;
   /** Lowercased test codeunit name -> "<id> <name>". */
   units: Map<string, string>;
+  /** Test codeunit id -> "<id> <name>". */
+  ids: Map<number, string>;
 }
 
 /** Every [Test] of the pristine Test app; null when one cannot be parsed. */
 async function shippedTests(testDir: string): Promise<ShippedTests | null> {
-  const names = new Map<string, string>();
-  const bodies = new Map<string, string>();
-  const units = new Map<string, string>();
+  const s: ShippedTests = {
+    names: new Map(),
+    bodies: new Map(),
+    units: new Map(),
+    ids: new Map(),
+  };
   for (const e of await listTree(testDir, "task", { optional: true })) {
     if (!e.path.toLowerCase().endsWith(".al")) continue;
     const src = await Deno.readTextFile(join(testDir, e.path));
@@ -747,53 +778,163 @@ async function shippedTests(testDir: string): Promise<ShippedTests | null> {
     for (const d of declarations(src).filter(isTestCodeunit)) {
       const ms = codeunitMembers(text, d);
       if (ms === null) return null;
-      const unit = new RegExp(
-        `codeunit\\s+${d.id}\\s+(?:"([^"\\n]+)"|([A-Za-z_][A-Za-z0-9_]*))`,
-        "i",
-      ).exec(text);
-      if (unit) {
-        const n = unit[1] ?? unit[2]!;
-        units.set(n.toLowerCase(), `${d.id} ${n}`);
-      }
+      const n = objectName(text, d);
+      s.units.set(n.toLowerCase(), `${d.id} ${n}`);
+      s.ids.set(d.id, `${d.id} ${n}`);
       for (const m of ms.filter((x) => x.test)) {
         const label = `${d.id} ${m.displays[0]}`;
-        names.set(m.names[0]!, label);
-        bodies.set(normalizeAlBody(src.slice(m.bodyStart, m.end)), label);
+        s.names.set(m.names[0]!, label);
+        s.bodies.set(normalizeAlBody(src.slice(m.bodyStart, m.end)), label);
       }
     }
   }
-  return { names, bodies, units };
-}
-
-interface Extracted {
-  from: number;
-  tests: string[];
-  text: (id: number) => string;
+  return s;
 }
 
 /**
- * One shipped test codeunit: its added [Test] procedures that count, with the
- * added procedures and globals they reach and the shipped globals they use
- * (pristine declarations). A test does not count, with a note, when it (or
- * an added procedure it reaches) is a normalized copy of a shipped [Test],
- * uses the name of a shipped [Test] (any codeunit, qualified or not: a call)
- * or of a shipped test codeunit (a variable or Codeunit.Run could run it
- * whole; shipped non-test library codeunits stay allowed), needs a shipped
- * procedure of this codeunit (never carried: shipped code is
- * not the agent's, and an edited one must not run), or needs a shipped
- * global the shipped OnRun trigger uses (its state is not carried).
+ * Numeric codeunit references: `Codeunit.Run(n`, `Codeunit::n` and a
+ * `Codeunit n` declaration. A computed id (`Codeunit.Run(X)`) is not seen:
+ * a known limit.
  */
-function extractFrom(
+const CODEUNIT_ID_REF = /\bcodeunit\s*(?:\.\s*run\s*\(\s*|::\s*|\s+)(\d+)\b/gi;
+
+/** The shipped test codeunit a noise-stripped range names or numbers, or null. */
+function shippedUnitRef(
+  text: string,
+  from: number,
+  to: number,
+  shipped: ShippedTests,
+): string | null {
+  for (const t of tokenize(text, from, to)) {
+    const u = t.id ? shipped.units.get(t.v) : undefined;
+    if (u) return u;
+  }
+  for (const m of text.slice(from, to).matchAll(CODEUNIT_ID_REF)) {
+    const u = shipped.ids.get(Number(m[1]));
+    if (u) return u;
+  }
+  return null;
+}
+
+/** Agent code judged by the credit rules. */
+interface Judged {
+  src: string;
+  text: string;
+  /** Candidates: procedures and triggers, or one pseudo member per unparsed object. */
+  code: Member[];
+  /** Globals the candidates can use (checked for shipped test codeunit types). */
+  vars: Member[];
+  /** Further direct violations (extraction: shipped procedures, OnRun state). */
+  extra?: (m: Member, refs: Ref[]) => string | null;
+}
+
+/**
+ * The credit rules (M4-17a item B) over every piece of agent test code at
+ * once. First each member's own violations: its body is a normalized copy of
+ * a shipped [Test] body (normalizeAlBody); it uses the name of a shipped
+ * [Test] (a call, qualified or not); its text (attributes, parameters,
+ * locals and body) names or numbers a shipped test codeunit
+ * (shippedUnitRef: a variable or Codeunit.Run could run it whole); it uses a
+ * global declared with such a type; or `extra`. Then over the call graph, by
+ * name and across codeunits (member access included, all overloads): a member
+ * that uses the name of a violator is one. Names over-approximate calls, so a
+ * doubtful member is a violator (fail closed). Shipped library codeunits that
+ * are not test codeunits stay allowed.
+ */
+function creditViolations(
+  units: Judged[],
+  shipped: ShippedTests,
+): Map<Member, string> {
+  const why = new Map<Member, string>();
+  const all: { m: Member; refs: Ref[] }[] = [];
+  for (const u of units) {
+    const tainted = new Map<string, string>();
+    for (const g of u.vars) {
+      const unit = shippedUnitRef(u.text, g.start, g.end, shipped);
+      if (unit) {
+        g.names.forEach((n, i) =>
+          tainted.set(
+            n,
+            `uses global ${g.displays[i]} of shipped test codeunit ${unit}`,
+          )
+        );
+      }
+    }
+    for (const m of u.code) {
+      const refs = memberRefs(u.src, u.text, m);
+      all.push({ m, refs });
+      const direct = ((): string | null => {
+        if (m.kind !== "object") {
+          const copy = shipped.bodies.get(
+            normalizeAlBody(u.src.slice(m.bodyStart, m.end)),
+          );
+          if (copy) return `copy of shipped [Test] ${copy}`;
+        }
+        for (const r of refs) {
+          const test = shipped.names.get(r.v);
+          if (test) return `calls shipped [Test] ${test}`;
+        }
+        const unit = shippedUnitRef(u.text, m.start, m.end, shipped);
+        if (unit) return `uses shipped test codeunit ${unit}`;
+        for (const r of refs) {
+          const t = r.dotted ? undefined : tainted.get(r.v);
+          if (t) return t;
+        }
+        return u.extra?.(m, refs) ?? null;
+      })();
+      if (direct) why.set(m, direct);
+    }
+  }
+  for (let changed = true; changed;) {
+    changed = false;
+    const byName = new Map<string, Member>();
+    for (const v of why.keys()) {
+      for (const n of v.names) if (!byName.has(n)) byName.set(n, v);
+    }
+    for (const { m, refs } of all) {
+      if (why.has(m)) continue;
+      const v = refs.map((r) => byName.get(r.v)).find((x) => x && x !== m);
+      if (v) {
+        why.set(m, `${why.get(v)} (via ${v.displays[0]})`);
+        changed = true;
+      }
+    }
+  }
+  return why;
+}
+
+/** One shipped test codeunit the agent edited, prepared for the credit rules. */
+interface Edited {
+  rel: string;
+  d: AlDecl;
+  pSrc: string;
+  pm: Member[];
+  aSrc: string;
+  am: Member[];
+  judged: Judged;
+  /** Added procedures (all overloads) and globals, by lowercased name. */
+  added: Map<string, Member[]>;
+  addedGlobals: Map<string, Member>;
+  shippedGlobals: Map<string, Member>;
+}
+
+/**
+ * Added members of one edited shipped codeunit: procedures and globals whose
+ * names the shipped codeunit lacks. A use of a shipped procedure of this
+ * codeunit (never carried: shipped code is not the agent's, and an edited one
+ * must not run), of a shipped global the shipped OnRun trigger uses (its
+ * state is not carried) or of a global declared together with a shipped one
+ * makes a member uncarriable.
+ */
+function prepareEdited(
   rel: string,
   d: AlDecl,
   pSrc: string,
   pm: Member[],
   aSrc: string,
   am: Member[],
-  shipped: ShippedTests,
   notes: string[],
-): Extracted | null {
-  const aText = stripAlNoise(aSrc);
+): Edited {
   const where = `${TEST_APP}/${rel} codeunit ${d.id}`;
   const shippedCode = new Map(
     pm.filter(isCode).map((m) => [m.names[0]!, m.displays[0]!]),
@@ -808,7 +949,7 @@ function extractFrom(
       memberRefs(pSrc, pText, m).map((r) => r.v)
     ),
   );
-  const added = new Map<string, Member>();
+  const added = new Map<string, Member[]>();
   for (const m of am.filter(isCode)) {
     if (shippedCode.has(m.names[0]!)) continue;
     if (m.kind === "trigger") {
@@ -817,7 +958,7 @@ function extractFrom(
           m.displays[0]
         } is not carried (shipped codeunit state is not extracted)`,
       );
-    } else if (!added.has(m.names[0]!)) added.set(m.names[0]!, m);
+    } else added.set(m.names[0]!, [...added.get(m.names[0]!) ?? [], m]);
   }
   const addedGlobals = new Map<string, Member>();
   const mixed = new Set<string>();
@@ -827,69 +968,69 @@ function extractFrom(
       for (const n of fresh) addedGlobals.set(n, g);
     } else for (const n of fresh) mixed.add(n);
   }
-
-  const reason = new Map<Member, string | null>();
-  const deps = new Map<Member, { procs: Member[]; globals: Member[] }>();
-  const evaluate = (m: Member): string | null => {
-    if (reason.has(m)) return reason.get(m)!;
-    reason.set(m, null); // a cycle is decided by the members on it
-    const dep = { procs: [] as Member[], globals: [] as Member[] };
-    deps.set(m, dep);
-    const why = ((): string | null => {
-      const copy = shipped.bodies.get(
-        normalizeAlBody(aSrc.slice(m.bodyStart, m.end)),
-      );
-      if (copy) return `copy of shipped [Test] ${copy}`;
-      const refs = memberRefs(aSrc, aText, m);
-      for (const r of refs) {
-        const test = shipped.names.get(r.v);
-        if (test) return `calls shipped [Test] ${test}`;
+  const extra = (_m: Member, refs: Ref[]): string | null => {
+    for (const r of refs) {
+      if (r.dotted || added.has(r.v)) continue;
+      const code = shippedCode.get(r.v);
+      if (code) return `needs shipped procedure ${code}`;
+      if (mixed.has(r.v)) {
+        return `needs global ${r.v}, declared together with a shipped global`;
       }
-      for (const r of refs) {
-        // A variable or Codeunit.Run of a shipped test codeunit could run it whole.
-        const unit = shipped.units.get(r.v);
-        if (unit) return `uses shipped test codeunit ${unit}`;
-        if (r.dotted) continue;
-        const p = added.get(r.v);
-        if (p) {
-          if (p === m) continue;
-          const inner = evaluate(p);
-          if (inner) return `${inner} (via ${p.displays[0]})`;
-          dep.procs.push(p);
-          continue;
-        }
-        const code = shippedCode.get(r.v);
-        if (code) return `needs shipped procedure ${code}`;
-        if (mixed.has(r.v)) {
-          return `needs global ${r.v}, declared together with a shipped global`;
-        }
-        const ag = addedGlobals.get(r.v);
-        if (ag) {
-          dep.globals.push(ag);
-          continue;
-        }
+      if (!addedGlobals.has(r.v) && onRun.has(r.v)) {
         const sg = shippedGlobals.get(r.v);
         if (sg) {
-          if (onRun.has(r.v)) {
-            return `needs shipped global ${
-              sg.displays[sg.names.indexOf(r.v)]
-            }, which the shipped OnRun trigger uses`;
-          }
-          dep.globals.push(sg);
+          return `needs shipped global ${
+            sg.displays[sg.names.indexOf(r.v)]
+          }, which the shipped OnRun trigger uses`;
         }
       }
-      return null;
-    })();
-    reason.set(m, why);
-    return why;
+    }
+    return null;
   };
+  return {
+    rel,
+    d,
+    pSrc,
+    pm,
+    aSrc,
+    am,
+    judged: {
+      src: aSrc,
+      text: stripAlNoise(aSrc),
+      code: [...added.values()].flat(),
+      vars: am.filter((m) => m.kind === "var"),
+      extra,
+    },
+    added,
+    addedGlobals,
+    shippedGlobals,
+  };
+}
 
+interface Extracted {
+  from: number;
+  tests: string[];
+  text: (id: number) => string;
+}
+
+/**
+ * The generated codeunit of one edited shipped codeunit: its added [Test]
+ * procedures that are not violators, with every added procedure (all
+ * overloads) and global they reach and the shipped globals they use
+ * (pristine declarations). Codeunit properties are the pristine codeunit's,
+ * Subtype = Test always.
+ */
+function extractFrom(
+  e: Edited,
+  why: ReadonlyMap<Member, string>,
+  notes: string[],
+): Extracted | null {
+  const where = `${TEST_APP}/${e.rel} codeunit ${e.d.id}`;
   const tests: Member[] = [];
-  for (const m of added.values()) {
-    if (!m.test) continue;
-    const why = evaluate(m);
-    if (why) {
-      notes.push(`${where}: added test ${m.displays[0]}: ${why}; not counted`);
+  for (const m of e.judged.code.filter((x) => x.test)) {
+    const w = why.get(m);
+    if (w) {
+      notes.push(`${where}: added test ${m.displays[0]}: ${w}; not counted`);
     } else tests.push(m);
   }
   if (tests.length === 0) return null;
@@ -898,38 +1039,43 @@ function extractFrom(
   const reach = (m: Member) => {
     if (procs.has(m)) return;
     procs.add(m);
-    for (const p of deps.get(m)!.procs) reach(p);
-    for (const g of deps.get(m)!.globals) globals.add(g);
+    for (const r of memberRefs(e.aSrc, e.judged.text, m)) {
+      if (r.dotted) continue;
+      // A reached violator would have made m one: only clean members here.
+      for (const p of e.added.get(r.v) ?? []) reach(p);
+      const g = e.addedGlobals.get(r.v) ?? e.shippedGlobals.get(r.v);
+      if (g) globals.add(g);
+    }
   };
   tests.forEach(reach);
-  const props = pm.filter((m) =>
+  const props = e.pm.filter((m) =>
     m.kind === "property" && m.names[0] !== "subtype"
   );
   return {
-    from: d.id,
+    from: e.d.id,
     tests: tests.map((m) => m.displays[0]!),
     text: (id) =>
       [
-        `// Generated by the verdict (M4-17a): the [Test] procedures an agent added to shipped test codeunit ${d.id} (${TEST_APP}/${rel}).`,
+        `// Generated by the verdict (M4-17a): the [Test] procedures an agent added to shipped test codeunit ${e.d.id} (${TEST_APP}/${e.rel}).`,
         `codeunit ${id} "CG Extracted Tests ${id}"`,
         "{",
         "    Subtype = Test;",
-        ...props.map((m) => `    ${pSrc.slice(m.start, m.end)}`),
+        ...props.map((m) => `    ${e.pSrc.slice(m.start, m.end)}`),
         ...(globals.size > 0
           ? [
             "",
             "    var",
-            ...pm.filter((m) => globals.has(m)).map((m) =>
-              `        ${pSrc.slice(m.start, m.end)}`
+            ...e.pm.filter((m) => globals.has(m)).map((m) =>
+              `        ${e.pSrc.slice(m.start, m.end)}`
             ),
-            ...am.filter((m) => globals.has(m)).map((m) =>
-              `        ${aSrc.slice(m.start, m.end)}`
+            ...e.am.filter((m) => globals.has(m)).map((m) =>
+              `        ${e.aSrc.slice(m.start, m.end)}`
             ),
           ]
           : []),
-        ...am.filter((m) => procs.has(m)).flatMap((m) => [
+        ...e.am.filter((m) => procs.has(m)).flatMap((m) => [
           "",
-          `    ${aSrc.slice(m.start, m.end)}`,
+          `    ${e.aSrc.slice(m.start, m.end)}`,
         ]),
         "}",
         "",
@@ -937,34 +1083,100 @@ function extractFrom(
   };
 }
 
+/** One member standing for a whole object the parser does not read (names taint its users). */
+const pseudoMember = (text: string, d: AlDecl): Member => {
+  const n = objectName(text, d);
+  return {
+    kind: "object",
+    names: [n.toLowerCase()],
+    displays: [n],
+    start: d.start,
+    end: d.end,
+    bodyStart: d.start,
+    test: false,
+    attrs: [],
+  };
+};
+
+/** A new Test file's objects, prepared for the credit rules. */
+interface NewFile {
+  rel: string;
+  src: string;
+  judged: Judged;
+  /** Parsed codeunits (their violators are removed). */
+  codeunits: { d: AlDecl; code: Member[] }[];
+}
+
 /**
- * Item A of M4-17a: from the artifact's edited shipped Test files, the
- * [Test] procedures the agent added (names the shipped codeunit lacks,
- * case-insensitive, quoted or not) go to a generated test codeunit in
- * Test/CGExtracted/, ids from HARNESS_EXTRACTED_TEST_RANGE in order of the
- * shipped codeunit id. Codeunit-level properties are the PRISTINE codeunit's
- * (TestPermissions and the like), Subtype = Test always; the agent's edits to
- * properties, triggers and shipped procedures are never carried. Fails closed
- * (nothing generated, a note) when a workspace object is in the range or a
- * shipped test codeunit cannot be parsed; an edited file with preprocessor
- * conditionals or an unparseable agent codeunit is skipped with a note.
- * Returns the notes.
+ * M4-17a items A and B. New Test files: every procedure or trigger the credit
+ * rules reject is REMOVED from the verdict copy (never run, never counted);
+ * a file whose structure would change by the removal keeps its text and its
+ * test codeunits are excluded instead; an unparseable test codeunit is
+ * excluded (not run, not counted); a file without violators stays byte for
+ * byte. Edited shipped files: the [Test] procedures the agent added (names
+ * the shipped codeunit lacks, case-insensitive, quoted or not) that are not
+ * violators go to a generated test codeunit in Test/CGExtracted/, ids from
+ * HARNESS_EXTRACTED_TEST_RANGE in order of the shipped codeunit id; the
+ * agent's edits to properties, triggers and shipped procedures are never
+ * carried. Fails closed (nothing generated, a note) when a workspace object
+ * is in the range, or (all agent tests excluded) when a shipped test
+ * codeunit cannot be parsed. Returns the notes and the excluded codeunit ids.
  */
-async function extractAddedTests(
+async function applyCreditRules(
   pristine: string,
   out: string,
   apps: StagedApp[],
   edited: ReadonlyMap<string, string>,
-): Promise<string[]> {
+  newFiles: readonly string[],
+): Promise<{ notes: string[]; excluded: number[] }> {
   const notes: string[] = [];
-  const range = HARNESS_EXTRACTED_TEST_RANGE;
+  const excluded: number[] = [];
+  const testOut = join(out, TEST_APP);
   const shipped = await shippedTests(join(pristine, TEST_APP));
   if (shipped === null) {
-    return [
-      "extraction: a shipped test codeunit could not be parsed; no added test procedure is extracted",
-    ];
+    for (
+      const t of await addedTestCodeunits(join(pristine, TEST_APP), testOut)
+    ) {
+      excluded.push(t.codeunit);
+    }
+    notes.push(
+      "credit rules: a shipped test codeunit could not be parsed; no agent test is run or counted",
+    );
+    return { notes, excluded };
   }
-  const found: Extracted[] = [];
+
+  const fresh: NewFile[] = [];
+  for (const rel of [...newFiles].sort()) {
+    const src = await Deno.readTextFile(join(testOut, ...rel.split("/")));
+    const text = stripAlNoise(src);
+    const f: NewFile = {
+      rel,
+      src,
+      judged: { src, text, code: [], vars: [] },
+      codeunits: [],
+    };
+    for (const d of declarations(src)) {
+      if (d.end === 0) continue; // a header without a body
+      const ms = d.kind === "codeunit" ? codeunitMembers(text, d) : null;
+      if (ms === null) {
+        f.judged.code.push(pseudoMember(text, d));
+        if (isTestCodeunit(d)) {
+          excluded.push(d.id);
+          notes.push(
+            `${TEST_APP}/${rel} codeunit ${d.id}: could not be parsed for the credit rules; its tests are not run or counted`,
+          );
+        }
+        continue;
+      }
+      const code = ms.filter(isCode);
+      f.judged.code.push(...code);
+      f.judged.vars.push(...ms.filter((m) => m.kind === "var"));
+      f.codeunits.push({ d, code });
+    }
+    fresh.push(f);
+  }
+
+  const shippedEdits: Edited[] = [];
   for (const [rel, aSrc] of [...edited].sort(([a], [b]) => a < b ? -1 : 1)) {
     const where = `${TEST_APP}/${rel}`;
     if (CONDITIONAL_DIRECTIVE.test(aSrc)) {
@@ -997,11 +1209,53 @@ async function extractAddedTests(
         );
         continue;
       }
-      const x = extractFrom(rel, p, pSrc, pm, aSrc, am, shipped, notes);
-      if (x) found.push(x);
+      shippedEdits.push(prepareEdited(rel, p, pSrc, pm, aSrc, am, notes));
     }
   }
-  if (found.length === 0) return notes;
+
+  const why = creditViolations(
+    [...fresh.map((f) => f.judged), ...shippedEdits.map((e) => e.judged)],
+    shipped,
+  );
+
+  for (const f of fresh) {
+    const cuts: Member[] = [];
+    for (const { d, code } of f.codeunits) {
+      for (const m of code) {
+        const w = why.get(m);
+        if (!w) continue;
+        cuts.push(m);
+        notes.push(
+          `${TEST_APP}/${f.rel} codeunit ${d.id}: ${
+            m.displays[0]
+          }: ${w}; removed (not run, not counted)`,
+        );
+      }
+    }
+    if (cuts.length === 0) continue;
+    let text = f.src;
+    for (const m of cuts.sort((a, b) => b.start - a.start)) {
+      text = text.slice(0, m.start) + text.slice(m.end);
+    }
+    const shape = (s: string) =>
+      declarations(s).map((d) => `${d.kind} ${d.id}`).join(",");
+    if (shape(text) !== shape(f.src)) {
+      // Removal would change the file's objects (unbalanced braces): keep it, run none of its tests.
+      for (const { d } of f.codeunits) {
+        if (isTestCodeunit(d)) excluded.push(d.id);
+      }
+      notes.push(
+        `${TEST_APP}/${f.rel}: removing the rejected procedures would change its objects; its tests are not run or counted`,
+      );
+      continue;
+    }
+    await Deno.writeTextFile(join(testOut, ...f.rel.split("/")), text);
+  }
+
+  const found = shippedEdits.map((e) => extractFrom(e, why, notes))
+    .filter((x): x is Extracted => x !== null);
+  if (found.length === 0) return { notes, excluded };
+  const range = HARNESS_EXTRACTED_TEST_RANGE;
   const taken: string[] = [];
   for (const app of apps) {
     for (const o of await alObjects(join(out, app.folder))) {
@@ -1016,14 +1270,13 @@ async function extractAddedTests(
         taken.join("; ")
       }); no added test procedure is extracted`,
     );
-    return notes;
+    return { notes, excluded };
   }
   found.sort((a, b) => a.from - b.from);
   for (const [i, x] of found.entries()) {
     const id = range.start + i;
     const dest = join(
-      out,
-      TEST_APP,
+      testOut,
       EXTRACTED_TEST_DIR,
       `Extracted${id}.Codeunit.al`,
     );
@@ -1048,5 +1301,5 @@ async function extractAddedTests(
     await validatedDest(join(dest, ".."));
     await Deno.writeTextFile(dest, text);
   }
-  return notes;
+  return { notes, excluded };
 }

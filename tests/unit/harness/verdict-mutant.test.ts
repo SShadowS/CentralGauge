@@ -503,9 +503,11 @@ Deno.test("mutant_kill (M4-17a): tests added to a shipped codeunit are extracted
         PriceIsTen: ten ? true : "Assert.AreEqual failed. Expected:<10>",
       });
     }
-    // The agent's edit would make the shipped test fail, were it ever deployed and run.
-    if (cu === 80010 && test.includes("SHIPPED RAN")) {
-      return result({ ShippedPasses: "SHIPPED RAN" });
+    // The shipped codeunit run as an agent test (in a build carrying the
+    // generated codeunit, i.e. outside the trusted pass_to_pass hold) breaks
+    // the judgment outright, so a regression goes red here.
+    if (cu === 80010 && test.includes("codeunit 84990")) {
+      throw new Error("shipped codeunit 80010 was run as an agent test");
     }
     return inner(cu, deployed, c);
   };
@@ -610,4 +612,49 @@ Deno.test("scorer suite (M4-17a): mutant_kill and pass_to_pass are bumped for te
     "3",
     "2",
   ]);
+});
+
+Deno.test("mutant_kill (M4-17a review): a new-file procedure that calls a shipped [Test] is removed before the build; it never runs or counts, the rest runs as before", async () => {
+  const deployedWrapper: boolean[] = [];
+  const fake = bc();
+  const inner = fake.script;
+  fake.script = (cu, deployed, c) => {
+    if (cu !== 80130) return inner(cu, deployed, c);
+    const test = deployedSource(deployed, "CGR Test");
+    deployedWrapper.push(test.includes("procedure Wrapper"));
+    const ten = deployedSource(deployed, "CGR Rental").includes("exit(10);");
+    return result({
+      PriceIsTen: ten ? true : "Assert.AreEqual failed. Expected:<10>",
+      // Were it deployed, the wrapper would report (and pass) on every target.
+      ...(test.includes("procedure Wrapper") ? { Wrapper: true } : {}),
+    });
+  };
+  const { judgment, log } = await judge(
+    new BcLane(fake, ["C1"]),
+    await setup({ "off-by-one": "exit(9);" }, {
+      edits: {
+        "Test/src/Agent80130.Test.al":
+          `codeunit 80130 "Agent 80130"\n{\n    Subtype = Test;\n${PRICE_TEST}
+    [Test]
+    procedure Wrapper()
+    var
+        Other: Codeunit "CGR Shipped Tests";
+    begin
+        Other.ShippedPasses();
+    end;
+}
+`,
+      },
+    }),
+  );
+  assertEquals(sc(judgment, "mutant_kill").passed, true);
+  assertEquals(
+    [...new Set(sc(judgment, "mutant_kill").tests.map((t) => t.procedure))],
+    ["PriceIsTen"],
+  );
+  assertEquals(deployedWrapper, [false, false, false]);
+  assertStringIncludes(
+    log.notes.join("\n"),
+    "Wrapper: calls shipped [Test] 80010 ShippedPasses",
+  );
 });

@@ -487,6 +487,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
     const added = await addedTestCodeunits(
       join(i.pristine, TEST_APP),
       join(vw.dir, TEST_APP),
+      new Set(vw.excluded),
     );
     for (const a of added) {
       if (a.testPage) {
@@ -715,6 +716,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   const added = await addedTestCodeunits(
     join(i.pristine, TEST_APP),
     join(vw.dir, TEST_APP),
+    new Set(vw.excluded),
   );
   const unsupported = added.filter((a) => a.testPage);
   if (unsupported.length > 0) {

@@ -111,6 +111,7 @@ async function rebuild(p: string, a: string) {
     added: await addedTestCodeunits(
       join(p, "Test"),
       join(v.dir, "Test"),
+      new Set(v.excluded),
     ),
     notes: v.notes.join("\n"),
   };
@@ -119,8 +120,28 @@ async function rebuild(p: string, a: string) {
 const counted = (added: { codeunit: number; procedures: string[] }[]) =>
   added.find((a) => a.codeunit === 84990)?.procedures ?? [];
 
-Deno.test("extraction: the reserved range is inside the fixture band (an agent object can never take it)", () => {
+Deno.test("extraction: the reserved range is inside the fixture band: an agent object there is a violation and nothing is generated", async () => {
   assertEquals(HARNESS_EXTRACTED_TEST_RANGE, { start: 84990, end: 84999 });
+  const p = await pristineDir();
+  const { v, gen } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      "Test/src/Squat.Test.al":
+        `codeunit 84990 "Squat"\n{\n    Subtype = Test;\n}\n`,
+      "Test/src/Suite.Test.al": agentSuite(`
+    [Test]
+    procedure Mine()
+    begin
+        Assert.AreEqual(3, 1 + 2, 'sum');
+    end;
+`),
+    }),
+  );
+  assertStringIncludes(
+    v.violations.join("\n"),
+    "codeunit 84990 is in the harness fixture band",
+  );
+  assertEquals(gen, null);
 });
 
 Deno.test("extraction: tests added to a shipped codeunit go to a generated codeunit with the added globals and helpers they use; shipped members are not carried", async () => {
@@ -558,5 +579,285 @@ Deno.test("credit: a test that names a shipped test codeunit (it could run it wh
   assertStringIncludes(
     notes,
     "RunsSuite: uses shipped test codeunit 80010 CGR Shipped Tests",
+  );
+});
+
+// ---- M4-17a review: credit rules for new files, declarations, numeric ids, cycles, overloads ----
+
+const NEW = "Test/src/Agent.Test.al";
+const newFile = (procs: string, globals = "") =>
+  `codeunit 80100 "Agent Tests"\n{\n    Subtype = Test;\n\n    var\n        Assert: Codeunit "Library Assert";\n${globals}${procs}}\n`;
+const GOOD = `
+    [Test]
+    procedure Good()
+    begin
+        Assert.AreEqual(3, 1 + 2, 'sum');
+    end;
+`;
+
+Deno.test("credit (new file): violating procedures are removed (never run, never counted); the rest of the codeunit is unchanged", async () => {
+  const p = await pristineDir();
+  const { v, added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      [NEW]: newFile(`
+    [Test]
+    procedure CopyOfShipped()
+    var
+        Price: Integer;
+    begin
+        Price := 10;
+        Assert.AreEqual(10, Price, 'Price is ten');
+    end;
+
+    [Test]
+    procedure Wraps()
+    var
+        Other: Codeunit "CGR Shipped Tests";
+    begin
+        Other.ShippedPasses();
+    end;
+
+    local procedure Relay()
+    var
+        Other: Codeunit "CGR Shipped Tests";
+    begin
+        Other.ShippedPasses();
+    end;
+
+    [Test]
+    procedure ViaRelay()
+    begin
+        Relay();
+    end;
+${GOOD}`),
+    }),
+  );
+  assertEquals(added.map((x) => [x.codeunit, x.procedures]), [
+    [80100, ["Good"]],
+  ]);
+  const text = await Deno.readTextFile(join(v.dir, NEW));
+  for (const gone of ["CopyOfShipped", "Wraps", "Relay", "ViaRelay"]) {
+    assert(!text.includes(gone), `${gone} is removed`);
+  }
+  assertStringIncludes(text, GOOD);
+  for (
+    const n of [
+      "CopyOfShipped: copy of shipped [Test] 80020 Shipped Price Check",
+      "Wraps: calls shipped [Test] 80010 ShippedPasses",
+      "ViaRelay: calls shipped [Test] 80010 ShippedPasses (via Relay)",
+    ]
+  ) {
+    assertStringIncludes(notes, n);
+  }
+});
+
+Deno.test("credit (new file): a codeunit without violations is left byte for byte", async () => {
+  const p = await pristineDir();
+  const text = newFile(GOOD);
+  const { v, added } = await rebuild(
+    p,
+    await artifactFrom(p, { [NEW]: text }),
+  );
+  assertEquals(await Deno.readTextFile(join(v.dir, NEW)), text);
+  assertEquals(added.map((x) => [x.codeunit, x.procedures]), [
+    [80100, ["Good"]],
+  ]);
+});
+
+Deno.test("credit (new file): a codeunit the parser cannot read is not run, with a note", async () => {
+  const p = await pristineDir();
+  const { v, added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      [NEW]: newFile(
+        GOOD,
+        "        [NonDebuggable]\n        Secret: Text;\n",
+      ),
+    }),
+  );
+  assertEquals(v.excluded, [80100]);
+  assertEquals(added, []);
+  assertStringIncludes(notes, "codeunit 80100");
+  assertStringIncludes(notes, "not run");
+});
+
+Deno.test("credit: shipped test codeunit types in added globals, locals and parameters do not count", async () => {
+  const p = await pristineDir();
+  const { added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      "Test/src/Suite.Test.al": agentSuite(
+        `
+    [Test]
+    procedure ViaGlobal()
+    begin
+        Whole.Run();
+    end;
+
+    [Test]
+    procedure ViaParam()
+    begin
+        Take(Whole);
+    end;
+
+    local procedure Take(var S: Codeunit "CGR Suite")
+    begin
+    end;
+
+    [Test]
+    procedure ViaLocal()
+    var
+        S: Codeunit "CGR Shipped Tests";
+    begin
+        S.Run();
+    end;
+${GOOD}`,
+        `        Whole: Codeunit "CGR Shipped Tests";\n`,
+      ),
+      [NEW]: newFile(
+        `
+    [Test]
+    procedure NewViaGlobal()
+    begin
+        Other.Run();
+    end;
+${GOOD}`,
+        `        Other: Codeunit "CGR Shipped Tests";\n`,
+      ),
+    }),
+  );
+  assertEquals(counted(added), ["Good"]);
+  assertEquals(added.find((x) => x.codeunit === 80100)?.procedures, ["Good"]);
+  for (const t of ["ViaGlobal", "ViaParam", "ViaLocal", "NewViaGlobal"]) {
+    assertStringIncludes(notes, `${t}:`);
+  }
+});
+
+Deno.test("credit: numeric references to a shipped test codeunit do not count (Codeunit.Run(n), Codeunit n, Codeunit::n)", async () => {
+  const p = await pristineDir();
+  const { added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      [NEW]: newFile(`
+    [Test]
+    procedure RunsById()
+    begin
+        Codeunit.Run(80010);
+    end;
+
+    [Test]
+    procedure DeclaresById()
+    var
+        S: Codeunit 80020;
+    begin
+        S.Run();
+    end;
+
+    [Test]
+    procedure ScopesById()
+    begin
+        Codeunit.Run(Codeunit::80010);
+    end;
+
+    [Test]
+    procedure OtherIdIsFine()
+    begin
+        Codeunit.Run(80090);
+    end;
+${GOOD}`),
+    }),
+  );
+  assertEquals(added.map((x) => x.procedures), [["OtherIdIsFine", "Good"]]);
+  for (const t of ["RunsById", "DeclaresById", "ScopesById"]) {
+    assertStringIncludes(notes, `${t}: uses shipped test codeunit`);
+  }
+});
+
+Deno.test("credit: a violation anywhere on a call cycle reaches every member of it (mutual recursion)", async () => {
+  const p = await pristineDir();
+  const { gen, added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      "Test/src/Suite.Test.al": agentSuite(`
+    [Test]
+    procedure X()
+    begin
+        Y();
+        Assert.AreEqual(1, ShippedHelper(), 'found after the recursion');
+    end;
+
+    local procedure Y()
+    begin
+        if false then
+            X();
+    end;
+
+    [Test]
+    procedure UsesY()
+    begin
+        Y();
+        Assert.AreEqual(3, 1 + 2, 'sum');
+    end;
+${GOOD}`),
+    }),
+  );
+  assertEquals(counted(added), ["Good"]);
+  assertStringIncludes(notes, "UsesY: needs shipped procedure ShippedHelper");
+  assert(!gen!.includes("procedure Y()"));
+});
+
+Deno.test("extraction: every overload of an added procedure is carried", async () => {
+  const p = await pristineDir();
+  const { gen, added } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      "Test/src/Suite.Test.al": agentSuite(`
+    [Test]
+    procedure UsesBoth()
+    begin
+        Check(1);
+        Check('a');
+    end;
+
+    local procedure Check(N: Integer)
+    begin
+        Assert.AreEqual(N, N, 'int');
+    end;
+
+    local procedure Check(T: Text)
+    begin
+        Assert.AreEqual(T, T, 'text');
+    end;
+`),
+    }),
+  );
+  assertEquals(counted(added), ["UsesBoth"]);
+  assertStringIncludes(gen!, "local procedure Check(N: Integer)");
+  assertStringIncludes(gen!, "local procedure Check(T: Text)");
+});
+
+Deno.test("credit: an agent object (not a codeunit) that runs a shipped test codeunit taints what uses it", async () => {
+  const p = await pristineDir();
+  const { added, notes } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      "Test/src/Evil.Table.al":
+        `table 80150 "Evil"\n{\n    trigger OnInsert()\n    begin\n        Codeunit.Run(80010);\n    end;\n}\n`,
+      [NEW]: newFile(`
+    [Test]
+    procedure InsertsEvil()
+    var
+        E: Record "Evil";
+    begin
+        E.Insert(true);
+    end;
+${GOOD}`),
+    }),
+  );
+  assertEquals(added.map((x) => x.procedures), [["Good"]]);
+  assertStringIncludes(
+    notes,
+    "InsertsEvil: uses shipped test codeunit 80010 CGR Shipped Tests (via Evil)",
   );
 });
