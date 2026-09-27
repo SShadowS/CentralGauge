@@ -36,6 +36,7 @@ import {
 } from "../../../../cli/commands/harness-env.ts";
 import {
   BACKEND_PORT,
+  cellEgressProblems,
   type EgressState,
   firewallPlan,
   preflightExpect,
@@ -1970,7 +1971,10 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
       join(cells, "executions", "camp1", `${id}.json`),
       JSON.stringify({
         id,
-        manifest: { harness: o.harness ?? "claude-code" },
+        manifest: {
+          harness: o.harness ?? "claude-code",
+          provider_routes: { main: "anthropic:first-party-oauth" },
+        },
         termination: o.termination ?? "completed",
         started_at: o.started ?? past(2),
       }),
@@ -1992,11 +1996,15 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
       await Deno.writeTextFile(join(cells, "runs", id, "egress.jsonl"), o.log);
     }
   };
-  const allow =
-    JSON.stringify({ decision: "allow", target: "api.anthropic.com:443" }) +
-    "\n";
-  const deny = JSON.stringify({ decision: "deny", target: "evil.test:443" }) +
-    "\n";
+  // M1-34e: the record-mode preflight's own lines, then agent traffic.
+  const allow = jsonl(tagged());
+  const deny = jsonl([{
+    at: "2026-09-27T08:35:00.000Z",
+    decision: "deny",
+    target: "evil.test:443",
+    reason: "host not allowed",
+    phase: "agent",
+  }]);
   const a = (o: { rotation?: string; cell?: string; evidence?: string }) =>
     harnessEgressVerify({ root, mark: "authorized", ...o }, c);
   const full = { rotation, cell: "cell-ok", evidence: "M1-34/001" };
@@ -2215,7 +2223,10 @@ async function authorizedRoot(at?: string): Promise<string> {
     join(cells, "executions", "camp1", "cell-ok.json"),
     JSON.stringify({
       id: "cell-ok",
-      manifest: { harness: "claude-code" },
+      manifest: {
+        harness: "claude-code",
+        provider_routes: { main: "anthropic:first-party-oauth" },
+      },
       termination: "completed",
       started_at: later,
     }),
@@ -2235,8 +2246,8 @@ async function authorizedRoot(at?: string): Promise<string> {
   );
   await Deno.writeTextFile(
     join(cells, "runs", "cell-ok", "egress.jsonl"),
-    JSON.stringify({ decision: "allow", target: "api.anthropic.com:443" }) +
-      "\n",
+    // M1-34e: the exact untagged log of Step 11 cell 9d68887a authorizes.
+    jsonl(CELL_9D68887A),
   );
   assertEquals(
     await harnessEgressVerify({
@@ -2821,4 +2832,136 @@ repeats: 1
     [3, "manual_rerun"],
     [4, "auto_retry"],
   ]);
+});
+
+// M1-34e: authorization judges the agent phase; the record-mode preflight's
+// own proxy lines must be exactly the expected ones.
+
+/** The egress.jsonl of Step 11 cell 9d68887a (M1-34 run 001): host, decision, time and reason only. */
+const CELL_9D68887A = [
+  ["2026-09-27T08:34:28.797Z", "allow", "example.com:443", "allowed"],
+  ["2026-09-27T08:34:28.804Z", "deny", "1.1.1.1:443", "ip literal"],
+  ["2026-09-27T08:34:28.975Z", "allow", "api.anthropic.com:443", "allowed"],
+  ["2026-09-27T08:34:33.486Z", "allow", "api.anthropic.com:443", "allowed"],
+  ["2026-09-27T08:34:33.487Z", "allow", "api.anthropic.com:443", "allowed"],
+  ["2026-09-27T08:34:34.462Z", "allow", "api.anthropic.com:443", "allowed"],
+].map(([at, decision, target, reason]) => ({ at, decision, target, reason }));
+const OAUTH_ROUTES = ["anthropic:first-party-oauth"];
+type LogLine = Record<string, unknown>;
+const jsonl = (ls: LogLine[]) =>
+  ls.map((l) => JSON.stringify(l)).join("\n") + "\n";
+/** The 9d68887a shape tagged: the first three lines are the preflight. */
+const tagged = (ls: LogLine[] = CELL_9D68887A) =>
+  ls.map((l, i) => ({ ...l, phase: i < 3 ? "preflight" : "agent" }));
+const cellLog = (ls: LogLine[], routes = OAUTH_ROUTES) =>
+  cellEgressProblems(jsonl(ls), routes).join("\n");
+
+Deno.test("cellEgressProblems (M1-34e): the 9d68887a shape authorizes, legacy and tagged", () => {
+  assertEquals(cellEgressProblems(jsonl(CELL_9D68887A), OAUTH_ROUTES), []);
+  assertEquals(cellEgressProblems(jsonl(tagged()), OAUTH_ROUTES), []);
+  // The expected hosts come from the cell's routes: an openrouter cell expects its own probe.
+  const openrouter = [
+    ...CELL_9D68887A.slice(0, 2),
+    { ...CELL_9D68887A[2]!, target: "openrouter.ai:443" },
+    { ...CELL_9D68887A[3]!, target: "openrouter.ai:443" },
+  ];
+  assertEquals(
+    cellEgressProblems(jsonl(openrouter), ["openrouter:api-key"]),
+    [],
+  );
+  assertStringIncludes(cellLog(openrouter), "api.anthropic.com:443");
+});
+
+Deno.test("cellEgressProblems (M1-34e): tagged logs refuse an agent deny and any preflight line that is not exactly expected", () => {
+  const t = tagged();
+  const deny = { ...t[4]!, decision: "deny", target: "evil.test:443" };
+  // An agent-phase deny.
+  assertStringIncludes(cellLog([...t, deny]), "agent-phase deny");
+  // An unexpected preflight deny, and a mismatched expected decision.
+  assertStringIncludes(
+    cellLog([...t.slice(0, 3), { ...deny, phase: "preflight" }, ...t.slice(3)]),
+    "preflight",
+  );
+  assertStringIncludes(
+    cellLog([{ ...t[0]!, decision: "deny" }, ...t.slice(1)]),
+    "example.com:443",
+  );
+  // A missing and a duplicate expected preflight line.
+  assertStringIncludes(
+    cellLog([t[0]!, t[1]!, ...t.slice(3)]),
+    "api.anthropic.com:443",
+  );
+  assertStringIncludes(
+    cellLog([t[0]!, t[1]!, t[1]!, ...t.slice(2)]),
+    "1.1.1.1:443",
+  );
+  // A preflight line after the agent phase began.
+  assertStringIncludes(
+    cellLog([t[0]!, t[2]!, t[3]!, t[1]!, ...t.slice(4)]),
+    "after",
+  );
+  // No agent line at all.
+  assertStringIncludes(cellLog(t.slice(0, 3)), "agent");
+});
+
+Deno.test("cellEgressProblems (M1-34e): legacy untagged logs need the exact preflight as the leading lines", () => {
+  const l = CELL_9D68887A;
+  const deny = { ...l[4]!, decision: "deny", target: "evil.test:443" };
+  // A deny interleaved after an agent line.
+  assertStringIncludes(
+    cellLog([...l.slice(0, 4), deny, ...l.slice(4)]),
+    "agent-phase deny evil.test:443",
+  );
+  // The expected deny again, after the preflight.
+  assertStringIncludes(
+    cellLog([...l.slice(0, 4), { ...l[1]!, at: l[3]!.at }, ...l.slice(4)]),
+    "agent-phase deny 1.1.1.1:443",
+  );
+  // A missing expected preflight line.
+  assertStringIncludes(cellLog(l.slice(1)), "example.com:443");
+  assertStringIncludes(cellLog([l[0]!, ...l.slice(2)]), "1.1.1.1:443");
+  // No agent line.
+  assertStringIncludes(cellLog(l.slice(0, 3)), "agent");
+  // Out of time order.
+  assertStringIncludes(cellLog([l[1]!, l[0]!, ...l.slice(2)]), "time order");
+});
+
+Deno.test("cellEgressProblems (M1-34e): fail closed on mixed tagging, unknown values and malformed lines", () => {
+  const t = tagged();
+  // Mixed tagging.
+  assertStringIncludes(
+    cellLog([...t.slice(0, 3), ...CELL_9D68887A.slice(3)]),
+    "mixes tagged and untagged",
+  );
+  // Unknown phase and decision values.
+  assertStringIncludes(
+    cellLog([...t, { ...t[3]!, phase: "setup" }]),
+    "malformed",
+  );
+  assertStringIncludes(
+    cellLog([{ ...t[0]!, phase: "setup" }, ...t.slice(1)]),
+    "malformed",
+  );
+  assertStringIncludes(
+    cellLog([...t, { ...t[3]!, decision: "maybe" }]),
+    "malformed",
+  );
+  assertStringIncludes(
+    cellLog([...CELL_9D68887A, { ...CELL_9D68887A[3]!, decision: "maybe" }]),
+    "malformed",
+  );
+  // Malformed lines: not JSON, no target, an unknown field.
+  assertStringIncludes(
+    cellEgressProblems(jsonl(t) + "{not json\n", OAUTH_ROUTES).join("\n"),
+    "malformed",
+  );
+  const noTarget: LogLine = { ...t[3]! };
+  delete noTarget["target"];
+  assertStringIncludes(cellLog([...t, noTarget]), "malformed");
+  assertStringIncludes(cellLog([...t, { ...t[3]!, extra: 1 }]), "malformed");
+  // An empty log.
+  assertStringIncludes(
+    cellEgressProblems("", OAUTH_ROUTES).join("\n"),
+    "agent",
+  );
 });

@@ -1369,7 +1369,10 @@ export async function runExecution(
       egressAbort.abort(new Error(`egress violation: ${violation}`));
     }
     try {
-      Deno.writeTextFileSync(p.egress, JSON.stringify(l) + "\n", {
+      // M1-34e: the phase from the same flag, so authorization can tell the
+      // preflight's own probes from the agent's traffic.
+      const phase = armed ? "agent" : "preflight";
+      Deno.writeTextFileSync(p.egress, JSON.stringify({ ...l, phase }) + "\n", {
         append: true,
       });
     } catch (err) {

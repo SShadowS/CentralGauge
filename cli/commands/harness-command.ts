@@ -89,6 +89,7 @@ import {
 import { hashTree } from "../../src/harness/hash.ts";
 import {
   authorizedMarkerProblems,
+  cellEgressProblems,
   collectEgressState,
   evaluatePreflight,
   hostsForRoutes,
@@ -1400,7 +1401,10 @@ const RotationSchema = z.object({
 
 const CellSchema = z.object({
   id: z.string(),
-  manifest: z.object({ harness: z.string() }),
+  manifest: z.object({
+    harness: z.string(),
+    provider_routes: z.record(z.string(), z.string()),
+  }),
   termination: z.string(),
   started_at: z.iso.datetime(),
 });
@@ -1550,22 +1554,12 @@ async function authorizationProblems(
     p.push(`cell ${o.cell} has no egress.jsonl: not an enforced run`);
     return { problems: p, allowlist };
   }
-  const decisions = log.split(/\r?\n/).filter((l) => l.trim()).map((l) => {
-    try {
-      return String(JSON.parse(l).decision);
-    } catch {
-      return "unreadable";
-    }
-  });
-  if (decisions.includes("deny")) {
-    p.push(`cell ${o.cell} egress.jsonl has a deny line`);
-  }
-  if (decisions.includes("unreadable")) {
-    p.push(`cell ${o.cell} egress.jsonl has an unreadable line`);
-  }
-  if (!decisions.includes("allow")) {
-    p.push(`cell ${o.cell} egress.jsonl has no allowed connection`);
-  }
+  // M1-34e: the preflight's own lines exactly as expected, the agent phase clean.
+  p.push(
+    ...cellEgressProblems(log, Object.values(e.manifest.provider_routes)).map(
+      (x) => `cell ${o.cell} egress.jsonl: ${x}`,
+    ),
+  );
   return { problems: p, allowlist };
 }
 

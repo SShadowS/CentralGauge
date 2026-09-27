@@ -1899,6 +1899,30 @@ Deno.test("enforced run: listeners checked, preflight run, then secrets and read
   assertStringIncludes(log, '"decision":"deny"');
 });
 
+Deno.test("enforced run (M1-34e): every egress line carries its phase, preflight before the release and agent after", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    eg.log!({
+      at: new Date().toISOString(),
+      decision: "allow",
+      target: "api.anthropic.com:443",
+      reason: "allowed",
+    });
+    return await inner(call, io);
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  const lines = (await Deno.readTextFile(
+    join(t.env.resultsRoot, "runs", e.id, "egress.jsonl"),
+  )).trim().split("\n").map((l) => JSON.parse(l));
+  assertEquals(lines.map((l) => [l.decision, l.phase]), [
+    ["deny", "preflight"],
+    ["allow", "agent"],
+  ]);
+});
+
 Deno.test("enforced run: a proxy not listening, a failed host verification or a failed preflight aborts before any secret file exists", async () => {
   const cases: [string, (eg: FakeEgress) => void, boolean][] = [
     [
