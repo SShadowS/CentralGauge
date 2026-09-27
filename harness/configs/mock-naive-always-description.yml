@@ -1,0 +1,6 @@
+id: mock-naive-always-description
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:always-description" }
+limits: { timeout_min: 10, max_budget_usd: 1 }

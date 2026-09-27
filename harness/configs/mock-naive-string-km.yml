@@ -1,0 +1,6 @@
+id: mock-naive-string-km
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:string-km" }
+limits: { timeout_min: 10, max_budget_usd: 1 }

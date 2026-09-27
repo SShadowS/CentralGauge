@@ -1,0 +1,6 @@
+id: mock-naive-checkout-only
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:checkout-only" }
+limits: { timeout_min: 10, max_budget_usd: 1 }

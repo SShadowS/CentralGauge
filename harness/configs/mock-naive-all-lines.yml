@@ -1,0 +1,6 @@
+id: mock-naive-all-lines
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:all-lines" }
+limits: { timeout_min: 10, max_budget_usd: 1 }

@@ -1,0 +1,6 @@
+id: mock-naive-skip-modify-on-damage
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:skip-modify-on-damage" }
+limits: { timeout_min: 10, max_budget_usd: 1 }

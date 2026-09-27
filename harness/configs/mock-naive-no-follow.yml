@@ -1,0 +1,6 @@
+id: mock-naive-no-follow
+harness: mock
+harness_version: "1"
+models: {}
+settings: { mode: apply, variant: "naive:no-follow" }
+limits: { timeout_min: 10, max_budget_usd: 1 }
