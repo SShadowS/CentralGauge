@@ -743,6 +743,38 @@ Deno.test("stream problems (M1-32 ruling): a usable result with stream problems 
   assertEquals((await t.env.store.judgments(e.id))[0]!.verdict, "pass");
 });
 
+Deno.test("stream problems (M5-07a): a tool_progress heartbeat mid-run leaves the cost estimated", async () => {
+  const t = await makeEnv();
+  t.docker.behavior = async (call, io) => {
+    let n = 0;
+    const out = async (line: string) => {
+      await io.stdout(line);
+      if (++n !== 1) return;
+      // Claude Code 2.1.282's heartbeat of a tool running past 30 s (M5-07 stage A).
+      await io.stdout(JSON.stringify({
+        type: "tool_progress",
+        tool_use_id: "toolu_x-heartbeat-0",
+        tool_name: "Bash",
+        parent_tool_use_id: "toolu_x",
+        elapsed_time_seconds: 30,
+        heartbeat: true,
+        session_id: JSON.parse(line).session_id,
+        uuid: "00000000-0000-4000-8000-000000000001",
+      }));
+    };
+    return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      { ...io, stdout: out },
+    );
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  assertEquals((await sideOf(t, e.id)).stream_problems, []);
+  assert(e.telemetry.cost_usd !== null && e.telemetry.cost_usd > 0);
+  assertEquals(e.telemetry.cost_source, "estimated");
+  assert(!e.validity.incomplete_telemetry.includes("cost_usd"));
+});
+
 Deno.test("recovery start (M1-20 handoff): leftover sandboxes are removed first, then this owner's stale secrets", async () => {
   const t = await makeEnv();
   const base = join(t.env.privateRoot, "secrets");

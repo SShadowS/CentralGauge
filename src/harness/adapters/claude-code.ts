@@ -35,6 +35,8 @@ const KNOWN_TYPES = new Set([
   "user",
   "result",
   "rate_limit_event",
+  // M5-07a: 2.1.282's heartbeat of a tool running past 30 s; no usage.
+  "tool_progress",
 ]);
 
 const isCount = (v: unknown): v is number =>
@@ -220,7 +222,7 @@ const DECLARED: readonly (keyof Telemetry)[] = Object.freeze([
 /** Per-run provenance persisted in raw_usage.capabilities; the report reads it, never the installed adapter. */
 export const CLAUDE_CAPABILITIES = {
   v: 1,
-  parser: "claude-code-trace@3",
+  parser: "claude-code-trace@4",
   rules: `rules@${RULES_VERSION}`,
   telemetry: DECLARED,
   nested: ["per_model.requests"],
