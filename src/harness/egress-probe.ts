@@ -52,8 +52,12 @@ export interface QualificationProbe {
   hosts?: string[];
   /** The host state at probe time (network id and interface index for the evidence). */
   collect(): Promise<EgressState>;
-  /** Revokes `token` at the backend; called first in the teardown (M5-08a). */
-  revoke?: () => Promise<unknown>;
+  /**
+   * Revokes `token` at the backend; required, called first in the teardown
+   * (M5-08a/b). A failure is reported and fails the probe closed; it never
+   * skips the proxy shutdown or the sandbox teardown.
+   */
+  revoke: () => Promise<unknown>;
 }
 
 const q = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -163,7 +167,17 @@ export async function runQualificationProbe(
     // M5-08a: credentials cut first (run aborted, backend token revoked,
     // proxy shut down), then the sandbox confirmed gone, then its secrets.
     if (pending && !settled) stop.abort();
-    const revoked = o.revoke?.().catch(() => {});
+    let revokeError: string | null = null;
+    const failed = (err: unknown) => {
+      revokeError = err instanceof Error ? err.message : String(err);
+    };
+    let revoked: Promise<void>;
+    try {
+      revoked = Promise.resolve(o.revoke()).then(() => {}, failed);
+    } catch (err) {
+      failed(err); // a synchronous throw: the teardown still runs
+      revoked = Promise.resolve();
+    }
     await bounded(proxy.shutdown(), opMs, "egress proxy shutdown").catch(
       () => {},
     );
@@ -178,11 +192,22 @@ export async function runQualificationProbe(
       secretsDir: secrets,
     });
     await revoked;
-    if (!down.gone || down.secretsLeft) {
+    const problems = [
+      ...(revokeError !== null
+        ? [`backend token revoke failed: ${revokeError}`]
+        : []),
+      ...(!down.gone || down.secretsLeft ? down.problems : []),
+    ];
+    if (revokeError !== null) {
+      console.error(
+        `[FAIL] qualification probe ${o.spec.name}: backend token revoke failed: ${revokeError}`,
+      );
+    }
+    if (problems.length > 0) {
       // Fail closed and loud; the next start sweeps the container, then the secrets.
       throw new ContainerError(
         `qualification probe ${o.spec.name}: teardown not confirmed (${
-          down.problems.join("; ")
+          problems.join("; ")
         }); resolve before the next run`,
         o.spec.name,
         "stop",
