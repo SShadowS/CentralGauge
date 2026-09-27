@@ -33,6 +33,7 @@ codeunit 70300 "CGR Lease Mgt"
         Line: Record "CGR Lease Schedule Line";
         LeaseMath: Codeunit "CGR Lease Math";
         Amounts: List of [Decimal];
+        MonthEnd: Boolean;
         i: Integer;
     begin
         Contract.Get(ContractNo);
@@ -44,12 +45,15 @@ codeunit 70300 "CGR Lease Mgt"
             Error(InvoicedErr, ContractNo);
         Line.SetRange(Invoiced);
         Line.DeleteAll(true);
+        MonthEnd := Contract."Start Date" = CalcDate('<CM>', Contract."Start Date");
         LeaseMath.SplitInstallments(LeaseMath.LeaseTotal(Contract."Base Rate", Contract.Months), Contract.Months, Amounts);
         for i := 1 to Contract.Months do begin
             Line.Init();
             Line."Contract No." := ContractNo;
             Line."Line No." := i * 10000;
             Line."Due Date" := CalcDate(StrSubstNo('<+%1M>', i - 1), Contract."Start Date");
+            if MonthEnd then
+                Line."Due Date" := CalcDate('<CM>', Line."Due Date");
             Line.Amount := Amounts.Get(i);
             Line.Insert(true);
         end;
