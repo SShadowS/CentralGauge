@@ -8,7 +8,9 @@
  * operational or unexpected failure.
  *
  * Secret files hold one value per line (trimmed, blank lines skipped, each at
- * least 8 characters). Each value is searched in file contents and archive
+ * least 8 characters); a file named openai-codex-auth is a pi auth.json whose
+ * whole text and inner access, refresh and accountId are its values (H-02).
+ * Each value is searched in file contents and archive
  * paths as UTF-8, UTF-16LE, standard and URL-safe base64 (all three byte
  * alignments) and percent-encoding. Values are never printed or written.
  * The scan covers the secret values on disk plus the key patterns; it is not
@@ -23,6 +25,10 @@ import { parseArgs } from "@std/cli/parse-args";
 import { walk } from "@std/fs/walk";
 import { basename, dirname, join, relative, resolve } from "@std/path";
 import * as colors from "@std/fmt/colors";
+import {
+  CODEX_AUTH_FILE,
+  parseCodexAuth,
+} from "../../src/harness/codex-auth.ts";
 import { utf16le } from "../../src/harness/fsutil.ts";
 
 /** Everything that is not a finding: I/O, bad input, a link. Exit 2. */
@@ -158,9 +164,21 @@ async function readSecrets(secretFiles: string[]): Promise<Secret[]> {
     } catch {
       throw new OperationalError(`cannot read ${name}`);
     }
-    const values = text.split(/\r?\n/).map((l) => l.trim()).filter((l) =>
-      l !== ""
-    );
+    // H-02 review: the codex credential is one pi auth.json; its inner
+    // access, refresh and accountId are secrets of their own, never its lines.
+    let values: string[];
+    if (basename(f) === CODEX_AUTH_FILE) {
+      try {
+        const a = parseCodexAuth(text);
+        values = [text.trim(), a.access, a.refresh, a.accountId];
+      } catch {
+        throw new OperationalError(
+          `${name} is not a valid ${CODEX_AUTH_FILE} (a pi auth.json with one openai-codex oauth entry)`,
+        );
+      }
+    } else {
+      values = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "");
+    }
     if (values.length === 0) {
       throw new OperationalError(`empty secret file (no values): ${name}`);
     }
