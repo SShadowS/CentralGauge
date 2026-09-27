@@ -165,7 +165,7 @@ Deno.test("verifyEgressState: effective-policy mutations are each a named proble
     ["prefix", (s) => (s.gatewayAdapter!.prefix = 16)],
     ["vethernet", (s) => (s.gatewayAdapter!.alias = "Ethernet 2")],
     ["vethernet", (s) => (s.hns!.name = "other")],
-    ["disabled", (s) => (s.groupRules[0]!.enabled = false)],
+    ["enabled is false", (s) => (s.groupRules[0]!.enabled = false)],
     ["direction", (s) => (s.groupRules[1]!.direction = "Outbound")],
     ["action", (s) => (s.groupRules[2]!.action = "Allow")],
     ["profile", (s) => (s.groupRules[3]!.profile = "Domain")],
@@ -1594,7 +1594,7 @@ Deno.test("collectEgressState (M1-34c): changed group rules and a foreign block 
       "interface type",
       (r) => (r.filters.interfaceType[6]!.InterfaceType = "Wireless"),
     ],
-    ["disabled", (r) => (r.groupRules[7]!.Enabled = "False")],
+    ["enabled is false", (r) => (r.groupRules[7]!.Enabled = "False")],
     ["action", (r) => (r.groupRules[8]!.Action = "Allow")],
     ["missing rule", (r) => {
       const id = r.groupRules.pop()!.InstanceID;
@@ -1621,6 +1621,15 @@ Deno.test("collectEgressState (M1-34c): changed group rules and a foreign block 
       `${word}: ${p.join("; ")}`,
     );
   }
+});
+
+Deno.test("verifyEgressState (M1-34d): a disabled group rule reads 'enabled is false, expected true'", async () => {
+  let name = "";
+  const p = await verifyRaw((r) => {
+    name = r.groupRules[7]!.Name;
+    r.groupRules[7]!.Enabled = "False";
+  });
+  assertEquals(p, [`rule ${name}: enabled is false, expected true`]);
 });
 
 Deno.test("decodeHnsBlob / parseHnsNetwork (M1-34c): the real VolatileStore value decodes exactly", () => {

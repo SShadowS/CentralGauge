@@ -546,7 +546,7 @@ const FIELDS = [
   "interfaceType",
 ] as const;
 const LABEL: Record<(typeof FIELDS)[number], string> = {
-  enabled: "disabled",
+  enabled: "enabled",
   direction: "direction",
   action: "action",
   profile: "profile",

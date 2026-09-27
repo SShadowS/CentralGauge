@@ -1911,7 +1911,7 @@ Deno.test("enforced run: a proxy not listening, a failed host verification or a 
     [
       "host verification",
       (eg) => (eg.verifyProblems = [
-        "rule cg-harness-egress-tcp: disabled is false",
+        "rule cg-harness-egress-tcp: enabled is false",
       ]),
       false,
     ],
@@ -2805,7 +2805,7 @@ Deno.test("placed run (M1-33d review): the host is verified again right before t
   eg.verify = () => {
     eg.events.push("verify");
     return Promise.resolve(
-      ++calls === 1 ? [] : ["rule cg-harness-egress-tcp: disabled is false"],
+      ++calls === 1 ? [] : ["rule cg-harness-egress-tcp: enabled is false"],
     );
   };
   const killed = mountAtKill(t);
