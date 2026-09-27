@@ -1185,3 +1185,21 @@
   batch_cache_write_per_mtoken: 1.25
   source: manual
   fetched_at: '2026-09-26T00:00:00.000Z'
+- pricing_version: '2026-09-27'
+  model_slug: openrouter/google/gemini-3.8-flash
+  effective_from: '2026-09-27T08:00:00.000Z'
+  effective_until: null
+  input_per_mtoken: 0.75
+  output_per_mtoken: 3.75
+  # The 2026-09-08 and 2026-09-11 auto-fetched rows carry zero cache rates;
+  # GET https://openrouter.ai/api/v1/models on 2026-09-27 reports
+  # input_cache_read 0.000000075 and input_cache_write 0.0000000416666666666667
+  # per token (M3 ruling: fixed locally before M3-09, no catalog sync).
+  cache_read_per_mtoken: 0.075
+  cache_write_per_mtoken: 0.0417
+  batch_input_per_mtoken: 0.375
+  batch_output_per_mtoken: 1.875
+  batch_cache_read_per_mtoken: 0.0375
+  batch_cache_write_per_mtoken: 0.0417
+  source: openrouter
+  fetched_at: '2026-09-27T08:00:00.000Z'
