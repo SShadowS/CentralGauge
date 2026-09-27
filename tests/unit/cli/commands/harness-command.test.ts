@@ -2546,6 +2546,85 @@ Deno.test("openHarnessEnv (M1-33d review): a shared proxy that cannot bind stops
   assertEquals(order.slice(-2), ["egress runtime", "release"]);
 });
 
+const isolationCases: [unknown, string][] = [
+  [undefined, "proxy_isolation missing"],
+  [1, "proxy_isolation 1"],
+  [3, "proxy_isolation 3"],
+  [2.5, "proxy_isolation 2.5"],
+  ["2", 'proxy_isolation "2"'],
+];
+const markerWith = (state: string, v: unknown) =>
+  JSON.stringify({
+    v: 1,
+    state,
+    ...(v !== undefined ? { proxy_isolation: v } : {}),
+  });
+
+Deno.test("run --concurrency > 1 (M1-33e): the up-front check names a marker proxy_isolation other than exactly PROXY_ISOLATION, before any environment opens; the refusal still stands", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  const never = () => Promise.reject(new Error("no environment may open"));
+  const refused = async (marker: string) => {
+    await Deno.writeTextFile(join(shared, EGRESS_MARKER), marker);
+    return (await assertRejects(
+      () =>
+        harnessRun(
+          "contract",
+          runOpts(t, { concurrency: 2 }),
+          never,
+          never,
+        ),
+      ConfigurationError,
+      "--concurrency",
+    )).message;
+  };
+  for (const [v, named] of isolationCases) {
+    for (const state of ["qualified", "authorized"]) {
+      assertStringIncludes(await refused(markerWith(state, v)), named, state);
+    }
+  }
+  assertStringIncludes(await refused("{not json"), "proxy_isolation missing");
+  const ok = await refused(markerWith("qualified", PROXY_ISOLATION));
+  assertEquals(ok.includes("proxy_isolation"), false, ok);
+});
+
+Deno.test("openHarnessEnv concurrency > 1 (M1-33e): the proxy_isolation gate runs under the lock, before any sweep, at both refusal points; the refusal still stands", async () => {
+  const t = await makeEnv();
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  const refused = async (marker: string, probe = false) => {
+    await Deno.writeTextFile(join(shared, EGRESS_MARKER), marker);
+    const order: string[] = [];
+    const msg = (await assertRejects(
+      () =>
+        openHarnessEnv(
+          { ...envOpts(t), concurrency: 2, ...(probe ? { probe } : {}) },
+          deps(order, undefined, () => Promise.resolve([])),
+        ),
+      ConfigurationError,
+      "--concurrency",
+    )).message;
+    assertEquals(order, ["lock", "release"], marker);
+    return msg;
+  };
+  for (const [v, named] of isolationCases) {
+    assertStringIncludes(await refused(markerWith("qualified", v)), named);
+    // A candidate places only the probe: the second (effective mode) point.
+    assertStringIncludes(
+      await refused(markerWith("candidate", v), true),
+      named,
+    );
+  }
+  for (const probe of [false, true]) {
+    const state = probe ? "candidate" : "qualified";
+    const ok = await refused(markerWith(state, PROXY_ISOLATION), probe);
+    assertEquals(ok.includes("proxy_isolation"), false, ok);
+  }
+});
+
 // ---- M5-03: --stop-file and --campaign on run and rejudge ----
 
 const UNKNOWN_CAMPAIGN = "00000000-0000-0000-0000-000000000000";

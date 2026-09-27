@@ -147,6 +147,12 @@ export interface HarnessEnv {
    * default network. Required when egressEnforced.
    */
   egress?: EgressRuntime;
+  /**
+   * The marker's proxy_isolation read under the lock when the environment
+   * opened placed (M1-33e), fixed for the life of the environment: runCampaign
+   * gates concurrency on it and each cell's verify() requires the same value.
+   */
+  proxyIsolation?: unknown;
   /** Shared cross-lane reservation ledger for supervised credential-bearing runs. */
   credentialLedger: string | null;
   /** Coordination lane name recorded with a reservation. */

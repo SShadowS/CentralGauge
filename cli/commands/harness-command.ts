@@ -75,7 +75,7 @@ import { rejudgeExecution, runCell } from "../../src/harness/execution.ts";
 import {
   cellRefFor,
   loadCampaignData,
-  PLACED_CONCURRENCY_REFUSAL,
+  placedConcurrencyRefusal,
   planCampaign,
   precheckCampaignPin,
   runCampaign,
@@ -140,7 +140,12 @@ import {
   writeVerdictLog,
 } from "../../src/harness/verdict.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
-import { markerPlaces, openHarnessEnv, openPlanEnv } from "./harness-env.ts";
+import {
+  markerPlaces,
+  markerProxyIsolation,
+  openHarnessEnv,
+  openPlanEnv,
+} from "./harness-env.ts";
 
 /** Loud, file-naming failures are collected; anything else is a bug. */
 function isProblem(err: unknown): err is Error {
@@ -988,12 +993,14 @@ export async function harnessRun(
     ...(o.rerun !== undefined ? { rerun: o.rerun } : {}),
   };
   const command = `harness run ${experimentId}`;
-  // M1-33c: before any lock, sweep or recovery writes (runCampaign rechecks).
-  if (
-    o.concurrency > 1 &&
-    await markerPlaces(join(o.root, "results", "harness"))
-  ) {
-    throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+  // M1-33c: before any lock, sweep or recovery writes (runCampaign rechecks),
+  // led by the marker's proxy_isolation gate (M1-33e).
+  const sharedResults = join(o.root, "results", "harness");
+  if (o.concurrency > 1 && await markerPlaces(sharedResults)) {
+    throw placedConcurrencyRefusal(
+      await markerProxyIsolation(sharedResults),
+      o.concurrency,
+    );
   }
   // M5-03 review: the pin, read-only, before any lock, sweep or recovery (runCampaign rechecks, with the arm manifests).
   if (o.campaign !== undefined) {

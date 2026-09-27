@@ -24,7 +24,7 @@ import {
   resolveBackendHost,
 } from "../../src/harness/backend.ts";
 import { BcLane } from "../../src/harness/bc-lane.ts";
-import { PLACED_CONCURRENCY_REFUSAL } from "../../src/harness/campaign.ts";
+import { placedConcurrencyRefusal } from "../../src/harness/campaign.ts";
 import {
   authorizedMarkerProblems,
   BACKEND_PORT,
@@ -104,6 +104,7 @@ export interface EnvDeps {
       markerPath: string;
       acceptCandidate?: boolean;
       concurrency?: number;
+      proxyIsolation?: unknown;
     },
   ) => Promise<EgressRuntime>;
 }
@@ -223,6 +224,22 @@ export async function markerPlaces(sharedResults: string): Promise<boolean> {
   }
 }
 
+/**
+ * The marker's proxy_isolation, read without verification (M1-33e); undefined
+ * when there is no marker, it is unreadable or it has no such field.
+ */
+export async function markerProxyIsolation(
+  sharedResults: string,
+): Promise<unknown> {
+  try {
+    return JSON.parse(
+      await Deno.readTextFile(join(sharedResults, EGRESS_MARKER)),
+    )?.proxy_isolation;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Enforcement counts only when the marker says authorized AND the host verifies now; a failing marker stops. */
 export async function resolveEgress(
   sharedResults: string,
@@ -321,10 +338,13 @@ export async function openHarnessEnv(
     for (const c of closers) await c().catch(() => {});
   };
   try {
+    // M1-33e: the marker's proxy_isolation, fixed here under the lock for
+    // the life of the environment (a later change refuses the next cell).
+    const proxyIsolation = await markerProxyIsolation(sharedResults);
     // M1-33c review (TOCTOU): the marker may have become placing since
     // harness run's up-front check; recheck under the lock, before any write.
     if ((o.concurrency ?? 1) > 1 && await markerPlaces(sharedResults)) {
-      throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+      throw placedConcurrencyRefusal(proxyIsolation, o.concurrency ?? 1);
     }
     // The effective mode (marker plus host verification) is fixed here, under
     // the lock and before any sweep, and gates concurrency again (M1-33c r2).
@@ -333,7 +353,7 @@ export async function openHarnessEnv(
       ...(o.probe ? { probe: true } : {}),
     });
     if ((o.concurrency ?? 1) > 1 && mode !== "off") {
-      throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+      throw placedConcurrencyRefusal(proxyIsolation, o.concurrency ?? 1);
     }
     const store = new RecordStore(o.resultsDir);
     await Deno.mkdir(join(o.privateRoot, "work"), { recursive: true });
@@ -363,6 +383,7 @@ export async function openHarnessEnv(
         ...(o.probe ? { acceptCandidate: true } : {}),
         // verify() gates concurrency > 1 on the marker's proxy_isolation (M1-33d review).
         concurrency: o.concurrency ?? 1,
+        proxyIsolation,
       });
     // The runtime owns the environment's one shared proxy (M1-33d): it goes with the env.
     if (egress) closers.unshift(() => egress.shutdown());
@@ -403,7 +424,7 @@ export async function openHarnessEnv(
       pricing: (at) => loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
       supervised: o.supervised,
       egressEnforced: mode === "enforced",
-      ...(egress ? { egress } : {}),
+      ...(egress ? { egress, proxyIsolation } : {}),
       credentialLedger: o.credentialLedger,
       // No placeholder: an unset lane is refused at the credential reservation (M1-28b).
       lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",

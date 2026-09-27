@@ -1590,6 +1590,22 @@ export const ROUTER_PS =
   "$r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop | Sort-Object RouteMetric | Select-Object -First 1; [Console]::Out.Write([string]$r.NextHop)";
 const PROBE_TIMEOUT_MS = 180_000;
 
+/**
+ * Why `concurrency` placed blocks cannot share the proxy a marker's
+ * proxy_isolation names (M1-33c design section 6), or null when they can.
+ * Exact match: missing, lower, higher and non-integer values are refused; no
+ * forward compatibility. Concurrency 1 ignores the field.
+ */
+export function proxyIsolationProblem(
+  value: unknown,
+  concurrency: number,
+): string | null {
+  if (concurrency <= 1 || value === PROXY_ISOLATION) return null;
+  return `proxy_isolation ${
+    JSON.stringify(value) ?? "missing"
+  }: concurrency ${concurrency} needs ${PROXY_ISOLATION}`;
+}
+
 /** The production runtime (Windows host, Docker Desktop Windows containers). */
 export async function realEgressRuntime(
   o: {
@@ -1604,6 +1620,12 @@ export async function realEgressRuntime(
     hostLogPath?: string;
     /** Campaign blocks at once (EnvOptions.concurrency); above 1 verify() needs the marker's proxy_isolation to be PROXY_ISOLATION. */
     concurrency?: number;
+    /**
+     * The marker's proxy_isolation fixed when the environment opened (env.proxyIsolation,
+     * M1-33e); above concurrency 1 every verify() requires the same value. A present
+     * but undefined key is a missing value; an absent key compares to PROXY_ISOLATION.
+     */
+    proxyIsolation?: unknown;
   },
 ): Promise<EgressRuntime> {
   const recordedHosts = await loadRecordedHosts(o.repoRoot);
@@ -1650,14 +1672,19 @@ export async function realEgressRuntime(
       );
       const p = verifyEgressState(s);
       markerProxyIsolation = s.marker?.proxyIsolation;
-      // Exact equality: a missing, older, newer or non-integer value is not this proxy.
-      if (
-        (o.concurrency ?? 1) > 1 && markerProxyIsolation !== PROXY_ISOLATION
-      ) {
+      // Exact equality: a missing, older, newer or non-integer value is not
+      // this proxy; nor is a value other than the one fixed at startup (M1-33e).
+      const concurrency = o.concurrency ?? 1;
+      const version = proxyIsolationProblem(markerProxyIsolation, concurrency);
+      const fixed = "proxyIsolation" in o ? o.proxyIsolation : PROXY_ISOLATION;
+      if (version) p.push(`egress marker ${o.markerPath} has ${version}`);
+      else if (concurrency > 1 && markerProxyIsolation !== fixed) {
         p.push(
-          `egress marker ${o.markerPath} has proxy_isolation ${
-            JSON.stringify(markerProxyIsolation) ?? "missing"
-          }: concurrency ${o.concurrency} needs ${PROXY_ISOLATION}`,
+          `egress marker ${o.markerPath} proxy_isolation changed from ${
+            JSON.stringify(fixed) ?? "missing"
+          } to ${
+            JSON.stringify(markerProxyIsolation)
+          } since the environment opened: concurrency ${concurrency} needs the same value throughout`,
         );
       }
       const placing = o.acceptCandidate

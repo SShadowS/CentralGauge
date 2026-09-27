@@ -1,4 +1,9 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import { walk } from "@std/fs";
 import { join } from "@std/path";
 import {
@@ -11,6 +16,7 @@ import {
   runCampaign,
   type RunOptions,
 } from "../../../src/harness/campaign.ts";
+import { PROXY_ISOLATION } from "../../../src/harness/egress-proxy.ts";
 import { imageTag, mcpLabel } from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
 import { buildReport } from "../../../src/harness/report.ts";
@@ -451,6 +457,33 @@ Deno.test("runCampaign: concurrency > 1 with enforced egress (no placement objec
     ConfigurationError,
     "--concurrency",
   );
+  assertEquals(t.docker.runs.length, 0);
+});
+
+Deno.test("runCampaign (M1-33e): above concurrency 1 a placed environment needs env.proxyIsolation exactly PROXY_ISOLATION, checked before any write alongside the refusal", async () => {
+  const t = await mockEnv();
+  const placed = { ...t.env, egress: {} as NonNullable<typeof t.env.egress> };
+  const refused = async (env: typeof t.env) =>
+    (await assertRejects(
+      () => runCampaign(env, "contract", opts({ concurrency: 2 }), io()),
+      ConfigurationError,
+      "--concurrency",
+    )).message;
+  // Not set on a placed environment (fail closed), lower, higher, non-integer.
+  assertStringIncludes(await refused(placed), "proxy_isolation missing");
+  for (const v of [1, 3, 2.5, "2"]) {
+    assertStringIncludes(
+      await refused({ ...placed, proxyIsolation: v }),
+      `proxy_isolation ${JSON.stringify(v)}`,
+    );
+  }
+  assertStringIncludes(
+    await refused({ ...t.env, egressEnforced: true, proxyIsolation: 1 }),
+    "proxy_isolation 1",
+  );
+  // The exact version passes the gate; the M1-33c refusal still stands.
+  const ok = await refused({ ...placed, proxyIsolation: PROXY_ISOLATION });
+  assertEquals(ok.includes("proxy_isolation"), false, ok);
   assertEquals(t.docker.runs.length, 0);
 });
 

@@ -21,6 +21,7 @@ import type { RefappRef } from "./identity.ts";
 import type { LoadedTask } from "./task.ts";
 import { ConfigurationError } from "../errors.ts";
 import { adapterFor } from "./adapters/mod.ts";
+import { proxyIsolationProblem } from "./egress.ts";
 import { estimateArms, renderEstimate } from "./estimate.ts";
 import { loadExperiment } from "./config.ts";
 import { recoverInterrupted, runCell } from "./execution.ts";
@@ -237,6 +238,22 @@ export function planCampaign(
  */
 export const PLACED_CONCURRENCY_REFUSAL =
   "--concurrency > 1 is refused while the egress marker places sandboxes: every placed cell uses the one egress proxy on the sandbox gateway, which has no per-execution isolation yet (M1-33c); run with --concurrency 1";
+
+/**
+ * The M1-33c refusal, led by the proxy_isolation gate's finding (M1-33e)
+ * when the marker's value is not exactly PROXY_ISOLATION.
+ */
+export function placedConcurrencyRefusal(
+  proxyIsolation: unknown,
+  concurrency: number,
+): ConfigurationError {
+  const p = proxyIsolationProblem(proxyIsolation, concurrency);
+  return new ConfigurationError(
+    p
+      ? `egress marker ${p}; ${PLACED_CONCURRENCY_REFUSAL}`
+      : PLACED_CONCURRENCY_REFUSAL,
+  );
+}
 
 function judgmentsByExecution(
   data: CampaignRecords,
@@ -461,7 +478,8 @@ export async function runCampaign(
     );
   }
   if (o.concurrency > 1 && (env.egress !== undefined || env.egressEnforced)) {
-    throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+    // A placed environment without env.proxyIsolation is missing (fail closed).
+    throw placedConcurrencyRefusal(env.proxyIsolation, o.concurrency);
   }
   if (o.rerun && (o.sample !== undefined || o.repeats !== undefined)) {
     throw new ConfigurationError(
