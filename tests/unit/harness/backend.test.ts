@@ -109,7 +109,7 @@ async function grantFor(
 }
 
 async function setup(
-  opts: { revokeGraceMs?: number } = {},
+  opts: { revokeGraceMs?: number; graceElapsed?: () => Promise<void> } = {},
 ): Promise<Setup> {
   const root = await tmp();
   const seen: string[] = [];
@@ -157,6 +157,7 @@ async function setup(
     now: () => clock.t,
     bodyTimeoutMs: 100,
     revokeGraceMs: opts.revokeGraceMs ?? 50,
+    ...(opts.graceElapsed ? { graceElapsed: opts.graceElapsed } : {}),
   });
   await Deno.mkdir(join(root, "work"), { recursive: true });
   const tokenA = await grantFor(backend, root, EXEC_A, hostLog);
@@ -331,7 +332,13 @@ Deno.test("backend: a second concurrent request is 429; revoke waits for the in-
 });
 
 Deno.test("backend: revoke aborts an operation that outlives the grace and still returns", async () => {
-  const s = await setup();
+  // C-02: the test decides when each grace elapses. A wall-clock grace let
+  // the post-abort unwinding (real file I/O) outlast it under full-suite
+  // load, so the revoke reported no drain.
+  const graces: (() => void)[] = [];
+  const s = await setup({
+    graceElapsed: () => new Promise<void>((r) => graces.push(r)),
+  });
   s.gate.wait = new Promise<void>(() => {}); // never opens: only the abort ends it
   const first = s.backend.handle(
     req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
@@ -341,13 +348,16 @@ Deno.test("backend: revoke aborts an operation that outlives the grace and still
   // before the op started: 503, the other legitimate ordering (M1-19a).
   await s.entered;
   const t0 = performance.now();
-  assertEquals(
-    await s.backend.revoke(EXEC_A),
-    true,
-    "aborted within the second grace",
-  );
-  assert(performance.now() - t0 < 1_000);
+  const revoking = s.backend.revoke(EXEC_A);
+  assertEquals(graces.length, 1, "the first grace is running");
+  graces[0]!(); // the op outlives the first grace: the revoke aborts it
   assertEquals((await first).status, 500);
+  // The op has drained; the second grace elapses only now, so the revoke
+  // must report the drain it already saw.
+  graces[1]?.();
+  assertEquals(await revoking, true, "aborted within the second grace");
+  assertEquals(graces.length, 2, "the abort started the second grace");
+  assert(performance.now() - t0 < 1_000);
 });
 
 Deno.test("backend: a revoke during the token check never admits the request", async () => {
@@ -387,6 +397,11 @@ Deno.test("production ops: a revoke past the grace cancels before any further BC
     return gate;
   };
   const exec = "00000000-0000-4000-8000-00000000e004";
+  // C-02: the test decides when each grace elapses (see the backend revoke
+  // test above); the second grace starting means the abort has landed.
+  const graces: (() => void)[] = [];
+  let aborted!: () => void;
+  const abortLanded = new Promise<void>((r) => (aborted = r));
   const b = new Backend({
     scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
@@ -394,6 +409,11 @@ Deno.test("production ops: a revoke past the grace cancels before any further BC
     ops: defaultBackendOps(new BcLane(bc, ["C1"])),
     allowedHosts: ["127.0.0.1"],
     revokeGraceMs: 100,
+    graceElapsed: () =>
+      new Promise<void>((r) => {
+        graces.push(r);
+        if (graces.length === 2) aborted();
+      }),
   });
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl4.jsonl"));
   const pending = b.handle(req("/v1/test", tok, "{}", exec));
@@ -402,10 +422,12 @@ Deno.test("production ops: a revoke past the grace cancels before any further BC
   // compile (M1-19a).
   await inCompile;
   const revoking = b.revoke(exec);
-  await new Promise((r) => setTimeout(r, 150)); // past the first grace: the signal is aborted
+  graces[0]!(); // past the first grace: the signal is aborted
+  await abortLanded;
   releaseCompile();
-  assertEquals(await revoking, true);
   assert([500, 503].includes((await pending).status));
+  graces[1]!(); // the second grace elapses only after the drain
+  assertEquals(await revoking, true);
   assertEquals(
     bc.compiles.length,
     1,
