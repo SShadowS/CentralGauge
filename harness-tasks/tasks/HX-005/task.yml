@@ -1,5 +1,5 @@
 id: HX-005
-refapp_version: refapp-v1-rc7
+refapp_version: refapp-v1
 kind: refactor
 prompt: prompt.md
 touches: [Rental]

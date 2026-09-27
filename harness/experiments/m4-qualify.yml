@@ -1,0 +1,11 @@
+# M4-14 qualification experiment: a copy of M1's mock contract that qualifies the v1 task set
+# (spec 1b section 8). The positive and named naive variants per task are listed in
+# H:\Temp3\harness-spike\M4\freeze\qualify-manifest.json; loaded by harness validate in M4-15.
+id: m4-qualify
+hypothesis: "Qualifies the refapp v1 task set (spec 1b section 8): every task's positive variant passes and every named naive variant fails."
+primary_metric: pass_rate
+baseline: mock-naive-lock-table
+variants: [mock-positive]
+vary: [settings]
+tasks: "harness-tasks/tasks/HX-*"
+repeats: 1
