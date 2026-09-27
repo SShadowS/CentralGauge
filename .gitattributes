@@ -2,3 +2,5 @@
 tests/fixtures/harness/** -text
 # Bash refuses CRLF: the base image's cg-al shim stays LF on every checkout
 harness/images/base/cg-al text eol=lf
+# Hashed by the egress marker (recorded_hosts_sha256): never convert line endings.
+harness/egress/recorded-hosts.json -text

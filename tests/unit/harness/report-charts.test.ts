@@ -19,6 +19,8 @@ const base = async (): Promise<HarnessReport> =>
   );
 const get = (fs: { name: string; content: string }[], suffix: string) =>
   fs.find((f) => f.name.endsWith(suffix))!.content;
+// M6-02c: the OpenRouter balance the actual spend is measured from.
+const REF = { usd: 60, at: "2026-10-01T00:00:00.000Z" };
 // Schema ruling 3: every experiment has its totals in the ledger.
 const experiments = [{
   id: "mock-contract",
@@ -137,6 +139,7 @@ Deno.test("charts: the ledger becomes ledger.csv and must agree with the reports
     paid_total_usd: 12.5,
     openrouter_actual_usd: 12.5,
     claude_code_cash_usd: 0 as const,
+    openrouter_reference: REF,
     openrouter_balance_readings: [{
       at: "2026-10-15T10:00:00.000Z",
       balance_usd: 47.5,
@@ -193,6 +196,7 @@ Deno.test("charts: a manual rerun in a cut repeat is kept in the ledger, disclos
     paid_total_usd: 0,
     openrouter_actual_usd: 0,
     claude_code_cash_usd: 0 as const,
+    openrouter_reference: REF,
     openrouter_balance_readings: [{
       at: "2026-10-15T10:00:00.000Z",
       balance_usd: 60,
@@ -230,6 +234,7 @@ Deno.test("charts: a fired pi stop needs its report at the last complete repeat"
     paid_total_usd: 3,
     openrouter_actual_usd: 3,
     claude_code_cash_usd: 0 as const,
+    openrouter_reference: REF,
     openrouter_balance_readings: [{
       at: "2026-10-12T10:00:00.000Z",
       balance_usd: 57,
@@ -283,6 +288,7 @@ const ledgerOf = (
   paid_total_usd: 0,
   openrouter_actual_usd: 0,
   claude_code_cash_usd: 0 as const,
+  openrouter_reference: REF,
   openrouter_balance_readings: [{
     at: "2026-10-15T10:00:00.000Z",
     balance_usd: 60,
@@ -458,6 +464,7 @@ Deno.test("charts (ruling 2): pi_stop is one scalar row per field", async () => 
   const fired = ledgerOf(r, {
     paid_total_usd: 3,
     openrouter_actual_usd: 3,
+    openrouter_reference: REF,
     openrouter_balance_readings: [{
       at: "2026-10-12T10:00:00.000Z",
       balance_usd: 57,
@@ -809,6 +816,7 @@ Deno.test("charts (run 002, fix 2): every $ on a chart is labelled est. (list pr
   const ledger = ledgerOf(r, {
     paid_total_usd: 3,
     openrouter_actual_usd: 3,
+    openrouter_reference: REF,
     openrouter_balance_readings: [{
       at: "2026-10-12T10:00:00.000Z",
       balance_usd: 57,
@@ -859,6 +867,7 @@ Deno.test("charts (run 002, fix 4): a ledger whose paid total is below its OpenR
   const l = ledgerOf(r, {
     paid_total_usd: 2,
     openrouter_actual_usd: 3,
+    openrouter_reference: REF,
     openrouter_balance_readings: [{
       at: "2026-10-12T10:00:00.000Z",
       balance_usd: 57,
@@ -979,6 +988,7 @@ Deno.test("charts (M6-02a F1): a ledger with no report writes only ledger.csv, e
   const ledger = ledgerOf(r, {
     paid_total_usd: 3,
     openrouter_actual_usd: 3,
+    openrouter_reference: REF,
     openrouter_balance_readings: [{
       at: "2026-10-12T10:00:00.000Z",
       balance_usd: 57,
@@ -1174,4 +1184,77 @@ Deno.test("charts (M5-04a): the header's excluded line counts invalid traces of 
   assert(
     !get(renderCharts([cut(0)]), "-primary.svg").includes("invalid trace"),
   );
+});
+
+// M6-02c: the actual OpenRouter spend is measured from the ledger's own reference.
+
+const refLedger = (reference: unknown, readings: unknown) =>
+  ({
+    v: 1 as const,
+    paid_total_usd: 12.5,
+    openrouter_actual_usd: 12.5,
+    openrouter_reference: reference,
+    claude_code_cash_usd: 0 as const,
+    openrouter_balance_readings: readings,
+    experiments,
+    manual_reruns: [],
+    rejudges: [],
+    pi_stop: {
+      fired: false,
+      experiment: null,
+      at: null,
+      last_complete_repeat: null,
+      decision: null,
+    },
+  }) as unknown as Ledger;
+
+Deno.test("charts (M6-02c): the spend is the ledger reference minus the latest balance, and ledger.csv carries the reference", async () => {
+  const r = await base();
+  const ref = { usd: 61.09, at: "2026-09-27T12:00:00.000Z" };
+  const ok = refLedger(ref, [
+    { at: "2026-09-27T12:00:00.000Z", balance_usd: 61.09 },
+    { at: "2026-10-15T10:00:00.000Z", balance_usd: 48.59 },
+  ]);
+  const csv = get(renderCharts([r], ok), "ledger.csv");
+  assert(csv.includes("scalar,,,openrouter_reference_usd,61.09,all,"), csv);
+  assert(
+    csv.includes(
+      "scalar,,,openrouter_reference_at,2026-09-27T12:00:00.000Z,all,",
+    ),
+    csv,
+  );
+  // The old hard-coded 60 no longer passes: 60 - 48.59 is not 12.5.
+  assertThrows(
+    () =>
+      renderCharts(
+        [r],
+        refLedger({ ...ref, usd: 60 }, [ok.openrouter_balance_readings[1]]),
+      ),
+    Error,
+    "openrouter_reference",
+  );
+});
+
+Deno.test("charts (M6-02c): a missing reference, or a balance read before it, is refused", async () => {
+  const r = await base();
+  const late = [{ at: "2026-10-15T10:00:00.000Z", balance_usd: 47.5 }];
+  assertThrows(
+    () => renderCharts([r], refLedger(undefined, late)),
+    Error,
+    "openrouter_reference",
+  );
+  assertThrows(
+    () =>
+      renderCharts(
+        [r],
+        refLedger(REF, [
+          { at: "2026-09-30T23:59:59.000Z", balance_usd: 60 },
+          ...late,
+        ]),
+      ),
+    Error,
+    "before the openrouter_reference",
+  );
+  // A reading at the reference time itself is allowed.
+  renderCharts([r], refLedger(REF, [{ at: REF.at, balance_usd: 60 }, ...late]));
 });

@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "source": "record mode execution 9d68887a-e657-4ff3-8059-eabd65713e9d",
+  "routes": {
+    "anthropic:first-party-oauth": [
+      "api.anthropic.com"
+    ]
+  }
+}
