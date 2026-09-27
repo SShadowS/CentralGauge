@@ -158,6 +158,7 @@ import {
   evaluatePreflight,
   hostsForRoutes,
   loadRecordedHosts,
+  loadRecording,
   MARKER_FILE,
   MARKER_STATES,
   preflightExpect,
@@ -166,10 +167,13 @@ import {
   realEgressCollector,
   recordCellProblems,
   RECORDED_HOSTS_PATH,
+  RECORDED_ROUTE_HARNESS,
+  RECORDED_ROUTES,
   ROUTE_HOSTS,
   SANDBOX_NETWORK,
   sha256File,
   sha256Text,
+  sourceCell,
   verifyEgressState,
 } from "../../src/harness/egress.ts";
 import { PROXY_ISOLATION } from "../../src/harness/egress-proxy.ts";
@@ -3094,69 +3098,112 @@ async function authorizationProblems(
       }
     }
   }
+  p.push(
+    ...await recordedCellProblems(root, o.cell, RECORDED_ROUTES[0]!, {
+      qualifiedAt,
+      rotatedAt,
+      egressLog: true,
+    }),
+  );
+  // H-02 review: every other recorded route's recording cell, looked up from
+  // its own source, passes the same record-mode cell checks.
+  let rec = null;
+  try {
+    rec = await loadRecording(root);
+  } catch { /* the allowlist problem above names it */ }
+  for (const [route, source] of Object.entries(rec?.sources ?? {})) {
+    if (route === RECORDED_ROUTES[0]) continue;
+    const id = sourceCell(source);
+    if (id === null) {
+      p.push(`${route}: ${RECORDED_HOSTS_PATH} names no record-mode cell`);
+      continue;
+    }
+    p.push(
+      ...await recordedCellProblems(root, id, route, {
+        qualifiedAt,
+        rotatedAt,
+        egressLog: false,
+      }),
+    );
+  }
+  return { problems: p, allowlist };
+}
+
+/**
+ * A record-mode cell of `route` for authorization: its execution record,
+ * its record-mode facts and the recording's source for the route
+ * (recordCellProblems), the route's harness and route in its manifest,
+ * completed, started after the qualified marker and after the rotation;
+ * with egressLog, its egress.jsonl judged as M1-34e.
+ */
+async function recordedCellProblems(
+  root: string,
+  id: string,
+  route: string,
+  o: { qualifiedAt: string; rotatedAt: string; egressLog: boolean },
+): Promise<string[]> {
+  const p: string[] = [];
   const cells = join(root, "results", "harness", "cells");
   let cellPath: string | null = null;
   try {
     for (const d of Deno.readDirSync(join(cells, "executions"))) {
-      const f = join(cells, "executions", d.name, `${o.cell}.json`);
+      const f = join(cells, "executions", d.name, `${id}.json`);
       if (d.isDirectory && await exists(f)) cellPath = f;
     }
   } catch { /* no cells yet */ }
-  if (!cellPath) {
-    p.push(`cell ${o.cell} not found under ${cells}`);
-    return { problems: p, allowlist };
-  }
+  if (!cellPath) return [`cell ${id} not found under ${cells}`];
   // R-10 Sol run 001 P2: a re-derived cell is read with its overlay applied
   // and checked (readCellRecord), so this gate and the store agree.
-  const read = await readCellRecord(cells, o.cell);
-  if (read.problem) {
-    p.push(read.problem);
-    return { problems: p, allowlist };
-  }
+  const read = await readCellRecord(cells, id);
+  if (read.problem) return [read.problem];
   const cell = CellSchema.safeParse(
     read.record ?? await readJsonFile(cellPath, "execution"),
   );
   if (!cell.success) {
-    p.push(
+    return [
       `execution ${cellPath} is invalid: ${cell.error.issues[0]?.message}`,
-    );
-    return { problems: p, allowlist };
+    ];
   }
   const e = cell.data;
-  p.push(...await recordCellProblems(root, o.cell));
-  if (e.manifest.harness !== "claude-code") {
-    p.push(`cell ${o.cell} ran ${e.manifest.harness}, not claude-code`);
+  p.push(...await recordCellProblems(root, id, route));
+  const harness = RECORDED_ROUTE_HARNESS[route];
+  if (e.manifest.harness !== harness) {
+    p.push(`cell ${id} ran ${e.manifest.harness}, not ${harness}`);
+  }
+  if (!Object.values(e.manifest.provider_routes).includes(route)) {
+    p.push(`cell ${id} did not run on ${route}`);
   }
   if (e.termination !== "completed") {
     p.push(
-      `cell ${o.cell} ended ${e.termination}; authorization needs a completed cell`,
+      `cell ${id} ended ${e.termination}; authorization needs a completed cell`,
     );
   }
   const started = new Date(e.started_at).getTime();
-  if (started < new Date(qualifiedAt).getTime()) {
+  if (started < new Date(o.qualifiedAt).getTime()) {
     p.push(
-      `cell ${o.cell} started before the qualified marker (${qualifiedAt}): not an enforced cell`,
+      `cell ${id} started before the qualified marker (${o.qualifiedAt}): not an enforced cell`,
     );
   }
-  if (rotatedAt && started < new Date(rotatedAt).getTime()) {
+  if (o.rotatedAt && started < new Date(o.rotatedAt).getTime()) {
     p.push(
-      `cell ${o.cell} started before the rotation (${rotatedAt}); it must start after the rotation`,
+      `cell ${id} started before the rotation (${o.rotatedAt}); it must start after the rotation`,
     );
   }
+  if (!o.egressLog) return p;
   let log: string;
   try {
-    log = await Deno.readTextFile(join(cells, "runs", o.cell, "egress.jsonl"));
+    log = await Deno.readTextFile(join(cells, "runs", id, "egress.jsonl"));
   } catch {
-    p.push(`cell ${o.cell} has no egress.jsonl: not an enforced run`);
-    return { problems: p, allowlist };
+    p.push(`cell ${id} has no egress.jsonl: not an enforced run`);
+    return p;
   }
   // M1-34e: the preflight's own lines exactly as expected, the agent phase clean.
   p.push(
     ...cellEgressProblems(log, Object.values(e.manifest.provider_routes)).map(
-      (x) => `cell ${o.cell} egress.jsonl: ${x}`,
+      (x) => `cell ${id} egress.jsonl: ${x}`,
     ),
   );
-  return { problems: p, allowlist };
+  return p;
 }
 
 /**

@@ -3440,7 +3440,9 @@ async function authorizedLayout(
     recordedHostsJson(["chatgpt.example.test"], "record mode execution cx-1", {
       route: "openai-codex:oauth",
       existing: {
-        source: "record mode execution cell-1",
+        sources: {
+          "anthropic:first-party-oauth": "record mode execution cell-1",
+        },
         routes: { "anthropic:first-party-oauth": [RECORDED_OAUTH] },
       },
     }),
@@ -3466,6 +3468,29 @@ async function authorizedLayout(
       supervised: o.supervised ?? true,
       credential_bearing: true,
       harness: "claude-code",
+      termination: "completed",
+    }),
+  );
+  // The codex route's record-mode cell (H-02 review: rechecked at every read).
+  await Deno.writeTextFile(
+    join(cells, "executions", "camp1", "cx-1.json"),
+    JSON.stringify({
+      id: "cx-1",
+      manifest: { harness: "pi" },
+      termination: "completed",
+      started_at: new Date().toISOString(),
+    }),
+  );
+  await Deno.mkdir(join(cells, "runs", "cx-1"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "runs", "cx-1", "record-mode.json"),
+    JSON.stringify({
+      v: 1,
+      execution_id: "cx-1",
+      record_mode: true,
+      supervised: true,
+      credential_bearing: true,
+      harness: "pi",
       termination: "completed",
     }),
   );

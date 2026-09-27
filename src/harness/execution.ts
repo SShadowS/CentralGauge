@@ -3143,6 +3143,9 @@ export async function runExecution(
       ) + "\n",
     );
     // Merged beside the routes already recorded (read again: the latest file).
+    // ponytail: read-modify-write without a lock; two concurrent record runs on
+    // different routes can lose one recording. Ceiling: one supervised record
+    // run at a time; add a file lock if record runs ever overlap.
     await writeAtomic(
       recordedPath,
       recordedHostsJson([...recordedHosts], `record mode execution ${id}`, {

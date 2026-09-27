@@ -166,14 +166,35 @@ export const RECORDED_ROUTES: readonly string[] = [
 /** Written by M1-34 Step 11 (ops), committed with its evidence; never invented here. */
 export const RECORDED_HOSTS_PATH = "harness/egress/recorded-hosts.json";
 export type RecordedHosts = Record<string, string[]>;
-/** The recording file: one source line (each record-mode execution appends its own) and the hosts per route. */
+/**
+ * The recording: per route, its hosts and its source (the record-mode
+ * execution that recorded it, "record mode execution <id>"). File v2 holds
+ * `sources` keyed by route (H-02 review: a source is bound to its route);
+ * the single-source v1 file (the M1-34 Step 11 recording) still loads when
+ * it records one route, and is rewritten as v2 by the next recording.
+ */
 export interface Recording {
-  source: string;
+  sources: Record<string, string>;
   routes: RecordedHosts;
 }
+export const RECORD_SOURCE_PREFIX = "record mode execution ";
+/** The execution id a recording source names (null when it names none). */
+export const sourceCell = (source: string | undefined): string | null =>
+  source?.startsWith(RECORD_SOURCE_PREFIX)
+    ? source.slice(RECORD_SOURCE_PREFIX.length) || null
+    : null;
 
 /**
- * The recording file text for `route` (default: the first-party OAuth
+ * Recording rule (H-02 review): an OAuth token endpoint is never allowed,
+ * so a token can never be refreshed inside a sandbox: auth.openai.com, any
+ * openai.com host whose label starts with "auth" (auth0.openai.com), and
+ * any host under them.
+ */
+export const isTokenEndpointHost = (h: string) =>
+  /(^|\.)auth[a-z0-9-]*\.openai\.com$/.test(h);
+
+/**
+ * The recording file text (v2) for `route` (default: the first-party OAuth
  * route), merged beside the routes an existing recording already holds.
  * Sorted, unique, strict schema, non-empty: deterministic for the same
  * hosts and sources. A route is recorded once; recording it again needs its
@@ -192,16 +213,16 @@ export function recordedHostsJson(
       `${route} is already recorded in ${RECORDED_HOSTS_PATH}; remove its entry explicitly to record again`,
     );
   }
+  const sorted = <T>(r: Record<string, T>) =>
+    Object.fromEntries(
+      Object.entries(r).sort(([a], [b]) => a < b ? -1 : 1),
+    );
   const v = {
-    v: 1,
-    source: o.existing ? `${o.existing.source}; ${source}` : source,
-    routes: Object.fromEntries(
-      Object.entries({ ...prior, [route]: list }).sort(([a], [b]) =>
-        a < b ? -1 : 1
-      ),
-    ),
+    v: 2,
+    sources: sorted({ ...(o.existing?.sources ?? {}), [route]: source }),
+    routes: sorted({ ...prior, [route]: list }),
   };
-  const r = RecordedSchema.safeParse(v);
+  const r = RecordedV2Schema.safeParse(v);
   if (!r.success || list.length === 0) {
     throw new ConfigurationError(
       `cannot record ${
@@ -214,17 +235,36 @@ export function recordedHostsJson(
   return JSON.stringify(v, null, 2) + "\n";
 }
 
-const RecordedSchema = z.object({
+const RoutesSchema = z.record(
+  z.string().refine((r) => RECORDED_ROUTES.includes(r), {
+    message: `only ${RECORDED_ROUTES.join(", ")} take a recording`,
+  }),
+  z.array(
+    z.string().refine(isAllowableHost, { message: "not a hostname" }).refine(
+      (h) => !isTokenEndpointHost(h),
+      {
+        message: "an OAuth token endpoint (auth*.openai.com) is never recorded",
+      },
+    ),
+  ).min(1),
+);
+const RecordedV1Schema = z.object({
   v: z.literal(1),
   source: z.string().min(1),
-  routes: z.record(
-    z.string().refine((r) => RECORDED_ROUTES.includes(r), {
-      message: `only ${RECORDED_ROUTES.join(", ")} take a recording`,
-    }),
-    z.array(z.string().refine(isAllowableHost, { message: "not a hostname" }))
-      .min(1),
-  ),
+  routes: RoutesSchema.refine((r) => Object.keys(r).length === 1, {
+    message: "a v1 recording names one source, so it records one route",
+  }),
 }).strict();
+const RecordedV2Schema = z.object({
+  v: z.literal(2),
+  sources: z.record(z.string(), z.string().min(1)),
+  routes: RoutesSchema,
+}).strict().refine(
+  (x) =>
+    JSON.stringify(Object.keys(x.sources).sort()) ===
+      JSON.stringify(Object.keys(x.routes).sort()),
+  { message: "sources must name exactly the recorded routes" },
+);
 
 /** The ops recording; a missing file is no recording (null). */
 export async function loadRecording(
@@ -248,17 +288,28 @@ export async function loadRecording(
       `${RECORDED_HOSTS_PATH} is not JSON: ${(err as Error).message}`,
     );
   }
-  const r = RecordedSchema.safeParse(v);
+  const version = (v as { v?: unknown } | null)?.v;
+  const r = version === 1
+    ? RecordedV1Schema.safeParse(v)
+    : RecordedV2Schema.safeParse(v);
   if (!r.success) {
     throw new ConfigurationError(
-      `${RECORDED_HOSTS_PATH} is invalid: ${
+      `${RECORDED_HOSTS_PATH} is invalid (v${String(version)}): ${
         r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(
           "; ",
         )
       }`,
     );
   }
-  return { source: r.data.source, routes: r.data.routes };
+  const d = r.data;
+  return "source" in d
+    ? {
+      sources: Object.fromEntries(
+        Object.keys(d.routes).map((k) => [k, d.source]),
+      ),
+      routes: d.routes,
+    }
+    : { sources: d.sources, routes: d.routes };
 }
 
 /** The recorded hosts per route; a missing file is no recording (routes that need one then refuse). */
@@ -1995,6 +2046,16 @@ export async function authorizedMarkerProblems(
     }
   }
   if (cell) p.push(...await recordCellProblems(repoRoot, cell));
+  // Every other recorded route's record-mode cell, from its own source (H-02 review).
+  try {
+    const rec = await loadRecording(repoRoot);
+    for (const [route, source] of Object.entries(rec?.sources ?? {})) {
+      if (route === RECORDED_ROUTES[0]) continue;
+      const id = sourceCell(source);
+      if (id === null) p.push(`${route}: its recording names no cell`);
+      else p.push(...await recordCellProblems(repoRoot, id, route));
+    }
+  } catch { /* the recorded-hosts hash check names an unreadable file */ }
   return p;
 }
 
@@ -2054,11 +2115,12 @@ const NON_TERMINAL_OR_CRASH = [
   "usage_limited",
 ];
 
-/**
- * The Step 11 cell by content: its execution record exists and ended in a
- * terminal non-crash outcome; its record-mode facts say supervised,
- * credential-bearing Claude Code; the recording names it as its source.
- */
+/** The harness whose record-mode cell records each recorded route. */
+export const RECORDED_ROUTE_HARNESS: Readonly<Record<string, string>> = {
+  "anthropic:first-party-oauth": "claude-code",
+  "openai-codex:oauth": "pi",
+};
+
 /**
  * The record-mode cell's execution record, by id under the cells store. A
  * cell with a re-derivation (or a file carrying `rederived`) is read through
@@ -2109,9 +2171,16 @@ export async function readCellRecord(
   return { record, problem: null };
 }
 
+/**
+ * The Step 11 cell of `route` by content: its execution record exists and
+ * ended in a terminal non-crash outcome; its record-mode facts say
+ * supervised and credential-bearing, on the route's harness; the recording
+ * names it as that route's source (H-02 review: bound per route).
+ */
 export async function recordCellProblems(
   repoRoot: string,
   cell: string,
+  route: string = RECORDED_ROUTES[0]!,
 ): Promise<string[]> {
   const cells = join(repoRoot, "results", "harness", "cells");
   const p: string[] = [];
@@ -2150,9 +2219,10 @@ export async function recordCellProblems(
     p.push(`cell ${cell} ${RECORD_MODE_FILE} names ${f.execution_id}`);
   }
   if (!f.supervised) p.push(`cell ${cell} was not supervised`);
-  if (!f.credential_bearing || f.harness !== "claude-code") {
+  const harness = RECORDED_ROUTE_HARNESS[route] ?? "(no recorded route)";
+  if (!f.credential_bearing || f.harness !== harness) {
     p.push(
-      `cell ${cell} was not a credential-bearing Claude Code arm (${f.harness})`,
+      `cell ${cell} was not a credential-bearing ${harness} arm for ${route} (${f.harness})`,
     );
   }
   if (f.termination !== termination) {
@@ -2161,17 +2231,11 @@ export async function recordCellProblems(
     );
   }
   try {
-    const rec = JSON.parse(
-      await Deno.readTextFile(
-        join(repoRoot, ...RECORDED_HOSTS_PATH.split("/")),
-      ),
-    );
-    // One source per record-mode execution; a later route's recording (H-02) appends its own.
-    const sources = typeof rec?.source === "string"
-      ? rec.source.split("; ")
-      : [];
-    if (!sources.includes(`record mode execution ${cell}`)) {
-      p.push(`${RECORDED_HOSTS_PATH} was not recorded by cell ${cell}`);
+    const rec = await loadRecording(repoRoot);
+    if (rec !== null && sourceCell(rec.sources[route]) !== cell) {
+      p.push(
+        `${RECORDED_HOSTS_PATH} does not name cell ${cell} as the source of ${route}`,
+      );
     }
   } catch { /* the recorded-hosts hash check names a missing file */ }
   return p;

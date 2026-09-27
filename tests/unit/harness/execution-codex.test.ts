@@ -254,10 +254,11 @@ Deno.test("record mode (H-02): a supervised qualified pi codex cell records its 
     "anthropic:first-party-oauth": ["api.anthropic.com"],
     "openai-codex:oauth": ["ab.example.test", "chatgpt.example.test"],
   });
-  assertEquals(
-    JSON.parse(await Deno.readTextFile(path)).source,
-    `record mode execution cc-1; record mode execution ${e.id}`,
-  );
+  // H-02 review: each route's source is its own record-mode execution.
+  assertEquals(JSON.parse(await Deno.readTextFile(path)).sources, {
+    "anthropic:first-party-oauth": "record mode execution cc-1",
+    "openai-codex:oauth": `record mode execution ${e.id}`,
+  });
   const facts = JSON.parse(
     await Deno.readTextFile(
       join(t.env.resultsRoot, "runs", e.id, "record-mode.json"),
@@ -298,4 +299,30 @@ Deno.test("record mode (H-02): refused when the route is already recorded or the
     assertEquals(t.docker.runs, [], what);
     assertEquals(await Deno.readTextFile(path), text, what);
   }
+});
+
+Deno.test("record mode (H-02 review): a codex recording that reached an OAuth token endpoint is refused and writes nothing", async () => {
+  const t = await codexEnv();
+  const eg = enforce(t);
+  t.env.egressEnforced = false;
+  t.env.recordOAuthHosts = true;
+  eg.recordedHosts = {};
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    for (const target of ["chatgpt.example.test:443", "auth.openai.com:443"]) {
+      eg.log!({
+        at: new Date().toISOString(),
+        decision: "allow",
+        target,
+        reason: "allowed",
+      });
+    }
+    return await inner(call, io);
+  };
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t, ARM)),
+    ConfigurationError,
+    "token endpoint",
+  );
+  assertEquals(await loadRecordedHosts(t.env.repoRoot), {});
 });

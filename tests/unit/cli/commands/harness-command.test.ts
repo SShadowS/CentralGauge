@@ -2757,17 +2757,24 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
   );
   // H-02: the ChatGPT-subscription route has no fixed host; it too needs its recording.
   assertStringIncludes((await a(full)).join("\n"), "openai-codex:oauth");
-  await Deno.writeTextFile(
-    join(root, ...RECORDED_HOSTS_PATH.split("/")),
-    JSON.stringify({
-      v: 1,
-      source: "record mode execution cell-ok; record mode execution cell-cx",
-      routes: {
-        "anthropic:first-party-oauth": ["oauth.example.test"],
-        "openai-codex:oauth": ["chatgpt.example.test"],
-      },
-    }),
-  );
+  const writeRecording = (sources: Record<string, string>) =>
+    Deno.writeTextFile(
+      join(root, ...RECORDED_HOSTS_PATH.split("/")),
+      JSON.stringify({
+        v: 2,
+        sources,
+        routes: {
+          "anthropic:first-party-oauth": ["oauth.example.test"],
+          "openai-codex:oauth": ["chatgpt.example.test"],
+        },
+      }),
+    );
+  const bothSources = {
+    "anthropic:first-party-oauth": "record mode execution cell-ok",
+    "openai-codex:oauth": "record mode execution cell-cx",
+  };
+  await writeRecording(bothSources);
+  await writeCodexCell(root, "cell-cx", { started: past(2) });
   await writeRotation(["claude-oauth"]);
   assertStringIncludes((await a(full)).join("\n"), "openrouter");
   await writeRotation(["claude-oauth", "openrouter"]);
@@ -2776,6 +2783,46 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
   assertStringIncludes((await a(full)).join("\n"), "after the rotation");
   await writeRotation(["claude-oauth", "openrouter", "openai-codex"]);
   assertStringIncludes((await a({ ...full, cell: "nope" })).join("\n"), "nope");
+  // H-02 review: each route's recording is bound to its own record-mode cell.
+  // The Claude --cell must own the OAuth route's source.
+  await writeRecording({
+    ...bothSources,
+    "anthropic:first-party-oauth": "record mode execution cell-other",
+  });
+  assertStringIncludes(
+    (await a(full)).join("\n"),
+    "does not name cell cell-ok as the source of anthropic:first-party-oauth",
+  );
+  // Re-record spoof: the codex route's source names the Claude cell.
+  await writeRecording({
+    ...bothSources,
+    "openai-codex:oauth": "record mode execution cell-ok",
+  });
+  assertStringIncludes(
+    (await a(full)).join("\n"),
+    "cell cell-ok was not a credential-bearing pi arm for openai-codex:oauth",
+  );
+  // The codex recording cell passes the same checks: present, supervised, after the qualified marker.
+  await writeRecording({
+    ...bothSources,
+    "openai-codex:oauth": "record mode execution cell-gone",
+  });
+  assertStringIncludes((await a(full)).join("\n"), "cell-gone");
+  await writeRecording(bothSources);
+  await writeCodexCell(root, "cell-cx", {
+    started: past(2),
+    supervised: false,
+  });
+  assertStringIncludes(
+    (await a(full)).join("\n"),
+    "cell cell-cx was not supervised",
+  );
+  await writeCodexCell(root, "cell-cx", { started: past(-60) });
+  assertStringIncludes(
+    (await a(full)).join("\n"),
+    "cell cell-cx started before",
+  );
+  await writeCodexCell(root, "cell-cx", { started: past(2) });
   await writeCell("cell-pi", { harness: "pi", log: allow });
   assertStringIncludes(
     (await a({ ...full, cell: "cell-pi" })).join("\n"),
@@ -3277,6 +3324,41 @@ Deno.test("qualification probe (H-01): the privilege check runs before the prefl
 // Review item 3: an authorized marker carries, and every read rechecks, its evidence.
 
 /** A repo root taken through candidate, qualified and authorized with complete evidence. */
+/** H-02 review: the supervised record-mode pi cell that recorded openai-codex:oauth. */
+async function writeCodexCell(
+  root: string,
+  id: string,
+  o: { started: string; supervised?: boolean },
+) {
+  const cells = join(root, "results", "harness", "cells");
+  await Deno.mkdir(join(cells, "executions", "camp1"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "executions", "camp1", `${id}.json`),
+    JSON.stringify({
+      id,
+      manifest: {
+        harness: "pi",
+        provider_routes: { main: "openai-codex:oauth" },
+      },
+      termination: "completed",
+      started_at: o.started,
+    }),
+  );
+  await Deno.mkdir(join(cells, "runs", id), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "runs", id, "record-mode.json"),
+    JSON.stringify({
+      v: 1,
+      execution_id: id,
+      record_mode: true,
+      supervised: o.supervised ?? true,
+      credential_bearing: true,
+      harness: "pi",
+      termination: "completed",
+    }),
+  );
+}
+
 async function authorizedRoot(at?: string): Promise<string> {
   const root = at ?? await Deno.realPath(await testTempDir());
   const c = markerAwareCollector();
@@ -3309,14 +3391,18 @@ async function authorizedRoot(at?: string): Promise<string> {
   await Deno.writeTextFile(
     join(root, ...RECORDED_HOSTS_PATH.split("/")),
     JSON.stringify({
-      v: 1,
-      source: "record mode execution cell-ok",
+      v: 2,
+      sources: {
+        "anthropic:first-party-oauth": "record mode execution cell-ok",
+        "openai-codex:oauth": "record mode execution cell-cx",
+      },
       routes: {
         "anthropic:first-party-oauth": ["oauth.example.test"],
         "openai-codex:oauth": ["chatgpt.example.test"],
       },
     }),
   );
+  await writeCodexCell(root, "cell-cx", { started: later });
   const cells = join(root, "results", "harness", "cells");
   await Deno.mkdir(join(cells, "executions", "camp1"), { recursive: true });
   await Deno.writeTextFile(
@@ -11981,4 +12067,21 @@ Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded
   await plant(`${roots[0]}\\f.txt:hid`);
   await recoverContainer(o, d, mech);
   assertEquals(await findRecords(qDir, key), []);
+});
+
+Deno.test("authorized marker (H-02 review): every read rechecks the codex route's record-mode cell", async () => {
+  const root = await authorizedRoot();
+  const shared = join(root, "results", "harness");
+  assertEquals(
+    await egressMode(shared, () => Promise.resolve([])),
+    "enforced",
+  );
+  const facts = join(shared, "cells", "runs", "cell-cx", "record-mode.json");
+  const f = JSON.parse(await Deno.readTextFile(facts));
+  await Deno.writeTextFile(facts, JSON.stringify({ ...f, supervised: false }));
+  await assertRejects(
+    () => egressMode(shared, () => Promise.resolve([])),
+    ConfigurationError,
+    "cell cell-cx was not supervised",
+  );
 });
