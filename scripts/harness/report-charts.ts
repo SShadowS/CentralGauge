@@ -48,6 +48,11 @@ export const Ledger = z.strictObject({
   v: z.literal(1),
   paid_total_usd: z.number().nonnegative(),
   openrouter_actual_usd: z.number().nonnegative(),
+  /** M6-02c: the OpenRouter balance the actual spend is measured from, and when it was read. */
+  openrouter_reference: z.strictObject({
+    usd: z.number().nonnegative(),
+    at: z.iso.datetime(),
+  }),
   openrouter_balance_readings: z.array(
     z.strictObject({ at: z.iso.datetime(), balance_usd: z.number() }),
   ).min(1),
@@ -81,7 +86,6 @@ export interface OutFile {
   content: string;
 }
 
-const OPENROUTER_TOPUP_USD = 60;
 const W = 960;
 const H = 540;
 const PALETTE = ["#4E79A7", "#F28E2B", "#59A14F", "#B07AA1", "#76B7B2"];
@@ -221,13 +225,22 @@ function checkLedger(reports: Report[], raw: unknown) {
       }
     }
   }
+  const ref = l.openrouter_reference;
+  const early = l.openrouter_balance_readings.find((b) =>
+    Date.parse(b.at) < Date.parse(ref.at)
+  );
+  if (early) {
+    fail(
+      `openrouter balance reading ${early.at} is before the openrouter_reference (${ref.at})`,
+    );
+  }
   const latest = [...l.openrouter_balance_readings].sort((a, b) =>
     Date.parse(a.at) - Date.parse(b.at)
   ).at(-1)!;
-  const expected = OPENROUTER_TOPUP_USD - latest.balance_usd;
+  const expected = ref.usd - latest.balance_usd;
   if (Math.abs(expected - l.openrouter_actual_usd) > 1e-9) {
     fail(
-      `openrouter_actual_usd ${l.openrouter_actual_usd} is not ${OPENROUTER_TOPUP_USD} minus the latest balance ${latest.balance_usd} (${latest.at})`,
+      `openrouter_actual_usd ${l.openrouter_actual_usd} is not the openrouter_reference ${ref.usd} (${ref.at}) minus the latest balance ${latest.balance_usd} (${latest.at})`,
     );
   }
   if (l.paid_total_usd < l.openrouter_actual_usd) {
@@ -289,6 +302,8 @@ function ledgerCsv(l: Ledger, actions: Scoped[]): string {
   const rows = [
     scalar("", "paid_total_usd", l.paid_total_usd),
     scalar("", "openrouter_actual_usd", l.openrouter_actual_usd),
+    scalar("", "openrouter_reference_usd", l.openrouter_reference.usd),
+    scalar("", "openrouter_reference_at", l.openrouter_reference.at),
     scalar("", "claude_code_cash_usd", l.claude_code_cash_usd),
     ...([
       "fired",
