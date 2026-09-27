@@ -9,6 +9,7 @@
  */
 
 import { join } from "@std/path";
+import { ContainerError } from "../errors.ts";
 import type { EgressRuntime, EgressState } from "./egress.ts";
 import type {
   DockerCli,
@@ -27,8 +28,8 @@ import {
   bounded,
   createSecretsDir,
   READY_FILE,
-  removeSecrets,
   runSandbox,
+  teardownSandbox,
   writeSecretFiles,
 } from "./sandbox.ts";
 
@@ -65,6 +66,10 @@ export async function runQualificationProbe(
   const opMs = o.spec.opTimeoutMs;
   const hosts = o.hosts ?? PROBE_HOSTS;
   let secrets: string | null = null;
+  const stop = new AbortController();
+  /** M5-08a: the started run until it is awaited; the teardown stops it first. */
+  let pending: Promise<SandboxResult> | null = null;
+  let settled: SandboxResult | null = null;
   const proxy = await o.egress.startProxy({
     allowedHosts: hosts,
     log: (l) => {
@@ -93,8 +98,7 @@ export async function runQualificationProbe(
     secrets = await createSecretsDir(o.custody);
     const waitReady =
       "$sw = [Diagnostics.Stopwatch]::StartNew(); while (-not (Test-Path 'C:\\cg-secrets\\ready')) { if ($sw.Elapsed.TotalSeconds -ge 600) { exit 3 }; Start-Sleep -Milliseconds 500 }; ";
-    const stop = new AbortController();
-    const running = runSandbox(
+    const running = pending = runSandbox(
       o.docker,
       {
         ...o.spec,
@@ -151,11 +155,32 @@ export async function runQualificationProbe(
       }]);
       await Deno.writeTextFile(join(secrets, READY_FILE), "");
     }
-    return { sandbox: await running, problems, evidence };
+    settled = await running;
+    return { sandbox: settled, problems, evidence };
   } finally {
+    // M5-08a: sandbox stopped and confirmed gone, then its secrets dir.
+    const down = await teardownSandbox({
+      docker: o.docker,
+      name: o.spec.name,
+      executionId: o.spec.executionId,
+      opTimeoutMs: opMs,
+      run: pending,
+      abort: () => stop.abort(),
+      settled,
+      secretsDir: secrets,
+    });
     await bounded(proxy.shutdown(), opMs, "egress proxy shutdown").catch(
       () => {},
     );
-    if (secrets) await removeSecrets(secrets);
+    if (!down.gone || down.secretsLeft) {
+      // Fail closed and loud; the next start sweeps the container, then the secrets.
+      throw new ContainerError(
+        `qualification probe ${o.spec.name}: teardown not confirmed (${
+          down.problems.join("; ")
+        }); resolve before the next run`,
+        o.spec.name,
+        "stop",
+      );
+    }
   }
 }

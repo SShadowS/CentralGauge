@@ -421,6 +421,72 @@ Deno.test("unconfirmed termination: nothing is frozen or published; recovery fin
   assertEquals((await t.env.store.judgments(e!.id))[0]!.verdict, "pass");
 });
 
+// M5-08a: a sandbox that is not confirmed gone still holds its secrets mount
+// (EBUSY on the real host). The secrets dir must not be pulled from under it,
+// and that failure must never mask the fail-closed "termination not confirmed".
+Deno.test("M5-08a: a lingering sandbox keeps its secrets mount: termination not confirmed, secrets left for recovery", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  let secretsDir = "";
+  t.docker.behavior = async (call, io) => {
+    t.docker.lingering.add(call.name);
+    secretsDir = call.mounts.get("C:\\cg-secrets")!.src;
+    return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ContainerError,
+    "termination not confirmed",
+  );
+  // On the host a live mount makes removal fail (os error 32) and that error
+  // used to replace this one; the dir is now never touched while it is held.
+  assert(await exists(secretsDir), "secrets stay until the container is gone");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  t.docker.lingering.clear();
+  const [e] = await recoverInterrupted(t.env, loadTask);
+  assertEquals(e!.termination, "harness_crash");
+  assert(
+    !await exists(secretsDir),
+    "recovery removes them after the container",
+  );
+});
+
+Deno.test("M5-08a: a failed rm -f is retried until the sandbox is confirmed gone, then secrets go, then the record", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  const events: string[] = [];
+  let secretsDir = "";
+  t.docker.behavior = async (call, io) => {
+    secretsDir = call.mounts.get("C:\\cg-secrets")!.src;
+    t.docker.rmFails.add(call.name); // runSandbox's own rm -f fails
+    return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  const rm = t.docker.rm.bind(t.docker);
+  let n = 0;
+  t.docker.rm = async (name) => {
+    if (++n >= 3) t.docker.rmFails.delete(name); // the daemon recovers
+    const r = await rm(name);
+    events.push(`rm ${r.code}; secrets ${await exists(secretsDir)}`);
+    return r;
+  };
+  const r = await runCell(t.env, cell);
+  const e = r.executions[0]!;
+  assertEquals(e.termination, "completed");
+  assert(!await exists(secretsDir));
+  // Every rm while the container stayed happened with the secrets still there.
+  assertEquals(events.at(-1), "rm 0; secrets true");
+  assert(
+    events.slice(0, -1).every((x) => x === "rm 1; secrets true"),
+    events.join(" | "),
+  );
+});
+
 Deno.test("every published surface is redacted (UTF-8 and UTF-16): logs, stderr, trace, side file, record, workspace", async () => {
   const t = await makeEnv();
   let token = "";

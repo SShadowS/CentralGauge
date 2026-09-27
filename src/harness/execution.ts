@@ -83,7 +83,6 @@ import {
   readSecretValues,
   READY_FILE,
   redactText,
-  removeSecrets,
   restrictPath,
   runSandbox,
   sandboxName,
@@ -91,6 +90,7 @@ import {
   type SecretValue,
   sweepOwnedSandboxes,
   sweepStaleSecrets,
+  teardownSandbox,
   writeSecretFiles,
 } from "./sandbox.ts";
 import { type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
@@ -1329,6 +1329,8 @@ export async function runExecution(
   await env.hooks?.prepared?.(id);
 
   let setupError: string | null = null;
+  /** M5-08a: what the teardown could not confirm (container or secrets). */
+  let teardownProblems: string[] = [];
   let sandbox: SandboxResult = {
     exitCode: null,
     started: false,
@@ -1488,6 +1490,9 @@ export async function runExecution(
       hostLog: p.host,
     }, timeoutMs + 5 * 60_000);
     let secretsDir: string | null = null;
+    /** The started run until it is awaited (M5-08a: teardown stops it first). */
+    let pending: Promise<SandboxResult> | null = null;
+    let settledRun: SandboxResult | null = null;
     try {
       const values = await readSecretValues(
         secretsSource,
@@ -1568,7 +1573,7 @@ export async function runExecution(
       // Not placed: released before the start (M3-10). Placed: the mount
       // stays empty until the preflight passes (M1-33 A3).
       if (!eg) await release();
-      const running = runSandbox(
+      const running = pending = runSandbox(
         env.docker,
         {
           name,
@@ -1681,7 +1686,7 @@ export async function runExecution(
           }
         }
       }
-      sandbox = await running;
+      sandbox = settledRun = await running;
       if (releaseError !== null) throw releaseError;
       // I4 (design section 5): a placed execution is recorded as anything
       // but setup_failed only while its registration and the proxy are intact.
@@ -1711,13 +1716,33 @@ export async function runExecution(
         throw egressFail(`egress preflight failed: ${preflightError}`);
       }
     } finally {
+      // M5-08a: the sandbox is stopped and confirmed gone before the
+      // secrets it mounts are removed; a removal failure never replaces the
+      // error in flight (the caller fails closed below).
+      const down = await teardownSandbox({
+        docker: env.docker,
+        name,
+        executionId: id,
+        opTimeoutMs: opMs,
+        run: pending,
+        abort: () =>
+          egressAbort.abort(new Error("execution ended before its sandbox")),
+        settled: settledRun,
+        secretsDir,
+      });
+      if (down.sandbox) sandbox = down.sandbox;
+      if (!down.gone || down.secretsLeft) {
+        teardownProblems = down.problems;
+        if (sandbox.confirmedGone && !down.gone) {
+          sandbox = { ...sandbox, confirmedGone: false };
+        }
+      }
       drained = await env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
       if (reg) {
         await bounded(reg.unregister(), opMs, "egress unregister").catch(
           (err) => console.warn(`[WARN] ${msg(err)}`),
         );
       }
-      if (secretsDir) await removeSecrets(secretsDir);
     }
   } catch (err) {
     if (err === refusal) {
@@ -1728,13 +1753,24 @@ export async function runExecution(
     if (
       !(err instanceof ConfigurationError) && !(err instanceof ValidationError)
     ) {
+      if (teardownProblems.length > 0) {
+        // Fail closed and loud: the intent stays; the next start sweeps the
+        // container first, then the secrets, then recovers the execution.
+        console.error(
+          `[FAIL] sandbox ${name} teardown not confirmed (${
+            teardownProblems.join("; ")
+          }); intent kept for recovery`,
+        );
+      }
       throw err;
     }
     setupError = err.message;
   }
-  if (!sandbox.confirmedGone || !drained) {
+  if (!sandbox.confirmedGone || !drained || teardownProblems.length > 0) {
     throw new ContainerError(
-      `termination not confirmed for ${name} (${sandbox.cleanup}${
+      `termination not confirmed for ${name} (${
+        [sandbox.cleanup, ...teardownProblems].join("; ")
+      }${
         drained ? "" : "; backend request did not drain"
       }); nothing frozen, intent kept; resolve and restart (recovery finalizes it)`,
       name,
