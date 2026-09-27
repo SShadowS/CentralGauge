@@ -658,3 +658,63 @@ Deno.test("mutant_kill (M4-17a review): a new-file procedure that calls a shippe
     "Wrapper: calls shipped [Test] 80010 ShippedPasses",
   );
 });
+
+Deno.test("mutant_kill (M4-17a run 002, R1): trusted platform dispatch (JQE-style) cannot reach a shipped test: mutant_kill builds deploy no shipped test codeunit", async () => {
+  const agentBuilds: string[] = [];
+  const fake = bc();
+  const inner = fake.script;
+  fake.script = (cu, deployed, c) => {
+    if (cu !== 80140) return inner(cu, deployed, c);
+    const test = deployedSource(deployed, "CGR Test");
+    agentBuilds.push(test);
+    const ten = deployedSource(deployed, "CGR Rental").includes("exit(10);");
+    return result({
+      PriceIsTen: ten ? true : "Assert.AreEqual failed. Expected:<10>",
+      // A literal platform codeunit running a record's computed id: were the
+      // shipped 80010 deployed, it would run here.
+      Dispatches: test.includes("codeunit 80010") ? "SHIPPED 80010 RAN" : true,
+    });
+  };
+  const { judgment } = await judge(
+    new BcLane(fake, ["C1"]),
+    await setup({ "off-by-one": "exit(9);" }, {
+      edits: {
+        "Test/src/Agent80140.Test.al":
+          `codeunit 80140 "Agent 80140"\n{\n    Subtype = Test;\n${PRICE_TEST}
+    [Test]
+    procedure Dispatches()
+    var
+        JQE: Record "Job Queue Entry";
+    begin
+        JQE."Object ID to Run" := 80000 + 10;
+        Codeunit.Run(Codeunit::"Job Queue Start Codeunit", JQE);
+    end;
+}
+`,
+      },
+    }),
+  );
+  assertEquals(
+    agentBuilds.length,
+    3,
+    "reference, mutant 0 and the named mutant",
+  );
+  for (const src of agentBuilds) {
+    assert(
+      !src.includes("codeunit 80010"),
+      "no shipped test codeunit deployed",
+    );
+    assertStringIncludes(src, "procedure Dispatches()");
+  }
+  // The shipped 80010 runs once: in the trusted pass_to_pass hold.
+  assertEquals(fake.tests.filter((t) => t.codeunit === 80010).length, 1);
+  assertEquals(sc(judgment, "pass_to_pass").passed, true);
+  const mk = sc(judgment, "mutant_kill");
+  assert(
+    mk.tests.some((t) =>
+      t.procedure === "Dispatches" && t.target === "reference" &&
+      t.outcome === "pass"
+    ),
+    "the clean dispatch test still compiles, runs and counts",
+  );
+});

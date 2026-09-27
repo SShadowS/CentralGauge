@@ -4,9 +4,15 @@
  * the pristine Test app (items A and B of the task). Mock only.
  */
 
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import { join } from "@std/path";
 import { HARNESS_EXTRACTED_TEST_RANGE } from "../../../src/constants.ts";
+import { ValidationError } from "../../../src/errors.ts";
 import { exists, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import {
   addedTestCodeunits,
@@ -1081,4 +1087,62 @@ Deno.test("credit (run 002): a TestRunner codeunit in agent code excludes every 
   assertEquals(v.excluded, [80100]);
   assertStringIncludes(notes, "Agent Runner: ");
   assertStringIncludes(notes, "no agent test is run or counted");
+});
+
+// ---- M4-17a run 002, R1: mutant_kill builds leave the shipped test codeunits out ----
+
+async function rebuildDropped(p: string, a: string) {
+  return await buildVerdictWorkspace({
+    pristine: p,
+    artifact: a,
+    out: join(await tmp(), "verdict"),
+    symbolIds: new Set([IDS.assert]),
+    dropShippedTests: true,
+  });
+}
+
+Deno.test("dropShippedTests: every shipped test codeunit is left out; the library, new files and the generated codeunit stay", async () => {
+  const p = await pristineDir();
+  const v = await rebuildDropped(
+    p,
+    await artifactFrom(p, {
+      [NEW]: newFile(GOOD),
+      "Test/src/Suite.Test.al": agentSuite(`
+    [Test]
+    procedure Mine()
+    begin
+        Assert.AreEqual(3, 1 + 2, 'sum');
+    end;
+`),
+    }),
+  );
+  assertEquals(v.violations, []);
+  for (
+    const shipped of ["Test/src/Shipped.Test.al", "Test/src/Suite.Test.al"]
+  ) {
+    assertEquals(await exists(join(v.dir, shipped)), false, shipped);
+  }
+  assert(await exists(join(v.dir, "Test/src/Lib.Codeunit.al")));
+  assert(await exists(join(v.dir, NEW)));
+  const gen = await Deno.readTextFile(join(v.dir, ...GEN.split("/")));
+  assertStringIncludes(gen, "procedure Mine()");
+  assertEquals(
+    (await addedTestCodeunits(join(p, "Test"), join(v.dir, "Test"))).map((
+      x,
+    ) => [x.codeunit, x.procedures]),
+    [[80100, ["Good"]], [84990, ["Mine"]]],
+  );
+});
+
+Deno.test("dropShippedTests: a shipped object that references a shipped test codeunit fails closed", async () => {
+  const p = await pristineDir({
+    "Test/src/Lib.Codeunit.al":
+      `codeunit 80090 "CGR Test Library"\n{\n    procedure RunSuite()\n    begin\n        Codeunit.Run(Codeunit::"CGR Suite");\n    end;\n}\n`,
+  });
+  const a = await artifactFrom(p, {});
+  await assertRejects(
+    () => rebuildDropped(p, a),
+    ValidationError,
+    "Test/src/Lib.Codeunit.al references shipped test codeunit 80020 CGR Suite",
+  );
 });

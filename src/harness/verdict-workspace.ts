@@ -56,6 +56,12 @@ export interface ReconstructOptions {
   out: string;
   productionFrom?: string | undefined;
   symbolIds: ReadonlySet<string>;
+  /**
+   * mutant_kill builds (M4-17a run 002): leave every shipped `Subtype = Test`
+   * codeunit out of the Test app, so no dispatch of any kind (a platform
+   * codeunit running a computed id, a test runner) can reach a shipped test.
+   */
+  dropShippedTests?: boolean;
 }
 
 export interface VerdictWorkspace {
@@ -246,6 +252,10 @@ export async function buildVerdictWorkspace(
         newTestFiles,
       )
       : { notes: [], excluded: [] };
+
+  if (o.dropShippedTests && violations.length === 0) {
+    await dropShippedTestCodeunits(o.pristine, out);
+  }
 
   const changed: string[] = [];
   for (const app of pristineApps) {
@@ -819,7 +829,10 @@ function shippedUnitRef(
  * Identifiers that can reach a codeunit chosen at run time, or run tests:
  * object metadata, RecordRef/Variant dispatch, sessions and tasks, test
  * runners and the test tool. Any use rejects the member (over-rejects on
- * purpose: fail closed).
+ * purpose: fail closed; e.g. Variant also rejects LibraryVariableStorage
+ * patterns, accepted). Defence in depth: mutant_kill builds carry no shipped
+ * test codeunit at all (dropShippedTests), which closes dispatch through
+ * trusted platform code (a Job Queue Entry's computed "Object ID to Run").
  */
 const DISPATCH_IDS = new Set([
   "allobj",
@@ -1387,4 +1400,54 @@ async function applyCreditRules(
     await Deno.writeTextFile(dest, text);
   }
   return { notes, excluded };
+}
+
+/**
+ * Removes every shipped test codeunit from the verdict copy's Test app
+ * (dropShippedTests). Throws ValidationError (a task defect, never the
+ * agent's) when a shipped test codeunit shares its file with another object
+ * or a kept shipped object references a removed one (the build would break).
+ */
+async function dropShippedTestCodeunits(
+  pristine: string,
+  out: string,
+): Promise<void> {
+  const testDir = join(pristine, TEST_APP);
+  const shipped = await shippedTests(testDir);
+  if (shipped === null) {
+    throw new ValidationError(
+      "a shipped test codeunit could not be parsed; mutant_kill cannot leave the shipped tests out",
+      [TEST_APP],
+    );
+  }
+  const drop: string[] = [];
+  const kept: string[] = [];
+  for (const e of await listTree(testDir, "task", { optional: true })) {
+    if (!e.path.toLowerCase().endsWith(".al")) continue;
+    const decls = declarations(await Deno.readTextFile(join(testDir, e.path)));
+    const tests = decls.filter(isTestCodeunit).length;
+    if (tests === 0) kept.push(e.path);
+    else if (tests === decls.length) drop.push(e.path);
+    else {
+      throw new ValidationError(
+        `${TEST_APP}/${e.path}: a shipped test codeunit shares its file with other objects; mutant_kill cannot leave it out`,
+        [e.path],
+      );
+    }
+  }
+  for (const rel of kept) {
+    const text = stripAlNoise(
+      await Deno.readTextFile(join(testDir, ...rel.split("/"))),
+    );
+    const unit = shippedUnitRef(text, 0, text.length, shipped);
+    if (unit) {
+      throw new ValidationError(
+        `${TEST_APP}/${rel} references shipped test codeunit ${unit}; mutant_kill cannot leave the shipped tests out`,
+        [rel],
+      );
+    }
+  }
+  for (const rel of drop) {
+    await Deno.remove(join(out, TEST_APP, ...rel.split("/")));
+  }
 }

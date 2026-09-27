@@ -639,6 +639,8 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     out: join(i.workDir, "verdict"),
     productionFrom: reference,
     symbolIds: i.symbolIds,
+    // mutant_kill builds carry no shipped test codeunit (M4-17a run 002).
+    dropShippedTests: true,
   });
   log.spans.reconstruct_ms = performance.now() - tr;
   log.violations = vw.violations;
@@ -858,6 +860,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
         out: join(i.workDir, `mutant-${m}`),
         productionFrom: production,
         symbolIds: i.symbolIds,
+        dropShippedTests: true,
       });
       const mp = await prepare(mv.dir, mv.apps, mv.changed, `apps-mutant-${m}`);
       recordBuild(ctx, mp, target);
