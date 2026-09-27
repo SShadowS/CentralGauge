@@ -29,7 +29,7 @@ Deno.test("backend-probe args: --image and --route (M3-08) resolve the route's h
   assertEquals(
     await parseProbeArgs([
       "Cronus281",
-      "C:\s",
+      "C:\\s",
       "--enforced",
       "--image",
       "sha256:abc",
@@ -38,7 +38,7 @@ Deno.test("backend-probe args: --image and --route (M3-08) resolve the route's h
     ]),
     {
       container: "Cronus281",
-      secretsDir: "C:\s",
+      secretsDir: "C:\\s",
       enforced: true,
       command: null,
       withholdToken: false,

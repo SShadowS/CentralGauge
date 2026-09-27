@@ -2216,7 +2216,7 @@ Deno.test("qualification probe: hosts override the default route host (M3-08 --r
       rawLog: join(out, "probe.jsonl"),
       stderrLog: join(out, "stderr.txt"),
     },
-    probeCommand: ["powershell", "-File", "C:\config\cg-al-probe.ps1"],
+    probeCommand: ["powershell", "-File", "C:\\config\\cg-al-probe.ps1"],
     out,
     hosts: ["openrouter.ai"],
     collect: () => markerAwareCollector()(markerPath),
