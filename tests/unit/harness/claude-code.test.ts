@@ -1953,3 +1953,36 @@ Deno.test("claude-code parse (M5-07a): a heartbeat inside the run is not a strea
   assertEquals(r.telemetry.cost_usd, base.telemetry.cost_usd);
   assert(r.telemetry.cost_usd !== null);
 });
+
+Deno.test("claude-code parse (M5-07a run 002): a tool_progress that is not the recorded heartbeat shape is a stream problem", async () => {
+  const l = (await Deno.readTextFile(FIXTURE)).split("\n").filter(Boolean);
+  const sid = JSON.parse(l[0]!).session_id;
+  const beat = {
+    type: "tool_progress",
+    tool_use_id: "toolu_x-heartbeat-0",
+    tool_name: "Bash",
+    parent_tool_use_id: "toolu_x",
+    elapsed_time_seconds: 30,
+    heartbeat: true,
+    session_id: sid,
+    uuid: "00000000-0000-4000-8000-000000000001",
+  };
+  const cases: [string, Record<string, unknown>][] = [
+    ["usage", { ...beat, usage: { input_tokens: 5 } }],
+    ["total_cost_usd", { ...beat, total_cost_usd: 0.01 }],
+    ["an unknown field", { ...beat, extra: 1 }],
+    ["not a heartbeat", { ...beat, heartbeat: false }],
+    ["elapsed not a number", { ...beat, elapsed_time_seconds: "30" }],
+    ["a missing field", (({ uuid: _, ...rest }) => rest)(beat)],
+  ];
+  for (const [what, rec] of cases) {
+    const { r } = await parse(
+      [l[0]!, JSON.stringify(rec), ...l.slice(1)].join("\n"),
+    );
+    assertEquals(
+      problems(r).filter((p) => p.includes("tool_progress")),
+      ["tool_progress at line 2 is not a heartbeat of the recorded shape"],
+      what,
+    );
+  }
+});

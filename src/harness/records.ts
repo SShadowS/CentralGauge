@@ -326,6 +326,11 @@ export const CampaignRecordSchema = z.strictObject({
     config_id: z.string(),
     manifest_hash: Sha256Hex,
     manifest: ResolvedManifestSchema,
+    /**
+     * The adapter's parser version at creation (M5-07a). Optional so older
+     * campaigns still load for reports; a campaign without it never resumes.
+     */
+    parser: z.string().min(1).optional(),
   })).min(2),
   /** The full plan (every task x repeat). Staged runs execute subsets of it. */
   blocks: z.array(BlockSchema).min(1),

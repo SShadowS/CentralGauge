@@ -388,9 +388,14 @@ function campaignDrift(
   cur: {
     expHash: string;
     identity: string;
-    arms?: { config_id: string; manifest_hash: string }[];
+    arms?: {
+      config_id: string;
+      manifest_hash: string;
+      parser?: string | undefined;
+    }[];
   },
 ): string[] {
+  const stored = (id: string) => x.arms.find((y) => y.config_id === id);
   return [
     ...(x.experiment_hash === cur.expHash ? [] : ["experiment_hash"]),
     ...(x.task_set.identity === cur.identity ? [] : ["task_set.identity"]),
@@ -401,6 +406,15 @@ function campaignDrift(
         )
       ? []
       : ["arms[].manifest_hash"]),
+    // M5-07a: a parse under another parser version is not the campaign's; a
+    // campaign that recorded none (before M5-07a) is refused, never assumed.
+    ...(!cur.arms ||
+        cur.arms.every((a) =>
+          a.parser !== undefined &&
+          stored(a.config_id)?.parser === a.parser
+        )
+      ? []
+      : ["arms[].parser"]),
   ];
 }
 
@@ -542,6 +556,7 @@ export async function runCampaign(
       config_id: config.id,
       manifest_hash: await manifestHash(manifest),
       manifest,
+      parser: adapterFor(config.harness).parser,
     });
   }
   const expHash = await experimentHash(experiment);

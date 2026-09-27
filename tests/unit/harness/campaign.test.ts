@@ -21,6 +21,7 @@ import { imageTag, mcpLabel } from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
 import { buildReport } from "../../../src/harness/report.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
+import { mockAdapter } from "../../../src/harness/adapters/mock.ts";
 import { EXECUTION_LABEL } from "../../../src/harness/sandbox.ts";
 import { write } from "./refapp-fixture.ts";
 import {
@@ -849,4 +850,62 @@ Deno.test("--rerun composes with --campaign, --dry-run and --stop-file; refuses 
     io(),
   );
   assertEquals([s.campaignId, s.ran, await count()], [c.id, 2, n + 2]);
+});
+
+// ---- M5-07a run 002: each arm's parser version is pinned in the campaign ----
+
+Deno.test("M5-07a: a campaign pins each arm's parser; resume under the same parser, never under another", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "contract", opts(), io());
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  assertEquals(c.arms.map((a) => a.parser), [
+    mockAdapter.parser,
+    mockAdapter.parser,
+  ]);
+  const same = await runCampaign(
+    t.env,
+    "contract",
+    opts({ campaign: c.id }),
+    io(),
+  );
+  assertEquals([same.campaignId, same.created], [c.id, false]);
+  const was = mockAdapter.parser;
+  for (const other of ["mock-trace@0", "mock-trace@9"]) {
+    mockAdapter.parser = other;
+    try {
+      await assertRejects(
+        () => runCampaign(t.env, "contract", opts({ campaign: c.id }), io()),
+        ConfigurationError,
+        "arms[].parser",
+      );
+    } finally {
+      mockAdapter.parser = was;
+    }
+  }
+  assertEquals((await t.env.store.campaigns("contract")).length, 1);
+});
+
+Deno.test("M5-07a: a campaign recorded without parser versions is never resumed; an unpinned run starts a new one", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "contract", opts(), io());
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  // A record from before M5-07a: the arms carry no parser.
+  const file = join(t.env.resultsRoot, "campaigns", `${c.id}.json`);
+  const rec = JSON.parse(await Deno.readTextFile(file));
+  for (const a of rec.arms) delete a.parser;
+  await Deno.remove(file);
+  await Deno.writeTextFile(file, JSON.stringify(rec));
+  const legacy = (await t.env.store.campaigns("contract"))[0]!;
+  assertEquals(legacy.arms.map((a) => a.parser), [undefined, undefined]);
+  await assertRejects(
+    () => runCampaign(t.env, "contract", opts({ campaign: c.id }), io()),
+    ConfigurationError,
+    "arms[].parser",
+  );
+  const s = await runCampaign(t.env, "contract", opts(), io());
+  assertEquals(s.created, true);
+  assert(s.campaignId !== c.id);
+  assertEquals((await t.env.store.campaigns("contract")).length, 2);
 });
