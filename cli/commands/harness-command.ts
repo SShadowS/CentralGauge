@@ -75,7 +75,7 @@ import { rejudgeExecution, runCell } from "../../src/harness/execution.ts";
 import {
   cellRefFor,
   loadCampaignData,
-  PLACED_CONCURRENCY_REFUSAL,
+  placedConcurrencyRefusal,
   planCampaign,
   precheckCampaignPin,
   runCampaign,
@@ -89,6 +89,7 @@ import {
 import { hashTree } from "../../src/harness/hash.ts";
 import {
   authorizedMarkerProblems,
+  cellEgressProblems,
   collectEgressState,
   evaluatePreflight,
   hostsForRoutes,
@@ -139,7 +140,12 @@ import {
   writeVerdictLog,
 } from "../../src/harness/verdict.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
-import { markerPlaces, openHarnessEnv, openPlanEnv } from "./harness-env.ts";
+import {
+  markerPlaces,
+  markerProxyIsolation,
+  openHarnessEnv,
+  openPlanEnv,
+} from "./harness-env.ts";
 
 /** Loud, file-naming failures are collected; anything else is a bug. */
 function isProblem(err: unknown): err is Error {
@@ -987,12 +993,14 @@ export async function harnessRun(
     ...(o.rerun !== undefined ? { rerun: o.rerun } : {}),
   };
   const command = `harness run ${experimentId}`;
-  // M1-33c: before any lock, sweep or recovery writes (runCampaign rechecks).
-  if (
-    o.concurrency > 1 &&
-    await markerPlaces(join(o.root, "results", "harness"))
-  ) {
-    throw new ConfigurationError(PLACED_CONCURRENCY_REFUSAL);
+  // M1-33c: before any lock, sweep or recovery writes (runCampaign rechecks),
+  // led by the marker's proxy_isolation gate (M1-33e).
+  const sharedResults = join(o.root, "results", "harness");
+  if (o.concurrency > 1 && await markerPlaces(sharedResults)) {
+    throw placedConcurrencyRefusal(
+      await markerProxyIsolation(sharedResults),
+      o.concurrency,
+    );
   }
   // M5-03 review: the pin, read-only, before any lock, sweep or recovery (runCampaign rechecks, with the arm manifests).
   if (o.campaign !== undefined) {
@@ -1400,7 +1408,10 @@ const RotationSchema = z.object({
 
 const CellSchema = z.object({
   id: z.string(),
-  manifest: z.object({ harness: z.string() }),
+  manifest: z.object({
+    harness: z.string(),
+    provider_routes: z.record(z.string(), z.string()),
+  }),
   termination: z.string(),
   started_at: z.iso.datetime(),
 });
@@ -1550,22 +1561,12 @@ async function authorizationProblems(
     p.push(`cell ${o.cell} has no egress.jsonl: not an enforced run`);
     return { problems: p, allowlist };
   }
-  const decisions = log.split(/\r?\n/).filter((l) => l.trim()).map((l) => {
-    try {
-      return String(JSON.parse(l).decision);
-    } catch {
-      return "unreadable";
-    }
-  });
-  if (decisions.includes("deny")) {
-    p.push(`cell ${o.cell} egress.jsonl has a deny line`);
-  }
-  if (decisions.includes("unreadable")) {
-    p.push(`cell ${o.cell} egress.jsonl has an unreadable line`);
-  }
-  if (!decisions.includes("allow")) {
-    p.push(`cell ${o.cell} egress.jsonl has no allowed connection`);
-  }
+  // M1-34e: the preflight's own lines exactly as expected, the agent phase clean.
+  p.push(
+    ...cellEgressProblems(log, Object.values(e.manifest.provider_routes)).map(
+      (x) => `cell ${o.cell} egress.jsonl: ${x}`,
+    ),
+  );
   return { problems: p, allowlist };
 }
 

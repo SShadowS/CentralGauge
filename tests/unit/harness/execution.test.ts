@@ -451,6 +451,10 @@ Deno.test("every published surface is redacted (UTF-8 and UTF-16): logs, stderr,
   assert(!leaks(published, SECRET_OAUTH) && !leaks(published, token));
   const side = await sideOf(t, r.executions[0]!.id);
   assertEquals([side.redactions, side.workspace_redactions], [2, 3]);
+  // M2-13b: where the redactions happened; the other published captures are clean.
+  const byFile = side.redactions_by_file as Record<string, number>;
+  assertEquals(byFile["raw.jsonl"], 2);
+  assertEquals(Object.values(byFile).reduce((a, b) => a + b, 0), 2);
   assert(!await exists(privatePaths(t.env, r.executions[0]!.id).custody));
 });
 
@@ -1899,6 +1903,30 @@ Deno.test("enforced run: listeners checked, preflight run, then secrets and read
   assertStringIncludes(log, '"decision":"deny"');
 });
 
+Deno.test("enforced run (M1-34e): every egress line carries its phase, preflight before the release and agent after", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    eg.log!({
+      at: new Date().toISOString(),
+      decision: "allow",
+      target: "api.anthropic.com:443",
+      reason: "allowed",
+    });
+    return await inner(call, io);
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  const lines = (await Deno.readTextFile(
+    join(t.env.resultsRoot, "runs", e.id, "egress.jsonl"),
+  )).trim().split("\n").map((l) => JSON.parse(l));
+  assertEquals(lines.map((l) => [l.decision, l.phase]), [
+    ["deny", "preflight"],
+    ["allow", "agent"],
+  ]);
+});
+
 Deno.test("enforced run: a proxy not listening, a failed host verification or a failed preflight aborts before any secret file exists", async () => {
   const cases: [string, (eg: FakeEgress) => void, boolean][] = [
     [
@@ -1911,7 +1939,7 @@ Deno.test("enforced run: a proxy not listening, a failed host verification or a 
     [
       "host verification",
       (eg) => (eg.verifyProblems = [
-        "rule cg-harness-egress-tcp: disabled is false",
+        "rule cg-harness-egress-tcp: enabled is false",
       ]),
       false,
     ],
@@ -1971,6 +1999,66 @@ Deno.test("enforced run: a proxy not listening, a failed host verification or a 
       `${word}: never scored`,
     );
   }
+});
+
+// M3-09a: the parsed preflight probe lines are a published run file, pass or fail.
+
+const preflightOf = async (t: TestEnv, id: string) =>
+  (await Deno.readTextFile(
+    join(t.env.resultsRoot, "runs", id, "preflight.jsonl"),
+  )).trim().split("\n").map((l) => JSON.parse(l) as ProbeLine);
+
+Deno.test("enforced run (M3-09a): a passing preflight publishes its exact probe lines", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  let seen: ProbeLine[] = [];
+  eg.lines = (ls) => (seen = ls);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  assert(seen.length > 0);
+  assertEquals(await preflightOf(t, e.id), seen);
+});
+
+Deno.test("enforced run (M3-09a): a failing preflight publishes its lines through the redaction path", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  let cred = "";
+  eg.onProbe = async (sandbox) => {
+    const dir = t.docker.runs.find((r) => r.name === sandbox)!.mounts.get(
+      "C:\\cg-secrets",
+    )!.src;
+    cred = (await Deno.readTextFile(join(dir, "proxy-credential"))).trim();
+  };
+  let seen: ProbeLine[] = [];
+  eg.lines = (ls) =>
+    seen = ls.map((l) =>
+      l.probe === "gw-smb-445"
+        ? { ...l, ok: true }
+        : l.probe === "gw-icmp"
+        ? { ...l, error: `leaked ${cred}` }
+        : l
+    );
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), ContainerError, "gw-smb-445");
+  const [e] = await t.env.store.executions(cell.campaignId);
+  assertEquals(e!.termination, "setup_failed");
+  assert(cred.length >= 20, "the probe saw the proxy credential");
+  const text = await Deno.readTextFile(
+    join(t.env.resultsRoot, "runs", e!.id, "preflight.jsonl"),
+  );
+  assert(!text.includes(cred), "the credential is redacted");
+  const got = await preflightOf(t, e!.id);
+  assertEquals(got.map((l) => l.probe), seen.map((l) => l.probe));
+  for (const [i, l] of got.entries()) {
+    if (l.probe === "gw-icmp") {
+      assertEquals({ ...l, error: undefined }, {
+        ...seen[i]!,
+        error: undefined,
+      });
+      assertStringIncludes(l.error!, "leaked [REDACTED:");
+    } else assertEquals(l, seen[i]);
+  }
+  assertEquals(got.find((l) => l.probe === "gw-smb-445")!.ok, true);
 });
 
 Deno.test("placed (qualified) run: a failed host verification reserves no ledger slot", async () => {
@@ -2691,6 +2779,11 @@ Deno.test("placed run (M1-33d): empty mount at the address check, the verified a
   const c = eg.credential!;
   assertEquals(atProbe, { "proxy-credential": `${c.user}:${c.pass}` });
   assertEquals(eg.registered, null, "unregistered");
+  // M1-33e review: the proxy credential file is gone after the completed run.
+  assert(
+    !await exists(join(mount(t.docker.runs[0]!.name), "proxy-credential")),
+    "proxy credential removed after the run",
+  );
   // The docker argv (env included) never holds any form of the credential.
   const call = t.docker.runs[0]!;
   for (const f of proxyCredentialForms(c)) {
@@ -2805,7 +2898,7 @@ Deno.test("placed run (M1-33d review): the host is verified again right before t
   eg.verify = () => {
     eg.events.push("verify");
     return Promise.resolve(
-      ++calls === 1 ? [] : ["rule cg-harness-egress-tcp: disabled is false"],
+      ++calls === 1 ? [] : ["rule cg-harness-egress-tcp: enabled is false"],
     );
   };
   const killed = mountAtKill(t);

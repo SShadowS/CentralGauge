@@ -27,6 +27,7 @@ import {
   preflightExpect,
   PROXY_PORT,
   proxyCredentialForms,
+  proxyIsolationProblem,
   realEgressRuntime,
   RECORDED_HOSTS_PATH,
   recordedHostsJson,
@@ -165,7 +166,7 @@ Deno.test("verifyEgressState: effective-policy mutations are each a named proble
     ["prefix", (s) => (s.gatewayAdapter!.prefix = 16)],
     ["vethernet", (s) => (s.gatewayAdapter!.alias = "Ethernet 2")],
     ["vethernet", (s) => (s.hns!.name = "other")],
-    ["disabled", (s) => (s.groupRules[0]!.enabled = false)],
+    ["enabled is false", (s) => (s.groupRules[0]!.enabled = false)],
     ["direction", (s) => (s.groupRules[1]!.direction = "Outbound")],
     ["action", (s) => (s.groupRules[2]!.action = "Allow")],
     ["profile", (s) => (s.groupRules[3]!.profile = "Domain")],
@@ -1402,6 +1403,7 @@ Deno.test("realEgressRuntime verify (M1-33d review): above concurrency 1 the mar
       collect,
       shared: inertShared,
       concurrency,
+      proxyIsolation: value,
     });
   };
   assertEquals(PROXY_ISOLATION, 2);
@@ -1432,6 +1434,90 @@ Deno.test("realEgressRuntime verify (M1-33d review): above concurrency 1 the mar
   const equal = await runtime(2, PROXY_ISOLATION);
   assertEquals(await equal.verify(), []);
   assertEquals(equal.markerProxyIsolation, PROXY_ISOLATION);
+});
+
+Deno.test("proxyIsolationProblem (M1-33e): above concurrency 1 only exactly PROXY_ISOLATION passes; missing, lower, higher and non-integer are named; concurrency 1 ignores the field", () => {
+  assertEquals(proxyIsolationProblem(PROXY_ISOLATION, 2), null);
+  assertEquals(proxyIsolationProblem(PROXY_ISOLATION, 8), null);
+  const cases: [string, unknown, string][] = [
+    ["missing", undefined, "proxy_isolation missing"],
+    ["lower", 1, "proxy_isolation 1"],
+    ["higher", 3, "proxy_isolation 3"],
+    ["non-integer", 2.5, "proxy_isolation 2.5"],
+    ["a string", "2", 'proxy_isolation "2"'],
+    ["null", null, "proxy_isolation null"],
+  ];
+  for (const [word, value, named] of cases) {
+    const p = proxyIsolationProblem(value, 2);
+    assert(p !== null, word);
+    assertStringIncludes(p, named, word);
+    assertStringIncludes(p, `concurrency 2 needs ${PROXY_ISOLATION}`, word);
+    assertEquals(proxyIsolationProblem(value, 1), null, `${word}: at 1`);
+  }
+});
+
+Deno.test("realEgressRuntime verify (M1-33e): above concurrency 1 each cell's re-read must equal the value fixed when the environment opened; a marker change between cells refuses the next cell", async () => {
+  const root = await Deno.makeTempDir();
+  const markerPath = join(root, "egress-verified.json");
+  let value: unknown = PROXY_ISOLATION;
+  const collect = () => {
+    const raw = rawObservation();
+    if (value !== undefined) {
+      (raw.marker as Record<string, unknown>)["proxy_isolation"] = value;
+    }
+    return Promise.resolve({ code: 0, stdout: JSON.stringify(raw) });
+  };
+  const runtime = (concurrency: number, fixed: unknown) =>
+    realEgressRuntime({
+      repoRoot: root,
+      markerPath,
+      collect,
+      shared: inertShared,
+      concurrency,
+      proxyIsolation: fixed,
+    });
+  // Cell 1 verifies; the marker leaves PROXY_ISOLATION; cell 2 is refused by
+  // the version check (the "changed" branch is exercised below).
+  for (const next of [1, 3, undefined, "2"]) {
+    value = PROXY_ISOLATION;
+    const rt = await runtime(2, PROXY_ISOLATION);
+    assertEquals(await rt.verify(), [], `cell 1 before ${String(next)}`);
+    value = next;
+    const p = await rt.verify();
+    assertEquals(p.length, 1, String(next));
+    assertStringIncludes(p[0]!, "proxy_isolation", String(next));
+    assertStringIncludes(p[0]!, "concurrency 2", String(next));
+    value = PROXY_ISOLATION;
+    assertEquals(await rt.verify(), [], `restored after ${String(next)}`);
+  }
+  // A marker changed to PROXY_ISOLATION after the environment fixed another
+  // value (or none) is refused too: the same value throughout.
+  for (const fixed of [1, undefined]) {
+    value = PROXY_ISOLATION;
+    const p = await (await runtime(2, fixed)).verify();
+    assertEquals(p.length, 1, String(fixed));
+    assertStringIncludes(p[0]!, "changed", String(fixed));
+    assertStringIncludes(p[0]!, "concurrency 2", String(fixed));
+  }
+  // No stored value at all is missing, never a default (fail closed).
+  value = PROXY_ISOLATION;
+  const unset = await (await realEgressRuntime({
+    repoRoot: root,
+    markerPath,
+    collect,
+    shared: inertShared,
+    concurrency: 2,
+  })).verify();
+  assertEquals(unset.length, 1);
+  assertStringIncludes(unset[0]!, "changed from missing");
+  // An older fixed value that the marker still holds is the plain version refusal.
+  value = 1;
+  const older = await (await runtime(2, 1)).verify();
+  assertEquals(older.length, 1);
+  assertStringIncludes(older[0]!, "proxy_isolation 1");
+  // Concurrency 1 ignores the field and its changes.
+  value = 1;
+  assertEquals(await (await runtime(1, PROXY_ISOLATION)).verify(), []);
 });
 
 Deno.test("realEgressRuntime (M1-33d review): a shared proxy that cannot bind fails the runtime start, naming the gateway and port", async () => {
@@ -1594,7 +1680,7 @@ Deno.test("collectEgressState (M1-34c): changed group rules and a foreign block 
       "interface type",
       (r) => (r.filters.interfaceType[6]!.InterfaceType = "Wireless"),
     ],
-    ["disabled", (r) => (r.groupRules[7]!.Enabled = "False")],
+    ["enabled is false", (r) => (r.groupRules[7]!.Enabled = "False")],
     ["action", (r) => (r.groupRules[8]!.Action = "Allow")],
     ["missing rule", (r) => {
       const id = r.groupRules.pop()!.InstanceID;
@@ -1621,6 +1707,15 @@ Deno.test("collectEgressState (M1-34c): changed group rules and a foreign block 
       `${word}: ${p.join("; ")}`,
     );
   }
+});
+
+Deno.test("verifyEgressState (M1-34d): a disabled group rule reads 'enabled is false, expected true'", async () => {
+  let name = "";
+  const p = await verifyRaw((r) => {
+    name = r.groupRules[7]!.Name;
+    r.groupRules[7]!.Enabled = "False";
+  });
+  assertEquals(p, [`rule ${name}: enabled is false, expected true`]);
 });
 
 Deno.test("decodeHnsBlob / parseHnsNetwork (M1-34c): the real VolatileStore value decodes exactly", () => {

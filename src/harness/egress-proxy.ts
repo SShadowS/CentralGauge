@@ -21,6 +21,11 @@ export interface EgressLogLine {
   decision: "allow" | "deny" | "error";
   target: string;
   reason: string;
+  /**
+   * M1-34e: set by the cell's log sink, never the proxy: preflight before the
+   * credentials are released, agent after. Absent in logs written before.
+   */
+  phase?: "preflight" | "agent";
 }
 
 export interface ProxyOptions {
@@ -806,6 +811,10 @@ export function startSharedEgressProxy(
     register(r) {
       if (failed) {
         throw new StateError("egress proxy has failed", "failed", "running");
+      }
+      // M1-33e: a shut-down proxy issues no credential.
+      if (stopping) {
+        throw new StateError("egress proxy is shut down", "stopped", "running");
       }
       const source = typeof r.source === "string" ? r.source : "";
       if (

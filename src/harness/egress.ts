@@ -546,7 +546,7 @@ const FIELDS = [
   "interfaceType",
 ] as const;
 const LABEL: Record<(typeof FIELDS)[number], string> = {
-  enabled: "disabled",
+  enabled: "enabled",
   direction: "direction",
   action: "action",
   profile: "profile",
@@ -1300,6 +1300,118 @@ export const PREFLIGHT_EXPECT: Record<string, boolean> = preflightExpect([
   "api.anthropic.com",
 ]);
 
+/** The CONNECT target of each fixed proxy probe (harness/images/base/egress-check.ps1). */
+const PROXY_PROBE_TARGETS: Record<string, string> = {
+  "proxy-deny-example.com": "example.com:443",
+  "proxy-ip-literal": "1.1.1.1:443",
+};
+
+/** One line of a cell's egress.jsonl; anything else is malformed (M1-34e). */
+const CellEgressLineSchema = z.object({
+  at: z.iso.datetime(),
+  decision: z.enum(["allow", "deny", "error"]),
+  target: z.string().min(1),
+  reason: z.string(),
+  phase: z.enum(["preflight", "agent"]).optional(),
+}).strict();
+
+/**
+ * M1-34e: judge a record-mode cell's egress.jsonl for authorization. The
+ * preflight's proxy lines must be exactly the proxy probes of
+ * preflightExpect for the cell's routes in record mode (each target once,
+ * with its decision; proxy-no-auth's 407 goes to the host log, never here);
+ * the agent phase must have an allowed connection and no deny. Untagged
+ * (legacy) logs: the leading lines, in time order, are the preflight. Fails
+ * closed: a malformed line, unknown values or mixed tagging refuse.
+ */
+export function cellEgressProblems(log: string, routes: string[]): string[] {
+  const expected = new Map<string, string>();
+  try {
+    const want = preflightExpect(hostsForRoutes(routes, {}, { record: true }), {
+      record: true,
+      auth: true,
+    });
+    for (const [probe, open] of Object.entries(want)) {
+      if (!probe.startsWith("proxy-") || probe === NO_AUTH_PROBE) continue;
+      const target = PROXY_PROBE_TARGETS[probe] ??
+        (probe.startsWith("proxy-allow-")
+          ? `${probe.slice("proxy-allow-".length)}:443`
+          : undefined);
+      if (!target) return [`preflight probe ${probe} has no known target`];
+      expected.set(target, open ? "allow" : "deny");
+    }
+  } catch (err) {
+    return [(err as Error).message];
+  }
+  const lines: z.infer<typeof CellEgressLineSchema>[] = [];
+  for (
+    const [i, text] of log.split(/\r?\n/).filter((l) => l.trim()).entries()
+  ) {
+    let r;
+    try {
+      r = CellEgressLineSchema.safeParse(JSON.parse(text));
+    } catch (err) {
+      return [`line ${i + 1} is malformed: ${(err as Error).message}`];
+    }
+    if (!r.success) {
+      return [`line ${i + 1} is malformed: ${r.error.issues[0]?.message}`];
+    }
+    lines.push(r.data);
+  }
+  const tagged = lines.filter((l) => l.phase !== undefined).length;
+  if (tagged > 0 && tagged < lines.length) {
+    return ["mixes tagged and untagged lines"];
+  }
+  let pre: typeof lines;
+  let agent: typeof lines;
+  if (tagged === 0) {
+    for (let i = 1; i < lines.length; i++) {
+      if (Date.parse(lines[i]!.at) < Date.parse(lines[i - 1]!.at)) {
+        return [`untagged line ${i + 1} is not in time order`];
+      }
+    }
+    pre = lines.slice(0, expected.size);
+    agent = lines.slice(expected.size);
+  } else {
+    const firstAgent = lines.findIndex((l) => l.phase === "agent");
+    if (
+      firstAgent >= 0 &&
+      lines.slice(firstAgent).some((l) => l.phase === "preflight")
+    ) {
+      return ["a preflight line after the agent phase began"];
+    }
+    pre = lines.filter((l) => l.phase === "preflight");
+    agent = lines.filter((l) => l.phase === "agent");
+  }
+  const p: string[] = [];
+  const seen = new Set<string>();
+  for (const l of pre) {
+    const want = expected.get(l.target);
+    if (want === undefined) {
+      p.push(`unexpected preflight line ${l.decision} ${l.target}`);
+    } else if (seen.has(l.target)) {
+      p.push(`duplicate preflight line ${l.target}`);
+    } else if (l.decision !== want) {
+      p.push(
+        `preflight ${l.target}: expected ${want}, observed ${l.decision}`,
+      );
+    }
+    seen.add(l.target);
+  }
+  for (const [target, want] of expected) {
+    if (!seen.has(target)) p.push(`missing preflight line ${want} ${target}`);
+  }
+  for (const l of agent) {
+    if (l.decision === "deny") {
+      p.push(`agent-phase deny ${l.target} (${l.reason})`);
+    }
+  }
+  if (!agent.some((l) => l.decision === "allow")) {
+    p.push("no allowed agent-phase connection");
+  }
+  return p;
+}
+
 export interface ProbeLine {
   probe: string;
   ok: boolean;
@@ -1478,6 +1590,22 @@ export const ROUTER_PS =
   "$r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop | Sort-Object RouteMetric | Select-Object -First 1; [Console]::Out.Write([string]$r.NextHop)";
 const PROBE_TIMEOUT_MS = 180_000;
 
+/**
+ * Why `concurrency` placed blocks cannot share the proxy a marker's
+ * proxy_isolation names (M1-33c design section 6), or null when they can.
+ * Exact match: missing, lower, higher and non-integer values are refused; no
+ * forward compatibility. Concurrency 1 ignores the field.
+ */
+export function proxyIsolationProblem(
+  value: unknown,
+  concurrency: number,
+): string | null {
+  if (concurrency <= 1 || value === PROXY_ISOLATION) return null;
+  return `proxy_isolation ${
+    JSON.stringify(value) ?? "missing"
+  }: concurrency ${concurrency} needs ${PROXY_ISOLATION}`;
+}
+
 /** The production runtime (Windows host, Docker Desktop Windows containers). */
 export async function realEgressRuntime(
   o: {
@@ -1492,6 +1620,12 @@ export async function realEgressRuntime(
     hostLogPath?: string;
     /** Campaign blocks at once (EnvOptions.concurrency); above 1 verify() needs the marker's proxy_isolation to be PROXY_ISOLATION. */
     concurrency?: number;
+    /**
+     * The marker's proxy_isolation fixed when the environment opened (env.proxyIsolation,
+     * M1-33e); above concurrency 1 every verify() requires the same value. Unset is
+     * missing and refused (fail closed).
+     */
+    proxyIsolation?: unknown;
   },
 ): Promise<EgressRuntime> {
   const recordedHosts = await loadRecordedHosts(o.repoRoot);
@@ -1538,14 +1672,18 @@ export async function realEgressRuntime(
       );
       const p = verifyEgressState(s);
       markerProxyIsolation = s.marker?.proxyIsolation;
-      // Exact equality: a missing, older, newer or non-integer value is not this proxy.
-      if (
-        (o.concurrency ?? 1) > 1 && markerProxyIsolation !== PROXY_ISOLATION
-      ) {
+      // Exact equality: a missing, older, newer or non-integer value is not
+      // this proxy; nor is a value other than the one fixed at startup (M1-33e).
+      const concurrency = o.concurrency ?? 1;
+      const version = proxyIsolationProblem(markerProxyIsolation, concurrency);
+      if (version) p.push(`egress marker ${o.markerPath} has ${version}`);
+      else if (concurrency > 1 && markerProxyIsolation !== o.proxyIsolation) {
         p.push(
-          `egress marker ${o.markerPath} has proxy_isolation ${
-            JSON.stringify(markerProxyIsolation) ?? "missing"
-          }: concurrency ${o.concurrency} needs ${PROXY_ISOLATION}`,
+          `egress marker ${o.markerPath} proxy_isolation changed from ${
+            JSON.stringify(o.proxyIsolation) ?? "missing"
+          } to ${
+            JSON.stringify(markerProxyIsolation)
+          } since the environment opened: concurrency ${concurrency} needs the same value throughout`,
         );
       }
       const placing = o.acceptCandidate

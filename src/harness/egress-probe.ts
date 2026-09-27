@@ -47,6 +47,8 @@ export interface QualificationProbe {
   probeCommand: string[];
   /** Evidence and the proxy log go here. */
   out: string;
+  /** Route hosts the proxy allows and the preflight probes (M3-08 `--route`); default PROBE_HOSTS. */
+  hosts?: string[];
   /** The host state at probe time (network id and interface index for the evidence). */
   collect(): Promise<EgressState>;
 }
@@ -61,9 +63,10 @@ export async function runQualificationProbe(
   const evidence = join(o.out, "probe-evidence.json");
   const egressLog = join(o.out, "egress.jsonl");
   const opMs = o.spec.opTimeoutMs;
+  const hosts = o.hosts ?? PROBE_HOSTS;
   let secrets: string | null = null;
   const proxy = await o.egress.startProxy({
-    allowedHosts: PROBE_HOSTS,
+    allowedHosts: hosts,
     log: (l) => {
       try {
         Deno.writeTextFileSync(egressLog, JSON.stringify(l) + "\n", {
@@ -116,7 +119,7 @@ export async function runQualificationProbe(
     try {
       await waitRunning(o.docker, o.spec.name, running, opMs);
       const lines = await bounded(
-        o.egress.probe(o.spec.name, PROBE_HOSTS),
+        o.egress.probe(o.spec.name, hosts),
         PROBE_TIMEOUT_MS,
         "egress preflight",
       );
@@ -129,14 +132,14 @@ export async function runQualificationProbe(
             at: new Date().toISOString(),
             network_id: s.network?.id ?? "",
             interface_index: s.gatewayAdapter?.index ?? -1,
-            hosts: PROBE_HOSTS,
+            hosts,
             lines,
           },
           null,
           2,
         ) + "\n",
       );
-      problems = evaluatePreflight(lines, preflightExpect(PROBE_HOSTS));
+      problems = evaluatePreflight(lines, preflightExpect(hosts));
     } catch (err) {
       problems = [err instanceof Error ? err.message : String(err)];
     }

@@ -147,6 +147,12 @@ export interface HarnessEnv {
    * default network. Required when egressEnforced.
    */
   egress?: EgressRuntime;
+  /**
+   * The marker's proxy_isolation read under the lock when the environment
+   * opened placed (M1-33e), fixed for the life of the environment: runCampaign
+   * gates concurrency on it and each cell's verify() requires the same value.
+   */
+  proxyIsolation?: unknown;
   /** Shared cross-lane reservation ledger for supervised credential-bearing runs. */
   credentialLedger: string | null;
   /** Coordination lane name recorded with a reservation. */
@@ -339,6 +345,8 @@ export function privatePaths(env: HarnessEnv, id: string) {
     trace: join(p, "quarantine", id, "trace.jsonl"),
     /** Every proxy decision of this execution (M1-33). */
     egress: join(p, "quarantine", id, "egress.jsonl"),
+    /** The parsed in-sandbox preflight probe lines, pass or fail (M3-09a). */
+    preflight: join(p, "quarantine", id, "preflight.jsonl"),
   };
 }
 
@@ -994,12 +1002,13 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const runDir = join(p.pending, "run");
   await Deno.remove(runDir, { recursive: true }).catch(() => {});
   await Deno.mkdir(runDir, { recursive: true }); // a setup failure has no captures but still writes its side file
-  const redactions = await publishRedacted([
+  const published = await publishRedacted([
     { src: p.raw, dest: join(runDir, "raw.jsonl") },
     { src: p.stderr, dest: join(runDir, "stderr.txt") },
     { src: p.host, dest: join(runDir, "host-log.jsonl") },
     { src: p.trace, dest: join(runDir, "trace.jsonl") },
     { src: p.egress, dest: join(runDir, "egress.jsonl") },
+    { src: p.preflight, dest: join(runDir, "preflight.jsonl") },
   ], scrub);
   const side = redactDeep({
     v: 1,
@@ -1010,7 +1019,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     infra_reason: infraReasons.length > 0 ? infraReasons.join("; ") : null,
     stream_problems: problems,
     usage_reset_at: parsed.usageResetAt,
-    redactions,
+    redactions: published.count,
+    redactions_by_file: published.byFile,
     workspace_redactions: frozen?.redactions ?? 0,
     pricing_book_at: f.pricing.at,
     pristine_hash: f.pristineHash,
@@ -1369,7 +1379,10 @@ export async function runExecution(
       egressAbort.abort(new Error(`egress violation: ${violation}`));
     }
     try {
-      Deno.writeTextFileSync(p.egress, JSON.stringify(l) + "\n", {
+      // M1-34e: the phase from the same flag, so authorization can tell the
+      // preflight's own probes from the agent's traffic.
+      const phase = armed ? "agent" : "preflight";
+      Deno.writeTextFileSync(p.egress, JSON.stringify({ ...l, phase }) + "\n", {
         append: true,
       });
     } catch (err) {
@@ -1618,6 +1631,10 @@ export async function runExecution(
             eg.probe(name, hosts),
             PREFLIGHT_TIMEOUT_MS,
             "egress preflight",
+          );
+          await Deno.writeTextFile(
+            p.preflight,
+            lines.map((l) => JSON.stringify(l) + "\n").join(""),
           );
           const problems = evaluatePreflight(lines, expect);
           if (problems.length > 0) throw new Error(problems.join("; "));

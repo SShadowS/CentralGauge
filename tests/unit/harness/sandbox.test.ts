@@ -575,7 +575,7 @@ Deno.test("redaction is longest-first and complete; publishing is byte-safe and 
     }],
     [{ name: "backend-token", value: TOKEN }],
   );
-  assertEquals(n, 2);
+  assertEquals(n, { count: 2, byFile: { "raw.jsonl": 2 } });
   assert(!(await Deno.readTextFile(join(pub, "raw.jsonl"))).includes(TOKEN));
   assert(!await exists(join(pub, "none.txt")));
 });
@@ -595,7 +595,7 @@ Deno.test("publishing redacts a secret cut off at the end of a capped or killed 
     ],
     [{ name: "backend-token", value: TOKEN }],
   );
-  assertEquals(n, 2);
+  assertEquals(n, { count: 2, byFile: { "a.jsonl": 1, "b.txt": 1 } });
   assertEquals(
     await Deno.readTextFile(join(pub, "a.jsonl")),
     `{"t":"ok"}\n{"t":"[REDACTED:backend-token]`,
@@ -1054,7 +1054,10 @@ Deno.test("publishRedacted redacts patterns in a serialized raw log, trace and U
     ),
     "warn [REDACTED:anthropic-key]\r\n",
   );
-  assertEquals(n, 4);
+  assertEquals(n, {
+    count: 4,
+    byFile: { "raw.jsonl": 2, "trace.jsonl": 1, "stderr.txt": 1 },
+  });
 });
 
 Deno.test("publishRedacted: a capture cut inside a pattern token leaves no prefix of 20 chars or more", async () => {
@@ -1130,4 +1133,26 @@ Deno.test("realDocker.networks (M1-33d): each network with its IPv4; no such con
   } finally {
     mock.restore();
   }
+});
+
+Deno.test("publishRedacted counts per published file: clean files 0, missing files omitted, total unchanged (M2-13b)", async () => {
+  const q = await tmp();
+  const pub = await tmp();
+  await Deno.writeTextFile(
+    join(q, "raw.jsonl"),
+    `{"a":"${TOKEN}"}\n{"b":"${TOKEN}"}\n`,
+  );
+  await Deno.writeTextFile(join(q, "stderr.txt"), `err ${TOKEN}\n`);
+  await Deno.writeTextFile(join(q, "trace.jsonl"), `{"v":2}\n`);
+  const n = await publishRedacted(
+    ["raw.jsonl", "stderr.txt", "trace.jsonl", "egress.jsonl"].map((f) => ({
+      src: join(q, f),
+      dest: join(pub, "run", f),
+    })),
+    [{ name: "backend-token", value: TOKEN }],
+  );
+  assertEquals(n, {
+    count: 3,
+    byFile: { "raw.jsonl": 2, "stderr.txt": 1, "trace.jsonl": 0 },
+  });
 });
