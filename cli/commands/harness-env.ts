@@ -107,6 +107,12 @@ export interface EnvDeps {
       proxyIsolation?: unknown;
     },
   ) => Promise<EgressRuntime>;
+  /** Test seam for the backend bind (default: backend.serve). */
+  serveBackend?: (
+    backend: Backend,
+    host: string,
+    port: number,
+  ) => { url: string; shutdown(): Promise<void> };
 }
 
 export const REAL_DEPS: EnvDeps = {
@@ -337,6 +343,7 @@ export async function openHarnessEnv(
   const closeAll = async () => {
     for (const c of closers) await c().catch(() => {});
   };
+  let closing: Promise<void> | null = null;
   try {
     // M1-33e: the marker's proxy_isolation, fixed here under the lock for
     // the life of the environment (a later change refuses the next cell).
@@ -393,7 +400,11 @@ export async function openHarnessEnv(
       ops: defaultBackendOps(lane),
       allowedHosts: [host],
     });
-    const server = backend.serve(host, port);
+    const server = (deps.serveBackend ?? ((b, h, p) => b.serve(h, p)))(
+      backend,
+      host,
+      port,
+    );
     closers.unshift(async () => {
       try {
         await bounded(server.shutdown(), 10_000, "backend server shutdown");
@@ -439,7 +450,8 @@ export async function openHarnessEnv(
         })`,
       );
     }
-    return { env, close: closeAll };
+    // A second close is a no-op (M1-33e).
+    return { env, close: () => closing ??= closeAll() };
   } catch (err) {
     await closeAll();
     throw err;

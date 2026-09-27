@@ -7,6 +7,7 @@ import {
 } from "@std/assert";
 import { Command } from "@cliffy/command";
 import { stripAnsiCode } from "@std/fmt/colors";
+import { walk } from "@std/fs";
 import { join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import {
@@ -2622,6 +2623,132 @@ Deno.test("openHarnessEnv concurrency > 1 (M1-33e): the proxy_isolation gate run
     const state = probe ? "candidate" : "qualified";
     const ok = await refused(markerWith(state, PROXY_ISOLATION), probe);
     assertEquals(ok.includes("proxy_isolation"), false, ok);
+  }
+});
+
+Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, registrations dropped, in-flight tunnels ended, no proxy credential on disk, a second close is a no-op; env.proxyIsolation is fixed under the lock", async () => {
+  const t = await makeEnv();
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  await Deno.writeTextFile(
+    join(shared, EGRESS_MARKER),
+    markerWith("qualified", PROXY_ISOLATION),
+  );
+  const upstream = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  const held: Deno.Conn[] = [];
+  (async () => {
+    for await (const c of upstream) held.push(c);
+  })();
+  const source = "172.30.60.5";
+  const order: string[] = [];
+  const seen: { proxyIsolation?: unknown }[] = [];
+  let proxyPort = 0;
+  const d: EnvDeps = {
+    ...deps(order, undefined, () => Promise.resolve([])),
+    egressRuntime: (eo) => {
+      seen.push(eo);
+      return realEgressRuntime({
+        ...eo,
+        shared: (so) => {
+          const p = startSharedEgressProxy({
+            ...so,
+            hostname: "127.0.0.1",
+            port: 0,
+            allowedHosts: ["127.0.0.1"],
+            resolve: () => Promise.resolve(["93.184.216.34"]),
+            dial: () =>
+              Deno.connect({
+                hostname: "127.0.0.1",
+                port: (upstream.addr as Deno.NetAddr).port,
+              }),
+            authDelayMs: 0,
+            sourceOf: () => source,
+          });
+          proxyPort = p.port;
+          return p;
+        },
+      });
+    },
+    // The backend binds the sandbox gateway, absent on a test host.
+    serveBackend: () => ({
+      url: `http://${SANDBOX_NETWORK.gateway}:${BACKEND_PORT}`,
+      shutdown: () => {
+        order.push("backend down");
+        return Promise.resolve();
+      },
+    }),
+  };
+  const h = await openHarnessEnv(
+    { ...envOpts(t), backendPort: BACKEND_PORT },
+    d,
+  );
+  try {
+    assertEquals(h.env.proxyIsolation, PROXY_ISOLATION);
+    assertEquals(seen.map((x) => x.proxyIsolation), [PROXY_ISOLATION]);
+    const { credential, reg } = h.env.egress!.register({
+      allow: ["example.test"],
+      log: () => Promise.resolve(),
+      source,
+    });
+    // An in-flight tunnel through the shared proxy.
+    const tunnel = await Deno.connect({
+      hostname: "127.0.0.1",
+      port: proxyPort,
+    });
+    await tunnel.write(
+      new TextEncoder().encode(
+        `CONNECT example.test:443 HTTP/1.1\r\nHost: example.test:443\r\nProxy-Authorization: Basic ${
+          btoa(`${credential.user}:${credential.pass}`)
+        }\r\n\r\n`,
+      ),
+    );
+    const buf = new Uint8Array(512);
+    const n = await tunnel.read(buf);
+    assertStringIncludes(
+      new TextDecoder().decode(buf.subarray(0, n ?? 0)),
+      " 200 ",
+    );
+    await h.close();
+    // In-flight tunnel ended.
+    assertEquals(await tunnel.read(buf).catch(() => null), null);
+    try {
+      tunnel.close();
+    } catch { /* closed */ }
+    // Listener closed: a new connection is refused.
+    await assertRejects(() =>
+      Deno.connect({ hostname: "127.0.0.1", port: proxyPort })
+    );
+    // Registrations dropped: none is issued after close, the old one is already revoked.
+    assertThrows(
+      () =>
+        h.env.egress!.register({
+          allow: [],
+          log: () => {},
+          source: "172.30.60.6",
+        }),
+      Error,
+      "shut down",
+    );
+    await reg.unregister();
+    // No file anywhere under the fixture holds the proxy credential.
+    for (const dir of [t.repo.root, t.env.privateRoot, t.env.secretsSource]) {
+      for await (const e of walk(dir, { includeDirs: false })) {
+        const text = await Deno.readTextFile(e.path).catch(() => "");
+        assertEquals(text.includes(credential.pass), false, e.path);
+      }
+    }
+    // A second close is a no-op.
+    await h.close();
+    assertEquals(order.filter((x) => x === "release").length, 1);
+    assertEquals(order.filter((x) => x === "backend down").length, 1);
+  } finally {
+    await h.close();
+    upstream.close();
+    for (const c of held) {
+      try {
+        c.close();
+      } catch { /* closed */ }
+    }
   }
 });
 

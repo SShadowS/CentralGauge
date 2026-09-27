@@ -812,6 +812,10 @@ export function startSharedEgressProxy(
       if (failed) {
         throw new StateError("egress proxy has failed", "failed", "running");
       }
+      // M1-33e: a shut-down proxy issues no credential.
+      if (stopping) {
+        throw new StateError("egress proxy is shut down", "stopped", "running");
+      }
       const source = typeof r.source === "string" ? r.source : "";
       if (
         !IPV4.test(source) || source.split(".").some((x) => Number(x) > 255)
