@@ -157,4 +157,82 @@ codeunit 80100 "CGR Lease Schedule Tests"
         asserterror LeaseMgt.CreateSchedule(ContractNo);
         Assert.ExpectedError(StrSubstNo(InvoicedErr, ContractNo));
     end;
+
+    [Test]
+    procedure MonthEndStartStaysOnMonthEnds()
+    var
+        LeaseMgt: Codeunit "CGR Lease Mgt";
+        ContractNo: Code[20];
+        Expected: array[6] of Date;
+    begin
+        ContractNo := Lib.CreateLease('T-LEASE-008', 20270228D, 6, 100);
+        LeaseMgt.CreateSchedule(ContractNo);
+        Expected[1] := 20270228D;
+        Expected[2] := 20270331D;
+        Expected[3] := 20270430D;
+        Expected[4] := 20270531D;
+        Expected[5] := 20270630D;
+        Expected[6] := 20270731D;
+        AssertDueDates(ContractNo, Expected, 6);
+    end;
+
+    [Test]
+    procedure ThirtiethMonthEndStartCrossesLeapFebruary()
+    var
+        LeaseMgt: Codeunit "CGR Lease Mgt";
+        ContractNo: Code[20];
+        Expected: array[6] of Date;
+    begin
+        ContractNo := Lib.CreateLease('T-LEASE-009', 20271130D, 4, 100);
+        LeaseMgt.CreateSchedule(ContractNo);
+        Expected[1] := 20271130D;
+        Expected[2] := 20271231D;
+        Expected[3] := 20280131D;
+        Expected[4] := 20280229D;
+        AssertDueDates(ContractNo, Expected, 4);
+    end;
+
+    [Test]
+    procedure DayBeforeMonthEndKeepsItsDay()
+    var
+        LeaseMgt: Codeunit "CGR Lease Mgt";
+        ContractNo: Code[20];
+        Expected: array[6] of Date;
+    begin
+        ContractNo := Lib.CreateLease('T-LEASE-010', 20270130D, 4, 100);
+        LeaseMgt.CreateSchedule(ContractNo);
+        Expected[1] := 20270130D;
+        Expected[2] := 20270228D;
+        Expected[3] := 20270330D;
+        Expected[4] := 20270430D;
+        AssertDueDates(ContractNo, Expected, 4);
+    end;
+
+    [Test]
+    procedure LeapYearFebruary28IsNotMonthEnd()
+    var
+        LeaseMgt: Codeunit "CGR Lease Mgt";
+        ContractNo: Code[20];
+        Expected: array[6] of Date;
+    begin
+        ContractNo := Lib.CreateLease('T-LEASE-011', 20280228D, 3, 100);
+        LeaseMgt.CreateSchedule(ContractNo);
+        Expected[1] := 20280228D;
+        Expected[2] := 20280328D;
+        Expected[3] := 20280428D;
+        AssertDueDates(ContractNo, Expected, 3);
+    end;
+
+    local procedure AssertDueDates(ContractNo: Code[20]; Expected: array[6] of Date; NoOfLines: Integer)
+    var
+        Line: Record "CGR Lease Schedule Line";
+        i: Integer;
+    begin
+        Line.SetRange("Contract No.", ContractNo);
+        Assert.AreEqual(NoOfLines, Line.Count(), 'One schedule line per month');
+        for i := 1 to NoOfLines do begin
+            Line.Get(ContractNo, i * 10000);
+            Assert.AreEqual(Expected[i], Line."Due Date", StrSubstNo('Due date of installment %1', i));
+        end;
+    end;
 }

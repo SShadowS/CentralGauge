@@ -7,7 +7,7 @@ Before anyone changes the scheduling code we want automated tests that pin down 
 How a lease schedule must behave (schedules are created with `CGR Lease Mgt`, CreateSchedule):
 
 - One schedule line per month of the lease, line numbers 10000, 20000, 30000 and so on.
-- The first installment is due on the lease start date; installment n is due n-1 months after the start date.
+- The first installment is due on the lease start date; installment n is due n-1 months after the start date, except that a lease starting on the last day of a month has every installment due on the last day of its month.
 - The lease total is base rate x months x rate factor, rounded to 0.01, where the rate factor is 1 + months/100. Every installment is the total divided by the number of months, rounded to 0.01, except the last one, which takes the remainder so that the installments add up exactly to the total.
 - Creating the schedule again replaces the existing lines with a schedule for the lease as it is now.
 - A lease with an invoiced schedule line cannot be rescheduled: the attempt fails.

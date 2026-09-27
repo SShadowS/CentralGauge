@@ -1,5 +1,5 @@
 id: HX-002
-refapp_version: refapp-v1
+refapp_version: refapp-v1-rc8
 kind: test-authoring
 prompt: prompt.md
 touches: [Leasing, Core, Test]
@@ -10,6 +10,6 @@ scorers: [build, pass_to_pass, mutant_kill]
 pass_to_pass:
   - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
   - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, ReturnWithoutDamageReleasesVehicle] }
-mutants: [no-carry, first-due-shift, invoiced-rebuilt, flat-factor, no-op-reschedule, line-numbering]
+mutants: [no-carry, first-due-shift, invoiced-rebuilt, flat-factor, no-op-reschedule, line-numbering, month-end-unanchored, chained-anchor]
 contamination: null
 limits: { timeout_min: 30 }

@@ -34,6 +34,7 @@ codeunit 70300 "CGR Lease Mgt"
         LeaseMath: Codeunit "CGR Lease Math";
         Amounts: List of [Decimal];
         MonthEnd: Boolean;
+        DueDate: Date;
         i: Integer;
     begin
         Contract.Get(ContractNo);
@@ -46,16 +47,18 @@ codeunit 70300 "CGR Lease Mgt"
         Line.SetRange(Invoiced);
         Line.DeleteAll(true);
         MonthEnd := Contract."Start Date" = CalcDate('<CM>', Contract."Start Date");
+        DueDate := Contract."Start Date";
         LeaseMath.SplitInstallments(LeaseMath.LeaseTotal(Contract."Base Rate", Contract.Months), Contract.Months, Amounts);
         for i := 1 to Contract.Months do begin
             Line.Init();
             Line."Contract No." := ContractNo;
-            Line."Line No." := i * 1000;
-            Line."Due Date" := CalcDate(StrSubstNo('<+%1M>', i - 1), Contract."Start Date");
-            if MonthEnd then
-                Line."Due Date" := CalcDate('<CM>', Line."Due Date");
+            Line."Line No." := i * 10000;
+            Line."Due Date" := DueDate;
             Line.Amount := Amounts.Get(i);
             Line.Insert(true);
+            DueDate := CalcDate('<+1M>', DueDate);
+            if MonthEnd then
+                DueDate := CalcDate('<CM>', DueDate);
         end;
     end;
 
