@@ -2179,6 +2179,65 @@ Deno.test("qualification bootstrap: a candidate marker places the probe only; th
   }
 });
 
+// M3-08: the route-aware probe proxies and probes exactly the hosts it is given.
+
+Deno.test("qualification probe: hosts override the default route host (M3-08 --route)", async () => {
+  const t = await makeEnv();
+  const root = t.env.privateRoot;
+  const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+  const eg = fakeEgress();
+  t.docker.waitForReady = true;
+  t.docker.behavior = () => Promise.resolve(0);
+  const out = join(root, "probe-out");
+  await Deno.mkdir(out, { recursive: true });
+  const r = await runQualificationProbe({
+    docker: t.docker,
+    egress: eg,
+    custody: {
+      privateRoot: t.env.privateRoot,
+      owner: t.env.owner,
+      ...(t.env.secretAcl ?? {}),
+    },
+    token: "backend-token-0123456789abcdef",
+    spec: {
+      name: "cg-harness-probe-2",
+      owner: t.env.owner,
+      executionId: "exec-probe-2",
+      imageId: `sha256:${"c".repeat(64)}`,
+      workspace: out,
+      taskDir: out,
+      configDir: out,
+      extraMounts: [],
+      env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+      timeoutMs: 60_000,
+      killGraceMs: 50,
+      opTimeoutMs: 100,
+      maxCaptureBytes: 1024 * 1024,
+      rawLog: join(out, "probe.jsonl"),
+      stderrLog: join(out, "stderr.txt"),
+    },
+    probeCommand: ["powershell", "-File", "C:\config\cg-al-probe.ps1"],
+    out,
+    hosts: ["openrouter.ai"],
+    collect: () => markerAwareCollector()(markerPath),
+  });
+  assertEquals(r.problems, []);
+  assertEquals(eg.proxyHosts, ["openrouter.ai"]);
+  assertEquals(eg.probedHosts, ["openrouter.ai"]);
+  const ev = JSON.parse(await Deno.readTextFile(r.evidence));
+  assertEquals(ev.hosts, ["openrouter.ai"]);
+  assert(
+    ev.lines.some((l: { probe: string }) =>
+      l.probe === "proxy-allow-openrouter.ai"
+    ),
+  );
+  assert(
+    !ev.lines.some((l: { probe: string }) =>
+      l.probe.includes("api.anthropic.com")
+    ),
+  );
+});
+
 // Review item 3: an authorized marker carries, and every read rechecks, its evidence.
 
 /** A repo root taken through candidate, qualified and authorized with complete evidence. */

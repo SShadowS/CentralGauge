@@ -2,6 +2,7 @@
 // Usage (container leased, no bench live):
 //   DOCKER_CONTEXT=desktop-windows deno run --allow-all scripts/harness/backend-probe.ts <container> <secretsDir>
 //     [--enforced] [--command-file <json string array>] [--withhold-token]
+//     [--image <ref>] [--route <provider route>]
 // Prints statuses only (never the token); the token is revoked when the script ends.
 // Exits non-zero on any preflight problem or when the sandbox did not exit 0.
 // --command-file (M3-07) replaces the cg-al-probe command; it is a file because a JSON-RPC
@@ -11,13 +12,17 @@
 // the probe sandbox alone goes on the internal network behind the proxy with the
 // backend on the sandbox gateway, in the order of an enforced cell (proxy,
 // listener check, empty mount, C:\egress-check.ps1, then only on a pass the
-// backend token and ready): runQualificationProbe. It writes probe-evidence.json
+// backend token and ready): runQualificationProbe.
+// --image (M3-08) probes in that image instead of claude-code 2.1.282; --route
+// (M3-08, needs --enforced) proxies and probes that route's hosts (ROUTE_HOSTS)
+// instead of the first-party default. It writes probe-evidence.json
 // for `harness egress verify --mark qualified --probe-evidence <path>`.
 import { join } from "@std/path";
 import type { SandboxResult } from "../../src/harness/sandbox.ts";
 import { openHarnessEnv } from "../../cli/commands/harness-env.ts";
 import {
   collectEgressState,
+  hostsForRoutes,
   MARKER_FILE,
   realEgressCollector,
 } from "../../src/harness/egress.ts";
@@ -34,7 +39,7 @@ import { TASK_SOURCES } from "../../src/harness/staging.ts";
 import { loadTask } from "../../src/harness/task.ts";
 
 const USAGE =
-  "usage: backend-probe.ts <container> <secretsDir> [--enforced] [--command-file <path>] [--withhold-token]";
+  "usage: backend-probe.ts <container> <secretsDir> [--enforced] [--command-file <path>] [--withhold-token] [--image <ref>] [--route <route>]";
 
 export async function parseProbeArgs(args: string[]): Promise<{
   container: string;
@@ -42,11 +47,15 @@ export async function parseProbeArgs(args: string[]): Promise<{
   enforced: boolean;
   command: string[] | null;
   withholdToken: boolean;
+  image: string | null;
+  hosts: string[] | null;
 }> {
   const pos: string[] = [];
   let enforced = false;
   let withholdToken = false;
   let commandFile: string | null = null;
+  let image: string | null = null;
+  let route: string | null = null;
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === "--enforced") enforced = true;
@@ -54,6 +63,11 @@ export async function parseProbeArgs(args: string[]): Promise<{
     else if (a === "--command-file") {
       commandFile = args[++i] ?? null;
       if (commandFile === null) throw new Error(USAGE);
+    } else if (a === "--image" || a === "--route") {
+      const v = args[++i];
+      if (!v) throw new Error(USAGE);
+      if (a === "--image") image = v;
+      else route = v;
     } else if (a.startsWith("--")) throw new Error(`${USAGE} (unknown ${a})`);
     else pos.push(a);
   }
@@ -70,7 +84,19 @@ export async function parseProbeArgs(args: string[]): Promise<{
     }
     command = v;
   }
-  return { container, secretsDir, enforced, command, withholdToken };
+  if (route !== null && !enforced) {
+    throw new Error("--route needs --enforced");
+  }
+  const hosts = route === null ? null : hostsForRoutes([route], {});
+  return {
+    container,
+    secretsDir,
+    enforced,
+    command,
+    withholdToken,
+    image,
+    hosts,
+  };
 }
 
 /**
@@ -98,8 +124,15 @@ export function probeExitCode(
 if (import.meta.main) await main();
 
 async function main() {
-  const { container, secretsDir, enforced, command, withholdToken } =
-    await parseProbeArgs(Deno.args);
+  const {
+    container,
+    secretsDir,
+    enforced,
+    command,
+    withholdToken,
+    image,
+    hosts,
+  } = await parseProbeArgs(Deno.args);
   if (enforced && withholdToken) {
     throw new Error("--withhold-token is not for --enforced runs");
   }
@@ -169,7 +202,7 @@ async function main() {
     }, 30 * 60_000);
     const img = await imageFacts(
       h.env.docker,
-      imageTag("claude-code", "2.1.282"),
+      image ?? imageTag("claude-code", "2.1.282"),
       h.env.owner,
     );
     const spec = {
@@ -206,6 +239,7 @@ async function main() {
         spec,
         probeCommand,
         out,
+        ...(hosts ? { hosts } : {}),
         collect: () =>
           collectEgressState(
             realEgressCollector(join(root, "results", "harness", MARKER_FILE)),

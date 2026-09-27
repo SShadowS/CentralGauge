@@ -20,7 +20,39 @@ Deno.test("backend-probe args: positional only keeps the M1-28 defaults", async 
     enforced: false,
     command: null,
     withholdToken: false,
+    image: null,
+    hosts: null,
   });
+});
+
+Deno.test("backend-probe args: --image and --route (M3-08) resolve the route's hosts", async () => {
+  assertEquals(
+    await parseProbeArgs([
+      "Cronus281",
+      "C:\s",
+      "--enforced",
+      "--image",
+      "sha256:abc",
+      "--route",
+      "openrouter:api-key",
+    ]),
+    {
+      container: "Cronus281",
+      secretsDir: "C:\s",
+      enforced: true,
+      command: null,
+      withholdToken: false,
+      image: "sha256:abc",
+      hosts: ["openrouter.ai"],
+    },
+  );
+  await assertRejects(() =>
+    parseProbeArgs(["C", "S", "--route", "openrouter:api-key"])
+  );
+  await assertRejects(() =>
+    parseProbeArgs(["C", "S", "--enforced", "--route", "nope:x"])
+  );
+  await assertRejects(() => parseProbeArgs(["C", "S", "--image"]));
 });
 
 Deno.test("backend-probe args: --enforced, --command-file (JSON string array) and --withhold-token", async () => {
@@ -46,6 +78,8 @@ Deno.test("backend-probe args: --enforced, --command-file (JSON string array) an
         enforced: true,
         command: ["powershell", "-Command", 'a "b"'],
         withholdToken: true,
+        image: null,
+        hosts: null,
       },
     );
   } finally {
