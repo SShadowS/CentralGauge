@@ -451,6 +451,10 @@ Deno.test("every published surface is redacted (UTF-8 and UTF-16): logs, stderr,
   assert(!leaks(published, SECRET_OAUTH) && !leaks(published, token));
   const side = await sideOf(t, r.executions[0]!.id);
   assertEquals([side.redactions, side.workspace_redactions], [2, 3]);
+  // M2-13b: where the redactions happened; the other published captures are clean.
+  const byFile = side.redactions_by_file as Record<string, number>;
+  assertEquals(byFile["raw.jsonl"], 2);
+  assertEquals(Object.values(byFile).reduce((a, b) => a + b, 0), 2);
   assert(!await exists(privatePaths(t.env, r.executions[0]!.id).custody));
 });
 

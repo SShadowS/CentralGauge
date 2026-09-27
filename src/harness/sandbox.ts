@@ -1019,12 +1019,17 @@ function redactCutTail(
   return { out, count: 1 };
 }
 
-/** Copy quarantined files to fresh destinations, byte-wise redacted. Missing sources are skipped. */
+/**
+ * Copy quarantined files to fresh destinations, byte-wise redacted. Missing
+ * sources are skipped and absent from `byFile`; a published file without
+ * redactions counts 0. `byFile` is keyed by the destination's base name.
+ */
 export async function publishRedacted(
   files: { src: string; dest: string }[],
   secrets: SecretValue[],
-): Promise<number> {
+): Promise<{ count: number; byFile: Record<string, number> }> {
   let count = 0;
+  const byFile: Record<string, number> = {};
   for (const f of files) {
     let data: Uint8Array;
     try {
@@ -1037,9 +1042,11 @@ export async function publishRedacted(
     const t = redactCutTail(r.out, secrets);
     // Token patterns after the exact custody secrets (M2-02).
     const p = redactPatterns(t.out);
-    count += r.count + t.count + p.count;
+    const n = r.count + t.count + p.count;
+    count += n;
+    byFile[basename(f.dest)] = (byFile[basename(f.dest)] ?? 0) + n;
     await Deno.mkdir(dirname(f.dest), { recursive: true });
     await Deno.writeFile(f.dest, p.out, { createNew: true });
   }
-  return count;
+  return { count, byFile };
 }

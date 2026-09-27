@@ -994,7 +994,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const runDir = join(p.pending, "run");
   await Deno.remove(runDir, { recursive: true }).catch(() => {});
   await Deno.mkdir(runDir, { recursive: true }); // a setup failure has no captures but still writes its side file
-  const redactions = await publishRedacted([
+  const published = await publishRedacted([
     { src: p.raw, dest: join(runDir, "raw.jsonl") },
     { src: p.stderr, dest: join(runDir, "stderr.txt") },
     { src: p.host, dest: join(runDir, "host-log.jsonl") },
@@ -1010,7 +1010,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     infra_reason: infraReasons.length > 0 ? infraReasons.join("; ") : null,
     stream_problems: problems,
     usage_reset_at: parsed.usageResetAt,
-    redactions,
+    redactions: published.count,
+    redactions_by_file: published.byFile,
     workspace_redactions: frozen?.redactions ?? 0,
     pricing_book_at: f.pricing.at,
     pristine_hash: f.pristineHash,
