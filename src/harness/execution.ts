@@ -73,6 +73,8 @@ import {
   retryProblem,
 } from "./records.ts";
 import {
+  ADMIN_REFUSAL_EXIT,
+  ADMIN_REFUSAL_MARKER,
   bounded,
   createSecretsDir,
   type DockerCli,
@@ -908,6 +910,25 @@ interface DraftInput {
   egressStop?: string | null;
 }
 
+/**
+ * The admin refusal line (H-01), or null. Only a genuine refusal counts: exit
+ * 86, no stdout at all (the guard runs before the agent could print), and the
+ * marker as the first stderr line. An agent that ran cannot forge it into an
+ * unjudged setup_failed.
+ */
+async function adminRefused(
+  s: SandboxResult,
+  rawPath: string,
+  stderrPath: string,
+): Promise<string | null> {
+  if (!s.started || s.exitCode !== ADMIN_REFUSAL_EXIT) return null;
+  const raw = await Deno.stat(rawPath).then((i) => i.size, () => -1);
+  if (raw !== 0) return null;
+  const first = (await Deno.readTextFile(stderrPath).catch(() => ""))
+    .split(/\r?\n/, 1)[0]!.trim();
+  return first.startsWith(ADMIN_REFUSAL_MARKER) ? first : null;
+}
+
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
 async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const now = env.now ?? (() => new Date());
@@ -1741,6 +1762,15 @@ export async function runExecution(
       "stop",
     );
   }
+  // H-01: the entrypoint refused to run the agent as an administrator (image
+  // or run user wrong). Infra: setup_failed, never judged, and a retry would
+  // repeat it, so the campaign stops.
+  const adminRefusal = await adminRefused(sandbox, p.raw, p.stderr);
+  if (adminRefusal !== null) {
+    setupError = setupError === null
+      ? adminRefusal
+      : `${adminRefusal}; ${setupError}`;
+  }
   const draft = await buildDraft(env, {
     id,
     cell,
@@ -1759,6 +1789,13 @@ export async function runExecution(
     egressStop,
   });
   await publishDraft(env, cell, draft, staged.pristine, true);
+  if (adminRefusal !== null) {
+    throw new ContainerError(
+      `${adminRefusal}; execution ${id} recorded as setup_failed; stopping`,
+      name,
+      "setup",
+    );
+  }
   if (egressFailure !== null) {
     // Infra, never scored; no retry repeats it: the campaign stops here.
     throw new ContainerError(

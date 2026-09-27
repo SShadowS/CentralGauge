@@ -28,7 +28,7 @@ import type {
   SharedProxyOptions,
 } from "./egress-proxy.ts";
 import type { SecretValue } from "./fsutil.ts";
-import { dockerChildEnv } from "./sandbox.ts";
+import { dockerChildEnv, SANDBOX_USER } from "./sandbox.ts";
 
 export type { EgressLogLine } from "./egress-proxy.ts";
 
@@ -1767,22 +1767,9 @@ export async function realEgressRuntime(
       });
       echo.on("message", (m, from) => echo.send(m, from.port, from.address));
       try {
-        const args = [
-          "exec",
-          sandbox,
-          "powershell",
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-File",
-          "C:\\egress-check.ps1",
-          "-Allow",
-          hosts.map((h) => `proxy-allow-${h}`).join(",") || "none",
-          ...(IPV4.test(lan) ? ["-LanRouter", lan] : []),
-        ];
         const r = await command(
           "docker",
-          args,
+          egressCheckArgs(sandbox, hosts, lan),
           dockerContextEnv(),
           PROBE_TIMEOUT_MS,
         );
@@ -1798,6 +1785,29 @@ export async function realEgressRuntime(
       }
     },
   };
+}
+
+/** The preflight's docker exec argv: as the agent's user (H-01), so it proves what the agent sees. */
+export function egressCheckArgs(
+  sandbox: string,
+  hosts: readonly string[],
+  lanRouter: string,
+): string[] {
+  return [
+    "exec",
+    "-u",
+    SANDBOX_USER,
+    sandbox,
+    "powershell",
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    "C:\\egress-check.ps1",
+    "-Allow",
+    hosts.map((h) => `proxy-allow-${h}`).join(",") || "none",
+    ...(IPV4.test(lanRouter) ? ["-LanRouter", lanRouter] : []),
+  ];
 }
 
 // ---------------------------------------------------------------------------

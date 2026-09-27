@@ -4,9 +4,18 @@
 # No secret is ever copied into a layer: the provider key arrives as a file at run time.
 ARG BASE
 FROM ${BASE}
+# A machine-wide npm prefix (H-01): ContainerUser can read and run it; the default
+# prefix sits in ContainerAdministrator's profile.
 RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
-    npm install -g @earendil-works/pi-coding-agent@0.87.1; \
-    [Environment]::SetEnvironmentVariable('PATH', (npm config get prefix) + ';' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
+    npm install -g --prefix C:\cg-npm @earendil-works/pi-coding-agent@0.87.1; \
+    [Environment]::SetEnvironmentVariable('PATH', 'C:\cg-npm;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
+# pi's agent directory at the C:\ root, which ContainerUser cannot create: made
+# here, Users (by SID) may modify it.
+RUN New-Item -ItemType Directory -Force -Path C:\pi-agent | Out-Null; \
+    icacls C:\pi-agent /grant "*S-1-5-32-545:(OI)(CI)M"; \
+    if ($LASTEXITCODE -ne 0) { throw "icacls C:\pi-agent failed: $LASTEXITCODE" }
 COPY run.ps1 C:/run.ps1
 COPY cg-budget.ts C:/cg-budget.ts
+# H-01: defense in depth; the harness also passes --user ContainerUser.
+USER ContainerUser
 CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\run.ps1"]

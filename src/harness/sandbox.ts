@@ -419,6 +419,17 @@ export interface SandboxSpec {
   stderrLog: string;
 }
 
+/**
+ * H-01: every sandbox process runs as the built-in non-admin user, never the
+ * image default ContainerAdministrator (an admin sandbox could change its own
+ * IP). The images also end with USER ContainerUser; this run arg is the control.
+ */
+export const SANDBOX_USER = "ContainerUser";
+/** An agent entrypoint that finds itself admin exits with this code and marker (harness/images/base/cg-nonadmin.ps1). */
+export const ADMIN_REFUSAL_EXIT = 86;
+export const ADMIN_REFUSAL_MARKER =
+  "cg-harness: refusing to run the agent as an administrator";
+
 export function buildRunArgs(s: SandboxSpec): string[] {
   if (!/^sha256:[0-9a-f]{64}$/.test(s.imageId)) {
     throw new ConfigurationError(
@@ -436,6 +447,8 @@ export function buildRunArgs(s: SandboxSpec): string[] {
     s.name,
     "--isolation",
     "hyperv",
+    "--user",
+    SANDBOX_USER,
     ...(s.network ? ["--network", s.network] : []),
     "--label",
     `${OWNER_LABEL}=${s.owner}`,

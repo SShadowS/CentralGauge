@@ -34,7 +34,10 @@ import {
   RecordStore,
 } from "../../../src/harness/records.ts";
 import {
+  ADMIN_REFUSAL_EXIT,
+  ADMIN_REFUSAL_MARKER,
   READY_FILE,
+  SANDBOX_USER,
   SECRETS_DIR_PREFIX,
 } from "../../../src/harness/sandbox.ts";
 import { loadTask } from "../../../src/harness/task.ts";
@@ -3160,5 +3163,70 @@ Deno.test("recovery (M1-33d): an attempt interrupted after the proxy credential 
     assertEquals(forms.length, 7, phase);
     for (const f of forms) assert(!leaks(published, f), `${phase}: ${f}`);
     assert(!await exists(privatePaths(t.env, e.id).custody), phase);
+  }
+});
+
+// H-01: the agent never runs as an administrator.
+
+Deno.test("H-01: every docker run of a cell (placed agent run, stub cell) runs as ContainerUser", async () => {
+  const t = await makeEnv();
+  enforce(t);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  const t2 = await makeEnv();
+  await stubEnv(t2);
+  await runCell(t2.env, await cellFor(t2));
+  const runs = [...t.docker.runs, ...t2.docker.runs];
+  assertEquals(runs.length, 2);
+  assertEquals(SANDBOX_USER, "ContainerUser");
+  for (const r of runs) assertEquals(r.user, "ContainerUser", r.name);
+});
+
+Deno.test("H-01: the entrypoint's admin refusal (exit 86 + marker) is setup_failed, never judged, and stops the campaign", async () => {
+  const t = await makeEnv();
+  t.env.supervised = false;
+  enforce(t);
+  t.docker.behavior = async () => {
+    await Deno.writeTextFile(
+      t.docker.lastCapture!.stderrPath,
+      `${ADMIN_REFUSAL_MARKER} (User Manager\\ContainerAdministrator)\r\n`,
+      { append: true },
+    );
+    return ADMIN_REFUSAL_EXIT;
+  };
+  const cell = await cellFor(t);
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ContainerError,
+    "administrator",
+  );
+  assertEquals(t.docker.runs.length, 1, "no automatic retry");
+  const [e] = await t.env.store.executions(cell.campaignId);
+  assertEquals(e!.termination, "setup_failed");
+  assertStringIncludes(
+    (await sideOf(t, e!.id)).setup_error,
+    ADMIN_REFUSAL_MARKER,
+  );
+  assertEquals(await t.env.store.judgments(e!.id), []);
+});
+
+Deno.test("H-01: only a genuine refusal counts: exit 86 without the marker, the marker with another code, or a run that printed (a forged refusal) is an ordinary crash", async () => {
+  const cases = [
+    [86, "boom", false],
+    [1, ADMIN_REFUSAL_MARKER, false],
+    [86, ADMIN_REFUSAL_MARKER, true],
+    [86, `noise\n${ADMIN_REFUSAL_MARKER}`, false],
+  ] as const;
+  for (const [code, text, printed] of cases) {
+    const t = await makeEnv();
+    t.docker.behavior = async (_c, io) => {
+      if (printed) await io.stdout(INIT);
+      await Deno.writeTextFile(t.docker.lastCapture!.stderrPath, text, {
+        append: true,
+      });
+      return code;
+    };
+    const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+    assertEquals(e.termination, "harness_crash", `${code} ${text} ${printed}`);
   }
 });

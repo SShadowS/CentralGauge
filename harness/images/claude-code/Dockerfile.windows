@@ -3,8 +3,12 @@
 # verifies that the built image's layers start with the base's layers (M1-24).
 ARG BASE
 FROM ${BASE}
+# A machine-wide npm prefix (H-01): ContainerUser can read and run it; the default
+# prefix sits in ContainerAdministrator's profile.
 RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
-    npm install -g @anthropic-ai/claude-code@2.1.282; \
-    [Environment]::SetEnvironmentVariable('PATH', (npm config get prefix) + ';' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
+    npm install -g --prefix C:\cg-npm @anthropic-ai/claude-code@2.1.282; \
+    [Environment]::SetEnvironmentVariable('PATH', 'C:\cg-npm;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
 COPY run.ps1 C:/run.ps1
+# H-01: defense in depth; the harness also passes --user ContainerUser.
+USER ContainerUser
 CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\run.ps1"]

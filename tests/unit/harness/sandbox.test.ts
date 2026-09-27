@@ -19,6 +19,7 @@ import {
   redactText,
   removeSecrets,
   runSandbox,
+  SANDBOX_USER,
   sandboxName,
   type SandboxSpec,
   sweepOwnedSandboxes,
@@ -114,6 +115,17 @@ Deno.test("buildRunArgs: owned name and labels, Hyper-V isolation, exact mounts,
     ConfigurationError,
     "immutable",
   );
+});
+
+Deno.test("buildRunArgs (H-01): every sandbox runs as the non-admin ContainerUser, before the image", async () => {
+  assertEquals(SANDBOX_USER, "ContainerUser");
+  const s = await spec({ command: ["powershell", "-File", "C:\\p.ps1"] });
+  const args = buildRunArgs(s);
+  const at = args.indexOf("--user");
+  assert(at > 0 && at < args.indexOf(s.imageId), args.join(" "));
+  assertEquals(args[at + 1], "ContainerUser");
+  assertEquals(args.filter((a) => a === "--user" || a === "-u").length, 1);
+  assertEquals(parseRunArgs(args).user, "ContainerUser");
 });
 
 Deno.test("runSandbox: a secret in argv or env is refused before docker run", async () => {

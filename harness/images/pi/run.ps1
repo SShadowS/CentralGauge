@@ -5,6 +5,9 @@
 # provider key: the budget guard (-e C:\cg-budget.ts) is its only holder.
 # Windows PowerShell 5.1: every text read names UTF-8.
 $ErrorActionPreference = 'Stop'
+# H-01: first, before any config, secret or ready read; any non-zero exits 86.
+& 'C:\cg-nonadmin.ps1'
+if ($LASTEXITCODE -ne 0) { exit 86 }
 $utf8 = New-Object System.Text.UTF8Encoding $false
 $global:OutputEncoding = $utf8
 [Console]::InputEncoding = $utf8
@@ -45,7 +48,8 @@ if (Test-Path 'C:\cg-secrets\proxy-credential') {
   Remove-Variable proxyCred
 }
 $env:PI_CODING_AGENT_DIR = 'C:\pi-agent'
-New-Item -ItemType Directory -Force -Path $env:PI_CODING_AGENT_DIR | Out-Null
+# Built into the image with Users modify (H-01: the agent is not admin).
+if (-not (Test-Path $env:PI_CODING_AGENT_DIR)) { New-Item -ItemType Directory -Path $env:PI_CODING_AGENT_DIR | Out-Null }
 [IO.File]::WriteAllText("$env:PI_CODING_AGENT_DIR\settings.json", (ConvertTo-Json -InputObject $ps -Depth 8), $utf8)
 # Instructions are validated and staged before pi runs at all.
 if (Test-Path 'C:\config\bundle\instructions') {

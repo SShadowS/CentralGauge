@@ -12,6 +12,8 @@ export interface RunCall {
   image: string;
   network: string | null;
   isolation: string | null;
+  /** --user / -u; null when absent (the image's default user). */
+  user: string | null;
   command: string[];
   mounts: Map<string, { src: string; readonly: boolean }>;
   env: Map<string, string>;
@@ -27,6 +29,7 @@ export function parseRunArgs(args: string[]): RunCall {
     image: args[imageAt]!,
     network: null,
     isolation: null,
+    user: null,
     command: args.slice(imageAt + 1),
     mounts: new Map(),
     env: new Map(),
@@ -38,6 +41,7 @@ export function parseRunArgs(args: string[]): RunCall {
     if (a === "--name") call.name = v;
     else if (a === "--network") call.network = v;
     else if (a === "--isolation") call.isolation = v;
+    else if (a === "--user" || a === "-u") call.user = v;
     else if (a === "--label") {
       call.labels.set(v.split("=")[0]!, v.slice(v.indexOf("=") + 1));
     } else if (a === "-e") {
