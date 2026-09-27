@@ -1622,8 +1622,8 @@ export async function realEgressRuntime(
     concurrency?: number;
     /**
      * The marker's proxy_isolation fixed when the environment opened (env.proxyIsolation,
-     * M1-33e); above concurrency 1 every verify() requires the same value. A present
-     * but undefined key is a missing value; an absent key compares to PROXY_ISOLATION.
+     * M1-33e); above concurrency 1 every verify() requires the same value. Unset is
+     * missing and refused (fail closed).
      */
     proxyIsolation?: unknown;
   },
@@ -1676,12 +1676,11 @@ export async function realEgressRuntime(
       // this proxy; nor is a value other than the one fixed at startup (M1-33e).
       const concurrency = o.concurrency ?? 1;
       const version = proxyIsolationProblem(markerProxyIsolation, concurrency);
-      const fixed = "proxyIsolation" in o ? o.proxyIsolation : PROXY_ISOLATION;
       if (version) p.push(`egress marker ${o.markerPath} has ${version}`);
-      else if (concurrency > 1 && markerProxyIsolation !== fixed) {
+      else if (concurrency > 1 && markerProxyIsolation !== o.proxyIsolation) {
         p.push(
           `egress marker ${o.markerPath} proxy_isolation changed from ${
-            JSON.stringify(fixed) ?? "missing"
+            JSON.stringify(o.proxyIsolation) ?? "missing"
           } to ${
             JSON.stringify(markerProxyIsolation)
           } since the environment opened: concurrency ${concurrency} needs the same value throughout`,

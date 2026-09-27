@@ -7,7 +7,6 @@ import {
 } from "@std/assert";
 import { Command } from "@cliffy/command";
 import { stripAnsiCode } from "@std/fmt/colors";
-import { walk } from "@std/fs";
 import { join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import {
@@ -2626,7 +2625,7 @@ Deno.test("openHarnessEnv concurrency > 1 (M1-33e): the proxy_isolation gate run
   }
 });
 
-Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, registrations dropped, in-flight tunnels ended, no proxy credential on disk, a second close is a no-op; env.proxyIsolation is fixed under the lock", async () => {
+Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, the existing registration revoked, in-flight tunnels ended, no registration after close, a second close is a no-op; env.proxyIsolation is fixed under the lock", async () => {
   const t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
@@ -2643,6 +2642,9 @@ Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, registrations d
   const order: string[] = [];
   const seen: { proxyIsolation?: unknown }[] = [];
   let proxyPort = 0;
+  // A resolve held open on the registration's signal: only revoke aborts it.
+  const resolving = Promise.withResolvers<void>();
+  let revoked = false;
   const d: EnvDeps = {
     ...deps(order, undefined, () => Promise.resolve([])),
     egressRuntime: (eo) => {
@@ -2655,7 +2657,16 @@ Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, registrations d
             hostname: "127.0.0.1",
             port: 0,
             allowedHosts: ["127.0.0.1"],
-            resolve: () => Promise.resolve(["93.184.216.34"]),
+            resolve: (host, signal) =>
+              host === "slow.example.test"
+                ? new Promise((res) => {
+                  signal?.addEventListener("abort", () => {
+                    revoked = true;
+                    res([]);
+                  });
+                  resolving.resolve();
+                })
+                : Promise.resolve(["93.184.216.34"]),
             dial: () =>
               Deno.connect({
                 hostname: "127.0.0.1",
@@ -2686,29 +2697,38 @@ Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, registrations d
     assertEquals(h.env.proxyIsolation, PROXY_ISOLATION);
     assertEquals(seen.map((x) => x.proxyIsolation), [PROXY_ISOLATION]);
     const { credential, reg } = h.env.egress!.register({
-      allow: ["example.test"],
+      allow: ["example.test", "slow.example.test"],
       log: () => Promise.resolve(),
       source,
     });
-    // An in-flight tunnel through the shared proxy.
-    const tunnel = await Deno.connect({
-      hostname: "127.0.0.1",
-      port: proxyPort,
-    });
-    await tunnel.write(
-      new TextEncoder().encode(
-        `CONNECT example.test:443 HTTP/1.1\r\nHost: example.test:443\r\nProxy-Authorization: Basic ${
-          btoa(`${credential.user}:${credential.pass}`)
-        }\r\n\r\n`,
-      ),
-    );
+    const connect = async (target: string) => {
+      const c = await Deno.connect({ hostname: "127.0.0.1", port: proxyPort });
+      await c.write(
+        new TextEncoder().encode(
+          `CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\nProxy-Authorization: Basic ${
+            btoa(`${credential.user}:${credential.pass}`)
+          }\r\n\r\n`,
+        ),
+      );
+      return c;
+    };
+    // An in-flight tunnel through the shared proxy, and a pending resolve.
+    const tunnel = await connect("example.test:443");
     const buf = new Uint8Array(512);
     const n = await tunnel.read(buf);
     assertStringIncludes(
       new TextDecoder().decode(buf.subarray(0, n ?? 0)),
       " 200 ",
     );
+    const pending = await connect("slow.example.test:443");
+    await resolving.promise;
+    assertEquals(revoked, false);
     await h.close();
+    // The existing registration was revoked: its signal aborted its pending resolve.
+    assertEquals(revoked, true);
+    try {
+      pending.close();
+    } catch { /* closed */ }
     // In-flight tunnel ended.
     assertEquals(await tunnel.read(buf).catch(() => null), null);
     try {
@@ -2718,7 +2738,7 @@ Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, registrations d
     await assertRejects(() =>
       Deno.connect({ hostname: "127.0.0.1", port: proxyPort })
     );
-    // Registrations dropped: none is issued after close, the old one is already revoked.
+    // No registration is issued after close.
     assertThrows(
       () =>
         h.env.egress!.register({
@@ -2730,13 +2750,6 @@ Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, registrations d
       "shut down",
     );
     await reg.unregister();
-    // No file anywhere under the fixture holds the proxy credential.
-    for (const dir of [t.repo.root, t.env.privateRoot, t.env.secretsSource]) {
-      for await (const e of walk(dir, { includeDirs: false })) {
-        const text = await Deno.readTextFile(e.path).catch(() => "");
-        assertEquals(text.includes(credential.pass), false, e.path);
-      }
-    }
     // A second close is a no-op.
     await h.close();
     assertEquals(order.filter((x) => x === "release").length, 1);

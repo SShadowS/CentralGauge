@@ -1403,6 +1403,7 @@ Deno.test("realEgressRuntime verify (M1-33d review): above concurrency 1 the mar
       collect,
       shared: inertShared,
       concurrency,
+      proxyIsolation: value,
     });
   };
   assertEquals(PROXY_ISOLATION, 2);
@@ -1475,7 +1476,8 @@ Deno.test("realEgressRuntime verify (M1-33e): above concurrency 1 each cell's re
       concurrency,
       proxyIsolation: fixed,
     });
-  // Cell 1 verifies; the marker changes; cell 2 is refused, naming both values.
+  // Cell 1 verifies; the marker leaves PROXY_ISOLATION; cell 2 is refused by
+  // the version check (the "changed" branch is exercised below).
   for (const next of [1, 3, undefined, "2"]) {
     value = PROXY_ISOLATION;
     const rt = await runtime(2, PROXY_ISOLATION);
@@ -1497,6 +1499,17 @@ Deno.test("realEgressRuntime verify (M1-33e): above concurrency 1 each cell's re
     assertStringIncludes(p[0]!, "changed", String(fixed));
     assertStringIncludes(p[0]!, "concurrency 2", String(fixed));
   }
+  // No stored value at all is missing, never a default (fail closed).
+  value = PROXY_ISOLATION;
+  const unset = await (await realEgressRuntime({
+    repoRoot: root,
+    markerPath,
+    collect,
+    shared: inertShared,
+    concurrency: 2,
+  })).verify();
+  assertEquals(unset.length, 1);
+  assertStringIncludes(unset[0]!, "changed from missing");
   // An older fixed value that the marker still holds is the plain version refusal.
   value = 1;
   const older = await (await runtime(2, 1)).verify();
