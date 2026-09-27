@@ -1146,3 +1146,63 @@ Deno.test("dropShippedTests: a shipped object that references a shipped test cod
     "Test/src/Lib.Codeunit.al references shipped test codeunit 80020 CGR Suite",
   );
 });
+
+// ---- M4-17a run 002 review: F1 dangling globals, F2 collisions with shipped objects ----
+
+Deno.test("F1: a new-file global typed as a shipped test codeunit is cut with the members that used it (the var keyword too when its section empties)", async () => {
+  const p = await pristineDir();
+  const onlyTainted =
+    `codeunit 80101 "Agent Two"\n{\n    Subtype = Test;\n\n    var\n        Other: Codeunit "CGR Shipped Tests";\n\n    [Test]\n    procedure Wraps()\n    begin\n        Other.Run();\n    end;\n${GOOD}}\n`;
+  const { v, added } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      [NEW]: newFile(
+        `
+    [Test]
+    procedure Wraps()
+    begin
+        Other.Run();
+    end;
+${GOOD}`,
+        `        Other: Codeunit "CGR Shipped Tests";\n        Keep: Integer;\n`,
+      ),
+      "Test/src/Two.Test.al": onlyTainted,
+    }),
+  );
+  assertEquals(v.excluded, []);
+  const one = await Deno.readTextFile(join(v.dir, NEW));
+  assert(!one.includes("CGR Shipped Tests"), one);
+  assertStringIncludes(one, "Keep: Integer;");
+  assertStringIncludes(one, 'Assert: Codeunit "Library Assert";');
+  const two = await Deno.readTextFile(join(v.dir, "Test/src/Two.Test.al"));
+  assert(!two.includes("CGR Shipped Tests"), two);
+  assert(!/\bvar\b/.test(two), "the emptied var section is gone");
+  assertEquals(added.map((x) => [x.codeunit, x.procedures]), [
+    [80100, ["Good"]],
+    [80101, ["Good"]],
+  ]);
+});
+
+Deno.test("F2: an agent Test object colliding with a shipped Test object (same kind, id or name) is a violation", async () => {
+  const p = await pristineDir();
+  const { v } = await rebuild(
+    p,
+    await artifactFrom(p, {
+      "Test/src/SameId.Test.al":
+        `codeunit 80010 "Imposter"\n{\n    Subtype = Test;\n}\n`,
+      "Test/src/SameName.Test.al":
+        `codeunit 80150 "CGR Shipped Tests"\n{\n    Subtype = Test;\n}\n`,
+      "Test/src/OtherKind.Table.al": `table 80010 "Fine"\n{\n}\n`,
+    }),
+  );
+  const text = v.violations.join("\n");
+  assertStringIncludes(
+    text,
+    "Test/src/SameId.Test.al: codeunit 80010 collides with shipped codeunit 80010 CGR Shipped Tests",
+  );
+  assertStringIncludes(
+    text,
+    "Test/src/SameName.Test.al: codeunit 80150 collides with shipped codeunit 80010 CGR Shipped Tests",
+  );
+  assert(!text.includes("OtherKind"), text);
+});

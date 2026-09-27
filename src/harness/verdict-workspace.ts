@@ -242,6 +242,9 @@ export async function buildVerdictWorkspace(
     violations.push(err.message);
   }
   violations.push(...await validateApps(out, pristineApps, apps, o.symbolIds));
+  violations.push(
+    ...await shippedCollisions(join(o.pristine, TEST_APP), out, newTestFiles),
+  );
   const { notes, excluded } =
     violations.length === 0 && (editedShipped.size + newTestFiles.length) > 0
       ? await applyCreditRules(
@@ -611,6 +614,8 @@ interface Member {
   test: boolean;
   /** Attribute source ranges. */
   attrs: [number, number][];
+  /** var: where its section's `var` (or `protected var`) keyword starts. */
+  section?: number;
 }
 
 /**
@@ -632,6 +637,7 @@ function codeunitMembers(text: string, d: AlDecl): Member[] | null {
   };
   while (k < t.length) {
     if (kw(k, "var") || (kw(k, "protected") && kw(k + 1, "var"))) {
+      const section = t[k]!.start;
       k += kw(k, "var") ? 1 : 2;
       while (
         k < t.length && !punct(k, "[") && !kw(k, "var") &&
@@ -655,6 +661,7 @@ function codeunitMembers(text: string, d: AlDecl): Member[] | null {
           bodyStart: 0,
           test: false,
           attrs: [],
+          section,
         });
         k++;
       }
@@ -1180,7 +1187,7 @@ interface NewFile {
   src: string;
   judged: Judged;
   /** Parsed codeunits (their violators are removed). */
-  codeunits: { d: AlDecl; code: Member[] }[];
+  codeunits: { d: AlDecl; code: Member[]; vars: Member[] }[];
 }
 
 /**
@@ -1250,9 +1257,10 @@ async function applyCreditRules(
         continue;
       }
       const code = ms.filter(isCode);
+      const vars = ms.filter((m) => m.kind === "var");
       f.judged.code.push(...code);
-      f.judged.vars.push(...ms.filter((m) => m.kind === "var"));
-      f.codeunits.push({ d, code });
+      f.judged.vars.push(...vars);
+      f.codeunits.push({ d, code, vars });
     }
     fresh.push(f);
   }
@@ -1317,8 +1325,8 @@ async function applyCreditRules(
   }
 
   for (const f of fresh) {
-    const cuts: Member[] = [];
-    for (const { d, code } of f.codeunits) {
+    const cuts: { start: number; end: number }[] = [];
+    for (const { d, code, vars } of f.codeunits) {
       for (const m of code) {
         const w = why.get(m);
         if (!w) continue;
@@ -1328,6 +1336,28 @@ async function applyCreditRules(
             m.displays[0]
           }: ${w}; removed (not run, not counted)`,
         );
+      }
+      // A global typed as a shipped test codeunit: every member using it was
+      // just removed (creditViolations), and it would dangle in a build
+      // without the shipped tests. Cut it; an emptied section loses `var`.
+      const tainted = vars.filter((g) =>
+        shippedUnitRef(f.judged.text, g.start, g.end, shipped) !== null
+      );
+      for (const g of tainted) {
+        notes.push(
+          `${TEST_APP}/${f.rel} codeunit ${d.id}: global ${
+            g.displays.join(", ")
+          }: typed as a shipped test codeunit; removed`,
+        );
+      }
+      const sections = new Map<number, Member[]>();
+      for (const g of vars) {
+        sections.set(g.section!, [...sections.get(g.section!) ?? [], g]);
+      }
+      for (const [start, gs] of sections) {
+        if (gs.every((g) => tainted.includes(g))) {
+          cuts.push({ start, end: gs.at(-1)!.end });
+        } else cuts.push(...gs.filter((g) => tainted.includes(g)));
       }
     }
     if (cuts.length === 0) continue;
@@ -1450,4 +1480,42 @@ async function dropShippedTestCodeunits(
   for (const rel of drop) {
     await Deno.remove(join(out, TEST_APP, ...rel.split("/")));
   }
+}
+
+/**
+ * An agent Test object with the kind and id or name of a shipped Test object
+ * (M4-17a run 002 F2): the agent's own workspace could not compile it, and a
+ * mutant_kill build that leaves the shipped tests out must not either.
+ */
+async function shippedCollisions(
+  pristineTest: string,
+  out: string,
+  newFiles: readonly string[],
+): Promise<string[]> {
+  const shipped = new Map<string, string>();
+  for (const e of await listTree(pristineTest, "task", { optional: true })) {
+    if (!e.path.toLowerCase().endsWith(".al")) continue;
+    const src = await Deno.readTextFile(join(pristineTest, e.path));
+    const text = stripAlNoise(src);
+    for (const d of declarations(src)) {
+      const label = `${d.kind} ${d.id} ${objectName(text, d)}`;
+      shipped.set(`${d.kind}#${d.id}`, label);
+      shipped.set(`${d.kind}:${objectName(text, d).toLowerCase()}`, label);
+    }
+  }
+  const v: string[] = [];
+  for (const rel of newFiles) {
+    const src = await Deno.readTextFile(join(out, TEST_APP, ...rel.split("/")));
+    const text = stripAlNoise(src);
+    for (const d of declarations(src)) {
+      const hit = shipped.get(`${d.kind}#${d.id}`) ??
+        shipped.get(`${d.kind}:${objectName(text, d).toLowerCase()}`);
+      if (hit) {
+        v.push(
+          `${TEST_APP}/${rel}: ${d.kind} ${d.id} collides with shipped ${hit}`,
+        );
+      }
+    }
+  }
+  return v;
 }
