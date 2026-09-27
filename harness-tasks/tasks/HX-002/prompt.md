@@ -2,7 +2,7 @@
 
 Finance reports that schedules of leases starting at the end of a month drift. A 12-month lease starting 31 January 2027 has its March installment due on 28 March instead of 31 March, and every later installment stays on the 28th.
 
-Before anyone changes the scheduling code we want automated tests that pin down how a lease schedule must behave. Add them to the Test app. Do not fix the scheduling code in this task: your tests will be run against the corrected scheduling code, where they must pass, and against the current code, where they must catch the drift.
+Before anyone changes the scheduling code we want automated tests that pin down how a lease schedule must behave. Put them in a new test codeunit in the Test app. Do not fix the scheduling code in this task: your tests will be run against the corrected scheduling code, where they must pass, and against the current code, where they must catch the drift.
 
 How a lease schedule must behave (schedules are created with `CGR Lease Mgt`, CreateSchedule):
 
