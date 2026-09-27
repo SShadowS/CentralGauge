@@ -52,6 +52,8 @@ export interface QualificationProbe {
   hosts?: string[];
   /** The host state at probe time (network id and interface index for the evidence). */
   collect(): Promise<EgressState>;
+  /** Revokes `token` at the backend; called first in the teardown (M5-08a). */
+  revoke?: () => Promise<unknown>;
 }
 
 const q = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -158,7 +160,13 @@ export async function runQualificationProbe(
     settled = await running;
     return { sandbox: settled, problems, evidence };
   } finally {
-    // M5-08a: sandbox stopped and confirmed gone, then its secrets dir.
+    // M5-08a: credentials cut first (run aborted, backend token revoked,
+    // proxy shut down), then the sandbox confirmed gone, then its secrets.
+    if (pending && !settled) stop.abort();
+    const revoked = o.revoke?.().catch(() => {});
+    await bounded(proxy.shutdown(), opMs, "egress proxy shutdown").catch(
+      () => {},
+    );
     const down = await teardownSandbox({
       docker: o.docker,
       name: o.spec.name,
@@ -169,9 +177,7 @@ export async function runQualificationProbe(
       settled,
       secretsDir: secrets,
     });
-    await bounded(proxy.shutdown(), opMs, "egress proxy shutdown").catch(
-      () => {},
-    );
+    await revoked;
     if (!down.gone || down.secretsLeft) {
       // Fail closed and loud; the next start sweeps the container, then the secrets.
       throw new ContainerError(

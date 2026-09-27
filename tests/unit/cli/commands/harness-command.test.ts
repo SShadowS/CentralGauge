@@ -64,6 +64,7 @@ import { BenchLockHeldError } from "../../../../src/utils/bench-lock.ts";
 import { FakeBc } from "../../harness/fake-bc.ts";
 import { FakeDocker } from "../../harness/fake-docker.ts";
 import { runQualificationProbe } from "../../../../src/harness/egress-probe.ts";
+import { holdExclusive } from "../../harness/hold-file.ts";
 import { READY_FILE } from "../../../../src/harness/sandbox.ts";
 import {
   CATALOG,
@@ -77,8 +78,10 @@ import {
 import {
   CentralGaugeError,
   ConfigurationError,
+  ContainerError,
   ValidationError,
 } from "../../../../src/errors.ts";
+import { exists } from "../../../../src/harness/fsutil.ts";
 import { RecordStore } from "../../../../src/harness/records.ts";
 import {
   campaign,
@@ -3242,4 +3245,140 @@ Deno.test("cellEgressProblems (M1-34e): fail closed on mixed tagging, unknown va
     cellEgressProblems("", OAUTH_ROUTES).join("\n"),
     "agent",
   );
+});
+
+// M5-08a run 002: the probe cuts its credentials first, then tears the
+// sandbox down, and never pulls the secrets from under a running sandbox.
+
+async function probeWith(
+  t: Awaited<ReturnType<typeof makeEnv>>,
+  eg: ReturnType<typeof fakeEgress>,
+  name: string,
+) {
+  const out = join(t.env.privateRoot, `probe-out-${name}`);
+  await Deno.mkdir(out, { recursive: true });
+  return await runQualificationProbe({
+    docker: t.docker,
+    egress: eg,
+    custody: {
+      privateRoot: t.env.privateRoot,
+      owner: t.env.owner,
+      ...(t.env.secretAcl ?? {}),
+    },
+    token: "backend-token-0123456789abcdef",
+    revoke: () => {
+      eg.events.push("revoke");
+      return Promise.resolve(true);
+    },
+    spec: {
+      name: `cg-harness-probe-${name}`,
+      owner: t.env.owner,
+      executionId: `exec-probe-${name}`,
+      imageId: `sha256:${"c".repeat(64)}`,
+      workspace: out,
+      taskDir: out,
+      configDir: out,
+      extraMounts: [],
+      env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+      timeoutMs: 60_000,
+      killGraceMs: 50,
+      opTimeoutMs: 100,
+      maxCaptureBytes: 1024 * 1024,
+      rawLog: join(out, "probe.jsonl"),
+      stderrLog: join(out, "stderr.txt"),
+    },
+    probeCommand: ["powershell", "-File", "C:\config\cg-al-probe.ps1"],
+    out,
+    collect: () =>
+      markerAwareCollector()(
+        join(t.env.privateRoot, "results", "harness", EGRESS_MARKER),
+      ),
+  });
+}
+
+Deno.test("qualification probe (M5-08a): a stuck rm -f runs only after the token is revoked and the proxy is down; secrets kept; fail closed", async () => {
+  const t = await makeEnv();
+  const eg = fakeEgress();
+  t.docker.waitForReady = true;
+  let secrets = "";
+  t.docker.behavior = (call) => {
+    secrets = call.mounts.get("C:\\cg-secrets")!.src;
+    t.docker.lingering.add(call.name);
+    return Promise.resolve(0);
+  };
+  const rm = t.docker.rm.bind(t.docker);
+  t.docker.rm = (n) => {
+    eg.events.push("rm");
+    return rm(n);
+  };
+  await assertRejects(
+    () => probeWith(t, eg, "stuck"),
+    ContainerError,
+    "teardown not confirmed",
+  );
+  const cut = Math.max(
+    eg.events.indexOf("revoke"),
+    eg.events.indexOf("proxy down"),
+  );
+  assert(cut >= 0, eg.events.join(","));
+  assertEquals(eg.events.slice(cut + 1), Array(5).fill("rm"));
+  assert(await exists(secrets), "never pulled from under a live sandbox");
+  t.docker.lingering.clear();
+  await Deno.remove(secrets, { recursive: true });
+});
+
+Deno.test({
+  name:
+    "qualification probe (M5-08a): a held secrets dir (os error 32) after the sandbox is gone fails closed with the reason",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const t = await makeEnv();
+    const eg = fakeEgress();
+    t.docker.waitForReady = true;
+    let release: (() => Promise<void>) | null = null;
+    let secrets = "";
+    t.docker.behavior = async (call) => {
+      secrets = call.mounts.get("C:\\cg-secrets")!.src;
+      release = await holdExclusive(join(secrets, "backend-token"));
+      return 0;
+    };
+    try {
+      const err = await assertRejects(
+        () => probeWith(t, eg, "held"),
+        ContainerError,
+        "teardown not confirmed",
+      );
+      assertStringIncludes(err.message, "os error 32");
+      assert(eg.events.includes("revoke"));
+    } finally {
+      await (release as (() => Promise<void>) | null)?.();
+    }
+    await Deno.remove(secrets, { recursive: true });
+  },
+});
+
+Deno.test("qualification probe (M5-08a): a failed token write while the sandbox runs keeps the secrets until the sandbox is gone; the write error is not masked", async () => {
+  const t = await makeEnv();
+  const eg = fakeEgress();
+  let secrets = "";
+  const seen: string[] = [];
+  t.docker.behavior = async (call, io) => {
+    secrets = call.mounts.get("C:\\cg-secrets")!.src;
+    // Makes the probe's createNew token write fail (AlreadyExists).
+    await Deno.writeTextFile(join(secrets, "backend-token"), "planted");
+    await io.killed;
+    return 137;
+  };
+  const rm = t.docker.rm.bind(t.docker);
+  t.docker.rm = async (n) => {
+    seen.push(`rm; secrets ${await exists(secrets)}`);
+    return await rm(n);
+  };
+  await assertRejects(
+    () => probeWith(t, eg, "write"),
+    Deno.errors.AlreadyExists,
+  );
+  assert(seen.length > 0 && seen.every((x) => x === "rm; secrets true"));
+  assert(!await exists(secrets), "removed after the sandbox is gone");
+  assert(eg.events.includes("revoke") && eg.events.includes("proxy down"));
 });

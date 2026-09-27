@@ -854,19 +854,20 @@ export async function createSecretsDir(
 }
 
 /** Write the values as new files into a custody dir; a failure removes the dir. */
+/**
+ * Write secret files into a custody dir. A failure is thrown as is: the dir
+ * may already be mounted by a running sandbox, so removing it is the
+ * caller's teardown (teardownSandbox, M5-08a), never done here.
+ */
 export async function writeSecretFiles(
   dir: string,
   values: SecretValue[],
 ): Promise<void> {
-  try {
-    for (const v of values) {
-      await Deno.writeTextFile(join(dir, v.name), v.value, {
-        createNew: true,
-        mode: 0o600,
-      });
-    }
-  } catch (err) {
-    await cleanupAfter(err, dir);
+  for (const v of values) {
+    await Deno.writeTextFile(join(dir, v.name), v.value, {
+      createNew: true,
+      mode: 0o600,
+    });
   }
 }
 
@@ -898,7 +899,11 @@ export async function prepareSecrets(
   } catch (err) {
     return await cleanupAfter(err, dir);
   }
-  await writeSecretFiles(dir, values);
+  try {
+    await writeSecretFiles(dir, values); // no sandbox mounts it yet
+  } catch (err) {
+    return await cleanupAfter(err, dir);
+  }
   return { dir, values };
 }
 
@@ -967,22 +972,26 @@ export async function teardownSandbox(o: {
     sandbox = await o.run; // runSandbox never rejects
   }
   let gone = o.run === null || (sandbox?.confirmedGone ?? false);
-  for (let i = 1; !gone && i <= attempts; i++) {
+  /** Gone when docker no longer reports it (or reports another execution's). */
+  const check = async (): Promise<boolean> => {
     try {
       const st = await bounded(
         o.docker.state(o.name),
         o.opTimeoutMs,
         `docker inspect ${o.name}`,
       );
-      if (st === null) {
-        gone = true;
-        break;
-      }
-      if (st.execution !== null && st.execution !== o.executionId) {
-        // Another execution's container under this name: ours is gone.
-        gone = true;
-        break;
-      }
+      return st === null ||
+        (st.execution !== null && st.execution !== o.executionId);
+    } catch (err) {
+      problems.push(err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  };
+  if (!gone) gone = await check();
+  // Bounded: at most `attempts` rm -f, each followed by an inspect, so a
+  // final successful removal is confirmed, never reported as unconfirmed.
+  for (let i = 1; !gone && i <= attempts; i++) {
+    try {
       const rm = await bounded(
         o.docker.rm(o.name),
         o.opTimeoutMs,
@@ -994,7 +1003,10 @@ export async function teardownSandbox(o: {
     } catch (err) {
       problems.push(err instanceof Error ? err.message : String(err));
     }
-    if (i < attempts) await new Promise((r) => setTimeout(r, delayMs));
+    gone = await check();
+    if (!gone && i < attempts) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
   }
   if (!gone) {
     problems.push(

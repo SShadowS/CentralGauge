@@ -1716,17 +1716,28 @@ export async function runExecution(
         throw egressFail(`egress preflight failed: ${preflightError}`);
       }
     } finally {
-      // M5-08a: the sandbox is stopped and confirmed gone before the
-      // secrets it mounts are removed; a removal failure never replaces the
-      // error in flight (the caller fails closed below).
+      // M5-08a: credentials are cut first, while the sandbox may still run:
+      // the run is aborted, the backend token revoked (the grant goes at
+      // once; the drain is awaited below) and the proxy credential
+      // unregistered. Then the bounded teardown: the sandbox confirmed gone
+      // before the secrets it mounts are removed. A teardown failure never
+      // replaces the error in flight (the caller fails closed below).
+      const abortRun = () =>
+        egressAbort.abort(new Error("execution ended before its sandbox"));
+      if (pending && !settledRun) abortRun();
+      const revoking = env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
+      if (reg) {
+        await bounded(reg.unregister(), opMs, "egress unregister").catch(
+          (err) => console.warn(`[WARN] ${msg(err)}`),
+        );
+      }
       const down = await teardownSandbox({
         docker: env.docker,
         name,
         executionId: id,
         opTimeoutMs: opMs,
         run: pending,
-        abort: () =>
-          egressAbort.abort(new Error("execution ended before its sandbox")),
+        abort: abortRun,
         settled: settledRun,
         secretsDir,
       });
@@ -1737,12 +1748,7 @@ export async function runExecution(
           sandbox = { ...sandbox, confirmedGone: false };
         }
       }
-      drained = await env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
-      if (reg) {
-        await bounded(reg.unregister(), opMs, "egress unregister").catch(
-          (err) => console.warn(`[WARN] ${msg(err)}`),
-        );
-      }
+      drained = await revoking;
     }
   } catch (err) {
     if (err === refusal) {

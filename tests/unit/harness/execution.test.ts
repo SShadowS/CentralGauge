@@ -36,7 +36,9 @@ import {
 import {
   READY_FILE,
   SECRETS_DIR_PREFIX,
+  sweepOwnedSandboxes,
 } from "../../../src/harness/sandbox.ts";
+import { holdExclusive } from "./hold-file.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
   authorizedAllowlist,
@@ -485,6 +487,112 @@ Deno.test("M5-08a: a failed rm -f is retried until the sandbox is confirmed gone
     events.slice(0, -1).every((x) => x === "rm 1; secrets true"),
     events.join(" | "),
   );
+});
+
+// M5-08a run 002: credentials are cut before the bounded teardown.
+
+/** Whether the backend still accepts this execution's token (401 once revoked). */
+async function tokenValid(t: TestEnv, id: string, token: string) {
+  const r = await t.env.backend.handle(
+    new Request("http://backend/v1/compile", {
+      method: "POST",
+      headers: {
+        "x-cg-execution": id,
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: "{",
+    }),
+  );
+  await r.body?.cancel();
+  return r.status !== 401;
+}
+
+Deno.test("M5-08a: a stuck rm -f runs only after the backend token is revoked and the proxy credential unregistered; the next start refuses while the container exists", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  const cell = await cellFor(t);
+  let token = "";
+  let id = "";
+  let name = "";
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    token = await tokenOf(call);
+    id = call.labels.get("centralgauge.harness.execution")!;
+    name = call.name;
+    assert(await tokenValid(t, id, token), "valid while the run holds it");
+    t.docker.lingering.add(call.name); // docker never lets it go
+    return await inner(call, io);
+  };
+  const seen: string[] = [];
+  const rm = t.docker.rm.bind(t.docker);
+  t.docker.rm = async (n) => {
+    seen.push(
+      `token ${await tokenValid(t, id, token)}; unregistered ${
+        eg.events.includes("unregister")
+      }`,
+    );
+    return await rm(n);
+  };
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ContainerError,
+    "termination not confirmed",
+  );
+  // The teardown's rm -f attempts (the last five) all ran with every
+  // credential already cut.
+  assertEquals(
+    seen.slice(-5),
+    Array(5).fill("token false; unregistered true"),
+  );
+  // The process lock is released when the process exits; what keeps the
+  // next start from running anything is its startup sweep, which refuses
+  // while the container still exists (then recovery, with the intent kept).
+  t.docker.owned.push(name);
+  await assertRejects(
+    () => sweepOwnedSandboxes(t.docker, t.env.owner),
+    ContainerError,
+    "could not remove leftover sandboxes",
+  );
+  await assertRejects(
+    () => recoverInterrupted(t.env, loadTask),
+    ContainerError,
+  );
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+});
+
+Deno.test({
+  name:
+    "M5-08a: a held secrets dir (os error 32) through runExecution: termination not confirmed with the reason, never the raw removal error",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const t = await makeEnv();
+    const cell = await cellFor(t);
+    let release: (() => Promise<void>) | null = null;
+    let secretsDir = "";
+    const inner = t.docker.behavior;
+    t.docker.behavior = async (call, io) => {
+      secretsDir = call.mounts.get("C:\\cg-secrets")!.src;
+      // As a host still holding the mount after the container is gone.
+      release = await holdExclusive(join(secretsDir, "backend-token"));
+      return await inner(call, io);
+    };
+    try {
+      const err = await assertRejects(
+        () => runCell(t.env, cell),
+        ContainerError,
+        "termination not confirmed",
+      );
+      assertStringIncludes(err.message, "os error 32");
+      assert(await exists(secretsDir), "kept for the startup sweep");
+    } finally {
+      await (release as (() => Promise<void>) | null)?.();
+    }
+    assertEquals(await t.env.store.executions(cell.campaignId), []);
+    const [e] = await recoverInterrupted(t.env, loadTask);
+    assertEquals(e!.termination, "harness_crash");
+    assert(!await exists(secretsDir));
+  },
 });
 
 Deno.test("every published surface is redacted (UTF-8 and UTF-16): logs, stderr, trace, side file, record, workspace", async () => {
