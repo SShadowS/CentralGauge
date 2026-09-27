@@ -973,19 +973,20 @@ export async function createSecretsDir(
 }
 
 /** Write the values as new files into a custody dir; a failure removes the dir. */
+/**
+ * Write secret files into a custody dir. A failure is thrown as is: the dir
+ * may already be mounted by a running sandbox, so removing it is the
+ * caller's teardown (teardownSandbox, M5-08a), never done here.
+ */
 export async function writeSecretFiles(
   dir: string,
   values: SecretValue[],
 ): Promise<void> {
-  try {
-    for (const v of values) {
-      await Deno.writeTextFile(join(dir, v.name), v.value, {
-        createNew: true,
-        mode: 0o600,
-      });
-    }
-  } catch (err) {
-    await cleanupAfter(err, dir);
+  for (const v of values) {
+    await Deno.writeTextFile(join(dir, v.name), v.value, {
+      createNew: true,
+      mode: 0o600,
+    });
   }
 }
 
@@ -1017,7 +1018,11 @@ export async function prepareSecrets(
   } catch (err) {
     return await cleanupAfter(err, dir);
   }
-  await writeSecretFiles(dir, values);
+  try {
+    await writeSecretFiles(dir, values); // no sandbox mounts it yet
+  } catch (err) {
+    return await cleanupAfter(err, dir);
+  }
   return { dir, values };
 }
 
@@ -1048,6 +1053,98 @@ export async function removeSecrets(
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
+}
+
+/**
+ * M5-08a: the teardown order of a credential-bearing sandbox. A run still
+ * pending is stopped (abort) and awaited; a container not confirmed gone gets
+ * rm -f again, retried, until docker no longer reports it; only then is the
+ * secrets dir it mounts removed (a mount the host still holds fails with
+ * os error 32, retried). Never throws: `gone` false or `secretsLeft` true
+ * means the caller must fail closed (keep the intent; the startup sweep and
+ * recovery finish it).
+ */
+export async function teardownSandbox(o: {
+  docker: DockerCli;
+  name: string;
+  executionId: string;
+  opTimeoutMs: number;
+  /** The run, if it was started; a pending one is aborted first. */
+  run: Promise<SandboxResult> | null;
+  abort: () => void;
+  settled: SandboxResult | null;
+  secretsDir: string | null;
+  attempts?: number;
+  delayMs?: number;
+}): Promise<{
+  sandbox: SandboxResult | null;
+  gone: boolean;
+  secretsLeft: boolean;
+  problems: string[];
+}> {
+  const attempts = o.attempts ?? 5;
+  const delayMs = o.delayMs ?? 1_000;
+  const problems: string[] = [];
+  let sandbox = o.settled;
+  if (!sandbox && o.run) {
+    o.abort();
+    sandbox = await o.run; // runSandbox never rejects
+  }
+  let gone = o.run === null || (sandbox?.confirmedGone ?? false);
+  /** Gone when docker no longer reports it (or reports another execution's). */
+  const check = async (): Promise<boolean> => {
+    try {
+      const st = await bounded(
+        o.docker.state(o.name),
+        o.opTimeoutMs,
+        `docker inspect ${o.name}`,
+      );
+      return st === null ||
+        (st.execution !== null && st.execution !== o.executionId);
+    } catch (err) {
+      problems.push(err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  };
+  if (!gone) gone = await check();
+  // Bounded: at most `attempts` rm -f, each followed by an inspect, so a
+  // final successful removal is confirmed, never reported as unconfirmed.
+  for (let i = 1; !gone && i <= attempts; i++) {
+    try {
+      const rm = await bounded(
+        o.docker.rm(o.name),
+        o.opTimeoutMs,
+        `docker rm -f ${o.name}`,
+      );
+      if (rm.code !== 0) {
+        problems.push(`docker rm -f ${o.name} exited ${rm.code}`);
+      }
+    } catch (err) {
+      problems.push(err instanceof Error ? err.message : String(err));
+    }
+    gone = await check();
+    if (!gone && i < attempts) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  if (!gone) {
+    problems.push(
+      `container ${o.name} still exists after ${attempts} rm -f attempts; its secrets dir is left in place`,
+    );
+  }
+  if (sandbox && gone && !sandbox.confirmedGone) {
+    sandbox = { ...sandbox, confirmedGone: true };
+  }
+  let secretsLeft = o.secretsDir !== null;
+  if (gone && o.secretsDir !== null) {
+    try {
+      await removeSecrets(o.secretsDir, attempts, delayMs);
+      secretsLeft = false;
+    } catch (err) {
+      problems.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return { sandbox, gone, secretsLeft, problems: [...new Set(problems)] };
 }
 
 /** Startup sweep: remove this owner's custody dirs left by a crash. Run after sweepOwnedSandboxes. */

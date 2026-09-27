@@ -10,6 +10,7 @@
  */
 
 import { join } from "@std/path";
+import { ContainerError } from "../errors.ts";
 import type { EgressRuntime, EgressState } from "./egress.ts";
 import type {
   DockerCli,
@@ -29,8 +30,8 @@ import {
   checkSandboxPrivilege,
   createSecretsDir,
   READY_FILE,
-  removeSecrets,
   runSandbox,
+  teardownSandbox,
   writeSecretFiles,
 } from "./sandbox.ts";
 
@@ -53,6 +54,12 @@ export interface QualificationProbe {
   hosts?: string[];
   /** The host state at probe time (network id and interface index for the evidence). */
   collect(): Promise<EgressState>;
+  /**
+   * Revokes `token` at the backend; required, called first in the teardown
+   * (M5-08a/b). A failure is reported and fails the probe closed; it never
+   * skips the proxy shutdown or the sandbox teardown.
+   */
+  revoke: () => Promise<unknown>;
 }
 
 const q = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -67,6 +74,10 @@ export async function runQualificationProbe(
   const opMs = o.spec.opTimeoutMs;
   const hosts = o.hosts ?? PROBE_HOSTS;
   let secrets: string | null = null;
+  const stop = new AbortController();
+  /** M5-08a: the started run until it is awaited; the teardown stops it first. */
+  let pending: Promise<SandboxResult> | null = null;
+  let settled: SandboxResult | null = null;
   const proxy = await o.egress.startProxy({
     allowedHosts: hosts,
     log: (l) => {
@@ -95,8 +106,7 @@ export async function runQualificationProbe(
     secrets = await createSecretsDir(o.custody);
     const waitReady =
       "$sw = [Diagnostics.Stopwatch]::StartNew(); while (-not (Test-Path 'C:\\cg-secrets\\ready')) { if ($sw.Elapsed.TotalSeconds -ge 600) { exit 3 }; Start-Sleep -Milliseconds 500 }; ";
-    const stop = new AbortController();
-    const running = runSandbox(
+    const running = pending = runSandbox(
       o.docker,
       {
         ...o.spec,
@@ -161,11 +171,57 @@ export async function runQualificationProbe(
       }]);
       await Deno.writeTextFile(join(secrets, READY_FILE), "");
     }
-    return { sandbox: await running, problems, evidence };
+    settled = await running;
+    return { sandbox: settled, problems, evidence };
   } finally {
+    // M5-08a: credentials cut first (run aborted, backend token revoked,
+    // proxy shut down), then the sandbox confirmed gone, then its secrets.
+    if (pending && !settled) stop.abort();
+    let revokeError: string | null = null;
+    const failed = (err: unknown) => {
+      revokeError = err instanceof Error ? err.message : String(err);
+    };
+    let revoked: Promise<void>;
+    try {
+      revoked = Promise.resolve(o.revoke()).then(() => {}, failed);
+    } catch (err) {
+      failed(err); // a synchronous throw: the teardown still runs
+      revoked = Promise.resolve();
+    }
     await bounded(proxy.shutdown(), opMs, "egress proxy shutdown").catch(
       () => {},
     );
-    if (secrets) await removeSecrets(secrets);
+    const down = await teardownSandbox({
+      docker: o.docker,
+      name: o.spec.name,
+      executionId: o.spec.executionId,
+      opTimeoutMs: opMs,
+      run: pending,
+      abort: () => stop.abort(),
+      settled,
+      secretsDir: secrets,
+    });
+    await revoked;
+    const problems = [
+      ...(revokeError !== null
+        ? [`backend token revoke failed: ${revokeError}`]
+        : []),
+      ...(!down.gone || down.secretsLeft ? down.problems : []),
+    ];
+    if (revokeError !== null) {
+      console.error(
+        `[FAIL] qualification probe ${o.spec.name}: backend token revoke failed: ${revokeError}`,
+      );
+    }
+    if (problems.length > 0) {
+      // Fail closed and loud; the next start sweeps the container, then the secrets.
+      throw new ContainerError(
+        `qualification probe ${o.spec.name}: teardown not confirmed (${
+          problems.join("; ")
+        }); resolve before the next run`,
+        o.spec.name,
+        "stop",
+      );
+    }
   }
 }

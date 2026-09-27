@@ -84,7 +84,6 @@ import {
   readSecretValues,
   READY_FILE,
   redactText,
-  removeSecrets,
   restrictPath,
   runSandbox,
   sandboxName,
@@ -92,6 +91,7 @@ import {
   type SecretValue,
   sweepOwnedSandboxes,
   sweepStaleSecrets,
+  teardownSandbox,
   writeSecretFiles,
 } from "./sandbox.ts";
 import { type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
@@ -1330,6 +1330,8 @@ export async function runExecution(
   await env.hooks?.prepared?.(id);
 
   let setupError: string | null = null;
+  /** M5-08a: what the teardown could not confirm (container or secrets). */
+  let teardownProblems: string[] = [];
   let sandbox: SandboxResult = {
     exitCode: null,
     started: false,
@@ -1491,6 +1493,9 @@ export async function runExecution(
       hostLog: p.host,
     }, timeoutMs + 5 * 60_000);
     let secretsDir: string | null = null;
+    /** The started run until it is awaited (M5-08a: teardown stops it first). */
+    let pending: Promise<SandboxResult> | null = null;
+    let settledRun: SandboxResult | null = null;
     try {
       const values = await readSecretValues(
         secretsSource,
@@ -1571,7 +1576,7 @@ export async function runExecution(
       // Every kind starts with an empty mount: nothing is released before
       // the harness's privilege check on the running sandbox (H-01); placed
       // runs then also wait for the preflight (M1-33 A3).
-      const running = runSandbox(
+      const running = pending = runSandbox(
         env.docker,
         {
           name,
@@ -1697,7 +1702,7 @@ export async function runExecution(
           egressAbort.abort(new Error(`release failed: ${msg(err)}`));
         }
       }
-      sandbox = await running;
+      sandbox = settledRun = await running;
       if (releaseError !== null) throw releaseError;
       // A sandbox that never started ran nothing: the start-failure rules apply.
       if (privilegeError !== null && sandbox.started) {
@@ -1733,13 +1738,39 @@ export async function runExecution(
         throw egressFail(`egress preflight failed: ${preflightError}`);
       }
     } finally {
-      drained = await env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
+      // M5-08a: credentials are cut first, while the sandbox may still run:
+      // the run is aborted, the backend token revoked (the grant goes at
+      // once; the drain is awaited below) and the proxy credential
+      // unregistered. Then the bounded teardown: the sandbox confirmed gone
+      // before the secrets it mounts are removed. A teardown failure never
+      // replaces the error in flight (the caller fails closed below).
+      const abortRun = () =>
+        egressAbort.abort(new Error("execution ended before its sandbox"));
+      if (pending && !settledRun) abortRun();
+      const revoking = env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
       if (reg) {
         await bounded(reg.unregister(), opMs, "egress unregister").catch(
           (err) => console.warn(`[WARN] ${msg(err)}`),
         );
       }
-      if (secretsDir) await removeSecrets(secretsDir);
+      const down = await teardownSandbox({
+        docker: env.docker,
+        name,
+        executionId: id,
+        opTimeoutMs: opMs,
+        run: pending,
+        abort: abortRun,
+        settled: settledRun,
+        secretsDir,
+      });
+      if (down.sandbox) sandbox = down.sandbox;
+      if (!down.gone || down.secretsLeft) {
+        teardownProblems = down.problems;
+        if (sandbox.confirmedGone && !down.gone) {
+          sandbox = { ...sandbox, confirmedGone: false };
+        }
+      }
+      drained = await revoking;
     }
   } catch (err) {
     if (err === refusal) {
@@ -1750,13 +1781,24 @@ export async function runExecution(
     if (
       !(err instanceof ConfigurationError) && !(err instanceof ValidationError)
     ) {
+      if (teardownProblems.length > 0) {
+        // Fail closed and loud: the intent stays; the next start sweeps the
+        // container first, then the secrets, then recovers the execution.
+        console.error(
+          `[FAIL] sandbox ${name} teardown not confirmed (${
+            teardownProblems.join("; ")
+          }); intent kept for recovery`,
+        );
+      }
       throw err;
     }
     setupError = err.message;
   }
-  if (!sandbox.confirmedGone || !drained) {
+  if (!sandbox.confirmedGone || !drained || teardownProblems.length > 0) {
     throw new ContainerError(
-      `termination not confirmed for ${name} (${sandbox.cleanup}${
+      `termination not confirmed for ${name} (${
+        [sandbox.cleanup, ...teardownProblems].join("; ")
+      }${
         drained ? "" : "; backend request did not drain"
       }); nothing frozen, intent kept; resolve and restart (recovery finalizes it)`,
       name,

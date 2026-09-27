@@ -21,9 +21,11 @@ import {
   runSandbox,
   SANDBOX_USER,
   sandboxName,
+  type SandboxResult,
   type SandboxSpec,
   sweepOwnedSandboxes,
   sweepStaleSecrets,
+  teardownSandbox,
 } from "../../../src/harness/sandbox.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 import { FakeDocker, parseRunArgs } from "./fake-docker.ts";
@@ -1167,4 +1169,119 @@ Deno.test("publishRedacted counts per published file: clean files 0, missing fil
     count: 3,
     byFile: { "raw.jsonl": 2, "stderr.txt": 1, "trace.jsonl": 0 },
   });
+});
+
+// ---- M5-08a: teardown order (sandbox gone, then secrets; never throws) ----
+
+const RESULT: SandboxResult = {
+  exitCode: null,
+  started: true,
+  startError: null,
+  timedOut: false,
+  interrupted: true,
+  overflow: false,
+  confirmedGone: true,
+  cleanup: "ok",
+  wall_ms: 1,
+};
+
+Deno.test("teardownSandbox (M5-08a): a pending run is stopped and awaited before its secrets dir is touched", async () => {
+  const dir = await tempDir();
+  await Deno.writeTextFile(join(dir, "backend-token"), "x");
+  const events: string[] = [];
+  let finish!: (r: SandboxResult) => void;
+  const run = new Promise<SandboxResult>((r) => (finish = r)).then((r) => {
+    events.push(`run settled; secrets ${Deno.statSync(dir).isDirectory}`);
+    return r;
+  });
+  const down = await teardownSandbox({
+    docker: new FakeDocker(),
+    name: "cg-harness-x",
+    executionId: "e1",
+    opTimeoutMs: 1_000,
+    run,
+    abort: () => {
+      events.push("abort");
+      finish(RESULT);
+    },
+    settled: null,
+    secretsDir: dir,
+  });
+  assertEquals(events, ["abort", "run settled; secrets true"]);
+  assertEquals([down.gone, down.secretsLeft, down.problems], [true, false, []]);
+  assert(!await exists(dir));
+});
+
+Deno.test("teardownSandbox (M5-08a): a container that never goes keeps its secrets dir; problems say so; no throw", async () => {
+  const dir = await tempDir();
+  const d = new FakeDocker();
+  d.lingering.add("cg-harness-x");
+  const down = await teardownSandbox({
+    docker: d,
+    name: "cg-harness-x",
+    executionId: "e1",
+    opTimeoutMs: 1_000,
+    run: Promise.resolve({ ...RESULT, confirmedGone: false }),
+    abort: () => {},
+    settled: { ...RESULT, confirmedGone: false },
+    secretsDir: dir,
+    attempts: 3,
+    delayMs: 1,
+  });
+  assertEquals([down.gone, down.secretsLeft], [false, true]);
+  assertEquals(d.removed, ["cg-harness-x", "cg-harness-x", "cg-harness-x"]);
+  assertStringIncludes(down.problems.join("; "), "still exists after 3 rm -f");
+  assert(await exists(dir), "never pulled from under a live container");
+  assertEquals(down.sandbox!.confirmedGone, false);
+});
+
+Deno.test({
+  name:
+    "teardownSandbox (M5-08a): a held secrets dir (os error 32) after the container is gone is reported, never thrown",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await tempDir();
+    const file = join(dir, "backend-token");
+    await Deno.writeTextFile(file, "x");
+    // An exclusive handle, as the host holds a live bind mount (Deno's own
+    // handles allow delete, so they cannot reproduce it).
+    const holder = new Deno.Command("powershell", {
+      args: [
+        "-NoProfile",
+        "-Command",
+        `$f = [IO.File]::Open('${file}', 'Open', 'Read', 'None'); [Console]::Out.WriteLine('held'); [Console]::Out.Flush(); [void][Console]::In.ReadLine(); $f.Close()`,
+      ],
+      stdin: "piped",
+      stdout: "piped",
+      stderr: "null",
+    }).spawn();
+    const reader = holder.stdout.getReader();
+    const first = new TextDecoder().decode((await reader.read()).value);
+    assertStringIncludes(first, "held");
+    try {
+      const down = await teardownSandbox({
+        docker: new FakeDocker(),
+        name: "cg-harness-x",
+        executionId: "e1",
+        opTimeoutMs: 1_000,
+        run: Promise.resolve(RESULT),
+        abort: () => {},
+        settled: RESULT,
+        secretsDir: dir,
+        attempts: 2,
+        delayMs: 1,
+      });
+      assertEquals([down.gone, down.secretsLeft], [true, true]);
+      assertStringIncludes(down.problems.join("; "), "os error 32");
+    } finally {
+      const w = holder.stdin.getWriter();
+      await w.write(new TextEncoder().encode("\n"));
+      await w.close();
+      reader.releaseLock();
+      await holder.stdout.cancel();
+      await holder.status;
+    }
+    await removeSecrets(dir);
+    assert(!await exists(dir));
+  },
 });
