@@ -1,5 +1,5 @@
 id: HX-002
-refapp_version: refapp-v1-rc8
+refapp_version: refapp-v1
 kind: test-authoring
 prompt: prompt.md
 touches: [Leasing, Core, Test]
