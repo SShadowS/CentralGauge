@@ -17,6 +17,7 @@ import { exists, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import {
   addedTestCodeunits,
   buildVerdictWorkspace,
+  DISPATCH_IDS,
   EXTRACTED_TEST_DIR,
   normalizeAlBody,
 } from "../../../src/harness/verdict-workspace.ts";
@@ -1205,4 +1206,18 @@ Deno.test("F2: an agent Test object colliding with a shipped Test object (same k
     "Test/src/SameName.Test.al: codeunit 80150 collides with shipped codeunit 80010 CGR Shipped Tests",
   );
   assert(!text.includes("OtherKind"), text);
+});
+
+Deno.test("mutant_kill eligibility doc: scoreTestAuthoring's comment lists every DISPATCH_IDS entry and the computed-id rule", async () => {
+  const src = await Deno.readTextFile("src/harness/verdict.ts");
+  const doc = src.slice(
+    src.lastIndexOf(
+      "/**",
+      src.indexOf("export async function scoreTestAuthoring"),
+    ),
+    src.indexOf("export async function scoreTestAuthoring"),
+  ).toLowerCase();
+  for (const id of DISPATCH_IDS) assertStringIncludes(doc, id);
+  assertStringIncludes(doc, "non-literal");
+  assertStringIncludes(doc, "libraryvariablestorage");
 });

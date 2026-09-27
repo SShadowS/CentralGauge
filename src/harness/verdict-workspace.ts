@@ -841,7 +841,7 @@ function shippedUnitRef(
  * test codeunit at all (dropShippedTests), which closes dispatch through
  * trusted platform code (a Job Queue Entry's computed "Object ID to Run").
  */
-const DISPATCH_IDS = new Set([
+export const DISPATCH_IDS: ReadonlySet<string> = new Set([
   "allobj",
   "allobjwithcaption",
   "codeunit metadata",
