@@ -44,14 +44,20 @@ codex run on an old pi image fails closed (the old guard wants the openrouter ke
      for each `$f` of the two paths:
      ```powershell
      icacls $f                                   # before: note every entry
-     icacls $f /inheritance:r /grant:r "${env:USERDOMAIN}\${env:USERNAME}:(F)" "NT AUTHORITY\SYSTEM:(F)"
-     icacls $f                                   # after: exactly the owner account and SYSTEM
+     icacls $f /inheritance:r /grant:r "${env:USERDOMAIN}\${env:USERNAME}:(F)" "*S-1-5-18:(F)"
+     icacls $f                                   # after: list every remaining principal
+     icacls $f /remove:g "<principal>"           # once per principal other than the two
+     icacls $f                                   # re-check: exactly the owner account and SYSTEM
      ```
-     `/inheritance:r` removes the inherited entries and `/grant:r` replaces the explicit ones,
-     so the result is exactly those two entries. If "before" already shows only those two
-     (or fewer), leave the file as it is. If "after" shows any other principal, stop and fix
-     it before any run. Repeat the "after" check whenever pi rewrites `auth.json` (a refresh
-     keeps the file but check it).
+     `/inheritance:r` removes the inherited entries and `/grant:r` replaces the explicit
+     entries of the two named principals only (the owner account, and SYSTEM by its SID
+     `*S-1-5-18`, which is locale-safe). Explicit entries of any other principal survive both:
+     for each one the "after" listing shows (for example `BUILTIN\Users` or
+     `BUILTIN\Administrators`), run `icacls $f /remove:g "<principal>"`, then list again
+     until only the owner account and SYSTEM remain. The only grants are to the owner account
+     and SYSTEM; never grant any other principal (never widen). If any other principal
+     remains, stop and fix it before any run. Repeat the check whenever pi rewrites
+     `auth.json` (a refresh keeps the file, but check it).
    - Every run refuses (`setup_failed`, before any reservation) when the token expires
      before `timeout_min + 15` minutes. Repeat the refresh and copy before each session.
      In-sandbox refresh is impossible by design: the host releases the sandbox copy with

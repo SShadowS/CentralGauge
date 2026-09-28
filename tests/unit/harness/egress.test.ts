@@ -1236,6 +1236,10 @@ Deno.test("openai-codex:oauth (H-02): no guessed host; refused until recorded; i
     ConfigurationError,
     "does not record openai-codex:oauth",
   );
+  // H-02 run 002 review: the bad codex file is left out, never fatal for the others.
+  assertEquals(await loadRecordedHosts(root), {
+    [oauth]: ["api.anthropic.com"],
+  });
   // One source per file, so one route per file.
   await Deno.writeTextFile(
     at(codex),

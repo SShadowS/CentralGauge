@@ -297,13 +297,26 @@ export async function loadRecording(
   return { source: r.data.source, hosts };
 }
 
-/** The recorded hosts per route, from every route's own file; a missing file is no recording (its route then refuses). */
+/**
+ * The recorded hosts of `routes` (default: every recorded route), each from
+ * its own file; a missing file is no recording (its route then refuses). A
+ * marker route's unreadable or invalid file throws, as before H-02; a later
+ * route's is left out (H-02 run 002 review): it refuses only that route's
+ * arms, and routeAuthorizationProblems names the file's problem.
+ */
 export async function loadRecordedHosts(
   repoRoot: string,
+  routes: readonly string[] = RECORDED_ROUTES,
 ): Promise<RecordedHosts> {
   const out: RecordedHosts = {};
-  for (const route of RECORDED_ROUTES) {
-    const rec = await loadRecording(repoRoot, route);
+  for (const route of routes.filter((r) => RECORDED_ROUTES.includes(r))) {
+    let rec: Recording | null;
+    try {
+      rec = await loadRecording(repoRoot, route);
+    } catch (err) {
+      if (MARKER_ROUTES.includes(route)) throw err;
+      continue;
+    }
     if (rec) out[route] = rec.hosts;
   }
   return out;
@@ -2007,9 +2020,10 @@ export async function authorizedAllowlist(
   repoRoot: string,
   routes: readonly string[] = MARKER_ROUTES,
 ): Promise<{ allowlist: string[]; sha256: string }> {
+  // Only these routes' files: another route's file never affects this allowlist.
   const allowlist = hostsForRoutes(
     [...routes],
-    await loadRecordedHosts(repoRoot),
+    await loadRecordedHosts(repoRoot, routes),
   );
   return { allowlist, sha256: await sha256Text(JSON.stringify(allowlist)) };
 }
@@ -2357,7 +2371,7 @@ export async function recordedCellProblems(
   const routes = Object.values(e.manifest.provider_routes);
   let allowed: string[] | undefined;
   try {
-    allowed = hostsForRoutes(routes, await loadRecordedHosts(repoRoot));
+    allowed = hostsForRoutes(routes, await loadRecordedHosts(repoRoot, routes));
   } catch (err) {
     p.push(`cell ${id}: ${(err as Error).message}`);
   }
@@ -2418,6 +2432,8 @@ export async function routeAuthorizationProblems(
     if (now !== recSha) {
       p.push(`${route}: recorded_hosts_sha256 does not match the current file`);
     }
+    // The route's own file, strictly: its load error is this route's problem.
+    await loadRecording(repoRoot, route);
     const a = await authorizedAllowlist(repoRoot, [route]);
     if (
       a.sha256 !== allowSha ||

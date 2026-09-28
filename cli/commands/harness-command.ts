@@ -3118,7 +3118,10 @@ async function rotationOf(
   let at = "";
   for (const c of rot.data.credentials) {
     if (!names.includes(c.name)) continue;
-    for (const t of [c.revoked_at, c.created_at]) if (t > at) at = t;
+    // As instants: ISO text mis-orders mixed fractional seconds.
+    for (const t of [c.revoked_at, c.created_at]) {
+      if (at === "" || Date.parse(t) > Date.parse(at)) at = t;
+    }
   }
   return { at, problems };
 }

@@ -12242,3 +12242,135 @@ Deno.test("route authorization (H-02 run 002): the codex recording cell is check
   ]);
   assertEquals(await egressMode(shared, ok), "enforced");
 });
+
+Deno.test("per-route authorization (H-02 run 002 review): a malformed codex recording refuses only codex; the marker's routes still verify and run", async () => {
+  const bad: [string, string][] = [
+    ["not JSON", "{"],
+    [
+      "wrong route key",
+      recordedHostsJson(["x.example.test"], "record mode execution cell-cx"),
+    ],
+    [
+      "schema-invalid",
+      JSON.stringify({
+        v: 1,
+        source: "record mode execution cell-cx",
+        routes: { [CODEX]: ["auth.openai.com"] },
+      }),
+    ],
+  ];
+  for (const authorized of [false, true]) {
+    const root = await authorizedRoot();
+    const shared = join(root, "results", "harness");
+    const markerPath = join(shared, EGRESS_MARKER);
+    if (authorized) {
+      await recordCodex(root, "cell-cx", { started: inMin(2) });
+      const rotation = join(root, "rotation-codex.json");
+      await Deno.writeTextFile(
+        rotation,
+        JSON.stringify({
+          v: 1,
+          credentials: [{
+            name: "openai-codex",
+            revoked_at: inMin(1),
+            created_at: inMin(1),
+          }],
+        }),
+      );
+      assertEquals(
+        await harnessEgressAuthorizeRoute({
+          root,
+          route: CODEX,
+          cell: "cell-cx",
+          rotation,
+          evidence: "H-02/001",
+        }),
+        [],
+      );
+    }
+    const m = JSON.parse(await Deno.readTextFile(markerPath));
+    const recPath = join(root, ...recordingPath(CODEX).split("/"));
+    await Deno.mkdir(join(recPath, ".."), { recursive: true });
+    for (const [what, text] of bad) {
+      const tag = `${what} (${authorized ? "authorized" : "unauthorized"})`;
+      await Deno.writeTextFile(recPath, text);
+      assertEquals(
+        await egressMode(shared, () => Promise.resolve([])),
+        "enforced",
+        tag,
+      );
+      const rec = await authorizedRecordedHosts(root, m);
+      assertEquals(Object.keys(rec), ["anthropic:first-party-oauth"], tag);
+      const rt = await realEgressRuntime({
+        repoRoot: root,
+        markerPath,
+        acceptCandidate: true,
+      });
+      assertEquals(
+        Object.keys(rt.recordedHosts),
+        ["anthropic:first-party-oauth"],
+        tag,
+      );
+      assertEquals(
+        hostsForRoutes(["openrouter:api-key"], rt.recordedHosts),
+        ["openrouter.ai"],
+        tag,
+      );
+      assertThrows(
+        () => hostsForRoutes([CODEX], rt.recordedHosts),
+        ConfigurationError,
+        CODEX,
+        tag,
+      );
+      const problems = await routeAuthorizationProblems(root, m, CODEX);
+      assert(problems.length > 0, tag);
+      if (authorized) {
+        assertStringIncludes(problems.join("\n"), recordingPath(CODEX), tag);
+        // The marker's own routes verify; the report names only the codex route.
+        const v = await harnessEgressVerify(
+          { root },
+          markerAwareCollector(),
+        );
+        assert(
+          v.length > 0 && v.every((x) => x.startsWith(`route ${CODEX}`)),
+          tag,
+        );
+      } else {
+        assertEquals(
+          await harnessEgressVerify({ root }, markerAwareCollector()),
+          [],
+          tag,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("route authorization (H-02 run 002 review): the rotation instant compares as time, not text (mixed fractional seconds)", async () => {
+  const root = await authorizedRoot();
+  const s = new Date(Date.now() + 5 * 60_000).toISOString().slice(0, 19);
+  const rotation = join(root, "rotation-codex.json");
+  // As text "...Z" sorts after "...500Z"; as time the .500 instant is later.
+  await Deno.writeTextFile(
+    rotation,
+    JSON.stringify({
+      v: 1,
+      credentials: [{
+        name: "openai-codex",
+        revoked_at: `${s}Z`,
+        created_at: `${s}.500Z`,
+      }],
+    }),
+  );
+  await recordCodex(root, "cell-cx", { started: `${s}.250Z` });
+  assertStringIncludes(
+    (await harnessEgressAuthorizeRoute({
+      root,
+      route: CODEX,
+      cell: "cell-cx",
+      rotation,
+      evidence: "H-02/001",
+    })).join("\n"),
+    `before the rotation (${s}.500Z)`,
+  );
+});
