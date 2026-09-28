@@ -1339,3 +1339,72 @@ Deno.test("charts (C-03 run 002): forced rejudges in the ledger reconcile with t
   // The ledger claims a forced rejudge the report does not have.
   refused(await base(), [{ forced_reason: OOM }], "forced rejudges disagree");
 });
+
+// C-03 run 003 (review of e8038b3b): exact set equality with no duplicate
+// ids, the ledger execution matches, and forced judgments need a ledger.
+
+/** forcedReport plus a second forced judgment, on HX-001 r2 mock-positive. */
+async function twoForced(): Promise<HarnessReport> {
+  const r = await forcedReport();
+  return {
+    ...r,
+    cells: r.cells.map((c) =>
+      c.arm === "mock-positive" && c.repeat === 2
+        ? {
+          ...c,
+          forced_rejudges: [{
+            judgment_id: c.judgment_id!,
+            execution_id: c.used_execution!,
+            reason: OOM,
+            replaces: "00000000-0000-4000-a000-0000000000c4",
+            basis: {
+              kind: "decision" as const,
+              path: "d.md",
+              sha256: "c".repeat(64),
+            },
+          }],
+        }
+        : c
+    ),
+  };
+}
+
+Deno.test("charts (C-03 run 003): forced ledger entries equal the report's forced judgments as a set, with no duplicate and the right execution", async () => {
+  const r = await twoForced();
+  const second = r.cells.find((x) =>
+    x.arm === "mock-positive" && x.repeat === 2
+  )!;
+  const b = {
+    forced_reason: OOM,
+    repeat: 2,
+    execution: second.used_execution,
+    judgment: second.judgment_id,
+  };
+  renderCharts([r], forcedLedger(r, [{ forced_reason: OOM }, b]));
+  // [A, A] against {A, B}: same count, B missing, A twice.
+  assertThrows(
+    () =>
+      renderCharts(
+        [r],
+        forcedLedger(r, [{ forced_reason: OOM }, { forced_reason: OOM }]),
+      ),
+    Error,
+    "more than once",
+  );
+  // The right judgment under another execution.
+  assertThrows(
+    () =>
+      renderCharts(
+        [r],
+        forcedLedger(r, [{ forced_reason: OOM }, { ...b, execution: "e9" }]),
+      ),
+    Error,
+    "execution e9",
+  );
+});
+
+Deno.test("charts (C-03 run 003): a report with forced judgments needs --ledger", async () => {
+  const r = await forcedReport();
+  assertThrows(() => renderCharts([r]), Error, "forced");
+  renderCharts([await base()]);
+});

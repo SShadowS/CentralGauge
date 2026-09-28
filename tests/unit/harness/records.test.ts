@@ -820,7 +820,7 @@ Deno.test("judgment schema (C-03 run 002): forced names the replaced judgment an
     const basis of [
       { kind: "signature", signature: "judge_error" },
       { kind: "signature", signature: "build_failed_no_diagnostics_no_tests" },
-      { kind: "decision", path: "2026-09-28-c03.md" },
+      { kind: "decision", path: "2026-09-28-c03.md", sha256: "c".repeat(64) },
     ] as const
   ) {
     assertEquals(parse({ reason, replaces, basis }).forced!.basis, basis);
@@ -832,9 +832,42 @@ Deno.test("judgment schema (C-03 run 002): forced names the replaced judgment an
       { reason, basis: { kind: "decision", path: "d.md" } },
       { reason, replaces: "x", basis: { kind: "decision", path: "d.md" } },
       { reason, replaces, basis: { kind: "signature", signature: "oom" } },
-      { reason, replaces, basis: { kind: "decision", path: " " } },
-      { reason, replaces, basis: { kind: "decision", path: "a\nb" } },
+      {
+        reason,
+        replaces,
+        basis: { kind: "decision", path: " ", sha256: "c".repeat(64) },
+      },
+      {
+        reason,
+        replaces,
+        basis: { kind: "decision", path: "a\nb", sha256: "c".repeat(64) },
+      },
       { reason, replaces, basis: { kind: "decision" } },
+    ]
+  ) {
+    assertThrows(() => parse(bad), Error, undefined, JSON.stringify(bad));
+  }
+});
+
+Deno.test("judgment schema (C-03 run 003): a decision basis carries the decision file's sha256", async () => {
+  const c = await campaign();
+  const j = judgment(c, execution(c), true);
+  const parse = (basis: unknown) =>
+    JudgmentRecordSchema.parse({
+      ...j,
+      forced: { reason: "host OOM", replaces: CAMPAIGN_ID, basis },
+    });
+  const ok = {
+    kind: "decision" as const,
+    path: "d.md",
+    sha256: "c".repeat(64),
+  };
+  assertEquals(parse(ok).forced!.basis, ok);
+  for (
+    const bad of [
+      { kind: "decision", path: "d.md" },
+      { kind: "decision", path: "d.md", sha256: "c".repeat(63) },
+      { kind: "decision", path: "d.md", sha256: "C".repeat(64) },
     ]
   ) {
     assertThrows(() => parse(bad), Error, undefined, JSON.stringify(bad));

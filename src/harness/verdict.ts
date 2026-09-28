@@ -965,7 +965,8 @@ export async function writeVerdictLog(
 
 /**
  * C-03 run 002: the infra signature a judgment's verdict log records, else
- * null. `judge_error`: judge caught an infra error (log.error set).
+ * null; both need 0 test rows in every scorer. `judge_error`: judge caught
+ * an infra error (log.error set).
  * `build_failed_no_diagnostics_no_tests`: a candidate "build failed:" note
  * (recordBuild's), no diagnostics at all and no test result in any scorer
  * (a build starved of host memory). The log must be this judgment's; a
@@ -978,6 +979,9 @@ export function infraSignature(
   if (typeof log !== "object" || log === null) return null;
   const l = log as Partial<Record<keyof VerdictLog, unknown>>;
   if (l.judgment_id !== j.id || l.execution_id !== j.execution_id) return null;
+  // Run 003: a real test row means the judge got far enough to score (an
+  // error after oracle rows can hide a genuine FAIL): never a signature.
+  if (!j.scorers.every((s) => s.tests.length === 0)) return null;
   if (typeof l.error === "string" && l.error.trim() !== "") {
     return "judge_error";
   }
@@ -986,8 +990,7 @@ export function infraSignature(
     l.notes.some((n) =>
       typeof n === "string" && n.startsWith("build failed: ")
     ) &&
-    Array.isArray(l.diagnostics) && l.diagnostics.length === 0 &&
-    j.scorers.every((s) => s.tests.length === 0)
+    Array.isArray(l.diagnostics) && l.diagnostics.length === 0
   ) {
     return "build_failed_no_diagnostics_no_tests";
   }

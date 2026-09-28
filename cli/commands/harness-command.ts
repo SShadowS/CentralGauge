@@ -16,7 +16,10 @@ import type {
   LoadedExperiment,
   VaryKey,
 } from "../../src/harness/config.ts";
-import type { JudgingContext } from "../../src/harness/outcome.ts";
+import {
+  cellsFromRecords,
+  type JudgingContext,
+} from "../../src/harness/outcome.ts";
 import type {
   ArtifactRecord,
   CampaignRecord,
@@ -91,7 +94,7 @@ import {
   freezeWorkspace,
   safeCopyTree,
 } from "../../src/harness/fsutil.ts";
-import { hashTree } from "../../src/harness/hash.ts";
+import { hashTree, sha256Hex } from "../../src/harness/hash.ts";
 import {
   authorizedMarkerProblems,
   cellEgressProblems,
@@ -1079,11 +1082,16 @@ function latestJudgment(js: JudgmentRecord[]): JudgmentRecord | undefined {
 const askUser = (q: string) => confirm(q);
 
 /**
- * C-03 run 002: `--basis` as a path relative to $CG_COORD_ROOT/decisions
- * (forward slashes). Refused unless CG_COORD_ROOT is set and the path,
- * symlinks resolved, is an existing file inside that directory.
+ * C-03 run 002/003: `--basis` (absolute, or relative to
+ * $CG_COORD_ROOT/decisions) as the decision basis: its path relative to that
+ * directory (forward slashes) and the sha256 of its bytes. Refused unless
+ * CG_COORD_ROOT is set, the path (symlinks resolved) is an existing file
+ * inside that directory, and its text names `execution`.
  */
-async function decisionBasis(p: string): Promise<string> {
+async function decisionBasis(
+  p: string,
+  execution: string,
+): Promise<{ kind: "decision"; path: string; sha256: string }> {
   const root = Deno.env.get("CG_COORD_ROOT");
   if (!root) {
     throw new ConfigurationError(
@@ -1092,7 +1100,7 @@ async function decisionBasis(p: string): Promise<string> {
   }
   const real = (x: string) => Deno.realPath(x).catch(() => null);
   const dir = await real(join(root, "decisions"));
-  const file = await real(resolve(p));
+  const file = await real(isAbsolute(p) ? p : join(root, "decisions", p));
   if (!dir || !file || !(await Deno.stat(file)).isFile) {
     throw new ConfigurationError(
       `rejudge --basis ${p} is not an existing file`,
@@ -1104,7 +1112,17 @@ async function decisionBasis(p: string): Promise<string> {
       `rejudge --basis ${p} is not inside ${dir} (an owner decision)`,
     );
   }
-  return rel.replaceAll("\\", "/");
+  const bytes = await Deno.readFile(file);
+  if (!new TextDecoder().decode(bytes).includes(execution)) {
+    throw new ConfigurationError(
+      `rejudge --basis ${p} does not name execution ${execution}`,
+    );
+  }
+  return {
+    kind: "decision",
+    path: rel.replaceAll("\\", "/"),
+    sha256: await sha256Hex(bytes),
+  };
 }
 
 /** The campaign rejudge works on (named, else newest), with --execution in it. */
@@ -1174,9 +1192,9 @@ export async function harnessRejudge(
 ): Promise<{ campaignId: string; rejudged: number }> {
   // M5-03 review: read-only, before any lock, sweep or recovery; again under the env.
   await rejudgeTarget(new RecordStore(o.resultsDir), experimentId, o);
-  const basisPath = o.basis === undefined
+  const decision = o.basis === undefined
     ? undefined
-    : await decisionBasis(o.basis);
+    : await decisionBasis(o.basis, o.execution!);
   const h = await open(
     envOptions(o, o.resultsDir, `harness rejudge ${experimentId}`),
   );
@@ -1267,6 +1285,26 @@ export async function harnessRejudge(
     let forced: JudgmentRecord["forced"];
     if (o.force) {
       const e = due[0]!;
+      // Run 003: only the execution its cell counts (campaign oracle), so a
+      // forced rejudge is never spent on a result the report ignores.
+      const byExecution = new Map<string, JudgmentRecord[]>();
+      for (const j of data.judgments) {
+        byExecution.set(j.execution_id, [
+          ...(byExecution.get(j.execution_id) ?? []),
+          j,
+        ]);
+      }
+      const used = cellsFromRecords(c, data.executions, byExecution).find((
+        x,
+      ) => x.task === e.task_id && x.repeat === e.repeat && x.arm === e.arm)!
+        .used_execution;
+      if (used !== e.id) {
+        throw new ConfigurationError(
+          `execution ${e.id} is not the one its cell counts (${
+            used ?? "none"
+          }): rejudge --force refused`,
+        );
+      }
       const js = data.judgments.filter((x) => x.execution_id === e.id);
       // The campaign's oracle (the due filter refused any other).
       const why = forcedRefusal(
@@ -1278,8 +1316,8 @@ export async function harnessRejudge(
       if (why) throw new ConfigurationError(`${why}: rejudge --force refused`);
       const replaced = js.find((x) => x.id === o.replaces)!;
       let basis: NonNullable<JudgmentRecord["forced"]>["basis"];
-      if (basisPath !== undefined) {
-        basis = { kind: "decision", path: basisPath };
+      if (decision !== undefined) {
+        basis = decision;
       } else {
         const log = await Deno.readTextFile(
           join(env.resultsRoot, "verdicts", `${replaced.id}.json`),

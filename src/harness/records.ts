@@ -297,7 +297,8 @@ export const JudgmentRecordSchema = z.strictObject({
    * starved of host memory). Absent on every other judgment; in no hash.
    * Run 002: at most one per execution; `replaces` is the judgment the report
    * used before, `basis` why that one was infra: its verdict log's signature,
-   * or an owner decision (path relative to $CG_COORD_ROOT/decisions).
+   * or an owner decision (path relative to $CG_COORD_ROOT/decisions, and
+   * the sha256 of its bytes; run 003).
    */
   forced: z.strictObject({
     reason: OneLine,
@@ -307,7 +308,11 @@ export const JudgmentRecordSchema = z.strictObject({
         kind: z.literal("signature"),
         signature: z.enum(INFRA_SIGNATURES),
       }),
-      z.strictObject({ kind: z.literal("decision"), path: OneLine }),
+      z.strictObject({
+        kind: z.literal("decision"),
+        path: OneLine,
+        sha256: Sha256Hex,
+      }),
     ]),
   }).optional(),
 }).refine((j) => j.verdict === verdictOf(j.scorers), {

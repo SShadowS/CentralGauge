@@ -239,12 +239,13 @@ function checkLedger(reports: Report[], raw: unknown) {
     }
   }
   // C-03 run 002: the ledger's forced rejudges in each report's scope are
-  // exactly the report's forced judgments (count, ids, reasons).
+  // exactly the report's forced judgments (count, ids, reasons). Run 003:
+  // set equality both ways, no duplicate id, the same execution.
   for (const r of reports) {
     const where = `${r.experiment.id} / ${r.campaign.id}`;
     const report = new Map(
       r.cells.flatMap((c) => c.forced_rejudges ?? [])
-        .map((f) => [f.judgment_id, f.reason]),
+        .map((f) => [f.judgment_id, f]),
     );
     const ledger = actions.filter((x) =>
       x.kind === "rejudge" && x.scope === "reported" &&
@@ -256,13 +257,26 @@ function checkLedger(reports: Report[], raw: unknown) {
         `ledger forced rejudges disagree with the report for ${where}: ledger ${ledger.length}, report ${report.size} (a forced rejudge carries forced_reason in the ledger)`,
       );
     }
+    const seen = new Set<string>();
     for (const a of ledger) {
-      const reason = report.get(a.judgment!);
-      if (reason === undefined) {
+      if (seen.has(a.judgment!)) {
+        fail(
+          `ledger lists forced judgment ${a.judgment} in ${where} more than once`,
+        );
+      }
+      seen.add(a.judgment!);
+      const f = report.get(a.judgment!);
+      if (f === undefined) {
         fail(
           `ledger forced rejudge names judgment ${a.judgment} in ${where}, which the report has no forced judgment for`,
         );
       }
+      if (a.execution !== f.execution_id) {
+        fail(
+          `forced judgment ${a.judgment} in ${where}: ledger execution ${a.execution}, report execution ${f.execution_id}`,
+        );
+      }
+      const reason = f.reason;
       if (reason !== a.forced_reason) {
         fail(
           `forced judgment ${a.judgment} in ${where}: ledger reason ${
@@ -270,6 +284,14 @@ function checkLedger(reports: Report[], raw: unknown) {
           }, report reason ${JSON.stringify(reason)}`,
         );
       }
+    }
+    const missing = [...report.keys()].filter((id) => !seen.has(id));
+    if (missing.length > 0) {
+      fail(
+        `report forced judgment(s) ${
+          missing.join(", ")
+        } in ${where} missing from the ledger`,
+      );
     }
   }
   const ref = l.openrouter_reference;
@@ -666,6 +688,15 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
   const names = reports.map(prefix);
   if (new Set(names).size !== names.length) {
     fail(`duplicate output name among ${names.join(", ")}`);
+  }
+  // C-03 run 003: forced judgments are published only reconciled with a ledger.
+  const forced = reports.find((r) =>
+    r.cells.some((c) => (c.forced_rejudges ?? []).length > 0)
+  );
+  if (ledger === undefined && forced) {
+    fail(
+      `report ${forced.experiment.id} / ${forced.campaign.id} has forced rejudges: --ledger is required to reconcile them`,
+    );
   }
   const lg = ledger === undefined ? null : checkLedger(reports, ledger);
   // No headline at all (F1): the ledger alone, every action not_reported.

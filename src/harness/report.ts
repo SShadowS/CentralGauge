@@ -836,13 +836,19 @@ export function renderReport(r: HarnessReport): string {
     for (const { c, f } of forced) {
       const basis = f.basis.kind === "signature"
         ? `signature ${f.basis.signature}`
-        : `decision ${f.basis.path}`;
+        : `decision ${f.basis.path} (sha256 ${f.basis.sha256})`;
       out.push(
         `    ${c.task} r${c.repeat} ${c.arm}: judgment ${f.judgment_id} (${
           f.judgment_id === c.judgment_id ? "counted" : "not counted"
         }) replaces ${f.replaces}, basis ${basis}: ${f.reason}`,
       );
     }
+  }
+  // Run 003: cells above the cut are not in r.cells, nor their forced judgments.
+  if (r.repeats.reported < r.repeats.planned) {
+    out.push(
+      `  Forced rejudges in repeats above ${r.repeats.reported}, if any, are not listed.`,
+    );
   }
   const ms = (x: number | null) => (x === null ? "n/a" : `${Math.round(x)} ms`);
   h("Efficiency (descriptive)");

@@ -634,3 +634,52 @@ Deno.test("infraSignature (C-03 run 002): judge error, or build failed with 0 di
   });
   assertEquals(infraSignature(withTest, log), null);
 });
+
+Deno.test("infraSignature (C-03 run 003): a judge error after real oracle rows is no signature (a genuine FAIL)", () => {
+  const id = "00000000-0000-4000-a000-00000000c031";
+  const eid = "00000000-0000-4000-9000-00000000c031";
+  const j = JudgmentRecordSchema.parse({
+    v: 1,
+    id,
+    execution_id: eid,
+    workspace_hash: "0".repeat(64),
+    task_id: "HX-001",
+    task_oracle_hash: "a".repeat(64),
+    scorer_versions: { build: "1" },
+    scorer_fingerprint: "b".repeat(64),
+    scorers: [
+      { name: "build", passed: true, tests: [] },
+      {
+        name: "fail_to_pass",
+        passed: false,
+        tests: [{
+          codeunit: 50100,
+          procedure: "T",
+          target: "candidate",
+          outcome: "fail",
+          failure: "assertion",
+        }],
+      },
+      { name: "pass_to_pass", passed: null, tests: [] },
+    ],
+    verdict: "fail",
+    verdict_container: null,
+    started_at: "2026-09-28T11:38:35.000Z",
+    ended_at: "2026-09-28T11:39:06.426Z",
+  });
+  const log = {
+    v: 1,
+    judgment_id: id,
+    execution_id: eid,
+    diagnostics: [],
+    notes: [],
+    error: "held container lost",
+  };
+  assertEquals(infraSignature(j, log), null);
+  // The same error with no test result anywhere stays a signature.
+  const bare = JudgmentRecordSchema.parse({
+    ...j,
+    scorers: j.scorers.map((s) => ({ ...s, tests: [] })),
+  });
+  assertEquals(infraSignature(bare, log), "judge_error");
+});

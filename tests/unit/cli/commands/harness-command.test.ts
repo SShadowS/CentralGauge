@@ -62,6 +62,7 @@ import {
 } from "../../../../src/harness/campaign.ts";
 import { buildReport, renderReport } from "../../../../src/harness/report.ts";
 import { writeVerdictLog } from "../../../../src/harness/verdict.ts";
+import { sha256Hex } from "../../../../src/harness/hash.ts";
 import { scorerFingerprint } from "../../../../src/harness/records.ts";
 import { oracleHash } from "../../../../src/harness/identity.ts";
 import { loadTask } from "../../../../src/harness/task.ts";
@@ -4051,7 +4052,7 @@ Deno.test("rejudge --force (C-03 run 002): a replaced judgment without an infra 
   const root = await Deno.makeTempDir({ prefix: "coord-" });
   await Deno.mkdir(join(root, "decisions"));
   const decision = join(root, "decisions", "2026-09-28-c03-forced.md");
-  await Deno.writeTextFile(decision, "owner: rejudge 3e75f789\n");
+  await Deno.writeTextFile(decision, `owner: rejudge ${e.id}\n`);
   await Deno.writeTextFile(join(root, "outside.md"), "not a decision\n");
   const prior = Deno.env.get("CG_COORD_ROOT");
   const refused = async (basis: string, msg: string) =>
@@ -4095,6 +4096,110 @@ Deno.test("rejudge --force (C-03 run 002): a replaced judgment without an infra 
   assertEquals(forced.forced, {
     reason: OOM_REASON,
     replaces: plain.id,
-    basis: { kind: "decision", path: "2026-09-28-c03-forced.md" },
+    basis: {
+      kind: "decision",
+      path: "2026-09-28-c03-forced.md",
+      sha256: await sha256Hex(
+        new TextEncoder().encode(`owner: rejudge ${e.id}\n`),
+      ),
+    },
   });
+});
+
+// C-03 run 003 (review of e8038b3b): the decision basis is pinned by hash and
+// names the execution; a relative --basis is under $CG_COORD_ROOT/decisions;
+// only the execution a cell counts can be force-rejudged.
+
+/** Runs `f` with CG_COORD_ROOT at a fresh coord root holding `decisions`. */
+async function withCoordRoot(
+  decisions: Record<string, string>,
+  f: (root: string) => Promise<void>,
+) {
+  const root = await Deno.makeTempDir({ prefix: "coord-" });
+  await Deno.mkdir(join(root, "decisions"));
+  for (const [name, text] of Object.entries(decisions)) {
+    await Deno.writeTextFile(join(root, "decisions", name), text);
+  }
+  const prior = Deno.env.get("CG_COORD_ROOT");
+  try {
+    Deno.env.set("CG_COORD_ROOT", root);
+    await f(root);
+  } finally {
+    if (prior === undefined) Deno.env.delete("CG_COORD_ROOT");
+    else Deno.env.set("CG_COORD_ROOT", prior);
+    await Deno.remove(root, { recursive: true });
+  }
+}
+
+Deno.test("rejudge --force (C-03 run 003): a relative --basis is under the decisions dir, must name the execution, and is recorded with its sha256", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
+  const good = `Owner: force-rejudge execution ${e.id} (host OOM).\n`;
+  await withCoordRoot({
+    "other.md": "Owner: force-rejudge execution 3e75f789.\n",
+    "c03.md": good,
+  }, async () => {
+    // The decision must name this execution.
+    await assertRejects(
+      () =>
+        harnessRejudge(
+          "contract",
+          forceOpts(t, c, e, { replaces: oom.id, basis: "other.md" }),
+          () => {
+            throw new Error("the environment must not open");
+          },
+        ),
+      ConfigurationError,
+      `does not name execution ${e.id}`,
+    );
+    // Relative to decisions/, not the working directory.
+    await harnessRejudge(
+      "contract",
+      forceOpts(t, c, e, { replaces: oom.id, basis: "c03.md" }),
+      opener(t),
+    );
+  });
+  const forced = (await t.env.store.judgments(e.id)).find((j) => j.forced)!;
+  assertEquals(forced.forced!.basis, {
+    kind: "decision",
+    path: "c03.md",
+    sha256: await sha256Hex(new TextEncoder().encode(good)),
+  });
+});
+
+Deno.test("rejudge --force (C-03 run 003): an execution its cell does not count is refused", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
+  // A manual rerun beside the scored planned result: judged, never counted.
+  const rerun = {
+    ...e,
+    id: crypto.randomUUID(),
+    attempt: 2,
+    run_kind: "manual_rerun" as const,
+    retry_of: null,
+  };
+  await t.env.store.writeExecution(rerun);
+  await t.env.store.writeArtifact({
+    ...(await t.env.store.artifact(e.id))!,
+    execution_id: rerun.id,
+  });
+  const rerunOom = { ...oom, id: crypto.randomUUID(), execution_id: rerun.id };
+  await writeOomLog(t, rerunOom.id, rerun.id);
+  await t.env.store.writeJudgment(rerunOom);
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        forceOpts(t, c, rerun, { replaces: rerunOom.id }),
+        opener(t),
+        () => {
+          throw new Error("refused before asking");
+        },
+      ),
+    ConfigurationError,
+    `execution ${rerun.id} is not the one its cell counts (${e.id})`,
+  );
+  assertEquals((await t.env.store.judgments(rerun.id)).length, 1);
 });

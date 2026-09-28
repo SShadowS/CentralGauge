@@ -465,7 +465,7 @@ Deno.test("cellsFromRecords (C-03 run 002): every forced judgment of a cell is l
     forced: {
       reason: "second host",
       replaces: rerunOom.id,
-      basis: { kind: "decision", path: "d.md" },
+      basis: { kind: "decision", path: "d.md", sha256: H("c") },
     },
   });
   const cell = cellOf(c, [e, rerun], [
@@ -489,7 +489,7 @@ Deno.test("cellsFromRecords (C-03 run 002): every forced judgment of a cell is l
       execution_id: rerun.id,
       reason: "second host",
       replaces: rerunOom.id,
-      basis: { kind: "decision", path: "d.md" },
+      basis: { kind: "decision", path: "d.md", sha256: H("c") },
     },
   ]);
   const plain = cellOf(c, [e], [oom]);

@@ -18,6 +18,7 @@ import {
 } from "../../../src/harness/records.ts";
 import {
   buildReport,
+  type HarnessReport,
   partialText,
   renderReport,
 } from "../../../src/harness/report.ts";
@@ -903,5 +904,21 @@ Deno.test("buildReport partial marker (M6-02a F3): null when complete; provision
   assertEquals(
     partialText(both),
     "PARTIAL (provisional: cells pending or unrun; repeat cut: 2 of 3 repeats reported)",
+  );
+});
+
+Deno.test("renderReport (C-03 run 003): a repeat cut says forced rejudges above it are not listed", async () => {
+  const r: HarnessReport = JSON.parse(
+    await Deno.readTextFile("tests/fixtures/harness/report-mock-contract.json"),
+  );
+  const cut = stripAnsiCode(
+    renderReport({ ...r, repeats: { planned: 3, reported: 2 } }),
+  );
+  assertStringIncludes(
+    cut,
+    "Forced rejudges in repeats above 2, if any, are not listed.",
+  );
+  assert(
+    !stripAnsiCode(renderReport(r)).includes("Forced rejudges in repeats"),
   );
 });
