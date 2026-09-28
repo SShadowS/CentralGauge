@@ -3680,3 +3680,156 @@ Deno.test("CLI (C-03): `harness rejudge --force --reason` parses and forwards bo
   assertEquals(js.filter((j) => j.forced?.reason === OOM_REASON).length, 1);
   assertStringIncludes(stripAnsiCode(out.out.join("\n")), `[OK] ${e.id}:`);
 });
+
+Deno.test("rejudge --force (C-03 review): a new judgment that does not end up latest (clock skew) is an error", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
+  // A judgment stamped by a clock ahead of this one stays newest by ended_at.
+  const skewed = {
+    ...oom,
+    id: crypto.randomUUID(),
+    started_at: "2999-01-01T00:00:00.000Z",
+    ended_at: "2999-01-01T00:00:00.000Z",
+  };
+  await t.env.store.writeJudgment(skewed);
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, {
+          campaign: c.id,
+          execution: e.id,
+          force: true,
+          reason: OOM_REASON,
+        }),
+        opener(t),
+      ),
+    ConfigurationError,
+    `is not the latest judgment of execution ${e.id}`,
+  );
+});
+
+Deno.test("rejudge --force (C-03 review): refused before writing when the task's current oracle differs from the campaign's", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e } = await campaignWithOomJudgment(t);
+  const oracle = join(
+    t.repo.tasksDir,
+    "HX-001",
+    "oracle",
+    "src",
+    "Oracle.Test.al",
+  );
+  await Deno.writeTextFile(
+    oracle,
+    (await Deno.readTextFile(oracle)) + "// oracle fix\n",
+  );
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, {
+          campaign: c.id,
+          execution: e.id,
+          force: true,
+          reason: OOM_REASON,
+        }),
+        opener(t),
+        () => {
+          throw new Error("refused before asking");
+        },
+      ),
+    ConfigurationError,
+    "would not be counted by the report",
+  );
+  assertEquals((await t.env.store.judgments(e.id)).length, 2);
+});
+
+Deno.test("rejudge --force (C-03 review): a multi-line --reason is refused before the environment opens", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e } = await campaignWithOomJudgment(t);
+  for (const reason of ["one\ntwo", "one\rtwo", "one\r\n"]) {
+    await assertRejects(
+      () =>
+        harnessRejudge(
+          "contract",
+          runOpts(t, { campaign: c.id, execution: e.id, force: true, reason }),
+          () => {
+            throw new Error("the environment must not open");
+          },
+        ),
+      ConfigurationError,
+      "--reason must be a single line",
+    );
+  }
+  assertEquals((await t.env.store.judgments(e.id)).length, 2);
+});
+
+Deno.test("rejudge --force (C-03 review): the confirmation prompt echoes the scrubbed reason", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e } = await campaignWithOomJudgment(t);
+  const asked: string[] = [];
+  await harnessRejudge(
+    "contract",
+    runOpts(t, {
+      campaign: c.id,
+      execution: e.id,
+      force: true,
+      reason: `OOM, dump in ${t.env.privateRoot}`,
+      yes: false,
+    }),
+    opener(t),
+    (q) => {
+      asked.push(q);
+      return false;
+    },
+  );
+  assertEquals(asked.length, 1);
+  assertStringIncludes(asked[0]!, "forced: OOM, dump in ");
+  assert(!asked[0]!.includes(t.env.privateRoot), asked[0]);
+});
+
+Deno.test("CLI (C-03 review): `harness rejudge --force` with --execution twice is rejected by parsing", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e } = await campaignWithOomJudgment(t);
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, opener(t));
+  const cwd = Deno.cwd();
+  const out = capture();
+  try {
+    Deno.chdir(t.repo.root);
+    await assertRejects(
+      () =>
+        cli.parse([
+          "harness",
+          "rejudge",
+          "contract",
+          "--campaign",
+          c.id,
+          "--execution",
+          e.id,
+          "--execution",
+          e.id,
+          "--force",
+          "--reason",
+          OOM_REASON,
+          "--yes",
+          "--secrets-dir",
+          t.env.privateRoot,
+          "--private-dir",
+          t.env.privateRoot,
+        ]),
+      Error,
+      'Option "--execution" can only occur once',
+    );
+  } finally {
+    Deno.chdir(cwd);
+    out.restore();
+    Deno.exitCode = 0;
+  }
+  assertEquals((await t.env.store.judgments(e.id)).length, 2);
+});

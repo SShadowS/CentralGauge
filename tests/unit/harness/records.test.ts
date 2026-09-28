@@ -83,6 +83,17 @@ Deno.test("execution schema: loud on bad records", async () => {
   }
 });
 
+Deno.test("judgment schema (C-03 review): forced.reason is one non-blank line", async () => {
+  const c = await campaign();
+  const j = judgment(c, execution(c), true);
+  const parse = (reason: string) =>
+    JudgmentRecordSchema.parse({ ...j, forced: { reason } });
+  assertEquals(parse("host OOM").forced, { reason: "host OOM" });
+  for (const bad of [" \t ", "one\ntwo", "one\rtwo", "one\r\n"]) {
+    assertThrows(() => parse(bad), Error, undefined, JSON.stringify(bad));
+  }
+});
+
 Deno.test("judgment schema: verdict must agree, failures must be classified", async () => {
   const c = await campaign();
   const j = judgment(c, execution(c), false);

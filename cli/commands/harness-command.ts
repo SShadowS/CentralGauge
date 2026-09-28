@@ -71,7 +71,11 @@ import { loadTraces } from "../../src/harness/trace-metrics.ts";
 import { checkScenario } from "../../scripts/harness/stub-anthropic.mjs";
 import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
-import { rejudgeExecution, runCell } from "../../src/harness/execution.ts";
+import {
+  rejudgeExecution,
+  runCell,
+  scrubForcedReason,
+} from "../../src/harness/execution.ts";
 import {
   cellRefFor,
   loadCampaignData,
@@ -1082,6 +1086,9 @@ async function rejudgeTarget(
   if (o.force && !o.reason?.trim()) {
     throw new ConfigurationError("rejudge --force needs a non-blank --reason");
   }
+  if (o.reason !== undefined && /[\r\n]/.test(o.reason)) {
+    throw new ConfigurationError("rejudge --reason must be a single line");
+  }
   if (!o.force && o.reason !== undefined) {
     throw new ConfigurationError("rejudge --reason is only for --force");
   }
@@ -1164,7 +1171,22 @@ export async function harnessRejudge(
         return false;
       }
       // C-03: forced, the one execution is due although its judgment is current.
-      if (o.force) return true;
+      if (o.force) {
+        // The report counts only judgments on the campaign's oracle.
+        const pinned = c.task_set.tasks.find((t) => t.id === e.task_id)!
+          .oracle;
+        const now = byTask.get(e.task_id)!.oracle;
+        if (now !== pinned) {
+          throw new ConfigurationError(
+            `task ${e.task_id}'s current oracle ${
+              now.slice(0, 12)
+            } differs from campaign ${c.id}'s ${
+              pinned.slice(0, 12)
+            }: a forced judgment would not be counted by the report (it selects the campaign's oracle); rejudge --force refused`,
+          );
+        }
+        return true;
+      }
       const j = latestJudgment(
         data.judgments.filter((x) => x.execution_id === e.id),
       );
@@ -1191,11 +1213,17 @@ export async function harnessRejudge(
       );
       return { campaignId: c.id, rejudged: 0 };
     }
+    // C-03 review: the prompt shows the reason as the judgment will record it.
+    const forced = o.force
+      ? {
+        reason: await scrubForcedReason(env, o.execution!, o.reason!.trim()),
+      }
+      : undefined;
     if (
       !o.yes &&
       !ask(
         `Rejudge ${due.length} execution(s) of campaign ${c.id} with the current scorer suite and the current oracle${
-          o.force ? ` (forced: ${o.reason!.trim()})` : ""
+          forced ? ` (forced: ${forced.reason})` : ""
         }?`,
       )
     ) {
@@ -1223,8 +1251,16 @@ export async function harnessRejudge(
         cell,
         e,
         oracle,
-        o.force ? { reason: o.reason!.trim() } : undefined,
+        forced,
       );
+      // C-03 review: an earlier judgment dated later (clock skew) would stay latest.
+      if (
+        forced && latestJudgment(await env.store.judgments(e.id))?.id !== j.id
+      ) {
+        throw new ConfigurationError(
+          `forced judgment ${j.id} is not the latest judgment of execution ${e.id} (an earlier one has a later ended_at; clock skew?): the report would not use it`,
+        );
+      }
       console.log(
         `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
           oracle.slice(0, 12)

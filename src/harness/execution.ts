@@ -513,6 +513,15 @@ async function readRedactionKeys(
   return keys;
 }
 
+/** C-03 review: a forced rejudge's reason as the judgment will record it (scrubbed). */
+export async function scrubForcedReason(
+  env: HarnessEnv,
+  id: string,
+  reason: string,
+): Promise<string> {
+  return scrubJudgeOutput(reason, await readRedactionKeys(env, id), env);
+}
+
 /** Judge output: custody secrets (by salted hash) and private paths scrubbed from every string. */
 function scrubJudgeOutput<T>(v: T, keys: RedactionKey[], env: HarnessEnv): T {
   const paths = privatePathValues(env);

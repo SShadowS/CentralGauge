@@ -284,7 +284,9 @@ export const JudgmentRecordSchema = z.strictObject({
    * execution although its latest judgment is current (e.g. a verdict build
    * starved of host memory). Absent on every other judgment; in no hash.
    */
-  forced: z.strictObject({ reason: z.string().regex(/\S/) }).optional(),
+  forced: z.strictObject({
+    reason: z.string().regex(/\S/).regex(/^[^\r\n]*$/),
+  }).optional(),
 }).refine((j) => j.verdict === verdictOf(j.scorers), {
   message: "verdict disagrees with scorer results",
   path: ["verdict"],
