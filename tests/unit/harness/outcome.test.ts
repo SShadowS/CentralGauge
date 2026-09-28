@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import { ValidationError } from "../../../src/errors.ts";
 import {
   type CellRecord,
@@ -442,4 +442,56 @@ Deno.test("cellsFromRecords: a fail judgment with a null scorer is scored, never
     false,
     j.id,
   ]);
+});
+
+Deno.test("cellsFromRecords (C-03 run 002): every forced judgment of a cell is listed, counted or not; none gives no field", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const rerun = execution(c, { attempt: 2, run_kind: "manual_rerun" });
+  const basis = {
+    kind: "signature" as const,
+    signature: "build_failed_no_diagnostics_no_tests" as const,
+  };
+  const oom = judgment(c, e, false);
+  const forced = judgment(c, e, true, {
+    ended_at: "2026-10-01T10:20:00.000Z",
+    forced: { reason: "host OOM", replaces: oom.id, basis },
+  });
+  // A later ordinary judgment (say a new scorer suite) is the one counted.
+  const later = judgment(c, e, false, { ended_at: "2026-10-01T10:30:00.000Z" });
+  const rerunOom = judgment(c, rerun, false);
+  const rerunForced = judgment(c, rerun, true, {
+    ended_at: "2026-10-01T10:25:00.000Z",
+    forced: {
+      reason: "second host",
+      replaces: rerunOom.id,
+      basis: { kind: "decision", path: "d.md" },
+    },
+  });
+  const cell = cellOf(c, [e, rerun], [
+    oom,
+    forced,
+    later,
+    rerunOom,
+    rerunForced,
+  ]);
+  assertEquals([cell.status, cell.judgment_id], ["scored", later.id]);
+  assertEquals(cell.forced_rejudges, [
+    {
+      judgment_id: forced.id,
+      execution_id: e.id,
+      reason: "host OOM",
+      replaces: oom.id,
+      basis,
+    },
+    {
+      judgment_id: rerunForced.id,
+      execution_id: rerun.id,
+      reason: "second host",
+      replaces: rerunOom.id,
+      basis: { kind: "decision", path: "d.md" },
+    },
+  ]);
+  const plain = cellOf(c, [e], [oom]);
+  assert(!("forced_rejudges" in plain), JSON.stringify(plain));
 });

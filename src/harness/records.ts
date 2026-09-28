@@ -33,6 +33,18 @@ import { TASK_KINDS, TaskLimitsSchema } from "./task.ts";
 /** Lower-case only: ids become file names, and Windows folds case. */
 const Uuid = z.uuid().refine((s) => s === s.toLowerCase(), "lower-case uuid");
 const Iso = z.iso.datetime();
+/** One non-blank line (C-03 forced reason and decision path). */
+const OneLine = z.string().regex(/\S/).regex(/^[^\r\n]*$/);
+/**
+ * C-03 run 002: a judgment's recorded infra signature (verdict.ts
+ * infraSignature): the judge caught an infra error, or the candidate build
+ * failed with no diagnostics and no test result (host memory starvation).
+ */
+export const INFRA_SIGNATURES = [
+  "judge_error",
+  "build_failed_no_diagnostics_no_tests",
+] as const;
+export type InfraSignature = typeof INFRA_SIGNATURES[number];
 const n = z.number().nonnegative().nullable();
 
 export const TERMINATIONS = [
@@ -283,9 +295,20 @@ export const JudgmentRecordSchema = z.strictObject({
    * C-03: set only by `harness rejudge --force`, which re-judges one
    * execution although its latest judgment is current (e.g. a verdict build
    * starved of host memory). Absent on every other judgment; in no hash.
+   * Run 002: at most one per execution; `replaces` is the judgment the report
+   * used before, `basis` why that one was infra: its verdict log's signature,
+   * or an owner decision (path relative to $CG_COORD_ROOT/decisions).
    */
   forced: z.strictObject({
-    reason: z.string().regex(/\S/).regex(/^[^\r\n]*$/),
+    reason: OneLine,
+    replaces: Uuid,
+    basis: z.discriminatedUnion("kind", [
+      z.strictObject({
+        kind: z.literal("signature"),
+        signature: z.enum(INFRA_SIGNATURES),
+      }),
+      z.strictObject({ kind: z.literal("decision"), path: OneLine }),
+    ]),
   }).optional(),
 }).refine((j) => j.verdict === verdictOf(j.scorers), {
   message: "verdict disagrees with scorer results",

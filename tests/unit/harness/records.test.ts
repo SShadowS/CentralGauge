@@ -790,10 +790,53 @@ Deno.test("execution v2: incomplete_observed required in v2, forbidden in v1; bo
 Deno.test("judgment schema (C-03 review): forced.reason is one non-blank line", async () => {
   const c = await campaign();
   const j = judgment(c, execution(c), true);
+  const basis = {
+    kind: "signature",
+    signature: "build_failed_no_diagnostics_no_tests",
+  } as const;
   const parse = (reason: string) =>
-    JudgmentRecordSchema.parse({ ...j, forced: { reason } });
-  assertEquals(parse("host OOM").forced, { reason: "host OOM" });
+    JudgmentRecordSchema.parse({
+      ...j,
+      forced: { reason, replaces: CAMPAIGN_ID, basis },
+    });
+  assertEquals(parse("host OOM").forced, {
+    reason: "host OOM",
+    replaces: CAMPAIGN_ID,
+    basis,
+  });
   for (const bad of [" \t ", "one\ntwo", "one\rtwo", "one\r\n"]) {
+    assertThrows(() => parse(bad), Error, undefined, JSON.stringify(bad));
+  }
+});
+
+Deno.test("judgment schema (C-03 run 002): forced names the replaced judgment and a signature or decision basis", async () => {
+  const c = await campaign();
+  const j = judgment(c, execution(c), true);
+  const parse = (forced: unknown) =>
+    JudgmentRecordSchema.parse({ ...j, forced });
+  const reason = "host OOM";
+  const replaces = CAMPAIGN_ID;
+  for (
+    const basis of [
+      { kind: "signature", signature: "judge_error" },
+      { kind: "signature", signature: "build_failed_no_diagnostics_no_tests" },
+      { kind: "decision", path: "2026-09-28-c03.md" },
+    ] as const
+  ) {
+    assertEquals(parse({ reason, replaces, basis }).forced!.basis, basis);
+  }
+  for (
+    const bad of [
+      { reason },
+      { reason, replaces },
+      { reason, basis: { kind: "decision", path: "d.md" } },
+      { reason, replaces: "x", basis: { kind: "decision", path: "d.md" } },
+      { reason, replaces, basis: { kind: "signature", signature: "oom" } },
+      { reason, replaces, basis: { kind: "decision", path: " " } },
+      { reason, replaces, basis: { kind: "decision", path: "a\nb" } },
+      { reason, replaces, basis: { kind: "decision" } },
+    ]
+  ) {
     assertThrows(() => parse(bad), Error, undefined, JSON.stringify(bad));
   }
 });

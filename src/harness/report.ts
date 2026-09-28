@@ -827,13 +827,20 @@ export function renderReport(r: HarnessReport): string {
       );
     }
   }
-  // C-03: every counted verdict from a forced rejudge, with its reason.
-  const forced = r.cells.filter((c) => c.forced_rejudge !== undefined);
+  // C-03 run 002: every forced judgment of a cell, counted or not.
+  const forced = r.cells.flatMap((c) =>
+    (c.forced_rejudges ?? []).map((f) => ({ c, f }))
+  );
   if (forced.length > 0) {
-    out.push("  Cells with forced rejudges:");
-    for (const c of forced) {
+    out.push("  Forced rejudges (every one, counted or not):");
+    for (const { c, f } of forced) {
+      const basis = f.basis.kind === "signature"
+        ? `signature ${f.basis.signature}`
+        : `decision ${f.basis.path}`;
       out.push(
-        `    ${c.task} r${c.repeat} ${c.arm}: judgment ${c.judgment_id} (${c.forced_rejudge})`,
+        `    ${c.task} r${c.repeat} ${c.arm}: judgment ${f.judgment_id} (${
+          f.judgment_id === c.judgment_id ? "counted" : "not counted"
+        }) replaces ${f.replaces}, basis ${basis}: ${f.reason}`,
       );
     }
   }

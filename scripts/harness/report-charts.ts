@@ -65,8 +65,18 @@ export const Ledger = z.strictObject({
     paid_usd: z.number().nonnegative().nullable(),
   })),
   manual_reruns: z.array(z.strictObject({ ...Action, decision: Text })),
+  /**
+   * Every rejudge action. C-03 run 002: a forced one (`harness rejudge
+   * --force`) also carries its judgment's `forced.reason`; those reconcile
+   * exactly with the reports' forced judgments.
+   */
   rejudges: z.array(
-    z.strictObject({ ...Action, judgment: Id, decision: Text }),
+    z.strictObject({
+      ...Action,
+      judgment: Id,
+      decision: Text,
+      forced_reason: z.string().regex(/\S/).regex(/^[^\r\n]*$/).optional(),
+    }),
   ),
   pi_stop: z.strictObject({
     fired: z.boolean(),
@@ -165,7 +175,10 @@ const armList = (
 
 interface Scoped {
   kind: "manual_rerun" | "rejudge";
-  a: Ledger["manual_reruns"][number] & { judgment?: string };
+  a: Ledger["manual_reruns"][number] & {
+    judgment?: string;
+    forced_reason?: string | undefined;
+  };
   scope: Scope;
 }
 
@@ -221,6 +234,40 @@ function checkLedger(reports: Report[], raw: unknown) {
       if (n !== c.manual_reruns) {
         fail(
           `ledger manual reruns disagree with the report for ${r.experiment.id} / ${r.campaign.id} / ${c.arm}: ledger ${n}, report ${c.manual_reruns}`,
+        );
+      }
+    }
+  }
+  // C-03 run 002: the ledger's forced rejudges in each report's scope are
+  // exactly the report's forced judgments (count, ids, reasons).
+  for (const r of reports) {
+    const where = `${r.experiment.id} / ${r.campaign.id}`;
+    const report = new Map(
+      r.cells.flatMap((c) => c.forced_rejudges ?? [])
+        .map((f) => [f.judgment_id, f.reason]),
+    );
+    const ledger = actions.filter((x) =>
+      x.kind === "rejudge" && x.scope === "reported" &&
+      x.a.campaign === r.campaign.id && x.a.repeat <= r.repeats.reported &&
+      x.a.forced_reason !== undefined
+    ).map((x) => x.a);
+    if (ledger.length !== report.size) {
+      fail(
+        `ledger forced rejudges disagree with the report for ${where}: ledger ${ledger.length}, report ${report.size} (a forced rejudge carries forced_reason in the ledger)`,
+      );
+    }
+    for (const a of ledger) {
+      const reason = report.get(a.judgment!);
+      if (reason === undefined) {
+        fail(
+          `ledger forced rejudge names judgment ${a.judgment} in ${where}, which the report has no forced judgment for`,
+        );
+      }
+      if (reason !== a.forced_reason) {
+        fail(
+          `forced judgment ${a.judgment} in ${where}: ledger reason ${
+            JSON.stringify(a.forced_reason)
+          }, report reason ${JSON.stringify(reason)}`,
         );
       }
     }

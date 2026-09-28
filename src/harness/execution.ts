@@ -94,6 +94,7 @@ import {
   writeSecretFiles,
 } from "./sandbox.ts";
 import { type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
+import { selectJudgment } from "./outcome.ts";
 import { currentScorerFingerprint, judge, writeVerdictLog } from "./verdict.ts";
 
 export type PublishStep =
@@ -511,6 +512,38 @@ async function readRedactionKeys(
     );
   }
   return keys;
+}
+
+/**
+ * C-03 run 002: why a forced judgment of `e` may not be written, else null.
+ * At most one forced judgment per execution; `replaces` must be the judgment
+ * the report selects on `oracle` (the campaign's); with `candidate`, the new
+ * judgment must become the selected one (else clock skew keeps the old).
+ */
+export function forcedRefusal(
+  e: ExecutionRecord,
+  existing: JudgmentRecord[],
+  oracle: string,
+  replaces: string,
+  candidate?: JudgmentRecord,
+): string | null {
+  const prior = existing.find((j) => j.execution_id === e.id && j.forced);
+  if (prior) {
+    return `execution ${e.id} already has forced judgment ${prior.id} (at most one forced rejudge per execution)`;
+  }
+  const used = selectJudgment(e, existing, oracle);
+  if (used?.id !== replaces) {
+    return `--replaces ${replaces} is not the judgment the report uses for execution ${e.id} (${
+      used?.id ?? "none"
+    })`;
+  }
+  if (
+    candidate &&
+    selectJudgment(e, [...existing, candidate], oracle)?.id !== candidate.id
+  ) {
+    return `forced judgment ${candidate.id} would not be the judgment the report selects for execution ${e.id} (an existing judgment on that oracle has a later ended_at; clock skew?)`;
+  }
+  return null;
 }
 
 /** C-03 review: a forced rejudge's reason as the judgment will record it (scrubbed). */
@@ -1962,6 +1995,19 @@ export async function judgeExecution(
         env,
       ),
     );
+    // C-03 run 002: checked against the store right before writing, so a
+    // refused forced judgment (a second one, a stale --replaces, or clock
+    // skew keeping an older judgment selected) leaves nothing behind.
+    if (judgment.forced) {
+      const why = forcedRefusal(
+        e,
+        await env.store.judgments(e.id),
+        oracleHash,
+        judgment.forced.replaces,
+        judgment,
+      );
+      if (why) throw new ConfigurationError(`${why}: nothing written`);
+    }
     // The side file first: a crash between the two leaves an orphan log, never a judgment without its log.
     await writeVerdictLog(env.resultsRoot, log);
     await env.store.writeJudgment(judgment);

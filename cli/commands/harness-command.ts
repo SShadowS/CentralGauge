@@ -7,7 +7,7 @@
  * @module cli/commands/harness
  */
 import * as colors from "@std/fmt/colors";
-import { fromFileUrl, join, relative, resolve } from "@std/path";
+import { fromFileUrl, isAbsolute, join, relative, resolve } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
 import { Command, EnumType } from "@cliffy/command";
 import { z } from "zod";
@@ -72,6 +72,7 @@ import { checkScenario } from "../../scripts/harness/stub-anthropic.mjs";
 import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
 import {
+  forcedRefusal,
   rejudgeExecution,
   runCell,
   scrubForcedReason,
@@ -139,6 +140,7 @@ import {
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
 import {
   currentScorerFingerprint,
+  infraSignature,
   judge,
   mutantOutcome,
   writeVerdictLog,
@@ -945,6 +947,10 @@ export interface RunCliOptions extends CellCliOptions {
   force?: boolean;
   /** rejudge (C-03): why --force; recorded as the new judgment's forced.reason. */
   reason?: string;
+  /** rejudge (C-03 run 002): the judgment --force replaces (the one the report uses). */
+  replaces?: string;
+  /** rejudge (C-03 run 002): an owner decision file under $CG_COORD_ROOT/decisions. */
+  basis?: string;
   /** run: any of these present stops the campaign before its next cell. */
   stopFiles?: string[];
   /** run: resume exactly this campaign; rejudge: this campaign, not the newest. */
@@ -1072,6 +1078,35 @@ function latestJudgment(js: JudgmentRecord[]): JudgmentRecord | undefined {
 
 const askUser = (q: string) => confirm(q);
 
+/**
+ * C-03 run 002: `--basis` as a path relative to $CG_COORD_ROOT/decisions
+ * (forward slashes). Refused unless CG_COORD_ROOT is set and the path,
+ * symlinks resolved, is an existing file inside that directory.
+ */
+async function decisionBasis(p: string): Promise<string> {
+  const root = Deno.env.get("CG_COORD_ROOT");
+  if (!root) {
+    throw new ConfigurationError(
+      "rejudge --basis needs CG_COORD_ROOT (the coord root holding decisions/)",
+    );
+  }
+  const real = (x: string) => Deno.realPath(x).catch(() => null);
+  const dir = await real(join(root, "decisions"));
+  const file = await real(resolve(p));
+  if (!dir || !file || !(await Deno.stat(file)).isFile) {
+    throw new ConfigurationError(
+      `rejudge --basis ${p} is not an existing file`,
+    );
+  }
+  const rel = relative(dir, file);
+  if (isAbsolute(rel) || rel.split(/[\\/]/)[0] === "..") {
+    throw new ConfigurationError(
+      `rejudge --basis ${p} is not inside ${dir} (an owner decision)`,
+    );
+  }
+  return rel.replaceAll("\\", "/");
+}
+
 /** The campaign rejudge works on (named, else newest), with --execution in it. */
 async function rejudgeTarget(
   store: RecordStore,
@@ -1091,6 +1126,16 @@ async function rejudgeTarget(
   }
   if (!o.force && o.reason !== undefined) {
     throw new ConfigurationError("rejudge --reason is only for --force");
+  }
+  if (o.force && !o.replaces) {
+    throw new ConfigurationError(
+      "rejudge --force needs --replaces <judgment id> (the judgment the report uses now)",
+    );
+  }
+  for (const [flag, v] of [["replaces", o.replaces], ["basis", o.basis]]) {
+    if (!o.force && v !== undefined) {
+      throw new ConfigurationError(`rejudge --${flag} is only for --force`);
+    }
   }
   const campaigns = await store.campaigns(experimentId);
   const c = o.campaign
@@ -1129,6 +1174,9 @@ export async function harnessRejudge(
 ): Promise<{ campaignId: string; rejudged: number }> {
   // M5-03 review: read-only, before any lock, sweep or recovery; again under the env.
   await rejudgeTarget(new RecordStore(o.resultsDir), experimentId, o);
+  const basisPath = o.basis === undefined
+    ? undefined
+    : await decisionBasis(o.basis);
   const h = await open(
     envOptions(o, o.resultsDir, `harness rejudge ${experimentId}`),
   );
@@ -1213,12 +1261,43 @@ export async function harnessRejudge(
       );
       return { campaignId: c.id, rejudged: 0 };
     }
-    // C-03 review: the prompt shows the reason as the judgment will record it.
-    const forced = o.force
-      ? {
-        reason: await scrubForcedReason(env, o.execution!, o.reason!.trim()),
+    // C-03 run 002: one forced rejudge per execution, replacing the judgment
+    // the report uses, which must carry a recorded infra basis. The prompt
+    // shows the reason as the judgment will record it (scrubbed).
+    let forced: JudgmentRecord["forced"];
+    if (o.force) {
+      const e = due[0]!;
+      const js = data.judgments.filter((x) => x.execution_id === e.id);
+      // The campaign's oracle (the due filter refused any other).
+      const why = forcedRefusal(
+        e,
+        js,
+        byTask.get(e.task_id)!.oracle,
+        o.replaces!,
+      );
+      if (why) throw new ConfigurationError(`${why}: rejudge --force refused`);
+      const replaced = js.find((x) => x.id === o.replaces)!;
+      let basis: NonNullable<JudgmentRecord["forced"]>["basis"];
+      if (basisPath !== undefined) {
+        basis = { kind: "decision", path: basisPath };
+      } else {
+        const log = await Deno.readTextFile(
+          join(env.resultsRoot, "verdicts", `${replaced.id}.json`),
+        ).then(JSON.parse).catch(() => null);
+        const signature = infraSignature(replaced, log);
+        if (!signature) {
+          throw new ConfigurationError(
+            `judgment ${replaced.id} carries no recorded infra basis (its verdict log shows no judge error, nor a failed build with 0 diagnostics and 0 tests): pass --basis <owner decision file under $CG_COORD_ROOT/decisions>`,
+          );
+        }
+        basis = { kind: "signature", signature };
       }
-      : undefined;
+      forced = {
+        reason: await scrubForcedReason(env, e.id, o.reason!.trim()),
+        replaces: replaced.id,
+        basis,
+      };
+    }
     if (
       !o.yes &&
       !ask(
@@ -1253,14 +1332,6 @@ export async function harnessRejudge(
         oracle,
         forced,
       );
-      // C-03 review: an earlier judgment dated later (clock skew) would stay latest.
-      if (
-        forced && latestJudgment(await env.store.judgments(e.id))?.id !== j.id
-      ) {
-        throw new ConfigurationError(
-          `forced judgment ${j.id} is not the latest judgment of execution ${e.id} (an earlier one has a later ended_at; clock skew?): the report would not use it`,
-        );
-      }
       console.log(
         `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
           oracle.slice(0, 12)
@@ -1935,6 +2006,8 @@ export function registerHarnessCommand(
     execution?: string;
     force?: boolean;
     reason?: string;
+    replaces?: string;
+    basis?: string;
     stopFile?: string[];
     campaign?: string;
     rerun?: RerunCell;
@@ -1951,6 +2024,8 @@ export function registerHarnessCommand(
     ...(f.execution ? { execution: f.execution } : {}),
     ...(f.force ? { force: true } : {}),
     ...(f.reason !== undefined ? { reason: f.reason } : {}),
+    ...(f.replaces !== undefined ? { replaces: f.replaces } : {}),
+    ...(f.basis !== undefined ? { basis: f.basis } : {}),
     ...(f.stopFile ? { stopFiles: f.stopFile.map((p) => resolve(p)) } : {}),
     ...(f.campaign ? { campaign: f.campaign } : {}),
     ...(f.rerun ? { rerun: f.rerun } : {}),
@@ -2010,6 +2085,14 @@ export function registerHarnessCommand(
       "Judge the one --execution again although its judgment is current",
     )
     .option("--reason <text:string>", "Why --force (recorded in the judgment)")
+    .option(
+      "--replaces <judgment:string>",
+      "With --force: the judgment replaced (the one the report uses now)",
+    )
+    .option(
+      "--basis <path:string>",
+      "With --force: owner decision file under $CG_COORD_ROOT/decisions (when the replaced judgment has no infra signature)",
+    )
     .option("--yes", "Do not ask for confirmation")
     .action((
       opts: Omit<RunFlags, "concurrency" | "maxPauseMin">,

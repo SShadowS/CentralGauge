@@ -61,6 +61,7 @@ import {
   runCampaign,
 } from "../../../../src/harness/campaign.ts";
 import { buildReport, renderReport } from "../../../../src/harness/report.ts";
+import { writeVerdictLog } from "../../../../src/harness/verdict.ts";
 import { scorerFingerprint } from "../../../../src/harness/records.ts";
 import { oracleHash } from "../../../../src/harness/identity.ts";
 import { loadTask } from "../../../../src/harness/task.ts";
@@ -3490,19 +3491,58 @@ async function campaignWithOomJudgment(t: TestEnv) {
   )!;
   const [j] = await t.env.store.judgments(e.id);
   assertEquals(j!.verdict, "pass");
+  // Run 002: the OOM signature is recorded (0 tests, a build note, no diagnostics).
   const oom = {
     ...j!,
     id: crypto.randomUUID(),
-    scorers: j!.scorers.map((s, i) =>
-      i === 0 ? { ...s, passed: false, tests: [] } : s
-    ),
+    scorers: j!.scorers.map((s, i) => ({
+      ...s,
+      passed: i === 0 ? false : s.passed,
+      tests: [],
+    })),
     verdict: "fail" as const,
     started_at: new Date().toISOString(),
     ended_at: new Date().toISOString(),
   };
+  await writeOomLog(t, oom.id, e.id);
   await t.env.store.writeJudgment(oom);
   return { c, e, original: j!, oom };
 }
+
+/** The verdict side file of an OOM-starved build (execution 3e75f789's). */
+async function writeOomLog(
+  t: TestEnv,
+  judgmentId: string,
+  executionId: string,
+) {
+  await writeVerdictLog(t.env.resultsRoot, {
+    v: 1,
+    judgment_id: judgmentId,
+    execution_id: executionId,
+    violations: [],
+    diagnostics: [],
+    test_messages: [],
+    notes: ["build failed: Test (no diagnostics)"],
+    spans: {
+      reconstruct_ms: 0,
+      compile_ms: 0,
+      queue_ms: 0,
+      provisioning_ms: 0,
+      candidate_publish_ms: 0,
+      test_ms: 0,
+      total_ms: 0,
+    },
+    containers: [],
+    infra_retries: [],
+    per_app_compiles: 0,
+    error: null,
+  });
+}
+
+const OOM_BASIS = {
+  kind: "signature",
+  signature: "build_failed_no_diagnostics_no_tests",
+} as const;
 
 Deno.test("rejudge --force (C-03): refused without --execution, without a non-blank --reason, and --reason without --force; before the environment opens", async () => {
   const t = await makeEnv();
@@ -3532,6 +3572,19 @@ Deno.test("rejudge --force (C-03): refused without --execution, without a non-bl
   await refused(
     { campaign: c.id, execution: e.id, reason: OOM_REASON },
     "--reason is only for --force",
+  );
+  // Run 002: --force names the judgment it replaces; --replaces and --basis need --force.
+  await refused(
+    { campaign: c.id, execution: e.id, force: true, reason: OOM_REASON },
+    "--force needs --replaces",
+  );
+  await refused(
+    { campaign: c.id, execution: e.id, replaces: crypto.randomUUID() },
+    "--replaces is only for --force",
+  );
+  await refused(
+    { campaign: c.id, execution: e.id, basis: "x.md" },
+    "--basis is only for --force",
   );
   assertEquals((await t.env.store.judgments(e.id)).length, 2);
 });
@@ -3572,6 +3625,7 @@ repeats: 1
           execution: crash.id,
           force: true,
           reason: OOM_REASON,
+          replaces: crypto.randomUUID(),
         }),
         opener(t),
       ),
@@ -3610,6 +3664,7 @@ Deno.test("rejudge --force (C-03): a current judgment gets a second judgment tha
       execution: e.id,
       force: true,
       reason: OOM_REASON,
+      replaces: oom.id,
     }),
     opener(t),
   );
@@ -3621,6 +3676,8 @@ Deno.test("rejudge --force (C-03): a current judgment gets a second judgment tha
   const forced = js.find((j) => j.id !== original.id && j.id !== oom.id)!;
   assertEquals([forced.verdict, forced.forced], ["pass", {
     reason: OOM_REASON,
+    replaces: oom.id,
+    basis: OOM_BASIS,
   }]);
   assertEquals(original.forced, undefined);
   const report = await load();
@@ -3630,23 +3687,29 @@ Deno.test("rejudge --force (C-03): a current judgment gets a second judgment tha
     true,
     forced.id,
   ]);
-  assertEquals(after.forced_rejudge, OOM_REASON);
+  assertEquals(after.forced_rejudges, [{
+    judgment_id: forced.id,
+    execution_id: e.id,
+    reason: OOM_REASON,
+    replaces: oom.id,
+    basis: OOM_BASIS,
+  }]);
   assertEquals(
     report.arms.find((a) => a.arm === "mock-positive")!.scored_cells,
     1,
   );
   const text = stripAnsiCode(renderReport(report));
-  assertStringIncludes(text, "Cells with forced rejudges:");
+  assertStringIncludes(text, "Forced rejudges (every one, counted or not):");
   assertStringIncludes(
     text,
-    `HX-001 r1 mock-positive: judgment ${forced.id} (${OOM_REASON})`,
+    `HX-001 r1 mock-positive: judgment ${forced.id} (counted) replaces ${oom.id}, basis signature build_failed_no_diagnostics_no_tests: ${OOM_REASON}`,
   );
 });
 
 Deno.test("CLI (C-03): `harness rejudge --force --reason` parses and forwards both", async () => {
   const t = await makeEnv();
   await writeCatalog(t);
-  const { c, e } = await campaignWithOomJudgment(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
   const cli = new Command().name("centralgauge").noExit();
   registerHarnessCommand(cli, opener(t));
   const cwd = Deno.cwd();
@@ -3664,6 +3727,8 @@ Deno.test("CLI (C-03): `harness rejudge --force --reason` parses and forwards bo
       "--force",
       "--reason",
       OOM_REASON,
+      "--replaces",
+      oom.id,
       "--yes",
       "--secrets-dir",
       t.env.privateRoot,
@@ -3677,11 +3742,16 @@ Deno.test("CLI (C-03): `harness rejudge --force --reason` parses and forwards bo
     Deno.exitCode = 0;
   }
   const js = await t.env.store.judgments(e.id);
-  assertEquals(js.filter((j) => j.forced?.reason === OOM_REASON).length, 1);
+  assertEquals(
+    js.filter((j) =>
+      j.forced?.reason === OOM_REASON && j.forced.replaces === oom.id
+    ).length,
+    1,
+  );
   assertStringIncludes(stripAnsiCode(out.out.join("\n")), `[OK] ${e.id}:`);
 });
 
-Deno.test("rejudge --force (C-03 review): a new judgment that does not end up latest (clock skew) is an error", async () => {
+Deno.test("rejudge --force (C-03 run 002): a forced judgment the report would not select (clock skew) is refused before anything is written", async () => {
   const t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
@@ -3692,7 +3762,16 @@ Deno.test("rejudge --force (C-03 review): a new judgment that does not end up la
     started_at: "2999-01-01T00:00:00.000Z",
     ended_at: "2999-01-01T00:00:00.000Z",
   };
+  await writeOomLog(t, skewed.id, e.id);
   await t.env.store.writeJudgment(skewed);
+  const verdicts = async () => {
+    const out: string[] = [];
+    for await (const f of Deno.readDir(join(t.env.resultsRoot, "verdicts"))) {
+      out.push(f.name);
+    }
+    return out.sort();
+  };
+  const logsBefore = await verdicts();
   await assertRejects(
     () =>
       harnessRejudge(
@@ -3702,18 +3781,31 @@ Deno.test("rejudge --force (C-03 review): a new judgment that does not end up la
           execution: e.id,
           force: true,
           reason: OOM_REASON,
+          replaces: skewed.id,
         }),
         opener(t),
       ),
     ConfigurationError,
-    `is not the latest judgment of execution ${e.id}`,
+    "would not be the judgment the report selects",
   );
+  // Nothing written: no judgment and no verdict side file.
+  assertEquals((await t.env.store.judgments(e.id)).length, 3);
+  assertEquals(await verdicts(), logsBefore);
+  const report = await buildReport(await loadCampaignData(t.env.store, c), {
+    resamples: 10,
+    seed: 1,
+  });
+  const cell = report.cells.find((x) => x.used_execution === e.id)!;
+  assertEquals([cell.judgment_id, cell.forced_rejudges], [
+    skewed.id,
+    undefined,
+  ]);
 });
 
 Deno.test("rejudge --force (C-03 review): refused before writing when the task's current oracle differs from the campaign's", async () => {
   const t = await makeEnv();
   await writeCatalog(t);
-  const { c, e } = await campaignWithOomJudgment(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
   const oracle = join(
     t.repo.tasksDir,
     "HX-001",
@@ -3734,6 +3826,7 @@ Deno.test("rejudge --force (C-03 review): refused before writing when the task's
           execution: e.id,
           force: true,
           reason: OOM_REASON,
+          replaces: oom.id,
         }),
         opener(t),
         () => {
@@ -3755,7 +3848,13 @@ Deno.test("rejudge --force (C-03 review): a multi-line --reason is refused befor
       () =>
         harnessRejudge(
           "contract",
-          runOpts(t, { campaign: c.id, execution: e.id, force: true, reason }),
+          runOpts(t, {
+            campaign: c.id,
+            execution: e.id,
+            force: true,
+            reason,
+            replaces: crypto.randomUUID(),
+          }),
           () => {
             throw new Error("the environment must not open");
           },
@@ -3770,7 +3869,7 @@ Deno.test("rejudge --force (C-03 review): a multi-line --reason is refused befor
 Deno.test("rejudge --force (C-03 review): the confirmation prompt echoes the scrubbed reason", async () => {
   const t = await makeEnv();
   await writeCatalog(t);
-  const { c, e } = await campaignWithOomJudgment(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
   const asked: string[] = [];
   await harnessRejudge(
     "contract",
@@ -3779,6 +3878,7 @@ Deno.test("rejudge --force (C-03 review): the confirmation prompt echoes the scr
       execution: e.id,
       force: true,
       reason: `OOM, dump in ${t.env.privateRoot}`,
+      replaces: oom.id,
       yes: false,
     }),
     opener(t),
@@ -3817,6 +3917,8 @@ Deno.test("CLI (C-03 review): `harness rejudge --force` with --execution twice i
           "--force",
           "--reason",
           OOM_REASON,
+          "--replaces",
+          crypto.randomUUID(),
           "--yes",
           "--secrets-dir",
           t.env.privateRoot,
@@ -3832,4 +3934,167 @@ Deno.test("CLI (C-03 review): `harness rejudge --force` with --execution twice i
     Deno.exitCode = 0;
   }
   assertEquals((await t.env.store.judgments(e.id)).length, 2);
+});
+
+// C-03 run 002 (review C-03-001): no cherry-picking. One forced rejudge per
+// execution, replacing the judgment the report uses, which must carry a
+// recorded infra basis (its verdict log's signature or an owner decision).
+
+/** Forced rejudge of `e` in `c` with the OOM reason; `over` adds or replaces options. */
+const forceOpts = (
+  t: TestEnv,
+  c: { id: string },
+  e: { id: string },
+  over: Record<string, unknown>,
+) =>
+  runOpts(t, {
+    campaign: c.id,
+    execution: e.id,
+    force: true,
+    reason: OOM_REASON,
+    ...over,
+  });
+
+Deno.test("rejudge --force (C-03 run 002): a second forced rejudge of the same execution is refused, whichever judgment it names", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
+  await harnessRejudge(
+    "contract",
+    forceOpts(t, c, e, { replaces: oom.id }),
+    opener(t),
+  );
+  const js = await t.env.store.judgments(e.id);
+  const first = js.find((j) => j.forced)!;
+  // The forced one fails too (say a flaky host): no retry until it passes.
+  for (const replaces of [first.id, oom.id]) {
+    await assertRejects(
+      () =>
+        harnessRejudge(
+          "contract",
+          forceOpts(t, c, e, { replaces }),
+          opener(t),
+          () => {
+            throw new Error("refused before asking");
+          },
+        ),
+      ConfigurationError,
+      `already has forced judgment ${first.id}`,
+    );
+  }
+  assertEquals((await t.env.store.judgments(e.id)).length, 3);
+});
+
+Deno.test("rejudge --force (C-03 run 002): --replaces must name the judgment the report uses for the execution", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, original } = await campaignWithOomJudgment(t);
+  for (const replaces of [original.id, crypto.randomUUID()]) {
+    await assertRejects(
+      () =>
+        harnessRejudge(
+          "contract",
+          forceOpts(t, c, e, { replaces }),
+          opener(t),
+          () => {
+            throw new Error("refused before asking");
+          },
+        ),
+      ConfigurationError,
+      `--replaces ${replaces} is not the judgment the report uses`,
+    );
+  }
+  assertEquals((await t.env.store.judgments(e.id)).length, 2);
+});
+
+Deno.test("rejudge --force (C-03 run 002): a replaced judgment without an infra signature needs --basis, a file under $CG_COORD_ROOT/decisions", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
+  // A plain FAIL with a test result and no verdict side file: no signature.
+  const plain = {
+    ...oom,
+    id: crypto.randomUUID(),
+    scorers: oom.scorers.map((s, i) =>
+      i === 0
+        ? {
+          ...s,
+          tests: [{
+            codeunit: 50100,
+            procedure: "T",
+            target: "candidate",
+            outcome: "fail" as const,
+            failure: "assertion" as const,
+          }],
+        }
+        : s
+    ),
+    // Just after the OOM judgment, so it is the one the report uses.
+    started_at: new Date(Date.parse(oom.ended_at) + 1).toISOString(),
+    ended_at: new Date(Date.parse(oom.ended_at) + 1).toISOString(),
+  };
+  await t.env.store.writeJudgment(plain);
+  const never = () => {
+    throw new Error("refused before asking");
+  };
+  await assertRejects(
+    () =>
+      harnessRejudge(
+        "contract",
+        forceOpts(t, c, e, { replaces: plain.id }),
+        opener(t),
+        never,
+      ),
+    ConfigurationError,
+    `judgment ${plain.id} carries no recorded infra basis`,
+  );
+  const root = await Deno.makeTempDir({ prefix: "coord-" });
+  await Deno.mkdir(join(root, "decisions"));
+  const decision = join(root, "decisions", "2026-09-28-c03-forced.md");
+  await Deno.writeTextFile(decision, "owner: rejudge 3e75f789\n");
+  await Deno.writeTextFile(join(root, "outside.md"), "not a decision\n");
+  const prior = Deno.env.get("CG_COORD_ROOT");
+  const refused = async (basis: string, msg: string) =>
+    await assertRejects(
+      () =>
+        harnessRejudge(
+          "contract",
+          forceOpts(t, c, e, { replaces: plain.id, basis }),
+          () => {
+            throw new Error("the environment must not open");
+          },
+        ),
+      ConfigurationError,
+      msg,
+    );
+  try {
+    Deno.env.delete("CG_COORD_ROOT");
+    await refused(decision, "--basis needs CG_COORD_ROOT");
+    Deno.env.set("CG_COORD_ROOT", root);
+    await refused(
+      join(root, "decisions", "..", "outside.md"),
+      "is not inside",
+    );
+    await refused(
+      join(root, "decisions", "missing.md"),
+      "not an existing file",
+    );
+    await refused(join(root, "decisions"), "not an existing file");
+    assertEquals((await t.env.store.judgments(e.id)).length, 3);
+    await harnessRejudge(
+      "contract",
+      forceOpts(t, c, e, { replaces: plain.id, basis: decision }),
+      opener(t),
+    );
+  } finally {
+    if (prior === undefined) Deno.env.delete("CG_COORD_ROOT");
+    else Deno.env.set("CG_COORD_ROOT", prior);
+    await Deno.remove(root, { recursive: true });
+  }
+  const forced = (await t.env.store.judgments(e.id)).find((j) => j.forced)!;
+  assertEquals(forced.forced, {
+    reason: OOM_REASON,
+    replaces: plain.id,
+    basis: { kind: "decision", path: "2026-09-28-c03-forced.md" },
+  });
 });
