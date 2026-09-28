@@ -454,7 +454,18 @@ export const ADMIN_REFUSAL_MARKER =
   "cg-harness: refusing to run the agent as an administrator";
 
 /** The privilege check's in-sandbox command, run as SANDBOX_USER. */
-export const PRIVILEGE_ARGV = ["whoami", "/groups", "/fo", "csv", "/nh"];
+/**
+ * H-01 run 003: an absolute path. docker exec starts in the image WORKDIR
+ * (C:\workspace, staged by the harness and agent-writable), where a bare
+ * "whoami" would find a planted whoami.exe before System32's.
+ */
+export const PRIVILEGE_ARGV = [
+  "C:\\Windows\\System32\\whoami.exe",
+  "/groups",
+  "/fo",
+  "csv",
+  "/nh",
+];
 const ADMINISTRATORS_SID = "S-1-5-32-544";
 /** Mandatory labels: S-1-16-12288 High, S-1-16-16384 System and above refuse. */
 const HIGH_LABEL_RID = 12288;

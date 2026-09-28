@@ -192,7 +192,23 @@ const ENABLED = "Mandatory group, Enabled by default, Enabled group";
 
 Deno.test("groupProblems: ContainerUser's real-looking output is clean", () => {
   assertEquals(groupProblems(USER_GROUPS_CSV), []);
-  assertEquals(PRIVILEGE_ARGV, ["whoami", "/groups", "/fo", "csv", "/nh"]);
+  assertEquals(PRIVILEGE_ARGV.slice(1), ["/groups", "/fo", "csv", "/nh"]);
+});
+
+Deno.test("privilege check (H-01 run 003): whoami is the absolute System32 binary, never a name a staged file could shadow", () => {
+  // docker exec starts in the image's WORKDIR (C:\workspace, agent-writable
+  // and staged by the harness): a bare "whoami" would resolve to a
+  // C:\workspace\whoami.exe first. Only the full path is trusted.
+  assertEquals(PRIVILEGE_ARGV[0], "C:\\Windows\\System32\\whoami.exe");
+  const exe = PRIVILEGE_ARGV[0]!;
+  assert(/^[A-Za-z]:\\/.test(exe), "absolute");
+  assert(!exe.toLowerCase().includes("workspace"));
+  // A shadow staged in the workspace is never the program the check runs.
+  const shadow = "C:\\workspace\\whoami.exe";
+  assert(exe.toLowerCase() !== shadow.toLowerCase());
+  for (const bare of ["whoami", "whoami.exe", ".\\whoami.exe"]) {
+    assert(exe !== bare, bare);
+  }
 });
 
 Deno.test("groupProblems: ContainerAdministrator's output names the enabled Administrators group and the high label", () => {
