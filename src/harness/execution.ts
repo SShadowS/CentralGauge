@@ -64,7 +64,6 @@ import {
   type EgressRuntime,
   evaluatePreflight,
   hostsForRoutes,
-  loadRecording,
   PLACED_ENV,
   preflightExpect,
   PROXY_PORT,
@@ -73,7 +72,8 @@ import {
   RECORDED_HOSTS_PATH,
   RECORDED_ROUTES,
   recordedHostsJson,
-  type Recording,
+  recordingPath,
+  ROUTE_AUTHORIZED_ROUTES,
   SANDBOX_NETWORK,
   sandboxSource,
 } from "./egress.ts";
@@ -2305,25 +2305,26 @@ export async function runExecution(
     throw new ConfigurationError(`${cell.arm}: ${unqualified}`);
   }
   const record = env.recordOAuthHosts === true;
-  const recordedPath = join(env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
   /** Record mode records the one recorded route this arm runs on (H-02: not only the OAuth route). */
   const recordRoutes = [
     ...new Set(Object.values(cell.armManifest.provider_routes)),
   ].filter((r) => RECORDED_ROUTES.includes(r));
   const recordRoute = recordRoutes[0] ?? "";
+  // Each route's own recording file (H-02 run 002).
+  const recordedPath = join(
+    env.repoRoot,
+    ...(recordRoute ? recordingPath(recordRoute) : RECORDED_HOSTS_PATH).split(
+      "/",
+    ),
+  );
   if (record) {
-    let existing: Recording | null = null;
-    let unreadable: string | null = null;
-    try {
-      existing = await loadRecording(env.repoRoot);
-    } catch (err) {
-      unreadable = msg(err);
-    }
     const why = mode === "stub"
       ? "a stub cell releases no credential and is never placed"
       : !env.egress
       ? "the egress marker must be qualified (sandboxes placed)"
-      : env.egressEnforced
+      // A later route records under the authorized marker (H-02 run 002):
+      // only its own sandbox gets the record-mode proxy.
+      : env.egressEnforced && !ROUTE_AUTHORIZED_ROUTES.includes(recordRoute)
       ? "the marker is already authorized"
       : !env.supervised
       ? "it runs only supervised (harness cell --supervised)"
@@ -2335,10 +2336,10 @@ export async function runExecution(
       }`
       : !env.credentialLedger
       ? "it runs inside the shared credential ledger (CG_CREDENTIAL_LEDGER)"
-      : unreadable !== null
-      ? unreadable
-      : existing !== null && Object.hasOwn(existing.routes, recordRoute)
-      ? `${recordRoute} is already recorded in ${RECORDED_HOSTS_PATH} (remove its entry explicitly to record again)`
+      : await exists(recordedPath)
+      ? `${
+        recordingPath(recordRoute)
+      } exists (remove it explicitly to record again)`
       : null;
     if (why) {
       throw new ConfigurationError(`${cell.arm}: record mode refused: ${why}`);
@@ -2589,7 +2590,11 @@ export async function runExecution(
       }
       let hp: string[];
       try {
-        hp = await bounded(eg.verify(), 3 * opMs, "egress host verification");
+        hp = await bounded(
+          eg.verify(record ? [] : Object.values(manifest.provider_routes)),
+          3 * opMs,
+          "egress host verification",
+        );
       } catch (err) {
         throw egressFail(`egress host verification failed: ${msg(err)}`);
       }
@@ -2908,7 +2913,7 @@ export async function runExecution(
           // M1-33d review: the host and marker are read again right before
           // provider secrets and ready; any change since the first read refuses.
           const again = await bounded(
-            eg.verify(),
+            eg.verify(record ? [] : Object.values(manifest.provider_routes)),
             3 * opMs,
             "egress host verification before release",
           );
@@ -3149,16 +3154,14 @@ export async function runExecution(
         2,
       ) + "\n",
     );
-    // Merged beside the routes already recorded (read again: the latest file).
-    // ponytail: read-modify-write without a lock; two concurrent record runs on
-    // different routes can lose one recording. Ceiling: one supervised record
-    // run at a time; add a file lock if record runs ever overlap.
+    // The route's own file (H-02 run 002): no other recording is touched.
     await writeAtomic(
       recordedPath,
-      recordedHostsJson([...recordedHosts], `record mode execution ${id}`, {
-        route: recordRoute,
-        existing: await loadRecording(env.repoRoot),
-      }),
+      recordedHostsJson(
+        [...recordedHosts],
+        `record mode execution ${id}`,
+        recordRoute,
+      ),
     );
   }
   return { execution: draft.execution, usageResetAt: draft.usage_reset_at };

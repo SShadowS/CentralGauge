@@ -11,13 +11,21 @@ import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { runCell } from "../../../src/harness/execution.ts";
 import {
   loadRecordedHosts,
+  loadRecording,
   RECORDED_HOSTS_PATH,
   recordedHostsJson,
+  recordingPath,
 } from "../../../src/harness/egress.ts";
 import { imageTag } from "../../../src/harness/images.ts";
 import { codexAuthText, FAKE_CODEX } from "./codex-fixture.ts";
 import { write } from "./refapp-fixture.ts";
-import { cellFor, enforce, makeEnv, type TestEnv } from "./runtime-fixture.ts";
+import {
+  cellFor,
+  enforce,
+  type FakeEgress,
+  makeEnv,
+  type TestEnv,
+} from "./runtime-fixture.ts";
 import type { RunBehavior, RunCall } from "./fake-docker.ts";
 
 const ARM = "pi-luna-codex";
@@ -230,20 +238,11 @@ Deno.test("codex arm: an enforced run is refused until the route's hosts are rec
   assertEquals(t.docker.runs, []);
 });
 
-Deno.test("record mode (H-02): a supervised qualified pi codex cell records its hosts beside the OAuth recording", async () => {
-  const t = await codexEnv();
-  const eg = enforce(t);
-  t.env.egressEnforced = false; // qualified
-  t.env.recordOAuthHosts = true;
-  const path = join(t.env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
-  await Deno.mkdir(join(path, ".."), { recursive: true });
-  await Deno.writeTextFile(
-    path,
-    recordedHostsJson(["api.anthropic.com"], "record mode execution cc-1"),
-  );
+/** Record mode on a codex cell: the proxy logs these CONNECTs as allowed. */
+async function recordRun(t: TestEnv, eg: FakeEgress, targets: string[]) {
   const inner = t.docker.behavior;
   t.docker.behavior = async (call, io) => {
-    for (const target of ["chatgpt.example.test:443", "ab.example.test:443"]) {
+    for (const target of targets) {
       eg.log!({
         at: new Date().toISOString(),
         decision: "allow",
@@ -253,41 +252,57 @@ Deno.test("record mode (H-02): a supervised qualified pi codex cell records its 
     }
     return await inner(call, io);
   };
-  const r = await runCell(t.env, await cellFor(t, ARM));
-  const e = r.executions[0]!;
-  assertEquals(e.termination, "completed");
-  // Record mode: nothing fixed for this route, the proxy allows any DNS name.
-  assertEquals([eg.proxyRecord, eg.proxyHosts], [true, []]);
-  assertEquals(await loadRecordedHosts(t.env.repoRoot), {
-    "anthropic:first-party-oauth": ["api.anthropic.com"],
-    "openai-codex:oauth": ["ab.example.test", "chatgpt.example.test"],
-  });
-  // H-02 review: each route's source is its own record-mode execution.
-  assertEquals(JSON.parse(await Deno.readTextFile(path)).sources, {
-    "anthropic:first-party-oauth": "record mode execution cc-1",
-    "openai-codex:oauth": `record mode execution ${e.id}`,
-  });
-  const facts = JSON.parse(
-    await Deno.readTextFile(
-      join(t.env.resultsRoot, "runs", e.id, "record-mode.json"),
-    ),
-  );
-  assertEquals([facts.harness, facts.credential_bearing], ["pi", true]);
-});
+  return await runCell(t.env, await cellFor(t, ARM));
+}
 
-Deno.test("record mode (H-02): refused when the route is already recorded or the recording is invalid", async () => {
+for (const marker of ["qualified", "authorized"] as const) {
+  Deno.test(`record mode (H-02 run 002): a supervised pi codex cell under a ${marker} marker records into its route's own file; the OAuth recording is untouched`, async () => {
+    const t = await codexEnv();
+    const eg = enforce(t);
+    t.env.egressEnforced = marker === "authorized";
+    t.env.recordOAuthHosts = true;
+    const oauth = join(t.env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
+    await Deno.mkdir(join(oauth, ".."), { recursive: true });
+    const oauthText = recordedHostsJson(
+      ["api.anthropic.com"],
+      "record mode execution cc-1",
+    );
+    await Deno.writeTextFile(oauth, oauthText);
+    const r = await recordRun(t, eg, [
+      "chatgpt.example.test:443",
+      "ab.example.test:443",
+    ]);
+    const e = r.executions[0]!;
+    assertEquals(e.termination, "completed");
+    // Record mode: nothing fixed for this route, the proxy allows any DNS name.
+    assertEquals([eg.proxyRecord, eg.proxyHosts], [true, []]);
+    assertEquals(await Deno.readTextFile(oauth), oauthText);
+    assertEquals(await loadRecordedHosts(t.env.repoRoot), {
+      "anthropic:first-party-oauth": ["api.anthropic.com"],
+      "openai-codex:oauth": ["ab.example.test", "chatgpt.example.test"],
+    });
+    assertEquals(
+      (await loadRecording(t.env.repoRoot, "openai-codex:oauth"))?.source,
+      `record mode execution ${e.id}`,
+    );
+    const facts = JSON.parse(
+      await Deno.readTextFile(
+        join(t.env.resultsRoot, "runs", e.id, "record-mode.json"),
+      ),
+    );
+    assertEquals([facts.harness, facts.credential_bearing], ["pi", true]);
+  });
+}
+
+Deno.test("record mode (H-02): refused when the route's file exists (recorded or invalid), and under an authorized marker for a route it already covers", async () => {
+  const codexFile = recordingPath("openai-codex:oauth");
   for (
-    const [what, text, arm] of [
+    const [what, text] of [
       [
         "already recorded",
-        JSON.stringify({
-          v: 1,
-          source: "s",
-          routes: { "openai-codex:oauth": ["x.example.test"] },
-        }),
-        ARM,
+        recordedHostsJson(["x.example.test"], "s", "openai-codex:oauth"),
       ],
-      ["invalid", "{}", ARM],
+      ["invalid", "{}"],
     ] as const
   ) {
     const t = await codexEnv();
@@ -295,11 +310,11 @@ Deno.test("record mode (H-02): refused when the route is already recorded or the
     t.env.egressEnforced = false;
     eg.recordedHosts = {};
     t.env.recordOAuthHosts = true;
-    const path = join(t.env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
+    const path = join(t.env.repoRoot, ...codexFile.split("/"));
     await Deno.mkdir(join(path, ".."), { recursive: true });
     await Deno.writeTextFile(path, text);
     await assertRejects(
-      async () => runCell(t.env, await cellFor(t, arm)),
+      async () => runCell(t.env, await cellFor(t, ARM)),
       ConfigurationError,
       "record mode refused",
       what,
@@ -307,6 +322,27 @@ Deno.test("record mode (H-02): refused when the route is already recorded or the
     assertEquals(t.docker.runs, [], what);
     assertEquals(await Deno.readTextFile(path), text, what);
   }
+  // A Claude (marker-route) recording is never redone under an authorized marker.
+  const t = await makeEnv();
+  enforce(t);
+  t.env.recordOAuthHosts = true;
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t)),
+    ConfigurationError,
+    "the marker is already authorized",
+  );
+});
+
+Deno.test("codex arm (H-02 run 002): enforced, it runs once its route's recorded hosts are authorized, and the proxy gets exactly them", async () => {
+  const t = await codexEnv();
+  const eg = enforce(t);
+  eg.recordedHosts = {
+    ...eg.recordedHosts,
+    "openai-codex:oauth": ["chatgpt.example.test"],
+  };
+  const r = await runCell(t.env, await cellFor(t, ARM));
+  assertEquals(r.executions[0]!.termination, "completed");
+  assertEquals(eg.proxyHosts, ["chatgpt.example.test"]);
 });
 
 Deno.test("record mode (H-02 review): a codex recording that reached an OAuth token endpoint is refused and writes nothing", async () => {

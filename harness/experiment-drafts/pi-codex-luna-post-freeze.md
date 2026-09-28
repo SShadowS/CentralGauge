@@ -2,15 +2,23 @@
 
 Owner and ops steps after the 2026-10-16 data freeze. Nothing here runs before it.
 
-## Why this waits for the freeze
+## What merging changes (per-route authorization, H-02 run 002)
 
-Merging H-02 adds the route `openai-codex:oauth` to `ROUTE_HOSTS` and `RECORDED_ROUTES`.
-The authorized egress allowlist is computed over every route, and this route has no
-recording yet. From the merge onward, until step 6 is done:
+Merging H-02 adds the route `openai-codex:oauth`. It is authorized on its own, never
+through the M1-34 marker:
 
-- every enforced run is refused (Claude arms and pi-openrouter arms too), with
-  `allowlist_sha256: cannot recompute (provider route openai-codex:oauth needs the hosts ...)`;
-- `harness egress verify authorized` fails the same way.
+- The authorized marker keeps covering exactly the routes it covered on master
+  (`anthropic:first-party-oauth`, `openrouter:api-key`). Its allowlist and hashes span only
+  those routes, and the Step 11 recording (`harness/egress/recorded-hosts.json`) is never
+  rewritten, so an existing authorized marker keeps verifying after the merge. Claude and
+  pi-openrouter arms keep running; there is no outage and no marker rebuild.
+- The codex route records into its own file,
+  `harness/egress/recorded-hosts.openai-codex_oauth.json`, and needs its own route
+  authorization in the marker (`routes_authorized`). Until then only codex arms refuse
+  (`provider route openai-codex:oauth needs the hosts ... authorized for its route`).
+- Every marker read (each environment open and each release) rechecks the route
+  authorization; if it stops verifying (a changed recording, a changed record-mode cell),
+  only codex arms refuse.
 
 It also changes the pi image contents (`harness/images/pi/run.ps1`, `cg-budget.ts`), so the
 pi image must be rebuilt. The frozen campaign images and checkout are never touched. A
@@ -19,48 +27,79 @@ codex run on an old pi image fails closed (the old guard wants the openrouter ke
 ## Steps
 
 1. **Integrate** (orchestrator): merge the H-02 branch after the freeze, with no campaign or
-   cell in flight.
+   cell in flight (a precaution, not a requirement of the design). Then confirm the existing
+   marker still verifies: `harness egress verify` reports no problem.
 2. **Rebuild the pi image** (ops): `harness images build pi --version 0.87.1`, then the usual
    layer verification. Record the new image id.
-3. **Create the credential** (owner, host terminal):
-   - Log in once on the host: `pi auth` (or `/login` in pi), choose OpenAI (ChatGPT Plus/Pro).
+3. **Create and protect the credential** (owner, host terminal):
+   - Log in on the host: run `pi`, then `/login`, choose OpenAI (ChatGPT Plus/Pro).
    - Refresh to a long validity right before use:
-     `pi auth print-bearer-token --provider openai-codex --min-expiry 60m`
-     (prints the token; do not paste it anywhere).
+     `pi auth print-bearer-token --provider openai-codex --min-expiry 60m > $null`
+     (it prints the token; the redirect discards it).
    - Write `H:\Temp3\harness-spike\secrets\openai-codex-auth` as a pi auth.json holding
      exactly one entry: `{"openai-codex": {"type":"oauth","access":...,"refresh":...,"expires":...,"accountId":...}}`,
      copied from `~/.pi/agent/auth.json`. Never commit it, never pass it in argv.
+   - **Host ACLs, both copies** (`%USERPROFILE%\.pi\agent\auth.json` and the secrets file).
+     Verify before, restrict, verify after; never widen. In an elevated-or-owner PowerShell,
+     for each `$f` of the two paths:
+     ```powershell
+     icacls $f                                   # before: note every entry
+     icacls $f /inheritance:r /grant:r "${env:USERDOMAIN}\${env:USERNAME}:(F)" "NT AUTHORITY\SYSTEM:(F)"
+     icacls $f                                   # after: exactly the owner account and SYSTEM
+     ```
+     `/inheritance:r` removes the inherited entries and `/grant:r` replaces the explicit ones,
+     so the result is exactly those two entries. If "before" already shows only those two
+     (or fewer), leave the file as it is. If "after" shows any other principal, stop and fix
+     it before any run. Repeat the "after" check whenever pi rewrites `auth.json` (a refresh
+     keeps the file but check it).
    - Every run refuses (`setup_failed`, before any reservation) when the token expires
      before `timeout_min + 15` minutes. Repeat the refresh and copy before each session.
      In-sandbox refresh is impossible by design: the host releases the sandbox copy with
      `refresh: ""` (the refresh token never enters the sandbox; pi uses the access token
      alone while it is valid), the guard refuses a token that does not outlive
      `timeout_min + 5` minutes, and a recording holding an `auth*.openai.com` host is refused.
-4. **Rotation record** (owner): the next authorization requires a rotation record with
-   entries `claude-oauth`, `openrouter` and `openai-codex` (names and times, never values).
+4. **Rotate the codex credential** (owner). A rotation record alone is not a rotation:
+   - Revoke the old refresh session: in the OpenAI account settings (Security, sessions or
+     devices) sign out the old pi/Codex session, so its refresh token stops working; then in
+     pi run `/logout` (it only deletes the local credential, it does not revoke anything).
+   - Log in again (`pi`, then `/login`), refresh and copy as in step 3, and redo the ACL
+     steps on both copies (a fresh login rewrites `auth.json`).
+   - Check the old copy is dead: nothing to run in the sandbox; on the host, a copy of the
+     old `auth.json` kept aside would fail `pi auth check --provider openai-codex` (then
+     delete that copy).
+   - Write the rotation record for the route: `{"v":1,"credentials":[{"name":"openai-codex",
+     "revoked_at":...,"created_at":...}]}` (names and times, never values). The route
+     authorization needs the `openai-codex` entry; the record-mode cell must start after it.
 5. **Record the hosts** (owner terminal, supervised, `harness cell --supervised` needs a TTY):
-   - The marker must be `qualified`, not `authorized`. Remove the authorized marker
-     explicitly, then `harness egress verify --mark candidate`, then `--mark qualified`
-     (needs fresh `backend-probe.ts --enforced` probe evidence).
+   - The marker stays `authorized`: a later route records under it, only in its own sandbox.
    - Run one supervised record-mode cell:
      `harness cell harness/configs/pi-gpt6-luna-codex.yml <task> --supervised --record-oauth-hosts`.
-     This adds `openai-codex:oauth` hosts to `harness/egress/recorded-hosts.json` beside the
-     existing Claude recording. The file becomes v2: `sources` holds each route's own
-     record-mode execution (the committed v1 file loads as is and is rewritten as v2). It
-     refuses if the route is already recorded. The cell must start after the rotation (step 4).
+     It writes `harness/egress/recorded-hosts.openai-codex_oauth.json` (source = this
+     execution); the Claude recording is untouched. It refuses if that file exists.
    - Review the recorded hosts (expected `chatgpt.com`; a recording holding an
      `auth*.openai.com` host is refused outright and writes nothing), then commit the file
      with its evidence.
-6. **Re-authorize** (ops/owner): `harness egress verify --mark authorized --evidence <M1-34/nnn>
-   --rotation <record> --cell <a clean enforced Claude cell started after the rotation>`.
-   The recording file changed, so the marker hash changes; the old marker cannot be reused.
-   Authorization also checks the codex recording cell named by its route's source:
-   supervised, credential-bearing pi on `openai-codex:oauth`, completed, started after the
-   qualified marker and after the rotation. Every later marker read rechecks it.
+6. **Authorize the route** (ops/owner):
+   `harness egress verify --authorize-route openai-codex:oauth --cell <the step 5 execution id>
+   --rotation <step 4 record> --evidence <H-02/nnn>`.
+   It needs the marker to verify for its own routes, never changes the marker's own fields,
+   and refuses to overwrite an existing route authorization. The record-mode cell is checked
+   with the same code as the M1-34 Claude cell: its record-mode facts (supervised,
+   credential-bearing pi) and the recording's source naming it; `openai-codex:oauth` in its
+   manifest; completed; started after the marker's authorization and after the rotation; its
+   `egress.jsonl` with the preflight lines exact (M1-34e) and the agent phase allow-only on
+   the recorded hosts. Every marker read repeats these checks.
 7. **First cell** (ops): one enforced cell of `pi-gpt6-luna-codex` on a known task. Check:
-   provider `openai-codex` in the stream, the list-price estimate in the record, the budget
-   guard armed, and no credential in the published files (a grep for the start of the access
-   token finds nothing; redactions show as `[REDACTED:openai-codex-auth...]`).
+   - provider `openai-codex` in the stream; the budget guard armed;
+   - the access-token expiry against the cell timeout: before the cell, `expires` in the
+     secrets file (epoch ms) is later than now plus `timeout_min + 15` minutes, and the cell
+     did not end `setup_failed` for expiry; after it, no refresh happened (the record holds no
+     `auth*.openai.com` connection, and `expires` in the secrets file is unchanged);
+   - the reported and the estimated cost: the record's `reported_cost_usd` (pi's list-price
+     sum) and `cost_usd` (our catalog list-price estimate) are both set and agree within a
+     cent; the subscription cash cost is 0;
+   - no credential in the published files (a grep for the start of the access token finds
+     nothing; redactions show as `[REDACTED:openai-codex-auth]`).
 8. **Experiment** (owner decision): move `harness/experiment-drafts/pi-codex-luna.yml` into
    `harness/experiments/`, run the `--sample 1` dry run, then the campaign. Cost reporting:
    the record carries the list-price estimate; the subscription cash cost is 0 and paid spend
@@ -68,6 +107,8 @@ codex run on an old pi image fails closed (the old guard wants the openrouter ke
 
 ## Open owner questions
 
+- Automated use of the ChatGPT subscription carries a terms-of-service and fair-use risk
+  (review H-02-001 finding 5); the owner decides whether to run the experiment at all.
 - `vary: [models, settings]` in the draft: `vary: [models]` alone is refused because provider
   and model id live in native settings. Accept, or derive those keys from the model slug.
 - `openai-codex/gpt-6-luna` is a new site catalog row. It reaches the site only with a

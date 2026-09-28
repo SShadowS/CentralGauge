@@ -23,6 +23,7 @@ import {
   listenerProblems,
   loadRecordedHosts,
   loadRecording,
+  MARKER_ROUTES,
   parseHnsNetwork,
   parseProbeLines,
   PREFLIGHT_EXPECT,
@@ -34,7 +35,9 @@ import {
   RECORDED_HOSTS_PATH,
   RECORDED_ROUTES,
   recordedHostsJson,
+  recordingPath,
   revertScript,
+  ROUTE_AUTHORIZED_ROUTES,
   ROUTE_HOSTS,
   RULE_GROUP,
   SANDBOX_NETWORK,
@@ -1165,20 +1168,19 @@ Deno.test("record mode: the route policy, the preflight expectation and the reco
   assertThrows(() => recordedHostsJson(["1.2.3.4"], "s"), ConfigurationError);
 });
 
-Deno.test("openai-codex:oauth (H-02): no guessed host; refused until recorded; a recording merges beside the OAuth one", async () => {
+Deno.test("openai-codex:oauth (H-02): no guessed host; refused until recorded; its own recording file beside the OAuth one", async () => {
   const codex = "openai-codex:oauth";
   const oauth = "anthropic:first-party-oauth";
   assertEquals(ROUTE_HOSTS[codex], []);
   assert(RECORDED_ROUTES.includes(codex));
-  assertThrows(
-    () => hostsForRoutes([codex], {}),
-    ConfigurationError,
-    RECORDED_HOSTS_PATH,
-  );
+  // H-02 run 002: the marker covers the routes master had; codex is authorized on its own.
+  assertEquals(MARKER_ROUTES, [oauth, "openrouter:api-key"]);
+  assertEquals(ROUTE_AUTHORIZED_ROUTES, [codex]);
+  assertThrows(() => hostsForRoutes([codex], {}), ConfigurationError, codex);
   assertThrows(
     () => hostsForRoutes([codex], { [codex]: [] }),
     ConfigurationError,
-    RECORDED_HOSTS_PATH,
+    codex,
   );
   // Record mode contributes nothing fixed; the proxy then allows any DNS name.
   assertEquals(hostsForRoutes([codex], {}, { record: true }), []);
@@ -1188,64 +1190,68 @@ Deno.test("openai-codex:oauth (H-02): no guessed host; refused until recorded; a
     }),
     ["chatgpt.example.test", "openrouter.ai"],
   );
-  // A recording of another route leaves this one unrecorded.
   assertThrows(
     () => hostsForRoutes([codex], { [oauth]: ["x.example.test"] }),
     ConfigurationError,
     codex,
   );
+  assertEquals(recordingPath(oauth), RECORDED_HOSTS_PATH);
+  assertEquals(
+    recordingPath(codex),
+    "harness/egress/recorded-hosts.openai-codex_oauth.json",
+  );
+  assertThrows(() => recordingPath("openrouter:api-key"), ConfigurationError);
 
   const root = await Deno.realPath(await Deno.makeTempDir());
-  assertEquals(await loadRecording(root), null);
-  const path = join(root, ...RECORDED_HOSTS_PATH.split("/"));
-  await Deno.mkdir(join(path, ".."), { recursive: true });
+  assertEquals(await loadRecording(root, codex), null);
+  const at = (r: string) => join(root, ...recordingPath(r).split("/"));
+  await Deno.mkdir(join(at(oauth), ".."), { recursive: true });
+  const oauthText = recordedHostsJson(
+    ["api.anthropic.com"],
+    "record mode execution a",
+  );
+  await Deno.writeTextFile(at(oauth), oauthText);
   await Deno.writeTextFile(
-    path,
-    recordedHostsJson(["api.anthropic.com"], "record mode execution a"),
+    at(codex),
+    recordedHostsJson(
+      ["chatgpt.example.test", "ab.example.test", "chatgpt.example.test"],
+      "record mode execution b",
+      codex,
+    ),
   );
-  const first = await loadRecording(root);
-  assertEquals(first, {
-    sources: { [oauth]: "record mode execution a" },
-    routes: { [oauth]: ["api.anthropic.com"] },
+  // The codex recording never touches the OAuth file (its hash is in the marker).
+  assertEquals(await Deno.readTextFile(at(oauth)), oauthText);
+  assertEquals(await loadRecording(root, codex), {
+    source: "record mode execution b",
+    hosts: ["ab.example.test", "chatgpt.example.test"],
   });
-  const merged = recordedHostsJson(
-    ["chatgpt.example.test", "auth.example.test", "chatgpt.example.test"],
-    "record mode execution b",
-    { route: codex, existing: first },
-  );
-  await Deno.writeTextFile(path, merged);
   assertEquals(await loadRecordedHosts(root), {
     [oauth]: ["api.anthropic.com"],
-    [codex]: ["auth.example.test", "chatgpt.example.test"],
+    [codex]: ["ab.example.test", "chatgpt.example.test"],
   });
-  // H-02 review: each route names its own source.
-  assertEquals(JSON.parse(merged).sources, {
-    [oauth]: "record mode execution a",
-    [codex]: "record mode execution b",
-  });
-  // Deterministic: the routes in sorted order, whatever order they were recorded in.
-  assertEquals(
-    Object.keys(JSON.parse(merged).routes),
-    [oauth, codex].sort(),
-  );
-  // A route is recorded once; re-recording needs the entry removed explicitly.
-  assertThrows(
-    () =>
-      recordedHostsJson(["y.example.test"], "s", {
-        route: codex,
-        existing: {
-          sources: { [codex]: "x" },
-          routes: { [codex]: ["z.example.test"] },
-        },
-      }),
+  // A route's file records that route only.
+  await Deno.writeTextFile(at(codex), oauthText);
+  await assertRejects(
+    () => loadRecording(root, codex),
     ConfigurationError,
-    "already recorded",
+    "does not record openai-codex:oauth",
+  );
+  // One source per file, so one route per file.
+  await Deno.writeTextFile(
+    at(codex),
+    JSON.stringify({
+      v: 1,
+      source: "record mode execution b",
+      routes: { [oauth]: ["x.example.test"], [codex]: ["chatgpt.com"] },
+    }),
+  );
+  await assertRejects(
+    () => loadRecording(root, codex),
+    ConfigurationError,
+    "one route",
   );
   assertThrows(
-    () =>
-      recordedHostsJson(["y.example.test"], "s", {
-        route: "openrouter:api-key",
-      }),
+    () => recordedHostsJson(["y.example.test"], "s", "openrouter:api-key"),
     ConfigurationError,
   );
 });
@@ -2237,62 +2243,6 @@ Deno.test("egress preflight (H-01): docker exec runs egress-check.ps1 as Contain
   assertEquals(b.slice(-2), ["-Allow", "none"]);
 });
 
-Deno.test("recorded-hosts v2 (H-02 review): a source per route; the single-source v1 file still loads for one route only", async () => {
-  const codex = "openai-codex:oauth";
-  const oauth = "anthropic:first-party-oauth";
-  const root = await Deno.realPath(await Deno.makeTempDir());
-  const path = join(root, ...RECORDED_HOSTS_PATH.split("/"));
-  await Deno.mkdir(join(path, ".."), { recursive: true });
-  // The committed master recording (v1, one route) keeps loading unchanged.
-  await Deno.writeTextFile(
-    path,
-    JSON.stringify({
-      v: 1,
-      source: "record mode execution 9d68887a",
-      routes: { [oauth]: ["api.anthropic.com"] },
-    }),
-  );
-  assertEquals(await loadRecording(root), {
-    sources: { [oauth]: "record mode execution 9d68887a" },
-    routes: { [oauth]: ["api.anthropic.com"] },
-  });
-  // A v1 file cannot bind one source to several routes.
-  await Deno.writeTextFile(
-    path,
-    JSON.stringify({
-      v: 1,
-      source: "record mode execution a; record mode execution b",
-      routes: { [oauth]: ["api.anthropic.com"], [codex]: ["chatgpt.com"] },
-    }),
-  );
-  await assertRejects(() => loadRecording(root), ConfigurationError, "v1");
-  // v2: the sources name exactly the recorded routes.
-  for (
-    const sources of [
-      { [oauth]: "record mode execution a" },
-      {
-        [oauth]: "record mode execution a",
-        [codex]: "record mode execution b",
-        "openrouter:api-key": "x",
-      },
-    ]
-  ) {
-    await Deno.writeTextFile(
-      path,
-      JSON.stringify({
-        v: 2,
-        sources,
-        routes: { [oauth]: ["api.anthropic.com"], [codex]: ["chatgpt.com"] },
-      }),
-    );
-    await assertRejects(
-      () => loadRecording(root),
-      ConfigurationError,
-      RECORDED_HOSTS_PATH,
-    );
-  }
-});
-
 Deno.test("recording rule (H-02 review): an OAuth token endpoint (auth*.openai.com) is never recorded or loaded", async () => {
   const codex = "openai-codex:oauth";
   for (
@@ -2300,9 +2250,7 @@ Deno.test("recording rule (H-02 review): an OAuth token endpoint (auth*.openai.c
   ) {
     assertThrows(
       () =>
-        recordedHostsJson(["chatgpt.com", h], "record mode execution b", {
-          route: codex,
-        }),
+        recordedHostsJson(["chatgpt.com", h], "record mode execution b", codex),
       ConfigurationError,
       "token endpoint",
     );
@@ -2310,10 +2258,10 @@ Deno.test("recording rule (H-02 review): an OAuth token endpoint (auth*.openai.c
   const ok = recordedHostsJson(
     ["chatgpt.com", "openai.com", "cdn.openai.com"],
     "s",
-    { route: codex },
+    codex,
   );
   const root = await Deno.realPath(await Deno.makeTempDir());
-  const path = join(root, ...RECORDED_HOSTS_PATH.split("/"));
+  const path = join(root, ...recordingPath(codex).split("/"));
   await Deno.mkdir(join(path, ".."), { recursive: true });
   await Deno.writeTextFile(path, ok);
   assertEquals((await loadRecordedHosts(root))[codex], [
@@ -2325,7 +2273,7 @@ Deno.test("recording rule (H-02 review): an OAuth token endpoint (auth*.openai.c
   hand.routes[codex].push("auth.openai.com");
   await Deno.writeTextFile(path, JSON.stringify(hand));
   await assertRejects(
-    () => loadRecording(root),
+    () => loadRecording(root, codex),
     ConfigurationError,
     "token endpoint",
   );

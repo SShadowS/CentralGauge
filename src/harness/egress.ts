@@ -167,15 +167,38 @@ export const RECORDED_ROUTES: readonly string[] = [
 export const RECORDED_HOSTS_PATH = "harness/egress/recorded-hosts.json";
 export type RecordedHosts = Record<string, string[]>;
 /**
- * The recording: per route, its hosts and its source (the record-mode
- * execution that recorded it, "record mode execution <id>"). File v2 holds
- * `sources` keyed by route (H-02 review: a source is bound to its route);
- * the single-source v1 file (the M1-34 Step 11 recording) still loads when
- * it records one route, and is rewritten as v2 by the next recording.
+ * Routes the M1-34 authorized marker covers: its allowlist and its hash span
+ * exactly these (the routes master had), so a marker authorized before H-02
+ * keeps verifying. Every later route is authorized on its own
+ * (routes_authorized, H-02 run 002): an unrecorded or unauthorized route
+ * refuses only its own arms.
  */
+export const MARKER_ROUTES: readonly string[] = [
+  "anthropic:first-party-oauth",
+  "openrouter:api-key",
+];
+/** Routes that need their own route authorization in the marker. */
+export const ROUTE_AUTHORIZED_ROUTES: readonly string[] = Object.keys(
+  ROUTE_HOSTS,
+).filter((r) => !MARKER_ROUTES.includes(r));
+
+/**
+ * One recording file per recorded route (H-02 run 002): the M1-34 Step 11
+ * file stays exactly as recorded (its hash is in the authorized marker), and
+ * a later route's recording never touches it. Each file names one source,
+ * the record-mode execution that recorded it.
+ */
+export function recordingPath(route: string): string {
+  if (!RECORDED_ROUTES.includes(route)) {
+    throw new ConfigurationError(`${route} takes no recording`);
+  }
+  return route === RECORDED_ROUTES[0]
+    ? RECORDED_HOSTS_PATH
+    : `harness/egress/recorded-hosts.${route.replaceAll(":", "_")}.json`;
+}
 export interface Recording {
-  sources: Record<string, string>;
-  routes: RecordedHosts;
+  source: string;
+  hosts: string[];
 }
 export const RECORD_SOURCE_PREFIX = "record mode execution ";
 /** The execution id a recording source names (null when it names none). */
@@ -193,91 +216,60 @@ export const sourceCell = (source: string | undefined): string | null =>
 export const isTokenEndpointHost = (h: string) =>
   /(^|\.)auth[a-z0-9-]*\.openai\.com$/.test(h);
 
-/**
- * The recording file text (v2) for `route` (default: the first-party OAuth
- * route), merged beside the routes an existing recording already holds.
- * Sorted, unique, strict schema, non-empty: deterministic for the same
- * hosts and sources. A route is recorded once; recording it again needs its
- * entry removed explicitly.
- */
+/** The recording file text of `route` (sorted, unique, strict schema, non-empty): deterministic for the same hosts and source. */
 export function recordedHostsJson(
   hosts: string[],
   source: string,
-  o: { route?: string; existing?: Recording | null } = {},
+  route: string = RECORDED_ROUTES[0]!,
 ): string {
-  const route = o.route ?? RECORDED_ROUTES[0]!;
   const list = [...new Set(hosts)].sort();
-  const prior = o.existing?.routes ?? {};
-  if (Object.hasOwn(prior, route)) {
-    throw new ConfigurationError(
-      `${route} is already recorded in ${RECORDED_HOSTS_PATH}; remove its entry explicitly to record again`,
-    );
-  }
-  const sorted = <T>(r: Record<string, T>) =>
-    Object.fromEntries(
-      Object.entries(r).sort(([a], [b]) => a < b ? -1 : 1),
-    );
-  const v = {
-    v: 2,
-    sources: sorted({ ...(o.existing?.sources ?? {}), [route]: source }),
-    routes: sorted({ ...prior, [route]: list }),
-  };
-  const r = RecordedV2Schema.safeParse(v);
+  const v = { v: 1, source, routes: { [route]: list } };
+  const r = RecordedSchema.safeParse(v);
   if (!r.success || list.length === 0) {
     throw new ConfigurationError(
-      `cannot record ${
-        JSON.stringify(list)
-      } for ${route} in ${RECORDED_HOSTS_PATH}: ${
-        r.success ? "no host" : r.error.issues[0]?.message
-      }`,
+      `cannot record ${JSON.stringify(list)} for ${route} in ${
+        recordingPath(route)
+      }: ${r.success ? "no host" : r.error.issues[0]?.message}`,
     );
   }
   return JSON.stringify(v, null, 2) + "\n";
 }
 
-const RoutesSchema = z.record(
-  z.string().refine((r) => RECORDED_ROUTES.includes(r), {
-    message: `only ${RECORDED_ROUTES.join(", ")} take a recording`,
-  }),
-  z.array(
-    z.string().refine(isAllowableHost, { message: "not a hostname" }).refine(
-      (h) => !isTokenEndpointHost(h),
-      {
-        message: "an OAuth token endpoint (auth*.openai.com) is never recorded",
-      },
-    ),
-  ).min(1),
-);
-const RecordedV1Schema = z.object({
+const RecordedSchema = z.object({
   v: z.literal(1),
   source: z.string().min(1),
-  routes: RoutesSchema.refine((r) => Object.keys(r).length === 1, {
-    message: "a v1 recording names one source, so it records one route",
+  routes: z.record(
+    z.string().refine((r) => RECORDED_ROUTES.includes(r), {
+      message: `only ${RECORDED_ROUTES.join(", ")} take a recording`,
+    }),
+    z.array(
+      z.string().refine(isAllowableHost, { message: "not a hostname" }).refine(
+        (h) => !isTokenEndpointHost(h),
+        {
+          message:
+            "an OAuth token endpoint (auth*.openai.com) is never recorded",
+        },
+      ),
+    ).min(1),
+  ).refine((r) => Object.keys(r).length === 1, {
+    message: "a recording file names one source, so it records one route",
   }),
 }).strict();
-const RecordedV2Schema = z.object({
-  v: z.literal(2),
-  sources: z.record(z.string(), z.string().min(1)),
-  routes: RoutesSchema,
-}).strict().refine(
-  (x) =>
-    JSON.stringify(Object.keys(x.sources).sort()) ===
-      JSON.stringify(Object.keys(x.routes).sort()),
-  { message: "sources must name exactly the recorded routes" },
-);
 
-/** The ops recording; a missing file is no recording (null). */
+/** The recording of `route` from its own file; a missing file is no recording (null). */
 export async function loadRecording(
   repoRoot: string,
+  route: string = RECORDED_ROUTES[0]!,
 ): Promise<Recording | null> {
-  const path = join(repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
+  const rel = recordingPath(route);
+  const path = join(repoRoot, ...rel.split("/"));
   let text: string;
   try {
     text = await Deno.readTextFile(path);
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) return null;
     throw new ConfigurationError(
-      `cannot read ${RECORDED_HOSTS_PATH}: ${(err as Error).message}`,
+      `cannot read ${rel}: ${(err as Error).message}`,
     );
   }
   let v: unknown;
@@ -285,38 +277,36 @@ export async function loadRecording(
     v = JSON.parse(text);
   } catch (err) {
     throw new ConfigurationError(
-      `${RECORDED_HOSTS_PATH} is not JSON: ${(err as Error).message}`,
+      `${rel} is not JSON: ${(err as Error).message}`,
     );
   }
-  const version = (v as { v?: unknown } | null)?.v;
-  const r = version === 1
-    ? RecordedV1Schema.safeParse(v)
-    : RecordedV2Schema.safeParse(v);
+  const r = RecordedSchema.safeParse(v);
   if (!r.success) {
     throw new ConfigurationError(
-      `${RECORDED_HOSTS_PATH} is invalid (v${String(version)}): ${
+      `${rel} is invalid: ${
         r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(
           "; ",
         )
       }`,
     );
   }
-  const d = r.data;
-  return "source" in d
-    ? {
-      sources: Object.fromEntries(
-        Object.keys(d.routes).map((k) => [k, d.source]),
-      ),
-      routes: d.routes,
-    }
-    : { sources: d.sources, routes: d.routes };
+  const hosts = r.data.routes[route];
+  if (!hosts) {
+    throw new ConfigurationError(`${rel} does not record ${route}`);
+  }
+  return { source: r.data.source, hosts };
 }
 
-/** The recorded hosts per route; a missing file is no recording (routes that need one then refuse). */
+/** The recorded hosts per route, from every route's own file; a missing file is no recording (its route then refuses). */
 export async function loadRecordedHosts(
   repoRoot: string,
 ): Promise<RecordedHosts> {
-  return (await loadRecording(repoRoot))?.routes ?? {};
+  const out: RecordedHosts = {};
+  for (const route of RECORDED_ROUTES) {
+    const rec = await loadRecording(repoRoot, route);
+    if (rec) out[route] = rec.hosts;
+  }
+  return out;
 }
 
 /**
@@ -343,7 +333,9 @@ export function hostsForRoutes(
       const rec = Object.hasOwn(recorded, r) ? recorded[r] : undefined;
       if (!rec || rec.length === 0) {
         throw new ConfigurationError(
-          `provider route ${r} needs the hosts M1-34 Step 11 records in ${RECORDED_HOSTS_PATH}; none recorded, refusing an enforced run`,
+          `provider route ${r} needs the hosts M1-34 Step 11 records in ${
+            recordingPath(r)
+          }, authorized for its route; none recorded and authorized, refusing an enforced run`,
         );
       }
       rec.forEach((h) => out.add(h));
@@ -1466,7 +1458,12 @@ const CellEgressLineSchema = z.object({
  * (legacy) logs: the leading lines, in time order, are the preflight. Fails
  * closed: a malformed line, unknown values or mixed tagging refuse.
  */
-export function cellEgressProblems(log: string, routes: string[]): string[] {
+export function cellEgressProblems(
+  log: string,
+  routes: string[],
+  /** H-02 run 002: when given, every agent-phase allow is one of these hosts (on 443). */
+  allowed?: readonly string[],
+): string[] {
   const expected = new Map<string, string>();
   try {
     const want = preflightExpect(hostsForRoutes(routes, {}, { record: true }), {
@@ -1546,6 +1543,11 @@ export function cellEgressProblems(log: string, routes: string[]): string[] {
   for (const l of agent) {
     if (l.decision === "deny") {
       p.push(`agent-phase deny ${l.target} (${l.reason})`);
+    } else if (
+      allowed && l.decision === "allow" &&
+      !allowed.some((h) => l.target === `${h}:443`)
+    ) {
+      p.push(`agent-phase allow ${l.target} is not a recorded host`);
     }
   }
   if (!agent.some((l) => l.decision === "allow")) {
@@ -1688,8 +1690,12 @@ export function parseProbeLines(text: string): ProbeLine[] {
 export interface EgressRuntime {
   /** Ops recording completing RECORDED_ROUTES (M1-34 Step 11). */
   recordedHosts: RecordedHosts;
-  /** Host state now: problems, [] when verified (marker qualified or authorized included). */
-  verify(): Promise<string[]>;
+  /**
+   * Host state now: problems, [] when verified (marker qualified or
+   * authorized included). With `routes`, an authorized marker must also
+   * authorize each of them that needs its own route authorization.
+   */
+  verify(routes?: readonly string[]): Promise<string[]>;
   /** Proxy and backend listening on the gateway only: problems. */
   listeners(): Promise<string[]>;
   /**
@@ -1770,7 +1776,20 @@ export async function realEgressRuntime(
     proxyIsolation?: unknown;
   },
 ): Promise<EgressRuntime> {
-  const recordedHosts = await loadRecordedHosts(o.repoRoot);
+  // H-02 run 002: under an authorized marker only the routes it authorizes
+  // get their recorded hosts (an unreadable marker gives none: fail closed).
+  let recordedHosts: RecordedHosts = {};
+  let marker: Record<string, unknown> | null = null;
+  try {
+    marker = JSON.parse(await Deno.readTextFile(o.markerPath));
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) marker = {};
+  }
+  if (marker !== null) {
+    recordedHosts = marker["state"] === "authorized"
+      ? await authorizedRecordedHosts(o.repoRoot, marker)
+      : await loadRecordedHosts(o.repoRoot);
+  }
   const hostLogPath = o.hostLogPath ??
     join(dirname(o.markerPath), "egress-host.jsonl");
   // One shared proxy per placed environment (design section 1). The
@@ -1808,7 +1827,7 @@ export async function realEgressRuntime(
     shutdown: () => shared?.shutdown() ?? Promise.resolve(),
     // Runs before every credential release (execution.ts): the marker and its
     // authorized evidence are read and rechecked now, never trusted from startup.
-    async verify() {
+    async verify(routes: readonly string[] = []) {
       const s = await collectEgressState(
         o.collect ?? realEgressCollector(o.markerPath),
       );
@@ -1855,6 +1874,15 @@ export async function realEgressRuntime(
             `not authorized: ${x}`
           ),
         );
+        // H-02 run 002: this execution's later routes, each on its own authorization.
+        for (const r of new Set(routes)) {
+          if (!ROUTE_AUTHORIZED_ROUTES.includes(r)) continue;
+          p.push(
+            ...(await routeAuthorizationProblems(o.repoRoot, m, r)).map((x) =>
+              `route not authorized: ${x}`
+            ),
+          );
+        }
       }
       return p;
     },
@@ -1970,12 +1998,17 @@ export async function sha256Text(text: string): Promise<string> {
     .join("");
 }
 
-/** The authorized allowlist and its hash, from the current recording. */
+/**
+ * The allowlist of `routes` (default: the marker's routes) and its hash,
+ * from the current recordings. The marker's hash spans MARKER_ROUTES only,
+ * so a later route never changes it (H-02 run 002).
+ */
 export async function authorizedAllowlist(
   repoRoot: string,
+  routes: readonly string[] = MARKER_ROUTES,
 ): Promise<{ allowlist: string[]; sha256: string }> {
   const allowlist = hostsForRoutes(
-    Object.keys(ROUTE_HOSTS),
+    [...routes],
     await loadRecordedHosts(repoRoot),
   );
   return { allowlist, sha256: await sha256Text(JSON.stringify(allowlist)) };
@@ -2046,16 +2079,6 @@ export async function authorizedMarkerProblems(
     }
   }
   if (cell) p.push(...await recordCellProblems(repoRoot, cell));
-  // Every other recorded route's record-mode cell, from its own source (H-02 review).
-  try {
-    const rec = await loadRecording(repoRoot);
-    for (const [route, source] of Object.entries(rec?.sources ?? {})) {
-      if (route === RECORDED_ROUTES[0]) continue;
-      const id = sourceCell(source);
-      if (id === null) p.push(`${route}: its recording names no cell`);
-      else p.push(...await recordCellProblems(repoRoot, id, route));
-    }
-  } catch { /* the recorded-hosts hash check names an unreadable file */ }
   return p;
 }
 
@@ -2231,12 +2254,207 @@ export async function recordCellProblems(
     );
   }
   try {
-    const rec = await loadRecording(repoRoot);
-    if (rec !== null && sourceCell(rec.sources[route]) !== cell) {
+    const rec = await loadRecording(repoRoot, route);
+    if (rec !== null && sourceCell(rec.source) !== cell) {
       p.push(
-        `${RECORDED_HOSTS_PATH} does not name cell ${cell} as the source of ${route}`,
+        `${
+          recordingPath(route)
+        } does not name cell ${cell} as the source of ${route}`,
       );
     }
   } catch { /* the recorded-hosts hash check names a missing file */ }
   return p;
+}
+
+const CellRecordSchema = z.object({
+  id: z.string(),
+  manifest: z.object({
+    harness: z.string(),
+    provider_routes: z.record(z.string(), z.string()),
+  }),
+  termination: z.string(),
+  started_at: z.iso.datetime(),
+});
+
+/**
+ * A record-mode cell of `route` as authorization evidence, one check for
+ * the Claude --cell and every route authorization (H-02 run 002): its
+ * record-mode facts and the recording's source for the route
+ * (recordCellProblems); the route's harness and the route in its manifest;
+ * completed; started after every instant in `after` (the qualified or
+ * authorized marker, the rotation); its egress.jsonl judged as M1-34e (the
+ * preflight's own lines exact, the agent phase allow-only).
+ */
+export async function recordedCellProblems(
+  repoRoot: string,
+  id: string,
+  route: string,
+  after: { what: string; at: string }[],
+): Promise<string[]> {
+  const p: string[] = [];
+  const cells = join(repoRoot, "results", "harness", "cells");
+  let cellPath: string | null = null;
+  try {
+    for (const d of Deno.readDirSync(join(cells, "executions"))) {
+      const f = join(cells, "executions", d.name, `${id}.json`);
+      if (d.isDirectory && await Deno.stat(f).then(() => true, () => false)) {
+        cellPath = f;
+      }
+    }
+  } catch { /* no cells yet */ }
+  if (!cellPath) return [`cell ${id} not found under ${cells}`];
+  // R-10 Sol run 001 P2: a re-derived cell is read with its overlay applied
+  // and checked (readCellRecord), so this gate and the store agree.
+  const read = await readCellRecord(cells, id);
+  if (read.problem) return [read.problem];
+  let v: unknown = read.record;
+  if (v === null) {
+    try {
+      v = JSON.parse(await Deno.readTextFile(cellPath));
+    } catch (err) {
+      return [
+        `execution ${cellPath} is unreadable: ${(err as Error).message}`,
+      ];
+    }
+  }
+  const cell = CellRecordSchema.safeParse(v);
+  if (!cell.success) {
+    return [
+      `execution ${cellPath} is invalid: ${cell.error.issues[0]?.message}`,
+    ];
+  }
+  const e = cell.data;
+  p.push(...await recordCellProblems(repoRoot, id, route));
+  const harness = RECORDED_ROUTE_HARNESS[route];
+  if (e.manifest.harness !== harness) {
+    p.push(`cell ${id} ran ${e.manifest.harness}, not ${harness}`);
+  }
+  if (!Object.values(e.manifest.provider_routes).includes(route)) {
+    p.push(`cell ${id} did not run on ${route}`);
+  }
+  if (e.termination !== "completed") {
+    p.push(
+      `cell ${id} ended ${e.termination}; authorization needs a completed cell`,
+    );
+  }
+  const started = new Date(e.started_at).getTime();
+  for (const a of after) {
+    if (a.at && started < new Date(a.at).getTime()) {
+      p.push(
+        `cell ${id} started before ${a.what} (${a.at}); it must start after ${a.what}`,
+      );
+    }
+  }
+  let log: string;
+  try {
+    log = await Deno.readTextFile(join(cells, "runs", id, "egress.jsonl"));
+  } catch {
+    p.push(`cell ${id} has no egress.jsonl: not an enforced run`);
+    return p;
+  }
+  // M1-34e: the preflight's own lines exactly as expected, the agent phase
+  // clean and allow-only on the route's recorded (and fixed) hosts.
+  const routes = Object.values(e.manifest.provider_routes);
+  let allowed: string[] | undefined;
+  try {
+    allowed = hostsForRoutes(routes, await loadRecordedHosts(repoRoot));
+  } catch (err) {
+    p.push(`cell ${id}: ${(err as Error).message}`);
+  }
+  p.push(
+    ...cellEgressProblems(log, routes, allowed).map(
+      (x) => `cell ${id} egress.jsonl: ${x}`,
+    ),
+  );
+  return p;
+}
+
+/**
+ * The marker's authorization of one route beyond MARKER_ROUTES (H-02 run
+ * 002), checked at authorization and at every read: the marker is
+ * authorized; the route's entry names its recording hash, allowlist and
+ * hash, rotation time and record-mode cell, each equal to what is on disk
+ * now; the cell passes recordedCellProblems after the marker's own
+ * authorization and the rotation. Empty means the route is authorized.
+ */
+export async function routeAuthorizationProblems(
+  repoRoot: string,
+  m: Record<string, unknown>,
+  route: string,
+): Promise<string[]> {
+  if (!ROUTE_AUTHORIZED_ROUTES.includes(route)) {
+    return [`${route} is not authorized on its own (MARKER_ROUTES cover it)`];
+  }
+  if (m["state"] !== "authorized") return ["the marker is not authorized"];
+  const all = m["routes_authorized"];
+  const e = all !== null && typeof all === "object" && Object.hasOwn(all, route)
+    ? (all as Record<string, Record<string, unknown>>)[route]
+    : undefined;
+  if (!e) return [`${route} has no route authorization in the marker`];
+  const p: string[] = [];
+  const str = (k: string) => {
+    const v = e[k];
+    if (typeof v !== "string" || v === "") {
+      p.push(`${route}: ${k} is missing`);
+      return "";
+    }
+    return v;
+  };
+  const [recSha, cell, rotatedAt, allowSha] = [
+    str("recorded_hosts_sha256"),
+    str("cell"),
+    str("rotated_at"),
+    str("allowlist_sha256"),
+  ];
+  const authorizedAt = typeof m["verified_at"] === "string"
+    ? m["verified_at"]
+    : "";
+  if (!authorizedAt) p.push("the marker has no verified_at");
+  if (p.length > 0) return p;
+  try {
+    const now = await sha256File(
+      join(repoRoot, ...recordingPath(route).split("/")),
+    );
+    if (now !== recSha) {
+      p.push(`${route}: recorded_hosts_sha256 does not match the current file`);
+    }
+    const a = await authorizedAllowlist(repoRoot, [route]);
+    if (
+      a.sha256 !== allowSha ||
+      JSON.stringify(e["allowlist"]) !== JSON.stringify(a.allowlist)
+    ) {
+      p.push(`${route}: the allowlist does not match the current recording`);
+    }
+  } catch (err) {
+    p.push(`${route}: cannot recompute (${(err as Error).message})`);
+  }
+  p.push(
+    ...(await recordedCellProblems(repoRoot, cell, route, [
+      { what: "the marker's authorization", at: authorizedAt },
+      { what: "the rotation", at: rotatedAt },
+    ])).map((x) => `${route}: ${x}`),
+  );
+  return p;
+}
+
+/**
+ * The recorded hosts an enforced environment may use (H-02 run 002): the
+ * MARKER_ROUTES recordings, plus each later route only while its route
+ * authorization verifies. A route left out refuses its own arms
+ * (hostsForRoutes) and nothing else; a run never gets a host its route was
+ * not authorized for.
+ */
+export async function authorizedRecordedHosts(
+  repoRoot: string,
+  m: Record<string, unknown>,
+): Promise<RecordedHosts> {
+  const all = await loadRecordedHosts(repoRoot);
+  const out: RecordedHosts = {};
+  for (const [route, hosts] of Object.entries(all)) {
+    if (
+      MARKER_ROUTES.includes(route) ||
+      (await routeAuthorizationProblems(repoRoot, m, route)).length === 0
+    ) out[route] = hosts;
+  }
+  return out;
 }
