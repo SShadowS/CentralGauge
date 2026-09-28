@@ -65,17 +65,30 @@ codex run on an old pi image fails closed (the old guard wants the openrouter ke
      alone while it is valid), the guard refuses a token that does not outlive
      `timeout_min + 5` minutes, and a recording holding an `auth*.openai.com` host is refused.
 4. **Rotate the codex credential** (owner). A rotation record alone is not a rotation:
+   - First note when the old access token expires, printing only the date, never a token.
+     Run this before `/logout` (which deletes the local entry), once for each copy (the pi
+     copy and the secrets file), and keep the later date:
+     ```powershell
+     deno eval "const e = JSON.parse(Deno.readTextFileSync(Deno.args[0]))['openai-codex']; console.log(new Date(e.expires).toISOString())" "$env:USERPROFILE\.pi\agent\auth.json"
+     deno eval "const e = JSON.parse(Deno.readTextFileSync(Deno.args[0]))['openai-codex']; console.log(new Date(e.expires).toISOString())" "H:\Temp3\harness-spike\secrets\openai-codex-auth"
+     ```
    - Revoke the old refresh session: in the OpenAI account settings (Security, sessions or
      devices) sign out the old pi/Codex session, so its refresh token stops working; then in
      pi run `/logout` (it only deletes the local credential, it does not revoke anything).
    - Log in again (`pi`, then `/login`), refresh and copy as in step 3, and redo the ACL
      steps on both copies (a fresh login rewrites `auth.json`).
-   - Check the old copy is dead: nothing to run in the sandbox; on the host, a copy of the
-     old `auth.json` kept aside would fail `pi auth check --provider openai-codex` (then
-     delete that copy).
-   - Write the rotation record for the route: `{"v":1,"credentials":[{"name":"openai-codex",
-     "revoked_at":...,"created_at":...}]}` (names and times, never values). The route
-     authorization needs the `openai-codex` entry; the record-mode cell must start after it.
+   - The old ACCESS token is not proven dead by any login check: `pi auth check --provider
+     openai-codex` (pi 0.87.1) reports only whether the current credential is usable, and a
+     revoked session can leave an already issued access token valid until its `expires`.
+     So wait until the noted date has passed; only then is the old credential dead. (A
+     request with the old token that must fail would also prove it, but that handles a
+     token; the wait does not.)
+   - Then write the rotation record for the route, with `revoked_at` set to that noted
+     `expires` instant (when the old access token stopped working) and `created_at` to the
+     new login time: `{"v":1,"credentials":[{"name":"openai-codex","revoked_at":...,"created_at":...}]}`
+     (names and times, never values). The route authorization needs the `openai-codex`
+     entry, re-reads the record at every check, and requires the record-mode cell to start
+     after the later of the two instants, so no cell can be counted before the old token died.
 5. **Record the hosts** (owner terminal, supervised, `harness cell --supervised` needs a TTY):
    - The marker stays `authorized`: a later route records under it, only in its own sandbox.
    - Run one supervised record-mode cell:
@@ -94,7 +107,11 @@ codex run on an old pi image fails closed (the old guard wants the openrouter ke
    credential-bearing pi) and the recording's source naming it; `openai-codex:oauth` in its
    manifest; completed; started after the marker's authorization and after the rotation; its
    `egress.jsonl` with the preflight lines exact (M1-34e) and the agent phase allow-only on
-   the recorded hosts. Every marker read repeats these checks.
+   the recorded hosts. Every marker read and every release repeats these checks and also
+   validates the route entry itself: exactly its fields, keyed by its own route, non-blank
+   evidence, the rotation record re-read with its `openai-codex` instant equal to the stored
+   `rotated_at`, and `verified_at` not in the future and after the marker's authorization,
+   the rotation and the cell's start. Any defect refuses codex arms only.
 7. **First cell** (ops): one enforced cell of `pi-gpt6-luna-codex` on a known task. Check:
    - provider `openai-codex` in the stream; the budget guard armed;
    - the access-token expiry against the cell timeout: before the cell, `expires` in the

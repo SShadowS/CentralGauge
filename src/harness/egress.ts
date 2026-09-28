@@ -2304,6 +2304,7 @@ export async function recordedCellProblems(
   id: string,
   route: string,
   after: { what: string; at: string }[],
+  before: { what: string; at: string }[] = [],
 ): Promise<string[]> {
   const p: string[] = [];
   const cells = join(repoRoot, "results", "harness", "cells");
@@ -2359,6 +2360,13 @@ export async function recordedCellProblems(
       );
     }
   }
+  for (const b of before) {
+    if (b.at && started >= new Date(b.at).getTime()) {
+      p.push(
+        `cell ${id} started at or after ${b.what} (${b.at}); it must start before it`,
+      );
+    }
+  }
   let log: string;
   try {
     log = await Deno.readTextFile(join(cells, "runs", id, "egress.jsonl"));
@@ -2383,13 +2391,91 @@ export async function recordedCellProblems(
   return p;
 }
 
+/** A rotation record (M1-34 Step 10): names and times, never values. */
+const RotationRecordSchema = z.object({
+  v: z.literal(1),
+  credentials: z.array(z.object({
+    name: z.string().min(1),
+    revoked_at: z.iso.datetime(),
+    created_at: z.iso.datetime(),
+  })),
+}).strict();
+
+/**
+ * The rotation instant of `names` in the record at `path`: the latest
+ * revoked_at or created_at among their entries, compared as instants (ISO
+ * text mis-orders mixed fractional seconds), or the problems.
+ */
+export async function rotationOf(
+  path: string,
+  names: readonly string[],
+): Promise<{ at: string; problems: string[] }> {
+  let v: unknown;
+  try {
+    v = JSON.parse(await Deno.readTextFile(path));
+  } catch (err) {
+    return {
+      at: "",
+      problems: [
+        `cannot read the rotation record ${path}: ${(err as Error).message}`,
+      ],
+    };
+  }
+  const rot = RotationRecordSchema.safeParse(v);
+  if (!rot.success) {
+    return {
+      at: "",
+      problems: [
+        `rotation record ${path} is invalid: ${rot.error.issues[0]?.message}`,
+      ],
+    };
+  }
+  const problems = names.filter((n) =>
+    !rot.data.credentials.some((c) => c.name === n)
+  ).map((n) => `rotation record lacks ${n}`);
+  let at = "";
+  for (const c of rot.data.credentials) {
+    if (!names.includes(c.name)) continue;
+    for (const t of [c.revoked_at, c.created_at]) {
+      if (at === "" || Date.parse(t) > Date.parse(at)) at = t;
+    }
+  }
+  return { at, problems };
+}
+
+/** The credential each later route rotates before its route authorization. */
+export const ROUTE_ROTATED_CREDENTIALS: Readonly<Record<string, string>> = {
+  "openai-codex:oauth": "openai-codex",
+};
+
+const Hex64 = z.string().regex(/^[0-9a-f]{64}$/);
+/** One route authorization entry of the marker (H-02 run 003): every field required, nothing else. */
+const RouteEntrySchema = z.object({
+  route: z.string().min(1),
+  verified_at: z.iso.datetime(),
+  evidence: z.string().refine((x) => x.trim() !== "", {
+    message: "evidence is blank",
+  }),
+  recorded_hosts_sha256: Hex64,
+  allowlist: z.array(z.string()),
+  allowlist_sha256: Hex64,
+  rotation: z.string().min(1),
+  rotated_at: z.iso.datetime(),
+  cell: z.string().min(1),
+}).strict();
+
 /**
  * The marker's authorization of one route beyond MARKER_ROUTES (H-02 run
- * 002), checked at authorization and at every read: the marker is
- * authorized; the route's entry names its recording hash, allowlist and
- * hash, rotation time and record-mode cell, each equal to what is on disk
- * now; the cell passes recordedCellProblems after the marker's own
- * authorization and the rotation. Empty means the route is authorized.
+ * 002, 003), checked at authorization and at every read (marker read and
+ * each release): the marker is authorized; the route's entry is exactly
+ * RouteEntrySchema, keyed by its own route; the rotation record it names is
+ * re-read and its route credential's instant recomputed and equal to
+ * rotated_at; verified_at is not in the future, after the marker's own
+ * authorization and after the rotation; the recording hash and allowlist
+ * equal what is on disk now; the record-mode cell passes
+ * recordedCellProblems and started after the marker's authorization and
+ * the rotation and before this route's authorization. Empty means the
+ * route is authorized; any problem refuses only this route's arms.
  */
 export async function routeAuthorizationProblems(
   repoRoot: string,
@@ -2401,43 +2487,68 @@ export async function routeAuthorizationProblems(
   }
   if (m["state"] !== "authorized") return ["the marker is not authorized"];
   const all = m["routes_authorized"];
-  const e = all !== null && typeof all === "object" && Object.hasOwn(all, route)
-    ? (all as Record<string, Record<string, unknown>>)[route]
+  const raw = all !== null && typeof all === "object" &&
+      Object.hasOwn(all, route)
+    ? (all as Record<string, unknown>)[route]
     : undefined;
-  if (!e) return [`${route} has no route authorization in the marker`];
+  if (raw === undefined) {
+    return [`${route} has no route authorization in the marker`];
+  }
+  const parsed = RouteEntrySchema.safeParse(raw);
+  if (!parsed.success) {
+    return parsed.error.issues.map((i) =>
+      `${route}: route authorization ${
+        i.path.join(".") || "entry"
+      }: ${i.message}`
+    );
+  }
+  const e = parsed.data;
   const p: string[] = [];
-  const str = (k: string) => {
-    const v = e[k];
-    if (typeof v !== "string" || v === "") {
-      p.push(`${route}: ${k} is missing`);
-      return "";
-    }
-    return v;
-  };
-  const [recSha, cell, rotatedAt, allowSha] = [
-    str("recorded_hosts_sha256"),
-    str("cell"),
-    str("rotated_at"),
-    str("allowlist_sha256"),
-  ];
-  const authorizedAt = typeof m["verified_at"] === "string"
+  if (e.route !== route) {
+    p.push(`${route}: route authorization route is ${e.route}`);
+  }
+  const authorizedAt = typeof m["verified_at"] === "string" &&
+      !Number.isNaN(Date.parse(m["verified_at"]))
     ? m["verified_at"]
     : "";
-  if (!authorizedAt) p.push("the marker has no verified_at");
+  if (!authorizedAt) p.push("the marker has no valid verified_at");
+  const rot = await rotationOf(e.rotation, [ROUTE_ROTATED_CREDENTIALS[route]!]);
+  p.push(...rot.problems.map((x) => `${route}: ${x}`));
+  if (
+    rot.problems.length === 0 && Date.parse(rot.at) !== Date.parse(e.rotated_at)
+  ) {
+    p.push(
+      `${route}: rotated_at ${e.rotated_at} does not match the rotation record (${rot.at})`,
+    );
+  }
+  const verified = Date.parse(e.verified_at);
+  if (verified > Date.now()) {
+    p.push(`${route}: verified_at ${e.verified_at} is in the future`);
+  }
+  if (authorizedAt && verified <= Date.parse(authorizedAt)) {
+    p.push(
+      `${route}: verified_at ${e.verified_at} is not after the marker's authorization (${authorizedAt})`,
+    );
+  }
+  if (verified <= Date.parse(e.rotated_at)) {
+    p.push(
+      `${route}: verified_at ${e.verified_at} is not after the rotation (${e.rotated_at})`,
+    );
+  }
   if (p.length > 0) return p;
   try {
     const now = await sha256File(
       join(repoRoot, ...recordingPath(route).split("/")),
     );
-    if (now !== recSha) {
+    if (now !== e.recorded_hosts_sha256) {
       p.push(`${route}: recorded_hosts_sha256 does not match the current file`);
     }
     // The route's own file, strictly: its load error is this route's problem.
     await loadRecording(repoRoot, route);
     const a = await authorizedAllowlist(repoRoot, [route]);
     if (
-      a.sha256 !== allowSha ||
-      JSON.stringify(e["allowlist"]) !== JSON.stringify(a.allowlist)
+      a.sha256 !== e.allowlist_sha256 ||
+      JSON.stringify(e.allowlist) !== JSON.stringify(a.allowlist)
     ) {
       p.push(`${route}: the allowlist does not match the current recording`);
     }
@@ -2445,10 +2556,14 @@ export async function routeAuthorizationProblems(
     p.push(`${route}: cannot recompute (${(err as Error).message})`);
   }
   p.push(
-    ...(await recordedCellProblems(repoRoot, cell, route, [
+    ...(await recordedCellProblems(repoRoot, e.cell, route, [
       { what: "the marker's authorization", at: authorizedAt },
-      { what: "the rotation", at: rotatedAt },
-    ])).map((x) => `${route}: ${x}`),
+      { what: "the rotation", at: e.rotated_at },
+    ], [{
+      what: "the route's authorization (verified_at)",
+      at: e.verified_at,
+    }]))
+      .map((x) => `${route}: ${x}`),
   );
   return p;
 }

@@ -11976,6 +11976,22 @@ Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded
 const CODEX = "openai-codex:oauth";
 const inMin = (min: number) =>
   new Date(Date.now() + min * 60_000).toISOString();
+/**
+ * An authorized marker whose own authorization lies two hours back, so a
+ * codex rotation, record-mode cell and route authorization can follow it
+ * in real time order (H-02 run 003: verified_at after all of them).
+ */
+async function codexRoot(): Promise<string> {
+  const root = await authorizedRoot();
+  const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+  const m = JSON.parse(await Deno.readTextFile(markerPath));
+  await Deno.writeTextFile(
+    markerPath,
+    JSON.stringify({ ...m, verified_at: inMin(-120) }),
+  );
+  return root;
+}
+
 /** A record-mode codex cell's tagged log: its preflight lines, then the agent phase. */
 const codexLog = (extra: LogLine[] = [], pre = true): LogLine[] => [
   ...(pre
@@ -12053,7 +12069,7 @@ async function recordCodex(
 }
 
 Deno.test("per-route authorization (H-02 run 002): a master marker keeps authorizing its routes while openai-codex:oauth is unrecorded or unauthorized; only codex refuses", async () => {
-  const root = await authorizedRoot();
+  const root = await codexRoot();
   const shared = join(root, "results", "harness");
   const ok = () => Promise.resolve([]);
   const m = JSON.parse(await Deno.readTextFile(join(shared, EGRESS_MARKER)));
@@ -12081,18 +12097,18 @@ Deno.test("per-route authorization (H-02 run 002): a master marker keeps authori
     );
   };
   await check(); // codex unrecorded
-  await recordCodex(root, "cell-cx", { started: inMin(2) });
+  await recordCodex(root, "cell-cx", { started: inMin(-20) });
   await check(); // recorded, not authorized: the marker's own recording is untouched
 });
 
 Deno.test("route authorization (H-02 run 002): the codex recording cell is checked like the Claude cell; then codex gets exactly its recorded hosts; rechecked at every read", async () => {
-  const root = await authorizedRoot();
+  const root = await codexRoot();
   const shared = join(root, "results", "harness");
   const markerPath = join(shared, EGRESS_MARKER);
   const ok = () => Promise.resolve([]);
   const before = JSON.parse(await Deno.readTextFile(markerPath));
   const rotation = join(root, "rotation-codex.json");
-  const rotate = (names: string[], at = inMin(1)) =>
+  const rotate = (names: string[], at = inMin(-30)) =>
     Deno.writeTextFile(
       rotation,
       JSON.stringify({
@@ -12120,22 +12136,22 @@ Deno.test("route authorization (H-02 run 002): the codex recording cell is check
     "not a route authorized on its own",
   );
   const refused: [string, Parameters<typeof recordCodex>[2], string][] = [
-    ["before the rotation", { started: inMin(0.5) }, "before the rotation"],
+    ["before the rotation", { started: inMin(-40) }, "before the rotation"],
     [
       "before the marker",
-      { started: inMin(-60) },
+      { started: inMin(-180) },
       "before the marker's authorization",
     ],
-    ["unsupervised", { started: inMin(2), supervised: false }, "supervised"],
+    ["unsupervised", { started: inMin(-20), supervised: false }, "supervised"],
     [
       "another route",
-      { started: inMin(2), route: "openrouter:api-key" },
+      { started: inMin(-20), route: "openrouter:api-key" },
       "did not run on openai-codex:oauth",
     ],
     [
       "agent deny",
       {
-        started: inMin(2),
+        started: inMin(-20),
         log: codexLog([{
           at: "2026-10-20T08:00:06.000Z",
           decision: "deny",
@@ -12149,7 +12165,7 @@ Deno.test("route authorization (H-02 run 002): the codex recording cell is check
     [
       "unrecorded allow",
       {
-        started: inMin(2),
+        started: inMin(-20),
         log: codexLog([{
           at: "2026-10-20T08:00:06.000Z",
           decision: "allow",
@@ -12162,12 +12178,12 @@ Deno.test("route authorization (H-02 run 002): the codex recording cell is check
     ],
     [
       "no preflight",
-      { started: inMin(2), log: codexLog([], false) },
+      { started: inMin(-20), log: codexLog([], false) },
       "missing preflight line",
     ],
     [
       "re-record spoof",
-      { started: inMin(2), source: "record mode execution cell-ok" },
+      { started: inMin(-20), source: "record mode execution cell-ok" },
       "does not name cell cell-cx",
     ],
   ];
@@ -12175,7 +12191,7 @@ Deno.test("route authorization (H-02 run 002): the codex recording cell is check
     await recordCodex(root, "cell-cx", o);
     assertStringIncludes(await auth(), want, what);
   }
-  await recordCodex(root, "cell-cx", { started: inMin(2) });
+  await recordCodex(root, "cell-cx", { started: inMin(-20) });
   await rotate(["claude-oauth"]);
   assertStringIncludes(await auth(), "rotation record lacks openai-codex");
   await rotate(["openai-codex"]);
@@ -12260,11 +12276,11 @@ Deno.test("per-route authorization (H-02 run 002 review): a malformed codex reco
     ],
   ];
   for (const authorized of [false, true]) {
-    const root = await authorizedRoot();
+    const root = await codexRoot();
     const shared = join(root, "results", "harness");
     const markerPath = join(shared, EGRESS_MARKER);
     if (authorized) {
-      await recordCodex(root, "cell-cx", { started: inMin(2) });
+      await recordCodex(root, "cell-cx", { started: inMin(-20) });
       const rotation = join(root, "rotation-codex.json");
       await Deno.writeTextFile(
         rotation,
@@ -12272,8 +12288,8 @@ Deno.test("per-route authorization (H-02 run 002 review): a malformed codex reco
           v: 1,
           credentials: [{
             name: "openai-codex",
-            revoked_at: inMin(1),
-            created_at: inMin(1),
+            revoked_at: inMin(-30),
+            created_at: inMin(-30),
           }],
         }),
       );
@@ -12347,8 +12363,8 @@ Deno.test("per-route authorization (H-02 run 002 review): a malformed codex reco
 });
 
 Deno.test("route authorization (H-02 run 002 review): the rotation instant compares as time, not text (mixed fractional seconds)", async () => {
-  const root = await authorizedRoot();
-  const s = new Date(Date.now() + 5 * 60_000).toISOString().slice(0, 19);
+  const root = await codexRoot();
+  const s = new Date(Date.now() - 10 * 60_000).toISOString().slice(0, 19);
   const rotation = join(root, "rotation-codex.json");
   // As text "...Z" sorts after "...500Z"; as time the .500 instant is later.
   await Deno.writeTextFile(
@@ -12373,4 +12389,133 @@ Deno.test("route authorization (H-02 run 002 review): the rotation instant compa
     })).join("\n"),
     `before the rotation (${s}.500Z)`,
   );
+});
+
+/** A marker with openai-codex:oauth authorized on its own (H-02 run 003). */
+async function codexAuthorizedRoot() {
+  const root = await codexRoot();
+  const shared = join(root, "results", "harness");
+  const markerPath = join(shared, EGRESS_MARKER);
+  await recordCodex(root, "cell-cx", { started: inMin(-20) });
+  const rotation = join(root, "rotation-codex.json");
+  const rotationText = JSON.stringify({
+    v: 1,
+    credentials: [{
+      name: "openai-codex",
+      revoked_at: inMin(-30),
+      created_at: inMin(-30),
+    }],
+  });
+  await Deno.writeTextFile(rotation, rotationText);
+  assertEquals(
+    await harnessEgressAuthorizeRoute({
+      root,
+      route: CODEX,
+      cell: "cell-cx",
+      rotation,
+      evidence: "H-02/001",
+    }),
+    [],
+  );
+  return { root, shared, markerPath, rotation, rotationText };
+}
+
+Deno.test("route authorization (H-02 run 003): every read validates the entry's route, rotation record, evidence and verified_at; each defect refuses codex only", async () => {
+  const { root, shared, markerPath, rotation, rotationText } =
+    await codexAuthorizedRoot();
+  const good = JSON.parse(await Deno.readTextFile(markerPath));
+  const entry = good.routes_authorized[CODEX];
+  assertEquals(await routeAuthorizationProblems(root, good, CODEX), []);
+  const withEntry = (e: Record<string, unknown>) => ({
+    ...good,
+    routes_authorized: { [CODEX]: e },
+  });
+  const later = (iso: string, ms: number) =>
+    new Date(Date.parse(iso) + ms).toISOString();
+  const cases: [string, Record<string, unknown>, string, string?][] = [];
+  for (const k of Object.keys(entry)) {
+    const { [k]: _gone, ...rest } = entry;
+    cases.push([`no ${k}`, withEntry(rest), k]);
+  }
+  cases.push(
+    [
+      "route mismatch",
+      withEntry({ ...entry, route: "openrouter:api-key" }),
+      "route",
+    ],
+    ["blank evidence", withEntry({ ...entry, evidence: "  " }), "evidence"],
+    ["extra field", withEntry({ ...entry, note: "x" }), "note"],
+    [
+      "rotated_at edited",
+      withEntry({ ...entry, rotated_at: later(entry.rotated_at, 1000) }),
+      "rotated_at",
+    ],
+    [
+      "future verified_at",
+      withEntry({
+        ...entry,
+        verified_at: later(new Date().toISOString(), 3600_000),
+      }),
+      "future",
+    ],
+    [
+      "verified_at before the marker",
+      withEntry({ ...entry, verified_at: later(good.verified_at, -1000) }),
+      "verified_at",
+    ],
+    [
+      "verified_at before the cell started",
+      withEntry({ ...entry, verified_at: later(entry.rotated_at, 1) }),
+      "verified_at",
+    ],
+  );
+  const refusesCodexOnly = async (what: string, m: unknown, want: string) => {
+    await Deno.writeTextFile(markerPath, JSON.stringify(m));
+    const mm = m as Record<string, unknown>;
+    assertStringIncludes(
+      (await routeAuthorizationProblems(root, mm, CODEX)).join("\n"),
+      want,
+      what,
+    );
+    assertEquals(
+      Object.keys(await authorizedRecordedHosts(root, mm)),
+      ["anthropic:first-party-oauth"],
+      what,
+    );
+    assertEquals(
+      await egressMode(shared, () => Promise.resolve([])),
+      "enforced",
+      what,
+    );
+  };
+  for (const [what, m, want] of cases) await refusesCodexOnly(what, m, want);
+  // The rotation record is re-read at every check.
+  await Deno.remove(rotation);
+  await refusesCodexOnly("rotation record missing", good, "rotation record");
+  await Deno.writeTextFile(
+    rotation,
+    JSON.stringify({
+      v: 1,
+      credentials: [{
+        name: "claude-oauth",
+        revoked_at: entry.rotated_at,
+        created_at: entry.rotated_at,
+      }],
+    }),
+  );
+  await refusesCodexOnly(
+    "rotation record without openai-codex",
+    good,
+    "lacks openai-codex",
+  );
+  const r = JSON.parse(rotationText);
+  r.credentials[0].created_at = later(entry.rotated_at, 1000);
+  await Deno.writeTextFile(rotation, JSON.stringify(r));
+  await refusesCodexOnly("rotation record edited", good, "rotated_at");
+  await Deno.writeTextFile(rotation, "{");
+  await refusesCodexOnly("rotation record not JSON", good, "rotation record");
+  // Restored, it authorizes again.
+  await Deno.writeTextFile(rotation, rotationText);
+  await Deno.writeTextFile(markerPath, JSON.stringify(good));
+  assertEquals(await routeAuthorizationProblems(root, good, CODEX), []);
 });

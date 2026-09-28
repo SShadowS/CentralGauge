@@ -165,7 +165,9 @@ import {
   RECORDED_ROUTES,
   recordedCellProblems,
   recordingPath,
+  rotationOf,
   ROUTE_AUTHORIZED_ROUTES,
+  ROUTE_ROTATED_CREDENTIALS,
   routeAuthorizationProblems,
   SANDBOX_NETWORK,
   sha256File,
@@ -2959,13 +2961,6 @@ export async function harnessQualify(
 
 /** Credentials M1-34 Step 10 rotates before authorization (names in the rotation record). */
 export const ROTATED_CREDENTIALS = ["claude-oauth", "openrouter"] as const;
-/**
- * The credential each later route rotates before its own route
- * authorization (H-02 run 002; names in the rotation record).
- */
-export const ROUTE_ROTATED_CREDENTIALS: Readonly<Record<string, string>> = {
-  "openai-codex:oauth": "openai-codex",
-};
 
 export interface EgressVerifyOptions {
   root: string;
@@ -3094,36 +3089,6 @@ async function authorizationProblems(
     ]),
   );
   return { problems: p, allowlist };
-}
-
-/** Rotation record: the latest instant among the named credential's entries, or problems. */
-async function rotationOf(
-  path: string,
-  names: readonly string[],
-): Promise<{ at: string; problems: string[] }> {
-  const rot = RotationSchema.safeParse(
-    await readJsonFile(path, "rotation record"),
-  );
-  if (!rot.success) {
-    return {
-      at: "",
-      problems: [
-        `rotation record ${path} is invalid: ${rot.error.issues[0]?.message}`,
-      ],
-    };
-  }
-  const problems = names.filter((n) =>
-    !rot.data.credentials.some((c) => c.name === n)
-  ).map((n) => `rotation record lacks ${n}`);
-  let at = "";
-  for (const c of rot.data.credentials) {
-    if (!names.includes(c.name)) continue;
-    // As instants: ISO text mis-orders mixed fractional seconds.
-    for (const t of [c.revoked_at, c.created_at]) {
-      if (at === "" || Date.parse(t) > Date.parse(at)) at = t;
-    }
-  }
-  return { at, problems };
 }
 
 export interface RouteAuthorizeOptions {
