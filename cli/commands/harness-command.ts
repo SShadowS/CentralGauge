@@ -937,6 +937,10 @@ export interface RunCliOptions extends CellCliOptions {
   yes?: boolean;
   /** rejudge: only this execution. */
   execution?: string;
+  /** rejudge (C-03): judge --execution again although its judgment is current. */
+  force?: boolean;
+  /** rejudge (C-03): why --force; recorded as the new judgment's forced.reason. */
+  reason?: string;
   /** run: any of these present stops the campaign before its next cell. */
   stopFiles?: string[];
   /** run: resume exactly this campaign; rejudge: this campaign, not the newest. */
@@ -1070,6 +1074,17 @@ async function rejudgeTarget(
   experimentId: string,
   o: RunCliOptions,
 ): Promise<CampaignRecord> {
+  if (o.force && !o.execution) {
+    throw new ConfigurationError(
+      "rejudge --force needs exactly one --execution (never a whole campaign)",
+    );
+  }
+  if (o.force && !o.reason?.trim()) {
+    throw new ConfigurationError("rejudge --force needs a non-blank --reason");
+  }
+  if (!o.force && o.reason !== undefined) {
+    throw new ConfigurationError("rejudge --reason is only for --force");
+  }
   const campaigns = await store.campaigns(experimentId);
   const c = o.campaign
     ? campaigns.find((x) => x.id === o.campaign)
@@ -1140,7 +1155,16 @@ export async function harnessRejudge(
     // a planned result never stays on an oracle a manual rerun has left).
     const due = data.executions.filter((e) => {
       if (o.execution && e.id !== o.execution) return false;
-      if (!outcomePolicy(e.termination, e.did_work).judge) return false;
+      if (!outcomePolicy(e.termination, e.did_work).judge) {
+        if (o.force) {
+          throw new ConfigurationError(
+            `execution ${e.id} is not judgeable (termination ${e.termination}): rejudge --force refused`,
+          );
+        }
+        return false;
+      }
+      // C-03: forced, the one execution is due although its judgment is current.
+      if (o.force) return true;
       const j = latestJudgment(
         data.judgments.filter((x) => x.execution_id === e.id),
       );
@@ -1170,7 +1194,9 @@ export async function harnessRejudge(
     if (
       !o.yes &&
       !ask(
-        `Rejudge ${due.length} execution(s) of campaign ${c.id} with the current scorer suite and the current oracle?`,
+        `Rejudge ${due.length} execution(s) of campaign ${c.id} with the current scorer suite and the current oracle${
+          o.force ? ` (forced: ${o.reason!.trim()})` : ""
+        }?`,
       )
     ) {
       console.log(`${colors.yellow("[SKIP]")} rejudge not confirmed`);
@@ -1192,11 +1218,17 @@ export async function harnessRejudge(
         e.arm,
         e.order_in_block,
       );
-      const j = await rejudgeExecution(env, cell, e, oracle);
+      const j = await rejudgeExecution(
+        env,
+        cell,
+        e,
+        oracle,
+        o.force ? { reason: o.reason!.trim() } : undefined,
+      );
       console.log(
         `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
           oracle.slice(0, 12)
-        })`,
+        })${j.forced ? `, forced: ${j.forced.reason}` : ""}`,
       );
     }
     return { campaignId: c.id, rejudged: due.length };
@@ -1865,6 +1897,8 @@ export function registerHarnessCommand(
     maxPauseMin: number;
     yes?: boolean;
     execution?: string;
+    force?: boolean;
+    reason?: string;
     stopFile?: string[];
     campaign?: string;
     rerun?: RerunCell;
@@ -1879,6 +1913,8 @@ export function registerHarnessCommand(
     ...(f.seed !== undefined ? { seed: f.seed } : {}),
     ...(f.yes ? { yes: true } : {}),
     ...(f.execution ? { execution: f.execution } : {}),
+    ...(f.force ? { force: true } : {}),
+    ...(f.reason !== undefined ? { reason: f.reason } : {}),
     ...(f.stopFile ? { stopFiles: f.stopFile.map((p) => resolve(p)) } : {}),
     ...(f.campaign ? { campaign: f.campaign } : {}),
     ...(f.rerun ? { rerun: f.rerun } : {}),
@@ -1933,6 +1969,11 @@ export function registerHarnessCommand(
   )
     .option("--execution <id:string>", "Only this execution")
     .option("--campaign <id:string>", "This campaign (default: newest)")
+    .option(
+      "--force",
+      "Judge the one --execution again although its judgment is current",
+    )
+    .option("--reason <text:string>", "Why --force (recorded in the judgment)")
     .option("--yes", "Do not ask for confirmation")
     .action((
       opts: Omit<RunFlags, "concurrency" | "maxPauseMin">,

@@ -90,6 +90,8 @@ export interface CellRecord extends Cell {
   oracle_hash: string | null;
   scorer_fingerprint: string | null;
   manual_reruns: number;
+  /** C-03: the reason when the used judgment is a forced rejudge; absent otherwise. */
+  forced_rejudge?: string;
 }
 
 interface Resolved {
@@ -213,6 +215,9 @@ export function cellsFromRecords(
         cell.judgment_id = r.judgment?.id ?? null;
         cell.oracle_hash = r.judgment?.task_oracle_hash ?? null;
         cell.scorer_fingerprint = r.judgment?.scorer_fingerprint ?? null;
+        const forced = r.judgment?.forced;
+        if (forced) cell.forced_rejudge = forced.reason;
+        else delete cell.forced_rejudge;
       };
       const planned = chains.find((c) => c.root.run_kind === "planned");
       if (all.length > 0 && !planned) {

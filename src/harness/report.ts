@@ -827,6 +827,16 @@ export function renderReport(r: HarnessReport): string {
       );
     }
   }
+  // C-03: every counted verdict from a forced rejudge, with its reason.
+  const forced = r.cells.filter((c) => c.forced_rejudge !== undefined);
+  if (forced.length > 0) {
+    out.push("  Cells with forced rejudges:");
+    for (const c of forced) {
+      out.push(
+        `    ${c.task} r${c.repeat} ${c.arm}: judgment ${c.judgment_id} (${c.forced_rejudge})`,
+      );
+    }
+  }
   const ms = (x: number | null) => (x === null ? "n/a" : `${Math.round(x)} ms`);
   h("Efficiency (descriptive)");
   for (const e of r.efficiency) {

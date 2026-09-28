@@ -279,6 +279,12 @@ export const JudgmentRecordSchema = z.strictObject({
   verdict_container: z.string().nullable(),
   started_at: Iso,
   ended_at: Iso,
+  /**
+   * C-03: set only by `harness rejudge --force`, which re-judges one
+   * execution although its latest judgment is current (e.g. a verdict build
+   * starved of host memory). Absent on every other judgment; in no hash.
+   */
+  forced: z.strictObject({ reason: z.string().regex(/\S/) }).optional(),
 }).refine((j) => j.verdict === verdictOf(j.scorers), {
   message: "verdict disagrees with scorer results",
   path: ["verdict"],

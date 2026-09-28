@@ -1897,6 +1897,7 @@ export async function judgeExecution(
   e: ExecutionRecord,
   pristine: string,
   oracleHash = cell.oracleHash,
+  forced?: JudgmentRecord["forced"],
 ): Promise<JudgmentRecord> {
   // Fail closed: judging needs proof the run was not scripted. The published
   // side file must be readable and the private marker (kept after
@@ -1946,7 +1947,11 @@ export async function judgeExecution(
     // agent's code can assemble a secret at runtime in a test message).
     const log = scrubJudgeOutput(raw.log, keys, env);
     const judgment = JudgmentRecordSchema.parse(
-      scrubJudgeOutput(raw.judgment, keys, env),
+      scrubJudgeOutput(
+        forced ? { ...raw.judgment, forced } : raw.judgment,
+        keys,
+        env,
+      ),
     );
     // The side file first: a crash between the two leaves an orphan log, never a judgment without its log.
     await writeVerdictLog(env.resultsRoot, log);
@@ -1963,6 +1968,7 @@ export async function rejudgeExecution(
   cell: CellRef,
   e: ExecutionRecord,
   oracleHash: string,
+  forced?: JudgmentRecord["forced"],
 ): Promise<JudgmentRecord> {
   const out = join(
     env.privateRoot,
@@ -1976,6 +1982,7 @@ export async function rejudgeExecution(
       e,
       (await stage(env, cell, out)).pristine,
       oracleHash,
+      forced,
     );
   } finally {
     await Deno.remove(out, { recursive: true }).catch(() => {});
