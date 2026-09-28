@@ -62,6 +62,7 @@ import {
 } from "../../src/harness/identity.ts";
 import {
   compareInstant,
+  isOwnerApproval,
   outcomePolicy,
   RecordStore,
 } from "../../src/harness/records.ts";
@@ -1084,14 +1085,16 @@ const askUser = (q: string) => confirm(q);
 /**
  * C-03 run 002/003: `--basis` (absolute, or relative to
  * $CG_COORD_ROOT/decisions) as the decision basis: its path relative to that
- * directory (forward slashes) and the sha256 of its bytes. Refused unless
- * CG_COORD_ROOT is set, the path (symlinks resolved) is an existing file
- * inside that directory, and its text names `execution`.
+ * directory (forward slashes), the sha256 of its bytes and its first
+ * OWNER-APPROVED line (run 003). Refused unless CG_COORD_ROOT is set, the
+ * path (symlinks resolved) is an existing file inside that directory, and
+ * its text names `execution` and holds a whole line
+ * `OWNER-APPROVED: <words> (<ISO-8601 time>)` (records.ts OWNER_APPROVED).
  */
 async function decisionBasis(
   p: string,
   execution: string,
-): Promise<{ kind: "decision"; path: string; sha256: string }> {
+): Promise<NonNullable<JudgmentRecord["forced"]>["basis"]> {
   const root = Deno.env.get("CG_COORD_ROOT");
   if (!root) {
     throw new ConfigurationError(
@@ -1113,15 +1116,24 @@ async function decisionBasis(
     );
   }
   const bytes = await Deno.readFile(file);
-  if (!new TextDecoder().decode(bytes).includes(execution)) {
+  const text = new TextDecoder().decode(bytes);
+  if (!text.includes(execution)) {
     throw new ConfigurationError(
       `rejudge --basis ${p} does not name execution ${execution}`,
+    );
+  }
+  // Run 003: the owner's approval, one whole line (the first that parses).
+  const approval = text.split(/\r?\n/).find(isOwnerApproval);
+  if (approval === undefined) {
+    throw new ConfigurationError(
+      `rejudge --basis ${p} has no OWNER-APPROVED: <words> (<ISO-8601 time>) line`,
     );
   }
   return {
     kind: "decision",
     path: rel.replaceAll("\\", "/"),
     sha256: await sha256Hex(bytes),
+    approval,
   };
 }
 
@@ -1148,6 +1160,12 @@ async function rejudgeTarget(
   if (o.force && !o.replaces) {
     throw new ConfigurationError(
       "rejudge --force needs --replaces <judgment id> (the judgment the report uses now)",
+    );
+  }
+  // Run 003: always an owner decision; an infra signature is never enough.
+  if (o.force && o.basis === undefined) {
+    throw new ConfigurationError(
+      "rejudge --force needs --basis <owner decision file under $CG_COORD_ROOT/decisions with an OWNER-APPROVED line>",
     );
   }
   for (const [flag, v] of [["replaces", o.replaces], ["basis", o.basis]]) {
@@ -1307,6 +1325,22 @@ export async function harnessRejudge(
       }
       const js = data.judgments.filter((x) => x.execution_id === e.id);
       // The campaign's oracle (the due filter refused any other).
+      // Run 003: the infra signature is a diagnostic for the operator, never
+      // authority (a genuine build failure can match it); the owner decides.
+      const replaced = js.find((x) => x.id === o.replaces);
+      if (replaced) {
+        const log = await Deno.readTextFile(
+          join(env.resultsRoot, "verdicts", `${replaced.id}.json`),
+        ).then(JSON.parse).catch(() => null);
+        const signature = infraSignature(replaced, log);
+        console.log(
+          `${colors.cyan("[info]")} replaced judgment ${replaced.id}${
+            signature
+              ? ` matches infra signature: ${signature}`
+              : ": no infra signature"
+          } (diagnostic only)`,
+        );
+      }
       const why = forcedRefusal(
         e,
         js,
@@ -1314,26 +1348,10 @@ export async function harnessRejudge(
         o.replaces!,
       );
       if (why) throw new ConfigurationError(`${why}: rejudge --force refused`);
-      const replaced = js.find((x) => x.id === o.replaces)!;
-      let basis: NonNullable<JudgmentRecord["forced"]>["basis"];
-      if (decision !== undefined) {
-        basis = decision;
-      } else {
-        const log = await Deno.readTextFile(
-          join(env.resultsRoot, "verdicts", `${replaced.id}.json`),
-        ).then(JSON.parse).catch(() => null);
-        const signature = infraSignature(replaced, log);
-        if (!signature) {
-          throw new ConfigurationError(
-            `judgment ${replaced.id} carries no recorded infra basis (its verdict log shows no judge error, nor a failed build with 0 diagnostics and 0 tests): pass --basis <owner decision file under $CG_COORD_ROOT/decisions>`,
-          );
-        }
-        basis = { kind: "signature", signature };
-      }
       forced = {
         reason: await scrubForcedReason(env, e.id, o.reason!.trim()),
-        replaces: replaced.id,
-        basis,
+        replaces: o.replaces!,
+        basis: decision!,
       };
     }
     if (
@@ -2129,7 +2147,7 @@ export function registerHarnessCommand(
     )
     .option(
       "--basis <path:string>",
-      "With --force: owner decision file under $CG_COORD_ROOT/decisions (when the replaced judgment has no infra signature)",
+      "With --force (required): owner decision file under $CG_COORD_ROOT/decisions naming the execution, with an OWNER-APPROVED: <words> (<ISO time>) line",
     )
     .option("--yes", "Do not ask for confirmation")
     .action((

@@ -834,9 +834,8 @@ export function renderReport(r: HarnessReport): string {
   if (forced.length > 0) {
     out.push("  Forced rejudges (every one, counted or not):");
     for (const { c, f } of forced) {
-      const basis = f.basis.kind === "signature"
-        ? `signature ${f.basis.signature}`
-        : `decision ${f.basis.path} (sha256 ${f.basis.sha256})`;
+      const basis =
+        `decision ${f.basis.path} (sha256 ${f.basis.sha256}; ${f.basis.approval})`;
       out.push(
         `    ${c.task} r${c.repeat} ${c.arm}: judgment ${f.judgment_id} (${
           f.judgment_id === c.judgment_id ? "counted" : "not counted"

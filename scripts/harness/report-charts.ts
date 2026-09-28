@@ -240,12 +240,14 @@ function checkLedger(reports: Report[], raw: unknown) {
   }
   // C-03 run 002: the ledger's forced rejudges in each report's scope are
   // exactly the report's forced judgments (count, ids, reasons). Run 003:
-  // set equality both ways, no duplicate id, the same execution.
+  // set equality both ways, no duplicate id, the same execution, and (run
+  // 003, review C-03-002) the same task, repeat and arm as the report cell.
   for (const r of reports) {
     const where = `${r.experiment.id} / ${r.campaign.id}`;
     const report = new Map(
-      r.cells.flatMap((c) => c.forced_rejudges ?? [])
-        .map((f) => [f.judgment_id, f]),
+      r.cells.flatMap((c) =>
+        (c.forced_rejudges ?? []).map((f) => ({ ...f, cell: c }))
+      ).map((f) => [f.judgment_id, f]),
     );
     const ledger = actions.filter((x) =>
       x.kind === "rejudge" && x.scope === "reported" &&
@@ -275,6 +277,15 @@ function checkLedger(reports: Report[], raw: unknown) {
         fail(
           `forced judgment ${a.judgment} in ${where}: ledger execution ${a.execution}, report execution ${f.execution_id}`,
         );
+      }
+      for (const k of ["task", "repeat", "arm"] as const) {
+        if (a[k] !== f.cell[k]) {
+          fail(
+            `forced judgment ${a.judgment} in ${where}: ledger ${k} ${
+              a[k]
+            }, report cell ${k} ${f.cell[k]}`,
+          );
+        }
       }
       const reason = f.reason;
       if (reason !== a.forced_reason) {

@@ -38,13 +38,25 @@ const OneLine = z.string().regex(/\S/).regex(/^[^\r\n]*$/);
 /**
  * C-03 run 002: a judgment's recorded infra signature (verdict.ts
  * infraSignature): the judge caught an infra error, or the candidate build
- * failed with no diagnostics and no test result (host memory starvation).
+ * failed with no diagnostics and no test result. Run 003: a printed
+ * diagnostic only, never the basis of a forced rejudge.
  */
 export const INFRA_SIGNATURES = [
   "judge_error",
   "build_failed_no_diagnostics_no_tests",
 ] as const;
 export type InfraSignature = typeof INFRA_SIGNATURES[number];
+/**
+ * C-03 run 003: an owner approval line, the whole line:
+ * `OWNER-APPROVED: <words> (<ISO-8601 time>)`, words non-blank.
+ */
+export const OWNER_APPROVED = /^OWNER-APPROVED: (\S(?:.*\S)?) \(([^()\s]+)\)$/;
+const ApprovalTime = z.iso.datetime({ offset: true });
+/** An OWNER_APPROVED line whose time parses as ISO-8601 (Z or an offset). */
+export function isOwnerApproval(line: string): boolean {
+  const m = OWNER_APPROVED.exec(line);
+  return m !== null && ApprovalTime.safeParse(m[2]).success;
+}
 const n = z.number().nonnegative().nullable();
 
 export const TERMINATIONS = [
@@ -296,24 +308,22 @@ export const JudgmentRecordSchema = z.strictObject({
    * execution although its latest judgment is current (e.g. a verdict build
    * starved of host memory). Absent on every other judgment; in no hash.
    * Run 002: at most one per execution; `replaces` is the judgment the report
-   * used before, `basis` why that one was infra: its verdict log's signature,
-   * or an owner decision (path relative to $CG_COORD_ROOT/decisions, and
-   * the sha256 of its bytes; run 003).
+   * used before. Run 003: `basis` is always an owner decision: its path
+   * relative to $CG_COORD_ROOT/decisions, the sha256 of its bytes and its
+   * OWNER-APPROVED line (an infra signature is never a basis).
    */
   forced: z.strictObject({
     reason: OneLine,
     replaces: Uuid,
-    basis: z.discriminatedUnion("kind", [
-      z.strictObject({
-        kind: z.literal("signature"),
-        signature: z.enum(INFRA_SIGNATURES),
-      }),
-      z.strictObject({
-        kind: z.literal("decision"),
-        path: OneLine,
-        sha256: Sha256Hex,
-      }),
-    ]),
+    basis: z.strictObject({
+      kind: z.literal("decision"),
+      path: OneLine,
+      sha256: Sha256Hex,
+      approval: z.string().refine(
+        isOwnerApproval,
+        "an OWNER-APPROVED: <words> (<ISO-8601 time>) line",
+      ),
+    }),
   }).optional(),
 }).refine((j) => j.verdict === verdictOf(j.scorers), {
   message: "verdict disagrees with scorer results",

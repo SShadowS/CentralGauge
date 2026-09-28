@@ -449,8 +449,10 @@ Deno.test("cellsFromRecords (C-03 run 002): every forced judgment of a cell is l
   const e = execution(c);
   const rerun = execution(c, { attempt: 2, run_kind: "manual_rerun" });
   const basis = {
-    kind: "signature" as const,
-    signature: "build_failed_no_diagnostics_no_tests" as const,
+    kind: "decision" as const,
+    path: "oom.md",
+    sha256: H("d"),
+    approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
   };
   const oom = judgment(c, e, false);
   const forced = judgment(c, e, true, {
@@ -465,7 +467,12 @@ Deno.test("cellsFromRecords (C-03 run 002): every forced judgment of a cell is l
     forced: {
       reason: "second host",
       replaces: rerunOom.id,
-      basis: { kind: "decision", path: "d.md", sha256: H("c") },
+      basis: {
+        kind: "decision",
+        path: "d.md",
+        sha256: H("c"),
+        approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
+      },
     },
   });
   const cell = cellOf(c, [e, rerun], [
@@ -489,7 +496,12 @@ Deno.test("cellsFromRecords (C-03 run 002): every forced judgment of a cell is l
       execution_id: rerun.id,
       reason: "second host",
       replaces: rerunOom.id,
-      basis: { kind: "decision", path: "d.md", sha256: H("c") },
+      basis: {
+        kind: "decision",
+        path: "d.md",
+        sha256: H("c"),
+        approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
+      },
     },
   ]);
   const plain = cellOf(c, [e], [oom]);

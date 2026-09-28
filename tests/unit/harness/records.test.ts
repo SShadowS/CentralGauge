@@ -791,8 +791,10 @@ Deno.test("judgment schema (C-03 review): forced.reason is one non-blank line", 
   const c = await campaign();
   const j = judgment(c, execution(c), true);
   const basis = {
-    kind: "signature",
-    signature: "build_failed_no_diagnostics_no_tests",
+    kind: "decision",
+    path: "d.md",
+    sha256: "c".repeat(64),
+    approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
   } as const;
   const parse = (reason: string) =>
     JudgmentRecordSchema.parse({
@@ -818,9 +820,12 @@ Deno.test("judgment schema (C-03 run 002): forced names the replaced judgment an
   const replaces = CAMPAIGN_ID;
   for (
     const basis of [
-      { kind: "signature", signature: "judge_error" },
-      { kind: "signature", signature: "build_failed_no_diagnostics_no_tests" },
-      { kind: "decision", path: "2026-09-28-c03.md", sha256: "c".repeat(64) },
+      {
+        kind: "decision",
+        path: "2026-09-28-c03.md",
+        sha256: "c".repeat(64),
+        approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
+      },
     ] as const
   ) {
     assertEquals(parse({ reason, replaces, basis }).forced!.basis, basis);
@@ -832,6 +837,12 @@ Deno.test("judgment schema (C-03 run 002): forced names the replaced judgment an
       { reason, basis: { kind: "decision", path: "d.md" } },
       { reason, replaces: "x", basis: { kind: "decision", path: "d.md" } },
       { reason, replaces, basis: { kind: "signature", signature: "oom" } },
+      // Run 003: a signature is never a basis.
+      {
+        reason,
+        replaces,
+        basis: { kind: "signature", signature: "judge_error" },
+      },
       {
         reason,
         replaces,
@@ -861,13 +872,44 @@ Deno.test("judgment schema (C-03 run 003): a decision basis carries the decision
     kind: "decision" as const,
     path: "d.md",
     sha256: "c".repeat(64),
+    approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
   };
   assertEquals(parse(ok).forced!.basis, ok);
   for (
     const bad of [
       { kind: "decision", path: "d.md" },
-      { kind: "decision", path: "d.md", sha256: "c".repeat(63) },
-      { kind: "decision", path: "d.md", sha256: "C".repeat(64) },
+      { ...ok, sha256: "c".repeat(63) },
+      { ...ok, sha256: "C".repeat(64) },
+    ]
+  ) {
+    assertThrows(() => parse(bad), Error, undefined, JSON.stringify(bad));
+  }
+});
+
+Deno.test("judgment schema (C-03 run 003): the basis is an owner decision with its OWNER-APPROVED line; never a signature", async () => {
+  const c = await campaign();
+  const j = judgment(c, execution(c), true);
+  const parse = (basis: unknown) =>
+    JudgmentRecordSchema.parse({
+      ...j,
+      forced: { reason: "host OOM", replaces: CAMPAIGN_ID, basis },
+    });
+  const ok = {
+    kind: "decision" as const,
+    path: "d.md",
+    sha256: "c".repeat(64),
+    approval: "OWNER-APPROVED: go (host OOM) (2026-09-28T14:00:00+02:00)",
+  };
+  assertEquals(parse(ok).forced!.basis, ok);
+  for (
+    const bad of [
+      { kind: "signature", signature: "build_failed_no_diagnostics_no_tests" },
+      { kind: "decision", path: "d.md", sha256: "c".repeat(64) },
+      { ...ok, approval: "OWNER-APPROVED:  (2026-09-28T12:00:00Z)" },
+      { ...ok, approval: "OWNER-APPROVED: go (yesterday)" },
+      { ...ok, approval: "OWNER-APPROVED: go (2026-13-45T12:00:00Z)" },
+      { ...ok, approval: "OWNER-APPROVED: go" },
+      { ...ok, approval: " OWNER-APPROVED: go (2026-09-28T12:00:00Z)" },
     ]
   ) {
     assertThrows(() => parse(bad), Error, undefined, JSON.stringify(bad));

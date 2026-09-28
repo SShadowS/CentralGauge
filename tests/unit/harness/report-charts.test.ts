@@ -1279,8 +1279,10 @@ async function forcedReport(): Promise<HarnessReport> {
             reason: OOM,
             replaces: "00000000-0000-4000-a000-0000000000c3",
             basis: {
-              kind: "signature" as const,
-              signature: "build_failed_no_diagnostics_no_tests" as const,
+              kind: "decision" as const,
+              path: "oom.md",
+              sha256: "d".repeat(64),
+              approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
             },
           }],
         }
@@ -1361,6 +1363,7 @@ async function twoForced(): Promise<HarnessReport> {
               kind: "decision" as const,
               path: "d.md",
               sha256: "c".repeat(64),
+              approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
             },
           }],
         }
@@ -1407,4 +1410,23 @@ Deno.test("charts (C-03 run 003): a report with forced judgments needs --ledger"
   const r = await forcedReport();
   assertThrows(() => renderCharts([r]), Error, "forced");
   renderCharts([await base()]);
+});
+
+Deno.test("charts (C-03 run 003): a forced ledger entry's task, repeat and arm must be its report cell's", async () => {
+  const r = await forcedReport();
+  renderCharts([r], forcedLedger(r, [{ forced_reason: OOM }]));
+  for (
+    const [over, msg] of [
+      [{ task: "HX-002" }, "task HX-002"],
+      [{ arm: "mock-naive-lock-table" }, "arm mock-naive-lock-table"],
+      [{ repeat: 2 }, "repeat 2"],
+    ] as const
+  ) {
+    assertThrows(
+      () =>
+        renderCharts([r], forcedLedger(r, [{ forced_reason: OOM, ...over }])),
+      Error,
+      msg,
+    );
+  }
 });
