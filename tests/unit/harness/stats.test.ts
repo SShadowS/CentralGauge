@@ -396,7 +396,7 @@ Deno.test("exploratoryText: labelled, share never rounds to 100% or 0%, counts b
   const f = (x: number) => x.toFixed(2);
   assertEquals(
     exploratoryText(e(1996), 2000, f),
-    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval: [-0.25, 0.50]",
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval: [-0.25, 0.50]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
   );
   assertStringIncludes(exploratoryText(e(1999), 2000, f), "over the 99.9% ");
   assertStringIncludes(exploratoryText(e(1), 2000, f), "over the 0.1% ");
@@ -416,7 +416,7 @@ Deno.test("exploratoryText (M6-02d review): conditional wording, never called a 
   const f = (x: number) => x.toFixed(2);
   assertEquals(
     exploratoryText(e, 2000, f),
-    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval: [-0.25, 0.50]",
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval: [-0.25, 0.50]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
   );
   assertStringIncludes(
     exploratoryText({ ...e, level: 0.9 }, 2000, f),
@@ -479,5 +479,25 @@ Deno.test("exploratoryNote (M6-02d review): omitted line names the count and the
       },
     }, f)!,
     "exploratory (not pre-registered): conditional 95% percentile interval",
+  );
+});
+
+// --- M6-02e: the label warns about conditioning bias ---
+
+Deno.test("exploratoryText (M6-02e): ends with the conditioning-bias warning", () => {
+  const f = (x: number) => x.toFixed(2);
+  assertEquals(
+    exploratoryText(
+      {
+        lo: -0.25,
+        hi: 0.5,
+        level: 0.95,
+        resamples_used: 1996,
+        undefined_share: 0.002,
+      },
+      2000,
+      f,
+    ),
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval: [-0.25, 0.50]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
   );
 });

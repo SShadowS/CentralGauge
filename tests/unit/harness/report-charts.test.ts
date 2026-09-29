@@ -1557,3 +1557,17 @@ Deno.test("charts (M6-02d review): the footnote is conditional and not a confide
   );
   assertEquals(overflowing(svg), []);
 });
+
+// --- M6-02e: the footnote warns about conditioning bias ---
+
+Deno.test("charts (M6-02e): the SVG footnote carries the conditioning-bias warning, wrapped inside the width", async () => {
+  const svg = get(
+    renderCharts([await suppressedWithExploratory()]),
+    "-primary.svg",
+  );
+  assertStringIncludes(
+    texts(svg).join(" "),
+    "not a confidence interval: [-0.40, 0.10]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
+  );
+  assertEquals(overflowing(svg), []);
+});

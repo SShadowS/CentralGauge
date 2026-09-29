@@ -7,6 +7,8 @@
 // only, every action scoped not_reported. Refuses a run with neither, an
 // existing non-empty --out, duplicate reports, a report whose partial marker
 // contradicts it and a ledger that disagrees with the reports.
+// comparisons.csv exploratory_ci_lo/hi (M6-02d/e) are conditional,
+// non-inferential bounds over defined resamples only, not CI bounds.
 
 import * as colors from "@std/fmt/colors";
 import { parseArgs } from "@std/cli/parse-args";
@@ -831,7 +833,13 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
         "distinguishable",
         "verdict_text",
         // M6-02d, appended: exploratory, not pre-registered. n/a when null,
-        // empty when absent (a pre-M6-02d report).
+        // empty when absent (a pre-M6-02d report). Despite the names these
+        // are NOT confidence-interval bounds (M6-02e): conditional,
+        // non-inferential percentile bounds over the resamples with a solve
+        // in both arms only; conditioning on solves can bias them, including
+        // their direction, so they are never evidence of a difference. The
+        // names stay (downstream templates read them); no note row goes
+        // inside the CSV, which would break its readers.
         "exploratory_ci_lo",
         "exploratory_ci_hi",
         "exploratory_resamples_used",

@@ -262,7 +262,10 @@ export interface Comparison {
    * EXPLORATORY, not pre-registered (M6-02d): the same percentile interval
    * over the defined resamples only, from the same draws. It is CONDITIONAL
    * on at least one solve per arm and has no nominal coverage: not a
-   * confidence interval. Never replaces `ci`, never feeds `distinguishable`.
+   * confidence interval: `lo`/`hi` are conditional, non-inferential bounds
+   * over the defined resamples only, and conditioning on solves can bias
+   * them, including their direction (M6-02e); they are not evidence of a
+   * difference. Never replaces `ci`, never feeds `distinguishable`.
    * Equals `ci` when `undefined_share` is 0; null when fewer than
    * `minDefinedResamples(level)` resamples are defined. Absent (undefined)
    * in pre-M6-02d reports.
@@ -294,7 +297,9 @@ export function exploratoryText(
       2,
     )}% percentile interval over the ${used}% of resamples with a solve in both arms (${e.resamples_used} of ${resamples}), not a confidence interval: [${
     f(e.lo)
-  }, ${f(e.hi)}]`;
+  }, ${
+    f(e.hi)
+  }]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference`;
 }
 
 /**

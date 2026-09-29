@@ -995,3 +995,18 @@ Deno.test("renderReport (M6-02d review): too few defined resamples omit the expl
   );
   assert(!text.includes("exploratory (not pre-registered)"));
 });
+
+// --- M6-02e: the label warns about conditioning bias ---
+
+Deno.test("renderReport (M6-02e): the exploratory line carries the conditioning-bias warning", async () => {
+  const r = await buildReport(await records(), { resamples: 400, seed: 3 });
+  const line = stripAnsiCode(renderReport(r)).split("\n").find((l) =>
+    l.includes("exploratory (not pre-registered)")
+  )!;
+  assert(
+    line.endsWith(
+      "; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
+    ),
+    line,
+  );
+});
