@@ -14,6 +14,9 @@
  *   in both arms; exclusions are counted per arm and reason.
  * - Paired task-level bootstrap. If any resample is undefined (no solve), the
  *   CI and the distinguishable verdict are suppressed.
+ * - Beside it (owner decision 2026-09-29, M6-02d), never replacing it: an
+ *   EXPLORATORY (not pre-registered) percentile interval over the defined
+ *   resamples only, from the same draws. It never sets `distinguishable`.
  */
 
 import { percentile } from "../../cli/commands/report/stats-calculator.ts";
@@ -255,6 +258,39 @@ export interface Comparison {
   resamples: number;
   seed: number;
   provisional: boolean;
+  /**
+   * EXPLORATORY, not pre-registered (M6-02d): the same percentile interval
+   * over the defined resamples only, from the same draws. Never replaces
+   * `ci`, never feeds `distinguishable`. Equals `ci` when `undefined_share`
+   * is 0; null when no resample is defined. Absent in pre-M6-02d reports.
+   */
+  exploratory_ci_defined_only?: ExploratoryInterval | null;
+}
+
+export interface ExploratoryInterval {
+  lo: number;
+  hi: number;
+  level: number;
+  resamples_used: number;
+  undefined_share: number;
+}
+
+/** The labelled exploratory line; never a headline (M6-02d). */
+export function exploratoryText(
+  e: ExploratoryInterval,
+  resamples: number,
+  f: (x: number) => string,
+): string {
+  // A share just under 100% (or just over 0%) never prints as 100% (0%).
+  const share = Math.round((e.resamples_used / resamples) * 1000) / 10;
+  const used = e.resamples_used === resamples
+    ? 100
+    : Math.min(Math.max(share, 0.1), 99.9);
+  return `exploratory (not pre-registered): ${+(e.level * 100).toFixed(
+    2,
+  )}% interval over the ${used}% of resamples with a solve in both arms (${e.resamples_used} of ${resamples}): [${
+    f(e.lo)
+  }, ${f(e.hi)}]`;
 }
 
 export interface BootstrapOptions {
@@ -351,6 +387,7 @@ export function compareArms(
       ci: null,
       undefined_share: 1,
       distinguishable: null,
+      exploratory_ci_defined_only: null,
     };
   }
   const rand = mulberry32(seed);
@@ -361,14 +398,23 @@ export function compareArms(
   }
   const undefinedShare = (resamples - deltas.length) / resamples;
   const alpha = (1 - level) / 2;
-  const ci: [number, number] | null = undefinedShare > 0
+  // One interval over the draws already made; no second draw.
+  const defined: [number, number] | null = deltas.length === 0
     ? null
     : [percentile(deltas, alpha), percentile(deltas, 1 - alpha)];
+  const ci = undefinedShare > 0 ? null : defined;
   return {
     ...base,
     delta: delta(tasks),
     ci,
     undefined_share: undefinedShare,
     distinguishable: ci === null ? null : !(ci[0] <= 0 && 0 <= ci[1]),
+    exploratory_ci_defined_only: defined === null ? null : {
+      lo: defined[0],
+      hi: defined[1],
+      level,
+      resamples_used: deltas.length,
+      undefined_share: undefinedShare,
+    },
   };
 }

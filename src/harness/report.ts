@@ -39,6 +39,7 @@ import {
   checkBootstrapOptions,
   compareArms,
   type Comparison,
+  exploratoryText,
   ineligible,
 } from "./stats.ts";
 
@@ -652,10 +653,13 @@ const pct = (x: number | null) =>
 const reasons = (r: Record<string, number | undefined>) =>
   Object.entries(r).map(([k, v]) => `${k} ${v}`).join(", ") || "none";
 
-function fmtDelta(c: Comparison): string {
-  const f = c.metric === "pass_rate"
+const fmtOf = (c: Comparison) =>
+  c.metric === "pass_rate"
     ? (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)} pp`
     : (x: number) => `${x >= 0 ? "+" : "-"}$${Math.abs(x).toFixed(3)}`;
+
+function fmtDelta(c: Comparison): string {
+  const f = fmtOf(c);
   if (c.pairs === 0) return "n/a (no matched pairs)";
   if (c.delta === null) return "n/a (no solved task in the matched pairs)";
   const cohort = `${c.pairs} matched pairs over ${c.tasks} tasks`;
@@ -786,6 +790,13 @@ export function renderReport(r: HarnessReport): string {
     out.push(
       `  ${c.variant} vs ${c.baseline}, ${c.metric}: ${fmtDelta(c)}${label}`,
     );
+    // M6-02d: only beside a suppressed CI (otherwise it equals the CI).
+    const e = c.exploratory_ci_defined_only;
+    if (c.ci === null && e) {
+      out.push(
+        colors.dim(`    ${exploratoryText(e, c.resamples, fmtOf(c))}`),
+      );
+    }
     out.push(
       `    scorer ${c.scorer_fingerprint?.slice(0, 12) ?? "n/a"}`,
     );

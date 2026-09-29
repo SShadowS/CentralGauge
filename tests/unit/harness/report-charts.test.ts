@@ -353,15 +353,15 @@ Deno.test("charts: exact comparisons.csv rows for a distinguishable and a suppre
   const [head, pass, cost] = csv.trim().split("\n");
   assertEquals(
     head,
-    "experiment,campaign,judging,metric,label,baseline,variant,pairs,tasks,tasks_dropped,excluded_baseline,excluded_variant,delta,ci_lo,ci_hi,level,undefined_share,distinguishable,verdict_text",
+    "experiment,campaign,judging,metric,label,baseline,variant,pairs,tasks,tasks_dropped,excluded_baseline,excluded_variant,delta,ci_lo,ci_hi,level,undefined_share,distinguishable,verdict_text,exploratory_ci_lo,exploratory_ci_hi,exploratory_resamples_used",
   );
   const id = `mock-contract,${r.campaign.id},campaign`;
   assertEquals(
     pass,
-    `${id},pass_rate,primary,mock-naive-lock-table,mock-positive,2,1,0,none,none,1,1,1,0.95,0,true,distinguishable`,
+    `${id},pass_rate,primary,mock-naive-lock-table,mock-positive,2,1,0,none,none,1,1,1,0.95,0,true,distinguishable,,,`,
   );
   // No solves in the baseline: delta and CI null, printed n/a, verdict CI suppressed.
-  assert(cost!.endsWith(",n/a,n/a,n/a,0.95,1,n/a,CI suppressed"), cost);
+  assert(cost!.endsWith(",n/a,n/a,n/a,0.95,1,n/a,CI suppressed,,,"), cost);
   const excl = {
     ...r.comparisons[0]!,
     excluded: { baseline: { pending: 1, unknown_spend: 2 }, variant: {} },
@@ -373,7 +373,7 @@ Deno.test("charts: exact comparisons.csv rows for a distinguishable and a suppre
   )
     .trim().split("\n")[1]!;
   assert(row.includes(",pending=1;unknown_spend=2,none,"), row);
-  assert(row.endsWith(",false,not distinguishable"), row);
+  assert(row.endsWith(",false,not distinguishable,,,"), row);
 });
 
 Deno.test("charts: a null delta reads n/a with its reason on the primary chart, never 0", async () => {
@@ -1429,4 +1429,97 @@ Deno.test("charts (C-03 run 003): a forced ledger entry's task, repeat and arm m
       msg,
     );
   }
+});
+
+// --- M6-02d: exploratory interval over the defined resamples only ---
+
+const suppressedWithExploratory = async () => {
+  const r = await base();
+  const c = {
+    ...r.comparisons.find((c) => c.primary)!,
+    delta: -0.2,
+    ci: null,
+    distinguishable: null,
+    undefined_share: 0.002,
+    resamples: 2000,
+    exploratory_ci_defined_only: {
+      lo: -0.4,
+      hi: 0.1,
+      level: 0.95,
+      resamples_used: 1996,
+      undefined_share: 0.002,
+    },
+  };
+  return { ...r, comparisons: [c] };
+};
+
+Deno.test("charts (M6-02d): the primary SVG keeps the suppressed headline; the exploratory interval is only a labelled footnote", async () => {
+  const r = await suppressedWithExploratory();
+  const svg = get(renderCharts([r]), "-primary.svg");
+  const t = texts(svg);
+  const headline = t.findIndex((l) =>
+    l.includes("CI suppressed (&lt;1% undefined)")
+  );
+  assert(headline >= 0, t.join("\n"));
+  // The headline line carries no exploratory interval.
+  assert(!t.slice(0, headline + 1).join(" ").includes("-0.40"), t.join("\n"));
+  const foot = t.findIndex((l) => l.includes("exploratory (not"));
+  assert(foot > headline, t.join("\n"));
+  const all = t.join(" ");
+  assertStringIncludes(
+    all,
+    "exploratory (not pre-registered): 95% interval over the 99.8% of resamples with a solve in both arms (1996 of 2000):",
+  );
+  assert(!t.slice(foot, foot + 3).join(" ").includes("distinguishable"));
+  assertEquals(overflowing(svg), []);
+});
+
+Deno.test("charts (M6-02d): comparisons.csv appends the exploratory columns at the end; empty for a pre-M6-02d report", async () => {
+  const csv = get(
+    renderCharts([await suppressedWithExploratory()]),
+    "comparisons.csv",
+  );
+  const [head, row] = csv.trim().split("\n");
+  assert(
+    head!.endsWith(
+      ",verdict_text,exploratory_ci_lo,exploratory_ci_hi,exploratory_resamples_used",
+    ),
+    head,
+  );
+  assert(
+    row!.endsWith(",n/a,n/a,0.95,0.002,n/a,CI suppressed,-0.4,0.1,1996"),
+    row,
+  );
+  const old = get(renderCharts([await base()]), "comparisons.csv").trim()
+    .split("\n").slice(1);
+  for (const l of old) {
+    assert(l.endsWith("suppressed,,,") || l.endsWith("distinguishable,,,"), l);
+  }
+  // No SVG footnote for a report without the field.
+  const svg = get(renderCharts([await base()]), "-primary.svg");
+  assert(!svg.includes("exploratory (not pre-registered)"));
+});
+
+Deno.test("charts (M6-02d): no footnote when the pre-registered CI is shown", async () => {
+  const r = await suppressedWithExploratory();
+  const c = {
+    ...r.comparisons[0]!,
+    ci: [-0.4, 0.1] as [number, number],
+    distinguishable: false,
+    undefined_share: 0,
+    exploratory_ci_defined_only: {
+      lo: -0.4,
+      hi: 0.1,
+      level: 0.95,
+      resamples_used: 2000,
+      undefined_share: 0,
+    },
+  };
+  const fs = renderCharts([{ ...r, comparisons: [c] }]);
+  assert(!get(fs, "-primary.svg").includes("exploratory (not pre-registered)"));
+  const row = get(fs, "comparisons.csv").trim().split("\n")[1]!;
+  assert(
+    row.endsWith(",-0.4,0.1,0.95,0,false,not distinguishable,-0.4,0.1,2000"),
+    row,
+  );
 });
