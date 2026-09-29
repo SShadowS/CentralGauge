@@ -922,3 +922,91 @@ Deno.test("renderReport (C-03 run 003): a repeat cut says forced rejudges above 
     !stripAnsiCode(renderReport(r)).includes("Forced rejudges in repeats"),
   );
 });
+
+// --- M6-02d: exploratory interval over the defined resamples only ---
+
+Deno.test("renderReport (M6-02d): a suppressed CI keeps its line; the exploratory interval is a separate labelled line", async () => {
+  const r = await buildReport(await records(), { resamples: 400, seed: 3 });
+  const primary = r.comparisons[0]!;
+  assertEquals([primary.ci, primary.distinguishable], [null, null]);
+  const e = primary.exploratory_ci_defined_only!;
+  assertEquals([e.resamples_used, e.undefined_share, e.level], [
+    299,
+    UNDEFINED_SEED3,
+    0.95,
+  ]);
+  assert(e.lo <= e.hi);
+  const lines = stripAnsiCode(renderReport(r)).split("\n");
+  const at = lines.findIndex((l) =>
+    l.includes("CI suppressed: 101 of 400 resamples had no solve")
+  );
+  assert(at >= 0);
+  assert(!lines[at]!.includes("exploratory"), lines[at]);
+  const next = lines[at + 1]!;
+  assertStringIncludes(
+    next,
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 74.8% of resamples with a solve in both arms (299 of 400), not a confidence interval: [",
+  );
+  assert(!next.includes("distinguishable"), next);
+  assertEquals(
+    lines.filter((l) => l.includes("exploratory (not pre-registered)")).length,
+    1,
+  );
+});
+
+Deno.test("renderReport (M6-02d): no exploratory line when the pre-registered CI is shown or the report predates it", async () => {
+  const r = await buildReport(await records(), { resamples: 400, seed: 3 });
+  const shown = r.comparisons.filter((c) => c.ci !== null);
+  assert(shown.length > 0);
+  for (const c of shown) {
+    assertEquals(c.exploratory_ci_defined_only, {
+      lo: c.ci![0],
+      hi: c.ci![1],
+      level: c.level,
+      resamples_used: c.resamples,
+      undefined_share: 0,
+    });
+  }
+  const text = stripAnsiCode(renderReport({ ...r, comparisons: shown }));
+  assert(!text.includes("exploratory (not pre-registered)"));
+  const old: HarnessReport = JSON.parse(
+    await Deno.readTextFile("tests/fixtures/harness/report-mock-contract.json"),
+  );
+  assert(!("exploratory_ci_defined_only" in old.comparisons[0]!));
+  assert(
+    !stripAnsiCode(renderReport(old)).includes(
+      "exploratory (not pre-registered)",
+    ),
+  );
+});
+
+// --- M6-02d review: too few defined resamples ---
+
+Deno.test("renderReport (M6-02d review): too few defined resamples omit the exploratory interval and say why", async () => {
+  const r = await buildReport(await records(), { resamples: 30, seed: 3 });
+  const primary = r.comparisons[0]!;
+  assertEquals([primary.ci, primary.exploratory_ci_defined_only], [null, null]);
+  const used = 30 - Math.round(primary.undefined_share * 30);
+  assert(used > 0 && used < 40);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text,
+    `exploratory interval omitted: only ${used} of 30 resamples defined (< 40)`,
+  );
+  assert(!text.includes("exploratory (not pre-registered)"));
+});
+
+// --- M6-02e: the label warns about conditioning bias ---
+
+Deno.test("renderReport (M6-02e): the exploratory line carries the conditioning-bias warning", async () => {
+  const r = await buildReport(await records(), { resamples: 400, seed: 3 });
+  const line = stripAnsiCode(renderReport(r)).split("\n").find((l) =>
+    l.includes("exploratory (not pre-registered)")
+  )!;
+  assert(
+    line.endsWith(
+      "; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
+    ),
+    line,
+  );
+});

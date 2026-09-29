@@ -7,6 +7,8 @@
 // only, every action scoped not_reported. Refuses a run with neither, an
 // existing non-empty --out, duplicate reports, a report whose partial marker
 // contradicts it and a ledger that disagrees with the reports.
+// comparisons.csv exploratory_ci_lo/hi (M6-02d/e) are conditional,
+// non-inferential bounds over defined resamples only, not CI bounds.
 
 import * as colors from "@std/fmt/colors";
 import { parseArgs } from "@std/cli/parse-args";
@@ -18,6 +20,7 @@ import {
   partialOf,
   partialText,
 } from "../../src/harness/report.ts";
+import { exploratoryNote } from "../../src/harness/stats.ts";
 
 /**
  * A real id, never a template placeholder (M6-02a F12: `<task#repeat:arm>`
@@ -581,6 +584,9 @@ function primaryChart(
   const bottom: Line[] = [
     ...r.comparisons.filter((c) => c.metric === m).flatMap((c) => [
       { text: deltaLine(c), size: 12 },
+      // M6-02d: a labelled footnote, never the headline interval.
+      ...[exploratoryNote(c, METRIC[c.metric].num)].filter((t) => t !== null)
+        .map((t) => ({ text: `  ${t}`, size: 11, fill: "#666" })),
       {
         text: `  unmatched pairs: ${c.baseline} ${
           reasonsOf(c.excluded.baseline)
@@ -826,6 +832,17 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
         "undefined_share",
         "distinguishable",
         "verdict_text",
+        // M6-02d, appended: exploratory, not pre-registered. n/a when null,
+        // empty when absent (a pre-M6-02d report). Despite the names these
+        // are NOT confidence-interval bounds (M6-02e): conditional,
+        // non-inferential percentile bounds over the resamples with a solve
+        // in both arms only; conditioning on solves can bias them, including
+        // their direction, so they are never evidence of a difference. The
+        // names stay (downstream templates read them); no note row goes
+        // inside the CSV, which would break its readers.
+        "exploratory_ci_lo",
+        "exploratory_ci_hi",
+        "exploratory_resamples_used",
       ],
       reports.flatMap((r) =>
         r.comparisons.map((c) => [
@@ -846,6 +863,11 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
           c.undefined_share,
           c.distinguishable,
           verdictText(c),
+          ...(c.exploratory_ci_defined_only === undefined ? ["", "", ""] : [
+            c.exploratory_ci_defined_only?.lo ?? null,
+            c.exploratory_ci_defined_only?.hi ?? null,
+            c.exploratory_ci_defined_only?.resamples_used ?? null,
+          ]),
         ])
       ),
     ),
