@@ -1468,7 +1468,7 @@ Deno.test("charts (M6-02d): the primary SVG keeps the suppressed headline; the e
   const all = t.join(" ");
   assertStringIncludes(
     all,
-    "exploratory (not pre-registered): 95% interval over the 99.8% of resamples with a solve in both arms (1996 of 2000):",
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval:",
   );
   assert(!t.slice(foot, foot + 3).join(" ").includes("distinguishable"));
   assertEquals(overflowing(svg), []);
@@ -1522,4 +1522,38 @@ Deno.test("charts (M6-02d): no footnote when the pre-registered CI is shown", as
     row.endsWith(",-0.4,0.1,0.95,0,false,not distinguishable,-0.4,0.1,2000"),
     row,
   );
+});
+
+// --- M6-02d review: CSV null vs absent, conditional footnote ---
+
+Deno.test("charts (M6-02d review): field present but null prints n/a; absent prints empty; the SVG says why", async () => {
+  const r = await suppressedWithExploratory();
+  const c = { ...r.comparisons[0]!, exploratory_ci_defined_only: null };
+  const fs = renderCharts([{ ...r, comparisons: [c] }]);
+  const row = get(fs, "comparisons.csv").trim().split("\n")[1]!;
+  assert(row.endsWith(",CI suppressed,n/a,n/a,n/a"), row);
+  const t = texts(get(fs, "-primary.svg")).join(" ");
+  assertStringIncludes(
+    t,
+    "exploratory interval omitted: only 1996 of 2000 resamples defined (&lt; 40)",
+  );
+  const { exploratory_ci_defined_only: _, ...old } = r.comparisons[0]!;
+  const oldRow = get(
+    renderCharts([{ ...r, comparisons: [old] }]),
+    "comparisons.csv",
+  )
+    .trim().split("\n")[1]!;
+  assert(oldRow.endsWith(",CI suppressed,,,"), oldRow);
+});
+
+Deno.test("charts (M6-02d review): the footnote is conditional and not a confidence interval, inside the width", async () => {
+  const svg = get(
+    renderCharts([await suppressedWithExploratory()]),
+    "-primary.svg",
+  );
+  assertStringIncludes(
+    texts(svg).join(" "),
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval:",
+  );
+  assertEquals(overflowing(svg), []);
 });

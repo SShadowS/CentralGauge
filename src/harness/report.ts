@@ -39,7 +39,7 @@ import {
   checkBootstrapOptions,
   compareArms,
   type Comparison,
-  exploratoryText,
+  exploratoryNote,
   ineligible,
 } from "./stats.ts";
 
@@ -791,12 +791,8 @@ export function renderReport(r: HarnessReport): string {
       `  ${c.variant} vs ${c.baseline}, ${c.metric}: ${fmtDelta(c)}${label}`,
     );
     // M6-02d: only beside a suppressed CI (otherwise it equals the CI).
-    const e = c.exploratory_ci_defined_only;
-    if (c.ci === null && e) {
-      out.push(
-        colors.dim(`    ${exploratoryText(e, c.resamples, fmtOf(c))}`),
-      );
-    }
+    const note = exploratoryNote(c, fmtOf(c));
+    if (note !== null) out.push(colors.dim(`    ${note}`));
     out.push(
       `    scorer ${c.scorer_fingerprint?.slice(0, 12) ?? "n/a"}`,
     );

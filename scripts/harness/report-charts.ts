@@ -18,7 +18,7 @@ import {
   partialOf,
   partialText,
 } from "../../src/harness/report.ts";
-import { exploratoryText } from "../../src/harness/stats.ts";
+import { exploratoryNote } from "../../src/harness/stats.ts";
 
 /**
  * A real id, never a template placeholder (M6-02a F12: `<task#repeat:arm>`
@@ -583,19 +583,8 @@ function primaryChart(
     ...r.comparisons.filter((c) => c.metric === m).flatMap((c) => [
       { text: deltaLine(c), size: 12 },
       // M6-02d: a labelled footnote, never the headline interval.
-      ...(c.ci === null && c.exploratory_ci_defined_only
-        ? [{
-          text: `  ${
-            exploratoryText(
-              c.exploratory_ci_defined_only,
-              c.resamples,
-              METRIC[c.metric].num,
-            )
-          }`,
-          size: 11,
-          fill: "#666",
-        }]
-        : []),
+      ...[exploratoryNote(c, METRIC[c.metric].num)].filter((t) => t !== null)
+        .map((t) => ({ text: `  ${t}`, size: 11, fill: "#666" })),
       {
         text: `  unmatched pairs: ${c.baseline} ${
           reasonsOf(c.excluded.baseline)
@@ -841,7 +830,8 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
         "undefined_share",
         "distinguishable",
         "verdict_text",
-        // M6-02d, appended: exploratory, not pre-registered; empty when null.
+        // M6-02d, appended: exploratory, not pre-registered. n/a when null,
+        // empty when absent (a pre-M6-02d report).
         "exploratory_ci_lo",
         "exploratory_ci_hi",
         "exploratory_resamples_used",
@@ -865,9 +855,11 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
           c.undefined_share,
           c.distinguishable,
           verdictText(c),
-          c.exploratory_ci_defined_only?.lo ?? "",
-          c.exploratory_ci_defined_only?.hi ?? "",
-          c.exploratory_ci_defined_only?.resamples_used ?? "",
+          ...(c.exploratory_ci_defined_only === undefined ? ["", "", ""] : [
+            c.exploratory_ci_defined_only?.lo ?? null,
+            c.exploratory_ci_defined_only?.hi ?? null,
+            c.exploratory_ci_defined_only?.resamples_used ?? null,
+          ]),
         ])
       ),
     ),

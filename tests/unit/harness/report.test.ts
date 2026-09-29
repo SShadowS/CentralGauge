@@ -945,7 +945,7 @@ Deno.test("renderReport (M6-02d): a suppressed CI keeps its line; the explorator
   const next = lines[at + 1]!;
   assertStringIncludes(
     next,
-    "exploratory (not pre-registered): 95% interval over the 74.8% of resamples with a solve in both arms (299 of 400): [",
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 74.8% of resamples with a solve in both arms (299 of 400), not a confidence interval: [",
   );
   assert(!next.includes("distinguishable"), next);
   assertEquals(
@@ -978,4 +978,20 @@ Deno.test("renderReport (M6-02d): no exploratory line when the pre-registered CI
       "exploratory (not pre-registered)",
     ),
   );
+});
+
+// --- M6-02d review: too few defined resamples ---
+
+Deno.test("renderReport (M6-02d review): too few defined resamples omit the exploratory interval and say why", async () => {
+  const r = await buildReport(await records(), { resamples: 30, seed: 3 });
+  const primary = r.comparisons[0]!;
+  assertEquals([primary.ci, primary.exploratory_ci_defined_only], [null, null]);
+  const used = 30 - Math.round(primary.undefined_share * 30);
+  assert(used > 0 && used < 40);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text,
+    `exploratory interval omitted: only ${used} of 30 resamples defined (< 40)`,
+  );
+  assert(!text.includes("exploratory (not pre-registered)"));
 });

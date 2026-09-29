@@ -260,9 +260,12 @@ export interface Comparison {
   provisional: boolean;
   /**
    * EXPLORATORY, not pre-registered (M6-02d): the same percentile interval
-   * over the defined resamples only, from the same draws. Never replaces
-   * `ci`, never feeds `distinguishable`. Equals `ci` when `undefined_share`
-   * is 0; null when no resample is defined. Absent in pre-M6-02d reports.
+   * over the defined resamples only, from the same draws. It is CONDITIONAL
+   * on at least one solve per arm and has no nominal coverage: not a
+   * confidence interval. Never replaces `ci`, never feeds `distinguishable`.
+   * Equals `ci` when `undefined_share` is 0; null when fewer than
+   * `minDefinedResamples(level)` resamples are defined. Absent (undefined)
+   * in pre-M6-02d reports.
    */
   exploratory_ci_defined_only?: ExploratoryInterval | null;
 }
@@ -286,11 +289,39 @@ export function exploratoryText(
   const used = e.resamples_used === resamples
     ? 100
     : Math.min(Math.max(share, 0.1), 99.9);
-  return `exploratory (not pre-registered): ${+(e.level * 100).toFixed(
-    2,
-  )}% interval over the ${used}% of resamples with a solve in both arms (${e.resamples_used} of ${resamples}): [${
+  return `exploratory (not pre-registered): conditional ${+(e.level * 100)
+    .toFixed(
+      2,
+    )}% percentile interval over the ${used}% of resamples with a solve in both arms (${e.resamples_used} of ${resamples}), not a confidence interval: [${
     f(e.lo)
   }, ${f(e.hi)}]`;
+}
+
+/**
+ * Fewest defined resamples for an exploratory interval: ceil(1 / alpha),
+ * alpha = (1 - level) / 2, so each tail holds at least one resample
+ * (40 at 95%). The epsilon absorbs float error in 1 / alpha.
+ */
+export function minDefinedResamples(level: number): number {
+  return Math.ceil(2 / (1 - level) - 1e-9);
+}
+
+/**
+ * The exploratory line beside a suppressed CI, or null: nothing beside a
+ * shown CI (it would equal it), for a pre-M6-02d report (field absent) or
+ * when the delta itself is undefined (then no resample is defined either).
+ */
+export function exploratoryNote(
+  c: Comparison,
+  f: (x: number) => string,
+): string | null {
+  const e = c.exploratory_ci_defined_only;
+  if (c.ci !== null || e === undefined || c.delta === null) return null;
+  if (e !== null) return exploratoryText(e, c.resamples, f);
+  const used = c.resamples - Math.round(c.undefined_share * c.resamples);
+  return `exploratory interval omitted: only ${used} of ${c.resamples} resamples defined (< ${
+    minDefinedResamples(c.level)
+  })`;
 }
 
 export interface BootstrapOptions {
@@ -409,12 +440,15 @@ export function compareArms(
     ci,
     undefined_share: undefinedShare,
     distinguishable: ci === null ? null : !(ci[0] <= 0 && 0 <= ci[1]),
-    exploratory_ci_defined_only: defined === null ? null : {
-      lo: defined[0],
-      hi: defined[1],
-      level,
-      resamples_used: deltas.length,
-      undefined_share: undefinedShare,
-    },
+    exploratory_ci_defined_only: defined === null ||
+        deltas.length < minDefinedResamples(level)
+      ? null
+      : {
+        lo: defined[0],
+        hi: defined[1],
+        level,
+        resamples_used: deltas.length,
+        undefined_share: undefinedShare,
+      },
   };
 }
