@@ -51,6 +51,7 @@ type Line = Record<string, unknown> & { type?: unknown };
 
 export const mockAdapter: HarnessAdapter = {
   harness: "mock",
+  parser: "mock@1",
   declared: ["harness_version", "exit_code"],
   secretFiles: [],
   credentialBearing: false,

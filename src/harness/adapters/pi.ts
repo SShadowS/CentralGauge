@@ -612,6 +612,7 @@ const THINKING = new Set([
 
 export const piAdapter: HarnessAdapter = {
   harness: "pi",
+  parser: PI_CAPABILITIES.parser,
   declared: PI_DECLARED,
   secretFiles: ["openrouter-api-key"],
   credentialBearing: true,

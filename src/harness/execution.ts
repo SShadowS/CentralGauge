@@ -83,7 +83,6 @@ import {
   readSecretValues,
   READY_FILE,
   redactText,
-  removeSecrets,
   restrictPath,
   runSandbox,
   sandboxName,
@@ -91,9 +90,11 @@ import {
   type SecretValue,
   sweepOwnedSandboxes,
   sweepStaleSecrets,
+  teardownSandbox,
   writeSecretFiles,
 } from "./sandbox.ts";
 import { type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
+import { selectJudgment } from "./outcome.ts";
 import { currentScorerFingerprint, judge, writeVerdictLog } from "./verdict.ts";
 
 export type PublishStep =
@@ -511,6 +512,47 @@ async function readRedactionKeys(
     );
   }
   return keys;
+}
+
+/**
+ * C-03 run 002: why a forced judgment of `e` may not be written, else null.
+ * At most one forced judgment per execution; `replaces` must be the judgment
+ * the report selects on `oracle` (the campaign's); with `candidate`, the new
+ * judgment must become the selected one (else clock skew keeps the old).
+ */
+export function forcedRefusal(
+  e: ExecutionRecord,
+  existing: JudgmentRecord[],
+  oracle: string,
+  replaces: string,
+  candidate?: JudgmentRecord,
+): string | null {
+  const prior = existing.find((j) => j.execution_id === e.id && j.forced);
+  if (prior) {
+    return `execution ${e.id} already has forced judgment ${prior.id} (at most one forced rejudge per execution)`;
+  }
+  const used = selectJudgment(e, existing, oracle);
+  if (used?.id !== replaces) {
+    return `--replaces ${replaces} is not the judgment the report uses for execution ${e.id} (${
+      used?.id ?? "none"
+    })`;
+  }
+  if (
+    candidate &&
+    selectJudgment(e, [...existing, candidate], oracle)?.id !== candidate.id
+  ) {
+    return `forced judgment ${candidate.id} would not be the judgment the report selects for execution ${e.id} (an existing judgment on that oracle has a later ended_at; clock skew?)`;
+  }
+  return null;
+}
+
+/** C-03 review: a forced rejudge's reason as the judgment will record it (scrubbed). */
+export async function scrubForcedReason(
+  env: HarnessEnv,
+  id: string,
+  reason: string,
+): Promise<string> {
+  return scrubJudgeOutput(reason, await readRedactionKeys(env, id), env);
 }
 
 /** Judge output: custody secrets (by salted hash) and private paths scrubbed from every string. */
@@ -1329,6 +1371,8 @@ export async function runExecution(
   await env.hooks?.prepared?.(id);
 
   let setupError: string | null = null;
+  /** M5-08a: what the teardown could not confirm (container or secrets). */
+  let teardownProblems: string[] = [];
   let sandbox: SandboxResult = {
     exitCode: null,
     started: false,
@@ -1488,6 +1532,9 @@ export async function runExecution(
       hostLog: p.host,
     }, timeoutMs + 5 * 60_000);
     let secretsDir: string | null = null;
+    /** The started run until it is awaited (M5-08a: teardown stops it first). */
+    let pending: Promise<SandboxResult> | null = null;
+    let settledRun: SandboxResult | null = null;
     try {
       const values = await readSecretValues(
         secretsSource,
@@ -1568,7 +1615,7 @@ export async function runExecution(
       // Not placed: released before the start (M3-10). Placed: the mount
       // stays empty until the preflight passes (M1-33 A3).
       if (!eg) await release();
-      const running = runSandbox(
+      const running = pending = runSandbox(
         env.docker,
         {
           name,
@@ -1681,7 +1728,7 @@ export async function runExecution(
           }
         }
       }
-      sandbox = await running;
+      sandbox = settledRun = await running;
       if (releaseError !== null) throw releaseError;
       // I4 (design section 5): a placed execution is recorded as anything
       // but setup_failed only while its registration and the proxy are intact.
@@ -1711,13 +1758,39 @@ export async function runExecution(
         throw egressFail(`egress preflight failed: ${preflightError}`);
       }
     } finally {
-      drained = await env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
+      // M5-08a: credentials are cut first, while the sandbox may still run:
+      // the run is aborted, the backend token revoked (the grant goes at
+      // once; the drain is awaited below) and the proxy credential
+      // unregistered. Then the bounded teardown: the sandbox confirmed gone
+      // before the secrets it mounts are removed. A teardown failure never
+      // replaces the error in flight (the caller fails closed below).
+      const abortRun = () =>
+        egressAbort.abort(new Error("execution ended before its sandbox"));
+      if (pending && !settledRun) abortRun();
+      const revoking = env.backend.revoke(id); // spec 1a section 5 item 6: revoke (and drain) before freeze
       if (reg) {
         await bounded(reg.unregister(), opMs, "egress unregister").catch(
           (err) => console.warn(`[WARN] ${msg(err)}`),
         );
       }
-      if (secretsDir) await removeSecrets(secretsDir);
+      const down = await teardownSandbox({
+        docker: env.docker,
+        name,
+        executionId: id,
+        opTimeoutMs: opMs,
+        run: pending,
+        abort: abortRun,
+        settled: settledRun,
+        secretsDir,
+      });
+      if (down.sandbox) sandbox = down.sandbox;
+      if (!down.gone || down.secretsLeft) {
+        teardownProblems = down.problems;
+        if (sandbox.confirmedGone && !down.gone) {
+          sandbox = { ...sandbox, confirmedGone: false };
+        }
+      }
+      drained = await revoking;
     }
   } catch (err) {
     if (err === refusal) {
@@ -1728,13 +1801,24 @@ export async function runExecution(
     if (
       !(err instanceof ConfigurationError) && !(err instanceof ValidationError)
     ) {
+      if (teardownProblems.length > 0) {
+        // Fail closed and loud: the intent stays; the next start sweeps the
+        // container first, then the secrets, then recovers the execution.
+        console.error(
+          `[FAIL] sandbox ${name} teardown not confirmed (${
+            teardownProblems.join("; ")
+          }); intent kept for recovery`,
+        );
+      }
       throw err;
     }
     setupError = err.message;
   }
-  if (!sandbox.confirmedGone || !drained) {
+  if (!sandbox.confirmedGone || !drained || teardownProblems.length > 0) {
     throw new ContainerError(
-      `termination not confirmed for ${name} (${sandbox.cleanup}${
+      `termination not confirmed for ${name} (${
+        [sandbox.cleanup, ...teardownProblems].join("; ")
+      }${
         drained ? "" : "; backend request did not drain"
       }); nothing frozen, intent kept; resolve and restart (recovery finalizes it)`,
       name,
@@ -1855,6 +1939,7 @@ export async function judgeExecution(
   e: ExecutionRecord,
   pristine: string,
   oracleHash = cell.oracleHash,
+  forced?: JudgmentRecord["forced"],
 ): Promise<JudgmentRecord> {
   // Fail closed: judging needs proof the run was not scripted. The published
   // side file must be readable and the private marker (kept after
@@ -1904,8 +1989,25 @@ export async function judgeExecution(
     // agent's code can assemble a secret at runtime in a test message).
     const log = scrubJudgeOutput(raw.log, keys, env);
     const judgment = JudgmentRecordSchema.parse(
-      scrubJudgeOutput(raw.judgment, keys, env),
+      scrubJudgeOutput(
+        forced ? { ...raw.judgment, forced } : raw.judgment,
+        keys,
+        env,
+      ),
     );
+    // C-03 run 002: checked against the store right before writing, so a
+    // refused forced judgment (a second one, a stale --replaces, or clock
+    // skew keeping an older judgment selected) leaves nothing behind.
+    if (judgment.forced) {
+      const why = forcedRefusal(
+        e,
+        await env.store.judgments(e.id),
+        oracleHash,
+        judgment.forced.replaces,
+        judgment,
+      );
+      if (why) throw new ConfigurationError(`${why}: nothing written`);
+    }
     // The side file first: a crash between the two leaves an orphan log, never a judgment without its log.
     await writeVerdictLog(env.resultsRoot, log);
     await env.store.writeJudgment(judgment);
@@ -1921,6 +2023,7 @@ export async function rejudgeExecution(
   cell: CellRef,
   e: ExecutionRecord,
   oracleHash: string,
+  forced?: JudgmentRecord["forced"],
 ): Promise<JudgmentRecord> {
   const out = join(
     env.privateRoot,
@@ -1934,6 +2037,7 @@ export async function rejudgeExecution(
       e,
       (await stage(env, cell, out)).pristine,
       oracleHash,
+      forced,
     );
   } finally {
     await Deno.remove(out, { recursive: true }).catch(() => {});

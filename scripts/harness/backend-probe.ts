@@ -236,6 +236,8 @@ async function main() {
         egress: h.env.egress,
         custody: { privateRoot: h.env.privateRoot, owner: h.env.owner },
         token,
+        // M5-08a: the token is cut before the sandbox teardown (and again below).
+        revoke: () => h.env.backend.revoke(id),
         spec,
         probeCommand,
         out,

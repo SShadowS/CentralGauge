@@ -41,6 +41,8 @@ export interface MountSpec {
 
 export interface HarnessAdapter {
   harness: string;
+  /** Parser provenance (raw_usage.capabilities.parser); a campaign pins it per arm (M5-07a). */
+  parser: string;
   declared: readonly (keyof Telemetry)[];
   secretFiles: readonly string[];
   /** Carries provider credentials: the egress rules apply. */

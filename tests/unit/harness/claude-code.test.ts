@@ -1479,7 +1479,7 @@ Deno.test("metrics: capabilities are the literal provenance of this parser", asy
   const { r } = await parse(await Deno.readTextFile(FIXTURE));
   assertEquals(raw(r).capabilities, {
     v: 1,
-    parser: "claude-code-trace@3",
+    parser: "claude-code-trace@4",
     rules: "rules@1",
     telemetry: [...claudeCodeAdapter.declared],
     nested: ["per_model.requests"],
@@ -1743,8 +1743,8 @@ Deno.test("run.ps1: strict MCP config on every arm, empty servers when none; tok
   assert(!/^\s/.test(strictLine), `top level: ${strictLine}`);
 });
 
-Deno.test("capabilities: retry and compaction declared from the M2-11 recordings; parser claude-code-trace@3", () => {
-  assertEquals(CLAUDE_CAPABILITIES.parser, "claude-code-trace@3");
+Deno.test("capabilities: retry and compaction declared from the M2-11 recordings; parser claude-code-trace@4 (tool_progress known, M5-07a)", () => {
+  assertEquals(CLAUDE_CAPABILITIES.parser, "claude-code-trace@4");
   assert(CLAUDE_CAPABILITIES.trace_types.includes("retry" as never));
   assert(CLAUDE_CAPABILITIES.trace_types.includes("compaction" as never));
   assert(claudeCodeAdapter.declared.includes("compactions"));
@@ -1912,4 +1912,77 @@ Deno.test("run.ps1 (M1-33d): after ready, the proxy credential file sets HTTPS_P
   assertStringIncludes(run, "$env:HTTP_PROXY = $env:HTTPS_PROXY");
   assertStringIncludes(run, "Remove-Variable proxyCred");
   assert(!/WriteLine\([^)]*proxyCred/i.test(run));
+});
+
+// M5-07a: Claude Code 2.1.282 writes a tool_progress heartbeat every 30 s of a
+// running tool. Recorded at M5-07 stage A (execution 5ecbee04, arm
+// cc-sonnet-plain, 3 heartbeats): it carries no usage, so it must not make
+// the cost unprovable (execution.ts nulls cost_usd on any stream problem).
+const TOOL_PROGRESS = "tests/fixtures/harness/claude-code/tool-progress.jsonl";
+
+Deno.test("claude-code parse (M5-07a): tool_progress heartbeats are known records; the stage-A log is priced", async () => {
+  const text = await Deno.readTextFile(TOOL_PROGRESS);
+  const beats = text.split("\n").filter((l) =>
+    l.includes('"type":"tool_progress"')
+  );
+  assertEquals(beats.length, 3);
+  const { r } = await parse(text, 0, {});
+  assertEquals(problems(r), []);
+  // 26 x 2 + 436533 x 0.2 + 45026 (all 1-hour writes) x 4 + 4419 x 10, per MTok.
+  assertAlmostEquals(r.telemetry.cost_usd!, 0.3116526, 1e-12);
+  assertEquals(r.telemetry.cost_source, "estimated");
+  assertEquals(r.telemetry.reported_cost_usd, 0.3116526);
+  assertEquals(r.telemetry.per_model[0]!.tokens_cache_write, 45026);
+});
+
+Deno.test("claude-code parse (M5-07a): a heartbeat inside the run is not a stream problem", async () => {
+  const l = (await Deno.readTextFile(FIXTURE)).split("\n").filter(Boolean);
+  const beat = JSON.stringify({
+    type: "tool_progress",
+    tool_use_id: "toolu_x-heartbeat-0",
+    tool_name: "Bash",
+    parent_tool_use_id: "toolu_x",
+    elapsed_time_seconds: 30,
+    heartbeat: true,
+    session_id: JSON.parse(l[0]!).session_id,
+    uuid: "00000000-0000-4000-8000-000000000001",
+  });
+  const base = (await parse(l.join("\n"))).r;
+  const { r } = await parse([l[0]!, beat, ...l.slice(1)].join("\n"));
+  assertEquals(problems(r), problems(base));
+  assertEquals(r.telemetry.cost_usd, base.telemetry.cost_usd);
+  assert(r.telemetry.cost_usd !== null);
+});
+
+Deno.test("claude-code parse (M5-07a run 002): a tool_progress that is not the recorded heartbeat shape is a stream problem", async () => {
+  const l = (await Deno.readTextFile(FIXTURE)).split("\n").filter(Boolean);
+  const sid = JSON.parse(l[0]!).session_id;
+  const beat = {
+    type: "tool_progress",
+    tool_use_id: "toolu_x-heartbeat-0",
+    tool_name: "Bash",
+    parent_tool_use_id: "toolu_x",
+    elapsed_time_seconds: 30,
+    heartbeat: true,
+    session_id: sid,
+    uuid: "00000000-0000-4000-8000-000000000001",
+  };
+  const cases: [string, Record<string, unknown>][] = [
+    ["usage", { ...beat, usage: { input_tokens: 5 } }],
+    ["total_cost_usd", { ...beat, total_cost_usd: 0.01 }],
+    ["an unknown field", { ...beat, extra: 1 }],
+    ["not a heartbeat", { ...beat, heartbeat: false }],
+    ["elapsed not a number", { ...beat, elapsed_time_seconds: "30" }],
+    ["a missing field", (({ uuid: _, ...rest }) => rest)(beat)],
+  ];
+  for (const [what, rec] of cases) {
+    const { r } = await parse(
+      [l[0]!, JSON.stringify(rec), ...l.slice(1)].join("\n"),
+    );
+    assertEquals(
+      problems(r).filter((p) => p.includes("tool_progress")),
+      ["tool_progress at line 2 is not a heartbeat of the recorded shape"],
+      what,
+    );
+  }
 });

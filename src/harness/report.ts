@@ -827,6 +827,28 @@ export function renderReport(r: HarnessReport): string {
       );
     }
   }
+  // C-03 run 002: every forced judgment of a cell, counted or not.
+  const forced = r.cells.flatMap((c) =>
+    (c.forced_rejudges ?? []).map((f) => ({ c, f }))
+  );
+  if (forced.length > 0) {
+    out.push("  Forced rejudges (every one, counted or not):");
+    for (const { c, f } of forced) {
+      const basis =
+        `decision ${f.basis.path} (sha256 ${f.basis.sha256}; ${f.basis.approval})`;
+      out.push(
+        `    ${c.task} r${c.repeat} ${c.arm}: judgment ${f.judgment_id} (${
+          f.judgment_id === c.judgment_id ? "counted" : "not counted"
+        }) replaces ${f.replaces}, basis ${basis}: ${f.reason}`,
+      );
+    }
+  }
+  // Run 003: cells above the cut are not in r.cells, nor their forced judgments.
+  if (r.repeats.reported < r.repeats.planned) {
+    out.push(
+      `  Forced rejudges in repeats above ${r.repeats.reported}, if any, are not listed.`,
+    );
+  }
   const ms = (x: number | null) => (x === null ? "n/a" : `${Math.round(x)} ms`);
   h("Efficiency (descriptive)");
   for (const e of r.efficiency) {

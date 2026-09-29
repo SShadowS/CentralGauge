@@ -13,6 +13,7 @@ import { loadTask } from "../../../src/harness/task.ts";
 import {
   buildFailureCodes,
   currentScorerFingerprint,
+  infraSignature,
   isCurrentJudgment,
   judge,
   SCORER_SUITE,
@@ -560,4 +561,125 @@ Deno.test("judge: a BOM app.json in the artifact judges the same as one without"
   const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
   assertEquals(log.violations, []);
   assertEquals(judgment.verdict, "pass");
+});
+
+Deno.test("infraSignature (C-03 run 002): judge error, or build failed with 0 diagnostics and 0 tests; nothing else", () => {
+  const id = "00000000-0000-4000-a000-00000000c030";
+  const eid = "00000000-0000-4000-9000-00000000c030";
+  const j = JudgmentRecordSchema.parse({
+    v: 1,
+    id,
+    execution_id: eid,
+    workspace_hash: "0".repeat(64),
+    task_id: "HX-001",
+    task_oracle_hash: "a".repeat(64),
+    scorer_versions: { build: "1" },
+    scorer_fingerprint: "b".repeat(64),
+    scorers: [
+      { name: "build", passed: false, tests: [] },
+      { name: "fail_to_pass", passed: false, tests: [] },
+    ],
+    verdict: "fail",
+    verdict_container: null,
+    started_at: "2026-09-28T11:38:35.000Z",
+    ended_at: "2026-09-28T11:39:06.426Z",
+  });
+  const log = {
+    v: 1,
+    judgment_id: id,
+    execution_id: eid,
+    violations: [],
+    diagnostics: [],
+    test_messages: [],
+    notes: ["build failed: Test (no diagnostics)"],
+    error: null,
+  };
+  assertEquals(
+    infraSignature(j, log),
+    "build_failed_no_diagnostics_no_tests",
+  );
+  assertEquals(
+    infraSignature(j, { ...log, notes: [], error: "NoEligibleContainers" }),
+    "judge_error",
+  );
+  const test = {
+    codeunit: 50100,
+    procedure: "T",
+    target: "candidate",
+    outcome: "fail",
+    failure: "assertion",
+  };
+  const none: [string, unknown][] = [
+    ["no log", null],
+    ["not an object", "build failed: x"],
+    ["other judgment", { ...log, judgment_id: eid }],
+    ["other execution", { ...log, execution_id: id }],
+    ["a diagnostic", {
+      ...log,
+      diagnostics: [{ app: "c/Test", code: "AL0118", message: "m" }],
+    }],
+    ["no build note", { ...log, notes: [] }],
+    ["oracle build note", { ...log, notes: ["oracle build failed: x"] }],
+    ["blank error", { ...log, notes: [], error: "" }],
+    ["malformed notes", { ...log, notes: "build failed: x" }],
+    ["malformed diagnostics", { ...log, diagnostics: undefined }],
+  ];
+  for (const [what, l] of none) {
+    assertEquals(infraSignature(j, l), null, what);
+  }
+  // A test result recorded: the build did not simply starve.
+  const withTest = JudgmentRecordSchema.parse({
+    ...j,
+    scorers: [j.scorers[0], { ...j.scorers[1]!, tests: [test] }],
+  });
+  assertEquals(infraSignature(withTest, log), null);
+});
+
+Deno.test("infraSignature (C-03 run 003): a judge error after real oracle rows is no signature (a genuine FAIL)", () => {
+  const id = "00000000-0000-4000-a000-00000000c031";
+  const eid = "00000000-0000-4000-9000-00000000c031";
+  const j = JudgmentRecordSchema.parse({
+    v: 1,
+    id,
+    execution_id: eid,
+    workspace_hash: "0".repeat(64),
+    task_id: "HX-001",
+    task_oracle_hash: "a".repeat(64),
+    scorer_versions: { build: "1" },
+    scorer_fingerprint: "b".repeat(64),
+    scorers: [
+      { name: "build", passed: true, tests: [] },
+      {
+        name: "fail_to_pass",
+        passed: false,
+        tests: [{
+          codeunit: 50100,
+          procedure: "T",
+          target: "candidate",
+          outcome: "fail",
+          failure: "assertion",
+        }],
+      },
+      { name: "pass_to_pass", passed: null, tests: [] },
+    ],
+    verdict: "fail",
+    verdict_container: null,
+    started_at: "2026-09-28T11:38:35.000Z",
+    ended_at: "2026-09-28T11:39:06.426Z",
+  });
+  const log = {
+    v: 1,
+    judgment_id: id,
+    execution_id: eid,
+    diagnostics: [],
+    notes: [],
+    error: "held container lost",
+  };
+  assertEquals(infraSignature(j, log), null);
+  // The same error with no test result anywhere stays a signature.
+  const bare = JudgmentRecordSchema.parse({
+    ...j,
+    scorers: j.scorers.map((s) => ({ ...s, tests: [] })),
+  });
+  assertEquals(infraSignature(bare, log), "judge_error");
 });

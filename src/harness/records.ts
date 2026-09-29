@@ -33,6 +33,30 @@ import { TASK_KINDS, TaskLimitsSchema } from "./task.ts";
 /** Lower-case only: ids become file names, and Windows folds case. */
 const Uuid = z.uuid().refine((s) => s === s.toLowerCase(), "lower-case uuid");
 const Iso = z.iso.datetime();
+/** One non-blank line (C-03 forced reason and decision path). */
+const OneLine = z.string().regex(/\S/).regex(/^[^\r\n]*$/);
+/**
+ * C-03 run 002: a judgment's recorded infra signature (verdict.ts
+ * infraSignature): the judge caught an infra error, or the candidate build
+ * failed with no diagnostics and no test result. Run 003: a printed
+ * diagnostic only, never the basis of a forced rejudge.
+ */
+export const INFRA_SIGNATURES = [
+  "judge_error",
+  "build_failed_no_diagnostics_no_tests",
+] as const;
+export type InfraSignature = typeof INFRA_SIGNATURES[number];
+/**
+ * C-03 run 003: an owner approval line, the whole line:
+ * `OWNER-APPROVED: <words> (<ISO-8601 time>)`, words non-blank.
+ */
+export const OWNER_APPROVED = /^OWNER-APPROVED: (\S(?:.*\S)?) \(([^()\s]+)\)$/;
+const ApprovalTime = z.iso.datetime({ offset: true });
+/** An OWNER_APPROVED line whose time parses as ISO-8601 (Z or an offset). */
+export function isOwnerApproval(line: string): boolean {
+  const m = OWNER_APPROVED.exec(line);
+  return m !== null && ApprovalTime.safeParse(m[2]).success;
+}
 const n = z.number().nonnegative().nullable();
 
 export const TERMINATIONS = [
@@ -279,6 +303,28 @@ export const JudgmentRecordSchema = z.strictObject({
   verdict_container: z.string().nullable(),
   started_at: Iso,
   ended_at: Iso,
+  /**
+   * C-03: set only by `harness rejudge --force`, which re-judges one
+   * execution although its latest judgment is current (e.g. a verdict build
+   * starved of host memory). Absent on every other judgment; in no hash.
+   * Run 002: at most one per execution; `replaces` is the judgment the report
+   * used before. Run 003: `basis` is always an owner decision: its path
+   * relative to $CG_COORD_ROOT/decisions, the sha256 of its bytes and its
+   * OWNER-APPROVED line (an infra signature is never a basis).
+   */
+  forced: z.strictObject({
+    reason: OneLine,
+    replaces: Uuid,
+    basis: z.strictObject({
+      kind: z.literal("decision"),
+      path: OneLine,
+      sha256: Sha256Hex,
+      approval: z.string().refine(
+        isOwnerApproval,
+        "an OWNER-APPROVED: <words> (<ISO-8601 time>) line",
+      ),
+    }),
+  }).optional(),
 }).refine((j) => j.verdict === verdictOf(j.scorers), {
   message: "verdict disagrees with scorer results",
   path: ["verdict"],
@@ -326,6 +372,11 @@ export const CampaignRecordSchema = z.strictObject({
     config_id: z.string(),
     manifest_hash: Sha256Hex,
     manifest: ResolvedManifestSchema,
+    /**
+     * The adapter's parser version at creation (M5-07a). Optional so older
+     * campaigns still load for reports; a campaign without it never resumes.
+     */
+    parser: z.string().min(1).optional(),
   })).min(2),
   /** The full plan (every task x repeat). Staged runs execute subsets of it. */
   blocks: z.array(BlockSchema).min(1),

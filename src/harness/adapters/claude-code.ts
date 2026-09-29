@@ -35,7 +35,29 @@ const KNOWN_TYPES = new Set([
   "user",
   "result",
   "rate_limit_event",
+  // M5-07a: 2.1.282's heartbeat of a tool running past 30 s; no usage.
+  "tool_progress",
 ]);
+
+/** The heartbeat shape recorded at M5-07 stage A (17 records, 5 runs): exactly these keys. */
+const HEARTBEAT_KEYS = [
+  "elapsed_time_seconds",
+  "heartbeat",
+  "parent_tool_use_id",
+  "session_id",
+  "tool_name",
+  "tool_use_id",
+  "type",
+  "uuid",
+];
+/** Fail closed (M5-07a run 002): any other key could carry usage or cost. */
+const isHeartbeat = (r: J) =>
+  Object.keys(r).sort().join() === HEARTBEAT_KEYS.join() &&
+  r["heartbeat"] === true &&
+  typeof r["elapsed_time_seconds"] === "number" &&
+  Number.isFinite(r["elapsed_time_seconds"]) &&
+  ["parent_tool_use_id", "session_id", "tool_name", "tool_use_id", "uuid"]
+    .every((k) => typeof r[k] === "string");
 
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
@@ -220,7 +242,7 @@ const DECLARED: readonly (keyof Telemetry)[] = Object.freeze([
 /** Per-run provenance persisted in raw_usage.capabilities; the report reads it, never the installed adapter. */
 export const CLAUDE_CAPABILITIES = {
   v: 1,
-  parser: "claude-code-trace@3",
+  parser: "claude-code-trace@4",
   rules: `rules@${RULES_VERSION}`,
   telemetry: DECLARED,
   nested: ["per_model.requests"],
@@ -328,6 +350,13 @@ export function parseClaudeStream(
   }
   for (const [t, n] of [...unknown].sort(([a], [b]) => a < b ? -1 : 1)) {
     streamProblems.push(`unknown record type ${t} (${n})`);
+  }
+  for (const { rec, line } of of("tool_progress")) {
+    if (!isHeartbeat(rec)) {
+      streamProblems.push(
+        `tool_progress at line ${line} is not a heartbeat of the recorded shape`,
+      );
+    }
   }
 
   // A same-session resume (M1-32b: a background task wakes the session) adds
@@ -713,6 +742,7 @@ export const claudeCodeHarnessNative = () => ({
 
 export const claudeCodeAdapter: HarnessAdapter = {
   harness: "claude-code",
+  parser: CLAUDE_CAPABILITIES.parser,
   declared: DECLARED,
   secretFiles: ["claude-oauth-token"],
   credentialBearing: true,

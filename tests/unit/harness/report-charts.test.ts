@@ -1258,3 +1258,175 @@ Deno.test("charts (M6-02c): a missing reference, or a balance read before it, is
   // A reading at the reference time itself is allowed.
   renderCharts([r], refLedger(REF, [{ at: REF.at, balance_usd: 60 }, ...late]));
 });
+
+// C-03 run 002: ledger rejudges[] entries with forced_reason are exactly the
+// report's forced judgments (count, ids, reasons); a mismatch refuses.
+
+const OOM = "host OOM during the verdict build";
+
+/** The report with one forced judgment on HX-001 r1 mock-positive (the counted one). */
+async function forcedReport(): Promise<HarnessReport> {
+  const r = await base();
+  return {
+    ...r,
+    cells: r.cells.map((c) =>
+      c.arm === "mock-positive" && c.repeat === 1
+        ? {
+          ...c,
+          forced_rejudges: [{
+            judgment_id: c.judgment_id!,
+            execution_id: c.used_execution!,
+            reason: OOM,
+            replaces: "00000000-0000-4000-a000-0000000000c3",
+            basis: {
+              kind: "decision" as const,
+              path: "oom.md",
+              sha256: "d".repeat(64),
+              approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
+            },
+          }],
+        }
+        : c
+    ),
+  };
+}
+
+function forcedLedger(r: HarnessReport, over: Record<string, unknown>[]) {
+  const c = r.cells.find((x) => x.arm === "mock-positive" && x.repeat === 1)!;
+  const entry = (o: Record<string, unknown>) => ({
+    experiment: r.experiment.id,
+    campaign: r.campaign.id,
+    task: "HX-001",
+    repeat: 1,
+    arm: "mock-positive",
+    execution: c.used_execution,
+    judgment: c.judgment_id,
+    decision: "H:/cg-coord/decisions/2026-09-28-c03.md",
+    ...o,
+  });
+  return ledgerOf(r, { rejudges: over.map(entry) });
+}
+
+Deno.test("charts (C-03 run 002): forced rejudges in the ledger reconcile with the report's forced judgments", async () => {
+  const r = await forcedReport();
+  // Matches, next to an ordinary rejudge (no forced_reason) of another cell.
+  const fs = renderCharts(
+    [r],
+    forcedLedger(r, [{ forced_reason: OOM }, {
+      repeat: 2,
+      execution: "e2",
+      judgment: "j2",
+    }]),
+  );
+  assertEquals(csvRows(get(fs, "arms.csv")).map((x) => x.rejudges), ["0", "2"]);
+  const refused = (
+    report: HarnessReport,
+    entries: Record<string, unknown>[],
+    msg: string,
+  ) =>
+    assertThrows(
+      () => renderCharts([report], forcedLedger(report, entries)),
+      Error,
+      msg,
+    );
+  // Count: missing from the ledger, or recorded as an ordinary rejudge.
+  refused(r, [], "forced rejudges disagree");
+  refused(r, [{}], "forced rejudges disagree");
+  // Twice in the ledger.
+  refused(r, [{ forced_reason: OOM }, { forced_reason: OOM }], "ledger 2");
+  // Ids: the ledger names another judgment.
+  refused(r, [{ forced_reason: OOM, judgment: "j9" }], "judgment j9");
+  // Reason differs.
+  refused(r, [{ forced_reason: "flaky" }], "reason");
+  // The ledger claims a forced rejudge the report does not have.
+  refused(await base(), [{ forced_reason: OOM }], "forced rejudges disagree");
+});
+
+// C-03 run 003 (review of e8038b3b): exact set equality with no duplicate
+// ids, the ledger execution matches, and forced judgments need a ledger.
+
+/** forcedReport plus a second forced judgment, on HX-001 r2 mock-positive. */
+async function twoForced(): Promise<HarnessReport> {
+  const r = await forcedReport();
+  return {
+    ...r,
+    cells: r.cells.map((c) =>
+      c.arm === "mock-positive" && c.repeat === 2
+        ? {
+          ...c,
+          forced_rejudges: [{
+            judgment_id: c.judgment_id!,
+            execution_id: c.used_execution!,
+            reason: OOM,
+            replaces: "00000000-0000-4000-a000-0000000000c4",
+            basis: {
+              kind: "decision" as const,
+              path: "d.md",
+              sha256: "c".repeat(64),
+              approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
+            },
+          }],
+        }
+        : c
+    ),
+  };
+}
+
+Deno.test("charts (C-03 run 003): forced ledger entries equal the report's forced judgments as a set, with no duplicate and the right execution", async () => {
+  const r = await twoForced();
+  const second = r.cells.find((x) =>
+    x.arm === "mock-positive" && x.repeat === 2
+  )!;
+  const b = {
+    forced_reason: OOM,
+    repeat: 2,
+    execution: second.used_execution,
+    judgment: second.judgment_id,
+  };
+  renderCharts([r], forcedLedger(r, [{ forced_reason: OOM }, b]));
+  // [A, A] against {A, B}: same count, B missing, A twice.
+  assertThrows(
+    () =>
+      renderCharts(
+        [r],
+        forcedLedger(r, [{ forced_reason: OOM }, { forced_reason: OOM }]),
+      ),
+    Error,
+    "more than once",
+  );
+  // The right judgment under another execution.
+  assertThrows(
+    () =>
+      renderCharts(
+        [r],
+        forcedLedger(r, [{ forced_reason: OOM }, { ...b, execution: "e9" }]),
+      ),
+    Error,
+    "execution e9",
+  );
+});
+
+Deno.test("charts (C-03 run 003): a report with forced judgments needs --ledger", async () => {
+  const r = await forcedReport();
+  assertThrows(() => renderCharts([r]), Error, "forced");
+  renderCharts([await base()]);
+});
+
+Deno.test("charts (C-03 run 003): a forced ledger entry's task, repeat and arm must be its report cell's", async () => {
+  const r = await forcedReport();
+  renderCharts([r], forcedLedger(r, [{ forced_reason: OOM }]));
+  for (
+    const [over, msg] of [
+      [{ task: "HX-002" }, "task HX-002"],
+      [{ arm: "mock-naive-lock-table" }, "arm mock-naive-lock-table"],
+      [{ repeat: 2 }, "repeat 2"],
+    ] as const
+  ) {
+    assertThrows(
+      () =>
+        renderCharts([r], forcedLedger(r, [{ forced_reason: OOM, ...over }])),
+      Error,
+      msg,
+    );
+  }
+});
