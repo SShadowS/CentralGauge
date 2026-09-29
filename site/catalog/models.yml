@@ -6,7 +6,8 @@
   released_at: "2026-09-29"
   max_input_tokens: 922000
   max_output_tokens: 128000
-  capabilities: ["thinking", "image", "pdf", "structured", "batch"]
+  # No "batch": OpenAI's Batch API rejects gpt-6.1-sol as of 2026-09-29.
+  capabilities: ["thinking", "image", "pdf", "structured"]
 
 - slug: openai/gpt-6-astra
   api_model_id: gpt-6-astra
