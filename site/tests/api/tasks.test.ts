@@ -1,6 +1,7 @@
 import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resetDb } from "../utils/reset-db";
+import { taskSummary } from "../../src/lib/server/task-summaries";
 
 async function seed(): Promise<void> {
   await resetDb();
@@ -291,5 +292,20 @@ describe("GET /api/v1/tasks/:id", () => {
   it("returns 404 for unknown task", async () => {
     const res = await SELF.fetch("https://x/api/v1/tasks/easy/nonexistent");
     expect(res.status).toBe(404);
+  });
+
+  it("returns the catalog summary for a summarised task and null otherwise", async () => {
+    await env.DB.prepare(
+      `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
+       VALUES ('ts','CG-AL-X185','hash-x','hard',2,'{"id":"CG-AL-X185"}'),
+              ('ts','CG-AL-E001','hash-e','easy',1,'{"id":"CG-AL-E001"}')`,
+    ).run();
+    const x = (await (await SELF.fetch("https://x/api/v1/tasks/CG-AL-X185"))
+      .json()) as { summary: string | null };
+    expect(x.summary).toBe(taskSummary("CG-AL-X185"));
+    expect(x.summary).not.toBeNull();
+    const e = (await (await SELF.fetch("https://x/api/v1/tasks/CG-AL-E001"))
+      .json()) as { summary: string | null };
+    expect(e.summary).toBeNull();
   });
 });
