@@ -564,7 +564,8 @@ model. `mode=combined` ranks every model on the mode it has most non-excluded
 runs in (ties go to batch). A task set with runs in both modes and no `?mode=`
 defaults to `combined`, so a batch run in the current set no longer makes the
 ranked APIs refuse with `mode_required`. Each leaderboard row reports
-`served_mode`, and a model ranked on its minority mode shows a mode pill. See
+`served_mode`, and a row whose served mode is the minority among the rows shown carries a
+mode pill. See
 `docs/superpowers/specs/2026-09-30-combined-mode-leaderboard-design.md`.
 
 ## Site cost is list price

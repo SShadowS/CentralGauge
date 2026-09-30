@@ -330,7 +330,7 @@ single-mode set, and to `sync` on an empty set. `?mode=all` is refused with
 `invalid_mode_for_metric` (there is no cross-mode pooling), and any other bad
 value gets the endpoint's normal validation error. Rows carry `served_mode`;
 the leaderboard has a Combined / Sync only / Batch only filter, a notice, and
-a pill on models ranked on their minority mode. `/api/v2/models` and the og
+a pill on rows whose served mode is the minority among the rows shown. `/api/v2/models` and the og
 image routes resolve the same way.
 
 ## Excluding a run (migration 0022)

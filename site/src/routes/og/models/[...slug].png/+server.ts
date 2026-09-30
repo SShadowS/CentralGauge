@@ -61,12 +61,6 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
       taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
       parseModeParam(url),
     );
-    // Current-set aggregates: bind the current set's map, not the all-sets one.
-    const modeBind = await resolveModeBinding(
-      env.DB,
-      taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
-      mode,
-    );
 
     const ogKey = buildCacheKey(
       "og-model",
@@ -121,6 +115,14 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
       .bind(slug)
       .first<{ id: number; display_name: string; family_slug: string }>();
     if (!m) return new Response(`Unknown model: ${slug}`, { status: 404 });
+
+    // Current-set aggregates, miss path only (after both cache checks): bind
+    // the current set's map, not the all-sets one.
+    const modeBind = await resolveModeBinding(
+      env.DB,
+      taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
+      mode,
+    );
 
     // taskSetHash and mode were already resolved above (needed before the
     // cache key).

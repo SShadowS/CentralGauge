@@ -14,6 +14,7 @@
   import ModeFilter from '$lib/components/domain/ModeFilter.svelte';
   import ViewToggle from '$lib/components/domain/ViewToggle.svelte';
   import ValueMap from '$lib/components/domain/ValueMap.svelte';
+  import { minorityMode } from '$lib/shared/leaderboard-derive';
   import { presetForSort, presetEligible } from '$lib/shared/sort-presets';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   // CHEAT overlay temporarily hidden. Re-enable by reverting this commit.
@@ -41,6 +42,8 @@
       .filter((r) => presetEligible(activePreset, r))
       .map((r, i) => ({ ...r, rank: i + 1 })),
   );
+
+  let minority = $derived(minorityMode(tableRows.map((r) => r.served_mode)));
 
   // SSE wiring. Only opens when the flag is on AND we're in the browser.
   // Server-side $effect doesn't run, but the import of useEventSource itself
@@ -142,7 +145,7 @@
     {/if}
     {#if data.mode === 'combined'}
       <p class="mode-notice">
-        Each model is ranked on the run mode it has most runs in. Models marked sync were run without batch.
+        Each model is ranked on the run mode it has most runs in. {#if minority}Models marked {minority} were ranked on {minority} runs.{/if}
         <a href={data.modeLinks.sync}>Sync only</a> · <a href={data.modeLinks.batch}>Batch only</a>
       </p>
     {/if}

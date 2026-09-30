@@ -119,16 +119,6 @@ export const GET: RequestHandler = async ({
       taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
       parseModeParam(url),
     );
-    // The primary aggregate and the same-set predecessor call filter to the
-    // current set: bind that set's map. The predecessor cross-set fallback
-    // spans sets: it binds the current-first all-sets map. Never reuse one
-    // for the other.
-    const setScope: ModeScope = taskSetHash
-      ? { kind: "hash", hash: taskSetHash }
-      : { kind: "current" };
-    const modeBind = await resolveModeBinding(env.DB, setScope, mode);
-    const modeBindAll = await resolveModeBinding(env.DB, { kind: "all" }, mode);
-
     // The slug is path-derived, not a free-form query param, and a miss on an
     // unknown slug 404s before any aggregate runs — so it is not the unbounded
     // key space that `since` was.
@@ -162,6 +152,19 @@ export const GET: RequestHandler = async ({
         );
       return cachedJson(request, JSON.parse(shared));
     }
+
+    // The primary aggregate and the same-set predecessor call filter to the
+    // current set: bind that set's map. The predecessor cross-set fallback and
+    // the served-mode label fallback span sets: they bind the current-first
+    // all-sets map, computed lazily. Never reuse one for the other. Resolved
+    // here, after both cache checks, so a cache hit issues no map query.
+    const setScope: ModeScope = taskSetHash
+      ? { kind: "hash", hash: taskSetHash }
+      : { kind: "current" };
+    const modeBind = await resolveModeBinding(env.DB, setScope, mode);
+    let modeBindAll: string | undefined;
+    const getModeBindAll = async () =>
+      (modeBindAll ??= await resolveModeBinding(env.DB, { kind: "all" }, mode));
 
     const model = await getFirst<ModelRow>(
       env.DB,
@@ -364,7 +367,7 @@ export const GET: RequestHandler = async ({
           priorAgg = await computeModelAggregates(env.DB, {
             modelIds: [prior.id],
             mode,
-            modeBind: modeBindAll,
+            modeBind: await getModeBindAll(),
           });
           a = priorAgg.get(prior.id);
         }
@@ -401,10 +404,21 @@ export const GET: RequestHandler = async ({
     const passAtN = agg?.pass_at_n ?? 0;
     const settingsSuffix = agg?.settings_suffix ?? "";
 
+    // A model absent from the set's map (only runs on older sets) takes its
+    // label from the current-first all-sets map, not servedModeOf's default.
+    const inSetMap =
+      mode !== "combined" ||
+      String(model.id) in (JSON.parse(modeBind) as Record<string, string>);
+    const servedMode = servedModeOf(
+      mode,
+      inSetMap ? modeBind : await getModeBindAll(),
+      model.id,
+    );
+
     const body: ModelDetail = {
       // task_set_hash bounds aggregates, history, recent_runs, failure_modes.
       task_set_hash: taskSetHash,
-      served_mode: servedModeOf(mode, modeBind, model.id),
+      served_mode: servedMode,
       model: {
         slug: model.slug,
         display_name: model.display_name,

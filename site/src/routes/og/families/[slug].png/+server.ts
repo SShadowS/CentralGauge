@@ -62,12 +62,6 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
         : { kind: "current" },
       parseModeParam(url),
     );
-    // Current-set aggregates: bind the current set's map, not the all-sets one.
-    const modeBind = await resolveModeBinding(
-      env.DB,
-      taskSet?.hash ? { kind: "hash", hash: taskSet.hash } : { kind: "current" },
-      mode,
-    );
 
     const ogKey = buildCacheKey(
       "og-family",
@@ -120,6 +114,14 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
       .bind(slug)
       .first<{ id: number; display_name: string; vendor: string }>();
     if (!fam) return new Response(`Unknown family: ${slug}`, { status: 404 });
+
+    // Current-set aggregates, miss path only (after both cache checks): bind
+    // the current set's map, not the all-sets one.
+    const modeBind = await resolveModeBinding(
+      env.DB,
+      taskSet?.hash ? { kind: "hash", hash: taskSet.hash } : { kind: "current" },
+      mode,
+    );
 
     // taskSet and mode were already resolved above (needed before the cache
     // key); only the member list is new here.

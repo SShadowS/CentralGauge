@@ -62,9 +62,6 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         ? { kind: "current" }
         : { kind: "hash", hash: parsed.set };
     const mode = await resolveInvocationMode(env.DB, modeScope, parsed.mode);
-    // The combined-mode served-mode map for this set. Not part of the cache
-    // key: it derives from data the epoch already covers.
-    const modeBind = await resolveModeBinding(env.DB, modeScope, mode);
     const q: LeaderboardQuery = { ...parsed, mode };
 
     // Key off the PARSED query, never the raw URL. Unknown params (utm_source,
@@ -146,6 +143,8 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         }
       }
 
+      // Computed on the miss path only: a cache hit issues no map query.
+      const modeBind = await resolveModeBinding(env.DB, modeScope, mode);
       const timer = new ServerTimer();
       const rows = await computeLeaderboard(env.DB, q, timer, modeBind);
       // Set when the payload is computed along a best-effort path that

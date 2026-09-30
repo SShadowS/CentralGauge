@@ -33,10 +33,6 @@ export const GET: RequestHandler = async ({
       { kind: "current" },
       parseModeParam(url),
     );
-    // The trajectory spans every task set, so the served-mode map does too:
-    // one mode per model across the whole trajectory.
-    const modeBind = await resolveModeBinding(env.DB, { kind: "all" }, mode);
-
     // This route had NO server-side cache and measured 104,781 rows per
     // request — 1.99M/day, the single largest consumer. It was missed because
     // the original cache rollout worked from a snapshot of expensive queries
@@ -51,6 +47,9 @@ export const GET: RequestHandler = async ({
       namespace: "family-detail",
       params: { slug: params.slug ?? "", mode },
       compute: async () => {
+        // The trajectory spans every task set, so the served-mode map does too:
+        // one mode per model across the whole trajectory.
+        const modeBind = await resolveModeBinding(env.DB, { kind: "all" }, mode);
         const fam = await getFirst<{
           id: number;
           slug: string;

@@ -66,12 +66,6 @@ export const GET: RequestHandler = async ({ url, platform }) => {
         : { kind: "current" },
       parseModeParam(url),
     );
-    // Current-set aggregates: bind the current set's map, not the all-sets one.
-    const modeBind = await resolveModeBinding(
-      env.DB,
-      taskSet?.hash ? { kind: "hash", hash: taskSet.hash } : { kind: "current" },
-      mode,
-    );
 
     const ogKey = buildCacheKey("og-index", { mode }, epoch);
     const ogHit = await ogCache.match(ogKey);
@@ -127,6 +121,14 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       run_count: number;
       last_run_at: string | null;
     }>();
+
+    // Current-set aggregates, miss path only (after both cache checks): bind
+    // the current set's map, not the all-sets one.
+    const modeBind = await resolveModeBinding(
+      env.DB,
+      taskSet?.hash ? { kind: "hash", hash: taskSet.hash } : { kind: "current" },
+      mode,
+    );
 
     // 2. Compute Solve AUC@2 for all models to find the leading value.
     //    auc_2 = (2*passedA1 + passedA2Only) / (2*D)

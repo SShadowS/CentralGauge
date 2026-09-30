@@ -23,7 +23,7 @@ describe("GET /api/v1/models/:slug combined mode binds the set's own map", () =>
         `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (1,'claude','anthropic','Claude')`,
       ),
       env.DB.prepare(
-        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (1,1,'sonnet-4.7','claude-sonnet-4-7','Sonnet 4.7',47),(2,1,'other','claude-other','Other',46)`,
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (1,1,'sonnet-4.7','claude-sonnet-4-7','Sonnet 4.7',47),(2,1,'other','claude-other','Other',46),(3,1,'oldonly','claude-oldonly','Old Only',45)`,
       ),
       env.DB.prepare(
         `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('old','2025-01-01T00:00:00Z',1,0),('ts','2026-01-01T00:00:00Z',1,1)`,
@@ -45,6 +45,7 @@ describe("GET /api/v1/models/:slug combined mode binds the set's own map", () =>
       run("o3", "old", 1, "sync"),
       run("c1", "ts", 1, "batch"),
       run("x1", "ts", 2, "sync"),
+      run("z1", "old", 3, "sync"),
     ]);
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ('c1','t1',1,1,1.0,1)`,
@@ -57,5 +58,13 @@ describe("GET /api/v1/models/:slug combined mode binds the set's own map", () =>
     const body = (await res.json()) as ModelDetail;
     expect(body.aggregates.run_count).toBe(1);
     expect(body.aggregates.tasks_passed_attempt_1).toBe(1);
+  });
+
+  it("labels a model with only old-set sync runs as sync, not batch", async () => {
+    const res = await SELF.fetch("https://x/api/v1/models/oldonly");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ModelDetail;
+    expect(body.aggregates.run_count).toBe(0);
+    expect(body.served_mode).toBe("sync");
   });
 });

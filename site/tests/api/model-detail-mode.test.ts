@@ -72,7 +72,7 @@ describe("GET /api/v1/models/:slug — mode-scoped cache key (D4)", () => {
     const third = await SELF.fetch("https://x/api/v1/models/sonnet-4.7");
     expect(third.status).toBe(200);
     const thirdBody = (await third.json()) as ModelDetail;
-    expect(thirdBody.served_mode).toBeDefined();
+    expect(thirdBody.served_mode).toBe("batch");
 
     // Explicit mode still works and computes fresh (a distinct cache key
     // from the default request, and correctly scoped to just that mode).
