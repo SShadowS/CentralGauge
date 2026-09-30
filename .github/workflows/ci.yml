@@ -19,3 +19,6 @@ jobs:
 
       - name: Run taxonomy-audit
         run: deno task taxonomy-audit
+
+      - name: Run summary-audit
+        run: deno task summary-audit

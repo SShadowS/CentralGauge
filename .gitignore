@@ -123,6 +123,7 @@ scripts/*
 !scripts/weekly-cycle.ts
 !scripts/cycle-*.ps1
 !scripts/trap-probe.ts
+!scripts/audit-task-summaries.ts
 !scripts/harvest-candidate-corpus.ts
 !scripts/id-audit.ts
 !scripts/lethal-t1-prep.ps1
