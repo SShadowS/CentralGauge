@@ -25,7 +25,12 @@ import {
   formatSettingsSuffix,
   type SettingsProfileLike,
 } from "./settings-suffix";
-import { modeBindValue, modePredicate, type RankMode } from "./invocation-mode";
+import {
+  modeBindValue,
+  modePredicate,
+  type RankMode,
+  servedModeOf,
+} from "./invocation-mode";
 
 export { cellColorBucket } from "$lib/client/matrix-helpers";
 export type { CellBucket } from "$lib/client/matrix-helpers";
@@ -253,6 +258,7 @@ export async function computeMatrix(
       slug: m.slug,
       display_name: m.display_name,
       settings_suffix: formatSettingsSuffix(profile),
+      served_mode: servedModeOf(opts.mode, opts.modeBind, m.model_id),
     };
   });
 

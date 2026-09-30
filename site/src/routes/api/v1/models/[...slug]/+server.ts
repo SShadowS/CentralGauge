@@ -14,6 +14,7 @@ import {
   parseModeParam,
   resolveInvocationMode,
   resolveModeBinding,
+  servedModeOf,
   type ModeScope,
 } from "$lib/server/invocation-mode";
 import {
@@ -403,6 +404,7 @@ export const GET: RequestHandler = async ({
     const body: ModelDetail = {
       // task_set_hash bounds aggregates, history, recent_runs, failure_modes.
       task_set_hash: taskSetHash,
+      served_mode: servedModeOf(mode, modeBind, model.id),
       model: {
         slug: model.slug,
         display_name: model.display_name,

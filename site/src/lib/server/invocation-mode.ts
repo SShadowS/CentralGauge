@@ -172,6 +172,20 @@ export function modeBindValue(mode: RankMode, modeBind?: string): string {
   return mode;
 }
 
+/**
+ * The mode a model's numbers come from, read off a binding a route already
+ * holds: the literal mode, or under `combined` the model's entry in the map.
+ */
+export function servedModeOf(
+  mode: RankMode,
+  modeBind: string | undefined,
+  modelId: number,
+): InvocationMode {
+  if (mode !== "combined") return mode;
+  const map = JSON.parse(modeBindValue(mode, modeBind)) as Record<string, InvocationMode>;
+  return map[String(modelId)] ?? "batch";
+}
+
 /** Served mode per model over the scope (same rule as the binding, one place). */
 export async function servedModes(
   db: D1Database,

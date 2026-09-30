@@ -8,6 +8,7 @@ import {
   resolveInvocationMode,
   resolveModeBinding,
   modePredicate,
+  servedModeOf,
 } from "$lib/server/invocation-mode";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
@@ -275,6 +276,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         pass_at_1:
           passAt1Strict === null ? null : Math.round(passAt1Strict * 1e6) / 1e6,
         denominator: hasRuns ? (denominator > 0 ? denominator : null) : null,
+        served_mode: servedModeOf(mode, modeBind, m.id),
       };
     });
 

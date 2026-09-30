@@ -308,6 +308,8 @@ export interface ModelDetail {
    * no runs on the current set, so the delta tile can still render.
    */
   task_set_hash: string | null;
+  /** Mode this model's numbers come from; under `mode=combined`, its majority mode in the set. */
+  served_mode: InvocationMode;
   model: {
     slug: string;
     display_name: string;
@@ -915,6 +917,8 @@ export interface CompareModel {
   pass_at_1: number | null;
   /** Denominator (task_count of the current task set). null when no current set. */
   denominator: number | null;
+  /** Mode this model's numbers come from; under `mode=combined`, its majority mode in the set. */
+  served_mode: InvocationMode;
 }
 
 export interface CompareTaskRow {
@@ -1107,6 +1111,8 @@ export interface MatrixModel {
    * Empty string when settings vary across the model's runs.
    */
   settings_suffix: string;
+  /** Mode this model's numbers come from; under `mode=combined`, its majority mode in the set. */
+  served_mode: InvocationMode;
 }
 
 export interface MatrixFilters {
