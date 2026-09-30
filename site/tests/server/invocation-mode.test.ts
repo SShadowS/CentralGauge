@@ -4,6 +4,7 @@ import {
   modePredicate,
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
   servedModes,
 } from "../../src/lib/server/invocation-mode";
 import { resetDb } from "../utils/reset-db";
@@ -39,7 +40,7 @@ async function seedRuns(modes: string[]): Promise<void> {
 }
 
 async function seedModelRuns(
-  runs: Array<{ model: number; mode: string; excluded?: boolean }>,
+  runs: Array<{ model: number; mode: string; excluded?: boolean; set?: string }>,
 ): Promise<void> {
   const modelIds = [...new Set(runs.map((r) => r.model))];
   await env.DB.batch([
@@ -54,14 +55,17 @@ async function seedModelRuns(
     env.DB.prepare(
       `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('ts','2026-01-01T00:00:00Z',1,1)`,
     ),
+    env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('ts2','2025-01-01T00:00:00Z',1,0)`,
+    ),
     env.DB.prepare(`INSERT INTO settings_profiles(hash) VALUES ('s')`),
     env.DB.prepare(
       `INSERT INTO machine_keys(id,machine_id,public_key,scope,created_at) VALUES (1,'rig',?,'ingest','2026-01-01T00:00:00Z')`,
     ).bind(new Uint8Array([0])),
     ...runs.map((r, i) =>
       env.DB.prepare(
-        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload,invocation_mode,excluded_at) VALUES (?,'ts',?,'s','rig','2026-01-01T00:00:00Z','completed','claimed','v','sig','2026-01-01T00:00:00Z',1,'{}',?,?)`,
-      ).bind(`r${i}`, r.model, r.mode, r.excluded ? "2026-01-02T00:00:00Z" : null),
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload,invocation_mode,excluded_at) VALUES (?,?,?,'s','rig','2026-01-01T00:00:00Z','completed','claimed','v','sig','2026-01-01T00:00:00Z',1,'{}',?,?)`,
+      ).bind(`r${i}`, r.set ?? 'ts', r.model, r.mode, r.excluded ? "2026-01-02T00:00:00Z" : null),
     ),
   ]);
 }
@@ -101,10 +105,10 @@ describe("modePredicate", () => {
     expect(modePredicate("ru1", "batch")).toBe("ru1.invocation_mode = ?");
     const combined = modePredicate("ru2", "combined");
     expect(combined.split("?").length - 1).toBe(1);
-    expect(combined).toContain("NULLIF(?, 'combined')");
-    expect(combined).toContain("sm.model_id = ru2.model_id");
+    expect(combined).toContain("json_extract(?");
+    expect(combined).toContain("ru2.model_id");
+    expect(combined).not.toContain("SELECT");
     expect(() => modePredicate("x; DROP", "sync")).toThrow();
-    expect(() => modePredicate("sm", "combined")).toThrow();
   });
 
   it("combined selects each model's majority mode, tie to batch, excluded runs ignored", async () => {
@@ -121,13 +125,14 @@ describe("modePredicate", () => {
       { model: 5, mode: "sync", excluded: true },
       { model: 6, mode: "sync", excluded: true }, // all excluded: no row
     ]);
+    const bind = await resolveModeBinding(env.DB, { kind: "current" }, "combined");
     const rs = await env.DB.prepare(
       `SELECT runs.model_id AS model_id, runs.invocation_mode AS mode
          FROM runs
         WHERE ${modePredicate("runs", "combined")} AND runs.excluded_at IS NULL
         ORDER BY runs.model_id, runs.id`,
     )
-      .bind("combined")
+      .bind(bind)
       .all<{ model_id: number; mode: string }>();
     const got = (rs.results ?? []).map((r) => `${r.model_id}:${r.mode}`);
     expect(got).toEqual(["1:batch", "2:sync", "3:sync", "3:sync", "4:batch", "5:batch"]);
@@ -140,5 +145,21 @@ describe("modePredicate", () => {
       4: "batch",
       5: "batch",
     });
+    expect(await resolveModeBinding(env.DB, { kind: "current" }, "sync")).toBe("sync");
+  });
+
+  it("scope all yields ONE mode per model across task sets; hash scope stays per set", async () => {
+    await seedModelRuns([
+      { model: 1, mode: "sync", set: "ts" }, // set ts: sync 2 vs batch 1 -> sync
+      { model: 1, mode: "sync", set: "ts" },
+      { model: 1, mode: "batch", set: "ts" },
+      { model: 1, mode: "batch", set: "ts2" }, // set ts2: batch 3 -> batch
+      { model: 1, mode: "batch", set: "ts2" },
+      { model: 1, mode: "batch", set: "ts2" },
+    ]);
+    expect(Object.fromEntries(await servedModes(env.DB, { kind: "hash", hash: "ts" }))).toEqual({ 1: "sync" });
+    expect(Object.fromEntries(await servedModes(env.DB, { kind: "hash", hash: "ts2" }))).toEqual({ 1: "batch" });
+    // 4 batch vs 2 sync over both sets: one mode for the model.
+    expect(Object.fromEntries(await servedModes(env.DB, { kind: "all" }))).toEqual({ 1: "batch" });
   });
 });

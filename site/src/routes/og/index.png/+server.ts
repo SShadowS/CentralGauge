@@ -7,6 +7,7 @@ import { computeModelAggregates } from "$lib/server/model-aggregates";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 import {
   buildCacheKey,
@@ -66,6 +67,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
         : { kind: "current" },
       parseModeParam(url),
     );
+    const modeBind = await resolveModeBinding(env.DB, { kind: "all" }, mode);
 
     const ogKey = buildCacheKey("og-index", { mode }, epoch);
     const ogHit = await ogCache.match(ogKey);
@@ -130,6 +132,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     const aggMap = await computeModelAggregates(env.DB, {
       taskSetHash: taskSet?.hash ?? null,
       mode,
+      modeBind,
     });
     let topAuc2 = 0;
     for (const agg of aggMap.values()) {

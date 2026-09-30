@@ -6,6 +6,7 @@ import { computeDenominator } from "$lib/server/denominator";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
   modePredicate,
 } from "$lib/server/invocation-mode";
 
@@ -15,14 +16,15 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // D4: resolve the invocation mode FIRST, before the models list is even
     // validated. Compare has no `?set=` — it always scopes to the current
     // task set, so mode resolution needs no other input. Resolving early
-    // means a task set with both sync and batch runs refuses with
-    // `mode_required` regardless of what (or how few) models were requested.
+    // means a task set with both sync and batch runs resolves to `combined`
+    // (each model on its majority mode) before the models list is validated.
     const requestedMode = parseModeParam(url);
     const mode = await resolveInvocationMode(
       env.DB,
       { kind: "current" },
       requestedMode,
     );
+    const modeBind = await resolveModeBinding(env.DB, { kind: "current" }, mode);
 
     const parsed = (url.searchParams.get("models") ?? "")
       .split(",")
@@ -178,11 +180,11 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         [
           taskSetHash,
           ...modelIds,
-          mode,
+          modeBind,
           ...modelIds,
-          mode,
+          modeBind,
           ...modelIds,
-          mode,
+          modeBind,
           ...modelIds,
         ],
       );
@@ -225,7 +227,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
              AND runs.excluded_at IS NULL
            GROUP BY r.task_id, m.id
            ORDER BY r.task_id, m.id`,
-      taskSetHash ? [...raw, taskSetHash, mode] : [...raw, mode],
+      taskSetHash ? [...raw, taskSetHash, modeBind] : [...raw, modeBind],
     );
 
     const byTask = new Map<string, Record<string, number | null>>();

@@ -2,9 +2,9 @@
  * Invocation-mode parsing, resolution and predicate helpers (spec D4,
  * docs/superpowers/specs/2026-09-06-batch-mode-design.md).
  *
- * `sync` and `batch` invocations are distinct profiles and are never pooled
- * within one model. A ranking query selects `sync`, `batch`, or `combined`
- * (each model on its own majority mode, amended D4:
+ * `sync` and `batch` invocations are distinct profiles: a ranking query uses
+ * exactly one mode per model, never a pool of both. It selects `sync`,
+ * `batch`, or `combined` (each model on its own majority mode, amended D4:
  * docs/superpowers/specs/2026-09-30-combined-mode-leaderboard-design.md).
  * `mode=all` is refused outright.
  */
@@ -71,8 +71,8 @@ export async function resolveInvocationMode(
           .bind(scope.hash);
 
   // Soft run exclusion (0022): modes are derived from the runs that COUNT.
-  // Otherwise a set whose only batch run is excluded would keep refusing with
-  // `mode_required` forever, for a mode with nothing left to rank.
+  // Otherwise a set whose only batch run is excluded would keep resolving to
+  // `combined` forever, for a mode with nothing left to rank.
   const rs = await stmt.all<{ mode: string }>();
   const modes = (rs.results ?? [])
     .map((r) => r.mode)
@@ -95,54 +95,77 @@ function assertSqlAlias(alias: string): void {
   }
 }
 
+/** The scope a served-mode map is computed over; `all` is every task set. */
+export type ModeScope = SetScope | { kind: "all" };
+
+/** The majority rule, in one place: more batch runs than sync wins; a tie goes to batch. */
+export const SERVED_MODE_CASE =
+  "CASE WHEN SUM(invocation_mode = 'batch') >= SUM(invocation_mode = 'sync') THEN 'batch' ELSE 'sync' END";
+
 /**
- * The served mode of the model owning the `<alias>` row, as a scalar
- * subquery: the mode with more non-excluded runs in that row's task set,
- * `batch` on a tie. Whole-set by construction (it reads `runs` directly), so
- * no caller filter can flip it. Binds nothing.
+ * The value to bind at the single `?` of `modePredicate`. For `sync`/`batch`
+ * it is the mode itself. For `combined` it is a JSON object
+ * `{"<model_id>": "sync"|"batch"}` holding each model's majority mode over the
+ * scope's non-excluded runs, computed by ONE query (runs of any status count
+ * toward the majority). `modePredicate` looks the row's model up in it, so the
+ * per-row cost is a JSON lookup, not a subquery. A model absent from the map
+ * yields NULL and matches nothing.
  */
-export function servedModeSql(alias: string): string {
-  assertSqlAlias(alias);
-  if (alias === "sm") throw new Error("alias 'sm' is reserved by servedModeSql");
-  return `(SELECT CASE WHEN SUM(sm.invocation_mode = 'batch') >= SUM(sm.invocation_mode = 'sync')
-                    THEN 'batch' ELSE 'sync' END
-             FROM runs sm
-            WHERE sm.model_id = ${alias}.model_id
-              AND sm.task_set_hash = ${alias}.task_set_hash
-              AND sm.excluded_at IS NULL)`;
+export async function resolveModeBinding(
+  db: D1Database,
+  scope: ModeScope,
+  mode: RankMode,
+): Promise<string> {
+  if (mode !== "combined") return mode;
+  const filter =
+    scope.kind === "current"
+      ? `AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
+      : scope.kind === "hash"
+        ? `AND task_set_hash = ?`
+        : ``;
+  const stmt = db.prepare(
+    `SELECT json_group_object(model_id, mode) AS map
+       FROM (SELECT model_id, ${SERVED_MODE_CASE} AS mode
+               FROM runs
+              WHERE excluded_at IS NULL ${filter}
+              GROUP BY model_id)`,
+  );
+  const row = await (scope.kind === "hash" ? stmt.bind(scope.hash) : stmt).first<{
+    map: string | null;
+  }>();
+  return row?.map ?? "{}";
 }
 
 /**
- * The mode predicate for `<alias>`, which must expose `model_id` and
- * `task_set_hash`. Always exactly one `?`, bound to the mode string itself:
- * single modes keep the original `= ?` form; `combined` binds `'combined'`,
- * which NULLIF turns into NULL so COALESCE falls through to the row's
- * served mode.
+ * The mode predicate for `<alias>`, which must expose `model_id`. Always
+ * exactly one `?`: bind `resolveModeBinding(...)`. Single modes keep the
+ * original `= ?` form; `combined` reads the model's mode out of the bound map.
  */
 export function modePredicate(alias: string, mode: RankMode): string {
   assertSqlAlias(alias);
   if (mode !== "combined") return `${alias}.invocation_mode = ?`;
-  return `${alias}.invocation_mode = COALESCE(NULLIF(?, 'combined'), ${servedModeSql(alias)})`;
+  return `${alias}.invocation_mode = json_extract(?, '$."' || ${alias}.model_id || '"')`;
 }
 
-/** Served mode per model over the scope's non-excluded runs (same rule as servedModeSql). */
+/**
+ * The value a caller binds at a `modePredicate` `?`: the pre-resolved
+ * `modeBind` when given, else the mode itself. `combined` has no meaningful
+ * literal, so it demands the resolved map rather than silently matching nothing.
+ */
+export function modeBindValue(mode: RankMode, modeBind?: string): string {
+  if (modeBind !== undefined) return modeBind;
+  if (mode === "combined") throw new Error("modeBind is required for combined mode");
+  return mode;
+}
+
+/** Served mode per model over the scope (same rule as the binding, one place). */
 export async function servedModes(
   db: D1Database,
-  scope: SetScope,
+  scope: ModeScope,
 ): Promise<Map<number, InvocationMode>> {
-  const where =
-    scope.kind === "current"
-      ? `task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
-      : `task_set_hash = ?`;
-  const stmt = db.prepare(
-    `SELECT model_id,
-            CASE WHEN SUM(invocation_mode = 'batch') >= SUM(invocation_mode = 'sync')
-                 THEN 'batch' ELSE 'sync' END AS mode
-       FROM runs
-      WHERE ${where} AND excluded_at IS NULL
-      GROUP BY model_id`,
-  );
-  const rs = await (scope.kind === "current" ? stmt : stmt.bind(scope.hash))
-    .all<{ model_id: number; mode: InvocationMode }>();
-  return new Map((rs.results ?? []).map((r) => [Number(r.model_id), r.mode]));
+  const map = JSON.parse(await resolveModeBinding(db, scope, "combined")) as Record<
+    string,
+    InvocationMode
+  >;
+  return new Map(Object.entries(map).map(([id, m]) => [Number(id), m]));
 }

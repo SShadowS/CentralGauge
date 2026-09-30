@@ -45,9 +45,9 @@ export interface LeaderboardQuery {
   /**
    * Invocation mode the ranking query is scoped to (D4). Resolved
    * server-side before the query runs: an explicit `?mode=` wins, otherwise
-   * the task set's sole mode is used, defaulting to `sync` when the set has
-   * no runs yet. Never `"all"` — sync and batch are distinct pricing/latency
-   * profiles and are never ranked together.
+   * the task set's only mode, `sync` when the set has no runs yet, or
+   * `combined` (each model on its majority mode) when it has both. Never
+   * `"all"`: each model contributes the runs of ONE mode only.
    */
   mode: RankMode;
   tier: "verified" | "claimed" | "trusted" | "all";
@@ -780,7 +780,7 @@ export interface FamilyDetail {
   /**
    * Invocation mode the trajectory aggregate is scoped to (D4). Resolved
    * server-side against the current task set: an explicit `?mode=` wins,
-   * otherwise the set's sole mode is used.
+   * otherwise the set's only mode, or `combined` when it has both.
    */
   filters: { mode: RankMode };
   trajectory: FamilyTrajectoryItem[];
@@ -921,7 +921,7 @@ export interface CompareFilters {
   /**
    * Invocation mode the comparison is scoped to (D4). Resolved server-side
    * against the current task set: an explicit `?mode=` wins, otherwise the
-   * set's sole mode is used. Every numerator (pass_at_n, pass_at_1, the
+   * set's only mode, or `combined` when it has both. Every numerator (pass_at_n, pass_at_1, the
    * per-task scores) reflects only runs in this mode.
    */
   mode: RankMode;
@@ -1114,7 +1114,7 @@ export interface MatrixFilters {
   /**
    * Invocation mode the matrix is scoped to (D4). Resolved server-side the
    * same way as the leaderboard's `mode`: an explicit `?mode=` wins,
-   * otherwise the resolved set's sole mode is used.
+   * otherwise the resolved set's only mode, or `combined` when it has both.
    */
   mode: RankMode;
 }

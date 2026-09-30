@@ -9,6 +9,7 @@ import {
   modePredicate,
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 import { excludedPredicate } from "$lib/server/run-exclusion";
 
@@ -32,6 +33,9 @@ export const GET: RequestHandler = async ({
       { kind: "current" },
       parseModeParam(url),
     );
+    // The trajectory spans every task set, so the served-mode map does too:
+    // one mode per model across the whole trajectory.
+    const modeBind = await resolveModeBinding(env.DB, { kind: "all" }, mode);
 
     // This route had NO server-side cache and measured 104,781 rows per
     // request — 1.99M/day, the single largest consumer. It was missed because
@@ -209,7 +213,7 @@ export const GET: RequestHandler = async ({
           // Textual `?` order: p1_by_model's mode, p2_only_by_model's mode,
           // the runs LEFT JOIN's mode, then the family id. The NOT EXISTS
           // dropped its own mode param when it started correlating on run_id.
-          [mode, mode, mode, fam.id],
+          [modeBind, modeBind, modeBind, fam.id],
         );
 
         // Resolve per-(dominant_task_set_hash) denominators. We batch the unique

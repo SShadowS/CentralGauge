@@ -25,7 +25,7 @@ import {
   formatSettingsSuffix,
   type SettingsProfileLike,
 } from "./settings-suffix";
-import { modePredicate, type RankMode } from "./invocation-mode";
+import { modeBindValue, modePredicate, type RankMode } from "./invocation-mode";
 
 export { cellColorBucket } from "$lib/client/matrix-helpers";
 export type { CellBucket } from "$lib/client/matrix-helpers";
@@ -40,6 +40,8 @@ export interface ComputeMatrixOpts {
    * route; every runs-joined query in this module predicates on it.
    */
   mode: RankMode;
+  /** `resolveModeBinding(...)` for `mode`; required when mode is `combined`. */
+  modeBind?: string;
 }
 
 const HASH_RE = /^[0-9a-f]{64}$/;
@@ -173,7 +175,7 @@ export async function computeMatrix(
       )
       ORDER BY m.id ASC
     `,
-    [...taskParams, opts.mode],
+    [...taskParams, modeBindValue(opts.mode, opts.modeBind)],
   );
 
   if (modelRows.length === 0) {
@@ -212,7 +214,7 @@ export async function computeMatrix(
         AND excluded_at IS NULL
       GROUP BY model_id
     `,
-    [...modelIds, opts.mode],
+    [...modelIds, modeBindValue(opts.mode, opts.modeBind)],
   );
 
   const uniqueHashByModel = new Map<number, string>();
@@ -290,7 +292,7 @@ export async function computeMatrix(
         AND runs.excluded_at IS NULL
       GROUP BY r.task_id, runs.model_id
     `,
-    [...taskParams, opts.mode],
+    [...taskParams, modeBindValue(opts.mode, opts.modeBind)],
   );
 
   const cellMap = new Map<string, MatrixCell>();

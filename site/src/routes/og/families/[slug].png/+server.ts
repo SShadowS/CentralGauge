@@ -7,6 +7,7 @@ import { computeModelAggregates } from "$lib/server/model-aggregates";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 import {
   buildCacheKey,
@@ -62,6 +63,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
         : { kind: "current" },
       parseModeParam(url),
     );
+    const modeBind = await resolveModeBinding(env.DB, { kind: "all" }, mode);
 
     const ogKey = buildCacheKey(
       "og-family",
@@ -133,6 +135,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
             modelIds,
             taskSetHash: taskSet?.hash ?? null,
             mode,
+            modeBind,
           })
         : new Map<
             number,

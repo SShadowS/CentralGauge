@@ -13,6 +13,7 @@ import { rowCostUsd } from "$lib/server/cost-sql";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 import {
   buildCacheKey,
@@ -116,6 +117,9 @@ export const GET: RequestHandler = async ({
       taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
       parseModeParam(url),
     );
+    // Cross-set surface (history and the predecessor fallback span sets): the
+    // served-mode map spans every task set so a model keeps one mode.
+    const modeBind = await resolveModeBinding(env.DB, { kind: "all" }, mode);
 
     // The slug is path-derived, not a free-form query param, and a miss on an
     // unknown slug 404s before any aggregate runs — so it is not the unbounded
@@ -175,6 +179,7 @@ export const GET: RequestHandler = async ({
       modelIds: [model.id],
       taskSetHash,
       mode,
+      modeBind,
       includeLatencyP50: true,
       includePassHatAtN: true,
       timer,
@@ -339,6 +344,7 @@ export const GET: RequestHandler = async ({
           modelIds: [prior.id],
           taskSetHash,
           mode,
+          modeBind,
         });
         let a = priorAgg.get(prior.id);
         if (!a || a.run_count === 0) {
@@ -350,6 +356,7 @@ export const GET: RequestHandler = async ({
           priorAgg = await computeModelAggregates(env.DB, {
             modelIds: [prior.id],
             mode,
+            modeBind,
           });
           a = priorAgg.get(prior.id);
         }

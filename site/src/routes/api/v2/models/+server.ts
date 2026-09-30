@@ -5,6 +5,7 @@ import { listModels } from "$lib/server/models";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 
 /**
@@ -31,7 +32,8 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       { kind: "current" },
       parseModeParam(url),
     );
-    const data = await listModels(db, mode);
+    const modeBind = await resolveModeBinding(db, { kind: "all" }, mode);
+    const data = await listModels(db, mode, modeBind);
 
     return v2Json(request, ctx, { data });
   } catch (err) {
