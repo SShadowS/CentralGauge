@@ -11,7 +11,7 @@ import {
   computeModelAggregatesLite,
   type LiteAggregate,
 } from "./model-aggregates";
-import type { ModelsIndexItem, InvocationMode } from "../shared/api-types";
+import type { ModelsIndexItem, RankMode } from "../shared/api-types";
 
 interface ModelRow {
   id: number;
@@ -46,7 +46,7 @@ interface ModelRow {
  */
 export async function listModels(
   db: D1Database,
-  mode: InvocationMode,
+  mode: RankMode,
 ): Promise<ModelsIndexItem[]> {
   const rows = await getAll<ModelRow>(
     db,

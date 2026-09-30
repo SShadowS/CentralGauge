@@ -6,6 +6,7 @@ import { computeDenominator } from "$lib/server/denominator";
 import {
   parseModeParam,
   resolveInvocationMode,
+  modePredicate,
 } from "$lib/server/invocation-mode";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
@@ -126,7 +127,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           JOIN current_hash ON ru1.task_set_hash = current_hash.hash
           WHERE r1.attempt = 1 AND r1.passed = 1
             AND ru1.model_id IN (${modelIdPlaceholders})
-            AND ru1.invocation_mode = ?
+            AND ${modePredicate("ru1", mode)}
             AND ru1.excluded_at IS NULL
           GROUP BY ru1.model_id
         ),
@@ -138,7 +139,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           JOIN current_hash ON ru2.task_set_hash = current_hash.hash
           WHERE r2.attempt = 2 AND r2.passed = 1
             AND ru2.model_id IN (${modelIdPlaceholders})
-            AND ru2.invocation_mode = ?
+            AND ${modePredicate("ru2", mode)}
             AND ru2.excluded_at IS NULL
             AND NOT EXISTS (
               SELECT 1 FROM results r1b
@@ -156,7 +157,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
           JOIN results r ON r.run_id = runs.id
           JOIN current_hash ON runs.task_set_hash = current_hash.hash
           WHERE runs.model_id IN (${modelIdPlaceholders})
-            AND runs.invocation_mode = ?
+            AND ${modePredicate("runs", mode)}
             -- Soft run exclusion (0022). run_count is the divisor for the
             -- per-run means above, so it must count exactly the runs those
             -- numerators were drawn from.
@@ -211,7 +212,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
            JOIN models m ON m.id = runs.model_id
            WHERE m.slug IN (${placeholders})
              AND runs.task_set_hash = ?
-             AND runs.invocation_mode = ?
+             AND ${modePredicate("runs", mode)}
              AND runs.excluded_at IS NULL
            GROUP BY r.task_id, m.id
            ORDER BY r.task_id, m.id`
@@ -220,7 +221,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
            JOIN runs ON runs.id = r.run_id
            JOIN models m ON m.id = runs.model_id
            WHERE m.slug IN (${placeholders})
-             AND runs.invocation_mode = ?
+             AND ${modePredicate("runs", mode)}
              AND runs.excluded_at IS NULL
            GROUP BY r.task_id, m.id
            ORDER BY r.task_id, m.id`,

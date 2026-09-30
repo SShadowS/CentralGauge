@@ -5,7 +5,7 @@ import {
 import type { ServerTimer } from "./server-timing";
 import { computeDenominator } from "./denominator";
 import { rowCostUsd } from "./cost-sql";
-import { modePredicate, type InvocationMode } from "./invocation-mode";
+import { modePredicate, type RankMode } from "./invocation-mode";
 import { excludedAndClause, excludedPredicate } from "./run-exclusion";
 
 /**
@@ -149,7 +149,7 @@ export interface ComputeOpts {
    * mixing both pricing/latency profiles into one number. Callers resolve it
    * via `resolveInvocationMode` before calling in.
    */
-  mode: InvocationMode;
+  mode: RankMode;
   /**
    * When true, also computes `latency_p50_ms` and `latency_p95_ms` for each
    * model. Off by default because it adds a second query; the leaderboard
@@ -234,7 +234,7 @@ export interface LiteAggregate {
  * with no results still reports run_count with a null avg_score, matching the
  * full path.
  *
- * `mode: InvocationMode` is REQUIRED (D4 fix round 1, controller ruling): the
+ * `mode: RankMode` is REQUIRED (D4 fix round 1, controller ruling): the
  * catalog list is cross-SET (no `taskSetHash` filter — see `models.ts`'s
  * `listModels` doc comment), but it is NOT cross-MODE. `avg_score_all_runs`
  * must not silently pool a model's sync and batch runs into one number; the
@@ -249,7 +249,7 @@ export interface LiteAggregate {
  */
 export async function computeModelAggregatesLite(
   db: D1Database,
-  opts: { modelIds?: number[]; mode: InvocationMode },
+  opts: { modelIds?: number[]; mode: RankMode },
 ): Promise<Map<number, LiteAggregate>> {
   const where: string[] = [];
   const params: Array<string | number> = [];
@@ -257,7 +257,7 @@ export async function computeModelAggregatesLite(
     where.push(`runs.model_id IN (${opts.modelIds.map(() => "?").join(",")})`);
     params.push(...opts.modelIds);
   }
-  where.push(modePredicate("runs"));
+  where.push(modePredicate("runs", opts.mode));
   params.push(opts.mode);
   // Soft run exclusion (0022). Binds nothing, so bind order is unaffected.
   where.push(excludedPredicate("runs"));
@@ -345,7 +345,7 @@ export async function computeModelAggregates(
     params.push(opts.since);
   }
   // D4: every ranking aggregate selects exactly one invocation mode.
-  where.push(modePredicate("runs"));
+  where.push(modePredicate("runs", opts.mode));
   params.push(opts.mode);
   // Soft run exclusion (0022). Pushed onto the SAME `where` array the
   // secondary helpers below (tokens, consistency, latency percentiles,
@@ -384,7 +384,7 @@ export async function computeModelAggregates(
       parts.push(`AND ${ruAlias}.started_at >= ?`);
       bind.push(opts.since);
     }
-    parts.push(`AND ${modePredicate(ruAlias)}`);
+    parts.push(`AND ${modePredicate(ruAlias, opts.mode)}`);
     bind.push(opts.mode);
     // Same mirroring reason as tier/since/mode: this subquery joins its own
     // `runs` alias. Contributes no bind param.
@@ -435,10 +435,10 @@ export async function computeModelAggregates(
   //   [SELECT list]
   //   1. taskSetClauseSubA1 ?  — hash mode only (ru1.task_set_hash = ?)
   //   2. scopeInA1 ?s          — difficulty?, category? inside A1 subquery
-  //   3. runScopeA1 ?s        : tier?, since?, then ru1.invocation_mode = ?
+  //   3. runScopeA1 ?s        : tier?, since?, then the ru1 mode predicate (one ?)
   //   4. taskSetClauseSubA2 ? : hash mode only
   //   5. scopeInA2 ?s         : difficulty?, category? inside A2 subquery
-  //   6. runScopeA2 ?s        : tier?, since?, then ru2.invocation_mode = ?
+  //   6. runScopeA2 ?s        : tier?, since?, then the ru2 mode predicate (one ?)
   //
   // The NOT EXISTS inside the A2 subquery carries no placeholders: it
   // correlates on `r1b.run_id = r2.run_id`, so it needs no scope mirroring
@@ -657,7 +657,7 @@ export async function computeModelAggregates(
   // D4: this helper builds its own WHERE from scratch (it has no results/task
   // join to piggyback on the outer `where`), so the mode predicate must be
   // added here too rather than inherited.
-  whereForSettings.push(modePredicate("runs"));
+  whereForSettings.push(modePredicate("runs", opts.mode));
   paramsForSettings.push(opts.mode);
   // This helper builds its WHERE from scratch, so the exclusion predicate
   // must be added here too rather than inherited from `where`.

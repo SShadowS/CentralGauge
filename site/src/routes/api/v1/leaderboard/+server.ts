@@ -13,7 +13,7 @@ import { getTierMap } from "$lib/server/tier-data";
 import {
   parseModeParam,
   resolveInvocationMode,
-  type InvocationMode,
+  type RankMode,
 } from "$lib/server/invocation-mode";
 import {
   buildCacheKey,
@@ -301,7 +301,7 @@ function parseSlug(raw: string | null, field: string): string | null {
  * is non-nullable.
  */
 type ParsedLeaderboardQuery = Omit<LeaderboardQuery, "mode"> & {
-  mode: InvocationMode | null;
+  mode: RankMode | null;
 };
 
 function parseQuery(url: URL): ParsedLeaderboardQuery {

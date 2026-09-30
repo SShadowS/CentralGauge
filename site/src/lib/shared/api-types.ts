@@ -31,6 +31,15 @@ export type SetFilter = "current" | string;
  */
 export type InvocationMode = "sync" | "batch";
 
+/**
+ * What a ranking query selects: one invocation mode, or `combined`, where
+ * each model is ranked on the mode it has most non-excluded runs in within
+ * the task set (tie to batch). See
+ * docs/superpowers/specs/2026-09-30-combined-mode-leaderboard-design.md.
+ * Keep in sync with `RankMode` in `$lib/server/invocation-mode`.
+ */
+export type RankMode = InvocationMode | "combined";
+
 export interface LeaderboardQuery {
   set: SetFilter;
   /**
@@ -40,7 +49,7 @@ export interface LeaderboardQuery {
    * no runs yet. Never `"all"` — sync and batch are distinct pricing/latency
    * profiles and are never ranked together.
    */
-  mode: InvocationMode;
+  mode: RankMode;
   tier: "verified" | "claimed" | "trusted" | "all";
   difficulty: "easy" | "medium" | "hard" | null;
   family: string | null;
@@ -773,7 +782,7 @@ export interface FamilyDetail {
    * server-side against the current task set: an explicit `?mode=` wins,
    * otherwise the set's sole mode is used.
    */
-  filters: { mode: InvocationMode };
+  filters: { mode: RankMode };
   trajectory: FamilyTrajectoryItem[];
 }
 
@@ -915,7 +924,7 @@ export interface CompareFilters {
    * set's sole mode is used. Every numerator (pass_at_n, pass_at_1, the
    * per-task scores) reflects only runs in this mode.
    */
-  mode: InvocationMode;
+  mode: RankMode;
 }
 
 export interface CompareResponse {
@@ -1107,7 +1116,7 @@ export interface MatrixFilters {
    * same way as the leaderboard's `mode`: an explicit `?mode=` wins,
    * otherwise the resolved set's sole mode is used.
    */
-  mode: InvocationMode;
+  mode: RankMode;
 }
 
 export interface MatrixResponse {

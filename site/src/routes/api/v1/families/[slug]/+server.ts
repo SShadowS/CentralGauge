@@ -131,7 +131,7 @@ export const GET: RequestHandler = async ({
         JOIN dominant_set ds1 ON ds1.model_id = ru1.model_id
         WHERE ru1.task_set_hash = ds1.dominant_hash
           AND r1.attempt = 1 AND r1.passed = 1
-          AND ${modePredicate("ru1")}
+          AND ${modePredicate("ru1", mode)}
           AND ${excludedPredicate("ru1")}
         GROUP BY ru1.model_id
       ),
@@ -149,7 +149,7 @@ export const GET: RequestHandler = async ({
         JOIN dominant_set ds2 ON ds2.model_id = ru2.model_id
         WHERE ru2.task_set_hash = ds2.dominant_hash
           AND r2.attempt = 2 AND r2.passed = 1
-          AND ${modePredicate("ru2")}
+          AND ${modePredicate("ru2", mode)}
           AND ${excludedPredicate("ru2")}
           AND NOT EXISTS (
             SELECT 1 FROM results r1b
@@ -195,7 +195,7 @@ export const GET: RequestHandler = async ({
                AS tasks_attempted_distinct,
              ds.dominant_hash AS dominant_task_set_hash
       FROM models m
-      LEFT JOIN runs ON runs.model_id = m.id AND ${modePredicate("runs")}
+      LEFT JOIN runs ON runs.model_id = m.id AND ${modePredicate("runs", mode)}
         AND ${excludedPredicate("runs")}
       LEFT JOIN results r ON r.run_id = runs.id
       LEFT JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version

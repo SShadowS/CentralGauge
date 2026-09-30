@@ -25,7 +25,7 @@ import {
   formatSettingsSuffix,
   type SettingsProfileLike,
 } from "./settings-suffix";
-import type { InvocationMode } from "./invocation-mode";
+import { modePredicate, type RankMode } from "./invocation-mode";
 
 export { cellColorBucket } from "$lib/client/matrix-helpers";
 export type { CellBucket } from "$lib/client/matrix-helpers";
@@ -39,7 +39,7 @@ export interface ComputeMatrixOpts {
    * Invocation mode the matrix is scoped to (D4). Resolved upstream in the
    * route; every runs-joined query in this module predicates on it.
    */
-  mode: InvocationMode;
+  mode: RankMode;
 }
 
 const HASH_RE = /^[0-9a-f]{64}$/;
@@ -168,7 +168,7 @@ export async function computeMatrix(
         JOIN results r ON r.run_id = runs.id
         WHERE r.task_id IN (${taskIdSubquery})
           ${taskSetRunsFilter}
-          AND runs.invocation_mode = ?
+          AND ${modePredicate("runs", opts.mode)}
           AND runs.excluded_at IS NULL
       )
       ORDER BY m.id ASC
@@ -208,7 +208,7 @@ export async function computeMatrix(
       FROM runs
       WHERE model_id IN (${modelIdsPh})
         ${taskSetSubFilter}
-        AND invocation_mode = ?
+        AND ${modePredicate("runs", opts.mode)}
         AND excluded_at IS NULL
       GROUP BY model_id
     `,
@@ -283,7 +283,7 @@ export async function computeMatrix(
       JOIN runs ON runs.id = r.run_id
       WHERE r.task_id IN (${taskIdSubquery})
         ${taskSetRunsFilter}
-        AND runs.invocation_mode = ?
+        AND ${modePredicate("runs", opts.mode)}
         -- Soft run exclusion (0022): an excluded run's cells are not counted
         -- as attempts or passes. A model with ONLY excluded runs also drops
         -- out of the models query above, so it gets no column at all.

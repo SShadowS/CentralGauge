@@ -8,7 +8,7 @@
 import type { TierInput, TierResult } from "./tiers";
 import { computeTiers } from "./tiers";
 import { CACHE_VERSION } from "./cache-version";
-import type { InvocationMode } from "./invocation-mode";
+import { modePredicate, type RankMode } from "./invocation-mode";
 
 export interface AucMatrixOptions {
   taskSetHash: string;
@@ -21,7 +21,7 @@ export interface AucMatrixOptions {
    * selects exactly one mode; the tier matrix is no exception, since sync
    * and batch runs are never ranked together.
    */
-  mode: InvocationMode;
+  mode: RankMode;
 }
 
 /**
@@ -99,7 +99,7 @@ export async function buildAucMatrix(
           ${categoryJoin}
          WHERE ru.task_set_hash = ?
            ${categoryWhere}
-           AND ru.invocation_mode = ?
+           AND ${modePredicate("ru", opts.mode)}
            -- Soft run exclusion (0022): an excluded run contributes no cell,
            -- so it moves neither a model's per-task mean nor its tier band.
            AND ru.excluded_at IS NULL
