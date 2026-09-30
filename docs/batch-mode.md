@@ -557,6 +557,17 @@ Wave timings: Anthropic waves ended within 20 to 80 minutes; OpenAI gpt-5-mini w
 8h33m (two items) and wave 2 12h12m (one item); OpenRouter Gemini completed in about 4
 minutes.
 
+## Site ranking by mode
+
+Sync and batch are distinct invocation profiles and are never pooled within one
+model. `mode=combined` ranks every model on the mode it has most non-excluded
+runs in (ties go to batch). A task set with runs in both modes and no `?mode=`
+defaults to `combined`, so a batch run in the current set no longer makes the
+ranked APIs refuse with `mode_required`. Each leaderboard row reports
+`served_mode`, and a row whose served mode is the minority among the rows shown carries a
+mode pill. See
+`docs/superpowers/specs/2026-09-30-combined-mode-leaderboard-design.md`.
+
 ## Site cost is list price
 
 The scoreboard prices every run at the model's published sync rates, whatever

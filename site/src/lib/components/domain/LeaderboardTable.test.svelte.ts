@@ -6,6 +6,7 @@ import type { LeaderboardRow } from '$shared/api-types';
 function makeRow(overrides: Partial<LeaderboardRow> & { slug: string }): LeaderboardRow {
   return {
     rank: 1,
+    served_mode: 'sync',
     family_slug: 'test',
     run_count: 1,
     tasks_attempted: 1,
@@ -40,6 +41,7 @@ function makeRow(overrides: Partial<LeaderboardRow> & { slug: string }): Leaderb
 const sampleRows: LeaderboardRow[] = [
   {
     rank: 1,
+    served_mode: 'sync',
     model: {
       slug: 'sonnet-4-7',
       display_name: 'Sonnet 4.7',
@@ -72,6 +74,7 @@ const sampleRows: LeaderboardRow[] = [
   },
   {
     rank: 2,
+    served_mode: 'sync',
     model: {
       slug: 'opus-4-7',
       display_name: 'Opus 4.7',
@@ -310,5 +313,17 @@ describe('LeaderboardTable', () => {
     expect(rankCells[0].classList.contains('tied')).toBe(true); // tier 1, shared
     expect(rankCells[1].classList.contains('tied')).toBe(true); // tier 1, shared
     expect(rankCells[2].classList.contains('tied')).toBe(false); // tier 2, alone
+  });
+
+  it('shows a mode pill only on minority-mode rows', () => {
+    const rows = [
+      makeRow({ slug: 'a', served_mode: 'batch' }),
+      makeRow({ slug: 'b', served_mode: 'batch' }),
+      makeRow({ slug: 'c', served_mode: 'sync' }),
+    ];
+    const { container } = render(LeaderboardTable, { props: { rows, sort: 'auc_2:desc' } });
+    const pills = container.querySelectorAll('[data-test="mode-pill"]');
+    expect(pills.length).toBe(1);
+    expect(pills[0].textContent?.trim()).toBe('sync');
   });
 });

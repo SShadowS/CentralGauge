@@ -45,7 +45,7 @@ describe("GET /api/v1/models/:slug — mode-scoped cache key (D4)", () => {
     ).run();
   });
 
-  it("caches the sync-only response, then refuses (not stale-serves) once the set turns mixed-mode", async () => {
+  it("caches the sync-only response, then re-resolves (not stale-serves) once the set turns mixed-mode", async () => {
     const first = await SELF.fetch("https://x/api/v1/models/sonnet-4.7");
     expect(first.status).toBe(200);
     const firstBody = (await first.json()) as ModelDetail;
@@ -67,12 +67,12 @@ describe("GET /api/v1/models/:slug — mode-scoped cache key (D4)", () => {
        VALUES ('r-batch','ts',1,'s','rig','2026-04-02T00:00:00Z','2026-04-02T01:00:00Z','completed','claimed','v1','sig','2026-04-02T00:00:00Z',1,'{}','batch')`,
     ).run();
 
-    // Default request (no ?mode=): must refuse with a visible 400, never the
-    // stale cached sync-only body.
+    // Default request (no ?mode=): must resolve to combined, never the stale
+    // cached sync-only body.
     const third = await SELF.fetch("https://x/api/v1/models/sonnet-4.7");
-    expect(third.status).toBe(400);
-    const thirdBody = await third.json<{ code: string }>();
-    expect(thirdBody.code).toBe("mode_required");
+    expect(third.status).toBe(200);
+    const thirdBody = (await third.json()) as ModelDetail;
+    expect(thirdBody.served_mode).toBe("batch");
 
     // Explicit mode still works and computes fresh (a distinct cache key
     // from the default request, and correctly scoped to just that mode).

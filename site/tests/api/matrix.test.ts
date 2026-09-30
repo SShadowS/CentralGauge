@@ -352,12 +352,15 @@ describe("GET /api/v1/matrix", () => {
     ]);
   }
 
-  it("requires mode when the current task set has both sync and batch runs", async () => {
+  it("defaults to combined when the current task set has both sync and batch runs", async () => {
     await seedModeFixture();
     const res = await SELF.fetch("https://x/api/v1/matrix?_cb=mode-none");
-    expect(res.status).toBe(400);
-    const body = await res.json<{ code: string }>();
-    expect(body.code).toBe("mode_required");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as MatrixResponse;
+    expect(body.filters.mode).toBe("combined");
+    for (const m of body.models) {
+      expect(["sync", "batch"]).toContain(m.served_mode);
+    }
   });
 
   it("scopes cells to the requested mode and echoes it in filters", async () => {

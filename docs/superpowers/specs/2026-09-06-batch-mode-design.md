@@ -65,6 +65,8 @@ concentrated after each wave rather than spread across it.
 | D13 | A run refuses to advance if any input that shaped attempt 1 has changed, and it persists the actual inputs needed to render attempt 2, not only their digests. | A fix prompt rendered days later must come from the same harness, and `advance` is a fresh process that does not receive the original submit options. |
 | D14 | The global bench lock becomes a real exclusive lock before batch mode lands: atomic creation, owner token, heartbeat, race-safe stale reclamation, owner-checked release. | Today `acquireBenchLock` overwrites the marker unconditionally and `isBenchRunning` only reads an mtime (`bench-lock.ts`); two processes can both "hold" it. The sync bench gets the fix too. |
 
+> D4 amended 2026-09-30: a mixed set defaults to mode=combined (see 2026-09-30-combined-mode-leaderboard-design.md).
+
 ## 4. Run state
 
 A run lives at `<output>/batch/<runId>/`. Every command loads it, acts,

@@ -8,7 +8,7 @@ import { resetDb } from "../utils/reset-db";
  * model, two runs on the same task set, one sync and one batch, each passing
  * a different task on attempt 1 — so mode=sync and mode=batch each isolate
  * exactly one pass, and the default rule (a set with both modes present)
- * must refuse rather than silently pick one.
+ * resolves to combined, which serves this tied model on batch.
  */
 
 beforeAll(async () => {
@@ -64,15 +64,16 @@ beforeEach(async () => {
 });
 
 describe("leaderboard invocation mode", () => {
-  it("refuses mode=all and requires mode when both modes exist", async () => {
+  it("refuses mode=all and defaults a mixed set to combined", async () => {
     const all = await SELF.fetch("https://x/api/v1/leaderboard?mode=all");
     expect(all.status).toBe(400);
     const allBody = (await all.json()) as { code?: string };
     expect(allBody.code).toBe("invalid_mode_for_metric");
     const none = await SELF.fetch("https://x/api/v1/leaderboard");
-    expect(none.status).toBe(400);
-    const noneBody = (await none.json()) as { code?: string };
-    expect(noneBody.code).toBe("mode_required");
+    expect(none.status).toBe(200);
+    const noneBody = (await none.json()) as LeaderboardResponse;
+    expect(noneBody.filters.mode).toBe("combined");
+    expect(noneBody.data[0].served_mode).toBe("batch"); // 1 sync vs 1 batch: tie to batch
   });
 
   it("counts only the selected mode's runs in every numerator", async () => {

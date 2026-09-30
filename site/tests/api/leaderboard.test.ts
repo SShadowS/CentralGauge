@@ -212,6 +212,7 @@ describe("LeaderboardRow — contract completeness", () => {
       "tier",
       "denominator",
       "fallback_count",
+      "served_mode",
       "refusal_count",
       "upstream",
       "latency_p95_ms",

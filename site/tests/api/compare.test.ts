@@ -282,14 +282,15 @@ async function seedModeFixture(): Promise<void> {
 }
 
 describe("GET /api/v1/compare — invocation mode (D4)", () => {
-  it("resolves mode before validating the model list: mode_required wins over too_few_models", async () => {
+  it("resolves mode before validating the model list: too_few_models surfaces on a mixed set", async () => {
     await seedModeFixture();
     // Only 1 model given (normally too_few_models), but the current set has
-    // both sync and batch runs, so mode resolution must refuse first.
+    // both sync and batch runs; mode resolves to combined, then the model
+    // list is validated.
     const res = await SELF.fetch("https://x/api/v1/compare?models=m");
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("mode_required");
+    expect(body.code).toBe("too_few_models");
   });
 
   it("rejects mode=all", async () => {

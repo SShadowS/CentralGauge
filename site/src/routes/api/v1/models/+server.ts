@@ -5,6 +5,7 @@ import { listModels } from "$lib/server/models";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 import {
   buildCacheKey,
@@ -67,7 +68,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // Row build is shared with `GET /api/v2/models` — see server/models.ts,
     // which also documents the cross-set `avg_score_all_runs` contract and the
     // lite-aggregate cost.
-    const data = await listModels(env.DB, mode);
+    // Cross-set list: the served-mode map spans every task set (scope `all`).
+    // Computed on the miss path only; it derives from data the epoch covers.
+    const modeBind = await resolveModeBinding(env.DB, { kind: "all" }, mode);
+    const data = await listModels(env.DB, mode, modeBind);
 
     // The response STORED in the named cache carries the public s-maxage. The
     // user-facing response stays `private` via cachedJson, or adapter-cloudflare

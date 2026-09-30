@@ -2,9 +2,11 @@
   import type { CompareModel, CompareTaskRow } from '$shared/api-types';
   import { formatScore } from '$lib/client/format';
   import ScoreCell from './ScoreCell.svelte';
+  import { minorityMode } from '$lib/shared/leaderboard-derive';
 
   interface Props { models: CompareModel[]; tasks: CompareTaskRow[]; }
   let { models, tasks }: Props = $props();
+  const badgeMode = $derived(minorityMode(models.map((m) => m.served_mode)));
 
   /**
    * Score-to-shade mapping: lerps from `--accent-soft` (0) to `--accent` (1).
@@ -36,6 +38,9 @@
         {#each models as m (m.slug)}
           <th scope="col" class="model-head">
             <a href="/models/{m.slug}">{m.display_name}</a>
+            {#if badgeMode && m.served_mode === badgeMode}
+              <span class="mode-pill" data-test="mode-pill" title="Ranked on {m.served_mode} runs">{m.served_mode}</span>
+            {/if}
             <span class="pass-rate">
               {#if m.pass_at_n !== null}
                 <ScoreCell score={m.pass_at_n} kind="pass_rate" />
@@ -86,6 +91,7 @@
   tbody tr:last-child td,
   tbody tr:last-child th { border-bottom: 0; }
   tr.divergent { background: var(--accent-soft); }
+  .mode-pill { margin-left: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }
   .model-head { vertical-align: top; }
   .pass-rate { display: block; margin-top: var(--space-1); }
   .cell {
