@@ -1,4 +1,5 @@
 import type {
+  InvocationMode,
   LeaderboardQuery,
   LeaderboardResponse,
   LeaderboardRow,
@@ -601,6 +602,14 @@ export async function computeLeaderboard(
   // upstream (spec 2026-09-11 D5): the profile every in-scope run of the model
   // was ingested under, the distinct upstreams that actually served, and the
   // verification-state histogram. Same scope caveat as fallback_count.
+  // Combined mode: report which mode each row was ranked on, read from the
+  // binding computeLeaderboard already received (no extra query).
+  const servedByModel = new Map<number, InvocationMode>(
+    q.mode === "combined" && modeBind
+      ? Object.entries(JSON.parse(modeBind) as Record<string, InvocationMode>)
+        .map(([k, v]) => [Number(k), v] as const)
+      : [],
+  );
   const upstreamByModel = new Map<number, LeaderboardUpstream>();
   if (modelIds.length > 0) {
     const upWheres = [modePredicate("runs", q.mode), excludedPredicate("runs")];
@@ -725,6 +734,9 @@ export async function computeLeaderboard(
       repair_rate: Math.round(repairRate * 1e6) / 1e6,
       denominator,
       fallback_count: fallbackByModel.get(r.model_id) ?? 0,
+      served_mode: q.mode === "combined"
+        ? (servedByModel.get(r.model_id) ?? "batch")
+        : q.mode,
       refusal_count: refusalByModel.get(r.model_id) ?? 0,
       upstream: upstreamByModel.get(r.model_id) ??
         { pin: null, served: [], verification: {} },

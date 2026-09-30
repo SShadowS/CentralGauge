@@ -6,6 +6,7 @@ import type { LeaderboardRow } from '$shared/api-types';
 function makeRow(overrides: Partial<LeaderboardRow> & { slug: string }): LeaderboardRow {
   return {
     rank: 1,
+    served_mode: 'sync',
     family_slug: 'test',
     run_count: 1,
     tasks_attempted: 1,
@@ -40,6 +41,7 @@ function makeRow(overrides: Partial<LeaderboardRow> & { slug: string }): Leaderb
 const sampleRows: LeaderboardRow[] = [
   {
     rank: 1,
+    served_mode: 'sync',
     model: {
       slug: 'sonnet-4-7',
       display_name: 'Sonnet 4.7',
@@ -72,6 +74,7 @@ const sampleRows: LeaderboardRow[] = [
   },
   {
     rank: 2,
+    served_mode: 'sync',
     model: {
       slug: 'opus-4-7',
       display_name: 'Opus 4.7',

@@ -202,6 +202,12 @@ export interface LeaderboardRow {
    */
   fallback_count: number;
   /**
+   * The invocation mode this row's numbers come from. Equals the requested
+   * mode for `mode=sync|batch`; under `mode=combined` it is the model's
+   * majority mode in the task set (tie to batch).
+   */
+  served_mode: InvocationMode;
+  /**
    * Count of result rows the provider REFUSED and nothing rescued
    * (`results.termination_kind = 'refusal'` with a NULL `served_model`).
    * A rescued refusal is reported by `fallback_count` instead, never here, so

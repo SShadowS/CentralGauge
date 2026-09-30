@@ -11,6 +11,7 @@ function row(
 ): LeaderboardRow {
   return {
     rank,
+    served_mode: "sync",
     model: {
       slug,
       display_name: slug,
