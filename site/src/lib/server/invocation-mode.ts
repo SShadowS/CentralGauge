@@ -34,7 +34,7 @@ export function parseModeParam(url: URL): RankMode | null {
     throw new ApiError(
       400,
       "invalid_mode_for_metric",
-      "mode=all is not supported: sync and batch are distinct invocation profiles and are never ranked together. Pass mode=sync or mode=batch.",
+      "mode=all is not supported: sync and batch are distinct invocation profiles and are never pooled within one model. Pass mode=sync, mode=batch or mode=combined.",
     );
   }
   throw new ApiError(400, "invalid_mode", "mode must be sync, batch or combined");
