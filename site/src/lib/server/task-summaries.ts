@@ -6,12 +6,25 @@
  * `deno task summary-audit` in CI.
  */
 import summariesMarkdown from "../../../catalog/task-summaries.md?raw";
+import { sha256Hex } from "$lib/shared/hash";
 import { parseTaskSummaries } from "$lib/shared/task-summaries";
 
-const SUMMARIES: Map<string, string> = new Map(
-  parseTaskSummaries(summariesMarkdown).entries.map((e) => [e.id, e.body]),
+const SUMMARIES: Map<string, { sha: string; body: string }> = new Map(
+  parseTaskSummaries(summariesMarkdown).entries.map((
+    e,
+  ) => [e.id, { sha: e.descriptionSha, body: e.body }]),
 );
 
-export function taskSummary(id: string): string | null {
-  return SUMMARIES.get(id) ?? null;
+/**
+ * The summary, only when it was written for the description being served
+ * (the bundle and D1's task set are deployed on independent clocks). The sha
+ * stays server-side.
+ */
+export async function taskSummary(
+  id: string,
+  description: string | undefined,
+): Promise<string | null> {
+  const e = SUMMARIES.get(id);
+  if (!e || description === undefined) return null;
+  return (await sha256Hex(description)) === e.sha ? e.body : null;
 }

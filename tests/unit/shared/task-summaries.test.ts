@@ -37,6 +37,31 @@ Deno.test("parseTaskSummaries", async (t) => {
     ]);
   });
 
+  await t.step(
+    "malformed headers error and do not merge into the previous entry",
+    () => {
+      const md = [
+        "## CG-AL-E002",
+        `description_sha: ${SHA_A}`,
+        "Real body.",
+        "## CG-AL-E001 foo",
+        `description_sha: ${SHA_B}`,
+        "Belongs to the broken entry.",
+        "##CG-AL-E001",
+        "Also broken.",
+        "### still body of nothing",
+      ].join("\n");
+      const r = parseTaskSummaries(md);
+      assertEquals(r.errors, [
+        "malformed header '## CG-AL-E001 foo'",
+        "malformed header '##CG-AL-E001'",
+      ]);
+      assertEquals(r.entries, [
+        { id: "CG-AL-E002", descriptionSha: SHA_A, body: "Real body." },
+      ]);
+    },
+  );
+
   await t.step("CRLF parses the same as LF", () => {
     const lf = `## CG-AL-E001\ndescription_sha: ${SHA_A}\nBody.\n`;
     assertEquals(

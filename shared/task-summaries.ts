@@ -20,22 +20,30 @@ export interface TaskSummariesParse {
 export const SUMMARY_MAX_CHARS = 600;
 
 const HEADER = /^## (\S+)\s*$/;
+// "##" followed by a non-"#": a header attempt ("###" stays body text).
+const HEADER_LIKE = /^##(?!#)/;
 const SHA_LINE = /^description_sha: ([0-9a-f]{64})\s*$/;
 
 export function parseTaskSummaries(markdown: string): TaskSummariesParse {
   const lines = markdown.replaceAll("\r\n", "\n").split("\n");
   const blocks: Array<{ id: string; lines: string[] }> = [];
+  const errors: string[] = [];
+  let broken = false;
   for (const line of lines) {
     const m = HEADER.exec(line);
     if (m) {
+      broken = false;
       blocks.push({ id: m[1]!, lines: [] });
-    } else if (blocks.length > 0) {
+    } else if (HEADER_LIKE.test(line)) {
+      // Skip the broken entry's lines too, so they never join the previous one.
+      errors.push(`malformed header '${line}'`);
+      broken = true;
+    } else if (!broken && blocks.length > 0) {
       blocks[blocks.length - 1]!.lines.push(line);
     }
   }
 
   const entries: TaskSummaryEntry[] = [];
-  const errors: string[] = [];
   const seen = new Set<string>();
   for (const b of blocks) {
     if (seen.has(b.id)) {

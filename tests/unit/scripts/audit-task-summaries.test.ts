@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import {
   auditSummaries,
@@ -145,4 +145,12 @@ Deno.test("auditSummaries", async (t) => {
       ],
     );
   });
+});
+
+Deno.test("baseline never grows", async () => {
+  // This number may only go down. New tasks need a summary, not a baseline line.
+  const ids = parseBaseline(
+    await Deno.readTextFile("site/catalog/task-summaries.baseline.txt"),
+  );
+  assert(ids.length <= 231, `baseline has ${ids.length} ids (max 231)`);
 });
