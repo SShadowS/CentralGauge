@@ -168,3 +168,21 @@ Extend the existing suites; write each failing test first.
 - Correcting scores for the extra sync rescues (the badge only discloses them).
 - Pooling both modes within one model.
 - Any change to how runs are ingested, priced or excluded.
+
+## Implementation note
+
+The plan first tried an inline correlated subquery (`servedModeSql`). The task
+review measured one evaluation per row, and on cross-set surfaces it pooled
+modes, so it was replaced by the map binding this spec describes:
+`resolveModeBinding(db, scope, mode)` returns the literal mode for sync and
+batch, or a JSON map from model_id to served mode for combined, and
+`modePredicate` still consumes exactly one `?`.
+
+The spec did not say which set a cross-set surface maps from. Queries filtered
+to one task set bind that set's map; cross-set queries (models list v1/v2,
+matrix `set=all`, the families trajectory) bind a current-first map,
+`json_patch(all-sets map, current-set map)`.
+
+`upstream-profile.ts:45` is ingest-side and untouched. The compare route had
+five hand-written mode predicates that this spec's list missed; all five now use
+`modePredicate`.

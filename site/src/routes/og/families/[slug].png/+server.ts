@@ -29,10 +29,9 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   }
   const env = platform.env;
 
-  // Everything below can throw an ApiError (resolveInvocationMode's
-  // mode_required on a mixed-mode task set) — without this wrap that
-  // propagated as an unhandled exception, which SvelteKit renders as an
-  // opaque 500 rather than the visible 400 the D4 default rule promises.
+  // Everything below can throw an ApiError (e.g. an invalid `mode` value):
+  // without this wrap that propagated as an unhandled exception, which
+  // SvelteKit renders as an opaque 500 rather than the visible 400.
   try {
     // Epoch-keyed named cache, checked BEFORE any D1 work. renderOgPng's own R2
     // cache is keyed on a payload derived from D1, so it saves the Satori render

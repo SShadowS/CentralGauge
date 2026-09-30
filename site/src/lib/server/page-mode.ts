@@ -3,13 +3,11 @@
  * docs/superpowers/specs/2026-09-06-batch-mode-design.md section 2).
  *
  * Every ranked API (leaderboard, matrix, compare, families/:slug,
- * models, models/:slug) resolves to exactly one invocation mode and
- * refuses with `400 mode_required` when the current task set has runs in
- * both modes and no `?mode=` was given (see `invocation-mode.ts`). Page
- * loaders forward the caller's `?mode=` through to the API and, when the
- * API refuses because the mode is genuinely ambiguous, fall back to
- * `sync` — every historical run is sync and the published baseline is
- * sync — rather than surfacing a 400 to the visitor.
+ * models, models/:slug) resolves each model to exactly one invocation
+ * mode (see `invocation-mode.ts`). Page loaders forward the caller's
+ * `?mode=` through to the API. The API now resolves a mixed set to
+ * `combined` itself, so the sync retry below only fires against an older
+ * worker that still refuses with `mode_required`.
  */
 import type { InvocationMode, RankMode } from "$lib/server/invocation-mode";
 
@@ -53,11 +51,10 @@ export interface ModeFetchResult {
 }
 
 /**
- * Fetches `buildUrl(requested)`. If the API refuses with `400
- * mode_required` (only possible when `requested` is null — an explicit
- * mode always short-circuits `resolveInvocationMode`), retries exactly
- * once against `buildUrl("sync")`. Any other outcome — ok, or a non-ok
- * response for any other reason — is returned as-is with no retry.
+ * Fetches `buildUrl(requested)`. If an older worker refuses with `400
+ * mode_required` (only possible when `requested` is null), retries
+ * exactly once against `buildUrl("sync")`. Any other outcome (ok, or a non-ok
+ * response for any other reason) is returned as-is with no retry.
  */
 export async function fetchWithModeFallback(
   fetchFn: typeof fetch,

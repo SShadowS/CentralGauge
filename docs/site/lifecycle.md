@@ -321,20 +321,17 @@ and a top-level `invocation_mode` (`sync` or `batch`) stored on D1
 `runs.invocation_mode` (migration `0019`). Every ranking query, leaderboard,
 aggregates, tiers, matrix and compare, requires a resolved mode and includes
 it in its cache keys, because sync and batch are different pricing and
-latency profiles that are never ranked together. The `mode` query parameter
-resolves to one of three outcomes: an explicit `?mode=sync` or `?mode=batch`
-selects that mode; an omitted `mode` on a task set with runs in only one mode
-defaults to that mode; and three error codes cover the rest,
-`invalid_mode_for_metric` for `?mode=all` (there is no cross-mode ranking),
-`mode_required` when the task set has runs in both modes and no `mode` was
-given, and the endpoint's normal validation error for any other bad value.
-The page loaders pass `?mode=` through and fall back to `sync` (with a
-notice and a mode filter on the leaderboard) when the current set has both
-modes, so a batch run may be ingested into the current set once this is
-deployed. `/api/v2/models` and the three og image routes (index, models,
-families) are not page loaders and are untouched by this fix - they still
-show `mode_required` on a mixed-mode set with no `mode` parameter, so a
-direct caller (including a social-preview crawler) must pass it explicitly.
+latency profiles that are never pooled within one model. The `mode` query
+parameter resolves as follows: an explicit `?mode=sync` or `?mode=batch`
+selects that mode; `?mode=combined` ranks each model on the mode it has most
+non-excluded runs in (ties go to batch); an omitted `mode` defaults to
+`combined` on a task set with runs in both modes, to the only mode on a
+single-mode set, and to `sync` on an empty set. `?mode=all` is refused with
+`invalid_mode_for_metric` (there is no cross-mode pooling), and any other bad
+value gets the endpoint's normal validation error. Rows carry `served_mode`;
+the leaderboard has a Combined / Sync only / Batch only filter, a notice, and
+a pill on models ranked on their minority mode. `/api/v2/models` and the og
+image routes resolve the same way.
 
 ## Excluding a run (migration 0022)
 
