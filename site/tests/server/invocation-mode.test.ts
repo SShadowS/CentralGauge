@@ -148,7 +148,7 @@ describe("modePredicate", () => {
     expect(await resolveModeBinding(env.DB, { kind: "current" }, "sync")).toBe("sync");
   });
 
-  it("scope all yields ONE mode per model across task sets; hash scope stays per set", async () => {
+  it("scope all yields ONE mode per model (current-first); hash scope stays per set", async () => {
     await seedModelRuns([
       { model: 1, mode: "sync", set: "ts" }, // set ts: sync 2 vs batch 1 -> sync
       { model: 1, mode: "sync", set: "ts" },
@@ -159,7 +159,24 @@ describe("modePredicate", () => {
     ]);
     expect(Object.fromEntries(await servedModes(env.DB, { kind: "hash", hash: "ts" }))).toEqual({ 1: "sync" });
     expect(Object.fromEntries(await servedModes(env.DB, { kind: "hash", hash: "ts2" }))).toEqual({ 1: "batch" });
-    // 4 batch vs 2 sync over both sets: one mode for the model.
-    expect(Object.fromEntries(await servedModes(env.DB, { kind: "all" }))).toEqual({ 1: "batch" });
+    // current-first: ts is the current set, where the model is sync-majority.
+    expect(Object.fromEntries(await servedModes(env.DB, { kind: "all" }))).toEqual({ 1: "sync" });
+  });
+
+  it("scope all is current-first: the current set's majority wins, old-only models keep theirs", async () => {
+    await seedModelRuns([
+      { model: 1, mode: "sync", set: "ts2" }, // 3 sync in the old set
+      { model: 1, mode: "sync", set: "ts2" },
+      { model: 1, mode: "sync", set: "ts2" },
+      { model: 1, mode: "batch", set: "ts" }, // 1 batch in the current set
+      { model: 2, mode: "sync", set: "ts2" }, // old set only: 2 batch vs 1 sync
+      { model: 2, mode: "batch", set: "ts2" },
+      { model: 2, mode: "batch", set: "ts2" },
+    ]);
+    expect(Object.fromEntries(await servedModes(env.DB, { kind: "all" }))).toEqual({
+      1: "batch",
+      2: "batch",
+    });
+    expect(Object.fromEntries(await servedModes(env.DB, { kind: "current" }))).toEqual({ 1: "batch" });
   });
 });

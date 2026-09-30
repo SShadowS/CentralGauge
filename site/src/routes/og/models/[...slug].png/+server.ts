@@ -62,7 +62,12 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
       taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
       parseModeParam(url),
     );
-    const modeBind = await resolveModeBinding(env.DB, { kind: "all" }, mode);
+    // Current-set aggregates: bind the current set's map, not the all-sets one.
+    const modeBind = await resolveModeBinding(
+      env.DB,
+      taskSetHash ? { kind: "hash", hash: taskSetHash } : { kind: "current" },
+      mode,
+    );
 
     const ogKey = buildCacheKey(
       "og-model",

@@ -95,21 +95,37 @@ function assertSqlAlias(alias: string): void {
   }
 }
 
-/** The scope a served-mode map is computed over; `all` is every task set. */
+/**
+ * The scope a served-mode map is computed over. `all` is CURRENT-FIRST: every
+ * task set's majority, overridden by the current set's majority for each model
+ * that has non-excluded runs there. A query filtered to ONE set must bind that
+ * set's scope instead (`current` or `hash`), never `all`.
+ */
 export type ModeScope = SetScope | { kind: "all" };
 
 /** The majority rule, in one place: more batch runs than sync wins; a tie goes to batch. */
 export const SERVED_MODE_CASE =
   "CASE WHEN SUM(invocation_mode = 'batch') >= SUM(invocation_mode = 'sync') THEN 'batch' ELSE 'sync' END";
 
+const CURRENT_SET_FILTER = `AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
+
+function servedMapSql(filter: string): string {
+  return `SELECT json_group_object(model_id, mode)
+            FROM (SELECT model_id, ${SERVED_MODE_CASE} AS mode
+                    FROM runs
+                   WHERE excluded_at IS NULL ${filter}
+                   GROUP BY model_id)`;
+}
+
 /**
  * The value to bind at the single `?` of `modePredicate`. For `sync`/`batch`
  * it is the mode itself. For `combined` it is a JSON object
  * `{"<model_id>": "sync"|"batch"}` holding each model's majority mode over the
- * scope's non-excluded runs, computed by ONE query (runs of any status count
- * toward the majority). `modePredicate` looks the row's model up in it, so the
- * per-row cost is a JSON lookup, not a subquery. A model absent from the map
- * yields NULL and matches nothing.
+ * scope's non-excluded runs, computed by ONE statement (runs of any status
+ * count toward the majority). `modePredicate` looks the row's model up in it,
+ * so the per-row cost is a JSON lookup, not a subquery. A model absent from
+ * the map yields NULL and matches nothing. Scope `all` is current-first (see
+ * `ModeScope`): `json_patch(all-sets map, current-set map)`.
  */
 export async function resolveModeBinding(
   db: D1Database,
@@ -117,20 +133,18 @@ export async function resolveModeBinding(
   mode: RankMode,
 ): Promise<string> {
   if (mode !== "combined") return mode;
-  const filter =
-    scope.kind === "current"
-      ? `AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
-      : scope.kind === "hash"
-        ? `AND task_set_hash = ?`
-        : ``;
-  const stmt = db.prepare(
-    `SELECT json_group_object(model_id, mode) AS map
-       FROM (SELECT model_id, ${SERVED_MODE_CASE} AS mode
-               FROM runs
-              WHERE excluded_at IS NULL ${filter}
-              GROUP BY model_id)`,
-  );
-  const row = await (scope.kind === "hash" ? stmt.bind(scope.hash) : stmt).first<{
+  let sql: string;
+  let binds: string[] = [];
+  if (scope.kind === "all") {
+    sql = `SELECT json_patch(COALESCE((${servedMapSql("")}), '{}'), COALESCE((${servedMapSql(CURRENT_SET_FILTER)}), '{}')) AS map`;
+  } else if (scope.kind === "current") {
+    sql = `SELECT (${servedMapSql(CURRENT_SET_FILTER)}) AS map`;
+  } else {
+    sql = `SELECT (${servedMapSql("AND task_set_hash = ?")}) AS map`;
+    binds = [scope.hash];
+  }
+  const stmt = db.prepare(sql);
+  const row = await (binds.length ? stmt.bind(...binds) : stmt).first<{
     map: string | null;
   }>();
   return row?.map ?? "{}";
