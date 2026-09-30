@@ -64,14 +64,16 @@ beforeEach(async () => {
 });
 
 describe("page loaders survive a mixed-mode task set", () => {
-  it("GET / falls back to sync and shows the notice + a batch link", async () => {
+  it("GET / ranks a mixed set combined and shows the combined notice", async () => {
     const res = await SELF.fetch("http://x/");
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain(
-      "Showing sync runs. This task set also has batch runs.",
+      "Each model is ranked on the run mode it has most runs in.",
     );
+    expect(html).toMatch(/href="[^"]*mode=sync[^"]*"/);
     expect(html).toMatch(/href="[^"]*mode=batch[^"]*"/);
+    expect(html).toMatch(/<a[^>]*class="[^"]*active[^"]*"[^>]*>\s*combined/);
   });
 
   it("GET /?mode=batch returns 200 without the notice", async () => {

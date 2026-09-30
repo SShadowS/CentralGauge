@@ -210,7 +210,7 @@
       <h2>Overview</h2>
       <p class="text-muted">
         {m.model.display_name} has run on {m.aggregates.run_count} occasions, attempting {m.aggregates.tasks_attempted_distinct} tasks
-        with an average score of {formatScore(m.aggregates.avg_score)}.
+        with an average score of {formatScore(m.aggregates.avg_score)}. Ranked on {m.served_mode} runs.
         {#if m.aggregates.verified_runs > 0}
           {m.aggregates.verified_runs} of these runs are verified by an independent verifier machine.
         {/if}

@@ -123,10 +123,11 @@
       onchange={(next) => pushFilter({ set: next === 'current' ? null : next })}
     />
     <OpennessFilter value={data.filters.openness ?? null} onselect={(v) => pushFilter({ openness: v })} />
-    {#if data.modeSplit || page.url.searchParams.has('mode')}
+    {#if data.modeSplit || data.mode === 'combined' || page.url.searchParams.has('mode')}
       <ModeFilter
         mode={data.mode}
         modeSplit={data.modeSplit}
+        combinedHref={data.modeLinks.combined}
         syncHref={data.modeLinks.sync}
         batchHref={data.modeLinks.batch}
       />
@@ -137,6 +138,12 @@
     {#if data.modeSplit}
       <p class="mode-notice">
         Showing sync runs. This task set also has batch runs. <a href={data.modeLinks.batch}>View batch</a>
+      </p>
+    {/if}
+    {#if data.mode === 'combined'}
+      <p class="mode-notice">
+        Each model is ranked on the run mode it has most runs in. Models marked sync were run without batch.
+        <a href={data.modeLinks.sync}>Sync only</a> · <a href={data.modeLinks.batch}>Batch only</a>
       </p>
     {/if}
     {#if Array.from(page.url.searchParams.entries()).some(([k]) => FILTER_KEYS.has(k))}

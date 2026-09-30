@@ -1,5 +1,5 @@
 // site/src/lib/shared/leaderboard-derive.ts
-import type { LeaderboardRow } from './api-types';
+import type { InvocationMode, LeaderboardRow } from './api-types';
 
 /** Solve AUC@2 as a 0..1 fraction (unrounded). Server-emitted auc_2 when
  * present, else the (pass@1 + pass@n)/2 fallback. Shared core for display +
@@ -35,3 +35,14 @@ export function outcomeMix(row: LeaderboardRow): OutcomeMix {
   return { firstTryPct, retryPct, failedPct };
 }
 
+
+/**
+ * The served mode to badge in a combined ranking: the less common one among
+ * the rows shown, `sync` on a tie, `null` when every row shares one mode.
+ */
+export function minorityMode(modes: InvocationMode[]): InvocationMode | null {
+  const sync = modes.filter((m) => m === 'sync').length;
+  const batch = modes.length - sync;
+  if (sync === 0 || batch === 0) return null;
+  return sync <= batch ? 'sync' : 'batch';
+}

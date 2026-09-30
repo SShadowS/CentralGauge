@@ -1,25 +1,29 @@
 <!-- site/src/lib/components/domain/ModeFilter.svelte -->
 <script lang="ts">
-  import type { InvocationMode } from '$lib/shared/api-types';
+  import type { RankMode } from '$lib/shared/api-types';
 
   interface Props {
     /** The mode actually served (null when the API never resolved one). */
-    mode: InvocationMode | null;
+    mode: RankMode | null;
     modeSplit: boolean;
     /** Precomputed hrefs (built server-side via withMode) that preserve every other param. */
+    combinedHref: string;
     syncHref: string;
     batchHref: string;
   }
-  let { mode, syncHref, batchHref }: Props = $props();
+  let { mode, combinedHref, syncHref, batchHref }: Props = $props();
 </script>
 
 <div class="mode-filter">
   <span class="label">Mode</span>
+  <a href={combinedHref} class="link" class:active={mode === 'combined'} aria-current={mode === 'combined' ? 'page' : undefined}>
+    combined
+  </a>
   <a href={syncHref} class="link" class:active={mode === 'sync'} aria-current={mode === 'sync' ? 'page' : undefined}>
-    sync
+    sync only
   </a>
   <a href={batchHref} class="link" class:active={mode === 'batch'} aria-current={mode === 'batch' ? 'page' : undefined}>
-    batch
+    batch only
   </a>
 </div>
 

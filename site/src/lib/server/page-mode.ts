@@ -11,7 +11,7 @@
  * `sync` — every historical run is sync and the published baseline is
  * sync — rather than surfacing a 400 to the visitor.
  */
-import type { InvocationMode } from "$lib/server/invocation-mode";
+import type { InvocationMode, RankMode } from "$lib/server/invocation-mode";
 
 /**
  * Reads the `?mode=` query param. Returns `null` for absent, empty, or any
@@ -19,9 +19,9 @@ import type { InvocationMode } from "$lib/server/invocation-mode";
  * simply treated as "not requested" and left for the API (or its own
  * default resolution) to handle.
  */
-export function pageMode(url: URL): InvocationMode | null {
+export function pageMode(url: URL): RankMode | null {
   const raw = url.searchParams.get("mode");
-  if (raw === "sync" || raw === "batch") return raw;
+  if (raw === "sync" || raw === "batch" || raw === "combined") return raw;
   return null;
 }
 
@@ -32,7 +32,7 @@ export function pageMode(url: URL): InvocationMode | null {
 export function withMode(
   path: string,
   params: URLSearchParams,
-  mode: InvocationMode | null,
+  mode: RankMode | null,
 ): string {
   const sp = new URLSearchParams(params);
   if (mode) {
@@ -47,7 +47,7 @@ export function withMode(
 export interface ModeFetchResult {
   res: Response;
   /** The mode actually served: `requested`, or `"sync"` after a fallback. */
-  mode: InvocationMode | null;
+  mode: RankMode | null;
   /** True when the API refused the unqualified request and a sync retry was made. */
   modeSplit: boolean;
 }
@@ -61,8 +61,8 @@ export interface ModeFetchResult {
  */
 export async function fetchWithModeFallback(
   fetchFn: typeof fetch,
-  buildUrl: (mode: InvocationMode | null) => string,
-  requested: InvocationMode | null,
+  buildUrl: (mode: RankMode | null) => string,
+  requested: RankMode | null,
 ): Promise<ModeFetchResult> {
   const res = await fetchFn(buildUrl(requested));
   if (res.ok) {

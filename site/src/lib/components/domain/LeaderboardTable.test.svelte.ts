@@ -314,4 +314,16 @@ describe('LeaderboardTable', () => {
     expect(rankCells[1].classList.contains('tied')).toBe(true); // tier 1, shared
     expect(rankCells[2].classList.contains('tied')).toBe(false); // tier 2, alone
   });
+
+  it('shows a mode pill only on minority-mode rows', () => {
+    const rows = [
+      makeRow({ slug: 'a', served_mode: 'batch' }),
+      makeRow({ slug: 'b', served_mode: 'batch' }),
+      makeRow({ slug: 'c', served_mode: 'sync' }),
+    ];
+    const { container } = render(LeaderboardTable, { props: { rows, sort: 'auc_2:desc' } });
+    const pills = container.querySelectorAll('[data-test="mode-pill"]');
+    expect(pills.length).toBe(1);
+    expect(pills[0].textContent?.trim()).toBe('sync');
+  });
 });
