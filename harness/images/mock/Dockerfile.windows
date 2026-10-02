@@ -4,6 +4,9 @@
 ARG BASE
 FROM ${BASE}
 COPY mock.ps1 C:/mock.ps1
+# H-01 run 004: what this image adds is read-only for the agent user.
+RUN powershell -NoProfile -ExecutionPolicy Bypass -File C:\cg-lockdown.ps1 C:\mock.ps1; \
+    if ($LASTEXITCODE -ne 0) { throw ('cg-lockdown failed: ' + $LASTEXITCODE) }
 # H-01: defense in depth; the harness also passes --user ContainerUser.
 USER ContainerUser
 CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\mock.ps1"]

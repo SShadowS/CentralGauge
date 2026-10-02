@@ -122,7 +122,7 @@ Deno.test("H-01 pi: C:\\pi-agent exists at build time, Users may modify it (by S
   );
   assertStringIncludes(
     df,
-    'icacls C:\\pi-agent /grant "*S-1-5-32-545:(OI)(CI)M"',
+    "icacls C:\\pi-agent /grant '*S-1-5-32-545:(OI)(CI)M'",
   );
   assert(
     df.indexOf("icacls C:\\pi-agent") < df.indexOf("USER ContainerUser"),
@@ -333,4 +333,162 @@ Deno.test("checkSandboxPrivilege: Config.User exactly ContainerUser, then whoami
     arrange(d);
     await assertRejects(() => checkSandboxPrivilege(d, "sb", 100), Error, want);
   }
+});
+
+// H-01 run 004 (H:\cg-coord\reviews\H-01-003\reject-pi-image-build.md).
+
+const LOCKDOWN = "harness/images/base/cg-lockdown.ps1";
+const IMAGES = ["base", "claude-code", "pi", "mock"] as const;
+/** Dockerfile instructions with backslash continuations joined. */
+const instructions = (text: string) =>
+  code(text.replace(/\s*\\\r?\n\s*/g, " "));
+
+Deno.test("H-01 run 004: no shell-form RUN carries a double quote (the Windows docker command line drops them before PowerShell parses)", async () => {
+  for (const h of IMAGES) {
+    const runs = instructions(
+      await Deno.readTextFile(`harness/images/${h}/Dockerfile.windows`),
+    ).filter((l) => /^RUN\s/.test(l) && !/^RUN\s+\[/.test(l));
+    assert(runs.length > 0 || h === "mock", h);
+    for (const r of runs) assert(!r.includes('"'), `${h}: ${r}`);
+  }
+  const pi = await Deno.readTextFile("harness/images/pi/Dockerfile.windows");
+  assertStringIncludes(pi, "icacls C:\\pi-agent /grant '*S-1-5-32-545:(OI)(CI)M'");
+});
+
+const LOCKED: Record<(typeof IMAGES)[number], string[]> = {
+  base: [
+    "C:\\cg-al.ps1",
+    "C:\\Windows\\System32\\cg-al.cmd",
+    "C:\\Git",
+    "C:\\al-tools-mcp.mjs",
+    "C:\\al-tools-tools.json",
+    "C:\\egress-check.ps1",
+    "C:\\cg-nonadmin.ps1",
+    "C:\\cg-lockdown.ps1",
+    "C:\\Program Files\\nodejs",
+  ],
+  "claude-code": ["C:\\cg-npm", "C:\\run.ps1"],
+  pi: ["C:\\cg-npm", "C:\\run.ps1", "C:\\cg-budget.ts"],
+  mock: ["C:\\mock.ps1"],
+};
+
+Deno.test("H-01 run 004: each image locks every harness-owned path it adds, after its last COPY and RUN, before USER", async () => {
+  for (const h of IMAGES) {
+    const lines = instructions(
+      await Deno.readTextFile(`harness/images/${h}/Dockerfile.windows`),
+    );
+    const at = lines.findIndex((l) => l.includes("C:\\cg-lockdown.ps1 "));
+    assert(at >= 0, `${h}: no lockdown`);
+    const l = lines[at]!;
+    assert(
+      l.startsWith(
+        "RUN powershell -NoProfile -ExecutionPolicy Bypass -File C:\\cg-lockdown.ps1 ",
+      ),
+      l,
+    );
+    assertStringIncludes(
+      l,
+      "; if ($LASTEXITCODE -ne 0) { throw ('cg-lockdown failed: ' + $LASTEXITCODE) }",
+    );
+    const args = l.slice(l.indexOf("cg-lockdown.ps1 ") + 16, l.indexOf(";"))
+      .match(/'[^']*'|\S+/g)!.map((a) => a.replace(/^'|'$/g, ""));
+    assertEquals(args, LOCKED[h], h);
+    lines.forEach((x, i) => {
+      if (i !== at && /^(RUN|COPY)\s/.test(x)) assert(i < at, `${h}: ${x}`);
+      if (/^USER\s/.test(x)) assert(i > at, `${h}: ${x}`);
+    });
+    // Every file the image COPYs is a locked path or lies under one.
+    for (const c of lines.filter((x) => /^COPY\s/.test(x))) {
+      const dest = c.split(/\s+/).at(-1)!.replaceAll("/", "\\");
+      assert(
+        args.some((p) => dest === p || dest.startsWith(p + "\\")),
+        `${h}: ${dest} not locked`,
+      );
+    }
+  }
+  // C:\pi-agent is the agent's own directory: Users keep Modify there.
+  assert(!LOCKED.pi.includes("C:\\pi-agent"));
+});
+
+const pwsh = async (args: string[]) => {
+  const out = await new Deno.Command("powershell", {
+    args: ["-NoProfile", "-ExecutionPolicy", "Bypass", ...args],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  const d = new TextDecoder();
+  return {
+    code: out.code,
+    out: d.decode(out.stdout) + d.decode(out.stderr),
+  };
+};
+
+/** A tree shaped like the C:\ root default: Authenticated Users Modify, inherited. */
+const rootShapedTree = async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-" });
+  await Deno.mkdir(`${dir}\\tool\\sub`, { recursive: true });
+  await Deno.writeTextFile(`${dir}\\tool\\sub\\shim.cmd`, "@echo off");
+  await Deno.writeTextFile(`${dir}\\run.ps1`, "exit 0");
+  const g = await pwsh([
+    "-Command",
+    `icacls '${dir}' /grant '*S-1-5-11:(OI)(CI)M' /Q; exit $LASTEXITCODE`,
+  ]);
+  assertEquals(g.code, 0, g.out);
+  return dir;
+};
+const dropTree = async (dir: string) => {
+  await pwsh(["-Command", `icacls '${dir}' /reset /T /C /Q | Out-Null`]);
+  await Deno.remove(dir, { recursive: true });
+};
+
+Deno.test({
+  name:
+    "H-01 run 004: cg-lockdown -VerifyOnly fails the root-COPY shape (Authenticated Users Modify) on files and inside directories",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await rootShapedTree();
+    try {
+      const r = await pwsh([
+        "-File",
+        LOCKDOWN,
+        "-VerifyOnly",
+        `${dir}\\run.ps1`,
+        `${dir}\\tool`,
+      ]);
+      assertEquals(r.code, 1, r.out);
+      assertStringIncludes(r.out, `[FAIL] write S-1-5-11 ${dir}\\run.ps1`);
+      assertStringIncludes(r.out, `[FAIL] write S-1-5-11 ${dir}\\tool\\sub\\shim.cmd`);
+    } finally {
+      await dropTree(dir);
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "H-01 run 004: cg-lockdown removes every non-admin write grant on files and whole trees; only Users read/execute remains",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await rootShapedTree();
+    try {
+      const r = await pwsh([
+        "-File",
+        LOCKDOWN,
+        `${dir}\\run.ps1`,
+        `${dir}\\tool`,
+      ]);
+      // On the host the owner is this (non-container) user, which the
+      // in-image check refuses; the DACL itself must be clean.
+      const fails = r.out.split(/\r?\n/).filter((x) => x.startsWith("[FAIL]"));
+      assert(fails.length > 0, r.out);
+      for (const f of fails) assert(f.startsWith("[FAIL] owner "), f);
+      for (const p of [`${dir}\\run.ps1`, `${dir}\\tool\\sub\\shim.cmd`]) {
+        const a = await pwsh(["-Command", `icacls '${p}'`]);
+        assert(!a.out.includes("S-1-5-11") && !/Authenticated Users/.test(a.out), a.out);
+        assert(/BUILTIN\\Users:(\(I\))?\(RX\)/.test(a.out), a.out);
+      }
+    } finally {
+      await dropTree(dir);
+    }
+  },
 });

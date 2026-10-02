@@ -9,6 +9,9 @@ RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
     npm install -g --prefix C:\cg-npm @anthropic-ai/claude-code@2.1.282; \
     [Environment]::SetEnvironmentVariable('PATH', 'C:\cg-npm;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
 COPY run.ps1 C:/run.ps1
+# H-01 run 004: what this image adds is read-only for the agent user.
+RUN powershell -NoProfile -ExecutionPolicy Bypass -File C:\cg-lockdown.ps1 C:\cg-npm C:\run.ps1; \
+    if ($LASTEXITCODE -ne 0) { throw ('cg-lockdown failed: ' + $LASTEXITCODE) }
 # H-01: defense in depth; the harness also passes --user ContainerUser.
 USER ContainerUser
 CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\run.ps1"]

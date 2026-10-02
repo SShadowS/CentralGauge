@@ -12,10 +12,14 @@ RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
 # pi's agent directory at the C:\ root, which ContainerUser cannot create: made
 # here, Users (by SID) may modify it.
 RUN New-Item -ItemType Directory -Force -Path C:\pi-agent | Out-Null; \
-    icacls C:\pi-agent /grant "*S-1-5-32-545:(OI)(CI)M"; \
-    if ($LASTEXITCODE -ne 0) { throw "icacls C:\pi-agent failed: $LASTEXITCODE" }
+    icacls C:\pi-agent /grant '*S-1-5-32-545:(OI)(CI)M'; \
+    if ($LASTEXITCODE -ne 0) { throw ('icacls C:\pi-agent failed: ' + $LASTEXITCODE) }
 COPY run.ps1 C:/run.ps1
 COPY cg-budget.ts C:/cg-budget.ts
+# H-01 run 004: what this image adds is read-only for the agent user (not C:\pi-agent,
+# the agent's own directory).
+RUN powershell -NoProfile -ExecutionPolicy Bypass -File C:\cg-lockdown.ps1 C:\cg-npm C:\run.ps1 C:\cg-budget.ts; \
+    if ($LASTEXITCODE -ne 0) { throw ('cg-lockdown failed: ' + $LASTEXITCODE) }
 # H-01: defense in depth; the harness also passes --user ContainerUser.
 USER ContainerUser
 CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\run.ps1"]
