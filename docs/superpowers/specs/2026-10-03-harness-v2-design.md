@@ -36,8 +36,8 @@ G4. Metrics that explain a result, not only score it.
 Confirmatory claims (pre-registered, section 7): the LSP effect without and with the realistic
 setup, and the realistic-setup effect, on cost per solved task. Everything else is
 exploratory and labelled so. Claims hold for the frozen v2 task population (BC/AL tasks of the
-stated kinds and coupling styles on the refapp), not BC coding in general unless the held-out
-check (section 3) supports transfer.
+stated kinds and coupling styles on the refapp, as selected by the screening pilot), not BC
+coding in general.
 
 Non-goals: harnesses beyond Claude Code (pi optional, section 5); more than one model per
 campaign; public scoreboard ingest; isolating each component's individual effect (would need
@@ -219,7 +219,29 @@ M8 to M11 can run in parallel (content, infra, infra2, ops); M12 needs all of th
 | Major: calibration and generalization | 3 (quotas, strata, symmetric pilot on both arms, held-out, freeze) |
 | Major: blocking/randomization, scorer qualification, licensing, load-tested gates | 7, 8.2, 8.5, 8.6 |
 
-## 12. Open questions for the owner
+## 12. Round 2 review (gpt-6.1-sol: ACCEPT WITH FINDINGS) carried into the plans
+
+`H:\cg-coord\reviews\SPEC-v2-002\review-gpt61sol.md`. Accepted as a design roadmap, not yet an
+analysis protocol. The M11 pre-registration task and the M8 screening task must close these
+BEFORE screening:
+
+1. Inference contract: bootstrap p-values and direction, missing-pair rule, Holm-adjusted
+   decisions vs reported 95% intervals; the interaction's status decided before outcomes (if
+   promoted, it joins the Holm family and the power simulation). C3 is named "realistic effect
+   without LSP", not a general main effect.
+2. Screening: exact stratum boundaries from which pilot outcomes, rounding, deterministic
+   selection and tie-breaking, too-few-candidates rule, redesigned task = new candidate with
+   fresh screening. The 0/6 and 6/6 filter is described as a screen, not proof of
+   intermediate difficulty. Screening on the diagonal arms selects a population; claims are
+   scoped to it.
+3. Screening prerequisites: component inventory, LSP S1, fixed model and qualified scorers
+   (incl. the existing test-authoring discovery limit, caveat C156 / M4-17a) BEFORE screening,
+   so M8 screening waits for M9 to M11 gates.
+4. Held-out: 3 to 4 tasks in addition to the confirmatory set, excluded from C1 to C3, reported
+   separately as a descriptive robustness check (same refapp, same authors), never as evidence
+   for BC coding in general; budgeted in section 9.
+
+## 13. Open questions for the owner
 
 1. Timeline: start after the Directions talk, or start M8 authoring and the M10 licensing
    question now?
