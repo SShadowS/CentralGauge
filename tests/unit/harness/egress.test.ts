@@ -168,14 +168,143 @@ Deno.test("revertScript (C-04 item 1): by default removes only the group rules a
   const quote =
     "Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction, DefaultOutboundAction | Format-Table -AutoSize | Out-String";
   assert(at("[before] profiles") > 0 && at("[after] profiles") > 0);
-  assertEquals(s.split(quote).length - 1, 2, "one quote before, one after");
+  assertEquals(
+    s.split(quote).length - 1,
+    3,
+    "one quote before, one after on each successful path (revert, nothing to revert; C-04a)",
+  );
   assert(at("[before] profiles") < at("Remove-NetFirewallRule"));
-  assert(at("Write-Output '[after] profiles'") > at("Move-Item"));
+  // The no-op branch quotes first (C-04a item 3); the revert path's quote is the last one.
+  assert(s.lastIndexOf("Write-Output '[after] profiles'") > at("Move-Item"));
   assert(
     at(`Write-Output "[before] ${RULE_GROUP} rules:`) <
       at("Remove-NetFirewallRule"),
   );
   assert(at(`Write-Output "[after] ${RULE_GROUP} rules:`) > at("Move-Item"));
+});
+
+const PROFILE_QUOTE =
+  "Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction, DefaultOutboundAction | Format-Table -AutoSize | Out-String";
+
+Deno.test("revertScript (C-04a item 1): a failed group removal names the possibly incomplete state, keeps the records, names the recovery and fails", () => {
+  for (const restoreProfiles of [false, true]) {
+    const s = revertScript("C:\\fw", { restoreProfiles });
+    const at = (x: string) => s.indexOf(x);
+    assertStringIncludes(
+      s,
+      `Remove-NetFirewallRule -Group '${RULE_GROUP}' -ErrorAction Stop`,
+    );
+    const fail = s.slice(at("rule removal failed"));
+    assert(at("rule removal failed") > 0);
+    const msg = fail.slice(0, fail.indexOf("\r\n"));
+    for (
+      const x of [
+        "may be partly removed",
+        "profiles were not changed",
+        "records for $inv are kept",
+        "recovery:",
+      ]
+    ) assertStringIncludes(msg, x);
+    const ls = s.split("\r\n");
+    const i = ls.findIndex((l) =>
+      l.includes(
+        `Remove-NetFirewallRule -Group '${RULE_GROUP}' -ErrorAction Stop`,
+      )
+    );
+    assert(ls[i]!.startsWith("try {") && ls[i]!.endsWith("} catch {"));
+    assert(
+      ls[i + 1]!.startsWith('  throw "rule removal failed'),
+      "the removal's own catch throws (non-zero exit)",
+    );
+    assert(at("rule removal failed") < at("Move-Item"), "records kept");
+  }
+});
+
+Deno.test("revertScript (C-04a item 1): a failed opt-in profile restore names the possibly incomplete state, keeps the records, names the rules-only recovery and fails", () => {
+  const s = revertScript("C:\\fw", { restoreProfiles: true });
+  const at = (x: string) => s.indexOf(x);
+  assertStringIncludes(
+    s,
+    "Set-NetFirewallProfile -Name $p.Name -Enabled $p.Enabled -DefaultInboundAction $p.DefaultInboundAction -DefaultOutboundAction $p.DefaultOutboundAction -ErrorAction Stop",
+  );
+  const msg = s.slice(at('throw "profile restore failed'));
+  const line = msg.slice(0, msg.indexOf("\r\n"));
+  for (
+    const x of [
+      "rules are removed",
+      "may be partly restored",
+      "records for $inv are kept",
+      "recovery:",
+      "without --restore-profiles",
+    ]
+  ) assertStringIncludes(line, x);
+  assert(at("profile restore failed") > at("Set-NetFirewallProfile -Name"));
+  const ls = s.split("\r\n");
+  const i = ls.findIndex((l) => l.includes("Set-NetFirewallProfile -Name"));
+  assert(ls[i]!.startsWith("try {") && ls[i]!.endsWith("} catch {"));
+  assert(
+    ls[i + 1]!.startsWith('  throw "profile restore failed'),
+    "the restore's own catch throws (non-zero exit)",
+  );
+  assert(at("profile restore failed") < at("Move-Item"), "records kept");
+  assert(
+    !revertScript("C:\\fw").includes("profile restore failed"),
+    "default has no restore stage",
+  );
+});
+
+Deno.test("revertScript (C-04a item 2): the after-state rule read is checked; a failed read is 'verification unavailable', never a 0; [OK] only after a successful read", () => {
+  for (const restoreProfiles of [false, true]) {
+    const s = revertScript("C:\\fw", { restoreProfiles });
+    const at = (x: string) => s.indexOf(x);
+    assert(
+      !s.includes(
+        `@(Get-NetFirewallRule -Group '${RULE_GROUP}' -ErrorAction SilentlyContinue)`,
+      ),
+      "no unchecked rule read",
+    );
+    const read =
+      `$left = @(Get-NetFirewallRule -Group '${RULE_GROUP}' -ErrorAction SilentlyContinue -ErrorVariable e)`;
+    assert(at(read) > at("Remove-NetFirewallRule"));
+    const check =
+      `Assert-NotFoundOnly $e 'the ${RULE_GROUP} group after removal'`;
+    assert(at(check) > at(read));
+    const readLine = s.split("\r\n").find((l) => l.includes(read))!;
+    assert(
+      readLine.startsWith("try {") &&
+        readLine.indexOf(read) < readLine.indexOf("} catch {") &&
+        readLine.includes("verification unavailable"),
+      "the read itself is inside the try: a terminating read error is also 'verification unavailable'",
+    );
+    assert(at("verification unavailable") > at(check));
+    assert(
+      at('Write-Output "[OK] reverted invocation') >
+        at("verification unavailable"),
+    );
+    assert(
+      at(`Write-Output "[after] ${RULE_GROUP} rules:`) <
+        at('Write-Output "[OK] reverted invocation'),
+    );
+    assert(
+      at("if ($left.Count -gt 0) { throw") > at(check) &&
+        at("if ($left.Count -gt 0) { throw") < at("Move-Item"),
+      "rules left after removal fail before the records are archived",
+    );
+  }
+});
+
+Deno.test("revertScript (C-04a item 3): the nothing-to-revert branch also quotes the after profiles, in both modes", () => {
+  for (const restoreProfiles of [false, true]) {
+    const s = revertScript("C:\\fw", { restoreProfiles });
+    const line = s.split("\r\n").find((l) =>
+      l.includes("[OK] nothing to revert")
+    )!;
+    assert(line, "the branch exists");
+    const tail = line.slice(line.indexOf("[OK] nothing to revert"));
+    assert(tail.indexOf("Write-Output '[after] profiles'") > 0);
+    assert(tail.indexOf(PROFILE_QUOTE) > tail.indexOf("[after] profiles"));
+    assert(tail.indexOf("exit 0") > tail.indexOf(PROFILE_QUOTE));
+  }
 });
 
 Deno.test("revertScript (C-04 item 2): profile restore only on opt-in, and only when the profiles still hold what the apply set; a difference refuses before any change, naming it", () => {

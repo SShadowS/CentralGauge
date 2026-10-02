@@ -492,26 +492,36 @@ export function revertScript(
     `Write-Output "[before] ${RULE_GROUP} rules: $($rules.Count)"`,
     "# The newest unarchived apply record or snapshot names the invocation (a crash may leave only the snapshot).",
     "$found = @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^fw-(apply|snapshot)-([A-Za-z0-9-]+)\\.json$' } | Sort-Object LastWriteTimeUtc -Descending)",
-    `if ($found.Count -eq 0) { if ($rules.Count -gt 0) { throw 'group ${RULE_GROUP} exists but no applied invocation is recorded in the dir; refusing' }; Write-Output '[OK] nothing to revert'; Write-Output '[after] profiles unchanged (nothing to revert)'; exit 0 }`,
+    `if ($found.Count -eq 0) { if ($rules.Count -gt 0) { throw 'group ${RULE_GROUP} exists but no applied invocation is recorded in the dir; refusing' }; Write-Output '[OK] nothing to revert'; Write-Output '[after] profiles'; ${QUOTE_PROFILES}; exit 0 }`,
     "$inv = [regex]::Match($found[0].Name, '^fw-(apply|snapshot)-([A-Za-z0-9-]+)\\.json$').Groups[2].Value",
   ];
   if (o.restoreProfiles) lines.push(...restoreProfilesCheck());
+  // C-04a: each change stage says what may be incomplete, keeps the records
+  // (nothing is archived on failure), names the recovery and fails.
+  const rerun =
+    "recovery: generate the rules-only revert (deno run --allow-all scripts/harness/egress-scripts.ts revert --dir $dir --out <revert.ps1>) and run it elevated";
   lines.push(
-    `if ($rules.Count -gt 0) { Remove-NetFirewallRule -Group '${RULE_GROUP}' }`,
+    `try { if ($rules.Count -gt 0) { Remove-NetFirewallRule -Group '${RULE_GROUP}' -ErrorAction Stop } } catch {`,
+    `  throw "rule removal failed: $($_.Exception.Message); the ${RULE_GROUP} group may be partly removed; profiles were not changed; the records for $inv are kept; ${rerun}"`,
+    "}",
   );
   if (o.restoreProfiles) {
     lines.push(
-      "foreach ($p in $profiles) { Set-NetFirewallProfile -Name $p.Name -Enabled $p.Enabled -DefaultInboundAction $p.DefaultInboundAction -DefaultOutboundAction $p.DefaultOutboundAction }",
+      "try { foreach ($p in $profiles) { Set-NetFirewallProfile -Name $p.Name -Enabled $p.Enabled -DefaultInboundAction $p.DefaultInboundAction -DefaultOutboundAction $p.DefaultOutboundAction -ErrorAction Stop } } catch {",
+      `  throw "profile restore failed: $($_.Exception.Message); the ${RULE_GROUP} rules are removed; the firewall profiles may be partly restored (compare with the [before] quote); the records for $inv are kept; ${rerun} (without --restore-profiles, which would refuse on the changed profiles)"`,
+      "}",
     );
   }
   lines.push(
+    "# The after-state is read and checked before the records are archived: a failed read is not an empty group.",
+    `try { $e = $null; $left = @(Get-NetFirewallRule -Group '${RULE_GROUP}' -ErrorAction SilentlyContinue -ErrorVariable e); Assert-NotFoundOnly $e 'the ${RULE_GROUP} group after removal' } catch { throw "verification unavailable: $($_.Exception.Message); the removal ran but its result cannot be read; the records for $inv are kept; check Get-NetFirewallRule -Group '${RULE_GROUP}', then run this revert again" }`,
+    `if ($left.Count -gt 0) { throw "$($left.Count) ${RULE_GROUP} rules remain after removal; the records for $inv are kept; run this revert again" }`,
     "$stamp = Get-Date -Format 'yyyyMMddHHmmss'",
     "foreach ($k in 'apply', 'snapshot', 'block-inventory') { $x = Join-Path $dir \"fw-$k-$inv.json\"; if (Test-Path -LiteralPath $x) { Move-Item -LiteralPath $x -Destination \"$x.reverted-$stamp\" } }",
+    `Write-Output "[after] ${RULE_GROUP} rules: $($left.Count)"`,
     o.restoreProfiles
       ? 'Write-Output "[OK] reverted invocation $inv (rules and profiles)"'
       : 'Write-Output "[OK] reverted invocation $inv (rules only; profiles not changed)"',
-    `$left = @(Get-NetFirewallRule -Group '${RULE_GROUP}' -ErrorAction SilentlyContinue)`,
-    `Write-Output "[after] ${RULE_GROUP} rules: $($left.Count)"`,
     "Write-Output '[after] profiles'",
     QUOTE_PROFILES,
   );

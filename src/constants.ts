@@ -222,6 +222,17 @@ export const HARNESS_SHIPPED_TEST_RANGE = { start: 80000, end: 80099 } as const;
 export const HARNESS_TASK_SUITE_RANGE = { start: 80100, end: 80999 } as const;
 /** Harness and hostile fixture tests. Agents may not use it. */
 export const HARNESS_FIXTURE_TEST_RANGE = { start: 84900, end: 84999 } as const;
+/**
+ * Generated test codeunits holding the [Test] procedures an agent added to a
+ * shipped test codeunit (M4-17a, verdict-workspace.ts), one per shipped
+ * codeunit, ids assigned in order. Inside the fixture band, so an agent
+ * object can never take it (a Test object there is a verdict violation); the
+ * verdict workspace fails closed when any workspace object uses it.
+ */
+export const HARNESS_EXTRACTED_TEST_RANGE = {
+  start: 84990,
+  end: 84999,
+} as const;
 /** Hidden oracle apps. */
 export const HARNESS_ORACLE_RANGE = { start: 85000, end: 89999 } as const;
 /** Ids that collide with foreign apps on shared containers (Cronus28: 80013). */

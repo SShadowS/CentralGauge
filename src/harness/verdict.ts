@@ -63,10 +63,14 @@ import {
  */
 export const SCORER_SUITE: Record<string, string> = {
   build: "1",
-  pass_to_pass: "1",
+  // 2: a change task's agent-added tests include those extracted from
+  // shipped test codeunits (M4-17a); the task's shipped rows are unchanged.
+  pass_to_pass: "2",
   fail_to_pass: "1",
   // 2: agent-suite rules (decision 2026-09-25-agent-suite-infra).
-  mutant_kill: "2",
+  // 3: [Test] procedures added to shipped test codeunits are extracted into
+  // a generated codeunit, with the credit rules (M4-17a).
+  mutant_kill: "3",
 };
 type ScorerName = "build" | "pass_to_pass" | "fail_to_pass" | "mutant_kill";
 
@@ -451,6 +455,9 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   });
   log.spans.reconstruct_ms = performance.now() - tr;
   log.violations = vw.violations;
+  // Tests the agent added to shipped codeunits are discovered below as the
+  // generated codeunit (addedTestCodeunits); why any were not is noted here.
+  log.notes.push(...vw.notes);
   if (vw.violations.length > 0) return scores.failRest();
 
   const prep = await prepareApps(ctx.lane, {
@@ -480,6 +487,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
     const added = await addedTestCodeunits(
       join(i.pristine, TEST_APP),
       join(vw.dir, TEST_APP),
+      new Set(vw.excluded),
     );
     for (const a of added) {
       if (a.testPage) {
@@ -612,6 +620,35 @@ export function mutantOutcome(rows: readonly TestRow[]): MutantOutcome {
  * agent's Test\\ changes are kept. pass_to_pass runs on the reference; the
  * submitted suite runs on the reference, on mutant 0 (staged production)
  * and on every named mutant.
+ *
+ * mutant_kill eligibility (M4-17a, scorer version 3). Agent tests are the
+ * test codeunits in new Test files plus the [Test] procedures added to
+ * shipped test codeunits, which are extracted into generated codeunits
+ * (84990-84999). Shipped test codeunits never run as agent tests, and the
+ * reference and mutant builds leave every shipped test codeunit out of the
+ * Test app. A test procedure is ineligible (removed from a new file or not
+ * extracted, never run, never counted, with a note), as is anything that
+ * reaches such a procedure, when it:
+ * - has a body equal, after normalizeAlBody, to a shipped [Test] body;
+ * - calls a shipped [Test] or names or numbers a shipped test codeunit
+ *   (any integer literal equal to its id counts), or uses a global of that
+ *   type;
+ * - runs a codeunit by a non-literal id: Codeunit.Run whose first argument
+ *   is not an integer literal or Codeunit::<name or literal> (so
+ *   Codeunit.Run(80000 + 10) or a variable set by Evaluate is out);
+ * - uses any of these identifiers (DISPATCH_IDS in verdict-workspace.ts):
+ *   AllObj, AllObjWithCaption, "Codeunit Metadata", RecordRef, Variant,
+ *   StartSession, CreateTask, EnqueueBackgroundTask, RunCodeunit,
+ *   TestRunner, "Test Method Line", "AL Test Suite".
+ *
+ * Known limit: this over-rejects on purpose. A test that uses a Variant, for
+ * example with the LibraryVariableStorage pattern (Enqueue/Dequeue into a
+ * Variant for handlers), is ineligible even when it is harmless.
+ *
+ * If an unremovable agent object is rejected (a table or extension trigger,
+ * a codeunit the parser cannot read, any TestRunner codeunit), no agent test
+ * runs or counts. A TestPage test is refused, and no eligible agent test
+ * means mutant_kill fails.
  */
 export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   const { i, scores, log } = ctx;
@@ -631,9 +668,14 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     out: join(i.workDir, "verdict"),
     productionFrom: reference,
     symbolIds: i.symbolIds,
+    // mutant_kill builds carry no shipped test codeunit (M4-17a run 002).
+    dropShippedTests: true,
   });
   log.spans.reconstruct_ms = performance.now() - tr;
   log.violations = vw.violations;
+  // Tests the agent added to shipped codeunits are discovered below as the
+  // generated codeunit (addedTestCodeunits); why any were not is noted here.
+  log.notes.push(...vw.notes);
   if (vw.violations.length > 0) return scores.failRest();
 
   const pristineApps = await readAppGraph(i.pristine);
@@ -705,6 +747,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   const added = await addedTestCodeunits(
     join(i.pristine, TEST_APP),
     join(vw.dir, TEST_APP),
+    new Set(vw.excluded),
   );
   const unsupported = added.filter((a) => a.testPage);
   if (unsupported.length > 0) {
@@ -846,6 +889,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
         out: join(i.workDir, `mutant-${m}`),
         productionFrom: production,
         symbolIds: i.symbolIds,
+        dropShippedTests: true,
       });
       const mp = await prepare(mv.dir, mv.apps, mv.changed, `apps-mutant-${m}`);
       recordBuild(ctx, mp, target);
