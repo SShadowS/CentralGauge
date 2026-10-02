@@ -352,7 +352,10 @@ Deno.test("H-01 run 004: no shell-form RUN carries a double quote (the Windows d
     for (const r of runs) assert(!r.includes('"'), `${h}: ${r}`);
   }
   const pi = await Deno.readTextFile("harness/images/pi/Dockerfile.windows");
-  assertStringIncludes(pi, "icacls C:\\pi-agent /grant '*S-1-5-32-545:(OI)(CI)M'");
+  assertStringIncludes(
+    pi,
+    "icacls C:\\pi-agent /grant '*S-1-5-32-545:(OI)(CI)M'",
+  );
 });
 
 const LOCKED: Record<(typeof IMAGES)[number], string[]> = {
@@ -457,7 +460,10 @@ Deno.test({
       ]);
       assertEquals(r.code, 1, r.out);
       assertStringIncludes(r.out, `[FAIL] write S-1-5-11 ${dir}\\run.ps1`);
-      assertStringIncludes(r.out, `[FAIL] write S-1-5-11 ${dir}\\tool\\sub\\shim.cmd`);
+      assertStringIncludes(
+        r.out,
+        `[FAIL] write S-1-5-11 ${dir}\\tool\\sub\\shim.cmd`,
+      );
     } finally {
       await dropTree(dir);
     }
@@ -515,7 +521,10 @@ Deno.test({
         ]
       ) {
         const a = await pwsh(["-Command", `icacls '${p}'`]);
-        assert(!a.out.includes("S-1-5-11") && !/Authenticated Users/.test(a.out), a.out);
+        assert(
+          !a.out.includes("S-1-5-11") && !/Authenticated Users/.test(a.out),
+          a.out,
+        );
         assert(/BUILTIN\\Users:(\(I\))?\(RX\)/.test(a.out), a.out);
         // Every Users ACE is read/execute only: no write right anywhere.
         const users = a.out.match(/BUILTIN\\Users:\S*/g) ?? [];
