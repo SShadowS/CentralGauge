@@ -758,6 +758,62 @@ Deno.test("coord sweep (C-05 run 002): a missing or unreadable required dir (tas
   }
 });
 
+Deno.test("coord sweep (C-05 run 003): a required dir that vanishes after its first read still throws at the query that reads it, never an empty section or 'drained'", async () => {
+  const realReadDir = Deno.readDir;
+  // The dir reads fine up to read k-1 and is gone from read k on.
+  const withReadDir = async (
+    target: string,
+    goneFrom: number,
+    f: () => Promise<unknown>,
+  ) => {
+    let reads = 0;
+    Object.defineProperty(Deno, "readDir", {
+      value: (p: string | URL) => {
+        if (String(p) === target && ++reads >= goneFrom) {
+          throw new Deno.errors.NotFound(`gone: ${target}`);
+        }
+        return realReadDir(p);
+      },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      await f();
+    } finally {
+      Object.defineProperty(Deno, "readDir", {
+        value: realReadDir,
+        configurable: true,
+        writable: true,
+      });
+    }
+    return reads;
+  };
+  for (const dir of ["tasks", "questions", "leases"]) {
+    const root = await freshRoot();
+    await seed(root);
+    await pause(root, "x");
+    const target = join(root, dir);
+    const total = await withReadDir(target, Infinity, () => sweep(root));
+    assert(total >= 1, `${dir} is read by the sweep`);
+    for (let k = 1; k <= total; k++) {
+      await withReadDir(
+        target,
+        k,
+        () => assertRejects(() => sweep(root), CoordError, dir),
+      );
+    }
+  }
+});
+
+Deno.test("coord sweep (C-05 run 003): other commands still read a missing dir as empty", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  await Deno.remove(join(root, "questions"), { recursive: true });
+  await Deno.remove(join(root, "leases"), { recursive: true });
+  assertEquals(await openQuestions(root), []);
+  assertEquals((await pauseState(root)).leases, []);
+});
+
 Deno.test("coord sweep (C-05 run 002): a missing leases dir under the machine root is a read error, never 'drained'", async () => {
   const base = await Deno.makeTempDir({ prefix: "coord-test-" });
   const machine = join(base, "machine");

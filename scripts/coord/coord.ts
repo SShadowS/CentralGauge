@@ -19,6 +19,7 @@
 import { parseArgs } from "@std/cli/parse-args";
 import * as colors from "@std/fmt/colors";
 import { join } from "@std/path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 
 export const PROTOCOL = 1;
@@ -147,11 +148,28 @@ async function readJson<T>(path: string): Promise<T | null> {
   }
 }
 
-async function listDir(path: string): Promise<string[]> {
+/** Set while `sweep` runs: its required dirs must be read, never assumed empty. */
+const strictReads = new AsyncLocalStorage<true>();
+
+/**
+ * A missing dir reads as empty. A `required` dir (tasks, questions, leases)
+ * read inside `sweep` instead throws on any read failure, missing included.
+ */
+async function listDir(
+  path: string,
+  o: { required?: boolean } = {},
+): Promise<string[]> {
   const names: string[] = [];
   try {
     for await (const e of Deno.readDir(path)) names.push(e.name);
   } catch (e) {
+    if (o.required && strictReads.getStore()) {
+      throw new CoordError(
+        `cannot read required dir ${path}: ${
+          e instanceof Error ? e.message : e
+        }`,
+      );
+    }
     if (e instanceof Deno.errors.NotFound) return [];
     throw e;
   }
@@ -320,7 +338,11 @@ export async function pauseState(root: string): Promise<PauseState> {
     join(machineRoot(root), "pause.json"),
   );
   const leases: PauseState["leases"] = [];
-  for (const c of await listDir(join(machineRoot(root), "leases"))) {
+  for (
+    const c of await listDir(join(machineRoot(root), "leases"), {
+      required: true,
+    })
+  ) {
     const h = await leaseHolder(root, c);
     if (h) leases.push({ container: c, lane: h.lane });
   }
@@ -395,7 +417,9 @@ async function readHeader(root: string, id: string): Promise<TaskHeader> {
 }
 
 async function taskIds(root: string): Promise<string[]> {
-  return (await listDir(join(root, "tasks"))).filter((n) => ID_RE.test(n));
+  return (await listDir(join(root, "tasks"), { required: true })).filter((n) =>
+    ID_RE.test(n)
+  );
 }
 
 /** `strict`: an unreadable or corrupt record throws instead of mapping to "unknown". */
@@ -708,7 +732,7 @@ export async function openQuestions(
   }[]
 > {
   await openRoot(root);
-  const names = await listDir(join(root, "questions"));
+  const names = await listDir(join(root, "questions"), { required: true });
   const out = [];
   for (const n of names) {
     const m = n.match(/^(q-.+)\.md$/);
@@ -909,7 +933,11 @@ export async function stale(
       );
     }
   }
-  for (const c of await listDir(join(machineRoot(root), "leases"))) {
+  for (
+    const c of await listDir(join(machineRoot(root), "leases"), {
+      required: true,
+    })
+  ) {
     const h = await leaseHolder(root, c);
     if (!h) continue;
     const min = Math.floor((now - (h.hb ?? h.at)) / 60000);
@@ -1121,7 +1149,11 @@ export async function overview(
   lines.push(...waiting);
 
   h(`Container leases (${ps.leases.length})`);
-  for (const c of await listDir(join(machineRoot(root), "leases"))) {
+  for (
+    const c of await listDir(join(machineRoot(root), "leases"), {
+      required: true,
+    })
+  ) {
     const l = await leaseHolder(root, c);
     if (l) {
       lines.push(
@@ -1183,29 +1215,23 @@ export interface Sweep {
  * One-call overview for the orchestrator sweep. Read-only. Task records are read
  * strictly: a corrupt or unreadable file throws naming it, never an empty section.
  */
-export async function sweep(
+/**
+ * Every read of tasks/, questions/ and leases/ inside the sweep is strict: a
+ * missing or unreadable one throws, never an empty section or a false
+ * "drained". Other commands keep reading a missing dir as empty.
+ */
+export function sweep(
   root: string,
   opts: { now?: number } = {},
 ): Promise<Sweep> {
+  return strictReads.run(true, () => sweepStrict(root, opts));
+}
+
+async function sweepStrict(
+  root: string,
+  opts: { now?: number },
+): Promise<Sweep> {
   await openRoot(root);
-  // listDir reads a missing dir as empty; for the sweep these dirs are
-  // required, so a missing or unreadable one is an error, never an empty
-  // section (or a false "drained").
-  for (
-    const d of [
-      join(root, "tasks"),
-      join(root, "questions"),
-      join(machineRoot(root), "leases"),
-    ]
-  ) {
-    try {
-      for await (const _ of Deno.readDir(d)) break;
-    } catch (e) {
-      throw new CoordError(
-        `cannot read required dir ${d}: ${e instanceof Error ? e.message : e}`,
-      );
-    }
-  }
   const now = opts.now ?? Date.now();
   const min = (at: number) => Math.max(0, Math.floor((now - at) / 60000));
   const states: TaskState[] = [];
