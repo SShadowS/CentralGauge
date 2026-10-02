@@ -121,6 +121,7 @@ import { PROXY_ISOLATION } from "../../src/harness/egress-proxy.ts";
 import {
   BASE_IMAGE,
   BASE_VERSION,
+  FROZEN_IMAGE_TAGS,
   hasBaseLayers,
   IMAGE_LABELS,
   imageFacts,
@@ -796,6 +797,11 @@ export async function harnessImagesBuild(
   // A tag names one image for good (frozen records resolve through it): an
   // existing tag is never rebuilt over, and there is no override.
   const refuseExisting = async (tag: string, use: string) => {
+    if (FROZEN_IMAGE_TAGS.includes(tag)) {
+      throw new ConfigurationError(
+        `${tag} is a frozen tag and is never built, present locally or not: ${use}`,
+      );
+    }
     if (await docker.inspectImage(tag) !== null) {
       throw new ConfigurationError(
         `${tag} already exists and is never rebuilt: ${use}`,

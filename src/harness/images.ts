@@ -13,6 +13,18 @@ import { hashJson } from "./hash.ts";
 /** base:1 is frozen; H-01 run 004 builds base:2 (an existing tag is never rebuilt). */
 export const BASE_VERSION = "2";
 export const BASE_IMAGE = `centralgauge/harness-base:${BASE_VERSION}`;
+/**
+ * Tags the frozen campaign images carry (H-01 run 005). Reserved in code, not by
+ * local presence: `images build` refuses them even on a host that has pruned
+ * them, so a changed Dockerfile can never be built under one. Old records still
+ * resolve through them (imageTag without a revision).
+ */
+export const FROZEN_IMAGE_TAGS: readonly string[] = [
+  "centralgauge/harness-base:1",
+  "centralgauge/harness-mock:1",
+  "centralgauge/harness-claude-code:2.1.282",
+  "centralgauge/harness-pi:0.87.1",
+];
 export const IMAGE_LABELS = {
   harness: "centralgauge.harness",
   version: "centralgauge.harness.version",
