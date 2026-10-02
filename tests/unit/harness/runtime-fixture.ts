@@ -240,7 +240,7 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
       `configs/${id}.yml`,
       `id: ${id}
 harness: mock
-harness_version: "1"
+harness_version: "2"
 models: {}
 settings: ${JSON.stringify(settings)}
 limits: { timeout_min: 5, max_budget_usd: 1 }
@@ -256,9 +256,9 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     "centralgauge.harness.version": "2.1.282",
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
   });
-  docker.addImage(imageTag("mock", "1"), MOCK_IMAGE_ID, {
+  docker.addImage(imageTag("mock", "2"), MOCK_IMAGE_ID, {
     "centralgauge.harness": "mock",
-    "centralgauge.harness.version": "1",
+    "centralgauge.harness.version": "2",
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
   });
   docker.behavior = ccBehavior(join(repo.tasksDir, "HX-001"), "correct");

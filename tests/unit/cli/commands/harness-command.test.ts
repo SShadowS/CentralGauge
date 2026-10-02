@@ -1077,6 +1077,7 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
     base_digest: pin,
     harness: "base",
     version: "1",
+    revision: null,
     mcp: {
       "al-tools": {
         version: mv.split(" ")[0]!,
@@ -3537,3 +3538,104 @@ for (
     assert(secrets !== "" && !await exists(secrets), "secrets removed");
   });
 }
+
+// ---- H-01 run 004: image_revision ----
+
+Deno.test("harnessImagesBuild: --revision adds the revision label and the -r tag; without it the frozen tag and no revision label", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
+  const labels = {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": baseId,
+  };
+  const r2 = "centralgauge/harness-claude-code:2.1.282-r2";
+  docker.addImage(r2, `sha256:${"c".repeat(64)}`, {
+    ...labels,
+    "centralgauge.harness.revision": "2",
+  }, ["l1", "l2", "l3"]);
+  const log = stub(console, "log", () => {});
+  let f;
+  try {
+    f = await harnessImagesBuild(
+      "claude-code",
+      { root, version: "2.1.282", revision: "2" },
+      docker,
+    );
+  } finally {
+    log.restore();
+  }
+  const args = docker.builds[0]!;
+  const li = args.indexOf("centralgauge.harness.revision=2");
+  assert(li > 0 && args[li - 1] === "--label", args.join(" "));
+  assertEquals(args[args.indexOf("-t") + 1], r2);
+  assertEquals(f.revision, "2");
+
+  const frozen = "centralgauge/harness-claude-code:2.1.282";
+  docker.addImage(frozen, `sha256:${"d".repeat(64)}`, labels, [
+    "l1",
+    "l2",
+    "l3",
+  ]);
+  const log2 = stub(console, "log", () => {});
+  try {
+    f = await harnessImagesBuild(
+      "claude-code",
+      { root, version: "2.1.282" },
+      docker,
+    );
+  } finally {
+    log2.restore();
+  }
+  const plain = docker.builds[1]!;
+  assertEquals(plain[plain.indexOf("-t") + 1], frozen);
+  assertEquals(
+    plain.some((a) => a.startsWith("centralgauge.harness.revision")),
+    false,
+  );
+  assertEquals(f.revision, null);
+
+  // A label that did not land on the image is refused, as is a bad shape.
+  docker.addImage(r2, `sha256:${"c".repeat(64)}`, labels, ["l1", "l2", "l3"]);
+  await assertRejects(
+    () =>
+      harnessImagesBuild(
+        "claude-code",
+        { root, version: "2.1.282", revision: "2" },
+        docker,
+      ),
+    ConfigurationError,
+    "revision",
+  );
+  const n = docker.builds.length;
+  for (const bad of ["", "r2", "0"]) {
+    await assertRejects(
+      () =>
+        harnessImagesBuild(
+          "claude-code",
+          { root, version: "2.1.282", revision: bad },
+          docker,
+        ),
+      ConfigurationError,
+      "revision",
+    );
+  }
+  assertEquals(docker.builds.length, n, "a bad revision builds nothing");
+});
+
+Deno.test("CLI: `harness images build --help` lists --revision", async () => {
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli);
+  const printed: string[] = [];
+  const log = stub(console, "log", (...args: unknown[]) => {
+    printed.push(args.join(" "));
+  });
+  try {
+    await cli.parse(["harness", "images", "build", "--help"]);
+  } finally {
+    log.restore();
+  }
+  assertStringIncludes(stripAnsiCode(printed.join("\n")), "--revision");
+});

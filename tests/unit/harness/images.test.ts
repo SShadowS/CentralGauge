@@ -1,7 +1,10 @@
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { ConfigurationError } from "../../../src/errors.ts";
 import { claudeCodeAdapter } from "../../../src/harness/adapters/claude-code.ts";
-import { HarnessConfigSchema } from "../../../src/harness/config.ts";
+import {
+  HarnessConfigSchema,
+  loadConfig,
+} from "../../../src/harness/config.ts";
 import { hashJson } from "../../../src/harness/hash.ts";
 import {
   AL_TOOLS_SHIPPED,
@@ -92,6 +95,7 @@ Deno.test("runtimeFacts: MCP facts come from the image label; LSP and missing MC
     base_digest: BASE,
     harness: "claude-code",
     version: "2.1.282",
+    revision: null,
   };
   const f = runtimeFacts(cfg, image, claudeCodeAdapter, catalog);
   assertEquals(
@@ -270,6 +274,7 @@ Deno.test("runtimeFacts: a plain arm's native settings carry neither mcp nor mcp
     base_digest: BASE,
     harness: "claude-code",
     version: "2.1.282",
+    revision: null,
   };
   const f = runtimeFacts(
     cfg,
@@ -363,4 +368,127 @@ Deno.test("readImageFile: the throwaway container is cg-harness-read-* with the 
     path: AL_TOOLS_SHIPPED,
     owner: "HOST1",
   }]);
+});
+
+// ---- H-01 run 004: image_revision ----
+
+Deno.test("imageTag: no revision is exactly the frozen tag; a revision adds -r<n>", () => {
+  assertEquals(
+    imageTag("claude-code", "2.1.282"),
+    "centralgauge/harness-claude-code:2.1.282",
+  );
+  assertEquals(imageTag("pi", "0.87.1"), "centralgauge/harness-pi:0.87.1");
+  assertEquals(imageTag("mock", "1"), "centralgauge/harness-mock:1");
+  assertEquals(
+    imageTag("claude-code", "2.1.282", undefined),
+    "centralgauge/harness-claude-code:2.1.282",
+  );
+  assertEquals(
+    imageTag("claude-code", "2.1.282", "2"),
+    "centralgauge/harness-claude-code:2.1.282-r2",
+  );
+  assertEquals(imageTag("pi", "0.87.1", "2"), "centralgauge/harness-pi:0.87.1-r2");
+});
+
+Deno.test("imageFacts: revision is the revision label, null when absent", async () => {
+  const d = new FakeDocker();
+  d.addImage("frozen", ID, LABELS);
+  assertEquals((await imageFacts(d, "frozen", "HOST1")).revision, null);
+  d.addImage("r2", ID, {
+    ...LABELS,
+    "centralgauge.harness.revision": "2",
+  });
+  assertEquals((await imageFacts(d, "r2", "HOST1")).revision, "2");
+});
+
+function revisionCase(configRevision?: string) {
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    ...(configRevision === undefined ? {} : { image_revision: configRevision }),
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings: {},
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  return (imageRevision: string | null, version = "2.1.282") =>
+    runtimeFacts(
+      cfg,
+      {
+        digest: ID,
+        base_digest: BASE,
+        harness: "claude-code",
+        version,
+        revision: imageRevision,
+      },
+      claudeCodeAdapter,
+      catalog,
+    );
+}
+
+Deno.test("runtimeFacts: image revision must equal config image_revision (absent on both sides is the frozen image)", () => {
+  // OK: absent on both sides; the manifest image carries no revision key.
+  const frozen = revisionCase()(null);
+  assertEquals(frozen.image, { digest: ID, base_digest: BASE });
+  // OK: equal on both sides; the manifest image records it.
+  assertEquals(revisionCase("2")("2").image, {
+    digest: ID,
+    base_digest: BASE,
+    revision: "2",
+  });
+  // Refused: label present, config absent.
+  const e1 = assertThrows(
+    () => revisionCase()("2"),
+    ConfigurationError,
+  );
+  assert(
+    e1.message.includes("revision 2") && e1.message.includes("no revision"),
+    e1.message,
+  );
+  // Refused: config present, label missing.
+  const e2 = assertThrows(
+    () => revisionCase("2")(null),
+    ConfigurationError,
+  );
+  assert(
+    e2.message.includes("no revision") && e2.message.includes("revision 2"),
+    e2.message,
+  );
+  // Refused: different.
+  const e3 = assertThrows(
+    () => revisionCase("3")("2"),
+    ConfigurationError,
+  );
+  assert(
+    e3.message.includes("revision 2") && e3.message.includes("revision 3"),
+    e3.message,
+  );
+  // Refused: an empty label is not "absent".
+  assertThrows(() => revisionCase()(""), ConfigurationError, "revision");
+});
+
+Deno.test("runtimeFacts: a version label that differs from harness_version is refused even when revisions match", () => {
+  assertThrows(
+    () => revisionCase("2")("2", "2.1.300"),
+    ConfigurationError,
+    "2.1.300",
+  );
+});
+
+Deno.test("repo configs: claude-code and pi arms resolve to the -r2 images, never the frozen tags", async () => {
+  const want: Record<string, string> = {
+    "cc-sonnet-mcp": "centralgauge/harness-claude-code:2.1.282-r2",
+    "cc-sonnet-plain": "centralgauge/harness-claude-code:2.1.282-r2",
+    "cc-sonnet-skills": "centralgauge/harness-claude-code:2.1.282-r2",
+    "pi-flash-plain": "centralgauge/harness-pi:0.87.1-r2",
+    "pi-sonnet-plain": "centralgauge/harness-pi:0.87.1-r2",
+  };
+  for (const [id, tag] of Object.entries(want)) {
+    const c = await loadConfig("harness", id);
+    assertEquals(
+      imageTag(c.harness, c.harness_version, c.image_revision),
+      tag,
+      id,
+    );
+  }
 });

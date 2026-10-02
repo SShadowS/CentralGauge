@@ -14,7 +14,7 @@ $CgAl = if ($env:CG_MOCK_CG_AL) { $env:CG_MOCK_CG_AL } else { 'C:\cg-al.ps1' }
 $Fsutil = if ($env:CG_MOCK_FSUTIL) { $env:CG_MOCK_FSUTIL } else { 'fsutil.exe' }
 $JunctionTarget = if ($env:CG_MOCK_JUNCTION_TARGET) { $env:CG_MOCK_JUNCTION_TARGET } else { 'C:\Users\Public' }
 $Secrets = if ($env:CG_MOCK_SECRETS) { $env:CG_MOCK_SECRETS } else { 'C:\cg-secrets' }
-$Version = '1'
+$Version = '2'
 
 # Like every entrypoint: nothing before the runner's ready (it releases the
 # backend token and ready only after its privilege check on this sandbox, H-01).

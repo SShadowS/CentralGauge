@@ -98,9 +98,9 @@ Deno.test("dry run opens no container, even for an al-tools image; a real run st
   await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
   // The mock image claims al-tools but ships no definition (a lying label).
   const [key, value] = await mcpLabel(".");
-  t.docker.addImage(imageTag("mock", "1"), MOCK_IMAGE_ID, {
+  t.docker.addImage(imageTag("mock", "2"), MOCK_IMAGE_ID, {
     "centralgauge.harness": "mock",
-    "centralgauge.harness.version": "1",
+    "centralgauge.harness.version": "2",
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
     [key]: value,
   });
@@ -111,7 +111,7 @@ Deno.test("dry run opens no container, even for an al-tools image; a real run st
   assertEquals(t.docker.runs.length, 0);
   assert(
     out.lines.some((l) =>
-      l.includes(imageTag("mock", "1")) && l.includes("not verified")
+      l.includes(imageTag("mock", "2")) && l.includes("not verified")
     ),
     out.lines.join("\n"),
   );
@@ -262,7 +262,7 @@ Deno.test("tasks_meta.limits stores the task's own overrides; two arms with diff
     "configs/mock-positive-long.yml",
     `id: mock-positive-long
 harness: mock
-harness_version: "1"
+harness_version: "2"
 models: {}
 settings: { mode: apply, variant: positive }
 limits: { timeout_min: 60, max_budget_usd: 1 }
@@ -331,7 +331,7 @@ Deno.test("a usage limit with maxPauseMs 0 stops with a resume line; a resume be
   clock = Date.parse(s.paused!) + 1000;
   // After the reset the account is no longer limited: the retry completes.
   t.docker.behavior = async (_call, run) => {
-    await run.stdout('{"type":"mock_init","version":"1","mode":"apply"}');
+    await run.stdout('{"type":"mock_init","version":"2","mode":"apply"}');
     await run.stdout('{"type":"mock_done","status":"ok"}');
     return 0;
   };

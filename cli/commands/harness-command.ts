@@ -47,6 +47,7 @@ import {
 import {
   checkModelsInCatalog,
   HarnessConfigSchema,
+  IMAGE_REVISION,
   loadConfig,
   loadExperiment,
   VARY_KEYS,
@@ -551,7 +552,11 @@ export async function harnessCell(
       config,
       await imageFacts(
         env.docker,
-        imageTag(config.harness, config.harness_version),
+        imageTag(
+          config.harness,
+          config.harness_version,
+          config.image_revision,
+        ),
         env.owner,
       ),
       adapter,
@@ -773,7 +778,7 @@ async function servercorePin(root: string): Promise<string> {
  */
 export async function harnessImagesBuild(
   harness: string,
-  o: { root: string; version?: string },
+  o: { root: string; version?: string; revision?: string },
   docker: DockerCli = realDocker(),
 ): Promise<ImageFacts> {
   const images = join(o.root, "harness", "images");
@@ -819,17 +824,23 @@ export async function harnessImagesBuild(
       base_digest: pin,
       harness: "base",
       version: "1",
+      revision: null,
       mcp,
     };
   }
   if (!o.version) throw new ConfigurationError(`pass --version for ${harness}`);
+  if (o.revision !== undefined && !IMAGE_REVISION.test(o.revision)) {
+    throw new ConfigurationError(
+      `--revision must be a positive integer without leading zero, got "${o.revision}"`,
+    );
+  }
   const base = await docker.inspectImage(BASE_IMAGE) as { Id?: string } | null;
   if (!base?.Id) {
     throw new ConfigurationError(
       "build the base image first: centralgauge harness images build base",
     );
   }
-  const tag = imageTag(harness, o.version);
+  const tag = imageTag(harness, o.version, o.revision);
   const code = await docker.build([
     "build",
     "-f",
@@ -844,6 +855,9 @@ export async function harnessImagesBuild(
     `${IMAGE_LABELS.version}=${o.version}`,
     "--label",
     `${IMAGE_LABELS.base}=${base.Id}`,
+    ...(o.revision === undefined
+      ? []
+      : ["--label", `${IMAGE_LABELS.revision}=${o.revision}`]),
     "-t",
     tag,
     join(images, harness),
@@ -858,9 +872,18 @@ export async function harnessImagesBuild(
   }
   // Same owner as a harness env (the hostname): a leftover read container is swept.
   const f = await imageFacts(docker, tag, Deno.hostname());
+  if (f.revision !== (o.revision ?? null)) {
+    throw new ConfigurationError(
+      `${tag}: label ${IMAGE_LABELS.revision} is ${
+        f.revision ?? "absent"
+      }, the build asked for ${o.revision ?? "none"}`,
+    );
+  }
   console.log(`${colors.green("[OK]")} ${tag} = ${f.digest} (base ${base.Id})`);
   console.log(
-    `  labels: ${IMAGE_LABELS.harness}=${f.harness} ${IMAGE_LABELS.version}=${f.version} ${IMAGE_LABELS.base}=${f.base_digest}`,
+    `  labels: ${IMAGE_LABELS.harness}=${f.harness} ${IMAGE_LABELS.version}=${f.version} ${IMAGE_LABELS.base}=${f.base_digest}${
+      f.revision === null ? "" : ` ${IMAGE_LABELS.revision}=${f.revision}`
+    }`,
   );
   return f;
 }
@@ -1253,7 +1276,7 @@ async function qualifyMockCell(
   const config = HarnessConfigSchema.parse({
     id: "mock-qualify",
     harness: "mock",
-    harness_version: "1",
+    harness_version: "2",
     models: {},
     settings: {
       mode: "apply",
@@ -1267,7 +1290,7 @@ async function qualifyMockCell(
     config,
     await imageFacts(
       env.docker,
-      imageTag(config.harness, config.harness_version),
+      imageTag(config.harness, config.harness_version, config.image_revision),
       env.owner,
     ),
     adapterFor(config.harness),
@@ -1974,11 +1997,16 @@ export function registerHarnessCommand(
         "Build the base image or a harness image",
       )
       .option("--version <v:string>", "Harness version (image tag and label)")
+      .option(
+        "--revision <n:string>",
+        "Image revision: tag <version>-r<n> and label centralgauge.harness.revision (configs name it as image_revision)",
+      )
       .action((opts, harness) =>
         fail(async () =>
           void await harnessImagesBuild(harness, {
             root: Deno.cwd(),
             ...(opts.version ? { version: opts.version } : {}),
+            ...(opts.revision !== undefined ? { revision: opts.revision } : {}),
           })
         )
       ),

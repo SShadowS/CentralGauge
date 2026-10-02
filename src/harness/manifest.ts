@@ -16,7 +16,7 @@ import { join } from "@std/path";
 import { z } from "zod";
 import { ConfigurationError, ValidationError } from "../errors.ts";
 import type { HarnessConfig, VaryKey } from "./config.ts";
-import { effectiveLimits } from "./config.ts";
+import { effectiveLimits, ImageRevisionSchema } from "./config.ts";
 import { HASH_RULES_VERSION, hashFile, hashJson, listTree } from "./hash.ts";
 import { Sha256Hex } from "./identity.ts";
 import type { HarnessTask } from "./task.ts";
@@ -60,6 +60,11 @@ export const ResolvedManifestSchema = z.strictObject({
   image: z.strictObject({
     digest: z.string().min(1),
     base_digest: z.string().min(1),
+    /**
+     * The image's revision label (H-01 run 004). Absent for a frozen image
+     * (never null), so manifests resolved before it keep their hashes.
+     */
+    revision: ImageRevisionSchema.optional(),
   }),
   backend_version: z.string().min(1),
   /** Provider route per model slot; every slot in `models` has one. */
@@ -76,7 +81,7 @@ export type ResolvedManifest = z.output<typeof ResolvedManifestSchema>;
 
 export interface RuntimeFacts {
   native_settings: Record<string, unknown>;
-  image: { digest: string; base_digest: string };
+  image: { digest: string; base_digest: string; revision?: string };
   backend_version: string;
   servers: Record<string, { version: string; tool_schema_hash: string }>;
   provider_routes: Record<string, string>;
@@ -242,7 +247,9 @@ export async function diffManifests(
 /**
  * Keys a vary list permits to differ. The image follows harness,
  * harness_version or toolchain (bundles are mounted, not baked); provider
- * routes follow models. backend_version never differs.
+ * routes follow models. backend_version never differs. The image revision is
+ * part of `image` and gets no vary key: arms on different revisions of one
+ * harness_version differ in `image` and are refused (H-01 run 004).
  */
 export function allowedDiffs(vary: readonly VaryKey[]): Set<ManifestKey> {
   const allowed = new Set<ManifestKey>(vary);

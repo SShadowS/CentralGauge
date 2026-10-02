@@ -345,3 +345,21 @@ Deno.test("mock.ps1 (H-01): waits for the runner's ready before reading its conf
   assert(wait < text.indexOf("Emit 'mock_init'"));
   assert(!text.includes("cg-nonadmin"));
 });
+
+Deno.test({
+  name:
+    "mock.ps1: reports version 2, the harness_version of every repo mock config (H-01 run 004)",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const a = await runMockPs1({ mode: "apply" });
+    const init = a.lines.find((l) => l.type === "mock_init") as
+      | { version?: string }
+      | undefined;
+    assertEquals(init?.version, "2");
+    for await (const e of Deno.readDir("harness/configs")) {
+      if (!e.name.startsWith("mock-")) continue;
+      const text = await Deno.readTextFile(join("harness/configs", e.name));
+      assert(text.includes('harness_version: "2"'), e.name);
+    }
+  },
+});

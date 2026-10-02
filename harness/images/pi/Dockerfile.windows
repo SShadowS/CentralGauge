@@ -1,4 +1,4 @@
-# pi harness image. Built by `harness images build pi --version 0.87.1`.
+# pi harness image. Built by `harness images build pi --version 0.87.1 --revision 2`.
 # BASE has no default: `harness images build` passes the inspected immutable base image and
 # verifies the layers (M1-24). Node 22.19.0 comes from the base (pi 0.87.1 engines, findings section 3).
 # No secret is ever copied into a layer: the provider key arrives as a file at run time.

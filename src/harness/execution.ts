@@ -216,7 +216,7 @@ async function overrideImage(
   env: HarnessEnv,
   id: string,
   harness: string,
-): Promise<{ digest: string; base_digest: string }> {
+): Promise<ResolvedManifest["image"]> {
   // imageFacts: labels, immutable id and the shipped MCP definition (M2-09).
   const f = await bounded(
     imageFacts(env.docker, id, env.owner),
@@ -231,7 +231,11 @@ async function overrideImage(
       `--image ${id} is a ${f.harness} image, not ${harness}`,
     );
   }
-  return { digest: f.digest, base_digest: f.base_digest };
+  return {
+    digest: f.digest,
+    base_digest: f.base_digest,
+    ...(f.revision === null ? {} : { revision: f.revision }),
+  };
 }
 
 /** Stub cells publish only under results/harness/stub-cells (never beside real campaigns). */

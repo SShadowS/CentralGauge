@@ -1,4 +1,4 @@
-# Claude Code harness image. Built by `harness images build claude-code --version 2.1.282`.
+# Claude Code harness image. Built by `harness images build claude-code --version 2.1.282 --revision 2`.
 # BASE has no default: `harness images build` passes the inspected immutable base image and then
 # verifies that the built image's layers start with the base's layers (M1-24).
 ARG BASE
