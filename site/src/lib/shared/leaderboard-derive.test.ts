@@ -1,6 +1,6 @@
 // site/src/lib/shared/leaderboard-derive.test.ts
 import { describe, it, expect } from 'vitest';
-import { auc2Display, outcomeMix } from './leaderboard-derive';
+import { auc2Display, minorityMode, outcomeMix } from './leaderboard-derive';
 import type { LeaderboardRow } from './api-types';
 
 function row(p: Partial<LeaderboardRow>): LeaderboardRow {
@@ -66,3 +66,13 @@ describe('outcomeMix', () => {
   });
 });
 
+
+describe('minorityMode', () => {
+  it('returns the less common mode, sync on a tie, null when uniform', () => {
+    expect(minorityMode(['batch', 'batch', 'sync'])).toBe('sync');
+    expect(minorityMode(['sync', 'sync', 'batch'])).toBe('batch');
+    expect(minorityMode(['batch', 'sync'])).toBe('sync');
+    expect(minorityMode(['batch', 'batch'])).toBeNull();
+    expect(minorityMode([])).toBeNull();
+  });
+});

@@ -14,6 +14,7 @@
   import ModeFilter from '$lib/components/domain/ModeFilter.svelte';
   import ViewToggle from '$lib/components/domain/ViewToggle.svelte';
   import ValueMap from '$lib/components/domain/ValueMap.svelte';
+  import { minorityMode } from '$lib/shared/leaderboard-derive';
   import { presetForSort, presetEligible } from '$lib/shared/sort-presets';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   // CHEAT overlay temporarily hidden. Re-enable by reverting this commit.
@@ -41,6 +42,8 @@
       .filter((r) => presetEligible(activePreset, r))
       .map((r, i) => ({ ...r, rank: i + 1 })),
   );
+
+  let minority = $derived(minorityMode(tableRows.map((r) => r.served_mode)));
 
   // SSE wiring. Only opens when the flag is on AND we're in the browser.
   // Server-side $effect doesn't run, but the import of useEventSource itself
@@ -123,10 +126,11 @@
       onchange={(next) => pushFilter({ set: next === 'current' ? null : next })}
     />
     <OpennessFilter value={data.filters.openness ?? null} onselect={(v) => pushFilter({ openness: v })} />
-    {#if data.modeSplit || page.url.searchParams.has('mode')}
+    {#if data.modeSplit || data.mode === 'combined' || page.url.searchParams.has('mode')}
       <ModeFilter
         mode={data.mode}
         modeSplit={data.modeSplit}
+        combinedHref={data.modeLinks.combined}
         syncHref={data.modeLinks.sync}
         batchHref={data.modeLinks.batch}
       />
@@ -137,6 +141,12 @@
     {#if data.modeSplit}
       <p class="mode-notice">
         Showing sync runs. This task set also has batch runs. <a href={data.modeLinks.batch}>View batch</a>
+      </p>
+    {/if}
+    {#if data.mode === 'combined'}
+      <p class="mode-notice">
+        Each model is ranked on the run mode it has most runs in. {#if minority}Models marked {minority} were ranked on {minority} runs.{/if}
+        <a href={data.modeLinks.sync}>Sync only</a> · <a href={data.modeLinks.batch}>Batch only</a>
       </p>
     {/if}
     {#if Array.from(page.url.searchParams.entries()).some(([k]) => FILTER_KEYS.has(k))}

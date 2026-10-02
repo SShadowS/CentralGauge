@@ -2,6 +2,7 @@ import {
   assert,
   assertAlmostEquals,
   assertEquals,
+  assertStringIncludes,
   assertThrows,
 } from "@std/assert";
 import { ValidationError } from "../../../src/errors.ts";
@@ -10,6 +11,9 @@ import {
   type Cell,
   type CellStatus,
   compareArms,
+  exploratoryNote,
+  exploratoryText,
+  minDefinedResamples,
   mulberry32,
 } from "../../../src/harness/stats.ts";
 
@@ -291,4 +295,209 @@ Deno.test("compareArms: a seed outside 0..0xffffffff is refused, never aliased",
     );
   }
   compareArms(cs, "base", "var", "pass_rate", { seed: 0xffffffff });
+});
+
+// M6-02d: an exploratory interval over the defined resamples only, beside
+// the pre-registered result, which it never replaces.
+
+Deno.test("compareArms: exploratory interval over defined resamples when the CI is suppressed", () => {
+  // Resamples: {t1,t1} delta 0, {t1,t2} delta 1, {t2,t2} undefined (no var solve).
+  const cs = [
+    ...cells("base", "t1", [[true, 1]]),
+    ...cells("var", "t1", [[true, 1]]),
+    ...cells("base", "t2", [[true, 1]]),
+    ...cells("var", "t2", [[false, 1]]),
+  ];
+  const r = compareArms(cs, "base", "var", "cost_per_solved_task", {
+    resamples: 400,
+    seed: 3,
+  });
+  assertEquals([r.ci, r.distinguishable], [null, null]);
+  const used = 400 - Math.round(r.undefined_share * 400);
+  assert(used > 0 && used < 400);
+  assertEquals(r.exploratory_ci_defined_only, {
+    lo: 0,
+    hi: 1,
+    level: 0.95,
+    resamples_used: used,
+    undefined_share: r.undefined_share,
+  });
+});
+
+Deno.test("compareArms: with no undefined resample the exploratory interval equals the CI exactly", () => {
+  const r = compareArms(twoArms(1), "base", "var", "cost_per_solved_task", {
+    seed: 7,
+    resamples: 500,
+  });
+  assertEquals(r.undefined_share, 0);
+  assertEquals(r.exploratory_ci_defined_only, {
+    lo: r.ci![0],
+    hi: r.ci![1],
+    level: r.level,
+    resamples_used: 500,
+    undefined_share: 0,
+  });
+});
+
+Deno.test("compareArms: exploratory interval is null when every resample is undefined", () => {
+  const none = [
+    ...cells("base", "t1", [[false, 1]]),
+    ...cells("var", "t1", [[true, 1]]),
+  ];
+  const r = compareArms(none, "base", "var", "cost_per_solved_task", {
+    resamples: 50,
+  });
+  assertEquals([r.undefined_share, r.exploratory_ci_defined_only], [1, null]);
+  const empty = compareArms(
+    cells("base", "t1", [[true, 1]]),
+    "base",
+    "var",
+    "cost_per_solved_task",
+    { resamples: 50 },
+  );
+  assertEquals([empty.tasks, empty.exploratory_ci_defined_only], [0, null]);
+});
+
+Deno.test("compareArms: pre-registered fields are byte-identical to the pre-M6-02d output", () => {
+  const cs = [
+    ...cells("base", "t1", [[true, 1]]),
+    ...cells("var", "t1", [[true, 1]]),
+    ...cells("base", "t2", [[true, 1]]),
+    ...cells("var", "t2", [[false, 1]]),
+    ...cells("base", "t3", [[true, 2]]),
+    ...cells("var", "t3", [[true, 1.5]]),
+  ];
+  // Captured from master 9e40cedd before the exploratory field existed.
+  const gold = {
+    cost_per_solved_task:
+      '{"metric":"cost_per_solved_task","baseline":"base","variant":"var","pairs":3,"tasks":3,"tasks_dropped":0,"excluded":{"baseline":{},"variant":{}},"level":0.95,"resamples":400,"seed":3,"provisional":false,"delta":0.41666666666666674,"ci":null,"undefined_share":0.0275,"distinguishable":null}',
+    pass_rate:
+      '{"metric":"pass_rate","baseline":"base","variant":"var","pairs":3,"tasks":3,"tasks_dropped":0,"excluded":{"baseline":{},"variant":{}},"level":0.95,"resamples":400,"seed":3,"provisional":false,"delta":-0.33333333333333337,"ci":[-1,0],"undefined_share":0,"distinguishable":false}',
+  } as const;
+  for (const metric of ["cost_per_solved_task", "pass_rate"] as const) {
+    const r = compareArms(cs, "base", "var", metric, {
+      resamples: 400,
+      seed: 3,
+    });
+    assert(r.exploratory_ci_defined_only != null);
+    const { exploratory_ci_defined_only: _, ...pre } = r;
+    assertEquals(JSON.stringify(pre), gold[metric]);
+  }
+});
+
+Deno.test("exploratoryText: labelled, share never rounds to 100% or 0%, counts beside it", () => {
+  const e = (used: number) => ({
+    lo: -0.25,
+    hi: 0.5,
+    level: 0.95,
+    resamples_used: used,
+    undefined_share: (2000 - used) / 2000,
+  });
+  const f = (x: number) => x.toFixed(2);
+  assertEquals(
+    exploratoryText(e(1996), 2000, f),
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval: [-0.25, 0.50]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
+  );
+  assertStringIncludes(exploratoryText(e(1999), 2000, f), "over the 99.9% ");
+  assertStringIncludes(exploratoryText(e(1), 2000, f), "over the 0.1% ");
+  assertStringIncludes(exploratoryText(e(2000), 2000, f), "over the 100% ");
+});
+
+// --- M6-02d review: conditional wording, minimum defined resamples ---
+
+Deno.test("exploratoryText (M6-02d review): conditional wording, never called a confidence interval; level 0.9 reads 90%", () => {
+  const e = {
+    lo: -0.25,
+    hi: 0.5,
+    level: 0.95,
+    resamples_used: 1996,
+    undefined_share: 0.002,
+  };
+  const f = (x: number) => x.toFixed(2);
+  assertEquals(
+    exploratoryText(e, 2000, f),
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval: [-0.25, 0.50]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
+  );
+  assertStringIncludes(
+    exploratoryText({ ...e, level: 0.9 }, 2000, f),
+    "conditional 90% percentile interval",
+  );
+});
+
+Deno.test("minDefinedResamples (M6-02d review): ceil(1/alpha), alpha = (1 - level) / 2", () => {
+  assertEquals(minDefinedResamples(0.95), 40);
+  assertEquals(minDefinedResamples(0.9), 20);
+  assertEquals(minDefinedResamples(0.99), 200);
+});
+
+Deno.test("compareArms (M6-02d review): fewer defined resamples than the minimum gives a null interval; the pre-registered result is untouched", () => {
+  const cs = twoArms(1);
+  const few = compareArms(cs, "base", "var", "cost_per_solved_task", {
+    seed: 7,
+    resamples: 39,
+  });
+  assertEquals(few.undefined_share, 0);
+  assert(few.ci !== null && few.distinguishable !== null);
+  assertEquals(few.exploratory_ci_defined_only, null);
+  const enough = compareArms(cs, "base", "var", "cost_per_solved_task", {
+    seed: 7,
+    resamples: 40,
+  });
+  assertEquals(enough.exploratory_ci_defined_only?.resamples_used, 40);
+});
+
+Deno.test("exploratoryNote (M6-02d review): omitted line names the count and the minimum; nothing beside a shown CI or for an old report", () => {
+  const f = (x: number) => x.toFixed(2);
+  const base = compareArms(twoArms(1), "base", "var", "cost_per_solved_task", {
+    seed: 7,
+    resamples: 400,
+  });
+  const suppressed = {
+    ...base,
+    ci: null,
+    distinguishable: null,
+    undefined_share: 0.95,
+    exploratory_ci_defined_only: null,
+  };
+  assertEquals(
+    exploratoryNote(suppressed, f),
+    "exploratory interval omitted: only 20 of 400 resamples defined (< 40)",
+  );
+  assertEquals(exploratoryNote(base, f), null);
+  const { exploratory_ci_defined_only: _, ...old } = suppressed;
+  assertEquals(exploratoryNote(old, f), null);
+  assertEquals(exploratoryNote({ ...suppressed, delta: null }, f), null);
+  assertStringIncludes(
+    exploratoryNote({
+      ...suppressed,
+      exploratory_ci_defined_only: {
+        lo: 0,
+        hi: 1,
+        level: 0.95,
+        resamples_used: 380,
+        undefined_share: 0.05,
+      },
+    }, f)!,
+    "exploratory (not pre-registered): conditional 95% percentile interval",
+  );
+});
+
+// --- M6-02e: the label warns about conditioning bias ---
+
+Deno.test("exploratoryText (M6-02e): ends with the conditioning-bias warning", () => {
+  const f = (x: number) => x.toFixed(2);
+  assertEquals(
+    exploratoryText(
+      {
+        lo: -0.25,
+        hi: 0.5,
+        level: 0.95,
+        resamples_used: 1996,
+        undefined_share: 0.002,
+      },
+      2000,
+      f,
+    ),
+    "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval: [-0.25, 0.50]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
+  );
 });

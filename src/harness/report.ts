@@ -39,6 +39,7 @@ import {
   checkBootstrapOptions,
   compareArms,
   type Comparison,
+  exploratoryNote,
   ineligible,
 } from "./stats.ts";
 
@@ -652,10 +653,13 @@ const pct = (x: number | null) =>
 const reasons = (r: Record<string, number | undefined>) =>
   Object.entries(r).map(([k, v]) => `${k} ${v}`).join(", ") || "none";
 
-function fmtDelta(c: Comparison): string {
-  const f = c.metric === "pass_rate"
+const fmtOf = (c: Comparison) =>
+  c.metric === "pass_rate"
     ? (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)} pp`
     : (x: number) => `${x >= 0 ? "+" : "-"}$${Math.abs(x).toFixed(3)}`;
+
+function fmtDelta(c: Comparison): string {
+  const f = fmtOf(c);
   if (c.pairs === 0) return "n/a (no matched pairs)";
   if (c.delta === null) return "n/a (no solved task in the matched pairs)";
   const cohort = `${c.pairs} matched pairs over ${c.tasks} tasks`;
@@ -786,6 +790,9 @@ export function renderReport(r: HarnessReport): string {
     out.push(
       `  ${c.variant} vs ${c.baseline}, ${c.metric}: ${fmtDelta(c)}${label}`,
     );
+    // M6-02d: only beside a suppressed CI (otherwise it equals the CI).
+    const note = exploratoryNote(c, fmtOf(c));
+    if (note !== null) out.push(colors.dim(`    ${note}`));
     out.push(
       `    scorer ${c.scorer_fingerprint?.slice(0, 12) ?? "n/a"}`,
     );
@@ -826,6 +833,28 @@ export function renderReport(r: HarnessReport): string {
         }, used ${c.used_kind ?? "no"} execution ${c.used_execution ?? "n/a"}`,
       );
     }
+  }
+  // C-03 run 002: every forced judgment of a cell, counted or not.
+  const forced = r.cells.flatMap((c) =>
+    (c.forced_rejudges ?? []).map((f) => ({ c, f }))
+  );
+  if (forced.length > 0) {
+    out.push("  Forced rejudges (every one, counted or not):");
+    for (const { c, f } of forced) {
+      const basis =
+        `decision ${f.basis.path} (sha256 ${f.basis.sha256}; ${f.basis.approval})`;
+      out.push(
+        `    ${c.task} r${c.repeat} ${c.arm}: judgment ${f.judgment_id} (${
+          f.judgment_id === c.judgment_id ? "counted" : "not counted"
+        }) replaces ${f.replaces}, basis ${basis}: ${f.reason}`,
+      );
+    }
+  }
+  // Run 003: cells above the cut are not in r.cells, nor their forced judgments.
+  if (r.repeats.reported < r.repeats.planned) {
+    out.push(
+      `  Forced rejudges in repeats above ${r.repeats.reported}, if any, are not listed.`,
+    );
   }
   const ms = (x: number | null) => (x === null ? "n/a" : `${Math.round(x)} ms`);
   h("Efficiency (descriptive)");

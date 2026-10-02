@@ -6,6 +6,7 @@ import type { MatrixResponse } from "$lib/shared/api-types";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
   type SetScope,
 } from "$lib/server/invocation-mode";
 
@@ -67,7 +68,6 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         ? { kind: "current" }
         : { kind: "hash", hash: set };
     const mode = await resolveInvocationMode(env.DB, scope, requestedMode);
-
     const ttl = isFallbackEpoch(epoch)
       ? DEGRADED_TTL_SECONDS
       : EPOCH_KEYED_TTL_SECONDS;
@@ -107,11 +107,19 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     }
 
     if (!payload) {
+      // `set=all` spans every task set, so its served-mode map must too (one
+      // mode per model across the whole matrix).
+      const modeBind = await resolveModeBinding(
+        env.DB,
+        set === "all" ? { kind: "all" } : scope,
+        mode,
+      );
       payload = await computeMatrix(env.DB, {
         set,
         category,
         difficulty: difficulty as "easy" | "medium" | "hard" | null,
         mode,
+        modeBind,
       });
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {

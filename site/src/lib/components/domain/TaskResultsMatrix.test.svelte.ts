@@ -32,12 +32,14 @@ function makeMatrix(overrides: Partial<MatrixResponse> = {}): MatrixResponse {
         slug: "sonnet",
         display_name: "Sonnet",
         settings_suffix: " (8K, t0)",
+        served_mode: "sync",
       },
       {
         model_id: 2,
         slug: "haiku",
         display_name: "Haiku",
         settings_suffix: "",
+        served_mode: "sync",
       },
     ],
     cells: [

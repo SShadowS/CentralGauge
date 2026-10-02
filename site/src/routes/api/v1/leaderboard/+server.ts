@@ -13,7 +13,9 @@ import { getTierMap } from "$lib/server/tier-data";
 import {
   parseModeParam,
   resolveInvocationMode,
-  type InvocationMode,
+  resolveModeBinding,
+  type RankMode,
+  type SetScope,
 } from "$lib/server/invocation-mode";
 import {
   buildCacheKey,
@@ -55,13 +57,11 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // resolved value (not just the raw `?mode=`) is part of the key — a
     // default resolved to "sync" must not keep being served once the first
     // batch run lands on this task set under the same key.
-    const mode = await resolveInvocationMode(
-      env.DB,
+    const modeScope: SetScope =
       parsed.set === "current"
         ? { kind: "current" }
-        : { kind: "hash", hash: parsed.set },
-      parsed.mode,
-    );
+        : { kind: "hash", hash: parsed.set };
+    const mode = await resolveInvocationMode(env.DB, modeScope, parsed.mode);
     const q: LeaderboardQuery = { ...parsed, mode };
 
     // Key off the PARSED query, never the raw URL. Unknown params (utm_source,
@@ -143,8 +143,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         }
       }
 
+      // Computed on the miss path only: a cache hit issues no map query.
+      const modeBind = await resolveModeBinding(env.DB, modeScope, mode);
       const timer = new ServerTimer();
-      const rows = await computeLeaderboard(env.DB, q, timer);
+      const rows = await computeLeaderboard(env.DB, q, timer, modeBind);
       // Set when the payload is computed along a best-effort path that
       // silently degraded. Such a payload must not inherit the full
       // epoch-keyed TTL — see the cache.put below.
@@ -184,6 +186,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
                 metric: "auc_2",
                 category: q.category ?? null,
                 mode: q.mode,
+                modeBind,
               },
               epoch,
             );
@@ -296,12 +299,12 @@ function parseSlug(raw: string | null, field: string): string | null {
 /**
  * `parseQuery`'s return shape before mode resolution: `mode` is whatever the
  * caller explicitly requested via `?mode=` (or `null` when absent). The GET
- * handler resolves the default (D4: the task set's sole mode, "sync" when
- * empty) and only then builds the full `LeaderboardQuery`, whose `mode` field
+ * handler resolves the default (D4: the task set's only mode, "sync" when
+ * empty, "combined" when both exist) and only then builds the full `LeaderboardQuery`, whose `mode` field
  * is non-nullable.
  */
 type ParsedLeaderboardQuery = Omit<LeaderboardQuery, "mode"> & {
-  mode: InvocationMode | null;
+  mode: RankMode | null;
 };
 
 function parseQuery(url: URL): ParsedLeaderboardQuery {

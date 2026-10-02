@@ -6,7 +6,7 @@
   import MetricInfo from './MetricInfo.svelte';
   import OutcomeMixBar from './OutcomeMixBar.svelte';
   import { ChevronDown, ChevronUp } from '$lib/components/ui/icons';
-  import { auc2Display, outcomeMix } from '$lib/shared/leaderboard-derive';
+  import { auc2Display, minorityMode, outcomeMix } from '$lib/shared/leaderboard-derive';
   import { isCostProvisional } from '$lib/shared/cost-provisional';
   import { upstreamChip } from '$lib/client/upstream-chip';
   import { COHORT_RUNS } from '$lib/shared/cohort';
@@ -71,6 +71,7 @@
   // — or even auc_2 ASCENDING — the order doesn't match tier order, so suppress
   // the bands + dimming there. `sortDir !== 'asc'` also covers a bare `auc_2`
   // (no direction) as the canonical descending default.
+  const badgeMode = $derived(minorityMode(rows.map((r) => r.served_mode)));
   const showTierUi = $derived(sortField === 'auc_2' && sortDir !== 'asc');
 
   const expanded = new SvelteSet<string>();
@@ -151,6 +152,16 @@
                 aria-label="Provisional: {row.run_count} of {COHORT_RUNS} cohort runs"
                 title="Provisional. A full cohort is {COHORT_RUNS} runs and this model has {row.run_count}. Metrics are means across runs, so the value is comparable; it just rests on fewer samples."
               >n={row.run_count}</span>
+            {/if}
+            {#if badgeMode && row.served_mode === badgeMode}
+              <span
+                class="mode-pill"
+                data-test="mode-pill"
+                aria-label="Ranked on {row.served_mode} runs"
+                title={row.served_mode === 'sync'
+                  ? 'Ranked on sync runs: continuation, empty retries and refusal fallback were available.'
+                  : 'Ranked on batch runs: no continuation, empty retries or refusal fallback.'}
+              >{row.served_mode}</span>
             {/if}
           </th>
           <td class="score" data-test="auc-cell">
@@ -304,6 +315,7 @@
   .upstream-warn { color: var(--warning); }
   .upstream-mixed { color: var(--danger); }
   .upstream-unrecorded { color: var(--text-faint); }
+  .mode-pill { margin-left: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }
   .provisional-marker { margin-left: var(--space-2); color: var(--text-faint); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .legend { display: flex; gap: var(--space-4); padding: var(--space-3); font-size: var(--text-xs); color: var(--text-muted); border-top: 1px solid var(--border); }
   .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: var(--space-2); }

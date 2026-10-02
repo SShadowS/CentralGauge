@@ -3,15 +3,13 @@
  * docs/superpowers/specs/2026-09-06-batch-mode-design.md section 2).
  *
  * Every ranked API (leaderboard, matrix, compare, families/:slug,
- * models, models/:slug) resolves to exactly one invocation mode and
- * refuses with `400 mode_required` when the current task set has runs in
- * both modes and no `?mode=` was given (see `invocation-mode.ts`). Page
- * loaders forward the caller's `?mode=` through to the API and, when the
- * API refuses because the mode is genuinely ambiguous, fall back to
- * `sync` — every historical run is sync and the published baseline is
- * sync — rather than surfacing a 400 to the visitor.
+ * models, models/:slug) resolves each model to exactly one invocation
+ * mode (see `invocation-mode.ts`). Page loaders forward the caller's
+ * `?mode=` through to the API. The API now resolves a mixed set to
+ * `combined` itself, so the sync retry below only fires against an older
+ * worker that still refuses with `mode_required`.
  */
-import type { InvocationMode } from "$lib/server/invocation-mode";
+import type { InvocationMode, RankMode } from "$lib/server/invocation-mode";
 
 /**
  * Reads the `?mode=` query param. Returns `null` for absent, empty, or any
@@ -19,9 +17,9 @@ import type { InvocationMode } from "$lib/server/invocation-mode";
  * simply treated as "not requested" and left for the API (or its own
  * default resolution) to handle.
  */
-export function pageMode(url: URL): InvocationMode | null {
+export function pageMode(url: URL): RankMode | null {
   const raw = url.searchParams.get("mode");
-  if (raw === "sync" || raw === "batch") return raw;
+  if (raw === "sync" || raw === "batch" || raw === "combined") return raw;
   return null;
 }
 
@@ -32,7 +30,7 @@ export function pageMode(url: URL): InvocationMode | null {
 export function withMode(
   path: string,
   params: URLSearchParams,
-  mode: InvocationMode | null,
+  mode: RankMode | null,
 ): string {
   const sp = new URLSearchParams(params);
   if (mode) {
@@ -47,22 +45,21 @@ export function withMode(
 export interface ModeFetchResult {
   res: Response;
   /** The mode actually served: `requested`, or `"sync"` after a fallback. */
-  mode: InvocationMode | null;
+  mode: RankMode | null;
   /** True when the API refused the unqualified request and a sync retry was made. */
   modeSplit: boolean;
 }
 
 /**
- * Fetches `buildUrl(requested)`. If the API refuses with `400
- * mode_required` (only possible when `requested` is null — an explicit
- * mode always short-circuits `resolveInvocationMode`), retries exactly
- * once against `buildUrl("sync")`. Any other outcome — ok, or a non-ok
- * response for any other reason — is returned as-is with no retry.
+ * Fetches `buildUrl(requested)`. If an older worker refuses with `400
+ * mode_required` (only possible when `requested` is null), retries
+ * exactly once against `buildUrl("sync")`. Any other outcome (ok, or a non-ok
+ * response for any other reason) is returned as-is with no retry.
  */
 export async function fetchWithModeFallback(
   fetchFn: typeof fetch,
-  buildUrl: (mode: InvocationMode | null) => string,
-  requested: InvocationMode | null,
+  buildUrl: (mode: RankMode | null) => string,
+  requested: RankMode | null,
 ): Promise<ModeFetchResult> {
   const res = await fetchFn(buildUrl(requested));
   if (res.ok) {

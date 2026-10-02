@@ -8,7 +8,7 @@
 import type { TierInput, TierResult } from "./tiers";
 import { computeTiers } from "./tiers";
 import { CACHE_VERSION } from "./cache-version";
-import type { InvocationMode } from "./invocation-mode";
+import { modeBindValue, modePredicate, type RankMode } from "./invocation-mode";
 
 export interface AucMatrixOptions {
   taskSetHash: string;
@@ -18,10 +18,13 @@ export interface AucMatrixOptions {
   category?: string | null;
   /**
    * Invocation mode the matrix is scoped to (D4). Every ranking surface
-   * selects exactly one mode; the tier matrix is no exception, since sync
-   * and batch runs are never ranked together.
+   * uses one mode per model (`combined` = each model on its majority mode);
+   * the tier matrix is no exception, since a model's sync and batch runs are
+   * never pooled.
    */
-  mode: InvocationMode;
+  mode: RankMode;
+  /** `resolveModeBinding(...)` for `mode`; required when mode is `combined`. */
+  modeBind?: string;
 }
 
 /**
@@ -99,7 +102,7 @@ export async function buildAucMatrix(
           ${categoryJoin}
          WHERE ru.task_set_hash = ?
            ${categoryWhere}
-           AND ru.invocation_mode = ?
+           AND ${modePredicate("ru", opts.mode)}
            -- Soft run exclusion (0022): an excluded run contributes no cell,
            -- so it moves neither a model's per-task mean nor its tier band.
            AND ru.excluded_at IS NULL
@@ -126,11 +129,11 @@ export async function buildAucMatrix(
             `AND tc.slug = ?`,
           ),
         )
-        .bind(opts.taskSetHash, cat, opts.mode)
+        .bind(opts.taskSetHash, cat, modeBindValue(opts.mode, opts.modeBind))
         .all<{ slug: string; task_id: string; score: number }>()
     : await db
         .prepare(cellCte("", ""))
-        .bind(opts.taskSetHash, opts.mode)
+        .bind(opts.taskSetHash, modeBindValue(opts.mode, opts.modeBind))
         .all<{ slug: string; task_id: string; score: number }>();
 
   const bySlug = new Map<string, number[]>();

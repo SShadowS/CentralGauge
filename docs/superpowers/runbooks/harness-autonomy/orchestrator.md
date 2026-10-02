@@ -48,7 +48,7 @@ Run as `/loop` without an interval (self-paced). Each sweep:
 - M1 is on the critical path. Start drafting the parts of M1 that do not depend on findings
   (schemas, records, hashing, task.yml loader, stats) as soon as M0-01 is accepted, so
   lane-infra is not idle.
-- Review each plan with `gpt-6-astra` (milestone) per README "Reviews". Apply findings you
+- Review each plan with `gpt-6.1-sol` per README "Reviews". Apply findings you
   agree with; record the rest with reasons in `decisions/`.
 - Load each plan's tasks: one `task.md` per plan task, written to a scratch file and added
   with `coord add <file>`. Keep `H:\cg-coord\milestones.json` in line with the plan
@@ -61,7 +61,7 @@ Run as `/loop` without an interval (self-paced). Each sweep:
 ## Review and integration of a submitted task
 
 1. `coord status --json` for the run: commit, branch.
-2. Freeze and review per README "Reviews" with `gpt-6-sol`. For oracle and test changes,
+2. Freeze and review per README "Reviews" with `gpt-6.1-sol`. For oracle and test changes,
    ask the reviewer specifically whether any test was weakened.
 3. Integrate per README "Git": merge onto current master in the main checkout, run the
    task's acceptance checks on that tree (never container tests: ask lane-ops for those and

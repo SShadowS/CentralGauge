@@ -12,7 +12,7 @@ import { resetDb } from "../utils/reset-db";
  * Fixture: one family with one model, a sync run passing t1 on attempt 1
  * and a batch run passing t2 on attempt 1, both in the current task set —
  * so mode=sync and mode=batch must each isolate exactly one pass, and a
- * request with no explicit mode must refuse rather than pool them.
+ * request with no explicit mode resolves to combined.
  */
 async function seedModeFixture(): Promise<void> {
   await resetDb();
@@ -71,11 +71,40 @@ beforeEach(async () => {
 });
 
 describe("GET /api/v1/families/:slug — invocation mode (D4)", () => {
-  it("refuses with mode_required when the family's current-set runs span both modes", async () => {
+  it("defaults to combined when the family's current-set runs span both modes", async () => {
     const res = await SELF.fetch("https://x/api/v1/families/claude");
-    expect(res.status).toBe(400);
-    const body = await res.json<{ code: string }>();
-    expect(body.code).toBe("mode_required");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as FamilyDetail;
+    expect(body.filters.mode).toBe("combined");
+  });
+
+  it("combined keeps a model's current-set batch runs when older sets hold more sync runs", async () => {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('ts-old','2025-01-01T00:00:00Z',2,0)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json) VALUES ('ts-old','t1','h1','easy','{}'),('ts-old','t2','h2','easy','{}')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,
+                          ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload,invocation_mode)
+         VALUES ('o1','ts-old',1,'s','rig','2025-02-01T00:00:00Z','2025-02-01T00:00:00Z','completed','claimed','v1','sig','2025-02-01T00:00:00Z',1,'{}','sync'),
+                ('o2','ts-old',1,'s','rig','2025-02-02T00:00:00Z','2025-02-02T00:00:00Z','completed','claimed','v1','sig','2025-02-02T00:00:00Z',1,'{}','sync')`,
+      ),
+    ]);
+    // All sets: 3 sync vs 1 batch, but the current set ties 1-1 and its map
+    // wins, so the model is served on batch and the current-set point counts
+    // the batch result (t2), not the sync one (t1).
+    const res = await SELF.fetch("https://x/api/v1/families/claude");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as FamilyDetail;
+    expect(body.filters.mode).toBe("combined");
+    const point = body.trajectory.find((t) => t.task_set_hash === "ts");
+    expect(point).toBeDefined();
+    expect(point!.run_count).toBe(1);
+    expect(point!.pass_at_1).toBeCloseTo(0.5, 5);
+    expect(point!.avg_score).toBeCloseTo(0.7, 5);
   });
 
   it("rejects mode=all", async () => {

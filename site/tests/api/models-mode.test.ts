@@ -53,11 +53,9 @@ describe("GET /api/v1/models — mode scoping (D4)", () => {
     ]);
   });
 
-  it("refuses with 400 mode_required when the current set is mixed-mode and mode is unspecified", async () => {
+  it("defaults to combined when the current set is mixed-mode and mode is unspecified", async () => {
     const res = await SELF.fetch("https://x/api/v1/models");
-    expect(res.status).toBe(400);
-    const body = await res.json<{ code: string }>();
-    expect(body.code).toBe("mode_required");
+    expect(res.status).toBe(200);
   });
 
   it("?mode=sync sees only the sync run, not the pooled count", async () => {

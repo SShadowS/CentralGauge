@@ -90,7 +90,17 @@ export interface CellRecord extends Cell {
   oracle_hash: string | null;
   scorer_fingerprint: string | null;
   manual_reruns: number;
+  /**
+   * C-03 run 002: every forced judgment of the cell's executions, counted or
+   * not (by ended_at, then id); absent when there is none.
+   */
+  forced_rejudges?: ForcedRejudge[];
 }
+
+/** One forced judgment as the report discloses it. */
+export type ForcedRejudge =
+  & { judgment_id: string; execution_id: string }
+  & NonNullable<JudgmentRecord["forced"]>;
 
 interface Resolved {
   status: CellStatus;
@@ -233,6 +243,17 @@ export function cellsFromRecords(
           : undefined;
         const pick = scored ?? pending;
         if (pick) use(pick.m, pick.r);
+      }
+      const forced = all.flatMap(js).filter((j) => j.forced)
+        .sort((x, y) =>
+          compareInstant(x.ended_at, y.ended_at) || (x.id < y.id ? -1 : 1)
+        );
+      if (forced.length > 0) {
+        cell.forced_rejudges = forced.map((j) => ({
+          judgment_id: j.id,
+          execution_id: j.execution_id,
+          ...j.forced!,
+        }));
       }
       cells.push(cell);
     }

@@ -14,6 +14,9 @@
  *   in both arms; exclusions are counted per arm and reason.
  * - Paired task-level bootstrap. If any resample is undefined (no solve), the
  *   CI and the distinguishable verdict are suppressed.
+ * - Beside it (owner decision 2026-09-29, M6-02d), never replacing it: an
+ *   EXPLORATORY (not pre-registered) percentile interval over the defined
+ *   resamples only, from the same draws. It never sets `distinguishable`.
  */
 
 import { percentile } from "../../cli/commands/report/stats-calculator.ts";
@@ -255,6 +258,75 @@ export interface Comparison {
   resamples: number;
   seed: number;
   provisional: boolean;
+  /**
+   * EXPLORATORY, not pre-registered (M6-02d): the same percentile interval
+   * over the defined resamples only, from the same draws. It is CONDITIONAL
+   * on at least one solve per arm and has no nominal coverage: not a
+   * confidence interval: `lo`/`hi` are conditional, non-inferential bounds
+   * over the defined resamples only, and conditioning on solves can bias
+   * them, including their direction (M6-02e); they are not evidence of a
+   * difference. Never replaces `ci`, never feeds `distinguishable`.
+   * Equals `ci` when `undefined_share` is 0; null when fewer than
+   * `minDefinedResamples(level)` resamples are defined. Absent (undefined)
+   * in pre-M6-02d reports.
+   */
+  exploratory_ci_defined_only?: ExploratoryInterval | null;
+}
+
+export interface ExploratoryInterval {
+  lo: number;
+  hi: number;
+  level: number;
+  resamples_used: number;
+  undefined_share: number;
+}
+
+/** The labelled exploratory line; never a headline (M6-02d). */
+export function exploratoryText(
+  e: ExploratoryInterval,
+  resamples: number,
+  f: (x: number) => string,
+): string {
+  // A share just under 100% (or just over 0%) never prints as 100% (0%).
+  const share = Math.round((e.resamples_used / resamples) * 1000) / 10;
+  const used = e.resamples_used === resamples
+    ? 100
+    : Math.min(Math.max(share, 0.1), 99.9);
+  return `exploratory (not pre-registered): conditional ${+(e.level * 100)
+    .toFixed(
+      2,
+    )}% percentile interval over the ${used}% of resamples with a solve in both arms (${e.resamples_used} of ${resamples}), not a confidence interval: [${
+    f(e.lo)
+  }, ${
+    f(e.hi)
+  }]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference`;
+}
+
+/**
+ * Fewest defined resamples for an exploratory interval: ceil(1 / alpha),
+ * alpha = (1 - level) / 2, so each tail holds at least one resample
+ * (40 at 95%). The epsilon absorbs float error in 1 / alpha.
+ */
+export function minDefinedResamples(level: number): number {
+  return Math.ceil(2 / (1 - level) - 1e-9);
+}
+
+/**
+ * The exploratory line beside a suppressed CI, or null: nothing beside a
+ * shown CI (it would equal it), for a pre-M6-02d report (field absent) or
+ * when the delta itself is undefined (then no resample is defined either).
+ */
+export function exploratoryNote(
+  c: Comparison,
+  f: (x: number) => string,
+): string | null {
+  const e = c.exploratory_ci_defined_only;
+  if (c.ci !== null || e === undefined || c.delta === null) return null;
+  if (e !== null) return exploratoryText(e, c.resamples, f);
+  const used = c.resamples - Math.round(c.undefined_share * c.resamples);
+  return `exploratory interval omitted: only ${used} of ${c.resamples} resamples defined (< ${
+    minDefinedResamples(c.level)
+  })`;
 }
 
 export interface BootstrapOptions {
@@ -351,6 +423,7 @@ export function compareArms(
       ci: null,
       undefined_share: 1,
       distinguishable: null,
+      exploratory_ci_defined_only: null,
     };
   }
   const rand = mulberry32(seed);
@@ -361,14 +434,26 @@ export function compareArms(
   }
   const undefinedShare = (resamples - deltas.length) / resamples;
   const alpha = (1 - level) / 2;
-  const ci: [number, number] | null = undefinedShare > 0
+  // One interval over the draws already made; no second draw.
+  const defined: [number, number] | null = deltas.length === 0
     ? null
     : [percentile(deltas, alpha), percentile(deltas, 1 - alpha)];
+  const ci = undefinedShare > 0 ? null : defined;
   return {
     ...base,
     delta: delta(tasks),
     ci,
     undefined_share: undefinedShare,
     distinguishable: ci === null ? null : !(ci[0] <= 0 && 0 <= ci[1]),
+    exploratory_ci_defined_only: defined === null ||
+        deltas.length < minDefinedResamples(level)
+      ? null
+      : {
+        lo: defined[0],
+        hi: defined[1],
+        level,
+        resamples_used: deltas.length,
+        undefined_share: undefinedShare,
+      },
   };
 }
