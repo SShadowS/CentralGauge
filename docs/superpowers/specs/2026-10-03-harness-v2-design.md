@@ -241,7 +241,18 @@ BEFORE screening:
    separately as a descriptive robustness check (same refapp, same authors), never as evidence
    for BC coding in general; budgeted in section 9.
 
-## 13. Open questions for the owner
+## 13. Owner answers (2026-10-03)
+
+- Timeline: start now. M8 authoring, M9 realistic bundle and the M10 LSP spike run in parallel;
+  the campaign comes after the Directions talk.
+- Arms: the 2x2 factorial, Claude Code only. pi is out of v2.
+- AL language server: the same source as the owner's local
+  `al-language-server-go-windows@claude-code-lsps` plugin; the owner confirmed its licence allows
+  use in our private sandbox image.
+- Model: the current Sonnet (verify the id with `models --check`), Team usage budget for about
+  1,300 cells is OK.
+
+## 14. Open questions for the owner (asked 2026-10-03, answered in 13)
 
 1. Timeline: start after the Directions talk, or start M8 authoring and the M10 licensing
    question now?
