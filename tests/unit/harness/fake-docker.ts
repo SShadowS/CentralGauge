@@ -331,8 +331,16 @@ export class FakeDocker implements DockerCli {
       this.images.get(this.tags.get(ref) ?? ref) ?? null,
     );
   }
+  /** What a build of a tag (`-t`) produces: added only when the build runs. */
+  buildResults = new Map<
+    string,
+    { id: string; labels: Record<string, string>; layers: string[] }
+  >();
   build(args: string[]): Promise<number> {
     this.builds.push(args);
+    const tag = args[args.indexOf("-t") + 1];
+    const r = tag === undefined ? undefined : this.buildResults.get(tag);
+    if (tag !== undefined && r) this.addImage(tag, r.id, r.labels, r.layers);
     return Promise.resolve(0);
   }
 }

@@ -3537,3 +3537,65 @@ Deno.test("H-01: a failed privilege check (wrong Config.User, admin groups, high
     }
   }
 });
+
+Deno.test("stub provider: an --image whose revision differs from the arm's is refused, fail closed (H-01 run 004)", async () => {
+  const labels = {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+  };
+  // Arm on the frozen image (no revision), override carries one.
+  const t = await makeEnv();
+  const revised = `sha256:${"9".repeat(64)}`;
+  t.docker.addImage("drill:r2", revised, {
+    ...labels,
+    "centralgauge.harness.revision": "2",
+  });
+  await stubEnv(t, revised);
+  const cell = await cellFor(t);
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ConfigurationError,
+    "revision 2",
+  );
+  assertEquals(t.docker.runs, []);
+  // Arm on revision 2, override without one, then with revision 3.
+  const u = await makeEnv();
+  const frozen = `sha256:${"8".repeat(64)}`;
+  u.docker.addImage("drill:frozen", frozen, labels);
+  await stubEnv(u, frozen);
+  const c2 = await cellFor(u);
+  const r2Cell = {
+    ...c2,
+    armManifest: {
+      ...c2.armManifest,
+      image: { ...c2.armManifest.image, revision: "2" },
+    },
+  };
+  await assertRejects(
+    () => runCell(u.env, r2Cell),
+    ConfigurationError,
+    "no revision",
+  );
+  const r3 = `sha256:${"7".repeat(64)}`;
+  u.docker.addImage("drill:r3", r3, {
+    ...labels,
+    "centralgauge.harness.revision": "3",
+  });
+  await stubEnv(u, r3);
+  await assertRejects(
+    () => runCell(u.env, r2Cell),
+    ConfigurationError,
+    "revision 3",
+  );
+  assertEquals(u.docker.runs, []);
+  // Same revision on both sides runs.
+  const r2 = `sha256:${"6".repeat(64)}`;
+  u.docker.addImage("drill:r2", r2, {
+    ...labels,
+    "centralgauge.harness.revision": "2",
+  });
+  await stubEnv(u, r2);
+  const e = (await runCell(u.env, r2Cell)).executions[0]!;
+  assertEquals(e.manifest.image.revision, "2");
+});

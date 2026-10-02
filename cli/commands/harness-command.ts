@@ -120,6 +120,7 @@ import {
 import { PROXY_ISOLATION } from "../../src/harness/egress-proxy.ts";
 import {
   BASE_IMAGE,
+  BASE_VERSION,
   hasBaseLayers,
   IMAGE_LABELS,
   imageFacts,
@@ -792,7 +793,20 @@ export async function harnessImagesBuild(
   docker: DockerCli = realDocker(),
 ): Promise<ImageFacts> {
   const images = join(o.root, "harness", "images");
+  // A tag names one image for good (frozen records resolve through it): an
+  // existing tag is never rebuilt over, and there is no override.
+  const refuseExisting = async (tag: string, use: string) => {
+    if (await docker.inspectImage(tag) !== null) {
+      throw new ConfigurationError(
+        `${tag} already exists and is never rebuilt: ${use}`,
+      );
+    }
+  };
   if (harness === "base") {
+    await refuseExisting(
+      BASE_IMAGE,
+      "bump BASE_VERSION in src/harness/images.ts",
+    );
     const pin = await servercorePin(o.root);
     const [mk, mv] = await mcpLabel(o.root);
     const code = await docker.build([
@@ -833,7 +847,7 @@ export async function harnessImagesBuild(
       digest: img.Id,
       base_digest: pin,
       harness: "base",
-      version: "1",
+      version: BASE_VERSION,
       revision: null,
       mcp,
     };
@@ -851,6 +865,7 @@ export async function harnessImagesBuild(
     );
   }
   const tag = imageTag(harness, o.version, o.revision);
+  await refuseExisting(tag, "use a new --version or --revision");
   const code = await docker.build([
     "build",
     "-f",

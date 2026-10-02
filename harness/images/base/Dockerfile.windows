@@ -29,5 +29,5 @@ COPY cg-lockdown.ps1 C:/cg-lockdown.ps1
 # grants Authenticated Users Modify to whatever lands there). Last step of the image;
 # each harness image locks what it adds the same way. No double quote in a shell-form
 # RUN: the Windows docker command line drops them before PowerShell parses.
-RUN powershell -NoProfile -ExecutionPolicy Bypass -File C:\cg-lockdown.ps1 C:\cg-al.ps1 C:\Windows\System32\cg-al.cmd C:\Git C:\al-tools-mcp.mjs C:\al-tools-tools.json C:\egress-check.ps1 C:\cg-nonadmin.ps1 C:\cg-lockdown.ps1 'C:\Program Files\nodejs'; \
+RUN powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-lockdown.ps1 C:\cg-al.ps1 C:\Windows\System32\cg-al.cmd C:\Git C:\al-tools-mcp.mjs C:\al-tools-tools.json C:\egress-check.ps1 C:\cg-nonadmin.ps1 C:\cg-lockdown.ps1 'C:\Program Files\nodejs'; \
     if ($LASTEXITCODE -ne 0) { throw ('cg-lockdown failed: ' + $LASTEXITCODE) }

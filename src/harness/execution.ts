@@ -212,12 +212,18 @@ export const STUB_COMMAND = [
   ].join("; "),
 ];
 
-/** The override image: same harness (label), recorded with its own base digest. */
+/**
+ * The override image: same harness (label) and same image revision as the
+ * arm (whose revision runtimeFacts tied to config.image_revision), recorded
+ * with its own base digest.
+ */
 async function overrideImage(
   env: HarnessEnv,
   id: string,
-  harness: string,
+  arm: Pick<ResolvedManifest, "harness" | "image">,
 ): Promise<ResolvedManifest["image"]> {
+  const harness = arm.harness;
+  const want = arm.image.revision ?? null;
   // imageFacts: labels, immutable id and the shipped MCP definition (M2-09).
   const f = await bounded(
     imageFacts(env.docker, id, env.owner),
@@ -230,6 +236,13 @@ async function overrideImage(
   if (f.harness !== harness) {
     throw new ConfigurationError(
       `--image ${id} is a ${f.harness} image, not ${harness}`,
+    );
+  }
+  if (f.revision !== want) {
+    const say = (r: string | null) =>
+      r === null ? "no revision" : `revision ${r}`;
+    throw new ConfigurationError(
+      `--image ${id} has ${say(f.revision)}, the arm wants ${say(want)}`,
     );
   }
   return {
@@ -1334,7 +1347,7 @@ export async function runExecution(
   const manifest = stub?.image_override
     ? {
       ...base,
-      image: await overrideImage(env, stub.image_override, base.harness),
+      image: await overrideImage(env, stub.image_override, base),
     }
     : base;
   const p = privatePaths(env, id);

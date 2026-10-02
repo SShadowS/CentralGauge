@@ -382,7 +382,7 @@ Deno.test("H-01 run 004: each image locks every harness-owned path it adds, afte
     const l = lines[at]!;
     assert(
       l.startsWith(
-        "RUN powershell -NoProfile -ExecutionPolicy Bypass -File C:\\cg-lockdown.ps1 ",
+        "RUN powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\\cg-lockdown.ps1 ",
       ),
       l,
     );
@@ -470,6 +470,29 @@ Deno.test({
   ignore: Deno.build.os !== "windows",
   async fn() {
     const dir = await rootShapedTree();
+    // Children that do not just inherit (review, H-01 run 004): an explicit
+    // Authenticated Users Modify ACE, a child with inheritance disabled and
+    // its own Users Modify ACE, and a hidden file.
+    const explicitAce = `${dir}\\tool\\explicit.cmd`;
+    const protectedChild = `${dir}\\tool\\sub\\protected.cmd`;
+    const hidden = `${dir}\\tool\\hidden.cmd`;
+    for (const f of [explicitAce, protectedChild, hidden]) {
+      await Deno.writeTextFile(f, "@echo off");
+    }
+    const s = await pwsh([
+      "-Command",
+      [
+        `icacls '${explicitAce}' /grant '*S-1-5-11:M' /Q`,
+        `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`,
+        `icacls '${protectedChild}' /inheritance:d /Q`,
+        `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`,
+        `icacls '${protectedChild}' /grant '*S-1-5-32-545:M' /Q`,
+        `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`,
+        `attrib +h '${hidden}'`,
+        `exit $LASTEXITCODE`,
+      ].join("; "),
+    ]);
+    assertEquals(s.code, 0, s.out);
     try {
       const r = await pwsh([
         "-File",
@@ -482,10 +505,23 @@ Deno.test({
       const fails = r.out.split(/\r?\n/).filter((x) => x.startsWith("[FAIL]"));
       assert(fails.length > 0, r.out);
       for (const f of fails) assert(f.startsWith("[FAIL] owner "), f);
-      for (const p of [`${dir}\\run.ps1`, `${dir}\\tool\\sub\\shim.cmd`]) {
+      for (
+        const p of [
+          `${dir}\\run.ps1`,
+          `${dir}\\tool\\sub\\shim.cmd`,
+          explicitAce,
+          protectedChild,
+          hidden,
+        ]
+      ) {
         const a = await pwsh(["-Command", `icacls '${p}'`]);
         assert(!a.out.includes("S-1-5-11") && !/Authenticated Users/.test(a.out), a.out);
         assert(/BUILTIN\\Users:(\(I\))?\(RX\)/.test(a.out), a.out);
+        // Every Users ACE is read/execute only: no write right anywhere.
+        const users = a.out.match(/BUILTIN\\Users:\S*/g) ?? [];
+        for (const u of users) {
+          assert(/^BUILTIN\\Users:(\(I\))?\(RX\)$/.test(u), `${p}: ${u}`);
+        }
       }
     } finally {
       await dropTree(dir);

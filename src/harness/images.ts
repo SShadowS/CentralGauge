@@ -10,7 +10,9 @@ import { ConfigurationError } from "../errors.ts";
 import { BACKEND_VERSION } from "./backend.ts";
 import { hashJson } from "./hash.ts";
 
-export const BASE_IMAGE = "centralgauge/harness-base:1";
+/** base:1 is frozen; H-01 run 004 builds base:2 (an existing tag is never rebuilt). */
+export const BASE_VERSION = "2";
+export const BASE_IMAGE = `centralgauge/harness-base:${BASE_VERSION}`;
 export const IMAGE_LABELS = {
   harness: "centralgauge.harness",
   version: "centralgauge.harness.version",
@@ -261,7 +263,8 @@ export function runtimeFacts(
   // in for each other, in either direction.
   const want = config.image_revision ?? null;
   if (image.revision !== want) {
-    const say = (r: string | null) => r === null ? "no revision" : `revision ${r}`;
+    const say = (r: string | null) =>
+      r === null ? "no revision" : `revision ${r}`;
     throw new ConfigurationError(
       `${config.id}: image ${image.digest} has ${
         say(image.revision)

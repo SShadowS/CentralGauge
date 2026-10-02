@@ -203,7 +203,11 @@ Deno.test("observedMismatch: on an image_revision image the reported CLI version
   const m = manifest("x", {
     image: { digest: "sha256:img", base_digest: "sha256:base", revision: "2" },
   });
-  const obs = { harness_version: "2.1.282", models: null, loaded_components: [] };
+  const obs = {
+    harness_version: "2.1.282",
+    models: null,
+    loaded_components: [],
+  };
   assertEquals(observedMismatch(m, obs, []).mismatch, null);
   for (const v of ["2.1.282-r2", "2", "2.1.300"]) {
     assertStringIncludes(

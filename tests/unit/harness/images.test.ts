@@ -387,7 +387,10 @@ Deno.test("imageTag: no revision is exactly the frozen tag; a revision adds -r<n
     imageTag("claude-code", "2.1.282", "2"),
     "centralgauge/harness-claude-code:2.1.282-r2",
   );
-  assertEquals(imageTag("pi", "0.87.1", "2"), "centralgauge/harness-pi:0.87.1-r2");
+  assertEquals(
+    imageTag("pi", "0.87.1", "2"),
+    "centralgauge/harness-pi:0.87.1-r2",
+  );
 });
 
 Deno.test("imageFacts: revision is the revision label, null when absent", async () => {
