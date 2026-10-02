@@ -374,11 +374,22 @@ export async function addTask(
   await writeExclusive(join(dir, "task.md"), `---\n${yaml}---\n\n${body}\n`);
 }
 
+function parseYamlIn(text: string, path: string): unknown {
+  try {
+    return parseYaml(text);
+  } catch (e) {
+    throw new CoordError(
+      `corrupt: ${path}: ${e instanceof Error ? e.message : e}`,
+    );
+  }
+}
+
 async function readHeader(root: string, id: string): Promise<TaskHeader> {
-  const text = await Deno.readTextFile(join(taskDir(root, id), "task.md"));
+  const path = join(taskDir(root, id), "task.md");
+  const text = await Deno.readTextFile(path);
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) throw new CoordError(`task ${id}: missing YAML header`);
-  const h = parseYaml(group(m, 1, `task ${id} header`)) as TaskHeader;
+  const h = parseYamlIn(group(m, 1, `task ${id} header`), path) as TaskHeader;
   if (h.id !== id) throw new CoordError(`task ${id}: header id ${h.id}`);
   return { ...h, deps: h.deps ?? [] };
 }
@@ -387,7 +398,12 @@ async function taskIds(root: string): Promise<string[]> {
   return (await listDir(join(root, "tasks"))).filter((n) => ID_RE.test(n));
 }
 
-export async function taskState(root: string, id: string): Promise<TaskState> {
+/** `strict`: an unreadable or corrupt record throws instead of mapping to "unknown". */
+export async function taskState(
+  root: string,
+  id: string,
+  opts: { strict?: boolean } = {},
+): Promise<TaskState> {
   const h = await readHeader(root, id);
   const base: TaskState = { id, lane: h.lane, state: "todo", attempts: 0 };
   try {
@@ -427,7 +443,9 @@ export async function taskState(root: string, id: string): Promise<TaskState> {
     if (!review) return { ...st, state: "review" };
     return { ...st, state: "todo" };
   } catch (e) {
-    if (e instanceof CoordError) return { ...base, state: "unknown" };
+    if (e instanceof CoordError && !opts.strict) {
+      return { ...base, state: "unknown" };
+    }
     throw e;
   }
 }
@@ -699,10 +717,11 @@ export async function openQuestions(
     ) {
       continue;
     }
-    const raw = await Deno.readTextFile(join(root, "questions", n));
+    const path = join(root, "questions", n);
+    const raw = await Deno.readTextFile(path);
     const hm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n\r?\n?([\s\S]*)$/);
     const h = hm?.[1]
-      ? parseYaml(hm[1]) as {
+      ? parseYamlIn(hm[1], path) as {
         task: string | null;
         from?: string | null;
         at?: string | null;
@@ -1135,6 +1154,130 @@ export async function overview(
   return lines.join("\n");
 }
 
+// ---------- sweep ----------
+
+export interface Sweep {
+  pause: Pick<PauseState, "paused" | "reason" | "since" | "drained">;
+  leases: {
+    container: string;
+    lane: string;
+    ageMin: number;
+    heartbeatAgeMin: number | null;
+  }[];
+  questions: { id: string; firstLine: string }[];
+  stale: string[];
+  tasks: {
+    id: string;
+    lane: string;
+    state: TaskStateName;
+    run: string | null;
+    phase: string | null;
+    wait: string | null;
+    checkpointAgeMin: number | null;
+  }[];
+  /** Ready task ids for each lane that has no doing task. */
+  next: Record<string, string[]>;
+}
+
+/**
+ * One-call overview for the orchestrator sweep. Read-only. Task records are read
+ * strictly: a corrupt or unreadable file throws naming it, never an empty section.
+ */
+export async function sweep(
+  root: string,
+  opts: { now?: number } = {},
+): Promise<Sweep> {
+  await openRoot(root);
+  const now = opts.now ?? Date.now();
+  const min = (at: number) => Math.max(0, Math.floor((now - at) / 60000));
+  const states: TaskState[] = [];
+  for (const id of await taskIds(root)) {
+    states.push(await taskState(root, id, { strict: true }));
+  }
+  const ps = await pauseState(root);
+  const leases: Sweep["leases"] = [];
+  for (const l of ps.leases) {
+    const h = await leaseHolder(root, l.container);
+    if (h) {
+      leases.push({
+        container: l.container,
+        lane: h.lane,
+        ageMin: min(h.at),
+        heartbeatAgeMin: h.hb === undefined ? null : min(h.hb),
+      });
+    }
+  }
+  const busy = new Set(
+    states.filter((t) => t.state === "doing").map((t) => t.lane),
+  );
+  const nextByLane: Sweep["next"] = {};
+  for (const lane of [...new Set(states.map((t) => t.lane))].sort()) {
+    if (!busy.has(lane)) {
+      nextByLane[lane] = (await next(root, lane)).map((t) => t.id);
+    }
+  }
+  return {
+    pause: {
+      paused: ps.paused,
+      reason: ps.reason,
+      since: ps.since,
+      drained: ps.drained,
+    },
+    leases,
+    questions: (await openQuestions(root)).map((q) => ({
+      id: q.id,
+      firstLine: q.text.split(/\r?\n/)[0] ?? "",
+    })),
+    stale: await stale(root, { now }),
+    tasks: states.filter((t) => t.state !== "accepted").map((t) => ({
+      id: t.id,
+      lane: t.lane,
+      state: t.state,
+      run: t.runId ?? null,
+      phase: t.checkpoint?.phase ?? null,
+      wait: t.checkpoint?.wait ?? null,
+      checkpointAgeMin: t.checkpoint ? min(t.checkpoint.at) : null,
+    })),
+    next: nextByLane,
+  };
+}
+
+export function sweepText(s: Sweep): string {
+  const p = s.pause;
+  const lines = [
+    p.paused
+      ? `Pause: PAUSED since ${p.since}: ${p.reason} (${
+        p.drained ? "drained" : "draining"
+      })`
+      : "Pause: running",
+    `Leases (${s.leases.length})`,
+    ...s.leases.map((l) =>
+      `  ${l.container} ${l.lane} held ${l.ageMin}m heartbeat ${
+        l.heartbeatAgeMin === null ? "none" : `${l.heartbeatAgeMin}m ago`
+      }`
+    ),
+    `Questions (${s.questions.length})`,
+    ...s.questions.map((q) => `  ${q.id} ${q.firstLine}`),
+    `Stale (${s.stale.length})`,
+    ...s.stale.map((x) => `  ${x}`),
+    `Tasks (${s.tasks.length})`,
+    ...s.tasks.map((t) =>
+      `  ${t.id} ${t.lane} ${t.state} run=${t.run ?? "-"} phase=${
+        t.phase ?? "-"
+      } wait=${t.wait ?? "-"} checkpoint=${
+        t.checkpointAgeMin === null ? "none" : `${t.checkpointAgeMin}m ago`
+      }`
+    ),
+    "Next (lanes with no doing task)",
+    ...Object.entries(s.next).map(([lane, ids]) =>
+      `  ${lane}: ${
+        ids.join(", ") || (s.pause.paused ? "(paused)" : "(none ready)")
+      }`
+    ),
+  ];
+  return lines.join("\n");
+}
+
 // ---------- CLI ----------
 
 function rootFromEnv(): string {
@@ -1349,6 +1492,11 @@ async function main(args: string[]): Promise<number> {
     case "stale":
       console.log((await stale(root)).join("\n") || "(nothing stale)");
       return 0;
+    case "sweep": {
+      const s = await sweep(root);
+      a.json ? out(s) : console.log(sweepText(s));
+      return 0;
+    }
     case "doctor": {
       const issues = await doctor(root);
       console.log(issues.join("\n") || "[OK] no issues");
@@ -1356,7 +1504,7 @@ async function main(args: string[]): Promise<number> {
     }
     default:
       console.error(
-        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|doctor|pause|resume|pause-state|overview [--watch N]|import-gh <owner/repo> [--lane L]> ...",
+        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|sweep [--json]|doctor|pause|resume|pause-state|overview [--watch N]|import-gh <owner/repo> [--lane L]> ...",
       );
       return 2;
   }

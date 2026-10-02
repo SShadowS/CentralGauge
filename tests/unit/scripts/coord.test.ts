@@ -30,6 +30,8 @@ import {
   stale,
   status,
   submit,
+  sweep,
+  sweepText,
   taskState,
   why,
 } from "../../../scripts/coord/coord.ts";
@@ -545,4 +547,190 @@ Deno.test("coord: allocation.json in the machine root limits leases per project,
   );
   const now = await lease(a, "Cronus284", "ops");
   assertEquals(now.attempt, "002");
+});
+
+// ---------- sweep ----------
+
+const coordScript = new URL("../../../scripts/coord/coord.ts", import.meta.url)
+  .pathname.replace(/^\/([A-Za-z]:)/, "$1");
+
+Deno.test("coord sweep: pause state and drain", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  assertEquals((await sweep(root)).pause.paused, false);
+  const l = await lease(root, "Cronus281", "ops");
+  await pause(root, "owner lunch");
+  let s = await sweep(root);
+  assertEquals(s.pause.paused, true);
+  assertEquals(s.pause.reason, "owner lunch");
+  assertEquals(s.pause.drained, false);
+  await release(root, "Cronus281", l.token);
+  s = await sweep(root);
+  assertEquals(s.pause.drained, true);
+});
+
+Deno.test("coord sweep: held leases with lane and age", async () => {
+  const root = await freshRoot();
+  await lease(root, "Cronus281", "ops");
+  const free = await lease(root, "Cronus282", "ops");
+  await release(root, "Cronus282", free.token);
+  const s = await sweep(root, { now: Date.now() + 30 * 60000 });
+  assertEquals(s.leases.map((l) => [l.container, l.lane]), [
+    ["Cronus281", "ops"],
+  ]);
+  assertEquals(s.leases[0]?.ageMin, 30);
+});
+
+Deno.test("coord sweep: open questions with id and first line", async () => {
+  const root = await freshRoot();
+  const q = await ask(root, "Cronus281 is stopped\nmore detail", {
+    from: "lane-ops",
+  });
+  const done = await ask(root, "answered one");
+  await answer(root, done, "ok");
+  const s = await sweep(root);
+  assertEquals(s.questions, [{ id: q, firstLine: "Cronus281 is stopped" }]);
+});
+
+Deno.test("coord sweep: stale runs", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  await claim(root, "M0-01", "content");
+  assertEquals((await sweep(root)).stale, []);
+  const s = await sweep(root, { now: Date.now() + 20 * 60000 });
+  assertEquals(s.stale.length, 1);
+  assertStringIncludes(s.stale[0] ?? "", "M0-01");
+});
+
+Deno.test("coord sweep: every non-accepted task with lane, run, phase, wait and checkpoint age", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  await checkpoint(root, "M0-01", r.runId, r.token, "red", { wait: "owner" });
+  const s = await sweep(root, { now: Date.now() + 5 * 60000 });
+  assertEquals(s.tasks.map((t) => t.id), ["M0-01", "M0-02", "M0-03"]);
+  const t = s.tasks[0];
+  assertEquals(t?.lane, "content");
+  assertEquals(t?.state, "doing");
+  assertEquals(t?.run, "001");
+  assertEquals(t?.phase, "red");
+  assertEquals(t?.wait, "owner");
+  assertEquals(t?.checkpointAgeMin, 5);
+  assertEquals(s.tasks[1]?.checkpointAgeMin, null);
+
+  await submit(root, "M0-01", r.runId, r.token, "c", "b");
+  await accept(root, "M0-01", r.runId, "sha");
+  assertEquals((await sweep(root)).tasks.map((x) => x.id), ["M0-02", "M0-03"]);
+});
+
+Deno.test("coord sweep: next only for lanes with no doing task", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  await addTask(root, { id: "M0-04", lane: "content", deps: [] }, "x");
+  await addTask(root, { id: "M0-05", lane: "docs", deps: [] }, "y");
+  await claim(root, "M0-01", "content");
+  const s = await sweep(root);
+  assertEquals(s.next, { docs: ["M0-05"], ops: [] });
+});
+
+Deno.test("coord sweep: text output has every section", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  await claim(root, "M0-01", "content");
+  await lease(root, "Cronus281", "ops");
+  await ask(root, "Secrets missing", { task: "M0-03" });
+  const text = sweepText(await sweep(root));
+  for (
+    const s of [
+      "Pause: running",
+      "Leases (1)",
+      "Cronus281",
+      "Questions (1)",
+      "Secrets missing",
+      "Stale (0)",
+      "Tasks (3)",
+      "M0-01",
+      "Next",
+    ]
+  ) assertStringIncludes(text, s);
+});
+
+Deno.test("coord sweep: a corrupt checkpoint, lease or question is an error naming the file", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  const cp = join(root, "tasks", "M0-01", "runs", r.runId, "checkpoint.json");
+  await Deno.writeTextFile(cp, "{");
+  await assertRejects(() => sweep(root), CoordError, "checkpoint.json");
+  await Deno.writeTextFile(cp, JSON.stringify({ phase: "x", at: 1 }));
+
+  const lr = join(root, "leases", "Cronus281", "001");
+  await Deno.mkdir(lr, { recursive: true });
+  await Deno.writeTextFile(join(lr, "lease.json"), "{");
+  await assertRejects(() => sweep(root), CoordError, "lease.json");
+  await Deno.remove(join(root, "leases", "Cronus281"), { recursive: true });
+
+  await Deno.writeTextFile(
+    join(root, "questions", "q-20261003T000000-deadbeef.md"),
+    "---\nid: [unclosed\n---\n\ntext\n",
+  );
+  await assertRejects(
+    () => sweep(root),
+    CoordError,
+    "q-20261003T000000-deadbeef.md",
+  );
+  await Deno.remove(join(root, "questions", "q-20261003T000000-deadbeef.md"));
+
+  const taskMd = join(root, "tasks", "M0-02", "task.md");
+  const header = await Deno.readTextFile(taskMd);
+  await Deno.writeTextFile(taskMd, "---\nid: [unclosed\n---\n\ntext\n");
+  await assertRejects(() => sweep(root), CoordError, "task.md");
+  await Deno.writeTextFile(taskMd, header);
+
+  await pause(root, "x");
+  const meta = JSON.parse(
+    await Deno.readTextFile(join(root, "coord.json")),
+  ) as { machineRoot?: string };
+  await Deno.writeTextFile(join(meta.machineRoot ?? root, "pause.json"), "{");
+  await assertRejects(() => sweep(root), CoordError, "pause.json");
+});
+
+Deno.test("coord sweep: while paused an empty next reads (paused), not (none ready)", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  await pause(root, "owner needs the machine");
+  const text = sweepText(await sweep(root));
+  assertStringIncludes(text, "(paused)");
+  assert(!text.includes("(none ready)"));
+});
+
+Deno.test("coord sweep: CLI exits non-zero on a read error and prints JSON with --json", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const run = (...args: string[]) =>
+    new Deno.Command(Deno.execPath(), {
+      args: ["run", "--allow-all", coordScript, ...args],
+      env: { CG_COORD_ROOT: root },
+    }).output();
+  const ok = await run("sweep", "--json");
+  assertEquals(ok.code, 0, new TextDecoder().decode(ok.stderr));
+  const data = JSON.parse(new TextDecoder().decode(ok.stdout));
+  assertEquals(Object.keys(data).sort(), [
+    "leases",
+    "next",
+    "pause",
+    "questions",
+    "stale",
+    "tasks",
+  ]);
+
+  const r = await claim(root, "M0-01", "content");
+  await Deno.writeTextFile(
+    join(root, "tasks", "M0-01", "runs", r.runId, "checkpoint.json"),
+    "{",
+  );
+  const bad = await run("sweep");
+  assert(bad.code !== 0);
+  assertEquals(new TextDecoder().decode(bad.stdout), "");
+  assertStringIncludes(new TextDecoder().decode(bad.stderr), "checkpoint.json");
 });
