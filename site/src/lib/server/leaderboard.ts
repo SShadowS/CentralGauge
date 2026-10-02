@@ -1,4 +1,5 @@
 import type {
+  InvocationMode,
   LeaderboardQuery,
   LeaderboardResponse,
   LeaderboardRow,
@@ -16,7 +17,7 @@ import { computeDenominator } from "./denominator";
 import { ApiError } from "./errors";
 import { isValidTaskSetHash } from "../shared/task-set-hash";
 import { COHORT_RUNS } from "../shared/cohort";
-import { modePredicate } from "./invocation-mode";
+import { modeBindValue, modePredicate } from "./invocation-mode";
 import { excludedAndClause, excludedPredicate } from "./run-exclusion";
 import { UNPINNED_PROFILE } from "./upstream-profile";
 
@@ -26,7 +27,10 @@ export async function computeLeaderboard(
   db: D1Database,
   q: LeaderboardQuery,
   timer?: ServerTimer,
+  /** `resolveModeBinding(...)` for `q.mode`; required when mode is `combined`. */
+  modeBind?: string,
 ): Promise<LeaderboardRow[]> {
+  const modeArg = modeBindValue(q.mode, modeBind);
   // ---------------------------------------------------------------------------
   // Resolve the task_set_hash for denominator computation.
   // Must happen BEFORE the main aggregate query so we can early-exit when
@@ -153,11 +157,11 @@ export async function computeLeaderboard(
     taskSetParamsA2 = [q.set];
   }
 
-  // D4: every ranking query selects exactly one invocation mode. `q.mode` is
-  // already resolved (never "all") by the time it reaches here — see
-  // resolveInvocationMode / the route's parseQuery.
-  wheres.push(modePredicate("runs"));
-  params.push(q.mode);
+  // D4 (amended 2026-09-30): every ranking query selects one mode or `combined`
+  // (each model on its majority mode). `modePredicate` keeps one `?` either way,
+  // so the bind below is unchanged.
+  wheres.push(modePredicate("runs", q.mode));
+  params.push(modeArg);
 
   // Soft run exclusion (migration 0022): an excluded run leaves every number.
   // Binds nothing, so it does not disturb the positional bind order documented
@@ -231,8 +235,8 @@ export async function computeLeaderboard(
     // (ru1/ru2/ru1b), unconditionally — same reasoning as tier/since above:
     // without it a task passed by an out-of-mode run would leak into a
     // mode-filtered leaderboard's numerator.
-    parts.push(`AND ${modePredicate(ruAlias)}`);
-    bind.push(q.mode);
+    parts.push(`AND ${modePredicate(ruAlias, q.mode)}`);
+    bind.push(modeArg);
     // Mirrored for the same reason as tier/since/mode above: the subquery
     // joins its OWN `runs` alias, so without this an excluded run's pass would
     // leak into the numerator even though the outer WHERE dropped that run.
@@ -507,6 +511,7 @@ export async function computeLeaderboard(
           tier: q.tier === "all" ? undefined : q.tier,
           since: q.since,
           mode: q.mode,
+          modeBind: modeArg,
           includeLatencyP50: true,
           includePassHatAtN: true,
           timer,
@@ -543,20 +548,21 @@ export async function computeLeaderboard(
   // applied — this is a per-model caveat count, not a filtered metric, and
   // api-types.ts documents it as such. `invocation_mode` (D4) is the one
   // exception: it is not a row-scope filter like tier/family, it is a hard
-  // partition of the ranking universe (sync and batch are never mixed into
-  // one number anywhere on this page), so it is always applied here too.
+  // partition of the ranking universe (one mode per model, `combined` = each
+  // model's majority mode; never a pool of both anywhere on this page), so it
+  // is always applied here too.
   const fallbackByModel = new Map<number, number>();
   const refusalByModel = new Map<number, number>();
   if (modelIds.length > 0) {
     const fallbackWheres = [
       `(results.served_model IS NOT NULL
         OR (results.termination_kind = 'refusal' AND results.served_model IS NULL))`,
-      modePredicate("runs"),
+      modePredicate("runs", q.mode),
       // An excluded run's refusals and fallbacks are not this model's caveat
       // count either. The badge must agree with the row it annotates.
       excludedPredicate("runs"),
     ];
-    const fallbackParams: Array<string | number> = [q.mode];
+    const fallbackParams: Array<string | number> = [modeArg];
     if (taskSetWhere) {
       fallbackWheres.push(taskSetWhere);
       fallbackParams.push(...taskSetWhereParams);
@@ -596,10 +602,18 @@ export async function computeLeaderboard(
   // upstream (spec 2026-09-11 D5): the profile every in-scope run of the model
   // was ingested under, the distinct upstreams that actually served, and the
   // verification-state histogram. Same scope caveat as fallback_count.
+  // Combined mode: report which mode each row was ranked on, read from the
+  // binding computeLeaderboard already received (no extra query).
+  const servedByModel = new Map<number, InvocationMode>(
+    q.mode === "combined" && modeBind
+      ? Object.entries(JSON.parse(modeBind) as Record<string, InvocationMode>)
+        .map(([k, v]) => [Number(k), v] as const)
+      : [],
+  );
   const upstreamByModel = new Map<number, LeaderboardUpstream>();
   if (modelIds.length > 0) {
-    const upWheres = [modePredicate("runs"), excludedPredicate("runs")];
-    const upParams: Array<string | number> = [q.mode];
+    const upWheres = [modePredicate("runs", q.mode), excludedPredicate("runs")];
+    const upParams: Array<string | number> = [modeArg];
     if (taskSetWhere) {
       upWheres.push(taskSetWhere);
       upParams.push(...taskSetWhereParams);
@@ -644,10 +658,10 @@ export async function computeLeaderboard(
     if (resolvedHash) {
       const pinRows = await getAll<{ model_id: number; profile_key: string }>(
         db,
-        `SELECT model_id, profile_key FROM upstream_profiles WHERE task_set_hash = ? AND invocation_mode = ? AND model_id IN (${
+        `SELECT model_id, profile_key FROM upstream_profiles WHERE task_set_hash = ? AND ${modePredicate("upstream_profiles", q.mode)} AND model_id IN (${
           modelIds.map(() => "?").join(",")
         })`,
-        [resolvedHash, q.mode, ...modelIds],
+        [resolvedHash, modeArg, ...modelIds],
       );
       for (const p of pinRows) {
         const cur = upstreamByModel.get(Number(p.model_id)) ??
@@ -720,6 +734,9 @@ export async function computeLeaderboard(
       repair_rate: Math.round(repairRate * 1e6) / 1e6,
       denominator,
       fallback_count: fallbackByModel.get(r.model_id) ?? 0,
+      served_mode: q.mode === "combined"
+        ? (servedByModel.get(r.model_id) ?? "batch")
+        : q.mode,
       refusal_count: refusalByModel.get(r.model_id) ?? 0,
       upstream: upstreamByModel.get(r.model_id) ??
         { pin: null, served: [], verification: {} },

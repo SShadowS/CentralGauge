@@ -112,11 +112,12 @@ export const load: PageServerLoad = async ({
     summary,
     taskSets,
     serverTime: new Date().toISOString(),
-    mode,
+    mode: payload.filters.mode ?? mode,
     modeSplit,
     // Precomputed here (server-only withMode) so the ModeFilter component
     // and the mixed-mode notice stay plain presentational markup.
     modeLinks: {
+      combined: withMode(url.pathname, url.searchParams, "combined"),
       sync: withMode(url.pathname, url.searchParams, "sync"),
       batch: withMode(url.pathname, url.searchParams, "batch"),
     },

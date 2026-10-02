@@ -56,6 +56,8 @@ const TEMPERATURE_LOCKED_MODELS: readonly string[] = [
   "gpt-6-astra",
   "gpt-6-sol",
   "gpt-6-luna",
+  // GPT-6.1 Sol: same 400 on `models --check` (2026-09-29).
+  "gpt-6.1-sol",
 ];
 
 function modelRejectsTemperature(model: string): boolean {

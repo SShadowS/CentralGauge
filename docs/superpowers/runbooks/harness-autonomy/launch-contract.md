@@ -31,9 +31,9 @@ Needs the owner: dropping pi, fewer than 6 tasks, changing the primary metric.
 - Reviews run through `pi_ask` on the owner's OpenAI (ChatGPT) subscription
   (`PI_MCP_PROVIDER=openai-codex`). If `pi_models` shows only `github-copilot` rows, the
   registration is wrong: `coord ask`, do not review on Copilot silently.
-- Plans, designs and decisions: orchestrator plus GPT-6 Sol via `pi_ask` (model id
-  `gpt-6-sol`), up to 2 review rounds. GPT-6 Astra (`gpt-6-astra`) only for milestone
-  plans (M1 to M4).
+- Plans, designs, decisions and milestone plans: orchestrator plus GPT-6.1 Sol via `pi_ask`
+  (model id `gpt-6.1-sol`), up to 2 review rounds. One reviewer for everything (owner,
+  2026-10-02: Astra dropped, `gpt-6-sol` replaced).
 - A review binds to a commit SHA and absolute paths of frozen files (`git show <sha>:<path>`
   written to a file). `require_evidence` stays on. An answer with no file reads, a timeout, or
   unreadable files means NOT reviewed.

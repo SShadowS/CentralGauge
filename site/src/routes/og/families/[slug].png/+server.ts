@@ -7,6 +7,7 @@ import { computeModelAggregates } from "$lib/server/model-aggregates";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 import {
   buildCacheKey,
@@ -28,10 +29,9 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   }
   const env = platform.env;
 
-  // Everything below can throw an ApiError (resolveInvocationMode's
-  // mode_required on a mixed-mode task set) — without this wrap that
-  // propagated as an unhandled exception, which SvelteKit renders as an
-  // opaque 500 rather than the visible 400 the D4 default rule promises.
+  // Everything below can throw an ApiError (e.g. an invalid `mode` value):
+  // without this wrap that propagated as an unhandled exception, which
+  // SvelteKit renders as an opaque 500 rather than the visible 400.
   try {
     // Epoch-keyed named cache, checked BEFORE any D1 work. renderOgPng's own R2
     // cache is keyed on a payload derived from D1, so it saves the Satori render
@@ -115,6 +115,14 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
       .first<{ id: number; display_name: string; vendor: string }>();
     if (!fam) return new Response(`Unknown family: ${slug}`, { status: 404 });
 
+    // Current-set aggregates, miss path only (after both cache checks): bind
+    // the current set's map, not the all-sets one.
+    const modeBind = await resolveModeBinding(
+      env.DB,
+      taskSet?.hash ? { kind: "hash", hash: taskSet.hash } : { kind: "current" },
+      mode,
+    );
+
     // taskSet and mode were already resolved above (needed before the cache
     // key); only the member list is new here.
     const memberRows = await env.DB.prepare(
@@ -133,6 +141,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
             modelIds,
             taskSetHash: taskSet?.hash ?? null,
             mode,
+            modeBind,
           })
         : new Map<
             number,

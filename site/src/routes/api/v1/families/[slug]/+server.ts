@@ -9,6 +9,7 @@ import {
   modePredicate,
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 import { excludedPredicate } from "$lib/server/run-exclusion";
 
@@ -32,7 +33,6 @@ export const GET: RequestHandler = async ({
       { kind: "current" },
       parseModeParam(url),
     );
-
     // This route had NO server-side cache and measured 104,781 rows per
     // request — 1.99M/day, the single largest consumer. It was missed because
     // the original cache rollout worked from a snapshot of expensive queries
@@ -47,6 +47,9 @@ export const GET: RequestHandler = async ({
       namespace: "family-detail",
       params: { slug: params.slug ?? "", mode },
       compute: async () => {
+        // The trajectory spans every task set, so the served-mode map does too:
+        // one mode per model across the whole trajectory.
+        const modeBind = await resolveModeBinding(env.DB, { kind: "all" }, mode);
         const fam = await getFirst<{
           id: number;
           slug: string;
@@ -131,7 +134,7 @@ export const GET: RequestHandler = async ({
         JOIN dominant_set ds1 ON ds1.model_id = ru1.model_id
         WHERE ru1.task_set_hash = ds1.dominant_hash
           AND r1.attempt = 1 AND r1.passed = 1
-          AND ${modePredicate("ru1")}
+          AND ${modePredicate("ru1", mode)}
           AND ${excludedPredicate("ru1")}
         GROUP BY ru1.model_id
       ),
@@ -149,7 +152,7 @@ export const GET: RequestHandler = async ({
         JOIN dominant_set ds2 ON ds2.model_id = ru2.model_id
         WHERE ru2.task_set_hash = ds2.dominant_hash
           AND r2.attempt = 2 AND r2.passed = 1
-          AND ${modePredicate("ru2")}
+          AND ${modePredicate("ru2", mode)}
           AND ${excludedPredicate("ru2")}
           AND NOT EXISTS (
             SELECT 1 FROM results r1b
@@ -195,7 +198,7 @@ export const GET: RequestHandler = async ({
                AS tasks_attempted_distinct,
              ds.dominant_hash AS dominant_task_set_hash
       FROM models m
-      LEFT JOIN runs ON runs.model_id = m.id AND ${modePredicate("runs")}
+      LEFT JOIN runs ON runs.model_id = m.id AND ${modePredicate("runs", mode)}
         AND ${excludedPredicate("runs")}
       LEFT JOIN results r ON r.run_id = runs.id
       LEFT JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version
@@ -209,7 +212,7 @@ export const GET: RequestHandler = async ({
           // Textual `?` order: p1_by_model's mode, p2_only_by_model's mode,
           // the runs LEFT JOIN's mode, then the family id. The NOT EXISTS
           // dropped its own mode param when it started correlating on run_id.
-          [mode, mode, mode, fam.id],
+          [modeBind, modeBind, modeBind, fam.id],
         );
 
         // Resolve per-(dominant_task_set_hash) denominators. We batch the unique

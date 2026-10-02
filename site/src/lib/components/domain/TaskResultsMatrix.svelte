@@ -1,9 +1,11 @@
 <script lang="ts">
   import type { MatrixResponse } from '$lib/shared/api-types';
   import { cellColorBucket } from '$lib/client/matrix-helpers';
+  import { minorityMode } from '$lib/shared/leaderboard-derive';
 
   interface Props { matrix: MatrixResponse; }
   let { matrix }: Props = $props();
+  const badgeMode = $derived(minorityMode(matrix.models.map((m) => m.served_mode)));
 
   /**
    * Tooltip text per cell. The shortcoming concept (when available) is the
@@ -27,6 +29,9 @@
         {#each matrix.models as model (model.slug)}
           <th class="model-col" title={model.display_name}>
             <div class="model-name">{model.slug}</div>
+            {#if badgeMode && model.served_mode === badgeMode}
+              <span class="mode-pill" data-test="mode-pill" title="Ranked on {model.served_mode} runs">{model.served_mode}</span>
+            {/if}
           </th>
         {/each}
       </tr>
@@ -112,6 +117,7 @@
     height: 8em;
     min-width: 28px;
   }
+  .mode-pill { margin-left: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }
   .matrix .model-col .model-name {
     writing-mode: vertical-rl;
     transform: rotate(180deg);

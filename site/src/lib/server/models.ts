@@ -11,7 +11,7 @@ import {
   computeModelAggregatesLite,
   type LiteAggregate,
 } from "./model-aggregates";
-import type { ModelsIndexItem, InvocationMode } from "../shared/api-types";
+import type { ModelsIndexItem, RankMode } from "../shared/api-types";
 
 interface ModelRow {
   id: number;
@@ -29,14 +29,15 @@ interface ModelRow {
  * See api-types.ts's `ModelsIndexItem` doc comment for the full contract.
  *
  * It is NOT cross-MODE (D4 fix round 1, controller ruling): `mode` is
- * required and every row's aggregates are scoped to that one mode, so
+ * required and every model's aggregates are scoped to ONE mode, so
  * `avg_score_all_runs` never pools a model's sync and batch runs into one
  * number. Callers resolve `mode` via `resolveInvocationMode`, scoped to the
  * current task set (there is no natural "task set" scope for a cross-set
- * list, so the current set stands in as the decision basis — same pattern
+ * list, so the current set stands in as the decision basis - same pattern
  * as `/og/index.png`). A current set with both modes present and no
- * explicit `?mode=` refuses with `mode_required`, same as every other D4
- * ranking surface.
+ * explicit `?mode=` resolves to `combined` (each model on its majority
+ * mode); `modeBind` then carries that map computed over EVERY task set, so a
+ * model keeps one mode across the whole list.
  *
  * Lite path: this list reads only the four plain aggregates below, and the
  * full `computeModelAggregates` costs 475,387 rows against production to
@@ -46,7 +47,8 @@ interface ModelRow {
  */
 export async function listModels(
   db: D1Database,
-  mode: InvocationMode,
+  mode: RankMode,
+  modeBind?: string,
 ): Promise<ModelsIndexItem[]> {
   const rows = await getAll<ModelRow>(
     db,
@@ -62,7 +64,7 @@ export async function listModels(
   const aggMap =
     allModelIds.length === 0
       ? new Map<number, LiteAggregate>()
-      : await computeModelAggregatesLite(db, { modelIds: allModelIds, mode });
+      : await computeModelAggregatesLite(db, { modelIds: allModelIds, mode, modeBind });
 
   return rows.map((r) => {
     const agg = aggMap.get(r.id);

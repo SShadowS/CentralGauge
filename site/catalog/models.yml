@@ -1,3 +1,14 @@
+- slug: openai/gpt-6.1-sol
+  api_model_id: gpt-6.1-sol
+  family: gpt
+  display_name: GPT-6.1 Sol
+  generation: 6
+  released_at: "2026-09-29"
+  max_input_tokens: 922000
+  max_output_tokens: 128000
+  # No "batch": OpenAI's Batch API rejects gpt-6.1-sol as of 2026-09-29.
+  capabilities: ["thinking", "image", "pdf", "structured"]
+
 - slug: openai/gpt-6-astra
   api_model_id: gpt-6-astra
   family: gpt

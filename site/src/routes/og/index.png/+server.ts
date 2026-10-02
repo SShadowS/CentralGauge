@@ -7,6 +7,7 @@ import { computeModelAggregates } from "$lib/server/model-aggregates";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 import {
   buildCacheKey,
@@ -28,10 +29,9 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   }
   const env = platform.env;
 
-  // Everything below can throw an ApiError (resolveInvocationMode's
-  // mode_required on a mixed-mode task set) — without this wrap that
-  // propagated as an unhandled exception, which SvelteKit renders as an
-  // opaque 500 rather than the visible 400 the D4 default rule promises.
+  // Everything below can throw an ApiError (e.g. an invalid `mode` value):
+  // without this wrap that propagated as an unhandled exception, which
+  // SvelteKit renders as an opaque 500 rather than the visible 400.
   try {
     // Epoch-keyed named cache, checked BEFORE any D1 work.
     //
@@ -122,6 +122,14 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       last_run_at: string | null;
     }>();
 
+    // Current-set aggregates, miss path only (after both cache checks): bind
+    // the current set's map, not the all-sets one.
+    const modeBind = await resolveModeBinding(
+      env.DB,
+      taskSet?.hash ? { kind: "hash", hash: taskSet.hash } : { kind: "current" },
+      mode,
+    );
+
     // 2. Compute Solve AUC@2 for all models to find the leading value.
     //    auc_2 = (2*passedA1 + passedA2Only) / (2*D)
     //    The strict denominator D is not directly in the aggregate, but we can
@@ -130,6 +138,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     const aggMap = await computeModelAggregates(env.DB, {
       taskSetHash: taskSet?.hash ?? null,
       mode,
+      modeBind,
     });
     let topAuc2 = 0;
     for (const agg of aggMap.values()) {

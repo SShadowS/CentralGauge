@@ -5,6 +5,7 @@ import { listModels } from "$lib/server/models";
 import {
   parseModeParam,
   resolveInvocationMode,
+  resolveModeBinding,
 } from "$lib/server/invocation-mode";
 
 /**
@@ -17,9 +18,8 @@ import {
  *
  * D4 fix round 1: `listModels` requires a resolved mode. `v2Json`'s cache key
  * already incorporates the full request URL (see v2-context.ts), so an
- * explicit `?mode=` naturally gets its own cache entry; a `mode_required`
- * refusal throws before `v2Json` is ever reached, so no stale success
- * response can be served for a request that would now be ambiguous.
+ * explicit `?mode=` naturally gets its own cache entry; a mixed set with no
+ * `?mode=` resolves to `combined` and is cached under its own URL.
  */
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   try {
@@ -31,7 +31,8 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       { kind: "current" },
       parseModeParam(url),
     );
-    const data = await listModels(db, mode);
+    const modeBind = await resolveModeBinding(db, { kind: "all" }, mode);
+    const data = await listModels(db, mode, modeBind);
 
     return v2Json(request, ctx, { data });
   } catch (err) {

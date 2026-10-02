@@ -50,9 +50,12 @@
  * v16: OpenRouter upstream lock (migration 0023). Leaderboard rows gained
  *   `upstream`; run detail gained per-attempt `upstream`, a run summary and
  *   `excluded_code`. Shape change, so no v15 entry may be served on.
+ * v17: combined invocation mode (2026-09-30). Leaderboard rows gain
+ *   `served_mode`, and a mixed-mode set's default response changes from
+ *   `400 mode_required` to the combined ranking; every v16 entry is retired.
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = "v16";
+export const CACHE_VERSION = "v17";

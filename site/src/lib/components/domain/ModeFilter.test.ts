@@ -8,7 +8,7 @@ describe("ModeFilter", () => {
       props: {
         mode: "sync",
         modeSplit: true,
-        syncHref: "/?mode=sync&difficulty=easy",
+        combinedHref: "/c", syncHref: "/?mode=sync&difficulty=easy",
         batchHref: "/?mode=batch&difficulty=easy",
       },
     });
@@ -25,7 +25,7 @@ describe("ModeFilter", () => {
       props: {
         mode: "batch",
         modeSplit: false,
-        syncHref: "/?mode=sync",
+        combinedHref: "/c", syncHref: "/?mode=sync",
         batchHref: "/?mode=batch",
       },
     });
@@ -42,7 +42,7 @@ describe("ModeFilter", () => {
       props: {
         mode: null,
         modeSplit: true,
-        syncHref: "/?mode=sync&category=al-basics",
+        combinedHref: "/c", syncHref: "/?mode=sync&category=al-basics",
         batchHref: "/?mode=batch&category=al-basics",
       },
     });

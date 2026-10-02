@@ -1203,3 +1203,20 @@
   batch_cache_write_per_mtoken: 0.0417
   source: openrouter
   fetched_at: '2026-09-27T08:00:00.000Z'
+- pricing_version: '2026-09-29'
+  model_slug: openai/gpt-6.1-sol
+  effective_from: '2026-09-29T00:00:00.000Z'
+  effective_until: null
+  input_per_mtoken: 2
+  output_per_mtoken: 10
+  cache_read_per_mtoken: 0.1
+  cache_write_per_mtoken: 2.5
+  # LiteLLM (sourced from OpenAI's pricing page) and OpenRouter agree:
+  # standard 2 / 0.1 / 2.5 / 10, batch 1 / 0.05 / 1.25 / 5. Cache read is half
+  # of GPT-6 Sol's 0.2. Long-context tier above 272K (4 / 15) is never reached.
+  batch_input_per_mtoken: 1
+  batch_output_per_mtoken: 5
+  batch_cache_read_per_mtoken: 0.05
+  batch_cache_write_per_mtoken: 1.25
+  source: litellm-api
+  fetched_at: '2026-09-29T00:00:00.000Z'

@@ -160,6 +160,21 @@ benchmarkPresets:
     maxConcurrency: 20
     taskConcurrency: 12
     maxTokens: 64000 # bench-command.ts:106 still defaults --max-tokens to 4000; the preset escapes it, pass it on the CLI too
+  fall-2026-gpt61:
+    description: "Fall 2026 campaign shape (3 runs, 2 attempts, 64K tokens) for GPT-6.1 Sol on Cronus281-284. Same settings as fall-2026; only the container set differs."
+    llms:
+      - "openai/gpt-6.1-sol"
+    containers:
+      - Cronus281
+      - Cronus282
+      - Cronus283
+      - Cronus284
+    runs: 3
+    attempts: 2
+    stream: true
+    maxConcurrency: 20
+    taskConcurrency: 16
+    maxTokens: 64000
   flagship-2026-q2:
     description: "Current flagship models across providers (2026-04)"
     llms:
