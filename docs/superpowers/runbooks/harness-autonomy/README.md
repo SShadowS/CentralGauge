@@ -123,6 +123,17 @@ SendMessage is a doorbell only. State lives in `coord` and in git. Messages that
 A restarted session has lost everything said in chat. The orchestrator re-sends the protocol
 line to every lane when it starts, and each lane re-reads the files.
 
+## Editing files
+
+Every session, and every subagent it starts, edits files with the Edit and Write tools only
+(owner, 2026-10-02). Never edit or create a file with an inline script: no `python -c`,
+`python - <<EOF`, `deno eval`, `sed -i`, `awk` rewrites, or `cat > file <<EOF` / `>>` appends.
+Inline scripts mangle backslash paths (`\t`, `\r`, `\b` in Windows paths), break on quoting,
+and bypass the edit hooks; the Edit tool checks the match for you. The shell runs commands
+and redirects command output to log or evidence files; it does not write source, task,
+handoff or decision files. Searches name a directory: never `find /` or `grep -r /` (in Git
+Bash `/` spans every drive).
+
 ## Git
 
 - Each lane commits only in its own worktree, on its own branch. Never write into another
