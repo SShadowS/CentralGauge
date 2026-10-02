@@ -1188,6 +1188,24 @@ export async function sweep(
   opts: { now?: number } = {},
 ): Promise<Sweep> {
   await openRoot(root);
+  // listDir reads a missing dir as empty; for the sweep these dirs are
+  // required, so a missing or unreadable one is an error, never an empty
+  // section (or a false "drained").
+  for (
+    const d of [
+      join(root, "tasks"),
+      join(root, "questions"),
+      join(machineRoot(root), "leases"),
+    ]
+  ) {
+    try {
+      for await (const _ of Deno.readDir(d)) break;
+    } catch (e) {
+      throw new CoordError(
+        `cannot read required dir ${d}: ${e instanceof Error ? e.message : e}`,
+      );
+    }
+  }
   const now = opts.now ?? Date.now();
   const min = (at: number) => Math.max(0, Math.floor((now - at) / 60000));
   const states: TaskState[] = [];

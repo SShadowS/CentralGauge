@@ -734,3 +734,39 @@ Deno.test("coord sweep: CLI exits non-zero on a read error and prints JSON with 
   assertEquals(new TextDecoder().decode(bad.stdout), "");
   assertStringIncludes(new TextDecoder().decode(bad.stderr), "checkpoint.json");
 });
+
+Deno.test("coord sweep (C-05 run 002): a missing or unreadable required dir (tasks, questions, leases) exits non-zero with empty stdout, in text and --json", async () => {
+  for (const dir of ["tasks", "questions", "leases"]) {
+    for (const how of ["missing", "not a directory"]) {
+      const root = await freshRoot();
+      await seed(root);
+      await Deno.remove(join(root, dir), { recursive: true });
+      if (how === "not a directory") {
+        await Deno.writeTextFile(join(root, dir), "x");
+      }
+      await assertRejects(() => sweep(root), CoordError, dir);
+      for (const args of [["sweep"], ["sweep", "--json"]]) {
+        const out = await new Deno.Command(Deno.execPath(), {
+          args: ["run", "--allow-all", coordScript, ...args],
+          env: { CG_COORD_ROOT: root },
+        }).output();
+        assert(out.code !== 0, `${dir} ${how} ${args.join(" ")}`);
+        assertEquals(new TextDecoder().decode(out.stdout), "");
+        assertStringIncludes(new TextDecoder().decode(out.stderr), dir);
+      }
+    }
+  }
+});
+
+Deno.test("coord sweep (C-05 run 002): a missing leases dir under the machine root is a read error, never 'drained'", async () => {
+  const base = await Deno.makeTempDir({ prefix: "coord-test-" });
+  const machine = join(base, "machine");
+  await Deno.mkdir(join(machine, "leases"), { recursive: true });
+  const root = join(base, "coord");
+  await initRoot(root, "test-campaign", { machineRoot: machine });
+  await seed(root);
+  await pause(root, "x");
+  assertEquals((await sweep(root)).pause.drained, true);
+  await Deno.remove(join(machine, "leases"), { recursive: true });
+  await assertRejects(() => sweep(root), CoordError, "leases");
+});
