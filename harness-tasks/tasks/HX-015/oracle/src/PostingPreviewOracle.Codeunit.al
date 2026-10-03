@@ -137,6 +137,18 @@ codeunit 85760 "HX015 Posting Preview Oracle"
         LedgerBuffer.FindFirst();
         Assert.AreEqual(SecondContractNo, LedgerBuffer."Contract No.", 'The buffer holds the second contract');
         Assert.AreEqual('HX015-E2', LedgerBuffer."Vehicle No.", 'The buffer holds the second vehicle');
+
+        LedgerBuffer.Init();
+        LedgerBuffer."Entry No." := 0;
+        LedgerBuffer."Contract No." := FirstContractNo;
+        LedgerBuffer."Vehicle No." := 'HX015-E1';
+        LedgerBuffer.Insert();
+        LedgerBuffer.SetRange("Contract No.", SecondContractNo);
+        RentalMgt.PreviewPosting(FirstContractNo, LedgerBuffer);
+        LedgerBuffer.Reset();
+        Assert.AreEqual(1, LedgerBuffer.Count(), 'A preview into a filtered buffer replaces every entry, also those outside the filter');
+        LedgerBuffer.FindFirst();
+        Assert.AreEqual(FirstContractNo, LedgerBuffer."Contract No.", 'The filtered buffer holds only the new preview');
     end;
 
     [Test]

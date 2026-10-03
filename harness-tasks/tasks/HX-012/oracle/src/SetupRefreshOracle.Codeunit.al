@@ -124,25 +124,28 @@ codeunit 85700 "HX012 Setup Refresh Oracle"
         Assert.AreEqual(1, AmountRounding.Precision(), 'A later save with triggers is seen');
     end;
 
-    // InsertedSetupIsRead and DeletedSetupIsDropped delete the Setup row, which resets
-    // "Last Contract No."; a later row that creates contracts would reuse contract numbers.
-    // Keep these two procedures last in the codeunit.
     [Test]
     procedure InsertedSetupIsRead()
     var
         Setup: Record "CGR Setup";
         AmountRounding: Codeunit "CGR Amount Rounding";
         Dispatcher: Codeunit "CGR Outbox Dispatcher";
+        LastContractNo: Integer;
+        LastLeaseNo: Integer;
     begin
         WorkDate(20270301D);
         InitSetup(0.05, '', 5);
         Assert.AreEqual(0.05, AmountRounding.Precision(), 'Precision read first');
 
         Setup.Get();
+        LastContractNo := Setup."Last Contract No.";
+        LastLeaseNo := Setup."Last Lease No.";
         Setup.Delete();
         Assert.AreEqual(0.05, AmountRounding.Precision(), 'A delete without triggers keeps the values already read');
 
         Setup.Init();
+        Setup."Last Contract No." := LastContractNo;
+        Setup."Last Lease No." := LastLeaseNo;
         Setup."Amount Rounding Precision" := 0.5;
         Setup."Outbox Max Attempts" := 6;
         Setup.Insert();
@@ -151,6 +154,8 @@ codeunit 85700 "HX012 Setup Refresh Oracle"
         Setup.Get();
         Setup.Delete();
         Setup.Init();
+        Setup."Last Contract No." := LastContractNo;
+        Setup."Last Lease No." := LastLeaseNo;
         Setup."Amount Rounding Precision" := 1;
         Setup."Outbox Max Attempts" := 7;
         Setup.Insert(true);
@@ -166,6 +171,8 @@ codeunit 85700 "HX012 Setup Refresh Oracle"
         SessionContext: Codeunit "CGR Session Context";
         AmountRounding: Codeunit "CGR Amount Rounding";
         Dispatcher: Codeunit "CGR Outbox Dispatcher";
+        LastContractNo: Integer;
+        LastLeaseNo: Integer;
     begin
         WorkDate(20270301D);
         InitSetup(0.05, 'HX12D', 5);
@@ -173,11 +180,18 @@ codeunit 85700 "HX012 Setup Refresh Oracle"
         Assert.AreEqual('HX12D', SessionContext.CurrentBranch(), 'Default branch read first');
 
         Setup.Get();
+        LastContractNo := Setup."Last Contract No.";
+        LastLeaseNo := Setup."Last Lease No.";
         Setup.Delete(true);
 
         Assert.AreEqual(0.01, AmountRounding.Precision(), 'Without a Setup record the precision is 0.01');
         Assert.AreEqual(3, Dispatcher.MaxAttempts(), 'Without a Setup record max attempts is 3');
         Assert.AreEqual('', SessionContext.CurrentBranch(), 'Without a Setup record there is no default branch');
+
+        Setup.Init();
+        Setup."Last Contract No." := LastContractNo;
+        Setup."Last Lease No." := LastLeaseNo;
+        Setup.Insert();
     end;
 
     local procedure InitSetup(RoundingPrecision: Decimal; DefaultBranchCode: Code[10]; OutboxMaxAttempts: Integer)
@@ -193,8 +207,26 @@ codeunit 85700 "HX012 Setup Refresh Oracle"
         Setup."Amount Rounding Precision" := RoundingPrecision;
         Setup."Default Branch Code" := DefaultBranchCode;
         Setup."Outbox Max Attempts" := OutboxMaxAttempts;
+        Setup."Last Contract No." := ContractNoFloor(Setup."Last Contract No.");
         Setup.Modify();
         SessionContext.Reset();
+    end;
+
+    // Every procedure is collision-safe on its own: the next contract number is always past
+    // every contract already in the database, whatever ran before.
+    local procedure ContractNoFloor(LastContractNo: Integer): Integer
+    var
+        Contract: Record "CGR Rental Contract";
+        ContractSeq: Integer;
+    begin
+        Contract.SetFilter("No.", 'RC*');
+        if Contract.FindSet() then
+            repeat
+                if Evaluate(ContractSeq, CopyStr(Contract."No.", 3)) then
+                    if ContractSeq > LastContractNo then
+                        LastContractNo := ContractSeq;
+            until Contract.Next() = 0;
+        exit(LastContractNo);
     end;
 
     local procedure InitVehicle(VehicleNo: Code[20])
