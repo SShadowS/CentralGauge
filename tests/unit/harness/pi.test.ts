@@ -786,13 +786,17 @@ Deno.test("pi adapter: registered; contract fields; parse writes the trace; a mi
     join(dir, "raw.jsonl"),
     HEAD + await Deno.readTextFile(FIXTURE),
   );
+  // H-01u: a clean stderr (no "Invalid settings file"); without one pi fails closed.
+  await Deno.writeTextFile(join(dir, "stderr.txt"), "");
   const r = await piAdapter.parse({
     rawLog: join(dir, "raw.jsonl"),
+    stderrLog: join(dir, "stderr.txt"),
     exitCode: 0,
     manifest: pm(),
     pricing: BOOK,
     traceOut: join(dir, "trace.jsonl"),
   });
+  assertEquals(r.termination, "completed");
   // M2-15: 4 tool calls plus the skill_invoke of the SKILL.md read.
   assertEquals(r.traceEvents, 5);
   assertEquals(

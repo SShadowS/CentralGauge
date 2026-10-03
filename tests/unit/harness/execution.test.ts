@@ -3759,3 +3759,31 @@ Deno.test("H-01 run 005: a failed pi config staging (non-zero, exec error, timeo
     }
   }
 });
+
+// H-01u run 002 (review H-01u-001 P1): the pi adapter's pi_config_invalid must
+// survive the final outcome choice. A stop reason (capture overflow here; an
+// interrupt or a recovered run takes the same branch) would otherwise turn it
+// into harness_crash, which is judged when work happened.
+Deno.test("H-01u: a pi run with Invalid settings file on stderr stays setup_failed (never judged) when a stop reason would make it harness_crash; a clean stderr does not", async () => {
+  const warning =
+    "Warning: Invalid settings file C:\\pi-agent\\settings.json: Lock file is already being held";
+  for (
+    const [label, stderr, want] of [
+      ["invalid", `${warning}\r\n`, "setup_failed"],
+      ["clean", "", "harness_crash"],
+    ] as const
+  ) {
+    const t = await piEnv("unplaced");
+    t.env.maxCaptureBytes = 64;
+    t.docker.behavior = async (_call, io) => {
+      await Deno.writeTextFile(t.docker.lastCapture!.stderrPath, stderr);
+      await io.stdout("x".repeat(256)); // over the cap: capture_overflow
+      return 0;
+    };
+    const e = (await runCell(t.env, await piCell(t))).executions[0]!;
+    assertEquals(e.termination, want, label);
+    if (label === "invalid") {
+      assertEquals(await t.env.store.judgments(e.id), [], label);
+    }
+  }
+});

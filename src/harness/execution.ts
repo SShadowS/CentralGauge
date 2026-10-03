@@ -1046,8 +1046,14 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     : f.interrupted
     ? "runner_interrupted"
     : null;
+  // H-01u: pi that ignored its staged settings (pi_config_invalid) is never a
+  // valid cell, whatever stop reason, timeout or recovery would say instead.
+  const configInvalid = problems.some((x) =>
+    x.startsWith("pi_config_invalid: ")
+  );
   const termination: ExecutionRecord["termination"] =
-    !started || f.setupError !== null || check.mismatch !== null
+    !started || f.setupError !== null || check.mismatch !== null ||
+      configInvalid
       ? "setup_failed"
       : stopReason !== null || parseError !== null
       ? "harness_crash"
