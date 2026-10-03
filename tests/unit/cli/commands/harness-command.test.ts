@@ -2260,6 +2260,225 @@ Deno.test("qualification bootstrap: a candidate marker places the probe only; th
   }
 });
 
+// M9-01a: an extra credential (the Claude Code OAuth token) is released only
+// after the preflight passes, beside the backend token; a probe mount can be
+// read-write; the proxy log stays in out/.
+
+Deno.test("qualification probe: extra secrets are released only after a passed preflight; a readWrite mount is not readonly (M9-01a)", async () => {
+  for (const passing of [true, false]) {
+    const t = await makeEnv();
+    const root = t.env.privateRoot;
+    const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+    const collect = markerAwareCollector();
+    assertEquals(
+      await harnessEgressVerify({ root, mark: "candidate" }, collect),
+      [],
+    );
+    const eg = fakeEgress();
+    if (!passing) {
+      eg.lines = (ls) =>
+        ls.map((l) => l.probe === "gw-smb-445" ? { ...l, ok: true } : l);
+    }
+    let atProbe: string[] = [];
+    eg.onProbe = (sandbox) => {
+      const dir = t.docker.runs.find((r) => r.name === sandbox)!.mounts.get(
+        "C:\\cg-secrets",
+      )!.src;
+      atProbe = [...Deno.readDirSync(dir)].map((e) => e.name);
+      return Promise.resolve();
+    };
+    t.docker.waitForReady = true;
+    let atStart: string[] = [];
+    t.docker.behavior = (call) => {
+      atStart = [
+        ...Deno.readDirSync(call.mounts.get("C:\\cg-secrets")!.src),
+      ].map((e) => e.name).sort();
+      return Promise.resolve(0);
+    };
+    const out = join(root, "probe-out");
+    const probeDir = join(root, "probe-mount");
+    await Deno.mkdir(out, { recursive: true });
+    await Deno.mkdir(probeDir, { recursive: true });
+    const r = await runQualificationProbe({
+      docker: t.docker,
+      egress: eg,
+      custody: {
+        privateRoot: t.env.privateRoot,
+        owner: t.env.owner,
+        ...(t.env.secretAcl ?? {}),
+      },
+      token: "backend-token-0123456789abcdef",
+      releaseAfterPreflight: [{
+        name: "claude-oauth-token",
+        value: "oauth-token-fedcba9876543210",
+      }],
+      revoke: () => t.env.backend.revoke("exec-probe-2"),
+      spec: {
+        name: "cg-harness-probe-2",
+        owner: t.env.owner,
+        executionId: "exec-probe-2",
+        imageId: `sha256:${"c".repeat(64)}`,
+        workspace: out,
+        taskDir: out,
+        configDir: out,
+        extraMounts: [{ src: probeDir, dst: "C:\\probe", readWrite: true }],
+        env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+        timeoutMs: 60_000,
+        killGraceMs: 50,
+        opTimeoutMs: 100,
+        maxCaptureBytes: 1024 * 1024,
+        rawLog: join(out, "probe.jsonl"),
+        stderrLog: join(out, "stderr.txt"),
+      },
+      probeCommand: ["powershell", "-File", "C:\\probe\\spike.ps1"],
+      out,
+      collect: () => collect(markerPath),
+    });
+    assertEquals(atProbe, [], "empty mount during the preflight");
+    const call = t.docker.runs[0]!;
+    assertEquals(call.mounts.get("C:\\probe"), {
+      src: probeDir,
+      readonly: false,
+    });
+    assertEquals(call.mounts.get("C:\\cg-secrets")!.readonly, true);
+    if (passing) {
+      assertEquals(r.problems, []);
+      assertEquals(atStart, [
+        "backend-token",
+        "claude-oauth-token",
+        READY_FILE,
+      ]);
+    } else {
+      assertStringIncludes(r.problems.join("\n"), "gw-smb-445");
+      assertEquals(t.docker.readySeen, false, "no token, no ready");
+      assertEquals(atStart.includes("claude-oauth-token"), false);
+    }
+  }
+});
+
+Deno.test("qualification probe: released secret values printed by the sandbox are scrubbed from the retained captures (M9-01a run 002)", async () => {
+  const t = await makeEnv();
+  const root = t.env.privateRoot;
+  const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+  const collect = markerAwareCollector();
+  assertEquals(
+    await harnessEgressVerify({ root, mark: "candidate" }, collect),
+    [],
+  );
+  const token = "backend-token-0123456789abcdef";
+  const oauth = "oauth-token-fedcba9876543210";
+  t.docker.waitForReady = true;
+  t.docker.behavior = async (_call, io) => {
+    await io.stdout(`leak ${oauth} and ${token} end`);
+    return 0;
+  };
+  const out = join(root, "probe-out");
+  await Deno.mkdir(out, { recursive: true });
+  const r = await runQualificationProbe({
+    docker: t.docker,
+    egress: fakeEgress(),
+    custody: {
+      privateRoot: t.env.privateRoot,
+      owner: t.env.owner,
+      ...(t.env.secretAcl ?? {}),
+    },
+    token,
+    releaseAfterPreflight: [{ name: "claude-oauth-token", value: oauth }],
+    revoke: () => t.env.backend.revoke("exec-probe-3"),
+    spec: {
+      name: "cg-harness-probe-3",
+      owner: t.env.owner,
+      executionId: "exec-probe-3",
+      imageId: `sha256:${"c".repeat(64)}`,
+      workspace: out,
+      taskDir: out,
+      configDir: out,
+      extraMounts: [],
+      env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+      timeoutMs: 60_000,
+      killGraceMs: 50,
+      opTimeoutMs: 100,
+      maxCaptureBytes: 1024 * 1024,
+      rawLog: join(out, "probe.jsonl"),
+      stderrLog: join(out, "stderr.txt"),
+    },
+    probeCommand: ["powershell", "-File", "C:\\probe\\spike.ps1"],
+    out,
+    collect: () => collect(markerPath),
+  });
+  assertEquals(r.problems, []);
+  const raw = await Deno.readTextFile(join(out, "probe.jsonl"));
+  assertStringIncludes(raw, "leak ");
+  assertStringIncludes(raw, " end");
+  assertEquals(raw.includes(oauth), false, "oauth value scrubbed");
+  assertEquals(raw.includes(token), false, "backend token scrubbed");
+});
+
+Deno.test("qualification probe: an injected scrub failure fails the probe closed (M9-01a run 003)", async () => {
+  const t = await makeEnv();
+  const root = t.env.privateRoot;
+  const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+  const collect = markerAwareCollector();
+  assertEquals(
+    await harnessEgressVerify({ root, mark: "candidate" }, collect),
+    [],
+  );
+  t.docker.waitForReady = true;
+  t.docker.behavior = () => Promise.resolve(0);
+  const out = join(root, "probe-out");
+  await Deno.mkdir(out, { recursive: true });
+  let scrubbed: string[] = [];
+  await assertRejects(
+    () =>
+      runQualificationProbe({
+        docker: t.docker,
+        egress: fakeEgress(),
+        custody: {
+          privateRoot: t.env.privateRoot,
+          owner: t.env.owner,
+          ...(t.env.secretAcl ?? {}),
+        },
+        token: "backend-token-0123456789abcdef",
+        releaseAfterPreflight: [{
+          name: "claude-oauth-token",
+          value: "oauth-token-fedcba9876543210",
+        }],
+        revoke: () => t.env.backend.revoke("exec-probe-4"),
+        scrub: (paths) => {
+          scrubbed = paths;
+          return Promise.resolve("injected: file locked");
+        },
+        spec: {
+          name: "cg-harness-probe-4",
+          owner: t.env.owner,
+          executionId: "exec-probe-4",
+          imageId: `sha256:${"c".repeat(64)}`,
+          workspace: out,
+          taskDir: out,
+          configDir: out,
+          extraMounts: [],
+          env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+          timeoutMs: 60_000,
+          killGraceMs: 50,
+          opTimeoutMs: 100,
+          maxCaptureBytes: 1024 * 1024,
+          rawLog: join(out, "probe.jsonl"),
+          stderrLog: join(out, "stderr.txt"),
+        },
+        probeCommand: ["powershell", "-File", "C:\\probe\\spike.ps1"],
+        out,
+        collect: () => collect(markerPath),
+      }),
+    Error,
+    "capture scrub failed: injected: file locked",
+  );
+  assertEquals(scrubbed, [
+    join(out, "probe.jsonl"),
+    join(out, "stderr.txt"),
+    join(out, "egress.jsonl"),
+  ]);
+});
+
 // M3-08: the route-aware probe proxies and probes exactly the hosts it is given.
 
 Deno.test("qualification probe: hosts override the default route host (M3-08 --route)", async () => {
