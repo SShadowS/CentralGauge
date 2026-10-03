@@ -108,7 +108,7 @@ const CUMULATIVE = [
  */
 function notCumulative(
   results: Line[],
-  perMessage: Map<string, { model: string; usage: J }>,
+  perMessage: PerMessage,
 ): string | null {
   for (const [i, b] of results.entries()) {
     if (typeof b.rec.total_cost_usd !== "number") {
@@ -157,6 +157,166 @@ function notCumulative(
     }
   }
   return null;
+}
+
+type PerMessage = Map<
+  string,
+  { model: string; usage: J; out: number; parent: string | null }
+>;
+type Tally = { input: number; read: number; write: number; out: number };
+export type Reconciliation =
+  | { status: "exact" }
+  | { status: "compaction_excess"; excess: Record<string, Omit<Tally, "out">> }
+  | { status: "unreconciled"; why: string };
+
+/**
+ * Spec v2 gate 3, inventoried images (appendix section 6). The last
+ * modelUsage must equal, per model, the streamed assistant messages (main and
+ * sub-agents, one per message id) plus each sub-agent's
+ * tool_use_result.usage, its final request, which the stream never shows
+ * (probe.jsonl and m129-resume.jsonl reconcile exactly). Every source field
+ * must be a count (never zero-filled) and both sides must name the same
+ * models. Equal input and cache counts: nothing omitted, nothing counted
+ * twice. Output is a floor: stream chunks carry a partial count. A run with a
+ * compaction may exceed only on main-session input that no sub-agent's input
+ * explains (compaction.jsonl: the summary request is billed, never
+ * streamed); the excess is recorded, never hidden.
+ */
+function reconcile(
+  last: J,
+  perMessage: PerMessage,
+  children: { line: number; model: string | null; usage: J }[],
+  compactions: number,
+): Reconciliation {
+  const no = (why: string): Reconciliation => ({ status: "unreconciled", why });
+  const FIELDS = [
+    ["input", "input_tokens"],
+    ["read", "cache_read_input_tokens"],
+    ["write", "cache_creation_input_tokens"],
+  ] as const;
+  const want = new Map<string, Tally>();
+  const add = (where: string, m: string, u: J, out: number): string | null => {
+    for (const [, f] of [...FIELDS, ["out", "output_tokens"] as const]) {
+      if (!isCount(u[f])) return `${where} ${f} missing or not a count`;
+    }
+    const t = want.get(m) ?? { input: 0, read: 0, write: 0, out: 0 };
+    for (const [k, f] of FIELDS) t[k] += u[f] as number;
+    t.out += out;
+    want.set(m, t);
+    return null;
+  };
+  for (const [id, v] of perMessage) {
+    const bad = add(`message ${id}`, v.model, v.usage, v.out);
+    if (bad) return no(bad);
+  }
+  for (const c of children) {
+    if (c.model === null) {
+      return no(`line ${c.line}: sub-agent usage without a model`);
+    }
+    const bad = add(
+      `line ${c.line}: sub-agent usage`,
+      c.model,
+      c.usage,
+      c.usage.output_tokens as number,
+    );
+    if (bad) return no(bad);
+  }
+  for (const m of Object.keys(last)) {
+    if (!want.has(m)) {
+      return no(`model ${m || "(no model)"} is only in modelUsage`);
+    }
+  }
+  for (const m of want.keys()) {
+    if (!Object.hasOwn(last, m)) {
+      return no(`model ${m || "(no model)"} is only in the stream`);
+    }
+  }
+  // Compaction attribution: main-session models, and every sub-agent input a
+  // doubled child would add (each child's final input, each parent's streamed input).
+  const mainModels = new Set(
+    [...perMessage.values()].filter((v) => v.parent === null).map((v) =>
+      v.model
+    ),
+  );
+  const streamedByParent = new Map<string, number>();
+  for (const v of perMessage.values()) {
+    if (v.parent !== null) {
+      streamedByParent.set(
+        v.parent,
+        (streamedByParent.get(v.parent) ?? 0) +
+          (v.usage.input_tokens as number),
+      );
+    }
+  }
+  const childInputs = new Set([
+    ...children.map((c) => c.usage.input_tokens as number),
+    ...streamedByParent.values(),
+  ]);
+  const excess: Record<string, Omit<Tally, "out">> = {};
+  for (const m of Object.keys(last).sort()) {
+    const name = m || "(no model)";
+    const x = obj(last[m]);
+    const t = want.get(m)!;
+    const got: Partial<Tally> = {};
+    for (
+      const [k, f] of [
+        ["input", "inputTokens"],
+        ["read", "cacheReadInputTokens"],
+        ["write", "cacheCreationInputTokens"],
+        ["out", "outputTokens"],
+      ] as const
+    ) {
+      const v = x[f];
+      if (!isCount(v)) {
+        return no(`modelUsage ${name} ${f} missing or not a count`);
+      }
+      got[k] = v;
+    }
+    const g = got as Tally;
+    if (g.out < t.out) {
+      return no(
+        `modelUsage ${name} output ${g.out} is below the ${t.out} the messages report`,
+      );
+    }
+    const d = {
+      input: g.input - t.input,
+      read: g.read - t.read,
+      write: g.write - t.write,
+    };
+    const shown =
+      `input ${d.input}, cache read ${d.read}, cache write ${d.write}`;
+    if (d.input < 0 || d.read < 0 || d.write < 0) {
+      return no(
+        `modelUsage ${name} is below the streamed messages and sub-agent results (${shown})`,
+      );
+    }
+    if (d.input > 0 || d.read > 0 || d.write > 0) {
+      if (compactions === 0) {
+        return no(
+          `modelUsage ${name} exceeds the streamed messages and sub-agent results (${shown})`,
+        );
+      }
+      if (!mainModels.has(m)) {
+        return no(
+          `modelUsage ${name} exceeds after a compaction but is not the main-session model (${shown})`,
+        );
+      }
+      if (d.read > 0 || d.write > 0) {
+        return no(
+          `modelUsage ${name}: cache excess after compaction is not attributable (${shown})`,
+        );
+      }
+      if (childInputs.has(d.input)) {
+        return no(
+          `modelUsage ${name}: input excess ${d.input} equals a sub-agent's input (suspected double count)`,
+        );
+      }
+      excess[m] = d;
+    }
+  }
+  return Object.keys(excess).length > 0
+    ? { status: "compaction_excess", excess }
+    : { status: "exact" };
 }
 
 /**
@@ -823,7 +983,7 @@ export function parseClaudeStream(
 
   // Per message id, for the TTL split and the partial usage (the stream
   // repeats a message once per content block).
-  const perMessage = new Map<string, { model: string; usage: J }>();
+  const perMessage: PerMessage = new Map();
   let didWork = false;
   for (const { rec } of of("assistant")) {
     // Claude Code's own API-error record (after the retries) is no work.
@@ -832,7 +992,18 @@ export function parseClaudeStream(
     const msg = obj(rec.message);
     const model = typeof msg.model === "string" ? msg.model : "";
     if (typeof msg.id === "string") {
-      perMessage.set(msg.id, { model, usage: obj(msg.usage) });
+      const prev = perMessage.get(msg.id);
+      const o = obj(msg.usage).output_tokens;
+      perMessage.set(msg.id, {
+        model,
+        usage: obj(msg.usage),
+        // A chunk without a count never lowers the floor; reconcile() still
+        // requires the stored usage to carry output_tokens as a count.
+        out: Math.max(prev?.out ?? 0, isCount(o) ? o : 0),
+        parent: typeof rec.parent_tool_use_id === "string"
+          ? rec.parent_tool_use_id
+          : null,
+      });
     }
   }
 
@@ -939,6 +1110,20 @@ export function parseClaudeStream(
       `${file}: ${results.length} result records (${
         linesOf(results)
       }): modelUsage not provably cumulative (${why})`,
+    );
+  }
+  // Spec v2 gate 3: exact reconciliation on inventoried images only.
+  const reconciliation = inventoried(input.manifest.image.revision) && result
+    ? reconcile(
+      obj(result.modelUsage),
+      perMessage,
+      children,
+      trace.filter((e) => e.type === "compaction").length,
+    )
+    : null;
+  if (reconciliation?.status === "unreconciled") {
+    unproven.costs.push(
+      `${file}: usage not reconciled (${reconciliation.why})`,
     );
   }
   const proven = unproven.costs.length === 0;
@@ -1145,6 +1330,7 @@ export function parseClaudeStream(
       }
       : {}),
     partial,
+    ...(reconciliation ? { usage_reconciliation: reconciliation } : {}),
     missing: est?.missing ??
       (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
     stream_problems: streamProblems,
