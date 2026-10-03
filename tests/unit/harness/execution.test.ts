@@ -3968,6 +3968,31 @@ Deno.test("component inventory (spec v2 gate 1): every inventory refusal is a pr
   assertEquals(t.docker.readySeen, true);
 });
 
+/** The campaign stops with the H-01 privilege failure; nothing was released or judged. */
+async function stopped(
+  what: string,
+  t: TestEnv,
+  cell: Awaited<ReturnType<typeof cellFor>>,
+  want: string,
+) {
+  const err = await assertRejects(
+    () => runCell(t.env, cell),
+    ContainerError,
+    "sandbox privilege check failed",
+  );
+  assertStringIncludes(err.message, "stopping", what);
+  assertStringIncludes(err.message, want, what);
+  const [e] = await t.env.store.executions(cell.campaignId);
+  assertEquals(e!.termination, "setup_failed", what);
+  assertEquals(
+    (await sideOf(t, e!.id)).stop_reason,
+    "privilege_check_failed",
+    what,
+  );
+  assertEquals(await t.env.store.judgments(e!.id), [], what);
+  assert(!t.docker.readySeen, `${what}: nothing released`);
+}
+
 // M9-05 run 003 (security): on an inventoried image a privilege failure is never
 // swallowed by the inventory. Only an end before the sandbox was seen running
 // with a PROVEN cg_inventory refusal is the arm's setup_failed; everything else
@@ -3983,29 +4008,6 @@ Deno.test("component inventory: privilege failures x inventory {ok, missing, ref
     ["inventory missing", []],
     ["inventory refused", [refusedRec]],
   ];
-  const stopped = async (
-    what: string,
-    t: TestEnv,
-    cell: Awaited<ReturnType<typeof cellFor>>,
-    want: string,
-  ) => {
-    const err = await assertRejects(
-      () => runCell(t.env, cell),
-      ContainerError,
-      "sandbox privilege check failed",
-    );
-    assertStringIncludes(err.message, "stopping", what);
-    assertStringIncludes(err.message, want, what);
-    const [e] = await t.env.store.executions(cell.campaignId);
-    assertEquals(e!.termination, "setup_failed", what);
-    assertEquals(
-      (await sideOf(t, e!.id)).stop_reason,
-      "privilege_check_failed",
-      what,
-    );
-    assertEquals(await t.env.store.judgments(e!.id), [], what);
-    assert(!t.docker.readySeen, `${what}: nothing released`);
-  };
   // A real privilege failure (the sandbox runs as ContainerAdministrator):
   // whatever the inventory says, the campaign stops.
   for (const [label, lines] of inventories) {
@@ -4050,6 +4052,60 @@ Deno.test("component inventory: privilege failures x inventory {ok, missing, ref
     assert(!t.docker.readySeen, `${what}: nothing released`);
     assertEquals(await t.env.store.judgments(e.id), [], what);
   }
+});
+
+// M9-05b: the proven refusal is the adapter's strict one: exactly one record of
+// the recorded shape with ok false. Anything else on an early end stops the campaign.
+Deno.test("component inventory: an early end with a malformed or duplicate refusal stops the campaign", async () => {
+  const bad = { ok: false, installed: [], problems: ["x"] };
+  const cases: [string, string[]][] = [
+    ["extra field", [INV({ ...bad, extra: 1 })]],
+    ["two refusal records", [INV(bad), INV(bad)]],
+  ];
+  for (const [what, lines] of cases) {
+    const t = await inventoriedEnv();
+    t.docker.preReady = { lines, exit: 5 };
+    const cell = await cellFor(t, "cc-v2-inv");
+    await stopped(what, t, cell, "ended before it was seen running");
+  }
+});
+
+// M9-05b: the inventory wait deadline is injectable; a running sandbox that
+// never prints the record is a pre-start refusal, not a campaign stop.
+Deno.test("component inventory: a running sandbox that never prints the record is refused at the deadline", async () => {
+  const t = await inventoriedEnv();
+  t.env.inventoryTimeoutMs = 300;
+  t.docker.waitForReady = true;
+  t.docker.preReady = { lines: [] };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes(
+    (await sideOf(t, e.id)).setup_error,
+    "component inventory",
+  );
+  assertEquals(e.telemetry.cost_usd, 0);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(t.docker.secretsAtKill ?? [], []);
+  assert(!await exists(privatePaths(t.env, e.id).custody), "no custody");
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+// M9-05b: the run settles while the privilege probe fails: the sandbox was seen
+// running, so it is the H-01 campaign stop, never the inventory's refusal.
+Deno.test("component inventory: the run settling while the privilege probe fails stops the campaign", async () => {
+  const t = await inventoriedEnv();
+  t.docker.waitForReady = true;
+  t.docker.preReady = { lines: [INV()] };
+  const exec = t.docker.exec.bind(t.docker);
+  t.docker.exec = async (name, user, argv) => {
+    await t.docker.kill(name);
+    await new Promise((r) => setTimeout(r, 50));
+    return exec(name, user, argv);
+  };
+  t.docker.execAnswer = new Error("exec failed: container exited");
+  const cell = await cellFor(t, "cc-v2-inv");
+  await stopped("settled during probe", t, cell, "exec failed");
 });
 
 // Contract (b): a problem found AFTER the agent started is setup_failed and never

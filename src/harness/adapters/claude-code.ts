@@ -468,9 +468,9 @@ export function pluginIs(
     (id.path === null || p["path"] === id.path);
 }
 
-const INVENTORY_KEYS = "installed,ok,problems,type,v";
+export const INVENTORY_KEYS = "installed,ok,problems,type,v";
 const INSTALLABLE = ["agents", "instructions", "skills"] as const;
-const strings = (v: unknown): v is string[] =>
+export const strings = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === "string");
 
 /**
