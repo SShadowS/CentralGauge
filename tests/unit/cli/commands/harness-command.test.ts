@@ -53,10 +53,13 @@ import {
 import { claudeCodeAdapter } from "../../../../src/harness/adapters/claude-code.ts";
 import { loadSymbolsLock } from "../../../../src/harness/identity.ts";
 import {
+  AL_LSP_DEF,
+  AL_LSP_SHIPPED,
   AL_TOOLS_DEF,
   BASE_IMAGE,
   FROZEN_IMAGE_TAGS,
   imageTag,
+  lspLabel,
   mcpLabel,
 } from "../../../../src/harness/images.ts";
 import {
@@ -5421,4 +5424,145 @@ Deno.test("CLI: `harness report` takes --prereg-decision and --prereg-b-decision
   const report = JSON.parse(printed.join("\n"));
   assertEquals(report.confirmatory.tasks, ["HX-001"]);
   assertEquals(report.confirmatory.results[0].id, "C1");
+});
+
+Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.json; the built image must show it", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
+    recursive: true,
+  });
+  await Deno.copyFile(AL_LSP_DEF, join(root, AL_LSP_DEF));
+  const [lk, lv] = (await lspLabel(root))!;
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+  const tag = "centralgauge/harness-claude-code:2.1.282-r3";
+  const id = `sha256:${"c".repeat(64)}`;
+  const labels = {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": baseId,
+    "centralgauge.harness.revision": "3",
+  };
+  // An existing tag is refused: each build starts with no tag and produces it.
+  docker.buildResults.set(tag, { id, labels, layers: ["l1", "l2"] });
+  const o = { root, version: "2.1.282", revision: "3" };
+  await assertRejects(
+    () => harnessImagesBuild("claude-code", o, docker),
+    ConfigurationError,
+    `label ${lk} did not land`,
+  );
+  const args = docker.builds.at(-1)!;
+  const i = args.indexOf(`${lk}=${lv}`);
+  assert(i > 0 && args[i - 1] === "--label" && i < args.indexOf("-t"));
+  docker.tags.delete(tag);
+  docker.buildResults.set(tag, {
+    id,
+    labels: { ...labels, [lk]: lv },
+    layers: ["l1", "l2"],
+  });
+  docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  assertEquals(
+    (await harnessImagesBuild("claude-code", o, docker)).lsp?.["al"]
+      ?.tool_schema_hash,
+    lv.split(" ")[1],
+  );
+});
+
+Deno.test("harnessCell: a stub cell's --image is the image runtimeFacts reads (dev-tag LSP proofs)", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await Deno.mkdir(
+    join(t.repo.root, "harness", "images", "claude-code", "lsp"),
+    { recursive: true },
+  );
+  await Deno.copyFile(AL_LSP_DEF, join(t.repo.root, AL_LSP_DEF));
+  await Deno.writeTextFile(
+    join(t.repo.root, "harness", "configs", "cc-dev-lsp.yml"),
+    'id: cc-dev-lsp\nharness: claude-code\nharness_version: "2.1.282"\nimage_revision: "2"\nmodels: { main: anthropic/claude-sonnet-5 }\nsettings: {}\ncomponents: { lsp: [al] }\nlimits: { timeout_min: 30, max_budget_usd: 5 }\n',
+  );
+  const dev = `sha256:${"7".repeat(64)}`;
+  const [lk, lv] = (await lspLabel(t.repo.root))!;
+  t.docker.addImage(dev, dev, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+    "centralgauge.harness.revision": "2",
+    [lk]: lv,
+  });
+  t.docker.shipFile(dev, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  const results = join(t.repo.root, "results", "harness");
+  const base = {
+    resultsDir: results,
+    supervised: false,
+    stubProvider: await scenarioFile(t),
+  };
+  // The config's own tag has no LSP label: without --image the arm is refused.
+  await assertRejects(
+    () =>
+      harnessCell(
+        "cc-dev-lsp",
+        "HX-001",
+        cellOpts(t, base),
+        rootedOpener(t),
+        () => false,
+        noInterrupt,
+      ),
+    ConfigurationError,
+  );
+  const r = await harnessCell(
+    "cc-dev-lsp",
+    "HX-001",
+    cellOpts(t, { ...base, image: dev }),
+    rootedOpener(t),
+    () => false,
+    noInterrupt,
+  );
+  assertEquals(r.executions.length, 1);
+});
+
+Deno.test("runCampaign: an LSP arm resolves when the image label matches the repo definition and is refused when it does not", async () => {
+  const t = await makeEnv();
+  t.env.supervised = false;
+  await Deno.mkdir(
+    join(t.repo.root, "harness", "images", "claude-code", "lsp"),
+    { recursive: true },
+  );
+  await Deno.copyFile(AL_LSP_DEF, join(t.repo.root, AL_LSP_DEF));
+  for (
+    const [id, variant] of [["mock-lsp-a", "positive"], [
+      "mock-lsp-b",
+      "naive:a",
+    ]]
+  ) {
+    await write(
+      t.harnessRoot,
+      `configs/${id}.yml`,
+      `id: ${id}\nharness: mock\nharness_version: "2"\nmodels: {}\nsettings: { mode: apply, variant: "${variant}" }\ncomponents: { lsp: [al] }\nlimits: { timeout_min: 5, max_budget_usd: 1 }\n`,
+    );
+  }
+  await write(
+    t.harnessRoot,
+    "experiments/lsp.yml",
+    `id: lsp\nhypothesis: LSP arm.\nprimary_metric: pass_rate\nbaseline: mock-lsp-a\nvariants: [mock-lsp-b]\nvary: [settings]\ntasks: "harness-tasks/tasks/*"\nrepeats: 1\n`,
+  );
+  const [lk, lv] = (await lspLabel(t.repo.root))!;
+  const mockImage = (label: string) =>
+    t.docker.addImage(imageTag("mock", "2"), `sha256:${"a".repeat(64)}`, {
+      "centralgauge.harness": "mock",
+      "centralgauge.harness.version": "2",
+      "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+      [lk]: label,
+    });
+  const run = () =>
+    runCampaign(
+      t.env,
+      "lsp",
+      { dryRun: true, concurrency: 1, maxPauseMs: 0 },
+      { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG },
+    );
+  mockImage(lv);
+  assertEquals((await run()).planned, 2);
+  mockImage(`${lv.split(" ")[0]} ${"e".repeat(64)}`);
+  await assertRejects(run, ConfigurationError, "differs from image");
 });

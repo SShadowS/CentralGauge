@@ -29,8 +29,8 @@ import { loadSymbolsLock, resolveRefapp, taskSetIdentity } from "./identity.ts";
 import {
   imageFacts,
   imageTag,
-  mcpDefinitions,
   runtimeFacts,
+  serverDefinitions,
 } from "./images.ts";
 import { validateCampaignRecords } from "./integrity.ts";
 import { manifestHash, resolveManifest } from "./manifest.ts";
@@ -556,9 +556,7 @@ export async function runCampaign(
       image,
       adapterFor(config.harness),
       io.catalog,
-      config.components.mcp.length > 0
-        ? await mcpDefinitions(env.repoRoot)
-        : {},
+      await serverDefinitions(env.repoRoot, config.components),
     );
     const manifest = await resolveManifest(env.harnessRoot, config, facts);
     arms.push({
