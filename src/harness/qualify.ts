@@ -16,6 +16,8 @@ export const QualifyManifestSchema = z.strictObject({
       rev: z.string().min(1),
       positive: z.enum(["correct", "reference-tests"]),
       naive: z.array(z.string().regex(/^[A-Za-z0-9_-]+$/)).min(1),
+      /** Measurement-only fixtures, variant `fixture/<name>` (appendix section 7). */
+      fixture: z.array(z.string().regex(/^[A-Za-z0-9_-]+$/)).default([]),
     }),
   ),
 });
@@ -61,7 +63,11 @@ export function variantAllowed(
       rev ?? "the working tree"
     })`;
   }
-  const listed = [t.positive, ...t.naive.map((n) => `naive/${n}`)];
+  const listed = [
+    t.positive,
+    ...t.naive.map((n) => `naive/${n}`),
+    ...t.fixture.map((n) => `fixture/${n}`),
+  ];
   return listed.includes(variant)
     ? null
     : `${taskId} variant ${variant} is not listed (listed: ${
