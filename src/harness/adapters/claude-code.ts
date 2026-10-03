@@ -35,6 +35,7 @@ const KNOWN_TYPES = new Set([
   "user",
   "result",
   "rate_limit_event",
+  "cg_inventory", // M9: run.ps1's pre-start component inventory, one line before init.
   // M5-07a: 2.1.282's heartbeat of a tool running past 30 s; no usage.
   "tool_progress",
 ]);
@@ -326,6 +327,392 @@ function mcpInventory(
   return { loaded, problems };
 }
 
+/** First claude-code image revision whose run.ps1 emits cg_inventory (M9). */
+export const INVENTORY_REVISION = 3;
+
+/**
+ * Whether an image revision runs the inventory: 3 and later, including the
+ * proof builds `3-dev-<task id>` (cross-plan ruling 1). Frozen images (no
+ * revision, or 2) keep the M2 rules.
+ */
+export function inventoried(revision: string | undefined): boolean {
+  // ponytail: H-01 revisions are ordered integers; a forked revision line would
+  // need an explicit inventory label instead of this comparison.
+  return Number.parseInt(revision ?? "0", 10) >= INVENTORY_REVISION;
+}
+
+/**
+ * Claude Code's own agents, skills, plugins and tools per version, as
+ * system/init lists them for ContainerUser, and the qualification that proved
+ * user-scope CLAUDE.md, rules and agents LOAD in that version (spec v2
+ * section 4: per cell the inventory proves installation; loading is qualified
+ * per version). A version not listed refuses every inventoried cell until it
+ * is qualified.
+ */
+export const BUILTIN_INVENTORY: Readonly<
+  Record<
+    string,
+    {
+      agents: readonly string[];
+      skills: readonly string[];
+      plugins: readonly string[];
+      tools: readonly string[];
+      qualified: string;
+    }
+  >
+> = {
+  "2.1.282": {
+    agents: [
+      "claude",
+      "Explore",
+      "general-purpose",
+      "Plan",
+      "statusline-setup",
+    ],
+    skills: [
+      "deep-research",
+      "dataviz",
+      "update-config",
+      "verify",
+      "debug",
+      "code-review",
+      "simplify",
+      "batch",
+      "fewer-permission-prompts",
+      "doctor",
+      "loop",
+      "schedule",
+      "claude-api",
+      "workflow-authoring",
+      "run",
+      "run-skill-generator",
+    ],
+    plugins: ["agents-md@builtin"],
+    tools: [
+      "Task",
+      "Bash",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "Edit",
+      "EnterWorktree",
+      "ExitWorktree",
+      "Glob",
+      "Grep",
+      "ListAgents",
+      "NotebookEdit",
+      "Read",
+      "RemoteTrigger",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "SendMessage",
+      "Skill",
+      "TaskStop",
+      "ToolSearch",
+      "WebFetch",
+      "WebSearch",
+      "Workflow",
+      "Write",
+    ],
+    qualified: "M9-01 spike (H:\\cg-coord\\m9\\spike-01\\findings.md item 7)",
+  },
+};
+
+/**
+ * The plugin each declared LSP component may show in system/init (cross-plan
+ * ruling 3: the allow-list follows the arm's declared components; appendix
+ * section 4). M10-06 owns the values (from its S1 capture
+ * tests/fixtures/harness/claude-code/lsp-init.json); these are provisional.
+ * path null: init entries carry no path. Any other plugin is refused.
+ */
+export const LSP_PLUGINS: Readonly<
+  Record<string, { name: string; source: string; path: string | null }>
+> = {
+  al: {
+    name: "al-language-server-go-windows",
+    source: "al-language-server-go-windows@inline",
+    path: "C:\\cg-lsp\\al-language-server-go-windows",
+  },
+};
+
+/** An init plugin entry is the declared plugin (appendix section 4 match rule). */
+export function pluginIs(
+  p: J,
+  id: { name: string; source: string; path: string | null },
+): boolean {
+  return p["name"] === id.name && p["source"] === id.source &&
+    (id.path === null || p["path"] === id.path);
+}
+
+const INVENTORY_KEYS = "installed,ok,problems,type,v";
+const INSTALLABLE = ["agents", "instructions", "skills"] as const;
+const strings = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((x) => typeof x === "string");
+
+/**
+ * Fail-closed component inventory (spec v2 section 4, gate 1). run.ps1's
+ * cg_inventory line proves installation before the agent starts; system/init
+ * proves what Claude Code loaded against its own built-ins and the arm's
+ * declared allow-list; every model seen must be the arm's main model (gate 3).
+ */
+function componentInventory(
+  lines: Line[],
+  inits: Line[],
+  modelSources: Map<string, string[]>,
+  manifest: ParseInput["manifest"],
+): {
+  required: boolean;
+  loaded: string[];
+  problems: string[];
+  evidence: Record<string, string>;
+} {
+  const required = inventoried(manifest.image.revision);
+  const none = { required, loaded: [], problems: [], evidence: {} };
+  if (!required) return none;
+  const problems: string[] = [];
+  const evidence: Record<string, string> = {};
+  // Appendix section 3: the installable components plus one lsp:<name> per declared LSP.
+  const declared = [
+    ...INSTALLABLE.filter((k) => manifest[k] !== null),
+    ...manifest.lsp.map((s) => `lsp:${s.name}`),
+  ].sort();
+  let installed: string[] = [];
+  const recs = lines.filter((x) => x.rec.type === "cg_inventory");
+  if (recs.length !== 1) {
+    problems.push(
+      recs.length === 0
+        ? "no cg_inventory record: the image did not prove its components"
+        : `${recs.length} cg_inventory records (${linesOf(recs)})`,
+    );
+  } else {
+    const { rec: r, line } = recs[0]!;
+    if (inits[0] && line > inits[0].line) {
+      problems.push(
+        `line ${line}: cg_inventory after system/init (line ${inits[0].line})`,
+      );
+    }
+    const { v, ok, installed: inst, problems: probs } = r;
+    if (
+      Object.keys(r).sort().join() !== INVENTORY_KEYS || v !== 1 ||
+      typeof ok !== "boolean" || !strings(inst) || !strings(probs)
+    ) {
+      problems.push(
+        `line ${line}: cg_inventory record is not of the recorded shape`,
+      );
+    } else if (ok !== (probs.length === 0)) {
+      problems.push(
+        `line ${line}: cg_inventory ok=${ok} contradicts its ${probs.length} problem(s)`,
+      );
+    } else if (!ok) {
+      problems.push(...probs);
+    } else if ([...inst].sort().join() !== declared.join()) {
+      problems.push(
+        `cg_inventory installed [${
+          [...inst].sort().join(", ")
+        }] but the arm declares [${declared.join(", ")}]`,
+      );
+    } else {
+      installed = inst;
+    }
+  }
+  // Every same-session init is checked against the arm (review 2); a
+  // component counts as loaded only when every init shows it.
+  let common: string[] | null = null;
+  for (const [n, init] of inits.entries()) {
+    const r = initInventory(init, installed, manifest);
+    const tag = inits.length > 1 ? `init ${n + 1}: ` : "";
+    problems.push(...r.problems.map((p) => tag + p));
+    common = common === null
+      ? r.loaded
+      : common.filter((c) => r.loaded.includes(c));
+    if (n === 0) Object.assign(evidence, r.evidence);
+  }
+  if (inits.length === 0) return { required, loaded: [], problems, evidence };
+  for (const k of Object.keys(evidence)) {
+    if (!common!.includes(k)) delete evidence[k];
+  }
+  // Ruling 1 (m9-01 findings): one model per arm; every model seen on any
+  // record (review 1), built-in sub-agents included, must be the main model id.
+  const main = obj(obj(manifest.settings.native)["api_models"])["main"];
+  if (typeof main !== "string") {
+    problems.push(
+      "settings.native.api_models.main missing: no model pin to check",
+    );
+  } else {
+    for (
+      const [m, where] of [...modelSources].sort(([a], [b]) => a < b ? -1 : 1)
+    ) {
+      if (m !== main) {
+        problems.push(
+          `model ${m || "(none)"} ran; the arm pins ${main} (${
+            where.slice(0, SHOWN).join(", ")
+          }${where.length > SHOWN ? `, ${where.length - SHOWN} more` : ""})`,
+        );
+      }
+    }
+  }
+  return { required, loaded: common!, problems, evidence };
+}
+
+/** One system/init checked against the arm: lists, members, tools, plugins, LSP. */
+function initInventory(
+  init: Line,
+  installed: string[],
+  manifest: ParseInput["manifest"],
+): { loaded: string[]; problems: string[]; evidence: Record<string, string> } {
+  const problems: string[] = [];
+  const evidence: Record<string, string> = {};
+  const i = init.rec;
+  const version = typeof i.claude_code_version === "string"
+    ? i.claude_code_version
+    : "";
+  const builtin = Object.hasOwn(BUILTIN_INVENTORY, version)
+    ? BUILTIN_INVENTORY[version]!
+    : null;
+  if (!builtin) {
+    problems.push(
+      `no qualified built-in inventory for Claude Code ${
+        version || "(unknown)"
+      }`,
+    );
+    return { loaded: [], problems, evidence };
+  }
+  // Absence is provable only from a list that is there.
+  const bad: string[] = ["agents", "skills", "tools"].filter((k) =>
+    !strings(i[k])
+  );
+  if (
+    !Array.isArray(i["plugins"]) ||
+    !i["plugins"].every((p) => p !== null && typeof p === "object")
+  ) {
+    bad.push("plugins");
+  }
+  if (bad.length > 0) {
+    problems.push(
+      `system/init lacks a valid list for ${
+        bad.join(", ")
+      }: absence cannot be proven`,
+    );
+    return { loaded: [], problems, evidence };
+  }
+  const loaded: string[] = [];
+  const want = {
+    agents: (manifest.agents?.files ?? []).map((f) =>
+      f.path.replace(/\.md$/, "")
+    ),
+    skills: [
+      ...new Set(
+        (manifest.skills?.files ?? []).map((f) => f.path.split("/")[0]!),
+      ),
+    ],
+  };
+  for (
+    const [component, kind] of [["agents", "agent"], [
+      "skills",
+      "skill",
+    ]] as const
+  ) {
+    const seen = i[component] as string[];
+    for (const n of seen) {
+      if (!builtin[component].includes(n) && !want[component].includes(n)) {
+        problems.push(`unrequested ${kind} loaded: ${n}`);
+      }
+    }
+    if (
+      manifest[component] !== null && installed.includes(component) &&
+      want[component].length > 0 && want[component].every((n) =>
+        seen.includes(n)
+      )
+    ) {
+      loaded.push(component);
+      evidence[component] =
+        "installed (cg_inventory) and listed by system/init";
+    }
+  }
+  // One allow-list: built-in plugins plus each declared LSP component's plugin.
+  const lspSeen = new Set<string>();
+  for (const p of (i["plugins"] as unknown[]).map(obj)) {
+    const src = typeof p["source"] === "string" ? p["source"] : null;
+    if (src !== null && builtin.plugins.includes(src)) continue;
+    const decl = manifest.lsp.find((s) =>
+      Object.hasOwn(LSP_PLUGINS, s.name) && pluginIs(p, LSP_PLUGINS[s.name]!)
+    );
+    if (decl) lspSeen.add(decl.name);
+    else problems.push(`unrequested plugin loaded: ${src ?? String(p.name)}`);
+  }
+  for (const s of manifest.lsp) {
+    if (!Object.hasOwn(LSP_PLUGINS, s.name)) {
+      problems.push(`no plugin identity for LSP component ${s.name}`);
+    }
+  }
+  const lspTool = (i["tools"] as string[]).includes("LSP");
+  if (manifest.lsp.length === 0 && lspTool) {
+    problems.push("unrequested LSP tool loaded");
+  }
+  // The ONE positive LSP check (appendix section 3): preflight passed
+  // (cg_inventory installed lsp:<name>), declared plugin in init, LSP tool listed.
+  for (const s of manifest.lsp) {
+    const pre = installed.includes(`lsp:${s.name}`);
+    const plugin = lspSeen.has(s.name);
+    if (pre && plugin && lspTool) {
+      loaded.push(`lsp:${s.name}`);
+      evidence[`lsp:${s.name}`] =
+        "preflight passed (cg_inventory); plugin and LSP tool listed by system/init";
+    } else {
+      problems.push(
+        `lsp:${s.name} not loaded (preflight ${
+          pre ? "passed" : "missing"
+        }, plugin ${plugin ? "present" : "absent"}, LSP tool ${
+          lspTool ? "present" : "absent"
+        })`,
+      );
+    }
+  }
+  if (manifest.instructions !== null && installed.includes("instructions")) {
+    loaded.push("instructions");
+    evidence["instructions"] =
+      `installed (cg_inventory); loading qualified for Claude Code ${version} by ${builtin.qualified}`;
+  }
+  // Review 3: the non-MCP tools equal builtin + LSP when declared - the arm's
+  // disallowed tools (settings.native.disallowed_tools); MCP is mcpInventory's.
+  const disallowed = list(obj(manifest.settings.native)["disallowed_tools"])
+    .filter((t): t is string => typeof t === "string");
+  const expectTools = [
+    ...builtin.tools,
+    ...(manifest.lsp.length > 0 ? ["LSP"] : []),
+  ].filter((t) => !disallowed.includes(t));
+  const gotTools = (i["tools"] as string[]).filter((t) =>
+    !t.startsWith("mcp__")
+  );
+  for (const t of [...new Set(gotTools)].sort()) {
+    const n = gotTools.filter((x) => x === t).length;
+    if (!expectTools.includes(t)) problems.push(`unexpected tool ${t}`);
+    else if (n > 1) problems.push(`duplicate tool ${t} (${n}x)`);
+  }
+  for (const t of expectTools) {
+    if (!gotTools.includes(t)) problems.push(`missing tool ${t}`);
+  }
+  // Review 4: every requested and built-in member must be present.
+  const initPlugins = (i["plugins"] as unknown[]).map(obj);
+  for (const p of builtin.plugins) {
+    if (!initPlugins.some((x) => x["source"] === p)) {
+      problems.push(`missing plugin ${p}`);
+    }
+  }
+  for (
+    const [component, kind] of [["agents", "agent"], [
+      "skills",
+      "skill",
+    ]] as const
+  ) {
+    const seen = i[component] as string[];
+    for (const n of [...builtin[component], ...want[component]]) {
+      if (!seen.includes(n)) problems.push(`missing ${kind} ${n}`);
+    }
+  }
+  return { loaded, problems, evidence };
+}
+
 export function parseClaudeStream(
   text: string,
   input: Omit<ParseInput, "traceOut">,
@@ -452,6 +839,8 @@ export function parseClaudeStream(
     split.set(model, e);
   };
   for (const { model, usage: u } of perMessage.values()) addSplit(model, u);
+  /** Sub-agent tool_use_result records (gate 3: the model check reads them). */
+  const children: { line: number; model: string | null; usage: J }[] = [];
   for (const { rec, line } of of("user")) {
     const tr = obj(rec.tool_use_result);
     const tu = obj(tr.usage);
@@ -462,6 +851,7 @@ export function parseClaudeStream(
       : models.length === 1
       ? models[0]!
       : null;
+    children.push({ line, model, usage: tu });
     if (model !== null && models.includes(model)) addSplit(model, tu);
     else {
       streamProblems.push(
@@ -604,21 +994,52 @@ export function parseClaudeStream(
       (input.manifest.skills?.files ?? []).map((f) => f.path.split("/")[0]!),
     ),
   ];
+  // Review 1: every model on every record, independent of usage accounting,
+  // empty-usage skips and message-id dedup (assistant chunks, children with
+  // any usage, every result's modelUsage keys).
+  const modelSources = new Map<string, string[]>();
+  const sawModel = (m: string, where: string) =>
+    modelSources.set(m, [...(modelSources.get(m) ?? []), where]);
+  const finalUsage = obj(result?.modelUsage);
+  for (const { rec, line } of lines) {
+    if (rec.type === "assistant") {
+      if (isApiErrorSynthetic(rec, finalUsage)) continue;
+      const m = obj(rec.message).model;
+      sawModel(typeof m === "string" ? m : "", `assistant line ${line}`);
+    } else if (rec.type === "user") {
+      const m = obj(rec.tool_use_result).resolvedModel;
+      if (typeof m === "string") sawModel(m, `sub-agent line ${line}`);
+    } else if (rec.type === "result") {
+      for (const m of Object.keys(obj(rec.modelUsage))) {
+        sawModel(m, `result line ${line} modelUsage`);
+      }
+    }
+  }
+  for (const c of children) {
+    if (c.model === null) sawModel("", `sub-agent line ${c.line}`);
+  }
+  const inv = componentInventory(lines, inits, modelSources, input.manifest);
   const mcp = mcpInventory(init, input.manifest);
   const connected = mcp.loaded;
   const loaded = init
     ? [
-      ...(input.manifest.skills && wantSkills.length > 0 &&
-          wantSkills.every((s) => skillNames.has(s))
+      ...(inv.required
+        ? inv.loaded
+        : input.manifest.skills && wantSkills.length > 0 &&
+            wantSkills.every((s) => skillNames.has(s))
         ? ["skills"]
         : []),
       ...connected,
     ]
     : null;
+  // With the inventory only the toolchain stays unconfirmable; a requested
+  // hook or plugin is refused by the inventory, never unverified.
   const unobservable = requestedComponents(input.manifest).filter((c) =>
-    ["instructions", "agents", "hooks"].includes(c) ||
-    c.startsWith("plugin:") || c.startsWith("lsp:") ||
-    c.startsWith("toolchain:")
+    inv.required
+      ? c.startsWith("toolchain:")
+      : ["instructions", "agents", "hooks"].includes(c) ||
+        c.startsWith("plugin:") || c.startsWith("lsp:") ||
+        c.startsWith("toolchain:")
   );
   const telemetry: Telemetry = {
     harness_version: version,
@@ -703,6 +1124,8 @@ export function parseClaudeStream(
     // Kept apart from stream_problems: an MCP inventory mismatch is a setup
     // fact (not loaded / setup_failed), never a reason to doubt the cost.
     mcp_inventory: mcp.problems,
+    component_inventory: inv.problems,
+    component_evidence: inv.evidence,
     lsp_passive_diagnostics: null,
     capabilities: CLAUDE_CAPABILITIES,
     trace_complete: traceComplete,
@@ -716,6 +1139,7 @@ export function parseClaudeStream(
       loaded_components: loaded,
     },
     unobservable,
+    inventoryProblems: inv.problems,
     didWork,
     termination,
     usageResetAt: termination === "usage_limited" && resetSec !== null

@@ -29,6 +29,11 @@ export interface ParsedRun {
   observed: ExecutionRecord["observed"];
   /** Requested components this harness cannot confirm as loaded. */
   unobservable: string[];
+  /**
+   * Component inventory problems (spec v2 section 4, gate 1); any one refuses
+   * the execution as setup_failed. Absent when the adapter has no inventory.
+   */
+  inventoryProblems?: string[];
   didWork: boolean;
   termination: Termination | null;
   usageResetAt: string | null;
