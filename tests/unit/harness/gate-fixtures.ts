@@ -1,5 +1,6 @@
 import { dirname, join } from "@std/path";
 import { BUILD_ORDER } from "../../../scripts/harness/gate-core.ts";
+import { oracleBandOf } from "../../../scripts/harness/gate-stage.ts";
 
 /** Unit-test temp root under the launch contract's authorized output root. */
 export const TEST_TMP = join(
@@ -47,8 +48,8 @@ export async function writeTask(
 ): Promise<string> {
   await writeRefapp(join(root, "harness-tasks/refapp"));
   const dir = join(root, "harness-tasks/tasks", id);
-  // Each task owns the oracle band 85000 + (N - 1) * 100 .. + 99.
-  const band = 85000 + (Number(id.slice(3)) - 1) * 100;
+  // Each task owns its oracle band (gate-stage oracleBandOf).
+  const [band, bandTo] = oracleBandOf(Number(id.slice(3)))!;
   await write(
     dir,
     "task.yml",
@@ -74,7 +75,7 @@ fail_to_pass:
       id: `c6a1e000-0000-4000-8001-000000000${id.slice(3)}`,
       name: `CGR Oracle ${id}`,
       publisher: "CentralGauge",
-      idRanges: [{ from: band, to: band + 99 }],
+      idRanges: [{ from: band, to: bandTo }],
       dependencies: [{ name: "CGR Core" }, { name: "Library Assert" }],
     }),
   );

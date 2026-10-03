@@ -343,6 +343,22 @@ export async function testManifestIn(dir: string): Promise<TestRef[]> {
   return out.sort((a, b) => a.codeunit - b.codeunit);
 }
 
+/**
+ * Oracle object band of task HX-N: HX-001..HX-006 keep their v1 100 ids;
+ * HX-007 onward own 20 ids from 85600 (v2 pool, spec 2026-10-03 section 3).
+ * null past 89999 (HX-227 and up).
+ */
+export function oracleBandOf(
+  taskNo: number,
+): readonly [number, number] | null {
+  if (!Number.isInteger(taskNo) || taskNo < 1) return null;
+  const from = taskNo <= 6
+    ? 85000 + (taskNo - 1) * 100
+    : 85600 + (taskNo - 7) * 20;
+  const to = from + (taskNo <= 6 ? 99 : 19);
+  return to > 89999 ? null : [from, to];
+}
+
 async function subdirs(p: string): Promise<string[]> {
   if (!(await exists(p))) return [];
   const out: string[] = [];
@@ -401,11 +417,15 @@ export async function checkTask(
     problems.push("test-authoring needs reference-tests/");
   }
 
+  // fixture/<name>/ (measurement-only, appendix section 7) gets the static
+  // layer rules; gatePlan never plans a gate run for it.
+  const fixtures = await subdirs(join(dir, "fixture"));
   const layerRoots = [
     "overlay",
     "correct",
     "reference-tests",
     ...naive.map((n) => `naive/${n}`),
+    ...fixtures.map((n) => `fixture/${n}`),
     ...task.mutants.map((m) => `mutants/${m}`),
   ];
   const alText = async (path: string, where: string) => {
@@ -467,15 +487,11 @@ export async function checkTask(
     }
   }
 
-  // Each task owns the oracle band 85000 + (N - 1) * 100 .. + 99.
   const taskNo = Number(task.id.slice(3));
-  const oracleBand: readonly [number, number] = [
-    85000 + (taskNo - 1) * 100,
-    85000 + (taskNo - 1) * 100 + 99,
-  ];
-  if (!Number.isInteger(taskNo) || taskNo < 1 || oracleBand[1] > 89999) {
-    problems.push(`${task.id}: no oracle band inside 85000-89999`);
-  }
+  const band = oracleBandOf(taskNo);
+  if (!band) problems.push(`${task.id}: no oracle band inside 85000-89999`);
+  // An empty range when there is no band: every oracle id is reported.
+  const oracleBand: readonly [number, number] = band ?? [85000, 84999];
   for (const f of all) {
     const where = `${f.source}/${f.rel}`;
     // Conditional compilation could hide checked code from these rules while
@@ -574,7 +590,8 @@ export async function checkTask(
   }
   const hidden: string[] = [...task.mutants];
   if (task.fail_to_pass) {
-    const oracle = all.filter((f) => f.module === "Oracle");
+    // Only oracle/ itself: a fixture's Oracle files are band-checked, never the oracle.
+    const oracle = all.filter((f) => f.source === "oracle");
     for (const f of oracle) {
       for (const o of alObjects(f.text)) if (o.name) hidden.push(o.name);
     }
@@ -689,7 +706,12 @@ export async function checkTask(
           prefix,
         ])),
       ].filter((p) => p.startsWith(prefix)).map((p) => p.slice(prefix.length));
-      const replaced = new Set(layerFiles.map((f) => f.rel.toLowerCase()));
+      // fixture/ never stages over the refapp: its paths are not replacements.
+      const replaced = new Set(
+        layerFiles.filter((f) => !f.source.startsWith("fixture/")).map((f) =>
+          f.rel.toLowerCase()
+        ),
+      );
       for (const c of changed) {
         if (replaced.has(c.toLowerCase())) {
           problems.push(
