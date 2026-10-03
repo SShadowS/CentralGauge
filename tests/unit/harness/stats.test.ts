@@ -839,6 +839,7 @@ Deno.test("compareArms bootstrap-t: null calibration smoke (30 tasks, skewed cos
   const sims = 300;
   let rejPct = 0;
   let rejBt = 0;
+  let suppressedBt = 0;
   for (let s = 0; s < sims; s++) {
     const rand = mulberry32(1000 + s);
     const cs: Cell[] = [];
@@ -864,6 +865,7 @@ Deno.test("compareArms bootstrap-t: null calibration smoke (30 tasks, skewed cos
     });
     if (pc.p_value != null && pc.p_value < 0.05) rejPct++;
     if (bt.p_value != null && bt.p_value < 0.05) rejBt++;
+    if (bt.p_value == null) suppressedBt++;
   }
   const [ratePct, rateBt] = [rejPct / sims, rejBt / sims];
   console.log(`type I @0.05: percentile ${ratePct}, bootstrap-t ${rateBt}`);
@@ -874,6 +876,16 @@ Deno.test("compareArms bootstrap-t: null calibration smoke (30 tasks, skewed cos
   //   n=30 sigma=1.5 reps=1: 0.1105 / 0.1030 / 0.0660 / 0.0935
   //   n=40 sigma=1 reps=8:   0.0690 / 0.0610 / 0.0535 / 0.0710
   //   n=24 sigma=1 reps=3:   0.0600 / 0.0535 / 0.0420 / 0.0645
+  // Seeded regression smoke, not evidence of type I control (the stage-A gate
+  // is). Predeclared absolute binomial tolerance: 3 * sqrt(0.05 * 0.95 / sims),
+  // about 0.038 at 300 sims. A suppressed bootstrap-t test counts as a
+  // non-rejection in the rate (denominator stays `sims`); none may be
+  // suppressed here.
+  assertEquals(suppressedBt, 0);
+  assert(
+    Math.abs(rateBt - 0.05) <= 3 * Math.sqrt(0.05 * 0.95 / sims),
+    `bootstrap-t ${rateBt} outside the binomial tolerance`,
+  );
   assert(
     Math.abs(rateBt - 0.05) < Math.abs(ratePct - 0.05),
     `bootstrap-t ${rateBt} vs percentile ${ratePct}`,
@@ -955,6 +967,55 @@ Deno.test("testContrasts: bootstrap-t is the default and adds the Bonferroni int
   );
   assertEquals(c1.p_value, c1.p_value ?? null);
   assertEquals(c1.decision, c1.delta! < 0 ? c1.decision : "no_decision");
+});
+
+/** Four arms, all solved, 8 tasks; per-arm costs on dyadic noise so the dollar interaction is exact. */
+function interactionCells(p: number, l: number, r: number, rl: number) {
+  const out: Cell[] = [];
+  for (let i = 0; i < 8; i++) {
+    const e = 0.125 * (i % 3);
+    const g = 0.25 * ((i + 1) % 3);
+    const t = `t${i}`;
+    out.push(...cells("P", t, [[true, p + e]]));
+    out.push(...cells("L", t, [[true, l + e]]));
+    out.push(...cells("R", t, [[true, r + g]]));
+    out.push(...cells("RL", t, [[true, rl + g]]));
+  }
+  return out;
+}
+const interactionRow = (cs: Cell[], method?: "percentile") =>
+  testContrasts(cs, [], INTER, "cost_per_solved_task", {
+    resamples: 999,
+    seed: 7,
+    level: 0.95,
+    alpha: 0.05,
+    zeroSolve: { rule: "min_defined_share", share: 0.5 },
+    family: ["interaction"],
+    ...(method ? { method } : {}),
+  })[0]!;
+
+Deno.test("testContrasts bootstrap-t: direction comes from theta, not the dollar interaction (opposite signs)", () => {
+  // Aggregate CPS P=1, L=2, R=10, RL=12: dollar +1, log interaction log(0.6) < 0.
+  const r = interactionRow(interactionCells(1, 2, 10, 12));
+  assert(r.delta! > 0);
+  assert(r.theta! < 0);
+  assertEquals(r.p_holm !== null && r.p_holm <= 0.05, true);
+  assertEquals(r.decision, "variant_lower");
+});
+
+Deno.test("testContrasts bootstrap-t: a zero dollar interaction that rejects on theta is directional", () => {
+  // P=1, L=2, R=10, RL=11: dollar exactly 0, log interaction < 0.
+  const r = interactionRow(interactionCells(1, 2, 10, 11));
+  assertEquals(r.delta, 0);
+  assert(r.theta! < 0);
+  assertEquals(r.decision, "variant_lower");
+});
+
+Deno.test("testContrasts percentile rows keep the dollar delta for direction", () => {
+  const r = interactionRow(interactionCells(1, 2, 10, 12), "percentile");
+  assertEquals(r.method, undefined);
+  assert(r.delta! > 0);
+  assert(r.decision === "variant_higher" || r.decision === "no_decision");
 });
 
 Deno.test("compareArms/compareInteraction: zero-task returns disclose the zero-solve rule", () => {

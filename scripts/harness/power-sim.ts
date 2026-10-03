@@ -674,7 +674,8 @@ export function evaluate(
           id: x.id,
           sup: sup[i]!,
           rejected: h.reject[i]!,
-          hit: (sign) => h.reject[i]! && Math.sign(x.c.delta ?? 0) === sign,
+          // Bootstrap-t direction is theta's (log scale), as in testContrasts.
+          hit: (sign) => h.reject[i]! && Math.sign(x.c.theta ?? 0) === sign,
           ci: sup[i] ? null : x.c.ci_log ?? null,
         }));
       }
@@ -908,7 +909,7 @@ export function stageBFlagProblem(
 }
 
 /** Stage B effect: the frozen simulation.args.effect when present, else the default. */
-export function stageBEffect(frozen: Record<string, number>): number {
+export function stageBEffect(frozen: Record<string, unknown>): number {
   return frozen["effect"] === undefined
     ? EFFECT_DEFAULT
     : parseEffect(frozen["effect"]);
@@ -1174,10 +1175,18 @@ async function main(): Promise<void> {
     for (const [flag, k] of NUMERIC) {
       const v = doc.simulation.args[k];
       if (v === undefined) bad(`pre-registration simulation.args lacks ${k}`);
+      if (typeof v !== "number") {
+        bad(`pre-registration simulation.args ${k} is not a number`);
+      }
       if (cli[k] !== undefined && cli[k] !== v) {
         bad(`--${flag} ${cli[k]} differs from the frozen stage A value ${v}`);
       }
       args[k] = v;
+    }
+    // This script only simulates the fitted power gate.
+    const frozenGate = doc.simulation.args["power_gate"];
+    if (frozenGate !== undefined && frozenGate !== "fitted") {
+      bad(`frozen power_gate ${frozenGate} is not the simulated "fitted"`);
     }
     // The frozen effect when present, else EFFECT_DEFAULT; always recorded.
     try {

@@ -1457,6 +1457,24 @@ Deno.test("renderReport (M11): amendments print first, Holm is named the sole ru
   );
 });
 
+Deno.test("renderReport (M11-09b): bootstrap-t rows print the method, log and ratio intervals, Bonferroni ones, the undefined count, and label the legacy interval percentile", async () => {
+  const recs = await factorialRecords(100, "cost_per_solved_task", true);
+  const doc = await stageBFor(recs.campaign, {
+    zero_solve: { rule: "min_defined_share", share: 0.99 },
+  });
+  const text = stripAnsiCode(
+    renderReport(await buildReport(recs, { prereg: preregOf(recs, doc) })),
+  );
+  assertStringIncludes(text, "method bootstrap-t (symmetric studentized)");
+  assertStringIncludes(text, "ci_log [");
+  assertStringIncludes(text, "ci_ratio [");
+  assertStringIncludes(text, "Bonferroni ci_log [");
+  assertStringIncludes(text, "Bonferroni ci_ratio [");
+  assertStringIncludes(text, "bootstrap-t undefined ");
+  assertStringIncludes(text, "% percentile CI [");
+  assertStringIncludes(text, "percentile Bonferroni interval [");
+});
+
 Deno.test("buildReport (M11 review): with contrasts the headline is exploratory and no decision is read off an interval", async () => {
   const recs = await factorialRecords();
   const r = await buildReport(recs, {

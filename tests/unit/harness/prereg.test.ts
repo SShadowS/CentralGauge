@@ -5,6 +5,10 @@ import { stringify } from "@std/yaml";
 import { ExperimentSchema } from "../../../src/harness/config.ts";
 import { sha256Hex } from "../../../src/harness/hash.ts";
 import {
+  EFFECT_DEFAULT,
+  simArgsRecord,
+} from "../../../scripts/harness/power-sim.ts";
+import {
   familyProblems,
   loadStageAAnchor,
   loadStageBAnchor,
@@ -819,6 +823,54 @@ Deno.test("semantic comparisons ignore object key order but not content", async 
   assert(
     key(await preregProblems(await stageB(), ctx({ simulation: changed })))
       .some((x) => x.includes("frozen script and arguments")),
+  );
+});
+
+Deno.test("M11-09b: the args record power-sim writes round-trips through the schema and the campaign binding; a power_gate mismatch fails", async () => {
+  // Built by power-sim's own record builder, not a hand literal.
+  const args = simArgsRecord(
+    STAGE_A.simulation.args as unknown as Parameters<typeof simArgsRecord>[0],
+    { effect: EFFECT_DEFAULT },
+  );
+  assertEquals(args["power_gate"], "fitted");
+  const doc = (a: Record<string, unknown>) => ({
+    ...STAGE_A,
+    simulation: { ...STAGE_A.simulation, args: a },
+  });
+  const parsed = PreregSchema.parse(doc(args));
+  assertEquals(parsed.simulation.args, args);
+  const approved = await protocolSha(parsed);
+  const stageBDoc = await stageB({
+    simulation: parsed.simulation,
+    stage_a: { sha256: approved },
+  });
+  const sim = (a: Record<string, unknown>) => ({
+    ...ctx().simulation,
+    json: { ...ctx().simulation.json, args: a },
+  });
+  const withSim = (a: Record<string, unknown>) =>
+    ctx({
+      simulation: sim(a),
+      anchor: {
+        approved_protocol_sha256: approved,
+        tag_protocol_sha256: approved,
+        tag_moved: false,
+      },
+    });
+  assertEquals(await preregProblems(stageBDoc, withSim(args)), []);
+  const bad = await preregProblems(
+    stageBDoc,
+    withSim({ ...args, power_gate: "stress" }),
+  );
+  assert(bad.some((x) => x.includes("frozen script and arguments")));
+  // Only the enum is accepted for power_gate; other string args stay refused.
+  assertEquals(
+    PreregSchema.safeParse(doc({ ...args, power_gate: "nonsense" })).success,
+    false,
+  );
+  assertEquals(
+    PreregSchema.safeParse(doc({ ...args, sims: "1000" })).success,
+    false,
   );
 });
 

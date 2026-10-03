@@ -940,7 +940,12 @@ export function testContrasts(
       name: r.name,
       confirmatory: true,
       p_holm: c.p_value == null ? null : h.adjusted[j]!,
-      decision: decide(c.delta, h.reject[j]!),
+      // Bootstrap-t rows decide direction from theta (log scale); the dollar
+      // delta can differ in sign or vanish for the interaction.
+      decision: decide(
+        c.method === "bootstrap-t" ? c.theta ?? null : c.delta,
+        h.reject[j]!,
+      ),
       bonferroni_ci: c.ci === null ? null : bc!.ci,
       ...(method === "bootstrap-t"
         ? {
