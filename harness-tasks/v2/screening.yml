@@ -1,0 +1,23 @@
+# Task set v2 screening registry (spec 2026-10-03-harness-v2-design.md section 3, section 12
+# finding 2; protocol in scripts/harness/screening.ts and plan 2026-10-03-harness-v2-m8-task-set.md).
+# rules: frozen at the first seal (tag harness-v2-screen-start).
+# candidates: appended by lane-content with each task. Once a seal holds an entry, the entry is
+# fixed (only `broken` may be set) and its task folder never changes.
+# The 0/6 and 6/6 filter is a screen, not proof of intermediate difficulty; screening on the two
+# diagonal arms selects a population, and every claim is scoped to it.
+v: 1
+rules:
+  arms: [cc-v2-plain, cc-v2-realistic-lsp]
+  repeats: 3
+  easy_share: 0.2
+  hard_share: 0.2
+  kind_min: 2
+  kind_max_share: 0.4
+  required_coupling: [single-instance, temporary-table, commit-behavior]
+  coupling_min: 1
+  large_min_share: 0.5
+  borrow:
+    easy: [intermediate]
+    intermediate: [hard, easy]
+    hard: [intermediate]
+candidates: []
