@@ -5556,3 +5556,65 @@ Deno.test("openHarnessEnv concurrency 2 (M7-01 review): the full gate, arms incl
     "not authorized, refusing to run",
   );
 });
+
+Deno.test("run --dry-run --concurrency 2 (M7-01 run 002): the plan environment carries the verified gate inputs, so a valid dry run and a resume plan, and unmet conditions still refuse", async () => {
+  const t = await makeEnv();
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const never = () =>
+    Promise.reject(new Error("a dry run opens no environment"));
+  const quiet = stub(console, "log", () => {});
+  try {
+    // A first campaign at concurrency 1 (no marker), to resume below.
+    const first = await harnessRun("contract", runOpts(t), opener(t));
+    const shared = join(t.repo.root, "results", "harness");
+    await authorizedRoot(t.repo.root);
+    const markerPath = join(shared, EGRESS_MARKER);
+    const marked = JSON.parse(await Deno.readTextFile(markerPath));
+    const setMarker = (patch: Record<string, unknown>) =>
+      Deno.writeTextFile(markerPath, JSON.stringify({ ...marked, ...patch }));
+    const planner = (verify: () => Promise<string[]>) =>
+    (
+      eo: Parameters<typeof openPlanEnv>[0],
+    ) => openPlanEnv(eo, planDeps(t, [], verify));
+    const verified = (): Promise<string[]> => Promise.resolve([]);
+    const dry = (
+      over: Record<string, unknown>,
+      verify = verified,
+    ) =>
+      harnessRun(
+        "contract",
+        runOpts(t, { dryRun: true, concurrency: 2, ...over }),
+        never,
+        planner(verify),
+      );
+    await setMarker({ proxy_isolation: PROXY_ISOLATION });
+    // New campaign and resume, every condition met: planned, not refused.
+    assertEquals((await dry({})).planned, 2);
+    const resumed = await dry({ campaign: first.campaignId });
+    assertEquals(resumed.campaignId, first.campaignId);
+    // Wrong or missing proxy_isolation, N=3, not enforced, unverifiable.
+    await setMarker({ proxy_isolation: 1 });
+    await assertRejects(() => dry({}), ConfigurationError, "proxy_isolation 1");
+    await setMarker({ proxy_isolation: PROXY_ISOLATION });
+    await assertRejects(
+      () => dry({ concurrency: 3 }),
+      ConfigurationError,
+      "exceeds the placed maximum 2",
+    );
+    await assertRejects(
+      () => dry({}, () => Promise.resolve(["proxy not running"])),
+      ConfigurationError,
+    );
+    await setMarker({ state: "qualified" });
+    await assertRejects(
+      () => dry({ campaign: first.campaignId }),
+      ConfigurationError,
+      "not enforced",
+    );
+  } finally {
+    quiet.restore();
+  }
+});

@@ -221,7 +221,15 @@ export type PlanEnv =
     | "symbols"
     | "egressEnforced"
   >
-  & Pick<Partial<HarnessEnv>, "now">;
+  & Pick<Partial<HarnessEnv>, "now" | "proxyIsolation">
+  & {
+    /**
+     * The verified marker places sandboxes (a plan env has no egress runtime
+     * to show it). With proxyIsolation, this is what the concurrency gate
+     * sees on a dry run, the same inputs as the real environment's.
+     */
+    egressPlaced?: boolean;
+  };
 
 /** A dry run: the plan and the egress refusal, without a lock or containers. */
 export function planCampaign(
@@ -279,9 +287,13 @@ export interface PlacedGate {
 
 /** The gate's view of a campaign environment. */
 export const placedGateOf = (
-  env: Pick<HarnessEnv, "egress" | "egressEnforced" | "proxyIsolation">,
+  env:
+    & Pick<HarnessEnv, "egressEnforced" | "proxyIsolation">
+    & Pick<Partial<HarnessEnv>, "egress">
+    & Pick<PlanEnv, "egressPlaced">,
 ): PlacedGate => ({
-  placed: env.egress !== undefined || env.egressEnforced,
+  placed: env.egress !== undefined || env.egressEnforced ||
+    env.egressPlaced === true,
   enforced: env.egressEnforced,
   proxyIsolation: env.proxyIsolation,
 });

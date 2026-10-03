@@ -1302,15 +1302,55 @@ const refusedGate = async (t: TestEnv, over: Partial<RunOptions> = {}) =>
     "--concurrency",
   )).message;
 
-Deno.test("M7-01: concurrency 2 with every condition met is allowed (plan and run)", async () => {
+Deno.test("M7-01: concurrency 2 with every condition met is allowed; two blocks run at once with separate registrations (plan and run)", async () => {
   const t = await gated();
+  // Two repeats of the one task: two blocks, so two workers have work.
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  );
   const s = await runCampaign(
     t.env,
     "contract",
     opts({ concurrency: 2, dryRun: true }),
     io(),
   );
-  assertEquals(s.planned, 2);
+  assertEquals(s.planned, 4);
+  // Cells in flight, per execution id; registrations live, per source.
+  const inFlight = new Set<string>();
+  let maxInFlight = 0;
+  const behave = t.docker.behavior;
+  t.docker.behavior = async (call, run) => {
+    inFlight.add(call.labels.get(EXECUTION_LABEL)!);
+    maxInFlight = Math.max(maxInFlight, inFlight.size);
+    await new Promise((r) => setTimeout(r, 25));
+    try {
+      return await behave(call, run);
+    } finally {
+      inFlight.delete(call.labels.get(EXECUTION_LABEL)!);
+    }
+  };
+  const eg = t.env.egress!;
+  const register = eg.register.bind(eg);
+  const live = new Set<string>();
+  const everRegistered: string[] = [];
+  let maxLive = 0;
+  eg.register = (o) => {
+    const r = register(o);
+    live.add(o.source);
+    everRegistered.push(o.source);
+    maxLive = Math.max(maxLive, live.size);
+    const unregister = r.reg.unregister.bind(r.reg);
+    r.reg.unregister = () => {
+      live.delete(o.source);
+      return unregister();
+    };
+    return r;
+  };
   const ran = await runCampaign(
     t.env,
     "contract",
@@ -1318,6 +1358,15 @@ Deno.test("M7-01: concurrency 2 with every condition met is allowed (plan and ru
     io(),
   );
   assertEquals(ran.ran, s.planned);
+  assertEquals(maxInFlight, 2, "both blocks' cells were in flight at once");
+  assert(everRegistered.length >= 2, "every cell registers with the proxy");
+  assertEquals(maxLive, 2, "two registrations were live at once");
+  assertEquals(
+    new Set(everRegistered).size,
+    everRegistered.length,
+    "no source is registered twice",
+  );
+  assertEquals(live.size, 0, "every registration was revoked");
 });
 
 Deno.test("M7-01: concurrency 3 is refused even when every other condition holds", async () => {

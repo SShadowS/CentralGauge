@@ -316,6 +316,11 @@ export async function openPlanEnv(
       [SYMBOLS_LOCK_PATH],
     );
   }
+  // The marker is verified exactly as the real environment verifies it (a
+  // failing one throws), and the gate inputs are read after that, so a dry
+  // run's concurrency gate sees what a real run's would.
+  const sharedResults = join(o.repoRoot, "results", "harness");
+  const mode = await egressMode(sharedResults, deps.verifyEgress);
   return {
     repoRoot: o.repoRoot,
     harnessRoot: join(o.repoRoot, "harness"),
@@ -323,10 +328,9 @@ export async function openPlanEnv(
     store: new RecordStore(o.resultsDir),
     docker: deps.docker(),
     symbols,
-    egressEnforced: await resolveEgress(
-      join(o.repoRoot, "results", "harness"),
-      deps.verifyEgress,
-    ),
+    egressEnforced: mode === "enforced",
+    egressPlaced: mode !== "off",
+    proxyIsolation: await markerProxyIsolation(sharedResults),
   };
 }
 
