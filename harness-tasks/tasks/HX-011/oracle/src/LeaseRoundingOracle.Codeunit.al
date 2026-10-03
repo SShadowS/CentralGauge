@@ -81,6 +81,9 @@ codeunit 85680 "HX011 Lease Rounding Oracle"
         InitHX11(1);
 
         Assert.AreEqual(104.00, LeaseMgt.MonthlyRate(101, 3), '104.03 is rounded to whole units');
+
+        InitHX11(0.05);
+        Assert.AreEqual(104.05, LeaseMgt.MonthlyRate(101, 3), 'The rate uses the precision in effect when it is computed');
     end;
 
     [Test]
@@ -172,13 +175,13 @@ codeunit 85680 "HX011 Lease Rounding Oracle"
         ScheduleLine: Record "CGR Lease Schedule Line";
     begin
         ScheduleLine.SetRange("Contract No.", LeaseNo);
-        Assert.AreEqual(3, ScheduleLine.Count(), 'One schedule line per month');
+        Assert.AreEqual(3, ScheduleLine.Count(), StrSubstNo('Lease %1 has one schedule line per month', LeaseNo));
         ScheduleLine.Get(LeaseNo, 10000);
-        Assert.AreEqual(First, ScheduleLine.Amount, 'First installment');
+        Assert.AreEqual(First, ScheduleLine.Amount, StrSubstNo('Lease %1, schedule line 10000: first installment', LeaseNo));
         ScheduleLine.Get(LeaseNo, 20000);
-        Assert.AreEqual(Second, ScheduleLine.Amount, 'Second installment');
+        Assert.AreEqual(Second, ScheduleLine.Amount, StrSubstNo('Lease %1, schedule line 20000: second installment', LeaseNo));
         ScheduleLine.Get(LeaseNo, 30000);
-        Assert.AreEqual(Third, ScheduleLine.Amount, 'Last installment takes the remainder');
+        Assert.AreEqual(Third, ScheduleLine.Amount, StrSubstNo('Lease %1, schedule line 30000: last installment takes the remainder', LeaseNo));
     end;
 
     local procedure AssertInvoiceLine(LeaseNo: Code[20]; ScheduleLineNo: Integer; Expected: Decimal)
@@ -186,6 +189,6 @@ codeunit 85680 "HX011 Lease Rounding Oracle"
         InvoiceLine: Record "CGR Lease Invoice Line";
     begin
         InvoiceLine.Get(LeaseNo, ScheduleLineNo);
-        Assert.AreEqual(Expected, InvoiceLine.Amount, 'The invoice line bills its installment');
+        Assert.AreEqual(Expected, InvoiceLine.Amount, StrSubstNo('Lease %1, invoice line %2 bills its installment', LeaseNo, ScheduleLineNo));
     end;
 }

@@ -8,6 +8,7 @@ source: refapp
 attachments: []
 scorers: [build, pass_to_pass, fail_to_pass]
 pass_to_pass:
+  - { codeunit: 80000, procedures: [LeaseRateUsesCoreInternal] }
   - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
   - { codeunit: 80052, procedures: [ZeroPrecisionFallsBackToCents, SetupPrecisionApplied, WholeUnitPrecision] }
   - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay, InvoiceAmountUsesSetupPrecision, HandledLinesAreNotInserted, AfterEventSeesEveryCreatedLine] }
