@@ -1,0 +1,121 @@
+{
+  "steps": [
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_lsp_01",
+          "name": "ToolSearch",
+          "input": { "query": "select:LSP", "max_results": 1 }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_lsp_02",
+          "name": "LSP",
+          "input": {
+            "operation": "documentSymbol",
+            "filePath": "C:\\workspace\\Core\\src\\LeaseMath.Codeunit.al",
+            "line": 1,
+            "character": 1
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_lsp_03",
+          "name": "LSP",
+          "input": {
+            "operation": "hover",
+            "filePath": "C:\\workspace\\Test\\src\\LeasingTests.Codeunit.al",
+            "line": 7,
+            "character": 27
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_lsp_04",
+          "name": "LSP",
+          "input": {
+            "operation": "findReferences",
+            "filePath": "C:\\workspace\\Core\\src\\LeaseMath.Codeunit.al",
+            "line": 3,
+            "character": 24
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_lsp_05",
+          "name": "Read",
+          "input": {
+            "file_path": "C:\\workspace\\Leasing\\src\\LeaseMgt.Codeunit.al"
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_lsp_06",
+          "name": "Edit",
+          "input": {
+            "file_path": "C:\\workspace\\Leasing\\src\\LeaseMgt.Codeunit.al",
+            "old_string": "exit(Round(BaseRate * LeaseMath.RateFactor(Months), 0.01));",
+            "new_string": "Foo := 1; exit(Round(BaseRate * LeaseMath.RateFactor(Months), 0.01));"
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_lsp_07",
+          "name": "Bash",
+          "input": { "command": "sleep 20" }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_stub_lsp_08",
+          "name": "Edit",
+          "input": {
+            "file_path": "C:\\workspace\\Leasing\\src\\LeaseMgt.Codeunit.al",
+            "old_string": "Foo := 1; exit(Round(BaseRate * LeaseMath.RateFactor(Months), 0.01));",
+            "new_string": "exit(Round(BaseRate * LeaseMath.RateFactor(Months), 0.01));"
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    },
+    {
+      "content": [{ "type": "text", "text": "done" }],
+      "stop_reason": "end_turn"
+    }
+  ]
+}
