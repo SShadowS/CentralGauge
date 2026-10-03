@@ -1075,3 +1075,21 @@ Deno.test("annotation uniqueness: a correct hash line plus a malformed duplicate
   }
   await Deno.remove(r.repo, { recursive: true });
 });
+
+// M11-10c: the same familyProblems runs at campaign start (preregProblems) and
+// in `harness report`, so one check covers both.
+Deno.test("primary metric: an experiment whose primary_metric differs from the preregistration's is refused", async () => {
+  const b = await stageB();
+  const passRate = ExperimentSchema.parse({
+    ...EXP,
+    primary_metric: "pass_rate",
+  });
+  const msg = (ps: string[]) => ps.find((p) => p.includes("primary_metric"));
+  const fam = msg(familyProblems(b, passRate));
+  assert(fam?.includes("pass_rate") && fam.includes("cost_per_solved_task"));
+  assert(
+    msg(await preregProblems(b, ctx({ experiment: passRate }))) !== undefined,
+  );
+  assertEquals(msg(familyProblems(b, EXP)), undefined);
+  assertEquals(msg(await preregProblems(b, ctx())), undefined);
+});
