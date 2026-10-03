@@ -1,0 +1,16 @@
+# Harness v2 confirmatory campaign skeleton (spec v2 section 7): realistic {off,on} x LSP {off,on}.
+#   cc-v2-plain          realistic off, LSP off   baseline
+#   cc-v2-plain-lsp      realistic off, LSP on    C1 = plain-lsp vs plain
+#   cc-v2-realistic      realistic on,  LSP off   C3 = realistic vs plain ("realistic effect without LSP")
+#   cc-v2-realistic-lsp  realistic on,  LSP on    C2 = realistic-lsp vs realistic
+# Contrasts, Holm family, seeds and arm-order randomization: M11 pre-registration stage A.
+# tasks and repeats: set at the M8 freeze (stage B design numbers); the v1 set stands in until
+# then so `harness validate` stays green. Arms resolve only on the one r3 image (M9-17).
+id: cc-v2-factorial
+hypothesis: "The AL language server and the realistic team setup each lower Claude Code's cost per solved task on the frozen v2 task population."
+primary_metric: cost_per_solved_task
+baseline: cc-v2-plain
+variants: [cc-v2-plain-lsp, cc-v2-realistic, cc-v2-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/*"
+repeats: 5

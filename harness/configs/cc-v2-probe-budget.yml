@@ -1,0 +1,14 @@
+# M9 proof config (developmental). Never part of an experiment.
+id: cc-v2-probe-budget
+harness: claude-code
+harness_version: "2.1.282"
+image_revision: "3-dev-M9-07"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/probe-m9/budget/instructions
+  skills: bundles/realistic/skills
+  agents: bundles/realistic/agents
+  mcp: [al-tools]
+limits: { timeout_min: 30, max_budget_usd: 0.5 }
