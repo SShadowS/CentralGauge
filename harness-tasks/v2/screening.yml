@@ -24,3 +24,36 @@ candidates:
   - id: HX-007
     prior: intermediate
     size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-008
+    prior: hard
+    size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-009
+    prior: intermediate
+    size: { objects: 4, files: 4, reuse: "CGR Working Days.WorkingDaysBetween", traces: null }
+  - id: HX-010
+    prior: easy
+    size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-011
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: "CGR Amount Rounding.RoundAmount", traces: null }
+  - id: HX-012
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-013
+    prior: hard
+    size: { objects: 3, files: 3, reuse: "CGR Service Plan Mgt.IsServiceDue", traces: "CGR Service Plan Mgt.OnAfterServiceRegistered" }
+  - id: HX-014
+    prior: intermediate
+    size: { objects: 6, files: 6, reuse: null, traces: "CGR Service Interval" }
+  - id: HX-017
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Rental-Post.OnAfterPostRentalContract" }
+  - id: HX-015
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-018
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Service Plan Mgt.OnAfterServiceRegistered" }
+  - id: HX-016
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Outbox Dispatcher.OnSendEntry" }

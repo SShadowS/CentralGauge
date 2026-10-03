@@ -1,0 +1,20 @@
+id: HX-013
+refapp_version: refapp-v2-rc1
+kind: bugfix
+prompt: prompt.md
+touches: [Fleet, Core, Rental]
+coupling: [events, interface]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80055, procedures: [AssignPlanSetsStrategy, NextServiceDateFromPlanInterval, DueByKmWithoutPlan, ServiceKmAboveMileageFails] }
+  - { codeunit: 80010, procedures: [CheckOutTwiceFails, ReturnWithoutDamageReleasesVehicle] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 85720, procedures: [ServiceOnDamagedVehicleKeepsBlock, ServiceReleasesUndamagedDueVehicle, RepairKeepsKmDueVehicleBlocked, RepairKeepsHeavyDutyDueBlocked, RepairReleasesHeavyDutyBelowInterval, RepairKeepsPlanDateDueBlocked, RepairReleasesDayBeforePlanDate, LateServiceStillDueStaysBlocked, RepairWithOtherDamageOpenStaysBlocked, RepairedDueVehicleCannotBeCheckedOut, ServiceThenRepairReleases, LateServiceByDateStaysBlocked] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

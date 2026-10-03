@@ -1,0 +1,20 @@
+id: HX-015
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Rental, Core, Fleet]
+coupling: [temporary-table, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, ReturnWithoutDamageReleasesVehicle, PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged] }
+  - { codeunit: 80053, procedures: [DailyPreviewMatchesPricing, PreviewMatchesPricingAtCoarsePrecision] }
+  - { codeunit: 80054, procedures: [PostsEveryReturnedContractInFilter, FailedContractIsRolledBackAndLogged] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 85760, procedures: [PreviewMatchesPostedEntry, PreviewWritesNothing, PreviewRunsNoPostingEvents, PreviewIgnoresCommittingExtension, PreviewReplacesBuffer, PreviewOfUnreturnedContractFails, PreviewOfOpenContractFails,PreviewAmountAtCoarsePrecision, PostingStillRunsEvents] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
