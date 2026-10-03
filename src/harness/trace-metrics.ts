@@ -26,6 +26,14 @@ export interface TraceMetrics {
   subagents: number | null;
   skill_invocations: Record<string, number> | null;
   mcp_calls: Record<string, number>;
+  /**
+   * LSP tool calls (transport lsp:<operation>, M10; ruling 9): total and per
+   * operation, errors included. null when the trace's parser does not emit
+   * the lsp_call capability (before claude-code-trace@5): never 0.
+   */
+  lsp_calls: { total: number; by_op: Record<string, number> } | null;
+  /** Shell calls whose recorded command names the LSP install or binaries (best-effort M10 audit); null as lsp_calls. */
+  lsp_shell_calls: number | null;
   compactions: number | null;
   retries: number | null;
   rules: string;
@@ -46,7 +54,11 @@ function within(root: string, path: string): boolean {
   return rel !== "" && !/^\.\.([\\/]|$)/.test(rel) && !isAbsolute(rel);
 }
 
-const bump = (m: Record<string, number>, k: string) => (m[k] = (m[k] ?? 0) + 1);
+// Own keys only: an LSP operation or skill named "constructor" must not read the inherited function.
+const bump = (
+  m: Record<string, number>,
+  k: string,
+) => (m[k] = (Object.hasOwn(m, k) ? m[k]! : 0) + 1);
 
 export function traceMetrics(
   events: TraceEvent[],
@@ -72,6 +84,8 @@ export function traceMetrics(
     subagents: has("subagent_spawn") ? 0 : null,
     skill_invocations: has("skill_invoke") ? {} : null,
     mcp_calls: {},
+    lsp_calls: has("lsp_call") ? { total: 0, by_op: {} } : null,
+    lsp_shell_calls: has("lsp_call") ? 0 : null,
     compactions: has("compaction") ? 0 : null,
     retries: has("retry") ? 0 : null,
     rules: `rules@${RULES_VERSION}`,
@@ -97,6 +111,16 @@ export function traceMetrics(
     if (e.transport?.startsWith("mcp:")) {
       bump(m.mcp_calls, e.transport.slice(4));
     }
+    if (m.lsp_calls !== null && e.transport?.startsWith("lsp:")) {
+      m.lsp_calls.total++;
+      bump(m.lsp_calls.by_op, e.transport.slice(4));
+    }
+    if (
+      m.lsp_shell_calls !== null && e.transport === "shell" &&
+      e.command !== null &&
+      /cg-lsp|al-lsp-wrapper|al-call-hierarchy|EditorServices|CodeAnalysis\.dll/i
+        .test(e.command)
+    ) m.lsp_shell_calls++;
     // A classification from other rules is replayed from the full command;
     // a dropped command is never guessed.
     let c: { category: Category; classifier: string };

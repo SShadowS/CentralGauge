@@ -57,6 +57,13 @@ export function transportOf(tool: string): string {
   return SHELL_TOOLS.has(tool) ? "shell" : "builtin";
 }
 
+/** Claude Code's LSP tool (M10): transport lsp:<operation>; the operation is model input, so only a plain name passes. */
+function lspTransport(op: unknown): string {
+  return typeof op === "string" && /^[A-Za-z]{1,40}$/.test(op)
+    ? `lsp:${op}`
+    : "lsp:invalid";
+}
+
 export interface ClaudeTrace {
   events: TraceEvent[];
   problems: string[];
@@ -327,7 +334,9 @@ export function claudeTrace(
         call_id: id,
         request_id: requestId,
         tool: name,
-        transport: transportOf(name),
+        transport: name === "LSP"
+          ? lspTransport(input["operation"])
+          : transportOf(name),
         model,
       };
       push({
