@@ -19,6 +19,7 @@ import {
   redactText,
   removeSecrets,
   runSandbox,
+  SANDBOX_MEMORY,
   SANDBOX_USER,
   sandboxName,
   type SandboxResult,
@@ -1284,4 +1285,33 @@ Deno.test({
     await removeSecrets(dir);
     assert(!await exists(dir));
   },
+});
+
+Deno.test("buildRunArgs (M10-01d): --memory 3g right after --isolation hyperv, for every spec shape", async () => {
+  assertEquals(SANDBOX_MEMORY, "3g");
+  const base = await spec({});
+  const shapes: SandboxSpec[] = [
+    base,
+    await spec({
+      extraMounts: [{ src: "C:\\h\\sol", dst: "C:\\mock\\variant" }],
+    }),
+    {
+      ...base,
+      network: "cg-harness-sandbox",
+      command: ["powershell", "-File", "C:\\config\\p.ps1"],
+    },
+    await spec({ command: ["powershell", "-File", "C:\\p.ps1"] }),
+    await spec({ env: { a: "1", B: "2", _c: "3" } }),
+  ];
+  for (const s of shapes) {
+    const args = buildRunArgs(s);
+    const at = args.indexOf("--isolation");
+    assertEquals(args.slice(at, at + 4), [
+      "--isolation",
+      "hyperv",
+      "--memory",
+      "3g",
+    ]);
+    assertEquals(args.filter((a) => a === "--memory" || a === "-m").length, 1);
+  }
 });
