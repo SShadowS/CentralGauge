@@ -6,10 +6,11 @@ import {
   fileTimeBounds,
   headerBytes,
   MAX_HEADER_BYTES,
-} from "../../../harness/images/claude-code/lsp/lsp-probe.mjs";
+} from "../../../harness/images/claude-code/lsp/lsp-probe-lib.mjs";
 
-// M10-01b run 002: clock bounds and fragmented header limits, through the
-// probe's own pure helpers (importing the probe starts no session).
+// M10-01b run 002/003: clock bounds and fragmented header limits, through the
+// probe's pure helper library (the probe itself is only ever run, never
+// imported).
 const FT = (ms: number, us = 0) =>
   (BigInt(ms) + 11644473600000n) * 10000n + BigInt(us) * 10n;
 
@@ -161,6 +162,60 @@ Deno.test({
     const r = await probe(await setup(), ["--preflight"]);
     assertEquals([r.code, r.stdout], [0, ""], r.stderr);
     assertStringIncludes(r.stderr, "[OK] lsp-probe preflight: 2 symbols");
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe (M10-01b run 003): run under node and deno, through another path spelling or a junction, it still does real work (never a silent exit 0)",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    const node = await new Deno.Command("node", { args: ["--version"] })
+      .output().then((o) => o.success, () => false);
+    const runners: [string, string[]][] = [[Deno.execPath(), ["run", "-A"]]];
+    if (node) runners.push(["node", []]);
+    // Node picks the module format from the extension case-sensitively, so
+    // only the directory part changes case.
+    const base = "lsp-probe.mjs";
+    const dir = PROBE.slice(0, -base.length - 1);
+    const upper = join(dir.toUpperCase(), base);
+    // A junction to the probe's folder (no admin needed): node resolves the
+    // main module through it, which made run 002's lexical isMain false and
+    // the probe exit 0 with no session.
+    const link = join(s.dir, "probe-link");
+    const mk = await new Deno.Command("cmd", {
+      args: ["/c", "mklink", "/J", link, dir],
+      stdout: "null",
+      stderr: "piped",
+    }).output();
+    assert(mk.success, new TextDecoder().decode(mk.stderr));
+    try {
+      for (const [cmd, pre] of runners) {
+        for (const script of [PROBE, upper, join(link, base)]) {
+          const out = await new Deno.Command(cmd, {
+            args: [...pre, script, "--preflight"],
+            env: {
+              CG_LSP_PLUGIN: s.plugin,
+              CG_LSP_WORKSPACE: s.ws,
+              CG_LSP_SHUTDOWN_MS: "1500",
+            },
+            stdout: "piped",
+            stderr: "piped",
+          }).output();
+          const err = new TextDecoder().decode(out.stderr);
+          assertEquals(out.code, 0, `${cmd} ${script}: ${err}`);
+          assertStringIncludes(
+            err,
+            "[OK] lsp-probe preflight: 2 symbols",
+            `${cmd} ${script}`,
+          );
+        }
+      }
+    } finally {
+      // rmdir removes the junction itself, never the probe folder behind it.
+      await new Deno.Command("cmd", { args: ["/c", "rmdir", link] }).output();
+    }
   },
 });
 
