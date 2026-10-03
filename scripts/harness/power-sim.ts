@@ -424,10 +424,10 @@ function populationCps(
   ) as Record<SimArm, number>;
 }
 
-/** The frozen effect: a 20% lower population cost per solved on the target contrast. */
-export const EFFECT_DEFAULT = 0.2;
+/** The pre-registered effect: a 30% lower population cost per solved on the target contrast (owner decision 2026-10-03-m11-inference-amendment.md). */
+export const EFFECT_DEFAULT = 0.3;
 
-/** Effect multiplier giving an `effect` (default 20%) lower population cost per solved on the scenario's target contrast; nulls are exactly 0. */
+/** Effect multiplier giving an `effect` (default 30%) lower population cost per solved on the scenario's target contrast; nulls are exactly 0. */
 export function calibrate(
   spec: Omit<RunSpec, "multiplier">,
   design: Design,
@@ -435,7 +435,7 @@ export function calibrate(
   seed: number,
   K = 200,
   effect = EFFECT_DEFAULT,
-): { multiplier: number; ratio: number; truth: Truth } {
+): { multiplier: number; ratio: number; truth: Truth; truth_log: Truth } {
   const sc = SCENARIOS[spec.scenario];
   const target = 1 - effect;
   const at = (m: number) =>
@@ -478,10 +478,24 @@ export function calibrate(
   for (const x of CONTRASTS) {
     truth[x.id] = sc.signs[x.id] ? delta(x.baseline, x.variant) : 0;
   }
+  // Log-scale truth (bootstrap-t interval coverage): log cps ratio, exactly 0 for null members.
+  const lg = (b: SimArm, v: SimArm) => Math.log(c[v]) - Math.log(c[b]);
+  const truth_log: Truth = {
+    C1: 0,
+    C2: 0,
+    C3: 0,
+    interaction: sc.signs["interaction"]
+      ? lg("real", "real_lsp") - lg("plain", "lsp")
+      : 0,
+  };
+  for (const x of CONTRASTS) {
+    truth_log[x.id] = sc.signs[x.id] ? lg(x.baseline, x.variant) : 0;
+  }
   return {
     multiplier,
     ratio: sc.target ? c[sc.target.variant] / c[sc.target.baseline] : 1,
     truth,
+    truth_log,
   };
 }
 
@@ -516,7 +530,7 @@ export interface DesignResult {
 
 export function evaluate(
   design: Design,
-  spec: RunSpec & { fitName: FitName; truth: Truth },
+  spec: RunSpec & { fitName: FitName; truth: Truth; truth_log: Truth },
   o: {
     sims: number;
     resamples: number;
@@ -575,6 +589,7 @@ export function evaluate(
       rejected: boolean;
       /** The expected-sign decision was reached. */
       hit: (sign: -1 | 1) => boolean;
+      /** Bootstrap-t interval on the log scale (covers truth_log). */
       ci: [number, number] | null;
     }
     const outs: Record<"A" | "B", Out[]> = { A: [], B: [] };
@@ -597,14 +612,14 @@ export function evaluate(
         );
         outs[key] = fam.map((id) => {
           const r = rows.find((x) => x.id === id)!;
-          const sup = r.p_value === null || r.ci === null;
+          const sup = r.p_value === null || r.ci_log == null;
           return {
             id,
             sup,
             rejected: r.decision !== "no_decision",
             hit: (sign) =>
               r.decision === (sign < 0 ? "variant_lower" : "variant_higher"),
-            ci: sup ? null : r.ci,
+            ci: sup ? null : r.ci_log!,
           };
         });
       }
@@ -614,6 +629,7 @@ export function evaluate(
         seed,
         level: 0.95,
         zeroSolve: loose,
+        method: "bootstrap-t" as const,
       };
       const comps = fam.map((id) => {
         if (id === "interaction") {
@@ -641,11 +657,15 @@ export function evaluate(
           arms: [x.baseline, x.variant] as string[],
         };
       });
+      // Rule A stays the analytic undefinedProb (zero-solve resamples only):
+      // an approximation, it ignores resamples with SE* = 0 that bootstrap-t
+      // also counts undefined. Rule B reads the bootstrap-t undefined share.
       const supA = comps.map((x) =>
         u < undefinedProb(cells, x.arms, o.campaignResamples)
       );
       const supB = comps.map((x) =>
-        1 - x.c.undefined_share < o.ruleBShare || x.c.ci === null
+        1 - (x.c.bt_undefined_share ?? 1) < o.ruleBShare ||
+        x.c.ci_log == null
       );
       for (const [key, sup] of [["A", supA], ["B", supB]] as const) {
         const ps = comps.map((x, i) => (sup[i] ? null : x.c.p_value ?? null));
@@ -655,7 +675,7 @@ export function evaluate(
           sup: sup[i]!,
           rejected: h.reject[i]!,
           hit: (sign) => h.reject[i]! && Math.sign(x.c.delta ?? 0) === sign,
-          ci: sup[i] ? null : x.c.ci,
+          ci: sup[i] ? null : x.c.ci_log ?? null,
         }));
       }
     }
@@ -672,7 +692,7 @@ export function evaluate(
         }
         if (x.ci) {
           k.cov[x.id]![1]!++;
-          const tv = spec.truth[x.id as FamilyId];
+          const tv = spec.truth_log[x.id as FamilyId];
           if (x.ci[0] <= tv && tv <= x.ci[1]) k.cov[x.id]![0]!++;
         }
       }
@@ -748,9 +768,10 @@ export function confirmDesign(
   sens: DesignResult[],
   key: "A" | "B",
   alpha: number,
+  powerScenario: PowerScenario = "fitted",
 ): boolean {
   enoughSims([...exact, ...sens]);
-  return chooseDesign(exact, key, alpha) !== null &&
+  return chooseDesign(exact, key, alpha, powerScenario) !== null &&
     sens.every((r) =>
       fwerOk(r.byRule[key], alpha) && coverageOk(r.byRule[key])
     );
@@ -767,10 +788,14 @@ const EXPECTED = [
 ]
   .flatMap((s) => ["fitted", "stress"].map((f) => `${s}|${f}`));
 
+/** Which results the power >= 0.8 gate applies to (owner amendment: fitted only). Stress power is always computed and reported. */
+export type PowerScenario = "fitted" | "all";
+
 export function chooseDesign(
   results: DesignResult[],
   key: "A" | "B",
   alpha = ALPHA,
+  powerScenario: PowerScenario = "fitted",
 ): Design | null {
   enoughSims(results);
   const designs = [
@@ -799,7 +824,10 @@ export function chooseDesign(
     }
     const pass = mine.every((r) => {
       const s = r.byRule[key];
-      return props(s.power).every((p) => p.p >= 0.8) && fwerOk(s, alpha) &&
+      const powerOk = powerScenario === "all" || r.fit === "fitted"
+        ? props(s.power).every((p) => p.p >= 0.8)
+        : true;
+      return powerOk && fwerOk(s, alpha) &&
         s.suppressed.p < 0.05 &&
         r.selection_failures.p < 0.05 && coverageOk(s);
     });
@@ -886,16 +914,21 @@ export function stageBEffect(frozen: Record<string, number>): number {
     : parseEffect(frozen["effect"]);
 }
 
-/** The args record: today's numeric keys only, plus effect (and grid when given) once a sweep flag is in play. */
+/**
+ * The args record: the numeric keys, the effective effect and power_gate
+ * ALWAYS (M11-09b, decision 2026-10-03-m11-inference-amendment.md; this
+ * intentionally changes args_sha256 versus earlier runs), plus grid only when
+ * --grid was given.
+ */
 export function simArgsRecord(
   args: SimArgs,
-  sweep: { effect: number; grid?: GridSpec | null } | null,
+  sweep: { effect: number; grid?: GridSpec | null },
 ): Record<string, unknown> {
-  if (!sweep) return { ...args };
   return {
     ...args,
     effect: sweep.effect,
-    ...(sweep.grid === undefined ? {} : { grid: sweep.grid }),
+    power_gate: "fitted",
+    ...(sweep.grid ? { grid: sweep.grid } : {}),
   };
 }
 
@@ -911,7 +944,7 @@ export function argsHashInput(
     inputs: { path: string; sha256: string }[];
     arm_prefix: string;
   },
-  sweep: { effect: number; grid?: GridSpec | null } | null,
+  sweep: { effect: number; grid?: GridSpec | null },
 ) {
   return { ...p, args: simArgsRecord(p.args, sweep) };
 }
@@ -1127,11 +1160,10 @@ async function main(): Promise<void> {
   let family: string[];
   let frozenRule: ZeroSolveRule | null = null;
   const args = {} as SimArgs;
-  // M11-13c diagnostic sweep: set only by --grid / --effect (stage A); null keeps today's args record.
+  // M11-13c sweep flags (stage A); the effective effect is always recorded (M11-09b).
   let effect = EFFECT_DEFAULT;
   let gridSpec: GridSpec | null = null;
   let gridDesigns = GRID_DESIGNS;
-  let sweep: { effect: number; grid?: GridSpec | null } | null = null;
   if (a.prereg !== undefined) {
     stage = "B";
     const problem = stageBFlagProblem({ grid: a.grid, effect: a.effect });
@@ -1147,13 +1179,11 @@ async function main(): Promise<void> {
       }
       args[k] = v;
     }
-    if (doc.simulation.args["effect"] !== undefined) {
-      try {
-        effect = stageBEffect(doc.simulation.args);
-      } catch (e) {
-        bad((e as Error).message);
-      }
-      sweep = { effect };
+    // The frozen effect when present, else EFFECT_DEFAULT; always recorded.
+    try {
+      effect = stageBEffect(doc.simulation.args);
+    } catch (e) {
+      bad((e as Error).message);
     }
     // The evaluated rule B share must be the frozen one, not just a flag value.
     if (
@@ -1188,12 +1218,13 @@ async function main(): Promise<void> {
       } catch (e) {
         bad((e as Error).message);
       }
-      sweep = { effect, grid: gridSpec };
-      console.log(
-        colors.yellow(
-          "[WARN] --grid/--effect given: this is a diagnostic sweep, not the frozen pipeline",
-        ),
-      );
+      if (gridSpec !== null || effect !== EFFECT_DEFAULT) {
+        console.log(
+          colors.yellow(
+            "[WARN] --grid/--effect given: this is a diagnostic sweep, not the frozen pipeline",
+          ),
+        );
+      }
     }
     family = [
       "C1",
@@ -1211,6 +1242,10 @@ async function main(): Promise<void> {
       "sims, resamples, confirm-sims, confirm-resamples and seed must be integers",
     );
   }
+
+  const sweep = { effect, grid: gridSpec };
+  const diagnostic = stage === "A" &&
+    (gridSpec !== null || effect !== EFFECT_DEFAULT);
 
   const out = a.out;
   const partial = `${out}.partial.jsonl`;
@@ -1319,6 +1354,7 @@ async function main(): Promise<void> {
       fitName,
       multiplier: cal.multiplier,
       truth: cal.truth,
+      truth_log: cal.truth_log,
     }, {
       ...base,
       sims: exact ? args.confirm_sims! : args.sims!,
@@ -1396,7 +1432,7 @@ async function main(): Promise<void> {
         results: [...done.values()],
         zero_solve: zeroSolve,
         decision: { design, confirmed },
-        ...(stage === "A" && sweep ? { diagnostic: true } : {}),
+        ...(diagnostic ? { diagnostic: true } : {}),
       },
       null,
       2,

@@ -1069,6 +1069,9 @@ const F_COST: Record<string, number> = {
 async function factorialRecords(
   heldOutLCost = 100,
   primary: "cost_per_solved_task" | "pass_rate" = "cost_per_solved_task",
+  // M11-09b: bootstrap-t is undefined at zero variance (SE = 0); `varied`
+  // gives the LSP arms a task-dependent cost so the studentized test can run.
+  varied = false,
 ): Promise<CampaignRecords> {
   const experiment = ExperimentSchema.parse({
     id: "cc-v2-factorial",
@@ -1127,7 +1130,10 @@ async function factorialRecords(
       for (const repeat of [1, 2]) {
         const cost = arm === "cc-l" && F_HELD.includes(task)
           ? heldOutLCost
-          : F_COST[arm]!;
+          : F_COST[arm]! *
+            (varied && (arm === "cc-l" || arm === "cc-rl")
+              ? 1 + 0.05 * F_TASKS.indexOf(task)
+              : 1);
         const e = execution(c, { arm, task, repeat }, {
           telemetry: telemetry(cost),
         });
@@ -1264,8 +1270,16 @@ function logsWithMeasure(
 }
 
 Deno.test("buildReport (M11): confirmatory C1-C3 from the pre-registration over selected tasks only", async () => {
-  const recs = await factorialRecords();
-  const prereg = preregOf(recs, await stageBFor(recs.campaign));
+  const recs = await factorialRecords(100, "cost_per_solved_task", true);
+  // With 6 tasks one resample is a single repeated task (SE* = 0, undefined)
+  // under this seed; suppress_any_undefined would withhold every row, so this
+  // fixture uses the min_defined_share rule.
+  const prereg = preregOf(
+    recs,
+    await stageBFor(recs.campaign, {
+      zero_solve: { rule: "min_defined_share", share: 0.99 },
+    }),
+  );
   const r = await buildReport(recs, { prereg, resamples: 50, seed: 99 });
   const k = confirmed(r);
   assertEquals(k.bootstrap.resamples, 1000);

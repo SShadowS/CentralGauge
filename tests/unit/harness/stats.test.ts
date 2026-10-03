@@ -6,6 +6,7 @@ import {
   assertThrows,
 } from "@std/assert";
 import { ValidationError } from "../../../src/errors.ts";
+import { percentile } from "../../../cli/commands/report/stats-calculator.ts";
 import {
   armSummary,
   bootstrapP,
@@ -611,6 +612,9 @@ const O = {
   level: 0.95,
   alpha: 0.05,
   zeroSolve: { rule: "suppress_any_undefined" as const },
+  // M11-09b: testContrasts now defaults to bootstrap-t; these pre-existing
+  // assertions are about the percentile path, so they pin it explicitly.
+  method: "percentile" as const,
 };
 
 Deno.test("testContrasts: Holm over the given family only; interaction outside it is exploratory", () => {
@@ -700,6 +704,257 @@ Deno.test("testContrasts: duplicate contrast ids and the reserved id interaction
     );
     assertStringIncludes(e.message, "interaction");
   }
+});
+
+// --- M11-09b: paired task-cluster studentized bootstrap (bootstrap-t) ---
+
+interface Pt {
+  c: number;
+  s: number;
+}
+/** Plain-arithmetic theta and SE for the pairwise log cost-per-solved ratio, independent of the implementation. */
+function hand(v: Pt[], b: Pt[]): { theta: number; se: number } | null {
+  const n = v.length;
+  if (n < 2) return null;
+  const m = (xs: number[]) => xs.reduce((a, x) => a + x, 0) / xs.length;
+  const Cv = m(v.map((p) => p.c));
+  const Sv = m(v.map((p) => p.s));
+  const Cb = m(b.map((p) => p.c));
+  const Sb = m(b.map((p) => p.s));
+  if (!(Cv > 0 && Sv > 0 && Cb > 0 && Sb > 0)) return null;
+  const infl = v.map((p, i) =>
+    (p.c - Cv) / Cv - (p.s - Sv) / Sv - (b[i]!.c - Cb) / Cb +
+    (b[i]!.s - Sb) / Sb
+  );
+  const mi = m(infl);
+  const sd = Math.sqrt(
+    infl.reduce((a, x) => a + (x - mi) ** 2, 0) / (n - 1),
+  );
+  const se = sd / Math.sqrt(n);
+  if (!(se > 0) || !Number.isFinite(se)) return null;
+  return { theta: Math.log(Cv / Sv) - Math.log(Cb / Sb), se };
+}
+
+// Per task: base rows and var rows (two repeats each).
+const BT_ROWS: Record<string, [Row[], Row[]]> = {
+  t1: [[[true, 2], [false, 2]], [[true, 1], [true, 1]]],
+  t2: [[[true, 4], [true, 6]], [[true, 2], [false, 4]]],
+  t3: [[[false, 3], [true, 3]], [[true, 2], [true, 2]]],
+  t4: [[[true, 1], [true, 3]], [[false, 1], [true, 3]]],
+};
+const ptOf = (rows: Row[]): Pt => ({
+  c: rows.reduce((a, [, x]) => a + x!, 0) / rows.length,
+  s: rows.filter(([p]) => p === true).length / rows.length,
+});
+const btCells = (): Cell[] =>
+  Object.entries(BT_ROWS).flatMap(([t, [b, v]]) => [
+    ...cells("base", t, b),
+    ...cells("var", t, v),
+  ]);
+
+Deno.test("compareArms bootstrap-t: theta, SE, t and p match plain arithmetic on a small fixture", () => {
+  const names = Object.keys(BT_ROWS);
+  const base = new Map(names.map((t) => [t, ptOf(BT_ROWS[t]![0])]));
+  const vari = new Map(names.map((t) => [t, ptOf(BT_ROWS[t]![1])]));
+  const full = hand(
+    names.map((t) => vari.get(t)!),
+    names.map((t) => base.get(t)!),
+  )!;
+  const r = compareArms(btCells(), "base", "var", "cost_per_solved_task", {
+    method: "bootstrap-t",
+    resamples: 300,
+    seed: 3,
+  });
+  assertEquals(r.method, "bootstrap-t");
+  assertAlmostEquals(r.theta!, full.theta, 1e-12);
+  assertAlmostEquals(r.se!, full.se, 1e-12);
+  assertAlmostEquals(r.t!, full.theta / full.se, 1e-12);
+  // Replay the same draws with the hand statistic.
+  const ts: number[] = [];
+  let undef = 0;
+  const rand = mulberry32(3);
+  for (let i = 0; i < 300; i++) {
+    const sample = names.map(() => names[Math.floor(rand() * names.length)]!);
+    const h = hand(
+      sample.map((t) => vari.get(t)!),
+      sample.map((t) => base.get(t)!),
+    );
+    if (h === null) undef++;
+    else ts.push((h.theta - full.theta) / h.se);
+  }
+  assertAlmostEquals(r.bt_undefined_share!, undef / 300, 1e-12);
+  const tHat = Math.abs(full.theta / full.se);
+  // Symmetric bootstrap-t: p = (#{|t*| >= |t_hat|} + 1) / (n + 1).
+  const ge = ts.filter((x) => Math.abs(x) >= tHat).length;
+  const expected = (ge + 1) / (ts.length + 1);
+  // Suppressed by the default zero-solve rule when any resample is undefined.
+  assert(undef > 0, "fixture should include undefined resamples");
+  assertEquals([r.p_value, r.ci_log, r.ci_ratio], [null, null, null]);
+  // Under min_defined_share the formulas run over the defined resamples.
+  const loose = compareArms(btCells(), "base", "var", "cost_per_solved_task", {
+    method: "bootstrap-t",
+    resamples: 300,
+    seed: 3,
+    zeroSolve: { rule: "min_defined_share", share: 0.1 },
+  });
+  assertAlmostEquals(loose.p_value!, expected, 1e-12);
+  const q = percentile(ts.map(Math.abs), 0.95);
+  assertAlmostEquals(loose.ci_log![0], full.theta - q * full.se, 1e-12);
+  assertAlmostEquals(loose.ci_log![1], full.theta + q * full.se, 1e-12);
+  assertAlmostEquals(loose.ci_ratio![0], Math.exp(loose.ci_log![0]), 1e-12);
+  assertAlmostEquals(loose.ci_ratio![1], Math.exp(loose.ci_log![1]), 1e-12);
+});
+
+Deno.test("compareArms bootstrap-t: the interval is symmetric on the log scale and asymmetric on the ratio scale", () => {
+  const rows = (cost: number): Row[] => [[true, cost], [true, cost]];
+  const cs: Cell[] = [];
+  for (let t = 1; t <= 12; t++) {
+    const bc = t === 12 ? 6 : 1 + t / 20;
+    const vc = (t === 12 ? 5 : 0.8) * (1 + t / 20) * (1 + 0.15 * (t % 3));
+    cs.push(...cells("base", `t${t}`, rows(bc)));
+    cs.push(...cells("var", `t${t}`, rows(vc)));
+  }
+  const r = compareArms(cs, "base", "var", "cost_per_solved_task", {
+    method: "bootstrap-t",
+    resamples: 1000,
+    seed: 5,
+  });
+  assert(r.ci_log != null && r.theta != null);
+  assertAlmostEquals(r.ci_log[1] - r.theta, r.theta - r.ci_log[0], 1e-12);
+  const rt = Math.exp(r.theta);
+  const up = r.ci_ratio![1] - rt;
+  const down = rt - r.ci_ratio![0];
+  assert(
+    Math.abs(up - down) > 0.05 * (r.ci_ratio![1] - r.ci_ratio![0]),
+    `up ${up} down ${down}`,
+  );
+});
+
+function normalDraw(rand: () => number): number {
+  return Math.sqrt(-2 * Math.log(Math.max(rand(), 1e-12))) *
+    Math.cos(2 * Math.PI * rand());
+}
+
+Deno.test("compareArms bootstrap-t: null calibration smoke (30 tasks, skewed costs): type I rate closer to 0.05 than the percentile test", () => {
+  const sims = 300;
+  let rejPct = 0;
+  let rejBt = 0;
+  for (let s = 0; s < sims; s++) {
+    const rand = mulberry32(1000 + s);
+    const cs: Cell[] = [];
+    for (let t = 0; t < 30; t++) {
+      const mu = 0.5 * normalDraw(rand);
+      for (const arm of ["a", "b"]) {
+        const rows: Row[] = [1, 2].map(() => [
+          rand() < 0.5,
+          Math.exp(mu + normalDraw(rand)),
+        ]);
+        cs.push(...cells(arm, `t${t}`, rows));
+      }
+    }
+    const o = {
+      resamples: 200,
+      seed: s + 1,
+      zeroSolve: { rule: "min_defined_share" as const, share: 0.5 },
+    };
+    const pc = compareArms(cs, "a", "b", "cost_per_solved_task", o);
+    const bt = compareArms(cs, "a", "b", "cost_per_solved_task", {
+      ...o,
+      method: "bootstrap-t",
+    });
+    if (pc.p_value != null && pc.p_value < 0.05) rejPct++;
+    if (bt.p_value != null && bt.p_value < 0.05) rejBt++;
+  }
+  const [ratePct, rateBt] = [rejPct / sims, rejBt / sims];
+  console.log(`type I @0.05: percentile ${ratePct}, bootstrap-t ${rateBt}`);
+  // Orchestrator's standalone null simulation (scratchpad btp.ts, 2000 sims x
+  // 500 resamples), type I at alpha 0.05. Columns: the task's mixed-tail
+  // formula / equal-tailed / symmetric |t| (shipped) / percentile:
+  //   n=30 sigma=1 reps=2:   0.0655 / 0.0580 / 0.0475 / 0.0645
+  //   n=30 sigma=1.5 reps=1: 0.1105 / 0.1030 / 0.0660 / 0.0935
+  //   n=40 sigma=1 reps=8:   0.0690 / 0.0610 / 0.0535 / 0.0710
+  //   n=24 sigma=1 reps=3:   0.0600 / 0.0535 / 0.0420 / 0.0645
+  assert(
+    Math.abs(rateBt - 0.05) < Math.abs(ratePct - 0.05),
+    `bootstrap-t ${rateBt} vs percentile ${ratePct}`,
+  );
+});
+
+Deno.test("compareArms bootstrap-t: an aggregate zero denominator follows the zero-solve rule", () => {
+  const z = [
+    ...cells("A", "t1", [[false, 2]]),
+    ...cells("A", "t2", [[true, 2]]),
+    ...cells("B", "t1", [[true, 1]]),
+    ...cells("B", "t2", [[true, 1]]),
+  ];
+  const o = { resamples: 400, seed: 3, method: "bootstrap-t" as const };
+  const any = compareArms(z, "A", "B", "cost_per_solved_task", o);
+  assert(any.bt_undefined_share! > 0 && any.bt_undefined_share! < 1);
+  assertEquals([any.p_value, any.ci_log, any.ci_ratio], [null, null, null]);
+  const low = any.bt_undefined_share!;
+  const ok = compareArms(z, "A", "B", "cost_per_solved_task", {
+    ...o,
+    zeroSolve: { rule: "min_defined_share", share: (1 - low) / 2 },
+  });
+  assert(ok.p_value !== null && ok.ci_log !== null);
+  const strict = compareArms(z, "A", "B", "cost_per_solved_task", {
+    ...o,
+    zeroSolve: { rule: "min_defined_share", share: Math.min(1, 1 - low + 0.1) },
+  });
+  assertEquals([strict.p_value, strict.ci_log], [null, null]);
+});
+
+Deno.test("compareArms bootstrap-t: pass_rate is refused; the default stays percentile with no new keys", () => {
+  assertThrows(
+    () =>
+      compareArms(btCells(), "base", "var", "pass_rate", {
+        method: "bootstrap-t",
+      }),
+    ValidationError,
+    "bootstrap-t is defined for cost_per_solved_task",
+  );
+  const d = compareArms(btCells(), "base", "var", "cost_per_solved_task", {
+    resamples: 50,
+  });
+  for (
+    const k of ["method", "theta", "se", "t", "ci_log", "ci_ratio"]
+  ) assert(!(k in d), k);
+});
+
+Deno.test("compareInteraction bootstrap-t: theta is the log-scale interaction contrast with a defined SE", () => {
+  const r = compareInteraction(
+    factorial(),
+    { plain: "P", lsp: "L", realistic: "R", realistic_lsp: "RL" },
+    "cost_per_solved_task",
+    { method: "bootstrap-t", resamples: 200, seed: 2 },
+  );
+  assertEquals(r.method, "bootstrap-t");
+  // Each arm is all-solved, so L_X = log(mean cost); costs 2.25 / 1.25 / 2.25 / 2.25.
+  const mc = (x: number) => Math.log(x + 0.25);
+  assertAlmostEquals(r.theta!, (mc(2) - mc(2)) - (mc(1) - mc(2)), 1e-12);
+  assert(r.se! > 0);
+});
+
+Deno.test("testContrasts: bootstrap-t is the default and adds the Bonferroni interval on the log and ratio scale", () => {
+  const { method: _m, ...rest } = O;
+  const r = testContrasts(factorial(), SPECS, INTER, "cost_per_solved_task", {
+    ...rest,
+    family: ["C1", "C2", "C3"],
+  });
+  const c1 = r[0]!;
+  assertEquals(c1.method, "bootstrap-t");
+  assert(c1.bonferroni_ci_log !== null && c1.ci_log !== null);
+  assert(
+    c1.bonferroni_ci_log![1] - c1.bonferroni_ci_log![0] >
+      c1.ci_log![1] - c1.ci_log![0],
+  );
+  assertAlmostEquals(
+    c1.bonferroni_ci_ratio![0],
+    Math.exp(c1.bonferroni_ci_log![0]),
+    1e-12,
+  );
+  assertEquals(c1.p_value, c1.p_value ?? null);
+  assertEquals(c1.decision, c1.delta! < 0 ? c1.decision : "no_decision");
 });
 
 Deno.test("compareArms/compareInteraction: zero-task returns disclose the zero-solve rule", () => {
