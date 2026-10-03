@@ -14,3 +14,5 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/hardcoded-case: { partial_credit: 0.8888888888888888 }
+  naive/vehicle-strategy: { partial_credit: 0.8888888888888888 }
