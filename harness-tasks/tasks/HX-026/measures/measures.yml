@@ -12,3 +12,9 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/not-single-instance: { partial_credit: 0 }
+  naive/refresh-clears-branch: { partial_credit: 0.8571428571428571 }
+  naive/reset-keeps-cache: { partial_credit: 0.7142857142857143 }
+  naive/reset-own-only: { partial_credit: 0.7142857142857143 }
+  naive/two-copies: { partial_credit: 0.5714285714285714 }
+  naive/uncached-default: { partial_credit: 0.8571428571428571 }
