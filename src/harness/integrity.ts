@@ -96,6 +96,14 @@ async function campaignProblems(c: CampaignRecord): Promise<string[]> {
     if (a.manifest_hash !== await manifestHash(a.manifest)) {
       out.push(`arm ${a.config_id}: manifest_hash does not match its manifest`);
     }
+    // M9-16: dev revisions are for standalone probes; loadExperiment refuses
+    // them, and a stored campaign must not carry one past that check.
+    const rev = a.manifest.image.revision;
+    if (rev?.includes("-dev-")) {
+      out.push(
+        `arm ${a.config_id}: development image revision ${rev} is not allowed in a campaign`,
+      );
+    }
   }
   // The schema guarantees the baseline arm exists.
   const base = c.arms.find((a) => a.config_id === c.experiment.baseline)!;

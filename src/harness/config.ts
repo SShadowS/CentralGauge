@@ -45,13 +45,15 @@ export const LimitsSchema = z.strictObject({
 });
 
 /**
- * Image revision (H-01 run 004): a rebuild of the image for the same
- * harness_version, tagged `<version>-r<n>`. Absent is the frozen image.
+ * Image revision (H-01 run 004): a rebuild for the same harness_version,
+ * tagged `<version>-r<n>`; or a proof build of revision n, `<n>-dev-<task id>`
+ * (cross-plan ruling 1), which no experiment may run. Absent is the frozen
+ * image.
  */
-export const IMAGE_REVISION = /^[1-9][0-9]{0,3}$/;
+export const IMAGE_REVISION = /^[1-9][0-9]{0,3}(?:-dev-[A-Za-z0-9-]{1,32})?$/;
 export const ImageRevisionSchema = z.string().regex(
   IMAGE_REVISION,
-  "positive integer, no leading zero",
+  "positive integer, no leading zero, optionally -dev-<task id>",
 );
 
 export const HarnessConfigSchema = z.strictObject({
@@ -96,6 +98,22 @@ export type VaryKey = (typeof VARY_KEYS)[number];
 export const PRIMARY_METRICS = ["cost_per_solved_task", "pass_rate"] as const;
 export type PrimaryMetric = (typeof PRIMARY_METRICS)[number];
 
+export const ContrastSchema = z.strictObject({
+  id: z.string().regex(/^C\d+$/, "C1, C2, ..."),
+  name: z.string().trim().min(1),
+  baseline: slug,
+  variant: slug,
+});
+export const InteractionSchema = z.strictObject({
+  name: z.string().trim().min(1),
+  /** Must equal the pre-registration (checked by the report and the campaign). */
+  status: z.enum(["exploratory", "confirmatory"]),
+  plain: slug,
+  lsp: slug,
+  realistic: slug,
+  realistic_lsp: slug,
+});
+
 export const ExperimentSchema = z.strictObject({
   id: slug,
   hypothesis: z.string().trim().min(1),
@@ -105,6 +123,10 @@ export const ExperimentSchema = z.strictObject({
   vary: z.array(z.enum(VARY_KEYS)).min(1),
   tasks: z.string().min(1),
   repeats: z.number().int().positive().default(3),
+  // Optional, never defaulted: v1 parsed objects and hashes stay unchanged.
+  contrasts: z.array(ContrastSchema).min(1).optional(),
+  interaction: InteractionSchema.optional(),
+  preregistration: relPath.optional(),
 }).superRefine((e, ctx) => {
   const arms = [e.baseline, ...e.variants];
   if (new Set(arms).size !== arms.length) {
@@ -121,6 +143,52 @@ export const ExperimentSchema = z.strictObject({
       message: `duplicate key ${[...new Set(dup)].join(", ")}`,
       path: ["vary"],
     });
+  }
+  const armSet = new Set(arms);
+  const notArm = (a: string, path: (string | number)[]) =>
+    !armSet.has(a) &&
+    ctx.addIssue({
+      code: "custom",
+      message: `${a} is not an arm of this experiment`,
+      path,
+    });
+  e.contrasts?.forEach((c, i) => {
+    notArm(c.baseline, ["contrasts", i, "baseline"]);
+    notArm(c.variant, ["contrasts", i, "variant"]);
+    if (c.baseline === c.variant) {
+      ctx.addIssue({
+        code: "custom",
+        message: "contrast arms must differ",
+        path: ["contrasts", i],
+      });
+    }
+  });
+  const ids = (e.contrasts ?? []).map((c) => c.id);
+  if (new Set(ids).size !== ids.length) {
+    ctx.addIssue({
+      code: "custom",
+      message: "duplicate contrast id",
+      path: ["contrasts"],
+    });
+  }
+  if (e.contrasts && !e.preregistration) {
+    ctx.addIssue({
+      code: "custom",
+      message: "contrasts need a preregistration file",
+      path: ["preregistration"],
+    });
+  }
+  if (e.interaction && !e.contrasts) {
+    ctx.addIssue({
+      code: "custom",
+      message: "interaction needs contrasts",
+      path: ["interaction"],
+    });
+  }
+  if (e.interaction) {
+    for (const k of ["plain", "lsp", "realistic", "realistic_lsp"] as const) {
+      notArm(e.interaction[k], ["interaction", k]);
+    }
   }
 });
 export type Experiment = z.output<typeof ExperimentSchema>;
@@ -178,7 +246,15 @@ export async function loadExperiment(
   assertIdMatchesFile(experiment.id, id, path);
   const configs: HarnessConfig[] = [];
   for (const arm of [experiment.baseline, ...experiment.variants]) {
-    configs.push(await loadConfig(harnessRoot, arm));
+    const cfg = await loadConfig(harnessRoot, arm);
+    // Cross-plan ruling 1: proof images prove things; they never run an experiment.
+    if (cfg.image_revision?.includes("-dev-")) {
+      throw new ConfigurationError(
+        `${path}: arm ${arm} names development image revision ${cfg.image_revision}`,
+        path,
+      );
+    }
+    configs.push(cfg);
   }
   return { experiment, configs };
 }
