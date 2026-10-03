@@ -1,6 +1,41 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join, resolve } from "@std/path";
 import { checkScenario } from "../../../scripts/harness/stub-anthropic.mjs";
+import { Buffer } from "node:buffer";
+import {
+  fileTimeBounds,
+  headerBytes,
+  MAX_HEADER_BYTES,
+} from "../../../harness/images/claude-code/lsp/lsp-probe.mjs";
+
+// M10-01b run 002: clock bounds and fragmented header limits, through the
+// probe's own pure helpers (importing the probe starts no session).
+const FT = (ms: number, us = 0) =>
+  (BigInt(ms) + 11644473600000n) * 10000n + BigInt(us) * 10n;
+
+Deno.test("fileTimeBounds: a child created at T+0.6 ms with the death read at T+0.9 ms stays under the upper bound; the lower bound is never late", () => {
+  const T = 1_760_000_000_000;
+  const created = FT(T, 600);
+  const read = Math.floor(T + 0.9); // Date.now() at T+0.9 ms reads T
+  assert(FT(read) < created, "a plain millisecond reading excludes the child");
+  const b = fileTimeBounds(read);
+  assert(created <= b.high, `upper bound ${b.high} below child ${created}`);
+  assert(FT(T, 999) < b.high, "the whole millisecond is under the bound");
+  assertEquals(b.low, FT(T), "lower bound is the floor, never later");
+});
+
+Deno.test("headerBytes: a header of exactly the limit is judged the same however its terminator is fragmented; one byte over is refused", () => {
+  const first = "Content-Length: 2\r\nX-Pad: ";
+  const block = first + "a".repeat(MAX_HEADER_BYTES - first.length);
+  assertEquals(block.length, MAX_HEADER_BYTES);
+  const n = (s: string) => headerBytes(Buffer.from(s, "latin1"));
+  for (const tail of ["", "\r", "\r\n", "\r\n\r", "\r\n\r\n", "\r\n\r\n{}"]) {
+    assertEquals(n(block + tail), MAX_HEADER_BYTES, JSON.stringify(tail));
+  }
+  for (const tail of ["", "\r", "\r\n", "\r\n\r", "\r\n\r\n{}"]) {
+    assert(n(block + "a" + tail) > MAX_HEADER_BYTES, JSON.stringify(tail));
+  }
+});
 
 const PROBE = resolve("harness/images/claude-code/lsp/lsp-probe.mjs");
 const FAKE = resolve("tests/fixtures/harness/lsp/fake-al-ls.mjs");

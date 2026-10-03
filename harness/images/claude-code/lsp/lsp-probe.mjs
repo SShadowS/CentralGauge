@@ -26,6 +26,10 @@ import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const EXIT = { ok: 0, timeout: 2, server: 3, config: 4, assertion: 6 };
+// Run as a script (node lsp-probe.mjs ...), not imported: the tests import
+// only the pure helpers below, and an import installs no handlers.
+const isMain = process.argv[1] !== undefined &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 /** A duration setting: finite and > 0, else exit 4 (0 would disable a deadline). */
 function ms(name, fallback) {
   const raw = process.env[name] ?? fallback;
@@ -51,7 +55,25 @@ const ROOT_VAR = "$" + "{CLAUDE_PLUGIN_ROOT}";
 // Largest accepted frame body; a bigger Content-Length is a protocol failure.
 const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 // Largest header block before its blank line.
-const MAX_HEADER_BYTES = 8192;
+export const MAX_HEADER_BYTES = 8192;
+/**
+ * The header bytes of `buf` counted against MAX_HEADER_BYTES: up to the
+ * terminator when it has arrived (`sep` >= 0), else the whole buffer less a
+ * trailing partial terminator ("\r", "\r\n", "\r\n\r"), so a header of exactly
+ * the limit is judged the same however its terminator is fragmented.
+ */
+export function headerBytes(buf, sep = buf.indexOf("\r\n\r\n")) {
+  if (sep >= 0) return sep;
+  for (const tail of ["\r\n\r", "\r\n", "\r"]) {
+    const t = Buffer.from(tail, "latin1");
+    if (
+      buf.length >= t.length && buf.subarray(buf.length - t.length).equals(t)
+    ) {
+      return buf.length - t.length;
+    }
+  }
+  return buf.length;
+}
 let child = null;
 let childExited = false;
 // Creation times are Windows FILETIMEs (100 ns since 1601) cut to whole
@@ -59,7 +81,19 @@ let childExited = false;
 // cuts Process.StartTime the same way, so both compare exactly. spawnedAt is
 // taken before spawn: a process created earlier is not one the probe started.
 let spawnedAt = 0n;
-const fileTimeNow = () => (BigInt(Date.now()) + 11644473600000n) * 10000n;
+// Date.now() is whole milliseconds while creation times keep microseconds, so
+// a clock read is rounded outward: a lower bound (spawnedAt) is the floor, an
+// upper bound (a parent's death, "now") is the next millisecond plus
+// CLOCK_SLACK_MS for the clocks' resolution. A child created at T+0.6 ms with
+// the death seen at T+0.9 ms is then still under the bound (M10-01b run 002).
+const CLOCK_SLACK_MS = 1n;
+const EPOCH_MS = 11644473600000n;
+export const fileTimeBounds = (msNow) => ({
+  low: (BigInt(msNow) + EPOCH_MS) * 10000n,
+  high: (BigInt(msNow) + 1n + CLOCK_SLACK_MS + EPOCH_MS) * 10000n,
+});
+const fileTimeLow = () => fileTimeBounds(Date.now()).low;
+const fileTimeHigh = () => fileTimeBounds(Date.now()).high;
 
 const runSync = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, {
@@ -117,7 +151,7 @@ const isAlive = (table, t) =>
  */
 function snapshot() {
   const table = processTable();
-  const now = fileTimeNow();
+  const now = fileTimeHigh();
   const root = table.find((r) => r.pid === child.pid);
   if (
     rootCreated === null && root && !childExited &&
@@ -248,7 +282,7 @@ function killTree() {
     } catch { /* reported below */ }
     why ??= `server pid ${child.pid} not confirmed dead`;
   }
-  if (held && rootDead) rootDeadBy ??= fileTimeNow();
+  if (held && rootDead) rootDeadBy ??= fileTimeHigh();
   let open = first.open.filter((t) => t !== root);
   // Final sweep, always: children started since the last snapshot (by the
   // server or any tracked process, dead or alive) still name their parent's
@@ -283,14 +317,16 @@ function fail(code, msg) {
 
 // Crash paths clean up too.
 const errText = (e) => e instanceof Error ? e.message : String(e);
-process.on(
-  "uncaughtException",
-  (e) => fail(EXIT.server, `uncaught: ${errText(e)}`),
-);
-process.on(
-  "unhandledRejection",
-  (e) => fail(EXIT.server, `unhandled rejection: ${errText(e)}`),
-);
+if (isMain) {
+  process.on(
+    "uncaughtException",
+    (e) => fail(EXIT.server, `uncaught: ${errText(e)}`),
+  );
+  process.on(
+    "unhandledRejection",
+    (e) => fail(EXIT.server, `unhandled rejection: ${errText(e)}`),
+  );
+}
 
 function serverSpec() {
   const file = join(PLUGIN, ".lsp.json");
@@ -386,7 +422,7 @@ function firstAl(dir) {
 }
 
 function connect(spec) {
-  spawnedAt = fileTimeNow();
+  spawnedAt = fileTimeLow();
   child = spawn(spec.command, spec.args, {
     env: spec.env,
     stdio: ["pipe", "pipe", "pipe"],
@@ -404,7 +440,7 @@ function connect(spec) {
   const exited = new Promise((res) =>
     child.once("exit", () => {
       childExited = true;
-      rootDeadBy ??= fileTimeNow();
+      rootDeadBy ??= fileTimeHigh();
       res(true);
     })
   );
@@ -423,7 +459,7 @@ function connect(spec) {
     for (;;) {
       const sep = buf.indexOf("\r\n\r\n");
       // The bound holds whether or not the block's terminator has arrived.
-      if ((sep < 0 ? buf.length : sep) > MAX_HEADER_BYTES) {
+      if (headerBytes(buf, sep) > MAX_HEADER_BYTES) {
         fail(EXIT.server, `frame header over ${MAX_HEADER_BYTES} bytes`);
       }
       if (sep < 0) return;
@@ -666,8 +702,10 @@ function verdict(s, result) {
   return null;
 }
 
-const mode = process.argv[2];
-if (mode === "--preflight") {
+const mode = isMain ? process.argv[2] : undefined;
+if (!isMain) {
+  // Imported by the tests for the pure helpers: no session.
+} else if (mode === "--preflight") {
   const r = await session(async (c, apps, t0) => {
     const file = firstAl(join(WORKSPACE, apps[0]));
     if (!file) fail(EXIT.config, `no .al file under ${apps[0]}`);
