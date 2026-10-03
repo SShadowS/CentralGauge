@@ -119,6 +119,9 @@ Deno.test("calibrate: spend is exactly 0.8 and leaves nulls at 0; solve reaches 
     RULES,
     9,
     50,
+    // M11-09b (decision 2026-10-03-m11-inference-amendment.md): the default
+    // effect is 0.3 now; these 0.8 assertions are about the 20% effect.
+    0.2,
   );
   assertEquals([s.multiplier, s.truth.C1, s.truth.C2], [0.8, 0, 0]);
   assertAlmostEquals(s.ratio, 0.8, 1e-9);
@@ -128,8 +131,43 @@ Deno.test("calibrate: spend is exactly 0.8 and leaves nulls at 0; solve reaches 
     RULES,
     9,
     50,
+    0.2,
   );
   assertAlmostEquals(v.ratio, 0.8, 0.005);
+});
+
+Deno.test("calibrate (M11-09b): no effect argument gives the 30% default: spend multiplier 0.7", () => {
+  const s = calibrate(
+    { scenario: "C1", mechanism: "spend", fit: FIT, poolFactor: 2 },
+    { tasks: 24, repeats: 3 },
+    RULES,
+    9,
+    50,
+  );
+  assertAlmostEquals(s.multiplier, 0.7, 1e-12);
+});
+
+Deno.test("calibrate (M11-09b): truth_log is the log-scale truth, exactly 0 for nulls", () => {
+  const c1 = calibrate(
+    { scenario: "C1", mechanism: "spend", fit: FIT, poolFactor: 2 },
+    { tasks: 24, repeats: 3 },
+    RULES,
+    9,
+    50,
+    0.2,
+  );
+  assertAlmostEquals(c1.truth_log.C1, Math.log(0.8), 1e-9);
+  assertEquals([c1.truth_log.C2, c1.truth_log.C3], [0, 0]);
+  // (log RL - log R) - (log L - log P) with only L cheaper: -log(0.8).
+  assertAlmostEquals(c1.truth_log.interaction, -Math.log(0.8), 1e-9);
+  const nul = calibrate(
+    { scenario: "null", mechanism: "spend", fit: FIT, poolFactor: 2 },
+    { tasks: 24, repeats: 3 },
+    RULES,
+    9,
+    50,
+  );
+  assertEquals(nul.truth_log, { C1: 0, C2: 0, C3: 0, interaction: 0 });
 });
 
 Deno.test("parseGrid (M11-13c): tasks outer, repeats inner; every malformed grid is refused", () => {
@@ -194,8 +232,9 @@ Deno.test("calibrate (M11-13c): effect 0.3 sets the spend multiplier and the sol
   assertAlmostEquals(solve.ratio, 0.7, 0.005);
 });
 
-Deno.test("calibrate (M11-13c): no effect argument equals the explicit default 0.2 exactly", () => {
-  assertEquals(EFFECT_DEFAULT, 0.2);
+Deno.test("calibrate (M11-13c): no effect argument equals the explicit default exactly", () => {
+  // M11-09b (decision 2026-10-03-m11-inference-amendment.md): default is now 0.3.
+  assertEquals(EFFECT_DEFAULT, 0.3);
   for (const mechanism of ["spend", "solve"] as const) {
     const spec = {
       scenario: "C1" as const,
@@ -206,7 +245,7 @@ Deno.test("calibrate (M11-13c): no effect argument equals the explicit default 0
     const d = { tasks: 24, repeats: 3 };
     assertEquals(
       calibrate(spec, d, RULES, 9, 50),
-      calibrate(spec, d, RULES, 9, 50, 0.2),
+      calibrate(spec, d, RULES, 9, 50, EFFECT_DEFAULT),
     );
   }
 });
@@ -231,9 +270,11 @@ Deno.test("argsHashInput (M11-13c): no flags keeps today's exact shape; either f
     inputs: [{ path: "x.json", sha256: "ab" }],
     arm_prefix: "cc-",
   };
+  // M11-09b (decision 2026-10-03-m11-inference-amendment.md): the args record
+  // now ALWAYS carries the effective effect (default 0.3) and power_gate.
   const today: unknown = {
     stage: "A",
-    args: numeric,
+    args: { ...numeric, effect: 0.3, power_gate: "fitted" },
     alpha: 0.05,
     family: ["C1", "C2", "C3"],
     rules: RULES,
@@ -241,12 +282,13 @@ Deno.test("argsHashInput (M11-13c): no flags keeps today's exact shape; either f
     inputs: [{ path: "x.json", sha256: "ab" }],
     arm_prefix: "cc-",
   };
-  const none = argsHashInput(parts, null);
+  const none = argsHashInput(parts, { effect: EFFECT_DEFAULT });
   assertEquals(none, today);
-  assertEquals(Object.keys(none.args), Object.keys(numeric));
+  assertEquals(none.args["grid"], undefined);
+  assert(!("grid" in none.args));
   assertEquals(await hashJson(none), await hashJson(today));
   const eff = argsHashInput(parts, { effect: 0.2, grid: null });
-  assertEquals(eff.args, { ...numeric, effect: 0.2, grid: null });
+  assertEquals(eff.args, { ...numeric, effect: 0.2, power_gate: "fitted" });
   assert((await hashJson(eff)) !== (await hashJson(today)));
   const grid = argsHashInput(parts, {
     effect: 0.2,
@@ -289,6 +331,7 @@ Deno.test("evaluate: deterministic; a big C1 effect is found; null scenario repo
     multiplier: 0.4,
     poolFactor: 2,
     truth: { C1: -0.4, C2: 0, C3: 0, interaction: 0.4 },
+    truth_log: { C1: Math.log(0.4), C2: 0, C3: 0, interaction: -Math.log(0.4) },
   };
   const r1 = evaluate({ tasks: 30, repeats: 5 }, spec, o);
   assertEquals(r1, evaluate({ tasks: 30, repeats: 5 }, spec, o));
@@ -298,6 +341,7 @@ Deno.test("evaluate: deterministic; a big C1 effect is found; null scenario repo
     scenario: "null",
     multiplier: 1,
     truth: { C1: 0, C2: 0, C3: 0, interaction: 0 },
+    truth_log: { C1: 0, C2: 0, C3: 0, interaction: 0 },
   }, o);
   assertEquals(Object.keys(nul.byRule.A.power), []);
   assert(nul.byRule.A.fwer !== null);
@@ -393,6 +437,46 @@ Deno.test("chooseDesign: gates on power, FWER, suppression and coverage; an inco
   );
 });
 
+Deno.test("chooseDesign (M11-09b): the power gate applies to fitted results only; stress power is reported, FWER still gates everywhere", () => {
+  const withStress = (
+    g: DesignResult[],
+    f: (r: DesignResult) => DesignResult,
+  ) => g.map((r) => (r.fit === "stress" ? f(r) : r));
+  const lowPower = (r: DesignResult): DesignResult => {
+    const low = (s: DesignResult["byRule"]["A"]) => ({
+      ...s,
+      power: Object.fromEntries(Object.keys(s.power).map((k) => [k, P(0.7)])),
+    });
+    return { ...r, byRule: { A: low(r.byRule.A), B: low(r.byRule.B) } };
+  };
+  // Stress power 0.7 with fitted power 0.9: accepted.
+  assertEquals(chooseDesign(withStress(grid(30, 5), lowPower), "A"), {
+    tasks: 30,
+    repeats: 5,
+  });
+  // Fitted power 0.7: refused (stress at 0.9 does not rescue it).
+  const fittedLow = grid(30, 5).map((r) =>
+    r.fit === "fitted" ? lowPower(r) : r
+  );
+  assertEquals(chooseDesign(fittedLow, "A"), null);
+  // FWER above tolerance on a stress result still refuses.
+  const stressFwer = withStress(grid(30, 5), (r) => ({
+    ...r,
+    byRule: { A: { ...r.byRule.A, fwer: P(0.09) }, B: r.byRule.B },
+  }));
+  assertEquals(chooseDesign(stressFwer, "A"), null);
+  // The explicit "all" scenario restores the old stress power gate.
+  assertEquals(
+    chooseDesign(withStress(grid(30, 5), lowPower), "A", 0.05, "all"),
+    null,
+  );
+  // confirmDesign likewise: sensitivity results are power-reported only.
+  assertEquals(
+    confirmDesign(grid(30, 5), withStress(grid(30, 5), lowPower), "A", 0.05),
+    true,
+  );
+});
+
 Deno.test("gates: the FWER tolerance is fixed and too few simulations refuse a gating decision", () => {
   // 0.06 passes the fixed 0.0638 tolerance; with 100 replicates alpha + 2 SE would have been 0.094.
   assertEquals(chooseDesign(grid(30, 5, { fwer: 0.06 }), "A"), {
@@ -468,6 +552,7 @@ Deno.test("evaluate: exact mode reads rule-A suppression from the shared bootstr
     multiplier: 1,
     poolFactor: 2,
     truth: { C1: 0, C2: 0, C3: 0, interaction: 0 },
+    truth_log: { C1: 0, C2: 0, C3: 0, interaction: 0 },
   };
   const r = evaluate({ tasks: 24, repeats: 3 }, spec, { ...o, exact: true });
   assertEquals(r.exact, true);
@@ -595,6 +680,7 @@ Deno.test("evaluate exact: decisions come from testContrasts (shared entry point
     multiplier: 0.4,
     poolFactor: 2,
     truth: { C1: -0.4, C2: 0, C3: 0, interaction: 0.4 },
+    truth_log: { C1: Math.log(0.4), C2: 0, C3: 0, interaction: -Math.log(0.4) },
   };
   const r = evaluate({ tasks: 24, repeats: 3 }, spec, o);
   const done = o.sims - Math.round(r.selection_failures.p * o.sims);

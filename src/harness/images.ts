@@ -50,6 +50,16 @@ export const AL_TOOLS_DEF = "harness/images/base/al-tools-tools.json";
 /** Where the base Dockerfile puts the definition al-tools-mcp.mjs reads. */
 export const AL_TOOLS_SHIPPED = "C:\\al-tools-tools.json";
 
+/**
+ * LSP component labels (M10): `centralgauge.lsp.<name>` = `<version> <sha256>`
+ * on the claude-code image, the hashJson of the repo definition.
+ */
+export const LSP_LABEL_PREFIX = "centralgauge.lsp.";
+const LSP_COMPONENTS: readonly string[] = ["al"];
+export const AL_LSP_DEF = "harness/images/claude-code/lsp/al-lsp.json";
+/** Where the claude-code Dockerfile puts the definition the image was built from. */
+export const AL_LSP_SHIPPED = "C:\\cg-lsp\\al-lsp.json";
+
 /** No revision: exactly the frozen tag. A revision: `<version>-r<revision>`. */
 export const imageTag = (
   harness: string,
@@ -68,6 +78,7 @@ export interface ImageFacts {
   /** The revision label; null when the image has none (a frozen image). */
   revision: string | null;
   mcp?: Record<string, { version: string; tool_schema_hash: string }>;
+  lsp?: Record<string, { version: string; tool_schema_hash: string }>;
 }
 
 type Inspect = {
@@ -116,26 +127,30 @@ export async function imageFacts(
     );
   }
   const mcp = mcpFacts(ref, l);
+  const lsp = lspFacts(ref, l);
   // The label is trusted at build time only: the bytes the image ships must
   // hash to it (same names with another schema would pass a name check).
-  if (mcp["al-tools"] && owner !== null) {
-    const text = await docker.readImageFile(img.Id, AL_TOOLS_SHIPPED, owner);
-    let hash: string;
-    try {
-      if (text === null) throw new Error("not found");
-      hash = await hashJson(JSON.parse(text));
-    } catch (e) {
-      throw new ConfigurationError(
-        `image ${ref}: cannot read the shipped ${AL_TOOLS_SHIPPED} (${
-          e instanceof Error ? e.message : String(e)
-        })`,
+  if (owner !== null) {
+    if (mcp["al-tools"]) {
+      await verifyShipped(
+        docker,
+        img.Id,
+        owner,
+        ref,
+        AL_TOOLS_SHIPPED,
+        mcp["al-tools"],
+        "rebuild the base image",
       );
     }
-    if (hash !== mcp["al-tools"].tool_schema_hash) {
-      throw new ConfigurationError(
-        `image ${ref}: shipped ${AL_TOOLS_SHIPPED} hashes to ${hash}, which differs from its label ${
-          mcp["al-tools"].tool_schema_hash
-        }: rebuild the base image`,
+    if (lsp["al"]) {
+      await verifyShipped(
+        docker,
+        img.Id,
+        owner,
+        ref,
+        AL_LSP_SHIPPED,
+        lsp["al"],
+        "rebuild the claude-code image",
       );
     }
   }
@@ -146,22 +161,69 @@ export async function imageFacts(
     version: l[IMAGE_LABELS.version]!,
     revision: l[IMAGE_LABELS.revision] ?? null,
     mcp,
+    // No key on images without LSP: existing deep-equal expectations hold.
+    ...(Object.keys(lsp).length > 0 ? { lsp } : {}),
   };
 }
 
-/** The MCP component facts in an image's labels; malformed or unknown labels are refused. */
-export function mcpFacts(
+async function verifyShipped(
+  docker: DockerCli,
+  id: string,
+  owner: string,
+  ref: string,
+  path: string,
+  label: { version: string; tool_schema_hash: string },
+  fix: string,
+): Promise<void> {
+  const want = label.tool_schema_hash;
+  const text = await docker.readImageFile(id, path, owner);
+  let hash: string;
+  let version: unknown;
+  try {
+    if (text === null) throw new Error("not found");
+    const def = JSON.parse(text);
+    hash = await hashJson(def);
+    version = def?.version;
+  } catch (e) {
+    throw new ConfigurationError(
+      `image ${ref}: cannot read the shipped ${path} (${
+        e instanceof Error ? e.message : String(e)
+      })`,
+    );
+  }
+  if (hash !== want) {
+    throw new ConfigurationError(
+      `image ${ref}: shipped ${path} hashes to ${hash}, which differs from its label ${want}: ${fix}`,
+    );
+  }
+  // The hash covers the version field, but the label's own version text is
+  // separate: a label may not claim a version the shipped file does not carry.
+  if (version !== label.version) {
+    throw new ConfigurationError(
+      `image ${ref}: label version ${label.version} differs from the shipped ${path} version ${
+        String(version)
+      }: ${fix}`,
+    );
+  }
+}
+
+type ComponentFacts = NonNullable<ImageFacts["mcp"]>;
+
+function componentFacts(
   ref: string,
   l: Record<string, string>,
-): NonNullable<ImageFacts["mcp"]> {
-  const mcp: NonNullable<ImageFacts["mcp"]> = {};
+  prefix: string,
+  known: readonly string[],
+  kind: "MCP" | "LSP",
+): ComponentFacts {
+  const mcp: ComponentFacts = {};
   for (const [k, v] of Object.entries(l)) {
-    if (!k.startsWith(MCP_LABEL_PREFIX)) continue;
-    const name = k.slice(MCP_LABEL_PREFIX.length);
-    if (!MCP_COMPONENTS.includes(name)) {
+    if (!k.startsWith(prefix)) continue;
+    const name = k.slice(prefix.length);
+    if (!known.includes(name)) {
       throw new ConfigurationError(
-        `image ${ref}: label ${k} names an unknown MCP component "${name}" (known: ${
-          MCP_COMPONENTS.join(", ")
+        `image ${ref}: label ${k} names an unknown ${kind} component "${name}" (known: ${
+          known.join(", ")
         })`,
       );
     }
@@ -179,6 +241,13 @@ export function mcpFacts(
   return mcp;
 }
 
+/** The MCP component facts in an image's labels; malformed or unknown labels are refused. */
+export const mcpFacts = (ref: string, l: Record<string, string>) =>
+  componentFacts(ref, l, MCP_LABEL_PREFIX, MCP_COMPONENTS, "MCP");
+/** The LSP component facts in an image's labels (M10); same rules. */
+export const lspFacts = (ref: string, l: Record<string, string>) =>
+  componentFacts(ref, l, LSP_LABEL_PREFIX, LSP_COMPONENTS, "LSP");
+
 /**
  * The base image's al-tools label: the tool definition's version and its
  * hashJson (canonical, so formatting of the file does not move it).
@@ -191,17 +260,19 @@ export async function mcpLabel(root: string): Promise<[string, string]> {
   ];
 }
 
-/** The al-tools definition, read once and version-checked. */
-async function readAlToolsDef(
+/** A component definition file, read once and version-checked. */
+async function readDef(
   root: string,
+  rel: string,
+  what: string,
 ): Promise<{ version: string; tools?: unknown }> {
-  const path = join(root, AL_TOOLS_DEF);
+  const path = join(root, rel);
   let def: { version?: unknown; tools?: unknown };
   try {
     def = JSON.parse(await Deno.readTextFile(path));
   } catch (e) {
     throw new ConfigurationError(
-      `${path}: cannot read the al-tools tool definition: ${
+      `${path}: cannot read the ${what}: ${
         e instanceof Error ? e.message : String(e)
       }`,
     );
@@ -213,9 +284,14 @@ async function readAlToolsDef(
   }
   return def as { version: string; tools?: unknown };
 }
+const readAlToolsDef = (root: string) =>
+  readDef(root, AL_TOOLS_DEF, "al-tools tool definition");
 
 /** The repo's MCP definitions: per server, the definition hash (as in the image label) and its sorted tool names. */
-export type McpDefinitions = Record<string, { hash: string; tools: string[] }>;
+export type McpDefinitions = Record<
+  string,
+  { hash: string; tools: string[]; version?: string }
+>;
 
 export async function mcpDefinitions(root: string): Promise<McpDefinitions> {
   // One read: the hash and the tool names come from the same object.
@@ -237,8 +313,51 @@ export async function mcpDefinitions(root: string): Promise<McpDefinitions> {
   return {
     "al-tools": {
       hash: await hashJson(def),
+      version: def.version,
       tools: (names as string[]).sort(),
     },
+  };
+}
+
+/**
+ * The claude-code image's LSP label. null when the build root has no
+ * al-lsp.json: the real Dockerfile COPYs that file, so a real build cannot
+ * succeed without it; temp build roots in tests stay label-free.
+ */
+export async function lspLabel(
+  root: string,
+): Promise<[string, string] | null> {
+  try {
+    await Deno.stat(join(root, AL_LSP_DEF));
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return null;
+    throw e;
+  }
+  const def = await readDef(root, AL_LSP_DEF, "AL LSP definition");
+  return [`${LSP_LABEL_PREFIX}al`, `${def.version} ${await hashJson(def)}`];
+}
+
+/** The repo's LSP definition: the hash the label must carry; no MCP tool list. */
+export async function lspDefinitions(root: string): Promise<McpDefinitions> {
+  const def = await readDef(root, AL_LSP_DEF, "AL LSP definition");
+  return { al: { hash: await hashJson(def), version: def.version, tools: [] } };
+}
+
+/** The definitions runtimeFacts needs for exactly the server kinds a config names. */
+export async function serverDefinitions(
+  root: string,
+  c: { mcp: readonly string[]; lsp: readonly string[] },
+): Promise<McpDefinitions> {
+  // One map keyed by server name: a name in both kinds would overwrite.
+  const dup = c.mcp.filter((n) => c.lsp.includes(n));
+  if (dup.length > 0) {
+    throw new ConfigurationError(
+      `server name(s) ${dup.join(", ")} named as both MCP and LSP components`,
+    );
+  }
+  return {
+    ...(c.mcp.length > 0 ? await mcpDefinitions(root) : {}),
+    ...(c.lsp.length > 0 ? await lspDefinitions(root) : {}),
   };
 }
 
@@ -285,39 +404,60 @@ export function runtimeFacts(
       } (image_revision)`,
     );
   }
-  if (config.components.lsp.length > 0) {
-    throw new ConfigurationError(
-      `${config.id}: LSP components are not implemented`,
-    );
-  }
   const servers: RuntimeFacts["servers"] = {};
-  for (const name of config.components.mcp) {
-    const f = image.mcp && Object.hasOwn(image.mcp, name)
-      ? image.mcp[name]
-      : undefined;
+  const fact = (
+    kind: "MCP" | "LSP",
+    name: string,
+    table: ImageFacts["mcp"],
+    defFile: string,
+    fix: string,
+  ) => {
+    const f = table && Object.hasOwn(table, name) ? table[name] : undefined;
     if (!f) {
       throw new ConfigurationError(
-        `${config.id}: image ${image.digest} has no MCP component ${name} (rebuild the base image, then the harness image)`,
+        `${config.id}: image ${image.digest} has no ${kind} component ${name} (${fix})`,
       );
     }
-    // Definition drift: the repo's tool file is not the one the image shipped.
+    // Definition drift: the repo's file is not the one the image shipped.
     const def = Object.hasOwn(defs, name) ? defs[name] : undefined;
     if (!def) {
       throw new ConfigurationError(
-        `${config.id}: no repo definition loaded for MCP component ${name}`,
+        `${config.id}: no repo definition loaded for ${kind} component ${name}`,
       );
     }
     if (def.hash !== f.tool_schema_hash) {
       throw new ConfigurationError(
-        `${config.id}: definition ${AL_TOOLS_DEF} differs from image ${image.digest}: rebuild`,
+        `${config.id}: definition ${defFile} differs from image ${image.digest}: rebuild`,
+      );
+    }
+    if (def.version !== undefined && def.version !== f.version) {
+      throw new ConfigurationError(
+        `${config.id}: image ${image.digest} label version ${f.version} differs from ${defFile} version ${def.version}: rebuild`,
       );
     }
     servers[name] = f;
+  };
+  for (const name of config.components.mcp) {
+    fact(
+      "MCP",
+      name,
+      image.mcp,
+      AL_TOOLS_DEF,
+      "rebuild the base image, then the harness image",
+    );
+  }
+  for (const name of config.components.lsp) {
+    fact(
+      "LSP",
+      name,
+      image.lsp,
+      AL_LSP_DEF,
+      "build the claude-code image with the LSP layer",
+    );
   }
   const native = adapter.nativeSettings(config, catalog);
-  // The expected tool inventory, persisted with the manifest before release
-  // (M2-09): only when servers exist, keyed by exactly the sorted names.
-  const names = Object.keys(servers).sort();
+  // The expected MCP tool inventory (M2-09): MCP servers only, sorted.
+  const names = [...config.components.mcp].sort();
   return {
     native_settings: names.length > 0
       ? {

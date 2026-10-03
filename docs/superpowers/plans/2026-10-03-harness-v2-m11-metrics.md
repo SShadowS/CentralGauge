@@ -1759,8 +1759,8 @@ Inference contract (stage A copies it):
 - AMENDED (owner, 2026-10-03, decisions/2026-10-03-m11-inference-amendment.md; task M11-09b). The confirmatory statistic is theta = log[(C_v/S_v)/(C_b/S_b)], the log ratio of aggregate cost per solved, with a paired task-cluster STUDENTIZED bootstrap (bootstrap-t):
   - SE from paired task-level influence contributions (delta method);
   - t* = (theta* - theta_hat)/SE* over resampled whole paired tasks;
-  - `p = min(1, 2 * min(#{t* <= -|t_hat|} + 1, #{t* >= |t_hat|} + 1) / (n + 1))` with t_hat = theta_hat/SE;
-  - intervals invert the t* quantiles, reported on the ratio scale.
+  - SYMMETRIC bootstrap-t: `p = (#{|t*| >= |t_hat|} + 1) / (n + 1)` with t_hat = theta_hat/SE (ruling 2 in the amendment decision; the earlier lighter-tail formula was liberal under skew);
+  - the dual symmetric interval is theta_hat ± q_{1-a}(|t*|)·SE (Bonferroni: q_{1-a/m}), reported on the log and ratio scales.
 
   The percentile test below is superseded for confirmatory decisions (it was liberal at 24-40 clusters in stage A). Superseded text: p-value: percentile bootstrap with the +1 correction over the defined resamples, `p = min(1, 2 * min(#{d <= 0} + 1, #{d >= 0} + 1) / (n + 1))`. This is an approximate test; its calibration is not assumed but checked: stage A's design rule requires family-wise error under the null and partial-null scenarios within alpha + 2 Monte Carlo SE at the chosen design (M11-13). If that fails no design is accepted and the owner decides.
 - Holm over exactly the pre-registered `family`, in its order (ties keep family order). A suppressed contrast (zero-solve rule) has p = null: ranks as 1, never rejects, decides `no_decision`.
