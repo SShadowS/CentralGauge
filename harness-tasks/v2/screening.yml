@@ -24,3 +24,6 @@ candidates:
   - id: HX-007
     prior: intermediate
     size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-016
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Outbox Dispatcher.OnSendEntry" }
