@@ -4078,6 +4078,43 @@ Deno.test("component inventory: an early end with a malformed or duplicate refus
     const cell = await cellFor(t, "cc-v2-inv");
     await stopped(what, t, cell, "ended before it was seen running");
   }
+  // M9-05b run 003: the adapter's reader also parses a final line with no
+  // newline, so an unterminated duplicate is two records, never a proof.
+  {
+    const what = "unterminated duplicate";
+    const t = await inventoriedEnv();
+    t.docker.preReady = {
+      lines: [
+        INV({ ...bad, problems: ["2 cg_inventory records (lines 1, 2)"] }),
+      ],
+      unterminated: INV(bad),
+      exit: 5,
+    };
+    const cell = await cellFor(t, "cc-v2-inv");
+    await stopped(what, t, cell, "ended before it was seen running");
+  }
+});
+
+// M9-05b run 003: the helper reads records exactly as the adapter does, so a
+// leading byte order mark gives the adapter's verdict: one strict refusal,
+// proven, the arm's setup_failed (not a campaign stop).
+Deno.test("component inventory: a refusal behind a leading BOM gets the adapter's verdict", async () => {
+  const t = await inventoriedEnv();
+  t.docker.preReady = {
+    lines: [
+      "﻿" + INV({ ok: false, installed: [], problems: ["x"] }),
+    ],
+    exit: 5,
+  };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  const side = await sideOf(t, e.id);
+  assertStringIncludes(side.setup_error, "component inventory: x");
+  assertEquals(side.stop_reason, "component_inventory_refused");
+  assertEquals(e.telemetry.cost_usd, 0);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(await t.env.store.judgments(e.id), []);
 });
 
 // M9-05b: the inventory wait deadline is injectable; a running sandbox that

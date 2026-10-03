@@ -40,6 +40,7 @@ import {
   INVENTORY_KEYS,
   strings,
 } from "./adapters/claude-code.ts";
+import { readRecords } from "./adapters/jsonl.ts";
 import { piConfigInvalid } from "./adapters/pi.ts";
 import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, DeployContext } from "./bc-lane.ts";
@@ -2092,41 +2093,43 @@ async function inventoryRefusal(
 ): Promise<{ problems: string[]; provenRefusal: boolean } | null> {
   const deadline = performance.now() + waitMs;
   /** Every complete line whose DECODED JSON type is cg_inventory (as the adapter counts; M9-05b run 002). */
+  // M9-05b run 003: the adapter's own reader (BOM stripping, line splitting,
+  // decoding, an unterminated final line included), so both see the same records.
   const records = async () => {
     const text = await Deno.readTextFile(p.raw).catch(() => "");
-    // Complete lines only: the last one may still be mid-write.
-    return text.split("\n").slice(0, -1).filter((l) => {
-      try {
-        return JSON.parse(l)?.type === "cg_inventory";
-      } catch {
-        return false;
-      }
-    });
+    const { lines } = readRecords<{
+      type?: unknown;
+      v?: unknown;
+      ok?: unknown;
+      installed?: unknown;
+      problems?: unknown;
+    }>(text);
+    // A record is complete only when a newline follows it (readRecords'
+    // split leaves one more segment after the last terminated line).
+    const segments =
+      (text.startsWith("﻿") ? text.slice(1) : text).split(/\r?\n/).length;
+    return lines.filter((l) => l.rec.type === "cg_inventory").map((l) => ({
+      rec: l.rec,
+      terminated: l.line < segments,
+    }));
   };
   while (
-    (await records()).length === 0 && !over() &&
+    !(await records()).some((r) => r.terminated) && !over() &&
     performance.now() < deadline
   ) {
     await new Promise((r) => setTimeout(r, 50));
   }
-  const lines = await records();
-  // The record, only when exactly one exists and it has the adapter's strict
-  // shape (same keys, v 1, boolean ok, string lists) with ok false and problems.
+  const recs = await records();
+  // The record, only when exactly one exists, newline-terminated, with the
+  // adapter's strict shape (same keys, v 1, string lists), ok false and problems.
   let refusalRecord: string[] | null = null;
-  if (lines.length === 1) {
-    try {
-      const r = JSON.parse(lines[0]!);
-      if (
-        r?.type === "cg_inventory" &&
-        Object.keys(r).sort().join() === INVENTORY_KEYS && r.v === 1 &&
-        r.ok === false && strings(r.installed) && strings(r.problems) &&
-        r.problems.length > 0
-      ) {
-        refusalRecord = r.problems;
-      }
-    } catch {
-      refusalRecord = null;
-    }
+  const r = recs.length === 1 && recs[0]!.terminated ? recs[0]!.rec : null;
+  if (
+    r !== null && Object.keys(r).sort().join() === INVENTORY_KEYS &&
+    r.v === 1 && r.ok === false && strings(r.installed) &&
+    strings(r.problems) && r.problems.length > 0
+  ) {
+    refusalRecord = r.problems;
   }
   // A run that ended (or timed out) without a record is named by the parse below.
   try {
