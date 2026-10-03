@@ -20,6 +20,7 @@ codeunit 80072 "CGR Service Due Tests"
         Lib.CreateVehicle('T-SD-002', 5999, Enum::"CGR Maintenance Strategy"::"Heavy Duty");
         Lib.SetLastServiceKm('T-SD-002', 1000);
 
+        Assert.AreEqual(0D, ServicePlanMgt.NextServiceDate('T-SD-001'), 'No plan, no next service date');
         Assert.IsTrue(ServicePlanMgt.IsServiceDue('T-SD-001', 20270301D), 'Heavy Duty is due 5000 km after the last service');
         Assert.IsFalse(ServicePlanMgt.IsServiceDue('T-SD-002', 20270301D), 'Heavy Duty is not due one km before');
     end;
@@ -166,7 +167,7 @@ codeunit 80072 "CGR Service Due Tests"
         WorkDate(20270301D);
         Lib.SetV2Setup(0.01, '', 3);
         Lib.CreateServicePlan('T-SD-3M', Enum::"CGR Maintenance Strategy"::Default, 3);
-        Lib.CreateVehicle('T-SD-011', 2000, Enum::"CGR Maintenance Strategy"::Default);
+        Lib.CreateVehicle('T-SD-011', 2500,Enum::"CGR Maintenance Strategy"::Default);
         ServicePlanMgt.AssignPlan('T-SD-011', 'T-SD-3M');
         ServicePlanMgt.RegisterService('T-SD-011', 20270131D, 2000);
 
