@@ -1,0 +1,22 @@
+id: HX-028
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Core, Rental]
+coupling: [core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged] }
+  - { codeunit: 80051, procedures: [WeekdaysCountedWithoutHolidays, HolidayIsNotAWorkingDay, NextWorkingDaySkipsWeekendAndHoliday, ReversedRangeHasNoWorkingDays] }
+  - { codeunit: 80053, procedures: [DailyPreviewMatchesPricing, PreviewMatchesPricingAtCoarsePrecision, RebuildReplacesPreviousLines, LineAmountsUseSetupPrecision, WeekendPackageIsOneLine] }
+  - { codeunit: 80054, procedures: [PostsEveryReturnedContractInFilter, FailedContractIsRolledBackAndLogged] }
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 86020, procedures: [SaturdayAndSundayAreWeekend, WeekdaysAreNotWeekend, WeekdayHolidayIsNotWeekend, WeekendHolidayIsWeekend, SurchargeIgnoresWeekdayHoliday, WorkingDaysUnchanged, PackageUnchanged, SurchargeCountsWeekendHoliday] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

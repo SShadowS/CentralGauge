@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "86020/SaturdayAndSundayAreWeekend": 1
+    "86020/WeekdaysAreNotWeekend": 1
+    "86020/WeekdayHolidayIsNotWeekend": 1
+    "86020/WeekendHolidayIsWeekend": 1
+    "86020/SurchargeIgnoresWeekdayHoliday": 1
+    "86020/WorkingDaysUnchanged": 1
+    "86020/PackageUnchanged": 1
+    "86020/SurchargeCountsWeekendHoliday": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
