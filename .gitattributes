@@ -4,3 +4,6 @@ tests/fixtures/harness/** -text
 harness/images/base/cg-al text eol=lf
 # Hashed by the egress marker (recorded_hosts_sha256): never convert line endings.
 harness/egress/recorded-hosts.json -text
+# Hashed by al-lsp.json (probe block) and checked at image build: LF on every checkout (M10-04)
+harness/images/claude-code/lsp/*.mjs text eol=lf
+harness/images/claude-code/lsp/al-lsp.json text eol=lf
