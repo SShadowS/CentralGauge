@@ -9,9 +9,16 @@ import { walk } from "@std/fs";
 import { basename, join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
-import { BUILTIN_INVENTORY } from "../../../src/harness/adapters/claude-code.ts";
+import {
+  BUILTIN_INVENTORY,
+  LSP_PLUGINS,
+} from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
-import { ExperimentSchema } from "../../../src/harness/config.ts";
+import { ExperimentSchema, loadConfig } from "../../../src/harness/config.ts";
+import {
+  manifestHash,
+  resolveManifest,
+} from "../../../src/harness/manifest.ts";
 import {
   type CellRef,
   type HarnessEnv,
@@ -46,7 +53,15 @@ import {
   sweepOwnedSandboxes,
 } from "../../../src/harness/sandbox.ts";
 import { holdExclusive } from "./hold-file.ts";
-import { imageTag } from "../../../src/harness/images.ts";
+import {
+  AL_LSP_DEF,
+  AL_LSP_SHIPPED,
+  imageFacts,
+  imageTag,
+  lspLabel,
+  runtimeFacts,
+  serverDefinitions,
+} from "../../../src/harness/images.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
   authorizedAllowlist,
@@ -66,6 +81,7 @@ import {
   verifyEgressState,
 } from "../../../src/harness/egress.ts";
 import {
+  CATALOG,
   ccBehavior,
   cellFor,
   enforce,
@@ -3968,6 +3984,31 @@ Deno.test("component inventory (spec v2 gate 1): every inventory refusal is a pr
   assertEquals(t.docker.readySeen, true);
 });
 
+/** The campaign stops with the H-01 privilege failure; nothing was released or judged. */
+async function stopped(
+  what: string,
+  t: TestEnv,
+  cell: Awaited<ReturnType<typeof cellFor>>,
+  want: string,
+) {
+  const err = await assertRejects(
+    () => runCell(t.env, cell),
+    ContainerError,
+    "sandbox privilege check failed",
+  );
+  assertStringIncludes(err.message, "stopping", what);
+  assertStringIncludes(err.message, want, what);
+  const [e] = await t.env.store.executions(cell.campaignId);
+  assertEquals(e!.termination, "setup_failed", what);
+  assertEquals(
+    (await sideOf(t, e!.id)).stop_reason,
+    "privilege_check_failed",
+    what,
+  );
+  assertEquals(await t.env.store.judgments(e!.id), [], what);
+  assert(!t.docker.readySeen, `${what}: nothing released`);
+}
+
 // M9-05 run 003 (security): on an inventoried image a privilege failure is never
 // swallowed by the inventory. Only an end before the sandbox was seen running
 // with a PROVEN cg_inventory refusal is the arm's setup_failed; everything else
@@ -3983,29 +4024,6 @@ Deno.test("component inventory: privilege failures x inventory {ok, missing, ref
     ["inventory missing", []],
     ["inventory refused", [refusedRec]],
   ];
-  const stopped = async (
-    what: string,
-    t: TestEnv,
-    cell: Awaited<ReturnType<typeof cellFor>>,
-    want: string,
-  ) => {
-    const err = await assertRejects(
-      () => runCell(t.env, cell),
-      ContainerError,
-      "sandbox privilege check failed",
-    );
-    assertStringIncludes(err.message, "stopping", what);
-    assertStringIncludes(err.message, want, what);
-    const [e] = await t.env.store.executions(cell.campaignId);
-    assertEquals(e!.termination, "setup_failed", what);
-    assertEquals(
-      (await sideOf(t, e!.id)).stop_reason,
-      "privilege_check_failed",
-      what,
-    );
-    assertEquals(await t.env.store.judgments(e!.id), [], what);
-    assert(!t.docker.readySeen, `${what}: nothing released`);
-  };
   // A real privilege failure (the sandbox runs as ContainerAdministrator):
   // whatever the inventory says, the campaign stops.
   for (const [label, lines] of inventories) {
@@ -4050,6 +4068,107 @@ Deno.test("component inventory: privilege failures x inventory {ok, missing, ref
     assert(!t.docker.readySeen, `${what}: nothing released`);
     assertEquals(await t.env.store.judgments(e.id), [], what);
   }
+});
+
+// M9-05b: the proven refusal is the adapter's strict one: exactly one record of
+// the recorded shape with ok false. Anything else on an early end stops the campaign.
+Deno.test("component inventory: an early end with a malformed or duplicate refusal stops the campaign", async () => {
+  const bad = { ok: false, installed: [], problems: ["x"] };
+  const cases: [string, string[]][] = [
+    ["extra field", [INV({ ...bad, extra: 1 })]],
+    ["two refusal records", [INV(bad), INV(bad)]],
+    // M9-05b run 002: a duplicate whose type is JSON-escaped ("cg_inventory")
+    // decodes to cg_inventory; the first record's problems mimic the adapter's
+    // duplicate diagnostic, so only counting DECODED records catches it.
+    [
+      "escaped duplicate mimicking the adapter's diagnostic",
+      [
+        INV({ ...bad, problems: ["2 cg_inventory records (lines 1, 2)"] }),
+        INV(bad).replace('"cg_inventory"', '"\\u0063g_inventory"'),
+      ],
+    ],
+  ];
+  for (const [what, lines] of cases) {
+    const t = await inventoriedEnv();
+    t.docker.preReady = { lines, exit: 5 };
+    const cell = await cellFor(t, "cc-v2-inv");
+    await stopped(what, t, cell, "ended before it was seen running");
+  }
+  // M9-05b run 003: the adapter's reader also parses a final line with no
+  // newline, so an unterminated duplicate is two records, never a proof.
+  {
+    const what = "unterminated duplicate";
+    const t = await inventoriedEnv();
+    t.docker.preReady = {
+      lines: [
+        INV({ ...bad, problems: ["2 cg_inventory records (lines 1, 2)"] }),
+      ],
+      unterminated: INV(bad),
+      exit: 5,
+    };
+    const cell = await cellFor(t, "cc-v2-inv");
+    await stopped(what, t, cell, "ended before it was seen running");
+  }
+});
+
+// M9-05b run 003: the helper reads records exactly as the adapter does, so a
+// leading byte order mark gives the adapter's verdict: one strict refusal,
+// proven, the arm's setup_failed (not a campaign stop).
+Deno.test("component inventory: a refusal behind a leading BOM gets the adapter's verdict", async () => {
+  const t = await inventoriedEnv();
+  t.docker.preReady = {
+    lines: [
+      "﻿" + INV({ ok: false, installed: [], problems: ["x"] }),
+    ],
+    exit: 5,
+  };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  const side = await sideOf(t, e.id);
+  assertStringIncludes(side.setup_error, "component inventory: x");
+  assertEquals(side.stop_reason, "component_inventory_refused");
+  assertEquals(e.telemetry.cost_usd, 0);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+// M9-05b: the inventory wait deadline is injectable; a running sandbox that
+// never prints the record is a pre-start refusal, not a campaign stop.
+Deno.test("component inventory: a running sandbox that never prints the record is refused at the deadline", async () => {
+  const t = await inventoriedEnv();
+  t.env.inventoryTimeoutMs = 300;
+  t.docker.waitForReady = true;
+  t.docker.preReady = { lines: [] };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes(
+    (await sideOf(t, e.id)).setup_error,
+    "component inventory",
+  );
+  assertEquals(e.telemetry.cost_usd, 0);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(t.docker.secretsAtKill ?? [], []);
+  assert(!await exists(privatePaths(t.env, e.id).custody), "no custody");
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+// M9-05b: the run settles while the privilege probe fails: the sandbox was seen
+// running, so it is the H-01 campaign stop, never the inventory's refusal.
+Deno.test("component inventory: the run settling while the privilege probe fails stops the campaign", async () => {
+  const t = await inventoriedEnv();
+  t.docker.waitForReady = true;
+  t.docker.preReady = { lines: [INV()] };
+  const exec = t.docker.exec.bind(t.docker);
+  t.docker.exec = async (name, user, argv) => {
+    await t.docker.kill(name);
+    await new Promise((r) => setTimeout(r, 50));
+    return exec(name, user, argv);
+  };
+  t.docker.execAnswer = new Error("exec failed: container exited");
+  const cell = await cellFor(t, "cc-v2-inv");
+  await stopped("settled during probe", t, cell, "exec failed");
 });
 
 // Contract (b): a problem found AFTER the agent started is setup_failed and never
@@ -4118,4 +4237,111 @@ Deno.test("component inventory: a non-inventoried image releases without waiting
   const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
   assertEquals(e.termination, "completed");
   assertEquals(t.docker.readySeen, true);
+});
+
+Deno.test("component inventory + LSP (spec v2 gates 1 and 2): a declared, proven LSP completes; a missing tool or an undeclared plugin is setup_failed", async () => {
+  const t = await inventoriedEnv();
+  await Deno.mkdir(
+    join(t.env.repoRoot, "harness", "images", "claude-code", "lsp"),
+    { recursive: true },
+  );
+  await Deno.copyFile(AL_LSP_DEF, join(t.env.repoRoot, AL_LSP_DEF));
+  await write(
+    t.harnessRoot,
+    "configs/cc-v2-inv-lsp.yml",
+    'id: cc-v2-inv-lsp\nharness: claude-code\nharness_version: "2.1.282"\nimage_revision: "3"\nmodels: { main: anthropic/claude-sonnet-5 }\nsettings: {}\ncomponents: { instructions: bundles/env/instructions, lsp: [al] }\nlimits: { timeout_min: 30, max_budget_usd: 5 }\n',
+  );
+  const imageId = `sha256:${"d".repeat(64)}`;
+  const [lk, lv] = (await lspLabel(t.env.repoRoot))!;
+  t.docker.addImage(imageTag("claude-code", "2.1.282", "3"), imageId, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+    "centralgauge.harness.revision": "3",
+    [lk]: lv,
+  });
+  t.docker.shipFile(
+    imageId,
+    AL_LSP_SHIPPED,
+    await Deno.readTextFile(AL_LSP_DEF),
+  );
+  const builtins = BUILTIN_INVENTORY["2.1.282"]!.plugins.map((s) => ({
+    name: s.split("@")[0],
+    source: s,
+  }));
+  const pluginId = LSP_PLUGINS["al"]!;
+  const lspPlugin = {
+    name: pluginId.name,
+    source: pluginId.source,
+    ...(pluginId.path === null ? {} : { path: pluginId.path }),
+  };
+  const init = (tools: string[], plugins: unknown[]) => {
+    const i = JSON.parse(V2_INIT);
+    return JSON.stringify({
+      ...i,
+      tools: [...i.tools, ...tools],
+      plugins: [...builtins, ...plugins],
+    });
+  };
+  const cases: [string, string, string, string, string | null][] = [
+    [
+      "proven",
+      "cc-v2-inv-lsp",
+      INV({ installed: ["instructions", "lsp:al"] }),
+      init(["LSP"], [lspPlugin]),
+      null,
+    ],
+    [
+      "no tool",
+      "cc-v2-inv-lsp",
+      INV({ installed: ["instructions", "lsp:al"] }),
+      init([], [lspPlugin]),
+      "lsp:al not loaded",
+    ],
+    [
+      "undeclared plugin",
+      "cc-v2-inv",
+      INV(),
+      init([], [lspPlugin]),
+      "unrequested plugin loaded",
+    ],
+  ];
+  for (const [name, cfg, inv, initLine, want] of cases) {
+    const post = [initLine, ...(await probeLines())];
+    t.docker.preReady = { lines: [inv] };
+    t.docker.behavior = async (_call, io) => {
+      for (const l of post) await io.stdout(l);
+      return 0;
+    };
+    // cellFor (runtime-fixture) loads no server definitions, so an LSP arm resolves its facts here.
+    const base = await cellFor(t, cfg === "cc-v2-inv-lsp" ? "cc-v2-inv" : cfg);
+    const config = await loadConfig(t.harnessRoot, cfg);
+    const facts = runtimeFacts(
+      config,
+      await imageFacts(
+        t.docker,
+        imageTag(config.harness, config.harness_version, config.image_revision),
+        "HOST1",
+      ),
+      adapterFor(config.harness),
+      CATALOG,
+      await serverDefinitions(t.env.repoRoot, config.components),
+    );
+    const armManifest = await resolveManifest(t.harnessRoot, config, facts);
+    const cell = {
+      ...base,
+      arm: cfg,
+      block: { ...base.block, order: [cfg] },
+      armManifest,
+      armManifestHash: await manifestHash(armManifest),
+    };
+    const e = (await runCell(t.env, cell)).executions[0]!;
+    if (want === null) {
+      assertEquals(e.termination, "completed", name);
+      assert(e.observed.loaded_components!.includes("lsp:al"), name);
+      continue;
+    }
+    assertEquals(e.termination, "setup_failed", name);
+    assertStringIncludes((await sideOf(t, e.id)).setup_error, want, name);
+  }
 });
