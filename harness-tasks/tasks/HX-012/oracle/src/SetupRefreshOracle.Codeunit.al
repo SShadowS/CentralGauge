@@ -124,27 +124,39 @@ codeunit 85700 "HX012 Setup Refresh Oracle"
         Assert.AreEqual(1, AmountRounding.Precision(), 'A later save with triggers is seen');
     end;
 
+    // InsertedSetupIsRead and DeletedSetupIsDropped delete the Setup row, which resets
+    // "Last Contract No."; a later row that creates contracts would reuse contract numbers.
+    // Keep these two procedures last in the codeunit.
     [Test]
     procedure InsertedSetupIsRead()
     var
         Setup: Record "CGR Setup";
-        SessionContext: Codeunit "CGR Session Context";
         AmountRounding: Codeunit "CGR Amount Rounding";
         Dispatcher: Codeunit "CGR Outbox Dispatcher";
     begin
         WorkDate(20270301D);
-        Setup.GetOrCreate();
+        InitSetup(0.05, '', 5);
+        Assert.AreEqual(0.05, AmountRounding.Precision(), 'Precision read first');
+
+        Setup.Get();
         Setup.Delete();
-        SessionContext.Reset();
-        Assert.AreEqual(0.01, AmountRounding.Precision(), 'Without a Setup record the precision is 0.01');
+        Assert.AreEqual(0.05, AmountRounding.Precision(), 'A delete without triggers keeps the values already read');
 
         Setup.Init();
-        Setup."Amount Rounding Precision" := 0.05;
-        Setup."Outbox Max Attempts" := 5;
+        Setup."Amount Rounding Precision" := 0.5;
+        Setup."Outbox Max Attempts" := 6;
+        Setup.Insert();
+        Assert.AreEqual(0.05, AmountRounding.Precision(), 'An insert without triggers keeps the values already read');
+
+        Setup.Get();
+        Setup.Delete();
+        Setup.Init();
+        Setup."Amount Rounding Precision" := 1;
+        Setup."Outbox Max Attempts" := 7;
         Setup.Insert(true);
 
-        Assert.AreEqual(0.05, AmountRounding.Precision(), 'Precision of the inserted Setup');
-        Assert.AreEqual(5, Dispatcher.MaxAttempts(), 'Max attempts of the inserted Setup');
+        Assert.AreEqual(1, AmountRounding.Precision(), 'Precision of the Setup inserted with triggers');
+        Assert.AreEqual(7, Dispatcher.MaxAttempts(), 'Max attempts of the Setup inserted with triggers');
     end;
 
     [Test]
