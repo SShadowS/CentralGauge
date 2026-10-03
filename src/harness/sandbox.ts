@@ -466,6 +466,41 @@ export const PRIVILEGE_ARGV = [
   "csv",
   "/nh",
 ];
+/**
+ * H-01 run 005: pi's harness-generated config (settings.json, AGENTS.md,
+ * auth.json in C:\pi-agent) is written by the image's cg-pi-stage.ps1 as
+ * ContainerAdministrator, so the agent user cannot rewrite it. An absolute
+ * path, like PRIVILEGE_ARGV: exec starts in the agent-staged C:\workspace.
+ */
+export const PI_STAGE_USER = "ContainerAdministrator";
+export const PI_STAGE_ARGV = [
+  "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+  "-NoProfile",
+  "-NonInteractive",
+  "-ExecutionPolicy",
+  "Bypass",
+  "-File",
+  "C:\\cg-pi-stage.ps1",
+];
+/** Runs the pi config staging in the sandbox; throws on non-zero, error or timeout. */
+export async function stagePiConfig(
+  docker: DockerCli,
+  name: string,
+  opMs: number,
+): Promise<void> {
+  const r = await bounded(
+    docker.exec(name, PI_STAGE_USER, PI_STAGE_ARGV),
+    opMs,
+    `docker exec ${name} cg-pi-stage.ps1`,
+  );
+  if (r.code !== 0) {
+    throw new Error(
+      `cg-pi-stage.ps1 exited ${r.code}: ${
+        (r.stdout + r.stderr).trim().slice(0, 300)
+      }`,
+    );
+  }
+}
 const ADMINISTRATORS_SID = "S-1-5-32-544";
 /** Mandatory labels: S-1-16-12288 High, S-1-16-16384 System and above refuse. */
 const HIGH_LABEL_RID = 12288;

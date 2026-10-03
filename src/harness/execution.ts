@@ -89,6 +89,7 @@ import {
   sandboxName,
   type SandboxResult,
   type SecretValue,
+  stagePiConfig,
   sweepOwnedSandboxes,
   sweepStaleSecrets,
   teardownSandbox,
@@ -964,7 +965,7 @@ interface DraftInput {
   /** The attempt's persisted mode (intent), never the current command's. */
   mode: AttemptMode;
   stub: StubProvenance | null;
-  /** egress_preflight_failed, egress_violation, egress_log_failed or egress_proxy_failed (M1-33, M1-33d); privilege_check_failed (H-01). */
+  /** egress_preflight_failed, egress_violation, egress_log_failed or egress_proxy_failed (M1-33, M1-33d); privilege_check_failed (H-01); pi_config_staging_failed (H-01 run 005). */
   egressStop?: string | null;
 }
 
@@ -1673,15 +1674,27 @@ export async function runExecution(
       let preflightError: string | null = null;
       let releaseError: unknown = null;
       let privilegeError: string | null = null;
+      let privilegeStop = "privilege_check_failed";
       // H-01: before any credential (the proxy credential included), while
       // only trusted image code runs (every entrypoint waits for ready): the
       // harness's own check, never the entrypoint's output. Fails closed.
+      // H-01 run 005: then a pi sandbox (stub cells too: STUB_COMMAND runs
+      // the image's run.ps1) gets its config staged admin-owned, still before
+      // anything is released; a failure is handled like the check's.
+      let setupStep = "sandbox privilege check";
       try {
         await waitRunning(env.docker, name, running, opMs);
         await checkSandboxPrivilege(env.docker, name, opMs);
+        if (manifest.harness === "pi") {
+          setupStep = "pi config staging";
+          await stagePiConfig(env.docker, name, opMs);
+        }
       } catch (err) {
         if (!stop.aborted) {
-          privilegeError = `sandbox privilege check failed: ${msg(err)}`;
+          privilegeError = `${setupStep} failed: ${msg(err)}`;
+          privilegeStop = setupStep === "pi config staging"
+            ? "pi_config_staging_failed"
+            : "privilege_check_failed";
           egressAbort.abort(new Error(privilegeError));
         }
       }
@@ -1765,7 +1778,7 @@ export async function runExecution(
       if (releaseError !== null) throw releaseError;
       // A sandbox that never started ran nothing: the start-failure rules apply.
       if (privilegeError !== null && sandbox.started) {
-        egressStop = "privilege_check_failed";
+        egressStop = privilegeStop;
         privilegeFailure = privilegeError;
         throw new ConfigurationError(privilegeError);
       }

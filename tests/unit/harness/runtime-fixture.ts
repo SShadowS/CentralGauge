@@ -316,6 +316,7 @@ export async function cellFor(
   t: TestEnv,
   configId = "cc-sonnet-plain",
   taskId = "HX-001",
+  catalog: typeof CATALOG = CATALOG,
 ): Promise<CellRef> {
   const config = await loadConfig(t.harnessRoot, configId);
   const facts = runtimeFacts(
@@ -326,7 +327,7 @@ export async function cellFor(
       "HOST1",
     ),
     adapterFor(config.harness),
-    CATALOG,
+    catalog,
   );
   const armManifest = await resolveManifest(t.harnessRoot, config, facts);
   const task = await loadTask(join(t.repo.tasksDir, taskId));

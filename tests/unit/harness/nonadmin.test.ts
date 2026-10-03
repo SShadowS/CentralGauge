@@ -15,8 +15,11 @@ import {
   ADMIN_REFUSAL_MARKER,
   checkSandboxPrivilege,
   groupProblems,
+  PI_STAGE_ARGV,
+  PI_STAGE_USER,
   PRIVILEGE_ARGV,
   SANDBOX_USER,
+  stagePiConfig,
 } from "../../../src/harness/sandbox.ts";
 import {
   ADMIN_GROUPS_CSV,
@@ -114,26 +117,21 @@ Deno.test("H-01 images: npm into a machine-wide prefix; the agent images end as 
   }
 });
 
-Deno.test("H-01 pi: C:\\pi-agent exists at build time, Users may modify it (by SID); run.ps1 creates it only if missing", async () => {
+Deno.test("H-01 pi: C:\\pi-agent exists at build time with an explicit ACL (by SID, run 005: no Users Modify); run.ps1 never creates it", async () => {
   const df = await Deno.readTextFile("harness/images/pi/Dockerfile.windows");
   assertStringIncludes(
     df,
     "New-Item -ItemType Directory -Force -Path C:\\pi-agent",
   );
-  assertStringIncludes(
-    df,
-    "icacls C:\\pi-agent /grant '*S-1-5-32-545:(OI)(CI)M'",
-  );
+  for (const g of PI_AGENT_ICACLS) assertStringIncludes(df, g);
+  assert(!df.includes("(OI)(CI)M"), "no Users Modify (H-01 run 005)");
   assert(
-    df.indexOf("icacls C:\\pi-agent") < df.indexOf("USER ContainerUser"),
+    df.lastIndexOf("icacls C:\\pi-agent") < df.indexOf("USER ContainerUser"),
     "granted while still admin",
   );
   assert(!/OPENROUTER|api-key|cg-secrets/i.test(df));
   const run = await Deno.readTextFile("harness/images/pi/run.ps1");
-  assertStringIncludes(
-    run,
-    "if (-not (Test-Path $env:PI_CODING_AGENT_DIR)) { New-Item -ItemType Directory -Path $env:PI_CODING_AGENT_DIR | Out-Null }",
-  );
+  assert(!run.includes("New-Item"), "run.ps1 creates nothing");
 });
 
 const guardRun = async (env: Record<string, string>) => {
@@ -352,10 +350,8 @@ Deno.test("H-01 run 004: no shell-form RUN carries a double quote (the Windows d
     for (const r of runs) assert(!r.includes('"'), `${h}: ${r}`);
   }
   const pi = await Deno.readTextFile("harness/images/pi/Dockerfile.windows");
-  assertStringIncludes(
-    pi,
-    "icacls C:\\pi-agent /grant '*S-1-5-32-545:(OI)(CI)M'",
-  );
+  // H-01 run 005: the C:\pi-agent grants (single-quoted) replace run 004's Users Modify.
+  for (const g of PI_AGENT_ICACLS) assertStringIncludes(pi, g);
 });
 
 const LOCKED: Record<(typeof IMAGES)[number], string[]> = {
@@ -371,7 +367,7 @@ const LOCKED: Record<(typeof IMAGES)[number], string[]> = {
     "C:\\Program Files\\nodejs",
   ],
   "claude-code": ["C:\\cg-npm", "C:\\run.ps1"],
-  pi: ["C:\\cg-npm", "C:\\run.ps1", "C:\\cg-budget.ts"],
+  pi: ["C:\\cg-npm", "C:\\run.ps1", "C:\\cg-budget.ts", "C:\\cg-pi-stage.ps1"],
   mock: ["C:\\mock.ps1"],
 };
 
@@ -409,13 +405,14 @@ Deno.test("H-01 run 004: each image locks every harness-owned path it adds, afte
       );
     }
   }
-  // C:\pi-agent is the agent's own directory: Users keep Modify there.
+  // C:\pi-agent carries its own ACL (H-01 run 005), not cg-lockdown's.
   assert(!LOCKED.pi.includes("C:\\pi-agent"));
 });
 
-const pwsh = async (args: string[]) => {
+const pwsh = async (args: string[], env?: Record<string, string>) => {
   const out = await new Deno.Command("powershell", {
     args: ["-NoProfile", "-ExecutionPolicy", "Bypass", ...args],
+    ...(env ? { env } : {}),
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -534,6 +531,351 @@ Deno.test({
       }
     } finally {
       await dropTree(dir);
+    }
+  },
+});
+
+// H-01 run 005 (H:\cg-coord\reviews\H-01-004\review-gpt61sol.md P2): pi's
+// harness-generated config is staged admin-owned by the harness; C:\pi-agent
+// lets the agent add only its own (lock) subdirectories. That ContainerUser
+// cannot create/replace/delete a file there but can make and remove its own
+// lock dir is provable only in a container (ops-proof-plan Run 005); these
+// tests pin the Dockerfile, the scripts and the ACL shape on host temp dirs.
+
+const PI_DF = "harness/images/pi/Dockerfile.windows";
+const PI_RUN = "harness/images/pi/run.ps1";
+const PI_STAGE = "harness/images/pi/cg-pi-stage.ps1";
+/**
+ * cg-pi-stage as the image runs it: Windows PowerShell's own module path (the
+ * host's inherited pwsh 7 PSModulePath hides Get-FileHash).
+ */
+const runStage = (args: string[]) =>
+  pwsh(["-File", PI_STAGE, ...args], {
+    PSModulePath: `${
+      Deno.env.get("SystemRoot") ?? "C:\\Windows"
+    }\\system32\\WindowsPowerShell\\v1.0\\Modules`,
+  });
+const PI_AGENT_ICACLS = [
+  "icacls C:\\pi-agent /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' '*S-1-3-0:(OI)(CI)(IO)F' /Q",
+  "icacls C:\\pi-agent /grant '*S-1-5-32-545:(AD)' /Q",
+];
+
+Deno.test("H-01 run 005: the pi Dockerfile gives C:\\pi-agent its explicit ACL (inheritance off, Users RX + AD on the folder only, CREATOR OWNER inherit-only), each icacls checked", async () => {
+  const lines = instructions(await Deno.readTextFile(PI_DF));
+  const run = lines.filter((l) => l.includes("C:\\pi-agent"));
+  const fail =
+    "if ($LASTEXITCODE -ne 0) { throw ('icacls C:\\pi-agent failed: ' + $LASTEXITCODE) }";
+  assertEquals(run, [
+    "RUN New-Item -ItemType Directory -Force -Path C:\\pi-agent | Out-Null; " +
+    `${PI_AGENT_ICACLS[0]}; ${fail}; ${PI_AGENT_ICACLS[1]}; ${fail}`,
+  ]);
+  // Users never get create-file (WD), delete-child (DC), modify or full here.
+  const users = run[0]!.match(/\*S-1-5-32-545:\S+'/g)!;
+  assertEquals(users, ["*S-1-5-32-545:(OI)(CI)RX'", "*S-1-5-32-545:(AD)'"]);
+});
+
+Deno.test("H-01 run 005: cg-pi-stage.ps1 is COPYed to C:\\cg-pi-stage.ps1 and locked; PI_STAGE_ARGV runs exactly it with the absolute powershell path", async () => {
+  const lines = instructions(await Deno.readTextFile(PI_DF));
+  assert(
+    lines.includes("COPY cg-pi-stage.ps1 C:/cg-pi-stage.ps1"),
+    lines.join("\n"),
+  );
+  assert(LOCKED.pi.includes("C:\\cg-pi-stage.ps1"));
+  assertEquals(PI_STAGE_USER, "ContainerAdministrator");
+  const exe = PI_STAGE_ARGV[0]!;
+  // docker exec starts in WORKDIR C:\workspace (agent-staged): never a bare name.
+  assertEquals(
+    exe,
+    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+  );
+  assertEquals(PI_STAGE_ARGV.slice(1), [
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    "C:\\cg-pi-stage.ps1",
+  ]);
+  // The stage script holds the validations run.ps1 used to run.
+  const s = await Deno.readTextFile(PI_STAGE);
+  for (
+    const x of [
+      "[string]$Dir = 'C:\\pi-agent'",
+      "[string]$Config = 'C:\\config'",
+      "-is [bool]",
+      "-cne 'off'",
+      "exit 4",
+      "instructions bundle holds unexpected files",
+      "pi instructions bundle must hold AGENTS.md",
+      "Get-FileHash",
+      "'settings.json'",
+      "'AGENTS.md'",
+      "'auth.json'",
+      "'/setowner'",
+    ]
+  ) assertStringIncludes(s, x);
+  assert(!/cg-secrets|OPENROUTER/i.test(s));
+});
+
+Deno.test("H-01 run 005: run.ps1 writes nothing into C:\\pi-agent; after ready it requires the staged settings.json; pi skips prompt templates and themes", async () => {
+  const run = await Deno.readTextFile(PI_RUN);
+  const body = code(run).join("\n");
+  for (
+    const w of [
+      "New-Item",
+      "WriteAllText",
+      "WriteAllBytes",
+      "Copy-Item",
+      "Set-Content",
+      "Out-File",
+      "Move-Item",
+      "Remove-Item",
+      "AGENTS.md",
+    ]
+  ) assert(!body.includes(w), w);
+  const need =
+    'if (-not (Test-Path -LiteralPath "$env:PI_CODING_AGENT_DIR\\settings.json" -PathType Leaf)) {';
+  assertStringIncludes(body, need);
+  const at = body.indexOf(need);
+  assert(at > body.indexOf("while (-not (Test-Path 'C:\\cg-secrets\\ready'))"));
+  assert(at > body.indexOf("$env:PI_CODING_AGENT_DIR = 'C:\\pi-agent'"));
+  assert(at < body.indexOf("& pi --version"));
+  assertStringIncludes(
+    body.slice(at, body.indexOf("}", at)),
+    "[Console]::Error.WriteLine('[FAIL] ",
+  );
+  // Defense in depth: the recorded pi_settings are still validated.
+  assertStringIncludes(body, "-cne 'off'");
+  const piArgs = body.split("\n").find((l) => l.startsWith("$piArgs = @("))!;
+  assertStringIncludes(piArgs, "'--no-prompt-templates', '--no-themes'");
+});
+
+Deno.test("H-01 run 005: stagePiConfig execs PI_STAGE_ARGV as ContainerAdministrator; non-zero, error or timeout throws", async () => {
+  const d = new FakeDocker();
+  await stagePiConfig(d, "sb", 100);
+  assertEquals(d.privilegeCalls.map((c) => [c.op, c.name, c.user, c.argv]), [
+    ["exec", "sb", PI_STAGE_USER, PI_STAGE_ARGV],
+  ]);
+  const fails: [FakeDocker["stageAnswer"], string][] = [
+    [
+      { code: 1, stdout: "[FAIL] owner S-1-5-21-1 C:\\pi-agent", stderr: "" },
+      "[FAIL] owner",
+    ],
+    [
+      { code: 4, stdout: "", stderr: "[FAIL] settings.pi_settings" },
+      "exited 4",
+    ],
+    [new Error("exec blew up"), "exec blew up"],
+    ["hang", "timed out"],
+  ];
+  for (const [answer, want] of fails) {
+    const d = new FakeDocker();
+    d.stageAnswer = answer;
+    await assertRejects(() => stagePiConfig(d, "sb", 100), Error, want);
+  }
+});
+
+/** The Dockerfile's own icacls segments for C:\pi-agent, aimed at `dir`. */
+const piAgentGrants = async (dir: string) => {
+  const segs = instructions(await Deno.readTextFile(PI_DF))
+    .flatMap((l) => l.replace(/^RUN /, "").split("; "))
+    .filter((s) => s.startsWith("icacls C:\\pi-agent "));
+  assertEquals(segs, PI_AGENT_ICACLS);
+  return segs.map((s) => s.replace("C:\\pi-agent", `'${dir}'`));
+};
+const ps1 = (cmds: string[]) =>
+  pwsh([
+    "-Command",
+    cmds.map((c) => `${c}; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`)
+      .join("; ") + "; exit 0",
+  ]);
+const fails = (out: string) =>
+  out.split(/\r?\n/).filter((x) => x.startsWith("[FAIL]"));
+const meSid = async () => {
+  const r = await pwsh([
+    "-Command",
+    "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+  ]);
+  return r.out.trim();
+};
+/** A temp dir with the Dockerfile's exact C:\pi-agent ACL. */
+const piAgentDir = async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-pi-agent-" });
+  const g = await ps1(await piAgentGrants(dir));
+  assertEquals(g.code, 0, g.out);
+  return dir;
+};
+/** C:\config as the harness writes it: valid pi_settings and an AGENTS.md/CLAUDE.md bundle. */
+const piConfigDir = async (piSettings: unknown) => {
+  const cfg = await Deno.makeTempDir({ prefix: "cg-pi-config-" });
+  await Deno.writeTextFile(
+    `${cfg}\\settings.json`,
+    JSON.stringify({ settings: { pi_settings: piSettings } }),
+  );
+  await Deno.mkdir(`${cfg}\\bundle\\instructions`, { recursive: true });
+  for (const f of ["AGENTS.md", "CLAUDE.md"]) {
+    await Deno.writeTextFile(
+      `${cfg}\\bundle\\instructions\\${f}`,
+      "Environment facts: \u00e6\u00f8\u00e5.\n",
+    );
+  }
+  return cfg;
+};
+const GOOD_PI = { compaction: { enabled: false }, cacheWarming: "off" };
+
+Deno.test({
+  name:
+    "H-01 run 005: cg-pi-stage -VerifyOnly fails the run 004 shape (Users (OI)(CI)M) on the dir and on a file in it",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await Deno.makeTempDir({ prefix: "cg-pi-agent-" });
+    try {
+      await Deno.writeTextFile(`${dir}\\settings.json`, "{}");
+      const g = await ps1([
+        `icacls '${dir}' /grant '*S-1-5-32-545:(OI)(CI)M' /Q`,
+      ]);
+      assertEquals(g.code, 0, g.out);
+      const r = await runStage(["-VerifyOnly", dir]);
+      assertEquals(r.code, 1, r.out);
+      assertStringIncludes(r.out, `[FAIL] write S-1-5-32-545 ${dir}\r\n`);
+      assertStringIncludes(
+        r.out,
+        `[FAIL] write S-1-5-32-545 ${dir}\\settings.json`,
+      );
+    } finally {
+      await dropTree(dir);
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "H-01 run 005: the Dockerfile's C:\\pi-agent ACL plus cg-pi-stage's files pass -VerifyOnly but for the host owner; a Users write grant on a staged file fails",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await piAgentDir();
+    const cfg = await piConfigDir(GOOD_PI);
+    const me = await meSid();
+    assert(/^S-1-5-21-/.test(me), me);
+    try {
+      // The Dockerfile shape alone: only the (host) owner is not an admin.
+      let r = await runStage(["-VerifyOnly", dir]);
+      assertEquals(r.code, 1, r.out);
+      assertEquals(fails(r.out), [`[FAIL] owner ${me} ${dir}`]);
+      const acl = await pwsh(["-Command", `icacls '${dir}'`]);
+      assert(/BUILTIN\\Users:\(OI\)\(CI\)\(RX\)/.test(acl.out), acl.out);
+      assert(/BUILTIN\\Users:\(AD\)/.test(acl.out), acl.out);
+      assert(/CREATOR OWNER:\(OI\)\(CI\)\(IO\)\(F\)/.test(acl.out), acl.out);
+      assert(!/\(I\)/.test(acl.out), `inheritance off: ${acl.out}`);
+      // The host user stands in for ContainerAdministrator while staging.
+      let g = await ps1([`icacls '${dir}' /grant '*${me}:(OI)(CI)F' /Q`]);
+      assertEquals(g.code, 0, g.out);
+      r = await runStage(["-Dir", dir, "-Config", cfg, "-Owner", me]);
+      assertEquals(r.code, 1, r.out);
+      // Only the stand-in's own grant and the host owner are flagged.
+      for (const f of fails(r.out)) {
+        assert(
+          f.startsWith("[FAIL] owner ") || f === `[FAIL] write ${me} ${dir}` ||
+            f === `[FAIL] inherited append ${me} ${dir}`,
+          f,
+        );
+      }
+      g = await ps1([`icacls '${dir}' /remove:g '*${me}' /Q`]);
+      assertEquals(g.code, 0, g.out);
+      r = await runStage(["-VerifyOnly", dir]);
+      assertEquals(r.code, 1, r.out);
+      assertEquals(
+        fails(r.out).sort(),
+        [
+          `[FAIL] owner ${me} ${dir}`,
+          `[FAIL] owner ${me} ${dir}\\AGENTS.md`,
+          `[FAIL] owner ${me} ${dir}\\auth.json`,
+          `[FAIL] owner ${me} ${dir}\\settings.json`,
+        ].sort(),
+      );
+      const names = [...Deno.readDirSync(dir)].map((e) => e.name).sort();
+      assertEquals(names, ["AGENTS.md", "auth.json", "settings.json"]);
+      assertEquals(
+        [...await Deno.readFile(`${dir}\\auth.json`)],
+        [...new TextEncoder().encode("{}")],
+      );
+      assertEquals(
+        await Deno.readFile(`${dir}\\AGENTS.md`),
+        await Deno.readFile(`${cfg}\\bundle\\instructions\\AGENTS.md`),
+      );
+      const settings = await Deno.readFile(`${dir}\\settings.json`);
+      assert(settings[0] !== 0xef, "no BOM");
+      assertEquals(JSON.parse(new TextDecoder().decode(settings)), GOOD_PI);
+      for (const f of ["settings.json", "AGENTS.md", "auth.json"]) {
+        const a = await pwsh(["-Command", `icacls '${dir}\\${f}'`]);
+        const users = a.out.match(/BUILTIN\\Users:\S*/g) ?? [];
+        assertEquals(users, ["BUILTIN\\Users:(RX)"], `${f}: ${a.out}`);
+        assert(!/\(I\)/.test(a.out), `${f}: ${a.out}`);
+      }
+      // A staged file carrying a Users write grant fails the check.
+      g = await ps1([
+        `icacls '${dir}\\settings.json' /grant '*S-1-5-32-545:M' /Q`,
+      ]);
+      assertEquals(g.code, 0, g.out);
+      r = await runStage(["-VerifyOnly", dir]);
+      assertEquals(r.code, 1, r.out);
+      assertStringIncludes(
+        r.out,
+        `[FAIL] write S-1-5-32-545 ${dir}\\settings.json`,
+      );
+      // An inheritable append (create-file on every child) fails on the dir.
+      g = await ps1([`icacls '${dir}' /grant '*S-1-5-32-545:(OI)(CI)(AD)' /Q`]);
+      assertEquals(g.code, 0, g.out);
+      r = await runStage(["-VerifyOnly", dir]);
+      assertStringIncludes(
+        r.out,
+        `[FAIL] inherited append S-1-5-32-545 ${dir}`,
+      );
+    } finally {
+      await dropTree(dir);
+      await Deno.remove(cfg, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "H-01 run 005: cg-pi-stage refuses a non-empty agent dir and invalid pi_settings, writing nothing",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const me = await meSid();
+    const stage = (dir: string, cfg: string) =>
+      runStage(["-Dir", dir, "-Config", cfg, "-Owner", me]);
+    const good = await piConfigDir(GOOD_PI);
+    const bad = await piConfigDir({
+      compaction: { enabled: true },
+      cacheWarming: "off",
+    });
+    const dirs: string[] = [];
+    try {
+      for (const pre of ["settings.json.lock", "settings.json", null]) {
+        const dir = await piAgentDir();
+        dirs.push(dir);
+        const g = await ps1([`icacls '${dir}' /grant '*${me}:(OI)(CI)F' /Q`]);
+        assertEquals(g.code, 0, g.out);
+        if (pre === "settings.json") {
+          await Deno.writeTextFile(`${dir}\\${pre}`, "{}");
+        } else if (pre) await Deno.mkdir(`${dir}\\${pre}`);
+        const r = await stage(dir, pre ? good : bad);
+        assert(r.code !== 0, r.out);
+        if (pre) {
+          assertStringIncludes(r.out, `[FAIL] ${dir} is not empty: ${pre}`);
+          assertEquals([...Deno.readDirSync(dir)].map((e) => e.name), [pre]);
+        } else {
+          assertEquals(r.code, 4, r.out);
+          assertStringIncludes(r.out, "[FAIL] settings.pi_settings");
+          assertEquals([...Deno.readDirSync(dir)], []);
+        }
+      }
+    } finally {
+      for (const d of dirs) await dropTree(d);
+      await Deno.remove(good, { recursive: true });
+      await Deno.remove(bad, { recursive: true });
     }
   },
 });

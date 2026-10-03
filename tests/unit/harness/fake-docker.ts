@@ -4,6 +4,7 @@ import {
   type Capture,
   type DockerCli,
   EXECUTION_LABEL,
+  PI_STAGE_ARGV,
 } from "../../../src/harness/sandbox.ts";
 
 export interface RunCall {
@@ -131,6 +132,12 @@ export class FakeDocker implements DockerCli {
   execAnswer: ExecAnswer | Error | "hang" = {
     code: 0,
     stdout: USER_GROUPS_CSV,
+    stderr: "",
+  };
+  /** The pi config staging exec's answer (H-01 run 005); same forms as execAnswer. */
+  stageAnswer: ExecAnswer | Error | "hang" = {
+    code: 0,
+    stdout: "",
     stderr: "",
   };
   /** Every configUser and exec call, with the secrets mount listing at that moment. */
@@ -301,7 +308,9 @@ export class FakeDocker implements DockerCli {
       argv,
       secrets: this.secretsOf(name),
     });
-    const a = this.execAnswer;
+    const a = JSON.stringify(argv) === JSON.stringify(PI_STAGE_ARGV)
+      ? this.stageAnswer
+      : this.execAnswer;
     if (a === "hang") return never();
     if (a instanceof Error) return Promise.reject(a);
     return Promise.resolve(a);

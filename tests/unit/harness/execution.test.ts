@@ -36,6 +36,8 @@ import {
 import {
   ADMIN_REFUSAL_EXIT,
   ADMIN_REFUSAL_MARKER,
+  PI_STAGE_ARGV,
+  PI_STAGE_USER,
   PRIVILEGE_ARGV,
   READY_FILE,
   SANDBOX_USER,
@@ -43,6 +45,7 @@ import {
   sweepOwnedSandboxes,
 } from "../../../src/harness/sandbox.ts";
 import { holdExclusive } from "./hold-file.ts";
+import { imageTag } from "../../../src/harness/images.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
   authorizedAllowlist,
@@ -3598,4 +3601,161 @@ Deno.test("stub provider: an --image whose revision differs from the arm's is re
   await stubEnv(u, r2);
   const e = (await runCell(u.env, r2Cell)).executions[0]!;
   assertEquals(e.manifest.image.revision, "2");
+});
+
+// H-01 run 005: pi's harness-generated config (settings.json, AGENTS.md,
+// auth.json) is staged admin-owned by the harness, after the privilege check
+// and before anything is released; the agent dir lets the agent add only
+// its own lock directories.
+
+const PI_CATALOG = {
+  models: [{
+    slug: "openrouter/google/gemini-3.8-flash",
+    api_model_id: "google/gemini-3.8-flash",
+    family: "gemini",
+    display_name: "F",
+  }],
+  pricing: [],
+  families: [],
+};
+const PI_IMAGE_ID = `sha256:${"a".repeat(64)}`;
+
+/** A pi arm (pi-plain) in an unplaced or stub env. */
+async function piEnv(kind: "unplaced" | "stub"): Promise<TestEnv> {
+  const t = await kindEnv(kind);
+  await write(
+    t.harnessRoot,
+    "configs/pi-plain.yml",
+    `id: pi-plain
+harness: pi
+harness_version: "0.87.1"
+models: { main: openrouter/google/gemini-3.8-flash }
+settings: {}
+components: { instructions: bundles/pi/instructions }
+limits: { timeout_min: 30, max_budget_usd: 2 }
+`,
+  );
+  await write(
+    t.harnessRoot,
+    "bundles/pi/instructions/AGENTS.md",
+    "Environment facts.\n",
+  );
+  t.docker.addImage(imageTag("pi", "0.87.1"), PI_IMAGE_ID, {
+    "centralgauge.harness": "pi",
+    "centralgauge.harness.version": "0.87.1",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+  });
+  await Deno.writeTextFile(
+    join(t.env.secretsSource, "openrouter-api-key"),
+    "sk-or-v1-".padEnd(48, "7"),
+  );
+  return t;
+}
+const piCell = (t: TestEnv) => cellFor(t, "pi-plain", "HX-001", PI_CATALOG);
+
+Deno.test("H-01 run 005: a pi cell (unplaced and stub) stages its config as ContainerAdministrator with the absolute argv, after the privilege check, before secrets and ready", async () => {
+  // A pi stub cell runs pi's own run.ps1 (STUB_COMMAND), so it is staged too.
+  assert(STUB_COMMAND.at(-1)!.includes("& C:\\run.ps1"));
+  for (const kind of ["unplaced", "stub"] as const) {
+    const t = await piEnv(kind);
+    await runCell(t.env, await piCell(t));
+    const name = t.docker.runs[0]!.name;
+    assertEquals(
+      t.docker.privilegeCalls.map((c) => [c.op, c.name, c.user, c.secrets]),
+      [
+        ["configUser", name, undefined, []],
+        ["exec", name, SANDBOX_USER, []],
+        ["exec", name, PI_STAGE_USER, []],
+      ],
+      kind,
+    );
+    assertEquals(t.docker.privilegeCalls[1]!.argv, PRIVILEGE_ARGV, kind);
+    assertEquals(t.docker.privilegeCalls[2]!.argv, PI_STAGE_ARGV, kind);
+    assert(t.docker.readySeen, kind);
+  }
+  assertEquals(PI_STAGE_USER, "ContainerAdministrator");
+  assertEquals(PI_STAGE_ARGV, [
+    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    "C:\\cg-pi-stage.ps1",
+  ]);
+});
+
+Deno.test("H-01 run 005: a non-pi cell (claude-code, mock; unplaced and stub) never runs the pi staging exec", async () => {
+  for (
+    const [kind, arm] of [
+      ["unplaced", "cc-sonnet-plain"],
+      ["stub", "cc-sonnet-plain"],
+      ["unplaced", "mock-positive"],
+    ] as const
+  ) {
+    const t = await kindEnv(kind);
+    await runCell(t.env, await cellFor(t, arm));
+    assert(t.docker.privilegeCalls.length >= 2, `${kind} ${arm}`);
+    for (const c of t.docker.privilegeCalls) {
+      assert(c.user !== PI_STAGE_USER, `${kind} ${arm}: ${c.user}`);
+      assert(
+        JSON.stringify(c.argv) !== JSON.stringify(PI_STAGE_ARGV),
+        `${kind} ${arm}`,
+      );
+    }
+  }
+});
+
+Deno.test("H-01 run 005: a failed pi config staging (non-zero, exec error, timeout) is setup_failed, releases nothing, is never judged, and stops the campaign", async () => {
+  const cases: [string, TestEnv["docker"]["stageAnswer"], string][] = [
+    [
+      "non-zero",
+      { code: 1, stdout: "[FAIL] write S-1-5-32-545 C:\\pi-agent", stderr: "" },
+      "exited 1",
+    ],
+    ["exec throws", new Error("stage blew up"), "stage blew up"],
+    ["exec hangs", "hang", "timed out"],
+  ];
+  for (const kind of ["unplaced", "stub"] as const) {
+    for (const [label, answer, want] of cases) {
+      const what = `${kind} ${label}`;
+      const t = await piEnv(kind);
+      t.docker.stageAnswer = answer;
+      let ran = 0;
+      const inner = t.docker.behavior;
+      t.docker.behavior = (c, io) => {
+        ran++;
+        return inner(c, io);
+      };
+      const cell = await piCell(t);
+      const err = await assertRejects(
+        () => runCell(t.env, cell),
+        ContainerError,
+        "pi config staging failed",
+      );
+      assertStringIncludes(err.message, want, what);
+      assert(!err.message.includes("privilege check failed"), what);
+      assertEquals(t.docker.runs.length, 1, `${what}: no automatic retry`);
+      assertEquals(
+        t.docker.privilegeCalls.map((c) => c.user),
+        [undefined, SANDBOX_USER, PI_STAGE_USER],
+        what,
+      );
+      const [e] = await t.env.store.executions(cell.campaignId);
+      assertEquals(e!.termination, "setup_failed", what);
+      const side = await sideOf(t, e!.id);
+      assertEquals(side.stop_reason, "pi_config_staging_failed", what);
+      assertStringIncludes(side.setup_error, "pi config staging failed", what);
+      assertStringIncludes(side.setup_error, want, what);
+      assertEquals(secretDirs(t), [], what);
+      assertEquals(await t.env.store.judgments(e!.id), [], what);
+      assertEquals(
+        ran,
+        0,
+        `${what}: the entrypoint never passed the ready wait`,
+      );
+      assert(!t.docker.readySeen, what);
+      assertEquals(t.docker.secretsAtKill, [], `${what}: nothing released`);
+    }
+  }
 });
