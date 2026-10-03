@@ -5099,3 +5099,326 @@ Deno.test("harnessImagesBuild: a frozen tag is refused on a clean host (not pres
     "centralgauge/harness-claude-code:2.1.282",
   );
 });
+
+// ---- M11-11: `harness report` of a pre-registered campaign ----
+
+import { stringify } from "@std/yaml";
+import { ExperimentSchema } from "../../../../src/harness/config.ts";
+import { hashFile } from "../../../../src/harness/hash.ts";
+import {
+  PreregSchema,
+  protocolSha,
+  verifyPrereg,
+} from "../../../../src/harness/prereg.ts";
+import { experimentHash } from "../../../../src/harness/records.ts";
+import { telemetry } from "../../harness/fixtures.ts";
+
+const RP_REL = "preregistration/skills-vs-plain.yml";
+const RP_CONTRAST = {
+  id: "C1",
+  name: "skills against plain",
+  baseline: "plain",
+  variant: "skills",
+};
+const RP_A = {
+  v: 1,
+  experiment: "skills-vs-plain",
+  protocol: {
+    arms: ["plain", "skills"],
+    contrasts: [RP_CONTRAST],
+    interaction: null,
+  },
+  approval: "OWNER-APPROVED: stage A (2026-10-21T12:00:00Z)",
+  population: "The two fixture tasks.",
+  primary_metric: "cost_per_solved_task",
+  confirmatory: true,
+  family: ["C1"],
+  alpha: 0.05,
+  test: {
+    sides: "two",
+    p_value: "percentile_bootstrap_plus_one",
+    adjustment: "holm",
+    direction: "sign_of_delta",
+  },
+  intervals: {
+    reported: "per_contrast_unadjusted",
+    beside: "bonferroni_same_draws",
+  },
+  bootstrap: { unit: "task", resamples: 1000, seed: 1, level: 0.95 },
+  zero_solve: { rule: "suppress_any_undefined" },
+  missing_pairs: "per_contrast_matched",
+  held_out: {
+    count: 1,
+    rule: "one task held out",
+    seal: "harness-v2-screen-start",
+    tasks: ["HX-002"],
+    in_family: false,
+  },
+  measures: {
+    fingerprint: "f".repeat(64),
+    unknown_symbol_codes: ["AL0118"],
+    ruleset_sha256: "d".repeat(64),
+    canary_codes: ["AA0137"],
+    workflow_execution: "used_execution",
+    effort_execution: "every_attempt",
+  },
+  exploratory_metrics: ["pass_rate"],
+  simulation: { script_sha256: "1".repeat(64), args: { sims: 10 } },
+  design_rule: "the frozen rule",
+  stage_a: null,
+  experiment_hash: null,
+  selection: null,
+  design: null,
+  power_simulation: null,
+  compiler_identity: null,
+  stage_b_approval: null,
+  amendments: [],
+};
+
+async function gitOut(root: string, ...args: string[]): Promise<string> {
+  const out = await new Deno.Command("git", {
+    args,
+    cwd: root,
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!out.success) throw new Error(new TextDecoder().decode(out.stderr));
+  return new TextDecoder().decode(out.stdout).trim();
+}
+
+/**
+ * A git repo holding the stage-A file (tagged harness-v2-prereg-a) and the
+ * frozen stage-B file (tagged harness-v2-prereg-b), both decision files, and
+ * a results store with the campaign bound to them, HX-001 selected and
+ * HX-002 held out, every cell passing (plain $2, skills $1).
+ */
+async function preregReportEnv() {
+  const root = await Deno.makeTempDir();
+  await git(root, "init", "-q");
+  await git(root, "config", "user.email", "t@example.com");
+  await git(root, "config", "user.name", "t");
+  await git(root, "config", "core.autocrlf", "false");
+  const approved = await protocolSha(PreregSchema.parse(RP_A));
+  await write(root, `harness/${RP_REL}`, stringify(RP_A));
+  await git(root, "add", ".");
+  await git(root, "commit", "-qm", "stage A");
+  await git(
+    root,
+    "tag",
+    "-a",
+    "harness-v2-prereg-a",
+    "-m",
+    `protocol_sha256: ${approved}`,
+  );
+  const experiment = ExperimentSchema.parse({
+    id: "skills-vs-plain",
+    hypothesis: "Skills cut cost per solved task.",
+    primary_metric: "cost_per_solved_task",
+    baseline: "plain",
+    variants: ["skills"],
+    vary: ["skills"],
+    tasks: "harness-tasks/tasks/*",
+    repeats: 1,
+    contrasts: [RP_CONTRAST],
+    preregistration: RP_REL,
+  });
+  const c0 = await campaign({ experiment });
+  const selPath = "harness-tasks/v2/selection.json";
+  await write(
+    root,
+    selPath,
+    JSON.stringify({
+      v: 1,
+      status: "ok",
+      held_out: ["HX-002"],
+      selection: { n: 1, selected: ["HX-001"] },
+    }),
+  );
+  const simPath = `harness/preregistration/skills-vs-plain.sim-b.json`;
+  await write(
+    root,
+    simPath,
+    JSON.stringify({
+      ...RP_A.simulation,
+      zero_solve: RP_A.zero_solve,
+      decision: { design: { tasks: 1, repeats: 1 } },
+    }),
+  );
+  const selSha = await hashFile(root, join(root, selPath));
+  const text = stringify({
+    ...RP_A,
+    stage_a: { sha256: approved },
+    experiment_hash: await experimentHash(experiment),
+    selection: {
+      path: selPath,
+      sha256: selSha,
+      selected: ["HX-001"],
+      held_out: ["HX-002"],
+    },
+    design: { tasks: 1, repeats: 1 },
+    power_simulation: {
+      inputs: [{ path: selPath, sha256: selSha }],
+      output: {
+        path: simPath,
+        sha256: await hashFile(root, join(root, simPath)),
+      },
+    },
+    compiler_identity: "artifact|bccontainerhelper 6.1.14",
+    stage_b_approval: "OWNER-APPROVED: stage B (2026-10-29T12:00:00Z)",
+  });
+  await write(root, `harness/${RP_REL}`, text);
+  const bSha = await sha256Hex(new TextEncoder().encode(text));
+  await git(root, "add", ".");
+  await git(root, "commit", "-qm", "stage B");
+  await git(
+    root,
+    "tag",
+    "-a",
+    "harness-v2-prereg-b",
+    "-m",
+    `stage_b_sha256: ${bSha}`,
+  );
+  const decisions = await Deno.makeTempDir();
+  const decisionA = join(decisions, "decision-a.md");
+  await Deno.writeTextFile(
+    decisionA,
+    `protocol_sha256: ${approved}\nfile_sha256: ${
+      "f".repeat(64)
+    }\ntag: harness-v2-prereg-a\ntag_object: ${await gitOut(
+      root,
+      "rev-parse",
+      "harness-v2-prereg-a",
+    )}\nOWNER-APPROVED: stage A (2026-10-24T12:00:00Z)\n`,
+  );
+  const decisionB = join(decisions, "decision-b.md");
+  await Deno.writeTextFile(
+    decisionB,
+    `stage_b_sha256: ${bSha}\ntag: harness-v2-prereg-b\ntag_object: ${await gitOut(
+      root,
+      "rev-parse",
+      "harness-v2-prereg-b",
+    )}\nOWNER-APPROVED: stage B (2026-11-06T12:00:00Z)\n`,
+  );
+  const v = await verifyPrereg(
+    root,
+    join(root, "harness"),
+    experiment,
+    c0.experiment_hash,
+    c0.task_set.tasks.map((t) => t.id),
+    decisionA,
+    decisionB,
+  );
+  assertEquals(v.problems, []);
+  const c = {
+    ...c0,
+    preregistration: {
+      path: RP_REL,
+      sha256: v.sha256,
+      protocol_sha256: v.protocol_sha256,
+      decision_sha256: v.decision_sha256,
+      stage_b_decision_sha256: v.stage_b_decision_sha256,
+    },
+  };
+  const results = await Deno.makeTempDir();
+  const store = new RecordStore(results);
+  await store.writeCampaign(c);
+  for (const arm of ["plain", "skills"]) {
+    for (const task of ["HX-001", "HX-002"]) {
+      const e = execution(c, { arm, task }, {
+        telemetry: telemetry(arm === "plain" ? 2 : 1),
+      });
+      await store.writeExecution(e);
+      await store.writeJudgment(judgment(c, e, true));
+    }
+  }
+  const opts = {
+    resultsDir: results,
+    resamples: 10,
+    seed: 1,
+    judging: "campaign" as const,
+    root,
+    preregDecision: decisionA,
+    preregBDecision: decisionB,
+  };
+  return { root, results, decisionA, decisionB, opts };
+}
+
+Deno.test("harnessReport (M11-11): a pre-registered campaign reports C1 over the selected task, held-out apart", async () => {
+  const p = await preregReportEnv();
+  const r = await harnessReport("skills-vs-plain", p.opts);
+  const k = r.confirmatory;
+  assert(k && !("withheld" in k));
+  assertEquals(k.tasks, ["HX-001"]);
+  assertEquals(k.held_out.tasks, ["HX-002"]);
+  assertEquals(k.bootstrap.resamples, 1000);
+  assertEquals(k.results.map((x) => [x.id, x.confirmatory, x.delta]), [
+    ["C1", true, -1],
+  ]);
+  assert(r.comparisons.every((x) => x.label === "exploratory"));
+});
+
+Deno.test("harnessReport (M11-11): both decision files are required with a preregistration", async () => {
+  const p = await preregReportEnv();
+  for (
+    const [drop, flag] of [
+      ["preregDecision", "--prereg-decision"],
+      ["preregBDecision", "--prereg-b-decision"],
+    ] as const
+  ) {
+    await assertRejects(
+      () => harnessReport("skills-vs-plain", { ...p.opts, [drop]: undefined }),
+      ConfigurationError,
+      flag,
+    );
+  }
+});
+
+Deno.test("harnessReport (M11-11): an edited pre-registration or decision file is refused", async () => {
+  const p = await preregReportEnv();
+  const file = join(p.root, "harness", RP_REL);
+  for (const path of [file, p.decisionA, p.decisionB]) {
+    const original = await Deno.readTextFile(path);
+    // Still parseable with the same anchor lines: only the bytes differ.
+    await Deno.writeTextFile(path, `# edited\n${original}`);
+    await assertRejects(
+      () => harnessReport("skills-vs-plain", p.opts),
+      ConfigurationError,
+      "preregistration changed",
+    );
+    await Deno.writeTextFile(path, original);
+  }
+  await harnessReport("skills-vs-plain", p.opts);
+});
+
+Deno.test("CLI: `harness report` takes --prereg-decision and --prereg-b-decision", async () => {
+  const p = await preregReportEnv();
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const printed: string[] = [];
+  const log = stub(console, "log", (...args: unknown[]) => {
+    printed.push(args.join(" "));
+  });
+  try {
+    await cli.parse([
+      "harness",
+      "report",
+      "skills-vs-plain",
+      "--results-dir",
+      p.results,
+      "--root",
+      p.root,
+      "--prereg-decision",
+      p.decisionA,
+      "--prereg-b-decision",
+      p.decisionB,
+      "--json",
+      "--judging",
+      "campaign",
+    ]);
+  } finally {
+    log.restore();
+  }
+  const report = JSON.parse(printed.join("\n"));
+  assertEquals(report.confirmatory.tasks, ["HX-001"]);
+  assertEquals(report.confirmatory.results[0].id, "C1");
+});

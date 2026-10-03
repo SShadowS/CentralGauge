@@ -73,6 +73,7 @@ import {
   loadReportLogs,
   renderReport,
 } from "../../src/harness/report.ts";
+import { verifyPrereg } from "../../src/harness/prereg.ts";
 import { loadTraces } from "../../src/harness/trace-metrics.ts";
 import { checkScenario } from "../../scripts/harness/stub-anthropic.mjs";
 import { loadTaskSet } from "../../src/harness/task.ts";
@@ -375,6 +376,9 @@ export interface ReportOptions {
   root: string;
   /** Report repeats 1..N only (M5-05); default all planned. */
   repeats?: number | undefined;
+  /** Stage-A and stage-B decision files; required for a pre-registered campaign (M11-11). */
+  preregDecision?: string | undefined;
+  preregBDecision?: string | undefined;
 }
 
 async function currentJudging(root: string): Promise<JudgingContext> {
@@ -417,9 +421,39 @@ export async function harnessReport(
     judgments.push(...await store.judgments(e.id));
   }
   const records = { campaign, executions, artifacts, judgments };
+  // The same externally anchored check as `run`: the document and both
+  // decision files must be the ones the campaign was created under.
+  const bound = campaign.preregistration;
+  let prereg: Awaited<ReturnType<typeof verifyPrereg>> | undefined;
+  if (bound) {
+    if (!opts.preregDecision || !opts.preregBDecision) {
+      throw new ConfigurationError(
+        "--prereg-decision and --prereg-b-decision are required to report a pre-registered campaign",
+      );
+    }
+    prereg = await verifyPrereg(
+      opts.root,
+      join(opts.root, "harness"),
+      campaign.experiment,
+      campaign.experiment_hash,
+      campaign.task_set.tasks.map((t) => t.id),
+      opts.preregDecision,
+      opts.preregBDecision,
+    );
+    if (
+      prereg.sha256 !== bound.sha256 ||
+      prereg.decision_sha256 !== bound.decision_sha256 ||
+      prereg.stage_b_decision_sha256 !== bound.stage_b_decision_sha256
+    ) {
+      throw new ConfigurationError(
+        `preregistration changed since campaign ${campaign.id} was created (document or decision file)`,
+      );
+    }
+  }
   return buildReport(records, {
     resamples: opts.resamples,
     seed: opts.seed,
+    ...(prereg ? { prereg } : {}),
     ...(opts.repeats !== undefined ? { repeats: opts.repeats } : {}),
     logs: await loadReportLogs(opts.resultsDir, records),
     traces: await loadTraces(opts.resultsDir, executions),
@@ -2197,9 +2231,19 @@ export function registerHarnessCommand(
       "Oracles to judge with, named explicitly: the campaign's, or the working tree's (after an oracle fix and rejudge)",
       { required: true },
     )
-    .option("--root <dir:string>", "Repository root for --judging current", {
-      default: ".",
-    })
+    .option(
+      "--root <dir:string>",
+      "Repository root for --judging current and the pre-registration",
+      { default: "." },
+    )
+    .option(
+      "--prereg-decision <path:string>",
+      "Stage-A pre-registration decision file (required with a preregistration)",
+    )
+    .option(
+      "--prereg-b-decision <path:string>",
+      "Stage-B pre-registration decision file (required with a preregistration)",
+    )
     .action((opts, experiment: string) =>
       fail(async () => {
         const report = await harnessReport(experiment, {
@@ -2210,6 +2254,12 @@ export function registerHarnessCommand(
           repeats: opts.repeats,
           judging: opts.judging,
           root: opts.root,
+          preregDecision: opts.preregDecision
+            ? resolve(opts.preregDecision)
+            : undefined,
+          preregBDecision: opts.preregBDecision
+            ? resolve(opts.preregBDecision)
+            : undefined,
         });
         console.log(
           opts.json ? JSON.stringify(report, null, 2) : renderReport(report),
