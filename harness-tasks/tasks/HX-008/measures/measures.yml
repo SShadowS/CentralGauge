@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "85620/InvoicesEveryDueLease": 1
+    "85620/LeaseOutsideFilterUntouched": 1
+    "85620/DueDateBoundaryInclusive": 1
+    "85620/CommittingFailureRollsBackLease": 1
+    "85620/FailureRecordedWithText": 1
+    "85620/PlainFailureRollsBackLease": 1
+    "85620/NothingDueNotCountedOrRecorded": 1
+    "85620/EachRunHasItsOwnId": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
