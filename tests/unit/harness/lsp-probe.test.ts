@@ -46,6 +46,9 @@ const FILE2 = "Core\\src\\LeaseFee.Codeunit.al";
 const LINE = "exit(1 + Months / 100);";
 const LINE2 = "exit(25);";
 const WINDOWS = Deno.build.os === "windows";
+// Probe timeout for runs expected to finish (not to time out): host load under
+// the full suite stretched a 14 s run past a 20 s timeout.
+const LOAD_TIMEOUT_MS = "60000";
 
 async function setup(withApp = true) {
   const dir = await Deno.realPath(await Deno.makeTempDir());
@@ -242,7 +245,9 @@ Deno.test({
       CG_LSP_TIMEOUT_MS: "1500",
     });
     assertEquals(r.code, 2);
-    assert(Date.now() - t0 < 20_000);
+    // Still far under an unbounded hang, but not a tight timing bound: under
+    // host load this run took 25 s (3 s alone) against a 1.5 s probe timeout.
+    assert(Date.now() - t0 < 60_000);
   },
 });
 
@@ -421,7 +426,7 @@ for (const [label, header] of BAD_HEADERS) {
     async fn() {
       const r = await probe(await setup(), ["--preflight"], {
         FAKE_FRAME: header,
-        CG_LSP_TIMEOUT_MS: "20000",
+        CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS,
       });
       assertEquals(r.code, 3, r.stderr);
       assertStringIncludes(r.stderr, "frame header");
@@ -595,7 +600,7 @@ Deno.test({
     const s = await setup();
     const r = await probe(s, ["--script", await steps(s, EDIT_CYCLE)], {
       FAKE_STALE: "1",
-      CG_LSP_TIMEOUT_MS: "20000",
+      CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS,
     });
     assertEquals(r.code, 0, r.stderr);
   },
@@ -609,7 +614,7 @@ Deno.test({
     const s = await setup();
     const r = await probe(s, ["--script", await steps(s, EDIT_CYCLE)], {
       FAKE_CHATTER: "1",
-      CG_LSP_TIMEOUT_MS: "20000",
+      CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS,
     });
     assertEquals(r.code, 0, r.stderr);
   },
@@ -625,7 +630,9 @@ Deno.test({
       "--script",
       await steps(s, [
         EDIT_CYCLE[0],
-        { op: "hold", ms: 500 }, // FILE's publish lands before the next edit
+        // FILE's counted publish already lands inside its edit step (after
+        // the documentSymbol response); the hold only spaces the edits.
+        { op: "hold", ms: 500 },
         { op: "edit", file: FILE2, find: LINE2, replace: "exit(30);" },
         EDIT_CYCLE[1],
         {
@@ -636,7 +643,7 @@ Deno.test({
           settleMs: 300,
         },
       ]),
-    ], { CG_LSP_TIMEOUT_MS: "20000" });
+    ], { CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS });
     assertEquals(r.code, 0, r.stderr);
     const out = JSON.parse(r.stdout);
     assertEquals(out.steps[3].result[0].code, "AL0118");
@@ -657,7 +664,7 @@ Deno.test({
         EDIT_CYCLE[0],
         { ...EDIT_CYCLE[1], file: ALIAS },
       ]),
-    ], { CG_LSP_TIMEOUT_MS: "20000" });
+    ], { CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS });
     assertEquals(r.code, 0, r.stderr);
     assertEquals(JSON.parse(r.stdout).steps[1].result[0].code, "AL0118");
   },
@@ -682,38 +689,45 @@ Deno.test({
 
 Deno.test({
   name:
-    "lsp-probe script: an unversioned publish followed by a versioned one still fails the step (6)",
+    "lsp-probe script: after the documentSymbol response, an unversioned publish then a versioned one passes (0)",
   ignore: !WINDOWS,
   async fn() {
     const s = await setup();
     const r = await probe(s, ["--script", await steps(s, EDIT_CYCLE)], {
       FAKE_NOVERSION_FIRST: "1",
-      CG_LSP_TIMEOUT_MS: "20000",
+      CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS,
     });
-    assertEquals(r.code, 6, r.stderr);
+    assertEquals(r.code, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    assertEquals(out.steps[1].ok, false);
-    assertStringIncludes(out.steps[1].why, "no document version");
+    assertEquals(out.steps.map((x: { ok: boolean }) => x.ok), [
+      true,
+      true,
+      true,
+      true,
+    ]);
+    assertEquals(out.steps[1].result[0].code, "AL0118");
+    assertEquals(out.steps[3].result, []);
   },
 });
 
 Deno.test({
   name:
-    "lsp-probe script: diagnostics without a document version are not provable: the step fails (6), never a pass after settling",
+    "lsp-probe script: an unversioned stale republish after the response cannot be told apart: timeout (2), never a pass",
   ignore: !WINDOWS,
   async fn() {
     const s = await setup();
+    // FAKE_STALE republishes the previous (clean) text, unversioned, right
+    // behind the post-documentSymbol publish: it replaces the AL0118 publish
+    // inside the settle window, so present:true never settles, whatever the
+    // timing (the stale-after-response residual in lsp-probe.mjs).
     const r = await probe(s, ["--script", await steps(s, EDIT_CYCLE)], {
       FAKE_STALE: "1",
       FAKE_NOVERSION: "1",
       CG_LSP_TIMEOUT_MS: "20000",
     });
-    assertEquals(r.code, 6, r.stderr);
-    const out = JSON.parse(r.stdout);
-    assertEquals(out.ok, false);
-    assertEquals(out.steps[1].ok, false);
-    assertStringIncludes(out.steps[1].why, "no document version");
-    assertEquals(out.steps[3].ok, false);
+    assertEquals(r.code, 2, r.stderr);
+    assertStringIncludes(r.stderr, "no result within");
+    assertEquals(r.stdout, "", "no step result is reported, so none as ok");
   },
 });
 
@@ -728,4 +742,114 @@ Deno.test("arm-lsp stub scenario: valid for the stub and drives the S1 LSP opera
     .filter((b: { name?: string }) => b.name === "LSP")
     .map((b: { input?: { operation?: string } }) => b.input?.operation);
   assertEquals(ops, ["documentSymbol", "hover", "findReferences"]);
+});
+
+// M10-01c: the AL LS publishes without a document version, so an edit is
+// gated by order: didChange, then documentSymbol on the file; only publishes
+// for that file after the documentSymbol response count.
+Deno.test({
+  name:
+    "lsp-probe script (M10-01c): a publish before the documentSymbol response is ignored, even with the expected code (timeout, not a pass)",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    const r = await probe(s, [
+      "--script",
+      await steps(s, EDIT_CYCLE.slice(0, 2)),
+    ], {
+      FAKE_PRE_ONLY: "1",
+      // Room for the version-gated pass this replaces (about 9 s under load),
+      // so the 2 comes from the gate, not a tight bound.
+      CG_LSP_TIMEOUT_MS: "20000",
+    });
+    assertEquals(r.code, 2, r.stderr);
+    assertStringIncludes(r.stderr, "no result within");
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe script (M10-01c): a publish after the documentSymbol response settles the step",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    const r = await probe(s, ["--script", await steps(s, EDIT_CYCLE)], {
+      FAKE_POST_ONLY: "1",
+      CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS,
+    });
+    assertEquals(r.code, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEquals(out.steps[1].result[0].code, "AL0118");
+    assertEquals(out.steps[3].result, []);
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe script (M10-01c): a server that publishes no version passes through the ordering gate",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    const r = await probe(s, ["--script", await steps(s, EDIT_CYCLE)], {
+      FAKE_NOVERSION: "1",
+      CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS,
+    });
+    assertEquals(r.code, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEquals(out.steps[1].result[0].code, "AL0118");
+    assertEquals(out.steps[3].result, []);
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe script (M10-01c): an edit to a file of a non-active project publishes only after documentSymbol activates it",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    const other = "Other\\src\\OtherFee.Codeunit.al";
+    await Deno.mkdir(join(s.ws, "Other", "src"), { recursive: true });
+    await Deno.writeTextFile(join(s.ws, "Other", "app.json"), "{}");
+    await Deno.writeTextFile(
+      join(s.ws, ...other.split("\\")),
+      'codeunit 70004 "CGR Other Fee"\n{\n    internal procedure Fee(): Decimal\n    begin\n        exit(25);\n    end;\n}\n',
+    );
+    const r = await probe(s, [
+      "--script",
+      await steps(s, [
+        { op: "symbols", file: FILE }, // Core is the active project
+        { op: "edit", file: other, find: LINE2, replace: `Foo := 1; ${LINE2}` },
+        {
+          op: "diagnostics",
+          file: other,
+          code: "AL0118",
+          present: true,
+          settleMs: 300,
+        },
+      ]),
+    ], { FAKE_ACTIVE_PROJECT: "1", CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS });
+    assertEquals(r.code, 0, r.stderr);
+    assertEquals(JSON.parse(r.stdout).steps[2].result[0].code, "AL0118");
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe script (M10-01c): a second edit of the same file waits until the first settles (one didChange in flight)",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    // FAKE_INFLIGHT republishes FILE for 5 s after each documentSymbol and
+    // exits 9 (server failure, 3) on a didChange of FILE inside that window.
+    const r = await probe(s, [
+      "--script",
+      await steps(s, [
+        EDIT_CYCLE[0],
+        { op: "edit", file: FILE, find: "Foo := 1;", replace: "Foo := 2;" },
+        { ...EDIT_CYCLE[1], settleMs: 300 },
+      ]),
+    ], { FAKE_INFLIGHT: "1", CG_LSP_TIMEOUT_MS: LOAD_TIMEOUT_MS });
+    assertEquals(r.code, 0, r.stderr);
+    assertEquals(JSON.parse(r.stdout).steps[2].result[0].code, "AL0118");
+  },
 });
