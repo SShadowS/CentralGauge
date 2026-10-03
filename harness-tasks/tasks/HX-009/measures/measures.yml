@@ -1,0 +1,28 @@
+v: 1
+partial_credit:
+  weights:
+    "85640/LateWeekdayReturnCharged": 1
+    "85640/WeekendDaysNotCounted": 1
+    "85640/HolidayNotCounted": 1
+    "85640/ReturnOnEndDateHasNoLine": 1
+    "85640/WeekendOnlyLatenessHasNoLine": 1
+    "85640/PostedFeeUsesReturnDate": 1
+    "85640/ReturnRecordsReturnDate": 1
+    "85640/ZeroFeeHasNoLine": 1
+    "85640/BatchPostedFeeIncluded": 1
+    "85640/WeekendPackageAlsoCharged": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70009, procedure: WorkingDaysBetween, signature: "(FromDate: Date; ToDate: Date): Integer", file: Core/src/WorkingDays.Codeunit.al, perturb: "exit(ToDate - FromDate + 1);" }
+    - { codeunit: 70009, procedure: IsWorkingDay, signature: "(CheckDate: Date): Boolean", file: Core/src/WorkingDays.Codeunit.al, perturb: "exit(true);" }
+    - { codeunit: 70009, procedure: NextWorkingDay, signature: "(FromDate: Date): Date", file: Core/src/WorkingDays.Codeunit.al, perturb: "exit(FromDate + 1);" }
+  tests:
+    - { codeunit: 85640, procedures: [WeekendDaysNotCounted, HolidayNotCounted, WeekendOnlyLatenessHasNoLine, PostedFeeUsesReturnDate] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  fixture/comment-only: { reuse_executed: false, reuse: false }
+  fixture/token-call: { reuse_executed: true, reuse: false }
+  fixture/caught-call: { reuse_executed: true, reuse: true }
