@@ -170,18 +170,33 @@ export interface HarnessReport {
    * never partial decisions) unless the data are exactly the pre-registered
    * design: nothing partial, pending or unrun, campaign oracles.
    */
-  confirmatory?: { withheld: string } | {
-    preregistration: { path: string; sha256: string; protocol_sha256: string };
+  confirmatory?: { withheld: string } | ContrastsAnalysis;
+  /**
+   * The same analysis when an approved amendment downgraded the
+   * pre-registration to exploratory: no family, no decisions, never under
+   * `confirmatory`.
+   */
+  exploratory_contrasts?: ContrastsAnalysis;
+  /** Pre-registration identity and amendments, disclosed even when `confirmatory` is withheld. */
+  preregistration?: {
+    path: string;
+    sha256: string;
+    protocol_sha256: string;
     amendments: Prereg["amendments"];
-    alpha: number;
-    family: string[];
-    zero_solve: ZeroSolveRule;
-    bootstrap: { resamples: number; seed: number; level: number };
-    tasks: string[];
-    results: ContrastResult[];
-    held_out: { tasks: string[]; arms: ArmSummary[] };
   };
   cells: CellRecord[];
+}
+
+export interface ContrastsAnalysis {
+  preregistration: { path: string; sha256: string; protocol_sha256: string };
+  amendments: Prereg["amendments"];
+  alpha: number;
+  family: string[];
+  zero_solve: ZeroSolveRule;
+  bootstrap: { resamples: number; seed: number; level: number };
+  tasks: string[];
+  results: ContrastResult[];
+  held_out: { tasks: string[]; arms: ArmSummary[] };
 }
 
 export type PartialReason = "provisional" | "repeat_cut";
@@ -636,48 +651,67 @@ export async function buildReport(
       open.filter((c) => c.status === "unrun").length
     } unrun cells`
     : null;
-  const confirmatory = d && pre && selection && exp.contrasts
-    ? withheld !== null ? { withheld } : (() => {
-      const selected = new Set(selection.selected);
-      const held = new Set(selection.held_out);
-      const family = d.confirmatory ? d.family : [];
-      const { resamples, seed, level } = d.bootstrap;
-      return {
-        preregistration: {
-          path: pre.path,
-          sha256: pre.sha256,
-          protocol_sha256: pre.protocol_sha256,
+  // Holm must never run on fewer than the frozen observations: a terminal
+  // cell of a selected task without the tested metric's data loses its pairs.
+  const metric = d?.primary_metric ?? "cost_per_solved_task";
+  const noData = selection
+    ? cells.filter((c) =>
+      selection.selected.includes(c.task) && ineligible(c, metric) !== null
+    ).length
+    : 0;
+  const reason = withheld ??
+    (noData > 0
+      ? `${noData} cells without ${
+        metric === "cost_per_solved_task" ? "cost" : metric
+      } data`
+      : null);
+  const analysis = (): ContrastsAnalysis => {
+    const selected = new Set(selection!.selected);
+    const held = new Set(selection!.held_out);
+    const family = d!.confirmatory ? d!.family : [];
+    const { resamples, seed, level } = d!.bootstrap;
+    return {
+      preregistration: {
+        path: pre!.path,
+        sha256: pre!.sha256,
+        protocol_sha256: pre!.protocol_sha256,
+      },
+      amendments: d!.amendments,
+      alpha: d!.alpha,
+      family,
+      zero_solve: d!.zero_solve,
+      bootstrap: { resamples, seed, level },
+      tasks: selection!.selected,
+      // The interval-derived flag is dropped: Holm alone decides.
+      results: testContrasts(
+        cells.filter((c) => selected.has(c.task)),
+        exp.contrasts!,
+        exp.interaction ? { ...exp.interaction } : null,
+        metric,
+        {
+          resamples,
+          seed,
+          level,
+          alpha: d!.alpha,
+          zeroSolve: d!.zero_solve,
+          family,
         },
-        amendments: d.amendments,
-        alpha: d.alpha,
-        family,
-        zero_solve: d.zero_solve,
-        bootstrap: { resamples, seed, level },
-        tasks: selection.selected,
-        // The interval-derived flag is dropped: Holm alone decides.
-        results: testContrasts(
-          cells.filter((c) => selected.has(c.task)),
-          exp.contrasts,
-          exp.interaction ? { ...exp.interaction } : null,
-          "cost_per_solved_task",
-          {
-            resamples,
-            seed,
-            level,
-            alpha: d.alpha,
-            zeroSolve: d.zero_solve,
-            family,
-          },
-        ).map((x) => ({ ...x, distinguishable: null })),
-        held_out: {
-          tasks: selection.held_out,
-          arms: arms.map((a) =>
-            armSummary(cells.filter((c) => held.has(c.task)), a, reported)
-          ),
-        },
-      };
-    })()
+      ).map((x) => ({ ...x, distinguishable: null })),
+      held_out: {
+        tasks: selection!.held_out,
+        arms: arms.map((a) =>
+          armSummary(cells.filter((c) => held.has(c.task)), a, reported)
+        ),
+      },
+    };
+  };
+  const ready = d && pre && selection && exp.contrasts;
+  // An approved downgrade is descriptive only: no decisions, so no gate.
+  const downgraded = ready && !d.confirmatory;
+  const confirmatory = ready && !downgraded
+    ? reason !== null ? { withheld: reason } : analysis()
     : undefined;
+  const exploratory_contrasts = downgraded ? analysis() : undefined;
   const summaries = arms.map((arm) => armSummary(cells, arm, reported));
   const rate = (task: string, arm: string) => {
     const ps = cells.filter((c) =>
@@ -855,6 +889,17 @@ export async function buildReport(
     slices,
     both_pass,
     ...(confirmatory ? { confirmatory } : {}),
+    ...(exploratory_contrasts ? { exploratory_contrasts } : {}),
+    ...(ready
+      ? {
+        preregistration: {
+          path: pre.path,
+          sha256: pre.sha256,
+          protocol_sha256: pre.protocol_sha256,
+          amendments: d.amendments,
+        },
+      }
+      : {}),
     cells,
   };
 }
@@ -899,7 +944,7 @@ export function renderReport(r: HarnessReport): string {
   const conf = r.confirmatory && !("withheld" in r.confirmatory)
     ? r.confirmatory
     : undefined;
-  for (const a of conf?.amendments ?? []) {
+  for (const a of r.preregistration?.amendments ?? []) {
     out.push(
       colors.yellow(
         `pre-registration amended after screening: ${a.key} ${
@@ -1015,7 +1060,7 @@ export function renderReport(r: HarnessReport): string {
     const label = c.label === "primary" ? "" : colors.dim(" [exploratory]");
     out.push(
       `  ${c.variant} vs ${c.baseline}, ${c.metric}: ${
-        fmtDelta(c, r.confirmatory === undefined)
+        fmtDelta(c, r.preregistration === undefined)
       }${label}`,
     );
     // M6-02d: only beside a suppressed CI (otherwise it equals the CI).
@@ -1033,21 +1078,27 @@ export function renderReport(r: HarnessReport): string {
   if (r.confirmatory && "withheld" in r.confirmatory) {
     h(`Confirmatory analysis withheld: ${r.confirmatory.withheld}`);
   }
-  if (conf) {
-    const k = conf;
-    h(
-      `Confirmatory contrasts (pre-registered ${
-        k.preregistration.sha256.slice(0, 12)
-      }, protocol ${
-        k.preregistration.protocol_sha256.slice(0, 12)
-      }, Holm at ${k.alpha}, ${k.bootstrap.resamples} resamples, seed ${k.bootstrap.seed}, ${k.tasks.length} selected tasks)`,
-    );
+  const k = conf ?? r.exploratory_contrasts;
+  if (k) {
+    const ids = `pre-registered ${
+      k.preregistration.sha256.slice(0, 12)
+    }, protocol ${k.preregistration.protocol_sha256.slice(0, 12)}`;
+    const sample =
+      `${k.bootstrap.resamples} resamples, seed ${k.bootstrap.seed}, ${k.tasks.length} selected tasks`;
     const bonferroni = +((1 - k.alpha / k.family.length) * 100).toFixed(1);
-    out.push(
-      `  Holm is the only decision rule (family ${
-        k.family.join(", ")
-      }); the intervals are descriptive and can disagree with it at the boundary.`,
-    );
+    if (conf) {
+      h(`Confirmatory contrasts (${ids}, Holm at ${k.alpha}, ${sample})`);
+      out.push(
+        `  Holm is the only decision rule (family ${
+          k.family.join(", ")
+        }); the intervals are descriptive and can disagree with it at the boundary.`,
+      );
+    } else {
+      h(
+        `Exploratory contrasts (${ids}, amended to exploratory: no decision rule applied, ${sample})`,
+      );
+      out.push("  The intervals are descriptive; no decision is made.");
+    }
     for (const c of k.results) {
       const f = fmtOf(c);
       const ci = c.ci === null
@@ -1067,7 +1118,11 @@ export function renderReport(r: HarnessReport): string {
             }] at level ${bonferroni}%`
             : "n/a"
         }`
-        : colors.dim("[exploratory] outside the Holm family");
+        : colors.dim(
+          conf
+            ? "[exploratory] outside the Holm family"
+            : "[exploratory] no decision rule applied",
+        );
       out.push(
         `  ${c.id} ${c.name}: ${c.variant} vs ${c.baseline} over ${c.tasks} of ${k.tasks.length} selected tasks: ${
           c.delta === null ? "n/a" : f(c.delta)

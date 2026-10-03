@@ -1066,11 +1066,14 @@ const F_COST: Record<string, number> = {
  * cheaper than P and RL than R; R costs the same as P. The two held-out
  * tasks cost `heldOutLCost` per cell in L, so counting them would move C1.
  */
-async function factorialRecords(heldOutLCost = 100): Promise<CampaignRecords> {
+async function factorialRecords(
+  heldOutLCost = 100,
+  primary: "cost_per_solved_task" | "pass_rate" = "cost_per_solved_task",
+): Promise<CampaignRecords> {
   const experiment = ExperimentSchema.parse({
     id: "cc-v2-factorial",
     hypothesis: "LSP and the realistic setup cut cost per solved task.",
-    primary_metric: "cost_per_solved_task",
+    primary_metric: primary,
     baseline: "cc-p",
     variants: ["cc-l", "cc-r", "cc-rl"],
     vary: ["skills"],
@@ -1560,4 +1563,130 @@ Deno.test("buildReport (M11 review): exploratory comparison rows carry no interv
   // Without contrasts the v1 verdict is unchanged.
   const v1 = await buildReport(await records(), { resamples: 200, seed: 1 });
   assert(v1.comparisons.some((c) => c.distinguishable !== null));
+});
+
+Deno.test("buildReport (M11 run 002): a terminal cell without cost data in a selected task withholds the confirmatory analysis", async () => {
+  const recs = await factorialRecords();
+  const prereg = preregOf(recs, await stageBFor(recs.campaign));
+  const unknownCost = (task: string) => ({
+    ...recs,
+    executions: recs.executions.map((e) =>
+      e.task_id === task && e.repeat === 1 && e.arm === "cc-p"
+        ? {
+          ...e,
+          telemetry: telemetry(null),
+          validity: {
+            ...e.validity,
+            incomplete_telemetry: ["cost_usd" as const],
+          },
+        }
+        : e
+    ),
+  });
+  const r = await buildReport(unknownCost("HX-001"), { prereg });
+  assertEquals(r.confirmatory, { withheld: "1 cells without cost data" });
+  assert(
+    stripAnsiCode(renderReport(r)).includes(
+      "Confirmatory analysis withheld: 1 cells without cost data",
+    ),
+  );
+  // The same loss in a held-out task is not part of C1-C3.
+  assertEquals(
+    confirmed(await buildReport(unknownCost("HX-007"), { prereg })).tasks
+      .length,
+    6,
+  );
+});
+
+Deno.test("buildReport (M11 run 002): a pass_rate experiment is still analysed on the pre-registered cost metric, and missing cost withholds it", async () => {
+  const base = await factorialRecords(100, "pass_rate");
+  const recs = {
+    ...base,
+    executions: base.executions.map((e) =>
+      e.task_id === "HX-001" && e.repeat === 1 && e.arm === "cc-p"
+        ? {
+          ...e,
+          telemetry: telemetry(null),
+          validity: {
+            ...e.validity,
+            incomplete_telemetry: ["cost_usd" as const],
+          },
+        }
+        : e
+    ),
+  };
+  const prereg = preregOf(recs, await stageBFor(recs.campaign));
+  const r = await buildReport(recs, { prereg });
+  assertEquals(r.confirmatory, { withheld: "1 cells without cost data" });
+  const full = confirmed(
+    await buildReport(base, { prereg: preregOf(base, prereg.doc) }),
+  );
+  assertEquals(
+    full.results.map((x) => x.metric),
+    Array(4).fill("cost_per_solved_task"),
+  );
+});
+
+const AM_EXPLORATORY = {
+  key: "confirmatory",
+  from: true,
+  to: false,
+  reason: "family unpowered",
+  approval: "OWNER-APPROVED: downgrade (2026-10-29T12:00:00Z)",
+};
+
+Deno.test("buildReport (M11 run 002): an approved downgrade to exploratory is emitted and rendered as exploratory, never confirmatory", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign, {
+    confirmatory: false,
+    family: [],
+    amendments: [AM_EXPLORATORY],
+  });
+  const r = await buildReport(recs, { prereg: preregOf(recs, doc) });
+  assertEquals(r.confirmatory, undefined);
+  const x = r.exploratory_contrasts!;
+  assertEquals(x.family, []);
+  assertEquals(
+    x.results.map((c) => [c.id, c.confirmatory, c.decision, c.distinguishable]),
+    ["C1", "C2", "C3", "interaction"].map((id) => [
+      id,
+      false,
+      "no_decision",
+      null,
+    ]),
+  );
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text.split("\n")[1]!,
+    "amended after screening: confirmatory",
+  );
+  assertStringIncludes(text, "Exploratory contrasts (pre-registered");
+  assert(!text.includes("Confirmatory"), text);
+  assert(!text.includes("Holm"), text);
+  assertStringIncludes(text, "Held-out tasks (descriptive");
+});
+
+Deno.test("buildReport (M11 run 002): amendments stay disclosed in the header when the confirmatory section is withheld", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign, {
+    amendments: [{
+      key: "design",
+      from: { tasks: 8, repeats: 2 },
+      to: { tasks: 6, repeats: 2 },
+      reason: "two tasks held out",
+      approval: "OWNER-APPROVED: design (2026-10-29T12:00:00Z)",
+    }],
+  });
+  const r = await buildReport(recs, {
+    prereg: preregOf(recs, doc),
+    repeats: 1,
+  });
+  assertEquals(Object.keys(r.confirmatory!), ["withheld"]);
+  assertEquals(r.preregistration!.amendments.map((a) => a.key), ["design"]);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text.split("\n")[1]!,
+    "pre-registration amended after screening: design",
+  );
+  assertStringIncludes(text, "Confirmatory analysis withheld");
 });
