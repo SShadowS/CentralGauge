@@ -45,15 +45,29 @@ if (Test-Path 'C:\config\bundle\instructions') {
   $names = @(Get-ChildItem $dir -File | ForEach-Object { $_.Name })
   $extra = @($names | Where-Object { $_ -notin @('AGENTS.md', 'CLAUDE.md') })
   if ($extra.Count -gt 0) { throw "instructions bundle holds unexpected files: $($extra -join ', ')" }
+  # M9: scoped rules travel in the instructions component as rules\*.md; nothing else nests.
+  $folders = @(Get-ChildItem $dir -Directory | Where-Object { $_.Name -cne 'rules' } | ForEach-Object { $_.Name })
+  if ($folders.Count -gt 0) { throw "instructions bundle holds unexpected folders: $($folders -join ', ')" }
   if ($names -notcontains 'CLAUDE.md') { throw 'Claude Code instructions bundle must hold CLAUDE.md' }
   if (($names -contains 'AGENTS.md') -and ((Get-FileHash "$dir\AGENTS.md").Hash -ne (Get-FileHash "$dir\CLAUDE.md").Hash)) {
     throw 'AGENTS.md and CLAUDE.md differ: the parity rule needs byte-identical files'
   }
   Copy-Item -LiteralPath "$dir\CLAUDE.md" -Destination "$userHome\.claude\CLAUDE.md" -Force
+  if (Test-Path "$dir\rules") {
+    Copy-Item -LiteralPath "$dir\rules" -Destination "$userHome\.claude\rules" -Recurse -Force
+  }
 }
 if (Test-Path 'C:\config\bundle\skills') {
   Copy-Item 'C:\config\bundle\skills' "$userHome\.claude\skills" -Recurse -Force
 }
+# M9: subagents install at user scope.
+if (Test-Path 'C:\config\bundle\agents') {
+  Copy-Item 'C:\config\bundle\agents' "$userHome\.claude\agents" -Recurse -Force
+}
+# Spec v2 gate 1: prove the components before any credential is read or claude starts. Hooks
+# and plugins have no installer in this image, so a staged one is refused here (exit 5).
+& 'C:\cg-inventory.ps1'
+if ($LASTEXITCODE -ne 0) { exit 5 }
 # The runner writes C:\cg-secrets\ready after the secret files (M1-33 A3); in an
 # enforced run only after the egress preflight. No credential is read before it.
 $timeout = 600
@@ -86,6 +100,11 @@ $env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Git\bin\bash.exe'
 $env:DISABLE_TELEMETRY = '1'
 $env:DISABLE_ERROR_REPORTING = '1'
 $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+# Spec v2 gate 3: every subagent, built-in or bundled, runs on the arm's main model, the same id
+# as --model (M9-01 ruling 1: 2.1.282 ignores a pin to another model).
+$env:CLAUDE_CODE_SUBAGENT_MODEL = $cfg.settings.api_models.main
+# M9-01 ruling 3: no background tasks, so subagents run in the foreground with usage in the result.
+$env:CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1'
 $prompt = Get-Content 'C:\task\prompt.md' -Raw -Encoding UTF8
 # Session-control tools the manifest disallows (settings.native.disallowed_tools, M1-32b).
 if (-not $cfg.settings.disallowed_tools) { throw 'settings.disallowed_tools missing from C:\config\settings.json' }
