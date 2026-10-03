@@ -1,0 +1,13 @@
+v: 1
+partial_credit:
+  weights:
+    "85660/PostedEntryTakesContractBranch": 1
+    "85660/BatchPostedEntriesTakeContractBranch": 1
+    "85660/RevenueGroupedByBranchYearMonth": 1
+    "85660/DateFilterBoundsInclusive": 1
+    "85660/BranchesAreSeparateRows": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  fixture/unused-variable: { new_warning_codes: [AA0137], partial_credit: 1 }
