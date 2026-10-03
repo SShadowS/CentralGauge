@@ -1041,7 +1041,9 @@ preregistration: ${PR_REL}
   const decisionA = join(decisions, "2026-10-24-harness-v2-prereg-a.md");
   await Deno.writeTextFile(
     decisionA,
-    `protocol_sha256: ${approved}\ntag: harness-v2-prereg-a\ntag_object: ${tagObject}\nOWNER-APPROVED: stage A (2026-10-24T12:00:00Z)\n`,
+    `protocol_sha256: ${approved}\nfile_sha256: ${
+      "f".repeat(64)
+    }\ntag: harness-v2-prereg-a\ntag_object: ${tagObject}\nOWNER-APPROVED: stage A (2026-10-24T12:00:00Z)\n`,
   );
   // A parseable stage-B decision for runs before stage B exists.
   const decisionB = join(decisions, "2026-11-06-harness-v2-prereg-b.md");

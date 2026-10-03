@@ -8,6 +8,7 @@
 import { join, relative } from "@std/path";
 import { parse } from "@std/yaml";
 import { z } from "zod";
+import { canonicalJSON } from "../../shared/canonical.ts";
 import { ValidationError } from "../errors.ts";
 import {
   ContrastSchema,
@@ -239,8 +240,14 @@ export interface StageBAnchor {
   approved_amendments: string[];
 }
 
-const same = (a: unknown, b: unknown) =>
-  JSON.stringify(a) === JSON.stringify(b);
+/** Structural equality: object key order is irrelevant, array order is not. */
+const same = (a: unknown, b: unknown) => {
+  try {
+    return canonicalJSON(a) === canonicalJSON(b);
+  } catch {
+    return false; // undefined or non-finite values never compare equal
+  }
+};
 const sorted = (xs: string[]) => [...xs].sort();
 const textSha = (t: string) =>
   sha256Hex(new TextEncoder().encode(t.replaceAll("\r\n", "\n")));
@@ -424,17 +431,30 @@ async function readJsonAt(
   }
 }
 
+/** The value of the single `key: value` line matching `re`; null when absent, repeated or malformed. */
+function anchorLine(text: string, key: string, re: string): string | null {
+  if ([...text.matchAll(new RegExp(`^${key}:`, "gm"))].length !== 1) {
+    return null;
+  }
+  return new RegExp(`^${key}:[ \\t]*(${re})[ \\t\\r]*$`, "m").exec(text)?.[1] ??
+    null;
+}
+
+const hasApproval = (text: string) => text.split(/\r?\n/).some(isOwnerApproval);
+
 /** The anchor lines of a stage-A decision file; null when any is missing. */
 export function parseStageADecision(
   text: string,
 ): { protocol_sha256: string; tag: string; tag_object: string } | null {
-  const line = (k: string, re: string) =>
-    new RegExp(`^${k}:\\s*(${re})\\s*$`, "m").exec(text)?.[1] ?? null;
+  const line = (k: string, re: string) => anchorLine(text, k, re);
   const protocol_sha256 = line("protocol_sha256", "[0-9a-f]{64}");
+  // Presence and format only: appendix section 10 defines no comparison for file_sha256.
+  const file_sha256 = line("file_sha256", "[0-9a-f]{64}");
   const tag = line("tag", "[A-Za-z0-9._/-]+");
   const tag_object = line("tag_object", "[0-9a-f]{40}");
   if (
-    !protocol_sha256 || !tag || !tag_object || !/^OWNER-APPROVED:/m.test(text)
+    !protocol_sha256 || !file_sha256 || !tag || !tag_object ||
+    !hasApproval(text)
   ) return null;
   return { protocol_sha256, tag, tag_object };
 }
@@ -448,18 +468,45 @@ export function parseStageBDecision(
   tag_object: string;
   amendments: string[];
 } | null {
-  const line = (k: string, re: string) =>
-    new RegExp(`^${k}:\\s*(${re})\\s*$`, "m").exec(text)?.[1] ?? null;
+  const line = (k: string, re: string) => anchorLine(text, k, re);
   const stage_b_sha256 = line("stage_b_sha256", "[0-9a-f]{64}");
   const tag = line("tag", "[A-Za-z0-9._/-]+");
   const tag_object = line("tag_object", "[0-9a-f]{40}");
-  if (
-    !stage_b_sha256 || !tag || !tag_object || !/^OWNER-APPROVED:/m.test(text)
-  ) return null;
+  if (!stage_b_sha256 || !tag || !tag_object || !hasApproval(text)) {
+    return null;
+  }
   const amendments = [
-    ...text.matchAll(/^amendment:\s*(design|family|confirmatory)\s*$/gm),
+    ...text.matchAll(
+      /^amendment:[ \t]*(design|family|confirmatory)[ \t\r]*$/gm,
+    ),
   ].map((m) => m[1]!);
   return { stage_b_sha256, tag, tag_object, amendments };
+}
+
+/** Variables that redirect git to another repository, object store or index. */
+const GIT_REDIRECTS = new Set([
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_GRAFT_FILE",
+  "GIT_SHALLOW_FILE",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_NAMESPACE",
+]);
+
+function isolatedGitEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(Deno.env.toObject())) {
+    const u = k.toUpperCase();
+    if (!GIT_REDIRECTS.has(u) && !u.startsWith("GIT_CONFIG_")) env[k] = v;
+  }
+  env["GIT_NO_REPLACE_OBJECTS"] = "1";
+  env["GIT_CONFIG_NOSYSTEM"] = "1";
+  return env;
 }
 
 async function gitOut(
@@ -469,10 +516,62 @@ async function gitOut(
   const r = await new Deno.Command("git", {
     args,
     cwd: repoRoot,
+    env: isolatedGitEnv(),
+    clearEnv: true,
     stdout: "piped",
     stderr: "null",
   }).output();
   return r.success ? new TextDecoder().decode(r.stdout) : null;
+}
+
+/**
+ * The tag object id when `refs/tags/<tag>` is an annotated tag whose message
+ * holds `<key>: <expected>`; null when the tag is missing. A lightweight tag
+ * or another annotation hash is refused (review finding 2).
+ */
+async function annotatedTagObject(
+  repoRoot: string,
+  tag: string,
+  key: string,
+  expected: string,
+  decisionObject: string,
+): Promise<string | null> {
+  const ref = `refs/tags/${tag}`;
+  const object = (await gitOut(repoRoot, ["rev-parse", "--verify", ref]))
+    ?.trim() ?? null;
+  // A missing or moved tag is reported as tag_moved; only the recorded object is vetted.
+  if (object === null || object !== decisionObject) return object;
+  // The resolved id, not the name, from here on: the ref cannot move between reads.
+  if ((await gitOut(repoRoot, ["cat-file", "-t", object]))?.trim() !== "tag") {
+    throw new ValidationError(
+      `${ref} is not an annotated tag (a lightweight tag does not anchor the approval)`,
+      [ref],
+    );
+  }
+  const body = await gitOut(repoRoot, ["cat-file", "tag", object]) ?? "";
+  const message = body.replaceAll("\r\n", "\n").split("\n\n").slice(1).join(
+    "\n\n",
+  );
+  const found = [
+    ...message.matchAll(
+      new RegExp(`^${key}:[ \\t]*([0-9a-f]{64})[ \\t]*$`, "gm"),
+    ),
+  ].map((m) => m[1]!);
+  if (found.length > 1) {
+    throw new ValidationError(
+      `${ref} annotation must hold exactly one ${key} line (found ${found.length})`,
+      [ref],
+    );
+  }
+  if (found[0] !== expected) {
+    throw new ValidationError(
+      `${ref} annotation ${key} ${
+        found[0]?.slice(0, 12) ?? "(missing)"
+      } differs from the decision file (${expected.slice(0, 12)})`,
+      [ref],
+    );
+  }
+  return object;
 }
 
 /** Reads the approved stage A from the decision file and the tag, never from the working file. */
@@ -490,18 +589,20 @@ export async function loadStageAAnchor(
       [decisionPath],
     );
   }
-  const object = (await gitOut(repoRoot, [
-    "rev-parse",
-    "--verify",
-    `refs/tags/${STAGE_A_TAG}`,
-  ]))?.trim() ?? null;
+  const object = await annotatedTagObject(
+    repoRoot,
+    STAGE_A_TAG,
+    "protocol_sha256",
+    d.protocol_sha256,
+    d.tag_object,
+  );
   const repoRel = relative(repoRoot, join(harnessRoot, rel)).replaceAll(
     "\\",
     "/",
   );
   const atTag = object === null ? null : await gitOut(repoRoot, [
     "show",
-    `refs/tags/${STAGE_A_TAG}^{commit}:${repoRel}`,
+    `${object}^{commit}:${repoRel}`,
   ]);
   let tagSha: string | null = null;
   if (atTag !== null) {
@@ -533,18 +634,20 @@ export async function loadStageBAnchor(
       [decisionPath],
     );
   }
-  const object = (await gitOut(repoRoot, [
-    "rev-parse",
-    "--verify",
-    `refs/tags/${STAGE_B_TAG}`,
-  ]))?.trim() ?? null;
+  const object = await annotatedTagObject(
+    repoRoot,
+    STAGE_B_TAG,
+    "stage_b_sha256",
+    d.stage_b_sha256,
+    d.tag_object,
+  );
   const repoRel = relative(repoRoot, join(harnessRoot, rel)).replaceAll(
     "\\",
     "/",
   );
   const atTag = object === null ? null : await gitOut(repoRoot, [
     "show",
-    `refs/tags/${STAGE_B_TAG}^{commit}:${repoRel}`,
+    `${object}^{commit}:${repoRel}`,
   ]);
   return {
     anchor: {

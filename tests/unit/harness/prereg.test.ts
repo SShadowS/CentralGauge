@@ -1,4 +1,5 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
+import { copy } from "@std/fs/copy";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
 import { ExperimentSchema } from "../../../src/harness/config.ts";
@@ -359,7 +360,9 @@ Deno.test("verifyPrereg I/O: the anchor comes from the tag and the decision file
   const decision = join(repo, "decision.md");
   await Deno.writeTextFile(
     decision,
-    `protocol_sha256: ${APPROVED}\ntag: harness-v2-prereg-a\ntag_object: ${tagObject}\nOWNER-APPROVED: stage A (2026-10-24T12:00:00Z)\n`,
+    `protocol_sha256: ${APPROVED}\nfile_sha256: ${
+      H("f")
+    }\ntag: harness-v2-prereg-a\ntag_object: ${tagObject}\nOWNER-APPROVED: stage A (2026-10-24T12:00:00Z)\n`,
   );
   const clean = await loadStageAAnchor(
     repo,
@@ -583,7 +586,9 @@ async function anchorRepo() {
   const decisionA = join(repo, "decision-a.md");
   await Deno.writeTextFile(
     decisionA,
-    `protocol_sha256: ${APPROVED}\ntag: harness-v2-prereg-a\ntag_object: ${await git(
+    `protocol_sha256: ${APPROVED}\nfile_sha256: ${
+      H("f")
+    }\ntag: harness-v2-prereg-a\ntag_object: ${await git(
       "rev-parse",
       "harness-v2-prereg-a",
     )}\nOWNER-APPROVED: stage A (2026-10-24T12:00:00Z)\n`,
@@ -660,4 +665,279 @@ Deno.test("stage-B anchor: a CRLF working copy matches the LF bytes approved at 
     [],
   );
   await Deno.remove(r.repo, { recursive: true });
+});
+
+// M11-10 run 002 hardening (review findings 1-4).
+const decisionA = (
+  tagObject: string,
+  o: { file?: boolean; approval?: string } = {},
+) =>
+  `protocol_sha256: ${APPROVED}\n${
+    o.file === false ? "" : `file_sha256: ${H("f")}\n`
+  }tag: harness-v2-prereg-a\ntag_object: ${tagObject}\n${
+    o.approval ?? "OWNER-APPROVED: stage A (2026-10-24T12:00:00Z)"
+  }\n`;
+
+Deno.test("git isolation: GIT_DIR pointing at another repo cannot satisfy or forge the anchor", async () => {
+  const r = await anchorRepo();
+  const f = await anchorRepo();
+  // The forged repo carries the same tag name on a different commit and tag object.
+  await Deno.writeTextFile(
+    join(f.harness, f.rel),
+    stringify({ ...STAGE_A, alpha: 0.1 }),
+  );
+  await f.git("commit", "-q", "-am", "edit");
+  await f.git("tag", "-f", "-a", "harness-v2-prereg-a", "-m", "forged");
+  const forgedObject = await f.git("rev-parse", "harness-v2-prereg-a");
+  const forgedDecision = join(r.repo, "forged-decision.md");
+  await Deno.writeTextFile(forgedDecision, decisionA(forgedObject));
+  const prev = Deno.env.get("GIT_DIR");
+  Deno.env.set("GIT_DIR", join(f.repo, ".git"));
+  try {
+    const a = await loadStageAAnchor(r.repo, r.harness, r.rel, r.decisionA);
+    assertEquals(a.anchor, {
+      approved_protocol_sha256: APPROVED,
+      tag_protocol_sha256: APPROVED,
+      tag_moved: false,
+    });
+    const forged = await loadStageAAnchor(
+      r.repo,
+      r.harness,
+      r.rel,
+      forgedDecision,
+    );
+    assertEquals(forged.anchor.tag_moved, true);
+    const b = await loadStageBAnchor(r.repo, r.harness, r.rel, r.decisionB);
+    assertEquals([b.anchor.tag_moved, b.anchor.tag_file_sha256], [
+      false,
+      r.bSha,
+    ]);
+  } finally {
+    if (prev === undefined) Deno.env.delete("GIT_DIR");
+    else Deno.env.set("GIT_DIR", prev);
+    await Deno.remove(r.repo, { recursive: true });
+    await Deno.remove(f.repo, { recursive: true });
+  }
+});
+
+Deno.test("anchors require annotated tags whose annotation hash equals the decision", async () => {
+  for (
+    const [tag, key, decision, hash] of [
+      ["harness-v2-prereg-a", "protocol_sha256", "decisionA", APPROVED],
+      ["harness-v2-prereg-b", "stage_b_sha256", "decisionB", "b".repeat(64)],
+    ] as const
+  ) {
+    const r = await anchorRepo();
+    const load = () =>
+      tag.endsWith("-a")
+        ? loadStageAAnchor(r.repo, r.harness, r.rel, r[decision])
+        : loadStageBAnchor(r.repo, r.harness, r.rel, r[decision]);
+    const redecide = async (obj: string) => {
+      const t = await Deno.readTextFile(r[decision]);
+      await Deno.writeTextFile(
+        r[decision],
+        t.replace(/^tag_object: .*$/m, `tag_object: ${obj}`),
+      );
+    };
+    // Lightweight tag on HEAD, decision records the commit id.
+    await r.git("tag", "-d", tag);
+    await r.git("tag", tag);
+    await redecide(await r.git("rev-parse", tag));
+    await assertRejects(load, Error, "not an annotated tag");
+    // Annotated, but the annotation names another hash.
+    await r.git("tag", "-f", "-a", tag, "-m", `${key}: ${H("9")}`);
+    await redecide(await r.git("rev-parse", tag));
+    await assertRejects(load, Error, "annotation");
+    // Annotated with the decision's own hash passes.
+    await r.git(
+      "tag",
+      "-f",
+      "-a",
+      tag,
+      "-m",
+      `${key}: ${tag.endsWith("-a") ? hash : r.bSha}`,
+    );
+    await redecide(await r.git("rev-parse", tag));
+    assertEquals((await load()).anchor.tag_moved, false);
+    await Deno.remove(r.repo, { recursive: true });
+  }
+});
+
+Deno.test("decision parsers: a bare or malformed approval line and a missing file_sha256 are refused", () => {
+  const obj = "c".repeat(40);
+  const ok = decisionA(obj);
+  assert(parseStageADecision(ok) !== null);
+  for (
+    const approval of [
+      "OWNER-APPROVED:",
+      "OWNER-APPROVED: stage A",
+      "OWNER-APPROVED: stage A (not-a-time)",
+    ]
+  ) assertEquals(parseStageADecision(decisionA(obj, { approval })), null);
+  assertEquals(parseStageADecision(decisionA(obj, { file: false })), null);
+  assertEquals(
+    parseStageADecision(ok.replace(/^tag_object: .*\n/m, "")),
+    null,
+  );
+  const b = (approval: string) =>
+    `stage_b_sha256: ${
+      H("b")
+    }\ntag: harness-v2-prereg-b\ntag_object: ${obj}\n${approval}\n`;
+  assert(
+    parseStageBDecision(b("OWNER-APPROVED: stage B (2026-11-06T12:00:00Z)")) !==
+      null,
+  );
+  for (
+    const approval of ["OWNER-APPROVED:", "OWNER-APPROVED: x (nope)"]
+  ) assertEquals(parseStageBDecision(b(approval)), null);
+});
+
+Deno.test("semantic comparisons ignore object key order but not content", async () => {
+  const sim = ctx().simulation;
+  const args = Object.fromEntries(
+    Object.entries(STAGE_A.simulation.args).reverse(),
+  );
+  const reordered = {
+    ...sim,
+    json: {
+      ...sim.json,
+      args,
+      zero_solve: { rule: "suppress_any_undefined" },
+      decision: { design: { repeats: 5, tasks: 2 } },
+    },
+  };
+  const key = (p: string[]) =>
+    p.filter((x) => x.includes("simulation") || x.includes("design"));
+  assertEquals(
+    key(await preregProblems(await stageB(), ctx({ simulation: reordered }))),
+    [],
+  );
+  const changed = {
+    ...reordered,
+    json: { ...reordered.json, args: { ...args, sims: 1 } },
+  };
+  assert(
+    key(await preregProblems(await stageB(), ctx({ simulation: changed })))
+      .some((x) => x.includes("frozen script and arguments")),
+  );
+});
+
+Deno.test("git isolation: GIT_COMMON_DIR and config redirects cannot move the object store or refs", async () => {
+  const r = await anchorRepo();
+  const f = await anchorRepo();
+  await Deno.writeTextFile(
+    join(f.harness, f.rel),
+    stringify({ ...STAGE_A, alpha: 0.1 }),
+  );
+  await f.git("commit", "-q", "-am", "edit");
+  // A forged annotated tag whose annotation names the approved hash but whose commit holds another file.
+  await f.git(
+    "tag",
+    "-f",
+    "-a",
+    "harness-v2-prereg-a",
+    "-m",
+    `protocol_sha256: ${APPROVED}`,
+  );
+  const real = await r.git("rev-parse", "refs/tags/harness-v2-prereg-a");
+  const forged = await f.git("rev-parse", "refs/tags/harness-v2-prereg-a");
+  // git does not verify a loose object's hash on read: a common dir that is a copy of the
+  // real .git, plus the forged objects, serves the forged tag under the real tag's id.
+  const common = `${r.repo}-common`;
+  await copy(join(f.repo, ".git"), common);
+  await copy(join(r.repo, ".git", "refs"), join(common, "refs"), {
+    overwrite: true,
+  });
+  const loose = (root: string, id: string) =>
+    join(root, "objects", id.slice(0, 2), id.slice(2));
+  const forgedBytes = await Deno.readFile(loose(join(f.repo, ".git"), forged));
+  await Deno.mkdir(join(common, "objects", real.slice(0, 2)), {
+    recursive: true,
+  });
+  try {
+    await Deno.remove(loose(common, real));
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  await Deno.writeFile(loose(common, real), forgedBytes);
+  const names = ["GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_GRAFT_FILE"];
+  const prev = names.map((n) => Deno.env.get(n));
+  Deno.env.set("GIT_COMMON_DIR", common);
+  Deno.env.set("GIT_NAMESPACE", "forged");
+  Deno.env.set("GIT_GRAFT_FILE", join(f.repo, "grafts"));
+  try {
+    const a = await loadStageAAnchor(r.repo, r.harness, r.rel, r.decisionA);
+    assertEquals(a.anchor, {
+      approved_protocol_sha256: APPROVED,
+      tag_protocol_sha256: APPROVED,
+      tag_moved: false,
+    });
+  } finally {
+    names.forEach((n, i) => {
+      const v = prev[i];
+      if (v === undefined) Deno.env.delete(n);
+      else Deno.env.set(n, v);
+    });
+    await Deno.remove(r.repo, { recursive: true });
+    await Deno.remove(f.repo, { recursive: true });
+    await Deno.remove(common, { recursive: true });
+  }
+});
+
+Deno.test("annotation must hold exactly one hash line", async () => {
+  const r = await anchorRepo();
+  await r.git(
+    "tag",
+    "-f",
+    "-a",
+    "harness-v2-prereg-a",
+    "-m",
+    `protocol_sha256: ${APPROVED}\nprotocol_sha256: ${APPROVED}`,
+  );
+  const t = await Deno.readTextFile(r.decisionA);
+  await Deno.writeTextFile(
+    r.decisionA,
+    t.replace(
+      /^tag_object: .*$/m,
+      `tag_object: ${await r.git("rev-parse", "harness-v2-prereg-a")}`,
+    ),
+  );
+  await assertRejects(
+    () => loadStageAAnchor(r.repo, r.harness, r.rel, r.decisionA),
+    Error,
+    "exactly one",
+  );
+  await Deno.remove(r.repo, { recursive: true });
+});
+
+Deno.test("decision parsers: keys cannot span lines or repeat", () => {
+  const obj = "c".repeat(40);
+  const ok = decisionA(obj);
+  assert(parseStageADecision(ok) !== null);
+  assertEquals(
+    parseStageADecision(
+      ok.replace(
+        `protocol_sha256: ${APPROVED}`,
+        `protocol_sha256:\n${APPROVED}`,
+      ),
+    ),
+    null,
+  );
+  assertEquals(
+    parseStageADecision(`${ok}tag_object: ${"d".repeat(40)}\n`),
+    null,
+  );
+  assertEquals(
+    parseStageADecision(`${ok}protocol_sha256: ${H("e")}\n`),
+    null,
+  );
+  const b = `stage_b_sha256: ${
+    H("b")
+  }\ntag: harness-v2-prereg-b\ntag_object: ${obj}\nOWNER-APPROVED: stage B (2026-11-06T12:00:00Z)\n`;
+  assert(parseStageBDecision(b) !== null);
+  assertEquals(
+    parseStageBDecision(b.replace("stage_b_sha256: ", "stage_b_sha256:\n")),
+    null,
+  );
+  assertEquals(parseStageBDecision(`${b}tag: harness-v2-prereg-b\n`), null);
 });
