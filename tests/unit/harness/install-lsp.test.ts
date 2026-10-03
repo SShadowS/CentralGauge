@@ -80,11 +80,27 @@ async function withTemp(
   }
 }
 
+// Fail with a clear message if antivirus quarantined a fixture (a vanished file otherwise
+// surfaces as a confusing hash mismatch or missing-executable error).
+async function assertPresent(...paths: string[]) {
+  for (const p of paths) {
+    try {
+      await Deno.stat(p);
+    } catch {
+      throw new Error(`fixture ${p} vanished (antivirus quarantine?)`);
+    }
+  }
+}
+
+// Plainly textual content so ML scanners do not mistake the .exe-named fixtures for stub binaries.
+const FIXTURE_A = "CentralGauge test fixture a: not an executable\n";
+const FIXTURE_B = "CentralGauge test fixture b: not an executable\n";
+
 async function tree(t: string) {
   const root = join(t, "lsp");
   await Deno.mkdir(join(root, "bin"), { recursive: true });
-  const a = new TextEncoder().encode("exe-a");
-  const b = new TextEncoder().encode("exe-b");
+  const a = new TextEncoder().encode(FIXTURE_A);
+  const b = new TextEncoder().encode(FIXTURE_B);
   await Deno.writeFile(join(root, "bin", "a.exe"), a);
   await Deno.writeFile(join(root, "b.exe"), b);
   await Deno.writeTextFile(join(root, "x.dll"), "dlls are not in the manifest");
@@ -103,17 +119,25 @@ Deno.test({
   async fn() {
     await withTemp(async (t, run) => {
       const { root, manifest } = await tree(t);
+      const aExe = join(root, "bin", "a.exe");
+      await assertPresent(aExe, join(root, "b.exe"), manifest);
       const ok = await run("exes", root, manifest);
       assertEquals([ok.code, ok.out.trim()], [0, "OK"]);
 
-      await Deno.writeTextFile(join(root, "bin", "a.exe"), "tampered");
+      await Deno.writeTextFile(aExe, "CentralGauge test fixture a: tampered\n");
+      await assertPresent(aExe);
       const bad = await run("exes", root, manifest);
       assertEquals(bad.code, 3);
       assertStringIncludes(bad.out, "hash mismatch for bin\\a.exe");
-      await Deno.writeTextFile(join(root, "bin", "a.exe"), "exe-a");
+      await Deno.writeTextFile(aExe, FIXTURE_A);
 
       await Deno.mkdir(join(root, "deep", "er"), { recursive: true });
-      await Deno.writeTextFile(join(root, "deep", "er", "evil.EXE"), "x");
+      const evil = join(root, "deep", "er", "evil.EXE");
+      await Deno.writeTextFile(
+        evil,
+        "CentralGauge test fixture: extra, not an executable\n",
+      );
+      await assertPresent(aExe, join(root, "b.exe"), evil);
       const extra = await run("exes", root, manifest);
       assertEquals(extra.code, 3);
       assertStringIncludes(
@@ -123,6 +147,7 @@ Deno.test({
       await Deno.remove(join(root, "deep"), { recursive: true });
 
       await Deno.remove(join(root, "b.exe"));
+      await assertPresent(aExe, manifest);
       const gone = await run("exes", root, manifest);
       assertEquals(gone.code, 3);
       assertStringIncludes(gone.out, "missing executable: b.exe");
@@ -140,20 +165,22 @@ Deno.test({
         const p = join(t, name);
         const r = await run("mkzip", p, entries);
         assertEquals([r.code, r.out.trim()], [0, "OK"]);
+        await assertPresent(p);
         return p;
       };
-      const clean = await mk("clean.zip", "dir/ok.exe|dir/sub/readme.txt");
+      // Assert-ZipSafe checks entry names only, so no entry needs an .exe name.
+      const clean = await mk("clean.zip", "dir/ok.bin|dir/sub/readme.txt");
       assertEquals((await run("zip", clean, "")).code, 0);
       for (
         const [n, entry] of [
-          ["dots", "..\\evil.exe"],
-          ["dots-mid", "a/../../evil.exe"],
-          ["abs", "/abs.exe"],
-          ["drive", "C:\\evil.exe"],
+          ["dots", "..\\evil.bin"],
+          ["dots-mid", "a/../../evil.bin"],
+          ["abs", "/abs.bin"],
+          ["drive", "C:\\evil.bin"],
           ["ads", "dir/file.txt:stream"],
         ]
       ) {
-        const z = await mk(`${n}.zip`, `dir/ok.exe|${entry}`);
+        const z = await mk(`${n}.zip`, `dir/ok.bin|${entry}`);
         const r = await run("zip", z, "");
         assertEquals(r.code, 3, `${n}: ${r.out}`);
         assertStringIncludes(r.out, "unsafe archive entry");
