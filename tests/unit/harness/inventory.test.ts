@@ -37,8 +37,10 @@ const FULL: Layout = {
   "ws/Core/app.json": "{}",
 };
 
+/** `prepare` runs after the layout is written, for links and case-sensitive folders. */
 async function inventory(
   layout: Layout,
+  prepare?: (root: string) => Promise<void>,
 ): Promise<{ code: number; rec: Inventory; root: string }> {
   const root = await Deno.realPath(await tempDir({ prefix: "cg-inv-" }));
   for (const d of ["config", "home", "ws"]) {
@@ -53,6 +55,7 @@ async function inventory(
     await Deno.mkdir(dirname(f), { recursive: true });
     await Deno.writeTextFile(f, text);
   }
+  await prepare?.(root);
   const out = await new Deno.Command("powershell", {
     args: [
       "-NoProfile",
@@ -266,5 +269,148 @@ Deno.test({
       "config/bundle/instructions/AGENTS.md": "team\n",
     });
     assertEquals([r.code, r.rec.ok], [0, true]);
+  },
+});
+
+// M9-02 review run 002: reparse points and case collisions under a scanned root.
+
+/** A directory junction (no admin or developer mode needed). */
+async function junction(link: string, target: string): Promise<void> {
+  const out = await new Deno.Command("cmd", {
+    args: ["/c", "mklink", "/J", link, target],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assert(
+    out.success,
+    `mklink /J ${link}: ${new TextDecoder().decode(out.stderr)}`,
+  );
+}
+
+/** Whether this host lets the test process create a file symlink, and a case-sensitive folder. */
+async function hostCan(): Promise<
+  { symlink: boolean; caseSensitive: boolean }
+> {
+  if (NOT_WINDOWS) return { symlink: false, caseSensitive: false };
+  const d = await tempDir({ prefix: "cg-inv-probe-" });
+  await Deno.writeTextFile(join(d, "t"), "t");
+  let symlink = true;
+  try {
+    await Deno.symlink(join(d, "t"), join(d, "l"), { type: "file" });
+  } catch {
+    symlink = false;
+  }
+  await Deno.mkdir(join(d, "cs"));
+  const fs = await new Deno.Command("fsutil", {
+    args: ["file", "setCaseSensitiveInfo", join(d, "cs"), "enable"],
+    stdout: "null",
+    stderr: "null",
+  }).output();
+  return { symlink, caseSensitive: fs.success };
+}
+const CAN = await hostCan();
+
+/** No problem may name a path below the link: the scan never followed it. */
+const notFollowed = (r: { rec: Inventory }, link: string) => {
+  for (const p of r.rec.problems) {
+    assert(
+      !p.includes(`${link}/`) && !p.includes(`${link}\\`),
+      `followed the link: ${p}`,
+    );
+  }
+};
+
+Deno.test({
+  name:
+    "cg-inventory: a junction under .claude/rules is refused and never followed",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    const r = await inventory(
+      { ...FULL, "elsewhere/al.md": "rule\n" },
+      (root) =>
+        junction(
+          join(root, "home", ".claude", "rules", "linked"),
+          join(root, "elsewhere"),
+        ),
+    );
+    refused(r, "reparse point under a scanned root: ");
+    assertStringIncludes(
+      r.rec.problems.join("\n"),
+      join(".claude", "rules", "linked"),
+    );
+    notFollowed(r, "linked");
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory: a junction in the workspace is refused and never followed",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    const r = await inventory(
+      { ...FULL, "elsewhere/CLAUDE.md": "x" },
+      (root) =>
+        junction(join(root, "ws", "Core", "linked"), join(root, "elsewhere")),
+    );
+    refused(r, "reparse point under a scanned root: ");
+    assertStringIncludes(
+      r.rec.problems.join("\n"),
+      join("ws", "Core", "linked"),
+    );
+    notFollowed(r, "linked");
+  },
+});
+
+Deno.test({
+  name: "cg-inventory: a file symlink in the workspace is refused",
+  // Creating a symlink needs admin or Windows developer mode; the junction cases above
+  // cover the same refusal on hosts without it.
+  ignore: NOT_WINDOWS || !CAN.symlink,
+  async fn() {
+    const r = await inventory(
+      { ...FULL, "elsewhere/x.al": "x" },
+      (root) =>
+        Deno.symlink(
+          join(root, "elsewhere", "x.al"),
+          join(root, "ws", "Core", "link.al"),
+          {
+            type: "file",
+          },
+        ),
+    );
+    refused(r, "reparse point under a scanned root: ");
+    assertStringIncludes(
+      r.rec.problems.join("\n"),
+      join("ws", "Core", "link.al"),
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory: two names that differ only in case are refused even when both copies match",
+  // Needs per-directory case sensitivity (fsutil setCaseSensitiveInfo); refused by some hosts.
+  ignore: NOT_WINDOWS || !CAN.caseSensitive,
+  async fn() {
+    const r = await inventory(FULL, async (root) => {
+      for (
+        const side of ["config/bundle/instructions/rules", "home/.claude/rules"]
+      ) {
+        const d = join(root, ...side.split("/"));
+        const tmp = `${d}-cs`;
+        await Deno.mkdir(tmp);
+        const fs = await new Deno.Command("fsutil", {
+          args: ["file", "setCaseSensitiveInfo", tmp, "enable"],
+          stdout: "null",
+          stderr: "null",
+        }).output();
+        assert(fs.success, `fsutil setCaseSensitiveInfo ${tmp}`);
+        await Deno.writeTextFile(join(tmp, "al.md"), "rule\n");
+        await Deno.writeTextFile(join(tmp, "AL.md"), "rule\n");
+        await Deno.remove(d, { recursive: true });
+        await Deno.rename(tmp, d);
+      }
+    });
+    refused(r, "names differ only in case under a scanned root: ");
   },
 });
