@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "85740/DefaultStrategyGetsTwelveMonths": 1
+    "85740/HeavyDutyGetsSixMonths": 1
+    "85740/PartnerWithoutIntervalGetsTwelve": 1
+    "85740/PartnerIntervalIsUsed": 1
+    "85740/PlanIntervalKeptWhenSet": 1
+    "85740/PlanStrategyDecidesNotVehicle": 1
+    "85740/DueOnDefaultIntervalBoundary": 1
+    "85740/NoPlanOrNoServiceNoDate": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
