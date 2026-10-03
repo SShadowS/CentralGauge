@@ -1,0 +1,5 @@
+{
+  "name": "CentralGauge harness v2 final-code check",
+  "description": "Frozen in stage A. CodeCop and UICop default severities, no overrides.",
+  "rules": []
+}

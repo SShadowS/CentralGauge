@@ -6,11 +6,13 @@
  * measure is ok, not_applicable or missing (missing is never a zero).
  */
 
-import { join } from "@std/path";
+import { basename, dirname, join, resolve } from "@std/path";
 import { z } from "zod";
+import type { AnalysisSettings } from "../container/types.ts";
 import { ValidationError } from "../errors.ts";
-import type { BcLane } from "./bc-lane.ts";
+import { type BcLane, buildApps, type LockedSymbols } from "./bc-lane.ts";
 import { type JudgmentRecord, publishOnce, readRecord } from "./records.ts";
+import { readAppJson, type StagedApp } from "./staging.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
 import { judge, type JudgeInput } from "./verdict.ts";
 import { safeCopyTree } from "./fsutil.ts";
@@ -548,4 +550,142 @@ export async function reuseCheck(
     ? null
     : [...new Set(wanted.map((k) => cover.get(k)![0]!))].join("+");
   return ok({ executed, effective, via });
+}
+
+export interface FinalCounts {
+  errors: number;
+  warnings: number;
+  warning_codes: Record<string, number>;
+  /** Apps not attempted or not built ok: their analyzer output is not trusted. */
+  incomplete_apps: string[];
+  compiler: string;
+}
+
+/** One CodeCop + UICop compile of a workspace (no build cache), counted. */
+export function finalCodeCounts(
+  lane: BcLane,
+  o: {
+    dir: string;
+    apps: StagedApp[];
+    lock: LockedSymbols;
+    outDir: string;
+    analysis: AnalysisSettings;
+  },
+): Promise<FinalCounts> {
+  return lane.compile(async (c) => {
+    const built = await buildApps(lane.bc, c, {
+      srcDir: o.dir,
+      apps: o.apps,
+      versions: new Map(),
+      outDir: o.outDir,
+      lock: o.lock,
+      analysis: o.analysis,
+    });
+    const warning_codes: Record<string, number> = {};
+    let warnings = 0;
+    for (const b of built) {
+      for (const x of b.warnings ?? []) {
+        warnings++;
+        warning_codes[x.code] = (warning_codes[x.code] ?? 0) + 1;
+      }
+    }
+    return {
+      errors: built.reduce(
+        (n, b) =>
+          n + b.diagnostics.filter((d) => d.severity === "error").length,
+        0,
+      ),
+      warnings,
+      warning_codes,
+      incomplete_apps: built.filter((b) => !b.attempted || !b.ok).map((b) =>
+        b.folder
+      ),
+      compiler: await lane.bc.harnessCompilerIdentity(c),
+    };
+  });
+}
+
+/**
+ * Final against starting workspace. Warnings only when every final app
+ * built (a failed compile's analyzer output is not trusted); an incomplete
+ * start or a compiler change makes the measure missing.
+ */
+export function finalCode(
+  start: FinalCounts,
+  end: FinalCounts,
+): Measure<FinalCode> {
+  if (start.compiler !== end.compiler) {
+    return missing("compiler changed between the start and final compiles");
+  }
+  if (start.incomplete_apps.length > 0) {
+    return missing(
+      `starting workspace did not build completely: ${
+        start.incomplete_apps.join(", ")
+      }`,
+    );
+  }
+  const complete = end.incomplete_apps.length === 0;
+  const inc: Record<string, number> = {};
+  if (complete) {
+    for (const k of Object.keys(end.warning_codes).sort()) {
+      const d = end.warning_codes[k]! - (start.warning_codes[k] ?? 0);
+      if (d > 0) inc[k] = d;
+    }
+  }
+  return ok({
+    errors: end.errors,
+    warnings: complete ? end.warnings : null,
+    start_errors: start.errors,
+    start_warnings: start.warnings,
+    new_warnings: complete
+      ? Object.values(inc).reduce((a, b) => a + b, 0)
+      : null,
+    new_warning_codes: inc,
+    complete,
+    incomplete_apps: end.incomplete_apps,
+  });
+}
+
+/** The canary app (no dependencies) as a one-app graph. */
+async function readAppGraphOf(dir: string): Promise<StagedApp[]> {
+  const a = await readAppJson(join(dir, "app.json"));
+  return [{
+    folder: basename(dir),
+    id: a.id.toLowerCase(),
+    name: a.name,
+    publisher: a.publisher,
+    version: a.version,
+    idRanges: a.idRanges,
+    depends: [],
+    external: [],
+  }];
+}
+
+/** Proves the analyzers ran: the canary must report every frozen expected code. */
+export async function canaryCheck(
+  lane: BcLane,
+  o: {
+    canaryDir: string;
+    lock: LockedSymbols;
+    outDir: string;
+    analysis: AnalysisSettings;
+    expected: string[];
+  },
+): Promise<{ codes: string[]; ok: boolean; compiler: string }> {
+  // buildApps copies only from absolute source paths.
+  const canary = resolve(o.canaryDir);
+  const c = await finalCodeCounts(lane, {
+    dir: dirname(canary),
+    apps: await readAppGraphOf(canary),
+    lock: o.lock,
+    outDir: o.outDir,
+    analysis: o.analysis,
+  });
+  const codes = Object.keys(c.warning_codes).sort();
+  return {
+    codes,
+    ok: c.incomplete_apps.length === 0 &&
+      o.expected.every((x) => codes.includes(x)),
+    compiler: c.compiler,
+  };
 }
