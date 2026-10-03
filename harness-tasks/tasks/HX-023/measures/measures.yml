@@ -12,6 +12,13 @@ partial_credit:
     "85920/RentalEntryWholeAmount": 1
     "85920/RentalEntrySmallValues": 1
   hidden_regressions: []
-reuse: null
+reuse:
+  targets:
+    - { codeunit: 70012, procedure: FormatAmount, signature: "(Amount: Decimal): Text", file: Core/src/ExportFormat.Codeunit.al, perturb: "exit('');" }
+    - { codeunit: 70012, procedure: FormatDate, signature: "(Value: Date): Text", file: Core/src/ExportFormat.Codeunit.al, perturb: "exit('');" }
+  tests:
+    - { codeunit: 85920, procedures: [LeaseLineGroupedAmount, LeaseLineHalfAmount, LeaseLineWholeAmount, RentalEntryGroupedValues, RentalEntryWholeAmount, RentalEntrySmallValues] }
 expect:
-  correct: { partial_credit: 1, final_errors: 0 }
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }

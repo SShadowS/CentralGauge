@@ -48,42 +48,42 @@ codeunit 85920 "HX023 Export Format Oracle"
     procedure LeaseLineGroupedAmount()
     begin
         WorkDate(20270301D);
-        Assert.AreEqual('HX23-L1;HX23-V1;2027-03-01;1234.50', ExportLease('HX23-L1', 20270301D, 1234.5), 'Lease export line');
+        Assert.AreEqual('HX23-L1;HX23-V1;2027-03-01;1234.50', ExportLease('HX23-L1', 20270301D, 1234.5), 'Lease export line for contract HX23-L1');
     end;
 
     [Test]
     procedure LeaseLineHalfAmount()
     begin
         WorkDate(20270301D);
-        Assert.AreEqual('HX23-L2;HX23-V1;2027-03-15;103.50', ExportLease('HX23-L2', 20270315D, 103.5), 'Lease export line');
+        Assert.AreEqual('HX23-L2;HX23-V1;2027-03-15;103.50', ExportLease('HX23-L2', 20270315D, 103.5), 'Lease export line for contract HX23-L2');
     end;
 
     [Test]
     procedure LeaseLineWholeAmount()
     begin
         WorkDate(20270301D);
-        Assert.AreEqual('HX23-L3;HX23-V1;2027-03-31;250.00', ExportLease('HX23-L3', 20270331D, 250), 'Lease export line');
+        Assert.AreEqual('HX23-L3;HX23-V1;2027-03-31;250.00', ExportLease('HX23-L3', 20270331D, 250), 'Lease export line for contract HX23-L3');
     end;
 
     [Test]
     procedure RentalEntryGroupedValues()
     begin
         WorkDate(20270301D);
-        Assert.AreEqual('HX23-R1;HX23-V2;2027-03-03;1234.50;1500', ExportRental('HX23-R1', 'HX23-V2', 20270303D, 1234.5, 1500), 'Rental export line');
+        Assert.AreEqual('HX23-R1;HX23-V2;2027-03-03;1234.50;1500', ExportRental('HX23-R1', 'HX23-V2', 20270303D, 1234.5, 1500), 'Rental export line for contract HX23-R1');
     end;
 
     [Test]
     procedure RentalEntryWholeAmount()
     begin
         WorkDate(20270301D);
-        Assert.AreEqual('HX23-R2;HX23-V2;2027-03-04;250.00;85', ExportRental('HX23-R2', 'HX23-V2', 20270304D, 250, 85), 'Rental export line');
+        Assert.AreEqual('HX23-R2;HX23-V2;2027-03-04;250.00;85', ExportRental('HX23-R2', 'HX23-V2', 20270304D, 250, 85), 'Rental export line for contract HX23-R2');
     end;
 
     [Test]
     procedure RentalEntrySmallValues()
     begin
         WorkDate(20270301D);
-        Assert.AreEqual('HX23-R3;HX23-V3;2027-11-15;12.35;7', ExportRental('HX23-R3', 'HX23-V3', 20271115D, 12.35, 7), 'Rental export line');
+        Assert.AreEqual('HX23-R3;HX23-V3;2027-11-15;12.35;7', ExportRental('HX23-R3', 'HX23-V3', 20271115D, 12.35, 7), 'Rental export line for contract HX23-R3');
     end;
 
     local procedure ExportLease(ContractNo: Code[20]; InvoiceDate: Date; LineAmount: Decimal): Text
