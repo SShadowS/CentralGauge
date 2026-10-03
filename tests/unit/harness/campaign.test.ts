@@ -6,6 +6,7 @@ import {
 } from "@std/assert";
 import { walk } from "@std/fs";
 import { join } from "@std/path";
+import { stringify } from "@std/yaml";
 import {
   ConfigurationError,
   ContainerError,
@@ -16,6 +17,10 @@ import {
   runCampaign,
   type RunOptions,
 } from "../../../src/harness/campaign.ts";
+import { loadExperiment } from "../../../src/harness/config.ts";
+import { hashFile, sha256Hex } from "../../../src/harness/hash.ts";
+import { PreregSchema, protocolSha } from "../../../src/harness/prereg.ts";
+import { experimentHash } from "../../../src/harness/records.ts";
 import { PROXY_ISOLATION } from "../../../src/harness/egress-proxy.ts";
 import { imageTag, mcpLabel } from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
@@ -23,7 +28,7 @@ import { buildReport } from "../../../src/harness/report.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
 import { mockAdapter } from "../../../src/harness/adapters/mock.ts";
 import { EXECUTION_LABEL } from "../../../src/harness/sandbox.ts";
-import { write } from "./refapp-fixture.ts";
+import { git, write } from "./refapp-fixture.ts";
 import {
   CATALOG,
   cellFor,
@@ -908,4 +913,344 @@ Deno.test("M5-07a: a campaign recorded without parser versions is never resumed;
   assertEquals(s.created, true);
   assert(s.campaignId !== c.id);
   assertEquals((await t.env.store.campaigns("contract")).length, 2);
+});
+
+// ---- M11-10: a pre-registered experiment binds its campaign to both approved stages ----
+
+const PR_REL = "preregistration/prereg.yml";
+const PR_STAGE_A = {
+  v: 1,
+  experiment: "prereg",
+  protocol: {
+    arms: ["mock-positive", "mock-naive-a"],
+    contrasts: [
+      {
+        id: "C1",
+        name: "naive against positive",
+        baseline: "mock-positive",
+        variant: "mock-naive-a",
+      },
+      {
+        id: "C2",
+        name: "positive against naive",
+        baseline: "mock-naive-a",
+        variant: "mock-positive",
+      },
+    ],
+    interaction: null,
+  },
+  approval: "OWNER-APPROVED: stage A (2026-10-21T12:00:00Z)",
+  population: "The mock task set.",
+  primary_metric: "cost_per_solved_task",
+  confirmatory: true,
+  family: ["C1", "C2"],
+  alpha: 0.05,
+  test: {
+    sides: "two",
+    p_value: "percentile_bootstrap_plus_one",
+    adjustment: "holm",
+    direction: "sign_of_delta",
+  },
+  intervals: {
+    reported: "per_contrast_unadjusted",
+    beside: "bonferroni_same_draws",
+  },
+  bootstrap: { unit: "task", resamples: 1000, seed: 1, level: 0.95 },
+  zero_solve: { rule: "suppress_any_undefined" },
+  missing_pairs: "per_contrast_matched",
+  held_out: {
+    count: 0,
+    rule: "none held out",
+    seal: "harness-v2-screen-start",
+    tasks: [],
+    in_family: false,
+  },
+  measures: {
+    fingerprint: "f".repeat(64),
+    unknown_symbol_codes: ["AL0118"],
+    ruleset_sha256: "d".repeat(64),
+    canary_codes: ["AA0137"],
+    workflow_execution: "used_execution",
+    effort_execution: "every_attempt",
+  },
+  exploratory_metrics: ["pass_rate"],
+  simulation: { script_sha256: "1".repeat(64), args: { sims: 10 } },
+  design_rule: "the frozen rule",
+  stage_a: null,
+  experiment_hash: null,
+  selection: null,
+  design: null,
+  power_simulation: null,
+  compiler_identity: null,
+  stage_b_approval: null,
+  amendments: [],
+};
+
+async function gitOut(root: string, ...args: string[]): Promise<string> {
+  const out = await new Deno.Command("git", {
+    args,
+    cwd: root,
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!out.success) throw new Error(new TextDecoder().decode(out.stderr));
+  return new TextDecoder().decode(out.stdout).trim();
+}
+
+/** Commit the working prereg file and tag it (stage A or stage B). */
+async function tagPrereg(t: TestEnv, tag: string, line: string) {
+  await git(t.repo.root, "add", "harness");
+  await git(t.repo.root, "commit", "-q", "-m", tag);
+  await git(t.repo.root, "tag", "-a", tag, "-m", line);
+  return await gitOut(t.repo.root, "rev-parse", tag);
+}
+
+/**
+ * The pre-registered experiment and its stage-A file, committed and tagged
+ * harness-v2-prereg-a, with the stage-A decision file outside the repo.
+ */
+async function preregEnv() {
+  const t = await mockEnv();
+  await write(
+    t.harnessRoot,
+    "experiments/prereg.yml",
+    `id: prereg
+hypothesis: Mock contract.
+primary_metric: cost_per_solved_task
+baseline: mock-positive
+variants: [mock-naive-a]
+vary: [settings]
+tasks: "harness-tasks/tasks/*"
+repeats: 1
+contrasts:
+${
+      PR_STAGE_A.protocol.contrasts.map((c) => `  - ${JSON.stringify(c)}`)
+        .join("\n")
+    }
+preregistration: ${PR_REL}
+`,
+  );
+  await write(t.harnessRoot, PR_REL, stringify(PR_STAGE_A));
+  const approved = await protocolSha(PreregSchema.parse(PR_STAGE_A));
+  const tagObject = await tagPrereg(
+    t,
+    "harness-v2-prereg-a",
+    `protocol_sha256: ${approved}`,
+  );
+  const decisions = await Deno.makeTempDir();
+  const decisionA = join(decisions, "2026-10-24-harness-v2-prereg-a.md");
+  await Deno.writeTextFile(
+    decisionA,
+    `protocol_sha256: ${approved}\ntag: harness-v2-prereg-a\ntag_object: ${tagObject}\nOWNER-APPROVED: stage A (2026-10-24T12:00:00Z)\n`,
+  );
+  // A parseable stage-B decision for runs before stage B exists.
+  const decisionB = join(decisions, "2026-11-06-harness-v2-prereg-b.md");
+  await Deno.writeTextFile(
+    decisionB,
+    `stage_b_sha256: ${"0".repeat(64)}\ntag: harness-v2-prereg-b\ntag_object: ${
+      "0".repeat(40)
+    }\nOWNER-APPROVED: stage B (2026-11-06T12:00:00Z)\n`,
+  );
+  return { t, approved, decisionA, decisionB };
+}
+
+/**
+ * Write the stage-B file (with selection and simulation JSON in the repo),
+ * commit it, tag harness-v2-prereg-b and write the stage-B decision file.
+ */
+async function freezeStageB(
+  p: Awaited<ReturnType<typeof preregEnv>>,
+  over: Record<string, unknown> = {},
+) {
+  const { t } = p;
+  const { experiment } = await loadExperiment(t.harnessRoot, "prereg");
+  const selPath = "harness-tasks/v2/selection.json";
+  await write(
+    t.repo.root,
+    selPath,
+    JSON.stringify({
+      v: 1,
+      status: "ok",
+      held_out: [],
+      selection: { n: 1, selected: ["HX-001"] },
+    }),
+  );
+  const simPath = "harness/preregistration/prereg.sim-b.json";
+  await write(
+    t.repo.root,
+    simPath,
+    JSON.stringify({
+      ...PR_STAGE_A.simulation,
+      zero_solve: PR_STAGE_A.zero_solve,
+      decision: { design: { tasks: 1, repeats: 1 } },
+    }),
+  );
+  const selSha = await hashFile(t.repo.root, join(t.repo.root, selPath));
+  const doc = {
+    ...PR_STAGE_A,
+    stage_a: { sha256: p.approved },
+    experiment_hash: await experimentHash(experiment),
+    selection: {
+      path: selPath,
+      sha256: selSha,
+      selected: ["HX-001"],
+      held_out: [],
+    },
+    design: { tasks: 1, repeats: 1 },
+    power_simulation: {
+      inputs: [{ path: selPath, sha256: selSha }],
+      output: {
+        path: simPath,
+        sha256: await hashFile(t.repo.root, join(t.repo.root, simPath)),
+      },
+    },
+    compiler_identity: "artifact|bccontainerhelper 6.1.14",
+    stage_b_approval: "OWNER-APPROVED: stage B (2026-10-29T12:00:00Z)",
+    ...over,
+  };
+  const text = stringify(doc);
+  await write(t.harnessRoot, PR_REL, text);
+  const bSha = await sha256Hex(new TextEncoder().encode(text));
+  const tagObject = await tagPrereg(
+    t,
+    "harness-v2-prereg-b",
+    `stage_b_sha256: ${bSha}`,
+  );
+  await Deno.writeTextFile(
+    p.decisionB,
+    `stage_b_sha256: ${bSha}\ntag: harness-v2-prereg-b\ntag_object: ${tagObject}\nOWNER-APPROVED: stage B (2026-11-06T12:00:00Z)\n`,
+  );
+  return doc;
+}
+
+const preregOpts = (p: { decisionA: string; decisionB: string }) =>
+  opts({ preregDecision: p.decisionA, preregBDecision: p.decisionB });
+
+Deno.test("M11-10: a pre-registered experiment needs both decision files and a frozen stage B before any cell", async () => {
+  const p = await preregEnv();
+  for (const o of [opts(), opts({ preregDecision: p.decisionA })]) {
+    await assertRejects(
+      () => runCampaign(p.t.env, "prereg", o, io()),
+      ConfigurationError,
+      "--prereg-b-decision",
+    );
+  }
+  await assertRejects(
+    () =>
+      runCampaign(
+        p.t.env,
+        "prereg",
+        opts({ preregBDecision: p.decisionB }),
+        io(),
+      ),
+    ConfigurationError,
+    "--prereg-decision",
+  );
+  await assertRejects(
+    () => runCampaign(p.t.env, "prereg", preregOpts(p), io()),
+    ConfigurationError,
+    "stage B is not frozen",
+  );
+  assertEquals(await p.t.env.store.campaigns("prereg"), []);
+  assertEquals(p.t.docker.runs.length, 0);
+});
+
+Deno.test("M11-10: a clean stage B binds the campaign; an edited file refuses the resume", async () => {
+  const p = await preregEnv();
+  await freezeStageB(p);
+  const s = await runCampaign(p.t.env, "prereg", preregOpts(p), io());
+  assertEquals(s.created, true);
+  const c = (await p.t.env.store.campaigns("prereg"))[0]!;
+  assertEquals(c.preregistration?.path, PR_REL);
+  assertEquals(c.preregistration?.protocol_sha256, p.approved);
+  assertEquals(
+    c.preregistration?.sha256,
+    await hashFile(p.t.harnessRoot, join(p.t.harnessRoot, PR_REL)),
+  );
+  assertEquals(
+    c.preregistration?.decision_sha256,
+    await sha256Hex(await Deno.readFile(p.decisionA)),
+  );
+  assertEquals(
+    c.preregistration?.stage_b_decision_sha256,
+    await sha256Hex(await Deno.readFile(p.decisionB)),
+  );
+  const runs = p.t.docker.runs.length;
+  await Deno.writeTextFile(
+    join(p.t.harnessRoot, PR_REL),
+    `${await Deno.readTextFile(join(p.t.harnessRoot, PR_REL))}# edited\n`,
+  );
+  await assertRejects(
+    () => runCampaign(p.t.env, "prereg", preregOpts(p), io()),
+    ConfigurationError,
+    "preregistration changed",
+  );
+  assertEquals(p.t.docker.runs.length, runs);
+});
+
+Deno.test("M11-10: a stage B whose stage A and stage_a.sha256 were both edited is refused", async () => {
+  const p = await preregEnv();
+  const edited = PreregSchema.parse({ ...PR_STAGE_A, alpha: 0.1 });
+  await freezeStageB(p, {
+    alpha: 0.1,
+    stage_a: { sha256: await protocolSha(edited) },
+  });
+  await assertRejects(
+    () => runCampaign(p.t.env, "prereg", preregOpts(p), io()),
+    ConfigurationError,
+    "differs from the approved stage A",
+  );
+  assertEquals(await p.t.env.store.campaigns("prereg"), []);
+  assertEquals(p.t.docker.runs.length, 0);
+});
+
+Deno.test("M11-10: a forged family amendment after the stage-B tag is refused (round 3 finding 1)", async () => {
+  const p = await preregEnv();
+  const doc = await freezeStageB(p);
+  await write(
+    p.t.harnessRoot,
+    PR_REL,
+    stringify({
+      ...doc,
+      family: ["C1"],
+      amendments: [{
+        key: "family",
+        from: ["C1", "C2"],
+        to: ["C1"],
+        reason: "C2 unpowered",
+        approval: "OWNER-APPROVED: drop C2 (2026-10-29T12:00:00Z)",
+      }],
+    }),
+  );
+  const err = await assertRejects(
+    () => runCampaign(p.t.env, "prereg", preregOpts(p), io()),
+    ConfigurationError,
+  );
+  assertStringIncludes(err.message, "not externally approved");
+  assertStringIncludes(
+    err.message,
+    "differs from the externally approved stage-B bytes",
+  );
+  assertEquals(await p.t.env.store.campaigns("prereg"), []);
+  assertEquals(p.t.docker.runs.length, 0);
+});
+
+Deno.test("M11-10: resume with an edited or swapped decision file is refused", async () => {
+  const p = await preregEnv();
+  await freezeStageB(p);
+  await runCampaign(p.t.env, "prereg", preregOpts(p), io());
+  const runs = p.t.docker.runs.length;
+  for (const path of [p.decisionA, p.decisionB]) {
+    const original = await Deno.readTextFile(path);
+    // Still a parseable decision with the same anchor lines: only its bytes differ.
+    await Deno.writeTextFile(path, `# swapped\n${original}`);
+    await assertRejects(
+      () => runCampaign(p.t.env, "prereg", preregOpts(p), io()),
+      ConfigurationError,
+      "preregistration changed",
+    );
+    await Deno.writeTextFile(path, original);
+  }
+  assertEquals(p.t.docker.runs.length, runs);
+  assertEquals((await p.t.env.store.campaigns("prereg")).length, 1);
 });

@@ -1005,6 +1005,10 @@ export interface RunCliOptions extends CellCliOptions {
   campaign?: string;
   /** run: rerun only this unscored cell as a manual_rerun. */
   rerun?: RerunCell;
+  /** run (M11-10): the stage-A pre-registration decision file. */
+  preregDecision?: string;
+  /** run (M11-10): the stage-B pre-registration decision file. */
+  preregBDecision?: string;
 }
 
 type RerunCell = NonNullable<RunOptions["rerun"]>;
@@ -1053,6 +1057,12 @@ export async function harnessRun(
     ...(o.stopFiles !== undefined ? { stopFiles: o.stopFiles } : {}),
     ...(o.campaign !== undefined ? { campaign: o.campaign } : {}),
     ...(o.rerun !== undefined ? { rerun: o.rerun } : {}),
+    ...(o.preregDecision !== undefined
+      ? { preregDecision: o.preregDecision }
+      : {}),
+    ...(o.preregBDecision !== undefined
+      ? { preregBDecision: o.preregBDecision }
+      : {}),
   };
   const command = `harness run ${experimentId}`;
   // M1-33c: before any lock, sweep or recovery writes (runCampaign rechecks),
@@ -2111,6 +2121,8 @@ export function registerHarnessCommand(
     stopFile?: string[];
     campaign?: string;
     rerun?: RerunCell;
+    preregDecision?: string;
+    preregBDecision?: string;
   };
   const runOpts = (f: RunFlags): RunCliOptions => ({
     ...cliOpts(f),
@@ -2129,6 +2141,10 @@ export function registerHarnessCommand(
     ...(f.stopFile ? { stopFiles: f.stopFile.map((p) => resolve(p)) } : {}),
     ...(f.campaign ? { campaign: f.campaign } : {}),
     ...(f.rerun ? { rerun: f.rerun } : {}),
+    ...(f.preregDecision ? { preregDecision: resolve(f.preregDecision) } : {}),
+    ...(f.preregBDecision
+      ? { preregBDecision: resolve(f.preregBDecision) }
+      : {}),
   });
 
   shared(
@@ -2167,6 +2183,14 @@ export function registerHarnessCommand(
     .option(
       "--rerun <cell:cell>",
       "Rerun only this unscored cell (<task:repeat:arm>) as a manual rerun",
+    )
+    .option(
+      "--prereg-decision <path:string>",
+      "Stage-A pre-registration decision file (required with a preregistration)",
+    )
+    .option(
+      "--prereg-b-decision <path:string>",
+      "Stage-B pre-registration decision file (required with a preregistration)",
     )
     .action((opts: RunFlags, experiment: string) =>
       fail(async () => void await harnessRun(experiment, runOpts(opts), open))
