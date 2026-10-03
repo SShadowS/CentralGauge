@@ -879,3 +879,51 @@ Deno.test({
     }
   },
 });
+
+// H-01s: the base build (H-01q run 001) failed its own verify because an
+// EXPLICIT ACE on a supplied root (C:\cg-al.ps1, C:\Git: Authenticated Users
+// Modify) survived /inheritance:r + /grant:r, and the children reset then
+// inherited it from C:\Git. Lock() must leave exactly the three ACEs.
+Deno.test({
+  name:
+    "H-01s: cg-lockdown leaves exactly SYSTEM, Administrators and Users on a supplied root that carries explicit ACEs of other SIDs, and on its children",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-h01s-" });
+    const file = `${dir}\\cg-al.ps1`;
+    const tree = `${dir}\\Git`;
+    const child = `${tree}\\usr\\bin\\cg-al`;
+    await Deno.mkdir(`${tree}\\usr\\bin`, { recursive: true });
+    await Deno.writeTextFile(file, "exit 0");
+    await Deno.writeTextFile(child, "#!/bin/sh");
+    const s = await pwsh([
+      "-Command",
+      [
+        `icacls '${file}' /grant '*S-1-5-11:M' '*S-1-1-0:RX' /Q`,
+        `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`,
+        `icacls '${tree}' /grant '*S-1-5-11:(OI)(CI)M' '*S-1-1-0:(OI)(CI)RX' /Q`,
+        `exit $LASTEXITCODE`,
+      ].join("; "),
+    ]);
+    assertEquals(s.code, 0, s.out);
+    try {
+      const r = await pwsh(["-File", LOCKDOWN, file, tree]);
+      // On the host the owner is the test user; the DACL itself must be clean.
+      const fails = r.out.split(/\r?\n/).filter((x) => x.startsWith("[FAIL]"));
+      for (const f of fails) assert(f.startsWith("[FAIL] owner "), f);
+      for (const p of [file, tree, `${tree}\\usr`, child]) {
+        const a = await pwsh([
+          "-Command",
+          `(Get-Item -LiteralPath '${p}' -Force).GetAccessControl().GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }`,
+        ]);
+        assertEquals(
+          [...new Set(a.out.split(/\r?\n/).filter((x) => x !== ""))].sort(),
+          ["S-1-5-18", "S-1-5-32-544", "S-1-5-32-545"],
+          `${p}: ${a.out}`,
+        );
+      }
+    } finally {
+      await dropTree(dir);
+    }
+  },
+});

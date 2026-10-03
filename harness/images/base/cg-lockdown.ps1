@@ -32,15 +32,35 @@ function Invoke-Icacls([string[]]$IcaclsArgs) {
   if ($LASTEXITCODE -ne 0) { throw ('icacls ' + ($IcaclsArgs -join ' ') + ' failed: ' + $LASTEXITCODE) }
 }
 
+# H-01s: the DACL is rebuilt from scratch: protected (inherited ACEs dropped), every
+# explicit ACE purged whatever its SID, then exactly SYSTEM F, Administrators F and
+# Users RX. icacls /inheritance:r + /grant:r kept explicit ACEs of other SIDs (the
+# servercore C:\ root shape put Authenticated Users Modify on C:\cg-al.ps1 and C:\Git).
+# Only the Access section is read and written, so the owner is left as it is.
+function Set-ThreeAces($item, [bool]$isDir) {
+  $sidType = [System.Security.Principal.SecurityIdentifier]
+  $acl = $item.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($r in @($acl.GetAccessRules($true, $true, $sidType))) { $acl.PurgeAccessRules($r.IdentityReference) }
+  $inherit = if ($isDir) { 'ContainerInherit, ObjectInherit' } else { 'None' }
+  foreach ($g in @(@('S-1-5-18', 'FullControl'), @('S-1-5-32-544', 'FullControl'), @('S-1-5-32-545', 'ReadAndExecute'))) {
+    $sid = New-Object System.Security.Principal.SecurityIdentifier $g[0]
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $g[1], $inherit, 'None', 'Allow')))
+  }
+  $item.SetAccessControl($acl)
+}
+
 function Lock([string]$p) {
   if (-not (Test-Path -LiteralPath $p)) { throw ('cg-lockdown: missing ' + $p) }
-  if (Test-Path -LiteralPath $p -PathType Container) {
-    Invoke-Icacls @($p, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-32-545:(OI)(CI)RX', '/Q')
+  $item = Get-Item -LiteralPath $p -Force
+  if ($item.PSIsContainer) {
+    Set-ThreeAces $item $true
+    # Children: explicit ACEs removed, inheritance on, so each inherits only the three.
     if (Get-ChildItem -LiteralPath $p -Force | Select-Object -First 1) {
       Invoke-Icacls @((Join-Path $p '*'), '/reset', '/T', '/Q')
     }
   } else {
-    Invoke-Icacls @($p, '/inheritance:r', '/grant:r', '*S-1-5-18:F', '*S-1-5-32-544:F', '*S-1-5-32-545:RX', '/Q')
+    Set-ThreeAces $item $false
   }
 }
 
