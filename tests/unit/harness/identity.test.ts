@@ -5,11 +5,12 @@ import {
   AGENT_VISIBLE_FIELDS,
   agentVisibleMetadata,
   loadSymbolsLock,
+  oracleHash,
   resolveRefapp,
   SymbolsLockSchema,
   taskSetIdentity,
 } from "../../../src/harness/identity.ts";
-import { listTree } from "../../../src/harness/hash.ts";
+import { hashJson, hashTree, listTree } from "../../../src/harness/hash.ts";
 import { loadTaskSet } from "../../../src/harness/task.ts";
 
 const TASK = (id: string) =>
@@ -400,4 +401,28 @@ Deno.test("SymbolsLockSchema: app ids follow BC's GUID shape, not RFC 4122", () 
       bad,
     );
   }
+});
+
+Deno.test("oracleHash: measures/ is hashed only when present; tasks without it keep the pre-M11 hash (M11-04)", async () => {
+  const root = await fixtureRepo();
+  const [t] = await loadTaskSet(join(root, "harness-tasks", "tasks"));
+  const { task, dir } = t!;
+  const tree = (d: string) =>
+    hashTree(join(dir, d), "task", { optional: true });
+  // The formula before M11-04, copied literally: frozen v1 hashes stay.
+  const before = await hashJson({
+    part: "oracle",
+    id: task.id,
+    kind: task.kind,
+    scorers: task.scorers,
+    pass_to_pass: task.pass_to_pass,
+    fail_to_pass: task.fail_to_pass,
+    mutants: task.mutants,
+    oracle: await tree("oracle"),
+    mutants_tree: await tree("mutants"),
+    correct: await tree("correct"),
+  });
+  assertEquals(await oracleHash(t!), before);
+  await write(dir, "measures/measures.yml", "v: 1\n");
+  assertNotEquals(await oracleHash(t!), before);
 });
