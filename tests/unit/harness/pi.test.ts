@@ -888,11 +888,15 @@ Deno.test("run.ps1: waits for ready before pi, isolated agent dir, guard explici
       "$env:PI_OFFLINE = '1'",
       "type = 'cg_entry'",
       "| & pi @piArgs",
-      "$env:PI_CODING_AGENT_DIR\\AGENTS.md",
-      "Get-FileHash",
       "-Encoding UTF8",
     ]
   ) assertStringIncludes(run, s);
+  // H-01 run 005: the instructions are validated and staged by the harness
+  // as admin (cg-pi-stage.ps1), never by the agent-user entrypoint.
+  const stage = await Deno.readTextFile("harness/images/pi/cg-pi-stage.ps1");
+  for (const s of ["'AGENTS.md'", "Get-FileHash", "-Encoding UTF8"]) {
+    assertStringIncludes(stage, s);
+  }
   assert(
     !run.includes("--append-system-prompt"),
     "instructions load once, from the agent directory",
@@ -1127,19 +1131,30 @@ Deno.test("run.ps1 review: pi_settings and the ready timeout are validated, inst
     return i;
   };
   assert(
-    at("-cne 'off'") < at('\\settings.json"'),
-    "settings checked before written",
-  );
-  assert(
     at("-cne 'off'") < at("C:\\cg-secrets\\ready"),
     "settings checked before the wait",
   );
+  // H-01 run 005: run.ps1 no longer writes settings.json or copies
+  // AGENTS.md; it requires the admin-staged settings.json before pi starts.
   assert(
-    at('\\AGENTS.md" -Force') < at("& pi --version"),
-    "instructions copied before pi --version",
+    at('\\settings.json" -PathType Leaf') < piStart,
+    "staged settings required before pi --version",
   );
-  assert(at("Get-FileHash") < piStart);
   assert(at("& pi --version") < at("ready = $true"));
+  const stage = await Deno.readTextFile("harness/images/pi/cg-pi-stage.ps1");
+  const st = (s: string) => {
+    const i = stage.indexOf(s);
+    assert(i >= 0, s);
+    return i;
+  };
+  assert(
+    st("-cne 'off'") < st("Write-Locked 'settings.json'"),
+    "settings checked before written",
+  );
+  assert(
+    st("Get-FileHash") < st("Write-Locked 'AGENTS.md'"),
+    "instructions checked before staged",
+  );
 });
 
 Deno.test("cg-budget: armed only once the record is written; a failed arm retries and the limit still holds", async () => {

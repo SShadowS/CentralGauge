@@ -10,6 +10,7 @@ import {
   checkTask,
   exportSource,
   GATE_TMP,
+  oracleBandOf,
   stageWorkspace,
   testManifestIn,
 } from "../../../scripts/harness/gate-stage.ts";
@@ -979,5 +980,112 @@ Deno.test("run 003 fix 3: exportSource refuses a path that is not valid UTF-8", 
     async () => exportSource(root, "HEAD", "HX-001", await tmp()),
     Error,
     "not valid UTF-8",
+  );
+});
+
+Deno.test("oracleBandOf: v1 keeps 100 ids, HX-007 on own 20 up to HX-226", () => {
+  assertEquals(oracleBandOf(1), [85000, 85099]);
+  assertEquals(oracleBandOf(6), [85500, 85599]);
+  assertEquals(oracleBandOf(7), [85600, 85619]);
+  assertEquals(oracleBandOf(51), [86480, 86499]);
+  assertEquals(oracleBandOf(226), [89980, 89999]);
+  assertEquals(oracleBandOf(227), null);
+  assertEquals(oracleBandOf(0), null);
+});
+
+Deno.test("checkTask: HX-051 oracle lives in its own 20-id band", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-051", "# Bug\n");
+  let r = await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  );
+  assertEquals(r.problems, []);
+  await write(dir, "oracle/src/P.al", TEST_CU(85000, "Other"));
+  r = await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  );
+  assertStringIncludes(
+    r.problems.join("\n"),
+    "object id 85000 outside Oracle range 86480-86499",
+  );
+});
+
+Deno.test("checkTask: a fixture/ layer gets the static layer rules", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-007", "# Bug\n");
+  await write(
+    dir,
+    "fixture/unused-variable/Test/src/X.al",
+    TEST_CU(80010, "X"),
+  );
+  const r = await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  );
+  assertStringIncludes(
+    r.problems.join("\n"),
+    "fixture/unused-variable/Test/src/X.al: correct/, naive/ and mutants/ must not touch Test/",
+  );
+});
+
+Deno.test("drift: a refapp change under a fixture-only path is not a problem", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-007", "# Bug\n");
+  const n = 'codeunit 70150 "N"\n{\n}\n';
+  await write(join(root, "harness-tasks/refapp"), "Fleet/src/N.al", n);
+  await write(
+    dir,
+    "fixture/f1/Fleet/src/N.al",
+    'codeunit 70150 "N"\n{\n    // f1\n}\n',
+  );
+  await git(root, "init", "-q");
+  await commitAll(root, "refapp-v1-rc1");
+  const refapp = join(root, "harness-tasks/refapp");
+  await write(
+    refapp,
+    "Fleet/src/N.al",
+    'codeunit 70150 "N"\n{\n    // moved\n}\n',
+  );
+  const r = await checkTask(await loadTask(dir), refapp, root);
+  assertEquals(
+    r.problems.filter((p) => p.includes("Fleet/src/N.al")),
+    [],
+  );
+  assert(r.warnings.some((w) => w.includes("re-gate")), r.warnings.join("; "));
+});
+
+Deno.test("checkTask: a fixture's Oracle file does not satisfy fail_to_pass", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-007", "# Bug\n");
+  await Deno.remove(join(dir, "oracle/src/O.al"));
+  await write(dir, "fixture/f1/Oracle/src/O.al", TEST_CU(85600, "Hidden"));
+  const r = await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  );
+  assertStringIncludes(
+    r.problems.join("\n"),
+    "fail_to_pass 85600.Hidden not found in oracle/",
+  );
+});
+
+Deno.test("checkTask: a fixture's Oracle files are band-checked like the oracle", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-007", "# Bug\n");
+  await write(dir, "fixture/f1/Oracle/src/X.al", TEST_CU(85000, "Other"));
+  const r = await checkTask(
+    await loadTask(dir),
+    join(root, "harness-tasks/refapp"),
+    root,
+  );
+  assertStringIncludes(
+    r.problems.join("\n"),
+    "fixture/f1/Oracle/src/X.al: object id 85000 outside Oracle range 85600-85619",
   );
 });

@@ -1,7 +1,12 @@
-# Mock harness image (spec 1a section 11). Built by `harness images build mock --version 1`.
+# Mock harness image (spec 1a section 11). Built by `harness images build mock --version 2`.
 # BASE has no default: `harness images build` passes the inspected immutable base image and then
 # verifies that the built image's layers start with the base's layers (M1-24).
 ARG BASE
 FROM ${BASE}
 COPY mock.ps1 C:/mock.ps1
+# H-01 run 004: what this image adds is read-only for the agent user.
+RUN powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-lockdown.ps1 C:\mock.ps1; \
+    if ($LASTEXITCODE -ne 0) { throw ('cg-lockdown failed: ' + $LASTEXITCODE) }
+# H-01: defense in depth; the harness also passes --user ContainerUser.
+USER ContainerUser
 CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\mock.ps1"]

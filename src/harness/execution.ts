@@ -74,6 +74,7 @@ import {
 } from "./records.ts";
 import {
   bounded,
+  checkSandboxPrivilege,
   createSecretsDir,
   type DockerCli,
   type IcaclsRunner,
@@ -88,6 +89,7 @@ import {
   sandboxName,
   type SandboxResult,
   type SecretValue,
+  stagePiConfig,
   sweepOwnedSandboxes,
   sweepStaleSecrets,
   teardownSandbox,
@@ -211,12 +213,18 @@ export const STUB_COMMAND = [
   ].join("; "),
 ];
 
-/** The override image: same harness (label), recorded with its own base digest. */
+/**
+ * The override image: same harness (label) and same image revision as the
+ * arm (whose revision runtimeFacts tied to config.image_revision), recorded
+ * with its own base digest.
+ */
 async function overrideImage(
   env: HarnessEnv,
   id: string,
-  harness: string,
-): Promise<{ digest: string; base_digest: string }> {
+  arm: Pick<ResolvedManifest, "harness" | "image">,
+): Promise<ResolvedManifest["image"]> {
+  const harness = arm.harness;
+  const want = arm.image.revision ?? null;
   // imageFacts: labels, immutable id and the shipped MCP definition (M2-09).
   const f = await bounded(
     imageFacts(env.docker, id, env.owner),
@@ -231,7 +239,18 @@ async function overrideImage(
       `--image ${id} is a ${f.harness} image, not ${harness}`,
     );
   }
-  return { digest: f.digest, base_digest: f.base_digest };
+  if (f.revision !== want) {
+    const say = (r: string | null) =>
+      r === null ? "no revision" : `revision ${r}`;
+    throw new ConfigurationError(
+      `--image ${id} has ${say(f.revision)}, the arm wants ${say(want)}`,
+    );
+  }
+  return {
+    digest: f.digest,
+    base_digest: f.base_digest,
+    ...(f.revision === null ? {} : { revision: f.revision }),
+  };
 }
 
 /** Stub cells publish only under results/harness/stub-cells (never beside real campaigns). */
@@ -946,7 +965,7 @@ interface DraftInput {
   /** The attempt's persisted mode (intent), never the current command's. */
   mode: AttemptMode;
   stub: StubProvenance | null;
-  /** egress_preflight_failed, egress_violation, egress_log_failed or egress_proxy_failed (M1-33, M1-33d). */
+  /** egress_preflight_failed, egress_violation, egress_log_failed or egress_proxy_failed (M1-33, M1-33d); privilege_check_failed (H-01); pi_config_staging_failed (H-01 run 005). */
   egressStop?: string | null;
 }
 
@@ -1329,7 +1348,7 @@ export async function runExecution(
   const manifest = stub?.image_override
     ? {
       ...base,
-      image: await overrideImage(env, stub.image_override, base.harness),
+      image: await overrideImage(env, stub.image_override, base),
     }
     : base;
   const p = privatePaths(env, id);
@@ -1390,11 +1409,13 @@ export async function runExecution(
   // M1-33: placed runs (qualified or authorized marker) sit on the internal
   // network behind the environment's shared proxy, registered per execution
   // (M1-33d); secrets and ready follow the authenticated preflight. A stub cell is never placed (M2-08: egress not consulted; its
-  // dummy credential and ready are written before the start, M3-10), though
+  // dummy credential and ready follow the privilege check, H-01), though
   // it still joins the internal network when an egress runtime exists.
   const eg = stub ? null : env.egress ?? null;
   /** Set for any egress failure: recorded as setup_failed, then the campaign stops. */
   let egressFailure: string | null = null;
+  /** H-01: the harness's privilege check on the running sandbox failed (setup_failed, campaign stops). */
+  let privilegeFailure: string | null = null;
   let egressStop: string | null = null;
   const egressFail = (m: string) => {
     egressFailure = m;
@@ -1612,9 +1633,9 @@ export async function runExecution(
         );
         await Deno.writeTextFile(join(dir, READY_FILE), "");
       };
-      // Not placed: released before the start (M3-10). Placed: the mount
-      // stays empty until the preflight passes (M1-33 A3).
-      if (!eg) await release();
+      // Every kind starts with an empty mount: nothing is released before
+      // the harness's privilege check on the running sandbox (H-01); placed
+      // runs then also wait for the preflight (M1-33 A3).
       const running = pending = runSandbox(
         env.docker,
         {
@@ -1652,13 +1673,37 @@ export async function runExecution(
       );
       let preflightError: string | null = null;
       let releaseError: unknown = null;
-      if (eg) {
+      let privilegeError: string | null = null;
+      let privilegeStop = "privilege_check_failed";
+      // H-01: before any credential (the proxy credential included), while
+      // only trusted image code runs (every entrypoint waits for ready): the
+      // harness's own check, never the entrypoint's output. Fails closed.
+      // H-01 run 005: then a pi sandbox (stub cells too: STUB_COMMAND runs
+      // the image's run.ps1) gets its config staged admin-owned, still before
+      // anything is released; a failure is handled like the check's.
+      let setupStep = "sandbox privilege check";
+      try {
+        await waitRunning(env.docker, name, running, opMs);
+        await checkSandboxPrivilege(env.docker, name, opMs);
+        if (manifest.harness === "pi") {
+          setupStep = "pi config staging";
+          await stagePiConfig(env.docker, name, opMs);
+        }
+      } catch (err) {
+        if (!stop.aborted) {
+          privilegeError = `${setupStep} failed: ${msg(err)}`;
+          privilegeStop = setupStep === "pi config staging"
+            ? "pi_config_staging_failed"
+            : "privilege_check_failed";
+          egressAbort.abort(new Error(privilegeError));
+        }
+      }
+      if (eg && !stop.aborted) {
         // M1-33d (review M1-33c-003 Part B): the sandbox runs with an empty
         // mount; its verified address is registered; only the proxy
         // credential is written; the authenticated preflight; then the
         // provider secrets and ready.
         try {
-          await waitRunning(env.docker, name, running, opMs);
           const source = await sandboxAddress(env.docker, name, id, opMs);
           if (eg.proxyFailed) {
             throw new Error(`egress proxy on ${proxyAt} has failed`);
@@ -1718,18 +1763,25 @@ export async function runExecution(
           egressAbort.abort(
             new Error(`egress preflight failed: ${preflightError}`),
           );
-        } else if (!stop.aborted) {
-          try {
-            await release();
-            armed = true;
-          } catch (err) {
-            releaseError = err;
-            egressAbort.abort(new Error(`release failed: ${msg(err)}`));
-          }
+        }
+      }
+      if (!stop.aborted) {
+        try {
+          await release();
+          armed = true;
+        } catch (err) {
+          releaseError = err;
+          egressAbort.abort(new Error(`release failed: ${msg(err)}`));
         }
       }
       sandbox = settledRun = await running;
       if (releaseError !== null) throw releaseError;
+      // A sandbox that never started ran nothing: the start-failure rules apply.
+      if (privilegeError !== null && sandbox.started) {
+        egressStop = privilegeStop;
+        privilegeFailure = privilegeError;
+        throw new ConfigurationError(privilegeError);
+      }
       // I4 (design section 5): a placed execution is recorded as anything
       // but setup_failed only while its registration and the proxy are intact.
       if (eg && egressStop === null) {
@@ -1843,6 +1895,14 @@ export async function runExecution(
     egressStop,
   });
   await publishDraft(env, cell, draft, staged.pristine, true);
+  if (privilegeFailure !== null) {
+    // Infra, never scored; a retry would repeat it: the campaign stops here.
+    throw new ContainerError(
+      `${privilegeFailure}; execution ${id} recorded as setup_failed (no credential released); stopping`,
+      name,
+      "setup",
+    );
+  }
   if (egressFailure !== null) {
     // Infra, never scored; no retry repeats it: the campaign stops here.
     throw new ContainerError(
@@ -1917,7 +1977,7 @@ export async function waitRunning(
   running.then(() => (settled = true), () => (settled = true));
   const deadline = performance.now() + PREFLIGHT_TIMEOUT_MS;
   for (;;) {
-    if (settled) throw new Error(`${name} ended before the egress preflight`);
+    if (settled) throw new Error(`${name} ended before it was seen running`);
     const st = await bounded(
       docker.state(name),
       opMs,

@@ -1,6 +1,6 @@
 id: mock-usage
 harness: mock
-harness_version: "1"
+harness_version: "2"
 models: {}
 settings: { mode: usage-limit }
 limits: { timeout_min: 10, max_budget_usd: 1 }

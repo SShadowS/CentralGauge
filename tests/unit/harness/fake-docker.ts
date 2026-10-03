@@ -4,6 +4,7 @@ import {
   type Capture,
   type DockerCli,
   EXECUTION_LABEL,
+  PI_STAGE_ARGV,
 } from "../../../src/harness/sandbox.ts";
 
 export interface RunCall {
@@ -12,6 +13,8 @@ export interface RunCall {
   image: string;
   network: string | null;
   isolation: string | null;
+  /** --user / -u; null when absent (the image's default user). */
+  user: string | null;
   command: string[];
   mounts: Map<string, { src: string; readonly: boolean }>;
   env: Map<string, string>;
@@ -27,6 +30,7 @@ export function parseRunArgs(args: string[]): RunCall {
     image: args[imageAt]!,
     network: null,
     isolation: null,
+    user: null,
     command: args.slice(imageAt + 1),
     mounts: new Map(),
     env: new Map(),
@@ -38,6 +42,7 @@ export function parseRunArgs(args: string[]): RunCall {
     if (a === "--name") call.name = v;
     else if (a === "--network") call.network = v;
     else if (a === "--isolation") call.isolation = v;
+    else if (a === "--user" || a === "-u") call.user = v;
     else if (a === "--label") {
       call.labels.set(v.split("=")[0]!, v.slice(v.indexOf("=") + 1));
     } else if (a === "-e") {
@@ -64,6 +69,27 @@ export interface RunIO {
 export type RunBehavior = (call: RunCall, io: RunIO) => Promise<number>;
 
 const never = <T>() => new Promise<T>(() => {});
+
+/** `whoami /groups /fo csv /nh` as ContainerUser (medium label, no Administrators). */
+export const USER_GROUPS_CSV = [
+  '"Everyone","Well-known group","S-1-1-0","Mandatory group, Enabled by default, Enabled group"',
+  '"BUILTIN\\Users","Alias","S-1-5-32-545","Mandatory group, Enabled by default, Enabled group"',
+  '"NT AUTHORITY\\SERVICE","Well-known group","S-1-5-6","Mandatory group, Enabled by default, Enabled group"',
+  '"CONSOLE LOGON","Well-known group","S-1-2-1","Mandatory group, Enabled by default, Enabled group"',
+  '"NT AUTHORITY\\Authenticated Users","Well-known group","S-1-5-11","Mandatory group, Enabled by default, Enabled group"',
+  '"NT AUTHORITY\\This Organization","Well-known group","S-1-5-15","Mandatory group, Enabled by default, Enabled group"',
+  '"LOCAL","Well-known group","S-1-2-0","Mandatory group, Enabled by default, Enabled group"',
+  '"Mandatory Label\\Medium Mandatory Level","Label","S-1-16-8192",""',
+].join("\r\n") + "\r\n";
+/** The same as ContainerAdministrator: Administrators enabled, high label. */
+export const ADMIN_GROUPS_CSV = [
+  '"Everyone","Well-known group","S-1-1-0","Mandatory group, Enabled by default, Enabled group"',
+  '"BUILTIN\\Administrators","Alias","S-1-5-32-544","Mandatory group, Enabled by default, Enabled group, Group owner"',
+  '"BUILTIN\\Users","Alias","S-1-5-32-545","Mandatory group, Enabled by default, Enabled group"',
+  '"Mandatory Label\\High Mandatory Level","Label","S-1-16-12288",""',
+].join("\r\n") + "\r\n";
+
+export type ExecAnswer = { code: number; stdout: string; stderr: string };
 
 export class FakeDocker implements DockerCli {
   runs: RunCall[] = [];
@@ -98,6 +124,30 @@ export class FakeDocker implements DockerCli {
   waitForReady = false;
   /** Whether a run ever saw ready in its secrets mount. */
   readySeen = false;
+  /** A run killed while waiting for ready: its secrets mount at that moment. */
+  secretsAtKill: string[] | null = null;
+  /** H-01 privilege check: Config.User per container (default: the run's --user, "" without). */
+  configUsers = new Map<string, string | null>();
+  /** The privilege exec's answer; an Error is thrown, "hang" never settles. */
+  execAnswer: ExecAnswer | Error | "hang" = {
+    code: 0,
+    stdout: USER_GROUPS_CSV,
+    stderr: "",
+  };
+  /** The pi config staging exec's answer (H-01 run 005); same forms as execAnswer. */
+  stageAnswer: ExecAnswer | Error | "hang" = {
+    code: 0,
+    stdout: "",
+    stderr: "",
+  };
+  /** Every configUser and exec call, with the secrets mount listing at that moment. */
+  privilegeCalls: {
+    op: "configUser" | "exec";
+    name: string;
+    user?: string;
+    argv?: string[];
+    secrets: string[];
+  }[] = [];
   private deleted = new Set<string>();
   private stoppers = new Map<string, () => void>();
 
@@ -132,7 +182,6 @@ export class FakeDocker implements DockerCli {
     const killed = new Promise<void>((r) => this.stoppers.set(call.name, r));
     let written = 0;
     try {
-      if (this.failAfterStart) throw this.failAfterStart;
       if (this.waitForReady) {
         const ready = `${call.mounts.get("C:\\cg-secrets")!.src}/ready`;
         let stop = false;
@@ -140,9 +189,14 @@ export class FakeDocker implements DockerCli {
         while (!stop && !await Deno.stat(ready).then(() => true, () => false)) {
           await new Promise((r) => setTimeout(r, 5));
         }
-        if (stop) return 137;
+        if (stop) {
+          this.secretsAtKill = this.secretsOf(call.name);
+          return 137;
+        }
         this.readySeen = true;
       }
+      // Mid-run (after the release, when the entrypoints wait for ready).
+      if (this.failAfterStart) throw this.failAfterStart;
       const code = await this.behavior(call, {
         stdout: async (line) => {
           const bytes = new TextEncoder().encode(line + "\n");
@@ -222,6 +276,45 @@ export class FakeDocker implements DockerCli {
       ip: `172.30.60.${10 + at}`,
     }]);
   }
+  private secretsOf(name: string): string[] {
+    const src = this.runs.find((r) => r.name === name)?.mounts.get(
+      "C:\\cg-secrets",
+    )?.src;
+    if (!src) return [];
+    try {
+      return [...Deno.readDirSync(src)].map((e) => e.name).sort();
+    } catch {
+      return [];
+    }
+  }
+  configUser(name: string): Promise<string | null> {
+    this.privilegeCalls.push({
+      op: "configUser",
+      name,
+      secrets: this.secretsOf(name),
+    });
+    if (this.configUsers.has(name)) {
+      return Promise.resolve(this.configUsers.get(name)!);
+    }
+    const r = this.runs.find((c) => c.name === name);
+    if (!r || !this.containers.has(name)) return Promise.resolve(null);
+    return Promise.resolve(r.user ?? "");
+  }
+  exec(name: string, user: string, argv: string[]): Promise<ExecAnswer> {
+    this.privilegeCalls.push({
+      op: "exec",
+      name,
+      user,
+      argv,
+      secrets: this.secretsOf(name),
+    });
+    const a = JSON.stringify(argv) === JSON.stringify(PI_STAGE_ARGV)
+      ? this.stageAnswer
+      : this.execAnswer;
+    if (a === "hang") return never();
+    if (a instanceof Error) return Promise.reject(a);
+    return Promise.resolve(a);
+  }
   listOwned(_owner: string): Promise<string[]> {
     return Promise.resolve([...this.owned]);
   }
@@ -247,8 +340,16 @@ export class FakeDocker implements DockerCli {
       this.images.get(this.tags.get(ref) ?? ref) ?? null,
     );
   }
+  /** What a build of a tag (`-t`) produces: added only when the build runs. */
+  buildResults = new Map<
+    string,
+    { id: string; labels: Record<string, string>; layers: string[] }
+  >();
   build(args: string[]): Promise<number> {
     this.builds.push(args);
+    const tag = args[args.indexOf("-t") + 1];
+    const r = tag === undefined ? undefined : this.buildResults.get(tag);
+    if (tag !== undefined && r) this.addImage(tag, r.id, r.labels, r.layers);
     return Promise.resolve(0);
   }
 }

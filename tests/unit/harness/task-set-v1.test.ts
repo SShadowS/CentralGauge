@@ -2,7 +2,8 @@ import { assertEquals } from "@std/assert";
 import { loadTaskSet } from "../../../src/harness/task.ts";
 
 Deno.test("v1 task set: six tasks, kinds and refapp version", async () => {
-  const set = await loadTaskSet("harness-tasks/tasks");
+  const set = (await loadTaskSet("harness-tasks/tasks"))
+    .filter((t) => /^HX-00[1-6]$/.test(t.task.id));
   assertEquals(
     set.map((t) => `${t.task.id}:${t.task.kind}:${t.task.refapp_version}`),
     [

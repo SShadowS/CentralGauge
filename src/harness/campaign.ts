@@ -529,7 +529,11 @@ export async function runCampaign(
   const ids = await taskSetIdentity(env.repoRoot, tasks, env.symbols);
   const arms: CampaignRecord["arms"] = [];
   for (const config of configs) {
-    const tag = imageTag(config.harness, config.harness_version);
+    const tag = imageTag(
+      config.harness,
+      config.harness_version,
+      config.image_revision,
+    );
     // A dry run opens no container: the shipped MCP definition is read (and
     // checked against its label) only by a real run, before any cell.
     const image = await imageFacts(

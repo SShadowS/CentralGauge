@@ -182,6 +182,7 @@ export function mockImageBehavior(): RunBehavior {
       env: {
         CG_MOCK_CONFIG: call.mounts.get("C:\\config")!.src,
         CG_MOCK_WORKSPACE: call.mounts.get("C:\\workspace")!.src,
+        CG_MOCK_SECRETS: call.mounts.get("C:\\cg-secrets")!.src,
       },
       stdout: "piped",
       stderr: "null",
@@ -239,7 +240,7 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
       `configs/${id}.yml`,
       `id: ${id}
 harness: mock
-harness_version: "1"
+harness_version: "2"
 models: {}
 settings: ${JSON.stringify(settings)}
 limits: { timeout_min: 5, max_budget_usd: 1 }
@@ -247,14 +248,17 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     );
   }
   const docker = new FakeDocker();
+  // Every entrypoint waits for ready (the mock too): the harness releases
+  // only after its privilege check on the running sandbox (H-01).
+  docker.waitForReady = true;
   docker.addImage(imageTag("claude-code", "2.1.282"), IMAGE_ID, {
     "centralgauge.harness": "claude-code",
     "centralgauge.harness.version": "2.1.282",
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
   });
-  docker.addImage(imageTag("mock", "1"), MOCK_IMAGE_ID, {
+  docker.addImage(imageTag("mock", "2"), MOCK_IMAGE_ID, {
     "centralgauge.harness": "mock",
-    "centralgauge.harness.version": "1",
+    "centralgauge.harness.version": "2",
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
   });
   docker.behavior = ccBehavior(join(repo.tasksDir, "HX-001"), "correct");
@@ -312,6 +316,7 @@ export async function cellFor(
   t: TestEnv,
   configId = "cc-sonnet-plain",
   taskId = "HX-001",
+  catalog: typeof CATALOG = CATALOG,
 ): Promise<CellRef> {
   const config = await loadConfig(t.harnessRoot, configId);
   const facts = runtimeFacts(
@@ -322,7 +327,7 @@ export async function cellFor(
       "HOST1",
     ),
     adapterFor(config.harness),
-    CATALOG,
+    catalog,
   );
   const armManifest = await resolveManifest(t.harnessRoot, config, facts);
   const task = await loadTask(join(t.repo.tasksDir, taskId));

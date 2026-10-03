@@ -787,6 +787,28 @@ Deno.test("execution v2: incomplete_observed required in v2, forbidden in v1; bo
   );
 });
 
+Deno.test("execution schema: the manifest image revision round-trips; a record without one still parses (H-01)", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  // Records written before H-01 run 004 carry no revision.
+  assertEquals(
+    Object.hasOwn(ExecutionRecordSchema.parse(e).manifest.image, "revision"),
+    false,
+  );
+  const r2 = {
+    ...e,
+    manifest: {
+      ...e.manifest,
+      image: { ...e.manifest.image, revision: "2" },
+    },
+  };
+  assertEquals(
+    ExecutionRecordSchema.parse(JSON.parse(JSON.stringify(r2))).manifest.image
+      .revision,
+    "2",
+  );
+});
+
 Deno.test("judgment schema (C-03 review): forced.reason is one non-blank line", async () => {
   const c = await campaign();
   const j = judgment(c, execution(c), true);

@@ -140,7 +140,7 @@ held_out, confirmatory_tasks, held_out_tasks, candidates, selection: Selection }
 | Push | the orchestrator pushes every seal and ledger tag to origin at creation (ruling 10) |
 | Ledger file | `harness-tasks/v2/seals.yml`, `{ v: 2, seals: [Entry] }` |
 | Entry | `{ tag, tag_object: <40 hex>, commit: <40 hex>, pushed_at: <ISO>, drand_chain: <64 hex, /info "hash">, drand_round: <int>, round_time: <ISO>, randomness: <64 hex>, prev: "genesis" \| <64 hex> }` |
-| Chain rule | `prev` of entry 0 is `"genesis"`; `prev` of entry i is `hashJson(entry i-1)` |
+| Chain rule | `prev` of entry 0 is `"genesis"`; `prev` of entry i is `hashJson({ seal_entry: entry i-1 })` (`screening.ts` `entryHash`; ruling 2026-10-03, M8-02) |
 | Round rule | `round = ceil((pushed_unix + 600 - genesis_time) / period) + 1`; `round_time = genesis_time + (round - 1) * period`; `round_time >= pushed_at + 10 min` |
 | Verification (`ledgerProblems`, run by every `screening.ts status/select`) | for each entry i: chain rule; `git rev-parse <tag>` = `tag_object` and `<tag>^{commit}` = `commit`; `seals.yml` at `<tag>` holds exactly entries 0..i-1 (absent for i = 0); `seals.yml` at `<tag>-ledger` holds exactly entries 0..i; a missing ledger tag is a problem |
 | Chronology (`chronologyProblems`) | every `v2-screen-*` campaign's `created_at` is later than the `round_time` of the first seal of every task it ran |

@@ -1,10 +1,17 @@
-# Claude Code harness image. Built by `harness images build claude-code --version 2.1.282`.
+# Claude Code harness image. Built by `harness images build claude-code --version 2.1.282 --revision 2`.
 # BASE has no default: `harness images build` passes the inspected immutable base image and then
 # verifies that the built image's layers start with the base's layers (M1-24).
 ARG BASE
 FROM ${BASE}
+# A machine-wide npm prefix (H-01): ContainerUser can read and run it; the default
+# prefix sits in ContainerAdministrator's profile.
 RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
-    npm install -g @anthropic-ai/claude-code@2.1.282; \
-    [Environment]::SetEnvironmentVariable('PATH', (npm config get prefix) + ';' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
+    npm install -g --prefix C:\cg-npm @anthropic-ai/claude-code@2.1.282; \
+    [Environment]::SetEnvironmentVariable('PATH', 'C:\cg-npm;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
 COPY run.ps1 C:/run.ps1
+# H-01 run 004: what this image adds is read-only for the agent user.
+RUN powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-lockdown.ps1 C:\cg-npm C:\run.ps1; \
+    if ($LASTEXITCODE -ne 0) { throw ('cg-lockdown failed: ' + $LASTEXITCODE) }
+# H-01: defense in depth; the harness also passes --user ContainerUser.
+USER ContainerUser
 CMD ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\run.ps1"]

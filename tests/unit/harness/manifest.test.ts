@@ -494,3 +494,52 @@ Deno.test("vary [mcp]: the MCP key shape is checked even when settings are equal
     "settings",
   );
 });
+
+// ---- H-01 run 004: image revision in the manifest ----
+
+Deno.test("manifestHash: an absent image revision leaves the golden hash unchanged; a present one changes it", async () => {
+  // Same literal as the golden test: frozen-image manifests keep their hash.
+  const golden =
+    "7d97b11d0ab99682dd3888115db6a648fe9a7fabe5cef295aa173addb68a4f23";
+  const m = ResolvedManifestSchema.parse(GOLDEN);
+  assertEquals(Object.hasOwn(m.image, "revision"), false);
+  assertEquals(await manifestHash(m), golden);
+  const r2 = ResolvedManifestSchema.parse({
+    ...GOLDEN,
+    image: { ...GOLDEN.image, revision: "2" },
+  });
+  assertEquals(r2.image.revision, "2");
+  assertNotEquals(await manifestHash(r2), golden);
+  assertEquals(await diffManifests(m, r2), ["image"]);
+  for (const bad of ["", "r2", null]) {
+    assertEquals(
+      ResolvedManifestSchema.safeParse({
+        ...GOLDEN,
+        image: { ...GOLDEN.image, revision: bad },
+      }).success,
+      false,
+      `revision ${JSON.stringify(bad)}`,
+    );
+  }
+});
+
+Deno.test("resolveManifest: the image revision from the runtime facts is recorded; arms on different revisions do not pool", async () => {
+  const r = await root();
+  const frozen = await resolveManifest(r, config("a"), FACTS);
+  assertEquals(Object.hasOwn(frozen.image, "revision"), false);
+  const r2 = await resolveManifest(r, config("a"), {
+    ...FACTS,
+    image: { ...FACTS.image, revision: "2" },
+  });
+  assertEquals(r2.image, {
+    digest: "sha256:img1",
+    base_digest: "sha256:base1",
+    revision: "2",
+  });
+  assertNotEquals(await manifestHash(frozen), await manifestHash(r2));
+  await assertRejects(
+    () => assertVaryHolds(frozen, r2, ["skills"]),
+    ConfigurationError,
+    "image",
+  );
+});
