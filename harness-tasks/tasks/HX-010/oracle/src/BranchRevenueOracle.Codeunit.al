@@ -9,6 +9,7 @@ codeunit 85660 "HX010 Branch Revenue Oracle"
     [Test]
     procedure PostedEntryTakesContractBranch()
     var
+        LedgerEntry: Record "CGR Rental Ledger Entry";
         RentalMgt: Codeunit "CGR Rental Mgt";
         SessionContext: Codeunit "CGR Session Context";
         ContractNo: Code[20];
@@ -21,6 +22,7 @@ codeunit 85660 "HX010 Branch Revenue Oracle"
 
         RentalMgt.Post(ContractNo);
         Assert.AreEqual('HX10A', PostedBranch(ContractNo), 'The ledger entry carries the branch of the contract');
+        Assert.AreEqual(10, MaxStrLen(LedgerEntry."Branch Code"), 'Branch Code is Code[10]');
     end;
 
     [Test]

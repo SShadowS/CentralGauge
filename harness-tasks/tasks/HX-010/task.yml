@@ -2,8 +2,8 @@ id: HX-010
 refapp_version: refapp-v2-rc1
 kind: feature
 prompt: prompt.md
-touches: [Rental, Reporting, Core]
-coupling: [queries, single-instance]
+touches: [Rental, Reporting]
+coupling: [queries]
 source: refapp
 attachments: []
 scorers: [build, pass_to_pass, fail_to_pass]
