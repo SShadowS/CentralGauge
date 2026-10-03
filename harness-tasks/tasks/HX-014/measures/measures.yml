@@ -9,6 +9,7 @@ partial_credit:
     "85740/PlanStrategyDecidesNotVehicle": 1
     "85740/DueOnDefaultIntervalBoundary": 1
     "85740/NoPlanOrNoServiceNoDate": 1
+    "85740/InterfaceReportsDefaultIntervals": 1
   hidden_regressions: []
 reuse: null
 expect:

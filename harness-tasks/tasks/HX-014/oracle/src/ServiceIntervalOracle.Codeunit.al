@@ -133,6 +133,24 @@ codeunit 85740 "HX014 Service Interval Oracle"
         Assert.AreEqual(0D, ServicePlanMgt.NextServiceDate('HX014-I'), 'No service plan, no next service date');
     end;
 
+    [Test]
+    procedure InterfaceReportsDefaultIntervals()
+    var
+        ServiceInterval: Interface "CGR Service Interval";
+    begin
+        WorkDate(20270301D);
+        InitSetup();
+
+        ServiceInterval := Enum::"CGR Maintenance Strategy"::"HX014 Old Partner";
+        Assert.AreEqual(12, ServiceInterval.DefaultIntervalMonths(), 'A strategy of another app without its own interval reports 12 months');
+        ServiceInterval := Enum::"CGR Maintenance Strategy"::Default;
+        Assert.AreEqual(12, ServiceInterval.DefaultIntervalMonths(), 'Default strategy reports 12 months');
+        ServiceInterval := Enum::"CGR Maintenance Strategy"::"Heavy Duty";
+        Assert.AreEqual(6, ServiceInterval.DefaultIntervalMonths(), 'Heavy Duty strategy reports 6 months');
+        ServiceInterval := Enum::"CGR Maintenance Strategy"::"HX014 New Partner";
+        Assert.AreEqual(9, ServiceInterval.DefaultIntervalMonths(), 'A strategy of another app reports the interval it provides');
+    end;
+
     local procedure InitSetup()
     var
         Setup: Record "CGR Setup";
