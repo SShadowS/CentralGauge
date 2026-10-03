@@ -46,6 +46,36 @@ codeunit 80053 "CGR Invoice Preview Tests"
     end;
 
     [Test]
+    procedure PreviewMatchesPricingAtCoarsePrecision()
+    var
+        Contract: Record "CGR Rental Contract";
+        PreviewLine: Record "CGR Invoice Preview Line";
+        Preview: Codeunit "CGR Rental Invoice Preview";
+        Pricing: Codeunit "CGR Rental Pricing";
+        ContractNo: Code[20];
+    begin
+        WorkDate(20270301D);
+        Lib.SetPricing(50, 100, 0.33);
+        Lib.SetV2Setup(0.05, '', 3);
+        Lib.CreateVehicle('T-PRV-005', 1000, Enum::"CGR Maintenance Strategy"::Default);
+        Lib.SetDailyRate('T-PRV-005', 33.33);
+        ContractNo := Lib.CreateReturnedContract('T-PRV-005', 20270305D, 20270307D, 1307);
+
+        Preview.BuildPreview(ContractNo, PreviewLine);
+        PreviewLine.FindSet();
+        Assert.AreEqual(100.00, PreviewLine.Amount, '3 x 33.33 = 99.99 rounded to 0.05');
+        PreviewLine.Next();
+        Assert.AreEqual(33.35, PreviewLine.Amount, '2 x 16.665 = 33.33 rounded to 0.05');
+        PreviewLine.Next();
+        Assert.AreEqual(2.30, PreviewLine.Amount, '7 x 0.33 = 2.31 rounded to 0.05');
+
+        Contract.Get(ContractNo);
+        Assert.AreEqual(135.65, Preview.TotalAmount(PreviewLine), 'Sum of the rounded lines, not 135.63 rounded once');
+        Assert.AreEqual(135.65, Pricing.CalcAmount(Contract), 'Posting charges the sum of the rounded lines');
+        Assert.AreEqual(Pricing.CalcAmount(Contract), Preview.TotalAmount(PreviewLine), 'Preview total equals the posted price');
+    end;
+
+    [Test]
     procedure RebuildReplacesPreviousLines()
     var
         PreviewLine: Record "CGR Invoice Preview Line";

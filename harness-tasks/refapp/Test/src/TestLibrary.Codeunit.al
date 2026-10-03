@@ -50,6 +50,7 @@ codeunit 80090 "CGR Test Library"
     procedure SetPricing(WeekendSurchargePct: Decimal; KmAllowancePerDay: Integer; ExcessKmRate: Decimal)
     var
         Setup: Record "CGR Setup";
+        SessionContext: Codeunit "CGR Session Context";
     begin
         Setup.GetOrCreate();
         Setup."Weekend Surcharge %" := WeekendSurchargePct;
@@ -57,6 +58,7 @@ codeunit 80090 "CGR Test Library"
         Setup."Excess Km Rate" := ExcessKmRate;
         Setup."Suspend Rentals" := false;
         Setup.Modify();
+        SessionContext.Reset();
     end;
 
     procedure CreateContract(VehicleNo: Code[20]): Code[20]

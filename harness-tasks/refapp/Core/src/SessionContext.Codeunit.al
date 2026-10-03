@@ -11,7 +11,8 @@ codeunit 70007 "CGR Session Context"
     procedure GetSetup(var Setup: Record "CGR Setup")
     begin
         if not SetupLoaded then begin
-            CachedSetup.GetOrCreate();
+            if not CachedSetup.Get() then
+                CachedSetup.Init();
             SetupLoaded := true;
         end;
         Setup := CachedSetup;
