@@ -2715,3 +2715,80 @@ Deno.test("inventory review 4: missing requested and built-in members are explic
     "missing skill loop",
   );
 });
+
+// M9-04b: MCP inventory on every same-session init; malformed mcp__ names.
+const MCP_ARM = () =>
+  V2({
+    mcp: [AL],
+    settings: {
+      requested: {},
+      native: {
+        api_models: { main: "claude-sonnet-5" },
+        mcp_tools: { "al-tools": ["al_compile"] },
+      },
+    },
+  });
+const mcpInit = (over: Record<string, unknown> = {}) =>
+  v2Init({
+    tools: [...B.tools, "mcp__al-tools__al_compile"],
+    mcp_servers: [{ name: "al-tools", status: "connected" }],
+    ...over,
+  });
+const mcpRun = async (lines: string[]) => {
+  const r = (await parse(lines.join("\n"), 0, MCP_ARM())).r;
+  const raw = r.telemetry.raw_usage as { mcp_inventory: string[] };
+  return {
+    problems: raw.mcp_inventory.join("\n"),
+    loaded: r.observed.loaded_components!,
+  };
+};
+
+Deno.test("inventory M9-04b: two identical correct MCP inits give no problem and load al-tools", async () => {
+  const { problems, loaded } = await mcpRun([
+    invLine(),
+    mcpInit(),
+    mcpInit(),
+    v2Result(),
+    v2Result(),
+  ]);
+  assertEquals(problems, "");
+  assert(loaded.includes("mcp:al-tools"));
+});
+
+Deno.test("inventory M9-04b: init 2 dropping al-tools is a problem and al-tools is not loaded", async () => {
+  const { problems, loaded } = await mcpRun([
+    invLine(),
+    mcpInit(),
+    mcpInit({ tools: [...B.tools], mcp_servers: [] }),
+    v2Result(),
+    v2Result(),
+  ]);
+  assertStringIncludes(problems, "init 2: mcp:al-tools not connected");
+  assert(!loaded.includes("mcp:al-tools"));
+});
+
+Deno.test("inventory M9-04b: init 2 adding an unexpected MCP server is a problem", async () => {
+  const { problems } = await mcpRun([
+    invLine(),
+    mcpInit(),
+    mcpInit({
+      mcp_servers: [
+        { name: "al-tools", status: "connected" },
+        { name: "rogue", status: "connected" },
+      ],
+    }),
+    v2Result(),
+    v2Result(),
+  ]);
+  assertStringIncludes(problems, "init 2: unexpected MCP server rogue");
+});
+
+Deno.test("inventory M9-04b: a malformed mcp__ tool name is an inventory problem", async () => {
+  const p = await problemsOf([
+    invLine(),
+    v2Init({ tools: [...B.tools, "mcp__rogue"] }),
+    v2Result(),
+  ]);
+  assertStringIncludes(p, "malformed MCP tool");
+  assertStringIncludes(p, "mcp__rogue");
+});
