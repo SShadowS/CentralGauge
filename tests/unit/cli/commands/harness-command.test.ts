@@ -6000,3 +6000,45 @@ preregistration: ${rel}
   assertEquals(await t.env.store.campaigns("prereg"), []);
   assertEquals(t.docker.runs.length, runs);
 });
+
+Deno.test("harnessReport (M11-12): a pre-registered campaign reads measure records of the pre-registered fingerprint, not the current one", async () => {
+  const p = await preregReportEnv();
+  const store = new RecordStore(p.results);
+  const c = (await store.campaigns("skills-vs-plain"))[0]!;
+  const e = (await store.executions(c.id)).find((x) =>
+    x.arm === "plain" && x.task_id === "HX-001"
+  )!;
+  const [j] = await store.judgments(e.id);
+  // The pre-registration pins "f"x64, which is not the current fingerprint.
+  assertEquals((await measureFingerprint()) === "f".repeat(64), false);
+  await writeMeasureRecord(p.results, {
+    v: 1,
+    judgment_id: j!.id,
+    execution_id: e.id,
+    task_id: e.task_id,
+    workspace_hash: e.workspace_hash!,
+    oracle_hash: j!.task_oracle_hash,
+    measure_fingerprint: "f".repeat(64),
+    analyzers: null,
+    final_code: {
+      status: "ok",
+      value: {
+        errors: 2,
+        warnings: null,
+        start_errors: 0,
+        start_warnings: 0,
+        new_warnings: null,
+        new_warning_codes: {},
+        complete: false,
+        incomplete_apps: [],
+      },
+    },
+    reuse: { status: "not_applicable", reason: "test" },
+    partial_credit: { status: "not_applicable", reason: "test" },
+  });
+  const r = await harnessReport("skills-vs-plain", p.opts);
+  const row = r.exploratory!.arms.find((x) =>
+    x.arm === "plain" && x.metric === "final_errors"
+  )!;
+  assertEquals([row.value, row.cells], [2, 1]);
+});

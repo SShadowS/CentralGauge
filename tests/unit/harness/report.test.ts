@@ -1735,3 +1735,219 @@ Deno.test("buildReport (M11 run 002): amendments stay disclosed in the header wh
   );
   assertStringIncludes(text, "Confirmatory analysis withheld");
 });
+
+import type { HostLogLine } from "../../../src/harness/backend.ts";
+
+const hostLine = (
+  o: Partial<Record<keyof HostLogLine, unknown>>,
+): HostLogLine =>
+  ({
+    v: 1,
+    request: "br_1",
+    execution: "e",
+    op: "compile",
+    status: 200,
+    outcome: "ok",
+    at: "2026-10-05T00:00:00.000Z",
+    spans: { compile_ms: 10 },
+    apps_compiled: [],
+    per_app_compiles: 0,
+    diagnostics: 0,
+    tests_run: 0,
+    tests_failed: 0,
+    container: null,
+    retries: 0,
+    diagnostic_list: [],
+    changed_apps: ["Core"],
+    build_ok: true,
+    ...o,
+  }) as HostLogLine;
+
+Deno.test("buildReport (M11-12): exploratory rollups carry null as missing, never no_build or zero, and disclose usage reconciliation", async () => {
+  const recs = await records();
+  const status: Record<string, string> = {
+    "plain/HX-001": "exact",
+    "plain/HX-002": "compaction_excess",
+    "skills/HX-001": "unreconciled",
+    "skills/HX-002": "unreconciled",
+  };
+  const perModel = [{
+    model: "m",
+    requests: 1,
+    tokens_in_uncached: 10,
+    tokens_cache_read: 20,
+    tokens_cache_write: 5,
+    tokens_out: 5,
+    tokens_reasoning: 0,
+    cost_usd: 1,
+  }];
+  const executions = recs.executions.map((e) => {
+    const key = `${e.arm}/${e.task_id}`;
+    const unreconciled = status[key] === "unreconciled";
+    return {
+      ...e,
+      // The fixture campaign is cost-primary: an unreconciled cell has unknown
+      // spend, yet its tokens and cost must show as missing, not vanish.
+      validity: unreconciled
+        ? { ...e.validity, incomplete_telemetry: ["cost_usd" as const] }
+        : e.validity,
+      telemetry: {
+        ...e.telemetry,
+        cost_usd: unreconciled ? null : e.telemetry.cost_usd,
+        per_model: unreconciled ? [] : perModel,
+        turns: 2,
+        raw_usage: { usage_reconciliation: { status: status[key]! } },
+      },
+    };
+  });
+  const idOf = (arm: string, task: string) =>
+    executions.find((e) => e.arm === arm && e.task_id === task)!.id;
+  const logs: ReportLogs = {
+    host: new Map<string, HostLogLine[]>([
+      // no build at all: no_build
+      [idOf("plain", "HX-001"), []],
+      // a build without a valid diagnostic_list: burden missing, first build ok
+      [idOf("plain", "HX-002"), [hostLine({ diagnostic_list: undefined })]],
+      // skills/HX-001 has no host log: everything missing
+      // a build without changed_apps: first build missing, burden 0
+      [idOf("skills", "HX-002"), [hostLine({ changed_apps: undefined })]],
+    ]),
+    verdict: new Map(),
+  };
+  const r = await buildReport({ ...recs, executions }, { logs });
+  const row = (arm: string, metric: string) =>
+    r.exploratory!.arms.find((x) => x.arm === arm && x.metric === metric)!;
+  assertEquals(r.exploratory!.label, "exploratory");
+  assertEquals(row("plain", "backend_builds"), {
+    arm: "plain",
+    metric: "backend_builds",
+    value: 0.5,
+    cells: 2,
+    missing: 0,
+    no_build: 0,
+    not_applicable: 0,
+  });
+  assertEquals(row("skills", "backend_builds").cells, 1);
+  assertEquals(row("skills", "backend_builds").missing, 1);
+  // plain: one no_build cell, one missing (null diagnostic count with a build).
+  const pb = row("plain", "burden_distinct");
+  assertEquals([pb.value, pb.cells, pb.missing, pb.no_build], [null, 0, 1, 1]);
+  // skills: one clean build (0), one without a log (missing).
+  const sb = row("skills", "burden_distinct");
+  assertEquals([sb.value, sb.cells, sb.missing, sb.no_build], [0, 1, 1, 0]);
+  // first_eligible null (skills/HX-002) is missing, never first_build_ok 0.
+  const fb = row("skills", "first_build_ok");
+  assertEquals([fb.value, fb.cells, fb.missing], [null, 0, 2]);
+  const pf = row("plain", "first_build_ok");
+  assertEquals([pf.value, pf.cells, pf.no_build], [1, 1, 1]);
+  // Unreconciled cells: tokens missing, never zero.
+  const st = row("skills", "tokens_out");
+  assertEquals([st.value, st.cells, st.missing], [null, 0, 2]);
+  assertEquals(row("plain", "tokens_out").value, 5);
+  assertEquals(r.exploratory!.usage_reconciliation, {
+    plain: { exact: 1, compaction_excess: 1, unreconciled: 0, absent: 0 },
+    skills: { exact: 0, compaction_excess: 0, unreconciled: 2, absent: 0 },
+  });
+  assertEquals(r.exploratory!.compaction_excess, [
+    { arm: "plain", task: "HX-002", repeat: 1 },
+  ]);
+  // Without contrasts: variant vs baseline; both cells need a value.
+  const d = r.exploratory!.deltas.find((x) => x.metric === "tokens_out")!;
+  assertEquals([d.baseline, d.variant, d.delta, d.pairs], [
+    "plain",
+    "skills",
+    null,
+    0,
+  ]);
+  // The primary cohort still excludes the unknown-spend cells and counts them;
+  // only the exploratory rollups include them (as missing).
+  const skills = r.arms.find((a) => a.arm === "skills")!;
+  assertEquals(skills.unknown_spend_cells, 2);
+  assertEquals(skills.cost_per_solved_task, null);
+  assertEquals(r.comparisons[0]!.excluded.variant, { unknown_spend: 2 });
+  assertEquals(r.exploratory!.usage_reconciliation["skills"]!.unreconciled, 2);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(text, "Exploratory metrics (not confirmatory)");
+  assertStringIncludes(text, "usage reconciliation");
+  assertStringIncludes(text, "compaction_excess");
+  assertStringIncludes(
+    text,
+    "all terminal cells; primary aggregates use the eligible cohort",
+  );
+});
+
+import {
+  measureFingerprint,
+  writeMeasureRecord,
+} from "../../../src/harness/measures.ts";
+import { loadReportLogs } from "../../../src/harness/report.ts";
+
+function measureFor(
+  recs: CampaignRecords,
+  j: CampaignRecords["judgments"][number],
+  fingerprint: string,
+): MeasureRecord {
+  const e = recs.executions.find((x) => x.id === j.execution_id)!;
+  const na = { status: "not_applicable" as const, reason: "test" };
+  return {
+    v: 1,
+    judgment_id: j.id,
+    execution_id: e.id,
+    task_id: e.task_id,
+    workspace_hash: e.workspace_hash!,
+    oracle_hash: j.task_oracle_hash,
+    measure_fingerprint: fingerprint,
+    analyzers: null,
+    final_code: na,
+    reuse: na,
+    partial_credit: na,
+  };
+}
+
+Deno.test("buildReport (M11-12 review): a measure record of a superseded judgment is ignored, not a refusal", async () => {
+  const base = await records();
+  const v2 = { build: "2" };
+  const older = judgment(base.campaign, base.executions[0]!, false, {
+    scorer_versions: v2,
+    scorer_fingerprint: await scorerFingerprint(v2),
+    ended_at: "2026-10-01T10:13:00.000Z",
+  });
+  const recs = { ...base, judgments: [older, ...base.judgments] };
+  const counted = base.judgments[0]!;
+  const logs: ReportLogs = {
+    host: new Map(),
+    verdict: new Map(),
+    measures: new Map([
+      [older.id, await measureFor(recs, older, H("f"))],
+      [counted.id, await measureFor(recs, counted, H("f"))],
+    ]),
+  };
+  const r = await buildReport(recs, { logs });
+  assertEquals(r.exploratory!.label, "exploratory");
+  // The counted record is still read.
+  assertEquals(
+    r.exploratory!.arms.find((a) =>
+      a.arm === base.executions[0]!.arm && a.metric === "final_errors"
+    )!.not_applicable,
+    1,
+  );
+});
+
+Deno.test("loadReportLogs (M11-12): reads measure records of the given fingerprint, else the current one", async () => {
+  const recs = await records();
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const j = recs.judgments[0]!;
+  const pinned = H("f");
+  await writeMeasureRecord(root, await measureFor(recs, j, pinned));
+  assertEquals((await loadReportLogs(root, recs, pinned)).measures!.size, 1);
+  assertEquals((await loadReportLogs(root, recs)).measures!.size, 0);
+  await writeMeasureRecord(
+    root,
+    await measureFor(recs, j, await measureFingerprint()),
+  );
+  const current = await loadReportLogs(root, recs);
+  assertEquals(
+    current.measures!.get(j.id)!.measure_fingerprint,
+    await measureFingerprint(),
+  );
+});
