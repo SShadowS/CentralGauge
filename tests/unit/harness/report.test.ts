@@ -1598,8 +1598,21 @@ Deno.test("buildReport (M11 run 002): a terminal cell without cost data in a sel
   );
 });
 
-Deno.test("buildReport (M11 run 002): a pass_rate experiment is still analysed on the pre-registered cost metric, and missing cost withholds it", async () => {
-  const base = await factorialRecords(100, "pass_rate");
+Deno.test("buildReport (M11-10c): a pass_rate experiment with a cost pre-registration is refused; on a cost experiment missing cost withholds the family", async () => {
+  const mismatched = await factorialRecords(100, "pass_rate");
+  const err = await assertRejects(
+    async () =>
+      await buildReport(mismatched, {
+        prereg: preregOf(
+          mismatched,
+          await stageBFor(mismatched.campaign),
+        ),
+      }),
+    ValidationError,
+  );
+  assertStringIncludes(err.message, "pass_rate");
+  assertStringIncludes(err.message, "cost_per_solved_task");
+  const base = await factorialRecords(100);
   const recs = {
     ...base,
     executions: base.executions.map((e) =>
