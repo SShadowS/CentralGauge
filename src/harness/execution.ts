@@ -996,6 +996,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     try {
       parsed = await adapter.parse({
         rawLog: p.raw,
+        stderrLog: p.stderr,
         exitCode: f.sandbox.exitCode,
         manifest: f.manifest,
         pricing: f.pricing,

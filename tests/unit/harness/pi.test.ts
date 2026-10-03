@@ -1427,3 +1427,54 @@ Deno.test("run.ps1 (M1-33d): after ready, the proxy credential file sets HTTPS_P
   assertStringIncludes(run, "Remove-Variable proxyCred");
   assert(!/WriteLine\([^)]*proxyCred/i.test(run));
 });
+
+// H-01u: pi on default settings (a held settings.json.lock, H-01q) prints
+// "Invalid settings file" on stderr and keeps running; such a run is not a
+// valid cell. Fail closed, also when stderr cannot be read or was not passed.
+Deno.test("pi adapter (H-01u): stderr with Invalid settings file, an unreadable or absent stderr log, is setup_failed with pi_config_invalid; a clean stderr changes nothing", async () => {
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.writeTextFile(
+    join(dir, "raw.jsonl"),
+    HEAD + await Deno.readTextFile(FIXTURE),
+  );
+  const parse = (stderrLog: string | undefined, n: string) =>
+    piAdapter.parse({
+      rawLog: join(dir, "raw.jsonl"),
+      ...(stderrLog === undefined ? {} : { stderrLog }),
+      exitCode: 0,
+      manifest: pm(),
+      pricing: BOOK,
+      traceOut: join(dir, `trace-${n}.jsonl`),
+    });
+  const problemsOf = (r: Awaited<ReturnType<typeof parse>>) =>
+    (r.telemetry.raw_usage as unknown as Raw).stream_problems;
+  await Deno.writeTextFile(join(dir, "clean.txt"), "");
+  const clean = await parse(join(dir, "clean.txt"), "clean");
+  assertEquals(clean.termination, "completed");
+  assert(!problemsOf(clean).some((p) => p.startsWith("pi_config_invalid")));
+  const warning =
+    "Warning: Invalid settings file C:\\pi-agent\\settings.json: Lock file is already being held";
+  await Deno.writeTextFile(
+    join(dir, "held.txt"),
+    `some other line\r\n${warning}\r\n`,
+  );
+  const held = await parse(join(dir, "held.txt"), "held");
+  assertEquals(held.termination, "setup_failed");
+  assert(
+    problemsOf(held).includes(`pi_config_invalid: ${warning}`),
+    JSON.stringify(problemsOf(held)),
+  );
+  for (
+    const [what, path] of [
+      ["absent file", join(dir, "absent.txt")],
+      ["not passed", undefined],
+    ] as const
+  ) {
+    const r = await parse(path, what.replace(" ", "-"));
+    assertEquals(r.termination, "setup_failed", what);
+    assert(
+      problemsOf(r).some((p) => p.startsWith("pi_config_invalid: ")),
+      `${what}: ${JSON.stringify(problemsOf(r))}`,
+    );
+  }
+});

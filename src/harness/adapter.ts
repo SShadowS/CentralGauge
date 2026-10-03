@@ -14,6 +14,8 @@ import type { LoadedTask } from "./task.ts";
 export interface ParseInput {
   /** Quarantined raw log (redaction happens on publication). */
   rawLog: string;
+  /** Quarantined sandbox stderr (H-01u); an adapter that needs it fails closed without it. */
+  stderrLog?: string;
   exitCode: number | null;
   manifest: ResolvedManifest;
   /** Fixed at run start; the snapshot goes into telemetry. */
