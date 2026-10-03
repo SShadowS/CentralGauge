@@ -275,16 +275,20 @@ function mcpInventoryAll(
   manifest: ParseInput["manifest"],
 ): { loaded: string[]; problems: string[] } {
   const problems: string[] = [];
+  const requested = new Set(manifest.mcp.map((s) => `mcp:${s.name}`));
+  // Requested tokens: intersection across inits. Unexpected tokens: union, so
+  // a rogue server seen in any single init still reaches observedMismatch.
   let common: string[] | null = null;
+  const rogue = new Set<string>();
   for (const [n, init] of inits.entries()) {
     const r = mcpInventory(init.rec, manifest);
     const tag = inits.length > 1 ? `init ${n + 1}: ` : "";
     problems.push(...r.problems.map((p) => tag + p));
-    common = common === null
-      ? r.loaded
-      : common.filter((c) => r.loaded.includes(c));
+    const req = r.loaded.filter((c) => requested.has(c));
+    for (const c of r.loaded) if (!requested.has(c)) rogue.add(c);
+    common = common === null ? req : common.filter((c) => req.includes(c));
   }
-  return { loaded: common ?? [], problems };
+  return { loaded: [...(common ?? []), ...[...rogue].sort()], problems };
 }
 
 function mcpInventory(

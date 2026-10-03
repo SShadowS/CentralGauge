@@ -2740,6 +2740,12 @@ const mcpRun = async (lines: string[]) => {
   return {
     problems: raw.mcp_inventory.join("\n"),
     loaded: r.observed.loaded_components!,
+    // The real refusal channel: execution.ts refuses setup on this mismatch.
+    mismatch: observedMismatch(
+      manifest("cc", MCP_ARM()),
+      r.observed,
+      r.unobservable,
+    ).mismatch,
   };
 };
 
@@ -2768,7 +2774,7 @@ Deno.test("inventory M9-04b: init 2 dropping al-tools is a problem and al-tools 
 });
 
 Deno.test("inventory M9-04b: init 2 adding an unexpected MCP server is a problem", async () => {
-  const { problems } = await mcpRun([
+  const { problems, loaded, mismatch } = await mcpRun([
     invLine(),
     mcpInit(),
     mcpInit({
@@ -2781,6 +2787,27 @@ Deno.test("inventory M9-04b: init 2 adding an unexpected MCP server is a problem
     v2Result(),
   ]);
   assertStringIncludes(problems, "init 2: unexpected MCP server rogue");
+  assert(loaded.includes("mcp:rogue"));
+  assertStringIncludes(mismatch ?? "", "mcp:rogue");
+});
+
+Deno.test("inventory M9-04b: an unexpected MCP server only in init 1 stays loaded and is refused", async () => {
+  const { problems, loaded, mismatch } = await mcpRun([
+    invLine(),
+    mcpInit({
+      mcp_servers: [
+        { name: "al-tools", status: "connected" },
+        { name: "rogue", status: "connected" },
+      ],
+    }),
+    mcpInit(),
+    v2Result(),
+    v2Result(),
+  ]);
+  assertStringIncludes(problems, "init 1: unexpected MCP server rogue");
+  assert(loaded.includes("mcp:rogue"));
+  assert(loaded.includes("mcp:al-tools"));
+  assertStringIncludes(mismatch ?? "", "mcp:rogue");
 });
 
 Deno.test("inventory M9-04b: a malformed mcp__ tool name is an inventory problem", async () => {
