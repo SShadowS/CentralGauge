@@ -31,12 +31,16 @@ export const NAIVE_RUNS = 2;
  * the task asks for does not exist yet. Verified against real output in M4-07
  * and M4-11; a change needs orchestrator approval. AL0504 (enum is not
  * extensible) added 2026-09-25 for HX-005, whose refactor makes the enum
- * extensible (orchestrator ruling q-20260925T200428-3b1fda27).
+ * extensible (orchestrator ruling q-20260925T200428-3b1fda27). AL0280 (event
+ * not found) added 2026-10-04 for HX-019, whose oracle subscribes to the event
+ * the task introduces (orchestrator ruling
+ * decisions\2026-10-04-al0280-missing-feature.md).
  */
 export const MISSING_FEATURE_CODES = new Set([
   "AL0118",
   "AL0132",
   "AL0185",
+  "AL0280",
   "AL0504",
 ]);
 

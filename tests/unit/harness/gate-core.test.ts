@@ -13,6 +13,7 @@ import {
   decideGate,
   gatePlan,
   layers,
+  missingFeatureOnly,
   parseVariant,
   summarize,
   tally,
@@ -277,6 +278,13 @@ Deno.test("decideGate: the compiler's AL0000 trailer next to missing-feature cod
     runs[0]!.summary = S({ oracle: "compile_fail", oracleCodes: codes });
     assertEquals(decideGate(F2P, planF2P, runs).promoted, true, codes.join());
   }
+});
+
+Deno.test("missingFeatureOnly: AL0280 (event not found) is a missing feature; a real error next to it is not", () => {
+  // HX-019: the oracle subscribes to the event the task introduces
+  // (orchestrator ruling decisions\2026-10-04-al0280-missing-feature.md).
+  assertEquals(missingFeatureOnly(["AL0280", "AL0000"]), true);
+  assertEquals(missingFeatureOnly(["AL0280", "AL0001"]), false);
 });
 
 Deno.test("decideGate: test-authoring", () => {
