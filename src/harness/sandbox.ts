@@ -420,7 +420,8 @@ export interface SandboxSpec {
   taskDir: string;
   configDir: string;
   secretsDir: string;
-  extraMounts: { src: string; dst: string }[];
+  /** Read-only unless `readWrite` (an ops probe folder, M9-01a; never a cell). */
+  extraMounts: { src: string; dst: string; readWrite?: boolean }[];
   /** Non-secret env only. */
   env: Record<string, string>;
   /** Docker network (M1-33's internal network when the egress marker places sandboxes). */
@@ -610,7 +611,7 @@ export function buildRunArgs(s: SandboxSpec): string[] {
     ...m(s.taskDir, "C:\\task", true),
     ...m(s.configDir, "C:\\config", true),
     ...m(s.secretsDir, "C:\\cg-secrets", true),
-    ...s.extraMounts.flatMap((x) => m(x.src, x.dst, true)),
+    ...s.extraMounts.flatMap((x) => m(x.src, x.dst, x.readWrite !== true)),
     ...Object.entries(s.env).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
       .flatMap((
         [k, v],

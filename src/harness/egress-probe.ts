@@ -45,6 +45,12 @@ export interface QualificationProbe {
   custody: SecretCustody;
   /** The backend token: released only after the preflight passes. */
   token: string;
+  /**
+   * Further secret files released with the backend token, only after the
+   * preflight passes (M9-01a: the Claude Code OAuth token of an ops spike).
+   * Their values are redacted from the captures like the token.
+   */
+  releaseAfterPreflight?: { name: string; value: string }[];
   spec: Omit<SandboxSpec, "secretsDir" | "network" | "command">;
   /** The probe's own command, run after the ready wait. */
   probeCommand: string[];
@@ -124,7 +130,7 @@ export async function runQualificationProbe(
           }; exit $LASTEXITCODE`,
         ],
       },
-      [o.token],
+      [o.token, ...(o.releaseAfterPreflight ?? []).map((s) => s.value)],
       stop.signal,
     );
     let problems: string[];
@@ -165,10 +171,10 @@ export async function runQualificationProbe(
     }
     if (problems.length > 0) stop.abort();
     else {
-      await writeSecretFiles(secrets, [{
-        name: "backend-token",
-        value: o.token,
-      }]);
+      await writeSecretFiles(secrets, [
+        { name: "backend-token", value: o.token },
+        ...(o.releaseAfterPreflight ?? []),
+      ]);
       await Deno.writeTextFile(join(secrets, READY_FILE), "");
     }
     settled = await running;

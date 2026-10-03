@@ -22,6 +22,8 @@ Deno.test("backend-probe args: positional only keeps the M1-28 defaults", async 
     withholdToken: false,
     image: null,
     hosts: null,
+    mount: null,
+    claudeOauth: false,
   });
 });
 
@@ -44,6 +46,8 @@ Deno.test("backend-probe args: --image and --route (M3-08) resolve the route's h
       withholdToken: false,
       image: "sha256:abc",
       hosts: ["openrouter.ai"],
+      mount: null,
+      claudeOauth: false,
     },
   );
   await assertRejects(() =>
@@ -80,6 +84,8 @@ Deno.test("backend-probe args: --enforced, --command-file (JSON string array) an
         withholdToken: true,
         image: null,
         hosts: null,
+        mount: null,
+        claudeOauth: false,
       },
     );
   } finally {
@@ -106,6 +112,59 @@ Deno.test("backend-probe args: missing positionals, a missing flag value or an u
   await assertRejects(() => parseProbeArgs(["Cronus281"]));
   await assertRejects(() => parseProbeArgs(["C", "S", "--bogus"]));
   await assertRejects(() => parseProbeArgs(["C", "S", "--command-file"]));
+});
+
+Deno.test("backend-probe args: --mount takes an absolute dir under H:\\cg-coord\\m9\\ only (M9-01a)", async () => {
+  const ok = await parseProbeArgs([
+    "C",
+    "S",
+    "--mount",
+    "H:\\cg-coord\\m9\\spike-01\\probe",
+  ]);
+  assertEquals(ok.mount, "H:\\cg-coord\\m9\\spike-01\\probe");
+  assertEquals(
+    (await parseProbeArgs([
+      "C",
+      "S",
+      "--mount",
+      "h:/CG-COORD/m9/spike-01/probe/",
+    ]))
+      .mount,
+    "h:\\CG-COORD\\m9\\spike-01\\probe",
+  );
+  for (
+    const bad of [
+      "H:\\cg-coord\\m9",
+      "H:\\cg-coord\\m9\\",
+      "H:\\cg-coord\\m9x\\a",
+      "H:\\cg-coord\\m9\\..\\tasks",
+      "H:\\cg-coord\\tasks\\M9-01",
+      "probe",
+      "m9\\spike-01",
+      "C:\\cg-coord\\m9\\a",
+    ]
+  ) {
+    await assertRejects(
+      () => parseProbeArgs(["C", "S", "--mount", bad]),
+      Error,
+      "--mount",
+      bad,
+    );
+  }
+  await assertRejects(() => parseProbeArgs(["C", "S", "--mount"]));
+});
+
+Deno.test("backend-probe args: --claude-oauth needs --enforced (M9-01a)", async () => {
+  await assertRejects(
+    () => parseProbeArgs(["C", "S", "--claude-oauth"]),
+    Error,
+    "--claude-oauth needs --enforced",
+  );
+  assertEquals(
+    (await parseProbeArgs(["C", "S", "--enforced", "--claude-oauth"]))
+      .claudeOauth,
+    true,
+  );
 });
 
 Deno.test("backend-probe exit code: non-zero on any preflight problem or a sandbox that did not exit 0", () => {

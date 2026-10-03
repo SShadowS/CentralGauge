@@ -17,7 +17,18 @@
 // (M3-08, needs --enforced) proxies and probes that route's hosts (ROUTE_HOSTS)
 // instead of the first-party default. It writes probe-evidence.json
 // for `harness egress verify --mark qualified --probe-evidence <path>`.
+// --mount <dir> (M9-01a) mounts an absolute host dir under H:\cg-coord\m9\
+// read-write at C:\probe; with --enforced, the run's proxy log is copied to
+// <dir>\out\egress-proxy.jsonl at the end. --claude-oauth (M9-01a, needs
+// --enforced) releases <secretsDir>\claude-oauth-token as
+// C:\cg-secrets\claude-oauth-token beside the backend token, only after the
+// egress preflight passed. The sandbox always runs as ContainerUser (H-01,
+// buildRunArgs) after the harness privilege check, so no --user flag exists.
 import { join } from "@std/path";
+import {
+  isAbsolute as winIsAbsolute,
+  normalize as winNormalize,
+} from "@std/path/windows";
 import type { SandboxResult } from "../../src/harness/sandbox.ts";
 import { openHarnessEnv } from "../../cli/commands/harness-env.ts";
 import {
@@ -39,7 +50,26 @@ import { TASK_SOURCES } from "../../src/harness/staging.ts";
 import { loadTask } from "../../src/harness/task.ts";
 
 const USAGE =
-  "usage: backend-probe.ts <container> <secretsDir> [--enforced] [--command-file <path>] [--withhold-token] [--image <ref>] [--route <route>]";
+  "usage: backend-probe.ts <container> <secretsDir> [--enforced] [--command-file <path>] [--withhold-token] [--image <ref>] [--route <route>] [--mount <H:\\cg-coord\\m9\\...>] [--claude-oauth]";
+
+/** The only host tree --mount may expose read-write to a probe sandbox (M9-01a). */
+const MOUNT_ROOT = "h:\\cg-coord\\m9\\";
+export const CLAUDE_OAUTH_FILE = "claude-oauth-token";
+
+/** An absolute dir strictly under H:\cg-coord\m9\ (normalized, case kept), else throws. */
+function probeMount(raw: string): string {
+  const p = winNormalize(raw).replace(/\\+$/, "");
+  if (
+    !winIsAbsolute(raw) || !/^[a-z]:\\/i.test(p) ||
+    !(p.toLowerCase() + "\\").startsWith(MOUNT_ROOT) ||
+    p.length <= MOUNT_ROOT.length - 1
+  ) {
+    throw new Error(
+      `--mount must be an absolute dir under H:\\cg-coord\\m9\\ (got ${raw})`,
+    );
+  }
+  return p;
+}
 
 export async function parseProbeArgs(args: string[]): Promise<{
   container: string;
@@ -49,25 +79,31 @@ export async function parseProbeArgs(args: string[]): Promise<{
   withholdToken: boolean;
   image: string | null;
   hosts: string[] | null;
+  mount: string | null;
+  claudeOauth: boolean;
 }> {
   const pos: string[] = [];
   let enforced = false;
   let withholdToken = false;
+  let claudeOauth = false;
   let commandFile: string | null = null;
   let image: string | null = null;
   let route: string | null = null;
+  let mount: string | null = null;
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === "--enforced") enforced = true;
     else if (a === "--withhold-token") withholdToken = true;
+    else if (a === "--claude-oauth") claudeOauth = true;
     else if (a === "--command-file") {
       commandFile = args[++i] ?? null;
       if (commandFile === null) throw new Error(USAGE);
-    } else if (a === "--image" || a === "--route") {
+    } else if (a === "--image" || a === "--route" || a === "--mount") {
       const v = args[++i];
       if (!v) throw new Error(USAGE);
       if (a === "--image") image = v;
-      else route = v;
+      else if (a === "--route") route = v;
+      else mount = probeMount(v);
     } else if (a.startsWith("--")) throw new Error(`${USAGE} (unknown ${a})`);
     else pos.push(a);
   }
@@ -87,6 +123,9 @@ export async function parseProbeArgs(args: string[]): Promise<{
   if (route !== null && !enforced) {
     throw new Error("--route needs --enforced");
   }
+  if (claudeOauth && !enforced) {
+    throw new Error("--claude-oauth needs --enforced");
+  }
   const hosts = route === null ? null : hostsForRoutes([route], {});
   return {
     container,
@@ -96,7 +135,21 @@ export async function parseProbeArgs(args: string[]): Promise<{
     withholdToken,
     image,
     hosts,
+    mount,
+    claudeOauth,
   };
+}
+
+/** The OAuth token from the secrets dir, checked in memory; never printed. */
+async function readClaudeOauth(secretsDir: string): Promise<string> {
+  const v = (await Deno.readTextFile(join(secretsDir, CLAUDE_OAUTH_FILE)))
+    .trim();
+  if (v === "" || v.startsWith("REPLACE_ME")) {
+    throw new Error(
+      `${CLAUDE_OAUTH_FILE} in the secrets dir is empty or a placeholder`,
+    );
+  }
+  return v;
 }
 
 /**
@@ -132,10 +185,17 @@ async function main() {
     withholdToken,
     image,
     hosts,
+    mount,
+    claudeOauth,
   } = await parseProbeArgs(Deno.args);
   if (enforced && withholdToken) {
     throw new Error("--withhold-token is not for --enforced runs");
   }
+  if (mount !== null && !(await Deno.stat(mount)).isDirectory) {
+    throw new Error(`--mount ${mount} is not a directory`);
+  }
+  // Read before any environment opens: a missing token stops the run early.
+  const oauth = claudeOauth ? await readClaudeOauth(secretsDir) : null;
   const root = Deno.cwd();
   const privateRoot = join(
     Deno.env.get("LOCALAPPDATA")!,
@@ -213,7 +273,9 @@ async function main() {
       workspace: staged.workspace,
       taskDir: staged.taskDir,
       configDir,
-      extraMounts: [],
+      extraMounts: mount === null
+        ? []
+        : [{ src: mount, dst: "C:\\probe", readWrite: true }],
       env: { CG_BACKEND_URL: h.env.backendUrl, CG_EXECUTION_ID: id },
       timeoutMs: 20 * 60_000,
       killGraceMs: 60_000,
@@ -236,6 +298,9 @@ async function main() {
         egress: h.env.egress,
         custody: { privateRoot: h.env.privateRoot, owner: h.env.owner },
         token,
+        ...(oauth === null ? {} : {
+          releaseAfterPreflight: [{ name: CLAUDE_OAUTH_FILE, value: oauth }],
+        }),
         // M5-08a: the token is cut before the sandbox teardown (and again below).
         revoke: () => h.env.backend.revoke(id),
         spec,
@@ -258,6 +323,16 @@ async function main() {
         }),
       );
       Deno.exitCode = probeExitCode(r);
+      if (mount !== null) {
+        // M9-13 criterion 6 reuses the proxy log of this run.
+        await Deno.mkdir(join(mount, "out"), { recursive: true });
+        await Deno.copyFile(
+          join(out, "egress.jsonl"),
+          join(mount, "out", "egress-proxy.jsonl"),
+        ).catch((e) =>
+          console.error(`proxy log not copied: ${(e as Error).message}`)
+        );
+      }
     } else {
       const s = await prepareSecrets(secretsDir, [], token, {
         privateRoot: h.env.privateRoot,
