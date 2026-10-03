@@ -18,12 +18,12 @@ codeunit 85640 "HX009 Late Return Oracle"
         InitSetup(12.345);
         ClearHolidays();
         InitVehicle('HX009-A');
-        ContractNo := ReturnedContract('HX009-A', 20270301D, 20270303D, 20270305D);
+        ContractNo := ReturnedContract('HX009-A', 20270301D, 20270303D, 20270304D);
 
         Preview.BuildPreview(ContractNo, PreviewLine);
         Assert.AreEqual(2, PreviewLine.Count(), 'Rental days and late return');
-        AssertLateLine(PreviewLine, 2, 24.69);
-        Assert.AreEqual(174.69, Preview.TotalAmount(PreviewLine), 'Preview total includes the late return line');
+        AssertLateLine(PreviewLine, 1, 12.35);
+        Assert.AreEqual(162.35, Preview.TotalAmount(PreviewLine), 'Preview total includes the late return line');
     end;
 
     [Test]
