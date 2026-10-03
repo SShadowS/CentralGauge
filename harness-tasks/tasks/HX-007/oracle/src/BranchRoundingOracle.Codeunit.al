@@ -208,6 +208,7 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
     var
         PreviewLine: Record "CGR Invoice Preview Line";
         BranchRounding: Record "CGR Branch Rounding";
+        Vehicle: Record "CGR Vehicle";
         Preview: Codeunit "CGR Rental Invoice Preview";
         RentalMgt: Codeunit "CGR Rental Mgt";
         ContractNo: Code[20];
@@ -217,13 +218,16 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
         if BranchRounding.Get('HX7ZB') then
             BranchRounding.Delete();
         InitVehicle('HX007-J');
+        Vehicle.Get('HX007-J');
+        Vehicle."Daily Rate" := 33.333;
+        Vehicle.Modify();
         ContractNo := ReturnedContract('HX007-J', 'HX7ZB');
 
         Preview.BuildPreview(ContractNo, PreviewLine);
-        AssertLines(PreviewLine, 99.99, 33.33, 2.31);
-        Assert.AreEqual(135.63, Preview.TotalAmount(PreviewLine), 'Setup precision 0 falls back to 0.01');
+        AssertLines(PreviewLine, 100.00, 33.33, 2.31);
+        Assert.AreEqual(135.64, Preview.TotalAmount(PreviewLine), 'Setup precision 0 falls back to 0.01');
         RentalMgt.Post(ContractNo);
-        Assert.AreEqual(135.63, PostedAmount(ContractNo), 'Posted amount at 0.01');
+        Assert.AreEqual(135.64, PostedAmount(ContractNo), 'Posted amount at 0.01');
     end;
 
     [Test]
