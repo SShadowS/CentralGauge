@@ -1,0 +1,28 @@
+v: 1
+partial_credit:
+  weights:
+    "85720/ServiceOnDamagedVehicleKeepsBlock": 1
+    "85720/ServiceReleasesUndamagedDueVehicle": 1
+    "85720/RepairKeepsKmDueVehicleBlocked": 1
+    "85720/RepairKeepsHeavyDutyDueBlocked": 1
+    "85720/RepairReleasesHeavyDutyBelowInterval": 1
+    "85720/RepairKeepsPlanDateDueBlocked": 1
+    "85720/RepairReleasesDayBeforePlanDate": 1
+    "85720/LateServiceStillDueStaysBlocked": 1
+    "85720/RepairWithOtherDamageOpenStaysBlocked": 1
+    "85720/RepairedDueVehicleCannotBeCheckedOut": 1
+    "85720/ServiceThenRepairReleases": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70111, procedure: IsServiceDue, signature: "(VehicleNo: Code[20]; AtDate: Date): Boolean", file: Fleet/src/ServicePlanMgt.Codeunit.al, perturb: "exit(false);" }
+    - { codeunit: 70100, procedure: NextServiceKm, signature: "(VehicleNo: Code[20]): Integer", file: Fleet/src/FleetMgt.Codeunit.al, perturb: "exit(2147483647);" }
+    - { codeunit: 70111, procedure: NextServiceDate, signature: "(VehicleNo: Code[20]): Date", file: Fleet/src/ServicePlanMgt.Codeunit.al, perturb: "exit(0D);" }
+  tests:
+    - { codeunit: 85720, procedures: [RepairKeepsKmDueVehicleBlocked, RepairKeepsHeavyDutyDueBlocked, RepairKeepsPlanDateDueBlocked, RepairedDueVehicleCannotBeCheckedOut] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  fixture/comment-only: { reuse_executed: false, reuse: false }
+  fixture/token-call: { reuse_executed: true, reuse: false }
