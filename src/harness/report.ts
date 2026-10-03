@@ -31,8 +31,21 @@ import {
   type JudgmentRecord,
 } from "./records.ts";
 import { RULES_VERSION } from "./classify.ts";
-import type { MeasureRecord } from "./measures.ts";
+import {
+  measureFingerprint,
+  type MeasureRecord,
+  readMeasureRecord,
+} from "./measures.ts";
 import { familyProblems, type Prereg } from "./prereg.ts";
+import {
+  type ArmRollup,
+  cellValues,
+  type DeltaRollup,
+  RECONCILIATION_STATUSES,
+  type ReconciliationStatus,
+  reconciliationStatus,
+  rollups,
+} from "./rollups.ts";
 import { type LoadedTrace, traceMetrics } from "./trace-metrics.ts";
 import {
   type ArmSummary,
@@ -185,6 +198,23 @@ export interface HarnessReport {
     amendments: Prereg["amendments"];
   };
   cells: CellRecord[];
+  /**
+   * M11-12: per-arm rollups and paired deltas of the exploratory metrics over
+   * every counted-or-unscored terminal cell (equal task weight). A value the
+   * records cannot supply is missing (counted as such), never zero.
+   */
+  exploratory?: {
+    label: "exploratory";
+    arms: ArmRollup[];
+    deltas: DeltaRollup[];
+    /** Per arm: cells per `raw_usage.usage_reconciliation.status` (worst over a cell's attempts). */
+    usage_reconciliation: Record<
+      string,
+      Record<ReconciliationStatus, number>
+    >;
+    /** Cells in compaction_excess: their cost is kept (owner default), listed here. */
+    compaction_excess: { arm: string; task: string; repeat: number }[];
+  };
 }
 
 export interface ContrastsAnalysis {
@@ -324,11 +354,14 @@ function traceCoverage(
 /**
  * Host logs (runs/<execution>/host-log.jsonl; a line cut by a crash is
  * skipped) and verdict logs (verdicts/<judgment>.json) of a campaign's
- * records under the results root. A missing file is absent from the map.
+ * records under the results root, and the measure records of the required
+ * fingerprint (the pre-registration's, else the current one). A missing file
+ * is absent from the map.
  */
 export async function loadReportLogs(
   resultsRoot: string,
   records: CampaignRecords,
+  fingerprint?: string,
 ): Promise<ReportLogs> {
   const read = async (path: string): Promise<string | null> => {
     try {
@@ -356,7 +389,13 @@ export async function loadReportLogs(
     const text = await read(join(resultsRoot, "verdicts", `${j.id}.json`));
     if (text !== null) verdict.set(j.id, JSON.parse(text) as VerdictLog);
   }
-  return { host, verdict };
+  const fp = fingerprint ?? await measureFingerprint();
+  const measures = new Map<string, MeasureRecord>();
+  for (const j of records.judgments) {
+    const m = await readMeasureRecord(resultsRoot, j.id, fp);
+    if (m !== null) measures.set(j.id, m);
+  }
+  return { host, verdict, measures };
 }
 
 function median(xs: number[]): number | null {
@@ -459,6 +498,9 @@ function checkMeasures(
     }
     const cell = cells.find((c) => c.judgment_id === r.judgment_id);
     if (!cell) {
+      // Filed under its own id, but superseded (rejudge, --judging current):
+      // ignored. An id no judgment of the campaign has is still refused.
+      if (records.judgments.some((j) => j.id === r.judgment_id)) continue;
       throw refuse(
         id,
         "judgment",
@@ -586,11 +628,12 @@ export async function buildReport(
       );
     }
   }
-  if (opts.logs?.measures) {
+  const measures = opts.logs?.measures;
+  if (measures) {
     checkMeasures(
       records,
       allCells,
-      opts.logs.measures,
+      measures,
       pre ? opts.prereg?.doc : undefined,
     );
   }
@@ -792,6 +835,53 @@ export async function buildReport(
     executions.filter((e) =>
       e.task_id === c.task && e.repeat === c.repeat && e.arm === c.arm
     );
+  // Every terminal cell, not only the primary metric's cohort: a cell with
+  // unknown spend (e.g. unreconciled usage) must show as missing, not vanish.
+  const terminal = cells.filter((c) =>
+    c.status !== "pending" && c.status !== "unrun"
+  );
+  const cellMetrics = new Map(terminal.map((c) => [
+    `${c.arm}\u0000${c.task}\u0000${c.repeat}`,
+    cellValues(
+      attemptsOf(c) as ExecutionRecord[],
+      executions.find((e) => e.id === c.used_execution),
+      c.judgment_id ? measures?.get(c.judgment_id) : undefined,
+      logs.host,
+      opts.traces?.traces ?? null,
+      manifestOf(c.arm).toolchain.length > 0,
+      c.status === "scored",
+    ),
+  ]));
+  const statusOf = new Map(terminal.map((c) => [
+    `${c.arm}\u0000${c.task}\u0000${c.repeat}`,
+    reconciliationStatus(attemptsOf(c)),
+  ]));
+  const usage_reconciliation = Object.fromEntries(arms.map((arm) => {
+    const n = Object.fromEntries(
+      RECONCILIATION_STATUSES.map((s) => [s, 0]),
+    ) as Record<ReconciliationStatus, number>;
+    for (const c of terminal) {
+      if (c.arm === arm) {
+        n[statusOf.get(`${c.arm}\u0000${c.task}\u0000${c.repeat}`)!]++;
+      }
+    }
+    return [arm, n];
+  }));
+  const exploratory: NonNullable<HarnessReport["exploratory"]> = {
+    label: "exploratory",
+    ...rollups(
+      terminal,
+      arms,
+      exp.contrasts ??
+        exp.variants.map((v) => ({ baseline: exp.baseline, variant: v })),
+      (c) => cellMetrics.get(`${c.arm}\u0000${c.task}\u0000${c.repeat}`)!,
+    ),
+    usage_reconciliation,
+    compaction_excess: terminal.filter((c) =>
+      statusOf.get(`${c.arm}\u0000${c.task}\u0000${c.repeat}`) ===
+        "compaction_excess"
+    ).map((c) => ({ arm: c.arm, task: c.task, repeat: c.repeat })),
+  };
   const provisional = summaries.some((s) => s.provisional);
   const repeats = { planned: exp.repeats, reported };
   return {
@@ -901,6 +991,7 @@ export async function buildReport(
       }
       : {}),
     cells,
+    exploratory,
   };
 }
 
@@ -1247,6 +1338,49 @@ export function renderReport(r: HarnessReport): string {
     out.push(
       `  ${b.baseline} vs ${b.variant} over ${b.pairs} matched scored pairs: both pass ${b.both_pass}, ${b.baseline} only ${b.baseline_only}, ${b.variant} only ${b.variant_only}, neither ${b.neither}`,
     );
+  }
+  if (r.exploratory) {
+    const x = r.exploratory;
+    h("Exploratory metrics (not confirmatory)");
+    const num = (v: number | null) =>
+      v === null ? "n/a" : Number.isInteger(v) ? String(v) : v.toFixed(3);
+    out.push(
+      "  cohort: all terminal cells; primary aggregates use the eligible cohort",
+    );
+    out.push(
+      `  usage reconciliation (cells per status): ${
+        Object.entries(x.usage_reconciliation).map(([arm, n]) =>
+          `${arm} ${Object.entries(n).map(([s, k]) => `${s} ${k}`).join(", ")}`
+        ).join("; ")
+      }`,
+    );
+    for (const c of x.compaction_excess) {
+      out.push(
+        `    compaction_excess (cost kept): ${c.task} r${c.repeat} ${c.arm}`,
+      );
+    }
+    for (const metric of new Set(x.arms.map((a) => a.metric))) {
+      out.push(
+        `  ${metric}: ${
+          x.arms.filter((a) => a.metric === metric).map((a) =>
+            `${a.arm} ${num(a.value)} (${a.cells} cells${
+              a.missing > 0 ? `, ${a.missing} missing` : ""
+            }${a.no_build > 0 ? `, ${a.no_build} no build` : ""}${
+              a.not_applicable > 0 ? `, ${a.not_applicable} n/a` : ""
+            })`
+          ).join("; ")
+        }`,
+      );
+      for (const d of x.deltas.filter((d) => d.metric === metric)) {
+        out.push(
+          `    ${d.variant} - ${d.baseline}: ${
+            num(d.delta)
+          } over ${d.pairs} pairs / ${d.tasks} tasks${
+            d.missing_pairs > 0 ? `, ${d.missing_pairs} unpaired` : ""
+          }`,
+        );
+      }
+    }
   }
   return out.join("\n");
 }
