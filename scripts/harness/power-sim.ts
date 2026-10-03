@@ -871,6 +871,13 @@ export function stageBContract(doc: Prereg, args: SimArgs): {
       `bootstrap resamples ${doc.bootstrap.resamples} differ from confirm_resamples ${args.confirm_resamples}`,
     );
   }
+  // M11-13b: the simulation certifies confirmatory decisions only; an
+  // exploratory-only pre-registration makes none (never substitute C1-C3).
+  if (!doc.confirmatory || doc.family.length === 0) {
+    fail(
+      "an exploratory-only pre-registration (not confirmatory, or an empty family) has no decisions to simulate",
+    );
+  }
   const modeled = ["C1", "C2", "C3", "interaction"];
   if (new Set(doc.family).size !== doc.family.length) {
     fail(`family ${doc.family.join(",")} has duplicates`);
@@ -879,6 +886,10 @@ export function stageBContract(doc: Prereg, args: SimArgs): {
   if (unknown.length > 0) {
     fail(`family ids ${unknown.join(",")} are not modeled by this simulation`);
   }
+  // M11-13b: unique before the map (a Map keeps the last duplicate), as testContrasts refuses.
+  const ids = doc.protocol.contrasts.map((c) => c.id);
+  const dup = ids.find((id, i) => ids.indexOf(id) !== i);
+  if (dup !== undefined) fail(`duplicate protocol contrast id ${dup}`);
   const byId = new Map(doc.protocol.contrasts.map((c) => [c.id, c]));
   const [c1, c2, c3] = ["C1", "C2", "C3"].map((id) =>
     byId.get(id) ?? fail(`protocol has no contrast ${id}`)
@@ -1010,7 +1021,6 @@ async function main(): Promise<void> {
     const doc = PreregSchema.parse(parse(await Deno.readTextFile(a.prereg)));
     frozenRule = doc.zero_solve;
     alpha = doc.alpha;
-    family = doc.family.length > 0 ? doc.family : ["C1", "C2", "C3"];
     for (const [flag, k] of NUMERIC) {
       const v = doc.simulation.args[k];
       if (v === undefined) bad(`pre-registration simulation.args lacks ${k}`);
@@ -1028,8 +1038,9 @@ async function main(): Promise<void> {
         `rule_b_share ${args.rule_b_share} differs from the frozen rule share ${frozenRule.share}`,
       );
     }
+    // The family is the contract's (M11-13b): never discarded or substituted.
     try {
-      stageBContract(doc, args);
+      family = stageBContract(doc, args).family;
     } catch (e) {
       bad((e as Error).message);
     }
