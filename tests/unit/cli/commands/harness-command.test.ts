@@ -5565,6 +5565,51 @@ Deno.test("runCampaign: an LSP arm resolves when the image label matches the rep
   assertEquals((await run()).planned, 2);
   mockImage(`${lv.split(" ")[0]} ${"e".repeat(64)}`);
   await assertRejects(run, ConfigurationError, "differs from image");
+  // A version-only difference (correct hash) is refused too.
+  mockImage(`al-lsp@999 ${lv.split(" ")[1]}`);
+  await assertRejects(run, ConfigurationError, "al-lsp@999");
+});
+
+Deno.test("harnessCell: a stub cell's --image whose LSP label has the right hash but a wrong version is refused", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await Deno.mkdir(
+    join(t.repo.root, "harness", "images", "claude-code", "lsp"),
+    { recursive: true },
+  );
+  await Deno.copyFile(AL_LSP_DEF, join(t.repo.root, AL_LSP_DEF));
+  await Deno.writeTextFile(
+    join(t.repo.root, "harness", "configs", "cc-dev-lsp.yml"),
+    'id: cc-dev-lsp\nharness: claude-code\nharness_version: "2.1.282"\nimage_revision: "2"\nmodels: { main: anthropic/claude-sonnet-5 }\nsettings: {}\ncomponents: { lsp: [al] }\nlimits: { timeout_min: 30, max_budget_usd: 5 }\n',
+  );
+  const dev = `sha256:${"7".repeat(64)}`;
+  const [lk, lv] = (await lspLabel(t.repo.root))!;
+  t.docker.addImage(dev, dev, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+    "centralgauge.harness.revision": "2",
+    [lk]: `al-lsp@999 ${lv.split(" ")[1]}`,
+  });
+  t.docker.shipFile(dev, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  await assertRejects(
+    async () =>
+      await harnessCell(
+        "cc-dev-lsp",
+        "HX-001",
+        cellOpts(t, {
+          resultsDir: join(t.repo.root, "results", "harness"),
+          supervised: false,
+          stubProvider: await scenarioFile(t),
+          image: dev,
+        }),
+        rootedOpener(t),
+        () => false,
+        noInterrupt,
+      ),
+    ConfigurationError,
+    "al-lsp@999",
+  );
 });
 
 // M7-01: the CLI runs the same placedConcurrencyProblem gate as runCampaign.

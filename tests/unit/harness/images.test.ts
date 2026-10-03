@@ -939,3 +939,42 @@ Deno.test("runtimeFacts: frozen and pre-LSP images refuse an LSP arm", async () 
     "has no LSP component al",
   );
 });
+
+Deno.test("LSP label version: a correct hash with a wrong version is refused by imageFacts (shipped file) and runtimeFacts (repo file)", async () => {
+  const [k, v] = (await lspLabel("."))!;
+  const [version, hash] = v.split(" ");
+  const bad = `al-lsp@999 ${hash}`;
+  const d = new FakeDocker();
+  d.addImage("liar", ID, { ...LABELS, [k]: bad });
+  d.shipFile(ID, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  await assertRejects(
+    () => imageFacts(d, "liar", "HOST1"),
+    ConfigurationError,
+    "al-lsp@999",
+  );
+  // An image facts value that skipped the shipped check still meets the repo file.
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc-lsp",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    image_revision: "3",
+    models: { main: "anthropic/claude-sonnet-5" },
+    components: { lsp: ["al"] },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const image = {
+    digest: ID,
+    base_digest: BASE,
+    harness: "claude-code",
+    version: "2.1.282",
+    revision: "3",
+    lsp: { al: { version: "al-lsp@999", tool_schema_hash: hash! } },
+  };
+  const defs = await serverDefinitions(".", cfg.components);
+  const err = assertThrows(
+    () => runtimeFacts(cfg, image, claudeCodeAdapter, catalog, defs),
+    ConfigurationError,
+    "al-lsp@999",
+  );
+  assertStringIncludes(err.message, version!);
+});

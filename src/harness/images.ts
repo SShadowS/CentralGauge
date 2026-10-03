@@ -138,7 +138,7 @@ export async function imageFacts(
         owner,
         ref,
         AL_TOOLS_SHIPPED,
-        mcp["al-tools"].tool_schema_hash,
+        mcp["al-tools"],
         "rebuild the base image",
       );
     }
@@ -149,7 +149,7 @@ export async function imageFacts(
         owner,
         ref,
         AL_LSP_SHIPPED,
-        lsp["al"].tool_schema_hash,
+        lsp["al"],
         "rebuild the claude-code image",
       );
     }
@@ -172,14 +172,18 @@ async function verifyShipped(
   owner: string,
   ref: string,
   path: string,
-  want: string,
+  label: { version: string; tool_schema_hash: string },
   fix: string,
 ): Promise<void> {
+  const want = label.tool_schema_hash;
   const text = await docker.readImageFile(id, path, owner);
   let hash: string;
+  let version: unknown;
   try {
     if (text === null) throw new Error("not found");
-    hash = await hashJson(JSON.parse(text));
+    const def = JSON.parse(text);
+    hash = await hashJson(def);
+    version = def?.version;
   } catch (e) {
     throw new ConfigurationError(
       `image ${ref}: cannot read the shipped ${path} (${
@@ -190,6 +194,15 @@ async function verifyShipped(
   if (hash !== want) {
     throw new ConfigurationError(
       `image ${ref}: shipped ${path} hashes to ${hash}, which differs from its label ${want}: ${fix}`,
+    );
+  }
+  // The hash covers the version field, but the label's own version text is
+  // separate: a label may not claim a version the shipped file does not carry.
+  if (version !== label.version) {
+    throw new ConfigurationError(
+      `image ${ref}: label version ${label.version} differs from the shipped ${path} version ${
+        String(version)
+      }: ${fix}`,
     );
   }
 }
@@ -275,7 +288,10 @@ const readAlToolsDef = (root: string) =>
   readDef(root, AL_TOOLS_DEF, "al-tools tool definition");
 
 /** The repo's MCP definitions: per server, the definition hash (as in the image label) and its sorted tool names. */
-export type McpDefinitions = Record<string, { hash: string; tools: string[] }>;
+export type McpDefinitions = Record<
+  string,
+  { hash: string; tools: string[]; version?: string }
+>;
 
 export async function mcpDefinitions(root: string): Promise<McpDefinitions> {
   // One read: the hash and the tool names come from the same object.
@@ -297,6 +313,7 @@ export async function mcpDefinitions(root: string): Promise<McpDefinitions> {
   return {
     "al-tools": {
       hash: await hashJson(def),
+      version: def.version,
       tools: (names as string[]).sort(),
     },
   };
@@ -323,7 +340,7 @@ export async function lspLabel(
 /** The repo's LSP definition: the hash the label must carry; no MCP tool list. */
 export async function lspDefinitions(root: string): Promise<McpDefinitions> {
   const def = await readDef(root, AL_LSP_DEF, "AL LSP definition");
-  return { al: { hash: await hashJson(def), tools: [] } };
+  return { al: { hash: await hashJson(def), version: def.version, tools: [] } };
 }
 
 /** The definitions runtimeFacts needs for exactly the server kinds a config names. */
@@ -411,6 +428,11 @@ export function runtimeFacts(
     if (def.hash !== f.tool_schema_hash) {
       throw new ConfigurationError(
         `${config.id}: definition ${defFile} differs from image ${image.digest}: rebuild`,
+      );
+    }
+    if (def.version !== undefined && def.version !== f.version) {
+      throw new ConfigurationError(
+        `${config.id}: image ${image.digest} label version ${f.version} differs from ${defFile} version ${def.version}: rebuild`,
       );
     }
     servers[name] = f;
