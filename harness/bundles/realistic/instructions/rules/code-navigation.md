@@ -38,8 +38,11 @@ around them.
   publisher and version of each one. It does not list objects, procedures or
   events.
 - Use it to see which apps and versions are available, and compare that with
-  the `dependencies` in each `app.json`: a dependency that is not installed, or
-  is installed in an older version, will not resolve.
+  the `dependencies` in each `app.json`. Two steps need them in different
+  ways: compiling resolves each dependency from its symbol package, while
+  publishing and running tests need the dependency installed on the server. A
+  dependency that is missing from the list, or listed in an older version than
+  `app.json` asks for, fails at one of those steps.
 - To find out what an app in the repository offers, search its source. For a
   package without source here, rely on the objects your code already uses from
   it and on what the compiler reports.

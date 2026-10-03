@@ -12,7 +12,8 @@ This is our Business Central workspace. Everything you need is on this machine.
   - `cg-al compile [App ...]` compiles the named apps, or all of them.
   - `cg-al test [codeunit ...]` publishes the apps and runs the named test
     codeunits, or all of them.
-  - `cg-al symbols` lists the symbols of the installed packages.
+  - `cg-al symbols` lists the package names, publishers and versions installed
+    on the server.
 
 ## How we work
 
