@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "85940/AmpersandNameLeaseAmount": 1
+    "85940/AmpersandNameRentalCount": 1
+    "85940/RangeLikeNameRentalCount": 1
+    "85940/RangeLikeNameLeaseAmount": 1
+    "85940/PlainNameUnchanged": 1
+    "85940/WildcardNameRentalCount": 1
+    "85940/WildcardNameLeaseAmount": 1
+    "85940/ApostropheNameRentalCount": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
