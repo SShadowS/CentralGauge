@@ -285,6 +285,21 @@ export interface Comparison {
   p_value?: number | null;
   values?: { baseline: number | null; variant: number | null };
   zero_solve?: ZeroSolveRule;
+  /**
+   * Present only for the studentized bootstrap (M11-09b). `p_value` is then the
+   * bootstrap-t p, and the legacy `delta`, percentile `ci`, `distinguishable`
+   * and `undefined_share` stay as the percentile path computes them.
+   */
+  method?: "bootstrap-t";
+  /** Log ratio of aggregate cost per solved (variant over baseline); null when undefined. */
+  theta?: number | null;
+  se?: number | null;
+  t?: number | null;
+  /** Bootstrap-t interval for theta at `level`; null when suppressed. */
+  ci_log?: [number, number] | null;
+  ci_ratio?: [number, number] | null;
+  /** Share of resamples with an undefined (theta*, SE*). */
+  bt_undefined_share?: number;
 }
 
 export interface ExploratoryInterval {
@@ -353,6 +368,126 @@ export interface BootstrapOptions {
   level?: number;
   /** Default suppress_any_undefined (v1 rule 4). */
   zeroSolve?: ZeroSolveRule;
+  /**
+   * Inference method. Default "percentile" (the legacy path, byte-identical
+   * output). "bootstrap-t" (M11-09b) adds the studentized log-ratio inference
+   * and applies to cost_per_solved_task only.
+   */
+  method?: "percentile" | "bootstrap-t";
+}
+
+function checkMethod(opts: BootstrapOptions, metric: PrimaryMetric): void {
+  if (opts.method === "bootstrap-t" && metric !== "cost_per_solved_task") {
+    const msg = "bootstrap-t is defined for cost_per_solved_task";
+    throw new ValidationError(msg, [msg]);
+  }
+}
+
+/** One arm's signed contribution to a log-ratio contrast. */
+interface Term {
+  sign: 1 | -1;
+  stats: Map<string, TaskStat>;
+}
+
+/**
+ * Delta-method statistic of a log cost-per-solved contrast over a task sample
+ * (duplicates allowed), equal task weight. Per arm X with per-task mean spend
+ * c_X_i and solve rate s_X_i: C_X = mean_i c_X_i, S_X = mean_i s_X_i, and
+ * L_X = log(C_X / S_X).
+ *   theta = sum_X sign_X * L_X
+ *   influence_i = sum_X sign_X * [(c_X_i - C_X)/C_X - (s_X_i - S_X)/S_X]
+ *   SE = sd(influence) / sqrt(n), sd with the (n - 1) denominator.
+ * Pairwise: variant +1, baseline -1. Interaction: RL +1, R -1, L -1, P +1.
+ * Null (undefined) when n < 2, any C_X or S_X is 0 or non-finite, or SE is 0
+ * or non-finite.
+ */
+function logRatioStat(
+  terms: Term[],
+  sample: string[],
+): { theta: number; se: number } | null {
+  const n = sample.length;
+  if (n < 2) return null;
+  const infl = new Array<number>(n).fill(0);
+  let theta = 0;
+  for (const { sign, stats } of terms) {
+    const rows = sample.map((t) => stats.get(t)!);
+    const C = mean(rows.map((r) => r.spend));
+    const S = mean(rows.map((r) => r.solved));
+    if (!(C > 0 && S > 0 && Number.isFinite(C) && Number.isFinite(S))) {
+      return null;
+    }
+    theta += sign * (Math.log(C) - Math.log(S));
+    rows.forEach((r, i) => {
+      infl[i]! += sign * ((r.spend - C) / C - (r.solved - S) / S);
+    });
+  }
+  const mi = mean(infl);
+  const sdv = Math.sqrt(sum(infl.map((x) => (x - mi) ** 2)) / (n - 1));
+  const se = sdv / Math.sqrt(n);
+  if (!(se > 0) || !Number.isFinite(se) || !Number.isFinite(theta)) return null;
+  return { theta, se };
+}
+
+/**
+ * Adds the bootstrap-t fields (and its p_value) to a legacy comparison.
+ * Symmetric studentized bootstrap (orchestrator implementation ruling under
+ * decisions\2026-10-03-m11-inference-amendment.md). With t*_b = (theta*_b -
+ * theta_hat) / SE*_b over the n defined resamples and t_hat = theta_hat /
+ * SE_hat:
+ *   p = (#{|t*_b| >= |t_hat|} + 1) / (n + 1)
+ *   q = percentile(|t*|, level)
+ *   ci_log = [theta_hat - q * SE_hat, theta_hat + q * SE_hat]; ci_ratio = exp.
+ * The Bonferroni interval is the same at level 1 - alpha/m.
+ */
+function withBootstrapT(
+  res: Comparison,
+  terms: Term[],
+  tasks: string[],
+  resamples: number,
+  seed: number,
+  level: number,
+  rule: ZeroSolveRule,
+): Comparison {
+  const hat = logRatioStat(terms, tasks);
+  if (hat === null) {
+    return {
+      ...res,
+      method: "bootstrap-t",
+      theta: null,
+      se: null,
+      t: null,
+      ci_log: null,
+      ci_ratio: null,
+      bt_undefined_share: 1,
+      p_value: null,
+    };
+  }
+  const draws = drawTasks(tasks, resamples, seed, (sample) => {
+    const r = logRatioStat(terms, sample);
+    return r === null ? null : (r.theta - hat.theta) / r.se;
+  });
+  const ts = draws.values;
+  const tHat = hat.theta / hat.se;
+  const shown = allowed(rule, draws.undefined_share) && ts.length > 0;
+  const abs = ts.map(Math.abs);
+  const q = shown ? percentile(abs, level) : 0;
+  const ci_log: [number, number] | null = shown
+    ? [hat.theta - q * hat.se, hat.theta + q * hat.se]
+    : null;
+  const ge = abs.filter((x) => x >= Math.abs(tHat)).length;
+  return {
+    ...res,
+    method: "bootstrap-t",
+    theta: hat.theta,
+    se: hat.se,
+    t: tHat,
+    ci_log,
+    ci_ratio: ci_log === null
+      ? null
+      : [Math.exp(ci_log[0]), Math.exp(ci_log[1])],
+    bt_undefined_share: draws.undefined_share,
+    p_value: shown ? (ge + 1) / (ts.length + 1) : null,
+  };
 }
 
 /** The resample loop (one mulberry32 stream per seed): the same draws as v1 compareArms. */
@@ -456,6 +591,7 @@ export function compareArms(
 ): Comparison {
   checkCells(cells);
   checkBootstrapOptions(opts);
+  checkMethod(opts, metric);
   const resamples = opts.resamples ?? 2000;
   const seed = opts.seed ?? 1;
   const level = opts.level ?? 0.95;
@@ -514,25 +650,36 @@ export function compareArms(
       variant: statistic(metric, tasks.map((t) => sv.get(t)!)),
     },
   };
-  if (tasks.length === 0) {
-    return {
+  const rule = opts.zeroSolve ?? { rule: "suppress_any_undefined" as const };
+  const legacy: Comparison = tasks.length === 0
+    ? {
       ...base,
       delta: null,
       ci: null,
       undefined_share: 1,
       distinguishable: null,
       p_value: null,
-      zero_solve: opts.zeroSolve ?? { rule: "suppress_any_undefined" },
+      zero_solve: rule,
       exploratory_ci_defined_only: null,
-    };
-  }
-  return finish(
-    base,
-    delta(tasks),
-    drawTasks(tasks, resamples, seed, delta),
-    level,
-    opts.zeroSolve ?? { rule: "suppress_any_undefined" },
-  );
+    }
+    : finish(
+      base,
+      delta(tasks),
+      drawTasks(tasks, resamples, seed, delta),
+      level,
+      rule,
+    );
+  return opts.method === "bootstrap-t"
+    ? withBootstrapT(
+      legacy,
+      [{ sign: 1, stats: sv }, { sign: -1, stats: sb }],
+      tasks,
+      resamples,
+      seed,
+      level,
+      rule,
+    )
+    : legacy;
 }
 
 function finish(
@@ -593,6 +740,7 @@ export function compareInteraction(
 ): Comparison {
   checkCells(cells);
   checkBootstrapOptions(opts);
+  checkMethod(opts, metric);
   const resamples = opts.resamples ?? 2000;
   const seed = opts.seed ?? 1;
   const level = opts.level ?? 0.95;
@@ -639,25 +787,37 @@ export function compareInteraction(
     ),
     values: { baseline: null, variant: null },
   };
-  if (tasks.length === 0) {
-    return {
+  const rule = opts.zeroSolve ?? { rule: "suppress_any_undefined" as const };
+  const legacy: Comparison = tasks.length === 0
+    ? {
       ...base,
       delta: null,
       ci: null,
       undefined_share: 1,
       distinguishable: null,
       p_value: null,
-      zero_solve: opts.zeroSolve ?? { rule: "suppress_any_undefined" },
+      zero_solve: rule,
       exploratory_ci_defined_only: null,
-    };
-  }
-  return finish(
-    base,
-    f(tasks),
-    drawTasks(tasks, resamples, seed, f),
-    level,
-    opts.zeroSolve ?? { rule: "suppress_any_undefined" },
-  );
+    }
+    : finish(
+      base,
+      f(tasks),
+      drawTasks(tasks, resamples, seed, f),
+      level,
+      rule,
+    );
+  const signs = [1, -1, -1, 1] as const;
+  return opts.method === "bootstrap-t"
+    ? withBootstrapT(
+      legacy,
+      stats.map((m, i) => ({ sign: signs[i]!, stats: m })),
+      tasks,
+      resamples,
+      seed,
+      level,
+      rule,
+    )
+    : legacy;
 }
 
 export interface ContrastSpec {
@@ -673,6 +833,9 @@ export interface ContrastResult extends Comparison {
   p_holm: number | null;
   decision: Decision;
   bonferroni_ci: [number, number] | null;
+  /** Bootstrap-t interval at the Bonferroni level (bootstrap-t rows only). */
+  bonferroni_ci_log?: [number, number] | null;
+  bonferroni_ci_ratio?: [number, number] | null;
   ratio: number | null;
 }
 
@@ -689,6 +852,8 @@ export function testContrasts(
     alpha: number;
     zeroSolve: ZeroSolveRule;
     family: readonly string[];
+    /** Default "bootstrap-t" for cost_per_solved_task. */
+    method?: "percentile" | "bootstrap-t";
   },
 ): ContrastResult[] {
   checkAlpha(o.alpha);
@@ -702,7 +867,17 @@ export function testContrasts(
     }`;
     throw new ValidationError(msg, [msg]);
   }
-  const boot = { resamples: o.resamples, seed: o.seed, zeroSolve: o.zeroSolve };
+  // Confirmatory inference is bootstrap-t for the cost metric. The percentile
+  // fallback for other metrics keeps pass_rate callers working (bootstrap-t
+  // itself refuses pass_rate).
+  const method = o.method ??
+    (metric === "cost_per_solved_task" ? "bootstrap-t" : "percentile");
+  const boot = {
+    resamples: o.resamples,
+    seed: o.seed,
+    zeroSolve: o.zeroSolve,
+    method,
+  };
   const rows: {
     id: string;
     name: string;
@@ -751,17 +926,33 @@ export function testContrasts(
         p_holm: null,
         decision: "no_decision" as const,
         bonferroni_ci: null,
+        ...(method === "bootstrap-t"
+          ? { bonferroni_ci_log: null, bonferroni_ci_ratio: null }
+          : {}),
         ratio,
       };
     }
+    // One Bonferroni-level run serves the percentile and the bootstrap-t interval.
+    const bc = c.ci !== null || c.ci_log != null ? r.run(bonf) : null;
     return {
       ...c,
       id: r.id,
       name: r.name,
       confirmatory: true,
       p_holm: c.p_value == null ? null : h.adjusted[j]!,
-      decision: decide(c.delta, h.reject[j]!),
-      bonferroni_ci: c.ci === null ? null : r.run(bonf).ci,
+      // Bootstrap-t rows decide direction from theta (log scale); the dollar
+      // delta can differ in sign or vanish for the interaction.
+      decision: decide(
+        c.method === "bootstrap-t" ? c.theta ?? null : c.delta,
+        h.reject[j]!,
+      ),
+      bonferroni_ci: c.ci === null ? null : bc!.ci,
+      ...(method === "bootstrap-t"
+        ? {
+          bonferroni_ci_log: c.ci_log == null ? null : bc!.ci_log ?? null,
+          bonferroni_ci_ratio: c.ci_log == null ? null : bc!.ci_ratio ?? null,
+        }
+        : {}),
       ratio,
     };
   });

@@ -87,7 +87,25 @@ export const PreregSchema = z.strictObject({
   exploratory_metrics: z.array(z.string().min(1)).min(1),
   simulation: z.strictObject({
     script_sha256: Sha256Hex,
-    args: z.record(z.string(), z.number()),
+    // Every simulation argument is numeric except power_gate (M11-09b), an enum.
+    args: z.record(z.string(), z.union([z.number(), z.string()])).superRefine(
+      (args, ctx) => {
+        for (const [k, v] of Object.entries(args)) {
+          const ok = k === "power_gate"
+            ? v === "fitted" || v === "stress"
+            : typeof v === "number";
+          if (!ok) {
+            ctx.addIssue({
+              code: "custom",
+              path: [k],
+              message: k === "power_gate"
+                ? 'power_gate must be "fitted" or "stress"'
+                : "simulation args are numeric",
+            });
+          }
+        }
+      },
+    ),
   }),
   design_rule: z.string().trim().min(1),
   // Stage B keys: empty in stage A.
