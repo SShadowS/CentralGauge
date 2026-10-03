@@ -51,45 +51,98 @@ export function buildDiagnostics(
 
 export type FirstBuild = "ok" | "failed" | "no_build";
 
+/**
+ * Each metric is null when a build line lacks, or carries a malformed, field
+ * it reads (missing, never zero); the whole result is null when a line cannot
+ * be classified (no log, pre-M11, malformed op/outcome/build_ok).
+ */
 export interface BuildLogMetrics {
   builds: number;
-  test_runs: number;
-  build_ms: number;
+  /** null: a test build without a numeric tests_run. */
+  test_runs: number | null;
+  /** null: a build without a numeric spans.compile_ms. */
+  build_ms: number | null;
+  /** null: no build, or a build without a valid diagnostic_list. */
   distinct_diagnostics: number | null;
   unknown_symbol: number | null;
-  first_eligible: FirstBuild;
+  /** null: a build up to the first eligible one without a valid changed_apps. */
+  first_eligible: FirstBuild | null;
+}
+
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isNum = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v);
+
+function isDiag(v: unknown): v is BuildDiagnostic {
+  if (typeof v !== "object" || v === null) return false;
+  const x = v as Record<string, unknown>;
+  return isStr(x["app"]) && isStr(x["code"]) && isStr(x["file"]) &&
+    isNum(x["line"]) && (x["symbol"] === null || isStr(x["symbol"]));
 }
 
 export function buildLogMetrics(
   lines: readonly HostLogLine[] | undefined,
 ): BuildLogMetrics | null {
   if (lines === undefined) return null;
+  if (
+    lines.some((l) =>
+      typeof l !== "object" || l === null || !isStr(l.op) ||
+      !isStr(l.outcome)
+    )
+  ) return null;
   const done = lines.filter((l) =>
     (l.op === "compile" || l.op === "test") &&
     (l.outcome === "ok" || l.outcome === "failed")
   );
   if (done.some((l) => !("build_ok" in l))) return null;
+  if (
+    done.some((l) => typeof l.build_ok !== "boolean" && l.build_ok !== null)
+  ) {
+    return null;
+  }
   const builds = done.filter((l) => typeof l.build_ok === "boolean");
+  const diagsOk = builds.every((l) =>
+    Array.isArray(l.diagnostic_list) && l.diagnostic_list.every(isDiag)
+  );
   const keys = new Set<string>();
   const unknown = new Set<string>();
-  for (const l of builds) {
-    for (const x of l.diagnostic_list ?? []) {
-      const k = `${x.code}\u0000${x.file}\u0000${x.symbol ?? ""}`;
-      keys.add(k);
-      if (UNKNOWN_SYMBOL_CODES.includes(x.code)) unknown.add(k);
+  if (diagsOk) {
+    for (const l of builds) {
+      for (const x of l.diagnostic_list ?? []) {
+        const k = `${x.code}\u0000${x.file}\u0000${x.symbol ?? ""}`;
+        keys.add(k);
+        if (UNKNOWN_SYMBOL_CODES.includes(x.code)) unknown.add(k);
+      }
     }
   }
-  const first = builds.find((l) => (l.changed_apps ?? []).length > 0);
+  let first: FirstBuild | null = "no_build";
+  for (const l of builds) {
+    const changed: unknown = l.changed_apps;
+    if (!Array.isArray(changed) || !changed.every(isStr)) {
+      first = null;
+      break;
+    }
+    if (changed.length > 0) {
+      first = l.build_ok ? "ok" : "failed";
+      break;
+    }
+  }
+  const msOk = builds.every((l) =>
+    typeof l.spans === "object" && l.spans !== null &&
+    isNum(l.spans["compile_ms"])
+  );
+  const testsOk = builds.every((l) => l.op !== "test" || isNum(l.tests_run));
+  const burden = builds.length === 0 || !diagsOk;
   return {
     builds: builds.length,
-    test_runs: builds.filter((l) => l.op === "test" && l.tests_run > 0).length,
-    build_ms: builds.reduce((n, l) => n + (l.spans["compile_ms"] ?? 0), 0),
-    distinct_diagnostics: builds.length === 0 ? null : keys.size,
-    unknown_symbol: builds.length === 0 ? null : unknown.size,
-    first_eligible: first === undefined
-      ? "no_build"
-      : first.build_ok
-      ? "ok"
-      : "failed",
+    test_runs: testsOk
+      ? builds.filter((l) => l.op === "test" && l.tests_run > 0).length
+      : null,
+    build_ms: msOk
+      ? builds.reduce((n, l) => n + (l.spans["compile_ms"] ?? 0), 0)
+      : null,
+    distinct_diagnostics: burden ? null : keys.size,
+    unknown_symbol: burden ? null : unknown.size,
+    first_eligible: first,
   };
 }

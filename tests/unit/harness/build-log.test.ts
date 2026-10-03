@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import type { HostLogLine } from "../../../src/harness/backend.ts";
 import {
   buildDiagnostics,
+  type BuildLogMetrics,
   buildLogMetrics,
   diagSymbol,
   relDiagFile,
@@ -167,4 +168,109 @@ Deno.test("buildLogMetrics: dedupe by (code, file, symbol); first eligible build
     unknown_symbol: 2,
     first_eligible: "failed",
   });
+});
+
+// Run 002: incomplete or malformed structured lines are missing, never zero.
+type Raw = { [K in keyof HostLogLine]?: unknown };
+const raw = (
+  o: Partial<HostLogLine>,
+  mutate: (l: Raw) => void,
+): HostLogLine => {
+  const l = line(o) as unknown as Raw;
+  mutate(l);
+  return l as unknown as HostLogLine;
+};
+const complete: BuildLogMetrics = {
+  builds: 1,
+  test_runs: 0,
+  build_ms: 10,
+  distinct_diagnostics: 0,
+  unknown_symbol: 0,
+  first_eligible: "no_build",
+};
+
+Deno.test("buildLogMetrics run 002: missing or malformed diagnostic_list makes the burden missing", () => {
+  const cases: ((l: Raw) => void)[] = [
+    (l) => delete l.diagnostic_list,
+    (l) => l.diagnostic_list = "AL0118",
+    (l) => l.diagnostic_list = [{ ...d("AL0118", "C.al", "Foo"), code: 118 }],
+    (l) => l.diagnostic_list = [{ ...d("AL0118", "C.al", "Foo"), line: "1" }],
+    (l) => l.diagnostic_list = [{ code: "AL0118" }],
+    (l) => l.diagnostic_list = [null],
+  ];
+  for (const mutate of cases) {
+    assertEquals(buildLogMetrics([raw({}, mutate)]), {
+      ...complete,
+      distinct_diagnostics: null,
+      unknown_symbol: null,
+    });
+  }
+});
+
+Deno.test("buildLogMetrics run 002: missing or malformed changed_apps before the first eligible build makes it missing, not no_build", () => {
+  const cases: ((l: Raw) => void)[] = [
+    (l) => delete l.changed_apps,
+    (l) => l.changed_apps = "Core",
+    (l) => l.changed_apps = [1],
+  ];
+  for (const mutate of cases) {
+    assertEquals(buildLogMetrics([raw({}, mutate)]), {
+      ...complete,
+      first_eligible: null,
+    });
+    assertEquals(
+      buildLogMetrics([
+        raw({}, mutate),
+        line({ request: "br_2", changed_apps: ["Core"], build_ok: true }),
+      ]),
+      { ...complete, builds: 2, build_ms: 20, first_eligible: null },
+    );
+  }
+});
+
+Deno.test("buildLogMetrics run 002: missing or malformed compile_ms makes build_ms missing", () => {
+  const cases: ((l: Raw) => void)[] = [
+    (l) => l.spans = {},
+    (l) => l.spans = { compile_ms: "10" },
+    (l) => l.spans = { compile_ms: Number.NaN },
+    (l) => l.spans = null,
+    (l) => delete l.spans,
+  ];
+  for (const mutate of cases) {
+    assertEquals(buildLogMetrics([raw({}, mutate)]), {
+      ...complete,
+      build_ms: null,
+    });
+  }
+});
+
+Deno.test("buildLogMetrics run 002: malformed tests_run on a test build makes test_runs missing", () => {
+  for (
+    const mutate of [
+      (l: Raw) => l.tests_run = "3",
+      (l: Raw) => delete l.tests_run,
+    ]
+  ) {
+    assertEquals(buildLogMetrics([raw({ op: "test" }, mutate)]), {
+      ...complete,
+      test_runs: null,
+    });
+  }
+});
+
+Deno.test("buildLogMetrics run 002: a malformed build_ok, op or outcome makes the whole cell missing", () => {
+  const cases: ((l: Raw) => void)[] = [
+    (l) => l.build_ok = "true",
+    (l) => l.build_ok = 1,
+    (l) => l.build_ok = undefined,
+    (l) => l.op = 7,
+    (l) => l.outcome = null,
+  ];
+  for (const mutate of cases) {
+    assertEquals(buildLogMetrics([raw({}, mutate)]), null);
+  }
+  assertEquals(
+    buildLogMetrics([null as unknown as HostLogLine]),
+    null,
+  );
 });
