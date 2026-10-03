@@ -140,10 +140,11 @@ import {
   IMAGE_LABELS,
   imageFacts,
   imageTag,
-  mcpDefinitions,
+  lspLabel,
   mcpFacts,
   mcpLabel,
   runtimeFacts,
+  serverDefinitions,
 } from "../../src/harness/images.ts";
 import { manifestHash, resolveManifest } from "../../src/harness/manifest.ts";
 import {
@@ -612,16 +613,18 @@ export async function harnessCell(
       config,
       await imageFacts(
         env.docker,
-        imageTag(
-          config.harness,
-          config.harness_version,
-          config.image_revision,
-        ),
+        // A stub cell's --image is the image under proof (dev tags).
+        o.image ??
+          imageTag(
+            config.harness,
+            config.harness_version,
+            config.image_revision,
+          ),
         env.owner,
       ),
       adapter,
       catalog,
-      config.components.mcp.length > 0 ? await mcpDefinitions(o.root) : {},
+      await serverDefinitions(o.root, config.components),
     );
     const armManifest = await resolveManifest(env.harnessRoot, config, facts);
     const at = await loadTaskAt(
@@ -957,6 +960,7 @@ export async function harnessImagesBuild(
     );
   }
   const tag = imageTag(harness, o.version, o.revision);
+  const lspL = harness === "claude-code" ? await lspLabel(o.root) : null;
   await refuseExisting(tag, "use a new --version or --revision");
   const code = await docker.build([
     "build",
@@ -975,6 +979,7 @@ export async function harnessImagesBuild(
     ...(o.revision === undefined
       ? []
       : ["--label", `${IMAGE_LABELS.revision}=${o.revision}`]),
+    ...(lspL ? ["--label", `${lspL[0]}=${lspL[1]}`] : []),
     "-t",
     tag,
     join(images, harness),
@@ -994,6 +999,16 @@ export async function harnessImagesBuild(
       `${tag}: label ${IMAGE_LABELS.revision} is ${
         f.revision ?? "absent"
       }, the build asked for ${o.revision ?? "none"}`,
+    );
+  }
+  if (
+    lspL &&
+    `${f.lsp?.["al"]?.version} ${f.lsp?.["al"]?.tool_schema_hash}` !== lspL[1]
+  ) {
+    throw new ConfigurationError(
+      `${tag}: label ${lspL[0]} did not land on the built image (want "${
+        lspL[1]
+      }")`,
     );
   }
   console.log(`${colors.green("[OK]")} ${tag} = ${f.digest} (base ${base.Id})`);

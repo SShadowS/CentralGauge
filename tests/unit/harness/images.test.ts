@@ -14,13 +14,17 @@ import {
 } from "../../../src/harness/config.ts";
 import { hashJson } from "../../../src/harness/hash.ts";
 import {
+  AL_LSP_DEF,
+  AL_LSP_SHIPPED,
   AL_TOOLS_SHIPPED,
   hasBaseLayers,
   imageFacts,
   imageTag,
+  lspLabel,
   mcpDefinitions,
   mcpLabel,
   runtimeFacts,
+  serverDefinitions,
 } from "../../../src/harness/images.ts";
 import {
   imageReadCreateArgs,
@@ -793,4 +797,184 @@ Deno.test("al-lsp.json: an exact manifest of every installed .exe under C:\\cg-l
       at('WriteAllText("$plugin\\.claude-plugin\\plugin.json"'),
     "the manifest check runs after the last install step",
   );
+});
+
+Deno.test("lspLabel: the value is al-lsp.json's version and its hashJson; no file, no label", async () => {
+  const [k, v] = (await lspLabel("."))!;
+  assertEquals(k, "centralgauge.lsp.al");
+  const def = JSON.parse(await Deno.readTextFile(AL_LSP_DEF));
+  assertEquals(v, `${def.version} ${await hashJson(def)}`);
+  assertEquals(await lspLabel(await Deno.makeTempDir()), null);
+});
+
+Deno.test("imageFacts: an LSP label needs the shipped al-lsp.json to hash to it; unknown LSP labels refused", async () => {
+  const [k, v] = (await lspLabel("."))!;
+  const shipped = await Deno.readTextFile(AL_LSP_DEF);
+  const d = new FakeDocker();
+  d.addImage("ok", ID, { ...LABELS, [k]: v });
+  d.shipFile(ID, AL_LSP_SHIPPED, shipped);
+  assertEquals(
+    Object.keys((await imageFacts(d, "ok", "HOST1")).lsp ?? {}),
+    ["al"],
+  );
+  const other = `sha256:${"e".repeat(64)}`;
+  const def = JSON.parse(shipped);
+  def.lsp_json.al.args = [...def.lsp_json.al.args, "--extra"];
+  d.addImage("drift", other, { ...LABELS, [k]: v });
+  d.shipFile(other, AL_LSP_SHIPPED, JSON.stringify(def));
+  await assertRejects(
+    () => imageFacts(d, "drift", "HOST1"),
+    ConfigurationError,
+    "differs from its label",
+  );
+  d.addImage("none", `sha256:${"f".repeat(64)}`, { ...LABELS, [k]: v });
+  await assertRejects(
+    () => imageFacts(d, "none", "HOST1"),
+    ConfigurationError,
+    "cannot read",
+  );
+  d.addImage("unknown", `sha256:${"c".repeat(64)}`, {
+    ...LABELS,
+    "centralgauge.lsp.pyright": v,
+  });
+  await assertRejects(
+    () => imageFacts(d, "unknown", "HOST1"),
+    ConfigurationError,
+    "unknown LSP component",
+  );
+  d.addImage("plain", `sha256:${"9".repeat(64)}`, LABELS);
+  assertEquals((await imageFacts(d, "plain", "HOST1")).lsp, undefined);
+});
+
+Deno.test("runtimeFacts: an LSP arm needs the image's LSP label and the repo definition with the same hash", () => {
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc-lsp",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    image_revision: "3",
+    models: { main: "anthropic/claude-sonnet-5" },
+    components: { lsp: ["al"] },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const image = {
+    digest: ID,
+    base_digest: BASE,
+    harness: "claude-code",
+    version: "2.1.282",
+    revision: "3",
+  };
+  assertThrows(
+    () => runtimeFacts(cfg, image, claudeCodeAdapter, catalog),
+    ConfigurationError,
+    "has no LSP component al",
+  );
+  const lsp = { al: { version: "al-lsp@1", tool_schema_hash: "1".repeat(64) } };
+  assertThrows(
+    () => runtimeFacts(cfg, { ...image, lsp }, claudeCodeAdapter, catalog),
+    ConfigurationError,
+    "no repo definition loaded for LSP component al",
+  );
+  assertThrows(
+    () =>
+      runtimeFacts(cfg, { ...image, lsp }, claudeCodeAdapter, catalog, {
+        al: { hash: "2".repeat(64), tools: [] },
+      }),
+    ConfigurationError,
+    "differs from image",
+  );
+  const f = runtimeFacts(cfg, { ...image, lsp }, claudeCodeAdapter, catalog, {
+    al: { hash: "1".repeat(64), tools: [] },
+  });
+  assertEquals(f.servers, lsp);
+  assertEquals(f.native_settings["mcp_tools"], undefined);
+});
+
+Deno.test("serverDefinitions: only the kinds a config names; the LSP definition lists no MCP tools", async () => {
+  assertEquals(await serverDefinitions(".", { mcp: [], lsp: [] }), {});
+  const both = await serverDefinitions(".", { mcp: ["al-tools"], lsp: ["al"] });
+  assertEquals(Object.keys(both).sort(), ["al", "al-tools"]);
+  assertEquals(both["al"]!.tools, []);
+  assertEquals(both["al"]!.hash, (await lspLabel("."))![1].split(" ")[1]);
+});
+
+Deno.test("serverDefinitions: a name in both mcp and lsp is refused, not overwritten", async () => {
+  await assertRejects(
+    () => serverDefinitions(".", { mcp: ["al"], lsp: ["al"] }),
+    ConfigurationError,
+    "both MCP and LSP",
+  );
+});
+
+Deno.test("runtimeFacts: frozen and pre-LSP images refuse an LSP arm", async () => {
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc-lsp",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    image_revision: "3",
+    models: { main: "anthropic/claude-sonnet-5" },
+    components: { lsp: ["al"] },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const defs = await serverDefinitions(".", cfg.components);
+  const d = new FakeDocker();
+  // Frozen: no revision label, no LSP label.
+  d.addImage("frozen", ID, LABELS);
+  const frozen = await imageFacts(d, "frozen", "HOST1");
+  assertEquals(frozen.revision, null);
+  assertThrows(
+    () => runtimeFacts(cfg, frozen, claudeCodeAdapter, catalog, defs),
+    ConfigurationError,
+    "has no revision",
+  );
+  // Revisioned but pre-LSP: no centralgauge.lsp.al label.
+  const preId = `sha256:${"d".repeat(64)}`;
+  d.addImage("pre", preId, {
+    ...LABELS,
+    "centralgauge.harness.revision": "3",
+  });
+  const pre = await imageFacts(d, "pre", "HOST1");
+  assertThrows(
+    () => runtimeFacts(cfg, pre, claudeCodeAdapter, catalog, defs),
+    ConfigurationError,
+    "has no LSP component al",
+  );
+});
+
+Deno.test("LSP label version: a correct hash with a wrong version is refused by imageFacts (shipped file) and runtimeFacts (repo file)", async () => {
+  const [k, v] = (await lspLabel("."))!;
+  const [version, hash] = v.split(" ");
+  const bad = `al-lsp@999 ${hash}`;
+  const d = new FakeDocker();
+  d.addImage("liar", ID, { ...LABELS, [k]: bad });
+  d.shipFile(ID, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  await assertRejects(
+    () => imageFacts(d, "liar", "HOST1"),
+    ConfigurationError,
+    "al-lsp@999",
+  );
+  // An image facts value that skipped the shipped check still meets the repo file.
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc-lsp",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    image_revision: "3",
+    models: { main: "anthropic/claude-sonnet-5" },
+    components: { lsp: ["al"] },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const image = {
+    digest: ID,
+    base_digest: BASE,
+    harness: "claude-code",
+    version: "2.1.282",
+    revision: "3",
+    lsp: { al: { version: "al-lsp@999", tool_schema_hash: hash! } },
+  };
+  const defs = await serverDefinitions(".", cfg.components);
+  const err = assertThrows(
+    () => runtimeFacts(cfg, image, claudeCodeAdapter, catalog, defs),
+    ConfigurationError,
+    "al-lsp@999",
+  );
+  assertStringIncludes(err.message, version!);
 });
