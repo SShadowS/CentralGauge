@@ -15,7 +15,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 85640, procedures: [LateWeekdayReturnCharged, WeekendDaysNotCounted, HolidayNotCounted, ReturnOnEndDateHasNoLine, WeekendOnlyLatenessHasNoLine, PostedFeeUsesReturnDate, ReturnRecordsReturnDate, ZeroFeeHasNoLine, BatchPostedFeeIncluded, WeekendPackageAlsoCharged] }
+    - { codeunit: 85640, procedures: [LateWeekdayReturnCharged, WeekendDaysNotCounted, HolidayNotCounted, ReturnOnEndDateHasNoLine, WeekendOnlyLatenessHasNoLine, PostedFeeUsesReturnDate, ReturnRecordsReturnDate, ZeroFeeHasNoLine, BatchPostedFeeIncluded, WeekendPackageAlsoCharged, LateLineUsesSetupPrecision] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

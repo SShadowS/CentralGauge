@@ -11,6 +11,7 @@ partial_credit:
     "85640/ZeroFeeHasNoLine": 1
     "85640/BatchPostedFeeIncluded": 1
     "85640/WeekendPackageAlsoCharged": 1
+    "85640/LateLineUsesSetupPrecision": 1
   hidden_regressions: []
 reuse:
   targets:

@@ -205,7 +205,31 @@ codeunit 85640 "HX009 Late Return Oracle"
         Assert.AreEqual(124.69, Preview.TotalAmount(PreviewLine), 'Package plus late return');
     end;
 
+    [Test]
+    procedure LateLineUsesSetupPrecision()
+    var
+        PreviewLine: Record "CGR Invoice Preview Line";
+        Preview: Codeunit "CGR Rental Invoice Preview";
+        ContractNo: Code[20];
+    begin
+        WorkDate(20270301D);
+        InitSetupAtPrecision(12.345, 1);
+        ClearHolidays();
+        InitVehicle('HX009-K');
+        ContractNo := ReturnedContract('HX009-K', 20270303D, 20270305D, 20270308D);
+
+        Preview.BuildPreview(ContractNo, PreviewLine);
+        Assert.AreEqual(2, PreviewLine.Count(), 'Rental days and late return');
+        AssertLateLine(PreviewLine, 1, 12);
+        Assert.AreEqual(162, Preview.TotalAmount(PreviewLine), 'Rental days 150 plus the late return line at whole units');
+    end;
+
     local procedure InitSetup(LateFeePerDay: Decimal)
+    begin
+        InitSetupAtPrecision(LateFeePerDay, 0.01);
+    end;
+
+    local procedure InitSetupAtPrecision(LateFeePerDay: Decimal; RoundingPrecision: Decimal)
     var
         Setup: Record "CGR Setup";
         SessionContext: Codeunit "CGR Session Context";
@@ -215,7 +239,7 @@ codeunit 85640 "HX009 Late Return Oracle"
         Setup."Km Allowance per Day" := 1000;
         Setup."Excess Km Rate" := 0;
         Setup."Suspend Rentals" := false;
-        Setup."Amount Rounding Precision" := 0.01;
+        Setup."Amount Rounding Precision" := RoundingPrecision;
         Setup."Default Branch Code" := '';
         Setup."Late Fee per Day" := LateFeePerDay;
         Setup.Modify();
