@@ -729,3 +729,144 @@ Deno.test("tasksGlob: exact ids", () => {
   );
   assertEquals(tasksGlob(["HX-007"]), "harness-tasks/tasks/HX-007");
 });
+
+// ---- Run 002 (review M8-02-001): history order, and ledger anchors read
+// from real git repos with a local bare origin (nothing leaves the machine).
+
+import { assertRejects } from "@std/assert";
+import { join } from "@std/path";
+import { stringify } from "@std/yaml";
+import { loadLedgerAnchors } from "../../../scripts/harness/screening.ts";
+import { tempDir } from "./temp-dirs.ts";
+
+const START = "harness-v2-screen-start";
+
+async function sh(cwd: string, ...args: string[]): Promise<string> {
+  const out = await new Deno.Command("git", {
+    args: [
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@example.invalid",
+      "-c",
+      "core.autocrlf=false",
+      ...args,
+    ],
+    cwd,
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!out.success) {
+    throw new Error(
+      `git ${args.join(" ")}: ${new TextDecoder().decode(out.stderr)}`,
+    );
+  }
+  return new TextDecoder().decode(out.stdout).trim();
+}
+
+/** Scratch repo + bare origin: the start seal and its -ledger tag, both pushed. */
+async function sealedRepo(opts: { lightweight?: boolean } = {}) {
+  const dir = await tempDir({ prefix: "cg-screening-" });
+  const origin = join(dir, "origin.git");
+  const repo = join(dir, "repo");
+  await Deno.mkdir(join(repo, "harness-tasks", "tasks", "HX-007"), {
+    recursive: true,
+  });
+  await Deno.mkdir(join(repo, "harness-tasks", "v2"), { recursive: true });
+  await sh(dir, "init", "-q", "--bare", origin);
+  await sh(repo, "init", "-q");
+  await sh(repo, "remote", "add", "origin", origin);
+  await Deno.writeTextFile(
+    join(repo, "harness-tasks", "tasks", "HX-007", "task.yml"),
+    "id: HX-007\n",
+  );
+  await sh(repo, "add", "-A");
+  await sh(repo, "commit", "-q", "-m", "seal");
+  await sh(repo, "tag", ...(opts.lightweight ? [] : ["-a", "-m", "s"]), START);
+  await sh(repo, "push", "-q", "origin", START);
+  const entry: SealEntry = {
+    ...SEAL0,
+    tag_object: await sh(repo, "rev-parse", `refs/tags/${START}`),
+    commit: await sh(repo, "rev-parse", `${START}^{commit}`),
+  };
+  const writeLedger = async (seals: SealEntry[], msg: string) => {
+    await Deno.writeTextFile(
+      join(repo, "harness-tasks", "v2", "seals.yml"),
+      stringify({ v: 2, seals }),
+    );
+    await sh(repo, "add", "-A");
+    await sh(repo, "commit", "-q", "-m", msg);
+  };
+  await writeLedger([entry], "ledger");
+  await sh(repo, "tag", "-a", "-m", "l", `${START}-ledger`);
+  await sh(repo, "push", "-q", "origin", `${START}-ledger`);
+  return { repo, entry, writeLedger };
+}
+
+Deno.test("screeningHistory (run 002): campaigns sort by instant, not as text", () => {
+  const h = screeningHistory([
+    {
+      id: "c1",
+      experiment: "v2-screen-2",
+      created_at: "2026-10-25T00:00:00.100Z",
+      cells: six("HX-008", 3),
+    },
+    {
+      id: "c2",
+      experiment: "v2-screen-1",
+      created_at: "2026-10-25T00:00:00Z",
+      cells: incomplete("HX-008"),
+    },
+  ], RULES);
+  assertEquals(h.problems, []);
+  assertEquals(tally(h.cells, RULES).get("HX-008"), {
+    solved: 3,
+    scored: 6,
+    complete: true,
+  });
+});
+
+Deno.test("loadLedgerAnchors (run 002): origin is authoritative; a moved local -ledger tag is a problem", async () => {
+  const { repo, entry, writeLedger } = await sealedRepo();
+  assertEquals(
+    await ledgerProblems([entry], await loadLedgerAnchors(repo, [entry])),
+    [],
+  );
+  // Rewrite the ledger and move the LOCAL -ledger tag onto it; origin keeps
+  // the original tag object.
+  const forged = { ...entry, randomness: "f".repeat(64) };
+  await writeLedger([forged], "rewrite");
+  await sh(repo, "tag", "-f", "-a", "-m", "moved", `${START}-ledger`);
+  const p = await ledgerProblems(
+    [forged],
+    await loadLedgerAnchors(repo, [forged]),
+  );
+  assert(
+    p.some((x) =>
+      x.startsWith(`${START}-ledger: local tag object `) &&
+      x.includes("differs from origin")
+    ),
+    p.join("\n"),
+  );
+  assert(
+    p.includes(`${START}: entry differs from ${START}-ledger`),
+    p.join("\n"),
+  );
+});
+
+Deno.test("loadLedgerAnchors (run 002): an unreadable rev is not treated as an absent ledger", async () => {
+  const { repo, entry } = await sealedRepo();
+  const c = await sh(repo, "rev-parse", `${START}-ledger^{commit}`);
+  await Deno.remove(join(repo, ".git", "objects", c.slice(0, 2), c.slice(2)));
+  await assertRejects(() => loadLedgerAnchors(repo, [entry]), ValidationError);
+});
+
+Deno.test("loadLedgerAnchors (run 002): a lightweight seal tag is a problem", async () => {
+  const { repo, entry } = await sealedRepo({ lightweight: true });
+  assertEquals(entry.tag_object, entry.commit);
+  const p = await ledgerProblems(
+    [entry],
+    await loadLedgerAnchors(repo, [entry]),
+  );
+  assert(p.includes(`${START}: not an annotated tag`), p.join("\n"));
+});

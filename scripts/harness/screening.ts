@@ -25,6 +25,7 @@ import { validateCampaignRecords } from "../../src/harness/integrity.ts";
 import { cellsFromRecords } from "../../src/harness/outcome.ts";
 import {
   CampaignRecordSchema,
+  compareInstant,
   RecordStore,
 } from "../../src/harness/records.ts";
 import {
@@ -191,6 +192,11 @@ export interface LedgerAnchors {
    * discovered independently of HEAD, mapped to seals.yml at that tag (null if absent).
    */
   published: Map<string, SealEntry[] | null>;
+  /**
+   * Run 002: problems found while reading the anchors (a local tag object
+   * that differs from origin's, a tag that is not annotated).
+   */
+  problems?: string[];
 }
 
 /**
@@ -205,12 +211,14 @@ export async function ledgerProblems(
   head: SealEntry[],
   a: LedgerAnchors,
 ): Promise<string[]> {
-  const out: string[] = [];
+  const out: string[] = [...(a.problems ?? [])];
   for (const [i, e] of head.entries()) {
     const prev = i === 0 ? "genesis" : await entryHash(head[i - 1]!);
     if (e.prev !== prev) {
       out.push(`${e.tag}: prev does not hash the entry before it`);
     }
+    // A lightweight tag has no tag object of its own (run 002).
+    if (e.tag_object === e.commit) out.push(`${e.tag}: not an annotated tag`);
     const r = a.refs.get(e.tag);
     if (!r || r.tag_object !== e.tag_object || r.commit !== e.commit) {
       out.push(
@@ -249,7 +257,7 @@ export async function ledgerProblems(
       );
     }
   }
-  return out;
+  return [...new Set(out)];
 }
 
 /**
@@ -456,7 +464,7 @@ export function screeningHistory(
   const latest = new Map<string, Cell[]>();
   const screens = new Map<string, number>();
   const order = [...campaigns].sort((a, b) =>
-    a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)
+    compareInstant(a.created_at, b.created_at) || a.id.localeCompare(b.id)
   );
   for (const c of order) {
     for (const t of new Set(c.cells.map((x) => x.task))) {
@@ -774,66 +782,91 @@ export async function loadLedgerAnchors(
   root: string,
   head: SealEntry[],
 ): Promise<LedgerAnchors> {
+  const problems = new Set<string>();
   const a: LedgerAnchors = {
     refs: new Map(),
     atSeal: new Map(),
     atLedger: new Map(),
     published: new Map(),
   };
+  // Run 002: null only on a confirmed path absence (the commit is readable,
+  // the path is not in it); any other git failure throws.
   const ledgerAt = async (rev: string): Promise<SealEntry[] | null> => {
-    const text = await tryGit(root, ["show", `${rev}:${SEALS_PATH}`]);
-    return text === null ? null : SealsSchema.parse(parse(text)).seals;
+    if (
+      await tryGit(root, ["cat-file", "-e", `${rev}:${SEALS_PATH}`]) === null
+    ) {
+      await git(root, ["cat-file", "-e", `${rev}^{commit}`]);
+      return null;
+    }
+    const text = await git(root, ["show", `${rev}:${SEALS_PATH}`]);
+    return SealsSchema.parse(parse(text)).seals;
   };
-  // Independent of HEAD: every ledger tag on origin AND locally (union). A tag on
-  // origin that is missing locally is fetched first (`git fetch origin tag <t>`);
-  // if origin cannot be reached the check throws (never treated as "no tags").
-  const remote = await git(root, [
-    "ls-remote",
-    "--tags",
-    "origin",
-    "refs/tags/harness-v2-screen-*-ledger",
-  ]);
+  // Independent of HEAD, origin is authoritative (run 002): the tag object
+  // origin advertises is the one read, for seal and ledger tags alike; a local
+  // tag that names another object is a problem. The object is fetched when
+  // absent (no local ref is written). If origin cannot be reached the check
+  // throws (never treated as "no tags").
+  const origin = new Map<string, string>();
+  for (
+    const line of (await git(root, [
+      "ls-remote",
+      "--tags",
+      "origin",
+      "refs/tags/harness-v2-screen-*",
+    ])).split("\n")
+  ) {
+    const m = line.trim().match(/^([0-9a-f]{40})\trefs\/tags\/(\S+)$/);
+    if (m && !m[2]!.endsWith("^{}")) origin.set(m[2]!, m[1]!);
+  }
+  const localRef = (t: string) =>
+    tryGit(root, ["rev-parse", "--verify", "--quiet", `refs/tags/${t}`]);
+  for (const [t, obj] of [...origin].sort(([x], [y]) => x.localeCompare(y))) {
+    const local = await localRef(t);
+    if (local !== null && local !== obj) {
+      problems.add(
+        `${t}: local tag object ${local} differs from origin ${obj}`,
+      );
+    }
+    if (await tryGit(root, ["cat-file", "-e", obj]) === null) {
+      await git(root, ["fetch", "--no-tags", "origin", `refs/tags/${t}`]);
+      await git(root, ["cat-file", "-e", obj]);
+    }
+  }
+  /** Tag object of `t` (origin's, else the local one), null when neither has it. */
+  const resolve = async (t: string): Promise<string | null> => {
+    const obj = origin.get(t) ?? await localRef(t);
+    if (obj === null) return null;
+    if ((await git(root, ["cat-file", "-t", obj])).trim() !== "tag") {
+      problems.add(`${t}: not an annotated tag`);
+    }
+    return obj;
+  };
   const local = (await git(root, ["tag", "-l", "harness-v2-screen-*-ledger"]))
-    .split("\n");
+    .split("\n").map((t) => t.trim());
   const names = new Set(
-    [
-      ...remote.split("\n").map((l) =>
-        l.split("refs/tags/")[1]?.replace(/\^\{\}$/, "")
-      ),
-      ...local,
-    ].filter((t): t is string => !!t && t.endsWith("-ledger")),
+    [...origin.keys(), ...local].filter((t) => t.endsWith("-ledger")),
   );
   for (const t of [...names].sort()) {
-    if (
-      await tryGit(root, ["rev-parse", "--verify", `refs/tags/${t}`]) === null
-    ) {
-      await git(root, ["fetch", "origin", "tag", t, "--no-tags"]);
-    }
-    const c = await tryGit(root, ["rev-parse", "--verify", `${t}^{commit}`]);
-    a.published.set(t, c === null ? null : await ledgerAt(c));
+    const obj = await resolve(t);
+    a.published.set(t, obj === null ? null : await ledgerAt(`${obj}^{commit}`));
   }
   for (const e of head) {
-    const obj = await tryGit(root, [
-      "rev-parse",
-      "--verify",
-      `refs/tags/${e.tag}`,
-    ]);
-    const commit = await tryGit(root, [
-      "rev-parse",
-      "--verify",
-      `${e.tag}^{commit}`,
-    ]);
-    if (obj !== null && commit !== null) {
+    const obj = await resolve(e.tag);
+    if (obj === null) {
+      a.atSeal.set(e.tag, null);
+    } else {
+      const commit =
+        (await git(root, ["rev-parse", "--verify", `${obj}^{commit}`])).trim();
       a.refs.set(e.tag, { tag_object: obj, commit });
+      a.atSeal.set(e.tag, await ledgerAt(commit));
     }
-    a.atSeal.set(e.tag, commit === null ? null : await ledgerAt(commit));
-    const led = await tryGit(root, [
-      "rev-parse",
-      "--verify",
-      `${e.tag}-ledger^{commit}`,
-    ]);
-    a.atLedger.set(e.tag, led === null ? null : await ledgerAt(led));
+    const led = await resolve(`${e.tag}-ledger`);
+    a.atLedger.set(
+      e.tag,
+      led === null ? null : await ledgerAt(`${led}^{commit}`),
+    );
   }
+  a.problems = [...problems];
   return a;
 }
 
