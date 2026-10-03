@@ -1,0 +1,14 @@
+v: 1
+partial_credit:
+  weights:
+    "85980/BranchSharedAcrossInstances": 1
+    "85980/SetThroughSessionReadThroughBranch": 1
+    "85980/SetThroughBranchReadThroughSession": 1
+    "85980/ResetClearsBranchContext": 1
+    "85980/DefaultFollowsLoadedSetup": 1
+    "85980/RefreshKeepsExplicitBranch": 1
+    "85980/NewContractTakesBranchContextBranch": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
