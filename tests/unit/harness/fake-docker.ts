@@ -122,8 +122,12 @@ export class FakeDocker implements DockerCli {
   lastCapture: Capture | null = null;
   /** Like the entrypoints: hold the behavior until the secrets mount holds ready (or a kill). */
   waitForReady = false;
-  /** Lines printed before the ready wait (run.ps1's inventory); `exit` ends the run there with that code. */
-  preReady: { lines: string[]; exit?: number } | null = null;
+  /**
+   * Lines printed before the ready wait (run.ps1's inventory); `exit` ends the run there with that code.
+   * `unterminated`: written after the lines with no trailing newline (M9-05b run 003).
+   */
+  preReady: { lines: string[]; exit?: number; unterminated?: string } | null =
+    null;
   /** Whether a run ever saw ready in its secrets mount. */
   readySeen = false;
   /** A run killed while waiting for ready: its secrets mount at that moment. */
@@ -187,9 +191,9 @@ export class FakeDocker implements DockerCli {
       // Like run.ps1's inventory: printed in one write before the ready wait.
       if (this.preReady) {
         const lines = this.preReady.lines;
-        if (lines.length > 0) {
-          await out.write(new TextEncoder().encode(lines.join("\n") + "\n"));
-        }
+        const text = (lines.length > 0 ? lines.join("\n") + "\n" : "") +
+          (this.preReady.unterminated ?? "");
+        if (text !== "") await out.write(new TextEncoder().encode(text));
         if (this.preReady.exit !== undefined) return this.preReady.exit;
       }
       if (this.waitForReady) {

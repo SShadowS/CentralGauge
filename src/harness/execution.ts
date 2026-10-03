@@ -35,7 +35,12 @@ import {
   requestedComponents,
 } from "./adapter.ts";
 import { adapterFor } from "./adapters/mod.ts";
-import { inventoried } from "./adapters/claude-code.ts";
+import {
+  inventoried,
+  INVENTORY_KEYS,
+  strings,
+} from "./adapters/claude-code.ts";
+import { readRecords } from "./adapters/jsonl.ts";
 import { piConfigInvalid } from "./adapters/pi.ts";
 import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, DeployContext } from "./bc-lane.ts";
@@ -196,6 +201,8 @@ export interface HarnessEnv {
   timeoutMsFor?: (minutes: number) => number;
   killGraceMs?: number;
   opTimeoutMs?: number;
+  /** Test seam: the inventory wait deadline (default PREFLIGHT_TIMEOUT_MS, 180 s). */
+  inventoryTimeoutMs?: number;
   maxCaptureBytes?: number;
   /**
    * Stub-provider cell (M2-08): a dir holding stub-anthropic.mjs and
@@ -1777,6 +1784,7 @@ export async function runExecution(
           adapter,
           manifest,
           () => runEnded || stop.aborted,
+          env.inventoryTimeoutMs ?? PREFLIGHT_TIMEOUT_MS,
         );
         if (stop.aborted) {
           // The operator's interrupt already stops the run.
@@ -2081,31 +2089,47 @@ async function inventoryRefusal(
   adapter: ReturnType<typeof adapterFor>,
   manifest: ResolvedManifest,
   over: () => boolean,
+  waitMs: number,
 ): Promise<{ problems: string[]; provenRefusal: boolean } | null> {
-  const deadline = performance.now() + PREFLIGHT_TIMEOUT_MS;
+  const deadline = performance.now() + waitMs;
+  /** Every complete line whose DECODED JSON type is cg_inventory (as the adapter counts; M9-05b run 002). */
+  // M9-05b run 003: the adapter's own reader (BOM stripping, line splitting,
+  // decoding, an unterminated final line included), so both see the same records.
   const records = async () => {
     const text = await Deno.readTextFile(p.raw).catch(() => "");
-    // Complete lines only: the last one may still be mid-write.
-    return text.split("\n").slice(0, -1).filter((l) =>
-      l.includes('"cg_inventory"')
-    );
+    const { lines } = readRecords<{
+      type?: unknown;
+      v?: unknown;
+      ok?: unknown;
+      installed?: unknown;
+      problems?: unknown;
+    }>(text);
+    // A record is complete only when a newline follows it (readRecords'
+    // split leaves one more segment after the last terminated line).
+    const segments =
+      (text.startsWith("﻿") ? text.slice(1) : text).split(/\r?\n/).length;
+    return lines.filter((l) => l.rec.type === "cg_inventory").map((l) => ({
+      rec: l.rec,
+      terminated: l.line < segments,
+    }));
   };
   while (
-    (await records()).length === 0 && !over() &&
+    !(await records()).some((r) => r.terminated) && !over() &&
     performance.now() < deadline
   ) {
     await new Promise((r) => setTimeout(r, 50));
   }
-  const lines = await records();
-  let provenRefusal = false;
-  if (lines.length === 1) {
-    try {
-      const r = JSON.parse(lines[0]!);
-      provenRefusal = r?.type === "cg_inventory" && r.ok === false &&
-        Array.isArray(r.problems) && r.problems.length > 0;
-    } catch {
-      provenRefusal = false;
-    }
+  const recs = await records();
+  // The record, only when exactly one exists, newline-terminated, with the
+  // adapter's strict shape (same keys, v 1, string lists), ok false and problems.
+  let refusalRecord: string[] | null = null;
+  const r = recs.length === 1 && recs[0]!.terminated ? recs[0]!.rec : null;
+  if (
+    r !== null && Object.keys(r).sort().join() === INVENTORY_KEYS &&
+    r.v === 1 && r.ok === false && strings(r.installed) &&
+    strings(r.problems) && r.problems.length > 0
+  ) {
+    refusalRecord = r.problems;
   }
   // A run that ended (or timed out) without a record is named by the parse below.
   try {
@@ -2118,6 +2142,11 @@ async function inventoryRefusal(
       traceOut: p.trace,
     });
     const problems = parsed.inventoryProblems ?? [];
+    // The proof is exactly one decoded record of the strict shape (above); the
+    // adapter's problems being precisely the record's own is an extra check.
+    const provenRefusal = refusalRecord !== null &&
+      problems.length === refusalRecord.length &&
+      problems.every((x, i) => x === refusalRecord![i]);
     return problems.length > 0 ? { problems, provenRefusal } : null;
   } catch (err) {
     if (!(err instanceof ValidationError)) throw err;
