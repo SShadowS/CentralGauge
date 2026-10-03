@@ -36,8 +36,8 @@ refused.
   message. A workspace the server refuses to build lists the reasons under
   `result.violations` instead.
 - When the server refused the request or did not answer, `result` holds an
-  `error` instead, and no `ok`. A fault on the server side holds an `infra`
-  message instead.
+  `error` instead, and no `ok`. A fault on the server side is HTTP 503 with an
+  `infra` message, or HTTP 500 with an `error`; both exit 2.
 
 Two cases print something else:
 

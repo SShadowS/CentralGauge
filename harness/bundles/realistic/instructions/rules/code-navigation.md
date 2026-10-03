@@ -38,11 +38,14 @@ around them.
   publisher and version of each one. It does not list objects, procedures or
   events.
 - Use it to see which apps and versions are available, and compare that with
-  the `dependencies` in each `app.json`. Two steps need them in different
-  ways: compiling resolves each dependency from its symbol package, while
-  publishing and running tests need the dependency installed on the server. A
-  dependency that is missing from the list, or listed in an older version than
-  `app.json` asks for, fails at one of those steps.
+  the `dependencies` in each `app.json`. This check is for external
+  dependencies only, apps that are not a folder in the repository: compiling
+  resolves them from their symbol packages, and publishing and running tests
+  need them installed on the server. An external dependency that is missing
+  from the list, or listed in an older version than `app.json` asks for, fails.
+- A dependency that is an app folder in the repository is exempt: it is built
+  from source, its package is supplied to the apps that depend on it, and the
+  test step publishes it. It does not need to appear in the list.
 - To find out what an app in the repository offers, search its source. For a
   package without source here, rely on the objects your code already uses from
   it and on what the compiler reports.

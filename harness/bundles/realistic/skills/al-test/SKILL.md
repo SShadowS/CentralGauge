@@ -27,10 +27,14 @@ under `result.skipped_testpage`, so it never proves anything here.
 
 - `result.ok` is true only when at least one test ran and every test passed.
 - `result.tests` has one row per test procedure: `codeunit`, `procedure`,
-  `outcome` (`pass`, `fail`, `error` or `not_run`) and, when it did not pass,
-  `failure` (`assertion`, `compile`, `runtime_error` or `infra`).
-- `result.messages` has one entry per failed procedure with its `codeunit`,
-  `procedure` and `message`.
+  `outcome` (`pass`, `fail` or `not_run`) and, when it did not pass,
+  `failure` (`assertion`, `runtime_error` or `infra`).
+- `result.messages` has one entry per procedure that failed with an error
+  text, with its `codeunit`, `procedure` and `message`. A `not_run` row can
+  have no message at all.
+- When the apps could not be published, every row is `not_run` and
+  `result.messages` holds one entry with `codeunit` 0 and `procedure`
+  `(publish)` whose `message` says why.
 - If the apps do not compile, the run stops there and `result.apps` holds the
   compiler diagnostics instead of test outcomes.
 - A row that failed with `infra` is the environment, not your code: run again
