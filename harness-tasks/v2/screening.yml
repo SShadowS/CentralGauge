@@ -20,4 +20,7 @@ rules:
     easy: [intermediate]
     intermediate: [hard, easy]
     hard: [intermediate]
-candidates: []
+candidates:
+  - id: HX-007
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: null, traces: null }

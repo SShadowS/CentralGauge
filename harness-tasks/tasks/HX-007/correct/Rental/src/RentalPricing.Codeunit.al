@@ -33,21 +33,21 @@ codeunit 70203 "CGR Rental Pricing"
         case Contract."Pricing Method" of
             Contract."Pricing Method"::Daily:
                 begin
-                    AddLine(PriceLine, Contract."No.", RentalDaysTxt, Days, Vehicle."Daily Rate");
+                    AddLine(PriceLine, Contract, RentalDaysTxt, Days, Vehicle."Daily Rate");
                     for i := 0 to Days - 1 do
                         if Date2DWY(Contract."Start Date" + i, 1) in [6, 7] then
                             WeekendDays += 1;
                     if (WeekendDays > 0) and (Setup."Weekend Surcharge %" <> 0) then
-                        AddLine(PriceLine, Contract."No.", WeekendSurchargeTxt, WeekendDays,
+                        AddLine(PriceLine, Contract, WeekendSurchargeTxt, WeekendDays,
                             Vehicle."Daily Rate" * Setup."Weekend Surcharge %" / 100);
                 end;
             Contract."Pricing Method"::"Weekend Package":
-                AddLine(PriceLine, Contract."No.", WeekendPackageTxt, 1, 2 * Vehicle."Daily Rate");
+                AddLine(PriceLine, Contract, WeekendPackageTxt, 1, 2 * Vehicle."Daily Rate");
         end;
         Driven := Contract."Return Km" - Contract."Start Km";
         Allowed := Days * Setup."Km Allowance per Day";
         if Driven > Allowed then
-            AddLine(PriceLine, Contract."No.", ExcessKmTxt, Driven - Allowed, Setup."Excess Km Rate");
+            AddLine(PriceLine, Contract, ExcessKmTxt, Driven - Allowed, Setup."Excess Km Rate");
     end;
 
     procedure TotalAmount(var PriceLine: Record "CGR Invoice Preview Line"): Decimal
@@ -61,7 +61,7 @@ codeunit 70203 "CGR Rental Pricing"
         exit(Total);
     end;
 
-    local procedure AddLine(var PriceLine: Record "CGR Invoice Preview Line"; ContractNo: Code[20]; Description: Text[100]; Quantity: Decimal; UnitPrice: Decimal)
+    local procedure AddLine(var PriceLine: Record "CGR Invoice Preview Line"; Contract: Record "CGR Rental Contract"; Description: Text[100]; Quantity: Decimal; UnitPrice: Decimal)
     var
         LineNo: Integer;
     begin
@@ -69,7 +69,8 @@ codeunit 70203 "CGR Rental Pricing"
             LineNo := PriceLine."Line No.";
         PriceLine.Init();
         PriceLine."Line No." := LineNo + 10000;
-        PriceLine."Contract No." := ContractNo;
+        PriceLine."Contract No." := Contract."No.";
+        PriceLine."Branch Code" := Contract."Branch Code";
         PriceLine.Description := Description;
         PriceLine.Quantity := Quantity;
         PriceLine."Unit Price" := UnitPrice;

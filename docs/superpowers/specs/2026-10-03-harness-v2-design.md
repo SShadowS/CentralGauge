@@ -146,6 +146,12 @@ trace-classified compile calls only): a structured backend build log per cell (t
 diagnostic codes with file/symbol), LSP operation counts from the trace, and subagent usage.
 Missing or incomplete telemetry stays missing, never zero.
 
+Threat to validity (accepted, owner 2026-10-03): the provider credential is readable by the
+agent user, so an agent can spend outside the budget guard (a direct API call, or a child
+`claude`/`pi` through the proxy). Such spend is not in the cell's priced usage, so recorded
+cost per solved task is a lower bound for any cell that does this. It is visible only in bash
+tool output. No detection is built; the paper states this limitation.
+
 ## 7. Statistics (pre-registered before any confirmatory cell)
 
 - Design: one blocked 2x2 factorial campaign, realistic {off, on} x LSP {off, on}, all four arms

@@ -9,9 +9,10 @@ codeunit 70203 "CGR Rental Pricing"
     procedure CalcAmount(Contract: Record "CGR Rental Contract"): Decimal
     var
         PriceLine: Record "CGR Invoice Preview Line";
+        AmountRounding: Codeunit "CGR Amount Rounding";
     begin
         CalcLines(Contract, PriceLine);
-        exit(TotalAmount(PriceLine));
+        exit(Round(TotalAmount(PriceLine), AmountRounding.BranchPrecision(Contract."Branch Code")));
     end;
 
     procedure CalcLines(Contract: Record "CGR Rental Contract"; var PriceLine: Record "CGR Invoice Preview Line")

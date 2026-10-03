@@ -27,6 +27,7 @@ codeunit 70203 "CGR Rental Pricing"
     begin
         Vehicle.Get(Contract."Vehicle No.");
         SessionContext.GetSetup(Setup);
+        SessionContext.SetCurrentBranch(Contract."Branch Code");
         PriceLine.Reset();
         PriceLine.DeleteAll();
         Days := Contract."End Date" - Contract."Start Date" + 1;
