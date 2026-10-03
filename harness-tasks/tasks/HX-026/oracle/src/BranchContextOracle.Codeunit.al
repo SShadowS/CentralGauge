@@ -48,6 +48,7 @@ codeunit 85980 "HX026 Branch Context Oracle"
     [Test]
     procedure ResetClearsBranchContext()
     var
+        Setup: Record "CGR Setup";
         SessionContext: Codeunit "CGR Session Context";
         BranchContext: Codeunit "CGR Branch Context";
     begin
@@ -58,6 +59,14 @@ codeunit 85980 "HX026 Branch Context Oracle"
         SessionContext.Reset();
         Assert.AreEqual('HX26D4', BranchContext.CurrentBranch(), 'Reset clears the explicit branch of the branch context');
         Assert.AreEqual('HX26D4', SessionContext.CurrentBranch(), 'After reset the session context reports the Setup default');
+
+        Assert.AreEqual('HX26D4', SessionContext.CurrentBranch(), 'The default is read through the session context before the Setup changes');
+        Setup.Get();
+        Setup."Default Branch Code" := 'HX26E4';
+        Setup.Modify();
+        SessionContext.Reset();
+        Assert.AreEqual('HX26E4', SessionContext.CurrentBranch(), 'Reset clears the Setup cache: the session context reports the changed default');
+        Assert.AreEqual('HX26E4', BranchContext.CurrentBranch(), 'Reset clears the Setup cache: the branch context reports the changed default');
     end;
 
     [Test]
