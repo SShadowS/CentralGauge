@@ -21,7 +21,7 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
 
         Preview.BuildPreview(ContractNo, PreviewLine);
         AssertLines(PreviewLine, 100.00, 33.00, 2.00);
-        Assert.AreEqual(135.00,Preview.TotalAmount(PreviewLine), 'Preview total at the branch precision');
+        Assert.AreEqual(135.00, Preview.TotalAmount(PreviewLine), 'Preview total at the branch precision');
     end;
 
     [Test]
@@ -37,7 +37,7 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
         ContractNo := ReturnedContract('HX007-B', 'HX7QA');
 
         RentalMgt.Post(ContractNo);
-        Assert.AreEqual(135.00,PostedAmount(ContractNo), 'Posted amount is the sum of the lines at the branch precision');
+        Assert.AreEqual(135.00, PostedAmount(ContractNo), 'Posted amount is the sum of the lines at the branch precision');
     end;
 
     [Test]
@@ -59,9 +59,9 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
 
         Preview.BuildPreview(ContractNo, PreviewLine);
         AssertLines(PreviewLine, 100.00, 33.00, 2.00);
-        Assert.AreEqual(135.00,Preview.TotalAmount(PreviewLine), 'Preview total uses the branch of the contract');
+        Assert.AreEqual(135.00, Preview.TotalAmount(PreviewLine), 'Preview total uses the branch of the contract');
         RentalMgt.Post(ContractNo);
-        Assert.AreEqual(135.00,PostedAmount(ContractNo), 'Posted amount uses the branch of the contract');
+        Assert.AreEqual(135.00, PostedAmount(ContractNo), 'Posted amount uses the branch of the contract');
     end;
 
     [Test]
@@ -85,7 +85,7 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
 
         Contract.SetFilter("Vehicle No.", '%1|%2', 'HX007-D1', 'HX007-D2');
         Assert.AreEqual(2, BatchPost.PostBatch(Contract), 'Both contracts are posted');
-        Assert.AreEqual(135.00,PostedAmount(FirstContractNo), 'First contract at precision 1');
+        Assert.AreEqual(135.00, PostedAmount(FirstContractNo), 'First contract at precision 1');
         Assert.AreEqual(135.65, PostedAmount(SecondContractNo), 'Second contract at precision 0.05');
     end;
 
@@ -188,13 +188,24 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
     procedure LeaseInvoiceKeepsSetupPrecision()
     var
         InvoiceLine: Record "CGR Lease Invoice Line";
+        PreviewLine: Record "CGR Invoice Preview Line";
+        Preview: Codeunit "CGR Rental Invoice Preview";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        SessionContext: Codeunit "CGR Session Context";
         LeaseMgt: Codeunit "CGR Lease Mgt";
         LeaseInvoicing: Codeunit "CGR Lease Invoicing";
+        RentalContractNo: Code[20];
         LeaseNo: Code[20];
     begin
         WorkDate(20270301D);
         InitSetup(0.01, 'HX7LB');
         SetBranchRounding('HX7LB', 1);
+        SetBranchRounding('HX7LR', 1);
+        InitVehicle('HX007-L2');
+        RentalContractNo := ReturnedContract('HX007-L2', 'HX7LR');
+        SessionContext.Reset();
+        Preview.BuildPreview(RentalContractNo, PreviewLine);
+        RentalMgt.Post(RentalContractNo);
         LeaseNo := LeaseMgt.CreateContract('HX007-L', 'HX007 Customer', 20270301D, 3, 101);
         LeaseMgt.CreateSchedule(LeaseNo);
 
@@ -358,13 +369,13 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
         Assert.AreEqual(3, PreviewLine.Count(), 'Rental days, weekend surcharge and excess km');
         PreviewLine.FindSet();
         Assert.AreEqual('Rental days', PreviewLine.Description, 'First line');
-        Assert.AreEqual(RentalDaysAmount, PreviewLine.Amount, 'Rental days: 3 x 33.33');
+        Assert.AreEqual(RentalDaysAmount, PreviewLine.Amount, 'Rental days line amount');
         PreviewLine.Next();
         Assert.AreEqual('Weekend surcharge', PreviewLine.Description, 'Second line');
-        Assert.AreEqual(SurchargeAmount, PreviewLine.Amount, 'Weekend surcharge: 2 x 16.665');
+        Assert.AreEqual(SurchargeAmount, PreviewLine.Amount, 'Weekend surcharge line amount');
         PreviewLine.Next();
         Assert.AreEqual('Excess km', PreviewLine.Description, 'Third line');
-        Assert.AreEqual(ExcessKmAmount, PreviewLine.Amount, 'Excess km: 7 x 0.33');
+        Assert.AreEqual(ExcessKmAmount, PreviewLine.Amount, 'Excess km line amount');
     end;
 
     local procedure PostedAmount(ContractNo: Code[20]): Decimal
