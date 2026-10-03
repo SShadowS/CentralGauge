@@ -242,8 +242,11 @@ Deno.test("pi trace: parse, write and load round trip", async () => {
     "tests/fixtures/harness/pi/probe.jsonl",
   );
   await Deno.writeTextFile(join(run, "raw.jsonl"), PI_HEAD + fixture);
+  // H-01u: a clean stderr (no "Invalid settings file"); without one pi fails closed.
+  await Deno.writeTextFile(join(run, "stderr.txt"), "");
   const parsed = await piAdapter.parse({
     rawLog: join(run, "raw.jsonl"),
+    stderrLog: join(run, "stderr.txt"),
     exitCode: 0,
     manifest: manifest("pi", {
       harness: "pi",
@@ -254,6 +257,7 @@ Deno.test("pi trace: parse, write and load round trip", async () => {
     pricing: { at: "2026-10-05T00:00:00.000Z", models: {} },
     traceOut: join(run, "trace.jsonl"),
   });
+  assertEquals(parsed.termination, "completed");
   const e = {
     id: "pi1",
     trace_path: "runs/pi1/trace.jsonl",

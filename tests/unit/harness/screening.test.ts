@@ -870,3 +870,148 @@ Deno.test("loadLedgerAnchors (run 002): a lightweight seal tag is a problem", as
   );
   assert(p.includes(`${START}: not an annotated tag`), p.join("\n"));
 });
+
+// ---- M8-02b (review M8-02-002): absence is read from the tree; two scored
+// manual reruns of one cell are a problem.
+
+import { manualRerunProblems } from "../../../scripts/harness/screening.ts";
+import { campaign, execution, judgment } from "./fixtures.ts";
+
+Deno.test("loadLedgerAnchors (M8-02b): a ledger in the start seal's tree whose blob is missing is never absent", async () => {
+  const dir = await tempDir({ prefix: "cg-screening-" });
+  const origin = join(dir, "origin.git");
+  const repo = join(dir, "repo");
+  await Deno.mkdir(join(repo, "harness-tasks", "v2"), { recursive: true });
+  await sh(dir, "init", "-q", "--bare", origin);
+  await sh(repo, "init", "-q");
+  await sh(repo, "remote", "add", "origin", origin);
+  // The start seal's commit already holds a seals.yml (it must hold none).
+  const seals = join(repo, "harness-tasks", "v2", "seals.yml");
+  await Deno.writeTextFile(seals, "# ledger present at the start seal\n");
+  await sh(repo, "add", "-A");
+  await sh(repo, "commit", "-q", "-m", "seal");
+  await sh(repo, "tag", "-a", "-m", "s", START);
+  await sh(repo, "push", "-q", "origin", START);
+  const blob = await sh(
+    repo,
+    "rev-parse",
+    `${START}:harness-tasks/v2/seals.yml`,
+  );
+  const entry: SealEntry = {
+    ...SEAL0,
+    tag_object: await sh(repo, "rev-parse", `refs/tags/${START}`),
+    commit: await sh(repo, "rev-parse", `${START}^{commit}`),
+  };
+  await Deno.writeTextFile(seals, stringify({ v: 2, seals: [entry] }));
+  await sh(repo, "add", "-A");
+  await sh(repo, "commit", "-q", "-m", "ledger");
+  await sh(repo, "tag", "-a", "-m", "l", `${START}-ledger`);
+  await sh(repo, "push", "-q", "origin", `${START}-ledger`);
+  // Delete the start seal's ledger blob (still loose: no gc, no repack).
+  await Deno.remove(
+    join(repo, ".git", "objects", blob.slice(0, 2), blob.slice(2)),
+  );
+  let problems: string[] | null = null;
+  try {
+    problems = await ledgerProblems(
+      [entry],
+      await loadLedgerAnchors(repo, [entry]),
+    );
+  } catch (err) {
+    assert(err instanceof ValidationError, String(err));
+  }
+  assert(
+    problems === null || problems.length > 0,
+    "a missing ledger blob passed as an absent ledger",
+  );
+});
+
+Deno.test("manualRerunProblems (M8-02b): two scored manual reruns of one cell are a problem", async () => {
+  const c = await campaign();
+  const limited = execution(c, {}, { termination: "usage_limited" });
+  const m2 = execution(c, { attempt: 2, run_kind: "manual_rerun" });
+  const m3 = execution(c, { attempt: 3, run_kind: "manual_rerun" });
+  // One scored rerun, or a scored one plus an unscored one: fine.
+  assertEquals(
+    manualRerunProblems(c, [limited, m2], [judgment(c, m2, true)]),
+    [],
+  );
+  assertEquals(
+    manualRerunProblems(c, [limited, m2, m3], [
+      judgment(c, m2, true),
+      judgment(c, m3, null),
+    ]),
+    [],
+  );
+  assertEquals(
+    manualRerunProblems(c, [limited, m3, m2], [
+      judgment(c, m2, false),
+      judgment(c, m3, true),
+    ]),
+    [`campaign ${c.id}: cell HX-001/1/plain has 2 scored manual reruns`],
+  );
+});
+
+Deno.test("screeningHistory (M8-02b): a campaign's record problems are reported", () => {
+  const h = screeningHistory([{
+    id: "c1",
+    experiment: "v2-screen-1",
+    created_at: "2026-10-25T00:00:00Z",
+    cells: six("HX-007", 3),
+    problems: [
+      "campaign c1: cell HX-007/1/cc-v2-plain has 2 scored manual reruns",
+    ],
+  }], RULES);
+  assertEquals(h.problems, [
+    "campaign c1: cell HX-007/1/cc-v2-plain has 2 scored manual reruns",
+  ]);
+});
+
+Deno.test("loadLedgerAnchors (M8-02b run 002): a missing intermediate tree on the ledger path is never absent", async () => {
+  const dir = await tempDir({ prefix: "cg-screening-" });
+  const origin = join(dir, "origin.git");
+  const repo = join(dir, "repo");
+  await Deno.mkdir(join(repo, "harness-tasks", "v2"), { recursive: true });
+  await sh(dir, "init", "-q", "--bare", origin);
+  await sh(repo, "init", "-q");
+  await sh(repo, "remote", "add", "origin", origin);
+  // The start seal's commit already holds a seals.yml (it must hold none).
+  const seals = join(repo, "harness-tasks", "v2", "seals.yml");
+  await Deno.writeTextFile(seals, "# ledger present at the start seal\n");
+  await sh(repo, "add", "-A");
+  await sh(repo, "commit", "-q", "-m", "seal");
+  await sh(repo, "tag", "-a", "-m", "s", START);
+  await sh(repo, "push", "-q", "origin", START);
+  const v2Tree = await sh(repo, "rev-parse", `${START}:harness-tasks/v2`);
+  const entry: SealEntry = {
+    ...SEAL0,
+    tag_object: await sh(repo, "rev-parse", `refs/tags/${START}`),
+    commit: await sh(repo, "rev-parse", `${START}^{commit}`),
+  };
+  await Deno.writeTextFile(seals, stringify({ v: 2, seals: [entry] }));
+  await sh(repo, "add", "-A");
+  await sh(repo, "commit", "-q", "-m", "ledger");
+  await sh(repo, "tag", "-a", "-m", "l", `${START}-ledger`);
+  await sh(repo, "push", "-q", "origin", `${START}-ledger`);
+  // Delete the start seal's harness-tasks/v2 TREE object (loose; no gc).
+  assert(
+    v2Tree !== await sh(repo, "rev-parse", "HEAD:harness-tasks/v2"),
+    "the ledger commit holds a different v2 tree",
+  );
+  await Deno.remove(
+    join(repo, ".git", "objects", v2Tree.slice(0, 2), v2Tree.slice(2)),
+  );
+  let problems: string[] | null = null;
+  try {
+    problems = await ledgerProblems(
+      [entry],
+      await loadLedgerAnchors(repo, [entry]),
+    );
+  } catch (err) {
+    assert(err instanceof ValidationError, String(err));
+  }
+  assert(
+    problems === null || problems.length > 0,
+    "a missing intermediate tree passed as an absent ledger",
+  );
+});

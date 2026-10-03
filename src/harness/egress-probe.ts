@@ -45,6 +45,14 @@ export interface QualificationProbe {
   custody: SecretCustody;
   /** The backend token: released only after the preflight passes. */
   token: string;
+  /**
+   * Further secret files released with the backend token, only after the
+   * preflight passes (M9-01a: the Claude Code OAuth token of an ops spike).
+   * Their values are redacted from the captures like the token.
+   */
+  releaseAfterPreflight?: { name: string; value: string }[];
+  /** The capture scrub (default scrubFiles); injectable for the failure test. */
+  scrub?: (paths: string[], values: string[]) => Promise<string | null>;
   spec: Omit<SandboxSpec, "secretsDir" | "network" | "command">;
   /** The probe's own command, run after the ready wait. */
   probeCommand: string[];
@@ -63,6 +71,86 @@ export interface QualificationProbe {
 }
 
 const q = (s: string) => `'${s.replaceAll("'", "''")}'`;
+
+const utf16le = (s: string): Uint8Array => {
+  const b = new Uint8Array(s.length * 2);
+  for (let i = 0; i < s.length; i++) {
+    b[i * 2] = s.charCodeAt(i) & 0xff;
+    b[i * 2 + 1] = s.charCodeAt(i) >> 8;
+  }
+  return b;
+};
+
+/** Every occurrence of `needle` in `hay` replaced by `by` (byte level). */
+function replaceBytes(
+  hay: Uint8Array,
+  needle: Uint8Array,
+  by: Uint8Array,
+): Uint8Array {
+  const parts: Uint8Array[] = [];
+  let from = 0;
+  let size = 0;
+  outer: for (let i = 0; i + needle.length <= hay.length;) {
+    for (let j = 0; j < needle.length; j++) {
+      if (hay[i + j] !== needle[j]) {
+        i++;
+        continue outer;
+      }
+    }
+    parts.push(hay.subarray(from, i), by);
+    size += i - from + by.length;
+    i += needle.length;
+    from = i;
+  }
+  if (parts.length === 0) return hay;
+  parts.push(hay.subarray(from));
+  size += hay.length - from;
+  const out = new Uint8Array(size);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+}
+
+/**
+ * Replaces every occurrence of each secret value in the given files with
+ * [REDACTED], as bytes, in both UTF-8 and UTF-16LE (Windows PowerShell 5.1
+ * `>` writes UTF-16LE); the replacement uses the matching encoding, so the
+ * rest of the file (BOM included) is unchanged. A missing file is skipped;
+ * any other read or write error is returned (the first), else null.
+ * Encoded forms (base64, percent, JSON escapes, split lines) are out of scope:
+ * the scrub targets accidental plain leaks (orchestrator ruling, M9-01a 002).
+ */
+export async function scrubFiles(
+  paths: string[],
+  values: string[],
+): Promise<string | null> {
+  const enc = new TextEncoder();
+  const pairs = values.filter((v) => v !== "").flatMap((v) => [
+    [enc.encode(v), enc.encode("[REDACTED]")],
+    [utf16le(v), utf16le("[REDACTED]")],
+  ]);
+  for (const p of paths) {
+    let bytes: Uint8Array;
+    try {
+      bytes = await Deno.readFile(p);
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) continue;
+      return `${p}: ${err instanceof Error ? err.message : err}`;
+    }
+    let clean = bytes;
+    for (const [needle, by] of pairs) clean = replaceBytes(clean, needle!, by!);
+    if (clean === bytes) continue;
+    try {
+      await Deno.writeFile(p, clean);
+    } catch (err) {
+      return `${p}: ${err instanceof Error ? err.message : err}`;
+    }
+  }
+  return null;
+}
 
 export async function runQualificationProbe(
   o: QualificationProbe,
@@ -124,7 +212,7 @@ export async function runQualificationProbe(
           }; exit $LASTEXITCODE`,
         ],
       },
-      [o.token],
+      [o.token, ...(o.releaseAfterPreflight ?? []).map((s) => s.value)],
       stop.signal,
     );
     let problems: string[];
@@ -165,10 +253,10 @@ export async function runQualificationProbe(
     }
     if (problems.length > 0) stop.abort();
     else {
-      await writeSecretFiles(secrets, [{
-        name: "backend-token",
-        value: o.token,
-      }]);
+      await writeSecretFiles(secrets, [
+        { name: "backend-token", value: o.token },
+        ...(o.releaseAfterPreflight ?? []),
+      ]);
       await Deno.writeTextFile(join(secrets, READY_FILE), "");
     }
     settled = await running;
@@ -202,11 +290,18 @@ export async function runQualificationProbe(
       secretsDir: secrets,
     });
     await revoked;
+    // M9-01a run 002: the retained captures and the proxy log never keep a
+    // released value (the sandbox could print a mounted secret).
+    const scrubError = await (o.scrub ?? scrubFiles)(
+      [o.spec.rawLog, o.spec.stderrLog, egressLog],
+      [o.token, ...(o.releaseAfterPreflight ?? []).map((s) => s.value)],
+    );
     const problems = [
       ...(revokeError !== null
         ? [`backend token revoke failed: ${revokeError}`]
         : []),
       ...(!down.gone || down.secretsLeft ? down.problems : []),
+      ...(scrubError !== null ? [`capture scrub failed: ${scrubError}`] : []),
     ];
     if (revokeError !== null) {
       console.error(
