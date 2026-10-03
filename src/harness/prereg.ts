@@ -469,7 +469,11 @@ function anchorLine(text: string, key: string, re: string): string | null {
  */
 const hasApproval = (text: string, stage: "A" | "B") => {
   const lines = text.split(/\r?\n/).filter(isOwnerApproval);
-  const other = new RegExp(`\\bstage\\s+${stage === "A" ? "B" : "A"}\\b`, "i");
+  // "stage B" and the hyphenated "stage-B" name a stage alike.
+  const other = new RegExp(
+    `\\bstage[\\s-]+${stage === "A" ? "B" : "A"}\\b`,
+    "i",
+  );
   return lines.length > 0 && !lines.some((l) => other.test(l));
 };
 

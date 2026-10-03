@@ -1145,3 +1145,28 @@ Deno.test("primary metric: an experiment whose primary_metric differs from the p
   assertEquals(msg(familyProblems(b, EXP)), undefined);
   assertEquals(msg(await preregProblems(b, ctx())), undefined);
 });
+
+Deno.test("decision parsers (M11-10b): hyphenated stage-A / stage-B wording names its stage like the spaced form", () => {
+  const obj = "c".repeat(40);
+  const a = (approval: string) => decisionA(obj, { approval });
+  const b = (approval: string) =>
+    `stage_b_sha256: ${
+      H("b")
+    }\ntag: harness-v2-prereg-b\ntag_object: ${obj}\n${approval}\n`;
+  const own = (s: string) =>
+    `OWNER-APPROVED: stage-${s} (2026-10-24T12:00:00Z)`;
+  assert(parseStageADecision(a(own("A"))) !== null);
+  assert(parseStageBDecision(b(own("B"))) !== null);
+  assertEquals(parseStageADecision(a(own("B"))), null);
+  assertEquals(parseStageBDecision(b(own("A"))), null);
+  assertEquals(
+    parseStageADecision(a(`${own("A")}\n${own("B")}`)),
+    null,
+  );
+  // Unrelated words stay unmatched: "stagebook B" does not name stage B.
+  assert(
+    parseStageADecision(
+      a("OWNER-APPROVED: stagecraft B (2026-10-24T12:00:00Z)"),
+    ) !== null,
+  );
+});
