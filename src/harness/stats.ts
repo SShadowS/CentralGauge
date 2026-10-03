@@ -12,8 +12,14 @@
  *   count are shown next to it and the headline is provisional (rule 6).
  * - A baseline-variant comparison uses matched (task, repeat) pairs eligible
  *   in both arms; exclusions are counted per arm and reason.
- * - Paired task-level bootstrap. If any resample is undefined (no solve), the
- *   CI and the distinguishable verdict are suppressed.
+ * - Paired task-level bootstrap. The zero-solve rule decides when resamples
+ *   without a solve suppress the CI, the distinguishable verdict and the
+ *   p-value: `suppress_any_undefined` (v1, the default) suppresses them when
+ *   any resample is undefined; `min_defined_share` computes them over the
+ *   defined resamples when their share is at least the frozen threshold.
+ * - Contrasts (M11): two-sided bootstrap p with the +1 correction, Holm over
+ *   exactly the pre-registered family (Holm alone decides), a descriptive
+ *   Bonferroni interval beside it, and the (RL - R) - (L - P) interaction.
  * - Beside it (owner decision 2026-09-29, M6-02d), never replacing it: an
  *   EXPLORATORY (not pre-registered) percentile interval over the defined
  *   resamples only, from the same draws. It never sets `distinguishable`.
@@ -249,7 +255,11 @@ export interface Comparison {
   };
   /** variant minus baseline over matched pairs; null when undefined. */
   delta: number | null;
-  /** Suppressed (null) when any resample is undefined. */
+  /**
+   * Null when suppressed by the zero-solve rule: any undefined resample
+   * (suppress_any_undefined) or a defined share below the threshold
+   * (min_defined_share, then over the defined resamples only).
+   */
   ci: [number, number] | null;
   level: number;
   undefined_share: number;
@@ -266,11 +276,15 @@ export interface Comparison {
    * over the defined resamples only, and conditioning on solves can bias
    * them, including their direction (M6-02e); they are not evidence of a
    * difference. Never replaces `ci`, never feeds `distinguishable`.
-   * Equals `ci` when `undefined_share` is 0; null when fewer than
-   * `minDefinedResamples(level)` resamples are defined. Absent (undefined)
-   * in pre-M6-02d reports.
+   * Equals `ci` whenever `ci` is shown and at least
+   * `minDefinedResamples(level)` resamples are defined; null when fewer are
+   * defined. Absent (undefined) in pre-M6-02d reports.
    */
   exploratory_ci_defined_only?: ExploratoryInterval | null;
+  /** Bootstrap p of delta = 0; null when suppressed; absent in pre-M11 reports. */
+  p_value?: number | null;
+  values?: { baseline: number | null; variant: number | null };
+  zero_solve?: ZeroSolveRule;
 }
 
 export interface ExploratoryInterval {
@@ -329,10 +343,82 @@ export function exploratoryNote(
   })`;
 }
 
+export type ZeroSolveRule =
+  | { rule: "suppress_any_undefined" }
+  | { rule: "min_defined_share"; share: number };
+
 export interface BootstrapOptions {
   resamples?: number;
   seed?: number;
   level?: number;
+  /** Default suppress_any_undefined (v1 rule 4). */
+  zeroSolve?: ZeroSolveRule;
+}
+
+/** The resample loop (one mulberry32 stream per seed): the same draws as v1 compareArms. */
+export function drawTasks(
+  tasks: string[],
+  resamples: number,
+  seed: number,
+  f: (sample: string[]) => number | null,
+): { values: number[]; undefined_share: number } {
+  const rand = mulberry32(seed);
+  const values: number[] = [];
+  for (let i = 0; i < resamples; i++) {
+    const d = f(tasks.map(() => tasks[Math.floor(rand() * tasks.length)]!));
+    if (d !== null) values.push(d);
+  }
+  return { values, undefined_share: (resamples - values.length) / resamples };
+}
+
+/** Two-sided percentile bootstrap p of delta = 0 with the +1 correction. */
+export function bootstrapP(deltas: readonly number[]): number {
+  const n = deltas.length;
+  if (n === 0) return 1;
+  const le = deltas.filter((d) => d <= 0).length;
+  const ge = deltas.filter((d) => d >= 0).length;
+  return Math.min(1, (2 * Math.min(le + 1, ge + 1)) / (n + 1));
+}
+
+function checkAlpha(alpha: number): void {
+  if (!(Number.isFinite(alpha) && alpha > 0 && alpha < 1)) {
+    const msg = `alpha must be finite and between 0 and 1, got ${alpha}`;
+    throw new ValidationError(msg, [msg]);
+  }
+}
+
+/** Holm step-down; a null p ranks as 1 and never rejects; ties keep order. */
+export function holm(
+  ps: readonly (number | null)[],
+  alpha: number,
+): { adjusted: number[]; reject: boolean[] } {
+  checkAlpha(alpha);
+  const m = ps.length;
+  const order = ps.map((p, i) => ({ p: p ?? 1, i })).sort((a, b) =>
+    a.p - b.p || a.i - b.i
+  );
+  const adjusted = new Array<number>(m);
+  let run = 0;
+  order.forEach(({ p, i }, k) => {
+    run = Math.max(run, Math.min(1, (m - k) * p));
+    adjusted[i] = run;
+  });
+  return {
+    adjusted,
+    reject: adjusted.map((a, i) => ps[i] !== null && a <= alpha),
+  };
+}
+
+export type Decision = "variant_lower" | "variant_higher" | "no_decision";
+export function decide(delta: number | null, rejected: boolean): Decision {
+  if (!rejected || delta === null || delta === 0) return "no_decision";
+  return delta < 0 ? "variant_lower" : "variant_higher";
+}
+
+function allowed(rule: ZeroSolveRule, undefinedShare: number): boolean {
+  return rule.rule === "suppress_any_undefined"
+    ? undefinedShare === 0
+    : 1 - undefinedShare >= rule.share;
 }
 
 export function checkBootstrapOptions(opts: BootstrapOptions): void {
@@ -346,6 +432,14 @@ export function checkBootstrapOptions(opts: BootstrapOptions): void {
   }
   if (!(level > 0 && level < 1)) {
     errors.push(`level must be between 0 and 1, got ${level}`);
+  }
+  if (
+    opts.zeroSolve?.rule === "min_defined_share" &&
+    !(opts.zeroSolve.share > 0 && opts.zeroSolve.share <= 1)
+  ) {
+    errors.push(
+      `zeroSolve.share must be in (0, 1], got ${opts.zeroSolve.share}`,
+    );
   }
   if (errors.length > 0) {
     throw new ValidationError(errors.join("; "), errors);
@@ -415,6 +509,10 @@ export function compareArms(
     resamples,
     seed,
     provisional,
+    values: {
+      baseline: statistic(metric, tasks.map((t) => sb.get(t)!)),
+      variant: statistic(metric, tasks.map((t) => sv.get(t)!)),
+    },
   };
   if (tasks.length === 0) {
     return {
@@ -423,28 +521,49 @@ export function compareArms(
       ci: null,
       undefined_share: 1,
       distinguishable: null,
+      p_value: null,
+      zero_solve: opts.zeroSolve ?? { rule: "suppress_any_undefined" },
       exploratory_ci_defined_only: null,
     };
   }
-  const rand = mulberry32(seed);
-  const deltas: number[] = [];
-  for (let i = 0; i < resamples; i++) {
-    const d = delta(tasks.map(() => tasks[Math.floor(rand() * tasks.length)]!));
-    if (d !== null) deltas.push(d);
-  }
-  const undefinedShare = (resamples - deltas.length) / resamples;
+  return finish(
+    base,
+    delta(tasks),
+    drawTasks(tasks, resamples, seed, delta),
+    level,
+    opts.zeroSolve ?? { rule: "suppress_any_undefined" },
+  );
+}
+
+function finish(
+  base: Omit<
+    Comparison,
+    | "delta"
+    | "ci"
+    | "undefined_share"
+    | "distinguishable"
+    | "exploratory_ci_defined_only"
+  >,
+  point: number | null,
+  draws: { values: number[]; undefined_share: number },
+  level: number,
+  rule: ZeroSolveRule,
+): Comparison {
+  const deltas = draws.values;
   const alpha = (1 - level) / 2;
   // One interval over the draws already made; no second draw.
   const defined: [number, number] | null = deltas.length === 0
     ? null
     : [percentile(deltas, alpha), percentile(deltas, 1 - alpha)];
-  const ci = undefinedShare > 0 ? null : defined;
+  const ci = allowed(rule, draws.undefined_share) ? defined : null;
   return {
     ...base,
-    delta: delta(tasks),
+    delta: point,
     ci,
-    undefined_share: undefinedShare,
+    undefined_share: draws.undefined_share,
     distinguishable: ci === null ? null : !(ci[0] <= 0 && 0 <= ci[1]),
+    p_value: ci === null ? null : bootstrapP(deltas),
+    zero_solve: rule,
     exploratory_ci_defined_only: defined === null ||
         deltas.length < minDefinedResamples(level)
       ? null
@@ -453,7 +572,197 @@ export function compareArms(
         hi: defined[1],
         level,
         resamples_used: deltas.length,
-        undefined_share: undefinedShare,
+        undefined_share: draws.undefined_share,
       },
   };
+}
+
+export interface InteractionArms {
+  plain: string;
+  lsp: string;
+  realistic: string;
+  realistic_lsp: string;
+}
+
+/** (RL - R) - (L - P) over (task, repeat) blocks eligible in all four arms; incomplete blocks under excluded.baseline.missing. */
+export function compareInteraction(
+  cells: Cell[],
+  a: InteractionArms,
+  metric: PrimaryMetric,
+  opts: BootstrapOptions = {},
+): Comparison {
+  checkCells(cells);
+  checkBootstrapOptions(opts);
+  const resamples = opts.resamples ?? 2000;
+  const seed = opts.seed ?? 1;
+  const level = opts.level ?? 0.95;
+  const names = [a.plain, a.lsp, a.realistic, a.realistic_lsp];
+  const byArm = names.map((n) =>
+    new Map(
+      cells.filter((c) => c.arm === n).map((c) => [key(c.task, c.repeat), c]),
+    )
+  );
+  const keys = new Set(byArm.flatMap((m) => [...m.keys()]));
+  const kept: Cell[][] = names.map(() => []);
+  let pairs = 0;
+  for (const k of keys) {
+    const cs = byArm.map((m) => m.get(k));
+    if (cs.every((c) => c !== undefined && ineligible(c, metric) === null)) {
+      cs.forEach((c, i) => kept[i]!.push(c!));
+      pairs++;
+    }
+  }
+  const stats = kept.map((cs) => taskStats(cs, metric));
+  const tasks = [...stats[0]!.keys()].sort();
+  const f = (sample: string[]): number | null => {
+    const s = stats.map((m) => statistic(metric, sample.map((t) => m.get(t)!)));
+    if (s.some((x) => x === null)) return null;
+    const [p, l, r, rl] = s as number[];
+    return (rl! - r!) - (l! - p!);
+  };
+  const allTasks = new Set(
+    cells.filter((c) => names.includes(c.arm)).map((c) => c.task),
+  );
+  const base = {
+    metric,
+    baseline: a.plain,
+    variant: a.realistic_lsp,
+    pairs,
+    tasks: tasks.length,
+    tasks_dropped: allTasks.size - tasks.length,
+    excluded: { baseline: { missing: keys.size - pairs }, variant: {} },
+    level,
+    resamples,
+    seed,
+    provisional: cells.some((c) =>
+      names.includes(c.arm) && (c.status === "pending" || c.status === "unrun")
+    ),
+    values: { baseline: null, variant: null },
+  };
+  if (tasks.length === 0) {
+    return {
+      ...base,
+      delta: null,
+      ci: null,
+      undefined_share: 1,
+      distinguishable: null,
+      p_value: null,
+      zero_solve: opts.zeroSolve ?? { rule: "suppress_any_undefined" },
+      exploratory_ci_defined_only: null,
+    };
+  }
+  return finish(
+    base,
+    f(tasks),
+    drawTasks(tasks, resamples, seed, f),
+    level,
+    opts.zeroSolve ?? { rule: "suppress_any_undefined" },
+  );
+}
+
+export interface ContrastSpec {
+  id: string;
+  name: string;
+  baseline: string;
+  variant: string;
+}
+export interface ContrastResult extends Comparison {
+  id: string;
+  name: string;
+  confirmatory: boolean;
+  p_holm: number | null;
+  decision: Decision;
+  bonferroni_ci: [number, number] | null;
+  ratio: number | null;
+}
+
+/** Holm over exactly `family` (ids in pre-registered order, "interaction" for the interaction). */
+export function testContrasts(
+  cells: Cell[],
+  contrasts: ContrastSpec[],
+  interaction: (InteractionArms & { name: string }) | null,
+  metric: PrimaryMetric,
+  o: {
+    resamples: number;
+    seed: number;
+    level: number;
+    alpha: number;
+    zeroSolve: ZeroSolveRule;
+    family: readonly string[];
+  },
+): ContrastResult[] {
+  checkAlpha(o.alpha);
+  const ids = contrasts.map((c) => c.id);
+  const bad = ids.filter((id, i) =>
+    id === "interaction" || ids.indexOf(id) !== i
+  );
+  if (bad.length > 0) {
+    const msg = `contrast ids must be unique and not "interaction", got ${
+      [...new Set(bad)].join(",")
+    }`;
+    throw new ValidationError(msg, [msg]);
+  }
+  const boot = { resamples: o.resamples, seed: o.seed, zeroSolve: o.zeroSolve };
+  const rows: {
+    id: string;
+    name: string;
+    run: (level: number) => Comparison;
+  }[] = contrasts.map((c) => ({
+    id: c.id,
+    name: c.name,
+    run: (level) =>
+      compareArms(cells, c.baseline, c.variant, metric, { ...boot, level }),
+  }));
+  if (interaction) {
+    rows.push({
+      id: "interaction",
+      name: interaction.name,
+      run: (level) =>
+        compareInteraction(cells, interaction, metric, { ...boot, level }),
+    });
+  }
+  const missingIds = o.family.filter((id) => !rows.some((r) => r.id === id));
+  if (missingIds.length > 0 || new Set(o.family).size !== o.family.length) {
+    const msg = `family ${o.family.join(",")} does not match the contrasts (${
+      rows.map((r) => r.id).join(",")
+    })`;
+    throw new ValidationError(msg, [msg]);
+  }
+  const results = new Map(rows.map((r) => [r.id, r.run(o.level)]));
+  const h = holm(
+    o.family.map((id) => results.get(id)!.p_value ?? null),
+    o.alpha,
+  );
+  const bonf = 1 - o.alpha / o.family.length;
+  return rows.map((r) => {
+    const c = results.get(r.id)!;
+    const v = c.values;
+    const ratio = v && v.baseline !== null && v.variant !== null &&
+        v.baseline !== 0
+      ? v.variant / v.baseline
+      : null;
+    const j = o.family.indexOf(r.id);
+    if (j < 0) {
+      return {
+        ...c,
+        id: r.id,
+        name: r.name,
+        confirmatory: false,
+        p_holm: null,
+        decision: "no_decision" as const,
+        bonferroni_ci: null,
+        ratio,
+      };
+    }
+    return {
+      ...c,
+      id: r.id,
+      name: r.name,
+      confirmatory: true,
+      p_holm: c.p_value == null ? null : h.adjusted[j]!,
+      decision: decide(c.delta, h.reject[j]!),
+      bonferroni_ci: c.ci === null ? null : r.run(bonf).ci,
+      ratio,
+    };
+  });
 }

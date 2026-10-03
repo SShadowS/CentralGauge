@@ -144,19 +144,19 @@ export class FakeBc implements HarnessBc {
         version: string;
       };
       const source = await sources(project.path);
-      // alc: a symbol package the source needs must be in the package cache.
-      const missing = [...source.matchAll(/\/\/ needs (.+?\.app)/g)]
-        .map((m) => m[1]!).find((f) => !pk.includes(f));
-      const errors = this.errorsFor?.(folder) ?? [];
-      if (errors.length > 0) {
+      const planted = this.errorsFor?.(folder) ?? [];
+      if (planted.length > 0) {
         return {
           success: false,
-          errors,
+          errors: planted,
           warnings: [],
           output: "",
           duration: 1,
         };
       }
+      // alc: a symbol package the source needs must be in the package cache.
+      const missing = [...source.matchAll(/\/\/ needs (.+?\.app)/g)]
+        .map((m) => m[1]!).find((f) => !pk.includes(f));
       if (source.includes("COMPILE_ERROR") || missing) {
         return {
           success: false,
