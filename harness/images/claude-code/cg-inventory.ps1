@@ -77,8 +77,12 @@ $bundle = Join-Path $ConfigDir 'bundle'
 $want = New-Map
 $owner = New-Map
 $staged = @()
+# `bundle` is below the C:\config mount root and is enumerated directly, so it is checked too: a
+# junction here to a matching tree would otherwise look like a complete install.
 if (Test-Path -LiteralPath $bundle) {
-  $staged = @(Get-Children $bundle | ForEach-Object { $_.Name } | Sort-Object)
+  if (-not (Test-Reparse (Get-Item -LiteralPath $bundle -Force))) {
+    $staged = @(Get-Children $bundle | ForEach-Object { $_.Name } | Sort-Object)
+  }
 }
 foreach ($name in $staged) {
   if (@('instructions', 'skills', 'agents') -cnotcontains $name) {

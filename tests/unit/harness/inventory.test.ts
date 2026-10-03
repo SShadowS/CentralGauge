@@ -344,6 +344,31 @@ Deno.test({
 
 Deno.test({
   name:
+    "cg-inventory (M9-02 run 003): a junctioned bundle folder is refused even when it points at a matching staged tree",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    // The staged files live outside config/; config/bundle is a junction to them, so a
+    // scan that followed it would see a complete, matching install and report ok.
+    const staged = Object.fromEntries(
+      Object.entries(FULL).map((
+        [k, v],
+      ) => [k.replace(/^config\/bundle\//, "staged/"), v]),
+    );
+    const r = await inventory(
+      staged,
+      (root) => junction(join(root, "config", "bundle"), join(root, "staged")),
+    );
+    refused(r, "reparse point under a scanned root: ");
+    assertStringIncludes(
+      r.rec.problems.join("\n"),
+      join("config", "bundle"),
+    );
+    assertEquals(r.rec.installed, [], "nothing installed through the link");
+  },
+});
+
+Deno.test({
+  name:
     "cg-inventory: a junction in the workspace is refused and never followed",
   ignore: NOT_WINDOWS,
   async fn() {
