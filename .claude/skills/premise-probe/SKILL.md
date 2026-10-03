@@ -34,14 +34,20 @@ probe would have killed.
      in Error, never a passing assert.
    - Any tables the probe needs (id 70090-70099 band, same uniqueness
      check).
-2. Run it (Cronus28 default; no bench may be live):
+2. Run it (default container Cronus281; no bench may be live; Cronus281-283
+   are this project's allocation, any other container needs
+   `--any-container`, and Cronus28 belongs to LethAL):
 
    ```bash
-   deno run -A scratch/premise-probe-runner.ts \
+   deno run -A scripts/premise-probe-runner.ts \
      --solution scratch/probe-<slug>/correct \
      --testFile scratch/probe-<slug>/correct/<File>.Test.al \
-     --codeunit <id>
+     --codeunit <id> [--container Cronus282]
    ```
+
+   The runner registers the container credentials for the target container
+   before publishing; without that, any container but the MCP module's
+   default publishes as admin/admin and fails with `Unauthorized`.
 
 3. Read the `RESULTS-` lines from the failure output. They ARE the
    measurement.
