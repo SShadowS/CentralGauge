@@ -10,6 +10,12 @@ partial_credit:
     "86020/PackageUnchanged": 1
     "86020/SurchargeCountsWeekendHoliday": 1
   hidden_regressions: []
-reuse: null
+reuse:
+  targets:
+    - { codeunit: 70009, procedure: IsWeekend, signature: "(CheckDate: Date): Boolean", file: Core/src/WorkingDays.Codeunit.al, perturb: "exit(false);" }
+  tests:
+    - { codeunit: 86020, procedures: [SurchargeIgnoresWeekdayHoliday, WorkingDaysUnchanged, SurchargeCountsWeekendHoliday] }
 expect:
-  correct: { partial_credit: 1, final_errors: 0 }
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
