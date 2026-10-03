@@ -759,3 +759,33 @@ Deno.test("validateCampaignRecords: vary [harness, mcp] keeps the MCP rule", asy
     "outside vary [harness, mcp]: settings",
   );
 });
+
+Deno.test("validateCampaignRecords: a campaign on a development image revision is refused (M9-16)", async () => {
+  const c = await campaign();
+  const onRevision = async (rev: string) => ({
+    ...c,
+    arms: await Promise.all(c.arms.map(async (a) => {
+      const m = {
+        ...a.manifest,
+        image: { ...a.manifest.image, revision: rev },
+      };
+      return { ...a, manifest: m, manifest_hash: await manifestHash(m) };
+    })),
+  });
+  const empty = { executions: [], artifacts: [], judgments: [] };
+  // Same revision on both arms: vary holds, hashes match; only the dev label is wrong.
+  assertEquals(
+    await problems({ campaign: await onRevision("3"), ...empty }),
+    [],
+  );
+  const p = await problems({
+    campaign: await onRevision("3-dev-M9-16"),
+    ...empty,
+  });
+  assertEquals(
+    p,
+    c.arms.map((a) =>
+      `arm ${a.config_id}: development image revision 3-dev-M9-16 is not allowed in a campaign`
+    ),
+  );
+});

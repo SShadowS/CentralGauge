@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
 import type { HarnessTask } from "../../../src/harness/task.ts";
@@ -191,5 +191,134 @@ Deno.test("measure records: versioned by fingerprint, write once, bound to artif
   assertEquals(
     await readMeasureRecord(root, r.judgment_id, "d".repeat(64)),
     null,
+  );
+});
+
+const record = async (): Promise<MeasureRecord> => ({
+  v: 1,
+  judgment_id: "00000000-0000-4000-8000-0000000000a1",
+  execution_id: "00000000-0000-4000-8000-0000000000b1",
+  task_id: "HX-101",
+  workspace_hash: "a".repeat(64),
+  oracle_hash: "b".repeat(64),
+  measure_fingerprint: await measureFingerprint(),
+  analyzers: null,
+  final_code: { status: "missing", reason: "not run" },
+  reuse: { status: "not_applicable", reason: "no reuse target" },
+  partial_credit: { status: "not_applicable", reason: "no frozen weights" },
+});
+
+Deno.test("TaskMeasuresSchema: a weight total that overflows is refused (M11-04 run 002)", () => {
+  const huge = TaskMeasuresSchema.safeParse({
+    v: 1,
+    partial_credit: { weights: { "85400/A": 1e308, "85400/B": 1e308 } },
+  });
+  assertEquals(huge.success, false);
+  assertStringIncludes(huge.error!.message, "finite");
+  // One very large weight alone is fine and stays proportional.
+  const big = TaskMeasuresSchema.parse({
+    v: 1,
+    partial_credit: {
+      weights: { "85400/A": 1e308, "85400/B": 1e308 / 2, "85400/C": 1e307 },
+      hidden_regressions: ["85400/H"],
+    },
+  });
+  const j = full(
+    [
+      row(85400, "A", true),
+      row(85400, "B", false),
+      row(85400, "C", false),
+      row(85400, "H", true),
+    ],
+    [row(80010, "P1", true), row(80010, "P2", true)],
+  );
+  const r = partialCredit(task(), big, j);
+  assertEquals(r.status, "ok");
+  assertEquals(
+    r.status === "ok" && Math.abs(r.value.new_requirements - 1 / 1.6) < 1e-12,
+    true,
+  );
+});
+
+Deno.test("loadTaskMeasures: duplicate hidden regressions are refused (M11-04 run 002)", async () => {
+  assertEquals(
+    TaskMeasuresSchema.safeParse({
+      v: 1,
+      partial_credit: {
+        weights: { "85400/A": 1 },
+        hidden_regressions: ["85400/H1", "85400/H1", "85400/H2"],
+      },
+    }).success,
+    false,
+  );
+  const dir = await Deno.makeTempDir();
+  await Deno.mkdir(join(dir, "measures"));
+  await Deno.writeTextFile(
+    join(dir, "measures", "measures.yml"),
+    `v: 1\npartial_credit:\n  weights: { "85400/A": 1, "85400/B": 1, "85400/C": 1 }\n  hidden_regressions: ["85400/H", "85400/H"]\n`,
+  );
+  await assertRejects(
+    () => loadTaskMeasures({ task: task(), dir }),
+    ValidationError,
+    "duplicate",
+  );
+});
+
+Deno.test("readMeasureRecord: a record whose judgment or fingerprint disagrees with its location is refused (M11-04 run 002)", async () => {
+  const root = await Deno.makeTempDir();
+  const r = await record();
+  await writeMeasureRecord(root, r);
+  const src = join(
+    root,
+    "measures",
+    r.judgment_id,
+    `${r.measure_fingerprint}.json`,
+  );
+  const otherFp = "c".repeat(64);
+  await Deno.copyFile(
+    src,
+    join(root, "measures", r.judgment_id, `${otherFp}.json`),
+  );
+  await assertRejects(
+    () => readMeasureRecord(root, r.judgment_id, otherFp),
+    ValidationError,
+    "measure_fingerprint: does not match its location",
+  );
+  const otherJ = "00000000-0000-4000-8000-0000000000a2";
+  await Deno.mkdir(join(root, "measures", otherJ));
+  await Deno.copyFile(
+    src,
+    join(root, "measures", otherJ, `${r.measure_fingerprint}.json`),
+  );
+  await assertRejects(
+    () => readMeasureRecord(root, otherJ, r.measure_fingerprint),
+    ValidationError,
+    "judgment_id: does not match its location",
+  );
+});
+
+Deno.test("writeMeasureRecord: published through a synced temp file; a stale temp never takes the key (M11-04 run 002)", async () => {
+  const root = await Deno.makeTempDir();
+  const r = await record();
+  const dir = join(root, "measures", r.judgment_id);
+  const final = join(dir, `${r.measure_fingerprint}.json`);
+  // A crash mid-write leaves only a temp name: the immutable key stays free.
+  await Deno.mkdir(dir, { recursive: true });
+  await Deno.writeTextFile(`${final}.tmp-crashed`, '{"v": 1, "judg');
+  await writeMeasureRecord(root, r);
+  assertEquals(
+    await readMeasureRecord(root, r.judgment_id, r.measure_fingerprint),
+    r,
+  );
+  const names: string[] = [];
+  for await (const e of Deno.readDir(dir)) names.push(e.name);
+  assertEquals(names.sort(), [
+    `${r.measure_fingerprint}.json`,
+    `${r.measure_fingerprint}.json.tmp-crashed`,
+  ]);
+  await assertRejects(
+    () => writeMeasureRecord(root, r),
+    ValidationError,
+    "immutable",
   );
 });

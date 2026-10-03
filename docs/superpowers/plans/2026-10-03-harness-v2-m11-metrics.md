@@ -1759,7 +1759,7 @@ Inference contract (stage A copies it):
 - p-value: percentile bootstrap with the +1 correction over the defined resamples, `p = min(1, 2 * min(#{d <= 0} + 1, #{d >= 0} + 1) / (n + 1))`. This is an approximate test; its calibration is not assumed but checked: stage A's design rule requires family-wise error under the null and partial-null scenarios within alpha + 2 Monte Carlo SE at the chosen design (M11-13). If that fails no design is accepted and the owner decides.
 - Holm over exactly the pre-registered `family`, in its order (ties keep family order). A suppressed contrast (zero-solve rule) has p = null: ranks as 1, never rejects, decides `no_decision`.
 - Direction: a rejection decides `variant_lower` (delta < 0) or `variant_higher`; else `no_decision`.
-- Intervals: the 95% percentile interval is per contrast and unadjusted (descriptive); beside it a Bonferroni interval at 1 - alpha/m from the same draws. Decisions come from Holm only; a Bonferroni interval excluding 0 implies the Holm rejection, the converse need not hold and is shown as is.
+- Intervals: the 95% percentile interval is per contrast and unadjusted (descriptive); beside it a Bonferroni interval at 1 - alpha/m from the same draws. Decisions come from Holm only. With finite resamples the interpolated Bonferroni interval and the +1-corrected Holm test can disagree in either direction at the boundary (an interval excluding 0 beside `no_decision` is possible); the report shows both as is and names Holm as the sole decision rule (ruling 2026-10-03, M11-09).
 - Zero-solve rule: `suppress_any_undefined` (v1) or `min_defined_share` (p and interval over the defined resamples, only when their share is at least the frozen threshold); chosen by M11-15 in stage A.
 
 **Files:**
