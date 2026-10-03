@@ -35,6 +35,7 @@ import {
 import { validateCampaignRecords } from "./integrity.ts";
 import { manifestHash, resolveManifest } from "./manifest.ts";
 import { cellsFromRecords } from "./outcome.ts";
+import { verifyPrereg } from "./prereg.ts";
 import {
   type ArtifactRecord,
   type Block,
@@ -70,6 +71,10 @@ export interface RunOptions {
   campaign?: string;
   /** Run exactly this unscored cell again as a manual_rerun; nothing else runs. */
   rerun?: { task: string; repeat: number; arm: string };
+  /** M11-10: the stage-A decision file; required with a preregistration. */
+  preregDecision?: string;
+  /** M11-10: the stage-B decision file; required with a preregistration. */
+  preregBDecision?: string;
 }
 
 export interface CampaignSummary {
@@ -576,6 +581,30 @@ export async function runCampaign(
   }
   let created = false;
   let data: CampaignRecords | null = null;
+  // M11-10: both decision files are required with a preregistration; checked
+  // before any cell, for a new campaign and a resume alike.
+  const verify = () => {
+    if (!o.preregDecision || !o.preregBDecision) {
+      throw new ConfigurationError(
+        "--prereg-decision and --prereg-b-decision are required for a pre-registered experiment",
+      );
+    }
+    return verifyPrereg(
+      env.repoRoot,
+      env.harnessRoot,
+      experiment,
+      expHash,
+      ids.tasks.map((t) => t.id),
+      o.preregDecision,
+      o.preregBDecision,
+    );
+  };
+  const refusal = (problems: string[]) =>
+    new ConfigurationError(
+      `preregistration ${experiment.preregistration} refuses a confirmatory campaign:\n  ${
+        problems.join("\n  ")
+      }`,
+    );
   if (!c && o.rerun) {
     throw new ConfigurationError(
       `no campaign of experiment ${experimentId} matches the current experiment, task set and arm manifests: --rerun targets an existing campaign`,
@@ -588,6 +617,27 @@ export async function runCampaign(
           campaigns[0]!.id
         }: starting a new campaign`,
       );
+    }
+    let preregistration:
+      | {
+        path: string;
+        sha256: string;
+        protocol_sha256: string;
+        decision_sha256: string;
+        stage_b_decision_sha256: string;
+      }
+      | undefined;
+    if (experiment.preregistration) {
+      const v = await verify();
+      if (v.problems.length > 0) throw refusal(v.problems);
+      // Bound to the externally approved stage-B bytes and both decision files.
+      preregistration = {
+        path: experiment.preregistration,
+        sha256: v.sha256,
+        protocol_sha256: v.protocol_sha256,
+        decision_sha256: v.decision_sha256,
+        stage_b_decision_sha256: v.stage_b_decision_sha256,
+      };
     }
     const seed = o.seed ??
       crypto.getRandomValues(new Uint32Array(1))[0]!;
@@ -614,6 +664,7 @@ export async function runCampaign(
         [experiment.baseline, ...experiment.variants],
         seed,
       ),
+      ...(preregistration ? { preregistration } : {}),
     });
     // The checks a resume runs, before any record or execution (dry run too).
     await validateCampaignRecords({
@@ -627,6 +678,19 @@ export async function runCampaign(
       created = true;
     }
   } else {
+    if (c.preregistration) {
+      const v = await verify();
+      const p = c.preregistration;
+      if (
+        v.sha256 !== p.sha256 || v.decision_sha256 !== p.decision_sha256 ||
+        v.stage_b_decision_sha256 !== p.stage_b_decision_sha256
+      ) {
+        throw new ConfigurationError(
+          `preregistration changed since campaign ${c.id} was created (document or decision file)`,
+        );
+      }
+      if (v.problems.length > 0) throw refusal(v.problems);
+    }
     data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data);
   }
