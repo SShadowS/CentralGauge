@@ -36,6 +36,7 @@ import {
   HARNESS_FIXTURE_TEST_RANGE,
   HARNESS_FORBIDDEN_IDS,
   HARNESS_SHIPPED_TEST_RANGE,
+  HARNESS_TASK_SUITE_RANGE,
   HARNESS_TEST_APP_RANGE,
   PREREQ_APP_ID_RANGE,
   SPIKE_APP_ID_RANGE,
@@ -183,6 +184,11 @@ function isFixtureUnderTest(unit: string): boolean {
   return /^harness-fixture:HX-[^:]+:[^:]+:Test$/.test(unit);
 }
 
+/** gate-stage: correct/ and mutants/ must not touch Test/ (overlay may). */
+function isForbiddenLayerTest(unit: string): boolean {
+  return /^harness-(correct|mutants):.*:Test$/.test(unit);
+}
+
 /** Expected band for a unit, or null when the unit has no enforced band. */
 function bandOf(unit: string): Band | null {
   if (unit.startsWith("prereq:")) {
@@ -221,18 +227,20 @@ function bandOf(unit: string): Band | null {
     };
   }
   if (unit.startsWith("harness-oracle:")) return oracleBand(unit.slice(15));
-  // Reported separately in auditObjects ("fixture under Test/").
-  if (isFixtureUnderTest(unit)) return null;
+  // Reported separately in auditObjects (no Test/ allowed for these layers).
+  if (isFixtureUnderTest(unit) || isForbiddenLayerTest(unit)) return null;
   if (
     /^harness-(overlay|correct|naive|mutants|reference-tests|fixture):/.test(
       unit,
     )
   ) {
+    if (!unit.endsWith(":Test")) return refappBand;
     // Test-authoring suites (reference-tests, naive) are visible tests in the
     // Test app: v2 plan m8-task-set.md:31, "visible tests 80000-84999".
-    return unit.endsWith(":Test")
-      ? { label: "task test suite", ...HARNESS_TEST_APP_RANGE }
-      : refappBand;
+    if (/^harness-(reference-tests|naive):/.test(unit)) {
+      return { label: "task test suite", ...HARNESS_TEST_APP_RANGE };
+    }
+    return { label: "task test suite", ...HARNESS_TASK_SUITE_RANGE };
   }
   return null;
 }
@@ -322,6 +330,12 @@ export function auditObjects(
       problems.push(
         `${obj.file}: ${obj.kind} ${obj.id} "${obj.name}" is a fixture under ` +
           `Test/ (fixtures never touch the Test app)`,
+      );
+    }
+    if (isForbiddenLayerTest(obj.unit)) {
+      problems.push(
+        `${obj.file}: ${obj.kind} ${obj.id} "${obj.name}": correct/ and ` +
+          `mutants/ must not touch Test/ (scripts/harness/gate-stage.ts)`,
       );
     }
     const harnessUnit = /^(refapp|harness-)/.test(obj.unit) ||

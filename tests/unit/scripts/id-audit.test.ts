@@ -495,6 +495,19 @@ Deno.test("harness-tasks v2: oracle bands, test-authoring suites, fixtures", asy
     assertEquals(auditObjects([f(fx, 80001)]).problems.length, 1);
   });
 
+  await t.step("correct/ and mutants/ under Test/ are refused", () => {
+    for (
+      const file of [
+        "harness-tasks/tasks/HX-016/correct/Test/src/C.Codeunit.al",
+        "harness-tasks/tasks/HX-016/mutants/x/Test/src/M.Codeunit.al",
+      ]
+    ) {
+      const p = auditObjects([f(file, 84000)]).problems;
+      assertEquals(p.length, 1, file);
+      assertStringIncludes(p[0]!, "must not touch Test/");
+    }
+  });
+
   await t.step("fixture under Test/ is refused, not banded", () => {
     const fx = "harness-tasks/tasks/HX-009/fixture/dead-call/Test/src/X.al";
     const p = auditObjects([f(fx, 80100)]).problems;
