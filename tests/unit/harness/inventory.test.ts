@@ -1,0 +1,270 @@
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import { dirname, fromFileUrl, join } from "@std/path";
+import { tempDir } from "./temp-dirs.ts";
+
+/**
+ * Spec v2 section 4 / gate 1: the pre-start component inventory, run with
+ * Windows PowerShell 5.1 (the image's shell) against a temp sandbox layout.
+ */
+const SCRIPT = fromFileUrl(
+  new URL(
+    "../../../harness/images/claude-code/cg-inventory.ps1",
+    import.meta.url,
+  ),
+);
+const NOT_WINDOWS = Deno.build.os !== "windows";
+
+/** Path relative to the sandbox root -> file content, or null for an empty folder. */
+type Layout = Record<string, string | null>;
+interface Inventory {
+  type: string;
+  v: number;
+  ok: boolean;
+  installed: string[];
+  problems: string[];
+}
+
+/** A fully installed realistic arm: every staged file has its installed copy. */
+const FULL: Layout = {
+  "config/bundle/instructions/CLAUDE.md": "team\n",
+  "config/bundle/instructions/rules/al.md": "rule\n",
+  "config/bundle/skills/al-compile/SKILL.md": "skill\n",
+  "config/bundle/agents/al-reviewer.md": "agent\n",
+  "home/.claude/CLAUDE.md": "team\n",
+  "home/.claude/rules/al.md": "rule\n",
+  "home/.claude/skills/al-compile/SKILL.md": "skill\n",
+  "home/.claude/agents/al-reviewer.md": "agent\n",
+  "ws/Core/app.json": "{}",
+};
+
+async function inventory(
+  layout: Layout,
+): Promise<{ code: number; rec: Inventory; root: string }> {
+  const root = await Deno.realPath(await tempDir({ prefix: "cg-inv-" }));
+  for (const d of ["config", "home", "ws"]) {
+    await Deno.mkdir(join(root, d), { recursive: true });
+  }
+  for (const [p, text] of Object.entries(layout)) {
+    const f = join(root, ...p.split("/"));
+    if (text === null) {
+      await Deno.mkdir(f, { recursive: true });
+      continue;
+    }
+    await Deno.mkdir(dirname(f), { recursive: true });
+    await Deno.writeTextFile(f, text);
+  }
+  const out = await new Deno.Command("powershell", {
+    args: [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      SCRIPT,
+      "-ConfigDir",
+      join(root, "config"),
+      "-HomeDir",
+      join(root, "home"),
+      "-Workspace",
+      join(root, "ws"),
+      "-Ancestors",
+      root,
+      "-ManagedDir",
+      join(root, "managed"),
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  const lines = new TextDecoder().decode(out.stdout).split(/\r?\n/).filter(
+    Boolean,
+  );
+  assertEquals(
+    lines.length,
+    1,
+    `exactly one JSON line; stdout ${lines.join(" | ")}; stderr ${
+      new TextDecoder().decode(out.stderr)
+    }`,
+  );
+  return { code: out.code, rec: JSON.parse(lines[0]!) as Inventory, root };
+}
+
+const without = (l: Layout, ...keys: string[]): Layout =>
+  Object.fromEntries(Object.entries(l).filter(([k]) => !keys.includes(k)));
+
+const refused = (r: { code: number; rec: Inventory }, want: string) => {
+  assertEquals([r.code, r.rec.ok], [5, false], JSON.stringify(r.rec));
+  assert(
+    r.rec.problems.some((p) => p.includes(want)),
+    `a problem containing ${JSON.stringify(want)}: ${
+      JSON.stringify(r.rec.problems)
+    }`,
+  );
+};
+
+Deno.test({
+  name: "cg-inventory: a fully installed arm is ok and lists every component",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    const r = await inventory(FULL);
+    assertEquals(r.code, 0);
+    assertEquals(r.rec, {
+      type: "cg_inventory",
+      v: 1,
+      ok: true,
+      installed: ["agents", "instructions", "skills"],
+      problems: [],
+    });
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory: an arm with no bundle and an empty user scope is ok with nothing installed",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    const r = await inventory({ "ws/Core/app.json": "{}" });
+    assertEquals([r.code, r.rec.ok, r.rec.installed, r.rec.problems], [
+      0,
+      true,
+      [],
+      [],
+    ]);
+  },
+});
+
+// Positive half per component is the FULL case; negative halves below.
+const PER_COMPONENT: [string, string][] = [
+  ["instructions", "CLAUDE.md"],
+  ["instructions", "rules/al.md"],
+  ["skills", "skills/al-compile/SKILL.md"],
+  ["agents", "agents/al-reviewer.md"],
+];
+const stagedKey = (comp: string, dest: string) =>
+  `config/bundle/${comp}/${
+    comp === "instructions" ? dest : dest.slice(comp.length + 1)
+  }`;
+
+Deno.test({
+  name:
+    "cg-inventory: a staged-but-absent component is refused and not listed as installed",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    for (const [comp, dest] of PER_COMPONENT) {
+      const r = await inventory(without(FULL, `home/.claude/${dest}`));
+      refused(r, `${comp}: ${dest} is staged but not installed`);
+      assert(!r.rec.installed.includes(comp), `${comp} not installed`);
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory: an installed-but-undeclared file is refused, per component and for hooks settings",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    for (const [comp, dest] of PER_COMPONENT) {
+      refused(
+        await inventory(without(FULL, stagedKey(comp, dest))),
+        `undeclared file in the user scope: .claude/${dest}`,
+      );
+    }
+    refused(
+      await inventory({
+        ...FULL,
+        "home/.claude/settings.json": '{"hooks":{}}',
+      }),
+      "undeclared file in the user scope: .claude/settings.json",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory: an installed copy that differs from the staged one is refused",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    for (const [comp, dest] of PER_COMPONENT) {
+      refused(
+        await inventory({ ...FULL, [`home/.claude/${dest}`]: "tampered\n" }),
+        `${comp}: ${dest} differs from the staged copy`,
+      );
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory: hooks and plugins have no installer, an unknown instructions file is not installable, an empty component is refused",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    refused(
+      await inventory({ ...FULL, "config/bundle/hooks/settings.json": "{}" }),
+      "hooks is staged but this image cannot install it",
+    );
+    refused(
+      await inventory({ ...FULL, "config/bundle/plugins/0/plugin.json": "{}" }),
+      "plugins is staged but this image cannot install it",
+    );
+    refused(
+      await inventory({ ...FULL, "config/bundle/instructions/notes.txt": "x" }),
+      "instructions: notes.txt is staged but not installable",
+    );
+    const empty = await inventory({
+      ...without(
+        FULL,
+        "config/bundle/agents/al-reviewer.md",
+        "home/.claude/agents/al-reviewer.md",
+      ),
+      "config/bundle/agents": null,
+    });
+    refused(empty, "agents is staged but empty");
+    assert(!empty.rec.installed.includes("agents"));
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory: project, nested, ancestor, user-config and managed scopes must be empty",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    for (
+      const p of [
+        "ws/CLAUDE.md",
+        "ws/CLAUDE.local.md",
+        "ws/AGENTS.md",
+        "ws/.mcp.json",
+        "ws/.claude/rules/x.md",
+        "ws/Core/src/CLAUDE.md",
+        "CLAUDE.md",
+        ".claude/agents/x.md",
+      ]
+    ) {
+      const r = await inventory({ ...FULL, [p]: "x" });
+      refused(r, "undeclared project-scope entry");
+      assertStringIncludes(
+        r.rec.problems.join("\n"),
+        p.split("/").at(-1)! === "x.md" ? ".claude" : p.split("/").at(-1)!,
+      );
+    }
+    refused(
+      await inventory({ ...FULL, "home/.claude.json": "{}" }),
+      "undeclared user config present",
+    );
+    refused(
+      await inventory({ ...FULL, "managed/managed-settings.json": "{}" }),
+      "managed Claude Code settings present",
+    );
+  },
+});
+
+Deno.test({
+  name: "cg-inventory: an AGENTS.md parity copy is staged but never installed",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    const r = await inventory({
+      ...FULL,
+      "config/bundle/instructions/AGENTS.md": "team\n",
+    });
+    assertEquals([r.code, r.rec.ok], [0, true]);
+  },
+});
