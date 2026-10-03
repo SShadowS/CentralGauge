@@ -31,6 +31,8 @@ import {
   type JudgmentRecord,
 } from "./records.ts";
 import { RULES_VERSION } from "./classify.ts";
+import type { MeasureRecord } from "./measures.ts";
+import { familyProblems, type Prereg } from "./prereg.ts";
 import { type LoadedTrace, traceMetrics } from "./trace-metrics.ts";
 import {
   type ArmSummary,
@@ -39,8 +41,11 @@ import {
   checkBootstrapOptions,
   compareArms,
   type Comparison,
+  type ContrastResult,
   exploratoryNote,
   ineligible,
+  testContrasts,
+  type ZeroSolveRule,
 } from "./stats.ts";
 
 export interface ArmCoverage {
@@ -157,6 +162,25 @@ export interface HarnessReport {
   slices: Slice[];
   /** Per variant: matched scored pairs against the baseline (descriptive, no winner). */
   both_pass: BothPass[];
+  /**
+   * M11-11: the pre-registered contrasts (C1..C3 and the interaction), over
+   * the selected tasks only. Holm over `family` is the only decision rule;
+   * the intervals are descriptive. Held-out tasks are summarised apart.
+   * Everything else in the report is exploratory. Withheld (with the reason,
+   * never partial decisions) unless the data are exactly the pre-registered
+   * design: nothing partial, pending or unrun, campaign oracles.
+   */
+  confirmatory?: { withheld: string } | {
+    preregistration: { path: string; sha256: string; protocol_sha256: string };
+    amendments: Prereg["amendments"];
+    alpha: number;
+    family: string[];
+    zero_solve: ZeroSolveRule;
+    bootstrap: { resamples: number; seed: number; level: number };
+    tasks: string[];
+    results: ContrastResult[];
+    held_out: { tasks: string[]; arms: ArmSummary[] };
+  };
   cells: CellRecord[];
 }
 
@@ -233,11 +257,15 @@ export interface ReportLogs {
   host: ReadonlyMap<string, readonly HostLogLine[]>;
   /** Judgment id -> verdict log. */
   verdict: ReadonlyMap<string, VerdictLog>;
+  /** Judgment id -> measure record; each is checked against its cell (see measureProblems). */
+  measures?: ReadonlyMap<string, MeasureRecord>;
 }
 
 export interface ReportOptions extends BootstrapOptions {
   judging?: JudgingContext;
   logs?: ReportLogs;
+  /** `verifyPrereg` output; required for a campaign with a preregistration. */
+  prereg?: { doc: Prereg; sha256: string; problems: string[] };
   /** Published traces (loadTraces); without it coverage[].trace is null. */
   traces?: {
     traces: Map<string, LoadedTrace | null>;
@@ -389,6 +417,97 @@ function oneScorerFingerprint(cells: CellRecord[]): string | null {
   return fps[0] ?? null;
 }
 
+/**
+ * A measure record counts for a cell only when it is the cell's own: its
+ * counted judgment, used execution, that execution's stored workspace and the
+ * judgment's oracle. With a pre-registration it must also carry the frozen
+ * measure fingerprint, analyzer ruleset, compiler and canary codes. The first
+ * mismatch refuses the report and names the field.
+ */
+function checkMeasures(
+  records: CampaignRecords,
+  cells: CellRecord[],
+  measures: ReadonlyMap<string, MeasureRecord>,
+  doc: Prereg | undefined,
+): void {
+  const refuse = (id: string, field: string, detail: string) => {
+    const msg = `measure record for judgment ${id}: ${field} ${detail}`;
+    return new ValidationError(msg, [msg]);
+  };
+  for (const [id, r] of measures) {
+    if (r.judgment_id !== id) {
+      throw refuse(
+        id,
+        "judgment",
+        `${r.judgment_id} differs from the key it is filed under`,
+      );
+    }
+    const cell = cells.find((c) => c.judgment_id === r.judgment_id);
+    if (!cell) {
+      throw refuse(
+        id,
+        "judgment",
+        `${r.judgment_id} is not the counted judgment of any cell`,
+      );
+    }
+    if (r.execution_id !== cell.used_execution) {
+      throw refuse(
+        id,
+        "execution",
+        `${r.execution_id} is not the cell's used execution ${cell.used_execution}`,
+      );
+    }
+    const stored = records.artifacts.find((a) =>
+      a.execution_id === cell.used_execution
+    )?.workspace_hash ??
+      records.executions.find((e) => e.id === cell.used_execution)
+        ?.workspace_hash;
+    if (r.workspace_hash !== stored) {
+      throw refuse(
+        id,
+        "workspace",
+        `hash ${r.workspace_hash} is not the used execution's stored workspace ${stored}`,
+      );
+    }
+    if (r.oracle_hash !== cell.oracle_hash) {
+      throw refuse(
+        id,
+        "oracle",
+        `hash ${r.oracle_hash} is not the counted judgment's oracle ${cell.oracle_hash}`,
+      );
+    }
+    if (!doc) continue;
+    const m = doc.measures;
+    if (r.measure_fingerprint !== m.fingerprint) {
+      throw refuse(
+        id,
+        "fingerprint",
+        `${r.measure_fingerprint} is not the pre-registered ${m.fingerprint}`,
+      );
+    }
+    const a = r.analyzers;
+    if (a === null) continue;
+    if (a.ruleset_sha256 !== m.ruleset_sha256) {
+      throw refuse(
+        id,
+        "ruleset",
+        `${a.ruleset_sha256} is not the pre-registered ${m.ruleset_sha256}`,
+      );
+    }
+    if (a.compiler !== doc.compiler_identity) {
+      throw refuse(
+        id,
+        "compiler",
+        `${a.compiler} is not the pre-registered ${doc.compiler_identity}`,
+      );
+    }
+    const lacking = m.canary_codes.filter((x) => !a.canary_codes.includes(x));
+    if (lacking.length > 0) {
+      throw refuse(id, "canary", `codes lack ${lacking.join(", ")}`);
+    }
+  }
+}
+
 export async function buildReport(
   records: CampaignRecords,
   opts: ReportOptions = {},
@@ -431,6 +550,35 @@ export async function buildReport(
     cs.reduce((s, c) => s + c.known_spend_usd, 0);
   // Refuse before any number: bad bootstrap options, mixed scorers.
   checkBootstrapOptions(opts);
+  const pre = campaign.preregistration;
+  if (pre) {
+    const p = opts.prereg;
+    if (!p || p.sha256 !== pre.sha256) {
+      const msg = `preregistration ${pre.path} (${
+        p?.sha256 ?? "not loaded"
+      }) does not match the campaign (${pre.sha256})`;
+      throw new ValidationError(msg, [msg]);
+    }
+    const why = [
+      ...p.problems,
+      ...familyProblems(p.doc, exp),
+      ...(p.doc.selection ? [] : ["stage B selection is missing"]),
+    ];
+    if (why.length > 0) {
+      throw new ValidationError(
+        `preregistration ${pre.path}: ${why.join("; ")}`,
+        why,
+      );
+    }
+  }
+  if (opts.logs?.measures) {
+    checkMeasures(
+      records,
+      allCells,
+      opts.logs.measures,
+      pre ? opts.prereg?.doc : undefined,
+    );
+  }
   const fingerprint = oneScorerFingerprint(cells);
   // The same complete map drives selection and the reported identity.
   const judgedTasks = campaign.task_set.tasks.map((t) => ({
@@ -449,8 +597,10 @@ export async function buildReport(
       ),
     });
   }
+  // With contrasts nothing but the pre-registered family is primary: the
+  // headline figures include held-out tasks.
   const labelOf = (m: ReportedMetric): MetricLabel =>
-    m === exp.primary_metric ? "primary" : "exploratory";
+    !exp.contrasts && m === exp.primary_metric ? "primary" : "exploratory";
   const metrics: PrimaryMetric[] = exp.primary_metric === "pass_rate"
     ? ["pass_rate", "cost_per_solved_task"]
     : ["cost_per_solved_task", "pass_rate"];
@@ -459,14 +609,75 @@ export async function buildReport(
     ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
     ...(opts.level !== undefined ? { level: opts.level } : {}),
   };
+  // With contrasts the pre-registered family is the only confirmatory result.
   const comparisons = exp.variants.flatMap((variant) => {
     return metrics.map((metric) => ({
       ...compareArms(cells, exp.baseline, variant, metric, bootstrap),
-      primary: metric === exp.primary_metric,
+      // No interval-derived verdict anywhere in a report with contrasts.
+      ...(exp.contrasts ? { distinguishable: null } : {}),
+      primary: exp.contrasts ? false : metric === exp.primary_metric,
       label: labelOf(metric),
       scorer_fingerprint: fingerprint,
     }));
   });
+  const d = pre && opts.prereg && exp.contrasts ? opts.prereg.doc : undefined;
+  const selection = d?.selection;
+  // Fail closed (cg-orchestrator ruling 2026-10-03): decisions only on the
+  // complete pre-registered design with the campaign's own oracles.
+  const open = cells.filter((c) =>
+    c.status === "pending" || c.status === "unrun"
+  );
+  const withheld = judging.source !== "campaign"
+    ? `judging with ${judging.source} oracles, not the campaign's`
+    : reported < exp.repeats
+    ? `repeats reported ${reported} of ${exp.repeats}`
+    : open.length > 0
+    ? `${open.filter((c) => c.status === "pending").length} pending and ${
+      open.filter((c) => c.status === "unrun").length
+    } unrun cells`
+    : null;
+  const confirmatory = d && pre && selection && exp.contrasts
+    ? withheld !== null ? { withheld } : (() => {
+      const selected = new Set(selection.selected);
+      const held = new Set(selection.held_out);
+      const family = d.confirmatory ? d.family : [];
+      const { resamples, seed, level } = d.bootstrap;
+      return {
+        preregistration: {
+          path: pre.path,
+          sha256: pre.sha256,
+          protocol_sha256: pre.protocol_sha256,
+        },
+        amendments: d.amendments,
+        alpha: d.alpha,
+        family,
+        zero_solve: d.zero_solve,
+        bootstrap: { resamples, seed, level },
+        tasks: selection.selected,
+        // The interval-derived flag is dropped: Holm alone decides.
+        results: testContrasts(
+          cells.filter((c) => selected.has(c.task)),
+          exp.contrasts,
+          exp.interaction ? { ...exp.interaction } : null,
+          "cost_per_solved_task",
+          {
+            resamples,
+            seed,
+            level,
+            alpha: d.alpha,
+            zeroSolve: d.zero_solve,
+            family,
+          },
+        ).map((x) => ({ ...x, distinguishable: null })),
+        held_out: {
+          tasks: selection.held_out,
+          arms: arms.map((a) =>
+            armSummary(cells.filter((c) => held.has(c.task)), a, reported)
+          ),
+        },
+      };
+    })()
+    : undefined;
   const summaries = arms.map((arm) => armSummary(cells, arm, reported));
   const rate = (task: string, arm: string) => {
     const ps = cells.filter((c) =>
@@ -643,6 +854,7 @@ export async function buildReport(
     ),
     slices,
     both_pass,
+    ...(confirmatory ? { confirmatory } : {}),
     cells,
   };
 }
@@ -658,7 +870,7 @@ const fmtOf = (c: Comparison) =>
     ? (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)} pp`
     : (x: number) => `${x >= 0 ? "+" : "-"}$${Math.abs(x).toFixed(3)}`;
 
-function fmtDelta(c: Comparison): string {
+function fmtDelta(c: Comparison, verdicts = true): string {
   const f = fmtOf(c);
   if (c.pairs === 0) return "n/a (no matched pairs)";
   if (c.delta === null) return "n/a (no solved task in the matched pairs)";
@@ -670,10 +882,12 @@ function fmtDelta(c: Comparison): string {
       f(c.delta)
     }, CI suppressed: ${none} of ${c.resamples} resamples had no solve (${cohort})`;
   }
+  const interval = `${f(c.delta)} [${f(c.ci[0])}, ${f(c.ci[1])}]`;
+  if (!verdicts) return `${interval} (${cohort})`;
   const verdict = c.distinguishable
     ? colors.green("distinguishable")
     : colors.yellow("not distinguishable");
-  return `${f(c.delta)} [${f(c.ci[0])}, ${f(c.ci[1])}] ${verdict} (${cohort})`;
+  return `${interval} ${verdict} (${cohort})`;
 }
 
 export function renderReport(r: HarnessReport): string {
@@ -682,6 +896,18 @@ export function renderReport(r: HarnessReport): string {
     r.metric_labels[m] === "primary" ? "" : colors.dim(" [exploratory]");
   const h = (s: string) => out.push("", colors.bold(s));
   out.push(colors.bold(`Harness report: ${r.experiment.id}`));
+  const conf = r.confirmatory && !("withheld" in r.confirmatory)
+    ? r.confirmatory
+    : undefined;
+  for (const a of conf?.amendments ?? []) {
+    out.push(
+      colors.yellow(
+        `pre-registration amended after screening: ${a.key} ${
+          JSON.stringify(a.from)
+        } -> ${JSON.stringify(a.to)} (${a.reason}; ${a.approval})`,
+      ),
+    );
+  }
   const part = partialText(r);
   out.push(r.partial === null ? part : colors.yellow(part));
   if (r.provisional) {
@@ -788,7 +1014,9 @@ export function renderReport(r: HarnessReport): string {
   for (const c of r.comparisons) {
     const label = c.label === "primary" ? "" : colors.dim(" [exploratory]");
     out.push(
-      `  ${c.variant} vs ${c.baseline}, ${c.metric}: ${fmtDelta(c)}${label}`,
+      `  ${c.variant} vs ${c.baseline}, ${c.metric}: ${
+        fmtDelta(c, r.confirmatory === undefined)
+      }${label}`,
     );
     // M6-02d: only beside a suppressed CI (otherwise it equals the CI).
     const note = exploratoryNote(c, fmtOf(c));
@@ -801,6 +1029,63 @@ export function renderReport(r: HarnessReport): string {
         reasons(c.excluded.baseline)
       }; ${c.variant} ${reasons(c.excluded.variant)}`,
     );
+  }
+  if (r.confirmatory && "withheld" in r.confirmatory) {
+    h(`Confirmatory analysis withheld: ${r.confirmatory.withheld}`);
+  }
+  if (conf) {
+    const k = conf;
+    h(
+      `Confirmatory contrasts (pre-registered ${
+        k.preregistration.sha256.slice(0, 12)
+      }, protocol ${
+        k.preregistration.protocol_sha256.slice(0, 12)
+      }, Holm at ${k.alpha}, ${k.bootstrap.resamples} resamples, seed ${k.bootstrap.seed}, ${k.tasks.length} selected tasks)`,
+    );
+    const bonferroni = +((1 - k.alpha / k.family.length) * 100).toFixed(1);
+    out.push(
+      `  Holm is the only decision rule (family ${
+        k.family.join(", ")
+      }); the intervals are descriptive and can disagree with it at the boundary.`,
+    );
+    for (const c of k.results) {
+      const f = fmtOf(c);
+      const ci = c.ci === null
+        ? `CI suppressed (${
+          Math.round(c.undefined_share * c.resamples)
+        } of ${c.resamples} resamples undefined)`
+        : `${+(c.level * 100).toFixed(1)}% CI [${f(c.ci[0])}, ${
+          f(c.ci[1])
+        }] (unadjusted)`;
+      const tail = c.confirmatory
+        ? `p ${c.p_value?.toFixed(4) ?? "n/a"}, Holm p ${
+          c.p_holm?.toFixed(4) ?? "n/a"
+        } -> ${c.decision.replace("_", " ")}; Bonferroni interval ${
+          c.bonferroni_ci
+            ? `[${f(c.bonferroni_ci[0])}, ${
+              f(c.bonferroni_ci[1])
+            }] at level ${bonferroni}%`
+            : "n/a"
+        }`
+        : colors.dim("[exploratory] outside the Holm family");
+      out.push(
+        `  ${c.id} ${c.name}: ${c.variant} vs ${c.baseline} over ${c.tasks} of ${k.tasks.length} selected tasks: ${
+          c.delta === null ? "n/a" : f(c.delta)
+        }, ${ci}; ${tail}`,
+      );
+    }
+    h(
+      `Held-out tasks (descriptive robustness check, not in C1-C3): ${
+        k.held_out.tasks.join(", ")
+      }`,
+    );
+    for (const a of k.held_out.arms) {
+      out.push(
+        `  ${a.arm}: cost per solved task ${
+          usd(a.cost_per_solved_task)
+        }, pass rate ${pct(a.pass_rate)} over ${a.scored_cells} scored cells`,
+      );
+    }
   }
   h("Outcome");
   for (const a of r.arms) {
