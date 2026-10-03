@@ -9,8 +9,11 @@
 import { join } from "@std/path";
 import { z } from "zod";
 import { ValidationError } from "../errors.ts";
+import type { BcLane } from "./bc-lane.ts";
 import { type JudgmentRecord, publishOnce, readRecord } from "./records.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
+import { judge, type JudgeInput } from "./verdict.ts";
+import { safeCopyTree } from "./fsutil.ts";
 import { hashJson } from "./hash.ts";
 import { Sha256Hex } from "./identity.ts";
 import { readYaml } from "./yaml.ts";

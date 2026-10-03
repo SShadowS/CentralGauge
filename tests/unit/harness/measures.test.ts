@@ -5,10 +5,12 @@ import type { HarnessTask } from "../../../src/harness/task.ts";
 import type { JudgmentRecord } from "../../../src/harness/records.ts";
 import {
   loadTaskMeasures,
+  locateProcedure,
   measureFingerprint,
   type MeasureRecord,
   partialCredit,
   readMeasureRecord,
+  stubProcedure,
   TaskMeasuresSchema,
   writeMeasureRecord,
 } from "../../../src/harness/measures.ts";
@@ -320,5 +322,78 @@ Deno.test("writeMeasureRecord: published through a synced temp file; a stale tem
     () => writeMeasureRecord(root, r),
     ValidationError,
     "immutable",
+  );
+});
+
+const T = {
+  codeunit: 70010,
+  procedure: "CalcSurcharge",
+  signature: "(Amount: Decimal): Decimal",
+};
+const CU = `codeunit 70010 "Rental Price Mgt"
+{
+    // old: procedure CalcSurcharge(Amount: Decimal): Decimal begin end;
+    procedure CalcSurcharge(Amount: Decimal): Decimal
+    var
+        Rate: Decimal;
+    begin
+        Rate := 0.1; // begin end case
+        Message('end; begin');
+        case Amount > 100 of
+            true:
+                begin
+                    exit(Amount * Rate);
+                end;
+        end;
+        exit(0);
+    end;
+
+    procedure Other()
+    begin
+    end;
+}
+`;
+const OTHER = `codeunit 70011 "Copy"
+{
+    procedure CalcSurcharge(Amount: Decimal): Decimal
+    begin
+        exit(1);
+    end;
+}
+`;
+
+Deno.test("stubProcedure: replaces only the target body (nested begin/case, comments, strings)", () => {
+  const out = stubProcedure(CU, T, "Error('CG-REUSE-PROBE');")!;
+  assertEquals(out.includes("Error('CG-REUSE-PROBE')"), true);
+  assertEquals(out.includes("exit(Amount * Rate)"), false);
+  assertEquals(out.includes("procedure Other()\n    begin\n    end;"), true);
+  assertEquals(out.includes("Rate: Decimal;"), true);
+  assertEquals(out.includes("// old: procedure CalcSurcharge"), true);
+});
+
+Deno.test("locateProcedure: object scoping, signature, renames and duplicates", () => {
+  assertEquals(
+    stubProcedure(OTHER + CU, T, "exit(-1);")!.includes("exit(1);"),
+    true,
+  );
+  assertEquals(locateProcedure(CU, { ...T, codeunit: 70011 }), null);
+  assertEquals(locateProcedure(CU, { ...T, procedure: "CalcSurcharge2" }), null);
+  assertEquals(
+    locateProcedure(CU, {
+      ...T,
+      signature: "(Amount: Decimal; Weekend: Boolean): Decimal",
+    }),
+    null,
+  );
+  assertEquals(locateProcedure(CU + CU, T), null);
+  assertEquals(
+    locateProcedure(
+      CU.replace(
+        "procedure CalcSurcharge(Amount: Decimal)",
+        "procedure  calcsurcharge( amount : decimal )",
+      ),
+      T,
+    ) !== null,
+    true,
   );
 });
