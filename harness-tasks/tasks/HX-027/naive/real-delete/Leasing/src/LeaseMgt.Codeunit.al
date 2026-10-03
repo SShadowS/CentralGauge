@@ -1,0 +1,81 @@
+codeunit 70300 "CGR Lease Mgt"
+{
+    var
+        MonthsErr: Label 'Lease %1 must run for at least one month.', Comment = '%1 = lease number';
+        InvoicedErr: Label 'Lease %1 has invoiced schedule lines and cannot be rescheduled.', Comment = '%1 = lease number';
+
+    procedure MonthlyRate(BaseRate: Decimal; Months: Integer): Decimal
+    var
+        LeaseMath: Codeunit "CGR Lease Math";
+    begin
+        exit(Round(BaseRate * LeaseMath.RateFactor(Months), 0.01));
+    end;
+
+    procedure CreateContract(VehicleNo: Code[20]; CustomerName: Text[100]; StartDate: Date; Months: Integer; BaseRate: Decimal): Code[20]
+    var
+        Contract: Record "CGR Lease Contract";
+        Setup: Record "CGR Setup";
+    begin
+        Contract.Init();
+        Contract."No." := Setup.NextLeaseNo();
+        Contract."Vehicle No." := VehicleNo;
+        Contract."Customer Name" := CustomerName;
+        Contract."Start Date" := StartDate;
+        Contract.Months := Months;
+        Contract."Base Rate" := BaseRate;
+        Contract.Insert(true);
+        exit(Contract."No.");
+    end;
+
+    procedure CreateSchedule(ContractNo: Code[20])
+    var
+        Line: Record "CGR Lease Schedule Line";
+        TempScheduleLine: Record "CGR Lease Schedule Line" temporary;
+    begin
+        Line.SetRange("Contract No.", ContractNo);
+        Line.SetRange(Invoiced, true);
+        if not Line.IsEmpty() then
+            Error(InvoicedErr, ContractNo);
+        BuildSchedule(ContractNo, TempScheduleLine);
+        if TempScheduleLine.FindSet() then
+            repeat
+                Line := TempScheduleLine;
+                Line.Insert(true);
+            until TempScheduleLine.Next() = 0;
+    end;
+
+    procedure BuildSchedule(ContractNo: Code[20]; var ScheduleBuffer: Record "CGR Lease Schedule Line" temporary)
+    var
+        Contract: Record "CGR Lease Contract";
+        Line: Record "CGR Lease Schedule Line";
+        LeaseMath: Codeunit "CGR Lease Math";
+        Amounts: List of [Decimal];
+        i: Integer;
+    begin
+        Contract.Get(ContractNo);
+        if Contract.Months <= 0 then
+            Error(MonthsErr, ContractNo);
+        Line.SetRange("Contract No.", ContractNo);
+        Line.DeleteAll(true);
+        ScheduleBuffer.Reset();
+        ScheduleBuffer.DeleteAll();
+        LeaseMath.SplitInstallments(LeaseMath.LeaseTotal(Contract."Base Rate", Contract.Months), Contract.Months, Amounts);
+        for i := 1 to Contract.Months do begin
+            ScheduleBuffer.Init();
+            ScheduleBuffer."Contract No." := ContractNo;
+            ScheduleBuffer."Line No." := i * 10000;
+            ScheduleBuffer."Due Date" := CalcDate(StrSubstNo('<+%1M>', i - 1), Contract."Start Date");
+            ScheduleBuffer.Amount := Amounts.Get(i);
+            ScheduleBuffer.Insert();
+        end;
+    end;
+
+    procedure InvoiceLine(ContractNo: Code[20]; LineNo: Integer)
+    var
+        Line: Record "CGR Lease Schedule Line";
+    begin
+        Line.Get(ContractNo, LineNo);
+        Line.Invoiced := true;
+        Line.Modify(true);
+    end;
+}

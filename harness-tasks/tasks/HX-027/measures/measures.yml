@@ -1,0 +1,18 @@
+v: 1
+partial_credit:
+  weights:
+    "86000/BuildMatchesCreatedSchedule": 1
+    "86000/BuildSavesNothing": 1
+    "86000/BuildKeepsSavedSchedule": 1
+    "86000/BuildWorksForInvoicedLease": 1
+    "86000/BuildReplacesBuffer": 1
+    "86000/BuildReplacesFilteredBuffer": 1
+    "86000/BuildWithoutMonthsFails": 1
+    "86000/BuildOneMonthLease": 1
+    "86000/CreateStillRefusesInvoicedLease": 1
+    "86000/CreateScheduleUnchanged": 1
+    "86000/CreateReplacesUninvoicedSchedule": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

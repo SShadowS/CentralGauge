@@ -1,0 +1,19 @@
+id: HX-027
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Leasing, Core]
+coupling: [temporary-table, internal]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay, InvoiceAmountUsesSetupPrecision, HandledLinesAreNotInserted, AfterEventSeesEveryCreatedLine] }
+fail_to_pass:
+  depends_on: [Core, Leasing]
+  tests:
+    - { codeunit: 86000, procedures: [BuildMatchesCreatedSchedule, BuildSavesNothing, BuildKeepsSavedSchedule, BuildWorksForInvoicedLease, BuildReplacesBuffer, BuildReplacesFilteredBuffer, BuildWithoutMonthsFails, BuildOneMonthLease, CreateStillRefusesInvoicedLease, CreateScheduleUnchanged, CreateReplacesUninvoicedSchedule] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
