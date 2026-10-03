@@ -278,6 +278,26 @@ Deno.test({
 
 Deno.test({
   name:
+    "lsp-probe: a child started during a clean shutdown is found by the final sweep and killed, never exit 0",
+  ignore: !WINDOWS,
+  async fn() {
+    const marker = `cg-m10-orphan-${crypto.randomUUID()}`;
+    const s = await setup();
+    const gate = join(s.dir, "gate");
+    const r = await probe(s, ["--preflight"], {
+      FAKE_LATE_ORPHAN: marker,
+      FAKE_GATE: gate,
+    });
+    assertEquals(r.code, 3, r.stderr);
+    const pid = (await Deno.readTextFile(`${gate}.pid`)).trim();
+    assert(/^\d+$/.test(pid), "the fake recorded the late child");
+    assertStringIncludes(r.stderr, `pid ${pid}: killed`);
+    assertEquals(await withMarker(marker), 0, "the probe killed the child");
+  },
+});
+
+Deno.test({
+  name:
     "lsp-probe: CG_LSP_CMD_MS and CG_LSP_TIMEOUT_MS must be finite and positive, else a configuration error (4)",
   ignore: !WINDOWS,
   async fn() {
@@ -297,6 +317,11 @@ const BAD_HEADERS: [string, string][] = [
   ["a non-numeric length", "Content-Length: 2junk"],
   ["duplicate conflicting lengths", "Content-Length: 2|Content-Length: 3"],
   ["an oversized length", "Content-Length: 99999999999"],
+  // A complete block (terminator included) over MAX_HEADER_BYTES (8192).
+  ["an oversized header block", `X-Pad: ${"a".repeat(9000)}|Content-Length: 2`],
+  // "Content-Length: 2\n" then the CRLF CRLF terminator: a bare LF.
+  ["a bare LF line end", "Content-Length: 2%0A"],
+  ["a control character in a header value", "X-Note: a%01b|Content-Length: 2"],
 ];
 for (const [label, header] of BAD_HEADERS) {
   Deno.test({
