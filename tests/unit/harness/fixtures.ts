@@ -4,7 +4,10 @@
  * validateCampaignRecords unless a test deliberately breaks it.
  */
 
-import { ExperimentSchema } from "../../../src/harness/config.ts";
+import {
+  type Experiment,
+  ExperimentSchema,
+} from "../../../src/harness/config.ts";
 import { taskSetHash } from "../../../src/harness/identity.ts";
 import {
   manifestHash,
@@ -86,6 +89,8 @@ export async function campaign(
     id?: string;
     created_at?: string;
     tasks?: number;
+    /** Replaces the plain-vs-skills experiment (same arms and `vary`). */
+    experiment?: Experiment;
   } = {},
 ): Promise<CampaignRecord> {
   const repeats = opts.repeats ?? 1;
@@ -97,7 +102,7 @@ export async function campaign(
         [H((2 * i + 1).toString(16)), H((2 * i + 2).toString(16))],
       ]),
     );
-  const experiment = ExperimentSchema.parse({
+  const experiment = opts.experiment ?? ExperimentSchema.parse({
     id: "skills-vs-plain",
     hypothesis: "Skills cut cost per solved task.",
     primary_metric: "cost_per_solved_task",
