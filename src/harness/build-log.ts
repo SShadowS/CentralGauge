@@ -72,6 +72,23 @@ export interface BuildLogMetrics {
 const isStr = (v: unknown): v is string => typeof v === "string";
 const isNum = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
+const isDuration = (v: unknown): v is number => isNum(v) && v >= 0;
+const isCount = (v: unknown): v is number =>
+  Number.isInteger(v) && v as number >= 0;
+
+/**
+ * Every value the backend writes: `op` is the /v1/<op> route
+ * (CgAlBackend.handle, /^\/v1\/(compile|test|symbols)$/) and `outcome` is the
+ * HostLogLine["outcome"] union. Anything else is a malformed line.
+ */
+const KNOWN_OPS: readonly string[] = ["compile", "test", "symbols"];
+const KNOWN_OUTCOMES: readonly string[] = [
+  "ok",
+  "failed",
+  "infra",
+  "rejected",
+  "error",
+];
 
 function isDiag(v: unknown): v is BuildDiagnostic {
   if (typeof v !== "object" || v === null) return false;
@@ -86,8 +103,8 @@ export function buildLogMetrics(
   if (lines === undefined) return null;
   if (
     lines.some((l) =>
-      typeof l !== "object" || l === null || !isStr(l.op) ||
-      !isStr(l.outcome)
+      typeof l !== "object" || l === null || !KNOWN_OPS.includes(l.op) ||
+      !KNOWN_OUTCOMES.includes(l.outcome)
     )
   ) return null;
   const done = lines.filter((l) =>
@@ -129,9 +146,9 @@ export function buildLogMetrics(
   }
   const msOk = builds.every((l) =>
     typeof l.spans === "object" && l.spans !== null &&
-    isNum(l.spans["compile_ms"])
+    isDuration(l.spans["compile_ms"])
   );
-  const testsOk = builds.every((l) => l.op !== "test" || isNum(l.tests_run));
+  const testsOk = builds.every((l) => l.op !== "test" || isCount(l.tests_run));
   const burden = builds.length === 0 || !diagsOk;
   return {
     builds: builds.length,

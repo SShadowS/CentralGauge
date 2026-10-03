@@ -274,3 +274,55 @@ Deno.test("buildLogMetrics run 002: a malformed build_ok, op or outcome makes th
     null,
   );
 });
+
+// Run 003: unknown classifications and out-of-range numbers are missing.
+Deno.test("buildLogMetrics run 003: an unknown op or outcome makes the whole cell missing", () => {
+  for (
+    const o of [
+      { op: "deploy" },
+      { op: "Compile" },
+      { outcome: "bogus" },
+      { outcome: "OK" },
+    ] as Partial<HostLogLine>[]
+  ) {
+    assertEquals(buildLogMetrics([line(o)]), null);
+    assertEquals(buildLogMetrics([line({}), line(o)]), null);
+  }
+  // Every known value still classifies.
+  for (const op of ["compile", "test", "symbols"]) {
+    for (const outcome of ["ok", "failed", "infra", "rejected", "error"]) {
+      assertEquals(
+        buildLogMetrics([line({ op, outcome } as Partial<HostLogLine>)]) ===
+          null,
+        false,
+        `${op}/${outcome}`,
+      );
+    }
+  }
+});
+
+Deno.test("buildLogMetrics run 003: a negative or infinite compile_ms makes build_ms missing", () => {
+  for (const ms of [-1, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assertEquals(
+      buildLogMetrics([line({ spans: { compile_ms: ms } })]),
+      { ...complete, build_ms: null },
+    );
+  }
+  assertEquals(
+    buildLogMetrics([line({ spans: { compile_ms: 0 } })]),
+    { ...complete, build_ms: 0 },
+  );
+});
+
+Deno.test("buildLogMetrics run 003: tests_run must be a non-negative integer", () => {
+  for (const n of [-1, 1.5, Number.POSITIVE_INFINITY]) {
+    assertEquals(
+      buildLogMetrics([line({ op: "test", tests_run: n })]),
+      { ...complete, test_runs: null },
+    );
+  }
+  assertEquals(
+    buildLogMetrics([line({ op: "test", tests_run: 0 })]),
+    complete,
+  );
+});
