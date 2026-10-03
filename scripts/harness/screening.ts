@@ -12,7 +12,11 @@ import { join } from "@std/path";
 import { parse } from "@std/yaml";
 import { z } from "zod";
 import type { TaskIdentity } from "../../src/harness/identity.ts";
-import type { JudgmentRecord } from "../../src/harness/records.ts";
+import type {
+  CampaignRecord,
+  ExecutionRecord,
+  JudgmentRecord,
+} from "../../src/harness/records.ts";
 import type { Cell } from "../../src/harness/stats.ts";
 import { ValidationError } from "../../src/errors.ts";
 import { loadCampaignData } from "../../src/harness/campaign.ts";
@@ -22,11 +26,17 @@ import {
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
-import { cellsFromRecords } from "../../src/harness/outcome.ts";
+import {
+  campaignJudging,
+  cellsFromRecords,
+  selectJudgment,
+} from "../../src/harness/outcome.ts";
 import {
   CampaignRecordSchema,
   compareInstant,
+  outcomePolicy,
   RecordStore,
+  retryChains,
 } from "../../src/harness/records.ts";
 import {
   HarnessTaskSchema,
@@ -443,6 +453,49 @@ export interface ScreenCampaign {
   experiment: string;
   created_at: string;
   cells: Cell[];
+  /** M8-02b: problems found in the campaign's raw records (manualRerunProblems). */
+  problems?: string[];
+}
+
+/**
+ * M8-02b: a cell with two or more SCORED manual reruns. cellsFromRecords
+ * would let the newest replace the older scored result (outcome.ts
+ * resolveChain + manual pick); the CLI never writes such records
+ * (campaign.ts rerunTarget), hand-made ones can. "Scored" mirrors
+ * resolveChain: the chain's last member is judged and its selected verdict
+ * is not "unscored".
+ */
+export function manualRerunProblems(
+  c: CampaignRecord,
+  executions: ExecutionRecord[],
+  judgments: JudgmentRecord[],
+): string[] {
+  const oracle = campaignJudging(c).oracle;
+  const byCell = new Map<string, ExecutionRecord[]>();
+  for (const e of executions) {
+    const k = `${e.task_id}/${e.repeat}/${e.arm}`;
+    byCell.set(k, [...(byCell.get(k) ?? []), e]);
+  }
+  return [...byCell].sort(([a], [b]) => a.localeCompare(b)).flatMap(
+    ([label, cell]) => {
+      const scored = retryChains(cell).chains.filter((ch) => {
+        if (ch.root.run_kind !== "manual_rerun") return false;
+        const last = ch.members[ch.members.length - 1]!;
+        if (!outcomePolicy(last.termination, last.did_work).judge) {
+          return false;
+        }
+        const j = selectJudgment(
+          last,
+          judgments,
+          oracle.get(last.task_id) ?? "",
+        );
+        return j !== null && j.verdict !== "unscored";
+      }).length;
+      return scored > 1
+        ? [`campaign ${c.id}: cell ${label} has ${scored} scored manual reruns`]
+        : [];
+    },
+  );
 }
 
 /**
@@ -461,6 +514,7 @@ export function screeningHistory(
   for (const x of new Set(exps.filter((e, i) => exps.indexOf(e) !== i))) {
     problems.push(`experiment ${x} has more than one campaign`);
   }
+  for (const c of campaigns) problems.push(...(c.problems ?? []));
   const latest = new Map<string, Cell[]>();
   const screens = new Map<string, number>();
   const order = [...campaigns].sort((a, b) =>
@@ -681,18 +735,21 @@ export const tasksGlob = (ids: string[]): string =>
 
 // ---- I/O ----
 
-async function git(root: string, args: string[]): Promise<string> {
+async function git(
+  root: string,
+  args: string[],
+  /** M8-02b run 002: any stderr output is a failure even when git exits 0. */
+  strict = false,
+): Promise<string> {
   const out = await new Deno.Command("git", {
     args,
     cwd: root,
     stdout: "piped",
     stderr: "piped",
   }).output();
-  if (!out.success) {
-    throw new ValidationError(
-      `git ${args.join(" ")}: ${new TextDecoder().decode(out.stderr).trim()}`,
-      args,
-    );
+  const err = new TextDecoder().decode(out.stderr).trim();
+  if (!out.success || (strict && err !== "")) {
+    throw new ValidationError(`git ${args.join(" ")}: ${err}`, args);
   }
   return new TextDecoder().decode(out.stdout);
 }
@@ -789,13 +846,16 @@ export async function loadLedgerAnchors(
     atLedger: new Map(),
     published: new Map(),
   };
-  // Run 002: null only on a confirmed path absence (the commit is readable,
-  // the path is not in it); any other git failure throws.
+  // M8-02b: null only when the readable tree at `rev` has no seals.yml entry
+  // (ls-tree throws on an unreadable commit or tree). A path entry whose blob
+  // cannot be read throws in `git show`, as does any other git failure.
+  // Run 002: the traversal must also be error-free; git reports an unreadable
+  // intermediate tree on stderr (git 2.55 also exits 1, other versions may
+  // exit 0), so any stderr from ls-tree is a throw, never an absence.
   const ledgerAt = async (rev: string): Promise<SealEntry[] | null> => {
     if (
-      await tryGit(root, ["cat-file", "-e", `${rev}:${SEALS_PATH}`]) === null
+      (await git(root, ["ls-tree", rev, "--", SEALS_PATH], true)).trim() === ""
     ) {
-      await git(root, ["cat-file", "-e", `${rev}^{commit}`]);
       return null;
     }
     const text = await git(root, ["show", `${rev}:${SEALS_PATH}`]);
@@ -943,6 +1003,7 @@ export async function loadScreenCampaigns(
       experiment: c.experiment.id,
       created_at: c.created_at,
       cells: cellsFromRecords(c, data.executions, byExecution),
+      problems: manualRerunProblems(c, data.executions, data.judgments),
     });
     ran.set(c.id, c.task_set.tasks);
   }
