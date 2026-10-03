@@ -43,24 +43,65 @@ Deno.test("buildCompileScript: analysis adds the cop switches and the ruleset; n
   );
   const s = buildCompileScript("C:\\\\cf", "C:\\\\p", "C:\\\\o", {
     ...analysis,
-    rulesetFile: "C:\\\\r\\\\f.json",
+    rulesetFile: "C:\\r\\f.json",
   });
   assertStringIncludes(s, "-EnableCodeCop");
   assertStringIncludes(s, "-EnableUICop");
-  assertStringIncludes(s, '-rulesetFile "C:\\\\r\\\\f.json"');
+  assertStringIncludes(s, "-rulesetFile 'C:\\r\\f.json'");
 });
 
-Deno.test("parsers: CodeCop and UICop codes keep their code", () => {
-  const out = [
-    "C:\\w\\Core\\src\\C.al(5,9): warning AA0137: The variable 'X' is declared but never used.",
-    "C:\\w\\Core\\src\\P.al(2,1): warning AW0006: The page 'P' should have the UsageCategory set.",
-    "C:\\w\\Core\\src\\C.al(7,1): error AA0001: There must be exactly one space character.",
-  ].join("\n");
-  assertEquals(parseCompilationWarnings(out).map((x) => x.code), [
+Deno.test("buildCompileScript: the ruleset path is a PowerShell literal ($, backtick, quote, space) (M11-05 run 002)", () => {
+  const path = "C:\\analysis\\$frozen\\`n it's\\final code.ruleset.json";
+  const s = buildCompileScript("C:\\\\cf", "C:\\\\p", "C:\\\\o", {
+    ...analysis,
+    rulesetFile: path,
+  });
+  // Single-quoted: no $ expansion, no backtick escapes; ' doubled.
+  assertStringIncludes(
+    s,
+    "-rulesetFile 'C:\\analysis\\$frozen\\`n it''s\\final code.ruleset.json'",
+  );
+  assertEquals(s.includes(`"${path}"`), false);
+});
+
+const ANALYZER_OUT = [
+  "C:\\w\\Core\\src\\C.al(5,9): warning AA0137: The variable 'X' is declared but never used.",
+  "C:\\w\\Core\\src\\P.al(2,1): warning AW0006: The page 'P' should have the UsageCategory set.",
+  "C:\\w\\Core\\src\\C.al(7,1): error AA0001: There must be exactly one space character.",
+  "C:\\w\\Core\\src\\C.al(8,1): error LC0001: lc.",
+  "C:\\w\\Core\\src\\C.al(9,1): error UI0001: ui.",
+  "C:\\w\\Core\\src\\C.al(10,1): error AL12345: long code.",
+  "C:\\w\\Core\\src\\C.al(11,1): warning AL0432: obsolete.",
+].join("\n");
+
+Deno.test("parsers: an analysis compile keeps CodeCop and UICop codes", () => {
+  const o = { analyzerCodes: true };
+  assertEquals(parseCompilationWarnings(ANALYZER_OUT, o).map((x) => x.code), [
     "AA0137",
     "AW0006",
+    "AL0432",
   ]);
-  assertEquals(parseCompilationErrors(out).map((x) => x.code), ["AA0001"]);
+  assertEquals(parseCompilationErrors(ANALYZER_OUT, o).map((x) => x.code), [
+    "AA0001",
+    "LC0001",
+    "UI0001",
+    "AL12345",
+  ]);
+});
+
+Deno.test("parsers: without analysis the bench parsing is unchanged (generic AL0000, warnings dropped, any AL digit count) (M11-05 run 002)", () => {
+  assertEquals(parseCompilationWarnings(ANALYZER_OUT).map((x) => x.code), [
+    "AL0432",
+  ]);
+  assertEquals(
+    parseCompilationErrors(ANALYZER_OUT).map((x) => [x.code, x.file]),
+    [
+      ["AL0000", "unknown"],
+      ["AL0000", "unknown"],
+      ["AL0000", "unknown"],
+      ["AL12345", "C:\\w\\Core\\src\\C.al"],
+    ],
+  );
 });
 
 Deno.test("finalCodeCounts: analysis reaches the compile; a failed app is incomplete", async () => {

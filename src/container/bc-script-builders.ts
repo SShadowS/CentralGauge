@@ -118,7 +118,8 @@ export function buildCompileScript(
     ? [
       analysis.codeCop ? "-EnableCodeCop" : "",
       analysis.uiCop ? "-EnableUICop" : "",
-      `-rulesetFile "${analysis.rulesetFile}"`,
+      // A literal: no $ expansion or backtick escapes from the path.
+      `-rulesetFile '${escapeForPS(analysis.rulesetFile)}'`,
     ].filter(Boolean).join(" ")
     : "";
   return `
