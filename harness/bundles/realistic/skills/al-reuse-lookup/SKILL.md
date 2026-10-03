@@ -14,7 +14,8 @@ may already handle cases you have not thought of.
 1. Say in one line what the procedure you need does, and list the words a name
    for it would contain (verbs and nouns, singular and plural).
 2. Search the app you are changing, from its folder under `C:\workspace`:
-   - Procedures: `procedure <Word>` and `procedure "<Word>` for each word.
+   - Procedures: `procedure ` followed by a name containing the word
+     (case-insensitive), quoted or not, for each word.
    - Callers of a candidate: `<Name>(` across all app folders.
    - Events: `[IntegrationEvent` and `[BusinessEvent`, then the lines after
      them for names containing your words.
@@ -25,8 +26,8 @@ may already handle cases you have not thought of.
    there is no source here; note them, and rely on objects the code already
    uses from them.
 5. For each candidate, read its signature and its body. Check its visibility:
-   a `local` or `internal` procedure in another app cannot be called from
-   yours.
+   a `local` procedure can only be called inside its own object, and an
+   `internal` one only inside its own app.
 
 ## Report
 

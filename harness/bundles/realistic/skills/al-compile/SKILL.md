@@ -35,7 +35,9 @@ refused.
   and its `diagnostics`, each with file, line, column, code, severity and
   message. A workspace the server refuses to build lists the reasons under
   `result.violations` instead.
-- When the server did not answer, `result` only holds an `error`.
+- When the server refused the request or did not answer, `result` holds an
+  `error` instead, and no `ok`. A fault on the server side holds an `infra`
+  message instead.
 
 Two cases print something else:
 
@@ -58,7 +60,8 @@ Two cases print something else:
 1. Compile the app you changed.
 2. Read every diagnostic in full. The first error often causes the ones after
    it, so fix from the top and compile again.
-3. An error in an app that others depend on shows up as missing symbols in
-   every app built on it: fix that app first.
+3. When an app fails, the apps built on it are not compiled: each reports one
+   diagnostic, code `CG0001`, `dependency <App> did not build`. Fix the
+   failing app first.
 4. Fix the warnings your change introduced, as the conventions rule asks.
 5. Finish with a clean `cg-al compile` of all apps.

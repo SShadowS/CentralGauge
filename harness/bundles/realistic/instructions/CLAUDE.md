@@ -42,7 +42,7 @@ If an LSP tool is available, use it first for symbols, definitions, references a
 - `al-reviewer`: when the change is written and compiles. It checks our
   conventions, breaking changes for other apps, and missing tests.
 - `library-function-finder`: when you are about to write a helper and suspect
-  the base app, the system app or one of our apps already has one.
+  one of our apps, or a package the app already uses, has one.
 
 ## Rules
 

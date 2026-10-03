@@ -16,8 +16,10 @@ same as for compile; see the `al-compile` skill.
   a codeunit number, not a name.
 
 A runnable test codeunit sits in the test app, has `Subtype = Test` and at least
-one `[Test]` procedure, and declares no `TestPage` variable. Asking for any
-other codeunit by number is refused with exit 1 and a message that names it. A
+one `[Test]` procedure, declares no `TestPage` variable, and, among other
+checks, has an ID the server accepts for tests: take it from the test app's
+range as the testing rule says, and use the next free one. Asking for any other
+codeunit by number is refused with exit 1 and an `error` in `result`. A
 test codeunit with a `TestPage` variable is skipped by a full run and listed
 under `result.skipped_testpage`, so it never proves anything here.
 
@@ -27,8 +29,8 @@ under `result.skipped_testpage`, so it never proves anything here.
 - `result.tests` has one row per test procedure: `codeunit`, `procedure`,
   `outcome` (`pass`, `fail`, `error` or `not_run`) and, when it did not pass,
   `failure` (`assertion`, `compile`, `runtime_error` or `infra`).
-- `result.messages` holds the error texts the run reported. Match them to the
-  failing procedures.
+- `result.messages` has one entry per failed procedure with its `codeunit`,
+  `procedure` and `message`.
 - If the apps do not compile, the run stops there and `result.apps` holds the
   compiler diagnostics instead of test outcomes.
 - A row that failed with `infra` is the environment, not your code: run again
