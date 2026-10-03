@@ -24,7 +24,7 @@
 // C:\cg-secrets\claude-oauth-token beside the backend token, only after the
 // egress preflight passed. The sandbox always runs as ContainerUser (H-01,
 // buildRunArgs) after the harness privilege check, so no --user flag exists.
-import { join } from "@std/path";
+import { dirname, join } from "@std/path";
 import {
   isAbsolute as winIsAbsolute,
   normalize as winNormalize,
@@ -37,7 +37,10 @@ import {
   MARKER_FILE,
   realEgressCollector,
 } from "../../src/harness/egress.ts";
-import { runQualificationProbe } from "../../src/harness/egress-probe.ts";
+import {
+  PROBE_HOSTS,
+  runQualificationProbe,
+} from "../../src/harness/egress-probe.ts";
 import { resolveRefapp } from "../../src/harness/identity.ts";
 import { imageFacts, imageTag } from "../../src/harness/images.ts";
 import {
@@ -126,6 +129,12 @@ export async function parseProbeArgs(args: string[]): Promise<{
   if (claudeOauth && !enforced) {
     throw new Error("--claude-oauth needs --enforced");
   }
+  // The OAuth token belongs to the first-party Anthropic route only (default hosts).
+  if (claudeOauth && route !== null && route !== FIRST_PARTY_ROUTE) {
+    throw new Error(
+      `--claude-oauth needs the first-party Anthropic route (got --route ${route})`,
+    );
+  }
   const hosts = route === null ? null : hostsForRoutes([route], {});
   return {
     container,
@@ -138,6 +147,101 @@ export async function parseProbeArgs(args: string[]): Promise<{
     mount,
     claudeOauth,
   };
+}
+
+const FIRST_PARTY_ROUTE = "anthropic:first-party-oauth";
+
+/**
+ * Filesystem containment of a --mount dir (M9-01a run 002): `dir` must
+ * resolve (realPath) to itself and lie strictly under `root`'s real path, and
+ * neither the path from `root` down to `dir` nor anything below `dir` may be a
+ * reparse point (junction or symlink: realPath differs from the lexical path,
+ * or lstat says symlink). Returns `dir`; throws otherwise.
+ */
+export async function assertMountContained(
+  dir: string,
+  root = MOUNT_ROOT,
+): Promise<string> {
+  const lower = (p: string) =>
+    winNormalize(p).replace(/\\+$/, "").toLowerCase();
+  const realRoot = lower(await Deno.realPath(root));
+  const lexical = lower(dir);
+  if (!lexical.startsWith(realRoot + "\\")) {
+    throw new Error(`--mount ${dir} is not under ${root}`);
+  }
+  const reparse = async (p: string) => {
+    const st = await Deno.lstat(p);
+    return st.isSymlink || lower(await Deno.realPath(p)) !== lower(p);
+  };
+  // Every step from the root down to the mount itself.
+  const steps = lexical.slice(realRoot.length + 1).split("\\");
+  let cur = realRoot;
+  for (const s of steps) {
+    cur = `${cur}\\${s}`;
+    if (await reparse(cur)) {
+      throw new Error(`--mount ${dir}: ${cur} is a reparse point`);
+    }
+  }
+  if (!(await Deno.stat(dir)).isDirectory) {
+    throw new Error(`--mount ${dir} is not a directory`);
+  }
+  // Everything below it, without following links.
+  const walk = async (d: string): Promise<void> => {
+    for await (const e of Deno.readDir(d)) {
+      const p = join(d, e.name);
+      if (e.isSymlink || await reparse(p)) {
+        throw new Error(`--mount ${dir}: ${p} is a reparse point`);
+      }
+      if (e.isDirectory) await walk(p);
+    }
+  };
+  await walk(dir);
+  return dir;
+}
+
+/**
+ * Exports an enforced run's proxy log for M9-13 (M9-01a run 002): only the
+ * `allow` lines whose host is in `allowedHosts`, reduced to {at, decision,
+ * target}, plus a summary line with the number of lines withheld (denied or
+ * unexpected targets are attacker-controlled and may carry secrets). Returns
+ * problems; [] on success.
+ */
+export async function exportProxyLog(
+  src: string,
+  dst: string,
+  allowedHosts: string[],
+): Promise<string[]> {
+  try {
+    const kept: string[] = [];
+    let withheld = 0;
+    for (const raw of (await Deno.readTextFile(src)).split(/\r?\n/)) {
+      if (raw.trim() === "") continue;
+      let l: { at?: unknown; decision?: unknown; target?: unknown };
+      try {
+        l = JSON.parse(raw);
+      } catch {
+        withheld++;
+        continue;
+      }
+      const target = typeof l.target === "string" ? l.target : "";
+      const host = target.replace(/:\d+$/, "").toLowerCase();
+      if (l.decision === "allow" && allowedHosts.includes(host)) {
+        kept.push(
+          JSON.stringify({ at: l.at, decision: "allow", target }),
+        );
+      } else withheld++;
+    }
+    kept.push(
+      JSON.stringify({ summary: true, allowed: kept.length, withheld }),
+    );
+    await Deno.mkdir(dirname(dst), { recursive: true });
+    await Deno.writeTextFile(dst, kept.join("\n") + "\n");
+    return [];
+  } catch (err) {
+    return [
+      `proxy log not exported: ${err instanceof Error ? err.message : err}`,
+    ];
+  }
 }
 
 /** The OAuth token from the secrets dir, checked in memory; never printed. */
@@ -191,9 +295,8 @@ async function main() {
   if (enforced && withholdToken) {
     throw new Error("--withhold-token is not for --enforced runs");
   }
-  if (mount !== null && !(await Deno.stat(mount)).isDirectory) {
-    throw new Error(`--mount ${mount} is not a directory`);
-  }
+  // Filesystem containment (realPath, no reparse point at or under it).
+  if (mount !== null) await assertMountContained(mount);
   // Read before any environment opens: a missing token stops the run early.
   const oauth = claudeOauth ? await readClaudeOauth(secretsDir) : null;
   const root = Deno.cwd();
@@ -293,25 +396,45 @@ async function main() {
       "C:\\config\\cg-al-probe.ps1",
     ];
     if (enforced && h.env.egress) {
-      const r = await runQualificationProbe({
-        docker: h.env.docker,
-        egress: h.env.egress,
-        custody: { privateRoot: h.env.privateRoot, owner: h.env.owner },
-        token,
-        ...(oauth === null ? {} : {
-          releaseAfterPreflight: [{ name: CLAUDE_OAUTH_FILE, value: oauth }],
-        }),
-        // M5-08a: the token is cut before the sandbox teardown (and again below).
-        revoke: () => h.env.backend.revoke(id),
-        spec,
-        probeCommand,
-        out,
-        ...(hosts ? { hosts } : {}),
-        collect: () =>
-          collectEgressState(
-            realEgressCollector(join(root, "results", "harness", MARKER_FILE)),
-          ),
-      });
+      const egress = h.env.egress;
+      let exportProblems: string[] = [];
+      const exportLog = async () => {
+        if (mount === null) return;
+        // M9-13 criterion 6 reuses the allowed-host lines of this run's proxy log.
+        exportProblems = await exportProxyLog(
+          join(out, "egress.jsonl"),
+          join(mount, "out", "egress-proxy.jsonl"),
+          hosts ?? PROBE_HOSTS,
+        );
+        for (const p of exportProblems) console.error(`[FAIL] ${p}`);
+      };
+      let r;
+      try {
+        r = await runQualificationProbe({
+          docker: h.env.docker,
+          egress,
+          custody: { privateRoot: h.env.privateRoot, owner: h.env.owner },
+          token,
+          ...(oauth === null ? {} : {
+            releaseAfterPreflight: [{ name: CLAUDE_OAUTH_FILE, value: oauth }],
+          }),
+          // M5-08a: the token is cut before the sandbox teardown (and again below).
+          revoke: () => h.env.backend.revoke(id),
+          spec,
+          probeCommand,
+          out,
+          ...(hosts ? { hosts } : {}),
+          collect: () =>
+            collectEgressState(
+              realEgressCollector(
+                join(root, "results", "harness", MARKER_FILE),
+              ),
+            ),
+        });
+      } finally {
+        // Also after a teardown exception (which still fails the run).
+        await exportLog();
+      }
       console.log(
         JSON.stringify({
           execution: id,
@@ -322,17 +445,11 @@ async function main() {
           hostLog,
         }),
       );
-      Deno.exitCode = probeExitCode(r);
-      if (mount !== null) {
-        // M9-13 criterion 6 reuses the proxy log of this run.
-        await Deno.mkdir(join(mount, "out"), { recursive: true });
-        await Deno.copyFile(
-          join(out, "egress.jsonl"),
-          join(mount, "out", "egress-proxy.jsonl"),
-        ).catch((e) =>
-          console.error(`proxy log not copied: ${(e as Error).message}`)
-        );
-      }
+      // A missing proxy-log export is a failed run, not a warning.
+      Deno.exitCode = probeExitCode({
+        problems: [...r.problems, ...exportProblems],
+        sandbox: r.sandbox,
+      });
     } else {
       const s = await prepareSecrets(secretsDir, [], token, {
         privateRoot: h.env.privateRoot,

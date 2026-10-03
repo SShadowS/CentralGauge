@@ -1,6 +1,8 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import {
+  assertMountContained,
+  exportProxyLog,
   parseProbeArgs,
   probeExitCode,
 } from "../../../scripts/harness/backend-probe.ts";
@@ -165,6 +167,126 @@ Deno.test("backend-probe args: --claude-oauth needs --enforced (M9-01a)", async 
       .claudeOauth,
     true,
   );
+});
+
+Deno.test("backend-probe args: --claude-oauth refuses any route but the first-party Anthropic one (M9-01a run 002)", async () => {
+  await assertRejects(
+    () =>
+      parseProbeArgs([
+        "C",
+        "S",
+        "--enforced",
+        "--claude-oauth",
+        "--route",
+        "openrouter:api-key",
+      ]),
+    Error,
+    "--claude-oauth needs the first-party Anthropic route",
+  );
+});
+
+Deno.test({
+  name:
+    "backend-probe mount: a real dir under the root passes; a junction at or under it is refused (M9-01a run 002)",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    const root = await Deno.makeTempDir();
+    const outside = await Deno.makeTempDir();
+    try {
+      const ok = join(root, "spike", "probe");
+      await Deno.mkdir(join(ok, "sub"), { recursive: true });
+      await Deno.writeTextFile(join(ok, "sub", "f.txt"), "x");
+      assertEquals(await assertMountContained(ok, root), ok);
+      const mklink = async (link: string, target: string) => {
+        const o = await new Deno.Command("cmd", {
+          args: ["/c", "mklink", "/J", link, target],
+          stdout: "null",
+          stderr: "null",
+        }).output();
+        assertEquals(o.code, 0, `mklink /J ${link}`);
+      };
+      // A junction below the mount points outside the root.
+      await mklink(join(ok, "sub", "escape"), outside);
+      await assertRejects(
+        () => assertMountContained(ok, root),
+        Error,
+        "reparse point",
+      );
+      // The mount itself (or an ancestor under the root) is a junction.
+      const j = join(root, "jdir");
+      await mklink(j, outside);
+      await assertRejects(
+        () => assertMountContained(j, root),
+        Error,
+        "reparse point",
+      );
+      // Not under the root at all.
+      await assertRejects(
+        () => assertMountContained(outside, root),
+        Error,
+        "under",
+      );
+    } finally {
+      await Deno.remove(root, { recursive: true });
+      await Deno.remove(outside, { recursive: true });
+    }
+  },
+});
+
+Deno.test("backend-probe proxy log export: allowed-host lines only, denied targets reduced to counts (M9-01a run 002)", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const src = join(dir, "egress.jsonl");
+    const secret = "sk-ant-oat01-secretvalue0123456789";
+    await Deno.writeTextFile(
+      src,
+      [
+        {
+          at: "t1",
+          decision: "allow",
+          target: "api.anthropic.com:443",
+          reason: "allowed",
+          extra: "x",
+        },
+        {
+          at: "t2",
+          decision: "deny",
+          target: `${secret}:443`,
+          reason: "host not allowed",
+        },
+        {
+          at: "t3",
+          decision: "deny",
+          target: "1.1.1.1:443",
+          reason: "ip literal",
+        },
+        {
+          at: "t4",
+          decision: "allow",
+          target: "evil.example:443",
+          reason: "allowed",
+        },
+      ].map((l) => JSON.stringify(l)).join("\n") + "\nnot json\n",
+    );
+    const dst = join(dir, "out", "egress-proxy.jsonl");
+    assertEquals(await exportProxyLog(src, dst, ["api.anthropic.com"]), []);
+    const text = await Deno.readTextFile(dst);
+    assertEquals(text.includes(secret), false);
+    assertEquals(text.includes("evil.example"), false);
+    const lines = text.trim().split("\n").map((l) => JSON.parse(l));
+    assertEquals(lines, [
+      { at: "t1", decision: "allow", target: "api.anthropic.com:443" },
+      { summary: true, allowed: 1, withheld: 4 },
+    ]);
+    // A missing source is a problem (the caller turns it into a non-zero exit).
+    const p = await exportProxyLog(join(dir, "nope.jsonl"), dst, [
+      "api.anthropic.com",
+    ]);
+    assertEquals(p.length, 1);
+    assertStringIncludes(p[0]!, "proxy log not exported");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 Deno.test("backend-probe exit code: non-zero on any preflight problem or a sandbox that did not exit 0", () => {

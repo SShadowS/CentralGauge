@@ -2356,6 +2356,64 @@ Deno.test("qualification probe: extra secrets are released only after a passed p
   }
 });
 
+Deno.test("qualification probe: released secret values printed by the sandbox are scrubbed from the retained captures (M9-01a run 002)", async () => {
+  const t = await makeEnv();
+  const root = t.env.privateRoot;
+  const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+  const collect = markerAwareCollector();
+  assertEquals(
+    await harnessEgressVerify({ root, mark: "candidate" }, collect),
+    [],
+  );
+  const token = "backend-token-0123456789abcdef";
+  const oauth = "oauth-token-fedcba9876543210";
+  t.docker.waitForReady = true;
+  t.docker.behavior = async (_call, io) => {
+    await io.stdout(`leak ${oauth} and ${token} end`);
+    return 0;
+  };
+  const out = join(root, "probe-out");
+  await Deno.mkdir(out, { recursive: true });
+  const r = await runQualificationProbe({
+    docker: t.docker,
+    egress: fakeEgress(),
+    custody: {
+      privateRoot: t.env.privateRoot,
+      owner: t.env.owner,
+      ...(t.env.secretAcl ?? {}),
+    },
+    token,
+    releaseAfterPreflight: [{ name: "claude-oauth-token", value: oauth }],
+    revoke: () => t.env.backend.revoke("exec-probe-3"),
+    spec: {
+      name: "cg-harness-probe-3",
+      owner: t.env.owner,
+      executionId: "exec-probe-3",
+      imageId: `sha256:${"c".repeat(64)}`,
+      workspace: out,
+      taskDir: out,
+      configDir: out,
+      extraMounts: [],
+      env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+      timeoutMs: 60_000,
+      killGraceMs: 50,
+      opTimeoutMs: 100,
+      maxCaptureBytes: 1024 * 1024,
+      rawLog: join(out, "probe.jsonl"),
+      stderrLog: join(out, "stderr.txt"),
+    },
+    probeCommand: ["powershell", "-File", "C:\\probe\\spike.ps1"],
+    out,
+    collect: () => collect(markerPath),
+  });
+  assertEquals(r.problems, []);
+  const raw = await Deno.readTextFile(join(out, "probe.jsonl"));
+  assertStringIncludes(raw, "leak ");
+  assertStringIncludes(raw, " end");
+  assertEquals(raw.includes(oauth), false, "oauth value scrubbed");
+  assertEquals(raw.includes(token), false, "backend token scrubbed");
+});
+
 // M3-08: the route-aware probe proxies and probes exactly the hosts it is given.
 
 Deno.test("qualification probe: hosts override the default route host (M3-08 --route)", async () => {

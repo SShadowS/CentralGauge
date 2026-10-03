@@ -70,6 +70,35 @@ export interface QualificationProbe {
 
 const q = (s: string) => `'${s.replaceAll("'", "''")}'`;
 
+/**
+ * Replaces every occurrence of each secret value in the given files with
+ * [REDACTED]; a missing file is skipped. Returns the first error, or null.
+ */
+async function scrubFiles(
+  paths: string[],
+  values: string[],
+): Promise<string | null> {
+  const secrets = values.filter((v) => v !== "");
+  for (const p of paths) {
+    let text: string;
+    try {
+      text = await Deno.readTextFile(p);
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) continue;
+      return `${p}: ${err instanceof Error ? err.message : err}`;
+    }
+    let clean = text;
+    for (const s of secrets) clean = clean.split(s).join("[REDACTED]");
+    if (clean === text) continue;
+    try {
+      await Deno.writeTextFile(p, clean);
+    } catch (err) {
+      return `${p}: ${err instanceof Error ? err.message : err}`;
+    }
+  }
+  return null;
+}
+
 export async function runQualificationProbe(
   o: QualificationProbe,
 ): Promise<
@@ -208,11 +237,18 @@ export async function runQualificationProbe(
       secretsDir: secrets,
     });
     await revoked;
+    // M9-01a run 002: the retained captures and the proxy log never keep a
+    // released value (the sandbox could print a mounted secret).
+    const scrubError = await scrubFiles(
+      [o.spec.rawLog, o.spec.stderrLog, egressLog],
+      [o.token, ...(o.releaseAfterPreflight ?? []).map((s) => s.value)],
+    );
     const problems = [
       ...(revokeError !== null
         ? [`backend token revoke failed: ${revokeError}`]
         : []),
       ...(!down.gone || down.secretsLeft ? down.problems : []),
+      ...(scrubError !== null ? [`capture scrub failed: ${scrubError}`] : []),
     ];
     if (revokeError !== null) {
       console.error(
