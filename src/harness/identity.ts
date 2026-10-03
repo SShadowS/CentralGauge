@@ -19,6 +19,7 @@ import {
   type TreeEntry,
 } from "./hash.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
+import { exists } from "./fsutil.ts";
 
 /** Every embedded SHA-256 (identities, component and file hashes): 64 lower-case hex. */
 export const Sha256Hex = z.string().regex(
@@ -327,12 +328,17 @@ export async function visibleInputHash(
 
 /**
  * Oracle hash: oracle/, mutants/, correct/ (a runtime input for
- * mutant_kill), and the scorer fields of task.yml. naive/ is in neither hash.
+ * mutant_kill), measures/ (M11-04; only when present, so tasks without it
+ * keep their frozen v1 hash), and the scorer fields of task.yml. naive/ is in
+ * neither hash.
  */
 export async function oracleHash(t: LoadedTask): Promise<string> {
   const { task, dir } = t;
   const tree = (d: string) =>
     hashTree(join(dir, d), "task", { optional: true });
+  const measures = (await exists(join(dir, "measures")))
+    ? await tree("measures")
+    : null;
   return hashJson({
     part: "oracle",
     id: task.id,
@@ -344,6 +350,7 @@ export async function oracleHash(t: LoadedTask): Promise<string> {
     oracle: await tree("oracle"),
     mutants_tree: await tree("mutants"),
     correct: await tree("correct"),
+    ...(measures !== null ? { measures } : {}),
   });
 }
 
