@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "85920/FormatAmountPadsToTwoDecimals": 1
+    "85920/FormatAmountHasNoGroupSeparator": 1
+    "85920/FormatAmountWholeValueHasDecimals": 1
+    "85920/FormatDateIsYearMonthDay": 1
+    "85920/LeaseLineGroupedAmount": 1
+    "85920/LeaseLineHalfAmount": 1
+    "85920/LeaseLineWholeAmount": 1
+    "85920/RentalEntryGroupedValues": 1
+    "85920/RentalEntryWholeAmount": 1
+    "85920/RentalEntrySmallValues": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
