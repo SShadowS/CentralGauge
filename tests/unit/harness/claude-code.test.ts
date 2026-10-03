@@ -14,8 +14,10 @@ import {
   observedMismatch,
 } from "../../../src/harness/adapter.ts";
 import {
+  BUILTIN_INVENTORY,
   CLAUDE_CAPABILITIES,
   claudeCodeAdapter,
+  LSP_PLUGINS,
 } from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import {
@@ -2083,4 +2085,633 @@ Deno.test("claude-code LSP: passive diagnostics are not in the stream (S1): null
       };
   assertEquals(off.lsp_passive_diagnostics, null);
   assertEquals(off.incomplete_reasons["lsp_passive_diagnostics"], undefined);
+});
+
+// Spec v2 gate 1 (M9-04): inventoried arms (image revision 3 or 3-dev-*).
+const H64 = "a".repeat(64);
+const comp = (path: string, files: string[]) => ({
+  path,
+  hash: H64,
+  files: files.map((p) => ({ path: p, sha256: H64 })),
+});
+const V2 = (over: Record<string, unknown> = {}) => ({
+  image: { digest: "sha256:img", base_digest: "sha256:base", revision: "3" },
+  settings: {
+    requested: {},
+    native: { api_models: { main: "claude-sonnet-5" } },
+  },
+  instructions: comp("bundles/realistic/instructions", [
+    "CLAUDE.md",
+    "rules/al.md",
+  ]),
+  skills: comp("bundles/realistic/skills", ["al-compile/SKILL.md"]),
+  agents: comp("bundles/realistic/agents", ["al-reviewer.md"]),
+  ...over,
+});
+const B = BUILTIN_INVENTORY["2.1.282"]!;
+const BUILTIN_PLUGINS = B.plugins.map((s) => ({
+  name: s.split("@")[0],
+  path: "builtin",
+  source: s,
+}));
+const invLine = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    type: "cg_inventory",
+    v: 1,
+    ok: true,
+    installed: ["agents", "instructions", "skills"],
+    problems: [],
+    ...over,
+  });
+const v2Init = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    type: "system",
+    subtype: "init",
+    session_id: "s1",
+    claude_code_version: "2.1.282",
+    tools: [...B.tools],
+    mcp_servers: [],
+    agents: [...B.agents, "al-reviewer"],
+    skills: [...B.skills, "al-compile"],
+    plugins: BUILTIN_PLUGINS,
+    ...over,
+  });
+const v2Msg = (model: string) =>
+  JSON.stringify({
+    type: "assistant",
+    session_id: "s1",
+    message: {
+      id: `m-${model}`,
+      model,
+      content: [{ type: "text", text: "x" }],
+      usage: {},
+    },
+  });
+const v2Child = (model: string) =>
+  JSON.stringify({
+    type: "user",
+    session_id: "s1",
+    parent_tool_use_id: null,
+    message: {
+      content: [{
+        type: "tool_result",
+        tool_use_id: "toolu_X",
+        content: "done",
+      }],
+    },
+    tool_use_result: {
+      model: null,
+      resolvedModel: model,
+      usage: { input_tokens: 1 },
+    },
+  });
+const v2Result = (models: string[] = ["claude-sonnet-5"]) =>
+  JSON.stringify({
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    session_id: "s1",
+    num_turns: 1,
+    duration_ms: 5,
+    total_cost_usd: 0.001,
+    stop_reason: "end_turn",
+    usage: {},
+    modelUsage: Object.fromEntries(models.map((m) => [m, {
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    }])),
+  });
+const v2 = async (lines: string[], over: Record<string, unknown> = {}) =>
+  (await parse(lines.join("\n"), 0, V2(over))).r;
+const problemsOf = async (
+  lines: string[],
+  over: Record<string, unknown> = {},
+) => (await v2(lines, over)).inventoryProblems!.join("\n");
+
+Deno.test("inventory (M9-04): a proven arm loads instructions, skills and agents; evidence separates installed from loaded", async () => {
+  const r = await v2([invLine(), v2Init(), v2Result()]);
+  assertEquals(r.inventoryProblems, []);
+  assertEquals([...r.observed.loaded_components!].sort(), [
+    "agents",
+    "instructions",
+    "skills",
+  ]);
+  assertEquals(r.unobservable, []);
+  assertEquals(
+    observedMismatch(manifest("cc", V2()), r.observed, r.unobservable).mismatch,
+    null,
+  );
+  const evidence =
+    (r.telemetry.raw_usage as { component_evidence: Record<string, string> })
+      .component_evidence;
+  assertStringIncludes(evidence["instructions"]!, "installed (cg_inventory)");
+  assertStringIncludes(evidence["instructions"]!, B.qualified);
+  assertStringIncludes(evidence["agents"]!, "listed by system/init");
+});
+
+Deno.test("inventory (M9-04): record count, order, shape and ok/problems consistency are enforced", async () => {
+  const cases: [string[], string][] = [
+    [[v2Init(), v2Result()], "no cg_inventory record"],
+    [[invLine(), invLine(), v2Init(), v2Result()], "2 cg_inventory records"],
+    [[v2Init(), invLine(), v2Result()], "after system/init"],
+    [
+      [invLine({ extra: 1 }), v2Init(), v2Result()],
+      "not of the recorded shape",
+    ],
+    [
+      [invLine({ installed: "agents" }), v2Init(), v2Result()],
+      "not of the recorded shape",
+    ],
+    [
+      [invLine({ ok: false, problems: [] }), v2Init(), v2Result()],
+      "contradicts",
+    ],
+    [
+      [invLine({ ok: true, problems: ["x"] }), v2Init(), v2Result()],
+      "contradicts",
+    ],
+    [
+      [
+        invLine({
+          ok: false,
+          installed: ["skills"],
+          problems: [
+            "agents: agents/al-reviewer.md is staged but not installed",
+          ],
+        }),
+        v2Init(),
+        v2Result(),
+      ],
+      "staged but not installed",
+    ],
+  ];
+  for (const [lines, want] of cases) {
+    assertStringIncludes(await problemsOf(lines), want);
+  }
+});
+
+Deno.test("inventory (M9-04): installed must equal the declared installable components exactly", async () => {
+  assertStringIncludes(
+    await problemsOf([
+      invLine({ installed: ["agents", "instructions"] }),
+      v2Init(),
+      v2Result(),
+    ]),
+    "but the arm declares [agents, instructions, skills]",
+  );
+  assertStringIncludes(
+    await problemsOf([
+      invLine({ installed: ["agents", "hooks", "instructions", "skills"] }),
+      v2Init(),
+      v2Result(),
+    ]),
+    "but the arm declares",
+  );
+  // A plain arm (instructions only) must not report skills or agents installed.
+  assertStringIncludes(
+    await problemsOf(
+      [
+        invLine(),
+        v2Init({ agents: [...B.agents], skills: [...B.skills] }),
+        v2Result(),
+      ],
+      { skills: null, agents: null },
+    ),
+    "but the arm declares [instructions]",
+  );
+});
+
+Deno.test("inventory (M9-04): system/init must carry agents, skills, plugins and tools as lists", async () => {
+  for (const k of ["agents", "skills", "plugins", "tools"]) {
+    assertStringIncludes(
+      await problemsOf([invLine(), v2Init({ [k]: undefined }), v2Result()]),
+      k,
+    );
+    assertStringIncludes(
+      await problemsOf([invLine(), v2Init({ [k]: "x" }), v2Result()]),
+      k,
+    );
+  }
+  assertStringIncludes(
+    await problemsOf([invLine(), v2Init({ agents: [1] }), v2Result()]),
+    "agents",
+  );
+});
+
+Deno.test("inventory (M9-04): unrequested agents, skills, plugins and the LSP tool are refused", async () => {
+  const al = LSP_PLUGINS["al"]!;
+  const cases: [string[], string][] = [
+    [
+      [
+        invLine(),
+        v2Init({ agents: [...B.agents, "al-reviewer", "rogue"] }),
+        v2Result(),
+      ],
+      "unrequested agent loaded: rogue",
+    ],
+    [
+      [
+        invLine(),
+        v2Init({ skills: [...B.skills, "al-compile", "rogue"] }),
+        v2Result(),
+      ],
+      "unrequested skill loaded: rogue",
+    ],
+    [
+      [
+        invLine(),
+        v2Init({
+          plugins: [...BUILTIN_PLUGINS, {
+            name: "x",
+            path: "C:\\x",
+            source: "x@market",
+          }],
+        }),
+        v2Result(),
+      ],
+      "unrequested plugin loaded: x@market",
+    ],
+    [
+      [
+        invLine(),
+        v2Init({
+          plugins: [...BUILTIN_PLUGINS, {
+            name: al.name,
+            path: al.path,
+            source: al.source,
+          }],
+        }),
+        v2Result(),
+      ],
+      "unrequested plugin loaded",
+    ],
+    [
+      [invLine(), v2Init({ tools: ["Agent", "LSP"] }), v2Result()],
+      "unrequested LSP tool loaded",
+    ],
+  ];
+  for (const [lines, want] of cases) {
+    assertStringIncludes(await problemsOf(lines), want);
+  }
+});
+
+Deno.test("inventory (M9-04): a declared LSP loads lsp:al only with preflight, plugin and tool; installed must include lsp:al", async () => {
+  const lspArm = {
+    lsp: [{ name: "al", version: "al-lsp@1", tool_schema_hash: H64 }],
+  };
+  const al = LSP_PLUGINS["al"]!;
+  const plugin = { name: al.name, path: al.path, source: al.source };
+  const installed = ["agents", "instructions", "lsp:al", "skills"];
+  const ok = await v2(
+    [
+      invLine({ installed }),
+      v2Init({
+        plugins: [...BUILTIN_PLUGINS, plugin],
+        tools: [...B.tools, "LSP"],
+      }),
+      v2Result(),
+    ],
+    lspArm,
+  );
+  assertEquals(ok.inventoryProblems, []);
+  assert(ok.observed.loaded_components!.includes("lsp:al"));
+  // No preflight (installed lacks lsp:al): the exact set and the positive check both refuse.
+  const noPreflight = await problemsOf(
+    [
+      invLine(),
+      v2Init({
+        plugins: [...BUILTIN_PLUGINS, plugin],
+        tools: ["Agent", "LSP"],
+      }),
+      v2Result(),
+    ],
+    lspArm,
+  );
+  assertStringIncludes(
+    noPreflight,
+    "but the arm declares [agents, instructions, lsp:al, skills]",
+  );
+  assertStringIncludes(
+    noPreflight,
+    "lsp:al not loaded (preflight missing, plugin present, LSP tool present)",
+  );
+  // Preflight passed but neither plugin nor tool in init.
+  const missing = await v2(
+    [invLine({ installed }), v2Init(), v2Result()],
+    lspArm,
+  );
+  assert(!missing.observed.loaded_components!.includes("lsp:al"));
+  assertStringIncludes(
+    missing.inventoryProblems!.join("\n"),
+    "lsp:al not loaded (preflight passed, plugin absent, LSP tool absent)",
+  );
+  assertStringIncludes(
+    observedMismatch(
+      manifest("cc", V2(lspArm)),
+      missing.observed,
+      missing.unobservable,
+    ).mismatch!,
+    "lsp:al",
+  );
+  // A plugin at another path or with another source is not the declared plugin.
+  for (
+    const other of [{ ...plugin, path: "C:\\elsewhere" }, {
+      ...plugin,
+      source: "x@market",
+    }]
+  ) {
+    assertStringIncludes(
+      await problemsOf(
+        [
+          invLine({ installed }),
+          v2Init({
+            plugins: [...BUILTIN_PLUGINS, other],
+            tools: ["Agent", "LSP"],
+          }),
+          v2Result(),
+        ],
+        lspArm,
+      ),
+      "unrequested plugin loaded",
+    );
+  }
+});
+
+Deno.test("inventory (M9-04): every model seen must be api_models.main (assistant, sub-agent, modelUsage)", async () => {
+  const want = "model claude-haiku-9 ran; the arm pins claude-sonnet-5";
+  assertStringIncludes(
+    await problemsOf([
+      invLine(),
+      v2Init(),
+      v2Result(["claude-sonnet-5", "claude-haiku-9"]),
+    ]),
+    want,
+  );
+  assertStringIncludes(
+    await problemsOf([
+      invLine(),
+      v2Init(),
+      v2Msg("claude-haiku-9"),
+      v2Result(),
+    ]),
+    want,
+  );
+  assertStringIncludes(
+    await problemsOf([
+      invLine(),
+      v2Init(),
+      v2Child("claude-haiku-9"),
+      v2Result(),
+    ]),
+    want,
+  );
+  assertStringIncludes(
+    await problemsOf([invLine(), v2Init(), v2Result()], {
+      settings: {
+        requested: {},
+        native: { api_models: { judge: "claude-sonnet-5" } },
+      },
+    }),
+    "api_models.main missing",
+  );
+});
+
+Deno.test("inventory (M9-04): a requested agent missing from init is a mismatch, not unverified", async () => {
+  const r = await v2([
+    invLine(),
+    v2Init({ agents: [...B.agents] }),
+    v2Result(),
+  ]);
+  assert(!r.observed.loaded_components!.includes("agents"));
+  assertStringIncludes(
+    observedMismatch(manifest("cc", V2()), r.observed, r.unobservable)
+      .mismatch!,
+    "agents",
+  );
+});
+
+Deno.test("inventory (M9-04): unknown Claude Code version refuses (loading must be qualified first)", async () => {
+  assertStringIncludes(
+    await problemsOf([
+      invLine(),
+      v2Init({ claude_code_version: "2.1.999" }),
+      v2Result(),
+    ]),
+    "no qualified built-in inventory for Claude Code 2.1.999",
+  );
+});
+
+Deno.test("inventory (M9-04): a dev proof revision is inventoried; a frozen image keeps the M2 rules", async () => {
+  const dev = await v2([v2Init(), v2Result()], {
+    image: {
+      digest: "sha256:img",
+      base_digest: "sha256:base",
+      revision: "3-dev-M9-07",
+    },
+  });
+  assertStringIncludes(
+    dev.inventoryProblems!.join("\n"),
+    "no cg_inventory record",
+  );
+  const frozen = await v2([v2Init(), v2Result()], {
+    image: { digest: "sha256:img", base_digest: "sha256:base" },
+  });
+  assertEquals(frozen.inventoryProblems, []);
+  assertEquals([...frozen.unobservable].sort(), ["agents", "instructions"]);
+});
+
+// M9-04 run 002 review findings (adversarial; each failed before the fix).
+const REAL_SKILLS = ["al-compile", "al-reuse-lookup", "al-symbols", "al-test"];
+const REAL_AGENTS = [
+  "al-reviewer",
+  "al-test-writer",
+  "library-function-finder",
+];
+const realArm = (over: Record<string, unknown> = {}) => ({
+  skills: comp(
+    "bundles/realistic/skills",
+    REAL_SKILLS.map((s) => `${s}/SKILL.md`),
+  ),
+  agents: comp("bundles/realistic/agents", REAL_AGENTS.map((a) => `${a}.md`)),
+  ...over,
+});
+const realInit = (over: Record<string, unknown> = {}) =>
+  v2Init({
+    tools: [...B.tools],
+    agents: [...B.agents, ...REAL_AGENTS],
+    skills: [...B.skills, ...REAL_SKILLS],
+    ...over,
+  });
+const without = (xs: readonly string[], x: string) => xs.filter((y) => y !== x);
+
+Deno.test("inventory review 1: model pin sees every record, independent of usage, dedup and the final result", async () => {
+  const want = "model claude-haiku-9 ran; the arm pins claude-sonnet-5";
+  // A child with empty usage.
+  const emptyChild = JSON.stringify({
+    type: "user",
+    session_id: "s1",
+    parent_tool_use_id: null,
+    message: { content: [] },
+    tool_use_result: {
+      model: null,
+      resolvedModel: "claude-haiku-9",
+      usage: {},
+    },
+  });
+  assertStringIncludes(
+    await problemsOf([invLine(), v2Init(), emptyChild, v2Result()]),
+    want,
+  );
+  // Two chunks of one message id, the FIRST on another model.
+  const chunk = (model: string) =>
+    JSON.stringify({
+      type: "assistant",
+      session_id: "s1",
+      message: {
+        id: "m-same",
+        model,
+        content: [{ type: "text", text: "x" }],
+        usage: {},
+      },
+    });
+  assertStringIncludes(
+    await problemsOf([
+      invLine(),
+      v2Init(),
+      chunk("claude-haiku-9"),
+      chunk("claude-sonnet-5"),
+      v2Result(),
+    ]),
+    want,
+  );
+  // An earlier result record with another modelUsage key, a clean final one.
+  const s2 = (r: string) =>
+    JSON.stringify({ ...JSON.parse(r), session_id: "s1" });
+  assertStringIncludes(
+    await problemsOf([
+      invLine(),
+      v2Init(),
+      s2(v2Result(["claude-sonnet-5", "claude-haiku-9"])),
+      v2Init(),
+      v2Result(),
+    ]),
+    want,
+  );
+});
+
+Deno.test("inventory review 2: every same-session init is validated", async () => {
+  const cases: [Record<string, unknown>, string][] = [
+    [
+      { agents: [...B.agents, "al-reviewer", "rogue"] },
+      "unrequested agent loaded: rogue",
+    ],
+    [
+      { skills: [...B.skills, "al-compile", "rogue"] },
+      "unrequested skill loaded: rogue",
+    ],
+    [
+      {
+        plugins: [...BUILTIN_PLUGINS, {
+          name: "x",
+          path: "C:\\x",
+          source: "x@m",
+        }],
+      },
+      "unrequested plugin loaded: x@m",
+    ],
+    [{ tools: [...B.tools, "LSP"] }, "unrequested LSP tool loaded"],
+  ];
+  for (const [over, want] of cases) {
+    const p = await problemsOf([
+      invLine(),
+      v2Init({ tools: [...B.tools] }),
+      v2Init({ tools: [...B.tools], ...over }),
+      v2Result(),
+      v2Result(),
+    ]);
+    assertStringIncludes(p, want);
+    assertStringIncludes(p, "init 2");
+  }
+});
+
+Deno.test("inventory review 3: the non-MCP tool set must equal builtin + declared LSP - disallowed", async () => {
+  const run = (tools: string[], over: Record<string, unknown> = {}) =>
+    problemsOf([invLine(), v2Init({ tools }), v2Result()], over);
+  assertEquals(await run([...B.tools]), "");
+  assertStringIncludes(
+    await run([...B.tools, "Rogue"]),
+    "unexpected tool Rogue",
+  );
+  assertStringIncludes(
+    await run(without(B.tools, "Bash")),
+    "missing tool Bash",
+  );
+  assertStringIncludes(await run([...B.tools, "LSP"]), "unexpected tool LSP");
+  // Disallowed tools (settings.native.disallowed_tools) are not expected, and must not be present.
+  const native = {
+    api_models: { main: "claude-sonnet-5" },
+    disallowed_tools: ["CronCreate"],
+  };
+  const dis = { settings: { requested: {}, native } };
+  assertEquals(await run(without(B.tools, "CronCreate"), dis), "");
+  assertStringIncludes(
+    await run([...B.tools], dis),
+    "unexpected tool CronCreate",
+  );
+  // A version with no builtin entry fails closed.
+  assertStringIncludes(
+    await problemsOf([
+      invLine(),
+      v2Init({ claude_code_version: "2.1.999", tools: [...B.tools] }),
+      v2Result(),
+    ]),
+    "no qualified built-in inventory",
+  );
+  // MCP tools are the MCP rule's business, not this set's.
+  assertEquals(
+    (await problemsOf([
+      invLine(),
+      v2Init({ tools: [...B.tools, "mcp__x__y"] }),
+      v2Result(),
+    ])).includes("unexpected tool mcp__"),
+    false,
+  );
+});
+
+Deno.test("inventory review 4: missing requested and built-in members are explicit problems (realistic bundle)", async () => {
+  const run = (init: string) =>
+    problemsOf([invLine(), init, v2Result()], realArm());
+  assertEquals(await run(realInit()), "");
+  assertStringIncludes(
+    await run(
+      realInit({ skills: [...B.skills, ...without(REAL_SKILLS, "al-test")] }),
+    ),
+    "missing skill al-test",
+  );
+  assertStringIncludes(
+    await run(
+      realInit({
+        agents: [...B.agents, ...without(REAL_AGENTS, "al-test-writer")],
+      }),
+    ),
+    "missing agent al-test-writer",
+  );
+  assertStringIncludes(
+    await run(realInit({ plugins: [] })),
+    "missing plugin agents-md@builtin",
+  );
+  assertStringIncludes(
+    await run(
+      realInit({ agents: [...without(B.agents, "Plan"), ...REAL_AGENTS] }),
+    ),
+    "missing agent Plan",
+  );
+  assertStringIncludes(
+    await run(
+      realInit({ skills: [...without(B.skills, "loop"), ...REAL_SKILLS] }),
+    ),
+    "missing skill loop",
+  );
 });
