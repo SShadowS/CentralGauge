@@ -9,6 +9,7 @@ codeunit 70200 "CGR Rental Mgt"
     var
         Contract: Record "CGR Rental Contract";
         Setup: Record "CGR Setup";
+        SessionContext: Codeunit "CGR Session Context";
     begin
         Contract.Init();
         Contract."No." := Setup.NextContractNo();
@@ -17,6 +18,7 @@ codeunit 70200 "CGR Rental Mgt"
         Contract."Start Date" := StartDate;
         Contract."End Date" := EndDate;
         Contract.Status := Contract.Status::Open;
+        Contract."Branch Code" := SessionContext.CurrentBranch();
         Contract.Insert(true);
         exit(Contract."No.");
     end;
