@@ -73,6 +73,14 @@ Deno.test("realistic bundle: skill and agent names equal their folder or file; a
     );
     // Spec v2 gate 3: the subagent model is pinned by run.ps1, never by the bundle.
     assertEquals(fm["model"], "inherit", `${a}: model`);
+    // Absent means inherit; any other non-string shape (a YAML list, a number)
+    // would read as no tools and hide a disallowed grant, so it fails.
+    assert(
+      fm["tools"] === undefined || typeof fm["tools"] === "string",
+      `${a}: tools must be a comma-separated string, got ${
+        JSON.stringify(fm["tools"])
+      }`,
+    );
     const tools = typeof fm["tools"] === "string"
       ? fm["tools"].split(",").map((t) => t.trim())
       : [];
@@ -148,6 +156,10 @@ const GENERIC = new Set([
  */
 async function leakIdentifiers(): Promise<Map<string, string>> {
   const out = new Map<string, string>();
+  // The YAML harvest is guarded on its own: the aggregate count alone would
+  // pass on the .al names even if no task.yml were read.
+  let tasks = 0;
+  const empty: string[] = [];
   const add = (name: string, where: string) => {
     const k = name.trim().toLowerCase();
     if (k.length >= 6 && !GENERIC.has(k) && !out.has(k)) out.set(k, where);
@@ -167,12 +179,20 @@ async function leakIdentifiers(): Promise<Map<string, string>> {
     })
   ) {
     const { task } = await loadTask(dirname(e.path));
+    tasks++;
+    let procs = 0;
     for (
       const g of [...task.pass_to_pass, ...(task.fail_to_pass?.tests ?? [])]
     ) {
-      for (const p of g.procedures) add(p, e.path);
+      for (const p of g.procedures) {
+        add(p, e.path);
+        procs++;
+      }
     }
+    if (procs === 0) empty.push(e.path);
   }
+  assert(tasks > 0, "identifier harvest read no task.yml");
+  assertEquals(empty, [], "task.yml files that named no oracle procedure");
   return out;
 }
 
