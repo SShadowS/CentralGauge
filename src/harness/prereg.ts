@@ -160,6 +160,11 @@ export function protocolSha(doc: Prereg): Promise<string> {
 
 export function familyProblems(doc: Prereg, e: Experiment): string[] {
   const out: string[] = [];
+  if (e.primary_metric !== doc.primary_metric) {
+    out.push(
+      `experiment primary_metric ${e.primary_metric} does not match the pre-registration's primary_metric ${doc.primary_metric}`,
+    );
+  }
   const ids = (e.contrasts ?? []).map((c) => c.id);
   const fam = doc.family.filter((id) => id !== "interaction");
   const amended = doc.amendments.some((a) => a.key === "family");
