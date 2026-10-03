@@ -9,6 +9,7 @@ partial_credit:
     "85620/PlainFailureRollsBackLease": 1
     "85620/NothingDueNotCountedOrRecorded": 1
     "85620/EachRunHasItsOwnId": 1
+    "85620/FailuresRecordedSeparately": 1
   hidden_regressions: []
 reuse: null
 expect:

@@ -3,24 +3,27 @@ codeunit 85621 "HX008 Lease Fail Subscriber"
     EventSubscriberInstance = Manual;
 
     var
-        FailContractNo: Code[20];
-        FailLineNo: Integer;
-        CommitBeforeFailing: Boolean;
+        FailingLines: Dictionary of [Text, Boolean];
         FailureErr: Label 'HX008 failure on %1 line %2.', Comment = '%1 = lease number, %2 = schedule line number';
 
     procedure FailOnScheduleLine(ContractNo: Code[20]; LineNo: Integer; CommitFirst: Boolean)
     begin
-        FailContractNo := ContractNo;
-        FailLineNo := LineNo;
-        CommitBeforeFailing := CommitFirst;
+        FailingLines.Set(LineKey(ContractNo, LineNo), CommitFirst);
+    end;
+
+    local procedure LineKey(ContractNo: Code[20]; LineNo: Integer): Text
+    begin
+        exit(StrSubstNo('%1|%2', ContractNo, LineNo));
     end;
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Lease Invoicing", 'OnAfterCreateInvoiceLine', '', false, false)]
     local procedure FailInvoiceLine(ScheduleLine: Record "CGR Lease Schedule Line"; var InvoiceLine: Record "CGR Lease Invoice Line")
+    var
+        CommitFirst: Boolean;
     begin
-        if (FailContractNo = '') or (ScheduleLine."Contract No." <> FailContractNo) or (ScheduleLine."Line No." <> FailLineNo) then
+        if not FailingLines.Get(LineKey(ScheduleLine."Contract No.", ScheduleLine."Line No."), CommitFirst) then
             exit;
-        if CommitBeforeFailing then
+        if CommitFirst then
             Commit();
         Error(FailureErr, ScheduleLine."Contract No.", ScheduleLine."Line No.");
     end;

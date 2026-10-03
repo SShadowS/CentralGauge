@@ -102,6 +102,8 @@ codeunit 85620 "HX008 Lease Batch Oracle"
         LeaseInvoiceError: Record "CGR Lease Invoice Error";
         FailSubscriber: Codeunit "HX008 Lease Fail Subscriber";
         BatchInvoicing: Codeunit "CGR Lease Batch Invoicing";
+        RunStartedAt: DateTime;
+        RunEndedAt: DateTime;
     begin
         InitRun();
         InsertLease('HX8-R5A', 20270301D);
@@ -111,7 +113,9 @@ codeunit 85620 "HX008 Lease Batch Oracle"
         BindSubscription(FailSubscriber);
 
         LeaseFilter.SetFilter("Vehicle No.", '%1|%2|%3', 'HX8-R5A', 'HX8-R5B', 'HX8-R5C');
+        RunStartedAt := CurrentDateTime();
         BatchInvoicing.InvoiceDueLeases(LeaseFilter, 20270401D);
+        RunEndedAt := CurrentDateTime();
 
         LeaseInvoiceError.SetRange("Run Id", BatchInvoicing.LastRunId());
         Assert.AreEqual(1, LeaseInvoiceError.Count(), 'One record for the one failed lease');
@@ -119,6 +123,41 @@ codeunit 85620 "HX008 Lease Batch Oracle"
         Assert.AreEqual('HX8-R5B', LeaseInvoiceError."Contract No.", 'The record names the failed lease');
         Assert.AreEqual(StrSubstNo('HX008 failure on %1 line %2.', 'HX8-R5B', 20000), LeaseInvoiceError."Error Message", 'The record keeps the error text');
         Assert.AreNotEqual(0DT, LeaseInvoiceError."Logged At", 'The record has its time');
+        // One second of slack each side: the stored DateTime may be rounded by the database.
+        Assert.IsTrue(LeaseInvoiceError."Logged At" >= RunStartedAt - 1000, 'Recorded during the run, not before');
+        Assert.IsTrue(LeaseInvoiceError."Logged At" <= RunEndedAt + 1000, 'Recorded during the run, not after');
+    end;
+
+    [Test]
+    procedure FailuresRecordedSeparately()
+    var
+        LeaseFilter: Record "CGR Lease Contract";
+        LeaseInvoiceError: Record "CGR Lease Invoice Error";
+        FailSubscriber: Codeunit "HX008 Lease Fail Subscriber";
+        BatchInvoicing: Codeunit "CGR Lease Batch Invoicing";
+        FirstEntryNo: Integer;
+    begin
+        InitRun();
+        InsertLease('HX8-R9A', 20270301D);
+        InsertLease('HX8-R9B', 20270301D);
+        InsertLease('HX8-R9C', 20270301D);
+        FailSubscriber.FailOnScheduleLine('HX8-R9B', 20000, true);
+        FailSubscriber.FailOnScheduleLine('HX8-R9C', 10000, false);
+        BindSubscription(FailSubscriber);
+
+        LeaseFilter.SetFilter("Vehicle No.", '%1|%2|%3', 'HX8-R9A', 'HX8-R9B', 'HX8-R9C');
+        Assert.AreEqual(1, BatchInvoicing.InvoiceDueLeases(LeaseFilter, 20270401D), 'Only the good lease is counted');
+
+        LeaseInvoiceError.SetRange("Run Id", BatchInvoicing.LastRunId());
+        Assert.AreEqual(2, LeaseInvoiceError.Count(), 'One record per failed lease');
+        LeaseInvoiceError.SetRange("Contract No.", 'HX8-R9B');
+        Assert.AreEqual(1, LeaseInvoiceError.Count(), 'A record for the first failed lease');
+        LeaseInvoiceError.FindFirst();
+        FirstEntryNo := LeaseInvoiceError."Entry No.";
+        LeaseInvoiceError.SetRange("Contract No.", 'HX8-R9C');
+        Assert.AreEqual(1, LeaseInvoiceError.Count(), 'A record for the second failed lease');
+        LeaseInvoiceError.FindFirst();
+        Assert.AreNotEqual(FirstEntryNo, LeaseInvoiceError."Entry No.", 'Each record has its own entry number');
     end;
 
     [Test]

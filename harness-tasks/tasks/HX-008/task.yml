@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Leasing]
   tests:
-    - { codeunit: 85620, procedures: [InvoicesEveryDueLease, LeaseOutsideFilterUntouched, DueDateBoundaryInclusive, CommittingFailureRollsBackLease, FailureRecordedWithText, PlainFailureRollsBackLease, NothingDueNotCountedOrRecorded, EachRunHasItsOwnId] }
+    - { codeunit: 85620, procedures: [InvoicesEveryDueLease, LeaseOutsideFilterUntouched, DueDateBoundaryInclusive, CommittingFailureRollsBackLease, FailureRecordedWithText, PlainFailureRollsBackLease, NothingDueNotCountedOrRecorded, EachRunHasItsOwnId, FailuresRecordedSeparately] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
