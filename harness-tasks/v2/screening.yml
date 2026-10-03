@@ -30,6 +30,9 @@ candidates:
   - id: HX-010
     prior: easy
     size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-013
+    prior: hard
+    size: { objects: 3, files: 3, reuse: "CGR Service Plan Mgt.IsServiceDue", traces: "CGR Service Plan Mgt.OnAfterServiceRegistered" }
   - id: HX-014
     prior: intermediate
     size: { objects: 6, files: 6, reuse: null, traces: "CGR Service Interval" }
