@@ -14,6 +14,8 @@ import { type BcLane, buildApps, type LockedSymbols } from "./bc-lane.ts";
 import { type JudgmentRecord, publishOnce, readRecord } from "./records.ts";
 import { readAppJson, type StagedApp } from "./staging.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
+import { judge, type JudgeInput } from "./verdict.ts";
+import { safeCopyTree } from "./fsutil.ts";
 import { hashJson } from "./hash.ts";
 import { Sha256Hex } from "./identity.ts";
 import { readYaml } from "./yaml.ts";
@@ -309,6 +311,309 @@ export async function readMeasureRecord(
     if (err instanceof Deno.errors.NotFound) return null;
     throw err;
   }
+}
+
+export const REUSE_MARKER = "CG-REUSE-PROBE";
+
+/**
+ * Same length as src: comments and string literals blanked, so indices stay
+ * valid. A lexer, not a regex: a "quoted identifier" (e.g. "Owner's") is its
+ * own state, so its apostrophe never opens a string that hides a comment.
+ */
+export function maskAl(src: string): string {
+  const blank = (s: string) => s.replace(/[^\n]/g, " ");
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i]!;
+    const n = src[i + 1];
+    let end: number;
+    if (c === "/" && n === "/") {
+      end = src.indexOf("\n", i);
+      if (end < 0) end = src.length;
+      out += blank(src.slice(i, end));
+    } else if (c === "/" && n === "*") {
+      end = src.indexOf("*/", i + 2);
+      end = end < 0 ? src.length : end + 2;
+      out += blank(src.slice(i, end));
+    } else if (c === "'") {
+      // '' inside a string is an escaped apostrophe.
+      end = i + 1;
+      while (end < src.length) {
+        if (src[end] !== "'") end++;
+        else if (src[end + 1] === "'") end += 2;
+        else {
+          end++;
+          break;
+        }
+      }
+      out += blank(src.slice(i, end));
+    } else if (c === '"') {
+      end = src.indexOf('"', i + 1);
+      end = end < 0 ? src.length : end + 1;
+      out += src.slice(i, end);
+    } else {
+      end = i + 1;
+      out += c;
+    }
+    i = end;
+  }
+  return out;
+}
+/** Quoted identifiers blanked too, for keyword scanning only. */
+const maskIdents = (m: string) =>
+  m.replace(/"[^"\n]*"/g, (s) => `"${" ".repeat(s.length - 2)}"`);
+const norm = (s: string) =>
+  s.trim().replace(/;$/, "").replace(/\s+/g, "").toLowerCase();
+
+function bodyRange(
+  m: string,
+  from: number,
+  limit: number,
+): [number, number] | null {
+  const re = /\b(begin|case|end)\b/gi;
+  re.lastIndex = from;
+  let depth = 0;
+  let start = -1;
+  for (let x = re.exec(m); x !== null && x.index < limit; x = re.exec(m)) {
+    const k = x[1]!.toLowerCase();
+    if (k === "end") {
+      depth--;
+      if (depth === 0) return [start, x.index + 3];
+      if (depth < 0) return null;
+    } else {
+      if (depth === 0) {
+        if (k !== "begin") return null;
+        start = x.index;
+      }
+      depth++;
+    }
+  }
+  return null;
+}
+
+/**
+ * The body range of the target: located by codeunit id, procedure name AND
+ * declared signature inside that codeunit's object body, with comments and
+ * strings masked. Absent or ambiguous: null.
+ */
+export function locateProcedure(
+  src: string,
+  t: Pick<ReuseTarget, "codeunit" | "procedure" | "signature">,
+): [number, number] | null {
+  const m = maskAl(src);
+  const k = maskIdents(m);
+  const heads = [
+    ...k.matchAll(new RegExp(`\\bcodeunit\\s+${t.codeunit}\\b`, "gi")),
+  ];
+  if (heads.length !== 1) return null;
+  const open = k.indexOf("{", heads[0]!.index!);
+  if (open < 0) return null;
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < k.length && close < 0; i++) {
+    if (k[i] === "{") depth++;
+    else if (k[i] === "}" && --depth === 0) close = i;
+  }
+  if (close < 0) return null;
+  const body = m.slice(open, close);
+  const hits = [
+    ...body.matchAll(
+      new RegExp(
+        `\\bprocedure\\s+(?:"${t.procedure}"|${t.procedure})\\s*\\(`,
+        "gi",
+      ),
+    ),
+  ];
+  // Overloads share the name: match each full signature, then require one.
+  const matches: number[] = [];
+  for (const h of hits) {
+    const sig = open + h.index! + h[0].length - 1;
+    // The parameter list first, so a `var` parameter is not the locals.
+    let d = 0;
+    let rparen = -1;
+    for (let i = sig; i < close && rparen < 0; i++) {
+      if (k[i] === "(") d++;
+      else if (k[i] === ")" && --d === 0) rparen = i;
+    }
+    if (rparen < 0) continue;
+    const kw = /\b(var|begin)\b/gi;
+    kw.lastIndex = rparen;
+    const at = kw.exec(k);
+    if (!at || at.index > close) continue;
+    if (norm(m.slice(sig, at.index)) === norm(t.signature)) {
+      matches.push(at.index);
+    }
+  }
+  if (matches.length !== 1) return null;
+  return bodyRange(k, matches[0]!, close);
+}
+
+export function stubProcedure(
+  src: string,
+  t: Pick<ReuseTarget, "codeunit" | "procedure" | "signature">,
+  statements: string,
+): string | null {
+  const r = locateProcedure(src, t);
+  return r === null
+    ? null
+    : `${src.slice(0, r[0])}begin\n        ${statements}\n    end${
+      src.slice(r[1])
+    }`;
+}
+
+export interface ReuseInput {
+  task: LoadedTask;
+  measures: TaskMeasures;
+  judgment: JudgmentRecord;
+  judge: Omit<JudgeInput, "task" | "artifact" | "workDir" | "executionId">;
+  artifact: string;
+  workDir: string;
+}
+
+/**
+ * Reuse = the target executed AND its result matters, attributed per reuse
+ * test (round 2 finding 5). `executed` is a lower bound: a call whose error
+ * is swallowed and whose result is ignored reads as not executed.
+ */
+export async function reuseCheck(
+  lane: BcLane,
+  o: ReuseInput,
+): Promise<
+  Measure<{ executed: boolean; effective: boolean; via: string | null }>
+> {
+  const r = o.measures.reuse;
+  if (!r) return na("no reuse target");
+  const wanted = r.tests.flatMap((x) =>
+    x.procedures.map((p) => `${x.codeunit}/${p}`)
+  );
+  const f2p = o.judgment.scorers.find((s) => s.name === "fail_to_pass");
+  const passing = new Set(
+    (f2p?.tests ?? []).filter((t) => t.outcome === "pass").map((t) =>
+      `${t.codeunit}/${t.procedure}`
+    ),
+  );
+  if (!wanted.every((k) => passing.has(k))) {
+    return missing("not evaluable: reuse tests did not pass in the judgment");
+  }
+  const probeTask: LoadedTask = {
+    dir: o.task.dir,
+    task: {
+      ...o.task.task,
+      scorers: ["build", "fail_to_pass"],
+      pass_to_pass: [],
+      fail_to_pass: {
+        depends_on: o.task.task.fail_to_pass!.depends_on,
+        tests: r.tests,
+      },
+    },
+  };
+  /** Per reuse test: failed under this probe, and failed with the marker. */
+  type Run = { failed: Set<string>; marker: Set<string> } | {
+    problem: string;
+  };
+  const probe = async (
+    i: number,
+    kind: string,
+    t: ReuseTarget,
+    body: string,
+  ): Promise<Run | null> => {
+    const art = join(o.workDir, `${kind}-${i}`);
+    await safeCopyTree(o.artifact, art);
+    let src: string;
+    try {
+      src = await Deno.readTextFile(join(art, t.file));
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return null;
+      throw err;
+    }
+    const stubbed = stubProcedure(src, t, body);
+    if (stubbed === null) return null;
+    await Deno.writeTextFile(join(art, t.file), stubbed);
+    const { judgment, log } = await judge(lane, {
+      ...o.judge,
+      executionId: crypto.randomUUID(),
+      task: probeTask,
+      artifact: art,
+      workDir: join(o.workDir, `${kind}-judge-${i}`),
+    });
+    if (judgment.verdict === "unscored") {
+      return { problem: "infra during a reuse probe" };
+    }
+    if (judgment.scorers.find((s) => s.name === "build")?.passed !== true) {
+      return {
+        problem:
+          `probe did not build (${kind} probe of ${t.codeunit}/${t.procedure})`,
+      };
+    }
+    const rows =
+      judgment.scorers.find((s) => s.name === "fail_to_pass")?.tests ?? [];
+    // Each reuse test must have run exactly once: an oracle compile failure
+    // or not_run row says nothing about the target.
+    const ran = (k: string) => {
+      const r = rows.filter((x) => `${x.codeunit}/${x.procedure}` === k);
+      return r.length === 1 && (r[0]!.outcome === "pass" ||
+          r[0]!.outcome === "fail")
+        ? r[0]!
+        : null;
+    };
+    const unran = wanted.filter((k) => ran(k) === null);
+    if (unran.length > 0) {
+      return {
+        problem:
+          `incomplete probe (${kind} probe of ${t.codeunit}/${t.procedure}: ${
+            unran.join(", ")
+          } did not run)`,
+      };
+    }
+    const failed = new Set(wanted.filter((k) => ran(k)!.outcome === "fail"));
+    const marker = new Set(
+      [...failed].filter((k) =>
+        log.test_messages.some((m) =>
+          `${m.codeunit}/${m.procedure}` === k &&
+          m.message.includes(REUSE_MARKER)
+        )
+      ),
+    );
+    return { failed, marker };
+  };
+  let located = 0;
+  // Per reuse test, the targets that cover it (alternatives may serve different tests).
+  const execBy = new Map<string, string[]>();
+  const effBy = new Map<string, string[]>();
+  const note = (m: Map<string, string[]>, k: string, id: string) =>
+    m.set(k, [...(m.get(k) ?? []), id]);
+  for (const [i, t] of r.targets.entries()) {
+    const ex = await probe(i, "executed", t, `Error('${REUSE_MARKER}');`);
+    if (ex === null) continue;
+    located++;
+    if ("problem" in ex) return missing(ex.problem);
+    const ef = await probe(i, "effective", t, t.perturb);
+    if (ef === null) {
+      return missing(
+        `target ${t.codeunit}/${t.procedure} vanished between probes`,
+      );
+    }
+    if ("problem" in ef) return missing(ef.problem);
+    const id = `${t.codeunit}/${t.procedure}`;
+    for (const k of ex.marker) note(execBy, k, id);
+    for (const k of ef.failed) note(effBy, k, id);
+  }
+  if (located === 0) {
+    return missing("no reuse target located in the final workspace");
+  }
+  const effective = wanted.every((k) => effBy.has(k));
+  // A test the perturbation changes ran the target, even if a TryFunction swallowed the marker.
+  const executed = wanted.every((k) => execBy.has(k) || effBy.has(k));
+  const cover = effective
+    ? effBy
+    : executed
+    ? new Map([...execBy, ...effBy])
+    : null;
+  const via = cover === null
+    ? null
+    : [...new Set(wanted.map((k) => cover.get(k)![0]!))].join("+");
+  return ok({ executed, effective, via });
 }
 
 export interface FinalCounts {
