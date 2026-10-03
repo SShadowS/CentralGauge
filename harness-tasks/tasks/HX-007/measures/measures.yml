@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "85600/PreviewUsesContractBranch": 1
+    "85600/PostingUsesContractBranch": 1
+    "85600/ContractKeepsCreationBranch": 1
+    "85600/BatchPostsEachContractsBranch": 1
+    "85600/BranchWithoutRowUsesSetup": 1
+    "85600/ZeroBranchPrecisionUsesSetup": 1
+    "85600/FinerBranchPrecisionWins": 1
+    "85600/PricingKeepsSessionBranch": 1
+    "85600/LeaseInvoiceKeepsSetupPrecision": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
