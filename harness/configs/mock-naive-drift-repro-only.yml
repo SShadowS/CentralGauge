@@ -1,6 +1,6 @@
 id: mock-naive-drift-repro-only
 harness: mock
-harness_version: "1"
+harness_version: "2"
 models: {}
 settings: { mode: apply, variant: "naive:drift-repro-only" }
 limits: { timeout_min: 10, max_budget_usd: 1 }

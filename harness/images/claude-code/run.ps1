@@ -6,6 +6,9 @@
 # stdin (native argument quoting drops embedded double quotes and a .cmd shim
 # can cut an argument at a newline).
 $ErrorActionPreference = 'Stop'
+# H-01: first, before any config, secret or ready read; any non-zero exits 86.
+& 'C:\cg-nonadmin.ps1'
+if ($LASTEXITCODE -ne 0) { exit 86 }
 $utf8 = New-Object System.Text.UTF8Encoding $false
 $global:OutputEncoding = $utf8
 [Console]::InputEncoding = $utf8

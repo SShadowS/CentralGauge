@@ -14,6 +14,7 @@ import {
   collectEgressState,
   combineObservation,
   decodeHnsBlob,
+  egressCheckArgs,
   type EgressState,
   evaluatePreflight,
   firewallPlan,
@@ -2119,4 +2120,31 @@ Deno.test("combineObservation (M1-34c run 002): docker's network and the marker 
       "not an object",
     );
   }
+});
+
+Deno.test("egress preflight (H-01): docker exec runs egress-check.ps1 as ContainerUser, the agent's user", () => {
+  const a = egressCheckArgs(
+    "cg-harness-x",
+    ["api.anthropic.com", "b.test"],
+    "192.168.1.1",
+  );
+  assertEquals(a, [
+    "exec",
+    "-u",
+    "ContainerUser",
+    "cg-harness-x",
+    "powershell",
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    "C:\\egress-check.ps1",
+    "-Allow",
+    "proxy-allow-api.anthropic.com,proxy-allow-b.test",
+    "-LanRouter",
+    "192.168.1.1",
+  ]);
+  const b = egressCheckArgs("cg-harness-x", [], "not-an-ip");
+  assertEquals(b.slice(0, 4), ["exec", "-u", "ContainerUser", "cg-harness-x"]);
+  assertEquals(b.slice(-2), ["-Allow", "none"]);
 });
