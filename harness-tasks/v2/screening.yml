@@ -33,6 +33,9 @@ candidates:
   - id: HX-010
     prior: easy
     size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-011
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: "CGR Amount Rounding.RoundAmount", traces: null }
   - id: HX-012
     prior: easy
     size: { objects: 1, files: 1, reuse: null, traces: null }
