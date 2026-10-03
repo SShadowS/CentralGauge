@@ -1470,3 +1470,128 @@ Deno.test("backend (M11): a refused grant creates no host log", async () => {
   );
   await assertRejects(() => Deno.stat(hostLog), Deno.errors.NotFound);
 });
+
+/** Status and body of a response, minus its wall-clock backend_ms. */
+async function verdict(r: Response): Promise<[number, unknown]> {
+  const body = await r.json() as Record<string, unknown>;
+  delete body["backend_ms"];
+  return [r.status, body];
+}
+
+/** Host-log appends of `hostLog` fail while `fail(n)` (n = 1-based append) is true. */
+function failHostLog(hostLog: string, fail: (n: number) => boolean) {
+  const real = Deno.writeTextFile;
+  let n = 0;
+  return stub(Deno, "writeTextFile", (path, data, options) => {
+    if (String(path) === hostLog && fail(++n)) {
+      return Promise.reject(new Deno.errors.PermissionDenied("disk says no"));
+    }
+    return real(path, data, options);
+  });
+}
+
+Deno.test("backend (M11-02 r2): a persistent host-log failure never changes the response", async () => {
+  const base = await setup();
+  const want = await verdict(
+    await base.backend.handle(
+      req("/v1/compile", base.tokenA, '{"apps":["Core"]}'),
+    ),
+  );
+  const s = await setup();
+  const warn = stub(console, "warn");
+  const write = failHostLog(s.hostLog, () => true);
+  let got: [number, unknown];
+  try {
+    got = await verdict(
+      await s.backend.handle(req("/v1/compile", s.tokenA, '{"apps":["Core"]}')),
+    );
+  } finally {
+    write.restore();
+    warn.restore();
+  }
+  assertEquals(got, want);
+  assertEquals(want[0], 200);
+  assert(
+    warn.calls.some((c) => String(c.args[0]).includes("disk says no")),
+    "the lost line is reported host-side",
+  );
+});
+
+Deno.test("backend (M11-02 r2): a transient host-log failure keeps the verdict and later lines", async () => {
+  const base = await setup();
+  const want = await verdict(
+    await base.backend.handle(
+      req("/v1/compile", base.tokenA, '{"apps":["Core"]}'),
+    ),
+  );
+  const s = await setup();
+  const warn = stub(console, "warn");
+  const write = failHostLog(s.hostLog, (n) => n === 1);
+  let got: [number, unknown];
+  let second: Response;
+  try {
+    got = await verdict(
+      await s.backend.handle(req("/v1/compile", s.tokenA, '{"apps":["Core"]}')),
+    );
+    second = await s.backend.handle(
+      req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
+    );
+  } finally {
+    write.restore();
+    warn.restore();
+  }
+  assertEquals(got, want);
+  assertEquals(second.status, 200);
+  await second.body?.cancel();
+  assertEquals(warn.calls.length, 1, "exactly the lost line is reported");
+  assertStringIncludes(String(warn.calls[0]!.args[0]), "disk says no");
+  assertEquals((await readHostLog(s.hostLog)).map((l) => l.request), ["br_2"]);
+});
+
+Deno.test("backend (M11-02 r2): concurrent 429 rejections append one whole line each, one at a time", async () => {
+  const s = await setup({ revokeGraceMs: 60_000 });
+  let open!: () => void;
+  s.gate.wait = new Promise<void>((r) => (open = r));
+  const first = s.backend.handle(
+    req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
+  );
+  await s.entered;
+  const real = Deno.writeTextFile;
+  let active = 0;
+  let peak = 0;
+  const write = stub(
+    Deno,
+    "writeTextFile",
+    async (path, data, options) => {
+      if (String(path) !== s.hostLog) return await real(path, data, options);
+      peak = Math.max(peak, ++active);
+      try {
+        await new Promise((r) => setTimeout(r, 1));
+        await real(path, data, options);
+      } finally {
+        active--;
+      }
+    },
+  );
+  const N = 25;
+  let statuses: number[];
+  try {
+    statuses = await Promise.all(
+      Array.from(
+        { length: N },
+        () =>
+          s.backend.handle(req("/v1/compile", s.tokenA, '{"apps":["Core"]}'))
+            .then(async (r) => (await r.body?.cancel(), r.status)),
+      ),
+    );
+  } finally {
+    write.restore();
+    open();
+  }
+  assertEquals((await first).status, 200);
+  assertEquals(statuses, Array(N).fill(429));
+  assertEquals(peak, 1, "appends to one log are serialized");
+  const lines = await readHostLog(s.hostLog);
+  assertEquals(lines.length, N + 1);
+  assertEquals(lines.filter((l) => l.status === 429).length, N);
+});

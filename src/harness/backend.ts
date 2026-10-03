@@ -411,6 +411,8 @@ export class Backend {
   private readonly draining = new Set<string>();
   /** Ids between grant's duplicate check and its insert. */
   private readonly reserved = new Set<string>();
+  /** Host log path -> its last pending append (the per-log write chain). */
+  private readonly logTails = new Map<string, Promise<void>>();
   private readonly now: () => number;
 
   /** Every response body is scrubbed of host paths (agent-facing, spec 1a section 7). */
@@ -548,12 +550,35 @@ export class Backend {
     }
   }
 
-  private async append(g: BackendGrant, line: HostLogLine) {
-    await Deno.mkdir(join(g.hostLog, ".."), { recursive: true });
-    await Deno.writeTextFile(g.hostLog, JSON.stringify(line) + "\n", {
-      append: true,
-      create: true,
+  /**
+   * Appends to one log run one at a time, so concurrent 429s cannot
+   * interleave lines. An append never throws: a lost telemetry line is
+   * reported host-side and never changes the agent's verdict.
+   */
+  private append(g: BackendGrant, line: HostLogLine): Promise<void> {
+    const path = g.hostLog;
+    const next = (this.logTails.get(path) ?? Promise.resolve())
+      .then(async () => {
+        await Deno.mkdir(join(path, ".."), { recursive: true });
+        await Deno.writeTextFile(path, JSON.stringify(line) + "\n", {
+          append: true,
+          create: true,
+        });
+      })
+      .catch((err) => {
+        try {
+          console.warn(
+            `[WARN] host log ${path}: ${line.request} not written: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        } catch { /* the report itself failed; nothing left to tell */ }
+      });
+    this.logTails.set(path, next);
+    void next.then(() => {
+      if (this.logTails.get(path) === next) this.logTails.delete(path);
     });
+    return next;
   }
 
   private line(
