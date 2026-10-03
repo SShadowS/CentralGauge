@@ -1064,6 +1064,13 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const check = started
     ? observedMismatch(f.manifest, parsed.observed, parsed.unobservable)
     : { mismatch: null, unverified: [] };
+  // Spec v2 gate 1: an arm whose components the adapter could not prove is never
+  // judged. The inventory problem is the root cause, so it outranks the derived
+  // "requested components did not load" mismatch.
+  const inventory = started ? parsed.inventoryProblems ?? [] : [];
+  const mismatch = inventory.length > 0
+    ? `component inventory: ${inventory.join("; ")}`
+    : check.mismatch;
   const stopReason = f.egressStop
     ? f.egressStop
     : f.sandbox.interrupted
@@ -1082,7 +1089,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     (started && f.manifest.harness === "pi" &&
       await piConfigInvalid(p.stderr) !== null);
   const termination: ExecutionRecord["termination"] =
-    !started || f.setupError !== null || check.mismatch !== null ||
+    !started || f.setupError !== null || mismatch !== null ||
       configInvalid
       ? "setup_failed"
       : stopReason !== null || parseError !== null
@@ -1111,7 +1118,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const side = redactDeep({
     v: 1,
     sandbox: f.sandbox,
-    setup_error: f.setupError ?? check.mismatch,
+    setup_error: f.setupError ?? mismatch,
     unverified: check.unverified,
     stop_reason: stopReason,
     infra_reason: infraReasons.length > 0 ? infraReasons.join("; ") : null,

@@ -9,6 +9,7 @@ import { walk } from "@std/fs";
 import { basename, join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
+import { BUILTIN_INVENTORY } from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { ExperimentSchema } from "../../../src/harness/config.ts";
 import {
@@ -3821,4 +3822,167 @@ Deno.test("H-01u: a pi run with Invalid settings file on stderr is setup_failed 
       assertEquals(await t.env.store.judgments(e.id), [], label);
     }
   }
+});
+
+/** A revision-3 claude-code arm in a test env (spec v2 gate 1). */
+async function inventoriedEnv(): Promise<TestEnv> {
+  const t = await makeEnv();
+  await write(
+    t.harnessRoot,
+    "configs/cc-v2-inv.yml",
+    `id: cc-v2-inv
+harness: claude-code
+harness_version: "2.1.282"
+image_revision: "3"
+models: { main: anthropic/claude-sonnet-5 }
+settings: {}
+components: { instructions: bundles/env/instructions }
+limits: { timeout_min: 30, max_budget_usd: 5 }
+`,
+  );
+  t.docker.addImage(
+    imageTag("claude-code", "2.1.282", "3"),
+    `sha256:${"d".repeat(64)}`,
+    {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.version": "2.1.282",
+      "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+      "centralgauge.harness.revision": "3",
+    },
+  );
+  return t;
+}
+const B282 = BUILTIN_INVENTORY["2.1.282"]!;
+/** INIT with the lists the inventory requires (M9-04). */
+const V2_INIT = JSON.stringify({
+  ...JSON.parse(INIT),
+  agents: [...B282.agents],
+  skills: [...B282.skills],
+  plugins: B282.plugins.map((s) => ({
+    name: s.split("@")[0],
+    path: "builtin",
+    source: s,
+  })),
+  // The arm disallows the session-control tools (M1-32b), so init does not list them.
+  tools: B282.tools.filter((x) =>
+    ![
+      "CronCreate",
+      "CronDelete",
+      "ListAgents",
+      "RemoteTrigger",
+      "ScheduleWakeup",
+      "SendMessage",
+    ].includes(x)
+  ),
+});
+const INV = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    type: "cg_inventory",
+    v: 1,
+    ok: true,
+    installed: ["instructions"],
+    problems: [],
+    ...over,
+  });
+/** The probe records with every assistant record's model replaced by `model`. */
+async function probeWithModel(model: string): Promise<string[]> {
+  return (await probeLines()).map((l) =>
+    l.includes('"type":"assistant"')
+      ? l.replaceAll('"model":"claude-sonnet-5"', `"model":"${model}"`)
+      : l
+  );
+}
+
+/** Runs one cell whose container prints `lines` and exits `code`; returns the execution and its side file. */
+async function inventoryCell(lines: string[], code = 0) {
+  const t = await inventoriedEnv();
+  t.docker.behavior = async (_call, io) => {
+    for (const l of lines) await io.stdout(l);
+    return code;
+  };
+  const e = (await runCell(t.env, await cellFor(t, "cc-v2-inv")))
+    .executions[0]!;
+  return { t, e, side: await sideOf(t, e.id) };
+}
+
+Deno.test("component inventory (spec v2 gate 1): every inventory failure is setup_failed and never judged; a proven arm completes", async () => {
+  const probe = await probeLines();
+  const cases: [string, string[], number, string][] = [
+    ["no record", [V2_INIT, ...probe], 0, "no cg_inventory record"],
+    [
+      "duplicate",
+      [INV(), INV(), V2_INIT, ...probe],
+      0,
+      "2 cg_inventory records",
+    ],
+    [
+      "malformed",
+      [INV({ extra: 1 }), V2_INIT, ...probe],
+      0,
+      "not of the recorded shape",
+    ],
+    [
+      "refused",
+      [
+        INV({
+          ok: false,
+          installed: [],
+          problems: ["instructions: CLAUDE.md is staged but not installed"],
+        }),
+        V2_INIT,
+        ...probe,
+      ],
+      0,
+      "component inventory: instructions: CLAUDE.md is staged but not installed",
+    ],
+    [
+      "record only, exit 5",
+      [
+        INV({
+          ok: false,
+          installed: [],
+          problems: ["hooks is staged but this image cannot install it"],
+        }),
+      ],
+      5,
+      "hooks is staged",
+    ],
+    [
+      "installer threw before the inventory (no output, exit 1)",
+      [],
+      1,
+      "no cg_inventory record",
+    ],
+  ];
+  for (const [name, lines, code, want] of cases) {
+    const { t, e, side } = await inventoryCell(lines, code);
+    assertEquals(e.termination, "setup_failed", name);
+    assertStringIncludes(side.setup_error, want, name);
+    assertEquals(
+      await t.env.store.judgments(e.id),
+      [],
+      `${name}: never judged`,
+    );
+  }
+  const { e } = await inventoryCell([INV(), V2_INIT, ...probe]);
+  assertEquals(e.termination, "completed");
+});
+
+// Round 3 (orchestrator; interfaces section 3 "Refusal outcome" (b)): a problem found
+// AFTER the agent started (here: an unpinned model ran) is setup_failed and never judged,
+// but the credential was released and paid work happened, so its cost is KEPT.
+Deno.test("component inventory: a post-start problem keeps the run's cost", async () => {
+  const { t, e } = await inventoryCell([
+    INV(),
+    V2_INIT,
+    ...await probeWithModel("anthropic/claude-other"),
+  ]);
+  assertEquals(e.termination, "setup_failed");
+  assertEquals(await t.env.store.judgments(e.id), []);
+  // The unpriced model leaves no list-price estimate (cost_usd null), so the
+  // kept cost is the vendor-reported one.
+  assert(
+    e.telemetry.reported_cost_usd !== null && e.telemetry.reported_cost_usd > 0,
+    "post-start refusal must keep the reported cost, never 0",
+  );
 });
