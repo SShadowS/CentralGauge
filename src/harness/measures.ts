@@ -9,7 +9,7 @@
 import { join } from "@std/path";
 import { z } from "zod";
 import { ValidationError } from "../errors.ts";
-import type { JudgmentRecord } from "./records.ts";
+import { type JudgmentRecord, publishOnce, readRecord } from "./records.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
 import { hashJson } from "./hash.ts";
 import { Sha256Hex } from "./identity.ts";
@@ -45,8 +45,15 @@ export const TaskMeasuresSchema = z.strictObject({
   v: z.literal(1),
   partial_credit: z.strictObject({
     weights: z.record(ProcKey, z.number().positive())
-      .refine((w) => Object.keys(w).length > 0, "at least one weight"),
-    hidden_regressions: z.array(ProcKey).default([]),
+      .refine((w) => Object.keys(w).length > 0, "at least one weight")
+      // partialCredit divides by the total: it must not overflow.
+      .refine(
+        (w) => Number.isFinite(Object.values(w).reduce((a, b) => a + b, 0)),
+        "weight total must be finite",
+      ),
+    // A duplicate would count twice in the preservation share.
+    hidden_regressions: z.array(ProcKey).default([])
+      .refine((h) => new Set(h).size === h.length, "duplicate entry"),
   }).nullable().default(null),
   reuse: z.strictObject({
     /** The spec-named procedure first, then accepted alternatives. */
@@ -271,13 +278,10 @@ export async function writeMeasureRecord(
   r: MeasureRecord,
 ): Promise<void> {
   const p = MeasureRecordSchema.parse(r);
-  await Deno.mkdir(join(resultsRoot, "measures", p.judgment_id), {
-    recursive: true,
-  });
-  await Deno.writeTextFile(
+  // Synced temp file hard-linked to the final name: never partial, never replaced.
+  await publishOnce(
     recordPath(resultsRoot, p.judgment_id, p.measure_fingerprint),
-    JSON.stringify(p, null, 2) + "\n",
-    { createNew: true },
+    p,
   );
 }
 
@@ -291,12 +295,12 @@ export async function readMeasureRecord(
     !Sha256Hex.safeParse(fingerprint).success
   ) return null;
   try {
-    return MeasureRecordSchema.parse(
-      JSON.parse(
-        await Deno.readTextFile(
-          recordPath(resultsRoot, judgmentId, fingerprint),
-        ),
-      ),
+    // Pinned to its location: a copied or moved record is refused.
+    return await readRecord(
+      resultsRoot,
+      recordPath(resultsRoot, judgmentId, fingerprint),
+      MeasureRecordSchema,
+      { judgment_id: judgmentId, measure_fingerprint: fingerprint },
     );
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) return null;
