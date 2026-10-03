@@ -4061,6 +4061,16 @@ Deno.test("component inventory: an early end with a malformed or duplicate refus
   const cases: [string, string[]][] = [
     ["extra field", [INV({ ...bad, extra: 1 })]],
     ["two refusal records", [INV(bad), INV(bad)]],
+    // M9-05b run 002: a duplicate whose type is JSON-escaped ("cg_inventory")
+    // decodes to cg_inventory; the first record's problems mimic the adapter's
+    // duplicate diagnostic, so only counting DECODED records catches it.
+    [
+      "escaped duplicate mimicking the adapter's diagnostic",
+      [
+        INV({ ...bad, problems: ["2 cg_inventory records (lines 1, 2)"] }),
+        INV(bad).replace('"cg_inventory"', '"\\u0063g_inventory"'),
+      ],
+    ],
   ];
   for (const [what, lines] of cases) {
     const t = await inventoriedEnv();

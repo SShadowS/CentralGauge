@@ -2091,12 +2091,17 @@ async function inventoryRefusal(
   waitMs: number,
 ): Promise<{ problems: string[]; provenRefusal: boolean } | null> {
   const deadline = performance.now() + waitMs;
+  /** Every complete line whose DECODED JSON type is cg_inventory (as the adapter counts; M9-05b run 002). */
   const records = async () => {
     const text = await Deno.readTextFile(p.raw).catch(() => "");
     // Complete lines only: the last one may still be mid-write.
-    return text.split("\n").slice(0, -1).filter((l) =>
-      l.includes('"cg_inventory"')
-    );
+    return text.split("\n").slice(0, -1).filter((l) => {
+      try {
+        return JSON.parse(l)?.type === "cg_inventory";
+      } catch {
+        return false;
+      }
+    });
   };
   while (
     (await records()).length === 0 && !over() &&
@@ -2134,8 +2139,8 @@ async function inventoryRefusal(
       traceOut: p.trace,
     });
     const problems = parsed.inventoryProblems ?? [];
-    // Exact: the adapter's problems are precisely the record's own; any
-    // other finding (duplicate, ordering, contradiction) is not a proof.
+    // The proof is exactly one decoded record of the strict shape (above); the
+    // adapter's problems being precisely the record's own is an extra check.
     const provenRefusal = refusalRecord !== null &&
       problems.length === refusalRecord.length &&
       problems.every((x, i) => x === refusalRecord![i]);
