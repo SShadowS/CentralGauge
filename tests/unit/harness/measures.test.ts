@@ -400,3 +400,86 @@ Deno.test("locateProcedure: object scoping, signature, renames and duplicates", 
     true,
   );
 });
+
+const OWNER = (real: boolean) =>
+  `codeunit 70010 "Rental Price Mgt"
+{
+    var
+        "Owner's": Integer;
+    /* ' procedure CalcSurcharge(Amount: Decimal): Decimal begin end; */
+${
+    real
+      ? `
+    procedure CalcSurcharge(Amount: Decimal): Decimal
+    begin
+        exit(Amount);
+    end;
+`
+      : ""
+  }}
+`;
+
+Deno.test("locateProcedure: a quoted identifier with an apostrophe never unmasks a comment (M11-06 run 002)", () => {
+  assertEquals(locateProcedure(OWNER(false), T), null);
+  const out = stubProcedure(OWNER(true), T, "exit(-1);")!;
+  assertEquals(
+    out.includes(
+      "/* ' procedure CalcSurcharge(Amount: Decimal): Decimal begin end; */",
+    ),
+    true,
+  );
+  assertEquals(out.includes("exit(-1);"), true);
+  assertEquals(out.includes("exit(Amount);"), false);
+});
+
+const OVERLOADS = `codeunit 70010 "Rental Price Mgt"
+{
+    procedure CalcSurcharge(Amount: Decimal; Weekend: Boolean): Decimal
+    begin
+        exit(2);
+    end;
+
+    procedure CalcSurcharge(Amount: Decimal): Decimal
+    begin
+        exit(1);
+    end;
+}
+`;
+
+Deno.test("locateProcedure: overloads are told apart by full signature, then exactly one must match (M11-06 run 002)", () => {
+  const out = stubProcedure(OVERLOADS, T, "exit(-1);")!;
+  assertEquals(out.includes("exit(2);"), true);
+  assertEquals(out.includes("exit(1);"), false);
+  const two = stubProcedure(
+    OVERLOADS,
+    { ...T, signature: "(Amount: Decimal; Weekend: Boolean): Decimal" },
+    "exit(-1);",
+  )!;
+  assertEquals([two.includes("exit(2);"), two.includes("exit(1);")], [
+    false,
+    true,
+  ]);
+  // The same signature twice is ambiguous.
+  assertEquals(
+    locateProcedure(OVERLOADS.replace("; Weekend: Boolean", ""), T),
+    null,
+  );
+});
+
+Deno.test("locateProcedure: a var (by-reference) parameter is part of the signature, not the locals (M11-06 run 002)", () => {
+  const src = `codeunit 70010 "Rental Price Mgt"
+{
+    procedure CalcSurcharge(var Amount: Decimal): Decimal
+    var
+        Rate: Decimal;
+    begin
+        exit(Amount * Rate);
+    end;
+}
+`;
+  const t = { ...T, signature: "(var Amount: Decimal): Decimal" };
+  const out = stubProcedure(src, t, "exit(-1);")!;
+  assertEquals(out.includes("Rate: Decimal;"), true);
+  assertEquals(out.includes("exit(Amount * Rate);"), false);
+  assertEquals(locateProcedure(src, T), null);
+});

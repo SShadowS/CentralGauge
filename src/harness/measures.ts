@@ -315,12 +315,50 @@ export async function readMeasureRecord(
 
 export const REUSE_MARKER = "CG-REUSE-PROBE";
 
-/** Same length as src: comments and string literals blanked (quotes kept), so indices stay valid. */
+/**
+ * Same length as src: comments and string literals blanked, so indices stay
+ * valid. A lexer, not a regex: a "quoted identifier" (e.g. "Owner's") is its
+ * own state, so its apostrophe never opens a string that hides a comment.
+ */
 export function maskAl(src: string): string {
-  return src.replace(
-    /'(?:[^']|'')*'|\/\/[^\n]*|\/\*[\s\S]*?\*\//g,
-    (m) => m.replace(/[^\n]/g, " "),
-  );
+  const blank = (s: string) => s.replace(/[^\n]/g, " ");
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i]!;
+    const n = src[i + 1];
+    let end: number;
+    if (c === "/" && n === "/") {
+      end = src.indexOf("\n", i);
+      if (end < 0) end = src.length;
+      out += blank(src.slice(i, end));
+    } else if (c === "/" && n === "*") {
+      end = src.indexOf("*/", i + 2);
+      end = end < 0 ? src.length : end + 2;
+      out += blank(src.slice(i, end));
+    } else if (c === "'") {
+      // '' inside a string is an escaped apostrophe.
+      end = i + 1;
+      while (end < src.length) {
+        if (src[end] !== "'") end++;
+        else if (src[end + 1] === "'") end += 2;
+        else {
+          end++;
+          break;
+        }
+      }
+      out += blank(src.slice(i, end));
+    } else if (c === '"') {
+      end = src.indexOf('"', i + 1);
+      end = end < 0 ? src.length : end + 1;
+      out += src.slice(i, end);
+    } else {
+      end = i + 1;
+      out += c;
+    }
+    i = end;
+  }
+  return out;
 }
 /** Quoted identifiers blanked too, for keyword scanning only. */
 const maskIdents = (m: string) =>
@@ -387,14 +425,28 @@ export function locateProcedure(
       ),
     ),
   ];
-  if (hits.length !== 1) return null;
-  const sig = open + hits[0]!.index! + hits[0]![0].length - 1;
-  const kw = /\b(var|begin)\b/gi;
-  kw.lastIndex = sig;
-  const at = kw.exec(k);
-  if (!at || at.index > close) return null;
-  if (norm(m.slice(sig, at.index)) !== norm(t.signature)) return null;
-  return bodyRange(k, at.index, close);
+  // Overloads share the name: match each full signature, then require one.
+  const matches: number[] = [];
+  for (const h of hits) {
+    const sig = open + h.index! + h[0].length - 1;
+    // The parameter list first, so a `var` parameter is not the locals.
+    let d = 0;
+    let rparen = -1;
+    for (let i = sig; i < close && rparen < 0; i++) {
+      if (k[i] === "(") d++;
+      else if (k[i] === ")" && --d === 0) rparen = i;
+    }
+    if (rparen < 0) continue;
+    const kw = /\b(var|begin)\b/gi;
+    kw.lastIndex = rparen;
+    const at = kw.exec(k);
+    if (!at || at.index > close) continue;
+    if (norm(m.slice(sig, at.index)) === norm(t.signature)) {
+      matches.push(at.index);
+    }
+  }
+  if (matches.length !== 1) return null;
+  return bodyRange(k, matches[0]!, close);
 }
 
 export function stubProcedure(
@@ -496,13 +548,25 @@ export async function reuseCheck(
     }
     const rows =
       judgment.scorers.find((s) => s.name === "fail_to_pass")?.tests ?? [];
-    const failed = new Set(
-      wanted.filter((k) =>
-        rows.some((x) =>
-          `${x.codeunit}/${x.procedure}` === k && x.outcome !== "pass"
-        )
-      ),
-    );
+    // Each reuse test must have run exactly once: an oracle compile failure
+    // or not_run row says nothing about the target.
+    const ran = (k: string) => {
+      const r = rows.filter((x) => `${x.codeunit}/${x.procedure}` === k);
+      return r.length === 1 && (r[0]!.outcome === "pass" ||
+          r[0]!.outcome === "fail")
+        ? r[0]!
+        : null;
+    };
+    const unran = wanted.filter((k) => ran(k) === null);
+    if (unran.length > 0) {
+      return {
+        problem:
+          `incomplete probe (${kind} probe of ${t.codeunit}/${t.procedure}: ${
+            unran.join(", ")
+          } did not run)`,
+      };
+    }
+    const failed = new Set(wanted.filter((k) => ran(k)!.outcome === "fail"));
     const marker = new Set(
       [...failed].filter((k) =>
         log.test_messages.some((m) =>

@@ -273,3 +273,27 @@ Deno.test("reuseCheck: a caught call whose result is ignored is the stated lower
     { status: "ok", value: { executed: false, effective: false, via: null } },
   );
 });
+
+Deno.test("reuseCheck: an oracle that does not compile in a probe is missing, never executed or effective (M11-06 run 002)", async () => {
+  const run = await one();
+  const fake = bc({ FixWorks: { target: 70210, uses: true } });
+  // The candidate builds; only the probe's oracle compile fails, so its rows are not_run.
+  fake.errorsFor = (folder) =>
+    folder === "oracle"
+      ? [{
+        code: "AL0118",
+        message: "oracle broke",
+        file: "O.al",
+        line: 1,
+        column: 1,
+        severity: "error",
+      }]
+      : [];
+  const r = await run(fake);
+  assertEquals(r.status, "missing");
+  assertEquals(
+    r.status === "missing" && r.reason.startsWith("incomplete probe"),
+    true,
+    JSON.stringify(r),
+  );
+});
