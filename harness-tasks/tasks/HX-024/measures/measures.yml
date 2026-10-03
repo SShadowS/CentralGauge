@@ -5,11 +5,15 @@ partial_credit:
     "85940/AmpersandNameRentalCount": 1
     "85940/RangeLikeNameRentalCount": 1
     "85940/RangeLikeNameLeaseAmount": 1
-    "85940/PlainNameUnchanged": 1
     "85940/WildcardNameRentalCount": 1
     "85940/WildcardNameLeaseAmount": 1
     "85940/ApostropheNameRentalCount": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "85940/PlainNameUnchanged"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/lease-only: { partial_credit: 0.42857142857142855 }
+  naive/placeholder-filter: { partial_credit: 0.7142857142857143 }
+  naive/quote-ampersand: { partial_credit: 0.2857142857142857 }
+  naive/quote-wrap: { partial_credit: 0.5714285714285714 }
