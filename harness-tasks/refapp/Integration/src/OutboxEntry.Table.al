@@ -10,6 +10,10 @@ table 70401 "CGR Outbox Entry"
         field(4; Payload; Text[2048]) { }
         field(5; "Created At"; DateTime) { }
         field(6; Sent; Boolean) { }
+        field(7; Attempts; Integer) { }
+        field(8; "Last Attempt At"; DateTime) { }
+        field(9; "Last Error"; Text[250]) { }
+        field(10; Failed; Boolean) { }
     }
 
     keys
