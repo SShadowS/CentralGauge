@@ -19,13 +19,16 @@ import {
   checkCells,
   compareArms,
   compareInteraction,
+  type ContrastSpec,
   holm,
   ineligible,
+  type InteractionArms,
   mulberry32,
+  testContrasts,
   type ZeroSolveRule,
 } from "../../src/harness/stats.ts";
 import { hashJson, sha256Hex } from "../../src/harness/hash.ts";
-import { PreregSchema } from "../../src/harness/prereg.ts";
+import { type Prereg, PreregSchema } from "../../src/harness/prereg.ts";
 import {
   type Eligible,
   type Rules,
@@ -111,6 +114,29 @@ const sd = (xs: number[]) => {
 function normal(rand: () => number): number {
   return Math.sqrt(-2 * Math.log(Math.max(rand(), 1e-12))) *
     Math.cos(2 * Math.PI * rand());
+}
+
+/**
+ * Concatenates cell files keeping task and arm (the statistical identity) and
+ * makes (task, arm, repeat) unique by shifting a later file's repeats for a
+ * task above the largest repeat the earlier files used for that task in any
+ * arm, so a file's (task, repeat) blocks stay aligned across arms.
+ */
+export function poolCells(files: Cell[][]): Cell[] {
+  const top = new Map<string, number>();
+  const out: Cell[] = [];
+  for (const file of files) {
+    const before = new Map(top);
+    for (const c of file) {
+      // Per task, not per (task, arm): every arm of a file's block shifts
+      // alike, so (task, repeat) blocks stay aligned across arms.
+      const k = c.task;
+      const r = c.repeat + (before.get(k) ?? 0);
+      top.set(k, Math.max(top.get(k) ?? 0, r));
+      out.push({ ...c, repeat: r });
+    }
+  }
+  return out;
 }
 
 export function fitCells(cells: Cell[]): Fit {
@@ -516,6 +542,14 @@ export function evaluate(
     rule: "min_defined_share",
     share: Number.EPSILON,
   };
+  const ruleOf = {
+    A: { rule: "suppress_any_undefined" } as ZeroSolveRule,
+    B: { rule: "min_defined_share", share: o.ruleBShare } as ZeroSolveRule,
+  };
+  const specs: ContrastSpec[] = CONTRASTS.map((c) => ({ ...c, name: c.id }));
+  const interArms = fam.includes("interaction")
+    ? { ...INTERACTION, name: "interaction" }
+    : null;
   for (let s = 0; s < o.sims; s++) {
     const tasks = selectTasks(design, spec, o.rules, rand);
     if (tasks === null) {
@@ -524,72 +558,119 @@ export function evaluate(
     }
     ran++;
     const cells = simulateCells(tasks, design.repeats, spec, rand);
-    const boot = {
-      resamples: o.resamples,
-      seed: (o.seed + s) >>> 0,
-      level: 0.95,
-      zeroSolve: loose,
-    };
-    const comps = fam.map((id) => {
-      if (id === "interaction") {
+    const seed = (o.seed + s) >>> 0;
+    // Grid: one uniform per replicate for all contrasts (comonotone, approximate).
+    const u = rand();
+    interface Out {
+      id: string;
+      sup: boolean;
+      /** Type I event for a null member; the grid keeps the raw Holm rejection. */
+      rejected: boolean;
+      /** The expected-sign decision was reached. */
+      hit: (sign: -1 | 1) => boolean;
+      ci: [number, number] | null;
+    }
+    const outs: Record<"A" | "B", Out[]> = { A: [], B: [] };
+    if (o.exact) {
+      // Confirmation: both rules read from the shared entry point the analysis uses.
+      for (const key of ["A", "B"] as const) {
+        const rows = testContrasts(
+          cells,
+          specs,
+          interArms,
+          "cost_per_solved_task",
+          {
+            resamples: o.resamples,
+            seed,
+            level: 0.95,
+            alpha: o.alpha,
+            zeroSolve: ruleOf[key],
+            family: fam,
+          },
+        );
+        outs[key] = fam.map((id) => {
+          const r = rows.find((x) => x.id === id)!;
+          const sup = r.p_value === null || r.ci === null;
+          return {
+            id,
+            sup,
+            rejected: r.decision !== "no_decision",
+            hit: (sign) =>
+              r.decision === (sign < 0 ? "variant_lower" : "variant_higher"),
+            ci: sup ? null : r.ci,
+          };
+        });
+      }
+    } else {
+      const boot = {
+        resamples: o.resamples,
+        seed,
+        level: 0.95,
+        zeroSolve: loose,
+      };
+      const comps = fam.map((id) => {
+        if (id === "interaction") {
+          return {
+            id,
+            c: compareInteraction(
+              cells,
+              INTERACTION,
+              "cost_per_solved_task",
+              boot,
+            ),
+            arms: [...SIM_ARMS] as string[],
+          };
+        }
+        const x = CONTRASTS.find((k) => k.id === id)!;
         return {
           id,
-          c: compareInteraction(
+          c: compareArms(
             cells,
-            INTERACTION,
+            x.baseline,
+            x.variant,
             "cost_per_solved_task",
             boot,
           ),
-          arms: [...SIM_ARMS] as string[],
+          arms: [x.baseline, x.variant] as string[],
         };
+      });
+      const supA = comps.map((x) =>
+        u < undefinedProb(cells, x.arms, o.campaignResamples)
+      );
+      const supB = comps.map((x) =>
+        1 - x.c.undefined_share < o.ruleBShare || x.c.ci === null
+      );
+      for (const [key, sup] of [["A", supA], ["B", supB]] as const) {
+        const ps = comps.map((x, i) => (sup[i] ? null : x.c.p_value ?? null));
+        const h = holm(ps, o.alpha);
+        outs[key] = comps.map((x, i) => ({
+          id: x.id,
+          sup: sup[i]!,
+          rejected: h.reject[i]!,
+          hit: (sign) => h.reject[i]! && Math.sign(x.c.delta ?? 0) === sign,
+          ci: sup[i] ? null : x.c.ci,
+        }));
       }
-      const x = CONTRASTS.find((k) => k.id === id)!;
-      return {
-        id,
-        c: compareArms(
-          cells,
-          x.baseline,
-          x.variant,
-          "cost_per_solved_task",
-          boot,
-        ),
-        arms: [x.baseline, x.variant] as string[],
-      };
-    });
-    // Exact (confirmation): rule A read from the same shared draws the analysis uses.
-    // Grid: one uniform per replicate for all contrasts (comonotone, approximate).
-    const u = rand();
-    const supA = o.exact
-      ? comps.map((x) => x.c.undefined_share > 0 || x.c.ci === null)
-      : comps.map((x) => u < undefinedProb(cells, x.arms, o.campaignResamples));
-    const supB = comps.map((x) =>
-      1 - x.c.undefined_share < o.ruleBShare || x.c.ci === null
-    );
-    for (const [key, sup] of [["A", supA], ["B", supB]] as const) {
+    }
+    for (const key of ["A", "B"] as const) {
       const k = by[key];
-      const ps = comps.map((x, i) => (sup[i] ? null : x.c.p_value ?? null));
-      const h = holm(ps, o.alpha);
       let anyNull = false;
-      comps.forEach((x, i) => {
-        if (signs[x.id]) {
-          if (h.reject[i] && Math.sign(x.c.delta ?? 0) === signs[x.id]) {
-            k.hit[x.id]!++;
-          }
-        } else if (h.reject[i]) {
+      for (const x of outs[key]) {
+        const sign = signs[x.id];
+        if (sign) {
+          if (x.hit(sign)) k.hit[x.id]!++;
+        } else if (x.rejected) {
           k.t1[x.id]!++;
           anyNull = true;
         }
-        const ci = sup[i] ? null : x.c.ci;
-        if (ci) {
+        if (x.ci) {
           k.cov[x.id]![1]!++;
           const tv = spec.truth[x.id as FamilyId];
-          if (ci[0] <= tv && tv <= ci[1]) {
-            k.cov[x.id]![0]!++;
-          }
+          if (x.ci[0] <= tv && tv <= x.ci[1]) k.cov[x.id]![0]!++;
         }
-      });
+      }
       if (anyNull) k.fw++;
-      if (sup.some(Boolean)) k.sup++;
+      if (outs[key].some((x) => x.sup)) k.sup++;
     }
   }
   const stats = (k: ReturnType<typeof counts>): RuleStats => ({
@@ -618,10 +699,13 @@ export function evaluate(
 }
 
 const ALPHA = 0.05;
-/** Fixed tolerance (round 2 finding 5): never widens when fewer simulations are run. */
-export const FWER_TOL = ALPHA + 2 * Math.sqrt((ALPHA * (1 - ALPHA)) / 1000);
+/** Fixed-count tolerance (round 2 finding 5, round 4 finding 3): reference 1000 replicates, never widens with fewer, derived from the frozen alpha. */
+export const fwerTol = (alpha: number): number =>
+  alpha + 2 * Math.sqrt((alpha * (1 - alpha)) / 1000);
+export const FWER_TOL = fwerTol(ALPHA);
 export const MIN_GATING_SIMS = 500;
-const fwerOk = (s: RuleStats) => s.fwer === null || s.fwer.p <= FWER_TOL;
+const fwerOk = (s: RuleStats, alpha: number) =>
+  s.fwer === null || s.fwer.p <= fwerTol(alpha);
 const coverageOk = (s: RuleStats) =>
   props(s.coverage).every((c) => c.n >= 100 && c.p >= 0.93);
 function enoughSims(results: DesignResult[]): void {
@@ -635,16 +719,34 @@ function enoughSims(results: DesignResult[]): void {
   }
 }
 
-export function chooseRule(results: DesignResult[]): ZeroSolveRule {
+export function chooseRule(
+  results: DesignResult[],
+  ruleBShare: number,
+  alpha = ALPHA,
+): ZeroSolveRule {
   enoughSims(results);
   const meanSup = (k: "A" | "B") =>
     mean(results.map((r) => r.byRule[k].suppressed.p));
   const bOk =
-    results.every((r) => fwerOk(r.byRule.B) && coverageOk(r.byRule.B)) &&
+    results.every((r) => fwerOk(r.byRule.B, alpha) && coverageOk(r.byRule.B)) &&
     meanSup("B") < meanSup("A");
   return bOk
-    ? { rule: "min_defined_share", share: 0.99 }
+    ? { rule: "min_defined_share", share: ruleBShare }
     : { rule: "suppress_any_undefined" };
+}
+
+/** Confirmation gate: the exact grid passes chooseDesign and every sensitivity result keeps FWER and coverage; all need MIN_GATING_SIMS. */
+export function confirmDesign(
+  exact: DesignResult[],
+  sens: DesignResult[],
+  key: "A" | "B",
+  alpha: number,
+): boolean {
+  enoughSims([...exact, ...sens]);
+  return chooseDesign(exact, key, alpha) !== null &&
+    sens.every((r) =>
+      fwerOk(r.byRule[key], alpha) && coverageOk(r.byRule[key])
+    );
 }
 
 const EXPECTED = [
@@ -661,6 +763,7 @@ const EXPECTED = [
 export function chooseDesign(
   results: DesignResult[],
   key: "A" | "B",
+  alpha = ALPHA,
 ): Design | null {
   enoughSims(results);
   const designs = [
@@ -689,7 +792,7 @@ export function chooseDesign(
     }
     const pass = mine.every((r) => {
       const s = r.byRule[key];
-      return props(s.power).every((p) => p.p >= 0.8) && fwerOk(s) &&
+      return props(s.power).every((p) => p.p >= 0.8) && fwerOk(s, alpha) &&
         s.suppressed.p < 0.05 &&
         r.selection_failures.p < 0.05 && coverageOk(s);
     });
@@ -747,12 +850,116 @@ function describe(r: DesignResult): string {
   }, cov A ${minOf(props(a.coverage))?.p.toFixed(3) ?? "n/a"}`;
 }
 
+/**
+ * The inference a stage-B run must simulate, in simulation arm names: the
+ * frozen family, contrasts and interaction mapped through the protocol. Throws
+ * when the frozen bootstrap or contrasts are not what this simulation models.
+ */
+export function stageBContract(doc: Prereg, args: SimArgs): {
+  family: string[];
+  contrasts: ContrastSpec[];
+  interaction: (InteractionArms & { name: string }) | null;
+} {
+  const fail = (m: string): never => {
+    throw new Error(`pre-registration contract: ${m}`);
+  };
+  if (doc.bootstrap.level !== 0.95) {
+    fail(`bootstrap level ${doc.bootstrap.level} is not the simulated 0.95`);
+  }
+  if (doc.bootstrap.resamples !== args.confirm_resamples) {
+    fail(
+      `bootstrap resamples ${doc.bootstrap.resamples} differ from confirm_resamples ${args.confirm_resamples}`,
+    );
+  }
+  const modeled = ["C1", "C2", "C3", "interaction"];
+  if (new Set(doc.family).size !== doc.family.length) {
+    fail(`family ${doc.family.join(",")} has duplicates`);
+  }
+  const unknown = doc.family.filter((id) => !modeled.includes(id));
+  if (unknown.length > 0) {
+    fail(`family ids ${unknown.join(",")} are not modeled by this simulation`);
+  }
+  const byId = new Map(doc.protocol.contrasts.map((c) => [c.id, c]));
+  const [c1, c2, c3] = ["C1", "C2", "C3"].map((id) =>
+    byId.get(id) ?? fail(`protocol has no contrast ${id}`)
+  ) as [
+    Prereg["protocol"]["contrasts"][number],
+    Prereg["protocol"]["contrasts"][number],
+    Prereg["protocol"]["contrasts"][number],
+  ];
+  const real: Record<SimArm, string> = {
+    plain: c1.baseline,
+    lsp: c1.variant,
+    real: c2.baseline,
+    real_lsp: c2.variant,
+  };
+  if (new Set(Object.values(real)).size !== 4) {
+    fail("C1 and C2 must name four distinct arms");
+  }
+  if (c3.baseline !== real.plain || c3.variant !== real.real) {
+    fail("C3 must be (C1 baseline, C2 baseline)");
+  }
+  let interaction: (InteractionArms & { name: string }) | null = null;
+  if (doc.family.includes("interaction")) {
+    const i = doc.protocol.interaction ??
+      fail("family has the interaction but the protocol does not");
+    if (
+      i.plain !== real.plain || i.lsp !== real.lsp ||
+      i.realistic !== real.real || i.realistic_lsp !== real.real_lsp
+    ) fail("the interaction arms differ from the C1 and C2 arms");
+    interaction = { ...INTERACTION, name: i.name };
+  }
+  return {
+    family: doc.family,
+    contrasts: [c1, c2, c3].map((c) => ({
+      id: c.id,
+      name: c.name,
+      baseline: Object.entries(real).find(([, v]) => v === c.baseline)![0],
+      variant: Object.entries(real).find(([, v]) => v === c.variant)![0],
+    })),
+    interaction,
+  };
+}
+
+/** The first line of a partial file: the arguments and the code fingerprint its results belong to. */
+export const resumeHeader = (argsSha: string, scriptSha: string): string =>
+  JSON.stringify({ args_sha256: argsSha, script_sha256: scriptSha }) + "\n";
+
+/** Refuses a partial file written with other arguments or by other code (the fingerprint is bound before any result is reused). */
+export function checkResumeHeader(
+  line: string,
+  argsSha: string,
+  scriptSha: string,
+): void {
+  const head = JSON.parse(line || "{}") as {
+    args_sha256?: string;
+    script_sha256?: string;
+  };
+  if (head.args_sha256 !== argsSha) {
+    throw new Error("partial file was written with other arguments");
+  }
+  if (head.script_sha256 !== scriptSha) {
+    throw new Error("partial file was written by other code");
+  }
+}
+
 function bad(msg: string): never {
   console.error(colors.red(`[FAIL] ${msg}`));
   Deno.exit(2);
 }
 
 async function main(): Promise<void> {
+  const here = (rel: string) => fromFileUrl(new URL(rel, import.meta.url));
+  const script_sha256 = await hashJson(
+    await Promise.all(
+      [
+        here("./power-sim.ts"),
+        here("./screening.ts"),
+        here("../../src/harness/stats.ts"),
+      ]
+        .map(async (p) => await sha256Hex(await Deno.readFile(p))),
+    ),
+  );
   const a = parseArgs(Deno.args, {
     string: [
       "out",
@@ -804,9 +1011,6 @@ async function main(): Promise<void> {
     frozenRule = doc.zero_solve;
     alpha = doc.alpha;
     family = doc.family.length > 0 ? doc.family : ["C1", "C2", "C3"];
-    if (!family.every((id) => ["C1", "C2", "C3", "interaction"].includes(id))) {
-      bad(`family ${family.join(",")} has ids this simulation does not model`);
-    }
     for (const [flag, k] of NUMERIC) {
       const v = doc.simulation.args[k];
       if (v === undefined) bad(`pre-registration simulation.args lacks ${k}`);
@@ -814,6 +1018,20 @@ async function main(): Promise<void> {
         bad(`--${flag} ${cli[k]} differs from the frozen stage A value ${v}`);
       }
       args[k] = v;
+    }
+    // The evaluated rule B share must be the frozen one, not just a flag value.
+    if (
+      frozenRule.rule === "min_defined_share" &&
+      args.rule_b_share !== frozenRule.share
+    ) {
+      bad(
+        `rule_b_share ${args.rule_b_share} differs from the frozen rule share ${frozenRule.share}`,
+      );
+    }
+    try {
+      stageBContract(doc, args);
+    } catch (e) {
+      bad((e as Error).message);
     }
     if (
       a.interaction !== undefined &&
@@ -854,19 +1072,17 @@ async function main(): Promise<void> {
   );
   const prefix = a["arm-prefix"];
   const inputs: { path: string; sha256: string }[] = [];
-  const cells: Cell[] = [];
-  for (const [i, path] of cellFiles.entries()) {
+  const files: Cell[][] = [];
+  for (const path of cellFiles) {
     const bytes = await Deno.readFile(path);
     inputs.push({ path, sha256: await sha256Hex(bytes) });
     const doc = JSON.parse(new TextDecoder().decode(bytes)) as {
       cells?: Cell[];
     };
     if (!Array.isArray(doc.cells)) bad(`${path} has no cells array`);
-    // Arms are tagged by file so two reports with the same arm names cannot collide.
-    for (const c of doc.cells) {
-      if (c.arm.startsWith(prefix)) cells.push({ ...c, arm: `${i}:${c.arm}` });
-    }
+    files.push(doc.cells.filter((c) => c.arm.startsWith(prefix)));
   }
+  const cells = poolCells(files);
   if (cells.length === 0) bad(`no cells with an arm starting ${prefix}`);
   const fitted = fitCells(cells);
   const stress = {
@@ -891,9 +1107,10 @@ async function main(): Promise<void> {
     const lines = (await Deno.readTextFile(partial)).split("\n").filter((l) =>
       l.trim() !== ""
     );
-    const head = JSON.parse(lines[0] ?? "{}") as { args_sha256?: string };
-    if (head.args_sha256 !== argsSha) {
-      bad(`${partial} was written with other arguments`);
+    try {
+      checkResumeHeader(lines[0] ?? "{}", argsSha, script_sha256);
+    } catch (e) {
+      bad(`${partial}: ${(e as Error).message}`);
     }
     for (const l of lines.slice(1)) {
       const r = JSON.parse(l) as DesignResult;
@@ -905,7 +1122,7 @@ async function main(): Promise<void> {
   } else {
     Deno.writeTextFileSync(
       partial,
-      JSON.stringify({ args_sha256: argsSha }) + "\n",
+      resumeHeader(argsSha, script_sha256),
     );
   }
 
@@ -977,12 +1194,12 @@ async function main(): Promise<void> {
   let design: Design | null;
   let confirmed = false;
   try {
-    zeroSolve = frozenRule ?? chooseRule(grid);
+    zeroSolve = frozenRule ?? chooseRule(grid, args.rule_b_share!, alpha);
     const key = zeroSolve.rule === "suppress_any_undefined" ? "A" : "B";
     let rest = grid;
     design = null;
     for (;;) {
-      design = chooseDesign(rest, key);
+      design = chooseDesign(rest, key, alpha);
       if (design === null) break;
       const d = design;
       const exact = PAIRS.flatMap((p) =>
@@ -991,9 +1208,7 @@ async function main(): Promise<void> {
       const sens = PAIRS.flatMap((p) =>
         SENSITIVITY.map((f) => runOne(d, p, f, true))
       );
-      const ok = chooseDesign(exact, key) !== null &&
-        sens.every((r) => fwerOk(r.byRule[key]) && coverageOk(r.byRule[key]));
-      if (ok) {
+      if (confirmDesign(exact, sens, key, alpha)) {
         confirmed = true;
         break;
       }
@@ -1011,17 +1226,6 @@ async function main(): Promise<void> {
     Deno.exit(1);
   }
 
-  const here = (rel: string) => fromFileUrl(new URL(rel, import.meta.url));
-  const script_sha256 = await hashJson(
-    await Promise.all(
-      [
-        here("./power-sim.ts"),
-        here("./screening.ts"),
-        here("../../src/harness/stats.ts"),
-      ]
-        .map(async (p) => await sha256Hex(await Deno.readFile(p))),
-    ),
-  );
   await Deno.writeTextFile(
     out,
     JSON.stringify(

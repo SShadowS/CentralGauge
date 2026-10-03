@@ -7,17 +7,25 @@ import {
 import { type Cell, mulberry32 } from "../../../src/harness/stats.ts";
 import {
   calibrate,
+  checkResumeHeader,
   chooseDesign,
   chooseRule,
+  confirmDesign,
   type DesignResult,
   evaluate,
   expectedSpend,
   fitCells,
+  FWER_TOL,
+  fwerTol,
   noiseMean,
+  poolCells,
+  resumeHeader,
   selectTasks,
   simulateCells,
+  stageBContract,
   undefinedProb,
 } from "../../../scripts/harness/power-sim.ts";
+import { type Prereg, PreregSchema } from "../../../src/harness/prereg.ts";
 import { RulesSchema } from "../../../scripts/harness/screening.ts";
 
 const RULES = RulesSchema.parse({
@@ -205,16 +213,27 @@ const grid = (
   );
 
 Deno.test("chooseRule: B only when its coverage and error control hold everywhere and it suppresses less", () => {
-  assertEquals(chooseRule(grid(30, 5)), { rule: "suppress_any_undefined" });
+  assertEquals(chooseRule(grid(30, 5), 0.99), {
+    rule: "suppress_any_undefined",
+  });
   assertEquals(
     chooseRule(
       grid(30, 5, { covB: 0.95 }).map((r) => ({
         ...r,
         byRule: { A: r.byRule.A, B: { ...r.byRule.B, suppressed: P(0) } },
       })),
+      0.99,
     ),
     { rule: "min_defined_share", share: 0.99 },
   );
+});
+
+Deno.test("chooseRule: the chosen B rule carries the share that evaluate used", () => {
+  const g = grid(30, 5, { covB: 0.95 }).map((r) => ({
+    ...r,
+    byRule: { A: r.byRule.A, B: { ...r.byRule.B, suppressed: P(0) } },
+  }));
+  assertEquals(chooseRule(g, 0.95), { rule: "min_defined_share", share: 0.95 });
 });
 
 Deno.test("chooseDesign: gates on power, FWER, suppression and coverage; an incomplete grid throws", () => {
@@ -241,7 +260,7 @@ Deno.test("gates: the FWER tolerance is fixed and too few simulations refuse a g
     byRule: { A: { ...r.byRule.A, suppressed: P(0.01, 100) }, B: r.byRule.B },
   }));
   assertThrows(() => chooseDesign(few, "A"), Error, "too few simulations");
-  assertThrows(() => chooseRule(few), Error, "too few simulations");
+  assertThrows(() => chooseRule(few, 0.99), Error, "too few simulations");
 });
 
 Deno.test("skew sensitivity: finite-moment noise whose simulated mean matches the analytic truth within Monte Carlo error", () => {
@@ -311,4 +330,280 @@ Deno.test("evaluate: exact mode reads rule-A suppression from the shared bootstr
     r,
     evaluate({ tasks: 24, repeats: 3 }, spec, { ...o, exact: true }),
   );
+});
+
+Deno.test("fwerTol: derived from the frozen alpha, chooseDesign gates with it", () => {
+  assertAlmostEquals(fwerTol(0.05), FWER_TOL, 1e-15);
+  assertAlmostEquals(fwerTol(0.01), 0.01 + 2 * Math.sqrt(0.0099 / 1000), 1e-15);
+  const g = grid(30, 5, { fwer: 0.03 });
+  assertEquals(chooseDesign(g, "A"), { tasks: 30, repeats: 5 });
+  assertEquals(chooseDesign(g, "A", 0.01), null);
+});
+
+Deno.test("confirmDesign: sensitivity results also need MIN_GATING_SIMS replicates", () => {
+  const exact = grid(30, 5);
+  const sens = grid(30, 5);
+  assertEquals(confirmDesign(exact, sens, "A", 0.05), true);
+  const few = sens.map((r) => ({
+    ...r,
+    byRule: { A: { ...r.byRule.A, suppressed: P(0.01, 100) }, B: r.byRule.B },
+  }));
+  assertThrows(
+    () => confirmDesign(exact, few, "A", 0.05),
+    Error,
+    "too few simulations",
+  );
+  const loose = sens.map((r) => ({
+    ...r,
+    byRule: { A: { ...r.byRule.A, fwer: P(0.09) }, B: r.byRule.B },
+  }));
+  assertEquals(confirmDesign(exact, loose, "A", 0.05), false);
+});
+
+Deno.test("poolCells: pooling split reports equals one report; arms and tasks stay, keys are unique", () => {
+  const costs = [1, 9, 2, 8];
+  const whole: Cell[] = [];
+  for (const t of ["t1", "t2", "t3"]) {
+    for (const [ai, a] of ["cc-a", "cc-b"].entries()) {
+      for (let r = 1; r <= 4; r++) {
+        whole.push(
+          cell(
+            t,
+            a,
+            r,
+            r % 2 === 0,
+            costs[(r + ai + t.length) % 4]! * (ai + 1),
+          ),
+        );
+      }
+    }
+  }
+  const half = (lo: number, hi: number) =>
+    whole.filter((c) => c.repeat >= lo && c.repeat <= hi).map((c) => ({
+      ...c,
+      repeat: c.repeat - lo + 1,
+    }));
+  const pooled = poolCells([half(1, 2), half(3, 4)]);
+  assertEquals(pooled.length, whole.length);
+  assertEquals(
+    new Set(pooled.map((c) => `${c.task}/${c.arm}/${c.repeat}`)).size,
+    pooled.length,
+  );
+  assertEquals(new Set(pooled.map((c) => c.arm)), new Set(["cc-a", "cc-b"]));
+  assertEquals(new Set(pooled.map((c) => c.task)), new Set(["t1", "t2", "t3"]));
+  assertEquals(fitCells(pooled), fitCells(whole));
+});
+
+Deno.test("poolCells: a later file's blocks stay aligned across arms even when the earlier file had uneven repeats per arm", () => {
+  // File 1: arm a has repeats 1..3, arm b only 1..2 (a missing cell).
+  const f1 = [
+    cell("t1", "a", 1, true),
+    cell("t1", "a", 2, true),
+    cell("t1", "a", 3, true),
+    cell("t1", "b", 1, true),
+    cell("t1", "b", 2, true),
+  ];
+  const f2 = [cell("t1", "a", 1, false), cell("t1", "b", 1, false)];
+  const pooled = poolCells([f1, f2]);
+  const later = pooled.slice(f1.length);
+  // Both arms of file 2's block land on the same repeat, above every earlier one.
+  assertEquals(later.map((c) => [c.arm, c.repeat]), [["a", 4], ["b", 4]]);
+});
+
+Deno.test("checkResumeHeader: both the arguments and the code fingerprint must match", () => {
+  const head = JSON.stringify({ args_sha256: "a1", script_sha256: "s1" });
+  checkResumeHeader(head, "a1", "s1");
+  assertThrows(
+    () => checkResumeHeader(head, "a2", "s1"),
+    Error,
+    "was written with other arguments",
+  );
+  assertThrows(
+    () => checkResumeHeader(head, "a1", "s2"),
+    Error,
+    "was written by other code",
+  );
+  assertThrows(
+    () => checkResumeHeader(JSON.stringify({ args_sha256: "a1" }), "a1", "s1"),
+    Error,
+    "was written by other code",
+  );
+});
+
+Deno.test("evaluate exact: decisions come from testContrasts (shared entry point)", () => {
+  const o = {
+    sims: 6,
+    resamples: 200,
+    campaignResamples: 200,
+    seed: 7,
+    alpha: 0.05,
+    ruleBShare: 0.99,
+    family: ["C1", "C2", "C3", "interaction"],
+    rules: RULES,
+    exact: true,
+  };
+  const spec = {
+    scenario: "C1" as const,
+    mechanism: "spend" as const,
+    fitName: "fitted" as const,
+    fit: FIT,
+    multiplier: 0.4,
+    poolFactor: 2,
+    truth: { C1: -0.4, C2: 0, C3: 0, interaction: 0.4 },
+  };
+  const r = evaluate({ tasks: 24, repeats: 3 }, spec, o);
+  const done = o.sims - Math.round(r.selection_failures.p * o.sims);
+  assertEquals(r.byRule.A.suppressed.n, done);
+  assertEquals(r.byRule.B.suppressed.n, done);
+  // testContrasts refuses a duplicated family; the exact path must go through it.
+  assertThrows(
+    () =>
+      evaluate({ tasks: 24, repeats: 3 }, spec, {
+        ...o,
+        family: ["C1", "C1", "C2", "C3"],
+      }),
+    Error,
+    "family",
+  );
+});
+
+const H = "a".repeat(64);
+const approval = "OWNER-APPROVED: sim contract (2026-10-03T10:00:00Z)";
+function preregDoc(over: Record<string, unknown> = {}): Prereg {
+  const protocol = {
+    arms: ["p", "l", "r", "rl"],
+    contrasts: [
+      { id: "C1", name: "LSP on plain", baseline: "p", variant: "l" },
+      { id: "C2", name: "LSP on realistic", baseline: "r", variant: "rl" },
+      { id: "C3", name: "Realistic", baseline: "p", variant: "r" },
+    ],
+    interaction: {
+      name: "Interaction",
+      status: "confirmatory",
+      plain: "p",
+      lsp: "l",
+      realistic: "r",
+      realistic_lsp: "rl",
+    },
+  };
+  return PreregSchema.parse({
+    v: 1,
+    experiment: "e",
+    protocol,
+    approval,
+    population: "pop",
+    primary_metric: "cost_per_solved_task",
+    confirmatory: true,
+    family: ["C1", "C2", "C3", "interaction"],
+    alpha: 0.05,
+    test: {
+      sides: "two",
+      p_value: "percentile_bootstrap_plus_one",
+      adjustment: "holm",
+      direction: "sign_of_delta",
+    },
+    intervals: {
+      reported: "per_contrast_unadjusted",
+      beside: "bonferroni_same_draws",
+    },
+    bootstrap: { unit: "task", resamples: 10000, seed: 1, level: 0.95 },
+    zero_solve: { rule: "suppress_any_undefined" },
+    missing_pairs: "per_contrast_matched",
+    held_out: {
+      count: 0,
+      rule: "r",
+      seal: "harness-v2-screen-x",
+      tasks: [],
+      in_family: false,
+    },
+    measures: {
+      fingerprint: H,
+      unknown_symbol_codes: ["AL0118"],
+      ruleset_sha256: H,
+      canary_codes: ["x"],
+      workflow_execution: "used_execution",
+      effort_execution: "every_attempt",
+    },
+    exploratory_metrics: ["m"],
+    simulation: { script_sha256: H, args: {} },
+    design_rule: "d",
+    stage_a: null,
+    experiment_hash: null,
+    selection: null,
+    design: null,
+    power_simulation: null,
+    compiler_identity: null,
+    stage_b_approval: null,
+    amendments: [],
+    ...over,
+  });
+}
+const SIMARGS = {
+  sims: 1000,
+  resamples: 1000,
+  confirm_sims: 500,
+  confirm_resamples: 10000,
+  seed: 1,
+  pool_factor: 2,
+  rule_b_share: 0.99,
+};
+const withProtocol = (f: (p: Prereg["protocol"]) => void): Prereg => {
+  const d = preregDoc();
+  f(d.protocol);
+  return d;
+};
+
+Deno.test("stageBContract: maps the frozen contrasts to simulation arms and refuses every mismatch", () => {
+  const ok = stageBContract(preregDoc(), SIMARGS);
+  assertEquals(ok.family, ["C1", "C2", "C3", "interaction"]);
+  assertEquals(
+    ok.contrasts.map((c) => [c.id, c.baseline, c.variant]),
+    [
+      ["C1", "plain", "lsp"],
+      ["C2", "real", "real_lsp"],
+      ["C3", "plain", "real"],
+    ],
+  );
+  assertEquals(ok.contrasts[0]!.name, "LSP on plain");
+  assertEquals(ok.interaction, {
+    name: "Interaction",
+    plain: "plain",
+    lsp: "lsp",
+    realistic: "real",
+    realistic_lsp: "real_lsp",
+  });
+  const bad = (d: Prereg, a = SIMARGS) =>
+    assertThrows(() => stageBContract(d, a), Error);
+  bad(preregDoc({ family: ["C1", "C1", "C2", "C3", "interaction"] }));
+  bad(preregDoc({ family: ["C1", "C2", "C9", "interaction"] }));
+  bad(preregDoc({
+    bootstrap: { unit: "task", resamples: 10000, seed: 1, level: 0.9 },
+  }));
+  bad(preregDoc(), { ...SIMARGS, confirm_resamples: 5000 });
+  bad(withProtocol((p) => {
+    p.contrasts[2] = { ...p.contrasts[2]!, baseline: "l", variant: "r" };
+  }));
+  bad(withProtocol((p) => {
+    p.interaction = { ...p.interaction!, lsp: "rl", realistic_lsp: "l" };
+  }));
+  // Without the interaction in the family a null interaction is returned.
+  const noInt = PreregSchema.parse({
+    ...preregDoc(),
+    confirmatory: true,
+    family: ["C1", "C2", "C3"],
+    protocol: {
+      ...preregDoc().protocol,
+      interaction: {
+        ...preregDoc().protocol.interaction!,
+        status: "exploratory",
+      },
+    },
+  });
+  assertEquals(stageBContract(noInt, SIMARGS).interaction, null);
+});
+
+Deno.test("resumeHeader: the written header round-trips through checkResumeHeader", () => {
+  const line = resumeHeader("a1", "s1");
+  checkResumeHeader(line.trim(), "a1", "s1");
+  assertEquals(JSON.parse(line), { args_sha256: "a1", script_sha256: "s1" });
 });
