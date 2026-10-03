@@ -69,6 +69,7 @@ import { sha256Hex } from "../../../../src/harness/hash.ts";
 import { scorerFingerprint } from "../../../../src/harness/records.ts";
 import {
   measureFingerprint,
+  readMeasureRecord,
   writeMeasureRecord,
 } from "../../../../src/harness/measures.ts";
 import {
@@ -1437,7 +1438,8 @@ Deno.test("rejudge adds one judgment per execution whose scorer fingerprint is n
   assertEquals([again.rejudged, await count()], [0, [3, 1]]);
 });
 
-Deno.test("measure (M11-07): two scored cells, one already measured under the current fingerprint: one new record", async () => {
+/** A two-cell mock campaign, judged, with the frozen analysis files in the harness root. */
+async function measurableCampaign() {
   const t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
@@ -1451,7 +1453,6 @@ Deno.test("measure (M11-07): two scored cells, one already measured under the cu
   const c = (await t.env.store.campaigns("contract"))[0]!;
   const es = await t.env.store.executions(c.id);
   assertEquals(es.length, 2);
-  // The frozen analysis files ship with the harness.
   const repoAnalysis = new URL(
     "../../../../harness/analysis/",
     import.meta.url,
@@ -1468,6 +1469,86 @@ Deno.test("measure (M11-07): two scored cells, one already measured under the cu
     await Deno.mkdir(join(dst, ".."), { recursive: true });
     await Deno.copyFile(new URL(rel, repoAnalysis), dst);
   }
+  const judgmentOf = async (id: string) =>
+    (await t.env.store.judgments(id))[0]!;
+  const records = async (judgment: string) => {
+    const out: string[] = [];
+    try {
+      for await (
+        const e of Deno.readDir(join(t.env.resultsRoot, "measures", judgment))
+      ) out.push(e.name);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    }
+    return out;
+  };
+  return { t, es, judgmentOf, records };
+}
+
+Deno.test("measure (M11-07 run 002): refused when a task's visible inputs drifted from the execution's", async () => {
+  const { t, es, judgmentOf, records } = await measurableCampaign();
+  await Deno.writeTextFile(
+    join(t.repo.tasksDir, "HX-001", "prompt.md"),
+    "An edited prompt.",
+  );
+  await assertRejects(
+    () => harnessMeasure("contract", runOpts(t, { yes: true }), opener(t)),
+    ConfigurationError,
+    "visible",
+  );
+  for (const e of es) {
+    assertEquals(await records((await judgmentOf(e.id)).id), []);
+  }
+});
+
+Deno.test("measure (M11-07 run 002): refused when the current oracle (measures/ included) differs from the judgment's", async () => {
+  const { t, es, judgmentOf, records } = await measurableCampaign();
+  // A measures file added after the campaign changes the oracle hash.
+  await Deno.mkdir(join(t.repo.tasksDir, "HX-001", "measures"));
+  await Deno.writeTextFile(
+    join(t.repo.tasksDir, "HX-001", "measures", "measures.yml"),
+    "v: 1\n",
+  );
+  await assertRejects(
+    () => harnessMeasure("contract", runOpts(t, { yes: true }), opener(t)),
+    ConfigurationError,
+    "oracle",
+  );
+  for (const e of es) {
+    assertEquals(await records((await judgmentOf(e.id)).id), []);
+  }
+});
+
+Deno.test("measure (M11-07 run 002): a canary infra error leaves final code missing in every cell, and the other measures proceed", async () => {
+  const { t, es, judgmentOf } = await measurableCampaign();
+  for (const c of t.env.lane.containers) t.bc.broken.add(c);
+  const r = await harnessMeasure(
+    "contract",
+    runOpts(t, { yes: true }),
+    opener(t),
+  );
+  assertEquals(r.measured, 2);
+  for (const e of es) {
+    const j = await judgmentOf(e.id);
+    const rec = await readMeasureRecord(
+      t.env.resultsRoot,
+      j.id,
+      await measureFingerprint(),
+    );
+    assertEquals(rec!.final_code.status, "missing");
+    assertStringIncludes(
+      rec!.final_code.status === "missing" ? rec!.final_code.reason : "",
+      "infra",
+    );
+    assertEquals(rec!.analyzers, null);
+    // Independent of the analyzers: partial credit and reuse still recorded.
+    assertEquals(rec!.partial_credit.status, "not_applicable");
+    assertEquals(rec!.reuse.status, "not_applicable");
+  }
+});
+
+Deno.test("measure (M11-07): two scored cells, one already measured under the current fingerprint: one new record", async () => {
+  const { t, es } = await measurableCampaign();
   const [j0] = await t.env.store.judgments(es[0]!.id);
   const [j1] = await t.env.store.judgments(es[1]!.id);
   const art = await t.env.store.artifact(es[0]!.id);

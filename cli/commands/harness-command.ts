@@ -1585,6 +1585,30 @@ export async function harnessMeasure(
       if (await readMeasureRecord(env.resultsRoot, j.id, fp)) continue;
       due.push({ e: executions.get(cell.used_execution)!, j });
     }
+    // A record binds the judgment's oracle: measuring with a task that has
+    // since changed (its visible inputs, or its oracle, measures/ included)
+    // would bind other weights, targets or sources to it. Refused, as rejudge.
+    const ids = await taskSetIdentity(
+      o.root,
+      [...new Set(due.map((d) => d.e.task_id))].map((id) => tasks.get(id)!),
+      env.symbols,
+    );
+    const byTask = new Map(ids.tasks.map((t) => [t.id, t]));
+    const drift = due.flatMap(({ e, j }) => [
+      ...(byTask.get(e.task_id)!.visible !== e.task_visible_hash
+        ? [`${e.task_id} visible inputs differ from execution ${e.id}'s`]
+        : []),
+      ...(byTask.get(e.task_id)!.oracle !== j.task_oracle_hash
+        ? [`${e.task_id} oracle differs from judgment ${j.id}'s`]
+        : []),
+    ]);
+    if (drift.length > 0) {
+      throw new ConfigurationError(
+        `measure refused, the task changed since it was judged: ${
+          [...new Set(drift)].join("; ")
+        }`,
+      );
+    }
     if (due.length === 0) {
       console.log(
         `${colors.green("[OK]")} nothing to measure in campaign ${c.id}`,

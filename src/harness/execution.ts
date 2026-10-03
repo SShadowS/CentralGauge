@@ -2196,7 +2196,6 @@ export async function measureWorkspace(
   const measures = await loadTaskMeasures(x.task);
   const lock = { store: env.symbolStore, packages: env.symbols };
   const symbolIds = new Set(env.symbols.map((s) => s.app_id.toLowerCase()));
-  const az = await analyzersOf(env, run, workDir);
   const analysis = {
     codeCop: true,
     uiCop: true,
@@ -2219,6 +2218,10 @@ export async function measureWorkspace(
       throw err;
     }
   };
+  // An infra error in the canary is cached as missing for the whole run:
+  // final code is missing, the independent measures still proceed.
+  const az = run.analyzers ??
+    (run.analyzers = await infraSafe(() => analyzersOf(env, run, workDir)));
   const final_code = az.status !== "ok"
     ? missing<FinalCode>(
       az.status === "missing" ? az.reason : "analyzers unavailable",
