@@ -1,4 +1,11 @@
-import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertMatch,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from "@std/assert";
 import { ConfigurationError } from "../../../src/errors.ts";
 import { claudeCodeAdapter } from "../../../src/harness/adapters/claude-code.ts";
 import {
@@ -494,4 +501,241 @@ Deno.test("repo configs: claude-code and pi arms resolve to the -r2 images, neve
       id,
     );
   }
+});
+
+Deno.test("claude-code image: the LSP layer installs from al-lsp.json pins and is locked with M9's inventory before USER", async () => {
+  const df = await Deno.readTextFile(
+    "harness/images/claude-code/Dockerfile.windows",
+  );
+  for (
+    const s of [
+      "COPY lsp/al-lsp.json C:/cg-lsp/al-lsp.json",
+      "COPY lsp/lsp-probe.mjs C:/cg-lsp/lsp-probe.mjs",
+      "COPY lsp/lsp-probe-lib.mjs C:/cg-lsp/lsp-probe-lib.mjs",
+      "COPY lsp/install-lsp.ps1 C:/cg-lsp/install-lsp.ps1",
+      "COPY cg-inventory.ps1 C:/cg-inventory.ps1",
+    ]
+  ) assertStringIncludes(df, s);
+  const lock = df.split(/\r?\n/).find((l) => l.includes("cg-lockdown.ps1"))!;
+  for (
+    const p of [
+      "C:\\cg-npm",
+      "C:\\run.ps1",
+      "C:\\cg-inventory.ps1",
+      "C:\\cg-lsp",
+    ]
+  ) {
+    assertStringIncludes(lock, p);
+  }
+  for (const line of df.split("\n").filter((l) => l.startsWith("RUN "))) {
+    assert(
+      !line.includes('"'),
+      `no double quote in a shell-form RUN: ${line}`,
+    );
+  }
+  assert(df.indexOf("install-lsp.ps1") < df.indexOf("cg-lockdown.ps1"));
+  assert(df.indexOf("cg-lockdown.ps1") < df.indexOf("USER ContainerUser"));
+});
+
+Deno.test("claude-code image: both probe files ship side by side, present and hashable, the probe importing the lib", async () => {
+  const dir = "harness/images/claude-code/lsp/";
+  const probe = await Deno.readFile(`${dir}lsp-probe.mjs`);
+  const lib = await Deno.readFile(`${dir}lsp-probe-lib.mjs`);
+  const def = JSON.parse(await Deno.readTextFile(`${dir}al-lsp.json`));
+  assertEquals(Object.keys(def.probe).sort(), [
+    "lsp-probe-lib.mjs",
+    "lsp-probe.mjs",
+  ]);
+  const sha = async (b: Uint8Array<ArrayBuffer>) =>
+    Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", b)))
+      .map((x) => x.toString(16).padStart(2, "0")).join("");
+  assertEquals(def.probe["lsp-probe.mjs"], await sha(probe));
+  assertEquals(def.probe["lsp-probe-lib.mjs"], await sha(lib));
+  assertStringIncludes(
+    new TextDecoder().decode(probe),
+    "./lsp-probe-lib.mjs",
+  );
+});
+
+// Approved deviation from the plan (decisions/2026-10-03-m10-03-s1-gate-FINAL.md and the
+// orchestrator ruling of 2026-10-03): pins.wrapper is an ordered list of two release sources
+// (v1.18.3 wrapper, v1.18.2 al-call-hierarchy) instead of one v1.17.0 zip.
+Deno.test("al-lsp.json: pins, lineage and diagnostics policy are complete; the shipped .lsp.json is offline, multi-app and matches the policy", async () => {
+  const d = JSON.parse(
+    await Deno.readTextFile("harness/images/claude-code/lsp/al-lsp.json"),
+  );
+  const H256 = /^[0-9a-f]{64}$/;
+  assertMatch(d.version, /^al-lsp@\d+$/);
+  assertEquals(
+    d.pins.wrapper.map((s: { release: string }) => s.release),
+    ["v1.18.3", "v1.18.2"],
+  );
+  assertEquals(
+    d.pins.wrapper.map((s: { files: object }) => Object.keys(s.files)),
+    [["al-lsp-wrapper.exe"], ["al-call-hierarchy.exe"]],
+  );
+  for (
+    const s of d.pins.wrapper as {
+      release: string;
+      url: string;
+      algorithm: string;
+      hash: string;
+      files: Record<string, string>;
+    }[]
+  ) {
+    assertEquals(
+      s.url,
+      `https://github.com/SShadowS/al-lsp-for-agents/releases/download/${s.release}/al-lsp-wrapper-windows-x64.zip`,
+    );
+    assertEquals(s.algorithm, "SHA256");
+    assertMatch(s.hash, H256);
+    for (const h of Object.values(s.files)) assertMatch(h, H256);
+  }
+  for (const k of ["al_extension", "dotnet"]) {
+    const p = d.pins[k];
+    assertMatch(p.url, /^https:\/\//);
+    assertMatch(
+      p.hash,
+      p.algorithm === "SHA512" ? /^[0-9a-f]{128}$/ : H256,
+      `${k} hash`,
+    );
+  }
+  assertEquals(d.pins.al_extension.version, "18.0.2732683");
+  for (const side of ["extension", "backend"]) {
+    assertMatch(d.lineage[side].version, /^\d+\.\d+/);
+    assertMatch(d.lineage[side].sha256, H256);
+  }
+  assertEquals(d.diagnostics, "sidecar-on");
+  const al = d.lsp_json.al;
+  assertEquals(al.command, "$" + "{CLAUDE_PLUGIN_ROOT}/bin/al-lsp-wrapper.exe");
+  assertEquals(al.transport, "stdio");
+  const i = al.args.indexOf("--al-extension-path");
+  assertEquals(al.args.slice(i, i + 2), [
+    "--al-extension-path",
+    "C:\\cg-lsp\\al",
+  ]);
+  assert(!al.args.includes("--auto-download-al-extension"));
+  assertEquals(
+    al.args.includes("--no-diagnostics"),
+    d.diagnostics === "sidecar-off",
+  );
+  assertEquals(
+    [
+      al.env.HTTPS_PROXY,
+      al.env.HTTP_PROXY,
+      al.env.AL_LSP_SOURCE_ROOTS,
+      al.env.DOTNET_ROOT,
+    ],
+    ["", "", "C:\\workspace", "C:\\cg-lsp\\dotnet"],
+  );
+  assertEquals([al.initializationOptions, al.settings], [{}, {}]);
+  assertEquals(d.plugin_json.name, "al-language-server-go-windows");
+});
+
+Deno.test("al-lsp.json: the strip list is enumerated (21 exact names, no wildcards) and covers the four tools", async () => {
+  const d = JSON.parse(
+    await Deno.readTextFile("harness/images/claude-code/lsp/al-lsp.json"),
+  );
+  const rm: string[] = d.pins.al_extension.remove;
+  assertEquals(rm.length, 21);
+  assertEquals(new Set(rm).size, 21);
+  for (const n of rm) assertMatch(n, /^(alc|altool|aldoc|almcp)\.[A-Za-z.]+$/);
+  assert(rm.every((n) => !n.includes("*")));
+  for (const t of ["alc", "altool", "aldoc", "almcp"]) {
+    for (const ext of ["exe", "dll"]) assert(rm.includes(`${t}.${ext}`));
+  }
+});
+
+Deno.test("al-lsp.json: the authorized pin values are exact (S1 pins.md, FINAL gate decision, orchestrator ruling 2026-10-03)", async () => {
+  const d = JSON.parse(
+    await Deno.readTextFile("harness/images/claude-code/lsp/al-lsp.json"),
+  );
+  const [w3, w2] = d.pins.wrapper;
+  assertEquals(
+    w3.hash,
+    "92859e899990e24b7b7ab7360280260ec3e00bde9321c46a8a7e9cf97d00df98",
+  );
+  assertEquals(
+    w3.files,
+    {
+      "al-lsp-wrapper.exe":
+        "d5c529bb116fd0ba7f72a0fa9b4f08ff575ae2a3ac6aaf2c33e290f9165fe210",
+    },
+  );
+  assertEquals(
+    w2.hash,
+    "85a1c77796ee5738fe02939398bc48473cbb411a3c2c7e76150dcc40fb6ef02e",
+  );
+  assertEquals(
+    w2.files,
+    {
+      "al-call-hierarchy.exe":
+        "e85e25bcb9633635a22d36bf28eb1a234bc2ef2f43cac8b23110933d517b4563",
+    },
+  );
+  assertEquals(
+    [d.pins.al_extension.algorithm, d.pins.al_extension.hash],
+    [
+      "SHA256",
+      "d45068b508f7d16ba1c88a5ce1831497493c948dc4fb3ae80c92c7ccf8d68433",
+    ],
+  );
+  assertEquals(
+    [d.pins.dotnet.url, d.pins.dotnet.algorithm, d.pins.dotnet.hash],
+    [
+      "https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/10.0.12/aspnetcore-runtime-10.0.12-win-x64.zip",
+      "SHA512",
+      "b6958736bd42eff9c78a27a489d43eb0a39c6201039070ecb76a93cb96c519f07c86fa8b62034c6dd1a82a4c8ad0bd781e052008a7ec4cc48f9f792227d9c7ac",
+    ],
+  );
+});
+
+Deno.test("install-lsp.ps1 and Dockerfile: every build-time safety check is present (deleting one fails this test)", async () => {
+  const ps = (await Deno.readTextFile(
+    "harness/images/claude-code/lsp/install-lsp.ps1",
+  )).replace(/\r\n/g, "\n");
+  const code = ps.split("\n").filter((l) => !l.trimStart().startsWith("#"));
+  const has = (s: string) =>
+    assert(code.some((l) => l.includes(s)), `install-lsp.ps1 lacks: ${s}`);
+  for (
+    const s of [
+      "$ErrorActionPreference = 'Stop'",
+      // download hash check
+      "-Algorithm $pin.algorithm).Hash.ToLowerInvariant()",
+      "if ($got -ne $pin.hash) { throw ('hash mismatch for ' + $pin.url",
+      // wrapper archive shape and per-exe hash check
+      "if ($found.Count -ne 1) { throw (",
+      'if (Test-Path -LiteralPath "$plugin\\bin\\$($p.Name)") { throw (',
+      "if ($h -ne $p.Value) { throw ('hash mismatch for ' + $p.Name + ' (' + $src.release",
+      // exact exe set
+      "if ($exes -ne 'al-call-hierarchy.exe,al-lsp-wrapper.exe') { throw (",
+      // probe hash check, exact names
+      "if ($h -ne $p.Value) { throw ('hash mismatch for ' + $p.Name + ': got '",
+      "$probeNames -notcontains 'lsp-probe.mjs'",
+      "$probeNames -notcontains 'lsp-probe-lib.mjs'",
+      "if ($probeNames.Count -ne 2",
+      // strip then recursive prefix re-check
+      'Remove-Item -LiteralPath "C:\\cg-lsp\\al\\bin\\$name" -Force',
+      "foreach ($prefix in 'alc', 'altool', 'aldoc', 'almcp')",
+      "Get-ChildItem -LiteralPath 'C:\\cg-lsp\\al' -File -Recurse",
+      "if ($left.Count -ne 0) { throw (",
+      // lineage
+      "if ($ca -ne $def.lineage.extension.sha256) { throw (",
+    ]
+  ) has(s);
+  const df = await Deno.readTextFile(
+    "harness/images/claude-code/Dockerfile.windows",
+  );
+  const run = df.replace(/\\\r?\n\s*/g, "").split(/\r?\n/).find((l) =>
+    l.startsWith("RUN ") && l.includes("C:\\cg-lsp\\install-lsp.ps1")
+  )!;
+  assertStringIncludes(
+    run,
+    "if ($LASTEXITCODE -ne 0) { throw ('install-lsp failed: ' + $LASTEXITCODE) }",
+  );
+  assertStringIncludes(run, "Remove-Item -Force C:\\cg-lsp\\install-lsp.ps1");
+  assert(
+    run.indexOf("$LASTEXITCODE") < run.indexOf("Remove-Item"),
+    "the exit check runs before the script is removed",
+  );
 });

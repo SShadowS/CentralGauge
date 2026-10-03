@@ -1,0 +1,103 @@
+{
+  "version": "al-lsp@1",
+  "pins": {
+    "wrapper": [
+      {
+        "release": "v1.18.3",
+        "url": "https://github.com/SShadowS/al-lsp-for-agents/releases/download/v1.18.3/al-lsp-wrapper-windows-x64.zip",
+        "algorithm": "SHA256",
+        "hash": "92859e899990e24b7b7ab7360280260ec3e00bde9321c46a8a7e9cf97d00df98",
+        "files": {
+          "al-lsp-wrapper.exe": "d5c529bb116fd0ba7f72a0fa9b4f08ff575ae2a3ac6aaf2c33e290f9165fe210"
+        }
+      },
+      {
+        "release": "v1.18.2",
+        "url": "https://github.com/SShadowS/al-lsp-for-agents/releases/download/v1.18.2/al-lsp-wrapper-windows-x64.zip",
+        "algorithm": "SHA256",
+        "hash": "85a1c77796ee5738fe02939398bc48473cbb411a3c2c7e76150dcc40fb6ef02e",
+        "files": {
+          "al-call-hierarchy.exe": "e85e25bcb9633635a22d36bf28eb1a234bc2ef2f43cac8b23110933d517b4563"
+        }
+      }
+    ],
+    "al_extension": {
+      "version": "18.0.2732683",
+      "url": "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-dynamics-smb/vsextensions/al/18.0.2732683/vspackage",
+      "algorithm": "SHA256",
+      "hash": "d45068b508f7d16ba1c88a5ce1831497493c948dc4fb3ae80c92c7ccf8d68433",
+      "remove": [
+        "alc.exe",
+        "alc.dll",
+        "alc.deps.json",
+        "alc.pdb",
+        "alc.runtimeconfig.json",
+        "altool.exe",
+        "altool.dll",
+        "altool.deps.json",
+        "altool.pdb",
+        "altool.runtimeconfig.json",
+        "aldoc.exe",
+        "aldoc.dll",
+        "aldoc.deps.json",
+        "aldoc.pdb",
+        "aldoc.runtimeconfig.json",
+        "almcp.exe",
+        "almcp.dll",
+        "almcp.deps.json",
+        "almcp.pdb",
+        "almcp.runtimeconfig.json",
+        "almcp.staticwebassets.endpoints.json"
+      ]
+    },
+    "dotnet": {
+      "version": "10.0.12",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/10.0.12/aspnetcore-runtime-10.0.12-win-x64.zip",
+      "algorithm": "SHA512",
+      "hash": "b6958736bd42eff9c78a27a489d43eb0a39c6201039070ecb76a93cb96c519f07c86fa8b62034c6dd1a82a4c8ad0bd781e052008a7ec4cc48f9f792227d9c7ac"
+    }
+  },
+  "probe": {
+    "lsp-probe.mjs": "7e5942511105aa9d29b1183a5bbb7893473da152e957ab52d5ba67cc00616cf3",
+    "lsp-probe-lib.mjs": "43acc9a57decde2176519bdaacc78e7a1857f5b62ec65c3a302e27894e0c6237"
+  },
+  "lineage": {
+    "extension": {
+      "version": "18.0.41.45789",
+      "sha256": "8d836219b160e0f18c60d716a789882643eba6d3946732ee1bd89824a8b7f6db"
+    },
+    "backend": {
+      "version": "17.0.40.3339",
+      "sha256": "5fbb36d53974f301ae9cc13a0da35829ca726facb702a36b681f75766a697ce9"
+    }
+  },
+  "diagnostics": "sidecar-on",
+  "plugin_json": {
+    "name": "al-language-server-go-windows",
+    "version": "1.18.3",
+    "description": "AL language server wrapper (Go) for Windows, al-lsp-for-agents v1.18.3 with al-call-hierarchy v1.18.2, pinned for the CentralGauge sandbox"
+  },
+  "lsp_json": {
+    "al": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/al-lsp-wrapper.exe",
+      "args": [
+        "--launcher",
+        "claude-code",
+        "--al-extension-path",
+        "C:\\cg-lsp\\al"
+      ],
+      "extensionToLanguage": { ".al": "al", ".dal": "al" },
+      "transport": "stdio",
+      "env": {
+        "DOTNET_ROOT": "C:\\cg-lsp\\dotnet",
+        "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+        "AL_LSP_SOURCE_ROOTS": "C:\\workspace",
+        "HTTPS_PROXY": "",
+        "HTTP_PROXY": ""
+      },
+      "initializationOptions": {},
+      "settings": {},
+      "maxRestarts": 3
+    }
+  }
+}
