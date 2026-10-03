@@ -39,6 +39,7 @@ Deno.test("traceMetrics: probe counts; undeclared types are null, not zero", asy
     1,
   ]);
   assertEquals([m.compactions, m.retries], [null, null]);
+  assertEquals([m.lsp_calls, m.lsp_shell_calls], [null, null]);
   assertEquals([m.skill_invocations, m.mcp_calls, m.by_agent], [
     { "fleet-notes": 1 },
     { "al-tools": 1 },
@@ -279,4 +280,122 @@ Deno.test("pi trace: parse, write and load round trip", async () => {
     null,
     0,
   ]);
+});
+
+Deno.test("claudeTrace: an LSP call's transport is lsp:<operation>; a malformed operation is lsp:invalid", async () => {
+  const recs = (await Deno.readTextFile(FIXTURE)).split("\n").filter((l) =>
+    l.trim()
+  ).map((l) => JSON.parse(l));
+  const rec = recs.find((r) =>
+    r.type === "assistant" &&
+    r.message.content.some((c: { name?: string }) => c.name === "Read")
+  );
+  const use = rec.message.content.find((c: { name?: string }) =>
+    c.name === "Read"
+  );
+  use.name = "LSP";
+  use.input = {
+    operation: "findReferences",
+    filePath: "C:\\workspace\\Core\\src\\LeaseMath.Codeunit.al",
+    line: 3,
+    character: 24,
+  };
+  const lsp = () =>
+    claudeTrace(
+      lines(recs.map((r) => JSON.stringify(r)).join("\n")),
+      FIXTURE,
+      new Set(),
+    ).events.find((e) => e.tool === "LSP");
+  assertEquals(lsp()?.transport, "lsp:findReferences");
+  use.input = { operation: "hover; rm -rf /", filePath: "x" };
+  assertEquals(lsp()?.transport, "lsp:invalid");
+  delete use.input.operation;
+  assertEquals(lsp()?.transport, "lsp:invalid");
+});
+
+Deno.test("traceMetrics: LSP calls by operation (errors still counted); shell calls into the LSP install are audited", () => {
+  const m = traceMetrics([
+    call({
+      seq: 1,
+      call_id: "a",
+      tool: "LSP",
+      transport: "lsp:hover",
+      command: null,
+    }),
+    call({
+      seq: 2,
+      call_id: "b",
+      tool: "LSP",
+      transport: "lsp:hover",
+      command: null,
+    }),
+    call({
+      seq: 3,
+      call_id: "c",
+      tool: "LSP",
+      transport: "lsp:findReferences",
+      command: null,
+      outcome: "error",
+      error_class: "tool_error",
+    }),
+    call({
+      seq: 4,
+      call_id: "d",
+      command:
+        "C:/cg-lsp/al-language-server-go-windows/bin/al-lsp-wrapper.exe --help",
+    }),
+    call({
+      seq: 5,
+      call_id: "e",
+      command:
+        "C:\\cg-lsp\\dotnet\\dotnet.exe C:\\cg-lsp\\al\\bin\\Microsoft.Dynamics.Nav.CodeAnalysis.dll",
+    }),
+    call({ seq: 6, call_id: "f" }),
+  ], { complete: true, trace_types: ["tool_call", "lsp_call"] });
+  assertEquals(m.lsp_calls, {
+    total: 3,
+    by_op: { hover: 2, findReferences: 1 },
+  });
+  assertEquals([m.tool_calls, m.tool_errors, m.lsp_shell_calls], [6, 1, 2]);
+  assertEquals(m.mcp_calls, {});
+});
+
+Deno.test("traceMetrics: LSP counts are null (unobservable), never 0, for a trace without the lsp_call capability", () => {
+  const m = traceMetrics([call({ seq: 1, call_id: "a" })], {
+    complete: true,
+    trace_types: ["tool_call"],
+  });
+  assertEquals([m.lsp_calls, m.lsp_shell_calls], [null, null]);
+  const none = traceMetrics([call({ seq: 1, call_id: "a" })], {
+    complete: true,
+    trace_types: ["tool_call", "lsp_call"],
+  });
+  assertEquals([none.lsp_calls, none.lsp_shell_calls], [
+    { total: 0, by_op: {} },
+    0,
+  ]);
+});
+
+Deno.test("traceMetrics: an LSP operation named like an Object.prototype member is counted as a number; total is the sum of by_op", () => {
+  const ops = ["constructor", "toString", "valueOf", "hasOwnProperty"];
+  const m = traceMetrics(
+    [...ops, "constructor"].map((op, i) =>
+      call({
+        seq: i + 1,
+        call_id: `c${i}`,
+        tool: "LSP",
+        transport: `lsp:${op}`,
+        command: null,
+      })
+    ),
+    { complete: true, trace_types: ["tool_call", "lsp_call"] },
+  );
+  const byOp = m.lsp_calls!.by_op;
+  assertEquals(Object.values(byOp).every((v) => typeof v === "number"), true);
+  assertEquals(byOp["constructor"], 2);
+  assertEquals(byOp["toString"], 1);
+  assertEquals(
+    m.lsp_calls!.total,
+    Object.values(byOp).reduce((a, b) => a + b, 0),
+  );
 });

@@ -6,9 +6,11 @@ import type { JudgmentRecord } from "../../../src/harness/records.ts";
 import {
   loadTaskMeasures,
   locateProcedure,
+  maskAl,
   measureFingerprint,
   type MeasureRecord,
   partialCredit,
+  qualifyMeasures,
   readMeasureRecord,
   stubProcedure,
   TaskMeasuresSchema,
@@ -482,4 +484,91 @@ Deno.test("locateProcedure: a var (by-reference) parameter is part of the signat
   assertEquals(out.includes("Rate: Decimal;"), true);
   assertEquals(out.includes("exit(Amount * Rate);"), false);
   assertEquals(locateProcedure(src, T), null);
+});
+
+Deno.test("maskAl: an unterminated or multi-line quoted identifier fails closed; locate and stub return null (M11-07)", () => {
+  const unterminated = `codeunit 70010 "Rental Price Mgt"
+{
+    var
+        "Owner's: Integer;
+
+    procedure CalcSurcharge(Amount: Decimal): Decimal
+    begin
+        exit(Amount);
+    end;
+}
+`;
+  const multiLine = unterminated.replace(
+    `"Owner's: Integer;`,
+    `"Owner's\n        Name": Integer;`,
+  );
+  for (const src of [unterminated, multiLine]) {
+    assertEquals(maskAl(src), null);
+    assertEquals(locateProcedure(src, T), null);
+    assertEquals(stubProcedure(src, T, "exit(-1);"), null);
+  }
+  // A well-formed quoted identifier still lexes.
+  assertEquals(
+    typeof maskAl(
+      unterminated.replace(`"Owner's: Integer;`, `"Owner's": Integer;`),
+    ),
+    "string",
+  );
+});
+
+Deno.test("qualifyMeasures: exact per-code increases; missing is a failure", async () => {
+  const r = {
+    v: 1,
+    judgment_id: "00000000-0000-4000-8000-0000000000a1",
+    execution_id: "00000000-0000-4000-8000-0000000000b1",
+    task_id: "HX-101",
+    workspace_hash: "a".repeat(64),
+    oracle_hash: "b".repeat(64),
+    measure_fingerprint: await measureFingerprint(),
+    analyzers: {
+      compiler: "c",
+      ruleset_sha256: "e".repeat(64),
+      canary_codes: ["AA0137"],
+    },
+    final_code: {
+      status: "ok",
+      value: {
+        errors: 0,
+        warnings: 3,
+        start_errors: 0,
+        start_warnings: 2,
+        new_warnings: 1,
+        new_warning_codes: { AA0137: 1 },
+        complete: true,
+        incomplete_apps: [],
+      },
+    },
+    reuse: {
+      status: "missing",
+      reason: "no reuse target located in the final workspace",
+    },
+    partial_credit: {
+      status: "ok",
+      value: {
+        new_requirements: 0.5,
+        hidden_regressions: null,
+        pass_to_pass: 1,
+      },
+    },
+  } as const satisfies MeasureRecord;
+  assertEquals(
+    qualifyMeasures(r, {
+      partial_credit: 0.5,
+      final_errors: 0,
+      new_warning_codes: ["AA0137"],
+    }),
+    [],
+  );
+  assertEquals(qualifyMeasures(r, { new_warning_codes: ["AW0006"] }), [
+    "new_warning_codes: expected AW0006 to increase, increased: AA0137",
+  ]);
+  assertEquals(qualifyMeasures(r, { reuse: false, partial_credit: 1 }), [
+    "reuse: expected false, got missing (no reuse target located in the final workspace)",
+    "partial_credit: expected 1, got 0.5",
+  ]);
 });

@@ -242,7 +242,7 @@ const DECLARED: readonly (keyof Telemetry)[] = Object.freeze([
 /** Per-run provenance persisted in raw_usage.capabilities; the report reads it, never the installed adapter. */
 export const CLAUDE_CAPABILITIES = {
   v: 1,
-  parser: "claude-code-trace@4",
+  parser: "claude-code-trace@5",
   rules: `rules@${RULES_VERSION}`,
   telemetry: DECLARED,
   nested: ["per_model.requests"],
@@ -253,6 +253,8 @@ export const CLAUDE_CAPABILITIES = {
     "skill_invoke",
     "retry",
     "compaction",
+    // LSP tool calls carry transport lsp:<operation> (M10-07).
+    "lsp_call",
   ],
 } as const;
 
@@ -673,6 +675,12 @@ export function parseClaudeStream(
     const key = `per_model[${m.model}].requests`;
     reasons[key] = reasons[key] ? `${reasons[key]}; ${why}` : why;
   }
+  // S1 found no LSP diagnostics record in the stream-json output, so an LSP
+  // arm reports null with a reason (never 0); a plain arm is not applicable.
+  if (input.manifest.lsp.length > 0) {
+    reasons["lsp_passive_diagnostics"] =
+      "LSP diagnostics are not in the stream-json output (S1)";
+  }
   telemetry.raw_usage = toJson({
     usage: result?.usage ?? null,
     modelUsage: result?.modelUsage ?? null,
@@ -695,6 +703,7 @@ export function parseClaudeStream(
     // Kept apart from stream_problems: an MCP inventory mismatch is a setup
     // fact (not loaded / setup_failed), never a reason to doubt the cost.
     mcp_inventory: mcp.problems,
+    lsp_passive_diagnostics: null,
     capabilities: CLAUDE_CAPABILITIES,
     trace_complete: traceComplete,
     incomplete_reasons: reasons,

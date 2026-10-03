@@ -1479,7 +1479,7 @@ Deno.test("metrics: capabilities are the literal provenance of this parser", asy
   const { r } = await parse(await Deno.readTextFile(FIXTURE));
   assertEquals(raw(r).capabilities, {
     v: 1,
-    parser: "claude-code-trace@4",
+    parser: "claude-code-trace@5",
     rules: "rules@1",
     telemetry: [...claudeCodeAdapter.declared],
     nested: ["per_model.requests"],
@@ -1490,6 +1490,7 @@ Deno.test("metrics: capabilities are the literal provenance of this parser", asy
       "skill_invoke",
       "retry",
       "compaction",
+      "lsp_call",
     ],
   });
   assert(Object.isFrozen(claudeCodeAdapter.declared), "declared is frozen");
@@ -1743,8 +1744,9 @@ Deno.test("run.ps1: strict MCP config on every arm, empty servers when none; tok
   assert(!/^\s/.test(strictLine), `top level: ${strictLine}`);
 });
 
-Deno.test("capabilities: retry and compaction declared from the M2-11 recordings; parser claude-code-trace@4 (tool_progress known, M5-07a)", () => {
-  assertEquals(CLAUDE_CAPABILITIES.parser, "claude-code-trace@4");
+Deno.test("capabilities: retry and compaction declared from the M2-11 recordings; parser claude-code-trace@5 (lsp_call, M10-07)", () => {
+  assertEquals(CLAUDE_CAPABILITIES.parser, "claude-code-trace@5");
+  assert(CLAUDE_CAPABILITIES.trace_types.includes("lsp_call" as never));
   assert(CLAUDE_CAPABILITIES.trace_types.includes("retry" as never));
   assert(CLAUDE_CAPABILITIES.trace_types.includes("compaction" as never));
   assert(claudeCodeAdapter.declared.includes("compactions"));
@@ -2052,4 +2054,33 @@ Deno.test("claude-code Dockerfile (M9): ships cg-inventory.ps1 read-only for the
     df,
     "--version 2.1.282 --revision 3 (proofs: --revision 3-dev-<task id>)",
   );
+});
+
+Deno.test("claude-code LSP: passive diagnostics are not in the stream (S1): null with a reason on an LSP arm, null without one on a plain arm", async () => {
+  const text = await Deno.readTextFile(FIXTURE);
+  const lspArm = {
+    lsp: [{
+      name: "al",
+      version: "al-lsp@1",
+      tool_schema_hash: "a".repeat(64),
+    }],
+    settings: { requested: {}, native: { lsp: ["al"] } },
+  };
+  const on = (await parse(text, 0, lspArm)).r.telemetry.raw_usage as {
+    lsp_passive_diagnostics: unknown;
+    incomplete_reasons: Record<string, string>;
+  };
+  assertEquals(on.lsp_passive_diagnostics, null);
+  assertEquals(
+    on.incomplete_reasons["lsp_passive_diagnostics"],
+    "LSP diagnostics are not in the stream-json output (S1)",
+  );
+  const off =
+    (await parse(text, 0, { settings: { requested: {}, native: {} } })).r
+      .telemetry.raw_usage as {
+        lsp_passive_diagnostics: unknown;
+        incomplete_reasons: Record<string, string>;
+      };
+  assertEquals(off.lsp_passive_diagnostics, null);
+  assertEquals(off.incomplete_reasons["lsp_passive_diagnostics"], undefined);
 });

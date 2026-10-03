@@ -319,8 +319,10 @@ export const REUSE_MARKER = "CG-REUSE-PROBE";
  * Same length as src: comments and string literals blanked, so indices stay
  * valid. A lexer, not a regex: a "quoted identifier" (e.g. "Owner's") is its
  * own state, so its apostrophe never opens a string that hides a comment.
+ * A quoted identifier is one line: unterminated or multi-line, the lexer
+ * cannot trust what follows, so it fails closed (null).
  */
-export function maskAl(src: string): string {
+export function maskAl(src: string): string | null {
   const blank = (s: string) => s.replace(/[^\n]/g, " ");
   let out = "";
   let i = 0;
@@ -350,7 +352,8 @@ export function maskAl(src: string): string {
       out += blank(src.slice(i, end));
     } else if (c === '"') {
       end = src.indexOf('"', i + 1);
-      end = end < 0 ? src.length : end + 1;
+      if (end < 0 || src.slice(i, end).includes("\n")) return null;
+      end++;
       out += src.slice(i, end);
     } else {
       end = i + 1;
@@ -402,6 +405,7 @@ export function locateProcedure(
   t: Pick<ReuseTarget, "codeunit" | "procedure" | "signature">,
 ): [number, number] | null {
   const m = maskAl(src);
+  if (m === null) return null;
   const k = maskIdents(m);
   const heads = [
     ...k.matchAll(new RegExp(`\\bcodeunit\\s+${t.codeunit}\\b`, "gi")),
@@ -752,4 +756,49 @@ export async function canaryCheck(
       o.expected.every((x) => codes.includes(x)),
     compiler: c.compiler,
   };
+}
+
+/** Expectation mismatches of one fixture's measures (spec 8.6); empty when it qualifies. */
+export function qualifyMeasures(
+  r: MeasureRecord,
+  expect: TaskMeasures["expect"][string],
+): string[] {
+  const out: string[] = [];
+  const got = <T>(m: Measure<T>, f: (v: T) => unknown) =>
+    m.status === "ok" ? f(m.value) : `${m.status} (${m.reason})`;
+  const eq = (name: string, want: unknown, g: unknown) => {
+    if (want !== undefined && g !== want) {
+      out.push(`${name}: expected ${want}, got ${g}`);
+    }
+  };
+  eq("reuse_executed", expect.reuse_executed, got(r.reuse, (v) => v.executed));
+  eq("reuse", expect.reuse, got(r.reuse, (v) => v.effective));
+  if (expect.partial_credit !== undefined) {
+    const g = got(r.partial_credit, (v) => v.new_requirements);
+    if (typeof g !== "number" || Math.abs(g - expect.partial_credit) > 1e-9) {
+      out.push(`partial_credit: expected ${expect.partial_credit}, got ${g}`);
+    }
+  }
+  eq("final_errors", expect.final_errors, got(r.final_code, (v) => v.errors));
+  if (expect.new_warning_codes !== undefined) {
+    const fc = r.final_code;
+    if (fc.status !== "ok" || !fc.value.complete) {
+      out.push(
+        `new_warning_codes: final-code check ${
+          fc.status === "ok" ? "incomplete" : `${fc.status} (${fc.reason})`
+        }`,
+      );
+    } else {
+      const inc = Object.keys(fc.value.new_warning_codes);
+      const lack = expect.new_warning_codes.filter((c) => !inc.includes(c));
+      if (lack.length > 0) {
+        out.push(
+          `new_warning_codes: expected ${
+            lack.join(",")
+          } to increase, increased: ${inc.join(",") || "none"}`,
+        );
+      }
+    }
+  }
+  return out;
 }

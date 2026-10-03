@@ -4,17 +4,20 @@ import type { ALProject, TestResult } from "../../../src/container/types.ts";
 import type { GateBc } from "../../../scripts/harness/gate-task.ts";
 import { runGate, runVariant } from "../../../scripts/harness/gate-task.ts";
 import { summarize } from "../../../scripts/harness/gate-core.ts";
+import { parseCompilationErrors } from "../../../src/container/bc-output-parsers.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import { tmp, writeTask } from "./gate-fixtures.ts";
 
 function mockBc(o: {
   failCompile?: string;
+  compileOut?: { codes: string[]; detail: string };
   failPublish?: string;
   publishError?: string;
   soapThrows?: boolean;
   emptyResults?: boolean;
   prenukeThrowsAfter?: number;
   seen?: string[];
+  ran?: number[];
 }): GateBc {
   let prenukes = 0;
   return {
@@ -30,7 +33,10 @@ function mockBc(o: {
     compile: async (p: ALProject) => {
       o.seen?.push(p.path);
       if (basename(p.path) === o.failCompile) {
-        return { ok: false, codes: ["AL0118"], detail: "AL0118 missing" };
+        return {
+          ok: false,
+          ...(o.compileOut ?? { codes: ["AL0118"], detail: "AL0118 missing" }),
+        };
       }
       const artifact = join(p.path, "out.app");
       await Deno.writeTextFile(artifact, "x");
@@ -41,6 +47,7 @@ function mockBc(o: {
         ? Promise.reject(new Error(o.publishError ?? "publish failed"))
         : Promise.resolve(),
     runTests: (codeunit: number): Promise<TestResult> => {
+      o.ran?.push(codeunit);
       if (o.soapThrows) return Promise.reject(new Error("SOAP timeout"));
       if (o.emptyResults) {
         return Promise.resolve({
@@ -326,4 +333,144 @@ Deno.test("runVariant: a non-collision publish failure stays infra", async () =>
   );
   assertEquals(r.builds.at(-1)?.stage, "publish");
   assert(summarize(loaded.task, r).infra);
+});
+
+// M8-01c: a compile failure with no real AL code (OOM / pipe death) is infra, never scored.
+for (
+  const compileOut of [
+    { codes: [], detail: "Compilation failed (errors=0, warnings=0)" },
+    {
+      codes: ["AL0000"],
+      detail: "AL0000 No process is on the other end of the pipe",
+    },
+  ]
+) {
+  Deno.test(`runGate: infra-shaped compile failure is infra/rerun (${compileOut.detail.slice(0, 30)})`, async () => {
+    const { loaded, source, tmpRoot } = await fixture();
+    const bc = mockBc({ failCompile: "Fleet", compileOut });
+    const r = await runVariant(
+      bc,
+      loaded.task,
+      source,
+      { kind: "correct" },
+      1,
+      tmpRoot,
+    );
+    assert(r.infra?.startsWith("compile infra: Fleet:"), r.infra);
+    assert(summarize(loaded.task, r).infra);
+    const { file, code } = await runGate({
+      bc,
+      loaded,
+      source,
+      container: "Mock",
+      outDir: await tmp(),
+      tmpRoot,
+      tagTree: null,
+    });
+    assertEquals(code, 3);
+    const report = JSON.parse(await Deno.readTextFile(file));
+    assert(
+      report.reasons.some((x: string) => x.includes("infra, rerun")),
+      report.reasons.join("; "),
+    );
+  });
+}
+
+Deno.test("runVariant: a compile failure with a real AL code stays a scored build failure", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const r = await runVariant(
+    mockBc({ failCompile: "Fleet" }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertEquals(r.infra, undefined);
+  assertEquals(r.builds.at(-1)?.codes, ["AL0118"]);
+  assertEquals(summarize(loaded.task, r).infra, false);
+});
+
+Deno.test("runVariant: a real AL code wins over an infra-looking detail", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const r = await runVariant(
+    mockBc({
+      failCompile: "Fleet",
+      compileOut: {
+        codes: ["AL0118"],
+        detail: "AL0118 The name 'Pipeline' does not exist; no pipe here",
+      },
+    }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertEquals(r.infra, undefined);
+  assertEquals(r.builds.at(-1)?.codes, ["AL0118"]);
+  assertEquals(summarize(loaded.task, r).infra, false);
+});
+
+// M8-01c run 002: CompileOut built from raw output by the real parser, as containerBc does.
+function parsedCompile(raw: string) {
+  const errors = parseCompilationErrors(raw);
+  return {
+    codes: errors.map((e) => e.code),
+    detail: errors.map((e) => `${e.code} ${e.message}`).join("; "),
+  };
+}
+
+Deno.test("runVariant: parser-synthesized AL0000 from a pre-ALC failure stays scored", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const compileOut = parsedCompile("ERROR:Unable to locate system symbols");
+  assertEquals(compileOut.codes, ["AL0000"]);
+  const r = await runVariant(
+    mockBc({ failCompile: "Fleet", compileOut }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertEquals(r.infra, undefined);
+  assertEquals(r.builds.at(-1)?.codes, ["AL0000"]);
+  assertEquals(summarize(loaded.task, r).infra, false);
+});
+
+Deno.test("runVariant: parser-synthesized AL0000 pipe death is infra", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const compileOut = parsedCompile(
+    "ERROR:No process is on the other end of the pipe. (0xE9)",
+  );
+  assertEquals(compileOut.codes, ["AL0000"]);
+  const r = await runVariant(
+    mockBc({ failCompile: "Fleet", compileOut }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assert(r.infra?.startsWith("compile infra: Fleet:"), r.infra);
+});
+
+Deno.test("runVariant: an Oracle compile infra fault skips all test execution", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const ran: number[] = [];
+  const r = await runVariant(
+    mockBc({
+      failCompile: "Oracle",
+      compileOut: { codes: [], detail: "Compilation failed (errors=0)" },
+      ran,
+    }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assert(r.infra?.startsWith("compile infra: Oracle:"), r.infra);
+  assertEquals(ran, []);
+  assertEquals(r.tests, []);
 });

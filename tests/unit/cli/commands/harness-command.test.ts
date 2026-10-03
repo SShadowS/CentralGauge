@@ -16,6 +16,7 @@ import {
   harnessEgressVerify,
   harnessImagesBuild,
   harnessJudgeFixture,
+  harnessMeasure,
   harnessQualify,
   harnessRejudge,
   harnessReport,
@@ -66,6 +67,11 @@ import { buildReport, renderReport } from "../../../../src/harness/report.ts";
 import { writeVerdictLog } from "../../../../src/harness/verdict.ts";
 import { sha256Hex } from "../../../../src/harness/hash.ts";
 import { scorerFingerprint } from "../../../../src/harness/records.ts";
+import {
+  measureFingerprint,
+  readMeasureRecord,
+  writeMeasureRecord,
+} from "../../../../src/harness/measures.ts";
 import {
   currentScorerFingerprint,
   SCORER_SUITE,
@@ -1430,6 +1436,163 @@ Deno.test("rejudge adds one judgment per execution whose scorer fingerprint is n
   assertEquals(await count(), [3, 1]);
   const again = await harnessRejudge("contract", runOpts(t), opener(t));
   assertEquals([again.rejudged, await count()], [0, [3, 1]]);
+});
+
+/** A two-cell mock campaign, judged, with the frozen analysis files in the harness root. */
+async function measurableCampaign() {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const es = await t.env.store.executions(c.id);
+  assertEquals(es.length, 2);
+  const repoAnalysis = new URL(
+    "../../../../harness/analysis/",
+    import.meta.url,
+  );
+  for (
+    const rel of [
+      "final-code.ruleset.json",
+      "canary/app.json",
+      "canary/expect.json",
+      "canary/src/Canary.Codeunit.al",
+    ]
+  ) {
+    const dst = join(t.env.harnessRoot, "analysis", rel);
+    await Deno.mkdir(join(dst, ".."), { recursive: true });
+    await Deno.copyFile(new URL(rel, repoAnalysis), dst);
+  }
+  const judgmentOf = async (id: string) =>
+    (await t.env.store.judgments(id))[0]!;
+  const records = async (judgment: string) => {
+    const out: string[] = [];
+    try {
+      for await (
+        const e of Deno.readDir(join(t.env.resultsRoot, "measures", judgment))
+      ) out.push(e.name);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    }
+    return out;
+  };
+  return { t, es, judgmentOf, records };
+}
+
+Deno.test("measure (M11-07 run 002): refused when a task's visible inputs drifted from the execution's", async () => {
+  const { t, es, judgmentOf, records } = await measurableCampaign();
+  await Deno.writeTextFile(
+    join(t.repo.tasksDir, "HX-001", "prompt.md"),
+    "An edited prompt.",
+  );
+  await assertRejects(
+    () => harnessMeasure("contract", runOpts(t, { yes: true }), opener(t)),
+    ConfigurationError,
+    "visible",
+  );
+  for (const e of es) {
+    assertEquals(await records((await judgmentOf(e.id)).id), []);
+  }
+});
+
+Deno.test("measure (M11-07 run 002): refused when the current oracle (measures/ included) differs from the judgment's", async () => {
+  const { t, es, judgmentOf, records } = await measurableCampaign();
+  // A measures file added after the campaign changes the oracle hash.
+  await Deno.mkdir(join(t.repo.tasksDir, "HX-001", "measures"));
+  await Deno.writeTextFile(
+    join(t.repo.tasksDir, "HX-001", "measures", "measures.yml"),
+    "v: 1\n",
+  );
+  await assertRejects(
+    () => harnessMeasure("contract", runOpts(t, { yes: true }), opener(t)),
+    ConfigurationError,
+    "oracle",
+  );
+  for (const e of es) {
+    assertEquals(await records((await judgmentOf(e.id)).id), []);
+  }
+});
+
+Deno.test("measure (M11-07 run 002): a canary infra error leaves final code missing in every cell, and the other measures proceed", async () => {
+  const { t, es, judgmentOf } = await measurableCampaign();
+  for (const c of t.env.lane.containers) t.bc.broken.add(c);
+  const r = await harnessMeasure(
+    "contract",
+    runOpts(t, { yes: true }),
+    opener(t),
+  );
+  assertEquals(r.measured, 2);
+  for (const e of es) {
+    const j = await judgmentOf(e.id);
+    const rec = await readMeasureRecord(
+      t.env.resultsRoot,
+      j.id,
+      await measureFingerprint(),
+    );
+    assertEquals(rec!.final_code.status, "missing");
+    assertStringIncludes(
+      rec!.final_code.status === "missing" ? rec!.final_code.reason : "",
+      "infra",
+    );
+    assertEquals(rec!.analyzers, null);
+    // Independent of the analyzers: partial credit and reuse still recorded.
+    assertEquals(rec!.partial_credit.status, "not_applicable");
+    assertEquals(rec!.reuse.status, "not_applicable");
+  }
+});
+
+Deno.test("measure (M11-07): two scored cells, one already measured under the current fingerprint: one new record", async () => {
+  const { t, es } = await measurableCampaign();
+  const [j0] = await t.env.store.judgments(es[0]!.id);
+  const [j1] = await t.env.store.judgments(es[1]!.id);
+  const art = await t.env.store.artifact(es[0]!.id);
+  await writeMeasureRecord(t.env.resultsRoot, {
+    v: 1,
+    judgment_id: j0!.id,
+    execution_id: es[0]!.id,
+    task_id: es[0]!.task_id,
+    workspace_hash: art!.workspace_hash,
+    oracle_hash: j0!.task_oracle_hash,
+    measure_fingerprint: await measureFingerprint(),
+    analyzers: null,
+    final_code: { status: "missing", reason: "already measured" },
+    reuse: { status: "not_applicable", reason: "no measures file" },
+    partial_credit: { status: "not_applicable", reason: "no frozen weights" },
+  });
+  const files = async (judgment: string) => {
+    const out: string[] = [];
+    try {
+      for await (
+        const e of Deno.readDir(
+          join(t.env.resultsRoot, "measures", judgment),
+        )
+      ) out.push(e.name);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    }
+    return out;
+  };
+  assertEquals((await files(j1!.id)).length, 0);
+  const r = await harnessMeasure(
+    "contract",
+    runOpts(t, { yes: true }),
+    opener(t),
+  );
+  assertEquals(r.measured, 1);
+  assertEquals(await files(j1!.id), [`${await measureFingerprint()}.json`]);
+  assertEquals((await files(j0!.id)).length, 1);
+  // Everything measured: a second call measures nothing.
+  assertEquals(
+    (await harnessMeasure("contract", runOpts(t, { yes: true }), opener(t)))
+      .measured,
+    0,
+  );
 });
 
 Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is rejudged with the current suite on the original artifact, task and oracle", async () => {

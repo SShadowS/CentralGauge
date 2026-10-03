@@ -32,7 +32,7 @@ const V1_FIELDS = {
   call_id: Str,
   request_id: Str,
   tool: Str,
-  /** builtin, mcp:<server>, shell */
+  /** builtin, mcp:<server>, lsp:<operation>, shell */
   transport: Str,
   skill: Str,
   backend_request: Str,
