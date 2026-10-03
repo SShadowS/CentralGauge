@@ -45,13 +45,15 @@ export const LimitsSchema = z.strictObject({
 });
 
 /**
- * Image revision (H-01 run 004): a rebuild of the image for the same
- * harness_version, tagged `<version>-r<n>`. Absent is the frozen image.
+ * Image revision (H-01 run 004): a rebuild for the same harness_version,
+ * tagged `<version>-r<n>`; or a proof build of revision n, `<n>-dev-<task id>`
+ * (cross-plan ruling 1), which no experiment may run. Absent is the frozen
+ * image.
  */
-export const IMAGE_REVISION = /^[1-9][0-9]{0,3}$/;
+export const IMAGE_REVISION = /^[1-9][0-9]{0,3}(?:-dev-[A-Za-z0-9-]{1,32})?$/;
 export const ImageRevisionSchema = z.string().regex(
   IMAGE_REVISION,
-  "positive integer, no leading zero",
+  "positive integer, no leading zero, optionally -dev-<task id>",
 );
 
 export const HarnessConfigSchema = z.strictObject({
@@ -178,7 +180,15 @@ export async function loadExperiment(
   assertIdMatchesFile(experiment.id, id, path);
   const configs: HarnessConfig[] = [];
   for (const arm of [experiment.baseline, ...experiment.variants]) {
-    configs.push(await loadConfig(harnessRoot, arm));
+    const cfg = await loadConfig(harnessRoot, arm);
+    // Cross-plan ruling 1: proof images prove things; they never run an experiment.
+    if (cfg.image_revision?.includes("-dev-")) {
+      throw new ConfigurationError(
+        `${path}: arm ${arm} names development image revision ${cfg.image_revision}`,
+        path,
+      );
+    }
+    configs.push(cfg);
   }
   return { experiment, configs };
 }
