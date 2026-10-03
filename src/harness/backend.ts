@@ -877,7 +877,9 @@ export class Backend {
         }),
       );
       if (!infra) {
-        console.error(`[FAIL] cg-al backend ${requestId}: ${message}`);
+        try {
+          console.error(`[FAIL] cg-al backend ${requestId}: ${message}`);
+        } catch { /* a broken logger must not lose the 500 reply */ }
       }
       // The agent never sees host paths or internal error text; the host log keeps them.
       return this.reply(

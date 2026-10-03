@@ -358,3 +358,23 @@ Deno.test("ExperimentSchema (M11): contrasts name declared arms, unique ids, nee
   bad({ contrasts: undefined }, "interaction needs contrasts");
   bad({ interaction: { ...v2.interaction, lsp: "cc-nope" } }, "not an arm");
 });
+
+Deno.test("ExperimentSchema (M11-08): interaction status must be present and valid; the preregistration path must be relative", () => {
+  const parse = (o: object) => ExperimentSchema.safeParse({ ...v2, ...o });
+  const withStatus = (status?: unknown) => {
+    const { status: _drop, ...rest } = v2.interaction;
+    return { interaction: status === undefined ? rest : { ...rest, status } };
+  };
+  assertEquals(
+    parse(withStatus("confirmatory")).data?.interaction?.status,
+    "confirmatory",
+  );
+  assertEquals(parse(withStatus()).success, false);
+  assertEquals(parse(withStatus("pending")).success, false);
+  for (const path of ["../outside.yml", "/abs/p.yml", "C:\\abs\\p.yml"]) {
+    assertStringIncludes(
+      parse({ preregistration: path }).error!.message,
+      "relative path inside harness/",
+    );
+  }
+});
