@@ -1101,17 +1101,41 @@ export function renderReport(r: HarnessReport): string {
     }
     for (const c of k.results) {
       const f = fmtOf(c);
+      const bt = c.method === "bootstrap-t";
+      const pctTag = bt ? "percentile " : "";
       const ci = c.ci === null
-        ? `CI suppressed (${
+        ? `${pctTag}CI suppressed (${
           Math.round(c.undefined_share * c.resamples)
         } of ${c.resamples} resamples undefined)`
-        : `${+(c.level * 100).toFixed(1)}% CI [${f(c.ci[0])}, ${
+        : `${+(c.level * 100).toFixed(1)}% ${pctTag}CI [${f(c.ci[0])}, ${
           f(c.ci[1])
         }] (unadjusted)`;
+      const range = (
+        x: [number, number] | null | undefined,
+        g: (v: number) => string,
+      ) => x ? `[${g(x[0])}, ${g(x[1])}]` : "n/a";
+      const logF = (v: number) => v.toFixed(4);
+      const ratioF = (v: number) => v.toFixed(4);
+      const btText = bt
+        ? `; method bootstrap-t (symmetric studentized): ${+(c.level * 100)
+          .toFixed(1)}% ci_log ${range(c.ci_log, logF)}, ci_ratio ${
+          range(c.ci_ratio, ratioF)
+        }${
+          c.confirmatory
+            ? `, Bonferroni ci_log ${
+              range(c.bonferroni_ci_log, logF)
+            }, Bonferroni ci_ratio ${
+              range(c.bonferroni_ci_ratio, ratioF)
+            } at level ${bonferroni}%`
+            : ""
+        }, bootstrap-t undefined ${
+          Math.round((c.bt_undefined_share ?? 0) * c.resamples)
+        } of ${c.resamples} resamples`
+        : "";
       const tail = c.confirmatory
         ? `p ${c.p_value?.toFixed(4) ?? "n/a"}, Holm p ${
           c.p_holm?.toFixed(4) ?? "n/a"
-        } -> ${c.decision.replace("_", " ")}; Bonferroni interval ${
+        } -> ${c.decision.replace("_", " ")}; ${pctTag}Bonferroni interval ${
           c.bonferroni_ci
             ? `[${f(c.bonferroni_ci[0])}, ${
               f(c.bonferroni_ci[1])
@@ -1126,7 +1150,7 @@ export function renderReport(r: HarnessReport): string {
       out.push(
         `  ${c.id} ${c.name}: ${c.variant} vs ${c.baseline} over ${c.tasks} of ${k.tasks.length} selected tasks: ${
           c.delta === null ? "n/a" : f(c.delta)
-        }, ${ci}; ${tail}`,
+        }, ${ci}; ${tail}${btText}`,
       );
     }
     h(
