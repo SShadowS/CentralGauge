@@ -26,9 +26,9 @@ codeunit 86000 "HX027 Schedule Build Oracle"
         for i := 1 to 3 do begin
             TempScheduleBuffer.Get('HX27-MATCH', i * 10000);
             ScheduleLine.Get('HX27-MATCH', i * 10000);
-            Assert.AreEqual(ScheduleLine."Due Date", TempScheduleBuffer."Due Date", 'Built due date equals the saved due date');
-            Assert.AreEqual(ScheduleLine.Amount, TempScheduleBuffer.Amount, 'Built amount equals the saved amount');
-            Assert.AreEqual(ScheduleLine.Invoiced, TempScheduleBuffer.Invoiced, 'Built line is invoiced like the saved line');
+            Assert.AreEqual(ScheduleLine."Due Date", TempScheduleBuffer."Due Date", StrSubstNo('Built due date of line %1 equals the saved due date', i * 10000));
+            Assert.AreEqual(ScheduleLine.Amount, TempScheduleBuffer.Amount, StrSubstNo('Built amount of line %1 equals the saved amount', i * 10000));
+            Assert.AreEqual(ScheduleLine.Invoiced, TempScheduleBuffer.Invoiced, StrSubstNo('Built line %1 is invoiced like the saved line', i * 10000));
         end;
     end;
 
@@ -209,6 +209,18 @@ codeunit 86000 "HX027 Schedule Build Oracle"
         AssertLine(ScheduleLine, 'HX27-RECREATE', 10000, 20270301D, 206.00);
         AssertLine(ScheduleLine, 'HX27-RECREATE', 20000, 20270401D, 206.00);
         AssertLine(ScheduleLine, 'HX27-RECREATE', 30000, 20270501D, 206.00);
+    end;
+
+    [Test]
+    procedure CreateWithoutMonthsFails()
+    var
+        LeaseMgt: Codeunit "CGR Lease Mgt";
+    begin
+        WorkDate(20270301D);
+        InitLease('HX27-CMONTHS', 0, 100.10);
+
+        asserterror LeaseMgt.CreateSchedule('HX27-CMONTHS');
+        Assert.ExpectedError('Lease HX27-CMONTHS must run for at least one month.');
     end;
 
     local procedure InitLease(LeaseNo: Code[20]; Months: Integer; BaseRate: Decimal)

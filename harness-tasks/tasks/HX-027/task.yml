@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Leasing]
   tests:
-    - { codeunit: 86000, procedures: [BuildMatchesCreatedSchedule, BuildSavesNothing, BuildKeepsSavedSchedule, BuildWorksForInvoicedLease, BuildReplacesBuffer, BuildReplacesFilteredBuffer, BuildWithoutMonthsFails, BuildOneMonthLease, CreateStillRefusesInvoicedLease, CreateScheduleUnchanged, CreateReplacesUninvoicedSchedule] }
+    - { codeunit: 86000, procedures: [BuildMatchesCreatedSchedule, BuildSavesNothing, BuildKeepsSavedSchedule, BuildWorksForInvoicedLease, BuildReplacesBuffer, BuildReplacesFilteredBuffer, BuildWithoutMonthsFails, BuildOneMonthLease, CreateStillRefusesInvoicedLease, CreateScheduleUnchanged, CreateReplacesUninvoicedSchedule, CreateWithoutMonthsFails] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
