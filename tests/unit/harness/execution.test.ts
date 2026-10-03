@@ -9,9 +9,16 @@ import { walk } from "@std/fs";
 import { basename, join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
-import { BUILTIN_INVENTORY } from "../../../src/harness/adapters/claude-code.ts";
+import {
+  BUILTIN_INVENTORY,
+  LSP_PLUGINS,
+} from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
-import { ExperimentSchema } from "../../../src/harness/config.ts";
+import { ExperimentSchema, loadConfig } from "../../../src/harness/config.ts";
+import {
+  manifestHash,
+  resolveManifest,
+} from "../../../src/harness/manifest.ts";
 import {
   type CellRef,
   type HarnessEnv,
@@ -46,7 +53,15 @@ import {
   sweepOwnedSandboxes,
 } from "../../../src/harness/sandbox.ts";
 import { holdExclusive } from "./hold-file.ts";
-import { imageTag } from "../../../src/harness/images.ts";
+import {
+  AL_LSP_DEF,
+  AL_LSP_SHIPPED,
+  imageFacts,
+  imageTag,
+  lspLabel,
+  runtimeFacts,
+  serverDefinitions,
+} from "../../../src/harness/images.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
   authorizedAllowlist,
@@ -66,6 +81,7 @@ import {
   verifyEgressState,
 } from "../../../src/harness/egress.ts";
 import {
+  CATALOG,
   ccBehavior,
   cellFor,
   enforce,
@@ -4118,4 +4134,111 @@ Deno.test("component inventory: a non-inventoried image releases without waiting
   const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
   assertEquals(e.termination, "completed");
   assertEquals(t.docker.readySeen, true);
+});
+
+Deno.test("component inventory + LSP (spec v2 gates 1 and 2): a declared, proven LSP completes; a missing tool or an undeclared plugin is setup_failed", async () => {
+  const t = await inventoriedEnv();
+  await Deno.mkdir(
+    join(t.env.repoRoot, "harness", "images", "claude-code", "lsp"),
+    { recursive: true },
+  );
+  await Deno.copyFile(AL_LSP_DEF, join(t.env.repoRoot, AL_LSP_DEF));
+  await write(
+    t.harnessRoot,
+    "configs/cc-v2-inv-lsp.yml",
+    'id: cc-v2-inv-lsp\nharness: claude-code\nharness_version: "2.1.282"\nimage_revision: "3"\nmodels: { main: anthropic/claude-sonnet-5 }\nsettings: {}\ncomponents: { instructions: bundles/env/instructions, lsp: [al] }\nlimits: { timeout_min: 30, max_budget_usd: 5 }\n',
+  );
+  const imageId = `sha256:${"d".repeat(64)}`;
+  const [lk, lv] = (await lspLabel(t.env.repoRoot))!;
+  t.docker.addImage(imageTag("claude-code", "2.1.282", "3"), imageId, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+    "centralgauge.harness.revision": "3",
+    [lk]: lv,
+  });
+  t.docker.shipFile(
+    imageId,
+    AL_LSP_SHIPPED,
+    await Deno.readTextFile(AL_LSP_DEF),
+  );
+  const builtins = BUILTIN_INVENTORY["2.1.282"]!.plugins.map((s) => ({
+    name: s.split("@")[0],
+    source: s,
+  }));
+  const pluginId = LSP_PLUGINS["al"]!;
+  const lspPlugin = {
+    name: pluginId.name,
+    source: pluginId.source,
+    ...(pluginId.path === null ? {} : { path: pluginId.path }),
+  };
+  const init = (tools: string[], plugins: unknown[]) => {
+    const i = JSON.parse(V2_INIT);
+    return JSON.stringify({
+      ...i,
+      tools: [...i.tools, ...tools],
+      plugins: [...builtins, ...plugins],
+    });
+  };
+  const cases: [string, string, string, string, string | null][] = [
+    [
+      "proven",
+      "cc-v2-inv-lsp",
+      INV({ installed: ["instructions", "lsp:al"] }),
+      init(["LSP"], [lspPlugin]),
+      null,
+    ],
+    [
+      "no tool",
+      "cc-v2-inv-lsp",
+      INV({ installed: ["instructions", "lsp:al"] }),
+      init([], [lspPlugin]),
+      "lsp:al not loaded",
+    ],
+    [
+      "undeclared plugin",
+      "cc-v2-inv",
+      INV(),
+      init([], [lspPlugin]),
+      "unrequested plugin loaded",
+    ],
+  ];
+  for (const [name, cfg, inv, initLine, want] of cases) {
+    const post = [initLine, ...(await probeLines())];
+    t.docker.preReady = { lines: [inv] };
+    t.docker.behavior = async (_call, io) => {
+      for (const l of post) await io.stdout(l);
+      return 0;
+    };
+    // cellFor (runtime-fixture) loads no server definitions, so an LSP arm resolves its facts here.
+    const base = await cellFor(t, cfg === "cc-v2-inv-lsp" ? "cc-v2-inv" : cfg);
+    const config = await loadConfig(t.harnessRoot, cfg);
+    const facts = runtimeFacts(
+      config,
+      await imageFacts(
+        t.docker,
+        imageTag(config.harness, config.harness_version, config.image_revision),
+        "HOST1",
+      ),
+      adapterFor(config.harness),
+      CATALOG,
+      await serverDefinitions(t.env.repoRoot, config.components),
+    );
+    const armManifest = await resolveManifest(t.harnessRoot, config, facts);
+    const cell = {
+      ...base,
+      arm: cfg,
+      block: { ...base.block, order: [cfg] },
+      armManifest,
+      armManifestHash: await manifestHash(armManifest),
+    };
+    const e = (await runCell(t.env, cell)).executions[0]!;
+    if (want === null) {
+      assertEquals(e.termination, "completed", name);
+      assert(e.observed.loaded_components!.includes("lsp:al"), name);
+      continue;
+    }
+    assertEquals(e.termination, "setup_failed", name);
+    assertStringIncludes((await sideOf(t, e.id)).setup_error, want, name);
+  }
 });

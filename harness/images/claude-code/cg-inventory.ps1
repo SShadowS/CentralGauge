@@ -13,7 +13,9 @@ param(
   [string]$HomeDir = $env:USERPROFILE,
   [string]$Workspace = 'C:\workspace',
   [string]$Ancestors = 'C:\',
-  [string]$ManagedDir = 'C:\Program Files\ClaudeCode'
+  [string]$ManagedDir = 'C:\Program Files\ClaudeCode',
+  [string]$LspPlugin = 'C:\cg-lsp\al-language-server-go-windows',
+  [string]$LspProbe = 'C:\cg-lsp\lsp-probe.mjs'
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
@@ -133,7 +135,24 @@ if (Test-Path -LiteralPath $ManagedDir) { $problems.Add("managed Claude Code set
 
 # @() at every array site: PowerShell 5.1 would otherwise emit a one-element array as a bare
 # string and an empty pipeline as null.
-$installed = @($owner.Values | Sort-Object -Unique | Where-Object { -not $broken.Contains($_) })
+# M10 (ruling 3): the LSP component. Declared in settings.lsp: the image's plugin must exist and
+# its server must answer the preflight as this user, offline (no proxy is set yet). Not declared:
+# ENABLE_LSP_TOOL must be unset. Without a settings file (M9's host tests) nothing is checked.
+$lspInstalled = @()
+$settingsPath = Join-Path $ConfigDir 'settings.json'
+if (Test-Path -LiteralPath $settingsPath) {
+  $s = (Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json).settings
+  $lspDeclared = @()
+  if ($null -ne $s -and $null -ne $s.PSObject.Properties['lsp']) { $lspDeclared = @($s.lsp) }
+  foreach ($n in $lspDeclared) {
+    if ($n -cne 'al') { $problems.Add("unknown LSP component: $n"); continue }
+    if (-not (Test-Path -LiteralPath (Join-Path $LspPlugin '.lsp.json'))) { $problems.Add("lsp:al: plugin missing at $LspPlugin"); continue }
+    & node $LspProbe --preflight
+    if ($LASTEXITCODE -ne 0) { $problems.Add("lsp:al: preflight failed (exit $LASTEXITCODE)") } else { $lspInstalled += 'lsp:al' }
+  }
+  if ($lspDeclared.Count -eq 0 -and $env:ENABLE_LSP_TOOL) { $problems.Add('ENABLE_LSP_TOOL is set in an arm without LSP') }
+}
+$installed = @(@($owner.Values) + $lspInstalled | Sort-Object -Unique | Where-Object { -not $broken.Contains($_) })
 $ok = $problems.Count -eq 0
 $rec = [ordered]@{ type = 'cg_inventory'; v = 1; ok = $ok; installed = @($installed); problems = @($problems) }
 [Console]::Out.WriteLine((ConvertTo-Json -InputObject $rec -Compress -Depth 3))

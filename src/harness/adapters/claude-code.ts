@@ -1422,6 +1422,12 @@ export const claudeCodeAdapter: HarnessAdapter = {
         `${config.id}: settings.mcp_tools is reserved; it is derived from the MCP tool inventory`,
       );
     }
+    // run.ps1 and the inventory load the LSP from settings.lsp: only components.lsp (checked against the image) may set it.
+    if (Object.hasOwn(config.settings, "lsp")) {
+      throw new ConfigurationError(
+        `${config.id}: settings.lsp is reserved; name LSP components under components.lsp`,
+      );
+    }
     // Plain arms keep their manifest hash: mcp only when non-empty.
     return {
       ...config.settings,
@@ -1429,6 +1435,9 @@ export const claudeCodeAdapter: HarnessAdapter = {
       ...claudeCodeHarnessNative(),
       ...(config.components.mcp.length > 0
         ? { mcp: [...config.components.mcp].sort() }
+        : {}),
+      ...(config.components.lsp.length > 0
+        ? { lsp: [...config.components.lsp].sort() }
         : {}),
     };
   },

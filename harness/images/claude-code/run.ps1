@@ -40,6 +40,16 @@ if ($null -ne $cfg.settings.PSObject.Properties['mcp']) {
 $mcpPath = "$userHome\mcp.json"
 [IO.File]::WriteAllText($mcpPath, (ConvertTo-Json -InputObject @{ mcpServers = $servers } -Depth 6), $utf8)
 $mcpArgs = @('--mcp-config', $mcpPath, '--strict-mcp-config')
+# LSP component (settings.lsp, set only from components.lsp, M10): every arm's image ships the
+# plugin; only an LSP arm passes it and turns the LSP tool on; every other arm clears an
+# inherited ENABLE_LSP_TOOL. cg-inventory.ps1 proves both before any credential.
+$pluginArgs = @()
+if ($null -ne $cfg.settings.PSObject.Properties['lsp']) {
+  $pluginArgs = @('--plugin-dir', 'C:\cg-lsp\al-language-server-go-windows')
+  $env:ENABLE_LSP_TOOL = '1'
+} else {
+  Remove-Item Env:\ENABLE_LSP_TOOL -ErrorAction SilentlyContinue
+}
 if (Test-Path 'C:\config\bundle\instructions') {
   $dir = 'C:\config\bundle\instructions'
   $names = @(Get-ChildItem $dir -File | ForEach-Object { $_.Name })
@@ -110,6 +120,7 @@ $prompt = Get-Content 'C:\task\prompt.md' -Raw -Encoding UTF8
 if (-not $cfg.settings.disallowed_tools) { throw 'settings.disallowed_tools missing from C:\config\settings.json' }
 $claudeArgs = @('-p', '--output-format', 'stream-json', '--verbose', '--model', $cfg.settings.api_models.main, '--dangerously-skip-permissions', '--max-budget-usd', $cfg.limits.max_budget_usd, '--disallowedTools', ($cfg.settings.disallowed_tools -join ','))
 $claudeArgs += $mcpArgs
+$claudeArgs += $pluginArgs
 Set-Location C:\workspace
 $prompt | & claude @claudeArgs
 exit $LASTEXITCODE
