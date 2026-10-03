@@ -1,0 +1,23 @@
+v: 1
+partial_credit:
+  weights:
+    "85600/BatchPostsEachContractsBranch": 1
+    "85600/ContractKeepsCreationBranch": 1
+    "85600/FinerBranchPrecisionWins": 1
+    "85600/PostingUsesContractBranch": 1
+    "85600/PreviewUsesContractBranch": 1
+    "85600/WeekendPackageUsesContractBranch": 1
+  hidden_regressions:
+    - "85600/BranchWithoutRowUsesSetup"
+    - "85600/ZeroBranchPrecisionUsesSetup"
+    - "85600/PricingKeepsSessionBranch"
+    - "85600/LeaseInvoiceKeepsSetupPrecision"
+    - "85600/SetupZeroBranchFallbackUsesCents"
+    - "85600/PricingKeepsDefaultBranchFallback"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/amount-before-insert: { partial_credit: 0 }
+  naive/round-posted-total: { partial_credit: 0 }
+  naive/session-branch: { partial_credit: 0.6666666666666666 }
+  naive/switch-session-branch: { partial_credit: 1 }

@@ -11,6 +11,9 @@ table 70003 "CGR Setup"
         field(5; "Weekend Surcharge %"; Decimal) { }
         field(6; "Km Allowance per Day"; Integer) { }
         field(7; "Excess Km Rate"; Decimal) { }
+        field(8; "Amount Rounding Precision"; Decimal) { DecimalPlaces = 0 : 5; }
+        field(9; "Default Branch Code"; Code[10]) { }
+        field(10; "Outbox Max Attempts"; Integer) { }
     }
 
     keys

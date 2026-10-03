@@ -54,9 +54,14 @@ function refs(src: string): Set<string> {
   );
 }
 
-const ids = (await Array.fromAsync(Deno.readDir(TASKS)))
-  .filter((e) => e.isDirectory && /^HX-\d+$/.test(e.name))
-  .map((e) => e.name).sort();
+// The v1 frozen set only: v2 candidates (HX-007 onward) pin refapp-v2 tags.
+const ids: string[] = [];
+for await (const e of Deno.readDir(TASKS)) {
+  if (!e.isDirectory || !/^HX-\d+$/.test(e.name)) continue;
+  const { task } = await loadTask(join(TASKS, e.name));
+  if (task.refapp_version.startsWith("refapp-v1")) ids.push(e.name);
+}
+ids.sort();
 
 Deno.test("frozen tasks: the set is HX-001..HX-006", () => {
   assertEquals(ids, [

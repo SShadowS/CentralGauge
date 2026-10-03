@@ -32,22 +32,33 @@ function Invoke-Icacls([string[]]$IcaclsArgs) {
   if ($LASTEXITCODE -ne 0) { throw ('icacls ' + ($IcaclsArgs -join ' ') + ' failed: ' + $LASTEXITCODE) }
 }
 
-# H-01s: the DACL is rebuilt from scratch: protected (inherited ACEs dropped), every
-# explicit ACE purged whatever its SID, then exactly SYSTEM F, Administrators F and
-# Users RX. icacls /inheritance:r + /grant:r kept explicit ACEs of other SIDs (the
-# servercore C:\ root shape put Authenticated Users Modify on C:\cg-al.ps1 and C:\Git).
-# Only the Access section is read and written, so the owner is left as it is.
+# H-01t: a FRESH security object, never the existing DACL edited: protected (no
+# inherited ACEs) with exactly SYSTEM F, Administrators F and Users RX (OI|CI on
+# directories). Whatever the old DACL held (explicit ACEs of any SID, callback or
+# conditional ACEs that rule enumeration may not show) is replaced wholesale. Only the
+# Access section is written (a fresh object has no owner set), so the owner is kept.
 function Set-ThreeAces($item, [bool]$isDir) {
-  $sidType = [System.Security.Principal.SecurityIdentifier]
-  $acl = $item.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
-  $acl.SetAccessRuleProtection($true, $false)
-  foreach ($r in @($acl.GetAccessRules($true, $true, $sidType))) { $acl.PurgeAccessRules($r.IdentityReference) }
+  $sec = if ($isDir) { New-Object System.Security.AccessControl.DirectorySecurity } else { New-Object System.Security.AccessControl.FileSecurity }
+  $sec.SetAccessRuleProtection($true, $false)
   $inherit = if ($isDir) { 'ContainerInherit, ObjectInherit' } else { 'None' }
   foreach ($g in @(@('S-1-5-18', 'FullControl'), @('S-1-5-32-544', 'FullControl'), @('S-1-5-32-545', 'ReadAndExecute'))) {
     $sid = New-Object System.Security.Principal.SecurityIdentifier $g[0]
-    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $g[1], $inherit, 'None', 'Allow')))
+    $sec.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $g[1], $inherit, 'None', 'Allow')))
   }
-  $item.SetAccessControl($acl)
+  $item.SetAccessControl($sec)
+}
+
+# H-01t: every entry of a supplied path, depth first, never descending into a reparse
+# point (junction, symlink, mount point): the walk itself does not follow links.
+function Get-Tree($item) {
+  $item
+  # A type check, not PSIsContainer: .NET children carry no provider properties.
+  if ($item -is [System.IO.DirectoryInfo] -and -not (Test-Reparse $item)) {
+    foreach ($c in $item.EnumerateFileSystemInfos()) { Get-Tree $c }
+  }
+}
+function Test-Reparse($item) {
+  ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
 }
 
 function Lock([string]$p) {
@@ -76,15 +87,39 @@ function Problems($item) {
     if ($r.AccessControlType -ne 'Allow' -or $AdminAce -contains $sid) { continue }
     if (([int64]$r.FileSystemRights -band $WriteMask) -ne 0) { '[FAIL] write ' + $sid + ' ' + $p }
   }
+  # H-01t: the raw DACL, every ACE: anything but a plain allow or deny ACE (a
+  # callback or conditional ACE, an object ACE, an unknown type) is not understood
+  # and fails closed, as does a missing DACL (everyone full control).
+  $raw = New-Object System.Security.AccessControl.RawSecurityDescriptor -ArgumentList @($acl.GetSecurityDescriptorBinaryForm(), 0)
+  if ($null -eq $raw.DiscretionaryAcl) { '[FAIL] null-dacl ' + $p }
+  else {
+    foreach ($a in $raw.DiscretionaryAcl) {
+      $plain = ($a -is [System.Security.AccessControl.CommonAce]) -and -not $a.IsCallback -and
+        ($a.AceType -eq [System.Security.AccessControl.AceType]::AccessAllowed -or $a.AceType -eq [System.Security.AccessControl.AceType]::AccessDenied)
+      if (-not $plain) {
+        $who = if ($a -is [System.Security.AccessControl.KnownAce]) { [string]$a.SecurityIdentifier } else { '?' }
+        '[FAIL] ace ' + $a.AceType + ' ' + $who + ' ' + $p
+      }
+    }
+  }
+  if (Test-Reparse $item) { '[FAIL] reparse ' + $p }
 }
 
-if (-not $VerifyOnly) { foreach ($p in $Path) { Lock $p } }
+# H-01t: a reparse point anywhere under a supplied path refuses the whole run before
+# any ACL changes (no icacls /T through a link).
+if (-not $VerifyOnly) {
+  foreach ($p in $Path) {
+    if (-not (Test-Path -LiteralPath $p)) { throw ('cg-lockdown: missing ' + $p) }
+    foreach ($i in @(Get-Tree (Get-Item -LiteralPath $p -Force))) {
+      if (Test-Reparse $i) { throw ('cg-lockdown: reparse point ' + $i.FullName + ' under ' + $p + ': refused, nothing changed') }
+    }
+  }
+  foreach ($p in $Path) { Lock $p }
+}
 $fails = @()
 $count = 0
 foreach ($p in $Path) {
-  $items = @(Get-Item -LiteralPath $p -Force)
-  if ($items[0].PSIsContainer) { $items += @(Get-ChildItem -LiteralPath $p -Recurse -Force) }
-  foreach ($i in $items) {
+  foreach ($i in @(Get-Tree (Get-Item -LiteralPath $p -Force))) {
     $count++
     $fails += @(Problems $i)
   }

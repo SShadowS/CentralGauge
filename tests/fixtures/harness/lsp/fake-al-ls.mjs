@@ -10,7 +10,8 @@
 // killed on the first didOpen, before documentSymbol answers; FAKE_MALFORMED
 // answers initialize with a frame that is not JSON (with FAKE_GATE=<path> it
 // first writes <path>.pid and waits for <path>.go); FAKE_FRAME answers
-// initialize with the given header lines ('|' separated) and body {};
+// initialize with the given header lines ('|' separated, each
+// percent-decoded, so %0A is a bare LF) and body {};
 // FAKE_LATE_ORPHAN starts the marked detached child on shutdown (its pid
 // goes to <FAKE_GATE>.pid when set); FAKE_CHATTER sends a
 // window/logMessage every 50 ms. Hover reports the proxy env and argv[2].
@@ -111,7 +112,8 @@ function handle(m) {
       }
       if (env("FAKE_FRAME")) {
         process.stdout.write(
-          env("FAKE_FRAME").split("|").join("\r\n") + "\r\n\r\n{}",
+          env("FAKE_FRAME").split("|").map(decodeURIComponent).join("\r\n") +
+            "\r\n\r\n{}",
         );
         return;
       }

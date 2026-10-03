@@ -610,6 +610,31 @@ const THINKING = new Set([
   "max",
 ]);
 
+/**
+ * The first stderr line saying pi ignored a settings file, or why stderr could
+ * not be checked; null when stderr is readable and has no such line. Any
+ * "Invalid settings file" counts, not only paths under C:\pi-agent.
+ */
+export async function piConfigInvalid(
+  stderrLog: string | undefined,
+): Promise<string | null> {
+  if (stderrLog === undefined) {
+    return "no stderr log, the staged settings cannot be shown loaded";
+  }
+  let text: string;
+  try {
+    text = await Deno.readTextFile(stderrLog);
+  } catch (err) {
+    return `stderr log unreadable (${
+      err instanceof Error ? err.message : String(err)
+    }), the staged settings cannot be shown loaded`;
+  }
+  const line = text.split(/\r?\n/).find((l) =>
+    l.includes("Invalid settings file")
+  );
+  return line === undefined ? null : line.trim();
+}
+
 export const piAdapter: HarnessAdapter = {
   harness: "pi",
   parser: PI_CAPABILITIES.parser,
@@ -687,8 +712,16 @@ export const piAdapter: HarnessAdapter = {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
       problems.push(`${input.rawLog}: raw log missing`);
     }
+    // H-01u: pi that could not load its staged settings (a held
+    // settings.json.lock, H-01q) says so only on stderr and then runs on
+    // defaults. Such a run, or one whose stderr cannot be read, is no valid cell.
+    const invalid = await piConfigInvalid(input.stderrLog);
+    if (invalid !== null) problems.push(`pi_config_invalid: ${invalid}`);
     const { trace, ...parsed } = parsePiStream(text, input, problems);
     await writeTrace(input.traceOut, trace);
-    return parsed;
+    // No termination (no usable result) stays null; any outcome becomes setup_failed.
+    return invalid === null || parsed.termination === null
+      ? parsed
+      : { ...parsed, termination: "setup_failed" };
   },
 };
