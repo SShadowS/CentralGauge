@@ -8,13 +8,18 @@ import {
 import { ValidationError } from "../../../src/errors.ts";
 import {
   armSummary,
+  bootstrapP,
   type Cell,
   type CellStatus,
   compareArms,
+  compareInteraction,
+  decide,
   exploratoryNote,
   exploratoryText,
+  holm,
   minDefinedResamples,
   mulberry32,
+  testContrasts,
 } from "../../../src/harness/stats.ts";
 
 type Row = [CellStatus | boolean, number | null];
@@ -380,7 +385,16 @@ Deno.test("compareArms: pre-registered fields are byte-identical to the pre-M6-0
       seed: 3,
     });
     assert(r.exploratory_ci_defined_only != null);
-    const { exploratory_ci_defined_only: _, ...pre } = r;
+    assert(r.values !== undefined);
+    assert(r.p_value !== undefined);
+    assert(r.zero_solve !== undefined);
+    const {
+      exploratory_ci_defined_only: _,
+      values: _values,
+      p_value: _p,
+      zero_solve: _zs,
+      ...pre
+    } = r;
     assertEquals(JSON.stringify(pre), gold[metric]);
   }
 });
@@ -500,4 +514,130 @@ Deno.test("exploratoryText (M6-02e): ends with the conditioning-bias warning", (
     ),
     "exploratory (not pre-registered): conditional 95% percentile interval over the 99.8% of resamples with a solve in both arms (1996 of 2000), not a confidence interval: [-0.25, 0.50]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
   );
+});
+
+Deno.test("bootstrapP: +1 corrected two-sided percentile p", () => {
+  assertAlmostEquals(bootstrapP([-1, -2, -3, -4]), 2 / 5, 1e-12);
+  assertEquals(bootstrapP([-1, 1]), 1);
+  assertEquals(bootstrapP([]), 1);
+});
+
+Deno.test("holm: step-down adjusted p; null never rejects and ranks as 1; ties keep order", () => {
+  const h = holm([0.01, 0.04, 0.03], 0.05);
+  assertEquals(h.adjusted.map((x) => +x.toFixed(4)), [0.03, 0.06, 0.06]);
+  assertEquals(h.reject, [true, false, false]);
+  const n = holm([null, 0.001, 0.001], 0.05);
+  assertEquals([n.reject, n.adjusted[0]], [[false, true, true], 1]);
+});
+
+Deno.test("decide: direction only on a rejection", () => {
+  assertEquals(decide(-0.2, true), "variant_lower");
+  assertEquals(decide(0.2, true), "variant_higher");
+  assertEquals(decide(-0.2, false), "no_decision");
+  assertEquals(decide(null, true), "no_decision");
+});
+
+Deno.test("compareArms: p_value and values; v1 suppression keeps p null; min_defined_share allows it", () => {
+  const cs = [
+    ...cells("A", "t1", [[true, 2], [true, 2]]),
+    ...cells("A", "t2", [[true, 3], [false, 3]]),
+    ...cells("B", "t1", [[true, 1], [true, 1]]),
+    ...cells("B", "t2", [[true, 1], [true, 1]]),
+  ];
+  const c = compareArms(cs, "A", "B", "cost_per_solved_task", {
+    resamples: 400,
+    seed: 3,
+  });
+  assert(c.p_value! > 0 && c.p_value! <= 1);
+  assertEquals(c.values!.variant, 1);
+  const z = [
+    ...cells("A", "t1", [[false, 2]]),
+    ...cells("A", "t2", [[true, 2]]),
+    ...cells("B", "t1", [[true, 1]]),
+    ...cells("B", "t2", [[true, 1]]),
+  ];
+  const s = compareArms(z, "A", "B", "cost_per_solved_task", {
+    resamples: 400,
+    seed: 3,
+  });
+  assertEquals([s.ci, s.p_value], [null, null]);
+  const share = compareArms(z, "A", "B", "cost_per_solved_task", {
+    resamples: 400,
+    seed: 3,
+    zeroSolve: { rule: "min_defined_share", share: 0.5 },
+  });
+  assert(share.undefined_share > 0 && share.undefined_share < 0.5);
+  assert(share.ci !== null && share.p_value !== null);
+});
+
+Deno.test("compareInteraction: (RL - R) - (L - P) over blocks eligible in all four arms", () => {
+  const cs = [
+    ...cells("P", "t1", [[true, 4], [true, 4]]),
+    ...cells("L", "t1", [[true, 2], [true, 2]]),
+    ...cells("R", "t1", [[true, 4], [true, 4]]),
+    ...cells("RL", "t1", [[true, 4], ["pending", null]]),
+  ];
+  const c = compareInteraction(
+    cs,
+    { plain: "P", lsp: "L", realistic: "R", realistic_lsp: "RL" },
+    "cost_per_solved_task",
+    { resamples: 50 },
+  );
+  assertEquals([c.pairs, c.delta], [1, 2]);
+});
+
+const factorial = () => {
+  const arm = (a: string, spend: number) =>
+    ["t1", "t2", "t3", "t4", "t5", "t6"].flatMap((t, i) =>
+      cells(a, t, [[true, spend + i / 10], [true, spend + i / 10]])
+    );
+  return [...arm("P", 2), ...arm("L", 1), ...arm("R", 2), ...arm("RL", 2)];
+};
+const SPECS = [
+  { id: "C1", name: "c1", baseline: "P", variant: "L" },
+  { id: "C2", name: "c2", baseline: "R", variant: "RL" },
+  { id: "C3", name: "c3", baseline: "P", variant: "R" },
+];
+const INTER = {
+  name: "i",
+  plain: "P",
+  lsp: "L",
+  realistic: "R",
+  realistic_lsp: "RL",
+};
+const O = {
+  resamples: 999,
+  seed: 7,
+  level: 0.95,
+  alpha: 0.05,
+  zeroSolve: { rule: "suppress_any_undefined" as const },
+};
+
+Deno.test("testContrasts: Holm over the given family only; interaction outside it is exploratory", () => {
+  const r = testContrasts(factorial(), SPECS, INTER, "cost_per_solved_task", {
+    ...O,
+    family: ["C1", "C2", "C3"],
+  });
+  assertEquals(r.map((x) => [x.id, x.confirmatory, x.decision]), [
+    ["C1", true, "variant_lower"],
+    ["C2", true, "no_decision"],
+    ["C3", true, "no_decision"],
+    ["interaction", false, "no_decision"],
+  ]);
+  assertEquals(r[3]!.p_holm, null);
+  assert(r[0]!.bonferroni_ci![1] < 0);
+  assertAlmostEquals(
+    r[0]!.ratio!,
+    r[0]!.values!.variant! / r[0]!.values!.baseline!,
+    1e-12,
+  );
+});
+
+Deno.test("testContrasts: a confirmatory interaction joins Holm (m = 4)", () => {
+  const r = testContrasts(factorial(), SPECS, INTER, "cost_per_solved_task", {
+    ...O,
+    family: ["C1", "C2", "C3", "interaction"],
+  });
+  assertEquals(r[3]!.confirmatory, true);
+  assertAlmostEquals(r[0]!.p_holm!, Math.min(1, 4 * r[0]!.p_value!), 1e-12);
 });
