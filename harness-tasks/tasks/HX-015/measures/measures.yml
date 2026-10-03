@@ -7,6 +7,7 @@ partial_credit:
     "85760/PreviewIgnoresCommittingExtension": 1
     "85760/PreviewReplacesBuffer": 1
     "85760/PreviewOfUnreturnedContractFails": 1
+    "85760/PreviewOfOpenContractFails": 1
     "85760/PreviewAmountAtCoarsePrecision": 1
     "85760/PostingStillRunsEvents": 1
   hidden_regressions: []

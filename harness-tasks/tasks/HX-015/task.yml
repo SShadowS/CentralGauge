@@ -14,7 +14,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 85760, procedures: [PreviewMatchesPostedEntry, PreviewWritesNothing, PreviewRunsNoPostingEvents, PreviewIgnoresCommittingExtension, PreviewReplacesBuffer, PreviewOfUnreturnedContractFails, PreviewAmountAtCoarsePrecision, PostingStillRunsEvents] }
+    - { codeunit: 85760, procedures: [PreviewMatchesPostedEntry, PreviewWritesNothing, PreviewRunsNoPostingEvents, PreviewIgnoresCommittingExtension, PreviewReplacesBuffer, PreviewOfUnreturnedContractFails, PreviewOfOpenContractFails,PreviewAmountAtCoarsePrecision, PostingStillRunsEvents] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

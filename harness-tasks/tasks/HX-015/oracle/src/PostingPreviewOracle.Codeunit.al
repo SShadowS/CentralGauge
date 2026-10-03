@@ -157,6 +157,22 @@ codeunit 85760 "HX015 Posting Preview Oracle"
     end;
 
     [Test]
+    procedure PreviewOfOpenContractFails()
+    var
+        LedgerBuffer: Record "CGR Rental Ledger Entry" temporary;
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        WorkDate(20270301D);
+        InitSetup(0.01);
+        InitVehicle('HX015-J');
+        ContractNo := RentalMgt.CreateContract('HX015-J', 'HX015 Customer', 20270305D, 20270307D);
+
+        asserterror RentalMgt.PreviewPosting(ContractNo, LedgerBuffer);
+        Assert.ExpectedError(StrSubstNo('Rental contract %1 must be returned before it is posted.', ContractNo));
+    end;
+
+    [Test]
     procedure PreviewAmountAtCoarsePrecision()
     var
         LedgerBuffer: Record "CGR Rental Ledger Entry" temporary;
