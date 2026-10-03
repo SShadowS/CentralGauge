@@ -1256,3 +1256,182 @@ Deno.test("M11-10: resume with an edited or swapped decision file is refused", a
   assertEquals(p.t.docker.runs.length, runs);
   assertEquals((await p.t.env.store.campaigns("prereg")).length, 1);
 });
+
+// M7-01: the placed-concurrency gate (decisions/2026-10-03-m7-concurrency.md).
+const gated = async (over: Record<string, unknown> = {}) => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  enforce(t);
+  Object.assign(t.env, { proxyIsolation: PROXY_ISOLATION, ...over });
+  return t;
+};
+// Both arms of the experiment get the harness lines (only settings may vary).
+const armConfig = async (t: TestEnv, harnessLines: string) => {
+  for (
+    const [id, variant] of [["mock-positive", "positive"], [
+      "mock-naive-a",
+      "naive:a",
+    ]]
+  ) {
+    await write(
+      t.harnessRoot,
+      `configs/${id}.yml`,
+      `id: ${id}
+${harnessLines}
+${
+        harnessLines.includes("mock")
+          ? "models: {}"
+          : "models: { main: anthropic/claude-sonnet-5 }"
+      }
+settings: { mode: apply, variant: "${variant}" }
+limits: { timeout_min: 5, max_budget_usd: 1 }
+`,
+    );
+  }
+};
+const refusedGate = async (t: TestEnv, over: Partial<RunOptions> = {}) =>
+  (await assertRejects(
+    () =>
+      runCampaign(
+        t.env,
+        "contract",
+        opts({ concurrency: 2, ...over }),
+        io(),
+      ),
+    ConfigurationError,
+    "--concurrency",
+  )).message;
+
+Deno.test("M7-01: concurrency 2 with every condition met is allowed (plan and run)", async () => {
+  const t = await gated();
+  const s = await runCampaign(
+    t.env,
+    "contract",
+    opts({ concurrency: 2, dryRun: true }),
+    io(),
+  );
+  assertEquals(s.planned, 2);
+  const ran = await runCampaign(
+    t.env,
+    "contract",
+    opts({ concurrency: 2 }),
+    io(),
+  );
+  assertEquals(ran.ran, s.planned);
+});
+
+Deno.test("M7-01: concurrency 3 is refused even when every other condition holds", async () => {
+  const t = await gated();
+  assertStringIncludes(
+    await refusedGate(t, { concurrency: 3 }),
+    "exceeds the placed maximum 2",
+  );
+  assertEquals(t.docker.runs.length, 0);
+});
+
+Deno.test("M7-01: missing or wrong proxy_isolation is refused at concurrency 2", async () => {
+  const t = await gated({ proxyIsolation: undefined });
+  assertStringIncludes(await refusedGate(t), "proxy_isolation missing");
+  for (const v of [1, 3, "2"]) {
+    t.env.proxyIsolation = v;
+    assertStringIncludes(
+      await refusedGate(t),
+      `proxy_isolation ${JSON.stringify(v)}`,
+    );
+  }
+  assertEquals(t.docker.runs.length, 0);
+});
+
+Deno.test("M7-01: placed but not enforced is refused at concurrency 2", async () => {
+  const t = await gated({ egressEnforced: false });
+  assertStringIncludes(await refusedGate(t), "not enforced");
+  assertEquals(t.docker.runs.length, 0);
+});
+
+Deno.test("M7-01: an arm on a frozen tag or below the H-01 revision is refused, naming the arm, before any write", async () => {
+  const t = await gated();
+  const before = await t.env.store.allExecutions();
+  for (
+    const [lines, want] of [
+      ['harness: mock\nharness_version: "1"', "revision 1 is below"],
+      [
+        'harness: mock\nharness_version: "2"\nimage_revision: "1"',
+        "revision 1 is below",
+      ],
+      [
+        'harness: claude-code\nharness_version: "2.1.282"',
+        "frozen image without image_revision",
+      ],
+      [
+        'harness: pi\nharness_version: "0.87.1"\nimage_revision: "1"',
+        "revision 1 is below the H-01 ContainerUser revision 2",
+      ],
+    ] as const
+  ) {
+    await armConfig(t, lines);
+    const m = await refusedGate(t);
+    assertStringIncludes(m, "arm mock-");
+    assertStringIncludes(m, want);
+  }
+  assertEquals(await t.env.store.allExecutions(), before);
+  assertEquals(t.docker.runs.length, 0);
+  // A passing config still runs at concurrency 1 (the frozen-arm case at
+  // concurrency 1 is the "review" test at the end of this file).
+  await armConfig(t, 'harness: mock\nharness_version: "2"');
+  const ok = await runCampaign(t.env, "contract", opts(), io());
+  assertEquals(ok.ran, 2);
+});
+
+Deno.test("M7-01: resume applies the same gate before any record", async () => {
+  const t = await gated();
+  await runCampaign(t.env, "contract", opts(), io());
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const before = await t.env.store.allExecutions();
+  t.env.proxyIsolation = 1;
+  assertStringIncludes(
+    await refusedGate(t, { campaign: c.id }),
+    "proxy_isolation 1",
+  );
+  t.env.proxyIsolation = PROXY_ISOLATION;
+  await armConfig(t, 'harness: mock\nharness_version: "1"');
+  assertStringIncludes(
+    await refusedGate(t, { campaign: c.id }),
+    "arm mock-",
+  );
+  assertEquals(await t.env.store.allExecutions(), before);
+});
+
+Deno.test("M7-01 review: mock's revision is its harness_version, so image_revision cannot lift a frozen mock; an unknown harness is refused whatever its revision", async () => {
+  const t = await gated();
+  await armConfig(
+    t,
+    'harness: mock\nharness_version: "1"\nimage_revision: "2"',
+  );
+  const m = await refusedGate(t);
+  assertStringIncludes(m, "arm mock-");
+  assertStringIncludes(m, "revision 1 is below");
+  await armConfig(
+    t,
+    'harness: other\nharness_version: "9"\nimage_revision: "5"',
+  );
+  assertStringIncludes(await refusedGate(t), "no H-01 ContainerUser revision");
+  assertEquals(t.docker.runs.length, 0);
+});
+
+Deno.test("M7-01 review: concurrency 1 never looks at the arm revision (a frozen claude-code arm still plans)", async () => {
+  const t = await gated();
+  const frozen = 'harness: claude-code\nharness_version: "2.1.282"';
+  await armConfig(t, frozen);
+  const plan = await runCampaign(
+    t.env,
+    "contract",
+    opts({ dryRun: true }),
+    io(),
+  );
+  assertEquals(plan.planned, 2);
+  // The same arms are refused the moment concurrency is 2.
+  assertStringIncludes(
+    await refusedGate(t, { dryRun: true }),
+    "frozen image without image_revision",
+  );
+});
