@@ -641,3 +641,94 @@ Deno.test("testContrasts: a confirmatory interaction joins Holm (m = 4)", () => 
   assertEquals(r[3]!.confirmatory, true);
   assertAlmostEquals(r[0]!.p_holm!, Math.min(1, 4 * r[0]!.p_value!), 1e-12);
 });
+
+Deno.test("holm: alpha must be finite and in (0, 1)", () => {
+  for (const alpha of [1.5, 1, 0, -0.1, NaN, Infinity]) {
+    const e = assertThrows(
+      () => holm([0.01, 1, 1], alpha),
+      ValidationError,
+    );
+    assertStringIncludes(e.message, "alpha");
+  }
+});
+
+Deno.test("testContrasts: an alpha outside (0, 1) is refused before any bootstrap work", () => {
+  for (const alpha of [1.5, 0, NaN]) {
+    const e = assertThrows(
+      () =>
+        testContrasts(factorial(), SPECS, INTER, "cost_per_solved_task", {
+          ...O,
+          alpha,
+          family: ["C1", "C2", "C3"],
+        }),
+      ValidationError,
+    );
+    assertStringIncludes(e.message, "alpha");
+  }
+});
+
+Deno.test("testContrasts: duplicate contrast ids and the reserved id interaction are refused", () => {
+  const dup = [...SPECS, {
+    id: "C1",
+    name: "again",
+    baseline: "R",
+    variant: "L",
+  }];
+  for (const inter of [INTER, null]) {
+    const e = assertThrows(
+      () =>
+        testContrasts(factorial(), dup, inter, "cost_per_solved_task", {
+          ...O,
+          family: ["C1", "C2", "C3"],
+        }),
+      ValidationError,
+    );
+    assertStringIncludes(e.message, "C1");
+  }
+  const reserved = [
+    ...SPECS,
+    { id: "interaction", name: "x", baseline: "R", variant: "L" },
+  ];
+  for (const inter of [INTER, null]) {
+    const e = assertThrows(
+      () =>
+        testContrasts(factorial(), reserved, inter, "cost_per_solved_task", {
+          ...O,
+          family: ["C1", "C2", "C3"],
+        }),
+      ValidationError,
+    );
+    assertStringIncludes(e.message, "interaction");
+  }
+});
+
+Deno.test("compareArms/compareInteraction: zero-task returns disclose the zero-solve rule", () => {
+  const cs = [
+    ...cells("A", "t1", [["pending", null]]),
+    ...cells("B", "t1", [[true, 1]]),
+  ];
+  const share = { rule: "min_defined_share" as const, share: 0.5 };
+  const a = compareArms(cs, "A", "B", "cost_per_solved_task", {
+    resamples: 50,
+  });
+  assertEquals([a.tasks, a.zero_solve], [0, {
+    rule: "suppress_any_undefined",
+  }]);
+  const s = compareArms(cs, "A", "B", "cost_per_solved_task", {
+    resamples: 50,
+    zeroSolve: share,
+  });
+  assertEquals([s.tasks, s.zero_solve], [0, share]);
+  const arms = { plain: "A", lsp: "B", realistic: "A", realistic_lsp: "B" };
+  const i = compareInteraction(cs, arms, "cost_per_solved_task", {
+    resamples: 50,
+  });
+  assertEquals([i.tasks, i.zero_solve], [0, {
+    rule: "suppress_any_undefined",
+  }]);
+  const j = compareInteraction(cs, arms, "cost_per_solved_task", {
+    resamples: 50,
+    zeroSolve: share,
+  });
+  assertEquals([j.tasks, j.zero_solve], [0, share]);
+});

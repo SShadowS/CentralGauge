@@ -12,8 +12,14 @@
  *   count are shown next to it and the headline is provisional (rule 6).
  * - A baseline-variant comparison uses matched (task, repeat) pairs eligible
  *   in both arms; exclusions are counted per arm and reason.
- * - Paired task-level bootstrap. If any resample is undefined (no solve), the
- *   CI and the distinguishable verdict are suppressed.
+ * - Paired task-level bootstrap. The zero-solve rule decides when resamples
+ *   without a solve suppress the CI, the distinguishable verdict and the
+ *   p-value: `suppress_any_undefined` (v1, the default) suppresses them when
+ *   any resample is undefined; `min_defined_share` computes them over the
+ *   defined resamples when their share is at least the frozen threshold.
+ * - Contrasts (M11): two-sided bootstrap p with the +1 correction, Holm over
+ *   exactly the pre-registered family (Holm alone decides), a descriptive
+ *   Bonferroni interval beside it, and the (RL - R) - (L - P) interaction.
  * - Beside it (owner decision 2026-09-29, M6-02d), never replacing it: an
  *   EXPLORATORY (not pre-registered) percentile interval over the defined
  *   resamples only, from the same draws. It never sets `distinguishable`.
@@ -249,7 +255,11 @@ export interface Comparison {
   };
   /** variant minus baseline over matched pairs; null when undefined. */
   delta: number | null;
-  /** Suppressed (null) when any resample is undefined. */
+  /**
+   * Null when suppressed by the zero-solve rule: any undefined resample
+   * (suppress_any_undefined) or a defined share below the threshold
+   * (min_defined_share, then over the defined resamples only).
+   */
   ci: [number, number] | null;
   level: number;
   undefined_share: number;
@@ -266,9 +276,9 @@ export interface Comparison {
    * over the defined resamples only, and conditioning on solves can bias
    * them, including their direction (M6-02e); they are not evidence of a
    * difference. Never replaces `ci`, never feeds `distinguishable`.
-   * Equals `ci` when `undefined_share` is 0; null when fewer than
-   * `minDefinedResamples(level)` resamples are defined. Absent (undefined)
-   * in pre-M6-02d reports.
+   * Equals `ci` whenever `ci` is shown and at least
+   * `minDefinedResamples(level)` resamples are defined; null when fewer are
+   * defined. Absent (undefined) in pre-M6-02d reports.
    */
   exploratory_ci_defined_only?: ExploratoryInterval | null;
   /** Bootstrap p of delta = 0; null when suppressed; absent in pre-M11 reports. */
@@ -370,11 +380,19 @@ export function bootstrapP(deltas: readonly number[]): number {
   return Math.min(1, (2 * Math.min(le + 1, ge + 1)) / (n + 1));
 }
 
+function checkAlpha(alpha: number): void {
+  if (!(Number.isFinite(alpha) && alpha > 0 && alpha < 1)) {
+    const msg = `alpha must be finite and between 0 and 1, got ${alpha}`;
+    throw new ValidationError(msg, [msg]);
+  }
+}
+
 /** Holm step-down; a null p ranks as 1 and never rejects; ties keep order. */
 export function holm(
   ps: readonly (number | null)[],
   alpha: number,
 ): { adjusted: number[]; reject: boolean[] } {
+  checkAlpha(alpha);
   const m = ps.length;
   const order = ps.map((p, i) => ({ p: p ?? 1, i })).sort((a, b) =>
     a.p - b.p || a.i - b.i
@@ -504,6 +522,7 @@ export function compareArms(
       undefined_share: 1,
       distinguishable: null,
       p_value: null,
+      zero_solve: opts.zeroSolve ?? { rule: "suppress_any_undefined" },
       exploratory_ci_defined_only: null,
     };
   }
@@ -628,6 +647,7 @@ export function compareInteraction(
       undefined_share: 1,
       distinguishable: null,
       p_value: null,
+      zero_solve: opts.zeroSolve ?? { rule: "suppress_any_undefined" },
       exploratory_ci_defined_only: null,
     };
   }
@@ -671,6 +691,17 @@ export function testContrasts(
     family: readonly string[];
   },
 ): ContrastResult[] {
+  checkAlpha(o.alpha);
+  const ids = contrasts.map((c) => c.id);
+  const bad = ids.filter((id, i) =>
+    id === "interaction" || ids.indexOf(id) !== i
+  );
+  if (bad.length > 0) {
+    const msg = `contrast ids must be unique and not "interaction", got ${
+      [...new Set(bad)].join(",")
+    }`;
+    throw new ValidationError(msg, [msg]);
+  }
   const boot = { resamples: o.resamples, seed: o.seed, zeroSolve: o.zeroSolve };
   const rows: {
     id: string;
