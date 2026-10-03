@@ -1,13 +1,20 @@
-import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import {
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from "@std/assert";
 import { join } from "@std/path";
 import {
   checkModelsInCatalog,
   ComponentsSchema,
   effectiveLimits,
   HarnessConfigSchema,
+  ImageRevisionSchema,
   loadConfig,
   loadExperiment,
 } from "../../../src/harness/config.ts";
+import { imageTag } from "../../../src/harness/images.ts";
 import { ConfigurationError } from "../../../src/errors.ts";
 
 const CONFIG = (id: string, extra = "") =>
@@ -235,5 +242,45 @@ Deno.test("HarnessConfigSchema: image_revision is optional and digits only (H-01
       false,
       `image_revision ${JSON.stringify(bad)} must be refused`,
     );
+  }
+});
+
+Deno.test("image_revision: proof builds are 3-dev-<task id>; malformed ones are refused", () => {
+  for (const ok of ["3", "12", "3-dev-M9-07", "3-dev-M10-03"]) {
+    assertEquals(ImageRevisionSchema.parse(ok), ok);
+  }
+  for (const bad of ["03", "3-dev-", "3-dev-a b", "dev-3", "3-DEV-x"]) {
+    assertThrows(() => ImageRevisionSchema.parse(bad), Error, undefined, bad);
+  }
+  assertEquals(
+    imageTag("claude-code", "2.1.282", "3-dev-M9-07"),
+    "centralgauge/harness-claude-code:2.1.282-r3-dev-M9-07",
+  );
+});
+
+Deno.test("loadExperiment: an arm on a development image revision is refused (cross-plan ruling 1)", async () => {
+  const root = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(join(root, "configs"));
+    await Deno.mkdir(join(root, "experiments"));
+    const cfg = (id: string, rev: string) =>
+      `id: ${id}\nharness: claude-code\nharness_version: "2.1.282"\nimage_revision: "${rev}"\nmodels: { main: anthropic/claude-sonnet-5 }\nlimits: { timeout_min: 30, max_budget_usd: 5 }\n`;
+    await Deno.writeTextFile(join(root, "configs", "a.yml"), cfg("a", "3"));
+    await Deno.writeTextFile(
+      join(root, "configs", "b.yml"),
+      cfg("b", "3-dev-M9-07"),
+    );
+    await Deno.writeTextFile(
+      join(root, "experiments", "e.yml"),
+      `id: e\nhypothesis: "h"\nprimary_metric: pass_rate\nbaseline: a\nvariants: [b]\nvary: [settings]\ntasks: "x/*"\n`,
+    );
+    await assertRejects(
+      () => loadExperiment(root, "e"),
+      ConfigurationError,
+      "development image revision 3-dev-M9-07",
+    );
+    await loadConfig(root, "b"); // a probe config may still name it
+  } finally {
+    await Deno.remove(root, { recursive: true });
   }
 });
