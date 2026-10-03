@@ -1,0 +1,12 @@
+# Harness v2 2x2: realistic off, LSP on (component al from M10).
+id: cc-v2-plain-lsp
+harness: claude-code
+harness_version: "2.1.282"
+image_revision: "3"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/env/instructions
+  lsp: [al]
+limits: { timeout_min: 30, max_budget_usd: 5 }
