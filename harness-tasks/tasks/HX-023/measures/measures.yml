@@ -20,5 +20,10 @@ reuse:
     - { codeunit: 85920, procedures: [LeaseLineGroupedAmount, LeaseLineHalfAmount, LeaseLineWholeAmount, RentalEntryGroupedValues, RentalEntryWholeAmount, RentalEntrySmallValues] }
 expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  naive/date-kept: { partial_credit: 0.3 }
+  naive/format-9-amount: { partial_credit: 0.2 }
+  naive/km-two-decimals: { partial_credit: 0.7 }
+  naive/lease-only: { partial_credit: 0.7 }
+  naive/precision-locale: { partial_credit: 0.7 }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
