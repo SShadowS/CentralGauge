@@ -24,6 +24,8 @@
 // publishes the previous version right after the documentSymbol republish.
 // FAKE_INFLIGHT keeps republishing a URI every 250 ms for 5 s after a
 // documentSymbol, and exits 9 on a didChange of that URI within those 5 s.
+// FAKE_FUTURE replaces the documentSymbol republish with an empty one that
+// carries the next (future) version.
 import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
@@ -162,6 +164,7 @@ function handle(m) {
         );
         const d = docs.get(uri);
         if (!d || env("FAKE_PRE_ONLY")) return;
+        if (env("FAKE_FUTURE")) return publish(uri, d.version + 1, "");
         publish(uri, d.version, d.text);
         // Stale right behind it, whatever the timing of the response.
         if (env("FAKE_STALE") && d.prev) {

@@ -853,3 +853,25 @@ Deno.test({
     assertEquals(JSON.parse(r.stdout).steps[2].result[0].code, "AL0118");
   },
 });
+
+Deno.test({
+  name:
+    "lsp-probe script (M10-01c run 002): after the documentSymbol response, a publish of a future version is ignored; an empty one never passes present:false (timeout)",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    // The edit leaves FILE at version 2 with AL0118; FAKE_FUTURE answers the
+    // documentSymbol with only an empty publish of version 3.
+    const r = await probe(s, [
+      "--script",
+      await steps(s, [EDIT_CYCLE[0], { ...EDIT_CYCLE[3], settleMs: 300 }]),
+    ], {
+      FAKE_FUTURE: "1",
+      // Room for the >= gate's pass this replaces, so the 2 is the gate's.
+      CG_LSP_TIMEOUT_MS: "20000",
+    });
+    assertEquals(r.code, 2, r.stderr);
+    assertStringIncludes(r.stderr, "no result within");
+    assertEquals(r.stdout, "", "no step result is reported, so none as ok");
+  },
+});

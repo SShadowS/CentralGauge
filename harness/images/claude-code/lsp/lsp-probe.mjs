@@ -22,7 +22,11 @@
 // unversioned republish after the response cannot be told apart, and one
 // carrying no error can satisfy a present:false (absent) expectation. The
 // probe is a preflight/spike instrument; the backend build stays
-// authoritative for scoring.
+// authoritative for scoring. A versioned publish must name the document's
+// current version exactly. Known limitation: a diagnostics step on a file
+// never edited depends on the server republishing after a fresh
+// documentSymbol, which only the fake is proven to do; on the real AL LS it
+// may time out (2). The S1 rerun checks it.
 // Exit: 0 ok, 2 timeout, 3 server/protocol/cleanup, 4 configuration, 6 assertion.
 // node: built-ins only (Node in the image, Deno in the unit tests).
 import { Buffer } from "node:buffer";
@@ -490,13 +494,13 @@ function connect(spec) {
   /**
    * Diagnostics for the document docKey `k` after notification index `from`
    * (publishes match by docKey, so any spelling of the uri), ignoring ones that
-   * name an older document version. Resolves { note } when the latest
-   * publish (unversioned, or of version >= minVersion) satisfies pred and
-   * stays the latest for settleMs. The AL LS publishes without a version, so
-   * the caller's `from` (after a documentSymbol response) is what ties an
+   * name another document version (older or future). Resolves { note } when
+   * the latest publish (unversioned, or of exactly `version`) satisfies pred
+   * and stays the latest for settleMs. The AL LS publishes without a version,
+   * so the caller's `from` (after a documentSymbol response) is what ties an
    * unversioned publish to an edit.
    */
-  const waitDiagnostics = (k, minVersion, pred, from, settleMs) =>
+  const waitDiagnostics = (k, version, pred, from, settleMs) =>
     new Promise((res) => {
       let timer = null;
       const publishes = () =>
@@ -507,7 +511,7 @@ function connect(spec) {
       const latest = () =>
         publishes().reverse().find((n) =>
           typeof n.params.version !== "number" ||
-          n.params.version >= minVersion
+          n.params.version === version
         );
       const settle = (r) => {
         clearTimeout(timer);
