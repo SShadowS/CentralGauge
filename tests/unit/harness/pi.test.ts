@@ -943,6 +943,14 @@ Deno.test("pi-flash-plain: loads and passes the catalog check", async () => {
 });
 
 Deno.test("instructions parity: AGENTS.md is byte-identical to CLAUDE.md; pi configs point at bundles with AGENTS.md", async () => {
+  // The file-set check applies to bundles pi reads; Claude Code only bundles may carry rules/.
+  const piInstructions = new Set<string>();
+  for await (const c of Deno.readDir("harness/configs")) {
+    const cfg = await loadConfig("harness", c.name.replace(/\.yml$/, ""));
+    if (cfg.harness !== "pi" || cfg.components.instructions === null) continue;
+    piInstructions.add(join("harness", cfg.components.instructions));
+  }
+  assert(piInstructions.has(join("harness/bundles", "env", "instructions")));
   for await (const b of Deno.readDir("harness/bundles")) {
     const dir = join("harness/bundles", b.name, "instructions");
     const names: string[] = [];
@@ -952,11 +960,13 @@ Deno.test("instructions parity: AGENTS.md is byte-identical to CLAUDE.md; pi con
       if (err instanceof Deno.errors.NotFound) continue;
       throw err;
     }
-    assertEquals(
-      names.filter((n) => n !== "AGENTS.md" && n !== "CLAUDE.md"),
-      [],
-      dir,
-    );
+    if (piInstructions.has(dir)) {
+      assertEquals(
+        names.filter((n) => n !== "AGENTS.md" && n !== "CLAUDE.md"),
+        [],
+        dir,
+      );
+    }
     if (names.includes("AGENTS.md") && names.includes("CLAUDE.md")) {
       assertEquals(
         await Deno.readFile(join(dir, "AGENTS.md")),
