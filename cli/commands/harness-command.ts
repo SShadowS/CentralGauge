@@ -98,6 +98,7 @@ import {
 import {
   cellRefFor,
   loadCampaignData,
+  placedConcurrencyProblem,
   placedConcurrencyRefusal,
   planCampaign,
   precheckCampaignPin,
@@ -167,6 +168,7 @@ import {
 } from "../../src/harness/verdict.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
 import {
+  markerAuthorized,
   markerPlaces,
   markerProxyIsolation,
   openHarnessEnv,
@@ -1153,10 +1155,19 @@ export async function harnessRun(
   // led by the marker's proxy_isolation gate (M1-33e).
   const sharedResults = join(o.root, "results", "harness");
   if (o.concurrency > 1 && await markerPlaces(sharedResults)) {
-    throw placedConcurrencyRefusal(
-      await markerProxyIsolation(sharedResults),
+    const proxyIsolation = await markerProxyIsolation(sharedResults);
+    const problem = placedConcurrencyProblem(
+      {
+        placed: true,
+        enforced: await markerAuthorized(sharedResults),
+        proxyIsolation,
+      },
       o.concurrency,
+      configs,
     );
+    if (problem) {
+      throw placedConcurrencyRefusal(proxyIsolation, o.concurrency, problem);
+    }
   }
   // M5-03 review: the pin, read-only, before any lock, sweep or recovery (runCampaign rechecks, with the arm manifests).
   if (o.campaign !== undefined) {
@@ -1184,6 +1195,7 @@ export async function harnessRun(
   const h = await open({
     ...envOptions(o, o.resultsDir, command),
     concurrency: o.concurrency,
+    configs,
   });
   try {
     const env = o.qualifyManifest
