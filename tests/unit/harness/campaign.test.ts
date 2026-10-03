@@ -1484,3 +1484,26 @@ Deno.test("M7-01 review: concurrency 1 never looks at the arm revision (a frozen
     "frozen image without image_revision",
   );
 });
+
+Deno.test("M11-10c: a campaign start whose experiment primary_metric differs from the preregistration's is refused before any cell", async () => {
+  const p = await preregEnv();
+  const file = join(p.t.harnessRoot, "experiments/prereg.yml");
+  const text = await Deno.readTextFile(file);
+  const swapped = text.replace(
+    "primary_metric: cost_per_solved_task",
+    "primary_metric: pass_rate",
+  );
+  assert(swapped !== text);
+  await Deno.writeTextFile(file, swapped);
+  await freezeStageB(p);
+  const err = await assertRejects(
+    () => runCampaign(p.t.env, "prereg", preregOpts(p), io()),
+    ConfigurationError,
+  );
+  assertStringIncludes(
+    err.message,
+    "experiment primary_metric pass_rate does not match the pre-registration's primary_metric cost_per_solved_task",
+  );
+  assertEquals(await p.t.env.store.campaigns("prereg"), []);
+  assertEquals(p.t.docker.runs.length, 0);
+});
