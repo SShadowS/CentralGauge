@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "85760/PreviewMatchesPostedEntry": 1
+    "85760/PreviewWritesNothing": 1
+    "85760/PreviewRunsNoPostingEvents": 1
+    "85760/PreviewIgnoresCommittingExtension": 1
+    "85760/PreviewReplacesBuffer": 1
+    "85760/PreviewOfUnreturnedContractFails": 1
+    "85760/PreviewAmountAtCoarsePrecision": 1
+    "85760/PostingStillRunsEvents": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
