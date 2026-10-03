@@ -76,11 +76,20 @@ export interface ContainerStatus {
   health: "healthy" | "unhealthy" | "starting" | "stopped";
 }
 
+/** Analyzer settings for the harness final-code check (host-controlled compile). */
+export interface AnalysisSettings {
+  codeCop: boolean;
+  uiCop: boolean;
+  /** Host path of the frozen ruleset. */
+  rulesetFile: string;
+}
+
 export interface ALProject {
   path: string;
   appJson: object;
   sourceFiles: string[];
   testFiles: string[];
+  analysis?: AnalysisSettings;
 }
 
 /** A CentralGauge app on a container, as Harness Bench lists it. */

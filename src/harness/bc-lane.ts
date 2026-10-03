@@ -9,6 +9,7 @@ import { basename, dirname, join } from "@std/path";
 import type { z } from "zod";
 import type {
   ALProject,
+  AnalysisSettings,
   CompilationError,
   CompilationResult,
   HarnessInstalledApp,
@@ -356,6 +357,8 @@ export interface BuiltApp {
   file: string | null;
   diagnostics: CompilationError[];
   compile_ms: number;
+  /** Analyzer warnings; set only by an analysis compile (M11-05). */
+  warnings?: CompilationError[];
 }
 
 const synthetic = (message: string): CompilationError => ({
@@ -610,6 +613,8 @@ export async function buildApps(
     cache?: BuildCache;
     /** The whole workspace graph (workspace dependencies' declared symbols); default `apps`. */
     graph?: StagedApp[];
+    /** CodeCop/UICop compile for the final-code check (M11-05); never with `cache`. */
+    analysis?: AnalysisSettings;
   },
 ): Promise<BuiltApp[]> {
   const files = new Map(o.prebuilt ?? []);
@@ -800,8 +805,10 @@ export async function buildApps(
       appJson,
       sourceFiles: [],
       testFiles: [],
+      ...(o.analysis ? { analysis: o.analysis } : {}),
     });
     const compile_ms = performance.now() - t0;
+    const warned = o.analysis ? { warnings: r.warnings } : {};
     const verified = new Set<string>();
     for await (const e of Deno.readDir(pk)) {
       // Only packages are checked: BCH writes its own index
@@ -826,8 +833,8 @@ export async function buildApps(
       ? collision(r.artifactPath)
       : undefined;
     if (r.artifactPath && outTaken) {
-      out.push(
-        refuse(
+      out.push({
+        ...refuse(
           app,
           version,
           true,
@@ -837,7 +844,8 @@ export async function buildApps(
           r.errors,
           compile_ms,
         ),
-      );
+        ...warned,
+      });
       continue;
     }
     let file: string | null = null;
@@ -856,6 +864,7 @@ export async function buildApps(
       file,
       diagnostics: r.errors,
       compile_ms,
+      ...warned,
     });
   }
   return out;

@@ -1698,6 +1698,12 @@ ${script}
         escapedCompilerFolder,
         projectPath,
         outputDir,
+        project.analysis
+          ? {
+            ...project.analysis,
+            rulesetFile: project.analysis.rulesetFile.replace(/\\/g, "\\\\"),
+          }
+          : undefined,
       );
       // Compile uses the per-container CompileSessionPool when available.
       // Pool keeps N (default 3) warm pwsh procs per container so up to N

@@ -3,7 +3,7 @@
  * These pure functions generate PowerShell scripts used by BcContainerProvider.
  */
 
-import type { ContainerCredentials } from "./types.ts";
+import type { AnalysisSettings, ContainerCredentials } from "./types.ts";
 import {
   BCCH_PINNED_VERSION,
   bcchConfigInit,
@@ -111,7 +111,16 @@ export function buildCompileScript(
   compilerFolder: string,
   projectPath: string,
   outputDir: string,
+  analysis?: AnalysisSettings,
 ): string {
+  // Harness final-code check only (M11-05); the bench never enables cops.
+  const cops = analysis
+    ? [
+      analysis.codeCop ? "-EnableCodeCop" : "",
+      analysis.uiCop ? "-EnableUICop" : "",
+      `-rulesetFile "${analysis.rulesetFile}"`,
+    ].filter(Boolean).join(" ")
+    : "";
   return `
       Write-Output "[CG-PIN] buildCompileScript bccontainerhelper@${BCCH_PINNED_VERSION} sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
@@ -122,7 +131,12 @@ export function buildCompileScript(
         $result = Compile-AppWithBcCompilerFolder \`
           -compilerFolder "${compilerFolder}" \`
           -appProjectFolder "${projectPath}" \`
-          -appOutputFolder "${outputDir}" \`
+          -appOutputFolder "${outputDir}" \`${
+    cops
+      ? `
+          ${cops} \``
+      : ""
+  }
           -ErrorAction Stop 2>&1
 
         # Check for compiled app file

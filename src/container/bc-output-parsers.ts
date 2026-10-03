@@ -103,8 +103,9 @@ export function parseCompilationErrors(output: string): CompilationError[] {
     const trimmedLine = line.trim();
 
     // Parse AL error format: filename(line,col): error AL####: message
+    // (two letters: CodeCop AA, UICop AW and others keep their code).
     const errorMatch = trimmedLine.match(
-      /([^(]+)\((\d+),(\d+)\):\s*error\s+(AL\d+):\s*(.+)/,
+      /([^(]+)\((\d+),(\d+)\):\s*error\s+([A-Z]{2}\d{4}):\s*(.+)/,
     );
     if (errorMatch) {
       errors.push({
@@ -155,7 +156,7 @@ export function parseCompilationWarnings(output: string): CompilationWarning[] {
 
     // Parse AL warning format
     const warningMatch = trimmedLine.match(
-      /([^(]+)\((\d+),(\d+)\):\s*warning\s+(AL\d+):\s*(.+)/,
+      /([^(]+)\((\d+),(\d+)\):\s*warning\s+([A-Z]{2}\d{4}):\s*(.+)/,
     );
     if (warningMatch) {
       warnings.push({
