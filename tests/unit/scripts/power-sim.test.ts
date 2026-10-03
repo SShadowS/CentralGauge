@@ -6,25 +6,32 @@ import {
 } from "@std/assert";
 import { type Cell, mulberry32 } from "../../../src/harness/stats.ts";
 import {
+  argsHashInput,
   calibrate,
   checkResumeHeader,
   chooseDesign,
   chooseRule,
   confirmDesign,
   type DesignResult,
+  EFFECT_DEFAULT,
   evaluate,
   expectedSpend,
   fitCells,
   FWER_TOL,
   fwerTol,
   noiseMean,
+  parseEffect,
+  parseGrid,
   poolCells,
   resumeHeader,
   selectTasks,
   simulateCells,
   stageBContract,
+  stageBEffect,
+  stageBFlagProblem,
   undefinedProb,
 } from "../../../scripts/harness/power-sim.ts";
+import { hashJson } from "../../../src/harness/hash.ts";
 import { type Prereg, PreregSchema } from "../../../src/harness/prereg.ts";
 import { RulesSchema } from "../../../scripts/harness/screening.ts";
 
@@ -123,6 +130,144 @@ Deno.test("calibrate: spend is exactly 0.8 and leaves nulls at 0; solve reaches 
     50,
   );
   assertAlmostEquals(v.ratio, 0.8, 0.005);
+});
+
+Deno.test("parseGrid (M11-13c): tasks outer, repeats inner; every malformed grid is refused", () => {
+  assertEquals(parseGrid("40,50x8,12"), [
+    { tasks: 40, repeats: 8 },
+    { tasks: 40, repeats: 12 },
+    { tasks: 50, repeats: 8 },
+    { tasks: 50, repeats: 12 },
+  ]);
+  assertEquals(parseGrid("24x3"), [{ tasks: 24, repeats: 3 }]);
+  for (
+    const s of [
+      "",
+      "40",
+      "40,50",
+      "x8",
+      "40x",
+      "40x8x3",
+      "40,,50x8",
+      "0x8",
+      "-4x8",
+      "40x2.5",
+      "4ax8",
+      "40,40x8",
+      "40x8,8",
+      "1,2,3,4,5,6x3",
+      "40x1,2,3,4,5,6",
+    ]
+  ) {
+    assertThrows(() => parseGrid(s), Error, undefined, `should refuse ${s}`);
+  }
+  assertEquals(parseGrid("1,2,3,4,5x1,2,3,4,5").length, 25);
+});
+
+Deno.test("parseEffect (M11-13c): open interval (0, 0.9), finite", () => {
+  assertEquals(parseEffect("0.3"), 0.3);
+  assertEquals(parseEffect(0.2), 0.2);
+  for (const v of [0, 0.9, 0.95, -0.1, NaN, Infinity, "abc", ""]) {
+    assertThrows(() => parseEffect(v), Error, undefined, `should refuse ${v}`);
+  }
+});
+
+Deno.test("calibrate (M11-13c): effect 0.3 sets the spend multiplier and the solve target ratio to 0.7", () => {
+  const spend = calibrate(
+    { scenario: "C3", mechanism: "spend", fit: FIT, poolFactor: 2 },
+    { tasks: 24, repeats: 3 },
+    RULES,
+    9,
+    50,
+    0.3,
+  );
+  assertAlmostEquals(spend.multiplier, 0.7, 1e-9);
+  assertAlmostEquals(spend.ratio, 0.7, 1e-9);
+  const solve = calibrate(
+    { scenario: "C1", mechanism: "solve", fit: FIT, poolFactor: 2 },
+    { tasks: 24, repeats: 3 },
+    RULES,
+    9,
+    50,
+    0.3,
+  );
+  assertAlmostEquals(solve.ratio, 0.7, 0.005);
+});
+
+Deno.test("calibrate (M11-13c): no effect argument equals the explicit default 0.2 exactly", () => {
+  assertEquals(EFFECT_DEFAULT, 0.2);
+  for (const mechanism of ["spend", "solve"] as const) {
+    const spec = {
+      scenario: "C1" as const,
+      mechanism,
+      fit: FIT,
+      poolFactor: 2,
+    };
+    const d = { tasks: 24, repeats: 3 };
+    assertEquals(
+      calibrate(spec, d, RULES, 9, 50),
+      calibrate(spec, d, RULES, 9, 50, 0.2),
+    );
+  }
+});
+
+Deno.test("argsHashInput (M11-13c): no flags keeps today's exact shape; either flag records both and changes the hash", async () => {
+  const numeric = {
+    sims: 1000,
+    resamples: 1000,
+    confirm_sims: 500,
+    confirm_resamples: 10000,
+    seed: 20261003,
+    pool_factor: 2,
+    rule_b_share: 0.99,
+  };
+  const parts = {
+    stage: "A" as const,
+    args: numeric,
+    alpha: 0.05,
+    family: ["C1", "C2", "C3"],
+    rules: RULES,
+    rule: null,
+    inputs: [{ path: "x.json", sha256: "ab" }],
+    arm_prefix: "cc-",
+  };
+  const today: unknown = {
+    stage: "A",
+    args: numeric,
+    alpha: 0.05,
+    family: ["C1", "C2", "C3"],
+    rules: RULES,
+    rule: null,
+    inputs: [{ path: "x.json", sha256: "ab" }],
+    arm_prefix: "cc-",
+  };
+  const none = argsHashInput(parts, null);
+  assertEquals(none, today);
+  assertEquals(Object.keys(none.args), Object.keys(numeric));
+  assertEquals(await hashJson(none), await hashJson(today));
+  const eff = argsHashInput(parts, { effect: 0.2, grid: null });
+  assertEquals(eff.args, { ...numeric, effect: 0.2, grid: null });
+  assert((await hashJson(eff)) !== (await hashJson(today)));
+  const grid = argsHashInput(parts, {
+    effect: 0.2,
+    grid: { tasks: [40], repeats: [8] },
+  });
+  assertEquals(grid.args["grid"], {
+    tasks: [40],
+    repeats: [8],
+  });
+  assert((await hashJson(grid)) !== (await hashJson(eff)));
+});
+
+Deno.test("stage B (M11-13c): --grid and --effect are refused; the effect comes from the frozen args or the default", () => {
+  assertEquals(stageBFlagProblem({}), null);
+  for (const f of [{ grid: "40x8" }, { effect: "0.3" }]) {
+    const p = stageBFlagProblem(f);
+    assert(p !== null && p.includes("stage B"), String(p));
+  }
+  assertEquals(stageBEffect({ sims: 1000 }), EFFECT_DEFAULT);
+  assertEquals(stageBEffect({ sims: 1000, effect: 0.3 }), 0.3);
+  assertThrows(() => stageBEffect({ effect: 0.95 }));
 });
 
 Deno.test("evaluate: deterministic; a big C1 effect is found; null scenario reports FWER", () => {

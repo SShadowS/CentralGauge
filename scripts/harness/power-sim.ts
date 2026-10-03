@@ -424,20 +424,25 @@ function populationCps(
   ) as Record<SimArm, number>;
 }
 
-/** Effect multiplier giving a 20% lower population cost per solved on the scenario's target contrast; nulls are exactly 0. */
+/** The frozen effect: a 20% lower population cost per solved on the target contrast. */
+export const EFFECT_DEFAULT = 0.2;
+
+/** Effect multiplier giving an `effect` (default 20%) lower population cost per solved on the scenario's target contrast; nulls are exactly 0. */
 export function calibrate(
   spec: Omit<RunSpec, "multiplier">,
   design: Design,
   rules: Rules,
   seed: number,
   K = 200,
+  effect = EFFECT_DEFAULT,
 ): { multiplier: number; ratio: number; truth: Truth } {
   const sc = SCENARIOS[spec.scenario];
+  const target = 1 - effect;
   const at = (m: number) =>
     populationCps(design, { ...spec, multiplier: m }, rules, seed, K);
   let multiplier = 1;
   if (sc.target) {
-    if (spec.mechanism === "spend") multiplier = 0.8;
+    if (spec.mechanism === "spend") multiplier = target;
     else {
       const ratio = (m: number) => {
         const c = at(m);
@@ -445,14 +450,16 @@ export function calibrate(
       };
       let lo = 1;
       let hi = 3;
-      if (ratio(hi) > 0.8) {
+      if (ratio(hi) > target) {
         throw new Error(
-          `${spec.scenario} solve: a 20% reduction is not reachable (solve rate cap)`,
+          `${spec.scenario} solve: a ${
+            Math.round(effect * 1000) / 10
+          }% reduction is not reachable (solve rate cap)`,
         );
       }
       for (let i = 0; i < 30; i++) {
         const mid = (lo + hi) / 2;
-        if (ratio(mid) > 0.8) lo = mid;
+        if (ratio(mid) > target) lo = mid;
         else hi = mid;
       }
       multiplier = hi;
@@ -806,6 +813,108 @@ export function chooseDesign(
 const GRID_DESIGNS: Design[] = [24, 30, 40].flatMap((tasks) =>
   [3, 5, 8].map((repeats) => ({ tasks, repeats }))
 );
+
+export interface GridSpec {
+  tasks: number[];
+  repeats: number[];
+}
+
+/** `--grid 40,50,60x8,12,16`: tasks x repeats, tasks outer (M11-13c). */
+export function parseGrid(s: string): Design[] {
+  const g = parseGridSpec(s);
+  return g.tasks.flatMap((tasks) =>
+    g.repeats.map((repeats) => ({ tasks, repeats }))
+  );
+}
+
+function parseGridSpec(s: string): GridSpec {
+  const sides = s.split("x");
+  if (sides.length !== 2) {
+    throw new Error(`--grid ${s}: expected <tasks list>x<repeats list>`);
+  }
+  const [tasks, repeats] = sides.map((side) => {
+    const vals = side.split(",").map((v) => {
+      if (!/^[1-9]\d*$/.test(v)) {
+        throw new Error(
+          `--grid ${s}: "${v}" is not a positive integer`,
+        );
+      }
+      return Number(v);
+    });
+    if (new Set(vals).size !== vals.length) {
+      throw new Error(`--grid ${s}: duplicate value in ${side}`);
+    }
+    if (vals.length > 5) {
+      throw new Error(`--grid ${s}: at most 5 values per list`);
+    }
+    return vals;
+  }) as [number[], number[]];
+  return { tasks, repeats };
+}
+
+/** `--effect`: relative cost-per-solved reduction, in the open interval (0, 0.9). */
+export function parseEffect(v: unknown): number {
+  const n = typeof v === "number" ? v : v === "" ? NaN : Number(v);
+  if (!Number.isFinite(n) || n <= 0 || n >= 0.9) {
+    throw new Error(`--effect must be in (0, 0.9), got ${String(v)}`);
+  }
+  return n;
+}
+
+/**
+ * Stage B never takes --grid or --effect: a non-default grid cannot be
+ * pre-registered (PreregSchema simulation.args holds numbers only), and the
+ * effect is the frozen one.
+ */
+export function stageBFlagProblem(
+  flags: { grid?: unknown; effect?: unknown },
+): string | null {
+  const bad = ["grid", "effect"].filter((f) =>
+    (flags as Record<string, unknown>)[f] !== undefined
+  );
+  return bad.length === 0
+    ? null
+    : `--${
+      bad.join(" and --")
+    } are refused in stage B (--prereg): the frozen pipeline uses the default grid and the pre-registered effect`;
+}
+
+/** Stage B effect: the frozen simulation.args.effect when present, else the default. */
+export function stageBEffect(frozen: Record<string, number>): number {
+  return frozen["effect"] === undefined
+    ? EFFECT_DEFAULT
+    : parseEffect(frozen["effect"]);
+}
+
+/** The args record: today's numeric keys only, plus effect (and grid when given) once a sweep flag is in play. */
+export function simArgsRecord(
+  args: SimArgs,
+  sweep: { effect: number; grid?: GridSpec | null } | null,
+): Record<string, unknown> {
+  if (!sweep) return { ...args };
+  return {
+    ...args,
+    effect: sweep.effect,
+    ...(sweep.grid === undefined ? {} : { grid: sweep.grid }),
+  };
+}
+
+/** What binds into args_sha256 (and the resume check). */
+export function argsHashInput(
+  p: {
+    stage: "A" | "B";
+    args: SimArgs;
+    alpha: number;
+    family: string[];
+    rules: Rules;
+    rule: ZeroSolveRule | null;
+    inputs: { path: string; sha256: string }[];
+    arm_prefix: string;
+  },
+  sweep: { effect: number; grid?: GridSpec | null } | null,
+) {
+  return { ...p, args: simArgsRecord(p.args, sweep) };
+}
 const PAIRS: { scenario: ScenarioName; mechanism: "spend" | "solve" }[] = [
   { scenario: "null", mechanism: "spend" },
   ...(["C1", "C2", "C3"] as const).flatMap((scenario) =>
@@ -985,6 +1094,8 @@ async function main(): Promise<void> {
       "seed",
       "pool-factor",
       "rule-b-share",
+      "grid",
+      "effect",
     ],
     boolean: ["resume"],
     collect: ["cells"],
@@ -1016,8 +1127,15 @@ async function main(): Promise<void> {
   let family: string[];
   let frozenRule: ZeroSolveRule | null = null;
   const args = {} as SimArgs;
+  // M11-13c diagnostic sweep: set only by --grid / --effect (stage A); null keeps today's args record.
+  let effect = EFFECT_DEFAULT;
+  let gridSpec: GridSpec | null = null;
+  let gridDesigns = GRID_DESIGNS;
+  let sweep: { effect: number; grid?: GridSpec | null } | null = null;
   if (a.prereg !== undefined) {
     stage = "B";
+    const problem = stageBFlagProblem({ grid: a.grid, effect: a.effect });
+    if (problem) bad(problem);
     const doc = PreregSchema.parse(parse(await Deno.readTextFile(a.prereg)));
     frozenRule = doc.zero_solve;
     alpha = doc.alpha;
@@ -1028,6 +1146,14 @@ async function main(): Promise<void> {
         bad(`--${flag} ${cli[k]} differs from the frozen stage A value ${v}`);
       }
       args[k] = v;
+    }
+    if (doc.simulation.args["effect"] !== undefined) {
+      try {
+        effect = stageBEffect(doc.simulation.args);
+      } catch (e) {
+        bad((e as Error).message);
+      }
+      sweep = { effect };
     }
     // The evaluated rule B share must be the frozen one, not just a flag value.
     if (
@@ -1052,6 +1178,23 @@ async function main(): Promise<void> {
     }
   } else {
     for (const [, k, def] of NUMERIC) args[k] = cli[k] ?? def;
+    if (flagged("grid") || flagged("effect")) {
+      try {
+        if (flagged("effect")) effect = parseEffect(a.effect);
+        if (flagged("grid")) {
+          gridSpec = parseGridSpec(a.grid!);
+          gridDesigns = parseGrid(a.grid!);
+        }
+      } catch (e) {
+        bad((e as Error).message);
+      }
+      sweep = { effect, grid: gridSpec };
+      console.log(
+        colors.yellow(
+          "[WARN] --grid/--effect given: this is a diagnostic sweep, not the frozen pipeline",
+        ),
+      );
+    }
     family = [
       "C1",
       "C2",
@@ -1103,7 +1246,7 @@ async function main(): Promise<void> {
   };
   const fits: Record<"fitted" | "stress", Fit> = { fitted, stress };
 
-  const argsSha = await hashJson({
+  const argsSha = await hashJson(argsHashInput({
     stage,
     args,
     alpha,
@@ -1112,7 +1255,7 @@ async function main(): Promise<void> {
     rule: frozenRule,
     inputs,
     arm_prefix: prefix,
-  });
+  }, sweep));
   const done = new Map<string, DesignResult>();
   if (a.resume && await exists(partial)) {
     const lines = (await Deno.readTextFile(partial)).split("\n").filter((l) =>
@@ -1170,7 +1313,7 @@ async function main(): Promise<void> {
       fit,
       poolFactor: args.pool_factor!,
     };
-    const cal = calibrate(spec, design, rules, args.seed!);
+    const cal = calibrate(spec, design, rules, args.seed!, 200, effect);
     const result = evaluate(design, {
       ...spec,
       fitName,
@@ -1194,7 +1337,7 @@ async function main(): Promise<void> {
   // Resumed results print nothing; the cached branch above returns them silently.
 
   const grid: DesignResult[] = [];
-  for (const d of GRID_DESIGNS) {
+  for (const d of gridDesigns) {
     for (const p of PAIRS) {
       for (const f of ["fitted", "stress"] as const) {
         grid.push(runOne(d, p, f, false));
@@ -1244,7 +1387,7 @@ async function main(): Promise<void> {
         v: 1,
         stage,
         script_sha256,
-        args,
+        args: simArgsRecord(args, sweep),
         alpha,
         family,
         inputs,
@@ -1253,6 +1396,7 @@ async function main(): Promise<void> {
         results: [...done.values()],
         zero_solve: zeroSolve,
         decision: { design, confirmed },
+        ...(stage === "A" && sweep ? { diagnostic: true } : {}),
       },
       null,
       2,
