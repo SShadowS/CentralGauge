@@ -1,0 +1,28 @@
+v: 1
+partial_credit:
+  weights:
+    "85680/InstallmentsUseSetupPrecision": 1
+    "85680/InstallmentsRoundUpToPrecision": 1
+    "85680/InvoiceLinesAddUpToRoundedTotal": 1
+    "85680/InvoiceBillsScheduledAmount": 1
+    "85680/MonthlyRateUsesSetupPrecision": 1
+    "85680/WholeUnitScheduleInvoices": 1
+    "85680/RescheduleUsesCurrentPrecision": 1
+  hidden_regressions:
+    - "85680/ZeroPrecisionKeepsCents"
+reuse:
+  targets:
+    - { codeunit: 70010, procedure: RoundAmount, signature: "(Amount: Decimal): Decimal", file: Core/src/AmountRounding.Codeunit.al, perturb: "exit(Amount);" }
+    - { codeunit: 70010, procedure: Precision, signature: "(): Decimal", file: Core/src/AmountRounding.Codeunit.al, perturb: "exit(0.01);" }
+  tests:
+    - { codeunit: 85680, procedures: [InstallmentsUseSetupPrecision, InstallmentsRoundUpToPrecision, MonthlyRateUsesSetupPrecision, RescheduleUsesCurrentPrecision] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  fixture/comment-only: { reuse_executed: false, reuse: false }
+  fixture/token-call: { reuse_executed: true, reuse: false }
+  naive/installments-only: { partial_credit: 0.2857142857142857 }
+  naive/invoice-unrounded: { partial_credit: 0.14285714285714285 }
+  naive/rate-unchanged: { partial_credit: 0.8571428571428571 }
+  naive/schedule-only: { partial_credit: 0.8571428571428571 }

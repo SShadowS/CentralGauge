@@ -1,0 +1,18 @@
+v: 1
+partial_credit:
+  weights:
+    "85700/TriggeredPrecisionChangeReachesPreview": 1
+    "85700/TriggeredMaxAttemptsReachesDispatcher": 1
+    "85700/TriggeredDefaultBranchReachesNewContract": 1
+    "85700/ExplicitBranchSurvivesSetupSave": 1
+    "85700/UntriggeredSaveKeepsCache": 1
+    "85700/InsertedSetupIsRead": 1
+    "85700/DeletedSetupIsDropped": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/event-every-save: { partial_credit: 0.7142857142857143 }
+  naive/modify-only: { partial_credit: 0.7142857142857143 }
+  naive/no-cache: { partial_credit: 0.7142857142857143 }
+  naive/reset-on-save: { partial_credit: 0.8571428571428571 }

@@ -1,0 +1,16 @@
+id: HX-018
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Fleet, Core, Test]
+coupling: [interface, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80055, procedures: [AssignPlanSetsStrategy, NextServiceDateFromPlanInterval, DueByKmWithoutPlan, ServiceKmAboveMileageFails] }
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension] }
+fail_to_pass: null
+mutants: [interval-zero-due, no-last-date-from-workdate, register-at-mileage-fails, event-before-fields, unknown-plan-silent, plan-replaces-km]
+contamination: null
+limits: { timeout_min: 30 }

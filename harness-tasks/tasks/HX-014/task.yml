@@ -1,0 +1,19 @@
+id: HX-014
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Core, Fleet]
+coupling: [interface]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80055, procedures: [AssignPlanSetsStrategy, NextServiceDateFromPlanInterval, DueByKmWithoutPlan, ServiceKmAboveMileageFails] }
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension] }
+fail_to_pass:
+  depends_on: [Core, Fleet]
+  tests:
+    - { codeunit: 85740, procedures: [DefaultStrategyGetsTwelveMonths, HeavyDutyGetsSixMonths, PartnerWithoutIntervalGetsTwelve, PartnerIntervalIsUsed, PlanIntervalKeptWhenSet, PlanStrategyDecidesNotVehicle, DueOnDefaultIntervalBoundary, NoPlanOrNoServiceNoDate, InterfaceReportsDefaultIntervals] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
