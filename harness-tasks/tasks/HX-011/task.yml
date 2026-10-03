@@ -1,0 +1,20 @@
+id: HX-011
+refapp_version: refapp-v2-rc1
+kind: bugfix
+prompt: prompt.md
+touches: [Leasing, Core]
+coupling: [internal, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
+  - { codeunit: 80052, procedures: [ZeroPrecisionFallsBackToCents, SetupPrecisionApplied, WholeUnitPrecision] }
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay, InvoiceAmountUsesSetupPrecision, HandledLinesAreNotInserted, AfterEventSeesEveryCreatedLine] }
+fail_to_pass:
+  depends_on: [Core, Leasing]
+  tests:
+    - { codeunit: 85680, procedures: [InstallmentsUseSetupPrecision, InstallmentsRoundUpToPrecision, InvoiceLinesAddUpToRoundedTotal, InvoiceBillsScheduledAmount, MonthlyRateUsesSetupPrecision, ZeroPrecisionKeepsCents, WholeUnitScheduleInvoices, RescheduleUsesCurrentPrecision] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
