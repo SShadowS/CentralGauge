@@ -4309,7 +4309,14 @@ Deno.test("component inventory + LSP (spec v2 gates 1 and 2): a declared, proven
   for (const [name, cfg, inv, initLine, want] of cases) {
     const post = [initLine, ...(await probeLines())];
     t.docker.preReady = { lines: [inv] };
-    t.docker.behavior = async (_call, io) => {
+    let staged: { settings: Record<string, unknown> } | null = null;
+    t.docker.behavior = async (call, io) => {
+      // The staged C:\config/settings.json, read while the sandbox runs.
+      staged = JSON.parse(
+        await Deno.readTextFile(
+          join(call.mounts.get("C:\\config")!.src, "settings.json"),
+        ),
+      );
       for (const l of post) await io.stdout(l);
       return 0;
     };
@@ -4336,6 +4343,15 @@ Deno.test("component inventory + LSP (spec v2 gates 1 and 2): a declared, proven
       armManifestHash: await manifestHash(armManifest),
     };
     const e = (await runCell(t.env, cell)).executions[0]!;
+    const stagedSettings =
+      (staged as { settings: Record<string, unknown> } | null)
+        ?.settings;
+    assert(stagedSettings, `${name}: settings.json staged`);
+    if (cfg === "cc-v2-inv-lsp") {
+      assertEquals(stagedSettings["lsp"], ["al"], name);
+    } else {
+      assertEquals("lsp" in stagedSettings, false, name);
+    }
     if (want === null) {
       assertEquals(e.termination, "completed", name);
       assert(e.observed.loaded_components!.includes("lsp:al"), name);

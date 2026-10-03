@@ -306,7 +306,15 @@ async function hostCan(): Promise<
     stdout: "null",
     stderr: "null",
   }).output();
-  return { symlink, caseSensitive: fs.success };
+  // fsutil exits 0 even when it prints "Access is denied" (seen on a TEMP on H:), so
+  // success proves nothing: only two names differing in case surviving as two entries does.
+  let caseSensitive = false;
+  if (fs.success) {
+    await Deno.writeTextFile(join(d, "cs", "a"), "t");
+    await Deno.writeTextFile(join(d, "cs", "A"), "t");
+    caseSensitive = [...Deno.readDirSync(join(d, "cs"))].length === 2;
+  }
+  return { symlink, caseSensitive };
 }
 const CAN = await hostCan();
 
@@ -432,6 +440,11 @@ Deno.test({
         assert(fs.success, `fsutil setCaseSensitiveInfo ${tmp}`);
         await Deno.writeTextFile(join(tmp, "al.md"), "rule\n");
         await Deno.writeTextFile(join(tmp, "AL.md"), "rule\n");
+        assertEquals(
+          [...Deno.readDirSync(tmp)].length,
+          2,
+          "two case-differing names",
+        );
         await Deno.remove(d, { recursive: true });
         await Deno.rename(tmp, d);
       }
