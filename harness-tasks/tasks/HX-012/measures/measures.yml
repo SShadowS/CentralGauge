@@ -12,3 +12,7 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/event-every-save: { partial_credit: 0.7142857142857143 }
+  naive/modify-only: { partial_credit: 0.7142857142857143 }
+  naive/no-cache: { partial_credit: 0.7142857142857143 }
+  naive/reset-on-save: { partial_credit: 0.8571428571428571 }
