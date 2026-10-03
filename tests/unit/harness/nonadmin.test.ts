@@ -927,3 +927,169 @@ Deno.test({
     }
   },
 });
+
+// H-01t (review H-01s-001): the exact DACL, read from the raw descriptor (every ACE,
+// callback and conditional ones included), a fresh DACL rather than purging rules,
+// and no ACL operation through a reparse point.
+
+/** `protected=<bool>` then one sorted `<AceType> <SID> 0x<mask> <AceFlags>` line per ACE. */
+const rawDacl = async (p: string): Promise<string[]> => {
+  const r = await pwsh([
+    "-Command",
+    [
+      `$s = (Get-Item -LiteralPath '${p}' -Force).GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)`,
+      `$raw = New-Object System.Security.AccessControl.RawSecurityDescriptor -ArgumentList @($s.GetSecurityDescriptorBinaryForm(), 0)`,
+      `'protected=' + (($raw.ControlFlags -band [System.Security.AccessControl.ControlFlags]::DiscretionaryAclProtected) -ne 0)`,
+      `foreach ($a in $raw.DiscretionaryAcl) { '{0} {1} 0x{2:x} {3}' -f $a.AceType, $a.SecurityIdentifier, $a.AccessMask, $a.AceFlags }`,
+    ].join("; "),
+  ]);
+  const lines = r.out.split(/\r?\n/).filter((x) => x !== "");
+  return [lines[0]!, ...lines.slice(1).sort()];
+};
+const FULL = "0x1f01ff";
+const RX = "0x1200a9";
+const three = (flags: string) =>
+  [
+    `AccessAllowed S-1-5-18 ${FULL} ${flags}`,
+    `AccessAllowed S-1-5-32-544 ${FULL} ${flags}`,
+    `AccessAllowed S-1-5-32-545 ${RX} ${flags}`,
+  ].sort();
+/** An explicit conditional (callback) allow ACE: Authenticated Users full control. */
+const plantConditional = (p: string) =>
+  pwsh([
+    "-Command",
+    [
+      `$i = Get-Item -LiteralPath '${p}' -Force`,
+      `$s = $i.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)`,
+      `$s.SetSecurityDescriptorSddlForm('D:(A;;FA;;;SY)(A;;FA;;;BA)(XA;;FA;;;AU;(Member_of {SID(BA)}))', [System.Security.AccessControl.AccessControlSections]::Access)`,
+      `$i.SetAccessControl($s)`,
+    ].join("; "),
+  ]);
+
+Deno.test({
+  name:
+    "H-01t: cg-lockdown leaves the exact DACL: protected roots with SYSTEM F, Administrators F, Users RX (OI|CI on directories), children inheriting only those",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-h01t-" });
+    const file = `${dir}\\run.ps1`;
+    const tree = `${dir}\\Git`;
+    await Deno.mkdir(`${tree}\\usr\\bin`, { recursive: true });
+    await Deno.writeTextFile(file, "exit 0");
+    await Deno.writeTextFile(`${tree}\\usr\\bin\\cg-al`, "#!/bin/sh");
+    const s = await pwsh([
+      "-Command",
+      `icacls '${tree}\\usr' /grant '*S-1-5-11:(OI)(CI)M' /Q; exit $LASTEXITCODE`,
+    ]);
+    assertEquals(s.code, 0, s.out);
+    try {
+      const r = await pwsh(["-File", LOCKDOWN, file, tree]);
+      for (
+        const f of r.out.split(/\r?\n/).filter((x) => x.startsWith("[FAIL]"))
+      ) {
+        assert(f.startsWith("[FAIL] owner "), f);
+      }
+      assertEquals(await rawDacl(file), ["protected=True", ...three("None")]);
+      assertEquals(await rawDacl(tree), [
+        "protected=True",
+        ...three("ObjectInherit, ContainerInherit"),
+      ]);
+      assertEquals(await rawDacl(`${tree}\\usr`), [
+        "protected=False",
+        ...three("ObjectInherit, ContainerInherit, Inherited"),
+      ]);
+      assertEquals(await rawDacl(`${tree}\\usr\\bin\\cg-al`), [
+        "protected=False",
+        ...three("Inherited"),
+      ]);
+    } finally {
+      await dropTree(dir);
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "H-01t: a conditional (callback) ACE is a [FAIL] in the verify pass and gone after cg-lockdown (fresh DACL)",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-h01t-" });
+    const file = `${dir}\\cg-al.ps1`;
+    await Deno.writeTextFile(file, "exit 0");
+    const s = await plantConditional(file);
+    assertEquals(s.code, 0, s.out);
+    try {
+      assert(
+        (await rawDacl(file)).some((l) =>
+          l.startsWith("AccessAllowedCallback S-1-5-11 ")
+        ),
+        "the conditional ACE is planted",
+      );
+      const v = await pwsh(["-File", LOCKDOWN, "-VerifyOnly", file]);
+      assertEquals(v.code, 1, v.out);
+      assertStringIncludes(
+        v.out,
+        `[FAIL] ace AccessAllowedCallback S-1-5-11 ${file}`,
+      );
+      await pwsh(["-File", LOCKDOWN, file]);
+      assertEquals(await rawDacl(file), ["protected=True", ...three("None")]);
+    } finally {
+      await dropTree(dir);
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "H-01t: a junction inside a supplied tree is refused before any ACL changes (target untouched) and is a [FAIL] in the verify pass",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-h01t-" });
+    const tree = `${dir}\\Git`;
+    const outside = `${dir}\\outside`;
+    const link = `${tree}\\usr\\link`;
+    await Deno.mkdir(`${tree}\\usr`, { recursive: true });
+    await Deno.mkdir(outside);
+    await Deno.writeTextFile(`${outside}\\secret.txt`, "x");
+    const s = await pwsh([
+      "-Command",
+      [
+        `icacls '${outside}' /grant '*S-1-5-11:(OI)(CI)M' /Q`,
+        `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`,
+        `icacls '${tree}' /grant '*S-1-5-11:(OI)(CI)M' /Q`,
+        `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`,
+        `New-Item -ItemType Junction -Path '${link}' -Target '${outside}' | Out-Null`,
+      ].join("; "),
+    ]);
+    assertEquals(s.code, 0, s.out);
+    const before = {
+      tree: await rawDacl(tree),
+      outside: await rawDacl(outside),
+      secret: await rawDacl(`${outside}\\secret.txt`),
+    };
+    try {
+      const r = await pwsh(["-File", LOCKDOWN, tree]);
+      assert(r.code !== 0, r.out);
+      assertStringIncludes(r.out, `reparse point ${link}`);
+      assertEquals(
+        {
+          tree: await rawDacl(tree),
+          outside: await rawDacl(outside),
+          secret: await rawDacl(`${outside}\\secret.txt`),
+        },
+        before,
+        "nothing changed before the refusal",
+      );
+      const v = await pwsh(["-File", LOCKDOWN, "-VerifyOnly", tree]);
+      assertEquals(v.code, 1, v.out);
+      assertStringIncludes(v.out, `[FAIL] reparse ${link}`);
+      assert(
+        !v.out.includes("secret.txt"),
+        "the verify pass does not walk through the link",
+      );
+    } finally {
+      await pwsh(["-Command", `[System.IO.Directory]::Delete('${link}')`]);
+      await dropTree(dir);
+    }
+  },
+});
