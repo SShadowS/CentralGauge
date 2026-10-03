@@ -96,9 +96,35 @@ import {
   teardownSandbox,
   writeSecretFiles,
 } from "./sandbox.ts";
-import { type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
+import { readAppGraph, type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
 import { selectJudgment } from "./outcome.ts";
 import { currentScorerFingerprint, judge, writeVerdictLog } from "./verdict.ts";
+import {
+  type AnalyzersSchema,
+  canaryCheck,
+  type FinalCode,
+  finalCode,
+  finalCodeCounts,
+  type FinalCounts,
+  loadTaskMeasures,
+  type Measure,
+  measureFingerprint,
+  type MeasureRecord,
+  missing,
+  na,
+  ok,
+  partialCredit,
+  reuseCheck,
+  type ReuseSchema,
+  writeMeasureRecord,
+} from "./measures.ts";
+import { buildVerdictWorkspace } from "./verdict-workspace.ts";
+import { isInfraError } from "../health/is-infra-error.ts";
+import {
+  InfraRetriesExhaustedError,
+  NoEligibleContainersError,
+} from "../parallel/errors.ts";
+import type { z } from "zod";
 
 export type PublishStep =
   | "draft"
@@ -2110,6 +2136,194 @@ export async function rejudgeExecution(
       oracleHash,
       forced,
     );
+  } finally {
+    await Deno.remove(out, { recursive: true }).catch(() => {});
+  }
+}
+
+const RULESET = join("analysis", "final-code.ruleset.json");
+const CANARY = join("analysis", "canary");
+
+/** One measuring call: the start counts per task and the canary result are computed once. */
+export interface MeasureRun {
+  startCache: Map<string, FinalCounts>;
+  analyzers: Measure<z.output<typeof AnalyzersSchema>> | null;
+}
+
+async function analyzersOf(env: HarnessEnv, run: MeasureRun, workDir: string) {
+  if (run.analyzers) return run.analyzers;
+  const rulesetFile = join(env.harnessRoot, RULESET);
+  const analysis = { codeCop: true, uiCop: true, rulesetFile };
+  const expected = (JSON.parse(
+    await Deno.readTextFile(join(env.harnessRoot, CANARY, "expect.json")),
+  ) as { codes: string[] }).codes;
+  const c = await canaryCheck(env.lane, {
+    canaryDir: join(env.harnessRoot, CANARY),
+    lock: { store: env.symbolStore, packages: env.symbols },
+    outDir: join(workDir, "canary"),
+    analysis,
+    expected,
+  });
+  run.analyzers = c.ok
+    ? ok({
+      compiler: c.compiler,
+      ruleset_sha256: await hashFile(env.harnessRoot, rulesetFile),
+      canary_codes: c.codes,
+    })
+    : missing(
+      `analyzer canary failed: expected ${expected.join(",")}, got ${
+        c.codes.join(",") || "none"
+      }`,
+    );
+  return run.analyzers;
+}
+
+/** The exploratory measures (M11) of one judged workspace; never touches the judgment. */
+export async function measureWorkspace(
+  env: HarnessEnv,
+  x: {
+    task: LoadedTask;
+    pristine: string;
+    artifact: string;
+    workspaceHash: string;
+    oracleHash: string;
+    judgment: JudgmentRecord;
+    executionId: string;
+  },
+  run: MeasureRun,
+  workDir: string,
+): Promise<MeasureRecord> {
+  const measures = await loadTaskMeasures(x.task);
+  const lock = { store: env.symbolStore, packages: env.symbols };
+  const symbolIds = new Set(env.symbols.map((s) => s.app_id.toLowerCase()));
+  const az = await analyzersOf(env, run, workDir);
+  const analysis = {
+    codeCop: true,
+    uiCop: true,
+    rulesetFile: join(env.harnessRoot, RULESET),
+  };
+  const infraSafe = async <T>(
+    f: () => Promise<Measure<T>>,
+  ): Promise<Measure<T>> => {
+    try {
+      return await f();
+    } catch (err) {
+      if (
+        err instanceof InfraRetriesExhaustedError ||
+        err instanceof NoEligibleContainersError || isInfraError(err)
+      ) {
+        return missing(
+          `infra: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      throw err;
+    }
+  };
+  const final_code = az.status !== "ok"
+    ? missing<FinalCode>(
+      az.status === "missing" ? az.reason : "analyzers unavailable",
+    )
+    : await infraSafe(async () => {
+      const vw = await buildVerdictWorkspace({
+        pristine: x.pristine,
+        artifact: x.artifact,
+        out: join(workDir, "final"),
+        symbolIds,
+      });
+      if (vw.violations.length > 0) {
+        return missing<FinalCode>(
+          `workspace violations: ${vw.violations.length}`,
+        );
+      }
+      let start = run.startCache.get(x.task.task.id);
+      if (!start) {
+        start = await finalCodeCounts(env.lane, {
+          dir: x.pristine,
+          apps: await readAppGraph(x.pristine),
+          lock,
+          outDir: join(workDir, "start-build"),
+          analysis,
+        });
+        run.startCache.set(x.task.task.id, start);
+      }
+      const end = await finalCodeCounts(env.lane, {
+        dir: vw.dir,
+        apps: vw.apps,
+        lock,
+        outDir: join(workDir, "final-build"),
+        analysis,
+      });
+      return finalCode(start, end);
+    });
+  const reuse = !measures
+    ? na<z.output<typeof ReuseSchema>>("no measures file")
+    : await infraSafe(() =>
+      reuseCheck(env.lane, {
+        task: x.task,
+        measures,
+        judgment: x.judgment,
+        judge: {
+          workspaceHash: x.workspaceHash,
+          oracleHash: x.oracleHash,
+          pristine: x.pristine,
+          symbolIds,
+          lock,
+          deploy: env.deploy,
+        },
+        artifact: x.artifact,
+        workDir: join(workDir, "reuse"),
+      })
+    );
+  return {
+    v: 1,
+    judgment_id: x.judgment.id,
+    execution_id: x.executionId,
+    task_id: x.task.task.id,
+    workspace_hash: x.workspaceHash,
+    oracle_hash: x.judgment.task_oracle_hash,
+    measure_fingerprint: await measureFingerprint(),
+    analyzers: az.status === "ok" ? az.value : null,
+    final_code,
+    reuse,
+    partial_credit: partialCredit(x.task.task, measures, x.judgment),
+  };
+}
+
+/** Exploratory measures of one judged execution (M11); never re-runs the agent, never touches the judgment. */
+export async function measureExecution(
+  env: HarnessEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+  j: JudgmentRecord,
+  run: MeasureRun,
+): Promise<MeasureRecord> {
+  const art = await env.store.artifact(e.id);
+  if (!art) {
+    throw new ValidationError(`no artifact for execution ${e.id}`, [e.id]);
+  }
+  const out = join(
+    env.privateRoot,
+    "work",
+    `measure-${e.id}-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  try {
+    const pristine = (await stage(env, cell, out)).pristine;
+    const rec = await measureWorkspace(
+      env,
+      {
+        task: cell.task,
+        pristine,
+        artifact: join(env.resultsRoot, art.stored_path),
+        workspaceHash: art.workspace_hash,
+        oracleHash: j.task_oracle_hash,
+        judgment: j,
+        executionId: e.id,
+      },
+      run,
+      join(out, "m"),
+    );
+    await writeMeasureRecord(env.resultsRoot, rec);
+    return rec;
   } finally {
     await Deno.remove(out, { recursive: true }).catch(() => {});
   }
