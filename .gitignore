@@ -106,7 +106,7 @@ tasks/starter/*/.alpackages/
 tasks/starter/*/output/
 tasks/starter/*/rad.json
 
-# Plan G — workflow orchestrator output (CI-only).
+# Plan G ï¿½ workflow orchestrator output (CI-only).
 weekly-cycle-result.json
 digest.md
 
@@ -123,6 +123,7 @@ scripts/*
 !scripts/weekly-cycle.ts
 !scripts/cycle-*.ps1
 !scripts/trap-probe.ts
+!scripts/premise-probe-runner.ts
 !scripts/harvest-candidate-corpus.ts
 !scripts/id-audit.ts
 !scripts/lethal-t1-prep.ps1
