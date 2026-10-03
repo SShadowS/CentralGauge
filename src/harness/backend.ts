@@ -9,7 +9,7 @@
 
 import { join, SEPARATOR } from "@std/path";
 import { z } from "zod";
-import type { BuildDiagnostic } from "./build-log.ts";
+import { type BuildDiagnostic, buildDiagnostics } from "./build-log.ts";
 import type { SymbolPackage } from "./identity.ts";
 import {
   HARNESS_FIXTURE_TEST_RANGE,
@@ -411,6 +411,8 @@ export class Backend {
   private readonly draining = new Set<string>();
   /** Ids between grant's duplicate check and its insert. */
   private readonly reserved = new Set<string>();
+  /** Host log path -> its last pending append (the per-log write chain). */
+  private readonly logTails = new Map<string, Promise<void>>();
   private readonly now: () => number;
 
   /** Every response body is scrubbed of host paths (agent-facing, spec 1a section 7). */
@@ -472,6 +474,10 @@ export class Backend {
           [canonical],
         );
       }
+      // M11: a granted execution always has a host log, so a missing file
+      // is lost telemetry and an empty one is "no request".
+      await Deno.mkdir(join(g.hostLog, ".."), { recursive: true });
+      await Deno.writeTextFile(g.hostLog, "", { append: true, create: true });
       const token = [...crypto.getRandomValues(new Uint8Array(32))]
         .map((b) => b.toString(16).padStart(2, "0")).join("");
       this.grants.set(id, {
@@ -544,12 +550,35 @@ export class Backend {
     }
   }
 
-  private async append(g: BackendGrant, line: HostLogLine) {
-    await Deno.mkdir(join(g.hostLog, ".."), { recursive: true });
-    await Deno.writeTextFile(g.hostLog, JSON.stringify(line) + "\n", {
-      append: true,
-      create: true,
+  /**
+   * Appends to one log run one at a time, so concurrent 429s cannot
+   * interleave lines. An append never throws: a lost telemetry line is
+   * reported host-side and never changes the agent's verdict.
+   */
+  private append(g: BackendGrant, line: HostLogLine): Promise<void> {
+    const path = g.hostLog;
+    const next = (this.logTails.get(path) ?? Promise.resolve())
+      .then(async () => {
+        await Deno.mkdir(join(path, ".."), { recursive: true });
+        await Deno.writeTextFile(path, JSON.stringify(line) + "\n", {
+          append: true,
+          create: true,
+        });
+      })
+      .catch((err) => {
+        try {
+          console.warn(
+            `[WARN] host log ${path}: ${line.request} not written: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        } catch { /* the report itself failed; nothing left to tell */ }
+      });
+    this.logTails.set(path, next);
+    void next.then(() => {
+      if (this.logTails.get(path) === next) this.logTails.delete(path);
     });
+    return next;
   }
 
   private line(
@@ -735,6 +764,7 @@ export class Backend {
           this.line(st, op, 200, "failed", t0, {
             request: requestId,
             message: violations.join("; "),
+            build_ok: null,
             spans: { snapshot_ms },
           }),
         );
@@ -1023,6 +1053,9 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           apps_compiled: built.filter((b) => b.attempted).map((b) => b.folder),
           per_app_compiles: built.filter((b) => b.attempted).length,
           diagnostics: built.reduce((n, b) => n + b.diagnostics.length, 0),
+          diagnostic_list: buildDiagnostics(built),
+          changed_apps: changed,
+          build_ok: ok,
           spans: { compile_ms: performance.now() - t0 },
         },
       };
@@ -1060,6 +1093,13 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
             outcome: "failed",
             apps_compiled: compiled,
             per_app_compiles: prep.per_app_compiles,
+            diagnostics: prep.built.reduce(
+              (n, b) => n + b.diagnostics.length,
+              0,
+            ),
+            diagnostic_list: buildDiagnostics(prep.built),
+            changed_apps: changed,
+            build_ok: false,
             spans: { compile_ms: prep.compile_ms },
           },
         };
@@ -1083,6 +1123,9 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
             apps_compiled: compiled,
             per_app_compiles: prep.per_app_compiles,
             message: "no runnable test codeunit in the Test app",
+            diagnostic_list: buildDiagnostics(prep.built),
+            changed_apps: changed,
+            build_ok: true,
             spans: { compile_ms: prep.compile_ms },
           },
         };
@@ -1116,6 +1159,9 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           per_app_compiles: prep.per_app_compiles,
           tests_run: rows.length,
           tests_failed: failed,
+          diagnostic_list: buildDiagnostics(prep.built),
+          changed_apps: changed,
+          build_ok: true,
           container: held.container,
           retries: held.retries.length,
           spans: {

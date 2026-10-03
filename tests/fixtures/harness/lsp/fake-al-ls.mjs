@@ -15,6 +15,17 @@
 // FAKE_LATE_ORPHAN starts the marked detached child on shutdown (its pid
 // goes to <FAKE_GATE>.pid when set); FAKE_CHATTER sends a
 // window/logMessage every 50 ms. Hover reports the proxy env and argv[2].
+// Publishes (M10-01c): every mode publishes on didOpen/didChange, before any
+// documentSymbol answer, and again (the URI's current state) right after
+// answering a documentSymbol for a known URI. FAKE_PRE_ONLY drops the
+// republish; FAKE_POST_ONLY drops the didOpen/didChange publish;
+// FAKE_ACTIVE_PROJECT publishes for a URI only while its workspace folder is
+// the project of the last documentSymbol URI (none at start). FAKE_STALE also
+// publishes the previous version right after the documentSymbol republish.
+// FAKE_INFLIGHT keeps republishing a URI every 250 ms for 5 s after a
+// documentSymbol, and exits 9 on a didChange of that URI within those 5 s.
+// FAKE_FUTURE replaces the documentSymbol republish with an empty one that
+// carries the next (future) version.
 import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
@@ -71,10 +82,21 @@ const INTERMEDIATE_JS = 'import { spawn } from "node:child_process";' +
   'spawn(Deno.execPath(), ["eval", "setTimeout(() => {}, 120000); // " + Deno.env.get("FAKE_INTERMEDIATE")],' +
   ' { detached: true, stdio: "ignore", windowsHide: true }).unref();' +
   'console.log("ready"); setInterval(() => {}, 1000);';
+// FAKE_ACTIVE_PROJECT: workspace folder uris (initialize) and the active one.
+let folders = [];
+let activeProject = null;
+const norm = (u) => decodeURIComponent(String(u)).toLowerCase();
+const projectOf = (uri) =>
+  folders.find((f) => norm(uri).startsWith(norm(f).replace(/\/?$/, "/"))) ??
+    null;
+// FAKE_INFLIGHT: per URI, when its post-documentSymbol publishes stop.
+const busyUntil = new Map();
+const inActive = (uri) =>
+  !env("FAKE_ACTIVE_PROJECT") || projectOf(uri) === activeProject;
 function changed(uri, version, text) {
   const prev = docs.get(uri);
-  docs.set(uri, { version, text });
-  publish(uri, version, text);
+  docs.set(uri, { version, text, prev });
+  if (!env("FAKE_POST_ONLY") && inActive(uri)) publish(uri, version, text);
   if (env("FAKE_STALE") && prev) {
     setTimeout(() => publish(uri, prev.version, prev.text), 300);
   }
@@ -127,17 +149,34 @@ function handle(m) {
         intermediate.stdout.once("data", () => reply(CAPABILITIES));
         return;
       }
+      folders = (m.params?.workspaceFolders ?? []).map((f) => f.uri);
       return reply(CAPABILITIES);
     case "textDocument/documentSymbol":
-      return intermediateGone.then(() =>
+      return intermediateGone.then(() => {
+        const uri = m.params.textDocument.uri;
+        activeProject = projectOf(uri);
         reply(
           env("FAKE_EMPTY") ? [] : [{
             name: "CGR Lease Math",
             kind: 5,
             children: [{ name: "RateFactor", kind: 6 }],
           }],
-        )
-      );
+        );
+        const d = docs.get(uri);
+        if (!d || env("FAKE_PRE_ONLY")) return;
+        if (env("FAKE_FUTURE")) return publish(uri, d.version + 1, "");
+        publish(uri, d.version, d.text);
+        // Stale right behind it, whatever the timing of the response.
+        if (env("FAKE_STALE") && d.prev) {
+          publish(uri, d.prev.version, d.prev.text);
+        }
+        if (env("FAKE_INFLIGHT")) {
+          // A publish every 250 ms for 5 s: the URI settles only after.
+          const t = setInterval(() => publish(uri, d.version, d.text), 250);
+          busyUntil.set(uri, Date.now() + 5000);
+          setTimeout(() => clearInterval(t), 5000);
+        }
+      });
     case "textDocument/hover":
       return reply({
         contents: {
@@ -170,6 +209,9 @@ function handle(m) {
         m.params.textDocument.text,
       );
     case "textDocument/didChange":
+      if ((busyUntil.get(m.params.textDocument.uri) ?? 0) > Date.now()) {
+        process.exit(9); // FAKE_INFLIGHT: a didChange before the last settled
+      }
       return changed(
         m.params.textDocument.uri,
         m.params.textDocument.version,

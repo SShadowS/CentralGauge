@@ -16,6 +16,17 @@
 // one handle, so nothing is killed between a verified check and the kill.
 // The probe runs inside a per-cell container, so this residual cannot reach
 // host processes.
+// Diagnostics (M10-01c): the AL LS publishes without a document version, so
+// an edit is gated by order instead: didChange, then documentSymbol on the
+// file; only publishes after that response count. Residual risk: a stale
+// unversioned republish after the response cannot be told apart, and one
+// carrying no error can satisfy a present:false (absent) expectation. The
+// probe is a preflight/spike instrument; the backend build stays
+// authoritative for scoring. A versioned publish must name the document's
+// current version exactly. Known limitation: a diagnostics step on a file
+// never edited depends on the server republishing after a fresh
+// documentSymbol, which only the fake is proven to do; on the real AL LS it
+// may time out (2). The S1 rerun checks it.
 // Exit: 0 ok, 2 timeout, 3 server/protocol/cleanup, 4 configuration, 6 assertion.
 // node: built-ins only (Node in the image, Deno in the unit tests).
 import { Buffer } from "node:buffer";
@@ -464,26 +475,32 @@ function connect(spec) {
       }
     }
   });
-  const request = (method, params) =>
+  /**
+   * Resolves { result, mark }: mark is the notification count when the
+   * response arrived, so notes from mark on came after it (the frame order).
+   */
+  const requestAt = (method, params) =>
     new Promise((res, rej) => {
       const id = nextId++;
       pending.set(id, (m) =>
         m.error
           ? rej(new Error(`${method}: ${m.error.message}`))
-          : res(m.result));
+          : res({ result: m.result, mark: notes.length }));
       send({ jsonrpc: "2.0", id, method, params });
     });
+  const request = async (method, params) =>
+    (await requestAt(method, params)).result;
   const notify = (method, params) => send({ jsonrpc: "2.0", method, params });
   /**
    * Diagnostics for the document docKey `k` after notification index `from`
    * (publishes match by docKey, so any spelling of the uri), ignoring ones that
-   * name an older document version. Resolves { note } when the latest
-   * publish of version >= minVersion satisfies pred and stays the latest for
-   * settleMs. A publish without a version cannot be tied to an edit, so the
-   * first one resolves { unversioned } at once: the caller fails the step as
-   * not provable, never a pass after settling.
+   * name another document version (older or future). Resolves { note } when
+   * the latest publish (unversioned, or of exactly `version`) satisfies pred
+   * and stays the latest for settleMs. The AL LS publishes without a version,
+   * so the caller's `from` (after a documentSymbol response) is what ties an
+   * unversioned publish to an edit.
    */
-  const waitDiagnostics = (k, minVersion, pred, from, settleMs) =>
+  const waitDiagnostics = (k, version, pred, from, settleMs) =>
     new Promise((res) => {
       let timer = null;
       const publishes = () =>
@@ -492,7 +509,10 @@ function connect(spec) {
           docKey(String(n.params?.uri)) === k
         );
       const latest = () =>
-        publishes().reverse().find((n) => n.params.version >= minVersion);
+        publishes().reverse().find((n) =>
+          typeof n.params.version !== "number" ||
+          n.params.version === version
+        );
       const settle = (r) => {
         clearTimeout(timer);
         waiters.delete(check);
@@ -502,10 +522,6 @@ function connect(spec) {
       // Called on every notification; the settle timer restarts only when
       // the latest matching publish changes, not on unrelated traffic.
       function check() {
-        const unversioned = publishes().find((n) =>
-          typeof n.params.version !== "number"
-        );
-        if (unversioned) return settle({ unversioned });
         const n = latest() ?? null;
         if (n === current) return;
         current = n;
@@ -517,7 +533,7 @@ function connect(spec) {
       waiters.add(check);
       check();
     });
-  return { request, notify, waitDiagnostics, mark: () => notes.length, exited };
+  return { request, requestAt, notify, waitDiagnostics, exited };
 }
 
 /**
@@ -699,8 +715,21 @@ if (mode === "--preflight") {
   const r = await session(async (c, _apps, t0) => {
     const doc = docs(c);
     const out = [];
-    // Per document (docKey): the notification mark and version of its last edit.
+    // Per document (docKey): the version of its last edit, the notification
+    // mark of the documentSymbol response that followed it, and whether a
+    // diagnostics step has settled on it since.
     const edits = new Map();
+    // The ordering gate: documentSymbol on the document (it also activates
+    // the file's project in the AL LS wrapper); only publishes after its
+    // response count. Never al/setActiveWorkspace.
+    const gate = async (d) => {
+      const { mark } = await c.requestAt("textDocument/documentSymbol", {
+        textDocument: { uri: d.uri },
+      });
+      const e = { mark, version: d.version, settled: false };
+      edits.set(d.key, e);
+      return e;
+    };
     for (const [i, s] of steps.entries()) {
       process.stderr.write(`[step ${i}] ${s.op}\n`);
       const t = Date.now();
@@ -729,29 +758,31 @@ if (mode === "--preflight") {
         if (!cur.includes(s.find)) {
           fail(EXIT.config, `edit: ${s.file} does not contain ${s.find}`);
         }
-        const mark = c.mark();
-        const d = doc(s.file, cur.replace(s.find, s.replace));
-        edits.set(d.key, { mark, version: d.version });
+        // One didChange in flight per document: an unsettled earlier edit
+        // first settles (any diagnostics, the default quiet window).
+        const k = doc(s.file).key;
+        const prev = edits.get(k);
+        if (prev && !prev.settled) {
+          await c.waitDiagnostics(k, prev.version, () => true, prev.mark, 2000);
+        }
+        await gate(doc(s.file, cur.replace(s.find, s.replace)));
       } else if (s.op === "diagnostics") {
         const has = (n) =>
           n.params.diagnostics.some((x) =>
             String(x.code?.value ?? x.code) === s.code
           );
-        const k = doc(s.file).key;
-        // A file never edited is gated on its opened version 1, from the start.
-        const e = edits.get(k) ?? { mark: 0, version: 1 };
+        const d = doc(s.file);
+        // A file never edited is gated on its opened version from here on.
+        const e = edits.get(d.key) ?? await gate(d);
         const w = await c.waitDiagnostics(
-          k,
+          d.key,
           e.version,
           (n) => has(n) === s.present,
           e.mark,
           s.settleMs ?? 2000,
         );
-        result = (w.note ?? w.unversioned).params.diagnostics;
-        if (w.unversioned) {
-          why =
-            `publishDiagnostics for ${s.file} has no document version: not provable against document version ${e.version}`;
-        }
+        e.settled = true;
+        result = w.note.params.diagnostics;
       } else if (s.op === "hold") {
         await new Promise((res) => setTimeout(res, s.ms));
       } else fail(EXIT.config, `unknown step op ${s.op}`);
