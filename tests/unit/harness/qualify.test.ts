@@ -31,8 +31,8 @@ Deno.test("variantAllowed: a listed fixture/<name> is allowed; unlisted and the 
   }
 });
 
-Deno.test("QualifyManifestSchema: fixture defaults to none and names stay folder-safe (M11-07)", () => {
-  assertEquals(manifest().tasks["HX-101"]!.fixture, []);
+Deno.test("QualifyManifestSchema: fixture is optional (absent means none) and names stay folder-safe (M11-07)", () => {
+  assertEquals(manifest().tasks["HX-101"]!.fixture, undefined);
   assertStringIncludes(
     variantAllowed(manifest(), "HX-101", "fixture/dead-call", "abc") ?? "",
     "is not listed",

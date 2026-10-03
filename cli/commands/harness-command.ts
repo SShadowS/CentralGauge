@@ -23,6 +23,7 @@ import {
 import type {
   ArtifactRecord,
   CampaignRecord,
+  ExecutionRecord,
   JudgmentRecord,
 } from "../../src/harness/records.ts";
 import type { HarnessReport } from "../../src/harness/report.ts";
@@ -78,10 +79,21 @@ import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
 import {
   forcedRefusal,
+  measureExecution,
+  type MeasureRun,
+  measureWorkspace,
   rejudgeExecution,
   runCell,
   scrubForcedReason,
 } from "../../src/harness/execution.ts";
+import {
+  loadTaskMeasures,
+  measureFingerprint,
+  type MeasureRecord,
+  qualifyMeasures,
+  readMeasureRecord,
+  VARIANT,
+} from "../../src/harness/measures.ts";
 import {
   cellRefFor,
   loadCampaignData,
@@ -645,12 +657,12 @@ async function readScenario(path: string): Promise<string> {
 export async function harnessJudgeFixture(
   taskId: string,
   variant: string,
-  o: CellCliOptions & { manifest: string | null },
+  o: CellCliOptions & { manifest: string | null; measures?: boolean },
   open: Opener = openHarnessEnv,
 ): Promise<JudgmentRecord> {
-  if (!/^(correct|reference-tests|naive\/[A-Za-z0-9_-]+)$/.test(variant)) {
+  if (!VARIANT.test(variant)) {
     throw new ConfigurationError(
-      `variant must be correct, reference-tests or naive/<name>, got ${variant}`,
+      `variant must be correct, reference-tests, naive/<name> or fixture/<name>, got ${variant}`,
     );
   }
   if (o.manifest) {
@@ -707,11 +719,12 @@ export async function harnessJudgeFixture(
         : {}),
     });
     const ids = await taskSetIdentity(o.root, [task], h.env.symbols);
+    const fixtureOracle = await oracleHash(task);
     const { judgment, log } = await judge(h.env.lane, {
       executionId: crypto.randomUUID(),
       workspaceHash: frozen.workspace_hash,
       task,
-      oracleHash: await oracleHash(task),
+      oracleHash: fixtureOracle,
       pristine: staged.pristine,
       artifact: join(h.env.resultsRoot, frozen.stored_path),
       symbolIds: new Set(h.env.symbols.map((s) => s.app_id.toLowerCase())),
@@ -756,6 +769,43 @@ export async function harnessJudgeFixture(
           : colors.red("[FAIL]")
       } ${taskId} ${variant}: ${judgment.verdict} (${out})`,
     );
+    if (o.measures) {
+      // Qualification (spec 8.6): the record stays with the fixture, never
+      // under results/harness/measures/.
+      const rec = await measureWorkspace(
+        h.env,
+        {
+          task,
+          pristine: staged.pristine,
+          artifact: join(h.env.resultsRoot, frozen.stored_path),
+          workspaceHash: frozen.workspace_hash,
+          oracleHash: fixtureOracle,
+          judgment,
+          executionId: judgment.execution_id,
+        },
+        { startCache: new Map(), analyzers: null },
+        join(scratch, "measure"),
+      );
+      await Deno.writeTextFile(
+        join(out, "measures.json"),
+        JSON.stringify(rec, null, 2) + "\n",
+      );
+      console.log(`${colors.cyan("[info]")} ${measureLine(rec)}`);
+      const expect = (await loadTaskMeasures(task))?.expect[variant];
+      if (!expect) {
+        console.log(`${colors.yellow("[WARN]")} no expectation for ${variant}`);
+      } else {
+        const fails = qualifyMeasures(rec, expect);
+        for (const f of fails) console.log(`${colors.red("[FAIL]")} ${f}`);
+        if (fails.length === 0) {
+          console.log(
+            `${
+              colors.green("[OK]")
+            } ${taskId} ${variant}: measures as expected`,
+          );
+        }
+      }
+    }
     return judgment;
   } finally {
     await Deno.remove(scratch, { recursive: true }).catch(() => {});
@@ -1444,6 +1494,138 @@ export async function harnessRejudge(
   }
 }
 
+/** One line per measure record: what the report's exploratory section reads. */
+function measureLine(r: MeasureRecord): string {
+  const show = <T>(
+    m:
+      | MeasureRecord["final_code"]
+      | MeasureRecord["reuse"]
+      | MeasureRecord[
+        "partial_credit"
+      ],
+    f: (v: T) => string,
+  ) => m.status === "ok" ? f(m.value as T) : m.status;
+  return [
+    `final errors ${
+      show<{ errors: number }>(r.final_code, (v) => String(v.errors))
+    }`,
+    `new warnings ${
+      show<{ new_warnings: number | null }>(
+        r.final_code,
+        (v) => String(v.new_warnings ?? "n/a"),
+      )
+    }`,
+    `reuse ${
+      show<{ executed: boolean; effective: boolean }>(
+        r.reuse,
+        (v) => `${v.executed}/${v.effective}`,
+      )
+    }`,
+    `partial ${
+      show<{ new_requirements: number }>(
+        r.partial_credit,
+        (v) => v.new_requirements.toFixed(3),
+      )
+    }`,
+  ].join(", ");
+}
+
+/**
+ * `harness measure` (M11-07): the exploratory measures of each counted,
+ * scored cell's judgment that has no record under the current measure
+ * fingerprint. Never re-runs the agent, never touches a judgment. Refused
+ * unless the records validate and every campaign task is present. Asks
+ * unless --yes.
+ */
+export async function harnessMeasure(
+  experimentId: string,
+  o: RunCliOptions,
+  open: Opener = openHarnessEnv,
+  ask: (question: string) => boolean = askUser,
+): Promise<{ campaignId: string; measured: number }> {
+  // Read-only, before any lock, sweep or recovery; again under the env.
+  await rejudgeTarget(new RecordStore(o.resultsDir), experimentId, o);
+  const h = await open(
+    envOptions(o, o.resultsDir, `harness measure ${experimentId}`),
+  );
+  try {
+    const env = h.env;
+    const c = await rejudgeTarget(env.store, experimentId, o);
+    const data = await loadCampaignData(env.store, c);
+    await validateCampaignRecords(data);
+    const tasks = new Map(
+      (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
+        t,
+      ) => [t.task.id, t]),
+    );
+    const absent = c.task_set.tasks.filter((t) => !tasks.has(t.id));
+    if (absent.length > 0) {
+      throw new ConfigurationError(
+        `measure needs every campaign task; missing: ${
+          absent.map((t) => t.id).join(", ")
+        }`,
+      );
+    }
+    const byExecution = new Map<string, JudgmentRecord[]>();
+    for (const j of data.judgments) {
+      byExecution.set(j.execution_id, [
+        ...(byExecution.get(j.execution_id) ?? []),
+        j,
+      ]);
+    }
+    const judgments = new Map(data.judgments.map((j) => [j.id, j]));
+    const executions = new Map(data.executions.map((e) => [e.id, e]));
+    const fp = await measureFingerprint();
+    const due: { e: ExecutionRecord; j: JudgmentRecord }[] = [];
+    for (const cell of cellsFromRecords(c, data.executions, byExecution)) {
+      if (cell.used_execution === null || cell.judgment_id === null) continue;
+      if (o.execution && cell.used_execution !== o.execution) continue;
+      const j = judgments.get(cell.judgment_id)!;
+      if (j.verdict === "unscored") continue;
+      if (await readMeasureRecord(env.resultsRoot, j.id, fp)) continue;
+      due.push({ e: executions.get(cell.used_execution)!, j });
+    }
+    if (due.length === 0) {
+      console.log(
+        `${colors.green("[OK]")} nothing to measure in campaign ${c.id}`,
+      );
+      return { campaignId: c.id, measured: 0 };
+    }
+    if (
+      !o.yes &&
+      !ask(
+        `Measure ${due.length} judged execution(s) of campaign ${c.id} (final-code check, reuse probe, partial credit)?`,
+      )
+    ) {
+      console.log(`${colors.yellow("[SKIP]")} measure not confirmed`);
+      return { campaignId: c.id, measured: 0 };
+    }
+    const opened: OpenedTasks = { tasks, refapps: new Map() };
+    for (const { e } of due) {
+      const v = tasks.get(e.task_id)!.task.refapp_version;
+      if (!opened.refapps.has(v)) {
+        opened.refapps.set(v, await resolveRefapp(o.root, v));
+      }
+    }
+    // One run: the canary and each task's start counts are computed once.
+    const run: MeasureRun = { startCache: new Map(), analyzers: null };
+    for (const { e, j } of due) {
+      const cell = cellRefFor(
+        c,
+        opened,
+        c.blocks[e.block]!,
+        e.arm,
+        e.order_in_block,
+      );
+      const r = await measureExecution(env, cell, e, j, run);
+      console.log(`${colors.green("[OK]")} ${e.id}: ${measureLine(r)}`);
+    }
+    return { campaignId: c.id, measured: due.length };
+  } finally {
+    await h.close();
+  }
+}
+
 /** Failing oracle rows, or the surviving mutants of mutant_kill (the verdict's own rule). */
 function judgmentReasons(j: JudgmentRecord): string[] {
   const out: string[] = [];
@@ -2075,15 +2257,19 @@ export function registerHarnessCommand(
   shared(
     parent.command(
       "judge-fixture <task:string> <variant:string>",
-      "Judge correct/, reference-tests/ or naive/<name>/ without an agent",
+      "Judge correct/, reference-tests/, naive/<name>/ or fixture/<name>/ without an agent",
     ),
   )
     .option(
       "--manifest <path:string>",
       "Qualification manifest shared with M4; refuses unlisted variants or revisions",
     )
+    .option(
+      "--measures",
+      "Also measure the fixture (M11) into its output folder and check measures.yml expect",
+    )
     .action((
-      opts: CellCliFlags & { manifest?: string },
+      opts: CellCliFlags & { manifest?: string; measures?: boolean },
       task: string,
       variant: string,
     ) =>
@@ -2091,6 +2277,7 @@ export function registerHarnessCommand(
         void await harnessJudgeFixture(task, variant, {
           ...cliOpts(opts),
           manifest: opts.manifest ? resolve(opts.manifest) : null,
+          measures: opts.measures === true,
         })
       )
     );
@@ -2200,6 +2387,28 @@ export function registerHarnessCommand(
     ) =>
       fail(async () =>
         void await harnessRejudge(
+          experiment,
+          runOpts({ ...opts, concurrency: 1, maxPauseMin: 0 }),
+          open,
+        )
+      )
+    );
+
+  shared(
+    parent.command(
+      "measure <experiment:string>",
+      "Exploratory measures (final-code check, reuse, partial credit) of judged cells not yet measured",
+    ),
+  )
+    .option("--execution <id:string>", "Only this execution")
+    .option("--campaign <id:string>", "This campaign (default: newest)")
+    .option("--yes", "Do not ask for confirmation")
+    .action((
+      opts: Omit<RunFlags, "concurrency" | "maxPauseMin">,
+      experiment: string,
+    ) =>
+      fail(async () =>
+        void await harnessMeasure(
           experiment,
           runOpts({ ...opts, concurrency: 1, maxPauseMin: 0 }),
           open,
