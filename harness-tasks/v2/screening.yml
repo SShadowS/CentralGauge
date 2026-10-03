@@ -42,6 +42,9 @@ candidates:
   - id: HX-017
     prior: intermediate
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Rental-Post.OnAfterPostRentalContract" }
+  - id: HX-015
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: null, traces: null }
   - id: HX-018
     prior: intermediate
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Service Plan Mgt.OnAfterServiceRegistered" }
