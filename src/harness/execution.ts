@@ -35,6 +35,7 @@ import {
   requestedComponents,
 } from "./adapter.ts";
 import { adapterFor } from "./adapters/mod.ts";
+import { piConfigInvalid } from "./adapters/pi.ts";
 import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, DeployContext } from "./bc-lane.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
@@ -996,6 +997,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     try {
       parsed = await adapter.parse({
         rawLog: p.raw,
+        stderrLog: p.stderr,
         exitCode: f.sandbox.exitCode,
         manifest: f.manifest,
         pricing: f.pricing,
@@ -1045,8 +1047,17 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     : f.interrupted
     ? "runner_interrupted"
     : null;
+  // H-01u: pi that ignored its staged settings (pi_config_invalid) is never a
+  // valid cell, whatever stop reason, timeout or recovery would say instead.
+  // Run 003: decided from stderr itself as well, so a stream the adapter's
+  // parser refuses (its problems then lost) cannot drop the verdict.
+  const configInvalid =
+    problems.some((x) => x.startsWith("pi_config_invalid: ")) ||
+    (started && f.manifest.harness === "pi" &&
+      await piConfigInvalid(p.stderr) !== null);
   const termination: ExecutionRecord["termination"] =
-    !started || f.setupError !== null || check.mismatch !== null
+    !started || f.setupError !== null || check.mismatch !== null ||
+      configInvalid
       ? "setup_failed"
       : stopReason !== null || parseError !== null
       ? "harness_crash"
