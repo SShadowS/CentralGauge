@@ -158,7 +158,7 @@ Deno.test({
 
 Deno.test({
   name:
-    "lsp-probe: a hung cleanup command is cut by its own deadline, so the timeout (2) still lands near the bound",
+    "lsp-probe: a hung cleanup command is cut by its own deadline; the unverified cleanup is a failure (3) near the bound",
   ignore: !WINDOWS,
   async fn() {
     const t0 = Date.now();
@@ -173,13 +173,146 @@ Deno.test({
         "setTimeout(() => {}, 60000)",
       ]),
     });
-    assertEquals(r.code, 2, r.stderr);
+    assertEquals(r.code, 3, r.stderr);
+    assertStringIncludes(r.stderr, "cleanup incomplete: process table");
     assert(
       Date.now() - t0 < 20_000,
       `took ${Date.now() - t0} ms: ${r.stderr}`,
     );
   },
 });
+
+Deno.test({
+  name:
+    "lsp-probe: an unreadable process table makes cleanup incomplete (3), never success",
+  ignore: !WINDOWS,
+  async fn() {
+    const r = await probe(await setup(), ["--preflight"], {
+      CG_LSP_TEST_TABLE_CMD: JSON.stringify([
+        Deno.execPath(),
+        "eval",
+        "Deno.exit(1)",
+      ]),
+    });
+    assertEquals(r.code, 3, r.stderr);
+    assertStringIncludes(r.stderr, "cleanup incomplete: process table");
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe: a process whose pid is targeted with another creation time is never killed (identity-bound kill)",
+  ignore: !WINDOWS,
+  async fn() {
+    const bystander = new Deno.Command(Deno.execPath(), {
+      args: ["eval", "setTimeout(() => {}, 60000)"],
+      stdout: "null",
+      stderr: "null",
+    }).spawn();
+    try {
+      // Test-only: a stale target with this pid but a wrong creation time, as
+      // if the pid had been reused since the probe recorded it.
+      const r = await probe(await setup(), ["--preflight"], {
+        FAKE_IGNORE_EXIT: "1",
+        CG_LSP_TEST_EXTRA_KILL: JSON.stringify([
+          { pid: bystander.pid, created: "1" },
+        ]),
+      });
+      assertEquals(r.code, 3, r.stderr);
+      assertStringIncludes(r.stderr, `pid ${bystander.pid}: mismatch`);
+      const alive = await Promise.race([
+        bystander.status.then(() => false),
+        new Promise<boolean>((res) => setTimeout(() => res(true), 500)),
+      ]);
+      assert(alive, "the bystander is still alive");
+    } finally {
+      try {
+        bystander.kill("SIGKILL");
+      } catch { /* gone */ }
+      await bystander.status;
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe: a server whose death cannot be confirmed by identity is cleanup incomplete (3)",
+  ignore: !WINDOWS,
+  async fn() {
+    const r = await probe(await setup(), ["--preflight"], {
+      FAKE_HANG: "1",
+      CG_LSP_TIMEOUT_MS: "1500",
+      // Test-only: the server's recorded creation time is wrong.
+      CG_LSP_TEST_ROOT_CREATED: "1",
+    });
+    assertEquals(r.code, 3, r.stderr);
+    assertStringIncludes(r.stderr, "cleanup incomplete: server pid");
+    assertStringIncludes(r.stderr, "not confirmed dead");
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe: a child the server started after the last snapshot is found by the post-kill sweep and killed",
+  ignore: !WINDOWS,
+  async fn() {
+    const marker = `cg-m10-orphan-${crypto.randomUUID()}`;
+    const s = await setup();
+    const gate = join(s.dir, "gate");
+    const r = await probe(s, ["--preflight"], {
+      FAKE_IGNORE_EXIT: "1",
+      FAKE_LATE_ORPHAN: marker,
+      FAKE_GATE: gate,
+      // Test-only: no snapshot right before the kill, so only the sweep
+      // after the server's confirmed death can see the late child.
+      CG_LSP_TEST_SKIP_PREKILL_SNAPSHOT: "1",
+    });
+    assertEquals(r.code, 3, r.stderr);
+    const pid = (await Deno.readTextFile(`${gate}.pid`)).trim();
+    assert(/^\d+$/.test(pid), "the fake recorded the late child");
+    // "killed" means it was found alive with a matching identity.
+    assertStringIncludes(r.stderr, `pid ${pid}: killed`);
+    assertEquals(await withMarker(marker), 0, "the probe killed the child");
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe: CG_LSP_CMD_MS and CG_LSP_TIMEOUT_MS must be finite and positive, else a configuration error (4)",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    for (const v of ["0", "-5", "abc", "Infinity"]) {
+      const r = await probe(s, ["--preflight"], { CG_LSP_CMD_MS: v });
+      assertEquals(r.code, 4, `CG_LSP_CMD_MS=${v}: ${r.stderr}`);
+      assertStringIncludes(r.stderr, "CG_LSP_CMD_MS");
+    }
+    const t = await probe(s, ["--preflight"], { CG_LSP_TIMEOUT_MS: "0" });
+    assertEquals(t.code, 4, t.stderr);
+  },
+});
+
+const BAD_HEADERS: [string, string][] = [
+  ["a prefixed field name", "X-Content-Length: 2"],
+  ["a non-numeric length", "Content-Length: 2junk"],
+  ["duplicate conflicting lengths", "Content-Length: 2|Content-Length: 3"],
+  ["an oversized length", "Content-Length: 99999999999"],
+];
+for (const [label, header] of BAD_HEADERS) {
+  Deno.test({
+    name:
+      `lsp-probe: a frame header with ${label} is a protocol failure (3), not a timeout`,
+    ignore: !WINDOWS,
+    async fn() {
+      const r = await probe(await setup(), ["--preflight"], {
+        FAKE_FRAME: header,
+        CG_LSP_TIMEOUT_MS: "20000",
+      });
+      assertEquals(r.code, 3, r.stderr);
+      assertStringIncludes(r.stderr, "frame header");
+    },
+  });
+}
 
 Deno.test({
   name: "lsp-probe: a server that ignores exit is killed and fails cleanup (3)",
@@ -222,10 +355,30 @@ Deno.test({
     "lsp-probe: a malformed frame is a server failure (3) that still kills the tree",
   ignore: !WINDOWS,
   async fn() {
-    await assertSurvivorKilled(
-      (m) => ({ FAKE_ORPHAN: m, FAKE_MALFORMED: "1" }),
-      "malformed frame",
-    );
+    const marker = `cg-m10-orphan-${crypto.randomUUID()}`;
+    const s = await setup();
+    const gate = join(s.dir, "gate");
+    // The fake starts the marked child, writes gate.pid, and sends the bad
+    // frame only once gate.go exists: the child is observed live first.
+    const run = probe(s, ["--preflight"], {
+      FAKE_ORPHAN: marker,
+      FAKE_MALFORMED: "1",
+      FAKE_GATE: gate,
+    });
+    for (let i = 0; i < 300; i++) {
+      try {
+        await Deno.stat(`${gate}.pid`);
+        break;
+      } catch {
+        await new Promise((res) => setTimeout(res, 100));
+      }
+    }
+    assertEquals(await withMarker(marker), 1, "the marked child is live");
+    await Deno.writeTextFile(`${gate}.go`, "");
+    const r = await run;
+    assertEquals(r.code, 3, r.stderr);
+    assertStringIncludes(r.stderr, "malformed frame");
+    assertEquals(await withMarker(marker), 0, "the probe killed the child");
   },
 });
 
@@ -372,6 +525,43 @@ Deno.test({
     assertEquals(r.code, 0, r.stderr);
     const out = JSON.parse(r.stdout);
     assertEquals(out.steps[3].result[0].code, "AL0118");
+  },
+});
+
+const ALIAS = "core/SRC/leasemath.codeunit.AL";
+
+Deno.test({
+  name:
+    "lsp-probe script: a differently cased or separated name is the same document: it keeps the edit's version gate",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    const r = await probe(s, [
+      "--script",
+      await steps(s, [
+        EDIT_CYCLE[0],
+        { ...EDIT_CYCLE[1], file: ALIAS },
+      ]),
+    ], { CG_LSP_TIMEOUT_MS: "20000" });
+    assertEquals(r.code, 0, r.stderr);
+    assertEquals(JSON.parse(r.stdout).steps[1].result[0].code, "AL0118");
+  },
+});
+
+Deno.test({
+  name:
+    "lsp-probe script: an aliased name never lets pre-edit clean diagnostics pass present:false (timeout, not a pass)",
+  ignore: !WINDOWS,
+  async fn() {
+    const s = await setup();
+    const r = await probe(s, [
+      "--script",
+      await steps(s, [
+        EDIT_CYCLE[0],
+        { ...EDIT_CYCLE[3], file: ALIAS, settleMs: 300 },
+      ]),
+    ], { CG_LSP_TIMEOUT_MS: "6000" });
+    assertEquals(r.code, 2, r.stderr);
   },
 });
 

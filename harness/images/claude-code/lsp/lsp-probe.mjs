@@ -5,33 +5,53 @@
 //                      documentSymbol, shutdown. stderr only, so the
 //                      inventory's single stdout line stays intact.
 //   --script <steps>   run S1 steps with expectations; one JSON object on stdout.
-// Every exit path kills the server's whole process tree; a clean shutdown must
-// end the tree within CG_LSP_SHUTDOWN_MS. Each cleanup command (CIM table,
-// taskkill) has its own deadline, CG_LSP_CMD_MS.
+// Every exit path kills the server's whole process tree, each process by
+// identity (pid plus creation time, killed through the handle that verified
+// it); a clean shutdown must end the tree within CG_LSP_SHUTDOWN_MS. Each
+// cleanup command (CIM table, identity kill) has its own deadline,
+// CG_LSP_CMD_MS. A cleanup that cannot be verified exits 3.
 // Exit: 0 ok, 2 timeout, 3 server/protocol/cleanup, 4 configuration, 6 assertion.
 // node: built-ins only (Node in the image, Deno in the unit tests).
 import { Buffer } from "node:buffer";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, normalize, relative, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+const EXIT = { ok: 0, timeout: 2, server: 3, config: 4, assertion: 6 };
+/** A duration setting: finite and > 0, else exit 4 (0 would disable a deadline). */
+function ms(name, fallback) {
+  const raw = process.env[name] ?? fallback;
+  const v = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(v) || v <= 0) {
+    process.stderr.write(
+      `[FAIL] lsp-probe: ${name}=${raw} must be a finite number of ms > 0\n`,
+    );
+    process.exit(EXIT.config);
+  }
+  return v;
+}
 const PLUGIN = process.env.CG_LSP_PLUGIN ??
   "C:\\cg-lsp\\al-language-server-go-windows";
 const WORKSPACE = process.env.CG_LSP_WORKSPACE ?? "C:\\workspace";
-const TIMEOUT_MS = Number(process.env.CG_LSP_TIMEOUT_MS ?? "180000");
-const SHUTDOWN_MS = Number(process.env.CG_LSP_SHUTDOWN_MS ?? "10000");
+const TIMEOUT_MS = ms("CG_LSP_TIMEOUT_MS", "180000");
+const SHUTDOWN_MS = ms("CG_LSP_SHUTDOWN_MS", "10000");
+// Deadline of each synchronous cleanup command (CIM table, identity kill): a
+// hung one is killed on expiry, so it delays an exit by at most CMD_MS per
+// call instead of blocking the probe (and its JavaScript timeout) forever.
+const CMD_MS = ms("CG_LSP_CMD_MS", "30000");
 const ROOT_VAR = "$" + "{CLAUDE_PLUGIN_ROOT}";
-// Deadline of each synchronous cleanup command (CIM table, taskkill): a hung
-// one is killed on expiry, so it delays an exit by at most CMD_MS per call
-// instead of blocking the probe (and its JavaScript timeout) forever.
-const CMD_MS = Number(process.env.CG_LSP_CMD_MS ?? "30000");
-const EXIT = { ok: 0, timeout: 2, server: 3, config: 4, assertion: 6 };
+// Largest accepted frame body; a bigger Content-Length is a protocol failure.
+const MAX_FRAME_BYTES = 64 * 1024 * 1024;
+// Largest header block before its blank line.
+const MAX_HEADER_BYTES = 8192;
 let child = null;
 let childExited = false;
-// Server start as a Windows FILETIME (100 ns since 1601), taken before spawn:
-// a process created earlier is not one the probe started.
+// Creation times are Windows FILETIMEs (100 ns since 1601) cut to whole
+// microseconds (ft - ft % 10), the precision CIM reports; the identity kill
+// cuts Process.StartTime the same way, so both compare exactly. spawnedAt is
+// taken before spawn: a process created earlier is not one the probe started.
 let spawnedAt = 0n;
 const fileTimeNow = () => (BigInt(Date.now()) + 11644473600000n) * 10000n;
 
@@ -56,7 +76,7 @@ function processTable() {
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "Get-CimInstance Win32_Process | ForEach-Object { [string]$_.ProcessId + ' ' + [string]$_.ParentProcessId + ' ' + [string]$(if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { 0 }) + ' ' + $_.Name }",
+      "Get-CimInstance Win32_Process | ForEach-Object { $f = [int64]0; if ($_.CreationDate) { $f = $_.CreationDate.ToFileTimeUtc(); $f = $f - ($f % 10) }; [string]$_.ProcessId + ' ' + [string]$_.ParentProcessId + ' ' + [string]$f + ' ' + $_.Name }",
     ];
   const out = runSync(cmd, args, { encoding: "utf8" });
   return out.split(/\r?\n/).filter((l) => l.trim()).map((l) => {
@@ -86,21 +106,29 @@ const isAlive = (table, t) =>
  * parent, so a reused parent pid cannot adopt older processes. Returns the
  * table.
  */
-function snapshot() {
+function snapshot(rootHeld = false) {
   const table = processTable();
+  const now = fileTimeNow();
   const root = table.find((r) => r.pid === child.pid);
   if (
     rootCreated === null && root && !childExited &&
     BigInt(root.created) >= spawnedAt
-  ) rootCreated = root.created;
+  ) {
+    // Test only: CG_LSP_TEST_ROOT_CREATED records a wrong creation time.
+    rootCreated = process.env.CG_LSP_TEST_ROOT_CREATED ?? root.created;
+  }
   const parents = [...tracked.values()].filter((t) => isAlive(table, t));
-  if (root && root.created === rootCreated) parents.push(root);
+  // rootHeld: the server is dead but this process still holds its handle,
+  // so its pid cannot have been reused and children naming it are its own.
+  if ((root && root.created === rootCreated) || (rootHeld && rootCreated)) {
+    parents.push({ pid: child.pid, created: rootCreated });
+  }
   for (let i = 0; i < parents.length; i++) {
     const p = parents[i];
     for (const r of table) {
       if (
         r.ppid === p.pid && r.pid !== child.pid && !tracked.has(key(r)) &&
-        BigInt(r.created) >= BigInt(p.created)
+        BigInt(r.created) >= BigInt(p.created) && BigInt(r.created) <= now
       ) {
         tracked.set(key(r), r);
         parents.push(r);
@@ -110,34 +138,132 @@ function snapshot() {
   return table;
 }
 
-// ponytail: identity is a pid plus its creation time from a snapshot taken
-// just before the kill; a pid reused within that gap (milliseconds) would
-// still be hit. Close it with process handles if that ever matters.
-function killPid(pid) {
+// One process at a time, never a tree: open the process once ($p.Handle
+// caches a handle that StartTime and Kill then reuse), compare its start time
+// with the recorded creation time, and kill through that same handle. A pid
+// reused by another process fails the comparison and is never touched.
+const KILL_PS = "$ErrorActionPreference = 'Stop'; " +
+  "foreach ($t in $env:CG_LSP_KILL_TARGETS.Split(',')) { " +
+  "$id, $c = $t.Split(':'); $p = $null; " +
+  "try { $p = [System.Diagnostics.Process]::GetProcessById([int]$id) } catch { $id + ' gone'; continue }; " +
+  "try { $null = $p.Handle; $f = $p.StartTime.ToFileTimeUtc(); $f = $f - ($f % 10) } " +
+  "catch { if ($p.HasExited) { $id + ' gone' } else { $id + ' unverifiable' }; continue }; " +
+  "if ([string]$f -ne $c) { $id + ' mismatch'; continue }; " +
+  "if ($p.HasExited) { $id + ' gone'; continue }; " +
+  "try { $p.Kill() } catch { }; " +
+  "if ($p.WaitForExit(2000)) { $id + ' killed' } else { $id + ' failed' } }";
+
+/**
+ * Kills each {pid, created} target by identity (one bounded call) and waits
+ * for each to exit. Reports every result on stderr; returns { results: pid
+ * to status, open: the targets that may still be ours and alive
+ * (unverifiable, failed, or no result) }.
+ */
+function killByIdentity(targets) {
+  if (targets.length === 0) return { open: [], results: new Map() };
+  const results = new Map();
   try {
-    runSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
-  } catch { /* already gone, or the deadline passed */ }
+    const out = runSync("powershell", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      KILL_PS,
+    ], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CG_LSP_KILL_TARGETS: targets.map((t) => `${t.pid}:${t.created}`).join(
+          ",",
+        ),
+      },
+    });
+    for (const l of out.split(/\r?\n/)) {
+      const [pid, status] = l.trim().split(" ");
+      if (status) results.set(Number(pid), status);
+    }
+  } catch (e) {
+    process.stderr.write(`[cleanup] identity kill: ${errText(e)}\n`);
+  }
+  const open = [];
+  for (const t of targets) {
+    const status = results.get(t.pid) ?? "no result";
+    process.stderr.write(`[cleanup] pid ${t.pid}: ${status}\n`);
+    if (!["killed", "gone", "mismatch"].includes(status)) open.push(t);
+  }
+  return { open, results };
 }
 
 /**
- * The server by pid only before its exit is seen (the open handle keeps the
- * pid from reuse); after that, only tracked processes whose identity a fresh
- * table confirms. Without a table those cannot be confirmed and are left.
+ * Kills the server and every tracked process a fresh table still shows with
+ * the recorded creation time, each by identity (never by bare pid, never
+ * /T), confirming each exit; then sweeps for children the server started
+ * since the last snapshot. Returns null when cleanup is verified, else why
+ * not.
  */
 function killTree() {
-  if (!child?.pid) return;
+  if (!child?.pid) return null;
   let table = null;
+  let why = null;
   try {
-    table = snapshot();
-  } catch { /* no table: the root tree only */ }
-  if (!childExited) killPid(child.pid);
-  if (!table) return;
-  for (const t of tracked.values()) if (isAlive(table, t)) killPid(t.pid);
+    // Test only: skip the snapshot right before the kill.
+    if (!process.env.CG_LSP_TEST_SKIP_PREKILL_SNAPSHOT) table = snapshot();
+  } catch (e) {
+    why = `process table unreadable (${errText(e)}): the tree is unverified`;
+  }
+  // Nothing in here yields to the event loop, so if the server's exit has not
+  // been seen yet, its handle stays open (and its pid unreusable) throughout.
+  const held = !childExited;
+  const targets = table
+    ? [...tracked.values()].filter((t) => isAlive(table, t))
+    : [];
+  // The server first, killed by identity so its death is confirmed (it waits
+  // for the exit), not assumed.
+  const root = held && rootCreated
+    ? { pid: child.pid, created: rootCreated }
+    : null;
+  if (root) targets.unshift(root);
+  // Test only: extra targets, as if a recorded pid had been reused.
+  targets.push(...JSON.parse(process.env.CG_LSP_TEST_EXTRA_KILL ?? "[]"));
+  const first = killByIdentity(targets);
+  const rootDead = !held ||
+    ["killed", "gone"].includes(first.results.get(child.pid));
+  if (!rootDead) {
+    // Unconfirmed: still end it through the spawn handle, but report it.
+    try {
+      child.kill("SIGKILL");
+    } catch { /* reported below */ }
+    why ??= `server pid ${child.pid} not confirmed dead`;
+  }
+  let open = first.open.filter((t) => t !== root);
+  // Sweep: children the server started after the last snapshot still name its
+  // (held, so not reused) pid as parent; find and kill them, with their trees.
+  if (held && rootDead && rootCreated) {
+    try {
+      const after = snapshot(true);
+      const late = [...tracked.values()].filter((t) =>
+        isAlive(after, t) && !targets.includes(t)
+      );
+      open = open.concat(killByIdentity(late).open);
+    } catch (e) {
+      why ??= `process table unreadable after the kill (${errText(e)})`;
+    }
+  }
+  if (open.length > 0) {
+    why ??= `${open.length} process(es) not confirmed dead: ${
+      open.map((t) => t.pid).join(", ")
+    }`;
+  }
+  return why;
 }
 
+/** Cleans up and exits; an unverified cleanup turns any exit into 3. */
 function fail(code, msg) {
   process.stderr.write(`[FAIL] lsp-probe: ${msg}\n`);
-  killTree();
+  const why = killTree();
+  if (why) {
+    process.stderr.write(`[FAIL] lsp-probe: cleanup incomplete: ${why}\n`);
+    process.exit(EXIT.server);
+  }
   process.exit(code);
 }
 
@@ -171,9 +297,48 @@ function serverSpec() {
   };
 }
 
+/**
+ * The body length of a header block (complete CRLF lines, no blank line), or
+ * a string saying why the block is not acceptable: every line a
+ * `field: value` header, exactly one Content-Length (field name
+ * case-insensitive) whose value is digits only and at most MAX_FRAME_BYTES.
+ */
+function frameLength(block) {
+  const lengths = [];
+  for (const line of block.split("\r\n")) {
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+:/.test(line)) {
+      return `not a header line: ${JSON.stringify(line.slice(0, 80))}`;
+    }
+    if (/^content-length:/i.test(line)) {
+      const m = /^Content-Length:[ \t]*(\d+)[ \t]*$/i.exec(line);
+      if (!m) return `bad Content-Length: ${JSON.stringify(line.slice(0, 80))}`;
+      lengths.push(m[1]);
+    }
+  }
+  if (lengths.length !== 1) {
+    return `${lengths.length} Content-Length headers, need exactly one`;
+  }
+  const n = Number(lengths[0]);
+  if (!Number.isSafeInteger(n) || n > MAX_FRAME_BYTES) {
+    return `Content-Length ${lengths[0]} over ${MAX_FRAME_BYTES} bytes`;
+  }
+  return n;
+}
+
 const uri = (p) => pathToFileURL(p).href;
-const sameUri = (a, b) =>
-  decodeURIComponent(a).toLowerCase() === decodeURIComponent(b).toLowerCase();
+/**
+ * One identity for a document, whether named by a workspace-relative path,
+ * an absolute path or a file URI (percent-encoded or not): the decoded,
+ * normalized, lower-cased Windows path. Windows file names ignore case.
+ */
+function docKey(x) {
+  try {
+    const p = /^file:/i.test(x) ? fileURLToPath(x) : resolve(WORKSPACE, x);
+    return normalize(p).replaceAll("/", "\\").toLowerCase();
+  } catch {
+    return `unparsed:${String(x).toLowerCase()}`;
+  }
+}
 const appDirs = () =>
   readdirSync(WORKSPACE, { withFileTypes: true })
     .filter((e) =>
@@ -230,12 +395,15 @@ function connect(spec) {
     buf = Buffer.concat([buf, d]);
     for (;;) {
       const sep = buf.indexOf("\r\n\r\n");
-      if (sep < 0) return;
-      const m = /Content-Length: *(\d+)/i.exec(
-        buf.subarray(0, sep).toString("ascii"),
-      );
-      if (!m) fail(EXIT.server, "frame without Content-Length");
-      const end = sep + 4 + Number(m[1]);
+      if (sep < 0) {
+        if (buf.length > MAX_HEADER_BYTES) {
+          fail(EXIT.server, `frame header over ${MAX_HEADER_BYTES} bytes`);
+        }
+        return;
+      }
+      const len = frameLength(buf.subarray(0, sep).toString("latin1"));
+      if (typeof len === "string") fail(EXIT.server, `frame header: ${len}`);
+      const end = sep + 4 + len;
       if (buf.length < end) return;
       let msg;
       try {
@@ -276,20 +444,21 @@ function connect(spec) {
     });
   const notify = (method, params) => send({ jsonrpc: "2.0", method, params });
   /**
-   * Diagnostics for u after notification index `from`, ignoring publishes that
+   * Diagnostics for the document docKey `k` after notification index `from`
+   * (publishes match by docKey, so any spelling of the uri), ignoring ones that
    * name an older document version. Resolves { note } when the latest
    * publish of version >= minVersion satisfies pred and stays the latest for
    * settleMs. A publish without a version cannot be tied to an edit, so the
    * first one resolves { unversioned } at once: the caller fails the step as
    * not provable, never a pass after settling.
    */
-  const waitDiagnostics = (u, minVersion, pred, from, settleMs) =>
+  const waitDiagnostics = (k, minVersion, pred, from, settleMs) =>
     new Promise((res) => {
       let timer = null;
       const publishes = () =>
         notes.slice(from).filter((n) =>
           n.method === "textDocument/publishDiagnostics" &&
-          sameUri(n.params.uri, u)
+          docKey(String(n.params?.uri)) === k
         );
       const latest = () =>
         publishes().reverse().find((n) => n.params.version >= minVersion);
@@ -320,28 +489,37 @@ function connect(spec) {
   return { request, notify, waitDiagnostics, mark: () => notes.length, exited };
 }
 
-/** Opens a workspace-relative file once; a later text is a didChange with the next version. */
+/**
+ * Opens a workspace-relative file once per docKey (any spelling of the same
+ * file is the same document, under the uri of its first opening); a later
+ * text is a didChange with the next version.
+ */
 function docs(c) {
   const open = new Map();
   return (rel, text) => {
-    const p = join(WORKSPACE, rel);
-    const d = open.get(p);
+    const key = docKey(rel);
+    let d = open.get(key);
     if (!d) {
-      const t = text ?? readFileSync(p, "utf8");
-      open.set(p, { text: t, version: 1 });
+      const p = join(WORKSPACE, rel);
+      d = { uri: uri(p), text: text ?? readFileSync(p, "utf8"), version: 1 };
+      open.set(key, d);
       c.notify("textDocument/didOpen", {
-        textDocument: { uri: uri(p), languageId: "al", version: 1, text: t },
+        textDocument: {
+          uri: d.uri,
+          languageId: "al",
+          version: 1,
+          text: d.text,
+        },
       });
     } else if (text !== undefined) {
       d.text = text;
       d.version++;
       c.notify("textDocument/didChange", {
-        textDocument: { uri: uri(p), version: d.version },
+        textDocument: { uri: d.uri, version: d.version },
         contentChanges: [{ text }],
       });
     }
-    const cur = open.get(p);
-    return { uri: uri(p), text: cur.text, version: cur.version };
+    return { key, uri: d.uri, text: d.text, version: d.version };
   };
 }
 
@@ -396,7 +574,7 @@ async function session(fn) {
     // Same pid and same creation time: the very process tracked earlier.
     const survivors = [...tracked.values()].filter((t) => isAlive(table, t));
     if (survivors.length > 0) {
-      for (const s of survivors) killPid(s.pid);
+      // fail() kills them, each by identity.
       fail(
         EXIT.server,
         `${survivors.length} subprocess(es) survived shutdown: ${
@@ -488,7 +666,7 @@ if (mode === "--preflight") {
   const r = await session(async (c, _apps, t0) => {
     const doc = docs(c);
     const out = [];
-    // Per file (document uri): the notification mark and version of its last edit.
+    // Per document (docKey): the notification mark and version of its last edit.
     const edits = new Map();
     for (const [i, s] of steps.entries()) {
       process.stderr.write(`[step ${i}] ${s.op}\n`);
@@ -520,17 +698,17 @@ if (mode === "--preflight") {
         }
         const mark = c.mark();
         const d = doc(s.file, cur.replace(s.find, s.replace));
-        edits.set(d.uri, { mark, version: d.version });
+        edits.set(d.key, { mark, version: d.version });
       } else if (s.op === "diagnostics") {
         const has = (n) =>
           n.params.diagnostics.some((x) =>
             String(x.code?.value ?? x.code) === s.code
           );
-        const u = doc(s.file).uri;
+        const k = doc(s.file).key;
         // A file never edited is gated on its opened version 1, from the start.
-        const e = edits.get(u) ?? { mark: 0, version: 1 };
+        const e = edits.get(k) ?? { mark: 0, version: 1 };
         const w = await c.waitDiagnostics(
-          u,
+          k,
           e.version,
           (n) => has(n) === s.present,
           e.mark,

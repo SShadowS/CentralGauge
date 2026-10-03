@@ -8,13 +8,29 @@
 // without and then once with its version; FAKE_INTERMEDIATE starts a child
 // that starts a detached grandchild (command line carries the value) and is
 // killed on the first didOpen, before documentSymbol answers; FAKE_MALFORMED
-// answers initialize with a frame that is not JSON; FAKE_CHATTER sends a
+// answers initialize with a frame that is not JSON (with FAKE_GATE=<path> it
+// first writes <path>.pid and waits for <path>.go); FAKE_FRAME answers
+// initialize with the given header lines ('|' separated) and body {};
+// FAKE_LATE_ORPHAN starts the marked detached child on shutdown (its pid
+// goes to <FAKE_GATE>.pid when set); FAKE_CHATTER sends a
 // window/logMessage every 50 ms. Hover reports the proxy env and argv[2].
 import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
 const env = (k) => process.env[k] ?? "";
+let orphan = null;
+// Detached: a non-detached child sits in the runtime's kill-on-close job and
+// dies with this server, and a detached powershell without a console exits at
+// once. A detached copy of this runtime does neither.
+function spawnOrphan(marker) {
+  orphan = spawn(process.execPath, [
+    "eval",
+    `setTimeout(() => {}, 120000); // ${marker}`,
+  ], { detached: true, stdio: "ignore", windowsHide: true });
+  orphan.unref();
+}
 let buf = Buffer.alloc(0);
 const docs = new Map();
 const send = (o) => {
@@ -78,17 +94,25 @@ function handle(m) {
   switch (m.method) {
     case "initialize":
       if (env("FAKE_DIE")) process.exit(7);
-      if (env("FAKE_ORPHAN")) {
-        // Detached: a non-detached child sits in the runtime's kill-on-close
-        // job and dies with this server, and a detached powershell without a
-        // console exits at once. A detached copy of this runtime does neither.
-        spawn(process.execPath, [
-          "eval",
-          `setTimeout(() => {}, 120000); // ${env("FAKE_ORPHAN")}`,
-        ], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-      }
+      if (env("FAKE_ORPHAN")) spawnOrphan(env("FAKE_ORPHAN"));
       if (env("FAKE_MALFORMED")) {
-        process.stdout.write("Content-Length: 5\r\n\r\n{oops");
+        const bad = () =>
+          process.stdout.write("Content-Length: 5\r\n\r\n{oops");
+        const gate = env("FAKE_GATE");
+        if (!gate) return void bad();
+        writeFileSync(`${gate}.pid`, String(orphan?.pid ?? ""));
+        const poll = setInterval(() => {
+          if (existsSync(`${gate}.go`)) {
+            clearInterval(poll);
+            bad();
+          }
+        }, 50);
+        return;
+      }
+      if (env("FAKE_FRAME")) {
+        process.stdout.write(
+          env("FAKE_FRAME").split("|").join("\r\n") + "\r\n\r\n{}",
+        );
         return;
       }
       if (env("FAKE_INTERMEDIATE")) {
@@ -150,6 +174,12 @@ function handle(m) {
         m.params.contentChanges[0].text,
       );
     case "shutdown":
+      if (env("FAKE_LATE_ORPHAN")) {
+        spawnOrphan(env("FAKE_LATE_ORPHAN"));
+        if (env("FAKE_GATE")) {
+          writeFileSync(`${env("FAKE_GATE")}.pid`, String(orphan.pid));
+        }
+      }
       return reply(null);
     case "exit":
       if (!env("FAKE_IGNORE_EXIT")) process.exit(0);
