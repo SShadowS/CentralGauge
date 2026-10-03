@@ -1,0 +1,19 @@
+v: 1
+partial_credit:
+  weights:
+    "85620/InvoicesEveryDueLease": 1
+    "85620/LeaseOutsideFilterUntouched": 1
+    "85620/DueDateBoundaryInclusive": 1
+    "85620/CommittingFailureRollsBackLease": 1
+    "85620/FailureRecordedWithText": 1
+    "85620/PlainFailureRollsBackLease": 1
+    "85620/NothingDueNotCountedOrRecorded": 1
+    "85620/EachRunHasItsOwnId": 1
+    "85620/FailuresRecordedSeparately": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/count-every-success: { partial_credit: 0.8888888888888888 }
+  naive/count-lines: { partial_credit: 0.1111111111111111 }
+  naive/no-ignore: { partial_credit: 0.8888888888888888 }

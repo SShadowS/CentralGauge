@@ -1,0 +1,20 @@
+v: 1
+partial_credit:
+  weights:
+    "85760/PreviewMatchesPostedEntry": 1
+    "85760/PreviewWritesNothing": 1
+    "85760/PreviewRunsNoPostingEvents": 1
+    "85760/PreviewIgnoresCommittingExtension": 1
+    "85760/PreviewReplacesBuffer": 1
+    "85760/PreviewOfUnreturnedContractFails": 1
+    "85760/PreviewOfOpenContractFails": 1
+    "85760/PreviewAmountAtCoarsePrecision": 1
+    "85760/PostingStillRunsEvents": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/append-to-buffer: { partial_credit: 0.8888888888888888 }
+  naive/copied-pricing: { partial_credit: 0.8888888888888888 }
+  naive/no-status-check: { partial_credit: 0.7777777777777778 }
+  naive/post-and-rollback: { partial_credit: 0.1111111111111111 }

@@ -28,13 +28,13 @@
  */
 import { dirname, fromFileUrl, join, relative } from "@std/path";
 import * as colors from "@std/fmt/colors";
+import { oracleBandOf } from "./harness/gate-stage.ts";
 import {
   BENCHMARK_APP_ID_BUFFER,
   BENCHMARK_APP_ID_RANGE,
   HARNESS_APP_ID_RANGE,
   HARNESS_FIXTURE_TEST_RANGE,
   HARNESS_FORBIDDEN_IDS,
-  HARNESS_ORACLE_RANGE,
   HARNESS_SHIPPED_TEST_RANGE,
   HARNESS_TASK_SUITE_RANGE,
   HARNESS_TEST_APP_RANGE,
@@ -147,13 +147,15 @@ export function unitOf(file: string): string {
     return "harness-fixture:Test";
   }
   const task =
-    /^harness-tasks\/tasks\/([^/]+)\/(overlay|correct|naive|mutants|oracle|reference-tests)\/(.+)$/
+    /^harness-tasks\/tasks\/([^/]+)\/(overlay|correct|naive|mutants|oracle|reference-tests|fixture)\/(.+)$/
       .exec(file);
   if (task) {
     const [, id, part, rest] = task;
     if (part === "oracle") return `harness-oracle:${id}`;
     const segs = rest!.split("/");
-    const variant = part === "naive" || part === "mutants"
+    // fixture/<name>/ follows the naive layer rules (interfaces appendix
+    // section 7; m8-task-set.md:2127).
+    const variant = part === "naive" || part === "mutants" || part === "fixture"
       ? `:${segs.shift()}`
       : "";
     return `harness-${part}:${id}${variant}:${segs[0]}`;
@@ -163,21 +165,28 @@ export function unitOf(file: string): string {
 }
 
 /**
- * Each task owns the oracle band 85000 + (N - 1) * 100 .. + 99 inside
- * HARNESS_ORACLE_RANGE. Mirrors the M4 gate (scripts/harness/gate-stage.ts,
- * "Each task owns the oracle band"); keep the two in step. Only ids matching
- * ^HX-(\d{3})$ have a band; any other id gets an empty one, so every object in
- * it is reported.
+ * Each task's oracle band comes from the gate (`oracleBandOf`, one source of
+ * truth). Only ids matching ^HX-(\d{3})$ have a band; any other id gets an
+ * empty one, so every object in it is reported.
  */
 function oracleBand(taskId: string): Band {
   const m = /^HX-(\d{3})$/.exec(taskId);
-  const n = m ? Number(m[1]) : NaN;
-  const start = HARNESS_ORACLE_RANGE.start + (n - 1) * 100;
+  const band = m ? oracleBandOf(Number(m[1])) : null;
   const label = `harness oracle ${taskId}`;
-  if (!m || n < 1 || start + 99 > HARNESS_ORACLE_RANGE.end) {
+  if (!band) {
     return { label: `${label} (no band inside 85000-89999)`, start: 1, end: 0 };
   }
-  return { label, start, end: start + 99 };
+  return { label, start: band[0], end: band[1] };
+}
+
+/** Task fixtures are never under Test/ (interfaces appendix section 7). */
+function isFixtureUnderTest(unit: string): boolean {
+  return /^harness-fixture:HX-[^:]+:[^:]+:Test$/.test(unit);
+}
+
+/** gate-stage: correct/ and mutants/ must not touch Test/ (overlay may). */
+function isForbiddenLayerTest(unit: string): boolean {
+  return /^harness-(correct|mutants):.*:Test$/.test(unit);
 }
 
 /** Expected band for a unit, or null when the unit has no enforced band. */
@@ -218,10 +227,20 @@ function bandOf(unit: string): Band | null {
     };
   }
   if (unit.startsWith("harness-oracle:")) return oracleBand(unit.slice(15));
-  if (/^harness-(overlay|correct|naive|mutants|reference-tests):/.test(unit)) {
-    return unit.endsWith(":Test")
-      ? { label: "task test suite", ...HARNESS_TASK_SUITE_RANGE }
-      : refappBand;
+  // Reported separately in auditObjects (no Test/ allowed for these layers).
+  if (isFixtureUnderTest(unit) || isForbiddenLayerTest(unit)) return null;
+  if (
+    /^harness-(overlay|correct|naive|mutants|reference-tests|fixture):/.test(
+      unit,
+    )
+  ) {
+    if (!unit.endsWith(":Test")) return refappBand;
+    // Test-authoring suites (reference-tests, naive) are visible tests in the
+    // Test app: v2 plan m8-task-set.md:31, "visible tests 80000-84999".
+    if (/^harness-(reference-tests|naive):/.test(unit)) {
+      return { label: "task test suite", ...HARNESS_TEST_APP_RANGE };
+    }
+    return { label: "task test suite", ...HARNESS_TASK_SUITE_RANGE };
   }
   return null;
 }
@@ -305,6 +324,18 @@ export function auditObjects(
       problems.push(
         `${obj.file}: ${obj.kind} ${obj.id} "${obj.name}" is on an ` +
           `unclassified harness path (no known unit under harness-tasks/)`,
+      );
+    }
+    if (isFixtureUnderTest(obj.unit)) {
+      problems.push(
+        `${obj.file}: ${obj.kind} ${obj.id} "${obj.name}" is a fixture under ` +
+          `Test/ (fixtures never touch the Test app)`,
+      );
+    }
+    if (isForbiddenLayerTest(obj.unit)) {
+      problems.push(
+        `${obj.file}: ${obj.kind} ${obj.id} "${obj.name}": correct/ and ` +
+          `mutants/ must not touch Test/ (scripts/harness/gate-stage.ts)`,
       );
     }
     const harnessUnit = /^(refapp|harness-)/.test(obj.unit) ||

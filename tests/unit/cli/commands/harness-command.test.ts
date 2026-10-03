@@ -3098,7 +3098,7 @@ const markerWith = (state: string, v: unknown) =>
     ...(v !== undefined ? { proxy_isolation: v } : {}),
   });
 
-Deno.test("run --concurrency > 1 (M1-33e): the up-front check names a marker proxy_isolation other than exactly PROXY_ISOLATION, before any environment opens; the refusal still stands", async () => {
+Deno.test("run --concurrency > 1 (M1-33e): the up-front check names a marker proxy_isolation other than exactly PROXY_ISOLATION, before any environment opens; it is refused unless every placed-concurrency condition holds (M7-01)", async () => {
   const t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
@@ -3129,7 +3129,7 @@ Deno.test("run --concurrency > 1 (M1-33e): the up-front check names a marker pro
   assertEquals(ok.includes("proxy_isolation"), false, ok);
 });
 
-Deno.test("openHarnessEnv concurrency > 1 (M1-33e): the proxy_isolation gate runs under the lock, before any sweep, at both refusal points; the refusal still stands", async () => {
+Deno.test("openHarnessEnv concurrency > 1 (M1-33e): the proxy_isolation gate runs under the lock, before any sweep, at both refusal points; it is refused unless every placed-concurrency condition holds (M7-01)", async () => {
   const t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
@@ -5565,4 +5565,200 @@ Deno.test("runCampaign: an LSP arm resolves when the image label matches the rep
   assertEquals((await run()).planned, 2);
   mockImage(`${lv.split(" ")[0]} ${"e".repeat(64)}`);
   await assertRejects(run, ConfigurationError, "differs from image");
+});
+
+// M7-01: the CLI runs the same placedConcurrencyProblem gate as runCampaign.
+Deno.test("run --concurrency 2 (M7-01): the up-front gate allows an authorized marker with exact proxy_isolation, and names every other failing condition before any environment opens", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  const never = () => Promise.reject(new Error("no environment may open"));
+  const run = (concurrency: number, marker: string) =>
+    Deno.writeTextFile(join(shared, EGRESS_MARKER), marker).then(() =>
+      harnessRun("contract", runOpts(t, { concurrency }), never, never)
+    );
+  const authorized = markerWith("authorized", PROXY_ISOLATION);
+  // Allowed: it gets as far as opening the environment (which the test refuses).
+  const opened = await assertRejects(
+    () => run(2, authorized),
+    Error,
+    "no environment may open",
+  );
+  assertEquals(opened instanceof ConfigurationError, false);
+  const refused = async (concurrency: number, marker: string) =>
+    (await assertRejects(
+      () => run(concurrency, marker),
+      ConfigurationError,
+      "--concurrency",
+    )).message;
+  assertStringIncludes(
+    await refused(3, authorized),
+    "exceeds the placed maximum 2",
+  );
+  assertStringIncludes(
+    await refused(2, markerWith("qualified", PROXY_ISOLATION)),
+    "not enforced",
+  );
+  assertStringIncludes(
+    await refused(2, markerWith("authorized", 1)),
+    "proxy_isolation 1",
+  );
+  // An arm on the frozen mock image (version 1, no revision) is refused.
+  for (
+    const [id, variant] of [["mock-positive", "positive"], [
+      "mock-naive-a",
+      "naive:a",
+    ]]
+  ) {
+    await write(
+      t.harnessRoot,
+      `configs/${id}.yml`,
+      `id: ${id}\nharness: mock\nharness_version: "1"\nmodels: {}\nsettings: { mode: apply, variant: "${variant}" }\nlimits: { timeout_min: 5, max_budget_usd: 1 }\n`,
+    );
+  }
+  assertStringIncludes(await refused(2, authorized), "arm mock-");
+});
+
+Deno.test("openHarnessEnv concurrency 2 (M7-01): the same gate runs under the lock, before any sweep", async () => {
+  const t = await makeEnv();
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  const refused = async (marker: string, concurrency: number) => {
+    await Deno.writeTextFile(join(shared, EGRESS_MARKER), marker);
+    const order: string[] = [];
+    const msg = (await assertRejects(
+      () =>
+        openHarnessEnv(
+          { ...envOpts(t), concurrency },
+          deps(order, undefined, () => Promise.resolve([])),
+        ),
+      ConfigurationError,
+      "--concurrency",
+    )).message;
+    assertEquals(order, ["lock", "release"], marker);
+    return msg;
+  };
+  assertStringIncludes(
+    await refused(markerWith("qualified", PROXY_ISOLATION), 2),
+    "not enforced",
+  );
+  assertStringIncludes(
+    await refused(markerWith("authorized", PROXY_ISOLATION), 3),
+    "exceeds the placed maximum 2",
+  );
+});
+
+import { HarnessConfigSchema } from "../../../../src/harness/config.ts";
+const armOf = (harness: string, version: string, revision?: string) =>
+  HarnessConfigSchema.parse({
+    id: `${harness}-arm`,
+    harness,
+    harness_version: version,
+    ...(revision ? { image_revision: revision } : {}),
+    models: harness === "mock" ? {} : { main: "anthropic/claude-sonnet-5" },
+    limits: { timeout_min: 5, max_budget_usd: 1 },
+  });
+
+Deno.test("openHarnessEnv concurrency 2 (M7-01 review): the full gate, arms included, runs under the lock before any sweep; absent configs fail closed; an authorized marker that fails host verification still stops the start", async () => {
+  const t = await makeEnv();
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  await Deno.writeTextFile(
+    join(shared, EGRESS_MARKER),
+    markerWith("authorized", PROXY_ISOLATION),
+  );
+  const refused = async (configs: ReturnType<typeof armOf>[] | undefined) => {
+    const order: string[] = [];
+    const msg = (await assertRejects(
+      () =>
+        openHarnessEnv(
+          {
+            ...envOpts(t),
+            concurrency: 2,
+            ...(configs ? { configs } : {}),
+          },
+          deps(order, undefined, () => Promise.resolve([])),
+        ),
+      ConfigurationError,
+    )).message;
+    assertEquals(order, ["lock", "release"], msg);
+    return msg;
+  };
+  // A frozen-image arm: refused by the arm check, naming the arm.
+  assertStringIncludes(
+    await refused([armOf("claude-code", "2.1.282")]),
+    "arm claude-code-arm",
+  );
+  // No configs at all: fail closed.
+  assertStringIncludes(await refused(undefined), "arm images unknown");
+  // Every condition holds: the up-front gate passes, then the marker's own
+  // evidence (absent here) fails host verification, still before any sweep.
+  assertStringIncludes(
+    await refused([armOf("mock", "2")]),
+    "not authorized, refusing to run",
+  );
+});
+
+Deno.test("run --dry-run --concurrency 2 (M7-01 run 002): the plan environment carries the verified gate inputs, so a valid dry run and a resume plan, and unmet conditions still refuse", async () => {
+  const t = await makeEnv();
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const never = () =>
+    Promise.reject(new Error("a dry run opens no environment"));
+  const quiet = stub(console, "log", () => {});
+  try {
+    // A first campaign at concurrency 1 (no marker), to resume below.
+    const first = await harnessRun("contract", runOpts(t), opener(t));
+    const shared = join(t.repo.root, "results", "harness");
+    await authorizedRoot(t.repo.root);
+    const markerPath = join(shared, EGRESS_MARKER);
+    const marked = JSON.parse(await Deno.readTextFile(markerPath));
+    const setMarker = (patch: Record<string, unknown>) =>
+      Deno.writeTextFile(markerPath, JSON.stringify({ ...marked, ...patch }));
+    const planner = (verify: () => Promise<string[]>) =>
+    (
+      eo: Parameters<typeof openPlanEnv>[0],
+    ) => openPlanEnv(eo, planDeps(t, [], verify));
+    const verified = (): Promise<string[]> => Promise.resolve([]);
+    const dry = (
+      over: Record<string, unknown>,
+      verify = verified,
+    ) =>
+      harnessRun(
+        "contract",
+        runOpts(t, { dryRun: true, concurrency: 2, ...over }),
+        never,
+        planner(verify),
+      );
+    await setMarker({ proxy_isolation: PROXY_ISOLATION });
+    // New campaign and resume, every condition met: planned, not refused.
+    assertEquals((await dry({})).planned, 2);
+    const resumed = await dry({ campaign: first.campaignId });
+    assertEquals(resumed.campaignId, first.campaignId);
+    // Wrong or missing proxy_isolation, N=3, not enforced, unverifiable.
+    await setMarker({ proxy_isolation: 1 });
+    await assertRejects(() => dry({}), ConfigurationError, "proxy_isolation 1");
+    await setMarker({ proxy_isolation: PROXY_ISOLATION });
+    await assertRejects(
+      () => dry({ concurrency: 3 }),
+      ConfigurationError,
+      "exceeds the placed maximum 2",
+    );
+    await assertRejects(
+      () => dry({}, () => Promise.resolve(["proxy not running"])),
+      ConfigurationError,
+    );
+    await setMarker({ state: "qualified" });
+    await assertRejects(
+      () => dry({ campaign: first.campaignId }),
+      ConfigurationError,
+      "not enforced",
+    );
+  } finally {
+    quiet.restore();
+  }
 });

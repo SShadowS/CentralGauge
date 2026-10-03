@@ -1,0 +1,21 @@
+id: HX-010
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Rental, Reporting]
+coupling: [queries]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged] }
+  - { codeunit: 80050, procedures: [CurrentBranchFallsBackToSetupDefault, NewContractTakesCurrentBranch] }
+  - { codeunit: 80054, procedures: [PostsEveryReturnedContractInFilter, FailedContractIsRolledBackAndLogged] }
+  - { codeunit: 80058, procedures: [RevenueGroupedByMonth, VehiclesAreSeparateRows] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Leasing, Reporting]
+  tests:
+    - { codeunit: 85660, procedures: [PostedEntryTakesContractBranch, BatchPostedEntriesTakeContractBranch, RevenueGroupedByBranchYearMonth, DateFilterBoundsInclusive, BranchesAreSeparateRows] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

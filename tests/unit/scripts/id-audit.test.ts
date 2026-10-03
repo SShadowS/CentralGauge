@@ -360,7 +360,7 @@ Deno.test("harness-tasks: units, bands, reserved subranges, 80013", async (t) =>
       f(core, 80001),
       f(shipped, 80150),
       f(oracle, 80001),
-      f(refTests, 80050),
+      f(refTests, 85000),
       f(fixture, 80098),
       f(mutant, 85001),
     ]).problems;
@@ -442,4 +442,76 @@ Deno.test("harness-tasks: per-task oracle band, fail-closed paths", async (t) =>
       );
     },
   );
+});
+
+Deno.test("harness-tasks v2: oracle bands, test-authoring suites, fixtures", async (t) => {
+  const f = (file: string, id: number) => obj({ file, unit: unitOf(file), id });
+  const oracle = (n: string) =>
+    `harness-tasks/tasks/HX-${n}/oracle/src/O.Codeunit.al`;
+
+  await t.step("HX-007+ oracle owns a 20-wide band (gate-stage)", () => {
+    assertEquals(auditObjects([f(oracle("007"), 85600)]).problems, []);
+    assertEquals(auditObjects([f(oracle("007"), 85619)]).problems, []);
+    assertEquals(auditObjects([f(oracle("008"), 85620)]).problems, []);
+    const p = auditObjects([f(oracle("007"), 85620)]).problems;
+    assertEquals(p.length, 1);
+    assertStringIncludes(p[0]!, "85600-85619");
+    assertEquals(auditObjects([f(oracle("007"), 85599)]).problems.length, 1);
+  });
+
+  await t.step("HX-227 has no oracle band", () => {
+    const p = auditObjects([f(oracle("227"), 89999)]).problems;
+    assertEquals(p.length, 1);
+    assertStringIncludes(p[0]!, "no band");
+  });
+
+  await t.step(
+    "test-authoring suites take the visible band 80000-84999",
+    () => {
+      const ref =
+        "harness-tasks/tasks/HX-016/reference-tests/Test/src/T.Codeunit.al";
+      const naive = "harness-tasks/tasks/HX-016/naive/x/Test/src/N.Codeunit.al";
+      assertEquals(
+        auditObjects([f(ref, 80070), f(naive, 80076), f(ref, 84999)]).problems,
+        [],
+      );
+      for (const id of [79999, 85000]) {
+        // 79999 also lands in the reserved buffer; count only the band reason.
+        const p = auditObjects([f(ref, id), f(naive, id)]).problems.filter((
+          x,
+        ) => x.includes("task test suite band"));
+        assertEquals(p.length, 2);
+        assertStringIncludes(p[0]!, "task test suite band 80000-84999");
+      }
+      const banned = auditObjects([f(ref, 80013)]).problems;
+      assert(banned.some((x) => x.includes("80013 is forbidden")));
+    },
+  );
+
+  await t.step("fixture/<name> is classified and banded like naive", () => {
+    const fx = "harness-tasks/tasks/HX-009/fixture/dead-call/Rental/src/A.al";
+    assertEquals(unitOf(fx), "harness-fixture:HX-009:dead-call:Rental");
+    assertEquals(auditObjects([f(fx, 70200)]).problems, []);
+    assertEquals(auditObjects([f(fx, 80001)]).problems.length, 1);
+  });
+
+  await t.step("correct/ and mutants/ under Test/ are refused", () => {
+    for (
+      const file of [
+        "harness-tasks/tasks/HX-016/correct/Test/src/C.Codeunit.al",
+        "harness-tasks/tasks/HX-016/mutants/x/Test/src/M.Codeunit.al",
+      ]
+    ) {
+      const p = auditObjects([f(file, 84000)]).problems;
+      assertEquals(p.length, 1, file);
+      assertStringIncludes(p[0]!, "must not touch Test/");
+    }
+  });
+
+  await t.step("fixture under Test/ is refused, not banded", () => {
+    const fx = "harness-tasks/tasks/HX-009/fixture/dead-call/Test/src/X.al";
+    const p = auditObjects([f(fx, 80100)]).problems;
+    assertEquals(p.length, 1);
+    assertStringIncludes(p[0]!, "fixture under Test/");
+  });
 });

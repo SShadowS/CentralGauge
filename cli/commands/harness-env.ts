@@ -24,7 +24,12 @@ import {
   resolveBackendHost,
 } from "../../src/harness/backend.ts";
 import { BcLane } from "../../src/harness/bc-lane.ts";
-import { placedConcurrencyRefusal } from "../../src/harness/campaign.ts";
+import {
+  placedConcurrencyProblem,
+  placedConcurrencyRefusal,
+  type PlacedGate,
+} from "../../src/harness/campaign.ts";
+import type { HarnessConfig } from "../../src/harness/config.ts";
 import {
   authorizedMarkerProblems,
   BACKEND_PORT,
@@ -83,6 +88,8 @@ export interface EnvOptions {
   probe?: boolean;
   /** Campaign blocks at once (harness run); above 1 the marker is rechecked under the lock (M1-33c). */
   concurrency?: number;
+  /** The experiment's arm configs (harness run); above concurrency 1 the placed gate needs them (absent is refused). */
+  configs?: readonly HarnessConfig[];
 }
 
 export interface EnvDeps {
@@ -231,6 +238,23 @@ export async function markerPlaces(sharedResults: string): Promise<boolean> {
 }
 
 /**
+ * Whether the marker says authorized, read without verification (the up-front
+ * concurrency gate; enforcement itself is verified when the environment opens).
+ * Unreadable or absent is not authorized (fail closed).
+ */
+export async function markerAuthorized(
+  sharedResults: string,
+): Promise<boolean> {
+  try {
+    return JSON.parse(
+      await Deno.readTextFile(join(sharedResults, EGRESS_MARKER)),
+    )?.state === "authorized";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The marker's proxy_isolation, read without verification (M1-33e); undefined
  * when there is no marker, it is unreadable or it has no such field.
  */
@@ -292,6 +316,11 @@ export async function openPlanEnv(
       [SYMBOLS_LOCK_PATH],
     );
   }
+  // The marker is verified exactly as the real environment verifies it (a
+  // failing one throws), and the gate inputs are read after that, so a dry
+  // run's concurrency gate sees what a real run's would.
+  const sharedResults = join(o.repoRoot, "results", "harness");
+  const mode = await egressMode(sharedResults, deps.verifyEgress);
   return {
     repoRoot: o.repoRoot,
     harnessRoot: join(o.repoRoot, "harness"),
@@ -299,10 +328,9 @@ export async function openPlanEnv(
     store: new RecordStore(o.resultsDir),
     docker: deps.docker(),
     symbols,
-    egressEnforced: await resolveEgress(
-      join(o.repoRoot, "results", "harness"),
-      deps.verifyEgress,
-    ),
+    egressEnforced: mode === "enforced",
+    egressPlaced: mode !== "off",
+    proxyIsolation: await markerProxyIsolation(sharedResults),
   };
 }
 
@@ -350,8 +378,23 @@ export async function openHarnessEnv(
     const proxyIsolation = await markerProxyIsolation(sharedResults);
     // M1-33c review (TOCTOU): the marker may have become placing since
     // harness run's up-front check; recheck under the lock, before any write.
-    if ((o.concurrency ?? 1) > 1 && await markerPlaces(sharedResults)) {
-      throw placedConcurrencyRefusal(proxyIsolation, o.concurrency ?? 1);
+    // The same full gate as harness run's up-front check and runCampaign,
+    // arms included; configs absent at concurrency > 1 is refused.
+    const concurrency = o.concurrency ?? 1;
+    const gate = (g: PlacedGate) =>
+      placedConcurrencyProblem(g, concurrency, o.configs) ??
+        (g.placed && concurrency > 1 && !o.configs
+          ? "arm images unknown (no experiment configs passed to the environment)"
+          : null);
+    if (concurrency > 1 && await markerPlaces(sharedResults)) {
+      const problem = gate({
+        placed: true,
+        enforced: await markerAuthorized(sharedResults),
+        proxyIsolation,
+      });
+      if (problem) {
+        throw placedConcurrencyRefusal(proxyIsolation, concurrency, problem);
+      }
     }
     // The effective mode (marker plus host verification) is fixed here, under
     // the lock and before any sweep, and gates concurrency again (M1-33c r2).
@@ -359,8 +402,13 @@ export async function openHarnessEnv(
       repoRoot: o.repoRoot,
       ...(o.probe ? { probe: true } : {}),
     });
-    if ((o.concurrency ?? 1) > 1 && mode !== "off") {
-      throw placedConcurrencyRefusal(proxyIsolation, o.concurrency ?? 1);
+    const modeProblem = gate({
+      placed: mode !== "off",
+      enforced: mode === "enforced",
+      proxyIsolation,
+    });
+    if (modeProblem) {
+      throw placedConcurrencyRefusal(proxyIsolation, concurrency, modeProblem);
     }
     const store = new RecordStore(o.resultsDir);
     await Deno.mkdir(join(o.privateRoot, "work"), { recursive: true });

@@ -19,9 +19,11 @@ import type { PriorExecution } from "./estimate.ts";
 import type { CampaignRecords } from "./integrity.ts";
 import type { RefappRef } from "./identity.ts";
 import type { LoadedTask } from "./task.ts";
+import type { HarnessConfig } from "./config.ts";
 import { ConfigurationError } from "../errors.ts";
 import { adapterFor } from "./adapters/mod.ts";
 import { proxyIsolationProblem } from "./egress.ts";
+import { PROXY_ISOLATION } from "./egress-proxy.ts";
 import { estimateArms, renderEstimate } from "./estimate.ts";
 import { loadExperiment } from "./config.ts";
 import { recoverInterrupted, runCell } from "./execution.ts";
@@ -219,7 +221,15 @@ export type PlanEnv =
     | "symbols"
     | "egressEnforced"
   >
-  & Pick<Partial<HarnessEnv>, "now">;
+  & Pick<Partial<HarnessEnv>, "now" | "proxyIsolation">
+  & {
+    /**
+     * The verified marker places sandboxes (a plan env has no egress runtime
+     * to show it). With proxyIsolation, this is what the concurrency gate
+     * sees on a dry run, the same inputs as the real environment's.
+     */
+    egressPlaced?: boolean;
+  };
 
 /** A dry run: the plan and the egress refusal, without a lock or containers. */
 export function planCampaign(
@@ -238,25 +248,118 @@ export function planCampaign(
 }
 
 /**
- * Placed cells share the one proxy on the sandbox gateway, which has no
- * per-execution isolation yet (M1-33c): refused until it does.
+ * Most blocks that may share a placed environment's proxy at once. Owner
+ * decision 2026-10-03 (decisions/2026-10-03-m7-concurrency.md, Option A):
+ * concurrency 2; raising it is a separate decision.
  */
-export const PLACED_CONCURRENCY_REFUSAL =
-  "--concurrency > 1 is refused while the egress marker places sandboxes: every placed cell uses the one egress proxy on the sandbox gateway, which has no per-execution isolation yet (M1-33c); run with --concurrency 1";
+export const MAX_PLACED_CONCURRENCY = 2;
 
 /**
- * The M1-33c refusal, led by the proxy_isolation gate's finding (M1-33e)
- * when the marker's value is not exactly PROXY_ISOLATION.
+ * The first image revision per harness that runs the agent as ContainerUser
+ * (non-admin). H-01 (decisions/2026-10-02-h-01-image-revision.md; accepted
+ * 2026-10-03-h-01-accepted.md): claude-code and pi r2 (image_revision), mock 2
+ * (its real harness_version). ContainerAdministrator images (the frozen tags
+ * without a revision) can spoof a sibling's IP (P2), so concurrent placed
+ * cells may only run revisions at or above these.
+ */
+export const H01_CONTAINER_USER_REVISION: Readonly<Record<string, number>> = {
+  "claude-code": 2,
+  pi: 2,
+  mock: 2,
+};
+
+/**
+ * Concurrent placed cells need the conditions below; each failure is named.
+ * Concurrency 1 is not gated here.
+ */
+export const PLACED_CONCURRENCY_REFUSAL =
+  `--concurrency > 1 is refused while the egress marker places sandboxes unless ALL hold: concurrency <= ${MAX_PLACED_CONCURRENCY} (M7); the egress marker's proxy isolation version is exactly ${PROXY_ISOLATION} (M1-33e); egress is enforced (authorized marker); every arm runs an image at or above its H-01 ContainerUser revision (a frozen tag without image_revision is a ContainerAdministrator image); otherwise run with --concurrency 1`;
+
+/** What the concurrency gate needs of an environment (runCampaign and the CLI both build it). */
+export interface PlacedGate {
+  /** Egress places sandboxes or is enforced. */
+  placed: boolean;
+  /** Egress is enforced (authorized marker). */
+  enforced: boolean;
+  /** The marker's proxy_isolation (missing is undefined). */
+  proxyIsolation: unknown;
+}
+
+/** The gate's view of a campaign environment. */
+export const placedGateOf = (
+  env:
+    & Pick<HarnessEnv, "egressEnforced" | "proxyIsolation">
+    & Pick<Partial<HarnessEnv>, "egress">
+    & Pick<PlanEnv, "egressPlaced">,
+): PlacedGate => ({
+  placed: env.egress !== undefined || env.egressEnforced ||
+    env.egressPlaced === true,
+  enforced: env.egressEnforced,
+  proxyIsolation: env.proxyIsolation,
+});
+
+/**
+ * Why concurrency above 1 is refused in a placed or enforced environment, or
+ * null when every condition holds. Image checks need the loaded configs and
+ * are skipped (not passed) when `configs` is undefined: call again with them.
+ */
+export function placedConcurrencyProblem(
+  env: PlacedGate,
+  concurrency: number,
+  configs?: readonly HarnessConfig[],
+): string | null {
+  if (concurrency <= 1) return null;
+  if (!env.placed) return null;
+  if (concurrency > MAX_PLACED_CONCURRENCY) {
+    return `concurrency ${concurrency} exceeds the placed maximum ${MAX_PLACED_CONCURRENCY}`;
+  }
+  const p = proxyIsolationProblem(env.proxyIsolation, concurrency);
+  if (p) return `egress marker ${p}`;
+  if (!env.enforced) {
+    return "egress is placed but not enforced (no authorized marker)";
+  }
+  for (const c of configs ?? []) {
+    const min = Object.hasOwn(H01_CONTAINER_USER_REVISION, c.harness)
+      ? H01_CONTAINER_USER_REVISION[c.harness]
+      : undefined;
+    if (min === undefined) {
+      return `arm ${c.id}: harness ${c.harness} has no H-01 ContainerUser revision`;
+    }
+    // mock's revision is its harness_version (H-01: mock 1 -> 2), whatever
+    // image_revision says; every other harness's is image_revision.
+    const revs = c.harness === "mock"
+      ? [c.harness_version, ...(c.image_revision ? [c.image_revision] : [])]
+      : [c.image_revision];
+    for (const rev of revs) {
+      if (rev === undefined) {
+        return `arm ${c.id}: ${c.harness} ${c.harness_version} is a frozen image without image_revision (ContainerAdministrator); needs revision >= ${min}`;
+      }
+      if (!/^[1-9][0-9]*$/.test(rev) || Number(rev) < min) {
+        return `arm ${c.id}: ${c.harness} image revision ${rev} is below the H-01 ContainerUser revision ${min}`;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * The concurrency refusal for `problem` (from placedConcurrencyProblem). Without
+ * one (the CLI's up-front check, which cannot see the arm images) the
+ * proxy_isolation gate's finding (M1-33e) leads when the marker's value is not
+ * exactly PROXY_ISOLATION.
  */
 export function placedConcurrencyRefusal(
   proxyIsolation: unknown,
   concurrency: number,
+  problem?: string,
 ): ConfigurationError {
-  const p = proxyIsolationProblem(proxyIsolation, concurrency);
+  const p = problem ??
+    (() => {
+      const q = proxyIsolationProblem(proxyIsolation, concurrency);
+      return q ? `egress marker ${q}` : null;
+    })();
   return new ConfigurationError(
-    p
-      ? `egress marker ${p}; ${PLACED_CONCURRENCY_REFUSAL}`
-      : PLACED_CONCURRENCY_REFUSAL,
+    p ? `${p}; ${PLACED_CONCURRENCY_REFUSAL}` : PLACED_CONCURRENCY_REFUSAL,
   );
 }
 
@@ -496,9 +599,14 @@ export async function runCampaign(
       `concurrency must be a positive integer: ${o.concurrency}`,
     );
   }
-  if (o.concurrency > 1 && (env.egress !== undefined || env.egressEnforced)) {
-    // A placed environment without env.proxyIsolation is missing (fail closed).
-    throw placedConcurrencyRefusal(env.proxyIsolation, o.concurrency);
+  // A placed environment without env.proxyIsolation is missing (fail closed).
+  // The cheap conditions first, before any read; the arm images below.
+  const early = placedConcurrencyProblem(
+    placedGateOf(env),
+    o.concurrency,
+  );
+  if (early) {
+    throw placedConcurrencyRefusal(env.proxyIsolation, o.concurrency, early);
   }
   if (o.rerun && (o.sample !== undefined || o.repeats !== undefined)) {
     throw new ConfigurationError(
@@ -509,6 +617,19 @@ export async function runCampaign(
     env.harnessRoot,
     experimentId,
   );
+  // Every arm's image, before any recovery, record or cell (new run and resume).
+  const armProblem = placedConcurrencyProblem(
+    placedGateOf(env),
+    o.concurrency,
+    configs,
+  );
+  if (armProblem) {
+    throw placedConcurrencyRefusal(
+      env.proxyIsolation,
+      o.concurrency,
+      armProblem,
+    );
+  }
   // Egress decision: a campaign runs unattended, so supervised campaigns do
   // not exist; a credential-bearing arm needs verified enforcement.
   const bearing = configs.filter((c) => adapterFor(c.harness).credentialBearing)

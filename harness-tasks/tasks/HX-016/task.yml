@@ -1,0 +1,16 @@
+id: HX-016
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Integration, Core, Test]
+coupling: [events, single-instance]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80057, procedures: [DeliveredEntryIsSent, RejectedEntryKeepsItsError, EntryFailsAtMaxAttempts, UndeliveredWithoutTransport] }
+  - { codeunit: 80040, procedures: [OutboxQueuesCheckout] }
+fail_to_pass: null
+mutants: [requeue-keeps-error, zero-max-five, sent-redispatched, first-error-kept, attempt-time-unset]
+contamination: null
+limits: { timeout_min: 30 }

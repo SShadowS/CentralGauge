@@ -267,6 +267,30 @@ export const CLAUDE_CAPABILITIES = {
  * available inventory, deferred tools included, so ToolSearch use does not
  * matter. An unrequested server (any status) fails setup via observedMismatch.
  */
+const MCP_TOOL = /^mcp__(.+?)__/;
+
+/** mcpInventory over every same-session init; loaded only if every init shows it. */
+function mcpInventoryAll(
+  inits: Line[],
+  manifest: ParseInput["manifest"],
+): { loaded: string[]; problems: string[] } {
+  const problems: string[] = [];
+  const requested = new Set(manifest.mcp.map((s) => `mcp:${s.name}`));
+  // Requested tokens: intersection across inits. Unexpected tokens: union, so
+  // a rogue server seen in any single init still reaches observedMismatch.
+  let common: string[] | null = null;
+  const rogue = new Set<string>();
+  for (const [n, init] of inits.entries()) {
+    const r = mcpInventory(init.rec, manifest);
+    const tag = inits.length > 1 ? `init ${n + 1}: ` : "";
+    problems.push(...r.problems.map((p) => tag + p));
+    const req = r.loaded.filter((c) => requested.has(c));
+    for (const c of r.loaded) if (!requested.has(c)) rogue.add(c);
+    common = common === null ? req : common.filter((c) => req.includes(c));
+  }
+  return { loaded: [...(common ?? []), ...[...rogue].sort()], problems };
+}
+
 function mcpInventory(
   init: J | undefined,
   manifest: ParseInput["manifest"],
@@ -289,7 +313,7 @@ function mcpInventory(
   // observedMismatch fails setup (ranked before every other termination).
   const seen = new Set<string>(servers.map((s) => s.name as string));
   for (const t of tools) {
-    const m = /^mcp__(.+?)__/.exec(t);
+    const m = MCP_TOOL.exec(t);
     if (m) seen.add(m[1]!);
   }
   const loaded: string[] = [];
@@ -681,9 +705,13 @@ function initInventory(
     ...builtin.tools,
     ...(manifest.lsp.length > 0 ? ["LSP"] : []),
   ].filter((t) => !disallowed.includes(t));
-  const gotTools = (i["tools"] as string[]).filter((t) =>
-    !t.startsWith("mcp__")
-  );
+  // A recognized mcp__<server>__ name is mcpInventory's; any other mcp__ name
+  // is malformed and never taken for a built-in.
+  const gotTools = (i["tools"] as string[]).filter((t) => {
+    if (!t.startsWith("mcp__")) return true;
+    if (!MCP_TOOL.test(t)) problems.push(`malformed MCP tool ${t}`);
+    return false;
+  });
   for (const t of [...new Set(gotTools)].sort()) {
     const n = gotTools.filter((x) => x === t).length;
     if (!expectTools.includes(t)) problems.push(`unexpected tool ${t}`);
@@ -1019,7 +1047,7 @@ export function parseClaudeStream(
     if (c.model === null) sawModel("", `sub-agent line ${c.line}`);
   }
   const inv = componentInventory(lines, inits, modelSources, input.manifest);
-  const mcp = mcpInventory(init, input.manifest);
+  const mcp = mcpInventoryAll(inits, input.manifest);
   const connected = mcp.loaded;
   const loaded = init
     ? [
