@@ -1739,10 +1739,16 @@ export async function runExecution(
         inventoried(manifest.image.revision);
       let runEnded = false;
       running.then(() => (runEnded = true), () => (runEnded = true));
-      /** A run that ended on its own before it was seen running: the inventory decides, not the privilege check. */
+      /**
+       * A run that ended on its own before it was seen running (run.ps1's exit 5).
+       * Downgraded only when a cg_inventory refusal is proven; every other
+       * privilege failure stops the campaign (M9-05 run 003, security).
+       */
       let endedEarly: string | null = null;
+      let seenRunning = false;
       try {
         await waitRunning(env.docker, name, running, opMs);
+        seenRunning = true;
         await checkSandboxPrivilege(env.docker, name, opMs);
         if (manifest.harness === "pi") {
           setupStep = "pi config staging";
@@ -1751,7 +1757,7 @@ export async function runExecution(
       } catch (err) {
         if (!stop.aborted) {
           const m = `${setupStep} failed: ${msg(err)}`;
-          if (inv && runEnded && setupStep === "sandbox privilege check") {
+          if (inv && runEnded && !seenRunning) {
             endedEarly = m;
           } else {
             privilegeError = m;
@@ -1772,13 +1778,19 @@ export async function runExecution(
           manifest,
           () => runEnded || stop.aborted,
         );
-        if (refused !== null && !stop.aborted) {
-          inventoryRefused = `component inventory: ${refused.join("; ")}`;
+        if (stop.aborted) {
+          // The operator's interrupt already stops the run.
+        } else if (
+          refused !== null && (endedEarly === null || refused.provenRefusal)
+        ) {
+          inventoryRefused = `component inventory: ${
+            refused.problems.join("; ")
+          }`;
           egressStop = "component_inventory_refused";
           egressAbort.abort(new Error(inventoryRefused));
-        } else if (endedEarly !== null && !stop.aborted) {
-          // The run ended with a proven inventory but never reached ready:
-          // that is the privilege check's failure after all.
+        } else if (endedEarly !== null) {
+          // An early end without a proven refusal (inventory ok, missing or
+          // malformed) is the privilege check's failure: the campaign stops.
           privilegeError = endedEarly;
           egressAbort.abort(new Error(privilegeError));
         }
@@ -2061,23 +2073,39 @@ async function sandboxAddress(
  * PREFLIGHT_TIMEOUT_MS passes first: fail closed), then let the adapter's own
  * parser judge it. null: the inventory is proven (or the operator stopped the
  * run); otherwise the adapter's problems, which refuse the arm before release.
+ * provenRefusal: exactly one record, a JSON cg_inventory with ok false and
+ * non-empty problems (the image itself refused; not a missing or odd record).
  */
 async function inventoryRefusal(
   p: ReturnType<typeof privatePaths>,
   adapter: ReturnType<typeof adapterFor>,
   manifest: ResolvedManifest,
   over: () => boolean,
-): Promise<string[] | null> {
+): Promise<{ problems: string[]; provenRefusal: boolean } | null> {
   const deadline = performance.now() + PREFLIGHT_TIMEOUT_MS;
-  const recorded = async () => {
+  const records = async () => {
     const text = await Deno.readTextFile(p.raw).catch(() => "");
     // Complete lines only: the last one may still be mid-write.
-    return text.split("\n").slice(0, -1).some((l) =>
+    return text.split("\n").slice(0, -1).filter((l) =>
       l.includes('"cg_inventory"')
     );
   };
-  while (!await recorded() && !over() && performance.now() < deadline) {
+  while (
+    (await records()).length === 0 && !over() &&
+    performance.now() < deadline
+  ) {
     await new Promise((r) => setTimeout(r, 50));
+  }
+  const lines = await records();
+  let provenRefusal = false;
+  if (lines.length === 1) {
+    try {
+      const r = JSON.parse(lines[0]!);
+      provenRefusal = r?.type === "cg_inventory" && r.ok === false &&
+        Array.isArray(r.problems) && r.problems.length > 0;
+    } catch {
+      provenRefusal = false;
+    }
   }
   // A run that ended (or timed out) without a record is named by the parse below.
   try {
@@ -2090,10 +2118,13 @@ async function inventoryRefusal(
       traceOut: p.trace,
     });
     const problems = parsed.inventoryProblems ?? [];
-    return problems.length > 0 ? problems : null;
+    return problems.length > 0 ? { problems, provenRefusal } : null;
   } catch (err) {
     if (!(err instanceof ValidationError)) throw err;
-    return [`inventory not provable: ${err.message}`];
+    return {
+      problems: [`inventory not provable: ${err.message}`],
+      provenRefusal: false,
+    };
   }
 }
 
