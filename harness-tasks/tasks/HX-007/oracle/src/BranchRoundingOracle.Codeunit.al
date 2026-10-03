@@ -72,9 +72,12 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
         SessionContext: Codeunit "CGR Session Context";
         FirstContractNo: Code[20];
         SecondContractNo: Code[20];
+        BranchRounding: Record "CGR Branch Rounding";
     begin
         WorkDate(20270301D);
         InitSetup(0.01, '');
+        if BranchRounding.Get('HX7BX') then
+            BranchRounding.Delete();
         SetBranchRounding('HX7BA', 1);
         SetBranchRounding('HX7BB', 0.05);
         InitVehicle('HX007-D1');
