@@ -8,10 +8,20 @@ FROM ${BASE}
 RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
     npm install -g --prefix C:\cg-npm @anthropic-ai/claude-code@2.1.282; \
     [Environment]::SetEnvironmentVariable('PATH', 'C:\cg-npm;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
+# M10: the AL language server plugin (al-lsp-for-agents wrapper, Microsoft AL extension, private
+# .NET 10), hash-pinned in lsp/al-lsp.json. Every arm's image has it; only an arm that declares
+# components.lsp loads it. The probe is two files that must sit side by side.
+COPY lsp/al-lsp.json C:/cg-lsp/al-lsp.json
+COPY lsp/lsp-probe.mjs C:/cg-lsp/lsp-probe.mjs
+COPY lsp/lsp-probe-lib.mjs C:/cg-lsp/lsp-probe-lib.mjs
+COPY lsp/install-lsp.ps1 C:/cg-lsp/install-lsp.ps1
+RUN powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-lsp\install-lsp.ps1; \
+    if ($LASTEXITCODE -ne 0) { throw ('install-lsp failed: ' + $LASTEXITCODE) }; \
+    Remove-Item -Force C:\cg-lsp\install-lsp.ps1
 COPY run.ps1 C:/run.ps1
 COPY cg-inventory.ps1 C:/cg-inventory.ps1
 # H-01 run 004: what this image adds is read-only for the agent user.
-RUN powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-lockdown.ps1 C:\cg-npm C:\run.ps1 C:\cg-inventory.ps1; \
+RUN powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-lockdown.ps1 C:\cg-npm C:\run.ps1 C:\cg-inventory.ps1 C:\cg-lsp; \
     if ($LASTEXITCODE -ne 0) { throw ('cg-lockdown failed: ' + $LASTEXITCODE) }
 # H-01: defense in depth; the harness also passes --user ContainerUser.
 USER ContainerUser
