@@ -366,7 +366,7 @@ const LOCKED: Record<(typeof IMAGES)[number], string[]> = {
     "C:\\cg-lockdown.ps1",
     "C:\\Program Files\\nodejs",
   ],
-  "claude-code": ["C:\\cg-npm", "C:\\run.ps1"],
+  "claude-code": ["C:\\cg-npm", "C:\\run.ps1", "C:\\cg-inventory.ps1"],
   pi: ["C:\\cg-npm", "C:\\run.ps1", "C:\\cg-budget.ts", "C:\\cg-pi-stage.ps1"],
   mock: ["C:\\mock.ps1"],
 };

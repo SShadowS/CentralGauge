@@ -1986,3 +1986,70 @@ Deno.test("claude-code parse (M5-07a run 002): a tool_progress that is not the r
     );
   }
 });
+
+Deno.test("run.ps1 (M9): rules and agents install at user scope, the inventory runs before ready, sub-agents pinned to the main model", async () => {
+  const run = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  const code = run.split(/\r?\n/).map((l) => l.trim()).filter((l) =>
+    l !== "" && !l.startsWith("#")
+  );
+  const at = (s: string) => {
+    const i = code.findIndex((l) => l.includes(s));
+    assert(i >= 0, `run.ps1 lacks: ${s}`);
+    return i;
+  };
+  const rules = at(
+    `Copy-Item -LiteralPath "$dir\\rules" -Destination "$userHome\\.claude\\rules" -Recurse -Force`,
+  );
+  const agents = at(
+    `Copy-Item 'C:\\config\\bundle\\agents' "$userHome\\.claude\\agents" -Recurse -Force`,
+  );
+  const inv = at("& 'C:\\cg-inventory.ps1'");
+  assertEquals(code[inv + 1], "if ($LASTEXITCODE -ne 0) { exit 5 }");
+  const ready = at("while (-not (Test-Path 'C:\\cg-secrets\\ready'))");
+  const token = at("$env:CLAUDE_CODE_OAUTH_TOKEN =");
+  assert(
+    rules < inv && agents < inv && inv < ready && ready < token,
+    "copies, then the inventory, then any credential",
+  );
+  const pin = at(
+    "$env:CLAUDE_CODE_SUBAGENT_MODEL = $cfg.settings.api_models.main",
+  );
+  assert(pin < at("$prompt | & claude @claudeArgs"));
+  assertStringIncludes(run, "instructions bundle holds unexpected folders");
+});
+
+Deno.test("run.ps1 (M9-01 rulings 1 and 3): the sub-agent pin is the --model id itself; background tasks stay off", async () => {
+  const run = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  const code = run.split(/\r?\n/).map((l) => l.trim()).filter((l) =>
+    l !== "" && !l.startsWith("#")
+  );
+  const main = "$cfg.settings.api_models.main";
+  const pins = code.filter((l) => l.includes("CLAUDE_CODE_SUBAGENT_MODEL"));
+  assertEquals(pins, [`$env:CLAUDE_CODE_SUBAGENT_MODEL = ${main}`]);
+  const args = code.filter((l) => l.startsWith("$claudeArgs = @("));
+  assertEquals(args.length, 1);
+  assertStringIncludes(args[0]!, `'--model', ${main},`);
+  const bg = code.findIndex((l) =>
+    l === "$env:CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1'"
+  );
+  assert(bg >= 0, "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 is set");
+  assert(bg < code.findIndex((l) => l === "$prompt | & claude @claudeArgs"));
+  assertEquals(
+    code.filter((l) => l.includes("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"))
+      .length,
+    1,
+  );
+});
+
+Deno.test("claude-code Dockerfile (M9): ships cg-inventory.ps1 read-only for the agent user", async () => {
+  const df = await Deno.readTextFile(
+    "harness/images/claude-code/Dockerfile.windows",
+  );
+  assert(/^COPY cg-inventory\.ps1 C:\/cg-inventory\.ps1\s*$/m.test(df), df);
+  const lock = df.split(/\r?\n/).find((l) => l.includes("cg-lockdown.ps1"))!;
+  assertStringIncludes(lock, "C:\\cg-inventory.ps1");
+  assertStringIncludes(
+    df,
+    "--version 2.1.282 --revision 3 (proofs: --revision 3-dev-<task id>)",
+  );
+});
