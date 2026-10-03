@@ -57,6 +57,13 @@
       "hash": "b6958736bd42eff9c78a27a489d43eb0a39c6201039070ecb76a93cb96c519f07c86fa8b62034c6dd1a82a4c8ad0bd781e052008a7ec4cc48f9f792227d9c7ac"
     }
   },
+  "exes": {
+    "al\\bin\\microsoft.dynamics.nav.editorservices.host.exe": "465268879ba69d0d885939d16d5a3e47ac97b2e8aa68d6b27a5c573545d59ec9",
+    "al-language-server-go-windows\\bin\\al-call-hierarchy.exe": "e85e25bcb9633635a22d36bf28eb1a234bc2ef2f43cac8b23110933d517b4563",
+    "al-language-server-go-windows\\bin\\al-lsp-wrapper.exe": "d5c529bb116fd0ba7f72a0fa9b4f08ff575ae2a3ac6aaf2c33e290f9165fe210",
+    "dotnet\\dotnet.exe": "21a46f1e5235cf4e844b9de5429f0e198b9c97a41f0503a66442f1d639ca3ee6",
+    "dotnet\\shared\\microsoft.netcore.app\\10.0.12\\createdump.exe": "315307159925d33eb604186a512901d080ecfc4cd8b8198030a7d398c6af2b0b"
+  },
   "probe": {
     "lsp-probe.mjs": "7e5942511105aa9d29b1183a5bbb7893473da152e957ab52d5ba67cc00616cf3",
     "lsp-probe-lib.mjs": "43acc9a57decde2176519bdaacc78e7a1857f5b62ec65c3a302e27894e0c6237"

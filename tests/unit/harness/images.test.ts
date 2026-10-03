@@ -739,3 +739,58 @@ Deno.test("install-lsp.ps1 and Dockerfile: every build-time safety check is pres
     "the exit check runs before the script is removed",
   );
 });
+
+Deno.test("al-lsp.json: an exact manifest of every installed .exe under C:\\cg-lsp, verified after install; zips are screened before extraction", async () => {
+  const d = JSON.parse(
+    await Deno.readTextFile("harness/images/claude-code/lsp/al-lsp.json"),
+  );
+  // Source: lane-ops' read of the gated -M10-02f image (H:\cg-coord\m10\cg-lsp-exe-manifest.txt), lowercase.
+  assertEquals(d.exes, {
+    "al\\bin\\microsoft.dynamics.nav.editorservices.host.exe":
+      "465268879ba69d0d885939d16d5a3e47ac97b2e8aa68d6b27a5c573545d59ec9",
+    "al-language-server-go-windows\\bin\\al-call-hierarchy.exe":
+      "e85e25bcb9633635a22d36bf28eb1a234bc2ef2f43cac8b23110933d517b4563",
+    "al-language-server-go-windows\\bin\\al-lsp-wrapper.exe":
+      "d5c529bb116fd0ba7f72a0fa9b4f08ff575ae2a3ac6aaf2c33e290f9165fe210",
+    "dotnet\\dotnet.exe":
+      "21a46f1e5235cf4e844b9de5429f0e198b9c97a41f0503a66442f1d639ca3ee6",
+    "dotnet\\shared\\microsoft.netcore.app\\10.0.12\\createdump.exe":
+      "315307159925d33eb604186a512901d080ecfc4cd8b8198030a7d398c6af2b0b",
+  });
+  const code = (await Deno.readTextFile(
+    "harness/images/claude-code/lsp/install-lsp.ps1",
+  )).split(/\r?\n/).filter((l) => !l.trimStart().startsWith("#"));
+  for (
+    const s of [
+      "Assert-ExeManifest 'C:\\cg-lsp' $def.exes",
+      'Assert-ZipSafe "$tmp\\al.zip"',
+      'Assert-ZipSafe "$tmp\\dotnet.zip"',
+      'Assert-ZipSafe "$tmp\\wrapper$n.zip"',
+    ]
+  ) assert(code.some((l) => l.includes(s)), `install-lsp.ps1 lacks: ${s}`);
+  const at = (s: string) => code.findIndex((l) => l.includes(s));
+  const expands = code.filter((l) => l.includes("Expand-Archive")).length;
+  const guards =
+    code.filter((l) =>
+      l.includes("Assert-ZipSafe ") && !l.startsWith("function ")
+    ).length;
+  assertEquals(expands, 3);
+  assertEquals(expands, guards, "every extraction has its own Assert-ZipSafe");
+  assert(
+    at('Assert-ZipSafe "$tmp\\dotnet.zip"') <
+      at('Expand-Archive -LiteralPath "$tmp\\dotnet.zip"'),
+  );
+  assert(
+    at('Assert-ZipSafe "$tmp\\al.zip"') <
+      at('Expand-Archive -LiteralPath "$tmp\\al.zip"'),
+  );
+  assert(
+    at('Assert-ZipSafe "$tmp\\wrapper$n.zip"') <
+      at('Expand-Archive -LiteralPath "$tmp\\wrapper$n.zip"'),
+  );
+  assert(
+    at("Assert-ExeManifest 'C:\\cg-lsp' $def.exes") >
+      at('WriteAllText("$plugin\\.claude-plugin\\plugin.json"'),
+    "the manifest check runs after the last install step",
+  );
+});

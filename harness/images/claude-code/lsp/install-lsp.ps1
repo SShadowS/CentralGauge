@@ -3,14 +3,10 @@
 # decompressed after the check; every installed executable is checked again.
 # Any mismatch fails the image build. Build time only (ContainerAdministrator);
 # cg-lockdown makes C:\cg-lsp read-only afterwards.
+# -LibOnly defines the check functions and stops (host tests dot-source it; nothing is installed).
+param([switch]$LibOnly)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$utf8 = New-Object System.Text.UTF8Encoding $false
-$def = Get-Content 'C:\cg-lsp\al-lsp.json' -Raw -Encoding UTF8 | ConvertFrom-Json
-$tmp = 'C:\cg-lsp-tmp'
-$plugin = 'C:\cg-lsp\al-language-server-go-windows'
-New-Item -ItemType Directory -Force -Path $tmp, "$plugin\bin", "$plugin\.claude-plugin" | Out-Null
 
 function Get-Pinned($pin, [string]$out) {
   Invoke-WebRequest -UseBasicParsing -Uri $pin.url -OutFile $out
@@ -22,6 +18,51 @@ function Test-Gzip([string]$path) {
   $s = [IO.File]::OpenRead($path)
   try { $b = New-Object byte[] 2; $n = $s.Read($b, 0, 2); return ($n -eq 2 -and $b[0] -eq 0x1f -and $b[1] -eq 0x8b) } finally { $s.Close() }
 }
+
+# Refuse an archive entry that could write outside the destination: rooted, drive-qualified
+# or stream-named (a colon), or holding a '..' segment. Checked on the entry list before any extraction.
+function Assert-ZipSafe([string]$zip) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $z = [IO.Compression.ZipFile]::OpenRead($zip)
+  try {
+    foreach ($e in $z.Entries) {
+      $name = $e.FullName
+      if ($name -match '^[\\/]' -or $name.Contains(':') -or (($name -split '[\\/]') -contains '..')) {
+        throw ('unsafe archive entry in ' + $zip + ': ' + $name)
+      }
+    }
+  } finally { $z.Dispose() }
+}
+
+# Every .exe under $root, recursively, must be in the manifest (relative path -> sha256) with that
+# hash, and every manifest entry must exist: a missing, extra or changed executable fails.
+function Assert-ExeManifest([string]$root, $manifest) {
+  $prefix = $root.TrimEnd('\') + '\'
+  $want = @{}
+  foreach ($m in $manifest.PSObject.Properties) { $want[$m.Name.ToLowerInvariant()] = $m.Value }
+  $have = @{}
+  $files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force | Where-Object { $_.Extension -ieq '.exe' })
+  foreach ($f in $files) {
+    $rel = $f.FullName.Substring($prefix.Length).ToLowerInvariant()
+    $have[$rel] = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+  foreach ($k in @($have.Keys | Sort-Object)) {
+    if (-not $want.ContainsKey($k)) { throw ('unexpected executable: ' + $k) }
+  }
+  foreach ($k in @($want.Keys | Sort-Object)) {
+    if (-not $have.ContainsKey($k)) { throw ('missing executable: ' + $k) }
+    if ($have[$k] -ne $want[$k]) { throw ('hash mismatch for ' + $k + ': got ' + $have[$k]) }
+  }
+}
+
+if ($LibOnly) { return }
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$utf8 = New-Object System.Text.UTF8Encoding $false
+$def = Get-Content 'C:\cg-lsp\al-lsp.json' -Raw -Encoding UTF8 | ConvertFrom-Json
+$tmp = 'C:\cg-lsp-tmp'
+$plugin = 'C:\cg-lsp\al-language-server-go-windows'
+New-Item -ItemType Directory -Force -Path $tmp, "$plugin\bin", "$plugin\.claude-plugin" | Out-Null
 
 # 0. The probe files copied next to this definition must match its recorded hashes.
 $probeNames = @($def.probe.PSObject.Properties | ForEach-Object { $_.Name })
@@ -37,6 +78,7 @@ $n = 0
 foreach ($src in @($def.pins.wrapper)) {
   $n++
   Get-Pinned $src "$tmp\wrapper$n.zip"
+  Assert-ZipSafe "$tmp\wrapper$n.zip"
   Expand-Archive -LiteralPath "$tmp\wrapper$n.zip" -DestinationPath "$tmp\wrapper$n"
   foreach ($p in $src.files.PSObject.Properties) {
     if (Test-Path -LiteralPath "$plugin\bin\$($p.Name)") { throw ('wrapper exe named by two sources: ' + $p.Name) }
@@ -60,6 +102,7 @@ if (Test-Gzip "$tmp\al.download") {
 } else {
   Move-Item -LiteralPath "$tmp\al.download" -Destination "$tmp\al.zip"
 }
+Assert-ZipSafe "$tmp\al.zip"
 Expand-Archive -LiteralPath "$tmp\al.zip" -DestinationPath "$tmp\al"
 Move-Item -LiteralPath "$tmp\al\extension" -Destination 'C:\cg-lsp\al'
 # The compiler and tools are not the agent's: the enumerated files go (a missing one fails the build),
@@ -76,6 +119,7 @@ if ($ca -ne $def.lineage.extension.sha256) { throw ('extension CodeAnalysis diff
 
 # 3. ASP.NET Core runtime 10 (holds Microsoft.NETCore.App too), private to the LSP.
 Get-Pinned $def.pins.dotnet "$tmp\dotnet.zip"
+Assert-ZipSafe "$tmp\dotnet.zip"
 Expand-Archive -LiteralPath "$tmp\dotnet.zip" -DestinationPath 'C:\cg-lsp\dotnet'
 
 # 4. Plugin files from the hashed definition (single source of truth).
@@ -83,6 +127,9 @@ $noDiag = @($def.lsp_json.al.args) -contains '--no-diagnostics'
 if ($noDiag -ne ($def.diagnostics -eq 'sidecar-off')) { throw ('lsp_json args disagree with diagnostics ' + $def.diagnostics) }
 [IO.File]::WriteAllText("$plugin\.lsp.json", (ConvertTo-Json -InputObject $def.lsp_json -Depth 10), $utf8)
 [IO.File]::WriteAllText("$plugin\.claude-plugin\plugin.json", (ConvertTo-Json -InputObject $def.plugin_json -Depth 10), $utf8)
+
+# 5. Every executable under C:\cg-lsp is exactly the pinned set (DLLs are covered by the archive hashes).
+Assert-ExeManifest 'C:\cg-lsp' $def.exes
 
 Remove-Item -LiteralPath $tmp -Recurse -Force
 [Console]::Out.WriteLine('[OK] install-lsp: wrapper ' + ((@($def.pins.wrapper) | ForEach-Object { $_.release }) -join ' + ') + ', AL ' + $def.pins.al_extension.version + ', .NET ' + $def.pins.dotnet.version + ', diagnostics ' + $def.diagnostics)
