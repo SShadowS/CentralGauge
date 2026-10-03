@@ -30,6 +30,9 @@ candidates:
   - id: HX-014
     prior: intermediate
     size: { objects: 6, files: 6, reuse: null, traces: "CGR Service Interval" }
+  - id: HX-017
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Rental-Post.OnAfterPostRentalContract" }
   - id: HX-016
     prior: intermediate
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Outbox Dispatcher.OnSendEntry" }
