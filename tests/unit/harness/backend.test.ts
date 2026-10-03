@@ -1346,3 +1346,127 @@ Deno.test("backend: revoke keeps a non-empty execution folder and its contents (
   assertStringIncludes(String(warn.calls[0]!.args[0]), "kept");
   assertEquals(await Deno.readTextFile(join(dir, "evidence.txt")), "keep me");
 });
+
+const ASSERT_SYMBOL = {
+  app_id: IDS.assert,
+  name: "Library Assert",
+  publisher: "Microsoft",
+  version: "28.0.0.0",
+  file: "a.app",
+  sha256: "0".repeat(64),
+};
+
+Deno.test("backend (M11): a granted execution has a host log before any request", async () => {
+  const s = await setup();
+  const path = join(s.root, "host-log-b.jsonl");
+  assert((await Deno.stat(path)).isFile);
+  assertEquals(await readHostLog(path), []);
+});
+
+Deno.test("production ops (M11): a failed compile logs code, relative file, symbol, changed apps and build_ok", async () => {
+  const s = await setup();
+  const bc = new FakeBc(() => result({ A: true }));
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend-m11"),
+    ops: defaultBackendOps(new BcLane(bc, ["C1"])),
+    allowedHosts: ["127.0.0.1"],
+  });
+  const exec = "00000000-0000-4000-8000-00000000e011";
+  const ws = await workspace(s.root, exec);
+  const pristine = await workspace(s.root, "pristine-m11");
+  const hostLog = join(s.root, "hl-m11.jsonl");
+  const tok = await b.grant({
+    executionId: exec,
+    sandbox: null,
+    workspace: ws,
+    pristine,
+    trusted: await readAppGraph(pristine),
+    symbols: [ASSERT_SYMBOL],
+    lock: { store: s.root, packages: [] },
+    deploy: { ledgerRoot: s.root, trustedRoots: [pristine] },
+    hostLog,
+  }, 60_000);
+  bc.errorsFor = (f) =>
+    f === "Core"
+      ? [{
+        code: "AL0118",
+        message: "The name 'Foo' does not exist in the current context",
+        file: "C:\\snap\\x\\Core\\src\\C.al",
+        line: 3,
+        column: 5,
+        severity: "error",
+      }]
+      : [];
+  await b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
+  await write(
+    ws,
+    "Core/src/C.al",
+    `codeunit 70000 "CGR Core"\n{\n    // edited\n}\n`,
+  );
+  await b.handle(req("/v1/compile", tok, '{"apps":["Core"]}', exec));
+  const [first, second] = await readHostLog(hostLog);
+  assertEquals(first!.changed_apps, []);
+  assertEquals(second!.changed_apps, ["Core"]);
+  assertEquals(second!.build_ok, false);
+  assertEquals(second!.diagnostic_list, [{
+    app: "Core",
+    code: "AL0118",
+    file: "Core/src/C.al",
+    line: 3,
+    symbol: "Foo",
+  }]);
+});
+
+Deno.test("production ops (M11): a test request whose build fails logs its diagnostics", async () => {
+  const s = await setup();
+  const bc = new FakeBc(() => result({ A: true }));
+  // Test, not Core: pristine is the workspace here, so an unchanged Core is a
+  // staged prerequisite whose failure is a task bug (thrown), not a build log.
+  bc.errorsFor = (f) =>
+    f === "Test"
+      ? [{
+        code: "AL0132",
+        message: "'X' does not contain a definition for 'Y'",
+        file: "C.al",
+        line: 1,
+        column: 1,
+        severity: "error",
+      }]
+      : [];
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, "backend-m11t"),
+    ops: defaultBackendOps(new BcLane(bc, ["C1"])),
+    allowedHosts: ["127.0.0.1"],
+  });
+  const exec = "00000000-0000-4000-8000-00000000e012";
+  const tok = await grantFor(b, s.root, exec, join(s.root, "hl-m11t.jsonl"));
+  await b.handle(req("/v1/test", tok, "{}", exec));
+  const [l] = await readHostLog(join(s.root, "hl-m11t.jsonl"));
+  assertEquals([l!.op, l!.build_ok, l!.diagnostics], ["test", false, 1]);
+  assertEquals(l!.diagnostic_list!.map((x) => [x.code, x.symbol]), [[
+    "AL0132",
+    "X.Y",
+  ]]);
+});
+
+Deno.test("backend (M11): a refused grant creates no host log", async () => {
+  const s = await setup();
+  const hostLog = join(s.root, "hl-refused.jsonl");
+  // workspace() under root/outside lands outside the approved root/work.
+  await assertRejects(
+    () =>
+      grantFor(
+        s.backend,
+        join(s.root, "outside"),
+        "00000000-0000-4000-8000-00000000e013",
+        hostLog,
+      ),
+    ValidationError,
+    "outside the approved roots",
+  );
+  await assertRejects(() => Deno.stat(hostLog), Deno.errors.NotFound);
+});

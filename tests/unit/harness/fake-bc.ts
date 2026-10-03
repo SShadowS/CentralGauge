@@ -3,6 +3,7 @@
 import { basename, join } from "@std/path";
 import type {
   ALProject,
+  CompilationError,
   CompilationResult,
   HarnessInstalledApp,
   HarnessSyncResult,
@@ -65,6 +66,8 @@ export class FakeBc implements HarnessBc {
   compileSeen = new Map<string, string[]>();
   /** Test hook: runs inside compileProject (e.g. to plant an unlocked package). */
   onCompile: ((projectDir: string) => Promise<void>) | null = null;
+  /** Test hook: errors a compile of the folder returns (M11). */
+  errorsFor: ((folder: string) => CompilationError[]) | null = null;
   concurrentCompiles = 0;
   maxConcurrentCompiles = 0;
   syncs: { container: string; removeIds: string[]; publish: string[] }[] = [];
@@ -134,6 +137,16 @@ export class FakeBc implements HarnessBc {
         version: string;
       };
       const source = await sources(project.path);
+      const planted = this.errorsFor?.(folder) ?? [];
+      if (planted.length > 0) {
+        return {
+          success: false,
+          errors: planted,
+          warnings: [],
+          output: "",
+          duration: 1,
+        };
+      }
       // alc: a symbol package the source needs must be in the package cache.
       const missing = [...source.matchAll(/\/\/ needs (.+?\.app)/g)]
         .map((m) => m[1]!).find((f) => !pk.includes(f));

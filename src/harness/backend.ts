@@ -9,7 +9,7 @@
 
 import { join, SEPARATOR } from "@std/path";
 import { z } from "zod";
-import type { BuildDiagnostic } from "./build-log.ts";
+import { type BuildDiagnostic, buildDiagnostics } from "./build-log.ts";
 import type { SymbolPackage } from "./identity.ts";
 import {
   HARNESS_FIXTURE_TEST_RANGE,
@@ -472,6 +472,10 @@ export class Backend {
           [canonical],
         );
       }
+      // M11: a granted execution always has a host log, so a missing file
+      // is lost telemetry and an empty one is "no request".
+      await Deno.mkdir(join(g.hostLog, ".."), { recursive: true });
+      await Deno.writeTextFile(g.hostLog, "", { append: true, create: true });
       const token = [...crypto.getRandomValues(new Uint8Array(32))]
         .map((b) => b.toString(16).padStart(2, "0")).join("");
       this.grants.set(id, {
@@ -735,6 +739,7 @@ export class Backend {
           this.line(st, op, 200, "failed", t0, {
             request: requestId,
             message: violations.join("; "),
+            build_ok: null,
             spans: { snapshot_ms },
           }),
         );
@@ -1023,6 +1028,9 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           apps_compiled: built.filter((b) => b.attempted).map((b) => b.folder),
           per_app_compiles: built.filter((b) => b.attempted).length,
           diagnostics: built.reduce((n, b) => n + b.diagnostics.length, 0),
+          diagnostic_list: buildDiagnostics(built),
+          changed_apps: changed,
+          build_ok: ok,
           spans: { compile_ms: performance.now() - t0 },
         },
       };
@@ -1060,6 +1068,13 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
             outcome: "failed",
             apps_compiled: compiled,
             per_app_compiles: prep.per_app_compiles,
+            diagnostics: prep.built.reduce(
+              (n, b) => n + b.diagnostics.length,
+              0,
+            ),
+            diagnostic_list: buildDiagnostics(prep.built),
+            changed_apps: changed,
+            build_ok: false,
             spans: { compile_ms: prep.compile_ms },
           },
         };
@@ -1083,6 +1098,9 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
             apps_compiled: compiled,
             per_app_compiles: prep.per_app_compiles,
             message: "no runnable test codeunit in the Test app",
+            diagnostic_list: buildDiagnostics(prep.built),
+            changed_apps: changed,
+            build_ok: true,
             spans: { compile_ms: prep.compile_ms },
           },
         };
@@ -1116,6 +1134,9 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           per_app_compiles: prep.per_app_compiles,
           tests_run: rows.length,
           tests_failed: failed,
+          diagnostic_list: buildDiagnostics(prep.built),
+          changed_apps: changed,
+          build_ok: true,
           container: held.container,
           retries: held.retries.length,
           spans: {
