@@ -457,8 +457,8 @@ const strings = (v: unknown): v is string[] =>
  */
 function componentInventory(
   lines: Line[],
-  init: Line | undefined,
-  usedModels: string[],
+  inits: Line[],
+  modelSources: Map<string, string[]>,
   manifest: ParseInput["manifest"],
 ): {
   required: boolean;
@@ -486,9 +486,9 @@ function componentInventory(
     );
   } else {
     const { rec: r, line } = recs[0]!;
-    if (init && line > init.line) {
+    if (inits[0] && line > inits[0].line) {
       problems.push(
-        `line ${line}: cg_inventory after system/init (line ${init.line})`,
+        `line ${line}: cg_inventory after system/init (line ${inits[0].line})`,
       );
     }
     const { v, ok, installed: inst, problems: probs } = r;
@@ -515,7 +515,53 @@ function componentInventory(
       installed = inst;
     }
   }
-  if (!init) return { required, loaded: [], problems, evidence };
+  // Every same-session init is checked against the arm (review 2); a
+  // component counts as loaded only when every init shows it.
+  let common: string[] | null = null;
+  for (const [n, init] of inits.entries()) {
+    const r = initInventory(init, installed, manifest);
+    const tag = inits.length > 1 ? `init ${n + 1}: ` : "";
+    problems.push(...r.problems.map((p) => tag + p));
+    common = common === null
+      ? r.loaded
+      : common.filter((c) => r.loaded.includes(c));
+    if (n === 0) Object.assign(evidence, r.evidence);
+  }
+  if (inits.length === 0) return { required, loaded: [], problems, evidence };
+  for (const k of Object.keys(evidence)) {
+    if (!common!.includes(k)) delete evidence[k];
+  }
+  // Ruling 1 (m9-01 findings): one model per arm; every model seen on any
+  // record (review 1), built-in sub-agents included, must be the main model id.
+  const main = obj(obj(manifest.settings.native)["api_models"])["main"];
+  if (typeof main !== "string") {
+    problems.push(
+      "settings.native.api_models.main missing: no model pin to check",
+    );
+  } else {
+    for (
+      const [m, where] of [...modelSources].sort(([a], [b]) => a < b ? -1 : 1)
+    ) {
+      if (m !== main) {
+        problems.push(
+          `model ${m || "(none)"} ran; the arm pins ${main} (${
+            where.slice(0, SHOWN).join(", ")
+          }${where.length > SHOWN ? `, ${where.length - SHOWN} more` : ""})`,
+        );
+      }
+    }
+  }
+  return { required, loaded: common!, problems, evidence };
+}
+
+/** One system/init checked against the arm: lists, members, tools, plugins, LSP. */
+function initInventory(
+  init: Line,
+  installed: string[],
+  manifest: ParseInput["manifest"],
+): { loaded: string[]; problems: string[]; evidence: Record<string, string> } {
+  const problems: string[] = [];
+  const evidence: Record<string, string> = {};
   const i = init.rec;
   const version = typeof i.claude_code_version === "string"
     ? i.claude_code_version
@@ -529,7 +575,7 @@ function componentInventory(
         version || "(unknown)"
       }`,
     );
-    return { required, loaded: [], problems, evidence };
+    return { loaded: [], problems, evidence };
   }
   // Absence is provable only from a list that is there.
   const bad: string[] = ["agents", "skills", "tools"].filter((k) =>
@@ -547,7 +593,7 @@ function componentInventory(
         bad.join(", ")
       }: absence cannot be proven`,
     );
-    return { required, loaded: [], problems, evidence };
+    return { loaded: [], problems, evidence };
   }
   const loaded: string[] = [];
   const want = {
@@ -627,21 +673,44 @@ function componentInventory(
     evidence["instructions"] =
       `installed (cg_inventory); loading qualified for Claude Code ${version} by ${builtin.qualified}`;
   }
-  // Ruling 1 (m9-01 findings): one model per arm; every model seen, built-in
-  // sub-agents included, must be the main model id.
-  const main = obj(obj(manifest.settings.native)["api_models"])["main"];
-  if (typeof main !== "string") {
-    problems.push(
-      "settings.native.api_models.main missing: no model pin to check",
-    );
-  } else {
-    for (const m of usedModels) {
-      if (m !== main) {
-        problems.push(`model ${m || "(none)"} ran; the arm pins ${main}`);
-      }
+  // Review 3: the non-MCP tools equal builtin + LSP when declared - the arm's
+  // disallowed tools (settings.native.disallowed_tools); MCP is mcpInventory's.
+  const disallowed = list(obj(manifest.settings.native)["disallowed_tools"])
+    .filter((t): t is string => typeof t === "string");
+  const expectTools = [
+    ...builtin.tools,
+    ...(manifest.lsp.length > 0 ? ["LSP"] : []),
+  ].filter((t) => !disallowed.includes(t));
+  const gotTools = (i["tools"] as string[]).filter((t) =>
+    !t.startsWith("mcp__")
+  );
+  for (const t of [...new Set(gotTools)].sort()) {
+    const n = gotTools.filter((x) => x === t).length;
+    if (!expectTools.includes(t)) problems.push(`unexpected tool ${t}`);
+    else if (n > 1) problems.push(`duplicate tool ${t} (${n}x)`);
+  }
+  for (const t of expectTools) {
+    if (!gotTools.includes(t)) problems.push(`missing tool ${t}`);
+  }
+  // Review 4: every requested and built-in member must be present.
+  const initPlugins = (i["plugins"] as unknown[]).map(obj);
+  for (const p of builtin.plugins) {
+    if (!initPlugins.some((x) => x["source"] === p)) {
+      problems.push(`missing plugin ${p}`);
     }
   }
-  return { required, loaded, problems, evidence };
+  for (
+    const [component, kind] of [["agents", "agent"], [
+      "skills",
+      "skill",
+    ]] as const
+  ) {
+    const seen = i[component] as string[];
+    for (const n of [...builtin[component], ...want[component]]) {
+      if (!seen.includes(n)) problems.push(`missing ${kind} ${n}`);
+    }
+  }
+  return { loaded, problems, evidence };
 }
 
 export function parseClaudeStream(
@@ -925,14 +994,31 @@ export function parseClaudeStream(
       (input.manifest.skills?.files ?? []).map((f) => f.path.split("/")[0]!),
     ),
   ];
-  const usedModels = [
-    ...new Set([
-      ...(result ? models : []),
-      ...[...perMessage.values()].map((v) => v.model),
-      ...children.map((c) => c.model ?? ""),
-    ]),
-  ].sort();
-  const inv = componentInventory(lines, inits[0], usedModels, input.manifest);
+  // Review 1: every model on every record, independent of usage accounting,
+  // empty-usage skips and message-id dedup (assistant chunks, children with
+  // any usage, every result's modelUsage keys).
+  const modelSources = new Map<string, string[]>();
+  const sawModel = (m: string, where: string) =>
+    modelSources.set(m, [...(modelSources.get(m) ?? []), where]);
+  const finalUsage = obj(result?.modelUsage);
+  for (const { rec, line } of lines) {
+    if (rec.type === "assistant") {
+      if (isApiErrorSynthetic(rec, finalUsage)) continue;
+      const m = obj(rec.message).model;
+      sawModel(typeof m === "string" ? m : "", `assistant line ${line}`);
+    } else if (rec.type === "user") {
+      const m = obj(rec.tool_use_result).resolvedModel;
+      if (typeof m === "string") sawModel(m, `sub-agent line ${line}`);
+    } else if (rec.type === "result") {
+      for (const m of Object.keys(obj(rec.modelUsage))) {
+        sawModel(m, `result line ${line} modelUsage`);
+      }
+    }
+  }
+  for (const c of children) {
+    if (c.model === null) sawModel("", `sub-agent line ${c.line}`);
+  }
+  const inv = componentInventory(lines, inits, modelSources, input.manifest);
   const mcp = mcpInventory(init, input.manifest);
   const connected = mcp.loaded;
   const loaded = init
