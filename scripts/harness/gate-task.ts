@@ -156,12 +156,16 @@ async function stageVariant(
 }
 
 /**
- * A failed compile with no real AL code (codes empty or only AL0000) is infra:
- * the host-crunch signature (zero errors, sub-second, AL0000 pipe errors). Any
- * other AL code is a scored build failure, whatever the detail says.
+ * A failed compile is infra when codes are empty (zero-error host-crunch
+ * signature), or only the parser's synthetic AL0000 AND the detail is the
+ * pipe/session-death signature. Other AL0000 (e.g. pre-ALC "Unable to locate
+ * system symbols" from a bad manifest) and any real AL code stay scored.
  */
 function isInfraCompile(c: CompileOut): boolean {
-  return c.codes.every((x) => x === "AL0000");
+  if (c.codes.length === 0) return true;
+  return c.codes.every((x) => x === "AL0000") &&
+    /no process is on the other end of the pipe|0xE9|session crashed|process exited before marker|persistent session init failed/i
+      .test(c.detail);
 }
 
 export async function runVariant(
@@ -235,7 +239,7 @@ export async function runVariant(
       const ok = (app: string) =>
         result.builds.some((b) => b.app === app && b.ok);
       const suites: { app: string; codeunit: number }[] = [];
-      if (ok("Test")) {
+      if (result.infra === undefined && ok("Test")) {
         for (const t of task.pass_to_pass) {
           suites.push({ app: "Test", codeunit: t.codeunit });
         }
