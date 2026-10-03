@@ -498,6 +498,9 @@ function checkMeasures(
     }
     const cell = cells.find((c) => c.judgment_id === r.judgment_id);
     if (!cell) {
+      // Filed under its own id, but superseded (rejudge, --judging current):
+      // ignored. An id no judgment of the campaign has is still refused.
+      if (records.judgments.some((j) => j.id === r.judgment_id)) continue;
       throw refuse(
         id,
         "judgment",
@@ -625,14 +628,7 @@ export async function buildReport(
       );
     }
   }
-  // Records of superseded judgments (after a rejudge or --judging current)
-  // are not any cell's: ignored, never a refusal. Other mismatches still refuse.
-  const countedJudgments = new Set(allCells.map((c) => c.judgment_id));
-  const measures = opts.logs?.measures
-    ? new Map(
-      [...opts.logs.measures].filter(([id]) => countedJudgments.has(id)),
-    )
-    : undefined;
+  const measures = opts.logs?.measures;
   if (measures) {
     checkMeasures(
       records,

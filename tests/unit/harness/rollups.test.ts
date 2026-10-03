@@ -9,6 +9,7 @@ import {
   rollups,
 } from "../../../src/harness/rollups.ts";
 import { RULES_VERSION } from "../../../src/harness/classify.ts";
+import type { MeasureRecord } from "../../../src/harness/measures.ts";
 import type { ExecutionRecord } from "../../../src/harness/records.ts";
 import type { TraceEvent } from "../../../src/harness/trace.ts";
 import type {
@@ -408,6 +409,23 @@ Deno.test("rollups: a terminal variant cell without a baseline counterpart is un
     tasks: 1,
     missing_pairs: 1,
   });
+});
+
+Deno.test("cellValues: final_new_warnings is n/a for a not_applicable record, missing only for an ok record with null new_warnings", () => {
+  const a = exec("a", [pm(1)]);
+  const code = (final_code: object) =>
+    cellValues(
+      [a],
+      a,
+      { final_code } as unknown as MeasureRecord,
+      new Map(),
+      new Map(),
+      false,
+    ).final_new_warnings;
+  assertEquals(code({ status: "not_applicable", reason: "x" }), "n/a");
+  assertEquals(code({ status: "missing", reason: "x" }), null);
+  assertEquals(code({ status: "ok", value: { new_warnings: null } }), null);
+  assertEquals(code({ status: "ok", value: { new_warnings: 3 } }), 3);
 });
 
 Deno.test("rollups: equal task weight per arm; paired deltas over pairs with both values", () => {

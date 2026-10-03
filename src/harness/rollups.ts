@@ -192,7 +192,10 @@ export function cellValues(
     first_build_ok: firstBuild(),
     final_errors: m((v: { errors: number }) => v.errors, measure?.final_code),
     // A null new_warnings (analyzer output incomplete) is missing, not n/a.
-    final_new_warnings: newWarnings === "n/a" && measure?.final_code
+    // Only an ok record's null new_warnings (incomplete analyzers) is missing;
+    // not_applicable and unmeasured cells stay "n/a".
+    final_new_warnings: newWarnings === "n/a" &&
+        measure?.final_code.status === "ok"
       ? null
       : newWarnings,
     reuse: m(

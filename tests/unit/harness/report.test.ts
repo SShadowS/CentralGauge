@@ -1951,3 +1951,25 @@ Deno.test("loadReportLogs (M11-12): reads measure records of the given fingerpri
     await measureFingerprint(),
   );
 });
+
+Deno.test("buildReport (M11-12 r2): a counted judgment's record filed under a superseded key is refused, not dropped", async () => {
+  const base = await records();
+  const v2 = { build: "2" };
+  const older = judgment(base.campaign, base.executions[0]!, false, {
+    scorer_versions: v2,
+    scorer_fingerprint: await scorerFingerprint(v2),
+    ended_at: "2026-10-01T10:13:00.000Z",
+  });
+  const recs = { ...base, judgments: [older, ...base.judgments] };
+  const counted = base.judgments[0]!;
+  const logs: ReportLogs = {
+    host: new Map(),
+    verdict: new Map(),
+    measures: new Map([[older.id, measureFor(recs, counted, H("f"))]]),
+  };
+  const err = await assertRejects(
+    () => buildReport(recs, { logs }),
+    ValidationError,
+  );
+  assertStringIncludes(err.message, "differs from the key");
+});
