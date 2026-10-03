@@ -155,6 +155,19 @@ async function stageVariant(
   };
 }
 
+/**
+ * A failed compile is infra when codes are empty (zero-error host-crunch
+ * signature), or only the parser's synthetic AL0000 AND the detail is the
+ * pipe/session-death signature. Other AL0000 (e.g. pre-ALC "Unable to locate
+ * system symbols" from a bad manifest) and any real AL code stay scored.
+ */
+function isInfraCompile(c: CompileOut): boolean {
+  if (c.codes.length === 0) return true;
+  return c.codes.every((x) => x === "AL0000") &&
+    /no process is on the other end of the pipe|0xE9|session crashed|process exited before marker|persistent session init failed/i
+      .test(c.detail);
+}
+
 export async function runVariant(
   bc: GateBc,
   task: HarnessTask,
@@ -195,6 +208,10 @@ export async function runVariant(
         appIds[app] = (project.appJson as { id: string }).id;
         const c = await bc.compile(project);
         if (!c.ok || !c.artifact) {
+          if (isInfraCompile(c)) {
+            result.infra = `compile infra: ${app}: ${c.detail.slice(0, 200)}`;
+            break;
+          }
           result.builds.push({
             app,
             stage: "compile",
@@ -222,7 +239,7 @@ export async function runVariant(
       const ok = (app: string) =>
         result.builds.some((b) => b.app === app && b.ok);
       const suites: { app: string; codeunit: number }[] = [];
-      if (ok("Test")) {
+      if (result.infra === undefined && ok("Test")) {
         for (const t of task.pass_to_pass) {
           suites.push({ app: "Test", codeunit: t.codeunit });
         }
