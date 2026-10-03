@@ -10,6 +10,9 @@ partial_credit:
     "85600/FinerBranchPrecisionWins": 1
     "85600/PricingKeepsSessionBranch": 1
     "85600/LeaseInvoiceKeepsSetupPrecision": 1
+    "85600/SetupZeroBranchFallbackUsesCents": 1
+    "85600/PricingKeepsDefaultBranchFallback": 1
+    "85600/WeekendPackageUsesContractBranch": 1
   hidden_regressions: []
 reuse: null
 expect:

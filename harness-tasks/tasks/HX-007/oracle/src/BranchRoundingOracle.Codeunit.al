@@ -203,6 +203,92 @@ codeunit 85600 "HX007 Branch Rounding Oracle"
         Assert.AreEqual(104.03, InvoiceLine.Amount, 'Lease invoice lines keep the Setup precision');
     end;
 
+    [Test]
+    procedure SetupZeroBranchFallbackUsesCents()
+    var
+        PreviewLine: Record "CGR Invoice Preview Line";
+        BranchRounding: Record "CGR Branch Rounding";
+        Preview: Codeunit "CGR Rental Invoice Preview";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        WorkDate(20270301D);
+        InitSetup(0, '');
+        if BranchRounding.Get('HX7ZB') then
+            BranchRounding.Delete();
+        InitVehicle('HX007-J');
+        ContractNo := ReturnedContract('HX007-J', 'HX7ZB');
+
+        Preview.BuildPreview(ContractNo, PreviewLine);
+        AssertLines(PreviewLine, 99.99, 33.33, 2.31);
+        Assert.AreEqual(135.63, Preview.TotalAmount(PreviewLine), 'Setup precision 0 falls back to 0.01');
+        RentalMgt.Post(ContractNo);
+        Assert.AreEqual(135.63, PostedAmount(ContractNo), 'Posted amount at 0.01');
+    end;
+
+    [Test]
+    procedure PricingKeepsDefaultBranchFallback()
+    var
+        Setup: Record "CGR Setup";
+        Contract: Record "CGR Rental Contract";
+        PreviewLine: Record "CGR Invoice Preview Line";
+        Preview: Codeunit "CGR Rental Invoice Preview";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        SessionContext: Codeunit "CGR Session Context";
+        FirstContractNo: Code[20];
+        SecondContractNo: Code[20];
+    begin
+        WorkDate(20270301D);
+        InitSetup(0.01, 'HX7SD');
+        SetBranchRounding('HX7SA', 1);
+        InitVehicle('HX007-K');
+        FirstContractNo := ReturnedContract('HX007-K', 'HX7SA');
+        SessionContext.Reset();
+
+        Preview.BuildPreview(FirstContractNo, PreviewLine);
+        RentalMgt.Post(FirstContractNo);
+        Setup.Get();
+        Setup."Default Branch Code" := 'HX7SE';
+        Setup.Modify();
+        SessionContext.RefreshSetup();
+        SecondContractNo := RentalMgt.CreateContract('HX007-K', 'HX007 Customer', 20270312D, 20270314D);
+
+        Assert.AreEqual('HX7SE', SessionContext.CurrentBranch(), 'Without an explicit branch the Setup default still applies');
+        Contract.Get(SecondContractNo);
+        Assert.AreEqual('HX7SE', Contract."Branch Code", 'A new contract takes the Setup default branch');
+    end;
+
+    [Test]
+    procedure WeekendPackageUsesContractBranch()
+    var
+        Contract: Record "CGR Rental Contract";
+        PreviewLine: Record "CGR Invoice Preview Line";
+        Preview: Codeunit "CGR Rental Invoice Preview";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        WorkDate(20270301D);
+        InitSetup(0.01, '');
+        SetBranchRounding('HX7WA', 1);
+        InitVehicle('HX007-W');
+        ContractNo := ReturnedContract('HX007-W', 'HX7WA');
+        Contract.Get(ContractNo);
+        Contract."Pricing Method" := Contract."Pricing Method"::"Weekend Package";
+        Contract.Modify();
+
+        Preview.BuildPreview(ContractNo, PreviewLine);
+        Assert.AreEqual(2, PreviewLine.Count(), 'Weekend package and excess km');
+        PreviewLine.FindSet();
+        Assert.AreEqual('Weekend package', PreviewLine.Description, 'First line');
+        Assert.AreEqual(67.00, PreviewLine.Amount, 'Weekend package: 2 x 33.33 at precision 1');
+        PreviewLine.Next();
+        Assert.AreEqual('Excess km', PreviewLine.Description, 'Second line');
+        Assert.AreEqual(2.00, PreviewLine.Amount, 'Excess km: 7 x 0.33 at precision 1');
+        Assert.AreEqual(69.00, Preview.TotalAmount(PreviewLine), 'Preview total at the branch precision');
+        RentalMgt.Post(ContractNo);
+        Assert.AreEqual(69.00, PostedAmount(ContractNo), 'Posted amount at the branch precision');
+    end;
+
     local procedure InitSetup(RoundingPrecision: Decimal; DefaultBranchCode: Code[10])
     var
         Setup: Record "CGR Setup";
