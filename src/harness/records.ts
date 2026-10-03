@@ -380,9 +380,25 @@ export const CampaignRecordSchema = z.strictObject({
   })).min(2),
   /** The full plan (every task x repeat). Staged runs execute subsets of it. */
   blocks: z.array(BlockSchema).min(1),
+  /**
+   * M11-10: the pre-registration this campaign was created under, and the
+   * hashes of both decision files (stage A and stage B) that approved it.
+   */
+  preregistration: z.strictObject({
+    path: z.string().min(1),
+    sha256: Sha256Hex,
+    protocol_sha256: Sha256Hex,
+    decision_sha256: Sha256Hex,
+    stage_b_decision_sha256: Sha256Hex,
+  }).optional(),
 }).superRefine((c, ctx) => {
   const issue = (message: string, path: (string | number)[]) =>
     ctx.addIssue({ code: "custom", message, path });
+  if (c.experiment.contrasts && !c.preregistration) {
+    issue("a campaign with contrasts needs its preregistration", [
+      "preregistration",
+    ]);
+  }
   if (c.task_set.provisional) {
     issue("campaign needs a non-provisional task set (symbols lock)", [
       "task_set",
