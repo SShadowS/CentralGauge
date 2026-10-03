@@ -1,0 +1,19 @@
+id: HX-021
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Rental, Core, Fleet]
+coupling: [temporary-table, commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged] }
+  - { codeunit: 80054, procedures: [PostsEveryReturnedContractInFilter, FailedContractIsRolledBackAndLogged] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 85880, procedures: [SimulatesEveryReturnedContract, SimulationChangesNothing, OnlyReturnedContractsInFilter, RejectedContractReported, CommittingExtensionLeavesNothing, ExtensionWritesNotKept, TwoRejectionsBothReported, BuffersAreReplaced, SimulatedEntryEqualsPostedEntry, CommittingExtensionNotKept] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
