@@ -941,3 +941,137 @@ Deno.test("decision parsers: keys cannot span lines or repeat", () => {
   );
   assertEquals(parseStageBDecision(`${b}tag: harness-v2-prereg-b\n`), null);
 });
+
+// M11-10b: global git config and lazy fetch, stage-specific approvals, annotation uniqueness.
+Deno.test("git isolation: a promisor ext:: helper from the user's global config never runs", async () => {
+  const r = await anchorRepo();
+  const home = await Deno.makeTempDir();
+  const fwd = (p: string) => p.replaceAll("\\", "/");
+  const marker = join(home, "marker");
+  const helper = join(home, "helper.sh");
+  await Deno.writeTextFile(helper, `#!/bin/sh\necho ran > "${fwd(marker)}"\n`);
+  const gc = join(home, ".gitconfig");
+  // Only the global config allows ext::, so a read of that file is what would let the helper run.
+  await Deno.writeTextFile(gc, '[protocol "ext"]\n\tallow = always\n');
+  await r.git("config", "core.repositoryformatversion", "1");
+  await r.git("config", "extensions.partialClone", "origin");
+  await r.git("config", "remote.origin.promisor", "true");
+  await r.git("config", "remote.origin.url", `ext::sh ${fwd(helper)} %S`);
+  // The tag object goes missing locally, so reading it triggers a lazy fetch from the promisor.
+  const tagObj = await r.git("rev-parse", "harness-v2-prereg-a");
+  const loose = join(
+    r.repo,
+    ".git",
+    "objects",
+    tagObj.slice(0, 2),
+    tagObj.slice(2),
+  );
+  await Deno.chmod(loose, 0o666).catch(() => {});
+  await Deno.remove(loose);
+  const names = ["HOME", "USERPROFILE", "GIT_CONFIG_GLOBAL"];
+  const prev = names.map((n) => Deno.env.get(n));
+  Deno.env.set("HOME", home);
+  Deno.env.set("USERPROFILE", home);
+  Deno.env.set("GIT_CONFIG_GLOBAL", gc);
+  try {
+    await assertRejects(
+      () => loadStageAAnchor(r.repo, r.harness, r.rel, r.decisionA),
+      Error,
+      "annotated tag",
+    );
+    let ran = true;
+    try {
+      await Deno.stat(marker);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+      ran = false;
+    }
+    assertEquals(ran, false, "the ext:: helper ran");
+  } finally {
+    names.forEach((n, i) => {
+      const v = prev[i];
+      if (v === undefined) Deno.env.delete(n);
+      else Deno.env.set(n, v);
+    });
+    await Deno.remove(r.repo, { recursive: true });
+    await Deno.remove(home, { recursive: true });
+  }
+});
+
+Deno.test("decision parsers: an approval line naming the other stage is refused", () => {
+  const obj = "c".repeat(40);
+  const wrongB = "OWNER-APPROVED: stage B (2026-10-24T12:00:00Z)";
+  const wrongA = "OWNER-APPROVED: stage A (2026-11-06T12:00:00Z)";
+  const a = (approval: string) => decisionA(obj, { approval });
+  const b = (approval: string) =>
+    `stage_b_sha256: ${
+      H("b")
+    }\ntag: harness-v2-prereg-b\ntag_object: ${obj}\n${approval}\n`;
+  assert(
+    parseStageADecision(a("OWNER-APPROVED: stage A (2026-10-24T12:00:00Z)")) !==
+      null,
+  );
+  assertEquals(parseStageADecision(a(wrongB)), null);
+  assertEquals(
+    parseStageADecision(
+      a(`OWNER-APPROVED: stage A (2026-10-24T12:00:00Z)\n${wrongB}`),
+    ),
+    null,
+  );
+  assert(
+    parseStageBDecision(b("OWNER-APPROVED: stage B (2026-11-06T12:00:00Z)")) !==
+      null,
+  );
+  assertEquals(parseStageBDecision(b(wrongA)), null);
+  assertEquals(
+    parseStageBDecision(
+      b(`OWNER-APPROVED: stage B (2026-11-06T12:00:00Z)\n${wrongA}`),
+    ),
+    null,
+  );
+});
+
+Deno.test("annotation uniqueness: a correct hash line plus a malformed duplicate is refused", async () => {
+  const r = await anchorRepo();
+  for (
+    const [tag, key, ok, decision, load] of [
+      [
+        "harness-v2-prereg-a",
+        "protocol_sha256",
+        APPROVED,
+        r.decisionA,
+        loadStageAAnchor,
+      ],
+      [
+        "harness-v2-prereg-b",
+        "stage_b_sha256",
+        r.bSha,
+        r.decisionB,
+        loadStageBAnchor,
+      ],
+    ] as const
+  ) {
+    await r.git(
+      "tag",
+      "-f",
+      "-a",
+      tag,
+      "-m",
+      `${key}: ${ok}\n${key}: not-a-hash`,
+    );
+    const t = await Deno.readTextFile(decision);
+    await Deno.writeTextFile(
+      decision,
+      t.replace(
+        /^tag_object: .*$/m,
+        `tag_object: ${await r.git("rev-parse", tag)}`,
+      ),
+    );
+    await assertRejects(
+      () => load(r.repo, r.harness, r.rel, decision),
+      Error,
+      "exactly one",
+    );
+  }
+  await Deno.remove(r.repo, { recursive: true });
+});
