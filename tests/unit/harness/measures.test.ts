@@ -377,7 +377,10 @@ Deno.test("locateProcedure: object scoping, signature, renames and duplicates", 
     true,
   );
   assertEquals(locateProcedure(CU, { ...T, codeunit: 70011 }), null);
-  assertEquals(locateProcedure(CU, { ...T, procedure: "CalcSurcharge2" }), null);
+  assertEquals(
+    locateProcedure(CU, { ...T, procedure: "CalcSurcharge2" }),
+    null,
+  );
   assertEquals(
     locateProcedure(CU, {
       ...T,

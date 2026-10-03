@@ -310,3 +310,242 @@ export async function readMeasureRecord(
     throw err;
   }
 }
+
+export const REUSE_MARKER = "CG-REUSE-PROBE";
+
+/** Same length as src: comments and string literals blanked (quotes kept), so indices stay valid. */
+export function maskAl(src: string): string {
+  return src.replace(
+    /'(?:[^']|'')*'|\/\/[^\n]*|\/\*[\s\S]*?\*\//g,
+    (m) => m.replace(/[^\n]/g, " "),
+  );
+}
+/** Quoted identifiers blanked too, for keyword scanning only. */
+const maskIdents = (m: string) =>
+  m.replace(/"[^"\n]*"/g, (s) => `"${" ".repeat(s.length - 2)}"`);
+const norm = (s: string) =>
+  s.trim().replace(/;$/, "").replace(/\s+/g, "").toLowerCase();
+
+function bodyRange(
+  m: string,
+  from: number,
+  limit: number,
+): [number, number] | null {
+  const re = /\b(begin|case|end)\b/gi;
+  re.lastIndex = from;
+  let depth = 0;
+  let start = -1;
+  for (let x = re.exec(m); x !== null && x.index < limit; x = re.exec(m)) {
+    const k = x[1]!.toLowerCase();
+    if (k === "end") {
+      depth--;
+      if (depth === 0) return [start, x.index + 3];
+      if (depth < 0) return null;
+    } else {
+      if (depth === 0) {
+        if (k !== "begin") return null;
+        start = x.index;
+      }
+      depth++;
+    }
+  }
+  return null;
+}
+
+/**
+ * The body range of the target: located by codeunit id, procedure name AND
+ * declared signature inside that codeunit's object body, with comments and
+ * strings masked. Absent or ambiguous: null.
+ */
+export function locateProcedure(
+  src: string,
+  t: Pick<ReuseTarget, "codeunit" | "procedure" | "signature">,
+): [number, number] | null {
+  const m = maskAl(src);
+  const k = maskIdents(m);
+  const heads = [
+    ...k.matchAll(new RegExp(`\\bcodeunit\\s+${t.codeunit}\\b`, "gi")),
+  ];
+  if (heads.length !== 1) return null;
+  const open = k.indexOf("{", heads[0]!.index!);
+  if (open < 0) return null;
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < k.length && close < 0; i++) {
+    if (k[i] === "{") depth++;
+    else if (k[i] === "}" && --depth === 0) close = i;
+  }
+  if (close < 0) return null;
+  const body = m.slice(open, close);
+  const hits = [
+    ...body.matchAll(
+      new RegExp(
+        `\\bprocedure\\s+(?:"${t.procedure}"|${t.procedure})\\s*\\(`,
+        "gi",
+      ),
+    ),
+  ];
+  if (hits.length !== 1) return null;
+  const sig = open + hits[0]!.index! + hits[0]![0].length - 1;
+  const kw = /\b(var|begin)\b/gi;
+  kw.lastIndex = sig;
+  const at = kw.exec(k);
+  if (!at || at.index > close) return null;
+  if (norm(m.slice(sig, at.index)) !== norm(t.signature)) return null;
+  return bodyRange(k, at.index, close);
+}
+
+export function stubProcedure(
+  src: string,
+  t: Pick<ReuseTarget, "codeunit" | "procedure" | "signature">,
+  statements: string,
+): string | null {
+  const r = locateProcedure(src, t);
+  return r === null
+    ? null
+    : `${src.slice(0, r[0])}begin\n        ${statements}\n    end${
+      src.slice(r[1])
+    }`;
+}
+
+export interface ReuseInput {
+  task: LoadedTask;
+  measures: TaskMeasures;
+  judgment: JudgmentRecord;
+  judge: Omit<JudgeInput, "task" | "artifact" | "workDir" | "executionId">;
+  artifact: string;
+  workDir: string;
+}
+
+/**
+ * Reuse = the target executed AND its result matters, attributed per reuse
+ * test (round 2 finding 5). `executed` is a lower bound: a call whose error
+ * is swallowed and whose result is ignored reads as not executed.
+ */
+export async function reuseCheck(
+  lane: BcLane,
+  o: ReuseInput,
+): Promise<
+  Measure<{ executed: boolean; effective: boolean; via: string | null }>
+> {
+  const r = o.measures.reuse;
+  if (!r) return na("no reuse target");
+  const wanted = r.tests.flatMap((x) =>
+    x.procedures.map((p) => `${x.codeunit}/${p}`)
+  );
+  const f2p = o.judgment.scorers.find((s) => s.name === "fail_to_pass");
+  const passing = new Set(
+    (f2p?.tests ?? []).filter((t) => t.outcome === "pass").map((t) =>
+      `${t.codeunit}/${t.procedure}`
+    ),
+  );
+  if (!wanted.every((k) => passing.has(k))) {
+    return missing("not evaluable: reuse tests did not pass in the judgment");
+  }
+  const probeTask: LoadedTask = {
+    dir: o.task.dir,
+    task: {
+      ...o.task.task,
+      scorers: ["build", "fail_to_pass"],
+      pass_to_pass: [],
+      fail_to_pass: {
+        depends_on: o.task.task.fail_to_pass!.depends_on,
+        tests: r.tests,
+      },
+    },
+  };
+  /** Per reuse test: failed under this probe, and failed with the marker. */
+  type Run = { failed: Set<string>; marker: Set<string> } | {
+    problem: string;
+  };
+  const probe = async (
+    i: number,
+    kind: string,
+    t: ReuseTarget,
+    body: string,
+  ): Promise<Run | null> => {
+    const art = join(o.workDir, `${kind}-${i}`);
+    await safeCopyTree(o.artifact, art);
+    let src: string;
+    try {
+      src = await Deno.readTextFile(join(art, t.file));
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return null;
+      throw err;
+    }
+    const stubbed = stubProcedure(src, t, body);
+    if (stubbed === null) return null;
+    await Deno.writeTextFile(join(art, t.file), stubbed);
+    const { judgment, log } = await judge(lane, {
+      ...o.judge,
+      executionId: crypto.randomUUID(),
+      task: probeTask,
+      artifact: art,
+      workDir: join(o.workDir, `${kind}-judge-${i}`),
+    });
+    if (judgment.verdict === "unscored") {
+      return { problem: "infra during a reuse probe" };
+    }
+    if (judgment.scorers.find((s) => s.name === "build")?.passed !== true) {
+      return {
+        problem:
+          `probe did not build (${kind} probe of ${t.codeunit}/${t.procedure})`,
+      };
+    }
+    const rows =
+      judgment.scorers.find((s) => s.name === "fail_to_pass")?.tests ?? [];
+    const failed = new Set(
+      wanted.filter((k) =>
+        rows.some((x) =>
+          `${x.codeunit}/${x.procedure}` === k && x.outcome !== "pass"
+        )
+      ),
+    );
+    const marker = new Set(
+      [...failed].filter((k) =>
+        log.test_messages.some((m) =>
+          `${m.codeunit}/${m.procedure}` === k &&
+          m.message.includes(REUSE_MARKER)
+        )
+      ),
+    );
+    return { failed, marker };
+  };
+  let located = 0;
+  // Per reuse test, the targets that cover it (alternatives may serve different tests).
+  const execBy = new Map<string, string[]>();
+  const effBy = new Map<string, string[]>();
+  const note = (m: Map<string, string[]>, k: string, id: string) =>
+    m.set(k, [...(m.get(k) ?? []), id]);
+  for (const [i, t] of r.targets.entries()) {
+    const ex = await probe(i, "executed", t, `Error('${REUSE_MARKER}');`);
+    if (ex === null) continue;
+    located++;
+    if ("problem" in ex) return missing(ex.problem);
+    const ef = await probe(i, "effective", t, t.perturb);
+    if (ef === null) {
+      return missing(
+        `target ${t.codeunit}/${t.procedure} vanished between probes`,
+      );
+    }
+    if ("problem" in ef) return missing(ef.problem);
+    const id = `${t.codeunit}/${t.procedure}`;
+    for (const k of ex.marker) note(execBy, k, id);
+    for (const k of ef.failed) note(effBy, k, id);
+  }
+  if (located === 0) {
+    return missing("no reuse target located in the final workspace");
+  }
+  const effective = wanted.every((k) => effBy.has(k));
+  // A test the perturbation changes ran the target, even if a TryFunction swallowed the marker.
+  const executed = wanted.every((k) => execBy.has(k) || effBy.has(k));
+  const cover = effective
+    ? effBy
+    : executed
+    ? new Map([...execBy, ...effBy])
+    : null;
+  const via = cover === null
+    ? null
+    : [...new Set(wanted.map((k) => cover.get(k)![0]!))].join("+");
+  return ok({ executed, effective, via });
+}
