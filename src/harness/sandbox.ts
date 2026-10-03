@@ -445,6 +445,9 @@ export interface SandboxSpec {
  * IP). The images also end with USER ContainerUser; this run arg is the control.
  */
 export const SANDBOX_USER = "ContainerUser";
+
+/** Every sandbox, every arm (decisions/2026-10-03-m10-03-s1-gate.md): the ~1 GB default ran at 97-99.5%. */
+export const SANDBOX_MEMORY = "3g";
 /**
  * An agent entrypoint that finds itself admin exits with this code and marker
  * (harness/images/base/cg-nonadmin.ps1). Diagnostic only: an agent can print
@@ -600,6 +603,8 @@ export function buildRunArgs(s: SandboxSpec): string[] {
     s.name,
     "--isolation",
     "hyperv",
+    "--memory",
+    SANDBOX_MEMORY,
     "--user",
     SANDBOX_USER,
     ...(s.network ? ["--network", s.network] : []),
