@@ -9,6 +9,7 @@ import { tmp, writeTask } from "./gate-fixtures.ts";
 
 function mockBc(o: {
   failCompile?: string;
+  compileOut?: { codes: string[]; detail: string };
   failPublish?: string;
   publishError?: string;
   soapThrows?: boolean;
@@ -30,7 +31,10 @@ function mockBc(o: {
     compile: async (p: ALProject) => {
       o.seen?.push(p.path);
       if (basename(p.path) === o.failCompile) {
-        return { ok: false, codes: ["AL0118"], detail: "AL0118 missing" };
+        return {
+          ok: false,
+          ...(o.compileOut ?? { codes: ["AL0118"], detail: "AL0118 missing" }),
+        };
       }
       const artifact = join(p.path, "out.app");
       await Deno.writeTextFile(artifact, "x");
@@ -326,4 +330,81 @@ Deno.test("runVariant: a non-collision publish failure stays infra", async () =>
   );
   assertEquals(r.builds.at(-1)?.stage, "publish");
   assert(summarize(loaded.task, r).infra);
+});
+
+// M8-01c: a compile failure with no real AL code (OOM / pipe death) is infra, never scored.
+for (
+  const compileOut of [
+    { codes: [], detail: "Compilation failed (errors=0, warnings=0)" },
+    {
+      codes: ["AL0000"],
+      detail: "AL0000 No process is on the other end of the pipe",
+    },
+  ]
+) {
+  Deno.test(`runGate: infra-shaped compile failure is infra/rerun (${compileOut.detail.slice(0, 30)})`, async () => {
+    const { loaded, source, tmpRoot } = await fixture();
+    const bc = mockBc({ failCompile: "Fleet", compileOut });
+    const r = await runVariant(
+      bc,
+      loaded.task,
+      source,
+      { kind: "correct" },
+      1,
+      tmpRoot,
+    );
+    assert(r.infra?.startsWith("compile infra: Fleet:"), r.infra);
+    assert(summarize(loaded.task, r).infra);
+    const { file, code } = await runGate({
+      bc,
+      loaded,
+      source,
+      container: "Mock",
+      outDir: await tmp(),
+      tmpRoot,
+      tagTree: null,
+    });
+    assertEquals(code, 3);
+    const report = JSON.parse(await Deno.readTextFile(file));
+    assert(
+      report.reasons.some((x: string) => x.includes("infra, rerun")),
+      report.reasons.join("; "),
+    );
+  });
+}
+
+Deno.test("runVariant: a compile failure with a real AL code stays a scored build failure", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const r = await runVariant(
+    mockBc({ failCompile: "Fleet" }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertEquals(r.infra, undefined);
+  assertEquals(r.builds.at(-1)?.codes, ["AL0118"]);
+  assertEquals(summarize(loaded.task, r).infra, false);
+});
+
+Deno.test("runVariant: a real AL code wins over an infra-looking detail", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const r = await runVariant(
+    mockBc({
+      failCompile: "Fleet",
+      compileOut: {
+        codes: ["AL0118"],
+        detail: "AL0118 The name 'Pipeline' does not exist; no pipe here",
+      },
+    }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertEquals(r.infra, undefined);
+  assertEquals(r.builds.at(-1)?.codes, ["AL0118"]);
+  assertEquals(summarize(loaded.task, r).infra, false);
 });

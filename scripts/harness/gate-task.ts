@@ -155,6 +155,15 @@ async function stageVariant(
   };
 }
 
+/**
+ * A failed compile with no real AL code (codes empty or only AL0000) is infra:
+ * the host-crunch signature (zero errors, sub-second, AL0000 pipe errors). Any
+ * other AL code is a scored build failure, whatever the detail says.
+ */
+function isInfraCompile(c: CompileOut): boolean {
+  return c.codes.every((x) => x === "AL0000");
+}
+
 export async function runVariant(
   bc: GateBc,
   task: HarnessTask,
@@ -195,6 +204,10 @@ export async function runVariant(
         appIds[app] = (project.appJson as { id: string }).id;
         const c = await bc.compile(project);
         if (!c.ok || !c.artifact) {
+          if (isInfraCompile(c)) {
+            result.infra = `compile infra: ${app}: ${c.detail.slice(0, 200)}`;
+            break;
+          }
           result.builds.push({
             app,
             stage: "compile",
