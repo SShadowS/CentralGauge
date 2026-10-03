@@ -56,6 +56,7 @@ import {
   parseCompilationWarnings,
   parseHarnessAppList,
   parseHarnessSyncOutput,
+  type ParseOptions,
   parseStatusOutput,
   parseTestResults,
 } from "./bc-output-parsers.ts";
@@ -1614,9 +1615,11 @@ ${script}
     output: string,
     duration: number,
     contextLog: Logger = log,
+    // Analyzer codes only for an analysis compile; the bench parses as before.
+    parse: ParseOptions = {},
   ): CompilationResult {
-    const errors = parseCompilationErrors(output);
-    const warnings = parseCompilationWarnings(output);
+    const errors = parseCompilationErrors(output, parse);
+    const warnings = parseCompilationWarnings(output, parse);
     const artifactPath = extractArtifactPath(output);
     const success = isCompilationSuccessful(output, errors.length);
 
@@ -1698,6 +1701,7 @@ ${script}
         escapedCompilerFolder,
         projectPath,
         outputDir,
+        project.analysis,
       );
       // Compile uses the per-container CompileSessionPool when available.
       // Pool keeps N (default 3) warm pwsh procs per container so up to N
@@ -1714,6 +1718,7 @@ ${script}
         result.output,
         Date.now() - startTime,
         contextLog,
+        { analyzerCodes: project.analysis !== undefined },
       );
     } catch (error) {
       // Infra-classified failures (container/session/queue faults) must

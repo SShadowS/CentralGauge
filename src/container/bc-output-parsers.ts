@@ -79,6 +79,22 @@ export function mapHealthStatus(
   return healthMap[raw.toLowerCase()] || "stopped";
 }
 
+export interface ParseOptions {
+  /**
+   * Analysis compile (harness final-code check, M11-05): CodeCop, UICop and
+   * other two-letter analyzer codes keep their code. Off (the bench): only
+   * `AL\d+` lines are structured, exactly as before.
+   */
+  analyzerCodes?: boolean;
+}
+
+function diagnosticLine(kind: "error" | "warning", o: ParseOptions): RegExp {
+  const code = o.analyzerCodes ? "(AL\\d+|[A-Z]{2}\\d{4})" : "(AL\\d+)";
+  return new RegExp(
+    `([^(]+)\\((\\d+),(\\d+)\\):\\s*${kind}\\s+${code}:\\s*(.+)`,
+  );
+}
+
 /**
  * Parse AL compiler error output
  *
@@ -95,17 +111,19 @@ export function mapHealthStatus(
  * // [{ file: 'Test.al', line: 10, column: 5, code: 'AL0001', message: "Expected ';'", severity: 'error' }]
  * ```
  */
-export function parseCompilationErrors(output: string): CompilationError[] {
+export function parseCompilationErrors(
+  output: string,
+  opts: ParseOptions = {},
+): CompilationError[] {
   const errors: CompilationError[] = [];
   const lines = output.split("\n");
+  const re = diagnosticLine("error", opts);
 
   for (const line of lines) {
     const trimmedLine = line.trim();
 
     // Parse AL error format: filename(line,col): error AL####: message
-    const errorMatch = trimmedLine.match(
-      /([^(]+)\((\d+),(\d+)\):\s*error\s+(AL\d+):\s*(.+)/,
-    );
+    const errorMatch = trimmedLine.match(re);
     if (errorMatch) {
       errors.push({
         file: errorMatch[1]?.trim() || "unknown",
@@ -146,17 +164,19 @@ export function parseCompilationErrors(output: string): CompilationError[] {
  * @param output - Raw compiler output
  * @returns Array of parsed compilation warnings
  */
-export function parseCompilationWarnings(output: string): CompilationWarning[] {
+export function parseCompilationWarnings(
+  output: string,
+  opts: ParseOptions = {},
+): CompilationWarning[] {
   const warnings: CompilationWarning[] = [];
   const lines = output.split("\n");
+  const re = diagnosticLine("warning", opts);
 
   for (const line of lines) {
     const trimmedLine = line.trim();
 
     // Parse AL warning format
-    const warningMatch = trimmedLine.match(
-      /([^(]+)\((\d+),(\d+)\):\s*warning\s+(AL\d+):\s*(.+)/,
-    );
+    const warningMatch = trimmedLine.match(re);
     if (warningMatch) {
       warnings.push({
         file: warningMatch[1]?.trim() || "unknown",

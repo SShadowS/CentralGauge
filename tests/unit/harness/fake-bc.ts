@@ -3,7 +3,10 @@
 import { basename, join } from "@std/path";
 import type {
   ALProject,
+  AnalysisSettings,
+  CompilationError,
   CompilationResult,
+  CompilationWarning,
   HarnessInstalledApp,
   HarnessSyncResult,
   TestResult,
@@ -65,6 +68,12 @@ export class FakeBc implements HarnessBc {
   compileSeen = new Map<string, string[]>();
   /** Test hook: runs inside compileProject (e.g. to plant an unlocked package). */
   onCompile: ((projectDir: string) => Promise<void>) | null = null;
+  /** project.analysis of every compile, in order (M11-05). */
+  analysisSeen: (AnalysisSettings | undefined)[] = [];
+  /** Analyzer warnings a successful compile of `folder` reports (M11-05). */
+  warningsFor: ((folder: string) => CompilationWarning[]) | null = null;
+  /** Errors that fail the compile of `folder` when non-empty (M11-05). */
+  errorsFor: ((folder: string) => CompilationError[]) | null = null;
   concurrentCompiles = 0;
   maxConcurrentCompiles = 0;
   syncs: { container: string; removeIds: string[]; publish: string[] }[] = [];
@@ -122,6 +131,7 @@ export class FakeBc implements HarnessBc {
       await new Promise((r) => setTimeout(r, 5));
       const folder = basename(project.path);
       this.compiles.push(folder);
+      this.analysisSeen.push(project.analysis);
       const pk: string[] = [];
       for await (const e of Deno.readDir(join(project.path, ".alpackages"))) {
         pk.push(e.name);
@@ -137,6 +147,16 @@ export class FakeBc implements HarnessBc {
       // alc: a symbol package the source needs must be in the package cache.
       const missing = [...source.matchAll(/\/\/ needs (.+?\.app)/g)]
         .map((m) => m[1]!).find((f) => !pk.includes(f));
+      const errors = this.errorsFor?.(folder) ?? [];
+      if (errors.length > 0) {
+        return {
+          success: false,
+          errors,
+          warnings: [],
+          output: "",
+          duration: 1,
+        };
+      }
       if (source.includes("COMPILE_ERROR") || missing) {
         return {
           success: false,
@@ -174,7 +194,7 @@ export class FakeBc implements HarnessBc {
       return {
         success: true,
         errors: [],
-        warnings: [],
+        warnings: this.warningsFor?.(folder) ?? [],
         output: "",
         duration: 1,
         artifactPath,
