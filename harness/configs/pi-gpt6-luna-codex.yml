@@ -1,6 +1,9 @@
 id: pi-gpt6-luna-codex
 harness: pi
 harness_version: "0.87.1"
+# The baseline's revision (vary has no image key). Revision 2 cannot run this
+# route (fails closed); the post-freeze plan rebuilds pi and bumps both arms.
+image_revision: "2"
 models:
   main: openai-codex/gpt-6-luna
 settings: {}

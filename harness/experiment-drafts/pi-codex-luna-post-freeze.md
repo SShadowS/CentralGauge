@@ -20,9 +20,41 @@ through the M1-34 marker:
   authorization; if it stops verifying (a changed recording, a changed record-mode cell),
   only codex arms refuse.
 
-It also changes the pi image contents (`harness/images/pi/run.ps1`, `cg-budget.ts`), so the
-pi image must be rebuilt. The frozen campaign images and checkout are never touched. A
-codex run on an old pi image fails closed (the old guard wants the openrouter key file).
+It also changes the pi image contents (`harness/images/pi/run.ps1`, `cg-budget.ts`,
+`cg-pi-stage.ps1`), so the pi image must be rebuilt. The frozen campaign images and checkout
+are never touched. A codex run on an old pi image fails closed (the old stage script has no
+`-Codex` mode, so the release refuses before ready).
+
+How the credential reaches pi (H-02 run 004, after H-01 run 005 made the agent dir
+admin-owned): pi 0.87.1 reads credentials only from `C:\pi-agent\auth.json`, which the agent
+user cannot write. After the host releases the secrets (the codex file with `refresh: ""`)
+and before ready, the harness runs `cg-pi-stage.ps1 -Codex` as ContainerAdministrator. It
+replaces only the staged `{}` with the released file's bytes, admin-owned with Users read
+only, after checking exactly one oauth entry with the refresh token withheld; any problem
+records the cell `setup_failed` and nothing passes ready. The budget guard only verifies the
+staged entry and its expiry, and never writes. Every other pi cell keeps the staged `{}`.
+
+## Discovery (H-02 run 004, from the pinned package, no credential)
+
+`npm pack @earendil-works/pi-coding-agent@0.87.1` and `@earendil-works/pi-ai@0.87.1`
+(dependencies pinned by the package's own `npm-shrinkwrap.json`), read in the bundle that runs:
+
+- provider `openai-codex`, model id `gpt-6-luna` (also listed: `gpt-6-sol`, `gpt-6-astra`),
+  api `openai-codex-responses`, base URL `https://chatgpt.com/backend-api`;
+- credential `{type: "oauth", access, refresh, expires (epoch ms), accountId}`, the
+  accountId from the access token's `chatgpt_account_id` claim;
+- refresh: POST `https://auth.openai.com/oauth/token` (`grant_type=refresh_token`), never
+  reached from a sandbox (refresh withheld, file read-only);
+- `pi auth print-bearer-token --provider <p> [--min-expiry <dur>]` and
+  `pi auth check --provider <p> [--no-refresh]` exist; a device-code login exists too.
+
+These hosts are candidates only: the route stays refused until step 6 records its hosts.
+
+**Image revision:** the codex config names `image_revision: "2"` like its baseline
+`pi-sonnet-plain` (vary has no image key; arms on different revisions are refused).
+Revision 2 cannot run the route, so it fails closed. With step 2, give the rebuilt image the
+next revision, and bump both draft arms together: a new baseline config (never editing the
+frozen `pi-sonnet-plain`) and `pi-gpt6-luna-codex`.
 
 ## Steps
 
@@ -62,7 +94,8 @@ codex run on an old pi image fails closed (the old guard wants the openrouter ke
      before `timeout_min + 15` minutes. Repeat the refresh and copy before each session.
      In-sandbox refresh is impossible by design: the host releases the sandbox copy with
      `refresh: ""` (the refresh token never enters the sandbox; pi uses the access token
-     alone while it is valid), the guard refuses a token that does not outlive
+     alone while it is valid), the staged auth.json is read-only to the agent (pi cannot
+     persist a refresh), the guard refuses a token that does not outlive
      `timeout_min + 5` minutes, and a recording holding an `auth*.openai.com` host is refused.
 4. **Rotate the codex credential** (owner). A rotation record alone is not a rotation:
    - First note when the old access token expires, printing only the date, never a token.

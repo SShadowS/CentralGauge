@@ -111,6 +111,7 @@ import {
   MIN_SECRET_LENGTH,
   namespaceOwner,
   OP_TIMEOUT_MS,
+  PI_STAGE_CODEX_ARGV,
   publishRedacted,
   READ_PREFIX,
   readSecretValues,
@@ -2715,6 +2716,23 @@ export async function runExecution(
           p.intent,
           JSON.stringify({ ...intent, phase: "released" }, null, 2),
         );
+        // H-02 run 004: pi reads the codex OAuth entry only from its agent
+        // auth.json, which the agent user cannot write (H-01 run 005): the
+        // admin script stages it from the released file, validated, before
+        // ready. A failure throws here, so ready is never written.
+        if (
+          manifest.harness === "pi" && secretFiles.includes(CODEX_AUTH_FILE)
+        ) {
+          try {
+            await stagePiConfig(env.docker, name, opMs, PI_STAGE_CODEX_ARGV);
+          } catch (err) {
+            // Deterministic (the released file is refused, or the exec
+            // failed): recorded setup_failed, never judged, as the H-01 staging.
+            throw new ConfigurationError(
+              `pi codex auth staging failed: ${msg(err)}`,
+            );
+          }
+        }
         await Deno.writeTextFile(join(dir, READY_FILE), "");
       };
       // M10-08c run 002 item 1: right before the start, the private root is

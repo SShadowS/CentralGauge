@@ -1,13 +1,13 @@
 // Budget guard and sole key holder for pi 0.87.1 (adapter contract
 // enforcesBudget; pi has no budget flag). Loaded by run.ps1 with
-// `-e C:\cg-budget.ts`. The provider credential is released here, so a
-// guard that fails to load leaves pi without one: the OpenRouter key is
-// registered (CG_PI_PROVIDER openrouter, the default), or the openai-codex
-// OAuth entry is written into the agent auth.json (H-02). Records go through
+// `-e C:\cg-budget.ts`. The OpenRouter key is released here (registered;
+// CG_PI_PROVIDER openrouter, the default), so a guard that fails to load
+// leaves pi without one; on openai-codex (H-02) the harness staged the OAuth
+// entry admin-owned and the guard only verifies it. Records go through
 // pi.appendEntry (JSON-mode entry_appended); stdout belongs to pi. A trip
 // aborts the current operation and blocks every later tool call. Overshoot
 // is bounded by the request that crossed the limit.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 
@@ -72,16 +72,13 @@ const CODEX_FIELDS = '["access","accountId","expires","refresh","type"]';
 const CODEX_INNER = /^[\x21\x23-\x5b\x5d-\x7e]{16,}$/;
 
 /**
- * H-02: the ChatGPT-subscription OAuth entry goes into the agent directory's
- * auth.json; run.ps1 never reads it. pi 0.87.1 reads that file lazily,
- * after extensions load (pi-coding-agent dist): the model runtime and its
- * AuthStorage come first (core/agent-session-services.js:56-61; the store
- * writes an empty "{}" through ensureFileExists, core/auth-storage.js:28-31
- * and 57-59), then extensions load (agent-session-services.js:69;
- * extensions/loader.js:449 awaits this factory), then provider availability
- * is refreshed (agent-session-services.js:98), and every credential read
- * re-reads the file once its stat revision changed (auth-storage.js:330-338;
- * utils/paths.js:21-29).
+ * H-02 run 004: the ChatGPT-subscription OAuth entry is in the agent
+ * directory's auth.json, staged there admin-owned (Users read only) by the
+ * harness (`cg-pi-stage.ps1 -Codex`) after the secrets and before ready, as
+ * every other file in C:\pi-agent (H-01 run 005). pi 0.87.1 reads
+ * credentials only from that file (core/auth-storage.js). This guard only
+ * verifies it, and never writes: the agent user could not, and pi cannot
+ * persist a refresh there either.
  *
  * H-02 review: the refresh token is withheld (the host releases refresh "").
  * pi uses only the access token while it is valid: the refresh path runs
@@ -90,9 +87,9 @@ const CODEX_INNER = /^[\x21\x23-\x5b\x5d-\x7e]{16,}$/;
  * availability check needs only an oauth entry (models.js:223-226), and
  * auth.json validation needs `refresh` to be a string (auth-storage.js:195-199).
  * So the token must outlive this run (CG_TIMEOUT_MIN) plus that window.
- * Returns the write, which the factory runs last. Errors never echo a value.
+ * Errors never echo a value.
  */
-function prepareCodexAuth(): () => void {
+function verifyCodexAuth(): void {
   const dir = process.env["PI_CODING_AGENT_DIR"];
   if (!dir) throw new Error("PI_CODING_AGENT_DIR is not set");
   const timeoutMin = Number(process.env["CG_TIMEOUT_MIN"]);
@@ -100,14 +97,11 @@ function prepareCodexAuth(): () => void {
     throw new Error("CG_TIMEOUT_MIN must be a positive number");
   }
   const bad = (why: string): never => {
-    throw new Error(`openai-codex credential file: ${why}`);
+    throw new Error(`openai-codex credential (staged agent auth.json): ${why}`);
   };
   let text = "";
   try {
-    text = readFileSync(
-      process.env["CG_PI_AUTH_FILE"] ?? "C:\\cg-secrets\\openai-codex-auth",
-      "utf8",
-    );
+    text = readFileSync(join(dir, "auth.json"), "utf8");
   } catch {
     bad("unreadable");
   }
@@ -121,7 +115,7 @@ function prepareCodexAuth(): () => void {
     ? Object.keys(v)
     : [];
   if (keys.length !== 1 || keys[0] !== "openai-codex") {
-    bad("must hold exactly one entry, openai-codex");
+    bad("must hold exactly one entry, openai-codex (was it staged?)");
   }
   const e = (v as Record<string, Record<string, unknown>>)["openai-codex"];
   if (
@@ -143,20 +137,6 @@ function prepareCodexAuth(): () => void {
       "the access token does not outlive the run timeout plus 5 minutes; pi would try to refresh it inside the sandbox (refresh it on the host)",
     );
   }
-  const path = join(dir, "auth.json");
-  return () => {
-    // Only pi's own empty placeholder may be replaced: never merge into another credential.
-    if (
-      existsSync(path) &&
-      !/^\s*(\{\s*\})?\s*$/.test(readFileSync(path, "utf8"))
-    ) {
-      bad("the agent auth.json already holds a credential");
-    }
-    writeFileSync(path, JSON.stringify({ "openai-codex": e }, null, 2), {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-  };
 }
 
 export default function (pi: Api): void {
@@ -165,8 +145,7 @@ export default function (pi: Api): void {
     throw new Error("CG_MAX_BUDGET_USD must be a positive number");
   }
   const provider = process.env["CG_PI_PROVIDER"] ?? "openrouter";
-  let releaseCodex: (() => void) | null = null;
-  if (provider === "openai-codex") releaseCodex = prepareCodexAuth();
+  if (provider === "openai-codex") verifyCodexAuth();
   else if (provider === "openrouter") {
     const key = readFileSync(
       process.env["CG_PI_KEY_FILE"] ?? "C:\\cg-secrets\\openrouter-api-key",
@@ -217,7 +196,4 @@ export default function (pi: Api): void {
       }
     }
   });
-  // H-02 review: last, once every handler is registered; a factory that
-  // throws earlier leaves pi without the credential (pi discards the extension).
-  releaseCodex?.();
 }

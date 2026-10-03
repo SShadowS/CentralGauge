@@ -1625,8 +1625,15 @@ Deno.test("pi parse (H-02): the codex arm accepts provider openai-codex, flags a
 
 Deno.test("run.ps1 (H-02): never touches the codex credential; tells the guard which provider to hold", async () => {
   const run = await Deno.readTextFile("harness/images/pi/run.ps1");
-  for (const s of ["openai-codex-auth", "auth.json", "print-bearer-token"]) {
+  for (const s of ["openai-codex-auth", "print-bearer-token"]) {
     assert(!run.includes(s), s);
+  }
+  // H-02 run 004: auth.json is staged admin-owned (cg-pi-stage.ps1); run.ps1
+  // only mentions it in a comment and never writes it.
+  for (
+    const line of run.split(/\r?\n/).filter((l) => l.includes("auth.json"))
+  ) {
+    assert(line.trimStart().startsWith("#"), line);
   }
   assertStringIncludes(
     run,
@@ -1642,9 +1649,10 @@ Deno.test("run.ps1 (H-02): never touches the codex credential; tells the guard w
       run.indexOf("$env:CG_PI_PROVIDER") < run.indexOf("| & pi @piArgs"),
     "set before pi starts",
   );
-  // The guard documents why writing auth.json at load reaches pi (source lines cited).
+  // The guard documents that the harness stages the entry and it only reads it.
   const guard = await Deno.readTextFile("harness/images/pi/cg-budget.ts");
-  assertStringIncludes(guard, "auth-storage.js");
+  assertStringIncludes(guard, "cg-pi-stage.ps1 -Codex");
+  assert(!guard.includes("writeFileSync"), "the guard never writes a file");
 });
 
 async function withGuardEnv(
@@ -1681,43 +1689,55 @@ async function withGuardEnv(
 const sandboxAuth = (expires: number, over: object = {}) =>
   codexAuthText(expires, { refresh: "", ...over });
 
-Deno.test("cg-budget (H-02): on the codex route it writes the agent auth.json (refresh withheld) as its last step; openrouter is never registered", async () => {
+Deno.test("cg-budget (H-02 run 004): on the codex route it verifies the admin-staged agent auth.json and never writes it; openrouter is never registered", async () => {
   const { default: guard } = await import(
     "../../../harness/images/pi/cg-budget.ts"
   );
   const registered: string[] = [];
-  let dir = "";
-  const writtenAtRegistration: boolean[] = [];
   const api = {
     registerProvider: (n: string) => void registered.push(n),
     appendEntry: () => {},
-    on: () => {
-      // H-02 review: every handler is registered before the credential exists.
-      const t = Deno.readTextFileSync(join(dir, "agent", "auth.json"));
-      writtenAtRegistration.push(t !== "{}");
-    },
+    on: () => {},
   };
   await withGuardEnv({ CG_PI_PROVIDER: "openai-codex" }, async (d) => {
-    dir = d;
-    const src = join(d, "openai-codex-auth");
-    Deno.env.set("CG_PI_AUTH_FILE", src);
     await Deno.mkdir(join(d, "agent"));
-    const text = sandboxAuth(Date.now() + 2 * 3600_000);
-    await Deno.writeTextFile(src, text + "\n");
-    // pi's AuthStorage creates an empty "{}" before extensions load.
-    await Deno.writeTextFile(join(d, "agent", "auth.json"), "{}");
+    const staged = join(d, "agent", "auth.json");
+    const text = sandboxAuth(Date.now() + 2 * 3600_000) + "\n";
+    await Deno.writeTextFile(staged, text);
+    const before = await Deno.stat(staged);
     guard(api);
     assertEquals(registered, []);
-    assertEquals(writtenAtRegistration, [false, false, false]);
-    const written = JSON.parse(
-      await Deno.readTextFile(join(d, "agent", "auth.json")),
-    );
-    assertEquals(written, JSON.parse(text));
-    assertEquals(written["openai-codex"].refresh, "");
+    assertEquals(await Deno.readTextFile(staged), text);
+    assertEquals((await Deno.stat(staged)).mtime, before.mtime);
+    // The secrets file is not the guard's to read any more.
+    assertEquals([...Deno.readDirSync(d)].map((e) => e.name), ["agent"]);
   });
 });
 
-Deno.test("cg-budget (H-02): refuses a token that does not outlive the timeout plus 5 minutes, a refresh token not withheld, a malformed or missing credential, a prior auth.json and an unknown provider; no value in any error", async () => {
+Deno.test("cg-budget (H-02 run 004): on the openrouter route the agent auth.json stays the staged {} and is never touched", async () => {
+  const { default: guard } = await import(
+    "../../../harness/images/pi/cg-budget.ts"
+  );
+  const api = {
+    registerProvider: () => {},
+    appendEntry: () => {},
+    on: () => {},
+  };
+  await withGuardEnv({ CG_PI_PROVIDER: "openrouter" }, async (d) => {
+    await Deno.mkdir(join(d, "agent"));
+    const staged = join(d, "agent", "auth.json");
+    await Deno.writeTextFile(staged, "{}");
+    const key = join(d, "key");
+    await Deno.writeTextFile(key, "sk-or-v1-cgfake" + "0".repeat(48));
+    Deno.env.set("CG_PI_KEY_FILE", key);
+    const before = await Deno.stat(staged);
+    guard(api);
+    assertEquals(await Deno.readTextFile(staged), "{}");
+    assertEquals((await Deno.stat(staged)).mtime, before.mtime);
+  });
+});
+
+Deno.test("cg-budget (H-02 run 004): refuses an unstaged ({} or missing), expiring, multi-entry, non-oauth or refresh-bearing agent auth.json and an unknown provider; never writes; no value in any error", async () => {
   const { default: guard } = await import(
     "../../../harness/images/pi/cg-budget.ts"
   );
@@ -1732,43 +1752,43 @@ Deno.test("cg-budget (H-02): refuses a token that does not outlive the timeout p
     openrouter: { type: "api_key", key: "sk-or-v1-x" },
   };
   // CG_TIMEOUT_MIN 30: the token must last 35 minutes from now.
-  const cases: [string, string | null, string | null, string?][] = [
-    ["missing file", null, null],
-    ["expiring", sandboxAuth(Date.now() + 60_000), null],
-    ["timeout plus 5", sandboxAuth(Date.now() + 34 * 60_000), null],
-    ["no timeout", sandboxAuth(later), null, ""],
-    ["extra entry", JSON.stringify(extra), null],
-    ["api key type", sandboxAuth(later, { type: "api_key" }), null],
-    ["refresh not withheld", codexAuthText(later), null],
-    ["prior credential", sandboxAuth(later), '{"x":{"type":"api_key"}}'],
+  const cases: [string, string | null, string?][] = [
+    ["missing file", null],
+    ["not staged", "{}"],
+    ["expiring", sandboxAuth(Date.now() + 60_000)],
+    ["timeout plus 5", sandboxAuth(Date.now() + 34 * 60_000)],
+    ["no timeout", sandboxAuth(later), ""],
+    ["extra entry", JSON.stringify(extra)],
+    ["api key type", sandboxAuth(later, { type: "api_key" })],
+    ["refresh not withheld", codexAuthText(later)],
+    ["not JSON", "{"],
   ];
-  for (const [what, text, prior, timeout] of cases) {
+  for (const [what, text, timeout] of cases) {
     await withGuardEnv({
       CG_PI_PROVIDER: "openai-codex",
       CG_TIMEOUT_MIN: timeout ?? "30",
     }, async (dir) => {
-      const src = join(dir, "openai-codex-auth");
-      Deno.env.set("CG_PI_AUTH_FILE", src);
       await Deno.mkdir(join(dir, "agent"));
-      if (text !== null) await Deno.writeTextFile(src, text);
-      if (prior !== null) {
-        await Deno.writeTextFile(join(dir, "agent", "auth.json"), prior);
-      }
+      const staged = join(dir, "agent", "auth.json");
+      if (text !== null) await Deno.writeTextFile(staged, text);
       const err = assertThrows(() => guard(api), Error, undefined, what);
       for (const v of Object.values(FAKE_CODEX)) {
         assert(!err.message.includes(v), `${what}: ${err.message}`);
       }
-      const written = await Deno.readTextFile(join(dir, "agent", "auth.json"))
-        .catch(() => null);
-      assertEquals(written, prior, `${what}: nothing written`);
+      assertEquals(
+        await Deno.readTextFile(staged).catch(() => null),
+        text,
+        `${what}: nothing written`,
+      );
     });
   }
   // 36 minutes of validity passes a 30-minute timeout.
   await withGuardEnv({ CG_PI_PROVIDER: "openai-codex" }, async (dir) => {
-    const src = join(dir, "openai-codex-auth");
-    Deno.env.set("CG_PI_AUTH_FILE", src);
     await Deno.mkdir(join(dir, "agent"));
-    await Deno.writeTextFile(src, sandboxAuth(Date.now() + 36 * 60_000));
+    await Deno.writeTextFile(
+      join(dir, "agent", "auth.json"),
+      sandboxAuth(Date.now() + 36 * 60_000),
+    );
     guard(api);
   });
   await withGuardEnv({ CG_PI_PROVIDER: "anthropic" }, () => {
@@ -1816,6 +1836,8 @@ Deno.test("pi-gpt6-luna-codex and the draft experiment pi-codex-luna (H-02): cat
         base_digest: `sha256:${"b".repeat(64)}`,
         harness: "pi",
         version: "0.87.1",
+        // Both arms name image_revision 2 (H-01 run 004 labels).
+        revision: "2",
       },
       piAdapter,
       catalog,

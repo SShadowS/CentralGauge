@@ -5,6 +5,7 @@ import {
   type DockerCli,
   EXECUTION_LABEL,
   PI_STAGE_ARGV,
+  PI_STAGE_CODEX_ARGV,
 } from "../../../src/harness/sandbox.ts";
 import { imageTag } from "../../../src/harness/images.ts";
 
@@ -149,6 +150,12 @@ export class FakeDocker implements DockerCli {
   };
   /** The pi config staging exec's answer (H-01 run 005); same forms as execAnswer. */
   stageAnswer: ExecAnswer | Error | "hang" = {
+    code: 0,
+    stdout: "",
+    stderr: "",
+  };
+  /** The codex auth staging exec's answer (H-02 run 004); same forms as execAnswer. */
+  codexStageAnswer: ExecAnswer | Error | "hang" = {
     code: 0,
     stdout: "",
     stderr: "",
@@ -339,6 +346,8 @@ export class FakeDocker implements DockerCli {
     });
     const a = JSON.stringify(argv) === JSON.stringify(PI_STAGE_ARGV)
       ? this.stageAnswer
+      : JSON.stringify(argv) === JSON.stringify(PI_STAGE_CODEX_ARGV)
+      ? this.codexStageAnswer
       : this.execAnswer;
     if (a === "hang") return never();
     if (a instanceof Error) return Promise.reject(a);

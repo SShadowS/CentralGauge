@@ -17,6 +17,13 @@ import {
   recordingPath,
 } from "../../../src/harness/egress.ts";
 import { imageTag } from "../../../src/harness/images.ts";
+import {
+  PI_STAGE_ARGV,
+  PI_STAGE_CODEX_ARGV,
+  PI_STAGE_USER,
+  PRIVILEGE_ARGV,
+  SANDBOX_USER,
+} from "../../../src/harness/sandbox.ts";
 import { codexAuthText, FAKE_CODEX } from "./codex-fixture.ts";
 import { write } from "./refapp-fixture.ts";
 import {
@@ -369,4 +376,79 @@ Deno.test("record mode (H-02 review): a codex recording that reached an OAuth to
     "token endpoint",
   );
   assertEquals(await loadRecordedHosts(t.env.repoRoot), {});
+});
+
+Deno.test("codex arm (H-02 run 004): the agent auth.json is staged by the admin exec cg-pi-stage.ps1 -Codex, after the released credential file and before ready", async () => {
+  const t = await codexEnv();
+  t.docker.waitForReady = true;
+  const e = (await runCell(t.env, await cellFor(t, ARM))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  const execs = t.docker.privilegeCalls.filter((c) => c.op === "exec");
+  assertEquals(execs.map((c) => [c.user, c.argv]), [
+    [SANDBOX_USER, PRIVILEGE_ARGV],
+    [PI_STAGE_USER, PI_STAGE_ARGV],
+    [PI_STAGE_USER, PI_STAGE_CODEX_ARGV],
+  ]);
+  assertEquals(PI_STAGE_CODEX_ARGV, [...PI_STAGE_ARGV, "-Codex"]);
+  // The plain staging ran before any credential; -Codex once the file is
+  // in the mount, and never after ready.
+  assertEquals(execs[1]!.secrets, []);
+  assert(execs[2]!.secrets.includes("openai-codex-auth"), "after the file");
+  assert(!execs[2]!.secrets.includes("ready"), "before ready");
+  assert(t.docker.readySeen);
+});
+
+Deno.test("codex arm (H-02 run 004): a failed -Codex staging fails closed: setup_failed, never past ready, never judged", async () => {
+  const cases: [string, NonNullable<TestEnv["docker"]["codexStageAnswer"]>][] =
+    [
+      ["refused", {
+        code: 6,
+        stdout: "[FAIL] openai-codex credential: refresh not withheld",
+        stderr: "",
+      }],
+      ["exec throws", new Error("codex stage blew up")],
+    ];
+  for (const [what, answer] of cases) {
+    const t = await codexEnv();
+    t.docker.waitForReady = true;
+    t.docker.codexStageAnswer = answer;
+    let ran = 0;
+    const inner = t.docker.behavior;
+    t.docker.behavior = (c, io) => {
+      ran++;
+      return inner(c, io);
+    };
+    const cell = await cellFor(t, ARM);
+    await runCell(t.env, cell).catch(() => {});
+    const [e] = await t.env.store.executions(cell.campaignId);
+    assertEquals(e!.termination, "setup_failed", what);
+    assertEquals(await t.env.store.judgments(e!.id), [], what);
+    assertEquals(ran, 0, `${what}: the entrypoint never passed ready`);
+    assert(!t.docker.readySeen, what);
+    assert(!(t.docker.secretsAtKill ?? []).includes("ready"), what);
+    // The released credential does not outlive the refusal on the host.
+    const left = await Array.fromAsync(
+      Deno.readDir(join(t.env.privateRoot, "secrets")),
+    ).catch(() => []);
+    assertEquals(left, [], `${what}: secrets mount removed`);
+  }
+});
+
+Deno.test("codex arm (H-02 run 004): a multi-entry credential file is refused before the run (nothing staged, nothing ready)", async () => {
+  const t = await codexEnv();
+  const two = JSON.parse(codexAuthText(IN_3H()));
+  two["openrouter"] = {
+    type: "api_key",
+    key: "sk-or-v1-cgfake" + "0".repeat(48),
+  };
+  await Deno.writeTextFile(
+    join(t.env.secretAccounts[0]!.dir, "openai-codex-auth"),
+    JSON.stringify(two),
+  );
+  const e = (await runCell(t.env, await cellFor(t, ARM))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertEquals(t.docker.runs, []);
+  assertEquals(t.docker.privilegeCalls, []);
+  const published = await allBytes(t.env.resultsRoot);
+  for (const v of Object.values(FAKE_CODEX)) assert(!leaks(published, v));
 });
