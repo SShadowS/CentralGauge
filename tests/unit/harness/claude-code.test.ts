@@ -18,6 +18,7 @@ import {
   CLAUDE_CAPABILITIES,
   claudeCodeAdapter,
   LSP_PLUGINS,
+  pluginIs,
 } from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import {
@@ -2818,4 +2819,141 @@ Deno.test("inventory M9-04b: a malformed mcp__ tool name is an inventory problem
   ]);
   assertStringIncludes(p, "malformed MCP tool");
   assertStringIncludes(p, "mcp__rogue");
+});
+
+const LSP_CATALOG = {
+  models: [{
+    slug: "anthropic/claude-sonnet-5",
+    api_model_id: "claude-sonnet-5",
+    family: "claude",
+    display_name: "S5",
+  }],
+  pricing: [],
+  families: [],
+};
+
+Deno.test("claude-code LSP: settings.lsp comes only from components.lsp; settings.lsp in a config is refused", () => {
+  const base = {
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    models: { main: "anthropic/claude-sonnet-5" },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  };
+  assertEquals(
+    claudeCodeAdapter.nativeSettings(
+      HarnessConfigSchema.parse({ ...base, components: { lsp: ["al"] } }),
+      LSP_CATALOG,
+    )["lsp"],
+    ["al"],
+  );
+  assertEquals(
+    claudeCodeAdapter.nativeSettings(
+      HarnessConfigSchema.parse(base),
+      LSP_CATALOG,
+    )["lsp"],
+    undefined,
+  );
+  assertThrows(
+    () =>
+      claudeCodeAdapter.nativeSettings(
+        HarnessConfigSchema.parse({ ...base, settings: { lsp: ["al"] } }),
+        LSP_CATALOG,
+      ),
+    ConfigurationError,
+    "settings.lsp is reserved",
+  );
+});
+
+Deno.test("inventory LSP (M10): the real S1 init matches LSP_PLUGINS.al; M9's single check loads lsp:al only with preflight, plugin and tool", async () => {
+  const real = JSON.parse(
+    await Deno.readTextFile("tests/fixtures/harness/claude-code/lsp-init.json"),
+  );
+  const plugin = real.plugins.filter((p: Record<string, unknown>) =>
+    pluginIs(p, LSP_PLUGINS["al"]!)
+  );
+  assertEquals(
+    plugin.length,
+    1,
+    "the S1 init shows exactly one plugin matching LSP_PLUGINS.al",
+  );
+  assert(real.tools.includes("LSP"));
+  const builtins = B.plugins.map((s) => ({ name: s.split("@")[0], source: s }));
+  const lspArm = {
+    lsp: [{
+      name: "al",
+      version: "al-lsp@1",
+      tool_schema_hash: "a".repeat(64),
+    }],
+    settings: {
+      requested: {},
+      native: { api_models: { main: "claude-sonnet-5" }, lsp: ["al"] },
+    },
+  };
+  const installed = ["agents", "instructions", "lsp:al", "skills"];
+  const ok = await v2([
+    invLine({ installed }),
+    v2Init({ tools: [...B.tools, "LSP"], plugins: [...builtins, ...plugin] }),
+    v2Result(),
+  ], lspArm);
+  assertEquals(ok.inventoryProblems, []);
+  assert(ok.observed.loaded_components!.includes("lsp:al"));
+  assert(!ok.unobservable.includes("lsp:al"));
+  const noTool = await v2([
+    invLine({ installed }),
+    v2Init({ plugins: [...builtins, ...plugin] }),
+    v2Result(),
+  ], lspArm);
+  assert(
+    noTool.inventoryProblems!.some((p) => p.startsWith("lsp:al not loaded")),
+  );
+  assert(!noTool.observed.loaded_components!.includes("lsp:al"));
+  const noPreflight = await v2([
+    invLine(),
+    v2Init({ tools: [...B.tools, "LSP"], plugins: [...builtins, ...plugin] }),
+    v2Result(),
+  ], lspArm);
+  assert(
+    noPreflight.inventoryProblems!.some((p) => p.includes("preflight missing")),
+  );
+  const plainWithPlugin = await v2([
+    invLine(),
+    v2Init({ plugins: [...builtins, ...plugin] }),
+    v2Result(),
+  ]);
+  assert(
+    plainWithPlugin.inventoryProblems!.some((p) =>
+      p.startsWith("unrequested plugin loaded")
+    ),
+  );
+  const plainWithTool = await v2([
+    invLine(),
+    v2Init({ tools: [...B.tools, "LSP"] }),
+    v2Result(),
+  ]);
+  assert(
+    plainWithTool.inventoryProblems!.includes("unrequested LSP tool loaded"),
+  );
+});
+
+Deno.test("run.ps1 LSP (M10): the declared LSP adds --plugin-dir and the tool; other arms clear ENABLE_LSP_TOOL; all before the inventory", async () => {
+  const run = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  const code = run.split(/\r?\n/).map((l) => l.trim()).filter((l) =>
+    l !== "" && !l.startsWith("#")
+  );
+  const at = (s: string) => {
+    const i = code.findIndex((l) => l.includes(s));
+    assert(i >= 0, `run.ps1 lacks: ${s}`);
+    return i;
+  };
+  const set = at("$env:ENABLE_LSP_TOOL = '1'");
+  const clear = at(
+    "Remove-Item Env:\\ENABLE_LSP_TOOL -ErrorAction SilentlyContinue",
+  );
+  at(
+    "$pluginArgs = @('--plugin-dir', 'C:\\cg-lsp\\al-language-server-go-windows')",
+  );
+  const inv = at("& 'C:\\cg-inventory.ps1'");
+  assert(set < inv && clear < inv, "the inventory sees the final LSP env");
+  assert(at("$claudeArgs += $pluginArgs") > inv);
 });
