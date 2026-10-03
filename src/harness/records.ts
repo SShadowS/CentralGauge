@@ -600,7 +600,10 @@ async function removeBestEffort(path: string): Promise<void> {
   }
 }
 
-async function publishOnce(path: string, value: unknown): Promise<void> {
+export async function publishOnce(
+  path: string,
+  value: unknown,
+): Promise<void> {
   await Deno.mkdir(join(path, ".."), { recursive: true });
   const tmp = `${path}${TMP}${crypto.randomUUID()}`;
   const file = await Deno.open(tmp, { write: true, createNew: true });
@@ -661,7 +664,7 @@ async function lstatNoLinks(
  * loudly instead of joining another execution or campaign. NotFound
  * propagates; everything else names the file.
  */
-async function readRecord<T extends z.ZodType>(
+export async function readRecord<T extends z.ZodType>(
   root: string,
   path: string,
   schema: T,
