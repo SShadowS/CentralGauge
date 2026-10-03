@@ -122,6 +122,8 @@ export class FakeDocker implements DockerCli {
   lastCapture: Capture | null = null;
   /** Like the entrypoints: hold the behavior until the secrets mount holds ready (or a kill). */
   waitForReady = false;
+  /** Lines printed before the ready wait (run.ps1's inventory); `exit` ends the run there with that code. */
+  preReady: { lines: string[]; exit?: number } | null = null;
   /** Whether a run ever saw ready in its secrets mount. */
   readySeen = false;
   /** A run killed while waiting for ready: its secrets mount at that moment. */
@@ -182,6 +184,14 @@ export class FakeDocker implements DockerCli {
     const killed = new Promise<void>((r) => this.stoppers.set(call.name, r));
     let written = 0;
     try {
+      // Like run.ps1's inventory: printed in one write before the ready wait.
+      if (this.preReady) {
+        const lines = this.preReady.lines;
+        if (lines.length > 0) {
+          await out.write(new TextEncoder().encode(lines.join("\n") + "\n"));
+        }
+        if (this.preReady.exit !== undefined) return this.preReady.exit;
+      }
       if (this.waitForReady) {
         const ready = `${call.mounts.get("C:\\cg-secrets")!.src}/ready`;
         let stop = false;

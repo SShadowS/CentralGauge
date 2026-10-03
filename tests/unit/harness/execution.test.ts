@@ -9,6 +9,7 @@ import { walk } from "@std/fs";
 import { basename, join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
+import { BUILTIN_INVENTORY } from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { ExperimentSchema } from "../../../src/harness/config.ts";
 import {
@@ -3821,4 +3822,300 @@ Deno.test("H-01u: a pi run with Invalid settings file on stderr is setup_failed 
       assertEquals(await t.env.store.judgments(e.id), [], label);
     }
   }
+});
+
+/** A revision-3 claude-code arm in a test env (spec v2 gate 1). */
+async function inventoriedEnv(): Promise<TestEnv> {
+  const t = await makeEnv();
+  await write(
+    t.harnessRoot,
+    "configs/cc-v2-inv.yml",
+    `id: cc-v2-inv
+harness: claude-code
+harness_version: "2.1.282"
+image_revision: "3"
+models: { main: anthropic/claude-sonnet-5 }
+settings: {}
+components: { instructions: bundles/env/instructions }
+limits: { timeout_min: 30, max_budget_usd: 5 }
+`,
+  );
+  t.docker.addImage(
+    imageTag("claude-code", "2.1.282", "3"),
+    `sha256:${"d".repeat(64)}`,
+    {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.version": "2.1.282",
+      "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+      "centralgauge.harness.revision": "3",
+    },
+  );
+  return t;
+}
+const B282 = BUILTIN_INVENTORY["2.1.282"]!;
+/** INIT with the lists the inventory requires (M9-04). */
+const V2_INIT = JSON.stringify({
+  ...JSON.parse(INIT),
+  agents: [...B282.agents],
+  skills: [...B282.skills],
+  plugins: B282.plugins.map((s) => ({
+    name: s.split("@")[0],
+    path: "builtin",
+    source: s,
+  })),
+  // The arm disallows the session-control tools (M1-32b), so init does not list them.
+  tools: B282.tools.filter((x) =>
+    ![
+      "CronCreate",
+      "CronDelete",
+      "ListAgents",
+      "RemoteTrigger",
+      "ScheduleWakeup",
+      "SendMessage",
+    ].includes(x)
+  ),
+});
+const INV = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    type: "cg_inventory",
+    v: 1,
+    ok: true,
+    installed: ["instructions"],
+    problems: [],
+    ...over,
+  });
+/**
+ * Runs one cell the way run.ps1 behaves: `pre` is printed before the ready wait
+ * (the inventory), `post` after ready (init and probe). Returns the execution and its side file.
+ */
+async function inventoryCell(
+  pre: { lines: string[]; exit?: number },
+  post: string[] = [],
+) {
+  const t = await inventoriedEnv();
+  t.docker.preReady = pre;
+  t.docker.behavior = async (_call, io) => {
+    for (const l of post) await io.stdout(l);
+    return 0;
+  };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  return { t, e, cell, side: await sideOf(t, e.id) };
+}
+
+Deno.test("component inventory (spec v2 gate 1): every inventory refusal is a pre-start setup_failed, cost 0, no credential released, never judged; a proven arm completes", async () => {
+  const probe = await probeLines();
+  const refusedRec = INV({
+    ok: false,
+    installed: [],
+    problems: ["instructions: CLAUDE.md is staged but not installed"],
+  });
+  // Run 003: an early end WITHOUT a proven refusal (no record, installer threw)
+  // is a campaign-stopping privilege failure; see the privilege x inventory test.
+  const cases: [string, { lines: string[]; exit?: number }, string][] = [
+    [
+      "duplicate",
+      { lines: [INV(), INV()] },
+      "2 cg_inventory records",
+    ],
+    [
+      "malformed",
+      { lines: [INV({ extra: 1 })] },
+      "not of the recorded shape",
+    ],
+    [
+      "refused",
+      { lines: [refusedRec] },
+      "component inventory: instructions: CLAUDE.md is staged but not installed",
+    ],
+    [
+      "record only, exit 5",
+      {
+        lines: [INV({
+          ok: false,
+          installed: [],
+          problems: ["hooks is staged but this image cannot install it"],
+        })],
+        exit: 5,
+      },
+      "hooks is staged",
+    ],
+  ];
+  for (const [name, pre, want] of cases) {
+    // Whatever the container would print after ready is never reached.
+    const { t, e, side } = await inventoryCell(pre, [V2_INIT, ...probe]);
+    assertEquals(e.termination, "setup_failed", name);
+    assertStringIncludes(side.setup_error, want, name);
+    assertEquals(e.telemetry.cost_usd, 0, `${name}: pre-start cost is 0`);
+    assertEquals(t.docker.readySeen, false, `${name}: ready never written`);
+    assertEquals(
+      t.docker.secretsAtKill ?? [],
+      [],
+      `${name}: no secret file in the mount`,
+    );
+    assert(
+      !await exists(privatePaths(t.env, e.id).custody),
+      `${name}: no custody (nothing released)`,
+    );
+    assertEquals(
+      await t.env.store.judgments(e.id),
+      [],
+      `${name}: never judged`,
+    );
+  }
+  const { t, e } = await inventoryCell({ lines: [INV()] }, [V2_INIT, ...probe]);
+  assertEquals(e.termination, "completed");
+  assertEquals(t.docker.readySeen, true);
+});
+
+// M9-05 run 003 (security): on an inventoried image a privilege failure is never
+// swallowed by the inventory. Only an end before the sandbox was seen running
+// with a PROVEN cg_inventory refusal is the arm's setup_failed; everything else
+// is the H-01 campaign stop, releasing nothing.
+Deno.test("component inventory: privilege failures x inventory {ok, missing, refused} stop the campaign unless the image proved its refusal", async () => {
+  const refusedRec = INV({
+    ok: false,
+    installed: [],
+    problems: ["hooks is staged but this image cannot install it"],
+  });
+  const inventories: [string, string[]][] = [
+    ["inventory ok", [INV()]],
+    ["inventory missing", []],
+    ["inventory refused", [refusedRec]],
+  ];
+  const stopped = async (
+    what: string,
+    t: TestEnv,
+    cell: Awaited<ReturnType<typeof cellFor>>,
+    want: string,
+  ) => {
+    const err = await assertRejects(
+      () => runCell(t.env, cell),
+      ContainerError,
+      "sandbox privilege check failed",
+    );
+    assertStringIncludes(err.message, "stopping", what);
+    assertStringIncludes(err.message, want, what);
+    const [e] = await t.env.store.executions(cell.campaignId);
+    assertEquals(e!.termination, "setup_failed", what);
+    assertEquals(
+      (await sideOf(t, e!.id)).stop_reason,
+      "privilege_check_failed",
+      what,
+    );
+    assertEquals(await t.env.store.judgments(e!.id), [], what);
+    assert(!t.docker.readySeen, `${what}: nothing released`);
+  };
+  // A real privilege failure (the sandbox runs as ContainerAdministrator):
+  // whatever the inventory says, the campaign stops.
+  for (const [label, lines] of inventories) {
+    const what = `admin user, ${label}`;
+    const t = await inventoriedEnv();
+    t.docker.preReady = { lines };
+    const cell = await cellFor(t, "cc-v2-inv");
+    const configUser = t.docker.configUser.bind(t.docker);
+    t.docker.configUser = (name) => {
+      if (t.docker.privilegeCalls.length === 0) {
+        t.docker.configUsers.set(name, "ContainerAdministrator");
+      }
+      return configUser(name);
+    };
+    await stopped(what, t, cell, "ContainerAdministrator");
+  }
+  // The sandbox ended before it was seen running (exit before ready).
+  const early: [string, string[], number][] = [
+    ["inventory ok", [INV()], 0],
+    ["inventory missing", [], 1],
+    ["inventory refused", [refusedRec], 5],
+  ];
+  for (const [label, lines, exit] of early) {
+    const what = `ended early, ${label}`;
+    const t = await inventoriedEnv();
+    t.docker.preReady = { lines, exit };
+    const cell = await cellFor(t, "cc-v2-inv");
+    if (label !== "inventory refused") {
+      await stopped(what, t, cell, "ended before it was seen running");
+      continue;
+    }
+    const e = (await runCell(t.env, cell)).executions[0]!;
+    assertEquals(e.termination, "setup_failed", what);
+    const side = await sideOf(t, e.id);
+    assertStringIncludes(
+      side.setup_error,
+      "component inventory: hooks is staged",
+      what,
+    );
+    assertEquals(side.stop_reason, "component_inventory_refused", what);
+    assertEquals(e.telemetry.cost_usd, 0, what);
+    assert(!t.docker.readySeen, `${what}: nothing released`);
+    assertEquals(await t.env.store.judgments(e.id), [], what);
+  }
+});
+
+// Contract (b): a problem found AFTER the agent started is setup_failed and never
+// judged, but the credential was released and paid work happened: usage and cost KEPT.
+Deno.test("component inventory: a post-start init mismatch keeps the priced cost and usage", async () => {
+  const probe = await probeLines();
+  const ok = await inventoryCell({ lines: [INV()] }, [V2_INIT, ...probe]);
+  assertEquals(ok.e.termination, "completed");
+  // An agent the arm did not install: init differs from the built-ins.
+  const rogue = JSON.stringify({
+    ...JSON.parse(V2_INIT),
+    agents: [...B282.agents, "rogue-agent"],
+  });
+  const { t, e } = await inventoryCell({ lines: [INV()] }, [rogue, ...probe]);
+  assertEquals(e.termination, "setup_failed");
+  assertEquals(await t.env.store.judgments(e.id), []);
+  assertEquals(t.docker.readySeen, true, "the credential was released");
+  assertStringIncludes(
+    (await sideOf(t, e.id)).setup_error,
+    "component inventory:",
+  );
+  // PROBE_COST is computed from the probe's usage and the test book alone.
+  assert(e.telemetry.cost_usd !== null && e.telemetry.cost_usd > 0);
+  assertAlmostEquals(e.telemetry.cost_usd, PROBE_COST, 1e-12);
+  assertEquals(e.telemetry.cost_usd, ok.e.telemetry.cost_usd);
+  assertEquals(
+    e.telemetry.per_model.map((m) => [
+      m.tokens_in_uncached,
+      m.tokens_cache_read,
+      m.tokens_out,
+    ]),
+    [[10, 120646, 2181]],
+  );
+  // Spend totals (outcome.ts) sum telemetry.cost_usd per execution.
+  assertAlmostEquals(
+    [e].reduce((a, x) => a + (x.telemetry.cost_usd ?? 0), 0),
+    PROBE_COST,
+    1e-12,
+  );
+});
+
+// A refusal is published like any setup_failed: recovery and a repeat run do not replay it.
+Deno.test("component inventory: a pre-start refusal is finalized; recovery re-executes nothing", async () => {
+  const { t, e, cell } = await inventoryCell({
+    lines: [
+      INV({ ok: false, installed: [], problems: ["x is not installed"] }),
+    ],
+    exit: 5,
+  });
+  assertEquals(e.termination, "setup_failed");
+  const runs = t.docker.runs.length;
+  assertEquals(intentIds(t), [], "intent finalized");
+  assertEquals(await recoverInterrupted(t.env, loadTask), []);
+  assertEquals(t.docker.runs.length, runs);
+  assertEquals((await t.env.store.executions(cell.campaignId)).length, 1);
+});
+
+// Only inventoried images wait for an inventory: others release without any cg_inventory line.
+Deno.test("component inventory: a non-inventoried image releases without waiting for an inventory", async () => {
+  const t = await makeEnv();
+  t.docker.waitForReady = true;
+  t.docker.behavior = ccBehavior(
+    join(t.repo.tasksDir, "HX-001"),
+    null,
+  );
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  assertEquals(t.docker.readySeen, true);
 });
