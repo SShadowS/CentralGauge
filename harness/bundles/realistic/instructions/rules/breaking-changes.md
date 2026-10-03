@@ -48,7 +48,10 @@ change that compiles here can still break an app that depends on ours.
 - An enum that is `Extensible = true` may have values added by other apps.
   Whether an enum is extensible is part of its contract: once it is shipped as
   extensible, it stays extensible.
-- Adding a value to an enum is not breaking. Removing one is.
+- Adding a value to an enum keeps other apps compiling, but it is not free:
+  code in other apps that branches on the enum with `case` or `else` may now
+  behave differently for the new value. Check the consumers you can see.
+- Removing a value is breaking.
 
 ## Behaviour
 

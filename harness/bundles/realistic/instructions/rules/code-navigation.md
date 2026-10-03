@@ -34,10 +34,16 @@ around them.
 
 ## Symbols from packages
 
-- `cg-al symbols` lists the objects, procedures and events of the installed
-  packages. Use it to check that a base app or system app object exists and
-  what its procedures and events look like.
-- Prefer an existing procedure or event from a package over writing your own.
+- `cg-al symbols` lists the packages installed on the server: the name,
+  publisher and version of each one. It does not list objects, procedures or
+  events.
+- Use it to see which apps and versions are available, and compare that with
+  the `dependencies` in each `app.json`: a dependency that is not installed, or
+  is installed in an older version, will not resolve.
+- To find out what an app in the repository offers, search its source. For a
+  package without source here, rely on the objects your code already uses from
+  it and on what the compiler reports.
+- Prefer an existing procedure or event over writing your own.
 
 ## Before you change something
 

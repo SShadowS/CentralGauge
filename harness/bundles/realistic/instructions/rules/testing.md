@@ -36,7 +36,10 @@ Tests live in the test app of the repository, not in the app they test.
 
 ## UI in tests
 
-- Pages are tested through `TestPage` variables.
+- Our tests run headless on the server, without a client session. Test
+  codeunits that declare `TestPage` variables are not picked up, and asking for
+  one by number is refused. Test the logic behind a page through its codeunits
+  and tables instead, and do not add `TestPage` tests.
 - Every `Message`, `Confirm`, `StrMenu` or modal page the code under test raises
   needs a handler function (`[MessageHandler]`, `[ConfirmHandler]`,
   `[StrMenuHandler]`, `[ModalPageHandler]`), named in the test's
