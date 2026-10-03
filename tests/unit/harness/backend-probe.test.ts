@@ -5,6 +5,7 @@ import {
   exportProxyLog,
   parseProbeArgs,
   probeExitCode,
+  runThenExport,
 } from "../../../scripts/harness/backend-probe.ts";
 
 /** A sandbox that ran to exit 0 and was cleaned up. */
@@ -287,6 +288,42 @@ Deno.test("backend-probe proxy log export: allowed-host lines only, denied targe
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+Deno.test("backend-probe export gate: nothing is exported unless the probe returned (scrub done) (M9-01a run 003)", async () => {
+  let exported = 0;
+  const exportLog = () => {
+    exported++;
+    return Promise.resolve([]);
+  };
+  // The probe throws (teardown or scrub failure): no export, the error propagates.
+  await assertRejects(
+    () =>
+      runThenExport(
+        () => Promise.reject(new Error("capture scrub failed: x")),
+        exportLog,
+      ),
+    Error,
+    "capture scrub failed",
+  );
+  assertEquals(exported, 0);
+  // The probe returned: the export runs once and its problems come back.
+  const r = await runThenExport(
+    () => Promise.resolve({ problems: [], sandbox: OK }),
+    () => {
+      exported++;
+      return Promise.resolve(["proxy log not exported: y"]);
+    },
+  );
+  assertEquals(exported, 1);
+  assertEquals(r.exportProblems, ["proxy log not exported: y"]);
+  assertEquals(
+    probeExitCode({
+      problems: [...r.result.problems, ...r.exportProblems],
+      sandbox: r.result.sandbox,
+    }),
+    1,
+  );
 });
 
 Deno.test("backend-probe exit code: non-zero on any preflight problem or a sandbox that did not exit 0", () => {

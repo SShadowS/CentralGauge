@@ -244,6 +244,19 @@ export async function exportProxyLog(
   }
 }
 
+/**
+ * M9-01a run 003: runs the probe and exports only after it returned
+ * normally (its teardown, capture scrub included, succeeded). A throw
+ * propagates with nothing exported.
+ */
+export async function runThenExport<R>(
+  run: () => Promise<R>,
+  exportLog: () => Promise<string[]>,
+): Promise<{ result: R; exportProblems: string[] }> {
+  const result = await run();
+  return { result, exportProblems: await exportLog() };
+}
+
 /** The OAuth token from the secrets dir, checked in memory; never printed. */
 async function readClaudeOauth(secretsDir: string): Promise<string> {
   const v = (await Deno.readTextFile(join(secretsDir, CLAUDE_OAUTH_FILE)))
@@ -397,44 +410,48 @@ async function main() {
     ];
     if (enforced && h.env.egress) {
       const egress = h.env.egress;
-      let exportProblems: string[] = [];
-      const exportLog = async () => {
-        if (mount === null) return;
+      const exportLog = async (): Promise<string[]> => {
+        if (mount === null) return [];
         // M9-13 criterion 6 reuses the allowed-host lines of this run's proxy log.
-        exportProblems = await exportProxyLog(
+        const p = await exportProxyLog(
           join(out, "egress.jsonl"),
           join(mount, "out", "egress-proxy.jsonl"),
           hosts ?? PROBE_HOSTS,
         );
-        for (const p of exportProblems) console.error(`[FAIL] ${p}`);
+        for (const x of p) console.error(`[FAIL] ${x}`);
+        return p;
       };
-      let r;
-      try {
-        r = await runQualificationProbe({
-          docker: h.env.docker,
-          egress,
-          custody: { privateRoot: h.env.privateRoot, owner: h.env.owner },
-          token,
-          ...(oauth === null ? {} : {
-            releaseAfterPreflight: [{ name: CLAUDE_OAUTH_FILE, value: oauth }],
-          }),
-          // M5-08a: the token is cut before the sandbox teardown (and again below).
-          revoke: () => h.env.backend.revoke(id),
-          spec,
-          probeCommand,
-          out,
-          ...(hosts ? { hosts } : {}),
-          collect: () =>
-            collectEgressState(
-              realEgressCollector(
-                join(root, "results", "harness", MARKER_FILE),
+      // Export only after a normal return, i.e. after the teardown scrubbed the
+      // captures and the proxy log; on any throw the artifacts stay quarantined
+      // in the private probe dir and the run exits non-zero.
+      const { result: r, exportProblems } = await runThenExport(
+        () =>
+          runQualificationProbe({
+            docker: h.env.docker,
+            egress,
+            custody: { privateRoot: h.env.privateRoot, owner: h.env.owner },
+            token,
+            ...(oauth === null ? {} : {
+              releaseAfterPreflight: [{
+                name: CLAUDE_OAUTH_FILE,
+                value: oauth,
+              }],
+            }),
+            // M5-08a: the token is cut before the sandbox teardown (and again below).
+            revoke: () => h.env.backend.revoke(id),
+            spec,
+            probeCommand,
+            out,
+            ...(hosts ? { hosts } : {}),
+            collect: () =>
+              collectEgressState(
+                realEgressCollector(
+                  join(root, "results", "harness", MARKER_FILE),
+                ),
               ),
-            ),
-        });
-      } finally {
-        // Also after a teardown exception (which still fails the run).
-        await exportLog();
-      }
+          }),
+        exportLog,
+      );
       console.log(
         JSON.stringify({
           execution: id,

@@ -2414,6 +2414,71 @@ Deno.test("qualification probe: released secret values printed by the sandbox ar
   assertEquals(raw.includes(token), false, "backend token scrubbed");
 });
 
+Deno.test("qualification probe: an injected scrub failure fails the probe closed (M9-01a run 003)", async () => {
+  const t = await makeEnv();
+  const root = t.env.privateRoot;
+  const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+  const collect = markerAwareCollector();
+  assertEquals(
+    await harnessEgressVerify({ root, mark: "candidate" }, collect),
+    [],
+  );
+  t.docker.waitForReady = true;
+  t.docker.behavior = () => Promise.resolve(0);
+  const out = join(root, "probe-out");
+  await Deno.mkdir(out, { recursive: true });
+  let scrubbed: string[] = [];
+  await assertRejects(
+    () =>
+      runQualificationProbe({
+        docker: t.docker,
+        egress: fakeEgress(),
+        custody: {
+          privateRoot: t.env.privateRoot,
+          owner: t.env.owner,
+          ...(t.env.secretAcl ?? {}),
+        },
+        token: "backend-token-0123456789abcdef",
+        releaseAfterPreflight: [{
+          name: "claude-oauth-token",
+          value: "oauth-token-fedcba9876543210",
+        }],
+        revoke: () => t.env.backend.revoke("exec-probe-4"),
+        scrub: (paths) => {
+          scrubbed = paths;
+          return Promise.resolve("injected: file locked");
+        },
+        spec: {
+          name: "cg-harness-probe-4",
+          owner: t.env.owner,
+          executionId: "exec-probe-4",
+          imageId: `sha256:${"c".repeat(64)}`,
+          workspace: out,
+          taskDir: out,
+          configDir: out,
+          extraMounts: [],
+          env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+          timeoutMs: 60_000,
+          killGraceMs: 50,
+          opTimeoutMs: 100,
+          maxCaptureBytes: 1024 * 1024,
+          rawLog: join(out, "probe.jsonl"),
+          stderrLog: join(out, "stderr.txt"),
+        },
+        probeCommand: ["powershell", "-File", "C:\\probe\\spike.ps1"],
+        out,
+        collect: () => collect(markerPath),
+      }),
+    Error,
+    "capture scrub failed: injected: file locked",
+  );
+  assertEquals(scrubbed, [
+    join(out, "probe.jsonl"),
+    join(out, "stderr.txt"),
+    join(out, "egress.jsonl"),
+  ]);
+});
+
 // M3-08: the route-aware probe proxies and probes exactly the hosts it is given.
 
 Deno.test("qualification probe: hosts override the default route host (M3-08 --route)", async () => {

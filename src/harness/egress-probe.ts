@@ -51,6 +51,8 @@ export interface QualificationProbe {
    * Their values are redacted from the captures like the token.
    */
   releaseAfterPreflight?: { name: string; value: string }[];
+  /** The capture scrub (default scrubFiles); injectable for the failure test. */
+  scrub?: (paths: string[], values: string[]) => Promise<string | null>;
   spec: Omit<SandboxSpec, "secretsDir" | "network" | "command">;
   /** The probe's own command, run after the ready wait. */
   probeCommand: string[];
@@ -70,28 +72,79 @@ export interface QualificationProbe {
 
 const q = (s: string) => `'${s.replaceAll("'", "''")}'`;
 
+const utf16le = (s: string): Uint8Array => {
+  const b = new Uint8Array(s.length * 2);
+  for (let i = 0; i < s.length; i++) {
+    b[i * 2] = s.charCodeAt(i) & 0xff;
+    b[i * 2 + 1] = s.charCodeAt(i) >> 8;
+  }
+  return b;
+};
+
+/** Every occurrence of `needle` in `hay` replaced by `by` (byte level). */
+function replaceBytes(
+  hay: Uint8Array,
+  needle: Uint8Array,
+  by: Uint8Array,
+): Uint8Array {
+  const parts: Uint8Array[] = [];
+  let from = 0;
+  let size = 0;
+  outer: for (let i = 0; i + needle.length <= hay.length;) {
+    for (let j = 0; j < needle.length; j++) {
+      if (hay[i + j] !== needle[j]) {
+        i++;
+        continue outer;
+      }
+    }
+    parts.push(hay.subarray(from, i), by);
+    size += i - from + by.length;
+    i += needle.length;
+    from = i;
+  }
+  if (parts.length === 0) return hay;
+  parts.push(hay.subarray(from));
+  size += hay.length - from;
+  const out = new Uint8Array(size);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+}
+
 /**
  * Replaces every occurrence of each secret value in the given files with
- * [REDACTED]; a missing file is skipped. Returns the first error, or null.
+ * [REDACTED], as bytes, in both UTF-8 and UTF-16LE (Windows PowerShell 5.1
+ * `>` writes UTF-16LE); the replacement uses the matching encoding, so the
+ * rest of the file (BOM included) is unchanged. A missing file is skipped;
+ * any other read or write error is returned (the first), else null.
+ * Encoded forms (base64, percent, JSON escapes, split lines) are out of scope:
+ * the scrub targets accidental plain leaks (orchestrator ruling, M9-01a 002).
  */
-async function scrubFiles(
+export async function scrubFiles(
   paths: string[],
   values: string[],
 ): Promise<string | null> {
-  const secrets = values.filter((v) => v !== "");
+  const enc = new TextEncoder();
+  const pairs = values.filter((v) => v !== "").flatMap((v) => [
+    [enc.encode(v), enc.encode("[REDACTED]")],
+    [utf16le(v), utf16le("[REDACTED]")],
+  ]);
   for (const p of paths) {
-    let text: string;
+    let bytes: Uint8Array;
     try {
-      text = await Deno.readTextFile(p);
+      bytes = await Deno.readFile(p);
     } catch (err) {
       if (err instanceof Deno.errors.NotFound) continue;
       return `${p}: ${err instanceof Error ? err.message : err}`;
     }
-    let clean = text;
-    for (const s of secrets) clean = clean.split(s).join("[REDACTED]");
-    if (clean === text) continue;
+    let clean = bytes;
+    for (const [needle, by] of pairs) clean = replaceBytes(clean, needle!, by!);
+    if (clean === bytes) continue;
     try {
-      await Deno.writeTextFile(p, clean);
+      await Deno.writeFile(p, clean);
     } catch (err) {
       return `${p}: ${err instanceof Error ? err.message : err}`;
     }
@@ -239,7 +292,7 @@ export async function runQualificationProbe(
     await revoked;
     // M9-01a run 002: the retained captures and the proxy log never keep a
     // released value (the sandbox could print a mounted secret).
-    const scrubError = await scrubFiles(
+    const scrubError = await (o.scrub ?? scrubFiles)(
       [o.spec.rawLog, o.spec.stderrLog, egressLog],
       [o.token, ...(o.releaseAfterPreflight ?? []).map((s) => s.value)],
     );
