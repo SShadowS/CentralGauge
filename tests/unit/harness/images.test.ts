@@ -978,3 +978,23 @@ Deno.test("LSP label version: a correct hash with a wrong version is refused by 
   );
   assertStringIncludes(err.message, version!);
 });
+
+Deno.test("imageFacts (M10-05): an older MCP label with its matching shipped definition is accepted, version and hash as labelled", async () => {
+  const [, current] = await mcpLabel(".");
+  const shipped = JSON.parse(
+    await Deno.readTextFile("harness/images/base/al-tools-tools.json"),
+  );
+  const older = { ...shipped, version: "al-tools-mcp@0" };
+  const olderHash = await hashJson(older);
+  assert(older.version !== shipped.version);
+  assert(olderHash !== current.split(" ")[1]);
+  const d = new FakeDocker();
+  d.addImage("older", ID, {
+    ...LABELS,
+    "centralgauge.mcp.al-tools": `${older.version} ${olderHash}`,
+  });
+  d.shipFile(ID, AL_TOOLS_SHIPPED, JSON.stringify(older));
+  assertEquals((await imageFacts(d, "older", "HOST1")).mcp, {
+    "al-tools": { version: older.version, tool_schema_hash: olderHash },
+  });
+});

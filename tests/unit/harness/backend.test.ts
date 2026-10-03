@@ -1595,3 +1595,40 @@ Deno.test("backend (M11-02 r2): concurrent 429 rejections append one whole line 
   assertEquals(lines.length, N + 1);
   assertEquals(lines.filter((l) => l.status === 429).length, N);
 });
+
+Deno.test("backend (M11-02): a logger that throws inside the operation-error handler still returns the original 500 or 503", async () => {
+  for (
+    const [err, status] of [
+      [new Error("boom at C:\\secret\\x"), 500],
+      [new ContainerError("SOAP timeout", "Cronus281", "test"), 503],
+    ] as const
+  ) {
+    const s = await setup();
+    s.failWith.err = err;
+    const boom = () => {
+      throw new Error("logger broke");
+    };
+    const fail = stub(console, "error", boom);
+    const warn = stub(console, "warn", boom);
+    const write = failHostLog(s.hostLog, () => true);
+    let r: Response;
+    try {
+      r = await s.backend.handle(
+        req("/v1/compile", s.tokenA, '{"apps":["Core"]}'),
+      );
+    } finally {
+      write.restore();
+      warn.restore();
+      fail.restore();
+    }
+    assertEquals(r.status, status);
+    const body = await r.json();
+    assert(body.request);
+    if (status === 500) {
+      assertEquals(
+        body.error,
+        "internal backend error; details are in the host log",
+      );
+    } else assertStringIncludes(body.infra, "SOAP timeout");
+  }
+});

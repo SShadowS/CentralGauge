@@ -5106,7 +5106,10 @@ Deno.test("harnessImagesBuild: a frozen tag is refused on a clean host (not pres
 // ---- M11-11: `harness report` of a pre-registered campaign ----
 
 import { stringify } from "@std/yaml";
-import { ExperimentSchema } from "../../../../src/harness/config.ts";
+import {
+  ExperimentSchema,
+  loadExperiment,
+} from "../../../../src/harness/config.ts";
 import { hashFile } from "../../../../src/harness/hash.ts";
 import {
   PreregSchema,
@@ -5195,7 +5198,9 @@ async function gitOut(root: string, ...args: string[]): Promise<string> {
  * a results store with the campaign bound to them, HX-001 selected and
  * HX-002 held out, every cell passing (plain $2, skills $1).
  */
-async function preregReportEnv() {
+async function preregReportEnv(
+  metric: "cost_per_solved_task" | "pass_rate" = "cost_per_solved_task",
+) {
   const root = await Deno.makeTempDir();
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "t@example.com");
@@ -5216,7 +5221,7 @@ async function preregReportEnv() {
   const experiment = ExperimentSchema.parse({
     id: "skills-vs-plain",
     hypothesis: "Skills cut cost per solved task.",
-    primary_metric: "cost_per_solved_task",
+    primary_metric: metric,
     baseline: "plain",
     variants: ["skills"],
     vary: ["skills"],
@@ -5311,7 +5316,14 @@ async function preregReportEnv() {
     decisionA,
     decisionB,
   );
-  assertEquals(v.problems, []);
+  assertEquals(
+    v.problems,
+    metric === "pass_rate"
+      ? [
+        "experiment primary_metric pass_rate does not match the pre-registration's primary_metric cost_per_solved_task",
+      ]
+      : [],
+  );
   const c = {
     ...c0,
     preregistration: {
@@ -5756,8 +5768,6 @@ Deno.test("run --dry-run --concurrency 2 (M7-01 run 002): the plan environment c
     Promise.reject(new Error("a dry run opens no environment"));
   const quiet = stub(console, "log", () => {});
   try {
-    // A first campaign at concurrency 1 (no marker), to resume below.
-    const first = await harnessRun("contract", runOpts(t), opener(t));
     const shared = join(t.repo.root, "results", "harness");
     await authorizedRoot(t.repo.root);
     const markerPath = join(shared, EGRESS_MARKER);
@@ -5780,8 +5790,11 @@ Deno.test("run --dry-run --concurrency 2 (M7-01 run 002): the plan environment c
         planner(verify),
       );
     await setMarker({ proxy_isolation: PROXY_ISOLATION });
-    // New campaign and resume, every condition met: planned, not refused.
-    assertEquals((await dry({})).planned, 2);
+    // New campaign, every condition met, planned before it exists: no id.
+    const planned = await dry({});
+    assertEquals([planned.planned, planned.campaignId], [2, null]);
+    // A first campaign at concurrency 1, to resume below.
+    const first = await harnessRun("contract", runOpts(t), opener(t));
     const resumed = await dry({ campaign: first.campaignId });
     assertEquals(resumed.campaignId, first.campaignId);
     // Wrong or missing proxy_isolation, N=3, not enforced, unverifiable.
@@ -5806,4 +5819,184 @@ Deno.test("run --dry-run --concurrency 2 (M7-01 run 002): the plan environment c
   } finally {
     quiet.restore();
   }
+});
+
+Deno.test("CLI: `harness report` refuses an experiment whose primary_metric differs from the preregistration's (M11-10c)", async () => {
+  const p = await preregReportEnv("pass_rate");
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const c = capture();
+  try {
+    await cli.parse([
+      "harness",
+      "report",
+      "skills-vs-plain",
+      "--results-dir",
+      p.results,
+      "--root",
+      p.root,
+      "--prereg-decision",
+      p.decisionA,
+      "--prereg-b-decision",
+      p.decisionB,
+      "--json",
+      "--judging",
+      "campaign",
+    ]);
+    assertEquals(Deno.exitCode, 1);
+  } finally {
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  assertStringIncludes(
+    stripAnsiCode(c.err.join("\n")),
+    "experiment primary_metric pass_rate does not match the pre-registration's primary_metric cost_per_solved_task",
+  );
+});
+
+Deno.test("CLI: `harness run` refuses a campaign start whose experiment primary_metric differs from the preregistration's (M11-10c)", async () => {
+  const t = await makeEnv();
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await writeCatalog(t);
+  const rel = "preregistration/prereg.yml";
+  const contrast = {
+    id: "C1",
+    name: "naive against positive",
+    baseline: "mock-positive",
+    variant: "mock-naive-a",
+  };
+  await write(
+    t.harnessRoot,
+    "experiments/prereg.yml",
+    `id: prereg
+hypothesis: Mock contract.
+primary_metric: pass_rate
+baseline: mock-positive
+variants: [mock-naive-a]
+vary: [settings]
+tasks: "harness-tasks/tasks/*"
+repeats: 1
+contrasts:
+  - ${JSON.stringify(contrast)}
+preregistration: ${rel}
+`,
+  );
+  const stageA = {
+    ...RP_A,
+    experiment: "prereg",
+    protocol: {
+      arms: ["mock-positive", "mock-naive-a"],
+      contrasts: [contrast],
+      interaction: null,
+    },
+    held_out: { ...RP_A.held_out, count: 0, tasks: [] },
+  };
+  const approved = await protocolSha(PreregSchema.parse(stageA));
+  const commitTag = async (tag: string, line: string) => {
+    await git(t.repo.root, "add", "harness", "harness-tasks");
+    await git(t.repo.root, "commit", "-q", "-m", tag);
+    await git(t.repo.root, "tag", "-a", tag, "-m", line);
+    return await gitOut(t.repo.root, "rev-parse", tag);
+  };
+  await write(t.harnessRoot, rel, stringify(stageA));
+  const tagA = await commitTag(
+    "harness-v2-prereg-a",
+    `protocol_sha256: ${approved}`,
+  );
+  const selPath = "harness-tasks/v2/selection.json";
+  await write(
+    t.repo.root,
+    selPath,
+    JSON.stringify({
+      v: 1,
+      status: "ok",
+      held_out: [],
+      selection: { n: 1, selected: ["HX-001"] },
+    }),
+  );
+  const simPath = "harness/preregistration/prereg.sim-b.json";
+  await write(
+    t.repo.root,
+    simPath,
+    JSON.stringify({
+      ...stageA.simulation,
+      zero_solve: stageA.zero_solve,
+      decision: { design: { tasks: 1, repeats: 1 } },
+    }),
+  );
+  const selSha = await hashFile(t.repo.root, join(t.repo.root, selPath));
+  const { experiment } = await loadExperiment(t.harnessRoot, "prereg");
+  const text = stringify({
+    ...stageA,
+    stage_a: { sha256: approved },
+    experiment_hash: await experimentHash(experiment),
+    selection: {
+      path: selPath,
+      sha256: selSha,
+      selected: ["HX-001"],
+      held_out: [],
+    },
+    design: { tasks: 1, repeats: 1 },
+    power_simulation: {
+      inputs: [{ path: selPath, sha256: selSha }],
+      output: {
+        path: simPath,
+        sha256: await hashFile(t.repo.root, join(t.repo.root, simPath)),
+      },
+    },
+    compiler_identity: "artifact|bccontainerhelper 6.1.14",
+    stage_b_approval: "OWNER-APPROVED: stage B (2026-10-29T12:00:00Z)",
+  });
+  await write(t.harnessRoot, rel, text);
+  const bSha = await sha256Hex(new TextEncoder().encode(text));
+  const tagB = await commitTag(
+    "harness-v2-prereg-b",
+    `stage_b_sha256: ${bSha}`,
+  );
+  const decisions = await Deno.makeTempDir();
+  const decisionA = join(decisions, "decision-a.md");
+  await Deno.writeTextFile(
+    decisionA,
+    `protocol_sha256: ${approved}\nfile_sha256: ${
+      "f".repeat(64)
+    }\ntag: harness-v2-prereg-a\ntag_object: ${tagA}\nOWNER-APPROVED: stage A (2026-10-24T12:00:00Z)\n`,
+  );
+  const decisionB = join(decisions, "decision-b.md");
+  await Deno.writeTextFile(
+    decisionB,
+    `stage_b_sha256: ${bSha}\ntag: harness-v2-prereg-b\ntag_object: ${tagB}\nOWNER-APPROVED: stage B (2026-11-06T12:00:00Z)\n`,
+  );
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, opener(t));
+  const runs = t.docker.runs.length;
+  const cwd = Deno.cwd();
+  const c = capture();
+  try {
+    Deno.chdir(t.repo.root);
+    await cli.parse([
+      "harness",
+      "run",
+      "prereg",
+      "--prereg-decision",
+      decisionA,
+      "--prereg-b-decision",
+      decisionB,
+      "--secrets-dir",
+      t.env.privateRoot,
+      "--private-dir",
+      t.env.privateRoot,
+    ]);
+    assertEquals(Deno.exitCode, 1);
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  assertStringIncludes(
+    stripAnsiCode(c.err.join("\n")),
+    "experiment primary_metric pass_rate does not match the pre-registration's primary_metric cost_per_solved_task",
+  );
+  assertEquals(await t.env.store.campaigns("prereg"), []);
+  assertEquals(t.docker.runs.length, runs);
 });
