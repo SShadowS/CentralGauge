@@ -34,11 +34,18 @@ import {
   RecordStore,
 } from "../../../src/harness/records.ts";
 import {
+  ADMIN_REFUSAL_EXIT,
+  ADMIN_REFUSAL_MARKER,
+  PI_STAGE_ARGV,
+  PI_STAGE_USER,
+  PRIVILEGE_ARGV,
   READY_FILE,
+  SANDBOX_USER,
   SECRETS_DIR_PREFIX,
   sweepOwnedSandboxes,
 } from "../../../src/harness/sandbox.ts";
 import { holdExclusive } from "./hold-file.ts";
+import { imageTag } from "../../../src/harness/images.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
   authorizedAllowlist,
@@ -74,7 +81,11 @@ import {
 import { blobB64, networkBlob } from "../../utils/hns-blob.ts";
 import { write } from "./refapp-fixture.ts";
 import { FakeBc, result } from "./fake-bc.ts";
-import type { RunBehavior } from "./fake-docker.ts";
+import {
+  ADMIN_GROUPS_CSV,
+  type RunBehavior,
+  USER_GROUPS_CSV,
+} from "./fake-docker.ts";
 
 const U16 = (s: string) =>
   String.fromCharCode(
@@ -289,7 +300,8 @@ Deno.test("retries follow ancestry: supervised withholds; usage-limit then setup
 
 Deno.test("runCell: timeout kills the sandbox; the workspace is judged; cost is unknown, never a lower bound", async () => {
   const t = await makeEnv();
-  t.env.timeoutMsFor = () => 50;
+  // Past the pre-release privilege check (H-01); the run still times out.
+  t.env.timeoutMsFor = () => 2_000;
   const lines = (await probeLines()).slice(0, 12);
   t.docker.behavior = async (call, io) => {
     await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", lines)(
@@ -1901,7 +1913,8 @@ for (const point of ["beforeDraft", "draft"] as const) {
 
 Deno.test("mcp inventory: a plain arm that connects an unrequested MCP server is setup_failed, even after a timeout", async () => {
   const t = await makeEnv();
-  t.env.timeoutMsFor = () => 50;
+  // Past the pre-release privilege check (H-01); the run still times out.
+  t.env.timeoutMsFor = () => 2_000;
   t.docker.behavior = async (_call, io) => {
     const init = JSON.parse(INIT);
     init.mcp_servers = [{ name: "al-tools", status: "connected" }];
@@ -3334,5 +3347,415 @@ Deno.test("recovery (M1-33d): an attempt interrupted after the proxy credential 
     assertEquals(forms.length, 7, phase);
     for (const f of forms) assert(!leaks(published, f), `${phase}: ${f}`);
     assert(!await exists(privatePaths(t.env, e.id).custody), phase);
+  }
+});
+
+// H-01: the agent never runs as an administrator.
+
+Deno.test("H-01: every docker run of a cell (placed agent run, stub cell) runs as ContainerUser", async () => {
+  const t = await makeEnv();
+  enforce(t);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  const t2 = await makeEnv();
+  await stubEnv(t2);
+  await runCell(t2.env, await cellFor(t2));
+  const runs = [...t.docker.runs, ...t2.docker.runs];
+  assertEquals(runs.length, 2);
+  assertEquals(SANDBOX_USER, "ContainerUser");
+  for (const r of runs) assertEquals(r.user, "ContainerUser", r.name);
+});
+
+// H-01 run 002: the harness decides by its own privilege check, never by
+// what the entrypoint printed. (Replaces run 001's two tests that mapped exit
+// 86 + marker to setup_failed.)
+
+type Kind = "unplaced" | "placed" | "stub";
+async function kindEnv(kind: Kind): Promise<TestEnv> {
+  const t = await makeEnv();
+  if (kind === "placed") {
+    t.env.supervised = false;
+    enforce(t);
+  }
+  if (kind === "stub") await stubEnv(t);
+  return t;
+}
+
+Deno.test("H-01: a forged refusal (marker first on stderr, no stdout, exit 86) is an ordinary crash; the campaign goes on", async () => {
+  for (const kind of ["unplaced", "placed"] as const) {
+    const t = await kindEnv(kind);
+    t.docker.behavior = async () => {
+      await Deno.writeTextFile(
+        t.docker.lastCapture!.stderrPath,
+        `${ADMIN_REFUSAL_MARKER} (User Manager\\ContainerAdministrator)\r\n`,
+        { append: true },
+      );
+      return ADMIN_REFUSAL_EXIT;
+    };
+    const cell = await cellFor(t);
+    const e = (await runCell(t.env, cell)).executions[0]!;
+    assertEquals(e.termination, "harness_crash", kind);
+    const side = await sideOf(t, e.id);
+    assert(
+      !/privilege|administrator/i.test(String(side.setup_error)),
+      `${kind}: ${side.setup_error}`,
+    );
+    assert(t.docker.readySeen, kind);
+  }
+});
+
+Deno.test("H-01: a healthy sandbox is checked (Config.User, then whoami as ContainerUser) after the start and before anything is released", async () => {
+  for (const kind of ["unplaced", "placed", "stub"] as const) {
+    const t = await kindEnv(kind);
+    const eg = kind === "placed" ? t.env.egress as FakeEgress : null;
+    let registeredAtCheck: boolean | null = null;
+    const exec = t.docker.exec.bind(t.docker);
+    t.docker.exec = (name, user, argv) => {
+      registeredAtCheck = eg ? eg.events.includes("register") : null;
+      return exec(name, user, argv);
+    };
+    const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+    assert(e.termination !== "setup_failed", `${kind}: ${e.termination}`);
+    const name = t.docker.runs[0]!.name;
+    assertEquals(
+      t.docker.privilegeCalls.map((c) => [c.op, c.name, c.user, c.secrets]),
+      [
+        ["configUser", name, undefined, []],
+        ["exec", name, SANDBOX_USER, []],
+      ],
+      kind,
+    );
+    assertEquals(t.docker.privilegeCalls[1]!.argv, PRIVILEGE_ARGV);
+    if (eg) {
+      assertEquals(registeredAtCheck, false, "before the proxy credential");
+    }
+    assert(t.docker.readySeen, kind);
+  }
+});
+
+Deno.test("H-01: a failed privilege check (wrong Config.User, admin groups, high label, exec error, timeout, unparseable, non-zero) is setup_failed, releases nothing, is never judged, and stops the campaign", async () => {
+  const cases: [string, (t: TestEnv, name: string) => void, string][] = [
+    [
+      "admin user",
+      (t, n) => t.docker.configUsers.set(n, "ContainerAdministrator"),
+      "ContainerAdministrator",
+    ],
+    [
+      "empty user",
+      (t, n) => t.docker.configUsers.set(n, ""),
+      "not ContainerUser",
+    ],
+    [
+      "admin groups",
+      (
+        t,
+      ) => (t.docker.execAnswer = {
+        code: 0,
+        stdout: ADMIN_GROUPS_CSV,
+        stderr: "",
+      }),
+      "S-1-5-32-544",
+    ],
+    [
+      "exec throws",
+      (t) => (t.docker.execAnswer = new Error("exec blew up")),
+      "exec blew up",
+    ],
+    ["exec hangs", (t) => (t.docker.execAnswer = "hang"), "timed out"],
+    [
+      "unparseable",
+      (
+        t,
+      ) => (t.docker.execAnswer = {
+        code: 0,
+        stdout: "INFO: nope\r\n",
+        stderr: "",
+      }),
+      "unparseable",
+    ],
+    [
+      "non-zero",
+      (
+        t,
+      ) => (t.docker.execAnswer = {
+        code: 5,
+        stdout: USER_GROUPS_CSV,
+        stderr: "denied",
+      }),
+      "exited 5",
+    ],
+  ];
+  const matrix: [Kind, typeof cases][] = [
+    ["unplaced", cases],
+    ["placed", [cases[0]!, cases[2]!, cases[4]!]],
+    ["stub", [cases[1]!, cases[2]!, cases[3]!]],
+  ];
+  for (const [kind, rows] of matrix) {
+    for (const [label, arrange, want] of rows) {
+      const what = `${kind} ${label}`;
+      const t = await kindEnv(kind);
+      let ran = 0;
+      const inner = t.docker.behavior;
+      t.docker.behavior = (c, io) => {
+        ran++;
+        return inner(c, io);
+      };
+      const cell = await cellFor(t);
+      // The sandbox name is known once the run starts: arrange at the check.
+      const configUser = t.docker.configUser.bind(t.docker);
+      t.docker.configUser = (name) => {
+        if (t.docker.privilegeCalls.length === 0) arrange(t, name);
+        return configUser(name);
+      };
+      const err = await assertRejects(
+        () => runCell(t.env, cell),
+        ContainerError,
+        "sandbox privilege check failed",
+      );
+      assertStringIncludes(err.message, want, what);
+      assertEquals(t.docker.runs.length, 1, `${what}: no automatic retry`);
+      const [e] = await t.env.store.executions(cell.campaignId);
+      assertEquals(e!.termination, "setup_failed", what);
+      const side = await sideOf(t, e!.id);
+      assertEquals(side.stop_reason, "privilege_check_failed", what);
+      assertEquals(secretDirs(t), [], what);
+      assertStringIncludes(
+        side.setup_error,
+        "sandbox privilege check failed",
+        what,
+      );
+      assertStringIncludes(side.setup_error, want, what);
+      assertEquals(await t.env.store.judgments(e!.id), [], what);
+      assertEquals(
+        ran,
+        0,
+        `${what}: the entrypoint never passed the ready wait`,
+      );
+      assert(!t.docker.readySeen, what);
+      assertEquals(t.docker.secretsAtKill, [], `${what}: nothing released`);
+      if (kind === "placed") {
+        const eg = t.env.egress as FakeEgress;
+        assert(!eg.events.includes("register"), what);
+      }
+    }
+  }
+});
+
+Deno.test("stub provider: an --image whose revision differs from the arm's is refused, fail closed (H-01 run 004)", async () => {
+  const labels = {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+  };
+  // Arm on the frozen image (no revision), override carries one.
+  const t = await makeEnv();
+  const revised = `sha256:${"9".repeat(64)}`;
+  t.docker.addImage("drill:r2", revised, {
+    ...labels,
+    "centralgauge.harness.revision": "2",
+  });
+  await stubEnv(t, revised);
+  const cell = await cellFor(t);
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ConfigurationError,
+    "revision 2",
+  );
+  assertEquals(t.docker.runs, []);
+  // Arm on revision 2, override without one, then with revision 3.
+  const u = await makeEnv();
+  const frozen = `sha256:${"8".repeat(64)}`;
+  u.docker.addImage("drill:frozen", frozen, labels);
+  await stubEnv(u, frozen);
+  const c2 = await cellFor(u);
+  const r2Cell = {
+    ...c2,
+    armManifest: {
+      ...c2.armManifest,
+      image: { ...c2.armManifest.image, revision: "2" },
+    },
+  };
+  await assertRejects(
+    () => runCell(u.env, r2Cell),
+    ConfigurationError,
+    "no revision",
+  );
+  const r3 = `sha256:${"7".repeat(64)}`;
+  u.docker.addImage("drill:r3", r3, {
+    ...labels,
+    "centralgauge.harness.revision": "3",
+  });
+  await stubEnv(u, r3);
+  await assertRejects(
+    () => runCell(u.env, r2Cell),
+    ConfigurationError,
+    "revision 3",
+  );
+  assertEquals(u.docker.runs, []);
+  // Same revision on both sides runs.
+  const r2 = `sha256:${"6".repeat(64)}`;
+  u.docker.addImage("drill:r2", r2, {
+    ...labels,
+    "centralgauge.harness.revision": "2",
+  });
+  await stubEnv(u, r2);
+  const e = (await runCell(u.env, r2Cell)).executions[0]!;
+  assertEquals(e.manifest.image.revision, "2");
+});
+
+// H-01 run 005: pi's harness-generated config (settings.json, AGENTS.md,
+// auth.json) is staged admin-owned by the harness, after the privilege check
+// and before anything is released; the agent dir lets the agent add only
+// its own lock directories.
+
+const PI_CATALOG = {
+  models: [{
+    slug: "openrouter/google/gemini-3.8-flash",
+    api_model_id: "google/gemini-3.8-flash",
+    family: "gemini",
+    display_name: "F",
+  }],
+  pricing: [],
+  families: [],
+};
+const PI_IMAGE_ID = `sha256:${"a".repeat(64)}`;
+
+/** A pi arm (pi-plain) in an unplaced or stub env. */
+async function piEnv(kind: "unplaced" | "stub"): Promise<TestEnv> {
+  const t = await kindEnv(kind);
+  await write(
+    t.harnessRoot,
+    "configs/pi-plain.yml",
+    `id: pi-plain
+harness: pi
+harness_version: "0.87.1"
+models: { main: openrouter/google/gemini-3.8-flash }
+settings: {}
+components: { instructions: bundles/pi/instructions }
+limits: { timeout_min: 30, max_budget_usd: 2 }
+`,
+  );
+  await write(
+    t.harnessRoot,
+    "bundles/pi/instructions/AGENTS.md",
+    "Environment facts.\n",
+  );
+  t.docker.addImage(imageTag("pi", "0.87.1"), PI_IMAGE_ID, {
+    "centralgauge.harness": "pi",
+    "centralgauge.harness.version": "0.87.1",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+  });
+  await Deno.writeTextFile(
+    join(t.env.secretsSource, "openrouter-api-key"),
+    "sk-or-v1-".padEnd(48, "7"),
+  );
+  return t;
+}
+const piCell = (t: TestEnv) => cellFor(t, "pi-plain", "HX-001", PI_CATALOG);
+
+Deno.test("H-01 run 005: a pi cell (unplaced and stub) stages its config as ContainerAdministrator with the absolute argv, after the privilege check, before secrets and ready", async () => {
+  // A pi stub cell runs pi's own run.ps1 (STUB_COMMAND), so it is staged too.
+  assert(STUB_COMMAND.at(-1)!.includes("& C:\\run.ps1"));
+  for (const kind of ["unplaced", "stub"] as const) {
+    const t = await piEnv(kind);
+    await runCell(t.env, await piCell(t));
+    const name = t.docker.runs[0]!.name;
+    assertEquals(
+      t.docker.privilegeCalls.map((c) => [c.op, c.name, c.user, c.secrets]),
+      [
+        ["configUser", name, undefined, []],
+        ["exec", name, SANDBOX_USER, []],
+        ["exec", name, PI_STAGE_USER, []],
+      ],
+      kind,
+    );
+    assertEquals(t.docker.privilegeCalls[1]!.argv, PRIVILEGE_ARGV, kind);
+    assertEquals(t.docker.privilegeCalls[2]!.argv, PI_STAGE_ARGV, kind);
+    assert(t.docker.readySeen, kind);
+  }
+  assertEquals(PI_STAGE_USER, "ContainerAdministrator");
+  assertEquals(PI_STAGE_ARGV, [
+    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    "C:\\cg-pi-stage.ps1",
+  ]);
+});
+
+Deno.test("H-01 run 005: a non-pi cell (claude-code, mock; unplaced and stub) never runs the pi staging exec", async () => {
+  for (
+    const [kind, arm] of [
+      ["unplaced", "cc-sonnet-plain"],
+      ["stub", "cc-sonnet-plain"],
+      ["unplaced", "mock-positive"],
+    ] as const
+  ) {
+    const t = await kindEnv(kind);
+    await runCell(t.env, await cellFor(t, arm));
+    assert(t.docker.privilegeCalls.length >= 2, `${kind} ${arm}`);
+    for (const c of t.docker.privilegeCalls) {
+      assert(c.user !== PI_STAGE_USER, `${kind} ${arm}: ${c.user}`);
+      assert(
+        JSON.stringify(c.argv) !== JSON.stringify(PI_STAGE_ARGV),
+        `${kind} ${arm}`,
+      );
+    }
+  }
+});
+
+Deno.test("H-01 run 005: a failed pi config staging (non-zero, exec error, timeout) is setup_failed, releases nothing, is never judged, and stops the campaign", async () => {
+  const cases: [string, TestEnv["docker"]["stageAnswer"], string][] = [
+    [
+      "non-zero",
+      { code: 1, stdout: "[FAIL] write S-1-5-32-545 C:\\pi-agent", stderr: "" },
+      "exited 1",
+    ],
+    ["exec throws", new Error("stage blew up"), "stage blew up"],
+    ["exec hangs", "hang", "timed out"],
+  ];
+  for (const kind of ["unplaced", "stub"] as const) {
+    for (const [label, answer, want] of cases) {
+      const what = `${kind} ${label}`;
+      const t = await piEnv(kind);
+      t.docker.stageAnswer = answer;
+      let ran = 0;
+      const inner = t.docker.behavior;
+      t.docker.behavior = (c, io) => {
+        ran++;
+        return inner(c, io);
+      };
+      const cell = await piCell(t);
+      const err = await assertRejects(
+        () => runCell(t.env, cell),
+        ContainerError,
+        "pi config staging failed",
+      );
+      assertStringIncludes(err.message, want, what);
+      assert(!err.message.includes("privilege check failed"), what);
+      assertEquals(t.docker.runs.length, 1, `${what}: no automatic retry`);
+      assertEquals(
+        t.docker.privilegeCalls.map((c) => c.user),
+        [undefined, SANDBOX_USER, PI_STAGE_USER],
+        what,
+      );
+      const [e] = await t.env.store.executions(cell.campaignId);
+      assertEquals(e!.termination, "setup_failed", what);
+      const side = await sideOf(t, e!.id);
+      assertEquals(side.stop_reason, "pi_config_staging_failed", what);
+      assertStringIncludes(side.setup_error, "pi config staging failed", what);
+      assertStringIncludes(side.setup_error, want, what);
+      assertEquals(secretDirs(t), [], what);
+      assertEquals(await t.env.store.judgments(e!.id), [], what);
+      assertEquals(
+        ran,
+        0,
+        `${what}: the entrypoint never passed the ready wait`,
+      );
+      assert(!t.docker.readySeen, what);
+      assertEquals(t.docker.secretsAtKill, [], `${what}: nothing released`);
+    }
   }
 });

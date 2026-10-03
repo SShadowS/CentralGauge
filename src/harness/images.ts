@@ -10,12 +10,33 @@ import { ConfigurationError } from "../errors.ts";
 import { BACKEND_VERSION } from "./backend.ts";
 import { hashJson } from "./hash.ts";
 
-export const BASE_IMAGE = "centralgauge/harness-base:1";
+/** base:1 is frozen; H-01 run 004 builds base:2 (an existing tag is never rebuilt). */
+export const BASE_VERSION = "2";
+export const BASE_IMAGE = `centralgauge/harness-base:${BASE_VERSION}`;
+/**
+ * Tags the frozen campaign images carry (H-01 run 005). Reserved in code, not by
+ * local presence: `images build` refuses them even on a host that has pruned
+ * them, so a changed Dockerfile can never be built under one. Old records still
+ * resolve through them (imageTag without a revision).
+ */
+export const FROZEN_IMAGE_TAGS: readonly string[] = [
+  "centralgauge/harness-base:1",
+  "centralgauge/harness-mock:1",
+  "centralgauge/harness-claude-code:2.1.282",
+  "centralgauge/harness-pi:0.87.1",
+];
 export const IMAGE_LABELS = {
   harness: "centralgauge.harness",
   version: "centralgauge.harness.version",
   base: "centralgauge.harness.base_digest",
+  /** Optional (H-01 run 004): only images built with --revision carry it. */
+  revision: "centralgauge.harness.revision",
 } as const;
+const REQUIRED_LABELS = [
+  IMAGE_LABELS.harness,
+  IMAGE_LABELS.version,
+  IMAGE_LABELS.base,
+];
 
 /**
  * MCP component labels (M3-03): `centralgauge.mcp.<name>` = `<version> <sha256>`.
@@ -29,14 +50,23 @@ export const AL_TOOLS_DEF = "harness/images/base/al-tools-tools.json";
 /** Where the base Dockerfile puts the definition al-tools-mcp.mjs reads. */
 export const AL_TOOLS_SHIPPED = "C:\\al-tools-tools.json";
 
-export const imageTag = (harness: string, version: string) =>
-  `centralgauge/harness-${harness}:${version}`;
+/** No revision: exactly the frozen tag. A revision: `<version>-r<revision>`. */
+export const imageTag = (
+  harness: string,
+  version: string,
+  revision?: string,
+) =>
+  `centralgauge/harness-${harness}:${version}${
+    revision === undefined ? "" : `-r${revision}`
+  }`;
 
 export interface ImageFacts {
   digest: string;
   base_digest: string;
   harness: string;
   version: string;
+  /** The revision label; null when the image has none (a frozen image). */
+  revision: string | null;
   mcp?: Record<string, { version: string; tool_schema_hash: string }>;
 }
 
@@ -72,7 +102,7 @@ export async function imageFacts(
     );
   }
   const l = img.Config?.Labels ?? {};
-  const missing = Object.values(IMAGE_LABELS).filter((k) => !l[k]);
+  const missing = REQUIRED_LABELS.filter((k) => !l[k]);
   if (missing.length > 0) {
     throw new ConfigurationError(
       `image ${ref} lacks label(s) ${missing.join(", ")}`,
@@ -114,6 +144,7 @@ export async function imageFacts(
     base_digest: l[IMAGE_LABELS.base]!,
     harness: l[IMAGE_LABELS.harness]!,
     version: l[IMAGE_LABELS.version]!,
+    revision: l[IMAGE_LABELS.revision] ?? null,
     mcp,
   };
 }
@@ -240,6 +271,20 @@ export function runtimeFacts(
       `${config.id}: image is ${image.harness} ${image.version}, config wants ${config.harness} ${config.harness_version}`,
     );
   }
+  // Fail closed (H-01 run 004): a frozen image and a rebuilt one never stand
+  // in for each other, in either direction.
+  const want = config.image_revision ?? null;
+  if (image.revision !== want) {
+    const say = (r: string | null) =>
+      r === null ? "no revision" : `revision ${r}`;
+    throw new ConfigurationError(
+      `${config.id}: image ${image.digest} has ${
+        say(image.revision)
+      } (label ${IMAGE_LABELS.revision}), config wants ${
+        say(want)
+      } (image_revision)`,
+    );
+  }
   if (config.components.lsp.length > 0) {
     throw new ConfigurationError(
       `${config.id}: LSP components are not implemented`,
@@ -282,7 +327,12 @@ export function runtimeFacts(
         ),
       }
       : native,
-    image: { digest: image.digest, base_digest: image.base_digest },
+    // No key when absent: frozen-image manifests keep their hashes.
+    image: {
+      digest: image.digest,
+      base_digest: image.base_digest,
+      ...(image.revision === null ? {} : { revision: image.revision }),
+    },
     backend_version: BACKEND_VERSION,
     servers,
     provider_routes: adapter.providerRoutes(config),

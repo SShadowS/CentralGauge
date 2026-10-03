@@ -1,6 +1,7 @@
 id: pi-sonnet-plain
 harness: pi
 harness_version: "0.87.1"
+image_revision: "2"
 models:
   main: openrouter/anthropic/claude-sonnet-5
 settings: {}

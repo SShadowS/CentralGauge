@@ -1,10 +1,13 @@
 # pi entrypoint (spec 1a section 5 item 3; findings sections 3 and 4; M1-33
-# credential release). Waits for the runner's ready file, isolates pi's agent
-# directory with the recorded settings, writes our cg_entry record, then runs
+# credential release). Waits for the runner's ready file, points pi at its
+# agent directory (settings staged by the harness), writes our cg_entry record, then runs
 # pi 0.87.1 in JSON mode with the prompt on stdin. This script never reads the
 # provider key: the budget guard (-e C:\cg-budget.ts) is its only holder.
 # Windows PowerShell 5.1: every text read names UTF-8.
 $ErrorActionPreference = 'Stop'
+# H-01: first, before any config, secret or ready read; any non-zero exits 86.
+& 'C:\cg-nonadmin.ps1'
+if ($LASTEXITCODE -ne 0) { exit 86 }
 $utf8 = New-Object System.Text.UTF8Encoding $false
 $global:OutputEncoding = $utf8
 [Console]::InputEncoding = $utf8
@@ -45,26 +48,19 @@ if (Test-Path 'C:\cg-secrets\proxy-credential') {
   Remove-Variable proxyCred
 }
 $env:PI_CODING_AGENT_DIR = 'C:\pi-agent'
-New-Item -ItemType Directory -Force -Path $env:PI_CODING_AGENT_DIR | Out-Null
-[IO.File]::WriteAllText("$env:PI_CODING_AGENT_DIR\settings.json", (ConvertTo-Json -InputObject $ps -Depth 8), $utf8)
-# Instructions are validated and staged before pi runs at all.
-if (Test-Path 'C:\config\bundle\instructions') {
-  $dir = 'C:\config\bundle\instructions'
-  $names = @(Get-ChildItem $dir -File | ForEach-Object { $_.Name })
-  $extra = @($names | Where-Object { $_ -notin @('AGENTS.md', 'CLAUDE.md') })
-  if ($extra.Count -gt 0) { throw "instructions bundle holds unexpected files: $($extra -join ', ')" }
-  if ($names -notcontains 'AGENTS.md') { throw 'pi instructions bundle must hold AGENTS.md' }
-  if (($names -contains 'CLAUDE.md') -and ((Get-FileHash "$dir\AGENTS.md").Hash -ne (Get-FileHash "$dir\CLAUDE.md").Hash)) {
-    throw 'AGENTS.md and CLAUDE.md differ: the parity rule needs byte-identical files'
-  }
-  Copy-Item -LiteralPath "$dir\AGENTS.md" -Destination "$env:PI_CODING_AGENT_DIR\AGENTS.md" -Force
+# H-01 run 005: settings.json, the instructions and auth.json were validated and
+# staged admin-owned by the harness (C:\cg-pi-stage.ps1) before ready; the agent
+# user only reads them.
+if (-not (Test-Path -LiteralPath "$env:PI_CODING_AGENT_DIR\settings.json" -PathType Leaf)) {
+  [Console]::Error.WriteLine('[FAIL] C:\pi-agent\settings.json was not staged by the harness')
+  exit 5
 }
 $env:PI_OFFLINE = '1'
 $env:CG_MAX_BUDGET_USD = [string]$budget
 $version = (& pi --version | Out-String).Trim()
 $entry = @{ type = 'cg_entry'; pi_version = $version; max_budget_usd = $budget; ready = $true }
 [Console]::Out.WriteLine((ConvertTo-Json -InputObject $entry -Compress))
-$piArgs = @('--mode', 'json', '--no-session', '--offline', '--no-approve', '--no-extensions', '-e', 'C:\cg-budget.ts', '--no-skills')
+$piArgs = @('--mode', 'json', '--no-session', '--offline', '--no-approve', '--no-extensions', '-e', 'C:\cg-budget.ts', '--no-skills', '--no-prompt-templates', '--no-themes')
 if (Test-Path 'C:\config\bundle\skills') { $piArgs += @('--skill', 'C:\config\bundle\skills') }
 if ($cfg.settings.thinking) { $piArgs += @('--thinking', $cfg.settings.thinking) }
 $piArgs += @('--provider', $cfg.settings.provider, '--model', $cfg.settings.api_models.main)

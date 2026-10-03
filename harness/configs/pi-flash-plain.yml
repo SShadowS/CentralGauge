@@ -1,6 +1,7 @@
 id: pi-flash-plain
 harness: pi
 harness_version: "0.87.1"
+image_revision: "2"
 models:
   main: openrouter/google/gemini-3.8-flash
 settings: {}

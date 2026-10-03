@@ -4,6 +4,7 @@ import {
   checkModelsInCatalog,
   ComponentsSchema,
   effectiveLimits,
+  HarnessConfigSchema,
   loadConfig,
   loadExperiment,
 } from "../../../src/harness/config.ts";
@@ -209,6 +210,30 @@ Deno.test("ComponentsSchema: duplicate list entries are refused", () => {
     assertEquals(
       ComponentsSchema.safeParse({ [key]: [list[0]] }).success,
       true,
+    );
+  }
+});
+
+Deno.test("HarnessConfigSchema: image_revision is optional and digits only (H-01)", () => {
+  const base = {
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    models: { main: "anthropic/model-a" },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  };
+  const absent = HarnessConfigSchema.parse(base);
+  assertEquals(absent.image_revision, undefined);
+  assertEquals(Object.hasOwn(absent, "image_revision"), false);
+  assertEquals(
+    HarnessConfigSchema.parse({ ...base, image_revision: "2" }).image_revision,
+    "2",
+  );
+  for (const bad of ["", "r2", "2a", " 2", "-1", "2.0", "0", "02", 2, null]) {
+    assertEquals(
+      HarnessConfigSchema.safeParse({ ...base, image_revision: bad }).success,
+      false,
+      `image_revision ${JSON.stringify(bad)} must be refused`,
     );
   }
 });

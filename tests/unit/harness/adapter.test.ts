@@ -198,3 +198,21 @@ Deno.test("observedMismatch: an unrequested MCP server is a mismatch (M2-09)", (
     "unrequested components loaded: mcp:al-tools",
   );
 });
+
+Deno.test("observedMismatch: on an image_revision image the reported CLI version is still checked against harness_version (H-01)", () => {
+  const m = manifest("x", {
+    image: { digest: "sha256:img", base_digest: "sha256:base", revision: "2" },
+  });
+  const obs = {
+    harness_version: "2.1.282",
+    models: null,
+    loaded_components: [],
+  };
+  assertEquals(observedMismatch(m, obs, []).mismatch, null);
+  for (const v of ["2.1.282-r2", "2", "2.1.300"]) {
+    assertStringIncludes(
+      observedMismatch(m, { ...obs, harness_version: v }, []).mismatch!,
+      `harness version ${v} ran, 2.1.282 was requested`,
+    );
+  }
+});

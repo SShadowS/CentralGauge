@@ -1,6 +1,6 @@
 id: mock-crash-after-work
 harness: mock
-harness_version: "1"
+harness_version: "2"
 models: {}
 settings: { mode: crash-after-work, variant: positive }
 limits: { timeout_min: 10, max_budget_usd: 1 }

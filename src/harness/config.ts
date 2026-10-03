@@ -44,10 +44,22 @@ export const LimitsSchema = z.strictObject({
   max_budget_usd: z.number().positive(),
 });
 
+/**
+ * Image revision (H-01 run 004): a rebuild of the image for the same
+ * harness_version, tagged `<version>-r<n>`. Absent is the frozen image.
+ */
+export const IMAGE_REVISION = /^[1-9][0-9]{0,3}$/;
+export const ImageRevisionSchema = z.string().regex(
+  IMAGE_REVISION,
+  "positive integer, no leading zero",
+);
+
 export const HarnessConfigSchema = z.strictObject({
   id: slug,
   harness: slug,
+  /** The harness's own version; compared with what the harness reports. */
   harness_version: z.string().min(1),
+  image_revision: ImageRevisionSchema.optional(),
   models: z.record(
     z.string().min(1),
     z.string().regex(/^[a-z0-9-]+\/\S+$/, "provider/model"),

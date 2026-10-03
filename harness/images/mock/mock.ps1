@@ -3,7 +3,7 @@
 # C:\config\variant\ (the runner copies the resolved variant there; C:\task never holds
 # solutions), applies it to C:\workspace with .delete semantics, optionally calls cg-al,
 # and prints JSON lines: mock_init, mock_apply, mock_cg_al, mock_usage_limit, mock_junction, mock_error, mock_done.
-# Windows PowerShell 5.1 and pwsh 7. CG_MOCK_CONFIG, CG_MOCK_WORKSPACE, CG_MOCK_CG_AL, CG_MOCK_FSUTIL and CG_MOCK_JUNCTION_TARGET
+# Windows PowerShell 5.1 and pwsh 7. CG_MOCK_CONFIG, CG_MOCK_WORKSPACE, CG_MOCK_CG_AL, CG_MOCK_FSUTIL, CG_MOCK_JUNCTION_TARGET and CG_MOCK_SECRETS
 # override the container paths (unit tests run this script on the host).
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding $false
@@ -13,7 +13,19 @@ $Workspace = if ($env:CG_MOCK_WORKSPACE) { $env:CG_MOCK_WORKSPACE } else { 'C:\w
 $CgAl = if ($env:CG_MOCK_CG_AL) { $env:CG_MOCK_CG_AL } else { 'C:\cg-al.ps1' }
 $Fsutil = if ($env:CG_MOCK_FSUTIL) { $env:CG_MOCK_FSUTIL } else { 'fsutil.exe' }
 $JunctionTarget = if ($env:CG_MOCK_JUNCTION_TARGET) { $env:CG_MOCK_JUNCTION_TARGET } else { 'C:\Users\Public' }
-$Version = '1'
+$Secrets = if ($env:CG_MOCK_SECRETS) { $env:CG_MOCK_SECRETS } else { 'C:\cg-secrets' }
+$Version = '2'
+
+# Like every entrypoint: nothing before the runner's ready (it releases the
+# backend token and ready only after its privilege check on this sandbox, H-01).
+$sw = [Diagnostics.Stopwatch]::StartNew()
+while (-not (Test-Path -LiteralPath (Join-Path $Secrets 'ready'))) {
+  if ($sw.Elapsed.TotalSeconds -ge 600) {
+    [Console]::Error.WriteLine("mock: $Secrets\ready not written within 600 s")
+    exit 5
+  }
+  Start-Sleep -Milliseconds 250
+}
 
 function Emit([string]$type, [hashtable]$data) {
   $data['type'] = $type

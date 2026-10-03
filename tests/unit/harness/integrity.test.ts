@@ -523,6 +523,7 @@ async function ccVsPi(
       base_digest: "sha256:base",
       harness: config.harness,
       version: config.harness_version,
+      revision: config.image_revision ?? null,
     };
     const facts = runtimeFacts(
       config,

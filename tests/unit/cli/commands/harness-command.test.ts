@@ -54,6 +54,8 @@ import { loadSymbolsLock } from "../../../../src/harness/identity.ts";
 import {
   AL_TOOLS_DEF,
   BASE_IMAGE,
+  FROZEN_IMAGE_TAGS,
+  imageTag,
   mcpLabel,
 } from "../../../../src/harness/images.ts";
 import {
@@ -72,7 +74,7 @@ import { oracleHash } from "../../../../src/harness/identity.ts";
 import { loadTask } from "../../../../src/harness/task.ts";
 import { BenchLockHeldError } from "../../../../src/utils/bench-lock.ts";
 import { FakeBc } from "../../harness/fake-bc.ts";
-import { FakeDocker } from "../../harness/fake-docker.ts";
+import { ADMIN_GROUPS_CSV, FakeDocker } from "../../harness/fake-docker.ts";
 import { runQualificationProbe } from "../../../../src/harness/egress-probe.ts";
 import { holdExclusive } from "../../harness/hold-file.ts";
 import { READY_FILE } from "../../../../src/harness/sandbox.ts";
@@ -1064,29 +1066,38 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
   );
   const baseId = `sha256:${"b".repeat(64)}`;
   const [mk, mv] = await mcpLabel(root);
-  docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
+  // Each base build starts with no base tag (an existing tag is refused);
+  // the build produces it.
+  const baseBuildsTo = (labels: Record<string, string>) => {
+    docker.tags.delete(BASE_IMAGE);
+    docker.buildResults.set(BASE_IMAGE, {
+      id: baseId,
+      labels,
+      layers: ["l1", "l2"],
+    });
+  };
+  baseBuildsTo({});
   await assertRejects(
     () => harnessImagesBuild("base", { root }, docker),
     ConfigurationError,
     `${BASE_IMAGE}: label ${mk}`,
   );
   docker.builds.length = 0;
-  docker.addImage(BASE_IMAGE, baseId, {
-    [mk]: `${mv.split(" ")[0]} ${"0".repeat(64)}`,
-  }, ["l1", "l2"]);
+  baseBuildsTo({ [mk]: `${mv.split(" ")[0]} ${"0".repeat(64)}` });
   await assertRejects(
     () => harnessImagesBuild("base", { root }, docker),
     ConfigurationError,
     `${BASE_IMAGE}: label ${mk}`,
   );
   docker.builds.length = 0;
-  docker.addImage(BASE_IMAGE, baseId, { [mk]: mv }, ["l1", "l2"]);
+  baseBuildsTo({ [mk]: mv });
   const bf = await harnessImagesBuild("base", { root }, docker);
   assertEquals(bf, {
     digest: baseId,
     base_digest: pin,
     harness: "base",
-    version: "1",
+    version: "2",
+    revision: null,
     mcp: {
       "al-tools": {
         version: mv.split(" ")[0]!,
@@ -1106,15 +1117,15 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
     "centralgauge.harness.version": "2.1.282",
     "centralgauge.harness.base_digest": baseId,
   };
-  docker.addImage(
-    "centralgauge/harness-claude-code:2.1.282",
-    `sha256:${"c".repeat(64)}`,
-    labels,
-    ["l1", "l2", "l3"],
-  );
+  // H-01 run 005: the changed Dockerfile builds under the r2 tag, never the frozen 2.1.282.
+  docker.buildResults.set("centralgauge/harness-claude-code:2.1.282-r2", {
+    id: `sha256:${"c".repeat(64)}`,
+    labels: { ...labels, "centralgauge.harness.revision": "2" },
+    layers: ["l1", "l2", "l3"],
+  });
   const f = await harnessImagesBuild(
     "claude-code",
-    { root, version: "2.1.282" },
+    { root, version: "2.1.282", revision: "2" },
     docker,
   );
   const args = docker.builds[1]!.join(" ");
@@ -1125,15 +1136,15 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
   );
   assertStringIncludes(args, `centralgauge.harness.base_digest=${baseId}`);
   assertEquals(f.digest, `sha256:${"c".repeat(64)}`);
-  docker.addImage(
-    "centralgauge/harness-claude-code:2.1.282",
-    `sha256:${"d".repeat(64)}`,
-    labels,
-    ["x1", "l3"],
-  );
+  // A new tag (an existing one is refused) whose layers miss the base's.
+  docker.buildResults.set("centralgauge/harness-claude-code:2.1.283", {
+    id: `sha256:${"d".repeat(64)}`,
+    labels: { ...labels, "centralgauge.harness.version": "2.1.283" },
+    layers: ["x1", "l3"],
+  });
   await assertRejects(
     () =>
-      harnessImagesBuild("claude-code", { root, version: "2.1.282" }, docker),
+      harnessImagesBuild("claude-code", { root, version: "2.1.283" }, docker),
     ConfigurationError,
     "layers",
   );
@@ -1164,7 +1175,8 @@ Deno.test("harnessImagesBuild: a base tag that moves between inspect and build c
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
-  const tag = "centralgauge/harness-claude-code:2.1.282";
+  // H-01 run 005: the r2 tag (2.1.282 itself is frozen and never built).
+  const tag = "centralgauge/harness-claude-code:2.1.282-r2";
   docker.build = (args) => {
     docker.builds.push(args);
     // Someone rebuilds the base tag while this build runs.
@@ -1173,12 +1185,13 @@ Deno.test("harnessImagesBuild: a base tag that moves between inspect and build c
       "centralgauge.harness": "claude-code",
       "centralgauge.harness.version": "2.1.282",
       "centralgauge.harness.base_digest": baseId,
+      "centralgauge.harness.revision": "2",
     }, ["l1", "l2", "l3"]);
     return Promise.resolve(0);
   };
   const f = await harnessImagesBuild(
     "claude-code",
-    { root, version: "2.1.282" },
+    { root, version: "2.1.282", revision: "2" },
     docker,
   );
   const args = docker.builds[0]!.join(" ");
@@ -1523,29 +1536,29 @@ Deno.test("images build lists the resulting digest and labels", async () => {
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
-  docker.addImage(
-    "centralgauge/harness-mock:1",
-    `sha256:${"c".repeat(64)}`,
-    {
+  // H-01 run 005: mock:2 (mock:1 is frozen and never built).
+  docker.buildResults.set("centralgauge/harness-mock:2", {
+    id: `sha256:${"c".repeat(64)}`,
+    labels: {
       "centralgauge.harness": "mock",
-      "centralgauge.harness.version": "1",
+      "centralgauge.harness.version": "2",
       "centralgauge.harness.base_digest": baseId,
     },
-    ["l1", "l2"],
-  );
+    layers: ["l1", "l2"],
+  });
   const lines: string[] = [];
   const log = stub(console, "log", (...a: unknown[]) => {
     lines.push(a.join(" "));
   });
   try {
-    await harnessImagesBuild("mock", { root, version: "1" }, docker);
+    await harnessImagesBuild("mock", { root, version: "2" }, docker);
   } finally {
     log.restore();
   }
   const out = stripAnsiCode(lines.join("\n"));
   assertStringIncludes(out, `sha256:${"c".repeat(64)}`);
   assertStringIncludes(out, "centralgauge.harness=mock");
-  assertStringIncludes(out, "centralgauge.harness.version=1");
+  assertStringIncludes(out, "centralgauge.harness.version=2");
   assertStringIncludes(out, `centralgauge.harness.base_digest=${baseId}`);
 });
 
@@ -2305,6 +2318,77 @@ Deno.test("qualification probe: hosts override the default route host (M3-08 --r
       l.probe.includes("api.anthropic.com")
     ),
   );
+});
+
+// H-01: the probe sandbox gets the harness privilege check before its preflight and token.
+
+Deno.test("qualification probe (H-01): the privilege check runs before the preflight; a failure releases nothing and is a problem", async () => {
+  for (const healthy of [true, false]) {
+    const t = await makeEnv();
+    const root = t.env.privateRoot;
+    const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+    const eg = fakeEgress();
+    t.docker.behavior = () => Promise.resolve(0);
+    if (!healthy) {
+      t.docker.execAnswer = { code: 0, stdout: ADMIN_GROUPS_CSV, stderr: "" };
+    }
+    const exec = t.docker.exec.bind(t.docker);
+    t.docker.exec = (name, user, argv) => {
+      eg.events.push("privilege");
+      return exec(name, user, argv);
+    };
+    const out = join(root, "probe-out");
+    await Deno.mkdir(out, { recursive: true });
+    const r = await runQualificationProbe({
+      docker: t.docker,
+      egress: eg,
+      custody: {
+        privateRoot: t.env.privateRoot,
+        owner: t.env.owner,
+        ...(t.env.secretAcl ?? {}),
+      },
+      token: "backend-token-0123456789abcdef",
+      revoke: () => t.env.backend.revoke("exec-probe-3"),
+      spec: {
+        name: "cg-harness-probe-3",
+        owner: t.env.owner,
+        executionId: "exec-probe-3",
+        imageId: `sha256:${"c".repeat(64)}`,
+        workspace: out,
+        taskDir: out,
+        configDir: out,
+        extraMounts: [],
+        env: { CG_BACKEND_URL: "http://172.30.60.1:3210" },
+        timeoutMs: 60_000,
+        killGraceMs: 50,
+        opTimeoutMs: 100,
+        maxCaptureBytes: 1024 * 1024,
+        rawLog: join(out, "probe.jsonl"),
+        stderrLog: join(out, "stderr.txt"),
+      },
+      probeCommand: ["powershell", "-File", "C:\\config\\cg-al-probe.ps1"],
+      out,
+      collect: () => markerAwareCollector()(markerPath),
+    });
+    assertEquals(t.docker.privilegeCalls[0]!.secrets, [], "empty mount");
+    if (healthy) {
+      assertEquals(r.problems, []);
+      assert(
+        eg.events.indexOf("privilege") < eg.events.indexOf("probe"),
+        eg.events.join(","),
+      );
+      assert(t.docker.readySeen);
+    } else {
+      assertStringIncludes(
+        r.problems.join("\n"),
+        "sandbox privilege check failed",
+      );
+      assertStringIncludes(r.problems.join("\n"), "S-1-5-32-544");
+      assert(!eg.events.includes("probe"), eg.events.join(","));
+      assertEquals(t.docker.readySeen, false, "no token, no ready");
+      assertEquals(t.docker.secretsAtKill, []);
+    }
+  }
 });
 
 // Review item 3: an authorized marker carries, and every read rechecks, its evidence.
@@ -3476,6 +3560,9 @@ Deno.test({
 Deno.test("qualification probe (M5-08a): a failed token write while the sandbox runs keeps the secrets until the sandbox is gone; the write error is not masked", async () => {
   const t = await makeEnv();
   const eg = fakeEgress();
+  // The planted file must exist before the token write: this image code does
+  // not wait for ready (the H-01 fixture default waits, like the entrypoints).
+  t.docker.waitForReady = false;
   let secrets = "";
   const seen: string[] = [];
   t.docker.behavior = async (call, io) => {
@@ -3527,6 +3614,113 @@ for (
     assert(secrets !== "" && !await exists(secrets), "secrets removed");
   });
 }
+
+// ---- H-01 run 004: image_revision ----
+
+Deno.test("harnessImagesBuild: --revision adds the revision label and the -r tag; without it the frozen tag and no revision label", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
+  const labels = {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": baseId,
+  };
+  const r2 = "centralgauge/harness-claude-code:2.1.282-r2";
+  docker.buildResults.set(r2, {
+    id: `sha256:${"c".repeat(64)}`,
+    labels: { ...labels, "centralgauge.harness.revision": "2" },
+    layers: ["l1", "l2", "l3"],
+  });
+  const log = stub(console, "log", () => {});
+  let f;
+  try {
+    f = await harnessImagesBuild(
+      "claude-code",
+      { root, version: "2.1.282", revision: "2" },
+      docker,
+    );
+  } finally {
+    log.restore();
+  }
+  const args = docker.builds[0]!;
+  const li = args.indexOf("centralgauge.harness.revision=2");
+  assert(li > 0 && args[li - 1] === "--label", args.join(" "));
+  assertEquals(args[args.indexOf("-t") + 1], r2);
+  assertEquals(f.revision, "2");
+
+  // No --revision: a NEW version gets the plain <version> tag, no revision label.
+  const plainTag = "centralgauge/harness-mock:3";
+  docker.buildResults.set(plainTag, {
+    id: `sha256:${"d".repeat(64)}`,
+    labels: {
+      "centralgauge.harness": "mock",
+      "centralgauge.harness.version": "3",
+      "centralgauge.harness.base_digest": baseId,
+    },
+    layers: ["l1", "l2", "l3"],
+  });
+  const log2 = stub(console, "log", () => {});
+  try {
+    f = await harnessImagesBuild("mock", { root, version: "3" }, docker);
+  } finally {
+    log2.restore();
+  }
+  const plain = docker.builds[1]!;
+  assertEquals(plain[plain.indexOf("-t") + 1], plainTag);
+  assertEquals(
+    plain.some((a) => a.startsWith("centralgauge.harness.revision")),
+    false,
+  );
+  assertEquals(f.revision, null);
+
+  // A label that did not land on the image is refused, as is a bad shape.
+  docker.buildResults.set("centralgauge/harness-claude-code:2.1.282-r3", {
+    id: `sha256:${"e".repeat(64)}`,
+    labels,
+    layers: ["l1", "l2", "l3"],
+  });
+  await assertRejects(
+    () =>
+      harnessImagesBuild(
+        "claude-code",
+        { root, version: "2.1.282", revision: "3" },
+        docker,
+      ),
+    ConfigurationError,
+    "revision",
+  );
+  const n = docker.builds.length;
+  for (const bad of ["", "r2", "0"]) {
+    await assertRejects(
+      () =>
+        harnessImagesBuild(
+          "claude-code",
+          { root, version: "2.1.282", revision: bad },
+          docker,
+        ),
+      ConfigurationError,
+      "revision",
+    );
+  }
+  assertEquals(docker.builds.length, n, "a bad revision builds nothing");
+});
+
+Deno.test("CLI: `harness images build --help` lists --revision", async () => {
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli);
+  const printed: string[] = [];
+  const log = stub(console, "log", (...args: unknown[]) => {
+    printed.push(args.join(" "));
+  });
+  try {
+    await cli.parse(["harness", "images", "build", "--help"]);
+  } finally {
+    log.restore();
+  }
+  assertStringIncludes(stripAnsiCode(printed.join("\n")), "--revision");
+});
 
 // C-03: a judgment corrupted by host memory starvation (execution 3e75f789:
 // "build failed: Test (no diagnostics)", 0 tests) is current, so only a
@@ -4424,4 +4618,102 @@ Deno.test("rejudge --force (C-03 run 003): a replaced judgment without an infra 
   );
   const forced = (await t.env.store.judgments(e.id)).find((j) => j.forced)!;
   assertEquals(forced.forced!.basis, await approvedBasis(e.id));
+});
+
+// ---- H-01 run 004 review: an existing tag is never rebuilt ----
+
+Deno.test("harnessImagesBuild: an existing tag (frozen, revised or base) is refused before any build", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.mkdir(join(root, "harness", "images", "base"), {
+    recursive: true,
+  });
+  await Deno.writeTextFile(
+    join(root, "harness", "images", "pins.json"),
+    JSON.stringify({
+      servercore: `mcr.microsoft.com/windows/servercore@sha256:${
+        "e".repeat(64)
+      }`,
+    }),
+  );
+  await Deno.copyFile(
+    AL_TOOLS_DEF,
+    join(root, "harness", "images", "base", "al-tools-tools.json"),
+  );
+  const docker = new FakeDocker();
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+  for (
+    const [tag, harness, version, revision] of [
+      ["centralgauge/harness-mock:1", "mock", "1", undefined],
+      ["centralgauge/harness-claude-code:2.1.282", "claude-code", "2.1.282"],
+      [
+        "centralgauge/harness-claude-code:2.1.282-r2",
+        "claude-code",
+        "2.1.282",
+        "2",
+      ],
+      ["centralgauge/harness-pi:0.87.1", "pi", "0.87.1"],
+    ] as [string, string, string, string?][]
+  ) {
+    docker.addImage(tag, `sha256:${"c".repeat(64)}`, {}, ["l1", "l2"]);
+    const err = await assertRejects(
+      () =>
+        harnessImagesBuild(harness, {
+          root,
+          version,
+          ...(revision ? { revision } : {}),
+        }, docker),
+      ConfigurationError,
+      // H-01 run 005: a frozen tag is refused as frozen before the local check.
+      revision ? `${tag} already exists` : `${tag} is a frozen tag`,
+    );
+    assertStringIncludes(err.message, "--version");
+  }
+  // The base too: base:2 exists here, so it is not rebuilt.
+  await assertRejects(
+    () => harnessImagesBuild("base", { root }, docker),
+    ConfigurationError,
+    `${BASE_IMAGE} already exists`,
+  );
+  assertEquals(docker.builds, [], "no build call for an existing tag");
+});
+
+Deno.test("BASE_IMAGE is base:2; base:1 is frozen", () => {
+  assertEquals(BASE_IMAGE, "centralgauge/harness-base:2");
+});
+
+// ---- H-01 run 005 (review H-01-004 P1): frozen tags are reserved in code ----
+
+Deno.test("harnessImagesBuild: a frozen tag is refused on a clean host (not present locally), before any build", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker(); // clean host: no image at all
+  docker.addImage(BASE_IMAGE, `sha256:${"b".repeat(64)}`, {}, ["l1"]);
+  for (
+    const [tag, harness, version] of [
+      ["centralgauge/harness-mock:1", "mock", "1"],
+      ["centralgauge/harness-claude-code:2.1.282", "claude-code", "2.1.282"],
+      ["centralgauge/harness-pi:0.87.1", "pi", "0.87.1"],
+    ] as [string, string, string][]
+  ) {
+    assertEquals(await docker.inspectImage(tag), null, tag);
+    assert(FROZEN_IMAGE_TAGS.includes(tag), tag);
+    await assertRejects(
+      () => harnessImagesBuild(harness, { root, version }, docker),
+      ConfigurationError,
+      `${tag} is a frozen tag`,
+    );
+  }
+  assertEquals(docker.builds, [], "no build call for a frozen tag");
+  assertEquals(FROZEN_IMAGE_TAGS, [
+    "centralgauge/harness-base:1",
+    "centralgauge/harness-mock:1",
+    "centralgauge/harness-claude-code:2.1.282",
+    "centralgauge/harness-pi:0.87.1",
+  ]);
+  assert(!FROZEN_IMAGE_TAGS.includes(BASE_IMAGE));
+  // Resolution for old records is unchanged: no revision is the frozen tag.
+  assertEquals(
+    imageTag("claude-code", "2.1.282"),
+    "centralgauge/harness-claude-code:2.1.282",
+  );
 });
