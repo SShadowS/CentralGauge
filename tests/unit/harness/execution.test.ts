@@ -3787,3 +3787,38 @@ Deno.test("H-01u: a pi run with Invalid settings file on stderr stays setup_fail
     }
   }
 });
+
+// H-01u run 003 (review H-01u-002 P1): the stderr verdict must not depend on
+// adapter.parse succeeding. A stream the parser refuses (two cg_entry records)
+// used to drop the adapter's problems and leave harness_crash with real work.
+Deno.test("H-01u: a pi run with Invalid settings file on stderr is setup_failed and never judged even when its stream is refused by the parser and the workspace changed", async () => {
+  const warning =
+    "Warning: Invalid settings file C:\\pi-agent\\settings.json: Lock file is already being held";
+  const entry = JSON.stringify({
+    type: "cg_entry",
+    pi_version: "0.87.1",
+    max_budget_usd: 2,
+    ready: true,
+  });
+  for (
+    const [label, stderr, want] of [
+      ["invalid", `${warning}\r\n`, "setup_failed"],
+      ["clean", "", "harness_crash"],
+    ] as const
+  ) {
+    const t = await piEnv("unplaced");
+    t.docker.behavior = async (call, io) => {
+      await Deno.writeTextFile(t.docker.lastCapture!.stderrPath, stderr);
+      const ws = call.mounts.get("C:\\workspace")!.src;
+      await Deno.writeTextFile(join(ws, "agent-work.al"), "// changed\n");
+      await io.stdout(entry);
+      await io.stdout(entry); // a duplicate cg_entry: the parser refuses it
+      return 0;
+    };
+    const e = (await runCell(t.env, await piCell(t))).executions[0]!;
+    assertEquals(e.termination, want, label);
+    if (label === "invalid") {
+      assertEquals(await t.env.store.judgments(e.id), [], label);
+    }
+  }
+});

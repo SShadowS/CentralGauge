@@ -615,7 +615,7 @@ const THINKING = new Set([
  * not be checked; null when stderr is readable and has no such line. Any
  * "Invalid settings file" counts, not only paths under C:\pi-agent.
  */
-async function piConfigInvalid(
+export async function piConfigInvalid(
   stderrLog: string | undefined,
 ): Promise<string | null> {
   if (stderrLog === undefined) {
