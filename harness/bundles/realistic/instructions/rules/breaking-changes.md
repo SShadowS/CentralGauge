@@ -50,7 +50,7 @@ change that compiles here can still break an app that depends on ours.
   extensible, it stays extensible.
 - Adding a value to an enum keeps other apps compiling, but it is not free:
   code in other apps that branches on the enum with `case` or `else` may now
-  behave differently for the new value. Check the consumers you can see.
+  behave differently for the new value.
 - Removing a value is breaking.
 
 ## Behaviour
