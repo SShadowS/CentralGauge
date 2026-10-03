@@ -24,6 +24,9 @@ candidates:
   - id: HX-007
     prior: intermediate
     size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-008
+    prior: hard
+    size: { objects: 3, files: 3, reuse: null, traces: null }
   - id: HX-014
     prior: intermediate
     size: { objects: 6, files: 6, reuse: null, traces: "CGR Service Interval" }
