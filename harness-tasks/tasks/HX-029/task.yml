@@ -1,0 +1,16 @@
+id: HX-029
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Leasing, Core, Test]
+coupling: [events, ishandled, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay, InvoiceAmountUsesSetupPrecision, HandledLinesAreNotInserted, AfterEventSeesEveryCreatedLine] }
+  - { codeunit: 80051, procedures: [HolidayIsNotAWorkingDay, NextWorkingDaySkipsWeekendAndHoliday] }
+fail_to_pass: null
+mutants: [before-amount-overwritten, before-date-missing, weekday-holiday-kept, single-holiday-skip, invoice-date-filter]
+contamination: null
+limits: { timeout_min: 30 }
