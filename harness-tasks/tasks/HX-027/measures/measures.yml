@@ -23,3 +23,9 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/append-buffer: { partial_credit: 0.8333333333333334 }
+  naive/buffer-delete-only: { partial_credit: 0.9166666666666666 }
+  naive/filtered-clear: { partial_credit: 0.9166666666666666 }
+  naive/helper-by-value: { partial_credit: 0.16666666666666666 }
+  naive/real-delete: { partial_credit: 0.8333333333333334 }
+  naive/shared-invoiced-check: { partial_credit: 0.9166666666666666 }
