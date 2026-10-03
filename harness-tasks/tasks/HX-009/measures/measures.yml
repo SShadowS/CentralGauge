@@ -27,3 +27,8 @@ expect:
   fixture/comment-only: { reuse_executed: false, reuse: false }
   fixture/token-call: { reuse_executed: true, reuse: false }
   fixture/caught-call: { reuse_executed: true, reuse: true }
+  naive/calendar-days: { partial_credit: 0.45454545454545453 }
+  naive/end-date-counted: { partial_credit: 0.2727272727272727 }
+  naive/fee-on-total: { partial_credit: 0.5454545454545454 }
+  naive/unrounded-line: { partial_credit: 0.5454545454545454 }
+  naive/workdate-at-pricing: { partial_credit: 0.8181818181818182 }
