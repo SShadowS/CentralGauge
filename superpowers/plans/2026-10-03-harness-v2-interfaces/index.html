@@ -1,0 +1,3267 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/plans/2026-10-03-harness-v2-interfaces/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Harness Bench v2: shared interfaces appendix (M8 to M11) - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#harness-bench-v2-shared-interfaces-appendix-m8-to-m11" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Harness Bench v2: shared interfaces appendix (M8 to M11)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-images-revisions-and-tags-ruling-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Images, revisions and tags (ruling 1)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-trace-parser-version-ruling-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Trace parser version (ruling 2)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-component-inventory-record-and-installed-set-rules-ruling-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Component inventory record and installed-set rules (ruling 3)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-lsp-identity-constants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. LSP identity constants
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-lsp-trace-fields-ruling-9-and-contamination-reporting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. LSP trace fields (ruling 9) and contamination reporting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-usage-reconciliation-gate-3-ruling-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Usage reconciliation (gate 3, ruling 4)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-task-measures-and-measurement-only-fixtures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Task measures and measurement-only fixtures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-screening-exports-m11-imports-from-m8-scriptsharnessscreeningts-m8-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Screening exports M11 imports from M8 (scripts/harness/screening.ts, M8-02)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-seals-ledger-and-tags-m8-ruling-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Seals, ledger and tags (M8; ruling 10)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-pre-registration-ruling-5-and-its-anchors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Pre-registration (ruling 5) and its anchors
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-sequencing-no-cycles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Sequencing (no cycles)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-pool-factor-and-capacity-model-m8-and-m11-use-the-same-numbers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Pool factor and capacity model (M8 and M11 use the same numbers)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-task-dependency-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Task dependency table
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/plans/2026-10-03-harness-v2-interfaces.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="harness-bench-v2-shared-interfaces-appendix-m8-to-m11">Harness Bench v2: shared interfaces appendix (M8 to M11)<a class="headerlink" href="#harness-bench-v2-shared-interfaces-appendix-m8-to-m11" title="Permanent link">&para;</a></h1>
+<p>Status: round 3 reconciliation, 2026-10-03. This file is the ONLY source of truth for every contract
+that crosses a plan boundary. The four plans link here and must quote these names exactly. A plan
+that needs a different contract changes this file first (orchestrator), then every consumer.</p>
+<p>Plans: <code>2026-10-03-harness-v2-m8-task-set.md</code> (M8), <code>...-m9-realistic.md</code> (M9), <code>...-m10-lsp.md</code>
+(M10), <code>...-m11-metrics.md</code> (M11), all in <code>H:\cg-coord\plans-v2\</code>. Spec:
+<code>H:\cg-coord\reviews\PLANS-v2-002\harness-v2-design.md</code>. Binding rulings:
+<code>H:\cg-coord\reviews\PLANS-v2-002\cross-plan-rulings.md</code> (1 to 10) and owner decisions
+<code>H:\cg-coord\decisions\2026-10-03-v2-plans-round3.md</code> (accepted defaults: interaction
+exploratory; unknown-symbol codes AL0118, AL0132, AL0185; CodeCop + UICop default rules; budget
+overshoot bound 1.2x; compacted runs keep cost with the excess recorded; USD 5 cell budget for all
+arms; <code>unscreenable</code> dropped under a pre-registered missingness rule; the N=40 path may slightly
+exceed 1,300 cells; 3 parallel authoring threads).</p>
+<p>Column "P" = producer task, "C" = consumer tasks.</p>
+<h2 id="1-images-revisions-and-tags-ruling-1">1. Images, revisions and tags (ruling 1)<a class="headerlink" href="#1-images-revisions-and-tags-ruling-1" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Exact value</th>
+<th>P</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Campaign image</td>
+<td><code>centralgauge/harness-claude-code:2.1.282-r3</code>, config <code>image_revision: "3"</code>, label <code>centralgauge.harness.revision=3</code></td>
+<td>M9-17 Step 2 (built once)</td>
+<td>M8-15b, M9-17, M10-09, M12</td>
+</tr>
+<tr>
+<td>Dev image tag</td>
+<td><code>centralgauge/harness-claude-code:2.1.282-r3-dev-&lt;task id&gt;</code>, revision string <code>3-dev-&lt;task id&gt;</code></td>
+<td>the task named in the tag</td>
+<td>probe configs only</td>
+</tr>
+<tr>
+<td>Revision regex</td>
+<td><code>IMAGE_REVISION = /^[1-9][0-9]{0,3}(?:-dev-[A-Za-z0-9-]{1,32})?$/</code> in <code>src/harness/config.ts</code></td>
+<td>M9-16</td>
+<td>CLI <code>--revision</code>, config, manifest</td>
+</tr>
+<tr>
+<td>Dev refusal</td>
+<td>probe CONFIGS may name <code>3-dev-*</code>; <code>loadExperiment</code> throws <code>ConfigurationError</code> "<code>&lt;path&gt;: arm &lt;id&gt; names development image revision &lt;rev&gt;</code>" for any arm whose <code>image_revision</code> contains <code>-dev-</code></td>
+<td>M9-16</td>
+<td>every experiment, M8-15b screening configs, M12</td>
+</tr>
+<tr>
+<td>Allocated dev tags</td>
+<td><code>3-dev-M9-07</code>, <code>3-dev-M9-13</code> (only on the gate 3 fallback), <code>3-dev-M10-08</code>; spike variants <code>2.1.282-r3-dev-M10-02</code>, <code>-M10-02b</code>, <code>-M10-02c</code>, <code>-M10-02d...</code> (raw <code>docker build</code> on the r2 image, r2 labels, used only with <code>--image</code> on an r2 config)</td>
+<td>as named</td>
+<td>as named</td>
+</tr>
+<tr>
+<td>Build command</td>
+<td><code>deno task start harness images build claude-code --version 2.1.282 --revision &lt;rev&gt;</code> (adds the <code>centralgauge.lsp.al</code> label after M10-05)</td>
+<td>any build task</td>
+<td></td>
+</tr>
+<tr>
+<td>Build guard</td>
+<td>before every build: <code>if DOCKER_CONTEXT=desktop-windows docker image inspect &lt;tag&gt; &gt;/dev/null 2&gt;&amp;1; then echo "[FAIL] &lt;tag&gt; exists"; exit 1; fi</code></td>
+<td>every build recipe</td>
+<td></td>
+</tr>
+<tr>
+<td>Inventoried images</td>
+<td><code>inventoried(revision)</code> = integer prefix of the revision &gt;= <code>INVENTORY_REVISION = 3</code> (so <code>3</code> and <code>3-dev-*</code>)</td>
+<td>M9-04</td>
+<td>M9-06, M10-06</td>
+</tr>
+</tbody>
+</table>
+<h2 id="2-trace-parser-version-ruling-2">2. Trace parser version (ruling 2)<a class="headerlink" href="#2-trace-parser-version-ruling-2" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Exact value</th>
+<th>P</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parser string</td>
+<td><code>CLAUDE_CAPABILITIES.parser = "claude-code-trace@5"</code></td>
+<td>the FIRST of M9-04 / M10-07 to merge (M11-03 is withdrawn)</td>
+<td>M11-12 <code>lspTotal</code></td>
+</tr>
+<tr>
+<td>Pin test</td>
+<td>the capabilities assertion in <code>tests/unit/harness/claude-code.test.ts</code> changes <code>@4</code> to <code>@5</code>, only in the bumping task's commit</td>
+<td>first of M9-04 / M10-07</td>
+<td></td>
+</tr>
+<tr>
+<td>Later merges</td>
+<td>extend @5 without touching the string or its test</td>
+<td>the other of M9-04 / M10-07</td>
+<td></td>
+</tr>
+<tr>
+<td>After the first v2 pilot cell</td>
+<td>any parser change needs <code>@6</code></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2 id="3-component-inventory-record-and-installed-set-rules-ruling-3">3. Component inventory record and installed-set rules (ruling 3)<a class="headerlink" href="#3-component-inventory-record-and-installed-set-rules-ruling-3" title="Permanent link">&para;</a></h2>
+<p><code>C:\cg-inventory.ps1</code> (repo <code>harness/images/claude-code/cg-inventory.ps1</code>) prints exactly one stdout
+line before Claude Code starts and exits 0 (ok) or 5 (refused):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>{"type":"cg_inventory","v":1,"ok":&lt;bool&gt;,"installed":[&lt;sorted unique tokens&gt;],"problems":[&lt;strings&gt;]}
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Exact value</th>
+<th>P</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Installed tokens</td>
+<td><code>agents</code>, <code>instructions</code>, <code>skills</code> (byte-for-byte install, M9-02); <code>lsp:&lt;name&gt;</code> when the declared LSP's preflight passed (M10-06)</td>
+<td>M9-02, M10-06</td>
+<td>M9-04</td>
+</tr>
+<tr>
+<td><code>ok</code></td>
+<td><code>ok === (problems.length === 0)</code></td>
+<td>M9-02</td>
+<td>M9-04</td>
+</tr>
+<tr>
+<td>Exact installed set (adapter)</td>
+<td>on ok: <code>sort(installed) === sort([...["agents","instructions","skills"].filter(k =&gt; manifest[k] !== null), ...manifest.lsp.map(s =&gt; "lsp:" + s.name)])</code>; else problem <code>cg_inventory installed [&lt;got&gt;] but the arm declares [&lt;want&gt;]</code></td>
+<td>M9-04</td>
+<td>M9-05, M10-06</td>
+</tr>
+<tr>
+<td>Loaded tokens</td>
+<td><code>observed.loaded_components</code> holds <code>instructions</code>, <code>skills</code>, <code>agents</code>, <code>mcp:&lt;server&gt;</code>, <code>lsp:&lt;name&gt;</code></td>
+<td>M9-04</td>
+<td><code>observedMismatch</code>, M9-07, M9-17</td>
+</tr>
+<tr>
+<td>LSP positive check (ONE, in <code>componentInventory</code>)</td>
+<td><code>lsp:&lt;name&gt;</code> loaded iff (a) <code>installed</code> has <code>lsp:&lt;name&gt;</code>, (b) a <code>system/init.plugins</code> entry matches <code>LSP_PLUGINS[&lt;name&gt;]</code> (section 4), (c) <code>system/init.tools</code> has <code>LSP</code>; otherwise problem <code>lsp:&lt;name&gt; not loaded (preflight &lt;passed\|missing&gt;, plugin &lt;present\|absent&gt;, LSP tool &lt;present\|absent&gt;)</code></td>
+<td>M9-04</td>
+<td>M10-06 (adds no second loop), M10-08</td>
+</tr>
+<tr>
+<td>Plugin allow-list</td>
+<td><code>BUILTIN_INVENTORY[version].plugins</code> sources plus the identity of each DECLARED LSP; anything else: <code>unrequested plugin loaded: &lt;source or name&gt;</code>; tool <code>LSP</code> with no declared LSP: <code>unrequested LSP tool loaded</code></td>
+<td>M9-04</td>
+<td>M10-06 tests</td>
+</tr>
+<tr>
+<td>Inventory problems added by M10</td>
+<td><code>lsp:al: plugin missing at &lt;path&gt;</code>, <code>lsp:al: preflight failed (exit &lt;n&gt;)</code>, <code>unknown LSP component: &lt;name&gt;</code>, <code>ENABLE_LSP_TOOL is set in an arm without LSP</code></td>
+<td>M10-06</td>
+<td>M9-05 (<code>setup_failed</code>)</td>
+</tr>
+<tr>
+<td>Settings</td>
+<td><code>settings.lsp</code> = sorted <code>components.lsp</code>, written only by <code>nativeSettings</code>; a config's own <code>settings.lsp</code> is refused (<code>settings.lsp is reserved</code>)</td>
+<td>M10-06</td>
+<td>run.ps1, cg-inventory.ps1</td>
+</tr>
+<tr>
+<td>Refusal outcome</td>
+<td>(a) pre-start problem (cg_inventory before any credential is read, exit 5): execution <code>setup_failed</code>, cost 0, no credential released, no judgment. (b) post-start problem (detected by the adapter after the agent started, e.g. <code>system/init</code> mismatch or an unpinned model seen): execution <code>setup_failed</code>, no judgment, the credential WAS released and the run's actual usage and cost are KEPT (never zeroed); cost is missing only if reconciliation fails. Both count in spend totals.</td>
+<td>M9-05</td>
+<td>M8 screening, M11</td>
+</tr>
+</tbody>
+</table>
+<h2 id="4-lsp-identity-constants">4. LSP identity constants<a class="headerlink" href="#4-lsp-identity-constants" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Exact value</th>
+<th>P</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Component slug</td>
+<td><code>al</code>; configs say <code>components: { lsp: [al] }</code></td>
+<td>M10</td>
+<td>M9-08</td>
+</tr>
+<tr>
+<td>Plugin identity</td>
+<td><code>export const LSP_PLUGINS: Readonly&lt;Record&lt;string, { name: string; source: string; path: string \| null }&gt;&gt;</code> in <code>src/harness/adapters/claude-code.ts</code>. M9-04 declares <code>al: { name: "al-language-server-go-windows", source: "al-language-server-go-windows@inline", path: "C:\\cg-lsp\\al-language-server-go-windows" }</code> as provisional values; M10-06 Step 1 replaces all three from the S1 capture <code>tests/fixtures/harness/claude-code/lsp-init.json</code> (<code>path: null</code> when init entries carry no path)</td>
+<td>M9-04 (type, provisional), M10-06 (values)</td>
+<td>M9-04 allow-list, M10-06, M10-08</td>
+</tr>
+<tr>
+<td>Match rule</td>
+<td><code>p.name === id.name &amp;&amp; p.source === id.source &amp;&amp; (id.path === null \|\| p.path === id.path)</code></td>
+<td>M9-04</td>
+<td></td>
+</tr>
+<tr>
+<td>Withdrawn name</td>
+<td><code>LSP_PLUGIN_SOURCES</code> (M10 rev 2) does not exist; use <code>LSP_PLUGINS.al.source</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Image paths</td>
+<td>plugin dir <code>C:\cg-lsp\al-language-server-go-windows</code>, probe <code>C:\cg-lsp\lsp-probe.mjs</code>, definition <code>harness/images/claude-code/lsp/al-lsp.json</code> (copied to <code>C:\cg-lsp\al-lsp.json</code>), label <code>centralgauge.lsp.al</code></td>
+<td>M10-04, M10-05</td>
+<td>M10-06, M10-09</td>
+</tr>
+<tr>
+<td>run.ps1</td>
+<td>LSP arm: <code>--plugin-dir C:\cg-lsp\al-language-server-go-windows</code> and <code>$env:ENABLE_LSP_TOOL = '1'</code>; other arms remove <code>ENABLE_LSP_TOOL</code>; both before the inventory call</td>
+<td>M10-06</td>
+<td>M9-03 run.ps1</td>
+</tr>
+</tbody>
+</table>
+<h2 id="5-lsp-trace-fields-ruling-9-and-contamination-reporting">5. LSP trace fields (ruling 9) and contamination reporting<a class="headerlink" href="#5-lsp-trace-fields-ruling-9-and-contamination-reporting" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Exact shape</th>
+<th>P</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tool event transport</td>
+<td><code>lsp:&lt;operation&gt;</code> with <code>&lt;operation&gt;</code> matching <code>^[A-Za-z]{1,40}$</code>, else <code>lsp:invalid</code></td>
+<td>M10-07</td>
+<td><code>traceMetrics</code></td>
+</tr>
+<tr>
+<td>Capability marker</td>
+<td><code>CLAUDE_CAPABILITIES.trace_types</code> gains <code>"lsp_call"</code> at @5 (LSP tool calls carry the transport above)</td>
+<td>M10-07</td>
+<td><code>traceMetrics</code></td>
+</tr>
+<tr>
+<td><code>TraceMetrics.lsp_calls</code></td>
+<td><code>{ total: number; by_op: Record&lt;string, number&gt; } \| null</code>; null when <code>trace_types</code> lacks <code>"lsp_call"</code> (reason for consumers: <code>trace parser before claude-code-trace@5</code>), never 0 for unobservable; tool errors counted; <code>total</code> = sum of <code>by_op</code></td>
+<td>M10-07</td>
+<td>M11-12 <code>lspTotal</code></td>
+</tr>
+<tr>
+<td><code>TraceMetrics.lsp_shell_calls</code></td>
+<td><code>number \| null</code> (null under the same condition): shell calls whose recorded command matches <code>/cg-lsp\|al-lsp-wrapper\|al-call-hierarchy\|EditorServices\|CodeAnalysis\.dll/i</code>; a best-effort audit (indirect scripts, aliases and copies are not detected)</td>
+<td>M10-07</td>
+<td>M11-12</td>
+</tr>
+<tr>
+<td><code>raw_usage.lsp_passive_diagnostics</code></td>
+<td><code>number \| null</code>; LSP arm with nothing observable: null and <code>raw_usage.incomplete_reasons.lsp_passive_diagnostics = "LSP diagnostics are not in the stream-json output (S1)"</code>; non-LSP arm: null (not applicable)</td>
+<td>M10-07</td>
+<td>M11-12</td>
+</tr>
+<tr>
+<td>Contamination rule (pre-registered in stage A text)</td>
+<td><code>lsp_shell_calls</code> is reported per arm as an exploratory count; no cell is ever excluded or re-run because of it</td>
+<td>M11-16</td>
+<td>M11-12 report</td>
+</tr>
+<tr>
+<td>M11 reader</td>
+<td><code>lspTotal(e, m) = parser &lt; @5 \|\| m.lsp_calls === null ? null : m.lsp_calls.total</code></td>
+<td>M11-12</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2 id="6-usage-reconciliation-gate-3-ruling-4">6. Usage reconciliation (gate 3, ruling 4)<a class="headerlink" href="#6-usage-reconciliation-gate-3-ruling-4" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Exact value</th>
+<th>P</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Field</td>
+<td><code>telemetry.raw_usage.usage_reconciliation</code>, present only on inventoried images: <code>{ status: "exact" } \| { status: "compaction_excess"; excess: Record&lt;model, { input; read; write }&gt; } \| { status: "unreconciled"; why: string }</code></td>
+<td>M9-06</td>
+<td>M11-12, M11-14, M9-13..17</td>
+</tr>
+<tr>
+<td>Required source fields (each must be a count, <code>isCount</code>; never <code>num()</code> zero-filled)</td>
+<td>streamed assistant <code>message.usage</code>: <code>input_tokens</code>, <code>cache_read_input_tokens</code>, <code>cache_creation_input_tokens</code>, <code>output_tokens</code>; sub-agent <code>tool_use_result.usage</code>: the same four; <code>result.modelUsage[&lt;model&gt;]</code>: <code>inputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheCreationInputTokens</code>, <code>outputTokens</code>. A missing or non-count field: <code>unreconciled</code>, why <code>&lt;source&gt; &lt;field&gt; missing or not a count</code></td>
+<td>M9-06</td>
+<td></td>
+</tr>
+<tr>
+<td>Model sets</td>
+<td>the model set of <code>modelUsage</code> must equal the set of streamed message models plus sub-agent models; why <code>model &lt;m&gt; is only in modelUsage</code> / <code>model &lt;m&gt; is only in the stream</code></td>
+<td>M9-06</td>
+<td></td>
+</tr>
+<tr>
+<td>Compaction exception (owner default)</td>
+<td>allowed only with &gt;= 1 <code>compaction</code> trace event, only for the main-session model, only on input (cache read and cache write excess 0), and never when the input excess equals one sub-agent's streamed or final input (suspected double count); otherwise <code>unreconciled</code></td>
+<td>M9-06</td>
+<td></td>
+</tr>
+<tr>
+<td>Unreconciled</td>
+<td><code>telemetry.cost_usd = null</code>, <code>telemetry.per_model = []</code>, reason in <code>raw_usage.missing</code></td>
+<td>M9-06</td>
+<td>M11-12 (tokens and cost missing)</td>
+</tr>
+<tr>
+<td>Gate 3 evidence</td>
+<td>only <code>exact</code> runs count (M9-13, M9-14, M9-17 Step 4, M11-14 co-sign); <code>compaction_excess</code> keeps its cost but never closes gate 3</td>
+<td>M9, M11-14</td>
+<td></td>
+</tr>
+<tr>
+<td>Disclosure</td>
+<td>the report lists per arm the count of cells per <code>usage_reconciliation.status</code></td>
+<td>M11-12</td>
+<td></td>
+</tr>
+<tr>
+<td>Budget</td>
+<td><code>max_budget_usd: 5</code> all arms; overshoot bound <code>reported_cost_usd &lt;= 1.2 x max_budget_usd</code></td>
+<td>M9-08, M9-13</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2 id="7-task-measures-and-measurement-only-fixtures">7. Task measures and measurement-only fixtures<a class="headerlink" href="#7-task-measures-and-measurement-only-fixtures" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Exact value</th>
+<th>P</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Measures file</td>
+<td><code>harness-tasks/tasks/HX-NNN/measures/measures.yml</code>, M11 <code>TaskMeasuresSchema</code> (<code>v: 1</code>); every non-test-authoring candidate; included in <code>oracleHash</code></td>
+<td>M8 Common procedure A4/A9</td>
+<td>M11-04 <code>loadTaskMeasures</code>, M11-14</td>
+</tr>
+<tr>
+<td>Partial credit split</td>
+<td><code>partial_credit.weights</code>: weight <code>1</code> for each NEW-REQUIREMENT row; <code>partial_credit.hidden_regressions</code>: every other <code>fail_to_pass</code> procedure. A row is new-requirement when it FAILS on <code>baseline</code> in the candidate's first promoted gate report (A9, before the seal; a baseline whose oracle did not compile makes every row new-requirement). Fixed at the seal; M8-21 Step 4 re-derives it from the freeze re-gate and must find the same split (else stop, <code>coord ask</code>)</td>
+<td>M8 A9</td>
+<td>M11-04, M11-14</td>
+</tr>
+<tr>
+<td>Reuse block</td>
+<td><code>reuse: { targets: [{ codeunit, procedure, signature, file, perturb }], tests: [{ codeunit, procedures }] }</code> for every reuse-flagged candidate (<code>size.reuse</code> non-null), else <code>reuse: null</code></td>
+<td>M8 A4</td>
+<td>M11-06</td>
+</tr>
+<tr>
+<td>Fixture folder</td>
+<td><code>harness-tasks/tasks/HX-NNN/fixture/&lt;name&gt;/</code> (singular, same layer rules as <code>naive/</code>, never under <code>Test/</code>); static checks only, never in a gate run</td>
+<td>M8-01 (<code>checkTask</code>), M8 A3</td>
+<td>M11-07</td>
+</tr>
+<tr>
+<td>Fixture variant id</td>
+<td><code>fixture/&lt;name&gt;</code>; M11 <code>VARIANT = /^(correct\|reference-tests\|naive\/[A-Za-z0-9_-]+\|fixture\/[A-Za-z0-9_-]+)$/</code>; qualify manifest task key <code>fixture: [&lt;names&gt;]</code>; <code>variantAllowed</code> lists <code>fixture/&lt;n&gt;</code></td>
+<td>M11-04, M11-07</td>
+<td>M8-06, M11-14</td>
+</tr>
+<tr>
+<td>Withdrawn names</td>
+<td><code>fixtures/</code> (M8 rev 2) and <code>measure/</code> (M11 rev 2)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Required fixtures (M8-06, wave 1)</td>
+<td>on &gt;= 3 reuse-flagged candidates: <code>fixture/duplicated-logic</code> <code>{reuse_executed: false, reuse: false}</code>, <code>fixture/dead-call</code> <code>{false, false}</code>, <code>fixture/comment-only</code> <code>{false, false}</code>, <code>fixture/token-call</code> <code>{reuse_executed: true, reuse: false}</code>; on &gt;= 1 of them <code>fixture/caught-call</code> (target called inside a <code>[TryFunction]</code>, result used; expectation written by the author under the M11-06 rule "executed = marker observed OR effective"); on one candidate <code>fixture/unused-variable</code> <code>{new_warning_codes: [AA0137], partial_credit: 1}</code></td>
+<td>M8-06</td>
+<td>M11-14</td>
+</tr>
+<tr>
+<td><code>expect</code> rows</td>
+<td><code>correct: {partial_credit: 1, final_errors: 0}</code> plus <code>reuse_executed: true, reuse: true</code> when reuse-flagged; each <code>naive/&lt;x&gt;: {partial_credit: &lt;measured over the weights&gt;}</code></td>
+<td>M8 A4/A9</td>
+<td>M11-14</td>
+</tr>
+<tr>
+<td>Delivery date</td>
+<td>wave 1 with measures, split and fixtures gated by 10-12</td>
+<td>M8-06, M8-07</td>
+<td>M11-14 (10-16)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="8-screening-exports-m11-imports-from-m8-scriptsharnessscreeningts-m8-02">8. Screening exports M11 imports from M8 (<code>scripts/harness/screening.ts</code>, M8-02)<a class="headerlink" href="#8-screening-exports-m11-imports-from-m8-scriptsharnessscreeningts-m8-02" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">RulesSchema</span><span class="p">;</span><span class="w">                 </span><span class="c1">// zod; the `rules` key of harness-tasks/v2/screening.yml</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">Rules</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">z</span><span class="p">.</span><span class="nx">output</span><span class="o">&lt;</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">RulesSchema</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">Kind</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">TASK_KINDS</span><span class="p">)[</span><span class="kt">number</span><span class="p">];</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">STRATA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"easy"</span><span class="p">,</span><span class="w"> </span><span class="s2">"intermediate"</span><span class="p">,</span><span class="w"> </span><span class="s2">"hard"</span><span class="p">]</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">;</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">Stratum</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="ow">typeof</span><span class="w"> </span><span class="nx">STRATA</span><span class="p">)[</span><span class="kt">number</span><span class="p">];</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">Eligible</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">stratum</span><span class="o">:</span><span class="w"> </span><span class="kt">Stratum</span><span class="p">;</span><span class="w"> </span><span class="nx">kind</span><span class="o">:</span><span class="w"> </span><span class="kt">Kind</span><span class="p">;</span><span class="w"> </span><span class="nx">coupling</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span><span class="w"> </span><span class="nx">large</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">Selection</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">n</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">targets</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="nx">Stratum</span><span class="p">,</span><span class="w"> </span><span class="kt">number</span><span class="o">&gt;</span><span class="p">;</span><span class="w"> </span><span class="nx">selected</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nx">by_stratum</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="nx">Stratum</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="p">[]</span><span class="o">&gt;</span><span class="p">;</span><span class="w"> </span><span class="nx">deviations</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span><span class="w"> </span><span class="nx">shortfalls</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[]</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">stratumOf</span><span class="p">(</span><span class="nx">solved</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">,</span><span class="w"> </span><span class="nx">total</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">Stratum</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"dead"</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s2">"saturated"</span><span class="p">;</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">select</span><span class="p">(</span><span class="nx">pool</span><span class="o">:</span><span class="w"> </span><span class="kt">Eligible</span><span class="p">[],</span><span class="w"> </span><span class="nx">n</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">,</span><span class="w"> </span><span class="nx">r</span><span class="o">:</span><span class="w"> </span><span class="kt">Rules</span><span class="p">,</span><span class="w"> </span><span class="nx">rank</span><span class="o">:</span><span class="w"> </span><span class="kt">Map</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">Selection</span><span class="p">;</span>
+</code></pre></div>
+<p>Rules file: <code>harness-tasks/v2/screening.yml</code> (<code>v: 1</code>, <code>rules</code>, <code>candidates</code>); M11-13/15 read it with
+<code>--rules harness-tasks/v2/screening.yml</code>. Selection JSON <code>harness-tasks/v2/selection.json</code> (M8-19):
+<code>{ v: 1, status: "ok" | "too_few", head, seals: [{tag, commit}], campaigns: [{id, experiment}],
+held_out, confirmatory_tasks, held_out_tasks, candidates, selection: Selection }</code>; committed only with
+<code>status: "ok"</code>. M11-10 reads <code>status</code>, <code>held_out</code>, <code>selection.selected</code>, <code>selection.n</code>.</p>
+<h2 id="9-seals-ledger-and-tags-m8-ruling-10">9. Seals, ledger and tags (M8; ruling 10)<a class="headerlink" href="#9-seals-ledger-and-tags-m8-ruling-10" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Exact value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Seal tags (annotated)</td>
+<td><code>harness-v2-screen-start</code>, <code>harness-v2-screen-w4</code>, <code>harness-v2-screen-r&lt;k&gt;</code> (replacement round k)</td>
+</tr>
+<tr>
+<td>Ledger tags (annotated)</td>
+<td><code>&lt;seal tag&gt;-ledger</code>, on the commit that appends that seal's ledger entry</td>
+</tr>
+<tr>
+<td>Refapp tag</td>
+<td><code>refapp-v2</code> on the start-seal commit (local at M8-15a, pushed at M8-21)</td>
+</tr>
+<tr>
+<td>Push</td>
+<td>the orchestrator pushes every seal and ledger tag to origin at creation (ruling 10)</td>
+</tr>
+<tr>
+<td>Ledger file</td>
+<td><code>harness-tasks/v2/seals.yml</code>, <code>{ v: 2, seals: [Entry] }</code></td>
+</tr>
+<tr>
+<td>Entry</td>
+<td><code>{ tag, tag_object: &lt;40 hex&gt;, commit: &lt;40 hex&gt;, pushed_at: &lt;ISO&gt;, drand_chain: &lt;64 hex, /info "hash"&gt;, drand_round: &lt;int&gt;, round_time: &lt;ISO&gt;, randomness: &lt;64 hex&gt;, prev: "genesis" \| &lt;64 hex&gt; }</code></td>
+</tr>
+<tr>
+<td>Chain rule</td>
+<td><code>prev</code> of entry 0 is <code>"genesis"</code>; <code>prev</code> of entry i is <code>hashJson({ seal_entry: entry i-1 })</code> (<code>screening.ts</code> <code>entryHash</code>; ruling 2026-10-03, M8-02)</td>
+</tr>
+<tr>
+<td>Round rule</td>
+<td><code>round = ceil((pushed_unix + 600 - genesis_time) / period) + 1</code>; <code>round_time = genesis_time + (round - 1) * period</code>; <code>round_time &gt;= pushed_at + 10 min</code></td>
+</tr>
+<tr>
+<td>Verification (<code>ledgerProblems</code>, run by every <code>screening.ts status/select</code>)</td>
+<td>for each entry i: chain rule; <code>git rev-parse &lt;tag&gt;</code> = <code>tag_object</code> and <code>&lt;tag&gt;^{commit}</code> = <code>commit</code>; <code>seals.yml</code> at <code>&lt;tag&gt;</code> holds exactly entries 0..i-1 (absent for i = 0); <code>seals.yml</code> at <code>&lt;tag&gt;-ledger</code> holds exactly entries 0..i; a missing ledger tag is a problem</td>
+</tr>
+<tr>
+<td>Chronology (<code>chronologyProblems</code>)</td>
+<td>every <code>v2-screen-*</code> campaign's <code>created_at</code> is later than the <code>round_time</code> of the first seal of every task it ran</td>
+</tr>
+<tr>
+<td>Seed and rank</td>
+<td>seed <code>&lt;commit&gt;:&lt;randomness&gt;</code> of the candidate's first seal; rank <code>sha256("&lt;seed&gt;:&lt;id&gt;")</code></td>
+</tr>
+<tr>
+<td>External re-check</td>
+<td>M8-19 Step 1 re-fetches each round from <code>https://api.drand.sh/public/&lt;round&gt;</code> and recomputes the round from the push time</td>
+</tr>
+</tbody>
+</table>
+<h2 id="10-pre-registration-ruling-5-and-its-anchors">10. Pre-registration (ruling 5) and its anchors<a class="headerlink" href="#10-pre-registration-ruling-5-and-its-anchors" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Exact value</th>
+<th>P</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Document</td>
+<td><code>harness/preregistration/cc-v2-factorial.yml</code>; experiment key <code>preregistration: preregistration/cc-v2-factorial.yml</code> (added to <code>harness/experiments/cc-v2-factorial.yml</code> with <code>contrasts</code> and <code>interaction</code> by M11-16 Step 1)</td>
+<td>M11-16, M11-17b</td>
+<td>M11-10, M11-11, M12</td>
+</tr>
+<tr>
+<td>Simulation outputs</td>
+<td>stage A <code>harness/preregistration/cc-v2-factorial.sim-a.json</code> + <code>H:\cg-coord\m11\sim-a.md</code>; stage B <code>harness/preregistration/cc-v2-factorial.sim-b.json</code> + <code>H:\cg-coord\m11\sim-b.md</code></td>
+<td>M11-15, M11-17a</td>
+<td>M8-07b, M8-12, M8-19, M11-16, M11-17b</td>
+</tr>
+<tr>
+<td>Stage A held-out</td>
+<td><code>held_out: { count: 4, rule: &lt;text&gt;, seal: "harness-v2-screen-start", tasks: [&lt;4 ids from M8-15a&gt;], in_family: false }</code></td>
+<td>M8-15a (ids), M11-16</td>
+<td>M11-10 (<code>selection.held_out</code> must equal <code>tasks</code>)</td>
+</tr>
+<tr>
+<td>Stage A tag</td>
+<td><code>harness-v2-prereg-a</code>, annotated, message contains the line <code>protocol_sha256: &lt;64 hex&gt;</code></td>
+<td>M11-16</td>
+<td>M11-10 <code>verifyPrereg</code></td>
+</tr>
+<tr>
+<td>Stage A decision file</td>
+<td><code>H:\cg-coord\decisions\&lt;approval date&gt;-harness-v2-prereg-a.md</code>, planned <code>2026-10-24-harness-v2-prereg-a.md</code>; consumers resolve the glob <code>*-harness-v2-prereg-a.md</code> (exactly one match). Lines: <code>protocol_sha256: &lt;hex&gt;</code>, <code>file_sha256: &lt;hex&gt;</code>, <code>tag: harness-v2-prereg-a</code>, <code>tag_object: &lt;40 hex&gt;</code>, <code>OWNER-APPROVED: &lt;words&gt; (&lt;ISO time&gt;)</code></td>
+<td>M11-16</td>
+<td>M8-15b, M11-10 (via <code>--prereg-decision</code>)</td>
+</tr>
+<tr>
+<td>Anchor verification</td>
+<td><code>verifyPrereg(..., decisionPath)</code>: decision file parses; <code>git rev-parse harness-v2-prereg-a</code> = <code>tag_object</code>; <code>protocolSha</code> of the document at the tag commit = decision <code>protocol_sha256</code>; <code>protocolSha(current doc)</code> and <code>doc.stage_a.sha256</code> both = decision <code>protocol_sha256</code>. Editing the document AND its <code>stage_a.sha256</code> therefore fails</td>
+<td>M11-10</td>
+<td><code>harness run</code>, <code>harness report</code></td>
+</tr>
+<tr>
+<td>CLI</td>
+<td><code>harness run &lt;exp&gt;</code> and <code>harness report &lt;exp&gt;</code> take <code>--prereg-decision &lt;stage-A decision&gt;</code> and <code>--prereg-b-decision &lt;stage-B decision&gt;</code>, both required when the experiment has <code>preregistration</code></td>
+<td>M11-10, M11-11</td>
+<td>M12</td>
+</tr>
+<tr>
+<td>Campaign record</td>
+<td><code>preregistration: { path, sha256, protocol_sha256, decision_sha256, stage_b_decision_sha256 }</code>; resume and report refuse a changed document or either decision file</td>
+<td>M11-10</td>
+<td>M11-11</td>
+</tr>
+<tr>
+<td>Stage B tag</td>
+<td><code>harness-v2-prereg-b</code>, annotated, message line <code>stage_b_sha256: &lt;64 hex&gt;</code> (sha256 of the yml text with CRLF normalized to LF)</td>
+<td>M11-17b</td>
+<td>M11-10</td>
+</tr>
+<tr>
+<td>Stage B decision file</td>
+<td><code>H:\cg-coord\decisions\&lt;date&gt;-harness-v2-prereg-b.md</code>, planned <code>2026-11-06-harness-v2-prereg-b.md</code>. Lines: <code>stage_b_sha256: &lt;hex&gt;</code>, <code>tag: harness-v2-prereg-b</code>, <code>tag_object: &lt;40 hex&gt;</code>, one <code>amendment: &lt;design\|family\|confirmatory&gt;</code> per owner-approved amendment, <code>OWNER-APPROVED: ...</code></td>
+<td>M11-17b</td>
+<td>M11-10 (via <code>--prereg-b-decision</code>)</td>
+</tr>
+<tr>
+<td>Stage B anchor verification</td>
+<td>current file text and the file at <code>harness-v2-prereg-b</code> both hash to <code>stage_b_sha256</code>; the tag resolves to <code>tag_object</code>; every amendment key in the document is listed in the decision file; approval text inside the document authorizes nothing; the design/simulation waiver needs an externally approved <code>design</code> amendment</td>
+<td>M11-10</td>
+<td><code>harness run</code>, <code>harness report</code></td>
+</tr>
+<tr>
+<td>Pool factor</td>
+<td><code>pool_factor: 2</code> in <code>simulation.args</code> (section 12)</td>
+<td>M11-15</td>
+<td>M11-10 tests, M8-12</td>
+</tr>
+</tbody>
+</table>
+<h2 id="11-sequencing-no-cycles">11. Sequencing (no cycles)<a class="headerlink" href="#11-sequencing-no-cycles" title="Permanent link">&para;</a></h2>
+<p>Stage A versus the start seal: <strong>the start seal comes first.</strong> The seal and held-out designation
+need no M11 input; stage A records the held-out ids; screening needs both.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>M8-14 start set (10-20..21) -&gt; M8-15a start seal + ledger + held-out ids (10-21)
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>   -&gt; M11-16 stage A freeze (10-22..24; also needs M11-10, M11-14, M11-15, M9-08)
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>   -&gt; M8-15b screening authorization (10-25; also needs M9-17, M10-09, M9-12 lock)
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>   -&gt; M8-16a / M8-16b pilots (10-25..31)
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>   -&gt; M11-17a provisional design: sim-b (N, R), NOT binding (11-01)
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>   -&gt; M8-19 select --n N (11-02) [-&gt; M8-17/M8-18 -&gt; M8-19 rerun, only on a shortfall]
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>   -&gt; M8-20 / M8-21 freeze (11-03..05)
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>   -&gt; M11-17b stage B binding: selection, design, experiment tasks/repeats, approval (11-06)
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>   -&gt; M12 first confirmatory cell
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>N_prelim: M11-15 sim-a.md (10-13) -&gt; M8-07b capacity checkpoint (10-12, rerun 10-13) -&gt; M8-12 wave 4 size
+</code></pre></div>
+<p>Stage B is the only binding design; M11-17a's output is provisional until M11-17b. A freeze that drops
+a task re-runs M8-19 with the same N before M11-17b, so stage B never binds a selection the freeze
+later changes.</p>
+<h2 id="12-pool-factor-and-capacity-model-m8-and-m11-use-the-same-numbers">12. Pool factor and capacity model (M8 and M11 use the same numbers)<a class="headerlink" href="#12-pool-factor-and-capacity-model-m8-and-m11-use-the-same-numbers" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>pool_factor = 2.0</code>: screened candidates = <code>ceil(2.0 x N_prelim)</code>, plus 4 held-out (never screened).</li>
+<li>Authoring rate 3 gated candidates per day (owner: 3 threads), re-measured at M8-07b.</li>
+<li>Pilot cells = 6 x screened candidates, plus rescreens (6 cells per incomplete candidate; budget 10%).</li>
+<li>Campaign cells = (N + 4) x R x 4, R from stage B (table uses R = 5).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>N_prelim</th>
+<th>Screened</th>
+<th>Pool ids</th>
+<th>Wave 4 size</th>
+<th>Wave 4 authoring</th>
+<th>Wave 4 ends</th>
+<th>Pilot cells (+10%)</th>
+<th>Campaign cells R=5</th>
+<th>Total</th>
+<th>Freeze</th>
+<th>Stage B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>24</td>
+<td>48</td>
+<td>HX-007..HX-058</td>
+<td>16</td>
+<td>6 days</td>
+<td>10-25</td>
+<td>288 (317)</td>
+<td>560</td>
+<td>877</td>
+<td>11-05</td>
+<td>11-06</td>
+</tr>
+<tr>
+<td>30</td>
+<td>60</td>
+<td>HX-007..HX-070</td>
+<td>28</td>
+<td>10 days</td>
+<td>10-29</td>
+<td>360 (396)</td>
+<td>680</td>
+<td>1,076</td>
+<td>11-09</td>
+<td>11-10</td>
+</tr>
+<tr>
+<td>40</td>
+<td>80</td>
+<td>HX-007..HX-090</td>
+<td>48</td>
+<td>16 days</td>
+<td>11-04</td>
+<td>480 (528)</td>
+<td>880</td>
+<td>1,408</td>
+<td>11-15</td>
+<td>11-16</td>
+</tr>
+</tbody>
+</table>
+<p>The N=40 row is over 1,300 cells and its freeze is after 11-12: M8-07b sends it to the owner (cap
+N_prelim at 30, or accept the slip; the owner already accepts "slightly" over 1,300). With R = 3 or 8
+the campaign column scales linearly (R x 112, 136, 176). M11-13's <code>drawPool</code> and every M11-15/17a run
+use <code>--pool-factor 2.0</code>.</p>
+<h2 id="13-task-dependency-table">13. Task dependency table<a class="headerlink" href="#13-task-dependency-table" title="Permanent link">&para;</a></h2>
+<p>Dates are planned windows for the N_prelim = 24 path. "ext" = outside M8 to M11 (H-01, M7, M12).
+Every dependency ends on or before the dependent task's start; same-day hand-offs are marked <code>=</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Lane</th>
+<th>Window</th>
+<th>Deps</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>M8-01</td>
+<td>ops</td>
+<td>10-03..05</td>
+<td>none</td>
+</tr>
+<tr>
+<td>M8-02</td>
+<td>infra</td>
+<td>10-03..05</td>
+<td>none</td>
+</tr>
+<tr>
+<td>M8-03</td>
+<td>ops</td>
+<td>10-04..05</td>
+<td>none</td>
+</tr>
+<tr>
+<td>M8-04</td>
+<td>content</td>
+<td>10-04..07</td>
+<td>M8-01, M8-02, M8-03 (rules before coupling objects are final)</td>
+</tr>
+<tr>
+<td>M8-05</td>
+<td>ops</td>
+<td>10-07</td>
+<td>M8-04 =</td>
+</tr>
+<tr>
+<td>M8-06</td>
+<td>content</td>
+<td>10-07..11</td>
+<td>M8-05 =</td>
+</tr>
+<tr>
+<td>M8-07</td>
+<td>ops</td>
+<td>10-09..12</td>
+<td>M8-06 (per candidate)</td>
+</tr>
+<tr>
+<td>M8-07b</td>
+<td>orchestrator</td>
+<td>10-12, rerun 10-13</td>
+<td>M8-07 =, M11-15 (rerun)</td>
+</tr>
+<tr>
+<td>M8-08</td>
+<td>content</td>
+<td>10-11..15</td>
+<td>M8-07 started</td>
+</tr>
+<tr>
+<td>M8-09</td>
+<td>ops</td>
+<td>10-12..16</td>
+<td>M8-08 (per candidate)</td>
+</tr>
+<tr>
+<td>M8-10</td>
+<td>content</td>
+<td>10-15..19</td>
+<td>M8-09 started</td>
+</tr>
+<tr>
+<td>M8-11</td>
+<td>ops</td>
+<td>10-16..20</td>
+<td>M8-10 (per candidate)</td>
+</tr>
+<tr>
+<td>M8-12</td>
+<td>content</td>
+<td>10-20..25</td>
+<td>M11-15, M8-07b, M8-11 started</td>
+</tr>
+<tr>
+<td>M8-13</td>
+<td>ops</td>
+<td>10-21..26</td>
+<td>M8-12 (per candidate)</td>
+</tr>
+<tr>
+<td>M8-14</td>
+<td>content</td>
+<td>10-20..21</td>
+<td>M8-05, M8-07, M8-09, M8-11 =</td>
+</tr>
+<tr>
+<td>M8-15a</td>
+<td>infra + orchestrator</td>
+<td>10-21</td>
+<td>M8-02, M8-14 =</td>
+</tr>
+<tr>
+<td>M8-15b</td>
+<td>infra</td>
+<td>10-25</td>
+<td>M8-15a, M11-16, M11-14, M9-12 (lock), M9-17, M10-09</td>
+</tr>
+<tr>
+<td>M8-15c</td>
+<td>infra + orchestrator</td>
+<td>10-27</td>
+<td>M8-13</td>
+</tr>
+<tr>
+<td>M8-16a</td>
+<td>ops</td>
+<td>10-25..28</td>
+<td>M8-15b =, M7 (ext)</td>
+</tr>
+<tr>
+<td>M8-16b</td>
+<td>ops</td>
+<td>10-28..31</td>
+<td>M8-15c, M8-16a =, M9-12 (wave 4 audit)</td>
+</tr>
+<tr>
+<td>M8-19</td>
+<td>infra</td>
+<td>11-02</td>
+<td>M8-16b, M11-17a</td>
+</tr>
+<tr>
+<td>M8-17</td>
+<td>content (conditional)</td>
+<td>11-03..05</td>
+<td>M8-19 exit 2</td>
+</tr>
+<tr>
+<td>M8-18</td>
+<td>ops (conditional)</td>
+<td>11-05..08</td>
+<td>M8-17, M9-12</td>
+</tr>
+<tr>
+<td>M8-19r</td>
+<td>infra (conditional rerun)</td>
+<td>11-09</td>
+<td>M8-18</td>
+</tr>
+<tr>
+<td>M8-20</td>
+<td>infra</td>
+<td>11-03</td>
+<td>M8-19 (or M8-19r)</td>
+</tr>
+<tr>
+<td>M8-21</td>
+<td>ops</td>
+<td>11-03..05</td>
+<td>M8-20 =</td>
+</tr>
+<tr>
+<td>M9-01</td>
+<td>ops</td>
+<td>10-03..04</td>
+<td>H-01 r2 (ext)</td>
+</tr>
+<tr>
+<td>M9-02</td>
+<td>infra2</td>
+<td>10-03..04</td>
+<td>none</td>
+</tr>
+<tr>
+<td>M9-09</td>
+<td>infra2</td>
+<td>10-03..04</td>
+<td>none</td>
+</tr>
+<tr>
+<td>M9-16</td>
+<td>infra2</td>
+<td>10-03..04</td>
+<td>H-01 (ext)</td>
+</tr>
+<tr>
+<td>M9-10</td>
+<td>content</td>
+<td>10-03..05</td>
+<td>M9-09, M9-01</td>
+</tr>
+<tr>
+<td>M9-03</td>
+<td>infra2</td>
+<td>10-05</td>
+<td>M9-02, M9-01, H-01 (ext)</td>
+</tr>
+<tr>
+<td>M9-11</td>
+<td>content</td>
+<td>10-05..07</td>
+<td>M9-09, M9-10</td>
+</tr>
+<tr>
+<td>M9-04</td>
+<td>infra2</td>
+<td>10-06..07</td>
+<td>M9-03, M9-16, M9-01</td>
+</tr>
+<tr>
+<td>M9-05</td>
+<td>infra2</td>
+<td>10-07</td>
+<td>M9-04 =, M9-16</td>
+</tr>
+<tr>
+<td>M9-06</td>
+<td>infra2</td>
+<td>10-07..09</td>
+<td>M9-04 =</td>
+</tr>
+<tr>
+<td>M9-08</td>
+<td>infra2</td>
+<td>10-07..09</td>
+<td>M9-10, M9-11 =, M9-16</td>
+</tr>
+<tr>
+<td>M9-07</td>
+<td>ops</td>
+<td>10-09..10</td>
+<td>M9-03, M9-04, M9-05, M9-08 =, M9-10, M9-11, M9-16</td>
+</tr>
+<tr>
+<td>M9-12</td>
+<td>content + orchestrator + infra2</td>
+<td>10-07..24 (audits per seal; lock 10-24)</td>
+<td>M9-11; Step 1 per candidate after its A6 audit; lock after M8-15a</td>
+</tr>
+<tr>
+<td>M9-13</td>
+<td>ops</td>
+<td>10-10..14</td>
+<td>M9-06, M9-07 =, M9-08</td>
+</tr>
+<tr>
+<td>M9-14</td>
+<td>infra2</td>
+<td>10-14..15</td>
+<td>M9-13 =</td>
+</tr>
+<tr>
+<td>M9-15</td>
+<td>orchestrator</td>
+<td>10-15..17</td>
+<td>M9-07, M9-12 Steps 1-2, M9-14 =</td>
+</tr>
+<tr>
+<td>M9-17</td>
+<td>infra2 + ops + orchestrator</td>
+<td>10-18..21 (r3 built 10-18)</td>
+<td>M9-15, M10-04..07 merged, M10-08</td>
+</tr>
+<tr>
+<td>M10-01</td>
+<td>infra</td>
+<td>10-03..05</td>
+<td>H-01 (ext)</td>
+</tr>
+<tr>
+<td>M10-02</td>
+<td>ops</td>
+<td>10-04..08</td>
+<td>M10-01 (Steps 4 on), r2 image</td>
+</tr>
+<tr>
+<td>M10-03</td>
+<td>orchestrator</td>
+<td>10-08</td>
+<td>M10-02 =</td>
+</tr>
+<tr>
+<td>M10-04</td>
+<td>infra</td>
+<td>10-09..10</td>
+<td>M10-03, M9-03, H-01 (ext)</td>
+</tr>
+<tr>
+<td>M10-05</td>
+<td>infra</td>
+<td>10-10..11</td>
+<td>M10-04 =</td>
+</tr>
+<tr>
+<td>M10-07</td>
+<td>infra</td>
+<td>10-09..11</td>
+<td>M10-02 captures, H-01 (ext)</td>
+</tr>
+<tr>
+<td>M10-06</td>
+<td>infra</td>
+<td>10-11..13</td>
+<td>M10-05 =, M9-02, M9-03, M9-04, M9-05, M9-08, M10-02 captures</td>
+</tr>
+<tr>
+<td>M10-08</td>
+<td>ops</td>
+<td>10-14</td>
+<td>M10-04..07, M9-02..05, M9-08, M9-16</td>
+</tr>
+<tr>
+<td>M10-09</td>
+<td>ops</td>
+<td>10-19..21</td>
+<td>M10-08, M9-17 Step 2 (r3 built 10-18)</td>
+</tr>
+<tr>
+<td>M11-04</td>
+<td>infra2</td>
+<td>10-03..05</td>
+<td>H-01 (ext)</td>
+</tr>
+<tr>
+<td>M11-09</td>
+<td>infra</td>
+<td>10-03..06</td>
+<td>H-01 (ext)</td>
+</tr>
+<tr>
+<td>M11-08</td>
+<td>infra</td>
+<td>10-06</td>
+<td>H-01 (ext)</td>
+</tr>
+<tr>
+<td>M11-13</td>
+<td>infra2</td>
+<td>10-05..09</td>
+<td>M11-09 (=10-06 for the stats imports), M8-02 =</td>
+</tr>
+<tr>
+<td>M11-01</td>
+<td>infra</td>
+<td>10-07</td>
+<td>H-01 (ext)</td>
+</tr>
+<tr>
+<td>M11-02</td>
+<td>infra</td>
+<td>10-07..09</td>
+<td>M11-01 =</td>
+</tr>
+<tr>
+<td>M11-05</td>
+<td>infra2</td>
+<td>10-09..11</td>
+<td>M11-04</td>
+</tr>
+<tr>
+<td>M11-10</td>
+<td>infra</td>
+<td>10-09..12</td>
+<td>M11-08, M11-09, M8-02</td>
+</tr>
+<tr>
+<td>M11-15</td>
+<td>ops</td>
+<td>10-10..13</td>
+<td>M11-13, M8-02</td>
+</tr>
+<tr>
+<td>M11-06</td>
+<td>infra2</td>
+<td>10-11..14</td>
+<td>M11-04</td>
+</tr>
+<tr>
+<td>M11-11</td>
+<td>infra</td>
+<td>10-12..14</td>
+<td>M11-08, M11-09, M11-10 =</td>
+</tr>
+<tr>
+<td>M11-07</td>
+<td>infra2</td>
+<td>10-14..16</td>
+<td>M11-04, M11-05, M11-06 =</td>
+</tr>
+<tr>
+<td>M11-12</td>
+<td>infra</td>
+<td>10-14..17</td>
+<td>M11-01, M11-02, M11-04, M11-11 =, M10-07, M9-06</td>
+</tr>
+<tr>
+<td>M11-14</td>
+<td>ops</td>
+<td>10-16..20</td>
+<td>M11-07 =, M8-06 + M8-07 (fixtures, split), H-01 (ext)</td>
+</tr>
+<tr>
+<td>M11-16</td>
+<td>orchestrator + owner</td>
+<td>10-22..24</td>
+<td>M11-10, M11-14, M11-15, M8-15a, M9-08</td>
+</tr>
+<tr>
+<td>M11-17a</td>
+<td>orchestrator + ops</td>
+<td>11-01</td>
+<td>M11-16, M8-16b</td>
+</tr>
+<tr>
+<td>M11-17b</td>
+<td>orchestrator + owner</td>
+<td>11-06</td>
+<td>M11-17a, M8-19, M8-21</td>
+</tr>
+</tbody>
+</table>
+<p>Cycle check (done 2026-10-03 by ordering the table by window): every edge points from an earlier or
+same-day window to a later one, so the graph is acyclic. The only loop in the text (select, then
+replacements, then select again) is unrolled as M8-19 then M8-19r. Dependencies on later-dated tasks
+found and fixed in round 3: M10-09 needed the r3 image (M9-17, after 10-17) but was dated 10-15..17
+(moved to 10-19..21); M9-15 (10-17) needed the M9-12 lock (10-24) (now needs Steps 1-2 only; the lock
+gates M8-15b); M11-16 (10-20..21) needed the held-out ids from M8-15a (10-21) (moved to 10-22..24);
+M11-17 needed M8-19 while M8-19 needed M11-17 (split into M11-17a and M11-17b).</p>
+<p>Critical path (N_prelim 24): M8-02 -&gt; M8-04 -&gt; M8-05 -&gt; waves 1-3 (M8-06..M8-11) -&gt; M8-14 (10-21)
+-&gt; M8-15a (10-21) -&gt; M11-16 (10-24) -&gt; M8-15b (10-25) -&gt; M8-16a (10-28) -&gt; M8-16b (10-31) -&gt;
+M11-17a (11-01) -&gt; M8-19 (11-02) -&gt; M8-20 (11-03) -&gt; M8-21 (11-05) -&gt; M11-17b (11-06). Infra side
+paths with slack: M9-17 and M10-09 finish 10-21 (3 days slack to M8-15b); M11-14 finishes 10-20.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

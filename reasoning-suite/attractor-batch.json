@@ -1,0 +1,18 @@
+[
+ {"name":"1 non-short-circuit boolean guard","expectedWrongForm":"if Rec.Get(x) and (Rec.Field > 0) - AL does not short-circuit, so the second operand runs on a failed Get",
+  "requirement":"Table \"CG P Setup\" has a Code[20] primary key \"Code\" and an Integer field Threshold. Write a codeunit procedure IsOverThreshold(SetupCode: Code[20]; Value: Integer): Boolean that returns true only when a setup row with that code exists AND Value exceeds its Threshold. It must not raise an error when no such setup row exists."},
+ {"name":"2 List assignment aliasing","expectedWrongForm":"Copy := Original then modifying Copy, which mutates the caller's list because List is a reference type",
+  "requirement":"Write a codeunit procedure WithoutBlanks(Source: List of [Text]) that returns a new List of [Text] containing the non-blank entries of Source. The caller's Source list must be completely unchanged when the procedure returns."},
+ {"name":"3 FindFirst under a non-primary current key","expectedWrongForm":"relying on FindFirst after SetCurrentKey to still return the lowest primary key",
+  "requirement":"Table \"CG P Entry\" has an Integer primary key \"Entry No.\" and fields \"Posting Date\" (Date) and Amount (Decimal). Write a codeunit procedure OldestEntryNo(): Integer that returns the \"Entry No.\" of the entry with the earliest Posting Date, breaking ties by the lowest Entry No."},
+ {"name":"4 write inside a failing TryFunction","expectedWrongForm":"assuming a database write made inside a [TryFunction] that then errors is rolled back",
+  "requirement":"Write a codeunit with a procedure ImportLine(Payload: Text) that records an audit row in table \"CG P Audit\" saying an import was attempted, then parses Payload and inserts a \"CG P Line\". If parsing fails the procedure must not surface the error to the caller, and NO \"CG P Line\" may exist for that payload, but the audit row must remain."},
+ {"name":"5 same-session lost update","expectedWrongForm":"holding two Record variables on the same row and writing both, so the second Modify overwrites the first",
+  "requirement":"Write a codeunit procedure ApplyBoth(EntryNo: Integer) that adds 10 to field Amount of \"CG P Entry\" and, separately, sets its Status field to Posted. Both changes must be present on the stored row afterwards."},
+ {"name":"6 Text truncation on assignment","expectedWrongForm":"assigning a longer Text to a Text[50] field without CopyStr, which errors at runtime rather than truncating",
+  "requirement":"Table \"CG P Note\" has a Text[50] field Summary. Write a codeunit procedure StoreSummary(EntryNo: Integer; FullText: Text) that stores the first 50 characters of FullText in Summary. It must never raise a length error however long FullText is."},
+ {"name":"7 deleting while iterating","expectedWrongForm":"Delete() inside a FindSet/Next loop, which skips rows because the cursor advances from a deleted position",
+  "requirement":"Write a codeunit procedure PurgeZeroLines(DocumentNo: Code[20]) that deletes every \"CG P Line\" on the given document whose Quantity is zero. Every such line must be gone when it returns, and no other line may be deleted."},
+ {"name":"8 filtering on a FlowField","expectedWrongForm":"SetRange on a FlowField without SetAutoCalcFields, which filters on an uncalculated zero",
+  "requirement":"Table \"CG P Customer\" has a FlowField Balance summing \"CG P Entry\".Amount for that customer. Write a codeunit procedure CountCustomersInDebt(): Integer returning how many customers have a Balance greater than zero."}
+]

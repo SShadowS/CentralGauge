@@ -1,0 +1,98 @@
+{
+  "_note": "Lane 1. Full AL setup bodies are in the kt1 subagent transcript; the fields here are what authoring the test needs.",
+  "CG-AL-H003": {
+    "killTests": [
+      {
+        "name": "TestDiscountReportedAtEachInventoryThreshold",
+        "closes": ["M0004", "M0005", "M0006", "M0007", "M0008", "M0009", "M0010", "M0011", "M0013", "M0014"],
+        "setup": "New helpers: CreateItemWithStock(var Item; UnitPrice; StockQty) - LibraryInventory.CreateItem then a direct Item Ledger Entry insert (the pattern already committed in tests/al/easy/CG-AL-E009.Test.al:82-93, so no journal posting is needed); DiscountReportedFor(var TempResult temporary; ItemNo): Decimal returning -1 when absent; RowsReportedFor(...): Integer. Add LibraryInventory to the global var block. Create five items at UnitPrice 200 with stock 100 / 50 / 10 / 9, plus one at UnitPrice 0 with stock 250. Call Processor.ProcessItemsWithDiscount(TempResult, 0).",
+        "assertion": "Assert.AreEqual(15, DiscountReportedFor(TempResult, ItemAt100.\"No.\"), 'Item with 100 in stock was not reported with the top discount'); Assert.AreEqual(10, ... ItemAt50 ... 'middle discount'); Assert.AreEqual(5, ... ItemAt10 ... 'lowest discount'); Assert.AreEqual(0, ... ItemBelow10 ... 'zero discount'); Assert.AreEqual(0, RowsReportedFor(TempResult, ItemNoPrice.\"No.\"), 'Item without a unit price was reported in the results'); then FindFirst on ItemAt100 and Assert.AreEqual(170, TempResult.\"Final Price\", 'Item with 100 in stock was not reported with its discounted price');",
+        "referenceValue": "15 / 10 / 5 / 0 for the four priced items; 0 rows for the unpriced item; Final Price 170.",
+        "mutantValue": "M0007 (>=100 -> >100): ItemAt100 reports 10. M0008: ItemAt50 reports 5. M0009: ItemAt10 reports 0. M0006 (CalcFields dropped): every item reports 0. M0005/M0011/M0013 (body emptied / insert dropped): nothing inserted, so the -1 absent sentinel fails the first assert. M0010 (>= MinDiscount -> >): ItemBelow10 dropped, sees -1. M0014 (Next() negated): only the first row is processed, at least three asserts see -1. M0004 (>0 -> >=0): the unpriced item is inserted, so RowsReportedFor returns 1.",
+        "whyRobust": "Fixtures are brand-new items so demo data cannot mask or supply the values; every assert is scoped to a fixture item's own \"No.\" rather than a row total or \"Line No.\", so an implementation numbering lines differently or iterating in another order passes. All five expectations come off the spec's own tier table plus 'discount >= MinDiscount' and '\"Unit Price\" > 0'. The -1 sentinel makes absence fail the same value assert rather than needing a separate presence check."
+      },
+      {
+        "name": "TestStaleRowsGoneWhenBufferArrivesFiltered",
+        "closes": ["M0002"],
+        "setup": "Insert two rows into the temporary buffer directly (Line No. 90001 'STALE-A', 90002 'STALE-B'), then apply the CALLER's own filter TempResult.SetRange(\"Line No.\", 90002) before calling Processor.ProcessItemsWithDiscount(TempResult, 0).",
+        "assertion": "TempResult.Reset(); TempResult.SetFilter(\"Item No.\", 'STALE-A|STALE-B'); Assert.AreEqual(0, TempResult.Count(), 'Rows that were in the buffer before the call were still there afterwards');",
+        "referenceValue": "0 - the reference clears the caller's filter before emptying the buffer, so both earlier rows go.",
+        "mutantValue": "1 - the buffer is emptied under the caller's still-active \"Line No.\" = 90002 filter, so STALE-A survives.",
+        "whyRobust": "Purely behavioural: any implementation leaving the buffer genuinely empty passes, whether it clears filters then deletes, deletes row by row, or uses Clear on the parameter. 90001/90002 cannot collide with the reference's own line numbers (multiples of 10000). NOTE this does harden the task: it fails a submission that empties the buffer under an inherited filter, which spec requirement 1's 'Clear the TempResult table completely' already asks for."
+      }
+    ]
+  },
+  "CG-AL-M022": {
+    "killTests": [
+      {
+        "name": "TestPostWeatherReport_SendsCallersJsonAsJsonPayload",
+        "closes": ["M0004", "M0006"],
+        "setup": "Add globals CapturedBody/CapturedContentType and an [HttpClientHandler] PostWeatherReportCapturingHandler that, for a POST whose Path contains 'reports', does Request.Content.ReadAs(CapturedBody), reads Content-Type via Request.Content.Headers.GetValues, answers 201 with '{\"id\": \"12345\", \"status\": \"created\"}', and exits false.",
+        "assertion": "Assert.IsTrue(Success, 'A 201 response was not reported as accepted'); Assert.AreEqual(ReportJson, CapturedBody, 'The report the caller supplied did not arrive at the service'); Assert.IsTrue(CapturedContentType.StartsWith('application/json'), 'The request did not declare its payload as JSON');",
+        "referenceValue": "CapturedBody = the exact JSON the caller passed; CapturedContentType = 'application/json'.",
+        "mutantValue": "M0004 (payload write dropped): CapturedBody = '' so AreEqual fails. M0006 (content-type add dropped): the reference's preceding Remove still runs, so no Content-Type reaches the handler and StartsWith fails.",
+        "whyRobust": "Asserts what the service actually receives, so it holds for any HttpContent construction order. StartsWith rather than AreEqual on the media type so '; charset=utf-8' still passes.",
+        "BLOCKED_ON": "Request.Content.ReadAs(Text) and Request.Content.Headers.Contains/GetValues have NO precedent anywhere in this repo. Compile the oracle once against the container's system symbols first. If the framework does not surface the request payload or content headers to the handler, the handler is the only observation point and M0004/M0006 must be reclassified unscorable rather than fixed."
+      },
+      {
+        "name": "TestUnreachableServiceIsReportedAsFailure",
+        "closes": ["M0008", "M0015"],
+        "setup": "An [HttpClientHandler] UnroutedRequestHandler that mocks nothing (exit(true) for every path), then call IsServiceAvailable() and PostWeatherReport(...) in turn. api.weather.example is in the reserved .example TLD so the send cannot succeed.",
+        "assertion": "Assert.IsFalse(Available, 'A service that could not be reached was reported as available'); Assert.IsFalse(Success, 'A report that never reached the service was reported as accepted');",
+        "referenceValue": "false for both - the send fails and both procedures take their failure exit.",
+        "mutantValue": "M0015: IsServiceAvailable returns true. M0008: PostWeatherReport returns true.",
+        "whyRobust": "Spec-backed both times ('false otherwise' for each procedure), and it also passes for a correct implementation that ignores the send's Boolean and reads the status code, which is 0 on a failed send.",
+        "BLOCKED_ON": "Assumes that under TestHttpRequestPolicy = AllowOutboundFromHandler an unmocked request surfaces as a false return from HttpClient.Get/Send rather than a runtime error. If it errors, the test fails against the reference too, and without another channel M0008/M0015 are unscorable."
+      }
+    ]
+  },
+  "CG-AL-H019": {
+    "killTests": [
+      {
+        "name": "TestTryProcessData_ReportsSuccess",
+        "closes": ["M0004", "M0005"],
+        "setup": "REPLACES the two tautological tests TestTryProcessData_Success and TestTryProcessData_NoException, both of which currently assert only Assert.IsTrue(true, ...). Call Success := InternalService.TryProcessData().",
+        "assertion": "Assert.IsTrue(Success, 'The processing attempt was reported as unsuccessful');",
+        "referenceValue": "true - the helper hands back a non-empty value, so nothing raises.",
+        "mutantValue": "M0004 (Result = '' negated to Result <> ''): the non-empty value now triggers the error, returns false. M0005 (helper body emptied): the value is blank, the error triggers, returns false.",
+        "whyRobust": "Asserts only the documented contract, spec item 3 'Returns true on success', and reads nothing about how the helper is written. Does NOT touch M0003 (the try procedure's own body emptied), which still returns true - out of this lane."
+      }
+    ]
+  },
+  "CG-AL-H015": {
+    "killTests": [
+      {
+        "name": "TestPayPal_DeclinedAtLimit",
+        "closes": ["M0003"],
+        "setup": "Result := PaymentService.Process(PayPal, 1000) - routed through Payment Service.Process exactly like the three existing tests, so it exercises the interface dispatch rather than the provider directly.",
+        "assertion": "Assert.AreEqual('Declined by PayPal', Result, 'PayPal reported an amount of exactly 1000 as authorized');",
+        "referenceValue": "'Declined by PayPal' - 1000 < 1000 is false.",
+        "mutantValue": "'Authorized by PayPal' - the boundary widens to 1000 <= 1000.",
+        "whyRobust": "The expectation is the spec's own rule verbatim ('Returns true if Amount < 1000'), so it cannot over-constrain."
+      }
+    ]
+  },
+  "CG-AL-M025": {
+    "killTests": [
+      {
+        "name": "TestInsertAndTruncate_LeavesNoRowsBehind",
+        "closes": ["M0009"],
+        "setup": "BulkManager.TruncateAll(); BulkManager.InsertRecords(3); assert the 3 seed rows are present; then Result := BulkManager.InsertAndTruncate(0). Count 0 deliberately, so the reference performs no insert during the call under test and no key collision with the seeded rows is possible under any AutoIncrement semantics of prereq table 69030.",
+        "assertion": "Assert.AreEqual(0, Result, 'Insert-and-truncate reported a non-zero row count'); Assert.AreEqual(0, BulkManager.GetRecordCount(), 'Rows were still in the table after insert-and-truncate');",
+        "referenceValue": "Result 0 and a row count of 0 - the seeded rows are gone.",
+        "mutantValue": "M0009 (whole body emptied): Result is still 0, but the row count is 3, so the SECOND assert is the killer. The return value alone is 0 either way, which is exactly why the existing single test misses it.",
+        "whyRobust": "Spec-backed: requirement 4 says truncate the table and requirement 2 defines that as removing all records. Any implementation leaving the table empty passes, regardless of how it counts."
+      }
+    ]
+  },
+  "CG-AL-X040": {
+    "killTests": [],
+    "specGaps": [
+      {
+        "code": "M0011",
+        "reclassifyTo": "equivalent",
+        "why": "Not a coverage hole. Removing the Commit() at CG-AL-X040.al:32 is provably behaviour-neutral: line 31 is AuditLog.Write(BatchId, 'FINISHED'), and the prereq codeunit \"CG X040 Audit Log\" (tests/al/dependencies/CG-AL-X040/CGX040AuditLog.Codeunit.al:14) ends with its OWN Commit(). No write of any kind happens between that commit and line 32, so the mutated line commits an empty transaction. The rollback boundary after PostBatch returns is identical with or without it, for the oracle and for any other caller, so no assertion in any session can separate the two. The prereq's hidden Commit is the whole point of this trap task. The other three X040 survivors (M0003, M0007, M0008) are outside this lane and untouched."
+      }
+    ]
+  }
+}

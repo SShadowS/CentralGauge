@@ -1,0 +1,2527 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/specs/2026-10-03-harness-v2-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Harness Bench v2: bigger task set, realistic setups, AL LSP arm - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#harness-bench-v2-bigger-task-set-realistic-setups-al-lsp-arm" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Harness Bench v2: bigger task set, realistic setups, AL LSP arm
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-why" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Why
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-goals-and-claims" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Goals and claims
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-task-set-v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Task set v2
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-realistic-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Realistic setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-al-lsp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. AL LSP
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-statistics-pre-registered-before-any-confirmatory-cell" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Statistics (pre-registered before any confirmatory cell)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-feasibility-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Feasibility gates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-scale-and-cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Scale and cost
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-milestones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Milestones
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-rev-1-review-findings-and-where-they-are-addressed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Rev 1 review findings and where they are addressed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-round-2-review-gpt-61-sol-accept-with-findings-carried-into-the-plans" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Round 2 review (gpt-6.1-sol: ACCEPT WITH FINDINGS) carried into the plans
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-owner-answers-2026-10-03" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Owner answers (2026-10-03)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-open-questions-for-the-owner-asked-2026-10-03-answered-in-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Open questions for the owner (asked 2026-10-03, answered in 13)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/specs/2026-10-03-harness-v2-design.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="harness-bench-v2-bigger-task-set-realistic-setups-al-lsp-arm">Harness Bench v2: bigger task set, realistic setups, AL LSP arm<a class="headerlink" href="#harness-bench-v2-bigger-task-set-realistic-setups-al-lsp-arm" title="Permanent link">&para;</a></h1>
+<p>Status: DRAFT rev 2 for owner review (2026-10-03). Rev 1 (99165fa3) was reviewed by
+gpt-6.1-sol: REJECT, findings in <code>H:\cg-coord\reviews\SPEC-v2-001\review-gpt61sol.md</code>. Rev 2
+addresses them (section 11 maps each finding). Builds on 1a
+(<code>2026-09-24-harness-bench-design.md</code>), 1b (<code>2026-09-24-harness-refapp-design.md</code>) and the M6
+freeze (<code>H:\cg-coord\m6\handoff.md</code>). Nothing here touches the frozen v1 data.</p>
+<h2 id="1-why">1. Why<a class="headerlink" href="#1-why" title="Permanent link">&para;</a></h2>
+<p>v1 answered "no verdict" on all three experiments. The task matrix shows why:</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Solved (all 6 arms, 18 cells)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HX-001 bugfix</td>
+<td>17/18</td>
+</tr>
+<tr>
+<td>HX-002 test-authoring</td>
+<td>0/18</td>
+</tr>
+<tr>
+<td>HX-003 feature</td>
+<td>18/18</td>
+</tr>
+<tr>
+<td>HX-004 feature</td>
+<td>18/18</td>
+</tr>
+<tr>
+<td>HX-005 refactor</td>
+<td>13/18</td>
+</tr>
+<tr>
+<td>HX-006 feature</td>
+<td>1/18</td>
+</tr>
+</tbody>
+</table>
+<p>Only HX-005 discriminates. Three tasks are saturated, two are near zero (HX-002 partly a scorer
+limit, M4-17a). The bootstrap over 6 tasks had undefined resamples, so the pre-registered
+interval was suppressed. v1's setups are also thin: one CLAUDE.md, an MCP server with three
+tools, four skills. Real teams run richer setups (rules, skills that wrap environment tools,
+review/test subagents, an AL language server).</p>
+<h2 id="2-goals-and-claims">2. Goals and claims<a class="headerlink" href="#2-goals-and-claims" title="Permanent link">&para;</a></h2>
+<p>G1. A task set with signal: enough tasks that neither arm saturates or floors the comparison.
+G2. Arms that look like a real BC team's Claude Code setup.
+G3. Measure what the AL language server changes: cost, tokens, turns, tool mix, compile
+workflow, and the quality of the final code, not only pass rate.
+G4. Metrics that explain a result, not only score it.</p>
+<p>Confirmatory claims (pre-registered, section 7): the LSP effect without and with the realistic
+setup, and the realistic-setup effect, on cost per solved task. Everything else is
+exploratory and labelled so. Claims hold for the frozen v2 task population (BC/AL tasks of the
+stated kinds and coupling styles on the refapp, as selected by the screening pilot), not BC
+coding in general.</p>
+<p>Non-goals: harnesses beyond Claude Code (pi optional, section 5); more than one model per
+campaign; public scoreboard ingest; isolating each component's individual effect (would need
+per-component ablations; out of scope unless the owner asks).</p>
+<h2 id="3-task-set-v2">3. Task set v2<a class="headerlink" href="#3-task-set-v2" title="Permanent link">&para;</a></h2>
+<p>Selection is fixed BEFORE any outcome is seen:</p>
+<ol>
+<li>Quotas: kinds (feature, bugfix, refactor, test-authoring, none above 40%), coupling styles
+   (each v1-uncovered style from caveat C43 at least once: single-instance, temporary tables,
+   CommitBehavior), and size (at least half touch 3 or more objects across 2 or more files,
+   need an existing procedure found and reused, or follow an event/interface through the
+   refapp).</li>
+<li>Difficulty strata, fixed shares: about 60% intermediate, 20% easy, 20% hard, by the
+   author's prior and the screening pilot. Easy and hard tasks stay on purpose (the LSP may help
+   most where plain fails).</li>
+<li>Screening pilot (developmental, never confirmatory): every candidate runs on BOTH the plain
+   and the realistic+LSP arm, 3 repeats each. A task is dropped only by a symmetric rule:
+   solved in 0 of 6 pilot cells (dead) or in all 6 (saturated), or a broken oracle. No task is
+   kept or dropped for an observed arm difference. Pilot executions are excluded from every
+   confirmatory result.</li>
+<li>Held-out: 3 to 4 tasks are authored to the same quotas but not screened; they run in the
+   campaign and are reported separately as a transfer check.</li>
+<li>Freeze: tasks, oracles, scorers, refapp (<code>refapp-v2</code> tag; <code>refapp-v1</code> stays frozen), bundles,
+   images and model are frozen before the first confirmatory cell.</li>
+</ol>
+<p>Count and repeats come from the power simulation (section 7), not fixed here. Planning
+range: 24 to 40 tasks, 5 repeats.</p>
+<p>Authoring and qualification reuse the v1 pipeline (gate scripts, naive variants, oracle rules,
+<code>al-test-auditor</code>, mutation check where it applies). CLAUDE.md task rules apply: no hints, no
+weakened oracles; a too-easy task is redesigned, never softened.</p>
+<h2 id="4-realistic-setup">4. Realistic setup<a class="headerlink" href="#4-realistic-setup" title="Permanent link">&para;</a></h2>
+<p>Inspired by a real BC support repo (U:\Git\DO.Support-NewFormat, surveyed 2026-10-03), not
+copied: no customer data, internal hosts, credentials or Continia tooling enter the sandbox.
+A real setup holds team instructions and scoped rules, skills that wrap environment tools
+(env, symbols, compile/deploy, tests), subagents (test writer, reviewer, "find an existing
+function", analyzers), an AL language server plugin, and MCP servers for external systems
+(the last is out of scope: no external systems in the sandbox).</p>
+<p>The realistic bundle (one level of the factorial, applied as a whole):</p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>Content</th>
+<th>Harness today</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>instructions</td>
+<td>CLAUDE.md v2: team conventions, investigation order</td>
+<td>applied</td>
+</tr>
+<tr>
+<td>rules</td>
+<td><code>.claude/rules/*.md</code>: AL conventions, test rules, breaking changes</td>
+<td>NOT applied (run.ps1 is non-recursive)</td>
+</tr>
+<tr>
+<td>skills</td>
+<td>wrappers over the sandbox <code>cg-al</code> backend: compile, test, symbols, "reuse before write" lookup</td>
+<td>applied</td>
+</tr>
+<tr>
+<td>agents</td>
+<td><code>al-test-writer</code>, <code>al-reviewer</code>, <code>library-function-finder</code></td>
+<td>staged, NOT applied</td>
+</tr>
+<tr>
+<td>mcp</td>
+<td>al-tools (v1)</td>
+<td>applied</td>
+</tr>
+</tbody>
+</table>
+<p>Requirements:</p>
+<ul>
+<li>Fail-closed component validation: every component an arm declares is proven installed in the
+  sandbox (runtime inventory check before the agent starts), and every component it does not
+  declare is proven absent. A staged-but-absent component refuses the cell. Positive and
+  negative inventory tests per component.</li>
+<li>Leakage audit of every bundle (rules, skills, agents) against the oracles and correct
+  solutions before freeze, by <code>al-test-auditor</code> plus an orchestrator review: a bundle must not
+  name a task's fix, its procedures or its oracle checks.</li>
+<li>Instructions that mention the LSP ("use LSP first") are capability-conditional ("if an LSP
+  tool is available") and IDENTICAL in the realistic arm with and without LSP, so the LSP toggle
+  changes only the LSP.</li>
+</ul>
+<h2 id="5-al-lsp">5. AL LSP<a class="headerlink" href="#5-al-lsp" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Component: the AL language server exposed to Claude Code's LSP tool (documentSymbol, hover,
+  findReferences, diagnostics), the same shape as the owner's local
+  <code>al-language-server-go-windows@claude-code-lsps</code> plugin.</li>
+<li>Gate S1 (spike, before build work): end-to-end qualification under ContainerUser, offline:
+  writable profile/cache/temp paths, binary discovery, runtime dependencies, path/URI handling,
+  symbol loading from <code>.alpackages</code>, multi-file references, diagnostics refresh after edits,
+  known hover/reference results and known-error diagnostics asserted on a fixture, subprocess
+  cleanup on cell timeout, startup time and peak RAM per cell, and NO access to hidden oracle
+  material (the server indexes only the workspace and <code>.alpackages</code>).</li>
+<li>Licensing: an explicit owner decision on the source of the AL language server binaries and
+  their use inside our image is required before S1. No workaround is assumed.</li>
+<li>pi: in v2 only if pi supports the same LSP component; otherwise pi stays out (owner choice).</li>
+</ul>
+<h2 id="6-metrics">6. Metrics<a class="headerlink" href="#6-metrics" title="Permanent link">&para;</a></h2>
+<p>Primary (confirmatory): cost per solved task (list-price estimate), as in v1.</p>
+<p>Exploratory, reported per arm and as paired deltas, each labelled exploratory:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Definition (frozen with the task set)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pass rate, pass^k</td>
+<td>as v1</td>
+</tr>
+<tr>
+<td>Tokens</td>
+<td>per type (uncached in, cache read, cache write, out, reasoning), incl. subagents</td>
+</tr>
+<tr>
+<td>Effort</td>
+<td>turns, wall time, backend builds (from the backend log, not trace classification), test runs</td>
+</tr>
+<tr>
+<td>Compile-workflow burden</td>
+<td>per cell: distinct AL diagnostics by code across agent builds, deduplicated by (code, file, symbol); unknown-symbol class = a frozen code list (e.g. AL0118, AL0132); cells with no agent build reported separately, never as zero</td>
+</tr>
+<tr>
+<td>First eligible build</td>
+<td>outcome of the first backend build after the agent's first edit; no-build cells separate. Workflow measure, not proof of knowledge</td>
+</tr>
+<tr>
+<td>Final-code check</td>
+<td>a host-controlled compile of every cell's final workspace with pinned compiler and analyzers (CodeCop, UICop, frozen rule set): error count, warning count relative to the task's starting workspace</td>
+</tr>
+<tr>
+<td>Reuse</td>
+<td>for tasks whose spec names a procedure to reuse: symbol-resolved call to it on the executed path (oracle test asserts behaviour through it); alternatives listed per task</td>
+</tr>
+<tr>
+<td>Partial credit</td>
+<td>fraction of new-requirement oracle tests passed, weights frozen per task; pass_to_pass preservation separate; not for test-authoring</td>
+</tr>
+<tr>
+<td>Tool mix</td>
+<td>LSP calls by operation, search/read calls, edits, skill invocations, subagent spawns, MCP calls</td>
+</tr>
+</tbody>
+</table>
+<p>The compile-workflow burden is NOT a measure of "knowledge": the LSP shows diagnostics before
+a build, which lowers it by design. The final-code check is the treatment-independent quality
+measure.</p>
+<p>New telemetry needed (the trace metrics today count failed tool calls by class and
+trace-classified compile calls only): a structured backend build log per cell (time, apps,
+diagnostic codes with file/symbol), LSP operation counts from the trace, and subagent usage.
+Missing or incomplete telemetry stays missing, never zero.</p>
+<p>Threat to validity (accepted, owner 2026-10-03): the provider credential is readable by the
+agent user, so an agent can spend outside the budget guard (a direct API call, or a child
+<code>claude</code>/<code>pi</code> through the proxy). Such spend is not in the cell's priced usage, so recorded
+cost per solved task is a lower bound for any cell that does this. It is visible only in bash
+tool output. No detection is built; the paper states this limitation.</p>
+<h2 id="7-statistics-pre-registered-before-any-confirmatory-cell">7. Statistics (pre-registered before any confirmatory cell)<a class="headerlink" href="#7-statistics-pre-registered-before-any-confirmatory-cell" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Design: one blocked 2x2 factorial campaign, realistic {off, on} x LSP {off, on}, all four arms
+  on the same tasks and repeats. Arm order randomized within each task/repeat block with a
+  recorded seed; quota windows counterbalanced (section 8).</li>
+<li>Confirmatory contrasts on cost per solved task: (C1) LSP effect at realistic off, (C2) LSP
+  effect at realistic on, (C3) realistic effect at LSP off. Holm correction across C1 to C3.
+  Interaction (LSP effect differs by realistic level) is exploratory unless the power
+  simulation shows it is powered.</li>
+<li>Estimator: paired task bootstrap as v1 (task clusters), replication count and seed
+  pre-registered. Zero-solve handling decided BEFORE outcomes with a coverage simulation:
+  v1's "suppress if any resample has no solve" rule is kept unless the simulation shows a
+  pre-registered alternative (e.g. a defined-resample rule with a minimum defined share) keeps
+  nominal coverage. Never changed after outcomes.</li>
+<li>Sample size: a simulation of the exact estimator using v1 data and the screening pilot
+  (task heterogeneity, repeat variance, cost-success dependence, arm correlation, missing
+  cost). Minimum relevant effect: 20% lower cost per solved task. Compare 24/30/40 tasks x
+  3/5/8 repeats; pick the smallest design with about 80% power per contrast after Holm and an
+  interval-suppression rate under 5%. If no affordable design meets it, the owner decides
+  (fewer contrasts, bigger effect, or exploratory only) before authoring finishes.</li>
+</ul>
+<h2 id="8-feasibility-gates">8. Feasibility gates<a class="headerlink" href="#8-feasibility-gates" title="Permanent link">&para;</a></h2>
+<p>Each is a gate with a test or a measured result, before the campaign:</p>
+<ol>
+<li>Component application (section 4): fail-closed inventory, all arms.</li>
+<li>LSP S1 (section 5) and licensing decision.</li>
+<li>Subagent cost completeness: fixtures and a live run prove whether parent usage includes
+   child usage (no omission, no double count), incl. child models, cache, retries and cancelled
+   agents; subagent model pinned; the cell budget limits aggregate work.</li>
+<li>Team quota: pilot + campaign + retries + subagents budgeted; quota monitored per cell; on
+   exhaustion the whole block pauses and resumes (no arm-specific reruns); terminal policy for
+   cells cut by quota. Claude Code cost stays a list-price estimate, not cash.</li>
+<li>Concurrency: the refusal stays until H-01 C1 to C8 (incl. C3/C8, owner route: lane-ops in
+   normal mode) and proxy isolation P1/P2 pass, then a load test with parallel cells and
+   subagents: backend routing, app/database isolation, leases, cleanup, proxy limits, combined
+   LSP + build + judge peak RAM, disk guards, shared-host jobs. Host RAM bars stay (stop under
+   10 GB, resume at 14 GB).</li>
+<li>Scorer qualification: every new scorer (final-code check, reuse, partial credit) qualified
+   on correct and naive variants like v1 scorers.</li>
+</ol>
+<h2 id="9-scale-and-cost">9. Scale and cost<a class="headerlink" href="#9-scale-and-cost" title="Permanent link">&para;</a></h2>
+<p>Cells = tasks x repeats x 4 arms (e.g. 30 x 5 x 4 = 600) plus pilot (candidates x 3 x 2). At
+<code>--concurrency 1</code> and v1's cell time this is weeks; measure the median cell wall time from the
+frozen archive first. Concurrency (gate 5) is likely 2 to 3 in practice (3 Cronus containers,
+host RAM). Claude Code runs on the Team subscription (usage, not cash); pi arms, if any, are
+paid under the launch-contract cap (USD 150, USD 5.45 spent).</p>
+<h2 id="10-milestones">10. Milestones<a class="headerlink" href="#10-milestones" title="Permanent link">&para;</a></h2>
+<ul>
+<li>M7 Concurrency: H-01 accepted, C3/C8, P1/P2, lift decision, load test (gate 5).</li>
+<li>M8 Task set v2: quotas and strata, refapp-v2, author candidates + held-out, screening pilot,
+  power simulation, freeze.</li>
+<li>M9 Realistic bundle: rules + agents applied in run.ps1, fail-closed inventory (gate 1), bundles,
+  leakage audit.</li>
+<li>M10 LSP: licensing decision, S1, <code>lsp</code> component in image + runtimeFacts + run.ps1.</li>
+<li>M11 Metrics and statistics: backend build log, telemetry, new scorers (gate 6), report
+  rollups, factorial contrasts with Holm, subagent accounting (gate 3), pre-registration file.</li>
+<li>M12 Campaign (gate 4) and analysis, v2 freeze like M6.</li>
+</ul>
+<p>M8 to M11 can run in parallel (content, infra, infra2, ops); M12 needs all of them and M7.</p>
+<h2 id="11-rev-1-review-findings-and-where-they-are-addressed">11. Rev 1 review findings and where they are addressed<a class="headerlink" href="#11-rev-1-review-findings-and-where-they-are-addressed" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Finding (gpt-6.1-sol, rev 1)</th>
+<th>Rev 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Blocking: knowledge metric confounded by LSP diagnostics; definitions, telemetry, multiplicity missing</td>
+<td>6 (burden is exploratory, final-code check), 7 (single primary, Holm)</td>
+</tr>
+<tr>
+<td>Blocking: components not applied today; subagent cost accounting unproven</td>
+<td>4 (fail-closed inventory), 8.1, 8.3</td>
+</tr>
+<tr>
+<td>Blocking: 18x5 unsupported; zero-solve suppression</td>
+<td>7 (power simulation, pre-outcome coverage simulation)</td>
+</tr>
+<tr>
+<td>Major: calibration and generalization</td>
+<td>3 (quotas, strata, symmetric pilot on both arms, held-out, freeze)</td>
+</tr>
+<tr>
+<td>Major: blocking/randomization, scorer qualification, licensing, load-tested gates</td>
+<td>7, 8.2, 8.5, 8.6</td>
+</tr>
+</tbody>
+</table>
+<h2 id="12-round-2-review-gpt-61-sol-accept-with-findings-carried-into-the-plans">12. Round 2 review (gpt-6.1-sol: ACCEPT WITH FINDINGS) carried into the plans<a class="headerlink" href="#12-round-2-review-gpt-61-sol-accept-with-findings-carried-into-the-plans" title="Permanent link">&para;</a></h2>
+<p><code>H:\cg-coord\reviews\SPEC-v2-002\review-gpt61sol.md</code>. Accepted as a design roadmap, not yet an
+analysis protocol. The M11 pre-registration task and the M8 screening task must close these
+BEFORE screening:</p>
+<ol>
+<li>Inference contract: bootstrap p-values and direction, missing-pair rule, Holm-adjusted
+   decisions vs reported 95% intervals; the interaction's status decided before outcomes (if
+   promoted, it joins the Holm family and the power simulation). C3 is named "realistic effect
+   without LSP", not a general main effect.</li>
+<li>Screening: exact stratum boundaries from which pilot outcomes, rounding, deterministic
+   selection and tie-breaking, too-few-candidates rule, redesigned task = new candidate with
+   fresh screening. The 0/6 and 6/6 filter is described as a screen, not proof of
+   intermediate difficulty. Screening on the diagonal arms selects a population; claims are
+   scoped to it.</li>
+<li>Screening prerequisites: component inventory, LSP S1, fixed model and qualified scorers
+   (incl. the existing test-authoring discovery limit, caveat C156 / M4-17a) BEFORE screening,
+   so M8 screening waits for M9 to M11 gates.</li>
+<li>Held-out: 3 to 4 tasks in addition to the confirmatory set, excluded from C1 to C3, reported
+   separately as a descriptive robustness check (same refapp, same authors), never as evidence
+   for BC coding in general; budgeted in section 9.</li>
+</ol>
+<h2 id="13-owner-answers-2026-10-03">13. Owner answers (2026-10-03)<a class="headerlink" href="#13-owner-answers-2026-10-03" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Timeline: start now. M8 authoring, M9 realistic bundle and the M10 LSP spike run in parallel;
+  the campaign comes after the Directions talk.</li>
+<li>Arms: the 2x2 factorial, Claude Code only. pi is out of v2.</li>
+<li>AL language server: the same source as the owner's local
+  <code>al-language-server-go-windows@claude-code-lsps</code> plugin; the owner confirmed its licence allows
+  use in our private sandbox image.</li>
+<li>Model: the current Sonnet (verify the id with <code>models --check</code>), Team usage budget for about
+  1,300 cells is OK.</li>
+</ul>
+<h2 id="14-open-questions-for-the-owner-asked-2026-10-03-answered-in-13">14. Open questions for the owner (asked 2026-10-03, answered in 13)<a class="headerlink" href="#14-open-questions-for-the-owner-asked-2026-10-03-answered-in-13" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Timeline: start after the Directions talk, or start M8 authoring and the M10 licensing
+   question now?</li>
+<li>Confirm the 2x2 factorial (plain, LSP, realistic, realistic+LSP); pi in or out of v2?</li>
+<li>Team usage budget for roughly 600 to 1,300 Claude Code cells including the pilot.</li>
+<li>AL language server binaries: which source, and is their use in our private image allowed?</li>
+<li>Model: Sonnet 5 again, or the current Sonnet?</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

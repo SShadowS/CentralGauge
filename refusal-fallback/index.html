@@ -1,0 +1,2427 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/refusal-fallback/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Refusal-Fallback Recording - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#refusal-fallback-recording" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Refusal-Fallback Recording
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-feature-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the feature is
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What the feature is">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#off-switch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Off-switch
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-a-response-is-classified" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How a response is classified
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How a response is classified">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-definitions-of-a-fallback-happened-and-where-they-part" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two definitions of "a fallback happened", and where they part
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scoring-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scoring semantics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-the-data-lands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where the data lands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Where the data lands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leaderboard-fallback_count-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Leaderboard fallback_count scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deploy-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deploy order
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#billing-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Billing note
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dashboard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/refusal-fallback.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="refusal-fallback-recording">Refusal-Fallback Recording<a class="headerlink" href="#refusal-fallback-recording" title="Permanent link">&para;</a></h1>
+<p>Some Claude models (Fable/Mythos, and Opus generation 5+ — not Sonnet, whose API rejects the <code>fallbacks</code> parameter) run behind a
+server-side safety classifier that can refuse a request outright. Anthropic's
+API offers a <strong>server-side refusal fallback</strong>: on a refusal, the API itself
+retries the request against a different, more permissive model in the same
+family and returns that model's answer instead of a bare refusal. This
+document describes how CentralGauge opts into that behavior, and how a
+rescued (or still-refused) attempt is recorded end to end.</p>
+<h2 id="what-the-feature-is">What the feature is<a class="headerlink" href="#what-the-feature-is" title="Permanent link">&para;</a></h2>
+<p>The bench's Anthropic adapter (<code>src/llm/anthropic-adapter.ts</code>) requests the
+beta server-side fallback on every call to a model the classifier applies to:</p>
+<ul>
+<li>Sets <code>fallbacks: "default"</code> on the request.</li>
+<li>Sends it through <code>client.beta.messages</code> with the beta header
+  <code>server-side-fallback-2026-07-01</code>.</li>
+</ul>
+<p>Gating is pure and unit-tested (<code>shouldRequestServerFallback</code>,
+<code>modelSupportsServerFallback</code>): the fallback is requested only for
+<code>claude-fable-*</code>, <code>claude-mythos-*</code>, and <code>claude-opus-*</code>/<code>claude-sonnet-*</code>
+generation 5 and above. Anything older never sends the beta param. (Opus
+4.7+ has its own, unrelated generational gate in the same adapter file —
+<code>modelRejectsTemperature</code>, for the <code>temperature</code> request param — not part of
+the refusal-fallback gate.)</p>
+<h3 id="off-switch">Off-switch<a class="headerlink" href="#off-switch" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">CENTRALGAUGE_REFUSAL_FALLBACK</span><span class="o">=</span><span class="m">0</span>
+</code></pre></div>
+<p>Set in the environment before a bench run. <code>shouldRequestServerFallback</code>
+disables the request only on the exact string <code>"0"</code> — any other value
+(including unset) leaves the fallback on for supported models.</p>
+<h2 id="how-a-response-is-classified">How a response is classified<a class="headerlink" href="#how-a-response-is-classified" title="Permanent link">&para;</a></h2>
+<p><code>extractFallbackInfo</code> reads the raw API response structurally (it accepts
+both <code>Anthropic.Message</code> and the beta <code>BetaMessage</code> shape) and produces one
+of three outcomes on <code>LLMResponse</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Outcome</th>
+<th><code>servedModel</code></th>
+<th><code>refusal</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Requested model answered normally</td>
+<td>absent</td>
+<td>absent</td>
+</tr>
+<tr>
+<td>Requested model refused, fallback rescued it</td>
+<td>set (served model's bare id) — <strong>only when it differs from the requested model</strong></td>
+<td><code>{ category: null, recovered: true }</code></td>
+</tr>
+<tr>
+<td>Whole fallback chain refused</td>
+<td>absent</td>
+<td><code>{ category: &lt;safety category or null&gt;, recovered: false }</code></td>
+</tr>
+</tbody>
+</table>
+<p>Two things worth calling out because they are easy to get wrong when reading
+this data later:</p>
+<ul>
+<li><strong>A model-string mismatch alone proves nothing.</strong> The API can echo a dated
+  snapshot id (<code>claude-opus-5</code> in, <code>claude-opus-5-20260601</code> out) on a
+  perfectly normal, non-refused call. <code>servedModel</code>/<code>recovered: true</code> is
+  stamped only when the response also carries a positive fallback signal — a
+  <code>fallback</code> content block or a <code>fallback_message</code> usage iteration.</li>
+<li><strong>A recovered fallback's <code>refusal.category</code> is always <code>null</code>.</strong> The
+  category of the refusal that <em>triggered</em> the fallback is not carried on
+  the success response. Only a chain refusal (<code>recovered: false</code>) carries a
+  real category. <code>recovered: true</code> is the signal that matters for a rescued
+  attempt, not the category field.</li>
+</ul>
+<p>These fields survive multi-turn continuation (<code>src/llm/continuation.ts</code>)
+unchanged.</p>
+<h3 id="two-definitions-of-a-fallback-happened-and-where-they-part">Two definitions of "a fallback happened", and where they part<a class="headerlink" href="#two-definitions-of-a-fallback-happened-and-where-they-part" title="Permanent link">&para;</a></h3>
+<p>Two different predicates drive the annotation surfaces, and they are not the
+same test:</p>
+<table>
+<thead>
+<tr>
+<th>Predicate</th>
+<th>Drives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>refusal.recovered === true</code></td>
+<td>results-JSON <code>fallbackEvents[]</code> entry, scores file <code># Fallbacks</code> block's <code>total_refusal_events</code> / <code>recovered_via_fallback</code> counts</td>
+</tr>
+<tr>
+<td><code>servedModel !== undefined</code></td>
+<td>console matrix <code>*</code> (single-task only), dashboard <code>⤵N</code>, D1 <code>results.served_model</code>, leaderboard <code>fallback_count</code></td>
+</tr>
+</tbody>
+</table>
+<p>They agree in every case except one: a fallback ran (the API returned a
+positive fallback signal, a <code>fallback</code> content block or a
+<code>fallback_message</code> usage iteration) and the chain came back to the
+<em>requested</em> model. In that shape, <code>refusal = { category: null, recovered:
+true }</code> but <code>servedModel</code> stays absent, per the rule above that
+<code>servedModel</code> is only set when it actually differs from the requested
+model. The result: the scores file reports <code>recovered_via_fallback: 1</code> for
+that attempt while the leaderboard shows <code>fallback_count: 0</code>, the matrix
+shows no <code>*</code>, the dashboard shows no <code>⤵</code>, and D1 stores <code>served_model =
+NULL</code>. An operator comparing the scores file against the leaderboard for
+that run sees a contradiction with no explanation on either surface unless
+they know this rule.</p>
+<p>Whether the Anthropic API can actually produce this shape in practice is
+unknown. This is written down precisely so the mismatch is explainable
+rather than rediscovered from scratch if it ever shows up.</p>
+<h2 id="scoring-semantics">Scoring semantics<a class="headerlink" href="#scoring-semantics" title="Permanent link">&para;</a></h2>
+<p>A fallback-rescued attempt is scored exactly like any other attempt — it
+compiles, runs tests, and passes or fails on its own merits. The served
+model answered the prompt; CentralGauge does not discount or flag the score
+itself. It is only <strong>annotated</strong> everywhere the data flows (see below) so a
+human or analyzer can filter fallback-served results in and out at will.</p>
+<p>A chain refusal (<code>recovered: false</code>) is a plain scored failure, same as any
+other empty/refused attempt — no special-casing beyond recording
+<code>refusal_category</code> for diagnosis.</p>
+<p>Excluding chain refusals from pass-rate denominators entirely was considered
+and deliberately left out of scope for this feature — recording the data is
+the goal; changing what counts as an "attempted" task is a separate decision
+for whoever owns the scoring model.</p>
+<h2 id="where-the-data-lands">Where the data lands<a class="headerlink" href="#where-the-data-lands" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Field(s)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LLMResponse</code> (in-process)</td>
+<td><code>servedModel?: string</code>, <code>refusal?: { category: string \| null; recovered: boolean }</code></td>
+</tr>
+<tr>
+<td>Results JSON</td>
+<td>top-level <code>fallbackEvents[]</code> (omitted entirely when empty) — <code>{ model, taskId, attempt, served, category, recovered }</code></td>
+</tr>
+<tr>
+<td>Scores file (<code>.txt</code>)</td>
+<td><code># Fallbacks</code> block: <code>total_refusal_events</code>, <code>recovered_via_fallback</code>, <code>chain_refusals</code>, <code>by_event:</code> listing</td>
+</tr>
+<tr>
+<td>Console matrix (single-task runs only)</td>
+<td>a <code>*</code> suffix on any attempt cell whose score came from a fallback-served model, plus one footnote line</td>
+</tr>
+<tr>
+<td>D1 (<code>results</code> table)</td>
+<td><code>served_model TEXT</code>, <code>refusal_category TEXT</code> — both nullable (migration <code>0015_results_fallback.sql</code>)</td>
+</tr>
+<tr>
+<td>Ingest endpoint</td>
+<td><code>POST /api/v1/runs</code> rejects a payload with <code>400 invalid_served_model</code> if <code>served_model</code> exceeds 128 characters</td>
+</tr>
+<tr>
+<td>Leaderboard API/UI</td>
+<td><code>fallback_count</code> per model row, <code>⤵N</code> badge, row-detail line</td>
+</tr>
+</tbody>
+</table>
+<p><code>collectFallbackEvents</code> (<code>cli/commands/bench/results-writer.ts</code>) is the one
+place that turns per-attempt <code>llmResponse</code> data into a <code>FallbackEvent</code>: it
+fires for an attempt whenever <code>refusal</code> or <code>servedModel</code> is present, and
+<code>recovered</code> defaults to <code>true</code> when only <code>servedModel</code> is set (belt-and-
+suspenders — in practice <code>extractFallbackInfo</code> never sets one without the
+other). <code>renderFallbackBlock</code> renders the <code># Fallbacks</code> scores block from the
+same events, gated the same way <code># Drain Events</code> / <code># Recovery Events</code> are:
+absent entirely when there is nothing to report.</p>
+<p>The matrix <code>*</code> marker lives in <code>cli/commands/bench/single-task-matrix.ts</code>
+(<code>fallbackMarker</code>) — it only marks a PASS/scoring cell; a chain refusal is
+already visually a fail and needs no separate marker.</p>
+<p><strong>The matrix marker is console-only and single-task-only.</strong> <code>formatSingleTaskMatrix</code>
+is only ever <code>console.log</code>ed from <code>displayFormattedOutput</code>
+(<code>cli/commands/bench/results-writer.ts</code>); it never appears in the scores
+<code>.txt</code> file, which carries the <code># Fallbacks</code> block instead. It is also only
+invoked when <code>taskCount === 1</code>; every multi-task bench (i.e. every real
+bench) renders <code>formatTaskMatrix</code> (<code>src/utils/formatters.ts</code>) instead, which
+this feature does not touch and which carries no <code>*</code> marker or footnote at
+all. The <code># Fallbacks</code> block and the leaderboard/dashboard surfaces below
+are the only annotations a multi-task run actually gets.</p>
+<h3 id="leaderboard-fallback_count-scope">Leaderboard <code>fallback_count</code> scope<a class="headerlink" href="#leaderboard-fallback_count-scope" title="Permanent link">&para;</a></h3>
+<p><code>fallback_count</code> (<code>site/src/lib/server/leaderboard.ts</code>) is an <strong>attempt-level
+count</strong> (<code>COUNT(*)</code> over <code>results</code> rows with <code>served_model IS NOT NULL</code>),
+scoped to the model and the resolved task-set hash. It is deliberately <strong>not</strong>
+narrowed by the page's other active filters (tier / family / since / category
+/ difficulty) — it is a per-model caveat, not a filtered metric, computed in
+a separate query from the ranked leaderboard SQL so the ranking statement's
+hand-maintained positional bind order doesn't grow another subquery site.
+<code>api-types.ts</code> documents this scope on the field itself.</p>
+<p>The response cache key bumped to <strong><code>_cv=v9</code></strong> for this field (see
+<code>site/src/lib/server/cache-version.ts</code>) — an entry cached under an older <code>_cv</code>
+simply has no <code>fallback_count</code> key; the UI treats that the same as <code>0</code>
+(<code>LeaderboardTable.test.ts</code> covers this explicitly), never as an error.</p>
+<p>The badge renders as <code>⤵N</code> next to a model's row (<code>LeaderboardTable.svelte</code>)
+with a title/aria-label spelling out the "not narrowed by filters" caveat,
+and a plain "Fallback-served results: N" line in the row-detail expansion
+(<code>LeaderboardRowDetail.svelte</code>). Hidden entirely at <code>fallback_count === 0</code>.</p>
+<h3 id="deploy-order">Deploy order<a class="headerlink" href="#deploy-order" title="Permanent link">&para;</a></h3>
+<p><code>leaderboard.ts</code> runs <code>SELECT ... FROM results ... WHERE
+results.served_model IS NOT NULL</code> unconditionally whenever a model list is
+supplied, the same failure mode as migration <code>0011</code> and <code>mf.open_weight</code>
+(see CLAUDE.md's "Migrations BEFORE deploy — strict ordering"). Apply
+<code>site/migrations/0015_results_fallback.sql</code> with <code>wrangler d1 migrations
+apply &lt;db&gt; --remote</code> <strong>before</strong> <code>cd site &amp;&amp; npm run deploy</code>. Deploying the
+worker first 500s the leaderboard on every request until the migration
+lands.</p>
+<h2 id="billing-note">Billing note<a class="headerlink" href="#billing-note" title="Permanent link">&para;</a></h2>
+<p>A fallback-served attempt is billed by the <strong>served model's rates</strong>, not the
+requested model's — that is the correct behavior since the served model is
+what actually generated the tokens, and it is what the Anthropic API itself
+bills.</p>
+<ul>
+<li><strong>Runtime cost (bench path)</strong> — <code>pricingSlugForAttempt</code> (in
+  <code>src/llm/anthropic-adapter.ts</code>) swaps the model segment of the
+  vendor-prefixed pricing slug to the served model when <code>servedModel</code> is
+  set, and is called at both cost-computation sites in the adapter
+  (streaming and non-streaming). <code>pricingSlugForAttempt</code> itself has no
+  visibility into the pricing catalog and never falls back to the requested
+  model's slug. A served model that is absent from
+  <code>site/catalog/models.yml</code> instead falls through
+  <code>PricingService.getPriceSync</code>'s own lookup chain: catalog, then API
+  cache, then JSON config, then the provider's <code>default</code> rate, or the
+  global $3/$15-per-MTok fallback if the service was never initialized.
+  This happens silently, no throw, no log. The resulting price is what
+  lands in <code>attempt.cost</code>, the bench summary's total cost, and the ingested
+  <code>cost_snapshots</code>-derived numbers. It is <strong>not</strong> the requested model's
+  rate, despite the served model sharing its vendor prefix.</li>
+<li><strong>Known gap — executor-v2 path.</strong> The dashboard/workbench executor-v2 path
+  does not call <code>pricingSlugForAttempt</code>; only the <code>bench</code> CLI path prices
+  fallback-served attempts correctly. Deliberately left uncovered for this
+  feature; the workbench doesn't run large enough volumes for the pricing
+  drift to matter yet.</li>
+<li><strong>Known gap — D1 <code>rowCostUsd</code>.</strong> <code>site/src/lib/server/cost-sql.ts</code>'s
+  <code>rowCostUsd()</code> SQL expression still prices every row by the <strong>run's</strong>
+  model, not <code>served_model</code>. A fallback-served row's D1-computed cost is
+  therefore a small undercount (or overcount, depending on relative pricing)
+  versus what the API actually billed. This is deferred deliberately, not
+  overlooked: <code>served_model</code> is recorded on every row (migration <code>0015</code>), so
+  the data needed to fix <code>rowCostUsd()</code> later is already there — it just
+  isn't read yet. Fixing it means joining <code>results.served_model</code> against the
+  pricing catalog inside the SQL cost expression, which is out of scope for
+  this feature and left as a follow-up.</li>
+</ul>
+<h2 id="dashboard">Dashboard<a class="headerlink" href="#dashboard" title="Permanent link">&para;</a></h2>
+<p>The live bench dashboard (<code>cli/dashboard/page.ts</code>) shows a <code>⤵N</code> badge next
+to a model's live stats, counting attempts where <code>llmResponse.servedModel</code>
+was set — the same conditional-display pattern as the existing <code>↻N</code>
+infra-retry badge (hidden entirely at <code>N === 0</code>).</p>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>.claude/rules/alert-drain-rebalance.md</code> — the <code># Drain Events</code> /
+  <code># Recovery Events</code> scores-file blocks this feature's <code># Fallbacks</code> block
+  follows the same shape as.</li>
+<li><code>src/llm/anthropic-adapter.ts</code> — <code>shouldRequestServerFallback</code>,
+  <code>modelSupportsServerFallback</code>, <code>extractFallbackInfo</code>,
+  <code>pricingSlugForAttempt</code>.</li>
+<li><code>cli/commands/bench/results-writer.ts</code> — <code>collectFallbackEvents</code>,
+  <code>renderFallbackBlock</code>, <code>groupResultsForFallback</code>.</li>
+<li><code>cli/commands/bench/single-task-matrix.ts</code> — <code>fallbackMarker</code>.</li>
+<li><code>site/migrations/0015_results_fallback.sql</code>.</li>
+<li><code>site/src/lib/server/leaderboard.ts</code> — <code>fallback_count</code> query + scope
+  comment.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
