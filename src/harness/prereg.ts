@@ -440,7 +440,15 @@ function anchorLine(text: string, key: string, re: string): string | null {
     null;
 }
 
-const hasApproval = (text: string) => text.split(/\r?\n/).some(isOwnerApproval);
+/**
+ * A valid approval line exists and none names the other stage: approvals are
+ * stage-specific (appendix section 10 has no structured stage field).
+ */
+const hasApproval = (text: string, stage: "A" | "B") => {
+  const lines = text.split(/\r?\n/).filter(isOwnerApproval);
+  const other = new RegExp(`\\bstage\\s+${stage === "A" ? "B" : "A"}\\b`, "i");
+  return lines.length > 0 && !lines.some((l) => other.test(l));
+};
 
 /** The anchor lines of a stage-A decision file; null when any is missing. */
 export function parseStageADecision(
@@ -454,7 +462,7 @@ export function parseStageADecision(
   const tag_object = line("tag_object", "[0-9a-f]{40}");
   if (
     !protocol_sha256 || !file_sha256 || !tag || !tag_object ||
-    !hasApproval(text)
+    !hasApproval(text, "A")
   ) return null;
   return { protocol_sha256, tag, tag_object };
 }
@@ -472,7 +480,7 @@ export function parseStageBDecision(
   const stage_b_sha256 = line("stage_b_sha256", "[0-9a-f]{64}");
   const tag = line("tag", "[A-Za-z0-9._/-]+");
   const tag_object = line("tag_object", "[0-9a-f]{40}");
-  if (!stage_b_sha256 || !tag || !tag_object || !hasApproval(text)) {
+  if (!stage_b_sha256 || !tag || !tag_object || !hasApproval(text, "B")) {
     return null;
   }
   const amendments = [
@@ -506,6 +514,9 @@ function isolatedGitEnv(): Record<string, string> {
   }
   env["GIT_NO_REPLACE_OBJECTS"] = "1";
   env["GIT_CONFIG_NOSYSTEM"] = "1";
+  // No user config (protocol allowances, promisor helpers) and no lazy fetch of missing objects.
+  env["GIT_CONFIG_GLOBAL"] = Deno.build.os === "windows" ? "NUL" : "/dev/null";
+  env["GIT_NO_LAZY_FETCH"] = "1";
   return env;
 }
 
@@ -552,17 +563,19 @@ async function annotatedTagObject(
   const message = body.replaceAll("\r\n", "\n").split("\n\n").slice(1).join(
     "\n\n",
   );
+  // Every line with the key counts, malformed ones included.
+  const keyed = [...message.matchAll(new RegExp(`^${key}:`, "gm"))].length;
+  if (keyed > 1) {
+    throw new ValidationError(
+      `${ref} annotation must hold exactly one ${key} line (found ${keyed})`,
+      [ref],
+    );
+  }
   const found = [
     ...message.matchAll(
       new RegExp(`^${key}:[ \\t]*([0-9a-f]{64})[ \\t]*$`, "gm"),
     ),
   ].map((m) => m[1]!);
-  if (found.length > 1) {
-    throw new ValidationError(
-      `${ref} annotation must hold exactly one ${key} line (found ${found.length})`,
-      [ref],
-    );
-  }
   if (found[0] !== expected) {
     throw new ValidationError(
       `${ref} annotation ${key} ${
