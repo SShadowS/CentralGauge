@@ -15,3 +15,7 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/by-value-buffer: { partial_credit: 0 }
+  naive/compute-only: { partial_credit: 0.7 }
+  naive/no-ignore: { partial_credit: 0.8 }
+  naive/post-and-undo: { partial_credit: 0.8 }
