@@ -13,7 +13,7 @@ Observed:
 Expected:
 
 - A vehicle stays blocked as long as it has an open damage or is due for service on the work date. "Due" means due by the same rules BlockDueVehicles applies.
-- Registering a service and repairing a damage release the vehicle only when neither reason remains. When neither remains, they release it as today.
+- Registering a service and repairing a damage release the vehicle only when neither reason remains. When neither remains, they release it as they do now.
 
 Reproduction:
 

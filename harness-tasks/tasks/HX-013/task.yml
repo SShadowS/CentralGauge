@@ -14,7 +14,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 85720, procedures: [ServiceOnDamagedVehicleKeepsBlock, ServiceReleasesUndamagedDueVehicle, RepairKeepsKmDueVehicleBlocked, RepairKeepsHeavyDutyDueBlocked, RepairReleasesHeavyDutyBelowInterval, RepairKeepsPlanDateDueBlocked, RepairReleasesDayBeforePlanDate, LateServiceStillDueStaysBlocked, RepairWithOtherDamageOpenStaysBlocked, RepairedDueVehicleCannotBeCheckedOut, ServiceThenRepairReleases] }
+    - { codeunit: 85720, procedures: [ServiceOnDamagedVehicleKeepsBlock, ServiceReleasesUndamagedDueVehicle, RepairKeepsKmDueVehicleBlocked, RepairKeepsHeavyDutyDueBlocked, RepairReleasesHeavyDutyBelowInterval, RepairKeepsPlanDateDueBlocked, RepairReleasesDayBeforePlanDate, LateServiceStillDueStaysBlocked, RepairWithOtherDamageOpenStaysBlocked, RepairedDueVehicleCannotBeCheckedOut, ServiceThenRepairReleases, LateServiceByDateStaysBlocked] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

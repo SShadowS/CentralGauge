@@ -12,6 +12,7 @@ partial_credit:
     "85720/RepairWithOtherDamageOpenStaysBlocked": 1
     "85720/RepairedDueVehicleCannotBeCheckedOut": 1
     "85720/ServiceThenRepairReleases": 1
+    "85720/LateServiceByDateStaysBlocked": 1
   hidden_regressions: []
 reuse:
   targets:

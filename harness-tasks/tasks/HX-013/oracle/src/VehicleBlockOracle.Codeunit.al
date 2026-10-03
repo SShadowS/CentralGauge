@@ -195,6 +195,25 @@ codeunit 85720 "HX013 Vehicle Block Oracle"
         Assert.IsTrue(FleetMgt.IsAvailable('HX013-K'), 'The serviced and repaired vehicle is available');
     end;
 
+    [Test]
+    procedure LateServiceByDateStaysBlocked()
+    var
+        ServicePlanMgt: Codeunit "CGR Service Plan Mgt";
+        FleetMgt: Codeunit "CGR Fleet Mgt";
+    begin
+        WorkDate(20310301D);
+        InitHX13Setup();
+        NewHX13Plan('HX013-P6L');
+        NewHX13Vehicle('HX013-L', 1000, Enum::"CGR Maintenance Strategy"::Default, 0);
+        ServicePlanMgt.AssignPlan('HX013-L', 'HX013-P6L');
+        ServicePlanMgt.RegisterService('HX013-L', 20300901D, 1000);
+        BlockVehicleForService('HX013-L');
+
+        ServicePlanMgt.RegisterService('HX013-L', 20300820D, 1000);
+        AssertVehicleBlocked('HX013-L', true, 'A service dated 2030-08-20 makes the plan date 2031-02-20, still due on the work date');
+        Assert.IsFalse(FleetMgt.IsAvailable('HX013-L'), 'A vehicle still due by its plan date stays unavailable');
+    end;
+
     local procedure InitHX13Setup()
     var
         Setup: Record "CGR Setup";
