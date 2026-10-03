@@ -1,8 +1,14 @@
 // M9-01a run 003: the qualification probe's capture scrub works on bytes and
 // matches each secret in UTF-8 and in UTF-16LE (PowerShell 5.1 `>` output).
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
-import { scrubFiles } from "../../../src/harness/egress-probe.ts";
+import { ContainerError } from "../../../src/errors.ts";
+import type { DockerCli } from "../../../src/harness/sandbox.ts";
+import type { EgressRuntime } from "../../../src/harness/egress.ts";
+import {
+  runQualificationProbe,
+  scrubFiles,
+} from "../../../src/harness/egress-probe.ts";
 
 const utf16le = (s: string) => {
   const b = new Uint8Array(s.length * 2);
@@ -76,5 +82,73 @@ Deno.test("scrubFiles: an unreadable path is reported, never skipped as clean", 
     assertEquals(typeof r, "string");
   } finally {
     await Deno.remove(dir, { recursive: true });
+  }
+});
+
+// M11-91: which error wins when the probe body and its teardown both fail.
+// No run is started (listeners() ends the body early), so the teardown needs
+// no docker; the injected scrub is the teardown problem.
+function probeWith(
+  listeners: () => Promise<string[]>,
+  scrubError: string | null,
+  out: string,
+) {
+  return runQualificationProbe({
+    docker: {} as DockerCli,
+    egress: {
+      startProxy: () => Promise.resolve({ shutdown: () => Promise.resolve() }),
+      listeners,
+    } as unknown as EgressRuntime,
+    custody: { privateRoot: out, owner: "o" },
+    token: "tok",
+    revoke: () => Promise.resolve(),
+    scrub: () => Promise.resolve(scrubError),
+    spec: {
+      name: "cg-probe-precedence",
+      owner: "o",
+      executionId: "exec-precedence",
+      imageId: `sha256:${"c".repeat(64)}`,
+      workspace: out,
+      taskDir: out,
+      configDir: out,
+      extraMounts: [],
+      env: {},
+      timeoutMs: 1000,
+      killGraceMs: 10,
+      opTimeoutMs: 100,
+      maxCaptureBytes: 1024,
+      rawLog: join(out, "raw.jsonl"),
+      stderrLog: join(out, "stderr.txt"),
+    },
+    probeCommand: ["x"],
+    out,
+    collect: () => Promise.reject(new Error("unused")),
+  });
+}
+
+Deno.test("qualification probe: body error and teardown error precedence (M11-91)", async () => {
+  const out = await Deno.makeTempDir();
+  const boom = () => Promise.reject(new Error("body boom"));
+  try {
+    // Body fails, teardown clean: the body's error.
+    await assertRejects(() => probeWith(boom, null, out), Error, "body boom");
+    // Body fails and teardown fails: the teardown's ContainerError replaces it.
+    const e = await assertRejects(
+      () => probeWith(boom, "locked", out),
+      ContainerError,
+      "teardown not confirmed (capture scrub failed: locked)",
+    );
+    assert(!String(e.message).includes("body boom"));
+    // Body returns, teardown fails: the ContainerError.
+    await assertRejects(
+      () => probeWith(() => Promise.resolve(["x"]), "locked", out),
+      ContainerError,
+      "teardown not confirmed",
+    );
+    // Body returns early with problems, teardown clean: the body's result.
+    const r = await probeWith(() => Promise.resolve(["x"]), null, out);
+    assertEquals(r.problems, ["listeners: x"]);
+  } finally {
+    await Deno.remove(out, { recursive: true });
   }
 });
