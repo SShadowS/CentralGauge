@@ -132,7 +132,9 @@ export async function makeRefappRepo(): Promise<RefappRepo> {
   await write(
     root,
     `${r}/Test/src/Shipped.Test.al`,
-    `codeunit 80010 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure ShippedPasses()\n    begin\n    end;\n}\n`,
+    // A non-trivial body: an empty one would equal every empty agent test
+    // body, which the M4-17a credit rules reject as a copy.
+    `codeunit 80010 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure ShippedPasses()\n    begin\n        Assert.AreEqual(10, Rental.Price(), 'shipped');\n    end;\n}\n`,
   );
   await git(root, "add", ".");
   await git(root, "commit", "-q", "-m", "refapp");

@@ -3,7 +3,10 @@
  * script only writes files; it never runs PowerShell or touches the host.
  * Usage:
  *   deno run --allow-all scripts/harness/egress-scripts.ts apply --invocation <id> --dir <dir> --interface-index <n> --interface-alias <alias> --hns-id <id> --out <apply.ps1>
- *   deno run --allow-all scripts/harness/egress-scripts.ts revert --dir <dir> --out <revert.ps1>
+ *   deno run --allow-all scripts/harness/egress-scripts.ts revert --dir <dir> --out <revert.ps1> [--restore-profiles]
+ * The revert removes only the cg-harness-egress rules and archives the
+ * records; it never changes the firewall profiles unless --restore-profiles
+ * is given, and then refuses if the profiles changed since the apply (C-04).
  * The interface index and alias are the adapter that owns 172.30.60.1
  * (`harness egress verify` prints problems naming it). The same inputs always
  * give the same script. Files are written with a UTF-8 BOM (Windows
@@ -26,6 +29,7 @@ const a = parseArgs(Deno.args, {
     "hns-id",
     "out",
   ],
+  boolean: ["restore-profiles"],
 });
 try {
   const [verb] = a._;
@@ -45,7 +49,7 @@ try {
       hnsId: a["hns-id"],
     });
   } else if (verb === "revert") {
-    text = revertScript(a.dir);
+    text = revertScript(a.dir, { restoreProfiles: a["restore-profiles"] });
   } else {
     throw new Error(`unknown verb ${verb ?? "(none)"}: apply or revert`);
   }

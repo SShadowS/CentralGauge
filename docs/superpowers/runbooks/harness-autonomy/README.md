@@ -73,7 +73,8 @@ todo --claim--> doing --submit--> review --accept--> accepted
 ### Queries
 
 - `coord status [--lane X] [--json]`, `coord why <id>`, `coord next <lane>`,
-  `coord questions`, `coord stale`, `coord holder <container>`, `coord doctor`.
+  `coord questions`, `coord stale`, `coord holder <container>`, `coord doctor`,
+  `coord sweep [--json]` (one-call orchestrator sweep: pause/drain, leases, questions, stale, open tasks, next).
 - Queries read only headers and status records. Never read every task folder by hand.
 
 ### Container leases (lane-ops only)

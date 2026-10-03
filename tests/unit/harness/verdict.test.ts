@@ -683,3 +683,36 @@ Deno.test("infraSignature (C-03 run 003): a judge error after real oracle rows i
   });
   assertEquals(infraSignature(bare, log), "judge_error");
 });
+
+Deno.test("judge (M4-17a): a test added to a shipped test codeunit runs under pass_to_pass from the generated codeunit; a failing one fails it", async () => {
+  const shipped = (body: string) =>
+    `codeunit 80010 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure ShippedPasses()\n    begin\n    end;\n\n    [Test]\n    procedure AgentAdded()\n    begin\n        ${body}\n    end;\n}\n`;
+  for (
+    const [body, verdict] of [["Message('ok');", "pass"], [
+      "Error('no');",
+      "fail",
+    ]] as const
+  ) {
+    const bc = script();
+    const inner = bc.script;
+    bc.script = (cu, deployed, container) =>
+      cu === 84990
+        ? result({
+          AgentAdded:
+            deployedSource(deployed, "CGR Test").includes("Error('no')")
+              ? "Assert.IsTrue failed. agent"
+              : true,
+        })
+        : inner(cu, deployed, container);
+    const { input } = await setup("correct", {
+      "Test/src/Shipped.Test.al": shipped(body),
+    });
+    const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
+    assertEquals(judgment.verdict, verdict, body);
+    assert(
+      judgment.scorers[1]!.tests.some((t) =>
+        t.codeunit === 84990 && t.procedure === "AgentAdded"
+      ),
+    );
+  }
+});

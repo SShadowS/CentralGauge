@@ -64,6 +64,10 @@ import { buildReport, renderReport } from "../../../../src/harness/report.ts";
 import { writeVerdictLog } from "../../../../src/harness/verdict.ts";
 import { sha256Hex } from "../../../../src/harness/hash.ts";
 import { scorerFingerprint } from "../../../../src/harness/records.ts";
+import {
+  currentScorerFingerprint,
+  SCORER_SUITE,
+} from "../../../../src/harness/verdict.ts";
 import { oracleHash } from "../../../../src/harness/identity.ts";
 import { loadTask } from "../../../../src/harness/task.ts";
 import { BenchLockHeldError } from "../../../../src/utils/bench-lock.ts";
@@ -1413,6 +1417,60 @@ Deno.test("rejudge adds one judgment per execution whose scorer fingerprint is n
   assertEquals(await count(), [3, 1]);
   const again = await harnessRejudge("contract", runOpts(t), opener(t));
   assertEquals([again.rejudged, await count()], [0, [3, 1]]);
+});
+
+Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is rejudged with the current suite on the original artifact, task and oracle", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const e = (await t.env.store.executions(c.id))[0]!;
+  const [orig] = await t.env.store.judgments(e.id);
+  // The suite as recorded before M4-17a.
+  const before = {
+    ...orig!.scorer_versions,
+    mutant_kill: "2",
+    pass_to_pass: "1",
+  };
+  await t.env.store.writeJudgment({
+    ...orig!,
+    id: crypto.randomUUID(),
+    scorer_versions: before,
+    scorer_fingerprint: await scorerFingerprint(before),
+    started_at: new Date().toISOString(),
+    ended_at: new Date().toISOString(),
+  });
+  assertEquals(
+    (await harnessRejudge("contract", runOpts(t), opener(t))).rejudged,
+    1,
+  );
+  const js = await t.env.store.judgments(e.id);
+  const latest = js.reduce((a, b) => a.started_at >= b.started_at ? a : b);
+  assertEquals(latest.scorer_versions, SCORER_SUITE);
+  assertEquals(latest.scorer_versions["mutant_kill"], "3");
+  assertEquals(latest.scorer_fingerprint, await currentScorerFingerprint());
+  assertEquals(
+    [
+      latest.execution_id,
+      latest.workspace_hash,
+      latest.task_id,
+      latest.task_oracle_hash,
+    ],
+    [
+      e.id,
+      (await t.env.store.artifact(e.id))!.workspace_hash,
+      orig!.task_id,
+      orig!.task_oracle_hash,
+    ],
+  );
+  assertEquals(latest.workspace_hash, orig!.workspace_hash);
 });
 
 Deno.test("rejudge refuses when the restaged visible inputs differ", async () => {
